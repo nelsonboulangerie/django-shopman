@@ -4,7 +4,9 @@ GET  /api/v1/backstage/kds/                       → list of KDS instances
 GET  /api/v1/backstage/kds/<ref>/                 → KDS board projection
 POST /api/v1/backstage/kds/tickets/<pk>/start/    → put ticket in progress
 POST /api/v1/backstage/kds/tickets/<pk>/done/     → mark ticket done
-POST /api/v1/backstage/kds/expedition/<pk>/action/ → dispatch/complete
+POST /api/v1/backstage/kds/<ref>/seen/           → "Visto" da estação (K20)
+PATCH /api/v1/backstage/kds/<ref>/settings/       → densidade e som da estação
+POST /api/v1/backstage/kds/<ref>/follow/          → levar a estação no bolso (push)
 POST /api/v1/backstage/kds/expedition/<pk>/printed-stations/<ref>/done/
                                                    → "Pronto" da Saída pela estação sem tela
 POST /api/v1/backstage/kds/printed-tickets/<pk>/done/ → "Pronto" do PDV no card do ticket
@@ -15,9 +17,7 @@ GET  /api/v1/backstage/kds/pickup/               → customer pickup board
 from __future__ import annotations
 
 import logging
-from datetime import date
 
-from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.response import Response
@@ -80,23 +80,94 @@ class KDSBoardView(APIView):
     required_permission = "backstage.operate_kds"
 
     def get(self, request, ref: str):
-        raw_date = str(request.query_params.get("date") or "").strip()
+        # O quadro é sempre o de hoje: a prévia de outra data foi para a
+        # Produção/Encomendas (SUITE-UX §9).
         try:
-            service_date = date.fromisoformat(raw_date) if raw_date else None
-        except ValueError:
-            return Response({"detail": "Data inválida."}, status=status.HTTP_400_BAD_REQUEST)
-        if service_date is not None and service_date < timezone.localdate():
-            return Response({"detail": "Escolha hoje ou uma data futura."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            board = build_kds_board(ref, service_date=service_date)
+            board = build_kds_board(ref)
         except KDSInstanceNotFound:
-            # Kiosk com a estação antiga (reseed, renomeada, desativada): 404 no
-            # dialeto canônico, e o app troca para "escolha outra estação".
+            # Kiosk com a estação antiga (reseed, renomeada, desativada) ou o
+            # endereço da Saída (que mora no Gestor): 404 no dialeto canônico, e
+            # o app troca para "escolha outra estação".
             return Response(
                 {"detail": "Esta estação não existe mais. Escolha outra na lista de estações."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response({"board": projection_data(board)})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Visto da estação: o aviso de pedido novo para em todas as telas dela",
+        responses={200: OpenApiResponse(description="Quantos tickets ficaram vistos.")},
+    ),
+)
+class KDSStationSeenView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_kds"
+
+    def post(self, request, ref: str):
+        ticket_pks = request.data.get("ticket_pks")
+        if not isinstance(ticket_pks, list):
+            return Response(
+                {"detail": "Diga quais pedidos foram vistos.", "field": "ticket_pks"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            seen = kds_service.mark_station_seen(station_ref=ref, ticket_pks=ticket_pks, actor=_actor(request))
+        except KDSInstanceNotFound as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"ok": True, "seen": seen})
+
+
+@extend_schema_view(
+    patch=extend_schema(
+        tags=["backstage"],
+        summary="Densidade e som da estação provisionada",
+        responses={200: OpenApiResponse(description="Densidade e som gravados.")},
+    ),
+)
+class KDSStationSettingsView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_kds"
+
+    def patch(self, request, ref: str):
+        density = request.data.get("density")
+        sound_enabled = request.data.get("sound_enabled")
+        if density is not None and not isinstance(density, str):
+            return Response({"detail": "Tamanho do ticket inválido.", "field": "density"}, status=status.HTTP_400_BAD_REQUEST)
+        if sound_enabled is not None and not isinstance(sound_enabled, bool):
+            return Response({"detail": "Som inválido.", "field": "sound_enabled"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            instance = kds_service.update_station_settings(
+                station_ref=ref, density=density, sound_enabled=sound_enabled
+            )
+        except KDSInstanceNotFound as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except KDSError as exc:
+            return Response({"detail": str(exc), "field": "density"}, status=status.HTTP_400_BAD_REQUEST)
+        from shopman.backstage.projections.kds import station_density
+
+        return Response({"density": station_density(instance), "sound_enabled": bool(instance.sound_enabled)})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Levar a estação no bolso: o pedido novo chega por push",
+        responses={200: OpenApiResponse(description="Operador segue a estação.")},
+    ),
+)
+class KDSStationFollowView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_kds"
+
+    def post(self, request, ref: str):
+        try:
+            kds_service.follow_station(station_ref=ref, user=request.user)
+        except KDSInstanceNotFound as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"ok": True})
 
 
 @extend_schema_view(
@@ -189,65 +260,6 @@ class KDSTicketAcknowledgeView(APIView):
             logger.debug("kds_ticket_ack_failed ticket_pk=%s", ticket_pk, exc_info=True)
             return Response({"detail": str(exc) or "Falha ao dar baixa."}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"ok": True, "ticket_pk": ticket_pk})
-
-
-@extend_schema_view(
-    post=extend_schema(
-        tags=["backstage"],
-        summary="Expedition action (dispatch/complete)",
-        responses={200: OpenApiResponse(description="Action result.")},
-    ),
-)
-class KDSExpeditionActionView(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_kds"
-
-    def post(self, request, order_pk: int):
-        action = (request.data.get("action") or "").strip()
-        if action not in {"dispatch", "complete"}:
-            return Response({"detail": "Ação inválida."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            kds_service.expedition_action(
-                order_id=order_pk,
-                action=action,
-                actor=_actor(request),
-            )
-        except KDSOrderNotFound as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
-        except KDSError as exc:
-            logger.debug(
-                "kds_expedition_action_failed order_pk=%s action=%s",
-                order_pk,
-                action,
-                exc_info=True,
-            )
-            return Response({"detail": str(exc) or "Falha na ação."}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"ok": True, "action": action, "order_pk": order_pk, **kds_service.expedition_handoff(order_pk)})
-
-
-@extend_schema_view(
-    post=extend_schema(
-        tags=["backstage"],
-        summary="Saída: desfazer Entregar/Despachar dentro da janela",
-        responses={
-            200: OpenApiResponse(description="Saída desfeita; o pedido volta para a Saída."),
-            400: OpenApiResponse(description="Prazo acabou ou o pedido mudou."),
-        },
-    ),
-)
-class KDSExpeditionUndoView(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_kds"
-
-    def post(self, request, order_pk: int):
-        token = str(request.data.get("token") or "").strip()
-        try:
-            kds_service.expedition_undo(order_id=order_pk, token=token, actor=_actor(request))
-        except KDSOrderNotFound as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
-        except KDSError as exc:
-            return Response({"detail": str(exc) or "Não deu para desfazer."}, status=status.HTTP_409_CONFLICT)
-        return Response({"ok": True, "order_pk": order_pk})
 
 
 #: Quem pode dar o "Pronto" da estação sem tela: a Saída (KDS) e o PDV. O

@@ -3,15 +3,17 @@
 // zonas, na ordem em que a cozinha pergunta (QUE PEDIDO · QUANTO TEMPO · QUE TAREFA)
 // e um só ato por vez:
 //
-// - IDENTIDADE (topo): o código grande e, embaixo, "Retirada"/"Entrega" com o
-//   cliente; à direita o relógio (o tempo contra a meta num número só, a cor diz se
+// - IDENTIDADE (topo): o código grande e, embaixo, "Retirada"/"Entrega" (prévia v4,
+//   nota 6: sem canal, telefone nem cliente; só a encomenda diz o cliente, com quem a
+//   hora foi combinada); "iniciado por Rafael às 21:56 · retira às 22:30" logo abaixo
+//   quando houver (nota 7); à direita o relógio (o tempo contra a meta num número só, a cor diz se
 //   está no prazo) e a pílula do estado ("Próximo · atrasado", "Novo", "Em preparo",
 //   "Bloqueado").
 // - TAREFA (meio): os itens, inteiros. Nome e observação quebram linha, e o card
 //   cresce o quanto precisar; ticket longo ocupa duas alturas na grade em vez de
 //   cortar a lista (quem decide é a página, por `isTallTicket`).
 // - AÇÃO (base): UM botão, com o ato escrito: "Iniciar preparo" → "Finalizar
-//   preparo". Quando o servidor recusaria o Finalizar (pagamento não confirmado), o
+//   preparo" (no polegar do celular, "Pronto W07", `thumbActionLabel`). Quando o servidor recusaria o Finalizar (pagamento não confirmado), o
 //   card diz ANTES do toque, numa caixa com cadeado, e o botão fica tracejado.
 //
 // A área grande (identidade + itens) faz o que é SEGURO: abre o detalhe. O ato que
@@ -26,14 +28,15 @@ import type { KDSTicketProjection } from "~/types/kds";
 import {
   cardScale,
   elapsedLabel,
-  fulfillmentLabel,
   KDS_ARM_DELAY_MS,
   KDS_UNDO_WINDOW_MS,
   pillClass,
-  shortDateLabel,
   splitRef,
+  thumbActionLabel,
   ticketAction,
+  ticketOverline,
   ticketPill,
+  ticketStartLine,
   ticketTone,
   toneNextSurface,
   toneTimerChip,
@@ -53,8 +56,6 @@ const props = withDefaults(
     addition?: boolean;
     /** Finalizado com a janela de "Desfazer" ainda aberta. */
     finishing?: boolean;
-    /** Data de serviço do quadro (ISO) — o card agendado precisa DIZER a data. */
-    serviceDate?: string;
     /** Rótulo fino acima do código (celular: "Agora"). */
     eyebrow?: string;
     /** Seletor para onde o botão vai (celular: a barra do polegar). Vazio = no card. */
@@ -66,24 +67,20 @@ const props = withDefaults(
     blocked: false,
     addition: false,
     finishing: false,
-    serviceDate: "",
     eyebrow: "",
     actionTarget: "",
   },
 );
-const emit = defineEmits<{ start: []; finish: []; blocked: []; locked: []; undo: []; open: [] }>();
+const emit = defineEmits<{ start: []; finish: []; blocked: []; locked: []; undo: []; open: []; hold: [] }>();
 
 const tone = computed(() => ticketTone(props.ticket.timer_class));
 const code = computed(() => splitRef(props.ticket.order_ref).code);
-const overline = computed(() => fulfillmentLabel(props.ticket.fulfillment_icon));
-// Sem cliente nomeado, o nome cai para a própria comanda — que já aparece riscada.
-const customerLabel = computed(() =>
-  props.ticket.customer_name === props.ticket.previous_tab_ref ? "" : props.ticket.customer_name,
-);
-const scheduledDate = computed(() => (props.serviceDate ? shortDateLabel(props.serviceDate) : ""));
-const finishLocked = computed(
-  () => Boolean(props.ticket.finish_block_label) && !props.ticket.is_scheduled && !props.finishing,
-);
+const overline = computed(() => ticketOverline(props.ticket));
+const startLine = computed(() => ticketStartLine(props.ticket));
+const finishLocked = computed(() => Boolean(props.ticket.finish_block_label) && !props.finishing);
+// Toque longo (celular, prévia v4 nota 7): desfazer, reabrir e ver o pedido, sem botões
+// a mais na tela. A página decide se escuta (`@hold`).
+const longPress = useLongPress(() => emit("hold"));
 
 // Armar o finalizar: o botão fica no MESMO lugar nos dois estados, então o toque
 // que INICIOU não pode, quicando, finalizar também. O rótulo já é "Finalizar
@@ -162,8 +159,10 @@ const surface = computed(() => {
   if (props.ticket.status === "in_progress") return "border border-primary/50 bg-card";
   return "border border-border bg-card";
 });
-const timerChip = computed(() =>
-  props.ticket.is_scheduled ? "border border-border bg-muted text-muted-foreground" : toneTimerChip(tone.value),
+const timerChip = computed(() => toneTimerChip(tone.value));
+// No polegar do celular o ato leva o código ("Pronto W07"): o card em foco fica longe do dedo.
+const actionLabel = computed(() =>
+  props.actionTarget ? thumbActionLabel(action.value, code.value) : action.value.label,
 );
 const undoWindowSeconds = Math.round(KDS_UNDO_WINDOW_MS / 1000);
 // Observação curta mora na linha do item ("Pão de Hambúrguer · sem gergelim"); a longa
@@ -194,7 +193,7 @@ const d = computed(() => ({
   >
     <!-- ÁREA DE LEITURA: identidade + itens. Um toque aqui abre o detalhe — o gesto
          seguro fica com a área grande, o gesto que sai da cozinha fica no botão. -->
-    <div class="relative flex flex-1 flex-col">
+    <div class="relative flex flex-1 flex-col" v-bind="longPress" data-kds-hold>
       <button
         v-if="!finishing"
         type="button"
@@ -232,11 +231,7 @@ const d = computed(() => ({
               >
                 <Icon name="lucide:plus" class="size-3" />Adicional
               </span>
-              <span>{{ overline }}</span>
-              <template v-if="customerLabel">
-                <span aria-hidden="true">·</span>
-                <span class="min-w-0 max-w-full truncate">{{ customerLabel }}</span>
-              </template>
+              <span class="min-w-0 break-words" data-kds-overline>{{ overline }}</span>
               <span
                 v-if="ticket.previous_tab_ref"
                 class="line-through"
@@ -253,11 +248,11 @@ const d = computed(() => ({
               :class="[timerChip, d.timerH, d.timer]"
             >
               <Icon
-                :name="ticket.is_scheduled ? 'lucide:calendar-clock' : 'lucide:timer'"
+                name="lucide:timer"
                 class="size-5 shrink-0"
-                :class="tone === 'ok' && !ticket.is_scheduled ? 'text-muted-foreground' : ''"
+                :class="tone === 'ok' ? 'text-muted-foreground' : ''"
               />
-              {{ ticket.is_scheduled ? scheduledDate || "Agendado" : elapsedLabel(ticket.elapsed_seconds) }}
+              {{ elapsedLabel(ticket.elapsed_seconds) }}
             </span>
             <span
               v-if="pill"
@@ -269,6 +264,16 @@ const d = computed(() => ({
             </span>
           </div>
         </div>
+
+        <!-- Quem iniciou e a hora combinada (v4: "iniciado por Rafael às 21:56 · retira às 22:30"). -->
+        <p
+          v-if="startLine"
+          class="flex min-w-0 items-start gap-1.5 op-micro text-muted-foreground"
+          data-kds-started
+        >
+          <Icon name="lucide:user-round" class="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <span class="min-w-0 break-words">{{ startLine }}</span>
+        </p>
 
         <!-- TAREFA: só os itens, inteiros. -->
         <ul class="flex flex-col divide-y divide-border border-t border-border">
@@ -355,27 +360,18 @@ const d = computed(() => ({
         <KdsCardButton
           tone="outline"
           :icon="action.icon"
-          :label="action.label"
+          :label="actionLabel"
           :size-class="d.action"
           :aria-label="actionAria"
           data-kds-action
           @click="onAction"
         />
       </div>
-      <div v-else-if="ticket.is_scheduled" :class="actionTarget ? '' : d.inset">
-        <KdsCardButton
-          tone="inert"
-          icon="lucide:calendar-clock"
-          :label="`Prévia${scheduledDate ? ` · começa em ${scheduledDate}` : ''}`"
-          :size-class="d.action"
-          data-kds-action
-        />
-      </div>
       <div v-else :class="actionTarget ? '' : d.inset">
         <KdsCardButton
           :tone="actionTone"
           :icon="action.icon"
-          :label="action.label"
+          :label="actionLabel"
           :size-class="d.action"
           :disabled="!action.enabled"
           :aria-label="actionAria"

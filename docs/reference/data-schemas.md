@@ -333,7 +333,7 @@ for key in (
 | _(edição da encomenda)_ | — | `shop.services.order_edit.edit` (API `POST orders/<ref>/edit/`, prévia em `POST orders/<ref>/edit/preview/`), sob lock do pedido, numa transação | todos os leitores de pedido | **Não cria chave nova de estado**: reescreve as que já existem. `adjustment` (itens/total, acima); `order_notes` (a observação do cliente; vazia ⇒ removida); retirada ↔ entrega: `fulfillment_type`, `delivery_address`, `delivery_address_structured`, `delivery_fee_q`, `delivery_fee_override_q`, `delivery_distance_km` (removidas quando vira retirada), `fiscal.tax_id` (o CPF/CNPJ que a entrega com nota exige, régua de 24/09); `payment` segue a invariante do valor final: `amount_q` vira o total novo, a linha recebida pelo meio que devolve encolhe junto, a linha pendente única passa a valer o saldo, e o pagamento digital já capturado vira linha `received` explícita (+ a pendente do saldo, `collection: "on_delivery"`, `method: "mixed"`) quando sobra saldo a receber. A data/janela vai pelo `services.reschedule` (acrescenta `reschedule_history`, `reason: "edição da encomenda"`, sem aviso próprio). Trilha: evento `order_edited` no OrderEvent (`source` = `pos:edit` no balcão, `concierge:add` quando a Concierge acrescenta a pedido do cliente, com `actor: "concierge"`; o Gestor mostra "Itens acrescentados pela Concierge a pedido do cliente") `{source, revision, previous_total_q, total_q, diff, settlement: {kind, amount_q, method}, customer_note, notes?, fulfillment?, delivery_fee?, schedule?, approved_by?}` — `settlement.kind` ∈ `none`, `collect`, `refund_gateway`, `refund_cash`, `refund_card_machine`. Estorno registrado na maquininha: evento `card_machine_refund_recorded` `{amount_q, approved_by}` |
 | `kitchen_note` | `string` | OrderNotesView (`operator_orders.save_kitchen_note`) | OperatorOrderProjection (`kitchen_note`), KDS ticket (`kitchen_note`) | Nota da cozinha escrita pelo operador no gestor (tags pré-configuradas `Shop.kitchen_note_tags` anexadas + texto livre). **Exibida no ticket do KDS** para a produção. Distinta da `order_notes` (nota do cliente, do checkout) e dos `operator_comment` do histórico |
 | `volumes` | `int` | OrderVolumesView (`operator_orders.save_volumes`), o mesmo gesto "Declarar volumes" (− N +, Gravar) em três lugares: o ⋯ e a etiqueta do cartão do Gestor, a coluna/posto Saída do Gestor e o detalhe do ticket na estação da Cozinha (KDS, também nos concluídos recentes). Porta: quem opera o quadro (`HasOrderBoardAccess`: `shop.manage_orders` ou `backstage.operate_kds`) | OrderCardProjection (`volumes`: "N volumes" no cartão e na Fila) · KDSTicketProjection (`volumes`, com `volumes_order_ref`/`volumes_revision` para declarar da estação) · `order_ticket.ticket_bytes` (com N > 1 sai uma Via Pedido por volume, cada uma com "Volume k de N") | Quantos volumes (sacolas, caixas) o pedido leva, **declarado** por quem embalou, onde estiver (dono, 04/10/2026). 1 a 99; zero apaga a chave e o cartão volta a contar itens. Não existe volume deduzido (dos itens, das estações ou da embalagem): sem declaração a chave não existe. Evento `volumes_declared` no histórico com `{volumes, actor, surface}`: `actor` = quem declarou (username), `surface` ∈ `orders` (cartão do Gestor, padrão), `exit` (Saída do Gestor), `kds` (estação da Cozinha). O "pronto há N min" NÃO mora aqui: vem do log de eventos (última entrada em READY; `Order.ready_at` guarda só a primeira) |
-| `kds_started` | `dict[str, dict]` | `shop.services.kds._record_ticket_start` (primeiro "Iniciar preparo" do ticket na estação) | KDSTicketProjection (`started_by`, `started_at_display`: "Iniciado por joyce às 14:05" no detalhe do ticket) | Quem iniciou cada ticket do KDS e quando: `{"<ticket_pk>": {at, by}}` (`at` ISO, `by` = username). Só o PRIMEIRO início conta (replay e recall não sobrescrevem). Ticket de comanda ainda sem pedido (Session) não registra: o ticket muda de dono no commit e o registro não tem caminho próprio até lá |
+| `kds_started` | `dict[str, dict]` | `shop.services.kds._record_ticket_start` (primeiro "Iniciar preparo" do ticket na estação) | KDSTicketProjection (`started_by` = o primeiro nome da conta, `started_at_display`: "iniciado por Rafael às 21:56" no card e no detalhe do ticket) | Quem iniciou cada ticket do KDS e quando: `{"<ticket_pk>": {at, by}}` (`at` ISO, `by` = username). Só o PRIMEIRO início conta (replay e recall não sobrescrevem). Ticket de comanda ainda sem pedido (Session) não registra: o ticket muda de dono no commit e o registro não tem caminho próprio até lá |
 | `assignment` | `dict` | OrderAssignView (operator_orders.assign_order) | OrderCardProjection (`assigned_operator`) | Operador que assumiu o pedido ("estou atendendo"): `{operator_id, operator_name, at}`. Removido por OrderUnassignView |
 | `returns` | `list[dict]` | ReturnService | ReturnHandler | Histórico de devoluções (ver detalhamento) |
 | `waitlist` | `dict` | `services.waitlist` (`open_window`, `confirm`, `release`) | `waitlist.state_for`, projections de acompanhamento e do board | Fila de espera (WP-P2E). Contrato: `{state, sku, qty, opened_at, deadline, confirmed_at, released_at, release_reason}`. ⚠️ O estado `fermata` **não** é gravado aqui — ele é DERIVADO do hold planejado indefinido, para não haver duas verdades sobre "ainda estou esperando a fornada". Ver detalhamento abaixo |
@@ -795,6 +795,15 @@ Heartbeat auto-reagendável de alertas de produção (WP-PE0). Payload **vazio**
 o handler roda `check_late_started_orders()` + `check_forgotten_planned_orders()`
 e reenfileira a si mesmo em `production.alerts.late_check_cadence_minutes`
 (0 = desligado), zerando `attempts`. Duplicatas colapsam mantendo a mais antiga.
+
+#### `kds.ticket_late`
+
+Despertador de UM ticket da Cozinha (`shop/handlers/kds_alerts.py`), criado quando o
+ticket nasce, com `available_at` = criação + `KDSInstance.target_time_minutes`. Payload:
+`{ticket_pk: int}`. Ao rodar, se o ticket ainda está aberto na estação, avisa quem
+cadastra as estações (`backstage.change_kdsinstance`) com o alerta pessoal
+`kds_ticket_late` (categoria `kitchen`, push que vibra); ticket que já saiu não avisa
+ninguém. O aviso some sozinho quando o ticket sai (pronto, cancelado).
 
 #### `card.create`
 
@@ -2623,3 +2632,16 @@ confirmation). An exact retry returns without any writes only while current
 saved values and all owner mappings still match. CPF changes, owner changes,
 new sale IDs or operators cannot reuse that receipt; normal guards apply.
 Only the most recent successful SAVE fingerprint is retained per customer.
+
+
+## KDSInstance.config
+
+**Campo**: `KDSInstance.config` (JSONField, `shopman/backstage/models/kds.py`). Como a
+estação provisionada se mostra e quem a leva no bolso (frente V6-KDS-HUB, prévia v4
+`cozinha-estacao` nota 1 e `cozinha-celular` b).
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|---|---|---|---|---|
+| `density` | `"compact" \| "cozy" \| "roomy"` | Ajustes da Cozinha (`PATCH kds/<ref>/settings/`, `backstage/services/kds.update_station_settings`) | `KDSBoardProjection.density` (todas as telas da estação) | Tamanho do ticket da estação. Ausente = `cozy`. O som mora no campo `KDSInstance.sound_enabled`, gravado pela mesma porta |
+| `followers` | `dict[str, str]` | `POST kds/<ref>/follow/` (o quadro aberto num celular), `shop/services/kds_alerts.follow` | `kds_alerts.notify_new_ticket` | Quem leva a estação no bolso: `{"<user_id>": "<iso de quando passou a seguir>"}`. Vale por um turno (`FOLLOW_TTL`, 12 h); seguir outra estação tira a pessoa desta. O pedido novo vira alerta pessoal `kds_ticket_new` (categoria `kitchen`), que some quando alguém dá Visto ou inicia o ticket |
+

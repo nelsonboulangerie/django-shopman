@@ -88,46 +88,94 @@ def acknowledge_ticket(*, ticket_pk: int, actor: str):
     return ticket
 
 
-def expedition_action(*, order_id: int, action: str, actor: str):
-    """Apply an expedition action; idempotent replay resolved under the core lock.
+def mark_station_seen(*, station_ref: str, ticket_pks, actor: str) -> int:
+    """O "Visto" da estação (K20): grava no servidor que alguém da estação viu.
 
-    O core (``expedition_action_by_order_id``) trava a linha do pedido, decide o
-    replay (status já no alvo = no-op) e valida a transição na linha travada.
-    Aqui só se traduz exceção de domínio para o vocabulário do backstage —
-    preservando a mensagem específica do core (ex.: "Pedido de retirada não
-    pode ser despachado"), nunca um genérico.
+    Vale para a estação inteira: as duas telas do Forno param de tocar juntas,
+    porque o quadro de cada uma lê ``seen`` do ticket. Só toca tickets DESTA
+    estação que ainda pedem atenção (aberto sem visto, cancelado sem visto depois
+    do cancelamento). Devolve quantos foram marcados; zero é replay, não erro.
     """
-    try:
-        return kds_core.expedition_action_by_order_id(order_id, action=action, actor=actor)
-    except kds_core.ExpeditionOrderNotFound as exc:
-        raise KDSOrderNotFound("Pedido não encontrado.") from exc
-    except ValueError as exc:
-        raise KDSError(str(exc) or "Ação inválida.") from exc
+    from django.db.models import F, Q
+    from django.utils import timezone
+
+    from shopman.backstage.models import KDSInstance, KDSTicket
+
+    instance = KDSInstance.objects.filter(ref=station_ref, is_active=True).first()
+    if instance is None:
+        raise KDSInstanceNotFound("Esta estação não existe mais.")
+    pks = [int(pk) for pk in ticket_pks if isinstance(pk, int) and not isinstance(pk, bool)]
+    if not pks:
+        return 0
+    now = timezone.now()
+    pending = KDSTicket.objects.filter(kds_instance=instance, pk__in=pks).filter(
+        Q(status="pending", seen_at__isnull=True)
+        | Q(status="cancelled", acknowledged_at__isnull=True)
+        & (Q(seen_at__isnull=True) | Q(seen_at__lt=F("cancelled_at")))
+    )
+    tickets = list(pending)
+    for ticket in tickets:
+        ticket.seen_at = now
+        ticket.seen_by = str(actor or "")[:150]
+    if tickets:
+        KDSTicket.objects.bulk_update(tickets, ["seen_at", "seen_by"])
+        from shopman.shop.handlers._sse_emitters import emit_kds_change
+        from shopman.shop.services import kds_alerts
+
+        # bulk_update não dispara post_save: o quadro das outras telas da estação
+        # relê pelo mesmo canal de sempre, e o aviso no bolso some junto.
+        emit_kds_change(tickets[0])
+        for ticket in tickets:
+            kds_alerts.resolve_new_ticket(ticket, outcome_code="kds_ticket_seen")
+    return len(tickets)
 
 
-def expedition_undo(*, order_id: int, token: str, actor: str) -> None:
-    """Desfaz o Entregar/Despachar da Saída dentro da janela (``order_undo``)."""
-    from shopman.orderman.models import Order
+def update_station_settings(*, station_ref: str, density: str | None = None, sound_enabled: bool | None = None):
+    """Densidade e som da estação provisionada (prévia v4, nota 1): o cadastro guarda.
 
-    from shopman.shop.services import order_undo
+    ``KDSInstance.sound_enabled`` e ``KDSInstance.config["density"]``: todas as
+    telas da estação seguem, e a escolha não depende do toque de quem passa.
+    """
+    from shopman.backstage.models import KDSInstance
+    from shopman.backstage.projections.kds import STATION_DENSITIES
 
-    order = Order.objects.filter(pk=order_id).first()
-    if order is None:
-        raise KDSOrderNotFound("Pedido não encontrado.")
-    try:
-        order_undo.undo_handoff(order, token=token, actor=actor)
-    except order_undo.UndoRefused as exc:
-        raise KDSError(str(exc)) from exc
+    instance = KDSInstance.objects.filter(ref=station_ref, is_active=True).first()
+    if instance is None or instance.type == "expedition":
+        raise KDSInstanceNotFound("Esta estação não existe mais.")
+    fields: list[str] = []
+    if density is not None:
+        if density not in STATION_DENSITIES:
+            raise KDSError("Tamanho do ticket inválido.")
+        config = dict(instance.config or {})
+        config["density"] = density
+        instance.config = config
+        fields.append("config")
+    if sound_enabled is not None:
+        instance.sound_enabled = bool(sound_enabled)
+        fields.append("sound_enabled")
+    if fields:
+        instance.save(update_fields=fields)
+        from shopman.shop.handlers._sse_emitters import emit_kds_station_settings
+
+        emit_kds_station_settings(instance)
+    return instance
 
 
-def expedition_handoff(order_id: int) -> dict:
-    """A saída pedida deste pedido, na forma que a Saída mostra (ou ``{}``)."""
-    from shopman.orderman.models import Order
+def follow_station(*, station_ref: str, user) -> None:
+    """Este operador leva a estação no bolso: o pedido novo chega por push.
 
-    from shopman.backstage.projections.kds import _handoff_fields
+    O celular da estação pequena (barista, lanches) apaga a tela; o aviso precisa
+    sair do dispositivo do quadro e ir ao bolso (SUITE-UX §10.3). Um operador segue
+    uma estação por vez; seguir outra deixa a anterior. Vale por um turno
+    (``kds_alerts.FOLLOW_TTL``).
+    """
+    from shopman.backstage.models import KDSInstance
+    from shopman.shop.services import kds_alerts
 
-    order = Order.objects.filter(pk=order_id).first()
-    return _handoff_fields(order) if order is not None else {}
+    instance = KDSInstance.objects.filter(ref=station_ref, is_active=True).first()
+    if instance is None or instance.type == "expedition":
+        raise KDSInstanceNotFound("Esta estação não existe mais.")
+    kds_alerts.follow(instance, user)
 
 
 # ── Estação sem tela: quem dá a baixa é outra porta ─────────────────────

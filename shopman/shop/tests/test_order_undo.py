@@ -545,17 +545,6 @@ def test_pending_handoff_offers_only_undo(channel):
     assert "advance" not in refs
 
 
-def test_saida_and_gestor_share_the_same_window(channel):
-    order = _ready("UNDO-H14")
-    assert kds_core.expedition_action_by_order_id(order.pk, action="complete", actor="saida:bia") == Order.Status.COMPLETED
-    order.refresh_from_db()
-    assert order.status == Order.Status.READY
-    assert order.data["pending_handoff"]["to_status"] == Order.Status.COMPLETED
-    # Replay pela Saída: a mesma saída.
-    assert kds_core.expedition_action_by_order_id(order.pk, action="complete", actor="saida:bia") == Order.Status.COMPLETED
-    assert Directive.objects.filter(topic=ORDER_HANDOFF_COMMIT, payload__order_ref=order.ref).count() == 1
-
-
 def test_external_fact_inside_the_window_records_the_tapped_handoff_once(channel):
     """O iFood/entregador avança enquanto a tela ainda pode desfazer: grava a saída tocada, sem pular degrau."""
     order = _ready("UNDO-H15", fulfillment="delivery")

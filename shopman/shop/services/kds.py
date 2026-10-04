@@ -28,7 +28,6 @@ from shopman.shop import product_options
 from shopman.shop.services import payment_gate
 from shopman.shop.services.order_helpers import (
     get_commitment_date,
-    get_fulfillment_type,
     is_test_order,
     json_quantity,
 )
@@ -36,20 +35,6 @@ from shopman.shop.services.order_helpers import (
 logger = logging.getLogger(__name__)
 
 OPEN_TICKET_STATUSES = {"pending", "in_progress"}
-
-EXPEDITION_TRANSITIONS = {
-    "dispatch": Order.Status.DISPATCHED,
-    "complete": Order.Status.COMPLETED,
-}
-
-
-class ExpeditionOrderNotFound(ValueError):
-    """Pedido inexistente numa ação da Saída do KDS.
-
-    Mapeia por TIPO para 404 na camada HTTP (padrão ``PosRecentSaleNotFound``),
-    nunca por comparação de string de mensagem.
-    """
-
 
 class TicketCompletionBlocked(Exception):
     """Bump recusado: o lifecycle ainda não libera trabalho físico no pedido.
@@ -1040,109 +1025,6 @@ def _acknowledge_ticket_locked(ticket, *, source, actor: str) -> bool:
 def _lock_ticket_after_source(ticket):
     """Lock one ticket only after its Session/Order source is already locked."""
     return ticket.__class__.objects.select_for_update().get(pk=ticket.pk)
-
-
-def expedition_block_reason(order, *, action: str) -> str:
-    """Por que a Saída do KDS NÃO pode aplicar esta ação agora, na voz do operador.
-
-    "" quando pode. A pergunta sobre dinheiro é feita ao ``payment_gate`` — a
-    MESMA régua do Gestor (``operator_orders.advance_block``) — e a frase vem do
-    mesmo dicionário, para que o operador leia a mesma coisa nos dois painéis.
-    """
-    from shopman.shop.services import operator_orders
-
-    target = EXPEDITION_TRANSITIONS.get(action)
-    if not target:
-        return ""
-    if order.channel_ref == "ifood":
-        # The expedition is another operator entry point: the same pending
-        # cancellation, preparation-window and delivery-owner guards apply.
-        blocked = operator_orders.advance_block_reason(order)
-        if blocked:
-            return blocked
-    if payment_gate.payment_blocks_transition(
-        order, current_status=order.status, target_status=target
-    ):
-        return operator_orders.advance_block_message(
-            operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED
-        )
-    if action == "dispatch":
-        # O troco sai da gaveta no despacho (``courier_out``) e só o Gestor
-        # pergunta quanto: despachar daqui deixaria a gaveta desfalcada sem
-        # linha no livro, e o acerto recusaria o troco devolvido. A maquininha
-        # idem (custódia no pedido). A pergunta é uma só, dos dois lados.
-        question = operator_orders.dispatch_custody_question(order)
-        if question == "machine":
-            return "Abra este pedido no Gestor e confirme a maquininha no despacho."
-        if question == "change":
-            return "Abra este pedido no Gestor e informe o troco que o entregador leva."
-    return ""
-
-
-def expedition_action(order, *, action: str, actor: str) -> str:
-    """Apply an expedition action and return the new order status.
-
-    A Saída do KDS é outra porta por onde a mercadoria sai, e a saída tem UMA
-    implementação: ``operator_orders.advance_order``, a mesma do Gestor. É lá
-    que moram o gate de pagamento, a custódia da maquininha, o fulfillment de
-    entrega, o troco da gaveta (``courier_out``), o aviso fiscal e a
-    auto-conclusão da entrega. Quando a Saída fazia a transição por conta
-    própria, a entrega despachada daqui ficava sem auto-conclusão, com o
-    fulfillment parado e — com troco — sem a linha do livro que o acerto exige.
-    O que a Saída não sabe perguntar (quanto de troco, qual maquininha)
-    ela recusa com "abra no Gestor" (``expedition_block_reason``).
-    """
-    _ensure_source_due(order)
-    is_delivery = get_fulfillment_type(order) == "delivery"
-    if action == "dispatch" and not is_delivery:
-        raise ValueError("Pedido de retirada não pode ser despachado")
-    if action == "complete" and order.status == Order.Status.READY and is_delivery:
-        raise ValueError("Pedido de delivery precisa ser despachado antes de concluir")
-
-    next_status = EXPEDITION_TRANSITIONS.get(action)
-    if not next_status or not order.can_transition_to(next_status):
-        raise ValueError("Ação inválida")
-    blocked = expedition_block_reason(order, action=action)
-    if blocked:
-        raise ValueError(blocked)
-    from shopman.shop.services import operator_orders
-
-    try:
-        new_status = operator_orders.advance_order(order, actor=actor, target_status=next_status, undo_window=True)
-    except operator_orders.ChangeOutRequired as exc:
-        # Rede de segurança: o bloqueio acima já diz isto antes do toque.
-        raise ValueError(
-            "Abra este pedido no Gestor e informe o troco que o entregador leva."
-        ) from exc
-    logger.info("kds_expedition %s order=%s", action, order.ref)
-    return new_status
-
-
-def expedition_action_by_order_id(order_id: int, *, action: str, actor: str) -> str:
-    """Load, lock and apply an expedition action; idempotent on replay.
-
-    Guard + transição na MESMA transação com lock (padrão ``operator_orders``):
-    ``can_transition_to`` decide na linha travada, nunca na instância em
-    memória — a Saída corre em paralelo com outras estações e com o
-    gestor. Replay (duas estações agindo no mesmo pedido) é decidido sob o
-    mesmo lock: pedido já no status alvo = sucesso no-op, nunca "Ação inválida".
-    """
-    from django.db import transaction
-
-    with transaction.atomic():
-        order = Order.objects.select_for_update().filter(pk=order_id).first()
-        if order is None:
-            raise ExpeditionOrderNotFound("Pedido não encontrado")
-        _ensure_source_due(order)
-        target = EXPEDITION_TRANSITIONS.get(action)
-        if target and order.status == target:
-            return order.status
-        from shopman.shop.services import order_undo
-
-        pending = order_undo.pending_handoff(order)
-        if target and pending.get("to_status") == target:
-            return target
-        return expedition_action(order, action=action, actor=actor)
 
 
 def _payment_allows_physical_work(order) -> bool:

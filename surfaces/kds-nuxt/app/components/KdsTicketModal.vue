@@ -25,14 +25,12 @@ const props = withDefaults(
     ticket: KDSTicketProjection | null;
     /** Gravando os volumes (o Gravar espera). */
     volumesBusy?: boolean;
-    /** Quadro de outra data: só leitura. */
-    readOnly?: boolean;
   }>(),
-  { volumesBusy: false, readOnly: false },
+  { volumesBusy: false },
 );
 const emit = defineEmits<{ "update:open": [boolean]; volumes: [number] }>();
 
-const canDeclareVolumes = computed(() => Boolean(props.ticket?.volumes_order_ref) && !props.readOnly);
+const canDeclareVolumes = computed(() => Boolean(props.ticket?.volumes_order_ref));
 const volumesEditing = ref(false);
 const volumesDraft = ref(0);
 watch(() => [props.open, props.ticket?.pk], () => { volumesEditing.value = false; });

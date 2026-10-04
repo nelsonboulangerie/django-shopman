@@ -2,11 +2,13 @@
 //
 // - A estação deste dispositivo: a aberta agora, ou a última aberta (lembrada por
 //   dispositivo). É ela que o item "Preparo" do rail abre.
-// - O quadro conta ao rail quantos pedidos tem (selo do Preparo) e quais datas de
-//   consulta existem (Ajustes). Fora do quadro os números vêm do índice das estações.
+// - O quadro conta ao rail quantos pedidos tem (selo do Preparo) e aos Ajustes como a
+//   estação se mostra (densidade e som, guardados no cadastro da estação). Fora do
+//   quadro os números vêm do índice das estações.
 // - A Saída é a coluna do Gestor (SUITE-UX §15): o item do rail é um atalho para lá,
 //   com o selo dos pedidos prontos para sair que o índice já conta.
-import type { KDSIndexResponse } from "~/types/kds";
+import type { KDSIndexResponse, KDSStationSettingsResponse } from "~/types/kds";
+import type { KDSDensity } from "~/presentation/board";
 import { EXIT_STATION_TYPE, gestorExitUrl } from "~/presentation/exitStation";
 import { kdsSections } from "~/presentation/sections";
 
@@ -18,9 +20,12 @@ export interface KdsStationMemory {
 export interface KdsBoardState {
   onBoard: boolean;
   total: number;
-  serviceDate: string;
-  today: string;
-  availableDates: string[];
+  /** A estação do quadro aberto (os Ajustes gravam nela). */
+  stationRef: string;
+  stationName: string;
+  /** Como a estação provisionada se mostra (prévia v4, nota 1). */
+  density: KDSDensity;
+  soundEnabled: boolean;
 }
 
 const STATION_KEY = "kds.station";
@@ -55,13 +60,59 @@ export function useKdsBoardState() {
   return useState<KdsBoardState>("kds-board-state", () => ({
     onBoard: false,
     total: 0,
-    serviceDate: "",
-    today: "",
-    availableDates: [],
+    stationRef: "",
+    stationName: "",
+    density: "cozy",
+    soundEnabled: true,
   }));
 }
 
-/** Ajustes abre como painel (densidade e data), do rail e da barra do polegar. */
+/** Ajustes abre como painel (densidade e som da estação), do rail e da barra do polegar. */
+export function useKdsStationSettings() {
+  const board = useKdsBoardState();
+  const busy = useState<boolean>("kds-station-settings-busy", () => false);
+
+  /** Grava densidade e/ou som no cadastro da estação aberta. Otimista: o quadro muda
+   *  na hora; recusa volta ao que era e avisa. As outras telas da estação releem pelo
+   *  SSE que o servidor manda. */
+  async function save(change: { density?: KDSDensity; sound_enabled?: boolean }): Promise<boolean> {
+    const ref = board.value.stationRef;
+    if (!ref || busy.value) return false;
+    const before = { density: board.value.density, soundEnabled: board.value.soundEnabled };
+    board.value = {
+      ...board.value,
+      density: change.density ?? board.value.density,
+      soundEnabled: change.sound_enabled ?? board.value.soundEnabled,
+    };
+    busy.value = true;
+    try {
+      const saved = (await ($fetch as (
+        path: string,
+        opts: { method: string; body: Record<string, unknown> },
+      ) => Promise<unknown>)(`/api/v1/backstage/kds/${encodeURIComponent(ref)}/settings/`, {
+        method: "PATCH",
+        body: change,
+      })) as KDSStationSettingsResponse;
+      board.value = {
+        ...board.value,
+        density: saved.density === "compact" || saved.density === "roomy" ? saved.density : "cozy",
+        soundEnabled: saved.sound_enabled,
+      };
+      await refreshNuxtData(`kds-board-${ref}`);
+      return true;
+    } catch (err) {
+      board.value = { ...board.value, ...before };
+      useSonner.error(httpErrorMessage(err, "Não deu para gravar os ajustes da estação. Tente de novo."));
+      return false;
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  return { busy, save };
+}
+
+/** Ajustes abre como painel (densidade e som da estação), do rail e da barra do polegar. */
 export function useKdsSettingsOpen() {
   return useState<boolean>("kds-settings-open", () => false);
 }

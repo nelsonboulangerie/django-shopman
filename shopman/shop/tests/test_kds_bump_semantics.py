@@ -18,7 +18,6 @@ from shopman.orderman.models import Order
 from shopman.backstage.models import KDSInstance, KDSTicket
 from shopman.shop.models import Channel
 from shopman.shop.services import kds as kds_core
-from shopman.shop.tests._handoff import settle
 
 pytestmark = pytest.mark.django_db
 
@@ -180,25 +179,3 @@ def test_stale_bump_does_not_resurrect_cancelled_ticket(order):
 
 # ── Saída por order_id: lock + replay idempotente + not-found ──────────
 
-
-def test_expedition_by_order_id_completes_ready_pickup(db):
-    Channel.objects.create(ref="pdv", name="PDV")
-    order = _order_at(Order.Status.READY, session_key="sk-kds-exp-ready")
-
-    assert kds_core.expedition_action_by_order_id(order.pk, action="complete", actor="kds:op") == Order.Status.COMPLETED
-    # UX-G2: a saída fica na janela de desfazer; gravada quando ela vence.
-    assert settle(order) == Order.Status.COMPLETED
-
-
-def test_expedition_by_order_id_replay_is_noop_success(db):
-    # Replay (duas estações agindo no mesmo pedido) decidido SOB O LOCK:
-    # pedido já no status alvo = sucesso no-op, nunca "Ação inválida".
-    Channel.objects.create(ref="pdv", name="PDV")
-    order = _order_at(Order.Status.COMPLETED, session_key="sk-kds-exp-replay")
-
-    assert kds_core.expedition_action_by_order_id(order.pk, action="complete", actor="kds:op") == Order.Status.COMPLETED
-
-
-def test_expedition_by_order_id_missing_order_raises_typed_not_found(db):
-    with pytest.raises(kds_core.ExpeditionOrderNotFound):
-        kds_core.expedition_action_by_order_id(999999, action="complete", actor="kds:op")

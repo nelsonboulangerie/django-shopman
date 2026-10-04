@@ -227,3 +227,28 @@ def active_ticket_count(kds_instance_id) -> int:
         kds_instance_id=kds_instance_id,
         status__in=["pending", "in_progress"],
     ).count()
+
+
+def get_ticket(ticket_pk) -> Any:
+    """O ticket com a estação, ou ``None`` (avisos da Cozinha, ``kds_alerts``)."""
+    from shopman.backstage.models import KDSTicket
+
+    return KDSTicket.objects.select_related("kds_instance").filter(pk=ticket_pk).first()
+
+
+def get_instance(instance_pk) -> Any:
+    from shopman.backstage.models import KDSInstance
+
+    return KDSInstance.objects.filter(pk=instance_pk).first()
+
+
+def instances_followed_by(user_id: int) -> list[Any]:
+    """Estações que guardam este operador entre quem as leva no bolso."""
+    from shopman.backstage.models import KDSInstance
+
+    key = str(int(user_id))
+    return [
+        instance
+        for instance in KDSInstance.objects.filter(is_active=True).exclude(type="expedition")
+        if key in ((instance.config or {}).get("followers") or {})
+    ]
