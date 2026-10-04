@@ -136,6 +136,8 @@ describe("grid helpers", () => {
             safety_percent: 10,
             same_weekday: true,
             season_label: "",
+            season_fallback: false,
+            current_season_label: "",
             soldout_days: 0,
             waste_percent: 0,
             waste_discounted: false,

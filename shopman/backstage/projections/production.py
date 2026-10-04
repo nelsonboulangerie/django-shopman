@@ -266,6 +266,11 @@ class ProductionSuggestionProjection:
     waste_discounted: bool
     material_shortages: tuple[SuggestionMaterialShortageProjection, ...] = ()
     fits_quantity: str = ""
+    #: Começo de estação: a corrente ainda não tem amostra suficiente e a
+    #: conta usou a estação anterior (``season_label``). ``current_season_label``
+    #: é a estação da data planejada, a que ainda não tem histórico.
+    season_fallback: bool = False
+    current_season_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -3253,6 +3258,8 @@ def _build_suggestion(
         waste_discounted=waste > SUGGESTION_WASTE_DISCOUNT_THRESHOLD,
         material_shortages=shortages,
         fits_quantity=fits,
+        season_fallback=bool(basis.get("season_fallback")),
+        current_season_label=_SEASON_LABELS.get(str(basis.get("current_season") or ""), ""),
     )
 
 

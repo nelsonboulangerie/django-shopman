@@ -11,6 +11,7 @@ Este módulo é o gancho explícito do orquestrador: logging estruturado e ponto
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from datetime import date, timedelta
@@ -40,6 +41,12 @@ def suggest_for(target_date: date, output_skus: list[str] | None = None):
     orquestrador, então é ele que tira da amostra os dias fechados. Sem isso um
     domingo de portas fechadas entra na média como um domingo fraco e puxa a
     sugestão da semana inteira para baixo.
+
+    Começo de estação: a janela do histórico ainda está quase toda na estação
+    que acabou, e o filtro por meses deixaria a ficha sem amostra (a sugestão
+    sumiria por semanas). Enquanto a estação corrente tiver menos de
+    ``season_min_samples`` dias-amostra, a ficha usa o histórico da estação
+    anterior, e o ``basis`` diz isso (``season_fallback``).
     """
     from shopman.craftsman import suggest as formula_suggest
     from shopman.craftsman.conf import get_setting
@@ -48,15 +55,83 @@ def suggest_for(target_date: date, output_skus: list[str] | None = None):
 
     suggestion = ProductionConfig.load().suggestion
     window_days = int(get_setting("HISTORICAL_DAYS") or 28)
-    return formula_suggest(
+    season_months = suggestion.season_months_for(target_date.month)
+    common = {
+        "high_demand_multiplier": suggestion.high_demand_multiplier_decimal,
+        "safety_pct": suggestion.safety_stock_percent_decimal,
+        "exclude_dates": untrustworthy_days(days=window_days),
+        "selling_window": selling_window_for(target_date),
+    }
+    lines = formula_suggest(
         target_date,
         output_skus=output_skus,
-        season_months=suggestion.season_months_for(target_date.month),
-        high_demand_multiplier=suggestion.high_demand_multiplier_decimal,
-        safety_pct=suggestion.safety_stock_percent_decimal,
-        exclude_dates=untrustworthy_days(days=window_days),
-        selling_window=selling_window_for(target_date),
+        season_months=season_months,
+        **common,
     )
+    if season_months is None or suggestion.season_min_samples <= 0:
+        return lines
+    return _with_previous_season(
+        lines,
+        target_date=target_date,
+        output_skus=output_skus,
+        suggestion=suggestion,
+        formula_suggest=formula_suggest,
+        common=common,
+    )
+
+
+def _sample_size(line) -> int:
+    return int((line.basis or {}).get("sample_size") or 0)
+
+
+def _with_previous_season(lines, *, target_date, output_skus, suggestion, formula_suggest, common):
+    """Troca pela estação anterior a ficha que ainda não juntou amostra da corrente.
+
+    "Suficiente" é ``season_min_samples`` dias-amostra da estação corrente na
+    janela. Abaixo disso, a ficha (com sugestão rala ou sem nenhuma) é
+    recalculada só com os meses da estação anterior; a troca só vale se a
+    anterior tiver mais amostra, senão fica o que a corrente já sabe.
+    """
+    from shopman.craftsman.models import Recipe
+
+    min_samples = suggestion.season_min_samples
+    recipes = Recipe.objects.filter(is_active=True)
+    if output_skus:
+        recipes = recipes.filter(output_sku__in=output_skus)
+    recipe_order = list(recipes.values_list("pk", "output_sku"))
+    by_recipe = {line.recipe.pk: line for line in lines}
+    thin_skus = sorted(
+        {sku for pk, sku in recipe_order if pk not in by_recipe or _sample_size(by_recipe[pk]) < min_samples}
+    )
+    if not thin_skus:
+        return lines
+    previous = suggestion.previous_season_for(target_date.month)
+    if previous is None:
+        return lines
+    previous_name, previous_months = previous
+    current_name = suggestion.season_name_for(target_date.month)
+
+    fallback = formula_suggest(
+        target_date,
+        output_skus=thin_skus,
+        season_months=previous_months,
+        **common,
+    )
+    for alt in fallback:
+        current = by_recipe.get(alt.recipe.pk)
+        if current is not None and _sample_size(current) >= _sample_size(alt):
+            continue
+        by_recipe[alt.recipe.pk] = dataclasses.replace(
+            alt,
+            basis={
+                **(alt.basis or {}),
+                "season": previous_name,
+                "season_fallback": True,
+                "current_season": current_name,
+                "current_season_samples": _sample_size(current) if current is not None else 0,
+            },
+        )
+    return [by_recipe[pk] for pk, _sku in recipe_order if pk in by_recipe]
 
 
 def selling_window_for(day: date):

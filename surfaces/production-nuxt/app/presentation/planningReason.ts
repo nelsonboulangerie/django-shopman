@@ -203,7 +203,19 @@ export function suggestionHistory(
       note: s.waste_discounted ? "a média já desconta essa sobra" : "",
     });
   }
-  if (s.season_label) {
+  if (s.season_fallback) {
+    // Começo de estação: a corrente ainda não juntou dias suficientes e a
+    // conta usou a anterior. Dizer as duas, senão "estação amena" em outubro
+    // parece engano.
+    lines.push({
+      kind: "season",
+      text:
+        s.season_label && s.current_season_label
+          ? `Baseado na ${s.season_label}, ainda sem histórico da ${s.current_season_label}`
+          : "Baseado na estação anterior, ainda sem histórico desta",
+      note: "",
+    });
+  } else if (s.season_label) {
     lines.push({
       kind: "season",
       text: `Histórico só da ${s.season_label}`,
