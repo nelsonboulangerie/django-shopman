@@ -477,7 +477,7 @@ export function useOrdersBoard() {
     busy.value = new Set(busy.value).add(ref_);
     try {
       if (send) await send();
-      else if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "courier-back", "comment", "settle-delivery-cash", "undo-handoff", "undo-ready"].includes(action)) {
+      else if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "courier-back", "comment", "settle-delivery-cash", "undo-handoff", "undo-ready", "volumes"].includes(action)) {
         const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
         const equipment = queue.value?.equipment_out?.find((item) => item.order_ref === ref_);
         await intentions.execute(ref_, action, (card?.actions ?? equipment?.actions)?.find((item) => item.ref === action), body ?? {});
@@ -560,6 +560,8 @@ export function useOrdersBoard() {
     return res.reasons;
   }
   const assign = (ref_: string) => act(ref_, "assign");
+  // Volumes declarados por quem embalou (0 apaga a declaração).
+  const declareVolumes = (ref_: string, volumes: number) => act(ref_, "volumes", { volumes });
   const unassign = (ref_: string) => act(ref_, "unassign");
 
   // Bulk action over many refs: fire all POSTs, capture per-ref failures inline,
@@ -595,7 +597,7 @@ export function useOrdersBoard() {
     readMetadata, queue, zones, totalCount, deviceAgent, preorders, realtime, pending, error,
     refresh, isBusy, actionError, clearActionError, confirm, advance, reject,
     fetchCancellationReasons, settleCash, equipmentBack, courierBack, equipmentOut,
-    equipmentAvailable, assign, unassign, confirmMany, advanceMany, undoHandoff, undoReady,
+    equipmentAvailable, assign, unassign, declareVolumes, confirmMany, advanceMany, undoHandoff, undoReady,
     markStationReady, recallStation,
     soundOn, soundBlocked, alerting, attentionPending, toggleSound,
     activateAttentionSound, acknowledgeAttention,

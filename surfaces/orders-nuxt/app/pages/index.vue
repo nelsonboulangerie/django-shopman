@@ -37,7 +37,7 @@ import type { CancellationReason } from "~/composables/useOrdersBoard";
 import { BOARD_COLUMNS_QUERY, BOARD_ZONE_KEYS, useBoardLayout } from "~/composables/useBoardLayout";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 
-const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, undoHandoff, undoReady, assign, unassign, confirmMany, advanceMany, markStationReady, recallStation, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
+const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, undoHandoff, undoReady, assign, unassign, confirmMany, advanceMany, markStationReady, recallStation, declareVolumes, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
 // Quem só expede (SUITE-UX §15) opera a Saída daqui; o detalhe do pedido é de quem gerencia.
 const { canManageOrders } = useGestorAccess();
 
@@ -1048,6 +1048,7 @@ function printQueue() {
                   @print-danfe="danfePrint.printDanfe(card.ref)"
                   @station-ready="(stationRef) => onStationReady(card, stationRef)"
                   @station-recall="(ticketPk) => recallStation(card.ref, ticketPk)"
+                  @volumes="(count) => declareVolumes(card.ref, count)"
                 />
               </div>
               <button
@@ -1092,6 +1093,7 @@ function printQueue() {
                 @print-danfe="danfePrint.printDanfe(card.ref)"
                 @station-ready="(stationRef) => onStationReady(card, stationRef)"
                 @station-recall="(ticketPk) => recallStation(card.ref, ticketPk)"
+                  @volumes="(count) => declareVolumes(card.ref, count)"
               />
             </div>
             <QueueColumnResizeHandle
