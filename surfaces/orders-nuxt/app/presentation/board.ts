@@ -29,11 +29,12 @@ export function timerTone(timerClass: OrderTimerClass): TimerTone {
   return "ok";
 }
 
-/** Tonal chip classes for the live timer. */
+/** Tonal chip classes for the live timer. Atenção ao tempo é número com intensidade,
+ *  sempre no âmbar (G03): o vermelho é só "bloqueado com motivo", nunca o relógio. */
 export function timerChip(tone: TimerTone): string {
   switch (tone) {
     case "late":
-      return "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300";
+      return "border-amber-600/60 bg-amber-500/20 font-bold text-amber-800 dark:text-amber-200";
     case "warning":
       return "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300";
     case "muted":

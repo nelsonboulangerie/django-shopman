@@ -63,6 +63,12 @@ const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 t
       <Icon name="lucide:columns-3" class="size-4 text-muted-foreground" aria-hidden="true" />
       Mostrar as 3 colunas
     </button>
+    <!-- as três colunas (Entrada, Preparo, Saída): fora do alternador Fila | Supervisão -->
+    <button v-if="!full" type="button" role="menuitemradio" :aria-checked="viewMode === 'board'" :class="ITEM" data-board-columns-view @click="emit('view', viewMode === 'board' ? (queueAvailable ? 'queue' : 'table') : 'board')">
+      <Icon name="lucide:columns-3" class="size-4" :class="viewMode === 'board' ? 'text-primary' : 'text-muted-foreground'" aria-hidden="true" />
+      <span class="flex-1">{{ viewMode === "board" ? "Voltar à Fila" : "Ver em colunas" }}</span>
+      <kbd class="hidden font-mono op-micro text-muted-foreground pointer-fine:inline" aria-hidden="true">V</kbd>
+    </button>
     <button type="button" role="menuitem" :class="ITEM" data-board-select @click="emit('select')">
       <Icon name="lucide:list-checks" class="size-4 text-muted-foreground" aria-hidden="true" />
       {{ selecting ? "Sair da seleção" : "Selecionar pedidos" }}
@@ -89,11 +95,11 @@ const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 t
       </button>
       <button type="button" role="menuitemradio" :aria-checked="viewMode === 'board'" :class="ITEM" @click="emit('view', 'board')">
         <Icon name="lucide:columns-3" class="size-4" :class="viewMode === 'board' ? 'text-primary' : 'text-muted-foreground'" aria-hidden="true" />
-        Supervisão
+        Colunas
       </button>
       <button type="button" role="menuitemradio" :aria-checked="viewMode === 'table'" :class="ITEM" @click="emit('view', 'table')">
         <Icon name="lucide:table-2" class="size-4" :class="viewMode === 'table' ? 'text-primary' : 'text-muted-foreground'" aria-hidden="true" />
-        Tabela
+        Supervisão
       </button>
     </template>
 

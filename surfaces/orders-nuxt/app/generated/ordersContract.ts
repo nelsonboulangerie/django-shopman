@@ -497,6 +497,7 @@ export interface OrderCardProjection {
   attention_since_iso: string;
   goal_minutes: number;
   goal_label: string;
+  ready_eta_iso: string;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */
@@ -656,6 +657,11 @@ export interface OperatorOrderProjection {
   context: string;
   schedule_label: string;
   counter: CounterOrderProjection | null;
+  channel_name: string;
+  opened_line: string;
+  confirmation_deadline_iso: string;
+  confirmation_action: string;
+  store_location: Record<string, number> | null;
 }
 
 /** Top-level read model for the operator order queue. */
@@ -692,9 +698,10 @@ export interface MenuChannelProjection {
   active: boolean;
   line: string;
   focus_path: string;
+  switch: ChannelSwitchProjection | null;
 }
 
-/** QueueAwarenessProjection(system_actions: 'tuple[SystemActionProjection, ...]' = (), system_window_minutes: 'int' = 15, menu_outages: 'tuple[MenuOutageProjection, ...]' = (), menu_outages_more: 'int' = 0, menu_channels: 'tuple[MenuChannelProjection, ...]' = (), can_open_channels: 'bool' = False) */
+/** QueueAwarenessProjection(system_actions: 'tuple[SystemActionProjection, ...]' = (), system_window_minutes: 'int' = 15, menu_outages: 'tuple[MenuOutageProjection, ...]' = (), menu_outages_more: 'int' = 0, menu_channels: 'tuple[MenuChannelProjection, ...]' = (), can_open_channels: 'bool' = False, kitchen_eta_basis: 'str' = '', managers: 'tuple[ManagerOptionProjection, ...]' = (), viewer_name: 'str' = '') */
 export interface QueueAwarenessProjection {
   system_actions: SystemActionProjection[];
   system_window_minutes: number;
@@ -702,6 +709,9 @@ export interface QueueAwarenessProjection {
   menu_outages_more: number;
   menu_channels: MenuChannelProjection[];
   can_open_channels: boolean;
+  kitchen_eta_basis: string;
+  managers: ManagerOptionProjection[];
+  viewer_name: string;
 }
 
 /** Operator queue grouped by action area: intake, prep and expedition */
