@@ -163,14 +163,14 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
     ),
   ).toBeLessThanOrEqual(0.001);
 
-  // O sino é a caixa de Avisos do kit (V6-KIT): as decisões entram como um resumo
-  // que leva à mesma fila (decisão do dono, 03/10/2026: sem lista própria).
-  await page.locator("[data-operator-inbox-trigger]").first().click();
+  // O sino é a caixa de Avisos do kit (V6-KIT), um só na barra de 56px; o resumo
+  // das decisões dentro dela é coberto em operator-flow.spec.ts.
+  const inboxTrigger = page.getByRole("button", { name: /^Avisos/ });
+  await expect(inboxTrigger).toHaveCount(1);
+  await inboxTrigger.click();
   await expect(
-    page
-      .locator("[data-operator-inbox-panel]")
-      .getByRole("link", { name: /Abrir a fila de decisões/ }),
-  ).toHaveAttribute("href", "/");
+    page.locator("[data-operator-inbox-panel]").getByRole("heading", { name: "Avisos" }),
+  ).toBeVisible();
   await page.keyboard.press("Escape");
 
   await page
