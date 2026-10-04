@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.utils import timezone
@@ -163,7 +163,7 @@ def _normalize(additions) -> list[dict]:
         sku = str((raw or {}).get("sku") or "").strip()
         try:
             qty = Decimal(str((raw or {}).get("qty")))
-        except Exception:
+        except (InvalidOperation, TypeError, ValueError):
             return []
         if not sku or not qty.is_finite() or qty <= 0 or qty != qty.to_integral_value():
             return []
