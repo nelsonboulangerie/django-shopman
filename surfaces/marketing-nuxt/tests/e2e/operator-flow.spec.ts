@@ -22,6 +22,26 @@ async function enterAsSyntheticOperator(page: Page) {
   ).toBeVisible();
 }
 
+type NuxtRoot = HTMLElement & {
+  __vue_app__?: {
+    config: { globalProperties: { $nuxt?: { isHydrating?: boolean } } };
+  };
+};
+
+// Carga completa de uma tela, pronta para o toque. O HTML do SSR já traz os
+// botões (a lista de Plataformas, o "Nova campanha"), mas eles só ganham ouvinte
+// quando o Vue termina de hidratar: um clique antes disso cai num botão morto e
+// nada acontece. O sinal é o do próprio Nuxt (`isHydrating` vira `false` quando a
+// hidratação resolve), não um tempo de espera.
+async function gotoHydrated(page: Page, path: string) {
+  await page.goto(path);
+  await page.waitForFunction(
+    () =>
+      (document.querySelector("#__nuxt") as NuxtRoot | null)?.__vue_app__?.config
+        .globalProperties.$nuxt?.isHydrating === false,
+  );
+}
+
 // No celular as quatro seções moram na barra do pé da tela.
 function mobileSections(page: Page) {
   return page.getByRole("navigation", {
@@ -99,7 +119,7 @@ test("a fila de decisões leva cada cartão ao lugar exato da decisão", async (
       path: "/",
     },
   ]);
-  await page.goto("/");
+  await gotoHydrated(page, "/");
 
   const cards = page.locator("[data-decision]");
   await expect(cards).toHaveCount(2);
@@ -135,7 +155,7 @@ test("Ajustes tem as próprias seções, uma rota por lugar", async ({
 }) => {
   await enterAsSyntheticOperator(page);
 
-  await page.goto("/offers");
+  await gotoHydrated(page, "/offers");
   await expect(
     page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
   ).toBeVisible();
@@ -156,7 +176,7 @@ test("Plataformas usa detalhe modal e volta para a própria lista", async ({
 }) => {
   await enterAsSyntheticOperator(page);
 
-  await page.goto("/platforms");
+  await gotoHydrated(page, "/platforms");
   await expect(page).toHaveURL(/\/platforms$/);
 
   const google = page.locator('[data-marketing-platform="google_business"]');
@@ -177,7 +197,7 @@ test("Plataformas usa detalhe modal e volta para a própria lista", async ({
 test("composer usa modal amplo no desktop", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await enterAsSyntheticOperator(page);
-  await page.goto("/campaigns");
+  await gotoHydrated(page, "/campaigns");
   await page.getByRole("button", { name: /^Nova campanha/ }).filter({ visible: true }).first().click();
 
   const dialog = page.getByRole("dialog").last();
@@ -192,7 +212,7 @@ test("a oferta abre o composer funcional com Google entre os destinos", async ({
   page,
 }) => {
   await enterAsSyntheticOperator(page);
-  await page.goto("/offers");
+  await gotoHydrated(page, "/offers");
   const useOffer = page.getByRole("link", {
     name: "Criar campanha com esta oferta",
   });
@@ -217,7 +237,7 @@ test("Campanhas liga ou desliga campanha com CAS e recuperação de conflito", a
   page,
 }) => {
   await enterAsSyntheticOperator(page);
-  await page.goto("/campaigns");
+  await gotoHydrated(page, "/campaigns");
 
   const activation = page.getByRole("switch", {
     name: "Desligar a campanha Fornada artesanal 01",
@@ -243,7 +263,7 @@ test("Campanhas prepara disparo idempotente e leva o receipt à revisão", async
       path: "/",
     },
   ]);
-  await page.goto("/campaigns");
+  await gotoHydrated(page, "/campaigns");
   const prepare = page.getByRole("button", {
     name: /Preparar o disparo da campanha Fornada artesanal 01/,
   });
