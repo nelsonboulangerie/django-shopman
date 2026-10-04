@@ -19,7 +19,7 @@
 // cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
 // o alcance "Esta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
-import { computed, ref } from "vue";
+import { computed } from "vue";
 
 import type { OperatorSession } from "../types/operator";
 
