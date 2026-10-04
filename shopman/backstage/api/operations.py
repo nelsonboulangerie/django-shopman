@@ -1815,6 +1815,18 @@ class OrderQueueView(OperationalObservationMixin, APIView):
         return Response(read_data(queue=projection_data(queue), device_agent=_station_device_agent(request)))
 
 
+class OrderRailCountsView(APIView):
+    """Os selos do rail fora do quadro (G26): ``{intake, exit}``, a mesma régua do quadro.
+    Leve de propósito: o Catálogo, os Clientes e os Canais leem isto em vez do quadro."""
+
+    permission_classes = [HasOrderBoardAccess]
+
+    def get(self, request):
+        from shopman.backstage.projections.order_queue import board_rail_counts
+
+        return Response(board_rail_counts())
+
+
 class OrderBoardLayoutView(APIView):
     """A arrumação das colunas do Gestor neste POSTO (SUITE-UX §16, lei L7).
 

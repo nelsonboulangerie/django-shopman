@@ -21,3 +21,22 @@ export function biSections(windowQuery: string): OperatorSection[] {
   if (!windowQuery) return [...BI_SECTIONS];
   return BI_SECTIONS.map((section) => ({ ...section, to: `${section.to}?${windowQuery}` }));
 }
+
+/**
+ * Onde a seção atual fica na faixa deslizável do celular (prévia
+ * `depois-marketing-bi-celular` (b), pino 7): a posição, a anterior e a seguinte.
+ * O deslizar troca de seção na ordem do rail; nas pontas não dá a volta.
+ */
+export function swipeNeighbours(
+  sections: readonly OperatorSection[],
+  path: string,
+): { index: number; previous: OperatorSection | null; next: OperatorSection | null } {
+  const clean = path.split("?")[0] || "/";
+  const index = sections.findIndex((section) => ((section.to ?? "").split("?")[0] || "/") === clean);
+  if (index < 0) return { index: -1, previous: null, next: null };
+  return {
+    index,
+    previous: index > 0 ? sections[index - 1]! : null,
+    next: index < sections.length - 1 ? sections[index + 1]! : null,
+  };
+}

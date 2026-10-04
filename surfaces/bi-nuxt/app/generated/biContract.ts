@@ -64,7 +64,14 @@ export interface BIOverShortHour {
   estimated_lost: string;
 }
 
-/** BIOverShortRow(sku: 'str', name: 'str', collection_ref: 'str', collection: 'str', verdict: 'str', made: 'str', sold: 'str', leftover: 'str', soldout_at: 'str', lost_estimate: 'str', typical_sold: 'str', typical_made: 'str', history: 'tuple[str, ...]', leftover_cost_q: 'int | None', lots: 'tuple[BIOverShortLot, ...]', sales_by_hour: 'tuple[BIOverShortHour, ...]') */
+/** Quando os canais tiraram o produto do ar naquele dia (``ShelfOutage``). */
+export interface BIOverShortUnavailable {
+  at: string;
+  channels: string[];
+  automatic: boolean;
+}
+
+/** BIOverShortRow(sku: 'str', name: 'str', collection_ref: 'str', collection: 'str', verdict: 'str', made: 'str', sold: 'str', leftover: 'str', soldout_at: 'str', lost_estimate: 'str', typical_sold: 'str', typical_made: 'str', history: 'tuple[str, ...]', leftover_cost_q: 'int | None', lots: 'tuple[BIOverShortLot, ...]', sales_by_hour: 'tuple[BIOverShortHour, ...]', history_days: 'tuple[str, ...]', planned: 'str', planned_lots: 'int', orders: 'int', alert_requests: 'int', unavailable: 'tuple[BIOverShortUnavailable, ...]', shift: 'str') */
 export interface BIOverShortRow {
   sku: string;
   name: string;
@@ -82,6 +89,21 @@ export interface BIOverShortRow {
   leftover_cost_q: number | null;
   lots: BIOverShortLot[];
   sales_by_hour: BIOverShortHour[];
+  history_days: string[];
+  planned: string;
+  planned_lots: number;
+  orders: number;
+  alert_requests: number;
+  unavailable: BIOverShortUnavailable[];
+  shift: string;
+}
+
+/** Uma parte da frase da resposta: um grupo (coleção ou produto) e o turno. */
+export interface BIOverShortAnswerGroup {
+  label: string;
+  kind: string;
+  shift: string;
+  count: number;
 }
 
 /** BIOverShortSummary(short: 'int', over: 'int', right: 'int', lost_estimate: 'str', leftover_units: 'str', leftover_cost_q: 'int', cost_complete: 'bool') */
@@ -104,7 +126,7 @@ export interface BIOverShortTypical {
   leftover_cost_q: number;
 }
 
-/** BIOverShortReport(day: 'str', weekday_label: 'str', opens_at: 'str', closes_at: 'str', compare_days: 'tuple[str, ...]', previous_day: 'str', next_day: 'str', plan_day: 'str', rows: 'tuple[BIOverShortRow, ...]', summary: 'BIOverShortSummary', typical: 'BIOverShortTypical') */
+/** BIOverShortReport(day: 'str', weekday_label: 'str', opens_at: 'str', closes_at: 'str', compare_days: 'tuple[str, ...]', previous_day: 'str', next_day: 'str', plan_day: 'str', rows: 'tuple[BIOverShortRow, ...]', summary: 'BIOverShortSummary', typical: 'BIOverShortTypical', compare: 'str', answer_short: 'tuple[BIOverShortAnswerGroup, ...]', answer_over: 'tuple[BIOverShortAnswerGroup, ...]') */
 export interface BIOverShortReport {
   day: string;
   weekday_label: string;
@@ -117,6 +139,9 @@ export interface BIOverShortReport {
   rows: BIOverShortRow[];
   summary: BIOverShortSummary;
   typical: BIOverShortTypical;
+  compare: string;
+  answer_short: BIOverShortAnswerGroup[];
+  answer_over: BIOverShortAnswerGroup[];
 }
 
 /** BISalesDay(date: 'str', orders: 'int', revenue_q: 'int', average_ticket_q: 'int', source: 'str') */
@@ -128,11 +153,20 @@ export interface BISalesDay {
   source: string;
 }
 
-/** BISalesChannelRow(channel_ref: 'str', orders: 'int', revenue_q: 'int') */
+/** BISalesChannelRow(channel_ref: 'str', name: 'str', kind: 'str', orders: 'int', revenue_q: 'int') */
 export interface BISalesChannelRow {
   channel_ref: string;
+  name: string;
+  kind: string;
   orders: number;
   revenue_q: number;
+}
+
+/** Um chip de canal: todo canal com venda na janela, antes do recorte. */
+export interface BISalesChannelOption {
+  ref: string;
+  name: string;
+  kind: string;
 }
 
 /** BITopSkuRow(sku: 'str', name: 'str', qty: 'str', revenue_q: 'int') */
@@ -161,7 +195,7 @@ export interface BISourceConflict {
   source: string;
 }
 
-/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int', sources: 'tuple[str, ...]', source_conflicts: 'tuple[BISourceConflict, ...]', previous: 'BISalesPrevious') */
+/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int', sources: 'tuple[str, ...]', source_conflicts: 'tuple[BISourceConflict, ...]', previous: 'BISalesPrevious', channel: 'str', channels: 'tuple[BISalesChannelOption, ...]', compare: 'str', closed_weekdays: 'tuple[int, ...]') */
 export interface BISalesReport {
   date_from: string;
   date_to: string;
@@ -178,6 +212,10 @@ export interface BISalesReport {
   sources: string[];
   source_conflicts: BISourceConflict[];
   previous: BISalesPrevious;
+  channel: string;
+  channels: BISalesChannelOption[];
+  compare: string;
+  closed_weekdays: number[];
 }
 
 /** BICashDay(date: 'str', shifts: 'int', difference_q: 'int', sangria_q: 'int', suprimento_q: 'int') */

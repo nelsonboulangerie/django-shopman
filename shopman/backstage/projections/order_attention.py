@@ -36,6 +36,7 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 from shopman.orderman.models import Order
 
+from shopman.backstage.projections.feeds import ChannelSwitchProjection, ManagerOptionProjection
 from shopman.shop.config import STAGE_GOAL_DEFAULTS
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,63 @@ def card_attention(order: Order, card, channel_config=None) -> dict:
     }
 
 
+# ── "Na Cozinha · próximo pronto em ~4 min" (G10) ───────────────────────
+
+#: Janela dos preparos reais que medem o tempo da Cozinha agora.
+PREP_SAMPLE_HOURS = 3
+#: Abaixo disto a mediana não diz nada: vale a meta da estação.
+PREP_MIN_SAMPLES = 3
+
+
+@dataclass(frozen=True)
+class PrepExpectation:
+    """Quanto um preparo está levando agora: a mediana real ou, sem amostra, a meta."""
+
+    #: Minutos medidos (mediana de ``preparing_at`` → ``ready_at``); ``None`` sem amostra.
+    minutes: float | None
+    samples: int
+
+    @property
+    def basis(self) -> str:
+        if self.minutes is None:
+            return "pela meta da estação (sem preparos suficientes nas últimas 3 horas)"
+        return f"pela mediana de {self.samples} preparos nas últimas {PREP_SAMPLE_HOURS} horas"
+
+
+def prep_expectation(*, now: datetime) -> PrepExpectation:
+    """A mediana dos preparos que terminaram nas últimas horas (uma consulta)."""
+    since = now - timedelta(hours=PREP_SAMPLE_HOURS)
+    rows = Order.objects.filter(
+        ready_at__gte=since, ready_at__lte=now, preparing_at__isnull=False,
+    ).order_by("-ready_at").values_list("preparing_at", "ready_at")[:60]
+    minutes = sorted((ready - start).total_seconds() / 60 for start, ready in rows if ready > start)
+    if len(minutes) < PREP_MIN_SAMPLES:
+        return PrepExpectation(minutes=None, samples=len(minutes))
+    middle = len(minutes) // 2
+    median = minutes[middle] if len(minutes) % 2 else (minutes[middle - 1] + minutes[middle]) / 2
+    return PrepExpectation(minutes=median, samples=len(minutes))
+
+
+def ready_eta(order: Order, expectation: PrepExpectation, channel_config=None, *, now: datetime) -> datetime | None:
+    """Quando o pedido na Cozinha deve ficar pronto: o início real mais o tempo de agora.
+
+    O início é o primeiro "Iniciar" do KDS (``Order.data["kds_started"]``) ou o
+    ``preparing_at``; o tempo é a mediana real (``prep_expectation``) ou a meta da
+    estação do canal. Pedido que ainda não começou não fica pronto antes de começar:
+    conta a partir de agora.
+    """
+    if order.status not in (Order.Status.ACCEPTED, Order.Status.PREPARING):
+        return None
+    expected = expectation.minutes if expectation.minutes is not None else stage_goal("station", channel_config)
+    starts = []
+    for record in ((order.data or {}).get("kds_started") or {}).values():
+        at = _parse(record.get("at")) if isinstance(record, dict) else None
+        if at is not None:
+            starts.append(at)
+    start = min(starts) if starts else order.preparing_at
+    return (start or now) + timedelta(minutes=expected)
+
+
 # ── A consciência ao lado da Fila ────────────────────────────────────────
 
 
@@ -218,6 +276,9 @@ class MenuChannelProjection:
     #: "iFood ligado" · "Loja online desligada até 18:00"
     line: str
     focus_path: str
+    #: O interruptor da linha (G09): o MESMO de Canais, que abre o
+    #: ``ChannelSwitchDialog`` com período, motivo e a aprovação do gerente.
+    switch: ChannelSwitchProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -230,6 +291,11 @@ class QueueAwarenessProjection:
     menu_channels: tuple[MenuChannelProjection, ...] = ()
     #: Quem gerencia o catálogo abre os canais a partir da linha.
     can_open_channels: bool = False
+    #: De onde vem o "próximo pronto em ~N min" (a mediana real ou a meta).
+    kitchen_eta_basis: str = ""
+    #: Quem autoriza ligar/desligar um canal (a lista de Canais) e quem opera.
+    managers: tuple[ManagerOptionProjection, ...] = ()
+    viewer_name: str = ""
 
 
 _VERBS = {
@@ -359,11 +425,15 @@ def menu_outages(*, channel_names: dict[str, str]) -> tuple[tuple[MenuOutageProj
     return tuple(items), max(0, len(by_sku) - MAX_MENU_OUTAGES)
 
 
-def menu_channels(*, now: datetime) -> tuple[MenuChannelProjection, ...]:
-    """Os canais de venda com interruptor: ligados ou desligados agora."""
+def menu_channels(*, now: datetime, user=None) -> tuple[MenuChannelProjection, ...]:
+    """Os canais de venda com interruptor: ligados ou desligados agora, com o gesto."""
+    from shopman.backstage.projections.feeds import _build_switch, switch_authority
     from shopman.shop.models import Channel
+    from shopman.shop.services import business_calendar
     from shopman.shop.services import channel_switch as switches
 
+    authorized, is_manager = switch_authority(user)
+    state = business_calendar.current_business_state(now=now)
     rows = []
     for channel in Channel.objects.filter(commerce_policy=Channel.CommercePolicy.ORDER).order_by("display_order", "name"):
         if not switches.is_switchable(channel):
@@ -376,11 +446,12 @@ def menu_channels(*, now: datetime) -> tuple[MenuChannelProjection, ...]:
             active=active,
             line=f"{name} {'recebendo pedidos' if active else 'sem receber pedidos'}",
             focus_path=f"/feeds?focus={channel.ref}",
+            switch=_build_switch(channel, user=user, authorized=authorized, is_manager=is_manager, state=state, now=now),
         ))
     return tuple(rows)
 
 
-def build_queue_awareness(*, user=None, now: datetime | None = None) -> QueueAwarenessProjection:
+def build_queue_awareness(*, user=None, now: datetime | None = None, expectation: PrepExpectation | None = None) -> QueueAwarenessProjection:
     now = now or timezone.now()
     names = _channel_names()
     try:
@@ -390,16 +461,22 @@ def build_queue_awareness(*, user=None, now: datetime | None = None) -> QueueAwa
         logger.warning("order_attention.menu_outages_failed", exc_info=True)
         outages, more = (), 0
     try:
-        channels = menu_channels(now=now)
+        channels = menu_channels(now=now, user=user)
     except Exception:
         logger.warning("order_attention.menu_channels_failed", exc_info=True)
         channels = ()
+    from shopman.backstage.projections.feeds import switch_managers
+
+    managers, viewer = switch_managers(user)
     return QueueAwarenessProjection(
         system_actions=system_actions(now=now, channel_names=names),
         menu_outages=outages,
         menu_outages_more=more,
         menu_channels=channels,
         can_open_channels=bool(user is not None and user.has_perm("shop.manage_catalog")),
+        kitchen_eta_basis=expectation.basis if expectation is not None else "",
+        managers=managers,
+        viewer_name=viewer,
     )
 
 
@@ -408,11 +485,14 @@ __all__ = [
     "CONFIRM_GOAL_MINUTES",
     "SYSTEM_WINDOW_MINUTES",
     "MenuChannelProjection",
+    "PrepExpectation",
     "MenuOutageProjection",
     "QueueAwarenessProjection",
     "SystemActionProjection",
     "attention_kind",
     "build_queue_awareness",
     "card_attention",
+    "prep_expectation",
+    "ready_eta",
     "stage_goal",
 ]

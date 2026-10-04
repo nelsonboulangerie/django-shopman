@@ -14,6 +14,7 @@
 //   3. sobra: a sobra passou do teto que a fórmula desconta (15%). Abaixo dele
 //      a sobra não mexeu no número, e avisar seria ruído.
 import type {
+  PlanCarryNoteProjection,
   ProductionSuggestionProjection,
   SuggestionMaterialShortageProjection,
 } from "~/types/production";
@@ -177,7 +178,7 @@ export function suggestionMath(
 // ── O histórico curto ──────────────────────────────────────────────────────
 
 export interface ReasonHistoryLine {
-  kind: "soldout" | "leftover" | "season";
+  kind: "soldout" | "leftover" | "season" | "bi";
   text: string;
   /** Nota curta logo abaixo, quando a fórmula já tratou o fato. */
   note: string;
@@ -203,6 +204,9 @@ export function suggestionHistory(
       note: s.waste_discounted ? "a média já desconta essa sobra" : "",
     });
   }
+  for (const note of s.bi_notes ?? []) {
+    lines.push({ kind: "bi", text: carriedNoteText(note), note: "levado do B.I." });
+  }
   if (s.season_fallback) {
     // Começo de estação: a corrente ainda não juntou dias suficientes e a
     // conta usou a anterior. Dizer as duas, senão "estação amena" em outubro
@@ -223,6 +227,27 @@ export function suggestionHistory(
     });
   }
   return lines;
+}
+
+/**
+ * A nota que o B.I. levou ao plano ("Sobrou ou faltou?" → "Levar ao plano"):
+ * "No sábado 03/10 acabou às 10:40, ~14 vendas perdidas" ou
+ * "No sábado 03/10 sobraram 12 de 60 feitas".
+ */
+export function carriedNoteText(note: PlanCarryNoteProjection): string {
+  const index = weekdayIndex(note.source_day);
+  const [, month, day] = note.source_day.split("-");
+  const when = `No ${index != null ? WEEKDAY_SINGULAR[index] : "dia"} ${day}/${month}`.replace(
+    /^No (segunda|terça|quarta|quinta|sexta)/,
+    "Na $1",
+  );
+  if (note.verdict === "short") {
+    const lost = asNumber(note.lost_estimate) > 0 ? `, ~${display(note.lost_estimate)} vendas perdidas` : "";
+    return note.soldout_at
+      ? `${when} acabou às ${note.soldout_at}${lost}`
+      : `${when} faltou${lost}`;
+  }
+  return `${when} sobraram ${display(note.leftover)} de ${display(note.made)} feitas`;
 }
 
 /** "confiança média · 4 sábados de histórico" (o subtítulo do detalhe). */

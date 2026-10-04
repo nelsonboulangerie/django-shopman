@@ -4,18 +4,17 @@ CostBackend protocol.
 Allows an external app to provide production cost for a product without
 Offerman importing it.
 
-⚠️ Nenhuma implementação existe ainda — ``OFFERMAN["COST_BACKEND"]`` é ``None``
-em todos os deployments, e por isso ``Product.reference_cost_q`` responde
-``None`` e a margem se esconde no Admin. O provedor precisa de receita
-(Craftsman) e de custo de insumo (Buyman) ao mesmo tempo, então **vai nascer no
-orquestrador** — depois da decisão registrada em
+O provedor precisa de receita (Craftsman) e de custo de insumo (Buyman) ao
+mesmo tempo, então mora no orquestrador: ``shopman.shop.adapters.cost.
+RecipeCostBackend`` responde o custo VIVO de
 docs/decisions/adr-023-cost-live-and-frozen.md (custo vivo para precificar ×
-custo congelado no fato para contar história).
+custo congelado no fato para contar história). Sem provedor configurado,
+``Product.reference_cost_q`` responde ``None`` e a margem se esconde no Admin.
 
-Usage (quando existir):
+Usage:
     # In settings.py
     OFFERMAN = {
-        "COST_BACKEND": "shopman.shop.adapters.cost.<Backend>",
+        "COST_BACKEND": "shopman.shop.adapters.cost.RecipeCostBackend",
     }
 """
 
