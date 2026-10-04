@@ -87,11 +87,16 @@ const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="O caixa fechou certo?" eyebrow="Auditoria do Dono">
+      <template #status>
+        <BiLiveStatus :pending="pending" :error="error" />
+      </template>
       <template #actions>
-        <BiWindowPicker />
+        <BiWindowPicker class="max-md:hidden" />
         <BiPageMenu />
       </template>
       <template #phone-actions>
+        <BiPeriodChip />
+        <BiShareButton />
         <BiPhoneBell />
       </template>
     </OperatorPageHeader>
@@ -104,14 +109,13 @@ const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
           <StatTile
             label="Turnos fechados"
             :value="formatInt(report.shifts_total)"
-            :delta="delta(report.shifts_total, report.previous.shifts_total)"
+            :delta="delta(report.shifts_total, report.previous.shifts_total, { base: formatInt(report.previous.shifts_total) })"
           />
           <StatTile
             label="Quebra acumulada"
             :value="formatMoney(report.difference_total_q)"
             :tone="report.difference_total_q < 0 ? 'destructive' : undefined"
-            :delta="{ text: `Anterior ${formatMoney(report.previous.difference_total_q)}`, tone: 'neutral' }"
-            hint="Contado − esperado; negativo = faltou"
+            :hint="`Contado menos esperado; negativo = faltou. Período anterior: ${formatMoney(report.previous.difference_total_q)}`"
           />
           <StatTile
             label="Dias sem fechamento"
@@ -269,6 +273,7 @@ const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
           <p v-else class="op-body text-muted-foreground">Nenhuma abertura de gaveta sem venda no período.</p>
         </BiSection>
       </template>
+      <BiSwipeHint />
     </main>
   </div>
 </template>

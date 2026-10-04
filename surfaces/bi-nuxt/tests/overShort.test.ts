@@ -2,11 +2,19 @@
 // mostra saem daqui, e cada uma é a da prévia com o dado real.
 import { describe, expect, it } from "vitest";
 import type { BIOverShortReport, BIOverShortRow } from "~/types/bi";
-import { BI_SECTIONS, biSections } from "~/presentation/biSections";
+import { BI_SECTIONS, biSections, swipeNeighbours } from "~/presentation/biSections";
 import { cashAnswer, customersAnswer, salesAnswer } from "~/presentation/bi";
 import {
   barGeometry,
   barScale,
+  carryLabel,
+  clientCount,
+  compareName,
+  compareOptions,
+  historyDaysLabel,
+  lotsLine,
+  ordersLinkLabel,
+  unavailableText,
   collectionsOf,
   compareCaption,
   dayCaption,
@@ -47,6 +55,13 @@ function row(overrides: Partial<BIOverShortRow>): BIOverShortRow {
     leftover_cost_q: null,
     lots: [],
     sales_by_hour: [],
+    history_days: ["2026-09-26", "2026-09-19", "2026-09-12", "2026-09-05"],
+    planned: "44",
+    planned_lots: 0,
+    orders: 0,
+    alert_requests: 0,
+    unavailable: [],
+    shift: "",
     ...overrides,
   };
 }
@@ -101,6 +116,9 @@ const report: BIOverShortReport = {
     cost_complete: true,
   },
   typical: { days: 4, short: "2", over: "3", leftover_units: "26", leftover_cost_q: 14000 },
+  compare: "typical",
+  answer_short: [],
+  answer_over: [],
 };
 
 describe("o dia e a comparação", () => {
@@ -261,5 +279,77 @@ describe("seções do rail", () => {
   it("cada seção leva a janela de análise", () => {
     expect(biSections("period=week")[1]!.to).toBe("/sales?period=week");
     expect(biSections("")[0]!.to).toBe("/");
+  });
+});
+
+
+describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu depois", () => {
+  it("a resposta fala por coleção e turno, como a prévia", () => {
+    const grouped = {
+      ...report,
+      answer_short: [{ label: "Folhados", kind: "collection", shift: "morning", count: 3 }],
+      answer_over: [{ label: "Baguette de Tradition", kind: "product", shift: "afternoon", count: 1 }],
+    };
+    expect(overShortAnswer(grouped)).toBe("Faltou nos folhados de manhã; sobrou Baguette de Tradition à tarde.");
+  });
+
+  it("o artigo da coleção sai da primeira palavra, e o resto vira \"mais N\"", () => {
+    const grouped = {
+      ...report,
+      answer_short: [
+        { label: "Bebidas quentes", kind: "collection", shift: "", count: 2 },
+        { label: "Mercearia", kind: "collection", shift: "evening", count: 2 },
+        { label: "Ciabatta", kind: "product", shift: "afternoon", count: 1 },
+      ],
+      answer_over: [],
+    };
+    expect(overShortAnswer(grouped)).toBe("Faltou nas bebidas quentes, na mercearia à noite e mais 1.");
+  });
+
+  it("o controle de comparação oferece as três bases, e o nome acompanha", () => {
+    expect(compareOptions("2026-10-03").map((option) => `${option.label} (${option.reach})`)).toEqual([
+      "sábado típico (4 sábados)",
+      "sábado anterior (um só)",
+      "sábado típico (8 sábados)",
+    ]);
+    expect(compareName("2026-10-03", "last")).toBe("sábado anterior");
+    expect(inTypical("2026-09-28", "last")).toBe("numa segunda anterior");
+    expect(typicalLine({ ...report, compare: "last" }, "short")).toBe("sábado anterior: 2 produtos");
+  });
+
+  it("canais que saíram do ar no mesmo minuto vão juntos; Me avise conta clientes", () => {
+    expect(unavailableText({ at: "10:40", channels: ["iFood", "Meta", "Google"], automatic: true })).toBe(
+      "iFood, Meta e Google indisponíveis às 10:40",
+    );
+    expect(unavailableText({ at: "11:05", channels: ["Site"], automatic: false })).toBe("Site indisponível às 11:05");
+    expect(clientCount(5)).toBe("5 clientes");
+    expect(clientCount(1)).toBe("1 cliente");
+  });
+
+  it("o lote que o plano tinha e não fechou aparece com o número do plano", () => {
+    const lots = [
+      { ref: "WO-0412", finished_at: "06:30", qty: "24" },
+      { ref: "WO-0418", finished_at: "08:20", qty: "20" },
+    ];
+    expect(lotsLine(row({ lots, planned_lots: 3, planned: "44" }))).toBe("Sem 3º lote: o plano dizia 44.");
+    expect(lotsLine(row({ lots, planned_lots: 2 }))).toBe("2 lotes · 44 un. feitas");
+  });
+
+  it("os caminhos ao registro dizem quantos e o que abrem", () => {
+    expect(ordersLinkLabel(44)).toBe("Abrir os 44 pedidos");
+    expect(ordersLinkLabel(1)).toBe("Abrir o pedido");
+    expect(historyDaysLabel("2026-10-03", 4)).toBe("Os 4 sábados");
+    expect(historyDaysLabel("2026-10-03", 1)).toBe("O sábado");
+    expect(carryLabel("2026-10-10")).toBe("Levar ao plano do próximo sábado");
+    expect(carryLabel("2026-10-05")).toBe("Levar ao plano da próxima segunda");
+  });
+
+  it("o deslizar do celular segue a ordem do rail e não dá a volta", () => {
+    const sections = biSections("period=28d");
+    expect(swipeNeighbours(sections, "/sales").previous?.key).toBe("production");
+    expect(swipeNeighbours(sections, "/sales").next?.key).toBe("cash");
+    expect(swipeNeighbours(sections, "/").previous).toBeNull();
+    expect(swipeNeighbours(sections, "/scenarios").next).toBeNull();
+    expect(swipeNeighbours(BI_SECTIONS, "/nada").index).toBe(-1);
   });
 });
