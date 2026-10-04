@@ -26,8 +26,14 @@ async function run() {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Que cenários a IA propõe?">
+      <template #status>
+        <BiLiveStatus :pending="pending" :error="error" />
+      </template>
       <template #actions>
         <BiPageMenu />
+      </template>
+      <template #phone-actions>
+        <BiShareButton />
       </template>
     </OperatorPageHeader>
 
@@ -106,6 +112,7 @@ async function run() {
         </section>
         <p v-else class="op-body text-muted-foreground">Nenhum cenário gerado ainda.</p>
       </template>
+      <BiSwipeHint />
     </main>
   </div>
 </template>

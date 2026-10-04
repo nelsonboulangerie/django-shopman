@@ -36,9 +36,16 @@ const weeklySeries = computed(() =>
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Os clientes estão voltando?">
+      <template #status>
+        <BiLiveStatus :pending="pending" :error="error" />
+      </template>
       <template #actions>
-        <BiWindowPicker />
+        <BiWindowPicker class="max-md:hidden" />
         <BiPageMenu />
+      </template>
+      <template #phone-actions>
+        <BiPeriodChip />
+        <BiShareButton />
       </template>
     </OperatorPageHeader>
 
@@ -68,6 +75,7 @@ const weeklySeries = computed(() =>
           </BiSection>
         </div>
       </template>
+      <BiSwipeHint />
     </main>
   </div>
 </template>

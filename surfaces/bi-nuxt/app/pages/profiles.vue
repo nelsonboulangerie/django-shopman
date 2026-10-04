@@ -84,9 +84,16 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Quem compra no balcão?">
+      <template #status>
+        <BiLiveStatus :pending="pending" :error="error" />
+      </template>
       <template #actions>
-        <BiWindowPicker />
+        <BiWindowPicker class="max-md:hidden" />
         <BiPageMenu />
+      </template>
+      <template #phone-actions>
+        <BiPeriodChip />
+        <BiShareButton />
       </template>
       <template #filters>
         <label class="inline-flex items-center gap-2 op-label text-muted-foreground">
@@ -193,7 +200,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
         <p class="mb-3 op-micro text-muted-foreground">
           A vocação em graus: cada produto tem um peso (% de chance de ser consumido aqui, editável em
           Configurações › Como vendemos, por papel e por produto) e a cesta vale o seu maior peso. É esperança
-          sob os pesos vigentes, não medida; a faixa piso–teto abaixo continua sendo o que o dado garante.
+          sob os pesos vigentes, não medida; a faixa entre piso e teto abaixo continua sendo o que o dado garante.
         </p>
         <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatTile
@@ -217,7 +224,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
             <ul class="mt-1 flex flex-col gap-0.5 op-label">
               <li v-for="(band, index) in bandOptions" :key="band.key" class="flex justify-between tnum">
                 <span class="text-muted-foreground">{{ band.label }}</span>
-                <span class="text-foreground">{{ report.estimate.orders_by_band[index] ? formatPercent(Math.round((report.estimate.seated_by_band[index]! * 1000) / report.estimate.orders_by_band[index]!) / 10) : '—' }}</span>
+                <span class="text-foreground">{{ report.estimate.orders_by_band[index] ? formatPercent(Math.round((report.estimate.seated_by_band[index]! * 1000) / report.estimate.orders_by_band[index]!) / 10) : 'sem pedido' }}</span>
               </li>
             </ul>
           </div>
@@ -342,13 +349,13 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
                 <tr v-for="row in strike" :key="row.weekday" class="border-b border-border last:border-0">
                   <td class="py-1 pr-2 font-medium text-foreground">{{ row.label }}</td>
                   <td v-for="(cell, index) in row.cells" :key="index" :class="tdClass" :title="cell ? `${formatInt(cell.with_beverage)} de ${formatInt(cell.orders)}` : ''">
-                    <span :class="cell && cell.orders ? '' : 'text-muted-foreground'">{{ cell && cell.orders ? formatPercent(cell.rate) : '—' }}</span>
+                    <span :class="cell && cell.orders ? '' : 'text-muted-foreground'">{{ cell && cell.orders ? formatPercent(cell.rate) : 'sem pedido' }}</span>
                   </td>
-                  <td :class="tdClass">{{ strikeByWeekday[row.weekday]?.orders ? formatPercent(strikeByWeekday[row.weekday]!.rate) : '—' }}</td>
+                  <td :class="tdClass">{{ strikeByWeekday[row.weekday]?.orders ? formatPercent(strikeByWeekday[row.weekday]!.rate) : 'sem pedido' }}</td>
                 </tr>
                 <tr>
                   <td class="py-1 pr-2 op-eyebrow text-muted-foreground">Faixa</td>
-                  <td v-for="band in bandOptions" :key="band.key" :class="tdClass">{{ strikeByBand[band.key]?.orders ? formatPercent(strikeByBand[band.key]!.rate) : '—' }}</td>
+                  <td v-for="band in bandOptions" :key="band.key" :class="tdClass">{{ strikeByBand[band.key]?.orders ? formatPercent(strikeByBand[band.key]!.rate) : 'sem pedido' }}</td>
                   <td :class="tdClass"></td>
                 </tr>
               </tbody>
@@ -385,6 +392,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
         </div>
       </section>
       </template>
+      <BiSwipeHint />
     </main>
   </div>
 </template>

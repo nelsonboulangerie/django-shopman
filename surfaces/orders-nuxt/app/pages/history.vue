@@ -76,6 +76,17 @@ const loading = computed(() => pending.value && !history.value);
 
     <section class="min-h-0 flex-1 overflow-auto p-4">
       <div class="mb-3 flex items-center gap-2">
+        <button
+          v-if="historyQuery.sku"
+          type="button"
+          class="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 text-sm font-semibold"
+          :aria-label="`Tirar o recorte do produto ${history?.sku_name || historyQuery.sku}`"
+          data-history-sku
+          @click="router.replace({ query: routeQueryFromHistory({ ...historyQuery, sku: '', page: 1 }) })"
+        >
+          Produto: {{ history?.sku_name || historyQuery.sku }}
+          <Icon name="lucide:x" class="size-4" aria-hidden="true" />
+        </button>
         <FilterBar v-model="filters" :dimensions="dimensions" touch class="min-w-0 flex-1" />
         <span v-if="history" class="shrink-0 text-xs text-muted-foreground tabular-nums" data-history-total>{{ history.total_label }}</span>
       </div>

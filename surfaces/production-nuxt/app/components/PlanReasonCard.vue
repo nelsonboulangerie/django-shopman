@@ -45,11 +45,13 @@ const HISTORY_ICON = {
   soldout: "lucide:clock-alert",
   leftover: "lucide:archive",
   season: "lucide:calendar-range",
+  bi: "lucide:chart-column",
 } as const;
 const HISTORY_TONE = {
   soldout: "text-destructive",
   leftover: "text-warning",
   season: "text-muted-foreground",
+  bi: "text-primary",
 } as const;
 </script>
 
@@ -130,8 +132,8 @@ const HISTORY_TONE = {
       data-testid="reason-history"
     >
       <li
-        v-for="line in history"
-        :key="line.kind"
+        v-for="(line, index) in history"
+        :key="`${line.kind}:${index}`"
         class="flex items-start gap-2"
       >
         <Icon

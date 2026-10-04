@@ -23,8 +23,11 @@ import {
 import {
   VERDICTS,
   barScale,
+  carryLabel,
   collectionsOf,
   compareCaption,
+  compareName,
+  compareOptions,
   filterRows,
   hiddenRowsSummary,
   historyHeading,
@@ -34,14 +37,21 @@ import {
   planLabel,
   shortUnit,
   typicalLine,
-  typicalName,
   verdictMeta,
 } from "~/presentation/overShort";
 import { todayIso } from "../../../operator-kit/app/presentation/dates";
 
 // ── Sobrou ou faltou ─────────────────────────────────────────────────────────
 
-const { report: day, pending: dayPending, error: dayError, refresh: dayRefresh, setDay } = useBiOverShort();
+const {
+  report: day,
+  pending: dayPending,
+  error: dayError,
+  refresh: dayRefresh,
+  setDay,
+  compare,
+  setCompare,
+} = useBiOverShort();
 
 const today = todayIso();
 const yesterday = computed(() => {
@@ -88,14 +98,43 @@ const counts = computed(() => ({
 const COLUMNS =
   "grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1.3fr)_104px_minmax(200px,230px)_92px_118px_minmax(0,1.1fr)_168px]";
 
-const config = useRuntimeConfig().public as { productionUrl?: string };
+const config = useRuntimeConfig().public as { productionUrl?: string; ordersUrl?: string };
 const productionUrl = (config.productionUrl || "").replace(/\/?$/, "/");
+const ordersUrl = (config.ordersUrl || "").replace(/\/?$/, "/");
 const planUrl = computed(() => (day.value?.plan_day && productionUrl ? `${productionUrl}plan?date=${day.value.plan_day}` : ""));
 const closeUrl = computed(() => (day.value && productionUrl ? `${productionUrl}close?date=${day.value.day}` : ""));
 const { attrsFor } = useOperatorAppLink();
 const planLink = computed(() => attrsFor(planUrl.value));
 
-const shareQuery = computed(() => (day.value ? `?day=${day.value.day}` : ""));
+const shareQuery = computed(() => {
+  if (!day.value) return "";
+  return day.value.compare && day.value.compare !== "typical"
+    ? `?day=${day.value.day}&compare=${day.value.compare}`
+    : `?day=${day.value.day}`;
+});
+const compareChoices = computed(() => (day.value ? compareOptions(day.value.day) : []));
+
+// "Levar ao plano do próximo sábado" (pino 3): a falta e a sobra viram o porquê ao
+// lado da sugestão do Planejamento. Não muda número nenhum do plano.
+const { run: carryToPlan, pending: carrying } = usePendingAction(async () => {
+  if (!day.value) return;
+  try {
+    const result = await $fetch<{ plan_day: string; carried: number }>("/api/v1/backstage/bi/over-short/carry/", {
+      method: "POST",
+      body: { day: day.value.day, compare: compare.value },
+    });
+    if (!result.carried) {
+      useSonner.info("Nada a levar: tudo ficou na medida neste dia.");
+      return;
+    }
+    useSonner.success(
+      `${result.carried === 1 ? "1 produto levado" : `${result.carried} produtos levados`} ao plano de ${planLabel(result.plan_day).replace(/^Abrir o plano de /, "")}: o porquê aparece ao lado da sugestão.`,
+      planUrl.value ? { action: { label: "Abrir o plano", onClick: () => window.open(planUrl.value, planLink.value.target || "_self") } } : undefined,
+    );
+  } catch (error) {
+    useSonner.error(httpErrorMessage(error, "Não deu para levar ao plano. Tente de novo."));
+  }
+});
 const explainOpen = ref(false);
 
 // Teclas do desktop: [ e ] andam um dia aberto; / leva à busca.
@@ -210,25 +249,41 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
             {{ explainOpen ? "Esconder como é calculado" : "Como é calculado" }}
           </button>
         </BiPageMenu>
-        <a
-          v-if="planUrl"
-          :href="planUrl"
-          :target="planLink.target"
-          :rel="planLink.rel"
-          class="inline-flex min-h-control items-center gap-2 rounded-md bg-primary px-4 op-label font-semibold text-primary-foreground transition hover:bg-primary/90"
-          data-bi-plan-link
+        <UiButton
+          v-if="day?.plan_day"
+          class="hidden md:inline-flex"
+          :disabled="carrying"
+          data-bi-carry
+          @click="carryToPlan()"
         >
           <Icon name="lucide:arrow-right-left" class="size-4" aria-hidden="true" />
-          {{ planLabel(day?.plan_day ?? "") }}
-        </a>
+          {{ carryLabel(day.plan_day) }}
+        </UiButton>
+      </template>
+      <template #phone-actions>
+        <BiShareButton />
       </template>
       <template v-if="day" #filters>
-        <span class="inline-flex min-h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label" data-bi-compare>
+        <label
+          class="relative inline-flex min-h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition focus-within:ring-2 focus-within:ring-ring/40 hover:bg-accent"
+          data-bi-compare
+        >
           <Icon name="lucide:git-compare-arrows" class="size-4 text-muted-foreground" aria-hidden="true" />
           <span class="font-normal text-muted-foreground">Comparar com:</span>
-          <span class="font-semibold">{{ typicalName(day.day) }}</span>
-          <span class="tnum font-normal text-muted-foreground">({{ compareCaption(day.day, day.compare_days) }})</span>
-        </span>
+          <span class="font-semibold">{{ compareName(day.day, day.compare) }}</span>
+          <span class="hidden tnum font-normal text-muted-foreground sm:inline">({{ compareCaption(day.day, day.compare_days) }})</span>
+          <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
+          <select
+            :value="compare"
+            class="absolute inset-0 cursor-pointer opacity-0"
+            aria-label="Comparar com"
+            @change="setCompare(($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="option in compareChoices" :key="option.key" :value="option.key">
+              {{ option.label }} ({{ option.reach }})
+            </option>
+          </select>
+        </label>
         <span class="mx-1 h-6 w-px bg-border" aria-hidden="true" />
         <UiFilterChip :active="!verdict" :count="rows.length" :aria-pressed="!verdict" @click="verdict = ''">
           <template #icon><Icon v-if="!verdict" name="lucide:check" class="size-4 text-primary" aria-hidden="true" /></template>
@@ -275,7 +330,8 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
           <p class="op-eyebrow text-muted-foreground">Como é calculado</p>
           <p><b>Fez</b>: o realizado dos lotes fechados do dia. <b>Vendeu</b>: as vendas do dia, de todos os canais.</p>
           <p><b>Acabou às</b>: a hora da venda em que o vendido alcançou o feito. <b>Vendas perdidas</b>: o ritmo até acabar, estendido até o fechamento{{ day.closes_at ? ` (${day.closes_at})` : "" }}, com teto de 2× o vendido. É a mesma conta que a sugestão do Planejamento usa.</p>
-          <p><b>Faltou</b>: acabou antes da última hora. <b>Na medida</b>: acabou na última hora, sobrou até 2, ou vendeu mais do que fez (havia estoque de antes). <b>Sobrou</b>: sobrou mais que isso. O típico é a média dos últimos {{ day.compare_days.length || 4 }} dias iguais com a loja aberta.</p>
+          <p><b>Faltou</b>: acabou antes da última hora. <b>Na medida</b>: acabou na última hora, sobrou até 2, ou vendeu mais do que fez (havia estoque de antes). <b>Sobrou</b>: sobrou mais que isso. A comparação é a média dos últimos {{ day.compare_days.length || 4 }} dias iguais com a loja aberta.</p>
+          <p><b>Custo</b>: a ficha técnica ativa vezes o custo do fornecedor preferencial de cada insumo. Insumo sem custo deixa o produto sem custo (nada é estimado).</p>
         </div>
 
         <!-- A resposta: uma frase e três números, cada um com o típico ao lado. -->
@@ -285,6 +341,18 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
           <StatTile label="Sobrou" :value="formatInt(day.summary.over)" tone="warning" :unit="overUnit(day)" :hint="typicalLine(day, 'over')" />
           <StatTile label="Na medida" :value="formatInt(day.summary.right)" tone="success" :unit="day.summary.right === 1 ? 'produto' : 'produtos'" :hint="typicalLine(day, 'right')" />
         </div>
+        <!-- No celular o gesto principal não cabe na barra de cima (BI-11): desce para
+             logo depois da resposta, na largura toda, ao alcance do polegar. -->
+        <UiButton
+          v-if="day.plan_day"
+          class="h-12 w-full md:hidden"
+          :disabled="carrying"
+          data-bi-carry-phone
+          @click="carryToPlan()"
+        >
+          <Icon name="lucide:arrow-right-left" class="size-4" aria-hidden="true" />
+          {{ carryLabel(day.plan_day) }}
+        </UiButton>
 
         <div class="overflow-hidden rounded-lg border border-border bg-card" data-over-short-table>
           <div
@@ -313,7 +381,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
               :open="openSku === row.sku"
               @toggle="openSku = openSku === row.sku ? null : row.sku"
             >
-              <OverShortDetail :row="row" :day="day.day" :close-url="closeUrl" :plan-url="planUrl" :plan-label="planLabel(day.plan_day)" />
+              <OverShortDetail :row="row" :day="day.day" :compare="day.compare" :close-url="closeUrl" :orders-url="ordersUrl" />
             </OverShortRow>
           </template>
           <p v-else-if="rows.length" class="px-4 py-4 op-body text-muted-foreground">Nenhum produto neste recorte.</p>
@@ -392,6 +460,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
           </div>
         </template>
       </section>
+      <BiSwipeHint />
       <MoreBelow />
     </main>
   </div>

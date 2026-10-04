@@ -71,6 +71,40 @@ export function sourceConflictLabel(conflict: {
   return `${shortDate(conflict.date)}: ${native} apagou ${dropped} do ${sourceLabel(conflict.source)} nesse dia`;
 }
 
+// ── Canais ───────────────────────────────────────────────────────────────────
+
+/** O ícone de cada tipo de canal (o mesmo desenho dos chips do Gestor). */
+const CHANNEL_ICONS: Record<string, string> = {
+  counter: "lucide:store",
+  whatsapp: "lucide:message-circle",
+  web: "lucide:globe",
+  marketplace: "lucide:bike",
+  historical: "lucide:archive",
+  other: "lucide:circle-dot",
+};
+
+export function channelIcon(kind: string): string {
+  return CHANNEL_ICONS[kind] ?? CHANNEL_ICONS.other!;
+}
+
+/** "93,6%": a parte de um canal no total, com uma casa (nunca "100,0%" por arredondar). */
+export function sharePercent(part: number, total: number): string {
+  if (!total) return "0%";
+  const value = Math.round((part * 1000) / total) / 10;
+  return `${String(value).replace(".", ",")}%`;
+}
+
+/** A base de comparação das Vendas, como a linha "Comparar com" a nomeia. */
+export const SALES_COMPARE_LABELS: Record<string, string> = {
+  previous: "período anterior",
+  year: "mesmo período do ano passado",
+};
+
+/** "08/08 a 04/09". */
+export function rangeCaption(dateFrom: string, dateTo: string): string {
+  return dateFrom === dateTo ? shortDate(dateFrom) : `${shortDate(dateFrom)} a ${shortDate(dateTo)}`;
+}
+
 /** 0 = segunda (convenção da projection). */
 export const WEEKDAY_LABELS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"] as const;
 
@@ -81,29 +115,48 @@ export function hourLabel(hour: number): string {
 export type DeltaTone = "positive" | "negative" | "neutral";
 
 export interface DeltaBadge {
+  /** A frase inteira, para leitor de tela e título: "queda de 23% vs período anterior (3.384)". */
   text: string;
   tone: DeltaTone;
+  /** A pílula (prévia `depois-bi-vendas`, pino 7): seta + "23%". Vazia sem base. */
+  percent: string;
+  direction: "up" | "down" | "flat" | "none";
+  /** O que vem depois da pílula: "vs período anterior (3.384)". */
+  caption: string;
 }
 
 /**
- * Delta vs o período anterior (F7). Sem base = travessão de dado ausente
- * (decisão do dono; a proibição do travessão vale para prosa, não para
- * placeholder). O tom veste os tokens semânticos dessaturados do tema
- * (success/destructive): cor por MELHOROU/PIOROU, não por sinal — perda
- * subindo é ruim, faturamento subindo é bom (`downIsGood` inverte).
+ * Delta contra a base de comparação (F7). A pílula leva a seta e a porcentagem; a
+ * legenda diz contra o quê e o valor de lá ("vs período anterior (3.384)"), para o
+ * número de antes estar à vista, não só a variação. Sem base, nenhuma pílula: a
+ * legenda diz que não há com o que comparar (nada de travessão no lugar do número).
+ * O tom veste os tokens semânticos (success/destructive): cor por MELHOROU/PIOROU,
+ * não por sinal; perda subindo é ruim (`downIsGood` inverte).
  */
 export function delta(
   current: number,
   previous: number,
-  opts: { downIsGood?: boolean } = {},
+  opts: { downIsGood?: boolean; base?: string; against?: string } = {},
 ): DeltaBadge {
-  if (!previous) return { text: "—", tone: "neutral" };
+  const against = opts.against ?? "período anterior";
+  if (!previous) {
+    const caption = `sem ${against || "base"} para comparar`;
+    return { text: caption, tone: "neutral", percent: "", direction: "none", caption };
+  }
   const pct = Math.round(((current - previous) / Math.abs(previous)) * 100);
-  if (pct === 0) return { text: "Estável vs Período anterior", tone: "neutral" };
+  const base = opts.base ? `(${opts.base})` : "";
+  const caption = against ? `vs ${against}${base ? ` ${base}` : ""}` : base;
+  if (pct === 0) {
+    return { text: `estável ${caption}`, tone: "neutral", percent: "0%", direction: "flat", caption };
+  }
   const improved = pct > 0 !== Boolean(opts.downIsGood);
+  const percent = `${Math.abs(pct)}%`;
   return {
-    text: `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs Período anterior`,
+    text: `${pct > 0 ? "alta" : "queda"} de ${percent} ${caption}`,
     tone: improved ? "positive" : "negative",
+    percent,
+    direction: pct > 0 ? "up" : "down",
+    caption,
   };
 }
 
@@ -585,16 +638,16 @@ export interface ProfileRangeLike {
   max_share: number;
 }
 
-/** "1.234–1.500 pedidos (16,7–20,1%)"; faixa fechada vira ponto. */
+/** "1.234 a 1.500 pedidos (16,7 a 20,1%)"; faixa fechada vira ponto. */
 export function rangeText(range: ProfileRangeLike): string {
   const orders =
     range.min_orders === range.max_orders
       ? `${formatInt(range.min_orders)} ${range.min_orders === 1 ? "pedido" : "pedidos"}`
-      : `${formatInt(range.min_orders)}–${formatInt(range.max_orders)} pedidos`;
+      : `${formatInt(range.min_orders)} a ${formatInt(range.max_orders)} pedidos`;
   const share =
     range.min_share === range.max_share
       ? formatPercent(range.min_share)
-      : `${String(range.min_share).replace(".", ",")}–${formatPercent(range.max_share)}`;
+      : `${String(range.min_share).replace(".", ",")} a ${formatPercent(range.max_share)}`;
   return `${orders} (${share})`;
 }
 
@@ -645,11 +698,11 @@ export interface ScenarioReportLike {
   scenarios: readonly unknown[];
 }
 
-/** "Vendas · 19/08 14:05 · janela 23/07–19/08" */
+/** "Vendas · 19/08 14:05 · janela 23/07 a 19/08" */
 export function scenarioReportHeadline(report: ScenarioReportLike): string {
   const stamp = new Date(report.generated_at);
   const when = `${String(stamp.getDate()).padStart(2, "0")}/${String(stamp.getMonth() + 1).padStart(2, "0")} ${String(stamp.getHours()).padStart(2, "0")}:${String(stamp.getMinutes()).padStart(2, "0")}`;
-  return `${report.focus_label} · ${when} · janela ${shortDate(report.window_from)}–${shortDate(report.window_to)}`;
+  return `${report.focus_label} · ${when} · janela ${shortDate(report.window_from)} a ${shortDate(report.window_to)}`;
 }
 
 /** Custo e latência declarados na tela: "3 cenários · 12 s · claude-opus-5" ou "falhou". */
