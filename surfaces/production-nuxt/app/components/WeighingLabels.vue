@@ -6,7 +6,8 @@
 //     de qualquer rótulo de venda.
 // Os tamanhos aqui são fixos para a etiquetadora, não os papéis tipográficos de tela —
 // por isso este componente é allowlistado no guardrail de tipografia (como o PosReceipt).
-import { computed } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { lotLabelPayload } from "~/presentation/production";
 import type {
   ProductionBlindLabel,
   ProductionPreparationLabelTicket,
@@ -32,6 +33,31 @@ const labelStyle = computed(() => ({
   width: `${props.labelWidthMm}mm`,
   height: `${props.labelHeightMm}mm`,
 }));
+
+// O QR do lote na etiqueta de preparo (o mesmo conteúdo da impressão pelo relay):
+// o Fechamento lê ("Ler etiqueta do lote"). Gerado no navegador, só quando há
+// etiqueta de preparo a imprimir.
+const qrSvgs = ref<Record<string, string>>({});
+async function renderQrs() {
+  if (props.printMode !== "preparo" || !import.meta.client) return;
+  const missing = props.tickets
+    .map((ticket) => ticket.output_sku)
+    .filter((sku) => sku && !qrSvgs.value[sku]);
+  if (!missing.length) return;
+  try {
+    const { BrowserQRCodeSvgWriter } = await import("@zxing/browser");
+    const writer = new BrowserQRCodeSvgWriter();
+    const next = { ...qrSvgs.value };
+    for (const sku of missing) {
+      next[sku] = writer.write(lotLabelPayload(sku), 96, 96).outerHTML;
+    }
+    qrSvgs.value = next;
+  } catch {
+    // Sem o QR a etiqueta continua válida: o código do lote se digita no leitor.
+  }
+}
+onMounted(renderQrs);
+watch(() => [props.printMode, props.tickets], renderQrs);
 </script>
 
 <template>
@@ -116,7 +142,16 @@ const labelStyle = computed(() => ({
         <span v-if="ticket.sources_display" class="text-xs"
           >Objetivo: {{ ticket.sources_display }}</span
         >
-        <span class="font-mono text-[0.65rem]">{{ ticket.blind_code }}</span>
+        <div class="mt-auto flex items-end justify-between gap-2">
+          <span class="font-mono text-[0.65rem]">{{ ticket.blind_code }}</span>
+          <!-- SVG gerado aqui pelo zxing a partir do SKU (sem entrada livre). -->
+          <span
+            v-if="qrSvgs[ticket.output_sku]"
+            class="block size-[14mm] shrink-0 [&_svg]:size-full"
+            data-label-lot-qr
+            :innerHTML="qrSvgs[ticket.output_sku]"
+          />
+        </div>
       </div>
     </div>
   </section>

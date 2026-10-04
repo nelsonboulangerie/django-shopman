@@ -35,6 +35,9 @@ const props = defineProps<{
   correctionAvailable: (order: QCOrderCardProjection) => boolean;
   /** A troca de vista mora no cabeçalho da página. */
   hideTabs?: boolean;
+  /** Busca da tela (lupa): recorta as exceções e os confirmados. O conjunto sem
+   *  exceção NÃO se recorta: o ato confirma exatamente o que o servidor assina. */
+  query?: string;
 }>();
 
 const emit = defineEmits<{
@@ -67,6 +70,18 @@ const cleanChips = computed(() =>
 const hiddenClean = computed(() =>
   Math.max(0, gate.value.clean.length - cleanChips.value.length),
 );
+
+function matchesQuery(order: QCOrderCardProjection): boolean {
+  const q = (props.query ?? "").trim().toLowerCase();
+  if (!q) return true;
+  return (
+    order.recipe_name.toLowerCase().includes(q) ||
+    order.output_sku.toLowerCase().includes(q) ||
+    order.ref.toLowerCase().includes(q)
+  );
+}
+const shownExceptions = computed(() => gate.value.exceptions.filter(matchesQuery));
+const shownReviewed = computed(() => gate.value.reviewed.filter(matchesQuery));
 
 function segments(order: QCOrderCardProjection) {
   return exceptionSegments(order, props.grades, props.defects);
@@ -320,7 +335,7 @@ function closedLine(order: QCOrderCardProjection): string {
         </h2>
 
         <article
-          v-for="order in gate.exceptions"
+          v-for="order in shownExceptions"
           :key="order.pk"
           class="grid min-w-0 grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4"
           data-quality-exception
@@ -431,7 +446,7 @@ function closedLine(order: QCOrderCardProjection): string {
         Nenhum lote confirmado nesta data.
       </p>
       <div
-        v-for="order in gate.reviewed"
+        v-for="order in shownReviewed"
         :key="order.pk"
         class="flex items-center justify-between gap-3 rounded-md border bg-card p-4"
       >

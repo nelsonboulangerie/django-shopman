@@ -226,6 +226,14 @@ def _qr(data: str, *, module: int = 6) -> bytes:
     )
 
 
+LOT_LABEL_PREFIX = "shopman-lote:"
+
+
+def lot_label_payload(output_sku: str) -> str:
+    """O conteúdo do QR da etiqueta de preparo (lido pelo Fechamento)."""
+    return f"{LOT_LABEL_PREFIX}{output_sku}"
+
+
 def production_label_run(
     document: dict,
     *,
@@ -292,6 +300,11 @@ def production_label_run(
             annotation = str(ingredient.get("annotation") or "")
             if annotation:
                 out += _line(f"  {annotation}")
+        if mode == "explicit" and ticket.get("output_sku"):
+            # O QR do lote: o Fechamento lê ("Ler etiqueta do lote") e abre o
+            # Finalizar deste produto. Só na etiqueta de preparo; a cega não pode
+            # carregar o SKU do que se pesa.
+            out += _qr(lot_label_payload(str(ticket["output_sku"])), module=4)
         out += bytes([ESC, ord("d"), 3])
         if cut_mode == "partial":
             out += bytes([GS, ord("V"), 1])

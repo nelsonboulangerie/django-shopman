@@ -59,6 +59,30 @@ const period = computed<PeriodSelection>({
   },
 });
 
+// "sáb 03/10 · lotes fechados hoje" sob o título (v4); a hora vem do ponto ao vivo.
+const qualitySubtitle = computed(() => {
+  const iso = selectedDate.value || todayISO;
+  const label = shortDay(iso);
+  return selectedDate.value === ""
+    ? `${label} · lotes fechados hoje`
+    : `${label} · lotes fechados no dia`;
+});
+function shortDay(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return "";
+  const day = new Date(Date.UTC(+match[1]!, +match[2]! - 1, +match[3]!));
+  const weekday = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][day.getUTCDay()];
+  return `${weekday} ${match[3]}/${match[2]}`;
+}
+function shiftDay(delta: number) {
+  const base = selectedDate.value || todayISO;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(base);
+  if (!match) return;
+  const day = new Date(Date.UTC(+match[1]!, +match[2]! - 1, +match[3]! + delta));
+  const next = day.toISOString().slice(0, 10);
+  period.value = periodOfDay("day", next > todayISO ? todayISO : next, todayISO);
+}
+
 // O portão vê TODOS os lotes do dia, sem o filtro da busca: o cartão "N lotes
 // sem exceção" precisa contar exatamente o conjunto que o ato confirma (o
 // servidor assina esse conjunto). Ele mesmo separa os fechados (sem exceção /
@@ -195,12 +219,66 @@ const screenStarted = computed(() => {
     <ProductionHeader
       v-model:query="query"
       title="Qualidade"
-      :eyebrow="selectedDate === '' ? 'Lotes fechados hoje' : 'Lotes fechados no dia'"
+      :subtitle="qualitySubtitle"
       :pending="pending"
       :stale="stale"
-      :searchable="false"
+      search-placeholder="Buscar lote ou produto"
       @refresh="refresh"
     >
+      <!-- Dias anteriores e relatórios moram no ⋯ (v4 legenda 8): o título fica
+           com a troca de vista, a lupa e o ⋯. -->
+      <template #menu="{ close }">
+        <div class="mt-1.5 border-t border-border pt-1.5" data-quality-day-menu>
+          <button
+            type="button"
+            role="menuitem"
+            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
+            data-quality-previous-day
+            @click="
+              close();
+              shiftDay(-1);
+            "
+          >
+            <Icon name="lucide:chevron-left" class="size-4 text-muted-foreground" />
+            Dia anterior
+          </button>
+          <button
+            v-if="selectedDate !== ''"
+            type="button"
+            role="menuitem"
+            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
+            @click="
+              close();
+              shiftDay(1);
+            "
+          >
+            <Icon name="lucide:chevron-right" class="size-4 text-muted-foreground" />
+            Dia seguinte
+          </button>
+          <button
+            v-if="selectedDate !== ''"
+            type="button"
+            role="menuitem"
+            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
+            @click="
+              close();
+              selectedDate = '';
+            "
+          >
+            <Icon name="lucide:calendar-check" class="size-4 text-muted-foreground" />
+            Voltar para hoje
+          </button>
+          <NuxtLink
+            to="/reports"
+            role="menuitem"
+            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
+            @click="close()"
+          >
+            <Icon name="lucide:chart-column" class="size-4 text-muted-foreground" />
+            Relatórios de qualidade
+          </NuxtLink>
+        </div>
+      </template>
       <template #actions>
         <div
           v-if="!correcting && kiosk && kiosk.orders.length"
@@ -240,14 +318,6 @@ const screenStarted = computed(() => {
             <span class="tnum">{{ gateCounts.reviewed }}</span>
           </button>
         </div>
-        <OperatorPeriodPicker
-          v-model="period"
-          :presets="['day']"
-          :today="todayISO"
-          :max="todayISO"
-          label="Data dos lotes"
-          align="end"
-        />
       </template>
     </ProductionHeader>
 
@@ -299,6 +369,7 @@ const screenStarted = computed(() => {
         v-model:view="view"
         hide-tabs
         :orders="qualityOrders"
+        :query="query"
         :grades="kiosk.grades"
         :defects="kiosk.defects"
         :is-today="selectedDate === ''"

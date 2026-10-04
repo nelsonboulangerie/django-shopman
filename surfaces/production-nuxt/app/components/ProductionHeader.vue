@@ -11,6 +11,8 @@
 // No celular e no tablet em pé (`OperatorPageHeader`, V6-KIT): barra de 56px com o selo
 // do app, o título, o ponto, a lupa e Avisos (do kit), como a v4; Timers, Qualidade e as
 // ferramentas moram no "Mais" da barra do polegar, e também no ⋯ desta tela.
+import { createReusableTemplate, useMediaQuery } from "@vueuse/core";
+import { useSlots } from "vue";
 import {
   isEditableKeyboardTarget,
   PRODUCTION_SHORTCUT_GROUPS,
@@ -31,8 +33,12 @@ const props = withDefaults(
     pending?: boolean;
     /** A última leitura falhou e a tela mostra dado velho: o ao vivo fala por extenso. */
     stale?: boolean;
-    /** Linha fina sob o título (ex.: "sáb 03/10 · lotes fechados hoje"). */
+    /** Linha fina sobre o título. */
     eyebrow?: string;
+    /** Linha fina SOB o título, em todo tamanho, com o ponto ao vivo e a hora
+     *  (v4 Qualidade: "22:03 · sáb 03/10 · lotes fechados hoje"). Sem ela, só o
+     *  celular ganha a linha, com a contagem ("06:12 · 6 para finalizar"). */
+    subtitle?: string;
     searchPlaceholder?: string;
     /** Telas sem busca própria (ex.: Timers) escondem o campo. */
     searchable?: boolean;
@@ -45,11 +51,18 @@ const props = withDefaults(
     pending: false,
     stale: false,
     eyebrow: "",
+    subtitle: "",
     searchPlaceholder: "Buscar produto ou SKU",
     searchable: true,
   },
 );
 const emit = defineEmits<{ refresh: [] }>();
+const slots = useSlots();
+const [DefineMenu, ReuseMenu] = createReusableTemplate();
+// Celular sem controles da tela (ex.: Timers): o ⋯ vai para a barra de 56 px.
+const isPhoneQuery = useMediaQuery("(max-width: 767px)");
+const isPhone = computed(() => hydrated.value && isPhoneQuery.value);
+const menuInPhoneBar = computed(() => isPhone.value && !slots.actions);
 const query = defineModel<string>("query", { default: "" });
 
 const searchInput = ref<{ focus: () => void } | null>(null);
@@ -146,58 +159,38 @@ const counterText = computed(() => {
   return props.countLabel || "ativos";
 });
 
+// A linha sob o título: a hora da leitura e o que a tela diz em uma frase. No
+// celular o título não cabe ao lado do ao vivo ("Fechame..."): o ao vivo desce
+// para esta linha, com a contagem (v3 celular: "06:12 · 6 para finalizar").
+const subtitleText = computed(() => {
+  const what =
+    props.subtitle ||
+    (props.count != null ? `${props.count} ${counterText.value}` : "");
+  const when = props.stale ? "Sem atualizar" : readClock.value;
+  return [when, what].filter(Boolean).join(" · ");
+});
+
+// Tablet no toque (deitado ou em pé): a busca vira lupa de 48 px que abre o campo
+// (v3 `depois-producao-dia-tablet` pino 3), e o cabeçalho cabe numa linha só.
+const touchTabletQuery = useMediaQuery("(pointer: coarse) and (min-width: 768px)");
+const touchTablet = computed(() => hydrated.value && touchTabletQuery.value);
+const tabletSearchOpen = ref(false);
+function openTabletSearch() {
+  tabletSearchOpen.value = true;
+  void nextTick(() => searchInput.value?.focus());
+}
+function closeTabletSearchIfEmpty() {
+  if (!query.value.trim()) tabletSearchOpen.value = false;
+}
+
 const ITEM =
   "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent";
 </script>
 
 <template>
-  <OperatorPageHeader :title="title" :eyebrow="eyebrow">
-    <template v-if="$slots.lead" #lead><slot name="lead" /></template>
-    <template #status>
-      <OperatorLiveStatus
-        :tone="liveTone"
-        :time="readClock"
-        :label="liveLabel"
-        :detail="stale ? 'A última leitura falhou: a tela mostra o que tinha.' : ''"
-      />
-    </template>
-    <template v-if="searchable" #search>
-      <UiSearchInput
-        ref="searchInput"
-        v-model="query"
-        class="suite:md:w-[18rem]!"
-        :placeholder="searchPlaceholder"
-        aria-label="Buscar por código, SKU ou receita"
-        shortcut="/"
-      />
-    </template>
-    <template #actions>
-      <!-- O percentual mora COM o número que ele resume — nunca longe dele. -->
-      <div
-        v-if="count != null"
-        class="flex items-center gap-3 pr-1 max-lg:hidden"
-        data-header-progress
-      >
-        <p class="op-label whitespace-nowrap">
-          <span class="op-title tnum">{{ count }}</span>
-          <span class="text-muted-foreground">{{ ` ${counterText}` }}</span>
-        </p>
-        <div
-          v-if="progress != null"
-          class="h-2 w-24 overflow-hidden rounded-full bg-muted"
-          role="progressbar"
-          :aria-valuenow="progress"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          :aria-label="`Progresso do dia: ${progress}%`"
-        >
-          <div
-            class="h-full rounded-full bg-primary transition-all"
-            :style="{ width: `${progress}%` }"
-          />
-        </div>
-      </div>
-      <slot name="actions" />
+  <!-- O ⋯ é um só; mora na linha dos controles ou, no celular sem controles
+       (Timers), na barra de 56 px, sem uma faixa só para ele (R16). -->
+  <DefineMenu>
       <UiPopover v-model:open="menuOpen">
         <UiPopoverTrigger as-child>
           <button
@@ -220,7 +213,7 @@ const ITEM =
             <!-- Tablet em pé e celular: o progresso do dia sai da linha e mora aqui. -->
             <p
               v-if="count != null"
-              class="px-2.5 pt-1 pb-2 op-label lg:hidden"
+              class="px-2.5 pt-1 pb-2 op-label md:hidden"
               data-header-menu-progress
             >
               <span class="op-title tnum">{{ count }}</span>
@@ -294,6 +287,89 @@ const ITEM =
           </div>
         </UiPopoverContent>
       </UiPopover>
+  </DefineMenu>
+  <OperatorPageHeader :title="title" :eyebrow="eyebrow">
+    <template v-if="$slots.lead" #lead><slot name="lead" /></template>
+    <template #subtitle>
+      <p
+        v-if="subtitleText"
+        class="mt-1 flex min-w-0 items-center gap-1.5 op-micro tnum text-muted-foreground"
+        :class="subtitle ? '' : 'md:hidden'"
+        data-header-subtitle
+      >
+        <span
+          class="size-2 shrink-0 rounded-full"
+          :class="stale ? 'bg-warning' : 'bg-success'"
+          aria-hidden="true"
+        />
+        <span class="truncate">{{ subtitleText }}</span>
+      </p>
+    </template>
+    <template #status>
+      <span :class="subtitle ? 'hidden' : 'contents max-md:hidden'">
+        <OperatorLiveStatus
+          :tone="liveTone"
+          :time="readClock"
+          :label="liveLabel"
+          :detail="stale ? 'A última leitura falhou: a tela mostra o que tinha.' : ''"
+        />
+      </span>
+    </template>
+    <template v-if="searchable" #search>
+      <button
+        v-if="touchTablet && !tabletSearchOpen && !query"
+        type="button"
+        class="grid size-12 place-items-center rounded-md border border-border bg-card text-foreground transition hover:bg-accent"
+        aria-label="Buscar produto ou SKU"
+        data-header-search-lupa
+        @click="openTabletSearch"
+      >
+        <Icon name="lucide:search" class="size-5" />
+      </button>
+      <UiSearchInput
+        v-else
+        ref="searchInput"
+        v-model="query"
+        class="suite:md:w-[18rem]!"
+        :placeholder="searchPlaceholder"
+        aria-label="Buscar por código, SKU ou receita"
+        shortcut="/"
+        @focusout="closeTabletSearchIfEmpty"
+      />
+    </template>
+    <template v-if="menuInPhoneBar" #phone-actions>
+      <ReuseMenu />
+    </template>
+    <template v-if="!menuInPhoneBar" #actions>
+      <!-- O percentual mora COM o número que ele resume — nunca longe dele. -->
+      <!-- Do tablet em pé para cima o progresso fica na linha do título (R15); no
+           tablet em pé a barra desce para baixo do número, como na v3. -->
+      <div
+        v-if="count != null"
+        class="flex items-center gap-3 pr-1 max-md:hidden max-lg:flex-col max-lg:items-end max-lg:gap-1"
+        data-header-progress
+      >
+        <p class="op-label whitespace-nowrap">
+          <span class="op-title tnum">{{ count }}</span>
+          <span class="text-muted-foreground">{{ ` ${counterText}` }}</span>
+        </p>
+        <div
+          v-if="progress != null"
+          class="h-2 w-24 overflow-hidden rounded-full bg-muted max-lg:h-1.5 max-lg:w-full"
+          role="progressbar"
+          :aria-valuenow="progress"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :aria-label="`Progresso do dia: ${progress}%`"
+        >
+          <div
+            class="h-full rounded-full bg-primary transition-all"
+            :style="{ width: `${progress}%` }"
+          />
+        </div>
+      </div>
+      <slot name="actions" />
+      <ReuseMenu v-if="!menuInPhoneBar" />
     </template>
     <template v-if="$slots.filters" #filters><slot name="filters" /></template>
     <template v-if="$slots.below" #below><slot name="below" /></template>
