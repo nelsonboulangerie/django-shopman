@@ -64,25 +64,30 @@ function openSearch() {
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 pr-2 pl-4 md:px-4 md:pt-3 md:pb-2.5">
       <!-- celular: o selo do app (o rail não existe abaixo de md) -->
       <!-- Tela com caminho de volta (`#lead`): no celular o voltar ocupa o lugar do selo. -->
+      <!-- O alvo de toque é de 44px (a régua da casa); o selo desenhado segue com 36. -->
       <a
         v-if="hubUrl && !$slots.lead"
         :href="hubUrl"
         :target="hubLink.target"
         :rel="hubLink.rel"
-        class="my-2.5 grid size-9 shrink-0 place-items-center overflow-hidden rounded-lg md:hidden"
-        :style="{ background: appColor }"
+        class="-mx-1 my-1.5 grid size-11 shrink-0 place-items-center rounded-lg md:hidden"
         :aria-label="`${identity?.label || 'App'}: ${HUB_BACK}`"
         data-page-header-app
       >
-        <img
-          v-if="identity?.iconSrc && !appIconBroken"
-          :src="identity.iconSrc"
-          class="size-9"
-          alt=""
-          decoding="async"
-          @error="appIconBroken = true"
+        <span
+          class="grid size-9 place-items-center overflow-hidden rounded-lg"
+          :style="{ background: appColor }"
         >
-        <Icon v-else :name="identity?.icon?.includes(':') ? identity.icon : `lucide:${identity?.icon || 'layout-grid'}`" class="size-5 text-white" aria-hidden="true" />
+          <img
+            v-if="identity?.iconSrc && !appIconBroken"
+            :src="identity.iconSrc"
+            class="size-9"
+            alt=""
+            decoding="async"
+            @error="appIconBroken = true"
+          >
+          <Icon v-else :name="identity?.icon?.includes(':') ? identity.icon : `lucide:${identity?.icon || 'layout-grid'}`" class="size-5 text-white" aria-hidden="true" />
+        </span>
       </a>
 
       <!-- tablet/desktop com o rail oculto: o caminho de volta para ele -->

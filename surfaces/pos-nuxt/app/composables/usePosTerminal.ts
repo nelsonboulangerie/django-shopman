@@ -20,6 +20,8 @@ export async function usePosTerminal() {
   // como se a loja não tivesse nada aberto. Agora o servidor decide o cadeado.
   // Resolvido ANTES do await: depois dele o contexto do Nuxt já não existe.
   const { flagIfStationLocked } = useStationLock();
+  // Antes do `await`: depois dele o contexto do Nuxt já não está garantido.
+  const sharedTabs = usePosTabsState();
 
   const { data, pending, error, refresh } = await useFetch<POSResponse>(
     () => apiPath("/api/v1/backstage/pos/"),
@@ -31,6 +33,9 @@ export async function usePosTerminal() {
   const pos = computed<POSProjection | null>(() => data.value?.pos ?? null);
   const shift = computed<POSShiftSummaryProjection | null>(() => data.value?.shift ?? null);
   const tabs = computed<POSTabProjection[]>(() => data.value?.tabs ?? []);
+  // O selo das Comandas no rail (camada da suíte) conta as em uso em qualquer tela
+  // do PDV; o rail lê daqui, sem uma segunda leitura.
+  watch(tabs, (value) => { sharedTabs.value = value; }, { immediate: true });
   const operators = computed<POSOperatorProjection[]>(() => pos.value?.operators ?? []);
   const actions = computed<Action[]>(() => pos.value?.actions ?? []);
 

@@ -77,51 +77,53 @@ const strikeByWeekday = computed(() =>
   Object.fromEntries((report.value?.beverage.by_weekday ?? []).map((c) => [c.weekday, c])),
 );
 
-const thClass = "whitespace-nowrap pb-2 pl-2 text-right text-xs font-medium text-muted-foreground";
-const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-foreground";
+const thClass = "whitespace-nowrap pb-2 pl-2 text-right op-eyebrow text-muted-foreground";
+const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
 </script>
 
 <template>
-  <main class="flex flex-1 flex-col gap-4 p-4">
-    <section class="flex flex-wrap items-end gap-3">
-      <div class="min-w-0 flex-1">
-        <h1 class="text-lg font-semibold text-foreground">Perfis de consumo do balcão</h1>
-        <p class="text-xs text-muted-foreground">
-          Perfil <strong>presumido</strong> pela cesta: cada produto tem uma vocação (consome aqui · leva ·
-          híbrido) editável em Configurações › Como vendemos. Entrega e iFood ficam fora da pergunta e dentro
-          da conta. A hora é a do registro da venda.
-        </p>
-      </div>
-      <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-        Dia da semana
-        <UiNativeSelect
-          :value="filters.weekday"
-          @change="apply({ weekday: ($event.target as HTMLSelectElement).value })"
-        >
-          <option value="">Todos</option>
-          <option v-for="(label, index) in WEEKDAY_LABELS" :key="label" :value="String(index)">{{ label }}</option>
-        </UiNativeSelect>
-      </label>
-      <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-        Faixa de hora
-        <UiNativeSelect
-          :value="filters.hour_band"
-          @change="apply({ hour_band: ($event.target as HTMLSelectElement).value })"
-        >
-          <option value="">Todas</option>
-          <option v-for="band in bandOptions" :key="band.key" :value="band.key">{{ band.title }}</option>
-        </UiNativeSelect>
-      </label>
-    </section>
+  <div class="flex min-h-0 flex-1 flex-col">
+    <OperatorPageHeader title="Quem compra no balcão?">
+      <template #actions>
+        <BiWindowPicker />
+        <BiPageMenu />
+      </template>
+      <template #phone-actions>
+        <BiPhoneBell />
+      </template>
+      <template #filters>
+        <label class="inline-flex items-center gap-2 op-label text-muted-foreground">
+          Dia da semana
+          <UiNativeSelect
+            :value="filters.weekday"
+            @change="apply({ weekday: ($event.target as HTMLSelectElement).value })"
+          >
+            <option value="">Todos</option>
+            <option v-for="(label, index) in WEEKDAY_LABELS" :key="label" :value="String(index)">{{ label }}</option>
+          </UiNativeSelect>
+        </label>
+        <label class="inline-flex items-center gap-2 op-label text-muted-foreground">
+          Faixa de hora
+          <UiNativeSelect
+            :value="filters.hour_band"
+            @change="apply({ hour_band: ($event.target as HTMLSelectElement).value })"
+          >
+            <option value="">Todas</option>
+            <option v-for="band in bandOptions" :key="band.key" :value="band.key">{{ band.title }}</option>
+          </UiNativeSelect>
+        </label>
+      </template>
+    </OperatorPageHeader>
 
-    <p v-if="pending" class="text-sm text-muted-foreground">Carregando…</p>
-    <div v-else-if="error" class="flex items-center gap-3">
-      <p class="text-sm text-muted-foreground">Não deu para carregar os números.</p>
-      <button type="button" class="h-9 rounded-md border border-border px-3 text-sm font-medium" @click="refresh()">
-        Tentar de novo
-      </button>
-    </div>
-    <template v-else-if="report">
+    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+      <p class="op-micro text-muted-foreground">
+        Perfil <strong>presumido</strong> pela cesta: cada produto tem uma vocação (consome aqui · leva ·
+        híbrido) editável em Configurações › Como vendemos. Entrega e iFood ficam fora da pergunta e dentro
+        da conta. A hora é a do registro da venda.
+      </p>
+
+      <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
+      <template v-if="report">
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
           label="Pedidos de balcão"
@@ -145,19 +147,19 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
         />
       </div>
 
-      <section class="rounded-md border border-border bg-card p-3">
-        <h2 class="text-lg font-semibold text-foreground">Os três perfis, em três leituras</h2>
-        <p class="mb-3 text-xs text-muted-foreground">
+      <section class="rounded-lg border border-border bg-card px-4 py-3">
+        <h2 class="op-title text-foreground">Os três perfis, em três leituras</h2>
+        <p class="mb-3 op-micro text-muted-foreground">
           Piso lê o ambíguo como levar; teto, como consumo local; vigente é a regra do explorador. % sobre os
           pedidos e a receita de balcão do recorte.
         </p>
-        <div class="grid gap-4 xl:grid-cols-3">
+        <div class="grid gap-3 xl:grid-cols-3">
           <div v-for="reading in report.readings" :key="reading.key" class="min-w-0 overflow-x-auto">
-            <h3 class="mb-1 text-sm font-semibold text-foreground">{{ reading.label }}</h3>
-            <table class="w-full text-sm">
+            <h3 class="mb-1 op-label font-semibold text-foreground">{{ reading.label }}</h3>
+            <table class="w-full op-label">
               <thead>
                 <tr class="border-b border-border">
-                  <th class="pb-2 text-left text-xs font-medium text-muted-foreground">Perfil</th>
+                  <th class="pb-2 text-left op-eyebrow text-muted-foreground">Perfil</th>
                   <th :class="thClass">Pedidos</th>
                   <th :class="thClass">Receita</th>
                   <th :class="thClass">Ticket</th>
@@ -174,11 +176,11 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
                   <td class="py-1.5 pr-2 font-medium">{{ row.label }}</td>
                   <td :class="tdClass">
                     {{ formatInt(row.orders) }}
-                    <span class="text-xs text-muted-foreground">{{ formatPercent(row.orders_share) }}</span>
+                    <span class="op-micro text-muted-foreground">{{ formatPercent(row.orders_share) }}</span>
                   </td>
                   <td :class="tdClass">
                     {{ formatMoneyCompact(row.revenue_q) }}
-                    <span class="text-xs text-muted-foreground">{{ formatPercent(row.revenue_share) }}</span>
+                    <span class="op-micro text-muted-foreground">{{ formatPercent(row.revenue_share) }}</span>
                   </td>
                   <td :class="tdClass">{{ formatMoney(row.average_ticket_q) }}</td>
                   <td :class="tdClass">{{ formatQty(row.units_per_order) }} · {{ formatQty(row.distinct_per_order) }}</td>
@@ -189,9 +191,9 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
         </div>
       </section>
 
-      <section class="rounded-md border border-border bg-card p-3">
-        <h2 class="text-lg font-semibold text-foreground">Estimativa ponderada: quantos comeram aqui</h2>
-        <p class="mb-3 text-xs text-muted-foreground">
+      <section class="rounded-lg border border-border bg-card px-4 py-3">
+        <h2 class="op-title text-foreground">Estimativa ponderada: quantos comeram aqui</h2>
+        <p class="mb-3 op-micro text-muted-foreground">
           A vocação em graus: cada produto tem um peso (% de chance de ser consumido aqui, editável em
           Configurações › Como vendemos, por papel e por produto) e a cesta vale o seu maior peso. É esperança
           sob os pesos vigentes, não medida; a faixa piso–teto abaixo continua sendo o que o dado garante.
@@ -213,10 +215,10 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
             :value="formatInt(report.estimate.weighted_orders)"
             :hint="report.estimate.unweighted_orders ? `${formatInt(report.estimate.unweighted_orders)} sem peso ficam fora desta conta` : 'todos os pedidos de balcão entraram'"
           />
-          <div class="rounded-md border border-border bg-card p-3">
-            <p class="text-xs font-medium text-muted-foreground">Por faixa · % que comeu aqui</p>
-            <ul class="mt-1 flex flex-col gap-0.5 text-sm">
-              <li v-for="(band, index) in bandOptions" :key="band.key" class="flex justify-between tabular-nums">
+          <div class="rounded-lg border border-border bg-card px-4 py-3">
+            <p class="op-eyebrow text-muted-foreground">Por faixa · % que comeu aqui</p>
+            <ul class="mt-1 flex flex-col gap-0.5 op-label">
+              <li v-for="(band, index) in bandOptions" :key="band.key" class="flex justify-between tnum">
                 <span class="text-muted-foreground">{{ band.label }}</span>
                 <span class="text-foreground">{{ report.estimate.orders_by_band[index] ? formatPercent(Math.round((report.estimate.seated_by_band[index]! * 1000) / report.estimate.orders_by_band[index]!) / 10) : '—' }}</span>
               </li>
@@ -225,17 +227,17 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
         </div>
       </section>
 
-      <div class="grid gap-4 lg:grid-cols-2">
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">A faixa honesta</h2>
-          <p class="mb-3 text-xs text-muted-foreground">
+      <div class="grid gap-3 lg:grid-cols-2">
+        <section class="rounded-lg border border-border bg-card px-4 py-3">
+          <h2 class="op-title text-foreground">A faixa honesta</h2>
+          <p class="mb-3 op-micro text-muted-foreground">
             {{ sensitivityHeadline(report.sensitivity.orders_changed, report.sensitivity.share_changed, report.counter_orders) }}
           </p>
-          <ul class="flex flex-col gap-2 text-sm">
+          <ul class="flex flex-col gap-2 op-label">
             <li v-for="range in report.sensitivity.ranges" :key="range.profile" class="flex flex-col">
               <span class="font-medium text-foreground">{{ range.label }}</span>
-              <span class="tabular-nums text-foreground">{{ rangeText(range) }}</span>
-              <span v-if="previousByProfile[range.profile]" class="text-xs tabular-nums text-muted-foreground">
+              <span class="tnum text-foreground">{{ rangeText(range) }}</span>
+              <span v-if="previousByProfile[range.profile]" class="op-micro tnum text-muted-foreground">
                 vigente {{ formatPercent(currentRows.find((r) => r.profile === range.profile)?.orders_share ?? 0) }}
                 · período anterior {{ formatPercent(previousByProfile[range.profile]!.orders_share) }}
                 ({{ formatInt(previousByProfile[range.profile]!.orders) }} pedidos)
@@ -244,31 +246,31 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
           </ul>
         </section>
 
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Conciliação</h2>
-          <p class="mb-3 text-xs text-muted-foreground">
+        <section class="rounded-lg border border-border bg-card px-4 py-3">
+          <h2 class="op-title text-foreground">Conciliação</h2>
+          <p class="mb-3 op-micro text-muted-foreground">
             A + B + C + sem etiqueta + entrega = faturamento do recorte. Sem filtros, é o mesmo número da aba Vendas.
           </p>
-          <dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
+          <dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 op-label">
             <dt class="text-muted-foreground">Balcão · {{ formatInt(report.counter_orders) }} pedidos</dt>
-            <dd class="text-right tabular-nums text-foreground">{{ formatMoney(report.counter_revenue_q) }}</dd>
+            <dd class="text-right tnum text-foreground">{{ formatMoney(report.counter_revenue_q) }}</dd>
             <dt class="text-muted-foreground">Entrega e iFood · {{ formatInt(report.delivery_orders) }} pedidos (fora da pergunta)</dt>
-            <dd class="text-right tabular-nums text-foreground">{{ formatMoney(report.delivery_revenue_q) }}</dd>
+            <dd class="text-right tnum text-foreground">{{ formatMoney(report.delivery_revenue_q) }}</dd>
             <dt class="border-t border-border pt-1 font-medium text-foreground">Faturamento do recorte</dt>
-            <dd class="border-t border-border pt-1 text-right font-medium tabular-nums text-foreground">{{ formatMoney(report.revenue_total_q) }}</dd>
+            <dd class="border-t border-border pt-1 text-right font-medium tnum text-foreground">{{ formatMoney(report.revenue_total_q) }}</dd>
           </dl>
         </section>
       </div>
 
-      <section class="rounded-md border border-border bg-card p-3">
+      <section class="rounded-lg border border-border bg-card px-4 py-3">
         <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 class="text-lg font-semibold text-foreground">Perfil por faixa de hora</h2>
-            <p class="text-xs text-muted-foreground">
+            <h2 class="op-title text-foreground">Perfil por faixa de hora</h2>
+            <p class="op-micro text-muted-foreground">
               Pedidos por faixa e % dentro da faixa. Quem almoça às 13h e paga às 14h05 cai em "Tarde".
             </p>
           </div>
-          <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
             Leitura
             <UiNativeSelect v-model="matrixReading">
               <option v-for="reading in report.readings" :key="reading.key" :value="reading.key">{{ reading.label }}</option>
@@ -276,10 +278,10 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
           </label>
         </div>
         <div class="overflow-x-auto">
-          <table class="w-full text-sm">
+          <table class="w-full op-label">
             <thead>
               <tr class="border-b border-border">
-                <th class="pb-2 text-left text-xs font-medium text-muted-foreground">Faixa</th>
+                <th class="pb-2 text-left op-eyebrow text-muted-foreground">Faixa</th>
                 <th :class="thClass">Pedidos</th>
                 <th v-for="row in currentRows" :key="row.profile" :class="thClass">{{ row.profile === 'unclassified' ? 'Sem etiqueta' : row.profile }}</th>
               </tr>
@@ -290,7 +292,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
                 <td :class="tdClass">{{ formatInt(row.total) }}</td>
                 <td v-for="cell in row.cells" :key="cell.profile" :class="tdClass">
                   {{ formatInt(cell.orders) }}
-                  <span class="text-xs text-muted-foreground">({{ formatPercent(cell.share) }})</span>
+                  <span class="op-micro text-muted-foreground">({{ formatPercent(cell.share) }})</span>
                 </td>
               </tr>
             </tbody>
@@ -298,25 +300,25 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
         </div>
       </section>
 
-      <div class="grid gap-4 lg:grid-cols-2">
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Receita por categoria</h2>
-          <p class="mb-3 text-xs text-muted-foreground">
+      <div class="grid gap-3 lg:grid-cols-2">
+        <section class="rounded-lg border border-border bg-card px-4 py-3">
+          <h2 class="op-title text-foreground">Receita por categoria</h2>
+          <p class="mb-3 op-micro text-muted-foreground">
             Soma das linhas de balcão (histórico: categoria do Yooga; nativo: coleção do catálogo).
             Difere do faturamento por {{ formatMoney(report.category_header_gap_q) }} de desconto/acréscimo de venda.
           </p>
-          <div class="mb-3 rounded-md bg-muted p-2 text-sm">
+          <div class="mb-3 rounded-md bg-muted p-2 op-label">
             <span class="font-medium text-foreground">Bebida pronta industrializada:</span>
-            <span class="tabular-nums text-foreground"> {{ formatMoney(report.beverage.ready_revenue_q) }}</span>
+            <span class="tnum text-foreground"> {{ formatMoney(report.beverage.ready_revenue_q) }}</span>
             <span class="text-muted-foreground"> · {{ formatPercent(report.beverage.ready_share) }} do faturamento de balcão</span>
           </div>
           <ChartHBarList v-if="categoryRows.length" :rows="categoryRows" />
-          <p v-else class="text-sm text-muted-foreground">Sem vendas no recorte.</p>
+          <p v-else class="op-label text-muted-foreground">Sem vendas no recorte.</p>
         </section>
 
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Bebida no pedido</h2>
-          <p class="mb-3 text-xs text-muted-foreground">
+        <section class="rounded-lg border border-border bg-card px-4 py-3">
+          <h2 class="op-title text-foreground">Bebida no pedido</h2>
+          <p class="mb-3 op-micro text-muted-foreground">
             A bebida indica o perfil, mas não decide: há C sem bebida (doce na mesa) e o café pra levar aumenta B e C.
           </p>
           <div class="mb-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
@@ -329,12 +331,12 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
               :hint="`${formatInt(report.beverage.beverage_only_orders)} pedidos · ticket ${formatMoney(report.beverage.beverage_only_ticket_q)} · medido, não estimado`"
             />
           </div>
-          <p class="mb-1 text-xs font-medium text-muted-foreground">% de pedidos com bebida · dia da semana × faixa (período inteiro)</p>
+          <p class="mb-1 op-eyebrow text-muted-foreground">% de pedidos com bebida · dia da semana × faixa (período inteiro)</p>
           <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+            <table class="w-full op-label">
               <thead>
                 <tr class="border-b border-border">
-                  <th class="pb-2 text-left text-xs font-medium text-muted-foreground"></th>
+                  <th class="pb-2 text-left op-eyebrow text-muted-foreground"></th>
                   <th v-for="band in bandOptions" :key="band.key" :class="thClass">{{ band.label }}</th>
                   <th :class="thClass">Dia</th>
                 </tr>
@@ -348,7 +350,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
                   <td :class="tdClass">{{ strikeByWeekday[row.weekday]?.orders ? formatPercent(strikeByWeekday[row.weekday]!.rate) : '—' }}</td>
                 </tr>
                 <tr>
-                  <td class="py-1 pr-2 text-xs font-medium text-muted-foreground">Faixa</td>
+                  <td class="py-1 pr-2 op-eyebrow text-muted-foreground">Faixa</td>
                   <td v-for="band in bandOptions" :key="band.key" :class="tdClass">{{ strikeByBand[band.key]?.orders ? formatPercent(strikeByBand[band.key]!.rate) : '—' }}</td>
                   <td :class="tdClass"></td>
                 </tr>
@@ -358,17 +360,17 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
         </section>
       </div>
 
-      <section class="rounded-md border border-border bg-card p-3">
-        <h2 class="text-lg font-semibold text-foreground">Receita por assento por hora</h2>
-        <p class="mb-3 text-xs text-muted-foreground">
+      <section class="rounded-lg border border-border bg-card px-4 py-3">
+        <h2 class="op-title text-foreground">Receita por assento por hora</h2>
+        <p class="mb-3 op-micro text-muted-foreground">
           Receita dos pedidos com item local ÷ (assentos × horas da faixa × dias com venda). Assentos:
           {{ formatInt(report.seats) }} ({{ report.seats_source }}). Todas as faixas do recorte de dia da semana.
         </p>
         <div class="overflow-x-auto">
-          <table class="w-full text-sm">
+          <table class="w-full op-label">
             <thead>
               <tr class="border-b border-border">
-                <th class="pb-2 text-left text-xs font-medium text-muted-foreground">Faixa</th>
+                <th class="pb-2 text-left op-eyebrow text-muted-foreground">Faixa</th>
                 <th :class="thClass">Receita local</th>
                 <th :class="thClass">Denominador</th>
                 <th :class="thClass">Receita por assento-hora</th>
@@ -378,13 +380,14 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tabular-nums text-fore
               <tr v-for="row in report.revpash" :key="row.band" class="border-b border-border last:border-0">
                 <td class="py-1.5 pr-2 font-medium text-foreground">{{ row.title }}</td>
                 <td :class="tdClass">{{ formatMoney(row.revenue_local_q) }}</td>
-                <td class="py-1.5 text-right text-xs tabular-nums text-muted-foreground">{{ revpashHint(row.seats, row.hours, row.days) }}</td>
+                <td class="py-1.5 text-right op-micro tnum text-muted-foreground">{{ revpashHint(row.seats, row.hours, row.days) }}</td>
                 <td :class="tdClass">{{ formatMoney(row.revpash_q) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </section>
-    </template>
-  </main>
+      </template>
+    </main>
+  </div>
 </template>

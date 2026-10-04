@@ -47,5 +47,25 @@ export async function useDayClosing({ action }: DayClosingDeps) {
     }
   }
 
-  return { closing, pending, error, accessDenied, refresh, submitting, submit };
+  // "Explicar o dia estranho" (V4-PDV): o sistema notou um sinal (o episódio) e quem
+  // fecha diz o que houve, escolhendo no catálogo; `kindRef` vazio é "não houve nada".
+  // O serviço e a rota já existiam (`closing/episodes/<id>/`); faltava a tela.
+  const answering = ref<number | null>(null);
+  async function answerEpisode(episodeId: number, kindRef: string, note = ""): Promise<boolean> {
+    if (answering.value !== null) return false;
+    answering.value = episodeId;
+    try {
+      await action.call(`/api/v1/backstage/closing/episodes/${episodeId}/`, { body: { kind_ref: kindRef, note } });
+      await refresh();
+      toast.success(kindRef ? "Resposta registrada. O dia fica marcado para o B.I. e para o plano." : "Registrado: não houve nada.");
+      return true;
+    } catch (err) {
+      toast.error(`${httpErrorMessage(err, "A resposta não foi registrada.")} Tente de novo.`);
+      return false;
+    } finally {
+      answering.value = null;
+    }
+  }
+
+  return { closing, pending, error, accessDenied, refresh, submitting, submit, answering, answerEpisode };
 }

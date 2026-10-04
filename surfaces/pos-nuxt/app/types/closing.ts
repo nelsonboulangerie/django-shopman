@@ -63,6 +63,25 @@ export interface DayClosingProjection {
   has_pending_production: boolean;
   upcoming_preorders: ClosingUpcomingPreorder[];
   has_upcoming_preorders: boolean;
+  /** "Explicar o dia estranho": vazio na maioria dos dias. */
+  pending_episodes?: ClosingPendingEpisode[];
+  episode_options?: ClosingEpisodeOption[];
+  has_pending_episodes?: boolean;
+}
+
+/** Algo estranho que o sistema notou no dia e ninguém explicou (`OperationEpisode`). */
+export interface ClosingPendingEpisode {
+  id: number;
+  /** O que o sistema MEDIU, em português ("nenhuma venda entre 14h e 16h"). */
+  signal: string;
+  window_display: string;
+}
+
+/** Uma resposta possível, do catálogo (`OperationEpisodeKind`): escolher, nunca digitar. */
+export interface ClosingEpisodeOption {
+  ref: string;
+  label: string;
+  hint: string;
 }
 
 export interface DayClosingResponse {

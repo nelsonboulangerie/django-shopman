@@ -23,6 +23,7 @@ import {
 } from "~/presentation/selection";
 import {
   lineDiscountBadge,
+  lineListUnitQ,
   lineListTotalDisplay,
   lineTotalQ,
   unitChargedQ,
@@ -60,7 +61,13 @@ const props = defineProps<{
    * mostrar o gesto seria deixar o operador fazer algo que some ao salvar.
    */
   lineAdjustmentsBlockedReason?: string;
+  /**
+   * A comanda é a FOLHA de baixo (tablet e celular, v4 `pos-tablet.jpg`): fechada,
+   * resumo e Pagamento; aberta, as linhas e o editor. No desktop ela é a coluna.
+   */
+  sheet?: boolean;
 }>();
+const sheetOpen = ref(false);
 const lineAdjustmentsBlocked = computed(() => Boolean(props.lineAdjustmentsBlockedReason));
 const primaryText = computed(() => props.primaryLabel || "Pagamento");
 const primaryIconName = computed(() => props.primaryIcon || "lucide:credit-card");
@@ -83,7 +90,8 @@ const emit = defineEmits<{
   setDiscount: [string, number, string, "percent" | "fixed"];
   /** Operator unit-price override (numpad "Preço"); gated by manager approval. */
   prepare: [];
-  move: [];
+  /** Transferir: no modo seleção leva as linhas marcadas (o diálogo nasce com elas). */
+  move: [lineIds?: string[]];
   fire: [];
   unfire: [string];
   /** Multi-select batch (spec §2.2): fire/unfire exatamente estas linhas. */
@@ -328,7 +336,67 @@ watch(numpadMode, () => syncBufferToMode());
 
 function selectLine(lineId: string) {
   selectedLineId.value = lineId;
+  editorClosed.value = false;
   syncBufferToMode();
+}
+
+// ── Editor da linha, sob demanda (v4) ─────────────────────────────────────────
+// Aberto para a linha ativa (a tocada, ou a última lançada); "Fechar" (Esc) devolve
+// a lista inteira até a próxima linha tocada, o próximo produto lançado ou o próximo
+// dígito do teclado físico (o teclado continua editando a linha ativa, como sempre).
+// No toque (tablet, prévia `pos-tablet.jpg`) o editor e o numérico só aparecem ao
+// tocar a linha: a lista fica inteira enquanto se lança.
+const coarsePointer = useMediaQuery("(pointer: coarse)");
+const editorClosed = ref(false);
+onMounted(() => { if (coarsePointer.value) editorClosed.value = true; });
+const editorVisible = computed(() => Boolean(activeItem.value) && !batchMode.value && !editorClosed.value);
+function closeEditor() {
+  editorClosed.value = true;
+  discountOpen.value = false;
+  if (inDiscountMode.value) numpadMode.value = "qty";
+}
+watch(
+  () => props.items.length,
+  (length, previous) => {
+    if (length > (previous ?? 0) && !coarsePointer.value) editorClosed.value = false;
+  },
+);
+
+// O desconto abre no mesmo lugar do editor: formato (% ou R$), valor e motivo. Na
+// seleção, vale para as linhas marcadas.
+const discountOpen = ref(false);
+const discountModes = [
+  { ref: "disc", label: "Em %" },
+  { ref: "disc_brl", label: "Em R$" },
+] as const;
+function toggleDiscount() {
+  if (mutationBusy.value || lineAdjustmentsBlocked.value) return;
+  discountOpen.value = !discountOpen.value;
+  if (discountOpen.value && !inDiscountMode.value) setMode(activeItem.value?.discount?.type === "fixed" ? "disc_brl" : "disc");
+  if (!discountOpen.value && !selectMode.value) setMode("qty");
+}
+const discountButtonLabel = computed(() => {
+  const discount = activeItem.value?.discount;
+  if (!discount?.value) return "Desconto";
+  return discount.type === "fixed"
+    ? `Desconto: ${formatBRL(Math.round(discount.value * 100))}`
+    : `Desconto: ${String(discount.value).replace(".", ",")}%`;
+});
+
+// O numérico da tela: no desconto (valor com vírgula) e, nos dispositivos de toque
+// (tablet, sem teclado físico), também para a quantidade. No balcão com teclado, a
+// quantidade se digita direto (a dica fica no pé da lista).
+const numpadVisible = computed(() => {
+  if (batchMode.value) return discountOpen.value && !lineAdjustmentsBlocked.value;
+  if (!editorVisible.value) return false;
+  return discountOpen.value || (coarsePointer.value && !lineAdjustmentsBlocked.value);
+});
+
+/** "Na cozinha 21:52": o selo da cozinha com a hora do envio, quando ela existe. */
+function kitchenFact(item: POSCartItem): string {
+  const badge = kitchenBadge(item);
+  const firedAt = item.kitchen_tickets?.[0]?.fired_at_display || "";
+  return badge.label === "Na cozinha" && firedAt ? `${badge.label} ${firedAt}` : badge.label;
 }
 
 function setMode(mode: "qty" | "disc" | "disc_brl") {
@@ -591,17 +659,42 @@ function onWindowKeydown(event: KeyboardEvent) {
   if (editing || !props.items.length || !activeLineId.value) return;
   if (event.key >= "0" && event.key <= "9") {
     event.preventDefault();
+    revealForKeyboard();
     onDigit(event.key);
   } else if (event.key === "Backspace") {
     event.preventDefault();
+    revealForKeyboard();
     onBackspace();
+  } else if (!batchMode.value && editorVisible.value && event.key === "Escape") {
+    // v4: "Fechar · Esc". Fora de campo, o Esc da venda não tinha outro dono.
+    event.preventDefault();
+    closeEditor();
+  } else if (!batchMode.value && event.key === "Delete") {
+    // v4: "Del remove" a linha ativa (sempre com a confirmação).
+    event.preventDefault();
+    askRemove(activeLineId.value);
+  } else if (!batchMode.value && editorVisible.value && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+    // v4: "↑↓ troca a linha" com o editor aberto.
+    event.preventDefault();
+    const index = props.items.findIndex((entry) => entry.line_id === activeLineId.value);
+    const next = props.items[Math.max(0, Math.min(props.items.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))];
+    if (next) selectLine(next.line_id);
   }
+}
+/** O teclado físico digitou: o editor (ou o desconto do lote) volta à vista. */
+function revealForKeyboard() {
+  if (batchMode.value) {
+    if (selectMode.value && !lineAdjustmentsBlocked.value) discountOpen.value = true;
+    return;
+  }
+  editorClosed.value = false;
 }
 onMounted(() => window.addEventListener("keydown", onWindowKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
 const batchMode = ref(false);
 function finishItemMode() {
   batchMode.value = false;
+  discountOpen.value = false;
   expandedLineId.value = "";
   clearSelection();
   listEntry.value?.focus();
@@ -609,6 +702,7 @@ function finishItemMode() {
 function toggleBatchMode() {
   if (batchMode.value) { finishItemMode(); return; }
   batchMode.value = true;
+  discountOpen.value = false;
   expandedLineId.value = "";
   clearSelection();
   void focusItem();
@@ -618,16 +712,9 @@ function markItem(lineId: string) {
   toggleSelect(lineId);
 }
 const mutationBusy = computed(() => props.loading || props.saving);
-const modes = [
-  { ref: "qty", label: "Qtd" },
-  { ref: "disc", label: "Desc %" },
-  { ref: "disc_brl", label: "Desc R$" },
-  { ref: "note", label: "Obs." },
-] as const;
-// Os modos que o teclado oferece: só "Qtd" quando desconto e observação de item
-// estão fora da tela (a frase do porquê fica logo abaixo do teclado).
-const visibleModes = computed(() => (lineAdjustmentsBlocked.value ? modes.filter((mode) => mode.ref === "qty") : modes));
-function chooseMode(mode: (typeof modes)[number]["ref"]) {
+/** O que o editor da linha escolhe: quantidade, desconto (% ou R$) ou observação. */
+type LineMode = "qty" | "disc" | "disc_brl" | "note";
+function chooseMode(mode: LineMode) {
   if (mutationBusy.value) return;
   if (lineAdjustmentsBlocked.value && mode !== "qty") return;
   if (mode === "note") openNoteDialog();
@@ -741,59 +828,248 @@ async function navigateItems(event: KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
     if (expandedLineId.value) expandedLineId.value = "";
-    else finishItemMode();
+    else if (batchMode.value) finishItemMode();
+    else closeEditor();
   }
 }
 defineExpose({ focusItem, onDigit, onBackspace });
 </script>
 
 <template>
-  <UiCard
+  <div
     v-if="requiresTab && !hasOpenTab"
-    class="gap-4 rounded-md p-4 shadow-none md:h-full md:min-h-0"
+    class="grid content-center gap-4 bg-card p-6 text-center md:h-full md:min-h-0"
   >
-    <div class="grid gap-3 text-center">
-      <div
-        class="mx-auto grid size-11 place-items-center rounded-md border bg-muted"
-      >
-        <Icon name="lucide:receipt-text" class="size-5 text-muted-foreground" />
-      </div>
-      <div class="grid gap-1">
-        <p class="text-base font-semibold">Abra uma comanda</p>
-        <p class="text-sm text-muted-foreground">
-          Escolha uma comanda para este atendimento não se perder.
-        </p>
-      </div>
-      <UiButton type="button" :disabled="loading" @click="$emit('requestTab')">
-        Escolher comanda
-      </UiButton>
+    <div class="mx-auto grid size-12 place-items-center rounded-full bg-secondary">
+      <Icon name="lucide:receipt-text" class="size-6 text-muted-foreground" />
     </div>
-  </UiCard>
+    <div class="grid gap-1">
+      <p class="op-title">Abra uma comanda</p>
+      <p class="op-body text-muted-foreground">
+        Escolha uma comanda para este atendimento não se perder.
+      </p>
+    </div>
+    <UiButton type="button" size="lg" :disabled="loading" @click="$emit('requestTab')">
+      Escolher comanda
+    </UiButton>
+  </div>
 
+  <!-- COMPOSIÇÃO (v4, `pos-sale4.html`): a comanda é lista + total + Pagamento, e só.
+       O editor da linha aparece sob demanda, colado no pé da lista; o numérico da
+       tela só no desconto e nos dispositivos de toque (no balcão o teclado físico
+       digita a quantidade). -->
   <div
     v-else
-    class="flex min-h-0 flex-col overflow-hidden bg-card text-card-foreground md:h-full"
+    class="relative flex min-h-0 flex-col bg-card text-card-foreground"
+    :class="sheet ? 'max-h-[82dvh] rounded-t-2xl border-t border-border shadow-[0_-12px_30px_rgb(0_0_0/.16)]' : 'overflow-hidden md:h-full'"
+    :data-pos-sheet="sheet ? (sheetOpen ? 'open' : 'closed') : undefined"
+    data-pos-ticket
   >
-    <header
-      class="flex min-h-[var(--pos-context-header-height,53px)] shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5"
-    >
-      <div class="flex items-center gap-2">
-        <h3 class="whitespace-nowrap text-base font-semibold">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
+    <!-- FOLHA (v4 tablet, `pos-tablet.jpg`): abaixo do desktop a comanda é a folha de
+         baixo. Fechada, mostra o resumo e o Pagamento na zona do polegar; puxada, as
+         linhas, o editor e o numérico (só ao tocar a linha). -->
+    <template v-if="sheet">
+      <div v-if="sheetOpen" class="fixed inset-0 -z-10 bg-black/35" aria-hidden="true" data-pos-sheet-backdrop @click="sheetOpen = false" />
+      <button
+        type="button"
+        class="mx-auto grid h-5 w-20 shrink-0 place-items-center"
+        :aria-label="sheetOpen ? 'Recolher a comanda' : 'Abrir a comanda'"
+        :aria-expanded="sheetOpen"
+        data-pos-sheet-handle
+        @click="sheetOpen = !sheetOpen"
+      >
+        <span class="h-1.5 w-12 rounded-full bg-border" aria-hidden="true" />
+      </button>
+      <div v-if="!sheetOpen" class="flex items-center gap-3 px-4 pt-1 pb-3">
+      <button
+        type="button"
+        class="flex min-h-16 min-w-0 flex-1 items-center gap-3 text-left"
+        aria-label="Abrir a comanda"
+        data-pos-sheet-summary
+        @click="sheetOpen = true"
+      >
+        <span class="relative grid size-11 shrink-0 place-items-center rounded-lg bg-secondary">
+          <Icon name="lucide:receipt-text" class="size-5" />
+          <span v-if="cartUnits" class="absolute -top-1.5 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-suite-badge px-1 op-micro font-bold text-suite-badge-foreground tnum">{{ cartUnits }}</span>
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block op-title tnum">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }} · {{ totalDisplay }}</span>
+          <span v-if="fireBar.fired" class="flex items-center gap-1 truncate op-micro text-success">
+            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" />{{ fireBar.fired }} na cozinha
+          </span>
+          <span v-else-if="fireBar.unfired && fireBar.visible" class="flex items-center gap-1 truncate op-micro text-muted-foreground">
+            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" />{{ fireBar.unfired }} ainda não foram à cozinha
+          </span>
+        </span>
+        <Icon name="lucide:chevron-up" class="size-5 shrink-0 text-muted-foreground" />
+      </button>
+      <!-- Pagamento na zona do polegar, sem abrir a folha (v4: 250 x 64). -->
+      <button
+        type="button"
+        class="flex h-16 w-40 shrink-0 items-center justify-center gap-2.5 rounded-lg bg-primary text-lg font-semibold text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none sm:w-56"
+        :disabled="!items.length || loading || saving"
+        :title="`${primaryText} (F4)`"
+        data-pos-sheet-primary
+        @click="$emit('prepare')"
+      >
+        <Icon :name="primaryIconName" class="size-6 shrink-0" />
+        {{ primaryText }}
+      </button>
       </div>
-      <!-- Pílula proposital: ação contextual, como Retirada e Para hoje. -->
+    </template>
+    <!-- Cabeçalho da comanda: contagem, Selecionar (Alt S) e Enviar à cozinha (F9). -->
+    <header
+      v-if="!batchMode && (!sheet || sheetOpen)"
+      class="flex min-h-14 shrink-0 items-center gap-2 border-b border-border py-1.5 pr-2.5 pl-3.5"
+    >
+      <div class="min-w-0 leading-none">
+        <h3 class="op-title tnum whitespace-nowrap">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
+        <p v-if="items.length" class="mt-1 whitespace-nowrap op-micro text-muted-foreground">em {{ items.length }} {{ items.length === 1 ? "linha" : "linhas" }}</p>
+      </div>
+      <div class="flex-1" />
       <button
         ref="listEntry"
+        type="button"
         aria-keyshortcuts="Alt+s"
-        title="Alt+S: selecionar itens"
-        class="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-border px-3 text-sm font-medium transition hover:bg-accent"
-        :aria-label="batchMode ? 'Concluir seleção' : 'Iniciar seleção'"
+        title="Selecionar linhas (Alt S): transferir, descontar e remover várias"
+        class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 op-label transition hover:bg-accent"
+        aria-label="Iniciar seleção"
         @click="toggleBatchMode"
       >
-        {{ batchMode ? "Concluir seleção" : "Selecionar" }}
-        <OperatorKbd v-if="!batchMode" aria-hidden="true">Alt S</OperatorKbd>
+        <Icon name="lucide:list-checks" class="size-4" aria-hidden="true" />
+        <span class="sr-only">Selecionar</span>
+        <OperatorKbd aria-hidden="true">Alt S</OperatorKbd>
+      </button>
+      <!-- ENVIAR ganha calor quando HÁ o que enviar: item lançado e não enviado é
+           trabalho parado. Borda e fundo primários, nunca o sólido: o sólido é do
+           Pagamento. A contagem é badge (o número é o dado, o resto é rótulo). -->
+      <button
+        v-if="fireBar.visible"
+        type="button"
+        class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border pr-1.5 pl-2.5 op-label font-semibold whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-60"
+        :class="fireBar.unfired && !fireBar.disabled
+          ? 'border-primary bg-primary/10 hover:bg-primary/15'
+          : 'border-border bg-card text-muted-foreground'"
+        :disabled="fireBar.disabled || firing"
+        :aria-busy="firing || undefined"
+        title="Enviar à cozinha as linhas novas (F9)"
+        data-pos-fire
+        @click="$emit('fire')"
+      >
+        <Icon :name="firing ? 'lucide:loader-circle' : 'lucide:chef-hat'" class="size-4" :class="[fireBar.unfired && !fireBar.disabled ? 'text-primary' : '', firing ? 'animate-spin motion-reduce:animate-none' : '']" />
+        {{ fireBar.label }}
+        <span
+          v-if="fireBar.unfired"
+          class="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-primary px-1 op-micro font-semibold tabular-nums text-primary-foreground"
+          :aria-label="`${fireBar.unfired} item(ns) a enviar`"
+          >{{ fireBar.unfired }}</span
+        >
+        <OperatorKbd aria-hidden="true">F9</OperatorKbd>
+      </button>
+      <button
+        v-if="sheet"
+        type="button"
+        class="grid size-10 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent"
+        aria-label="Recolher a comanda"
+        @click="sheetOpen = false"
+      >
+        <Icon name="lucide:chevron-down" class="size-5" />
       </button>
     </header>
+
+    <!-- Modo seleção (Alt S): o cabeçalho da comanda vira a barra do lote. Só aqui
+         mora Transferir (F10 continua valendo em toda a venda). -->
+    <template v-else-if="!sheet || sheetOpen">
+      <header class="flex min-h-14 shrink-0 items-center gap-2 border-b border-border bg-primary/10 px-3 py-1.5">
+        <button
+          type="button"
+          class="grid size-10 shrink-0 place-items-center rounded-md transition hover:bg-accent"
+          aria-label="Concluir seleção"
+          title="Sair da seleção (Esc)"
+          @click="toggleBatchMode"
+        >
+          <Icon name="lucide:x" class="size-4" />
+        </button>
+        <p class="shrink-0 op-title tnum whitespace-nowrap">
+          {{ selection.count ? `${selection.count} ${selection.count === 1 ? "selecionada" : "selecionadas"}` : "Toque nas linhas" }}
+        </p>
+        <div class="flex-1" />
+        <button
+          v-if="canMove && hasOpenTab && selection.count"
+          type="button"
+          class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 op-label font-semibold transition hover:bg-accent disabled:opacity-50"
+          :disabled="loading"
+          title="Transferir as linhas marcadas para outra comanda (F10)"
+          @click="$emit('move', selection.lineIds)"
+        >
+          <Icon name="lucide:split" class="size-4" />
+          Transferir
+          <OperatorKbd aria-hidden="true">F10</OperatorKbd>
+        </button>
+      </header>
+      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+        <UiButton
+          v-if="fireAction.present"
+          variant="outline"
+          size="sm"
+          class="gap-1.5 bg-card"
+          :disabled="
+            mutationBusy || firing || !selection.canFire || !fireAction.enabled
+          "
+          @click="batchFire"
+          ><Icon name="lucide:chef-hat" class="size-4 text-primary" />{{
+            fireAction.label || "Enviar"
+          }}</UiButton
+        >
+        <UiButton
+          v-if="selection.canUnfire && unfireAction.present"
+          :disabled="mutationBusy || firing || !unfireAction.enabled"
+          variant="ghost"
+          size="sm"
+          class="gap-1.5"
+          @click="batchUnfire"
+          ><Icon name="lucide:undo-2" class="size-3.5" />{{
+            unfireAction.label || "Cancelar envio"
+          }}</UiButton
+        >
+        <button
+          v-if="!lineAdjustmentsBlocked"
+          type="button"
+          class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 op-label transition hover:bg-accent"
+          :class="discountOpen ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
+          :aria-pressed="discountOpen"
+          @click="toggleDiscount"
+        >
+          <Icon name="lucide:percent" class="size-4" />
+          Desconto
+        </button>
+        <button
+          type="button"
+          class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 op-label text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
+          :disabled="mutationBusy || !selection.count"
+          @click="batchRemove"
+        >
+          <Icon name="lucide:trash-2" class="size-4" />Remover
+        </button>
+        <span class="flex-1" />
+        <span v-if="selectMode" class="op-micro text-muted-foreground tnum"
+          >{{ selection.units }}
+          {{ selection.units === 1 ? "item" : "itens" }}</span
+        >
+        <button
+          v-if="selectMode"
+          type="button"
+          class="min-h-9 rounded-md px-2 op-micro text-muted-foreground hover:bg-accent"
+          aria-label="Limpar seleção"
+          @click="clearSelection"
+        >
+          Limpar
+        </button>
+      </div>
+    </template>
+
     <div
+      v-show="!sheet || sheetOpen"
       ref="receiptList"
       class="min-h-0 flex-1 overflow-y-auto"
       data-receipt-list
@@ -801,48 +1077,48 @@ defineExpose({ focusItem, onDigit, onBackspace });
     >
       <p
         v-if="!items.length"
-        class="p-6 text-center text-sm text-muted-foreground"
+        class="p-6 text-center op-body text-muted-foreground"
       >
         Escolha um produto para começar.
       </p>
-      <ul class="divide-y divide-border/40">
+      <ul>
         <li
           v-for="item in items"
           :key="item.line_id"
-          class="relative flex flex-wrap items-start border-l"
+          class="relative flex flex-wrap items-stretch border-b border-border"
           :aria-current="activeLineId === item.line_id ? 'true' : undefined"
           :class="
             isSelected(item.line_id)
-              ? 'border-l-primary bg-primary/10'
-              : activeLineId === item.line_id
-                ? 'border-l-primary bg-primary/5'
-                : 'border-l-transparent hover:bg-muted/50'
+              ? 'bg-primary/10'
+              : activeLineId === item.line_id && editorVisible
+                ? 'bg-primary/10 shadow-[inset_4px_0_0_var(--primary)]'
+                : 'hover:bg-muted/50'
           "
           @click="batchMode && toggleSelect(item.line_id)"
         >
           <button
             v-if="batchMode"
-            class="grid size-11 shrink-0 place-items-center"
+            class="grid w-11 shrink-0 place-items-center"
             :aria-label="`Selecionar ${item.name}`"
             :aria-pressed="isSelected(item.line_id)"
             @click.stop="toggleSelect(item.line_id)"
           >
             <span
-              class="grid size-4 place-items-center rounded border"
+              class="grid size-5 place-items-center rounded border"
               :class="
                 isSelected(item.line_id)
-                  ? 'bg-primary text-primary-foreground'
-                  : ''
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-input bg-card'
               "
               ><Icon
                 v-if="isSelected(item.line_id)"
                 name="lucide:check"
-                class="size-3"
+                class="size-3.5"
             /></span>
           </button>
           <button
-            class="grid min-h-11 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 pl-3 pr-1 pt-2 text-left focus-visible:outline-none"
-            :class="activeLineId === item.line_id && !batchMode ? 'pb-1' : 'pb-2'"
+            class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 py-1.5 pr-1 text-left focus-visible:outline-none"
+            :class="batchMode ? 'pl-0' : 'pl-3.5'"
             :data-item-select="item.line_id"
             :aria-label="`Editar ${item.name}`"
             :aria-pressed="
@@ -855,48 +1131,50 @@ defineExpose({ focusItem, onDigit, onBackspace });
             @focus="selectLine(item.line_id)"
             @click="selectLine(item.line_id)"
           >
-            <span v-if="isWeighedLine(item)" class="py-0.5 text-sm font-semibold tabular-nums"
+            <span v-if="isWeighedLine(item)" class="op-label font-semibold tnum"
               >{{ lineQtyLabel(item) }}</span
             >
-            <span v-else class="py-0.5 text-sm font-semibold tabular-nums"
-              >{{ item.qty }}
-              <span class="font-normal text-muted-foreground">×</span></span
+            <span v-else class="op-title tnum"
+              >{{ item.qty }}×</span
             >
-            <span
-              class="min-w-0 py-0.5 text-sm font-medium leading-snug [overflow-wrap:anywhere]"
-              >{{ item.name }}</span
-            >
-            <strong class="py-0.5 text-sm font-semibold tabular-nums">{{
+            <span class="min-w-0">
+              <span
+                class="block truncate op-body leading-5"
+                :class="activeLineId === item.line_id && editorVisible ? 'font-semibold' : 'font-medium'"
+                :title="item.name"
+                >{{ item.name }}</span
+              >
+              <!-- O fato da linha, numa linha só (v4): observação, desconto (preço
+                   unitário só aqui ou no peso) e o estado na cozinha. -->
+              <span
+                v-if="item.notes || discountBadge(item) || isWeighedLine(item) || lineKitchenState(item) !== 'unfired'"
+                class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 op-micro text-muted-foreground tnum"
+              >
+                <span v-if="item.notes" class="min-w-0 text-foreground/80 [overflow-wrap:anywhere]">Obs.: {{ item.notes }}</span>
+                <span v-if="isWeighedLine(item)" class="shrink-0">{{ formatBRL(unitChargedQ(item)) }}/kg</span>
+                <span
+                  v-if="discountBadge(item)"
+                  class="inline-flex shrink-0 items-center gap-1 font-semibold text-primary"
+                  data-line-discount-fact
+                  :title="discountBadge(item)"
+                  ><Icon name="lucide:percent" class="size-3.5" aria-hidden="true" /><template v-if="!isWeighedLine(item)">{{ formatBRL(lineListUnitQ(item)) }} </template>{{ compactDiscount(item) }}</span
+                >
+                <span
+                  v-if="lineKitchenState(item) !== 'unfired'"
+                  class="inline-flex shrink-0 items-center gap-1 rounded-sm px-1"
+                  :class="badgeTone(kitchenBadge(item).tone)"
+                  ><Icon name="lucide:chef-hat" class="size-3.5" aria-hidden="true" />{{ kitchenFact(item) }}</span
+                >
+              </span>
+            </span>
+            <strong class="op-title tnum">{{
               formatBRL(lineTotalQ(item))
             }}</strong>
-            <span
-              class="col-start-2 col-end-4 text-xs leading-4 text-muted-foreground"
-              >{{ formatBRL(unitChargedQ(item)) }}{{ isWeighedLine(item) ? "/kg" : " cada" }}</span
-            >
-            <span
-              v-if="item.notes"
-              class="col-start-2 col-end-4 mt-1 text-xs leading-relaxed text-muted-foreground"
-              >{{ item.notes }}</span
-            >
-            <span
-              v-if="discountBadge(item) || lineKitchenState(item) !== 'unfired'"
-              class="col-start-2 col-end-4 flex flex-wrap gap-2 text-xs text-muted-foreground"
-              ><span
-                v-if="discountBadge(item)"
-                class="text-primary"
-                :title="discountBadge(item)"
-                >{{ compactDiscount(item) }}</span
-              ><span
-                v-if="lineKitchenState(item) !== 'unfired'"
-                :class="badgeTone(kitchenBadge(item).tone)"
-                >{{ kitchenBadge(item).label }}</span
-              ></span
-            >
           </button>
           <button
             v-if="hasKitchenCard(item)"
             type="button"
-            class="grid min-h-11 w-9 shrink-0 place-items-center text-muted-foreground hover:text-foreground"
+            class="grid min-h-12 w-9 shrink-0 place-items-center text-muted-foreground hover:text-foreground"
             :aria-label="`Ver ${item.name} na cozinha`"
             title="Ver na cozinha"
             data-testid="kitchen-card-open"
@@ -905,7 +1183,8 @@ defineExpose({ focusItem, onDigit, onBackspace });
             <Icon name="lucide:chef-hat" class="size-4" />
           </button>
           <button
-            class="grid min-h-11 w-9 shrink-0 place-items-center text-muted-foreground"
+            class="grid min-h-12 w-8 shrink-0 place-items-center text-muted-foreground transition hover:text-foreground"
+            :class="expandedLineId === item.line_id || activeLineId === item.line_id ? '' : 'opacity-40 hover:opacity-100 focus-visible:opacity-100'"
             :aria-label="`Detalhes de ${item.name}`"
             :aria-expanded="expandedLineId === item.line_id"
             :aria-controls="detailsId(item.line_id)"
@@ -921,64 +1200,11 @@ defineExpose({ focusItem, onDigit, onBackspace });
             />
           </button>
           <div
-            v-if="activeLineId === item.line_id && !batchMode"
-            class="flex w-full items-center justify-between gap-2 px-3 pb-2"
-            aria-label="Ajustes do item"
-          >
-            <span
-              v-if="isWeighedLine(item)"
-              class="text-xs text-muted-foreground"
-            >Peça pesada: para trocar, remova e lance a outra etiqueta.</span>
-            <div
-              v-else
-              class="inline-flex items-center overflow-hidden rounded-md border border-primary/20 bg-card"
-              role="group"
-              :aria-label="`Quantidade de ${item.name}`"
-            >
-              <button
-                class="grid size-9 place-items-center text-lg hover:bg-primary/10 focus-visible:bg-primary/10"
-                aria-label="Diminuir"
-                :disabled="mutationBusy"
-                @click="bump(item.line_id, 'decrement')"
-              >
-                −
-              </button>
-              <button
-                type="button"
-                class="min-h-9 min-w-8 border-x border-primary/10 text-center text-sm font-semibold tabular-nums"
-                :aria-label="`Editar quantidade de ${item.name}`"
-                :disabled="mutationBusy"
-                @click="
-                  selectLine(item.line_id);
-                  setMode('qty');
-                "
-              >
-                {{ item.qty }}
-              </button>
-              <button
-                class="grid size-9 place-items-center text-lg hover:bg-primary/10 focus-visible:bg-primary/10"
-                aria-label="Aumentar"
-                :disabled="mutationBusy"
-                @click="bump(item.line_id, 'increment')"
-              >
-                +
-              </button>
-            </div>
-            <button
-              class="inline-flex min-h-9 items-center gap-1.5 rounded-md px-2 text-xs text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10"
-              aria-label="Remover"
-              :disabled="mutationBusy"
-              @click="askRemove(item.line_id)"
-            >
-              <Icon name="lucide:trash-2" class="size-3.5" />Remover
-            </button>
-          </div>
-          <div
             v-if="expandedLineId === item.line_id"
             :id="detailsId(item.line_id)"
             role="region"
             :aria-label="`Detalhes de ${item.name}`"
-            class="w-full px-3 pb-2 text-xs leading-relaxed"
+            class="w-full px-3.5 pb-2 op-micro leading-relaxed"
           >
             <p v-if="discountBadge(item)" class="mt-1">
               {{ discountBadge(item) }}
@@ -1044,133 +1270,147 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </li>
       </ul>
     </div>
-    <div v-if="selectMode" class="shrink-0 border-t bg-primary/5 p-3">
-      <div class="mb-2 flex items-center justify-between">
-        <span class="text-sm font-semibold"
-          >{{ selection.units }}
-          {{
-            selection.units === 1 ? "item selecionado" : "itens selecionados"
-          }}</span
-        ><button
-          class="min-h-9 px-2 text-xs text-muted-foreground"
-          aria-label="Limpar seleção"
-          @click="clearSelection"
-        >
-          Limpar
-        </button>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        <UiButton
-          v-if="fireAction.present"
-          variant="outline"
-          class="gap-1.5 bg-card text-primary"
-          :disabled="
-            mutationBusy || firing || !selection.canFire || !fireAction.enabled
-          "
-          @click="batchFire"
-          ><Icon name="lucide:utensils" class="size-4" />{{
-            fireAction.label || "Enviar"
-          }}</UiButton
-        ><UiButton
-          variant="outline"
-          class="gap-1.5 border-destructive/25 bg-card text-destructive hover:bg-destructive/10"
-          :disabled="mutationBusy"
-          @click="batchRemove"
-          ><Icon name="lucide:trash-2" class="size-4" />Remover</UiButton
-        >
-      </div>
-      <UiButton
-        v-if="selection.canUnfire && unfireAction.present"
-        :disabled="mutationBusy || firing || !unfireAction.enabled"
-        variant="ghost"
-        class="mt-1 w-full gap-1.5 text-xs"
-        @click="batchUnfire"
-        ><Icon name="lucide:undo-2" class="size-3.5" />{{
-          unfireAction.label || "Cancelar envio"
-        }}</UiButton
-      >
-    </div>
+
+    <!-- EDITOR DA LINHA, sob demanda (v4): colado no pé da lista, borda primária em
+         cima. Clicar (ou ↑↓) numa linha abre o editor DELA; Fechar (Esc) devolve a
+         lista inteira. Com a seleção ligada, o mesmo lugar recebe o desconto do lote. -->
     <section
-      v-if="activeItem"
-      class="shrink-0 border-t bg-card p-2"
+      v-if="(editorVisible || (batchMode && discountOpen)) && (!sheet || sheetOpen)"
+      class="shrink-0 border-t-2 border-primary bg-card px-3 pt-2 pb-2.5 shadow-[0_-10px_24px_rgb(0_0_0/.10)]"
       aria-label="Console do item"
+      data-pos-line-editor
     >
-      <div class="grid grid-cols-[minmax(0,1fr)_70px] gap-2">
-        <div class="grid grid-cols-3 gap-1">
-          <button
-            v-for="key in [1, 2, 3, 4, 5, 6, 7, 8, 9, 'decimal', 0, 'back']"
-            :key="key"
-            class="h-11 rounded-md border bg-card text-base font-semibold hover:bg-muted"
-            :class="
-              key === 'back' ? 'border-destructive/30 text-destructive' : ''
-            "
-            :aria-label="
-              typeof key === 'number'
-                ? 'Dígito ' + key
-                : key === 'back'
-                  ? 'Apagar último dígito'
-                  : 'Vírgula'
-            "
-            :disabled="
-              mutationBusy ||
-              !numpadCanType ||
-              (key === 'decimal' && numpadMode !== 'disc_brl')
-            "
-            @click="
-              typeof key === 'number'
-                ? onDigit(String(key))
-                : key === 'back'
-                  ? onBackspace()
-                  : onComma()
-            "
-          >
-            {{ typeof key === "number" ? key : key === "back" ? "⌫" : "," }}
-          </button>
-        </div>
-        <div class="grid grid-rows-4 gap-1">
-          <button
-            v-for="mode in visibleModes"
-            :key="mode.ref"
-            class="h-11 rounded-md border text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-35 disabled:saturate-0"
-            :class="
-              numpadMode === mode.ref
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'bg-card text-primary'
-            "
-            :aria-pressed="numpadMode === mode.ref"
-            :disabled="
-              mutationBusy ||
-              (selectMode && (mode.ref === 'qty' || mode.ref === 'note'))
-            "
-            @click="chooseMode(mode.ref)"
-          >
-            {{ mode.label }}
-          </button>
-        </div>
-      </div>
-      <p
-        v-if="lineAdjustmentsBlockedReason"
-        class="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground"
-        data-line-adjustments-blocked
-      >
-        <Icon name="lucide:info" class="mt-0.5 size-3.5 shrink-0" />
-        <span>{{ lineAdjustmentsBlockedReason }}</span>
-      </p>
-      <div v-if="inDiscountMode" class="mt-2">
-        <p class="mb-1 text-xs text-muted-foreground">
-          {{
-            selectMode
-              ? `Desconto em ${selection.units} itens`
-              : numpadMode === "disc_brl"
-                ? "Desconto por unidade"
-                : "Desconto percentual"
-          }}:
-          <strong>{{
-            numpadMode === "disc_brl"
-              ? `R$ ${numpadBuffer || "0"}`
-              : `${numpadBuffer || "0"}%`
-          }}</strong>
+      <template v-if="!batchMode && activeItem">
+        <p class="flex h-6 items-center gap-1.5 truncate op-micro text-muted-foreground">
+          <Icon name="lucide:corner-left-up" class="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+          Editando <b class="truncate font-semibold text-foreground">{{ activeItem.name }}</b>
+          <span class="shrink-0 tnum">· {{ formatBRL(unitChargedQ(activeItem)) }}{{ isWeighedLine(activeItem) ? "/kg" : " cada" }}</span>
         </p>
+        <div class="mt-1.5 flex items-center gap-2" aria-label="Ajustes do item">
+          <span
+            v-if="isWeighedLine(activeItem)"
+            class="min-w-0 flex-1 op-micro text-muted-foreground"
+          >Peça pesada: para trocar, remova e lance a outra etiqueta.</span>
+          <div
+            v-else
+            class="inline-flex h-11 shrink-0 items-center overflow-hidden rounded-md border border-input bg-card"
+            role="group"
+            :aria-label="`Quantidade de ${activeItem.name}`"
+            title="Quantidade: −/+ ou digite"
+          >
+            <button
+              type="button"
+              class="grid size-11 place-items-center border-r border-border hover:bg-accent disabled:opacity-50"
+              aria-label="Diminuir"
+              :disabled="mutationBusy"
+              @click="bump(activeItem.line_id, 'decrement')"
+            >
+              <Icon name="lucide:minus" class="size-4" />
+            </button>
+            <button
+              type="button"
+              class="h-11 w-11 text-center op-title tnum disabled:opacity-50"
+              :class="numpadMode === 'qty' && !numpadFresh ? 'bg-primary/10' : ''"
+              :aria-label="`Editar quantidade de ${activeItem.name}`"
+              :disabled="mutationBusy"
+              @click="
+                selectLine(activeItem.line_id);
+                setMode('qty');
+              "
+            >
+              {{ activeItem.qty }}
+            </button>
+            <button
+              type="button"
+              class="grid size-11 place-items-center border-l border-border hover:bg-accent disabled:opacity-50"
+              aria-label="Aumentar"
+              :disabled="mutationBusy"
+              @click="bump(activeItem.line_id, 'increment')"
+            >
+              <Icon name="lucide:plus" class="size-4" />
+            </button>
+          </div>
+          <button
+            type="button"
+            class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md px-2.5 op-label font-semibold whitespace-nowrap text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
+            aria-label="Remover"
+            title="Remover, com confirmação e desfazer"
+            :disabled="mutationBusy"
+            @click="askRemove(activeItem.line_id)"
+          >
+            <Icon name="lucide:trash-2" class="size-4" />Remover
+            <OperatorKbd v-if="!coarsePointer" class="max-xl:hidden" aria-hidden="true">Del</OperatorKbd>
+          </button>
+          <div class="flex-1" />
+          <button
+            type="button"
+            class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md px-2 op-label whitespace-nowrap text-muted-foreground transition hover:bg-accent"
+            title="Fechar o editor"
+            data-pos-line-editor-close
+            @click="closeEditor"
+          >
+            Fechar
+            <OperatorKbd v-if="!coarsePointer" class="max-xl:hidden" aria-hidden="true">Esc</OperatorKbd>
+          </button>
+        </div>
+        <div v-if="!lineAdjustmentsBlocked" class="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            class="inline-flex h-10 items-center justify-center gap-1.5 rounded-md border px-2.5 op-label whitespace-nowrap transition hover:bg-accent disabled:opacity-50"
+            :class="discountOpen || activeItem.discount?.value ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
+            :aria-pressed="discountOpen"
+            :disabled="mutationBusy"
+            data-pos-line-discount
+            @click="toggleDiscount"
+          >
+            <Icon name="lucide:percent" class="size-4 text-primary" />
+            {{ discountButtonLabel }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-2.5 op-label whitespace-nowrap transition hover:bg-accent disabled:opacity-50"
+            :disabled="mutationBusy"
+            @click="chooseMode('note')"
+          >
+            <Icon name="lucide:message-square-text" class="size-4" />
+            Observação
+          </button>
+        </div>
+      </template>
+
+      <!-- Desconto (da linha ou do lote): formato, valor e motivo. O numérico da tela
+           aparece aqui e, nos dispositivos de toque, também para a quantidade. -->
+      <div v-if="discountOpen && !lineAdjustmentsBlocked" class="mt-2 grid gap-2" data-pos-discount-panel>
+        <div class="flex items-center gap-2">
+          <div class="inline-flex h-10 shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Formato do desconto">
+            <button
+              v-for="mode in discountModes"
+              :key="mode.ref"
+              type="button"
+              class="inline-flex h-full items-center rounded px-2.5 op-label transition disabled:opacity-50"
+              :class="numpadMode === mode.ref ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
+              :aria-pressed="numpadMode === mode.ref"
+              :disabled="mutationBusy"
+              @click="chooseMode(mode.ref)"
+            >
+              {{ mode.label }}
+            </button>
+          </div>
+          <p class="min-w-0 flex-1 truncate text-right op-micro text-muted-foreground">
+            {{
+              selectMode
+                ? `Desconto em ${selection.units} itens`
+                : numpadMode === "disc_brl"
+                  ? "Desconto por unidade"
+                  : "Desconto percentual"
+            }}:
+            <strong class="op-title text-foreground tnum">{{
+              numpadMode === "disc_brl"
+                ? `R$ ${numpadBuffer || "0"}`
+                : `${numpadBuffer || "0"}%`
+            }}</strong>
+          </p>
+        </div>
         <UiNativeSelect
           v-model="discountReason"
           aria-label="Motivo do desconto"
@@ -1187,90 +1427,87 @@ defineExpose({ focusItem, onDigit, onBackspace });
           </option>
         </UiNativeSelect>
       </div>
-    </section>
-    <div class="grid shrink-0 gap-2 border-t px-3 py-2">
-      <div class="flex items-baseline justify-between">
-        <span class="text-sm font-medium text-muted-foreground"
-          >Total parcial</span
+
+      <div v-if="numpadVisible" class="mt-2 grid grid-cols-3 gap-1.5" data-pos-line-numpad>
+        <button
+          v-for="key in [1, 2, 3, 4, 5, 6, 7, 8, 9, 'decimal', 0, 'back']"
+          :key="key"
+          type="button"
+          class="h-11 rounded-md border bg-card op-title transition hover:bg-muted disabled:opacity-40"
+          :class="
+            key === 'back' ? 'border-destructive/30 text-destructive' : 'border-border'
+          "
+          :aria-label="
+            typeof key === 'number'
+              ? 'Dígito ' + key
+              : key === 'back'
+                ? 'Apagar último dígito'
+                : 'Vírgula'
+          "
+          :disabled="
+            mutationBusy ||
+            !numpadCanType ||
+            (key === 'decimal' && numpadMode !== 'disc_brl')
+          "
+          @click="
+            typeof key === 'number'
+              ? onDigit(String(key))
+              : key === 'back'
+                ? onBackspace()
+                : onComma()
+          "
         >
-        <strong class="text-xl font-semibold tabular-nums">{{
-          totalDisplay
-        }}</strong>
+          {{ typeof key === "number" ? key : key === "back" ? "⌫" : "," }}
+        </button>
       </div>
-      <!-- Secondary actions stack on the left; Pagamento is the highlight column
-           spanning their full height — saves a vertical row. -->
-      <div
-        v-if="!batchMode && (fireBar.visible || (canMove && hasOpenTab && items.length))"
-        class="grid grid-cols-2 gap-2"
+
+      <p
+        v-if="lineAdjustmentsBlockedReason"
+        class="mt-2 flex items-start gap-1.5 op-micro text-muted-foreground"
+        data-line-adjustments-blocked
       >
-        <div class="flex flex-col gap-2">
-          <!-- ENVIAR ganha calor quando HÁ o que enviar: item lançado e não
-               enviado é trabalho parado, e o botão neutro dizia isso com a
-               mesma voz de um botão desligado. Emprestamos o idioma de ênfase
-               da casa (borda + fundo primário) em vez de um segundo botão
-               sólido: o sólido é do "Pagamento", e dois blocos cheios lado a
-               lado brigam pela mesma atenção em vez de dirigi-la. A contagem
-               virou badge — o número é o dado, o resto é rótulo. -->
-          <UiButton
-            v-if="fireBar.visible"
-            variant="outline"
-            class="justify-center gap-2"
-            :class="
-              fireBar.unfired && !fireBar.disabled
-                ? 'border-primary bg-primary/5 text-primary hover:bg-primary/10'
-                : ''
-            "
-            :disabled="fireBar.disabled"
-            :loading="firing"
-            @click="$emit('fire')"
-          >
-            <Icon name="lucide:utensils" class="size-4" />
-            {{ fireBar.label }}
-            <span
-              v-if="fireBar.unfired"
-              class="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-primary px-1.5 text-xs font-semibold tabular-nums text-primary-foreground"
-              :aria-label="`${fireBar.unfired} item(ns) a enviar`"
-              >{{ fireBar.unfired }}</span
-            >
-          </UiButton>
-          <UiButton
-            v-if="canMove && hasOpenTab && items.length"
-            variant="outline"
-            class="justify-center gap-1.5"
-            :disabled="loading"
-            @click="$emit('move')"
-          >
-            <Icon name="lucide:split" class="size-4" />
-            Transferir
-          </UiButton>
-        </div>
-        <UiButton
-          size="lg"
-          class="h-full flex-col gap-1 text-base"
-          :disabled="!items.length || loading || saving"
-          :loading="loading"
-          @click="$emit('prepare')"
-        >
-          <Icon :name="primaryIconName" class="size-6" />
-          {{ primaryText }}
-          <OperatorKbd variant="inverse" aria-hidden="true">F4</OperatorKbd>
-        </UiButton>
-      </div>
-      <UiButton
-        v-else-if="!batchMode"
-        size="lg"
-        class="w-full gap-2"
+        <Icon name="lucide:info" class="mt-0.5 size-3.5 shrink-0" />
+        <span>{{ lineAdjustmentsBlockedReason }}</span>
+      </p>
+    </section>
+
+    <!-- O teclado físico edita a linha ativa: a dica mora aqui, no balcão (v4). -->
+    <p
+      v-if="items.length && !batchMode && !coarsePointer && !sheet"
+      class="hidden h-7 shrink-0 items-center gap-2 overflow-hidden border-t border-border bg-muted/50 px-3.5 op-micro whitespace-nowrap text-muted-foreground md:flex"
+      data-pos-keyboard-hint
+    >
+      <Icon name="lucide:keyboard" class="size-3.5" aria-hidden="true" />
+      Digite para mudar a quantidade <span class="text-border" aria-hidden="true">·</span> Del remove <span class="text-border" aria-hidden="true">·</span> ↑↓ troca a linha
+    </p>
+
+    <!-- Pé: UMA faixa, o maior alvo da tela (Pagamento F4 com o total dentro). Na
+         seleção, o pé encolhe para o total: o gesto geral espera o Concluir. -->
+    <div v-if="batchMode" class="flex shrink-0 items-baseline justify-between border-t border-border px-3.5 py-3">
+      <span class="op-label text-muted-foreground">Total parcial</span>
+      <strong class="text-xl font-semibold tnum">{{ totalDisplay }}</strong>
+    </div>
+    <div v-else-if="!sheet || sheetOpen" class="shrink-0 border-t border-border p-3">
+      <button
+        type="button"
+        class="flex h-16 w-full items-center gap-3 rounded-lg bg-primary pr-3.5 pl-4 text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
         :disabled="!items.length || loading || saving"
-        :loading="loading"
+        :aria-busy="loading || undefined"
+        :title="`${primaryText} (F4)`"
+        data-pos-primary
         @click="$emit('prepare')"
       >
-        <Icon :name="primaryIconName" class="size-5" />
-        {{ primaryText }}
-        <OperatorKbd variant="inverse" aria-hidden="true">F4</OperatorKbd>
-      </UiButton>
+        <Icon :name="loading ? 'lucide:loader-circle' : primaryIconName" class="size-6 shrink-0" :class="loading ? 'animate-spin motion-reduce:animate-none' : ''" />
+        <span class="text-lg font-semibold whitespace-nowrap">{{ primaryText }}</span>
+        <OperatorKbd v-if="!coarsePointer" variant="inverse" class="max-lg:hidden" aria-hidden="true">F4</OperatorKbd>
+        <span class="flex-1" />
+        <span class="flex flex-col items-end leading-none">
+          <span class="op-micro opacity-80">total</span>
+          <span class="text-xl leading-8 font-semibold tnum xl:text-3xl">{{ totalDisplay }}</span>
+        </span>
+      </button>
     </div>
   </div>
-
   <UiDialog
     :open="!!noteDialog"
     @update:open="

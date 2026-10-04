@@ -1,7 +1,10 @@
 <script setup lang="ts">
 // Barras verticais de série temporal (uma série → sem legenda; o título nomeia).
 // Marcas finas ancoradas na baseline, topo arredondado, vão entre barras;
-// monocromático de propósito (cor só funcional no DS de operador). Hover por
+// monocromático de propósito (cor só funcional no DS de operador). Linguagem da
+// prévia `bi-sobra4.html`: a barra cheia é latão (`primary`, o "vendeu" da prévia),
+// o traço é a comparação na cor do texto (o "típico"). Contraste de marca ≥ 3:1 sobre
+// o cartão nos dois temas (latão #8b6b2e no claro, #d4a53f no escuro). Hover por
 // barra com tooltip; rótulos diretos só onde importam (máximo do período).
 import { computed } from "vue";
 
@@ -32,7 +35,7 @@ const every = computed(
 </script>
 
 <template>
-  <figure>
+  <figure class="pt-5">
     <!-- max-w por barra: com poucos pontos a barra não vira um bloco gigante. -->
     <div class="flex h-36 items-end justify-center gap-px border-b border-border" role="img">
       <div
@@ -43,28 +46,28 @@ const every = computed(
         <div
           class="w-full rounded-t-sm transition-colors"
           :class="point.muted
-            ? 'bg-foreground/25 group-hover:bg-foreground/50'
-            : 'bg-foreground/60 group-hover:bg-foreground'"
+            ? 'bg-primary/35 group-hover:bg-primary/55'
+            : 'bg-primary group-hover:bg-primary/80'"
           :style="{ height: `${Math.max(point.value > 0 ? 3 : 0, (point.value / max) * 100)}%` }"
         ></div>
         <!-- Traço do período anterior (bullet-style): posição, não preenchimento. -->
         <div
           v-if="point.previous"
-          class="pointer-events-none absolute left-0 right-0 h-0.5 bg-foreground/45"
+          class="pointer-events-none absolute left-0 right-0 h-0.5 bg-foreground"
           :style="{ bottom: `${(point.previous / max) * 100}%` }"
         ></div>
         <!-- Rótulo direto seletivo: só o pico do período. -->
         <span
           v-if="index === maxIndex"
-          class="pointer-events-none absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs tabular-nums text-muted-foreground"
+          class="pointer-events-none absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap op-micro tnum text-muted-foreground"
         >
           {{ fmt(point.value) }}
         </span>
         <div
-          class="pointer-events-none absolute bottom-full left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground shadow-sm group-hover:block"
+          class="pointer-events-none absolute bottom-full left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 op-micro text-popover-foreground shadow-sm group-hover:block"
         >
           <span class="text-muted-foreground">{{ point.label }}</span>
-          · <span class="font-medium tabular-nums">{{ fmt(point.value) }}</span>
+          · <span class="font-semibold tnum">{{ fmt(point.value) }}</span>
           <span v-if="point.previous" class="text-muted-foreground">
             · anterior {{ fmt(point.previous) }}</span>
           <span v-if="point.detail" class="text-muted-foreground"> · {{ point.detail }}</span>
@@ -77,7 +80,7 @@ const every = computed(
       <span
         v-for="(point, index) in points"
         :key="point.label"
-        class="relative min-w-0 max-w-16 flex-1 text-center text-xs text-muted-foreground"
+        class="relative min-w-0 max-w-16 flex-1 text-center op-micro tnum text-muted-foreground"
       >
         <span
           v-if="index % every === 0"

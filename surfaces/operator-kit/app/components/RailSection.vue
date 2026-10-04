@@ -20,14 +20,23 @@ const props = defineProps<{
   attention?: string;
   /** Nome acessível quando difere do visível. */
   ariaLabel?: string;
-  /** Tecla que leva ao item (anunciada, não impressa: o rail é estreito). */
+  /** Tecla que leva ao item (anunciada; impressa só com `printShortcut`). */
   shortcut?: string;
+  /**
+   * Imprime a tecla sob o nome ("Alt1"), como o rail da Produção na prévia v4
+   * (`plano-porque4.html`, `.rail-item kbd`). Só com ponteiro fino: no toque não há
+   * teclado, e a tecla impressa seria ruído.
+   */
+  printShortcut?: boolean;
+  /** Rótulo de 10px com tracking apertado (`.rail-item.sm` da v4): nomes longos, como "Planejamento". */
+  dense?: boolean;
 }>();
 
 const emit = defineEmits<{ activate: [] }>();
 
 const NuxtLink = resolveComponent("NuxtLink");
 const iconName = computed(() => (props.icon.includes(":") ? props.icon : `lucide:${props.icon}`));
+const printedShortcut = computed(() => (props.printShortcut && props.shortcut ? props.shortcut.replace(/\+/g, "") : ""));
 const a11yLabel = computed(() => {
   const base = props.ariaLabel || props.label;
   return props.attention ? `${base}: ${props.attention}` : base;
@@ -45,16 +54,24 @@ const a11yLabel = computed(() => {
     :title="attention ? `${label}: ${attention}` : undefined"
     :data-active="active || undefined"
     data-rail-section
-    class="relative flex w-16 flex-col items-center gap-[3px] rounded-[10px] px-0.5 pt-[7px] pb-1.5 text-center text-[11px] leading-[13px] font-semibold whitespace-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
-    :class="active
+    class="relative flex w-16 flex-col items-center gap-[3px] rounded-[10px] pt-[7px] pb-1.5 text-center leading-[13px] font-semibold whitespace-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
+    :class="[dense ? 'px-0 text-[10px] tracking-[-0.3px]' : 'px-0 text-[11px]', active
       ? 'bg-rail-foreground text-rail shadow-[0_1px_2px_rgb(0_0_0/.18)] dark:text-background'
-      : 'text-rail-foreground hover:bg-rail-foreground/10'"
+      : 'text-rail-foreground hover:bg-rail-foreground/10']"
     @click="to ? undefined : emit('activate')"
   >
     <slot name="icon">
       <Icon :name="iconName" class="size-[22px]" aria-hidden="true" />
     </slot>
-    <span class="max-w-full break-words">{{ label }}</span>
+    <!-- Sem quebra no meio da palavra (prévia `.rail-item`): "Encomendas" passa 4px dos
+         64px e fica centrada, em vez de virar "Encomenda / s". -->
+    <span :class="dense ? 'whitespace-nowrap' : ''">{{ label }}</span>
+    <kbd
+      v-if="printedShortcut"
+      class="hidden font-mono text-[9.5px] leading-none font-semibold tracking-normal pointer-fine:block"
+      aria-hidden="true"
+      data-rail-shortcut
+    >{{ printedShortcut }}</kbd>
     <span
       v-if="badge"
       aria-hidden="true"

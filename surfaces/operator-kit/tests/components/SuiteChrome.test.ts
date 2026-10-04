@@ -119,6 +119,31 @@ describe("OperatorSuiteRail", () => {
     expect(wrapper.find("[data-suite-rail]").exists()).toBe(false);
   });
 
+  // V4-PROD (prévia `plano-porque4.html`): a Produção imprime a tecla sob o nome (só
+  // com ponteiro fino) e usa rótulos de 10px para "Planejamento". Opt-in: sem as
+  // props, nada muda (o primeiro teste acima continua sem a tecla no texto).
+  it("printShortcuts imprime a tecla da seção, sem o +, e denseLabels aperta o rótulo", async () => {
+    const wrapper = await mountRail({
+      sections: [{ key: "plan", label: "Planejamento", icon: "lucide:layout-grid", to: "/plan", shortcut: "Alt+1" }],
+      printShortcuts: true,
+      denseLabels: true,
+    });
+    const item = wrapper.get('nav [data-section="plan"]');
+    const kbd = item.get("[data-rail-shortcut]");
+    expect(kbd.text()).toBe("Alt1");
+    expect(kbd.classes()).toContain("pointer-fine:block");
+    expect(kbd.attributes("aria-hidden")).toBe("true");
+    expect(item.attributes("aria-keyshortcuts")).toBe("Alt+1");
+    expect(item.classes()).toContain("text-[10px]");
+  });
+
+  it("sem printShortcuts a tecla só é anunciada", async () => {
+    const wrapper = await mountRail({
+      sections: [{ key: "plan", label: "Planejamento", icon: "lucide:layout-grid", to: "/plan", shortcut: "Alt+1" }],
+    });
+    expect(wrapper.find("[data-rail-shortcut]").exists()).toBe(false);
+  });
+
   it("do tablet para cima: o rail não existe abaixo de md", async () => {
     const wrapper = await mountRail();
     const classes = wrapper.get("[data-suite-rail]").classes();
@@ -141,6 +166,24 @@ describe("OperatorSectionBar", () => {
     expect(items).toHaveLength(3);
     expect(items[0]!.attributes("aria-current")).toBe("page");
     expect(items[2]!.text()).toContain("1 desligado");
+  });
+
+  it("shortLabel encurta o rótulo visível na barra e mantém o nome cheio para leitor de tela", async () => {
+    const wrapper = await mountSuspended(OperatorSectionBar, {
+      props: {
+        sections: [
+          { key: "plan", label: "Planejamento", shortLabel: "Plano", icon: "lucide:layout-grid", to: "/plan" },
+          { key: "open", label: "Abertura", icon: "lucide:flame", to: "/" },
+        ],
+        label: "Telas de produção",
+      },
+      global: { stubs },
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    const plan = wrapper.get('[data-section="plan"]');
+    expect(plan.get("[data-section-short]").text()).toBe("Plano");
+    expect(plan.get(".sr-only").text()).toBe("Planejamento");
+    expect(wrapper.get('[data-section="open"]').text()).toBe("Abertura");
   });
 
   it("uma seção só não vira barra", async () => {

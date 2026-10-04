@@ -45,6 +45,10 @@ const props = withDefaults(defineProps<{
   operatorName?: string;
   /** Seção ativa. Omitida, sai da rota. */
   current?: string;
+  /** Imprime a tecla de cada seção sob o nome, com ponteiro fino (v4 da Produção: "Alt1"). */
+  printShortcuts?: boolean;
+  /** Rótulos de 10px para nomes longos (v4 da Produção: "Planejamento", "Preparação"). */
+  denseLabels?: boolean;
   /**
    * Mostra Bloquear quando há operador (padrão). `false`: o app não trava operador (a
    * Central, que é a porta de entrada; cada app trava o seu), e as iniciais seguem no pé.
@@ -54,6 +58,8 @@ const props = withDefaults(defineProps<{
   hubUrl: undefined,
   operatorName: undefined,
   current: undefined,
+  printShortcuts: false,
+  denseLabels: false,
   lockable: true,
 });
 
@@ -167,6 +173,8 @@ function hideRail() {
           :aria-label="section.badgeLabel ? `${section.label}, ${section.badgeLabel}` : undefined"
           :attention="section.attention"
           :shortcut="section.shortcut"
+          :print-shortcut="printShortcuts"
+          :dense="denseLabels"
           :data-section="section.key"
           @activate="emit('select', section.key)"
         />
@@ -187,6 +195,8 @@ function hideRail() {
         :aria-label="section.badgeLabel ? `${section.label}, ${section.badgeLabel}` : undefined"
         :attention="section.attention"
         :shortcut="section.shortcut"
+        :print-shortcut="printShortcuts"
+        :dense="denseLabels"
         :data-section="section.key"
         @activate="emit('select', section.key)"
       />
@@ -225,7 +235,7 @@ function hideRail() {
         <PopoverTrigger as-child>
           <button
             type="button"
-            class="mt-1 grid size-11 place-items-center rounded-full bg-rail-foreground/15 text-[13px] font-semibold text-rail-foreground transition hover:bg-rail-foreground/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
+            class="mt-1 grid size-11 place-items-center rounded-full bg-black/20 text-[13px] font-semibold text-rail-foreground transition hover:bg-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
             :aria-label="operatorName ? `Menu de ${operatorName}` : 'Menu do dispositivo'"
             data-suite-rail-menu
           >

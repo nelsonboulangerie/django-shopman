@@ -131,7 +131,6 @@ function openCustomerSheet() {
   }
   customerSheetOpen.value = true;
 }
-defineExpose({ openCustomer: openCustomerSheet });
 // Foco devolvido ao CONTEXTO quando o modal fecha: o diálogo é controlado (sem
 // trigger do reka), então sem isto o foco morria no body.
 const customerChipRef = ref<HTMLButtonElement | null>(null);
@@ -147,23 +146,27 @@ function runClear() {
   confirmClear.value = false;
   emit("clear");
 }
+/** A porta "Liberar comanda" da barra de contexto pede a MESMA confirmação de sempre. */
+function askRelease() {
+  if (!props.hasOpenTab || props.readOnly) return;
+  confirmClear.value = true;
+}
+defineExpose({ openCustomer: openCustomerSheet, askRelease });
 </script>
 
 <template>
   <div class="flex min-w-0 flex-wrap items-center gap-2">
-    <!-- MODO DE ATENDIMENTO — o escolhido é CHEIO (`bg-primary`), como o modo
-         do numpad e o seletor do "Transferir": `secondary` sobre `ghost` era
-         dois cinzas quase iguais, e sob a luz do balcão ninguém dizia qual
-         estava ligado. O ícone dobra a leitura para quem não pára para ler. -->
-    <div v-if="!readOnly" class="flex shrink-0 items-center gap-0.5 rounded-md border bg-muted/40 p-0.5" role="group" aria-label="Modo de atendimento">
-      <UiButton
+    <!-- MODO DE ATENDIMENTO (v4): o seletor segmentado da suíte, o ligado em cartão
+         sobre o trilho `secondary`, com ícone que dobra a leitura e `aria-pressed`
+         para o leitor de tela. -->
+    <div v-if="!readOnly" class="inline-flex h-10 shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Modo de atendimento">
+      <button
         v-for="mode in SALES_MODES"
         :key="mode.ref"
-        variant="ghost"
-        size="sm"
-        class="h-8 gap-1.5 px-3 font-semibold"
+        type="button"
+        class="inline-flex h-full items-center gap-1.5 rounded px-2.5 op-label transition disabled:opacity-50"
         :class="(salesMode || 'counter') === mode.ref
-          ? 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 hover:text-primary-foreground'
+          ? 'bg-card font-semibold text-foreground shadow-sm'
           : 'text-muted-foreground hover:text-foreground'"
         :aria-pressed="(salesMode || 'counter') === mode.ref"
         :disabled="loading"
@@ -171,13 +174,13 @@ function runClear() {
       >
         <Icon :name="mode.icon" class="size-4 shrink-0" />
         {{ mode.label }}
-      </UiButton>
+      </button>
     </div>
     <!-- tab number (renameable) -->
     <div v-if="renaming" class="flex items-center gap-1">
       <UiInput
         v-model="renameValue"
-        class="h-9 w-40 text-lg font-semibold"
+        class="h-10 w-40 text-lg font-semibold"
         placeholder="Mesa, nome…"
         autofocus
         @keydown="onRenameKeydown"
@@ -192,17 +195,19 @@ function runClear() {
     <button
       v-else-if="hasOpenTab && canRename && !readOnly"
       type="button"
-      class="group flex min-w-0 max-w-full shrink-0 items-center gap-1.5"
+      class="group inline-flex h-10 min-w-0 max-w-full shrink-0 items-center gap-1.5 rounded-md px-2 transition hover:bg-accent"
       aria-label="Renomear comanda"
+      title="Renomear comanda"
       @click="startRename"
     >
-      <h1 class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
-      <Icon name="lucide:pencil" class="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+      <h1 class="truncate op-heading tabular-nums">#{{ tabDisplay || "..." }}</h1>
+      <Icon name="lucide:pencil" class="size-3.5 shrink-0 text-muted-foreground" />
     </button>
-    <h1 v-else-if="hasOpenTab" class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
-    <h1 v-else class="whitespace-nowrap text-lg font-semibold">Venda rápida</h1>
+    <h1 v-else-if="hasOpenTab" class="truncate px-2 op-heading tabular-nums">#{{ tabDisplay || "..." }}</h1>
+    <h1 v-else class="whitespace-nowrap px-2 op-heading">Venda rápida</h1>
+    <div class="hidden h-6 w-px shrink-0 bg-border sm:block" aria-hidden="true" />
 
-    <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA — F6 · F7 · F8, na ordem em que
+    <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA: F6 · F7 · F8, na ordem em que
          aparecem. O atalho existia e só vivia no dicionário (tecla `?`), que é
          onde se aprende, não onde se lembra. No balcão quem ensina é a tela: a
          tecla ao lado do botão é o que faz a mão largar o mouse.
@@ -210,10 +215,10 @@ function runClear() {
          `aria-hidden` nos três: quem usa leitor de tela navega por foco, e o
          nome acessível do botão não deve virar "Identificar cliente F6". -->
 
-    <!-- customer chip — e, na encomenda anônima, o CHAMADO.
+    <!-- customer chip, e, na encomenda anônima, o CHAMADO.
          O checkout tinha um cartaz dizendo "identifique o cliente" a 400px de
          distância do único botão que faz isso. Dois lugares para uma pendência:
-         um que fala e outro que resolve. Agora quem fala é o próprio botão —
+         um que fala e outro que resolve. Agora quem fala é o próprio botão:
          ele pulsa, ganha a cor do alerta e diz o porquê no `title`.
          `motion-safe:` porque pulso é enfeite para quem pediu para a tela parar
          de se mexer; a cor e a borda seguram o recado sozinhas. -->
@@ -221,12 +226,12 @@ function runClear() {
       ref="customerChipRef"
       data-context-entry="customer"
       type="button"
-      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
+      class="inline-flex h-10 min-w-0 shrink items-center gap-2 rounded-full border bg-card pr-2 pl-2.5 op-label transition hover:bg-accent"
       :class="customerRequired
         ? 'border-warning bg-warning/10 font-medium text-warning motion-safe:animate-pulse'
         : 'border-border'"
       aria-haspopup="dialog"
-      :title="customerLockedReason || (customerRequired ? 'A encomenda precisa de cliente: é quem a casa avisa se algo mudar até a data' : undefined)"
+      :title="customerLockedReason || (customerRequired ? 'A encomenda precisa de cliente: é quem a casa avisa se algo mudar até a data' : 'Cliente (F6)')"
       @click="readOnly ? $emit('openCustomer') : openCustomerSheet()"
     >
       <Icon
@@ -234,45 +239,47 @@ function runClear() {
         class="size-4 shrink-0"
         :class="customerRequired ? 'text-warning' : 'text-muted-foreground'"
       />
-      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-medium" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
+      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-semibold" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
       <span v-else class="whitespace-nowrap" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
       <OperatorKbd
         aria-hidden="true"
       >F6</OperatorKbd>
     </button>
 
-    <!-- RECEBIMENTO — irmão do chip de cliente. Os dois são fatos do PEDIDO,
+    <!-- RECEBIMENTO: irmão do chip de cliente. Os dois são fatos do PEDIDO,
          decididos na abertura do atendimento e revistos de relance daqui em
          diante. Na barra eles são LEITURA com porta de saída; o lugar onde se
          decide é o começo do fluxo, não esta barra. -->
     <button
       v-if="hasOpenTab && salesMode !== 'counter'"
       type="button"
-      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
+      class="inline-flex h-10 min-w-0 shrink items-center gap-2 rounded-full border bg-card pr-2 pl-2.5 op-label transition hover:bg-accent"
       :class="fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'border-border'"
       aria-haspopup="dialog"
+      title="Recebimento (F7)"
       @click="$emit('openFulfillment')"
     >
       <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
-      <span class="min-w-0 max-w-48 truncate font-medium">{{ fulfillmentLabel }}</span>
+      <span class="min-w-0 max-w-48 truncate font-semibold">{{ fulfillmentLabel }}</span>
       <OperatorKbd
         aria-hidden="true"
       >F7</OperatorKbd>
     </button>
 
-    <!-- QUANDO — o terceiro irmão. A data morava dentro do formulário de
+    <!-- QUANDO: o terceiro irmão. A data morava dentro do formulário de
          ENTREGA, e por isso a retirada agendada não existia: a casa recebe
          encomenda por telefone e o balcão não tinha onde escrever isso.
-         "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um campo vazio. -->
+         "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um campo vazio; por isso
+         a borda tracejada (v4) enquanto nada foi agendado. -->
     <button
       v-if="hasOpenTab && salesMode !== 'counter'"
       type="button"
-      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
+      class="inline-flex h-10 min-w-0 shrink items-center gap-2 rounded-full border bg-card pr-2 pl-2.5 op-label transition hover:bg-accent"
       :class="scheduleConflict
         ? 'border-destructive bg-destructive/10 text-destructive'
-        : (scheduled ? 'border-primary bg-primary/5' : 'border-border')"
+        : (scheduled ? 'border-primary bg-primary/5' : 'border-dashed border-border text-muted-foreground')"
       aria-haspopup="dialog"
-      :title="scheduleConflictReason || ''"
+      :title="scheduleConflictReason || 'Quando (F8)'"
       @click="$emit('openSchedule')"
     >
       <Icon
@@ -280,25 +287,14 @@ function runClear() {
         class="size-4 shrink-0"
         :class="scheduleConflict ? '' : 'text-muted-foreground'"
       />
-      <span class="min-w-0 max-w-56 truncate font-medium">{{ scheduleLabel }}</span>
+      <span class="min-w-0 max-w-56 truncate" :class="scheduled || scheduleConflict ? 'font-semibold' : ''">{{ scheduleLabel }}</span>
       <OperatorKbd
         aria-hidden="true"
       >F8</OperatorKbd>
     </button>
 
-    <!-- release tab (pushed to the right of the context bar) -->
-    <UiButton
-      v-if="hasOpenTab && !readOnly"
-      variant="ghost"
-      size="icon-sm"
-      class="ml-auto shrink-0 text-muted-foreground"
-      aria-label="Liberar comanda"
-      title="Liberar comanda"
-      @click="confirmClear = true"
-    >
-      <Icon name="lucide:x" class="size-4" />
-    </UiButton>
-
+    <!-- Liberar comanda: a porta mora no fim da barra de contexto (`pages/index.vue`,
+         v4); o gesto e a confirmação continuam aqui (`askRelease`). -->
     <PosCustomerModal
       v-model:open="customerSheetOpen"
       :customer-name="customerName"

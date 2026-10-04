@@ -156,7 +156,7 @@ if (!import.meta.client) {
   width: 0.78em;
   height: 1.18em;
   border-radius: 0.09em;
-  background: linear-gradient(180deg, #23262b 0%, #191c20 48%, #101216 52%, #1b1e23 100%);
+  background: linear-gradient(180deg, #3a2a1f 0%, #2b1d16 48%, #1e140e 52%, #2a1c14 100%);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 60%);
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -176,11 +176,13 @@ if (!import.meta.client) {
   filter: brightness(0.75);
 }
 .flap-cell--blank {
-  background: linear-gradient(180deg, #1a1d21 0%, #14161a 48%, #0e1013 52%, #16181c 100%);
+  background: linear-gradient(180deg, #2b1d16 0%, #22170f 48%, #180f0a 52%, #20150e 100%);
 }
 @media (prefers-reduced-motion: reduce) {
+  /* \`!important\`: a camada da suíte (\`data-suite\`) reduz toda transição a 0,01 ms;
+     a palheta não gira nada, nem por 0,01 ms. */
   .flap-cell {
-    transition: none;
+    transition: none !important;
   }
 }
 </style>

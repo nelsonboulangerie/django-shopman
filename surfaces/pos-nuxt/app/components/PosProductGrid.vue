@@ -9,6 +9,7 @@ import type { POSCartItem, POSCollectionProjection, POSProductProjection } from 
 import {
   HIDE_UNAVAILABLE_STORAGE_KEY,
   cartQtyForSku,
+  collectionColorMap,
   enterTargetProduct,
   filterProducts,
   gridEntries,
@@ -42,12 +43,13 @@ const DENSITIES: { key: Density; label: string; icon: string; cols: string }[] =
   // um tile mínimo (~120px compacta, ~135px padrão, ~185px ampla).
   { key: "compact", label: "Compacta", icon: "lucide:grid-3x3", cols: "grid-cols-3 @lg:grid-cols-4 @2xl:grid-cols-5 @3xl:grid-cols-6 @4xl:grid-cols-7 @5xl:grid-cols-8" },
   { key: "cozy", label: "Padrão", icon: "lucide:layout-grid", cols: "grid-cols-2 @md:grid-cols-3 @xl:grid-cols-4 @3xl:grid-cols-5 @5xl:grid-cols-6" },
-  { key: "roomy", label: "Ampla", icon: "lucide:square", cols: "grid-cols-2 @xl:grid-cols-3 @4xl:grid-cols-4" },
+  { key: "roomy", label: "Ampla", icon: "lucide:grid-2x2", cols: "grid-cols-2 @xl:grid-cols-3 @4xl:grid-cols-4" },
 ];
 const DENSITY_STORAGE_KEY = "pos.productDensity";
 const density = ref<Density>("cozy");
 const densityCols = computed(() => DENSITIES.find((d) => d.key === density.value)?.cols ?? DENSITIES[1]!.cols);
-const densityIcon = computed(() => DENSITIES.find((d) => d.key === density.value)?.icon ?? DENSITIES[1]!.icon);
+// O ponto colorido do chip de cada coleção (v4): a cor que os produtos dela já trazem.
+const collectionColors = computed(() => collectionColorMap(props.products));
 
 // Ocultar indisponíveis: preferência de exibição deste dispositivo (o olho ao
 // lado da densidade). Padrão = mostrar; a regra de disponibilidade não muda.
@@ -133,14 +135,24 @@ function onSearchEscape() {
 </script>
 
 <template>
-  <section class="flex h-full min-h-0 flex-col gap-3">
-    <div class="flex shrink-0 items-center gap-2">
-      <PosSearchField ref="searchInputRef" v-model="search" kbd="F3" placeholder="Buscar produto por nome ou código" autofocus @keydown.enter.prevent="onSearchEnter" @keydown.esc.prevent="onSearchEscape" />
-      <UiButton
-        variant="outline"
-        size="icon"
-        class="relative size-11 shrink-0"
-        :class="hideUnavailable ? 'border-primary text-primary' : ''"
+  <section class="flex h-full min-h-0 flex-col gap-2.5">
+    <!-- Busca + densidade (v4): a busca é o instrumento do balcão (44 px, Enter
+         adiciona, F3 ou / focam); a densidade é um seletor segmentado à vista. -->
+    <div class="flex shrink-0 flex-wrap items-center gap-2">
+      <PosSearchField
+        ref="searchInputRef"
+        v-model="search"
+        :kbd="['F3', '/']"
+        hint="Enter adiciona"
+        placeholder="Buscar produto por nome ou código"
+        autofocus
+        @keydown.enter.prevent="onSearchEnter"
+        @keydown.esc.prevent="onSearchEscape"
+      />
+      <button
+        type="button"
+        class="relative grid size-11 shrink-0 place-items-center rounded-md border bg-card transition hover:bg-accent"
+        :class="hideUnavailable ? 'border-primary text-primary' : 'border-border text-muted-foreground'"
         :aria-label="hideUnavailableActionLabel"
         :title="hideUnavailableActionLabel"
         data-pos-hide-unavailable
@@ -152,48 +164,55 @@ function onSearchEscape() {
           class="absolute -right-1.5 -top-1.5 min-w-5 rounded-full bg-primary px-1 text-xs font-semibold tabular-nums leading-5 text-primary-foreground"
           aria-hidden="true"
         >{{ hiddenCount }}</span>
-      </UiButton>
-      <UiPopover>
-        <UiPopoverTrigger as-child>
-          <UiButton variant="outline" size="icon" class="size-11 shrink-0" aria-label="Densidade da grade" title="Densidade da grade">
-            <Icon :name="densityIcon" class="size-5" />
-          </UiButton>
-        </UiPopoverTrigger>
-        <UiPopoverContent align="end" class="w-44 p-1">
-          <p class="px-2 py-1.5 text-xs font-medium text-muted-foreground">Densidade da grade</p>
-          <button
-            v-for="opt in DENSITIES"
-            :key="opt.key"
-            type="button"
-            class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition hover:bg-accent"
-            :class="density === opt.key ? 'bg-accent font-medium text-accent-foreground' : ''"
-            @click="setDensity(opt.key)"
-          >
-            <Icon :name="opt.icon" class="size-4 shrink-0" />
-            <span class="flex-1">{{ opt.label }}</span>
-            <Icon v-if="density === opt.key" name="lucide:check" class="size-4 shrink-0 text-primary" />
-          </button>
-        </UiPopoverContent>
-      </UiPopover>
+      </button>
+      <div class="inline-flex h-11 shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Densidade da grade" title="Densidade da grade">
+        <button
+          v-for="opt in DENSITIES"
+          :key="opt.key"
+          type="button"
+          class="inline-flex h-full items-center justify-center gap-1.5 rounded op-label transition"
+          :class="density === opt.key
+            ? 'bg-card px-2 font-semibold text-foreground shadow-sm'
+            : 'w-9 text-muted-foreground hover:text-foreground'"
+          :aria-label="`Densidade ${opt.label}`"
+          :aria-pressed="density === opt.key"
+          :title="opt.label"
+          @click="setDensity(opt.key)"
+        >
+          <Icon :name="opt.icon" class="size-4 shrink-0" />
+          <span v-if="density === opt.key" class="max-xl:sr-only">{{ opt.label }}</span>
+        </button>
+      </div>
     </div>
 
-    <div class="-mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 pb-1 no-scrollbar">
+    <!-- Coleções em chips de 32 px (v4), com o ponto na cor da coleção. -->
+    <div class="-mx-1 flex shrink-0 gap-1 overflow-x-auto px-1 pb-1 no-scrollbar">
       <button
         type="button"
-        class="flex h-9 shrink-0 items-center whitespace-nowrap rounded-full border px-3 text-sm font-medium transition"
-        :class="activeCollection === '' ? 'border-primary bg-primary/5' : 'hover:border-primary/50 hover:bg-accent'"
+        class="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 op-label transition"
+        :class="activeCollection === '' ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
+        :aria-pressed="activeCollection === ''"
         @click="activeCollection = ''"
       >
+        <Icon v-if="activeCollection === ''" name="lucide:check" class="size-3.5 text-primary" aria-hidden="true" />
         Tudo
       </button>
       <button
         v-for="collection in orderedCollections"
         :key="collection.ref"
         type="button"
-        class="flex h-9 shrink-0 items-center whitespace-nowrap rounded-full border px-3 text-sm font-medium transition"
-        :class="activeCollection === collection.ref ? 'border-primary bg-primary/5' : 'hover:border-primary/50 hover:bg-accent'"
+        class="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 op-label transition"
+        :class="activeCollection === collection.ref ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
+        :aria-pressed="activeCollection === collection.ref"
         @click="activeCollection = collection.ref"
       >
+        <Icon v-if="activeCollection === collection.ref" name="lucide:check" class="size-3.5 text-primary" aria-hidden="true" />
+        <span
+          v-else
+          class="size-2 shrink-0 rounded-full bg-muted-foreground"
+          :style="collectionColors.get(collection.ref) ? { background: collectionColors.get(collection.ref) } : undefined"
+          aria-hidden="true"
+        />
         {{ collection.name }}
       </button>
     </div>
@@ -202,11 +221,11 @@ function onSearchEscape() {
       <!-- Skeleton só no PRIMEIRO carregamento: um refresh de fundo com a grade
            já populada não pisca 12 tiles pulsando em cima do catálogo. -->
       <div v-if="pending && !products.length" class="grid gap-2.5" :class="densityCols">
-        <div v-for="idx in 12" :key="idx" class="aspect-[4/3] animate-pulse rounded-md border bg-muted" />
+        <div v-for="idx in 12" :key="idx" class="h-[150px] animate-pulse rounded-lg border bg-muted" />
       </div>
       <div
         v-else-if="!filteredProducts.length && hiddenCount > 0"
-        class="flex flex-col items-center gap-3 rounded-md border border-dashed p-8 text-center text-muted-foreground"
+        class="flex flex-col items-center gap-3 rounded-lg border border-dashed p-8 text-center text-muted-foreground"
         data-pos-hidden-unavailable-empty
       >
         <p>Nenhum produto disponível encontrado. {{ hiddenUnavailableLabel(hiddenCount) }}.</p>
@@ -215,10 +234,10 @@ function onSearchEscape() {
           Mostrar indisponíveis
         </UiButton>
       </div>
-      <div v-else-if="!filteredProducts.length" class="rounded-md border border-dashed p-8 text-center text-muted-foreground">
+      <div v-else-if="!filteredProducts.length" class="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
         Nenhum produto encontrado.
       </div>
-      <div v-else class="grid gap-2.5" :class="densityCols">
+      <div v-else class="grid content-start gap-2.5 pb-2" :class="densityCols">
         <template v-for="entry in entries" :key="entry.key">
           <PosProductGroupTile
             v-if="entry.kind === 'group'"

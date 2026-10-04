@@ -14,6 +14,7 @@ import {
   formatQty,
   hourLabel,
   sourceConflictLabel,
+  salesAnswer,
   sourcesCaption,
 } from "~/presentation/bi";
 
@@ -69,96 +70,90 @@ const channelRows = computed(() =>
 </script>
 
 <template>
-  <main class="flex flex-1 flex-col gap-4 p-4">
-    <p v-if="pending" class="text-sm text-muted-foreground">Carregando…</p>
-    <div v-else-if="error" class="flex items-center gap-3">
-      <p class="text-sm text-muted-foreground">Não deu para carregar os números.</p>
-      <button type="button" class="h-9 rounded-md border border-border px-3 text-sm font-medium" @click="refresh()">
-        Tentar de novo
-      </button>
-    </div>
-    <template v-else-if="report">
-      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile
-          label="Pedidos"
-          :value="formatInt(report.orders_total)"
-          :delta="delta(report.orders_total, report.previous.orders_total)"
-        />
-        <StatTile
-          label="Faturamento"
-          :value="formatMoneyCompact(report.revenue_total_q)"
-          :delta="delta(report.revenue_total_q, report.previous.revenue_total_q)"
-        />
-        <StatTile
-          label="Ticket médio"
-          :value="formatMoney(report.average_ticket_q)"
-          :delta="delta(report.average_ticket_q, report.previous.average_ticket_q)"
-        />
-        <StatTile
-          label="Cancelados"
-          :value="formatInt(report.cancelled_total)"
-          hint="Fora do faturamento acima"
-        />
-      </div>
+  <div class="flex min-h-0 flex-1 flex-col">
+    <OperatorPageHeader title="Quanto vendemos?">
+      <template #actions>
+        <BiWindowPicker />
+        <BiPageMenu />
+      </template>
+      <template #phone-actions>
+        <BiPhoneBell />
+      </template>
+    </OperatorPageHeader>
 
-      <section class="rounded-md border border-border bg-card p-3">
-        <h2 class="text-lg font-semibold text-foreground">Faturamento por dia</h2>
-        <p class="mb-3 text-xs text-muted-foreground">
-          Traço = período anterior; janela longa agrega por semana ou mês
-          <template v-if="hasHistory">
-            · <span class="mx-0.5 inline-block h-2 w-2 rounded-sm bg-foreground/25 align-middle"></span>
-            barras claras = histórico Yooga
+    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+      <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
+      <template v-if="report">
+        <div class="grid grid-cols-2 gap-3 xl:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
+          <BiAnswer :text="salesAnswer(report)" class="col-span-2 xl:col-span-1" />
+          <StatTile
+            label="Faturamento"
+            :value="formatMoneyCompact(report.revenue_total_q)"
+            :delta="delta(report.revenue_total_q, report.previous.revenue_total_q)"
+          />
+          <StatTile
+            label="Pedidos"
+            :value="formatInt(report.orders_total)"
+            :delta="delta(report.orders_total, report.previous.orders_total)"
+          />
+          <StatTile
+            label="Ticket médio"
+            :value="formatMoney(report.average_ticket_q)"
+            :delta="delta(report.average_ticket_q, report.previous.average_ticket_q)"
+          />
+          <StatTile label="Cancelados" :value="formatInt(report.cancelled_total)" hint="Fora do faturamento ao lado" />
+        </div>
+
+        <BiSection title="Faturamento por dia">
+          <template #caption>
+            Traço = período anterior; janela longa agrega por semana ou mês
+            <template v-if="hasHistory">
+              · <span class="mx-0.5 inline-block size-2 rounded-sm bg-primary/35 align-middle"></span>
+              barras claras = histórico Yooga
+            </template>
           </template>
-        </p>
-        <ChartBarSeries :points="revenueSeries" :format="formatMoneyCompact" />
-        <p v-if="conflicts.length" class="mt-3 text-xs text-muted-foreground">
-          Dia com pedido no Shopman lê só o Shopman, e o histórico daquele dia sai da conta.
-          <span v-for="line in conflicts" :key="line" class="block">{{ line }}.</span>
-        </p>
-      </section>
+          <ChartBarSeries :points="revenueSeries" :format="formatMoneyCompact" />
+          <p v-if="conflicts.length" class="mt-3 op-micro text-muted-foreground">
+            Dia com pedido no Shopman lê só o Shopman, e o histórico daquele dia sai da conta.
+            <span v-for="line in conflicts" :key="line" class="block">{{ line }}.</span>
+          </p>
+        </BiSection>
 
-      <div class="grid gap-4 lg:grid-cols-2">
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Pedidos por hora</h2>
-          <p class="mb-3 text-xs text-muted-foreground">Soma do período, hora local{{ sourcesNote }}</p>
-          <ChartBarSeries :points="hourSeries" :format="(v) => formatInt(v)" :tick-every="4" />
-        </section>
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Pedidos por dia da semana</h2>
-          <p class="mb-3 text-xs text-muted-foreground">Soma do período{{ sourcesNote }}</p>
-          <ChartBarSeries :points="weekdaySeries" :format="(v) => formatInt(v)" :tick-every="1" />
-        </section>
-      </div>
+        <div class="grid gap-3 lg:grid-cols-2">
+          <BiSection title="Pedidos por hora" :caption="`Soma do período, hora local${sourcesNote}`">
+            <ChartBarSeries :points="hourSeries" :format="(v) => formatInt(v)" :tick-every="4" />
+          </BiSection>
+          <BiSection title="Pedidos por dia da semana" :caption="`Soma do período${sourcesNote}`">
+            <ChartBarSeries :points="weekdaySeries" :format="(v) => formatInt(v)" :tick-every="1" />
+          </BiSection>
+        </div>
 
-      <div class="grid gap-4 lg:grid-cols-2">
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Por canal</h2>
-          <p class="mb-3 text-xs text-muted-foreground">Faturamento do período</p>
-          <ChartHBarList v-if="channelRows.length" :rows="channelRows" />
-          <p v-else class="text-sm text-muted-foreground">Sem vendas no período.</p>
-        </section>
-        <section class="rounded-md border border-border bg-card p-3">
-          <h2 class="text-lg font-semibold text-foreground">Top produtos</h2>
-          <p class="mb-3 text-xs text-muted-foreground">Por faturamento no período</p>
-          <table v-if="report.top_skus.length" class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-border text-left text-xs font-medium text-muted-foreground">
-                <th class="pb-2 font-medium">Produto</th>
-                <th class="pb-2 text-right font-medium">Qtd</th>
-                <th class="pb-2 text-right font-medium">Faturamento</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in report.top_skus" :key="row.sku" class="border-b border-border last:border-0">
-                <td class="max-w-0 truncate py-2 pr-2 font-medium text-foreground">{{ row.name }}</td>
-                <td class="py-2 text-right tabular-nums text-foreground">{{ formatQty(row.qty) }}</td>
-                <td class="py-2 text-right tabular-nums text-foreground">{{ formatMoney(row.revenue_q) }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="text-sm text-muted-foreground">Sem vendas no período.</p>
-        </section>
-      </div>
-    </template>
-  </main>
+        <div class="grid gap-3 lg:grid-cols-2">
+          <BiSection title="Por canal" caption="Faturamento do período">
+            <ChartHBarList v-if="channelRows.length" :rows="channelRows" />
+            <p v-else class="op-body text-muted-foreground">Sem vendas no período.</p>
+          </BiSection>
+          <BiSection title="Top produtos" caption="Por faturamento no período">
+            <table v-if="report.top_skus.length" class="w-full op-label">
+              <thead>
+                <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
+                  <th class="pb-2 font-semibold">Produto</th>
+                  <th class="pb-2 text-right font-semibold">Qtd</th>
+                  <th class="pb-2 text-right font-semibold">Faturamento</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in report.top_skus" :key="row.sku" class="border-b border-border last:border-0">
+                  <td class="py-2 pr-2 font-medium text-foreground">{{ row.name }}</td>
+                  <td class="py-2 text-right tnum text-foreground">{{ formatQty(row.qty) }}</td>
+                  <td class="py-2 text-right tnum text-foreground">{{ formatMoney(row.revenue_q) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="op-body text-muted-foreground">Sem vendas no período.</p>
+          </BiSection>
+        </div>
+      </template>
+    </main>
+  </div>
 </template>

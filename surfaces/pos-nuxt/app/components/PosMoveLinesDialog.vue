@@ -8,6 +8,7 @@ import {
   freezesPriceOnMove,
   type MoveMode,
   type MovePayload,
+  moveLineId,
   moveLineView,
   modeNeedsSelection,
   moveTargetOptions,
@@ -25,6 +26,11 @@ const props = defineProps<{
   busy: boolean;
   /** Fase de preparo (persist + reload da comanda): o diálogo já abriu. */
   preparing?: boolean;
+  /**
+   * Linhas que já vêm marcadas: o Transferir do modo seleção da comanda (v4), onde o
+   * operador escolheu antes o que sai. Pelo F10 a lista vem vazia, como sempre.
+   */
+  preselected?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -48,7 +54,9 @@ watch(() => props.open, (isOpen) => {
   // Seleção começa VAZIA: dividir a conta é escolher O QUE SAI — nascer com
   // tudo marcado invertia o gesto (desmarcar o que fica) e um Enter apressado
   // movia a comanda inteira.
-  selected.value = new Set();
+  // A exceção é o Transferir do modo seleção: lá a escolha já foi feita, linha a linha.
+  const known = new Set(props.items.map(moveLineId));
+  selected.value = new Set((props.preselected ?? []).filter((id) => known.has(id)));
   splitRef.value = props.suggestedSplitRef;
   targetSessionKey.value = defaultMoveTarget(props.otherTabs);
 });

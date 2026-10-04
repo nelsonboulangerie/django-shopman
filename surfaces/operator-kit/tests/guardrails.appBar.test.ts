@@ -19,10 +19,10 @@ import { OPERATOR_SURFACES as APPS } from "./support/surfaceRegistry";
 //
 // ## Por que a trava é por LISTA e não por proibição
 //
-// Três cabeçalhos ainda são legítimos como estão: o do PDV carrega a comanda editável,
-// o da Cozinha carrega relógio e dia operacional, o da Produção carrega progresso do
-// dia e timers. Eles não são deriva — são cabeçalhos ricos que ainda não foram
-// convertidos, e a conversão é WP próprio. A trava não os proíbe: ela impede que a
+// Um cabeçalho ainda é legítimo como está: o do PDV carrega a comanda editável (o da
+// Cozinha e o da Produção viraram o `OperatorPageHeader` da suíte na onda V4). Não é
+// deriva — é cabeçalho rico que ainda não foi convertido, e a conversão é WP próprio.
+// A trava não o proíbe: ela impede que a
 // lista CRESÇA em silêncio, que é como os quatro convertidos aqui nasceram.
 //
 // Um arquivo novo com `<header>` + `<RailToggle>` reprova até ser adicionado a esta
@@ -31,16 +31,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SURFACES = resolve(here, "../..");
 
 /** Cabeçalhos ricos ainda não convertidos. Cada linha é uma dívida com endereço. */
-const CABECALHOS_PROPRIOS_CONHECIDOS = [
-  // O PDV monta o cabeçalho por página porque cada uma carrega um contexto diferente
-  // (comanda aberta, caixa) — e o `PosTabHeader` é editável. As Encomendas já
-  // nasceram no `OperatorAppBar` (`PosPreordersShell`), e a antiga tela de fichas
-  // saiu da lista com elas.
-  "pos-nuxt/app/pages/index.vue",
-  "pos-nuxt/app/pages/session/index.vue",
-  // A Produção carrega progresso do dia, timers e atalhos ensinados na aba.
-  "production-nuxt/app/components/ProductionHeader.vue",
-  "production-nuxt/app/components/RecipeHeader.vue",
+const CABECALHOS_PROPRIOS_CONHECIDOS: string[] = [
+  // Vazia desde a onda V4: Produção (V4-PROD) e PDV (V4-PDV) migraram para o cabeçalho
+  // da layer. Cabeçalho próprio novo volta a reprovar até ser declarado aqui com motivo.
 ].sort();
 
 
@@ -68,10 +61,11 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(proprios.sort()).toEqual(CABECALHOS_PROPRIOS_CONHECIDOS);
   });
 
-  it("os três convertidos consomem a peça da layer", () => {
-    const convertidos = [
-      "bi-nuxt/app/components/BiTopBar.vue",
-    ];
+  it("os convertidos consomem a peça da layer", () => {
+    // O B.I. saiu desta lista para a do rail da suíte (V4-BI).
+    // O Marketing também saiu (V4-MKT): a lista ficou vazia, e a trava segue valendo
+    // para quem voltar a usar a barra de seções do topo.
+    const convertidos: string[] = [];
     // Navegação local que ainda não é peça da layer, declarada com o motivo.
     const navLocalDeclarada: Record<string, string> = {};
     for (const file of convertidos) {
@@ -94,6 +88,11 @@ describe("guardrail do cabeçalho de seções", () => {
       // cupons, Plataformas) mora em `MarketingSettingsNav.vue`, na linha de recortes
       // do `OperatorPageHeader`; ela não é barra de seções do app.
       "marketing-nuxt/app/components/MarketingNav.vue",
+      // V4-PDV: o rail e a barra do polegar do PDV (`place`), como o GestorNav.
+      "pos-nuxt/app/components/PosFunctionRail.vue",
+      // V4-PROD: o ciclo do lote no rail (Alt1 a Alt5 impressos) e na barra do polegar.
+      "production-nuxt/app/components/ProductionNav.vue",
+      "bi-nuxt/app/components/BiNav.vue",
       // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
       // `current` e devolvem `select`.
       "purchase-nuxt/app/components/PurchaseNav.vue",

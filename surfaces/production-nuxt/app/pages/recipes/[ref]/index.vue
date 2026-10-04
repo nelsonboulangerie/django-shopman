@@ -185,7 +185,7 @@ async function confirmArchive() {
 </script>
 
 <template>
-  <main class="flex min-h-screen flex-col">
+  <main class="flex min-h-0 flex-1 flex-col">
     <RecipeHeader :title="entry?.name || 'Receita'" :subtitle="subtitle" back="/recipes" :pending="pending" @refresh="refresh()" />
 
     <section v-if="forbidden" class="grid flex-1 place-items-center p-6 text-center">
