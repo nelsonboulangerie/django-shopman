@@ -684,8 +684,14 @@ test.describe("listas operacionais", () => {
     await page.getByRole("button", { name: "Nova campanha" }).click();
     await page.getByLabel("Quando acontecer").selectOption("schedule");
     await prepareNewCampaignForMoment(page);
-    await page.getByLabel("Começar em (opcional)").fill("2026-12-31");
-    await page.getByLabel("Parar depois de (opcional)").fill("2026-01-01");
+    const period = page.getByRole("group", { name: "Período de veiculação da recorrência" });
+    const periodSegments = period.getByRole("spinbutton");
+    await periodSegments.nth(0).fill("31");
+    await periodSegments.nth(1).fill("12");
+    await periodSegments.nth(2).fill("2026");
+    await periodSegments.nth(3).fill("01");
+    await periodSegments.nth(4).fill("01");
+    await periodSegments.nth(5).fill("2026");
     await expect(page.getByRole("alert")).toContainText("data final");
     await expect(
       page.getByText("Rascunho salvo neste dispositivo às 10:30."),
