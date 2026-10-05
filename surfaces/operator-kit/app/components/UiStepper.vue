@@ -34,7 +34,7 @@ const ui = {
   container: "relative flex w-full items-center justify-center",
   trigger: "relative z-10 group/step-trigger grid size-control place-items-center rounded-full outline-none transition disabled:cursor-not-allowed disabled:opacity-60",
   indicator: "relative grid size-7 place-items-center rounded-full border border-border bg-card text-xs font-semibold tabular-nums text-muted-foreground shadow-xs transition before:pointer-events-none before:absolute before:inset-[-5px] before:rounded-full before:border before:border-transparent before:transition group-data-[state=active]/step:border-primary group-data-[state=active]/step:bg-primary group-data-[state=active]/step:text-primary-foreground group-data-[state=active]/step:before:border-primary group-data-[state=completed]/step:border-primary group-data-[state=completed]/step:bg-primary/10 group-data-[state=completed]/step:text-primary group-focus-visible/step-trigger:before:border-ring",
-  separator: "absolute top-1/2 left-1/2 z-0 h-0.5 w-full -translate-y-1/2 rounded-full bg-border transition group-data-[state=completed]/step:bg-primary",
+  separator: "absolute top-1/2 start-[calc(50%+28px)] end-[calc(-50%+28px)] z-0 h-0.5 -translate-y-1/2 rounded-full bg-border transition group-data-[state=completed]/step:bg-primary",
   wrapper: "pointer-events-none hidden min-w-0 max-w-28 sm:block",
   title: "truncate text-center text-xs font-medium text-current",
   description: "hidden",

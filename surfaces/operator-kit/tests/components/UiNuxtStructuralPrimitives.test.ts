@@ -100,6 +100,10 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     expect(root.querySelectorAll("[data-slot='separator']")).toHaveLength(2);
     for (const separator of root.querySelectorAll("[data-slot='separator']")) {
       expect(separator.className).toContain("h-0.5");
+      expect(separator.className).toContain("start-[calc(50%+28px)]");
+      expect(separator.className).toContain("end-[calc(-50%+28px)]");
+      expect(separator.className).not.toContain("left-1/2");
+      expect(separator.className).not.toContain("w-full");
       expect(separator.className).not.toContain("hidden");
     }
     expect(root.querySelectorAll("[data-slot='title']")[1]?.textContent?.trim()).toBe("2. Destinos");
