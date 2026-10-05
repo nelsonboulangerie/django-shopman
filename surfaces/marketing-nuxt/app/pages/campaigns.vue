@@ -722,7 +722,7 @@ useHead({ title: "Campanhas" });
           :key="rule.pk"
           :data-created-campaign="rule.pk === createdPk ? rule.pk : undefined"
           :tabindex="rule.pk === createdPk ? -1 : undefined"
-          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 outline-none sm:flex sm:flex-wrap sm:gap-3"
+          class="relative px-4 py-3 outline-none"
           :class="
             rule.pk === createdPk
               ? 'bg-emerald-500/5 ring-2 ring-inset ring-emerald-500/30'
@@ -737,13 +737,14 @@ useHead({ title: "Campanhas" });
             :disabled="mutatingCampaignPk !== null || !editState(rule).enabled"
             :aria-busy="mutatingCampaignPk === rule.pk"
             :aria-label="`${rule.is_active ? 'Desligar' : 'Ligar'} a campanha ${rule.name}`"
+            class="absolute top-2.5 right-3"
             @update:model-value="toggle(rule)"
           />
 
           <!-- A linha inteira abre a edição; o alvo amplo reduz precisão e navegação do operador. -->
           <button
             type="button"
-            class="col-start-2 min-w-0 text-left disabled:cursor-not-allowed disabled:opacity-60 sm:flex-1"
+            class="min-w-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="!editState(rule).enabled"
             :aria-label="
               editState(rule).enabled
@@ -753,7 +754,7 @@ useHead({ title: "Campanhas" });
             @click="openEdit(rule)"
           >
             <p
-              class="font-semibold"
+              class="pr-12 font-semibold"
               :class="rule.is_active ? '' : 'text-muted-foreground'"
             >
               {{ rule.name }}
@@ -804,7 +805,7 @@ useHead({ title: "Campanhas" });
           </button>
 
           <div
-            class="col-start-2 flex min-h-11 shrink-0 items-center justify-end gap-2 sm:min-h-0"
+            class="mt-2 flex min-h-11 shrink-0 items-center justify-end gap-2"
           >
             <span
               v-if="!rule.requires_approval"
@@ -845,13 +846,13 @@ useHead({ title: "Campanhas" });
              Botão morto sem frase é defeito — a frase vai por extenso, sob a linha. -->
           <p
             v-if="!editState(rule).enabled"
-            class="col-start-2 -mt-1 text-xs text-muted-foreground sm:basis-full sm:pl-12"
+            class="-mt-1 text-xs text-muted-foreground"
           >
             {{ editState(rule).reason }}
           </p>
           <p
             v-if="!fireState(rule).enabled"
-            class="col-start-2 -mt-1 text-xs text-muted-foreground sm:basis-full sm:pl-12"
+            class="-mt-1 text-xs text-muted-foreground"
           >
             {{ fireState(rule).reason }}
           </p>

@@ -559,6 +559,12 @@ test.describe("cartão de anúncio", () => {
     page,
   }) => {
     await openScenario(page, "board-pending", "/__visual_board", V1280);
+    // Em uma rodada completa, a compilação do dev server e as 28 cenas anteriores
+    // podem atrasar a primeira projeção sem que a interface tenha regredido. Espere
+    // o cartão factual, não somente o shell já montado, antes de cobrar seu controle.
+    await expect(page.locator("[data-announcement-review]")).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(
       page.getByRole("button", { name: "Ver como fica em cada plataforma" }),
     ).toBeVisible();

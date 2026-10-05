@@ -73,7 +73,7 @@ const { request: openSearch } = useSuiteSearchRequest();
     class="flex shrink-0 flex-col border-b border-border bg-card print:hidden"
     data-operator-page-header
   >
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 pr-2 pl-4 md:px-4 md:pt-3 md:pb-2.5">
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-2 pr-2 pl-4 md:gap-x-3 md:px-4 md:pt-3 md:pb-2.5">
       <!-- celular e tablet em pé: o selo do app (o rail não existe ali) -->
       <!-- Tela com caminho de volta (`#lead`): no celular o voltar ocupa o lugar do selo. -->
       <!-- O alvo de toque é de 44px (a régua da casa); o selo desenhado segue com 36. -->
@@ -94,10 +94,10 @@ const { request: openSearch } = useSuiteSearchRequest();
 
       <slot name="lead" />
 
-      <div class="flex min-w-0 flex-1 basis-0 items-center gap-3 py-2.5 md:flex-none md:basis-auto md:py-0">
+      <div class="flex min-w-0 flex-1 basis-0 items-center gap-2 py-2.5 md:flex-none md:basis-auto md:gap-3 md:py-0">
         <div class="min-w-0">
           <p v-if="eyebrowText" class="op-eyebrow truncate text-muted-foreground" data-page-header-eyebrow>{{ eyebrowText }}</p>
-          <h1 class="truncate text-[20px] leading-none font-semibold tracking-[-0.01em] md:text-[22px]">{{ title }}</h1>
+          <h1 class="truncate text-[19px] leading-none font-semibold tracking-[-0.01em] outline-none md:text-[22px]">{{ title }}</h1>
           <!-- Linha fina SOB o título (prévias v4: "22:03 · sáb 03/10 · lotes fechados
                hoje"; no celular "06:12 · 6 para finalizar"). Opcional. -->
           <slot name="subtitle" />
@@ -121,7 +121,7 @@ const { request: openSearch } = useSuiteSearchRequest();
         <button
           v-if="$slots.search || search"
           type="button"
-          class="grid size-12 place-items-center rounded-md text-foreground"
+          class="grid size-11 place-items-center rounded-md text-foreground md:size-12"
           aria-label="Buscar"
           aria-haspopup="dialog"
           data-page-header-search-toggle

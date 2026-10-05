@@ -344,6 +344,9 @@ describe("OperatorPageHeader", () => {
   it("o título é o h1 da tela", async () => {
     const wrapper = await mountHeader();
     expect(wrapper.get("h1").text()).toBe("Pedidos");
+    // A troca de rota pode focar o título para anunciar a nova tela, mas isso não
+    // deve deixar a moldura padrão do navegador colada às letras.
+    expect(wrapper.get("h1").classes()).toContain("outline-none");
   });
 
   it("a busca aparece uma vez; no celular a lupa pede a busca da suíte em tela cheia", async () => {
@@ -356,6 +359,7 @@ describe("OperatorPageHeader", () => {
     const before = requests.value;
     const toggle = wrapper.get("[data-page-header-search-toggle]");
     expect(toggle.attributes("aria-haspopup")).toBe("dialog");
+    expect(toggle.classes()).toContain("size-11");
     await toggle.trigger("click");
     expect(requests.value).toBe(before + 1);
   });
@@ -410,6 +414,13 @@ describe("OperatorLiveStatus", () => {
     mounted.push(wrapper as unknown as VueWrapper);
     expect(wrapper.text()).toContain("Atualização falhou");
     expect(wrapper.attributes("data-live-tone")).toBe("off");
+  });
+
+  it("no menor celular, atualização calma vira ponto para preservar o título", async () => {
+    const wrapper = await mountSuspended(OperatorLiveStatus, { props: { tone: "calm", time: "10:30", label: "Atualiza a cada 1 min" } });
+    mounted.push(wrapper as unknown as VueWrapper);
+    expect(wrapper.get("[data-operator-live-status] > span:last-child").classes()).toContain("max-[379px]:hidden");
+    expect(wrapper.attributes("aria-label")).toContain("Atualiza a cada 1 min");
   });
 });
 
