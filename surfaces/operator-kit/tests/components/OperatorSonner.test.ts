@@ -1,4 +1,4 @@
-import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, type VueWrapper } from "vue";
 
@@ -20,10 +20,11 @@ const ToasterStub = defineComponent({
 });
 
 const mounted: VueWrapper[] = [];
+const colorMode = vi.hoisted(() => ({ value: "dark" }));
+mockNuxtImport("useColorMode", () => () => colorMode);
+
 beforeEach(() => {
-  // O layer não instala @nuxtjs/color-mode sozinho; quem fornece o composable é
-  // cada app hospedeiro. No teste da fonte, simulamos exatamente esse contrato.
-  vi.stubGlobal("useColorMode", () => ({ value: "dark" }));
+  colorMode.value = "dark";
 });
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount();

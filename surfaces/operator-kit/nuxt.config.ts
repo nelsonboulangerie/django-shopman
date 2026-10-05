@@ -19,6 +19,44 @@ export default defineNuxtConfig({
   // que components/composables/utils/plugins em `app/` sejam auto-importados via extends.
   future: { compatibilityVersion: 4 },
 
+  // Nuxt UI é a camada estrutural de alto nível da suíte. O tema visual padrão
+  // fica deliberadamente desligado: cor, tipografia, raio, densidade e foco
+  // continuam vindo dos tokens Shopman em operator-theme.css. Componentes
+  // complexos podem usar Nuxt UI; quando a anatomia operacional pedir algo mais
+  // específico, o wrapper canônico usa Reka diretamente.
+  modules: [
+    [
+      "@nuxt/ui",
+      {
+        prefix: "Nuxt",
+        fonts: false,
+        colorMode: false,
+        theme: {
+          unstyled: true,
+          transitions: false,
+        },
+        experimental: {
+          componentDetection: true,
+        },
+      },
+    ],
+  ],
+
+  hooks: {
+    // Os oito apps já instalam @nuxtjs/color-mode e esse é o dono canônico do
+    // composable. O Nuxt UI também exporta um fallback homônimo mesmo quando seu
+    // módulo de color mode está desligado; removê-lo evita warning de import
+    // duplicado e, sobretudo, duas fontes possíveis para o mesmo estado.
+    "imports:extend": (imports) => {
+      const duplicate = imports.findIndex(
+        (entry) =>
+          entry.name === "useColorMode" &&
+          String(entry.from).includes("@nuxt/ui"),
+      );
+      if (duplicate >= 0) imports.splice(duplicate, 1);
+    },
+  },
+
   // Um reka-ui só no bundle do app. Sem isto, o componente do kit que importa
   // `reka-ui` resolve o `operator-kit/node_modules` e o app resolve o dele. Medido
   // no build do Gestor (03/10/2026): duas cópias do DismissableLayer no bundle; com

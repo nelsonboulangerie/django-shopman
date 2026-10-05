@@ -10,6 +10,9 @@ import UiRadio from "../../../operator-kit/app/components/UiRadio.vue";
 import UiRadioGroup from "../../../operator-kit/app/components/UiRadioGroup.vue";
 import UiSelect from "../../../operator-kit/app/components/UiSelect.vue";
 import UiSwitch from "../../../operator-kit/app/components/UiSwitch.vue";
+import UiTabs from "../../../operator-kit/app/components/Ui/Tabs/Tabs.vue";
+import UiTabsList from "../../../operator-kit/app/components/Ui/Tabs/List.vue";
+import UiTabsTrigger from "../../../operator-kit/app/components/Ui/Tabs/Trigger.vue";
 import UiToggleChip from "../../../operator-kit/app/components/UiToggleChip.vue";
 
 function invoke(listener: unknown, event: Event) {
@@ -66,6 +69,67 @@ const UiInput = defineComponent({
   },
 });
 
+// Os componentes canônicos de data/hora são exercitados com Nuxt UI/Reka no
+// operator-kit. Aqui o dublê mantém o contrato string que a regra de Marketing
+// consome, para estes testes continuarem focados em timezone, DST e payload.
+function temporalInput(name: string, type: "date" | "time" | "datetime-local") {
+  return defineComponent({
+    name,
+    inheritAttrs: false,
+    props: { modelValue: { type: String, default: "" } },
+    emits: ["update:modelValue"],
+    setup(props, { attrs, emit }) {
+      return () => h("input", {
+        ...attrs,
+        type,
+        value: props.modelValue,
+        onInput: (event: Event) => emit("update:modelValue", (event.target as HTMLInputElement).value),
+      });
+    },
+  });
+}
+
+const UiDateField = temporalInput("UiDateField", "date");
+const UiDateTimeField = temporalInput("UiDateTimeField", "datetime-local");
+const UiTimeField = temporalInput("UiTimeField", "time");
+
+const UiDateRangeField = defineComponent({
+  name: "UiDateRangeField",
+  inheritAttrs: false,
+  props: {
+    modelValue: {
+      type: Object as () => { start?: string; end?: string },
+      default: () => ({ start: "", end: "" }),
+    },
+  },
+  emits: ["update:modelValue"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h("div", { ...attrs, role: "group" }, [
+        h("input", {
+          "aria-label": "Início do período",
+          type: "date",
+          value: props.modelValue.start ?? "",
+          onInput: (event: Event) =>
+            emit("update:modelValue", {
+              start: (event.target as HTMLInputElement).value,
+              end: props.modelValue.end ?? "",
+            }),
+        }),
+        h("input", {
+          "aria-label": "Fim do período",
+          type: "date",
+          value: props.modelValue.end ?? "",
+          onInput: (event: Event) =>
+            emit("update:modelValue", {
+              start: props.modelValue.start ?? "",
+              end: (event.target as HTMLInputElement).value,
+            }),
+        }),
+      ]);
+  },
+});
+
 const UiTextarea = defineComponent({
   name: "UiTextarea",
   inheritAttrs: false,
@@ -89,15 +153,50 @@ const UiTextarea = defineComponent({
   },
 });
 
+// O NuxtStepper é validado no próprio operator-kit. Aqui o dublê preserva o
+// contrato público consumido pelo formulário: nome, etapa atual, bloqueio e
+// atualização controlada. Assim os testes de Campanhas continuam testando o
+// fluxo, sem remontar o runtime Nuxt UI dentro de cada unitário do app.
+const UiStepper = defineComponent({
+  name: "UiStepper",
+  props: {
+    modelValue: { type: Number, default: 0 },
+    items: { type: Array as () => Array<{ title: string; description?: string; disabled?: boolean }>, default: () => [] },
+    label: { type: String, default: "Etapas" },
+  },
+  emits: ["update:modelValue"],
+  setup(props, { emit }) {
+    return () => h("nav", { "aria-label": props.label }, [
+      h("ol", props.items.map((item, index) => h("li", [
+        h("button", {
+          type: "button",
+          disabled: item.disabled,
+          "aria-current": props.modelValue === index ? "step" : undefined,
+          "aria-label": `${index + 1}. ${item.title}`,
+          onClick: () => emit("update:modelValue", index),
+        }, item.title),
+      ]))),
+    ]);
+  },
+});
+
 config.global.components = {
   ...config.global.components,
   UiButton,
   UiCheckbox,
+  UiDateField,
+  UiDateRangeField,
+  UiDateTimeField,
   UiInput,
   UiRadio,
   UiRadioGroup,
   UiSelect,
   UiSwitch,
+  UiStepper,
+  UiTabs,
+  UiTabsList,
+  UiTabsTrigger,
   UiTextarea,
+  UiTimeField,
   UiToggleChip,
 };

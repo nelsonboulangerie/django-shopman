@@ -1,0 +1,16 @@
+{
+  "allowedAdvisories": [
+    {
+      "ghsa": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "expiresOn": "2026-11-15",
+      "reason": "Transitivo de Nuxt/Nitro via globby/fast-glob/micromatch. Em 2026-10-05, braces@3.0.3 é a versão mais recente publicada e o audit não oferece upgrade seguro."
+    },
+    {
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "package": "node-forge",
+      "expiresOn": "2026-11-15",
+      "reason": "Transitivo de Nuxt/Nitro via listhen/@nuxt/cli. Em 2026-10-05, node-forge@1.4.0 é a versão mais recente publicada; npm audit fix --force propõe downgrade quebrador para nuxt@3.15.1."
+    }
+  ]
+}

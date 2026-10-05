@@ -25,7 +25,7 @@ describe("OrderIFoodNegotiations", () => {
     await w.findAll("select")[1]!.setValue("PRODUCT_QUALITY");
     await w.get("textarea").setValue(" Café não recebido. ");
     expect(w.get('button[type="submit"]').attributes("disabled")).toBeDefined();
-    await w.get('input[type="checkbox"]').setValue(true);
+    await w.get('[role="checkbox"]').trigger("click");
     await w.get("form").trigger("submit"); await flushPromises();
     expect(executePath).toHaveBeenCalledWith("IFOOD-123:ifood-handshake:dispute-1", "/api/v1/backstage/orders/IFOOD-123/ifood-handshake/", expect.objectContaining({ ref: "accept", payload_schema: expect.objectContaining({ base_revision: "r1", decision: "accept" }) }), { reason: "PRODUCT_QUALITY", detail_reason: "Café não recebido." });
     expect(w.emitted("refresh")).toHaveLength(1);
@@ -36,18 +36,18 @@ describe("OrderIFoodNegotiations", () => {
     const w = render(); await w.get("select").setValue("accept"); await w.get("textarea").setValue("rascunho");
     await w.get("select").setValue("reject"); expect(w.find("textarea").exists()).toBe(false);
     expect(w.text()).not.toContain("PRODUCT_QUALITY");
-    await w.get('input[type="checkbox"]').setValue(true);
+    await w.get('[role="checkbox"]').trigger("click");
     expect(w.get('button[type="submit"]').attributes("disabled")).toBeDefined();
-    await w.findAll("select")[1]!.setValue("ORDER_DELIVERED"); await w.get('input[type="checkbox"]').setValue(true);
+    await w.findAll("select")[1]!.setValue("ORDER_DELIVERED"); await w.get('[role="checkbox"]').trigger("click");
     await w.get("form").trigger("submit"); await flushPromises();
     expect(executePath.mock.calls[0]?.[3]).toEqual({ reason: "ORDER_DELIVERED", detail_reason: "" });
   });
   it("allows acceptance without reason only with no supplied reasons", async () => {
-    const w = render(negotiation({ accept_reasons: [] })); await w.get("select").setValue("accept"); await w.get('input[type="checkbox"]').setValue(true);
+    const w = render(negotiation({ accept_reasons: [] })); await w.get("select").setValue("accept"); await w.get('[role="checkbox"]').trigger("click");
     expect(w.findAll("select")).toHaveLength(1); expect(w.get('button[type="submit"]').attributes("disabled")).toBeUndefined();
   });
   it("blocks changed revision and read-only/expired negotiations", async () => {
-    const w = render(); await w.get("select").setValue("accept"); await w.findAll("select")[1]!.setValue("PRODUCT_QUALITY"); await w.get('input[type="checkbox"]').setValue(true);
+    const w = render(); await w.get("select").setValue("accept"); await w.findAll("select")[1]!.setValue("PRODUCT_QUALITY"); await w.get('[role="checkbox"]').trigger("click");
     await w.setProps({ negotiations: [negotiation({ actions: [{ ...action("accept"), payload_schema: { ...action("accept").payload_schema, base_revision: "r2" } }, action("reject")] })] });
     expect(w.text()).toContain("A negociação foi atualizada"); expect(w.get('button[type="submit"]').attributes("disabled")).toBeDefined();
     await w.setProps({ negotiations: [negotiation({ can_respond: false, response_notice: "Prazo encerrado." })] });
@@ -55,17 +55,18 @@ describe("OrderIFoodNegotiations", () => {
   });
   it("freezes an uncertain response and retries exactly the same intention", async () => {
     executePath.mockRejectedValueOnce(new Error("network")); const w = render(negotiation({ accept_reasons: [] }));
-    await w.get("select").setValue("accept"); await w.get('input[type="checkbox"]').setValue(true); await w.get("form").trigger("submit"); await flushPromises();
+    await w.get("select").setValue("accept"); await w.get('[role="checkbox"]').trigger("click"); await w.get("form").trigger("submit"); await flushPromises();
     expect(w.get("fieldset").attributes("disabled")).toBeDefined(); expect(w.text()).toContain("Verificar mesmo envio");
-    await w.get('button[type="button"]').trigger("click"); await flushPromises(); expect(executePath.mock.calls[1]).toEqual(executePath.mock.calls[0]);
+    await w.findAll('button[type="button"]').find((button) => button.text().includes("Verificar mesmo envio"))!.trigger("click");
+    await flushPromises(); expect(executePath.mock.calls[1]).toEqual(executePath.mock.calls[0]);
   });
   it("releases a definitively refused intention for review", async () => {
     executePath.mockRejectedValueOnce({ data: { outcome: "not_applied" } });
     const w = render(negotiation({ accept_reasons: [] }));
-    await w.get("select").setValue("accept"); await w.get('input[type="checkbox"]').setValue(true); await w.get("form").trigger("submit"); await flushPromises();
+    await w.get("select").setValue("accept"); await w.get('[role="checkbox"]').trigger("click"); await w.get("form").trigger("submit"); await flushPromises();
     expect(w.get("fieldset").attributes("disabled")).toBeUndefined();
     expect(w.text()).toContain("A resposta não foi aplicada");
-    expect((w.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false);
+    expect(w.get('[role="checkbox"]').attributes("aria-checked")).toBe("false");
   });
   it("permits only the current order's evidence proxy among relative URLs", () => {
     const good = "/api/v1/backstage/orders/IFOOD-123/ifood-handshake-evidence/?dispute_id=dispute-1&index=0";

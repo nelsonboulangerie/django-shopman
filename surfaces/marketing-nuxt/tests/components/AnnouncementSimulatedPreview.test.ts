@@ -136,7 +136,7 @@ describe("AnnouncementSimulatedPreview", () => {
       "story",
     );
 
-    await tabs[2]?.trigger("click");
+    await tabs[2]?.trigger("mousedown", { button: 0, ctrlKey: false });
     expect(wrapper.get('[role="tabpanel"]').attributes("data-scene-kind")).toBe(
       "whatsapp_message",
     );

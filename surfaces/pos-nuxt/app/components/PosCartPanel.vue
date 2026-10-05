@@ -921,7 +921,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
          baixo. Fechada, mostra o resumo e o Pagamento na zona do polegar; puxada, as
          linhas, o editor e o numérico (só ao tocar a linha). -->
     <template v-if="sheet">
-      <div v-if="sheetOpen" class="fixed inset-0 -z-10 bg-black/35" aria-hidden="true" data-pos-sheet-backdrop @click="sheetOpen = false" />
+      <UiScrim v-if="sheetOpen" class="-z-10 bg-black/35 backdrop-blur-none" label="Recolher a comanda" data-pos-sheet-backdrop @click="sheetOpen = false" />
       <button
         type="button"
         class="mx-auto grid h-5 w-20 shrink-0 place-items-center"

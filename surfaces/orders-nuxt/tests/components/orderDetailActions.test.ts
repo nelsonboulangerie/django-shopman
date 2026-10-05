@@ -1,6 +1,6 @@
 import { fixtureActions } from "../support/orderActions";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, defineComponent, ref, watch } from "vue";
+import { computed, defineComponent, h, ref, watch } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { useOrderCashDrafts } from "../../app/composables/useOrderCashDrafts";
 
@@ -167,7 +167,13 @@ const stubs = {
   OperatorPageHeader: { template: "<header><slot name='lead' /><slot name='status' /><slot name='actions' /><slot name='phone-actions' /></header>" },
   OperatorLiveStatus: true,
   ReadFreshness: true,
-  UiIconButton: { inheritAttrs: false, template: "<button type='button' v-bind='$attrs'><slot /></button>" },
+  UiIconButton: defineComponent({
+    inheritAttrs: false,
+    emits: ["click"],
+    setup(_, { attrs, emit, slots }) {
+      return () => h("button", { ...attrs, type: "button", onClick: (event: MouseEvent) => emit("click", event) }, slots.default?.());
+    },
+  }),
   NuxtLink: { template: "<a><slot /></a>" },
   OrderCourierPanel: true,
   OrderReasonDialog: true,

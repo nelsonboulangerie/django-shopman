@@ -129,9 +129,7 @@ describe("OperatorLogin", () => {
     expect(wrapper.get("input").classes()).toContain("h-12");
     expect(wrapper.get('button[type="submit"]').classes()).toContain("h-14");
     expect(wrapper.get("form").classes()).not.toContain("bg-card");
-    expect(wrapper.getComponent({ name: "Icon" }).attributes("name")).toBe(
-      "lucide:lock-keyhole",
-    );
+    expect(wrapper.get(".iconify").classes()).toContain("i-lucide:lock-keyhole");
   });
 
   // Identidade do app no gate: o PNG da família PWA (o mesmo do rail e da Central),
@@ -145,13 +143,11 @@ describe("OperatorLogin", () => {
     const img = roundel.get("img");
     expect(img.attributes("src")).toBe("/pwa/pwa-64x64.png?v=3");
     expect(img.attributes("alt")).toBe("");
-    expect(roundel.findComponent({ name: "Icon" }).exists()).toBe(false);
+    expect(roundel.find(".iconify").exists()).toBe(false);
 
     await img.trigger("error");
 
     expect(roundel.find("img").exists()).toBe(false);
-    expect(roundel.getComponent({ name: "Icon" }).attributes("name")).toBe(
-      "lucide:layout-grid",
-    );
+    expect(roundel.get(".iconify").classes()).toContain("i-lucide:layout-grid");
   });
 });

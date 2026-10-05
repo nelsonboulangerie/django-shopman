@@ -679,32 +679,19 @@ test.describe("listas operacionais", () => {
     );
   });
 
-  test("intervalo recorrente inválido explica o campo", async ({ page }) => {
+  test("período recorrente usa o campo canônico único", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V768);
     await page.getByRole("button", { name: "Nova campanha" }).click();
     await page.getByLabel("Quando acontecer").selectOption("schedule");
     await prepareNewCampaignForMoment(page);
-    await page.getByLabel("Começar em (opcional)").fill("2026-12-31");
-    await page.getByLabel("Parar depois de (opcional)").fill("2026-01-01");
-    await expect(page.getByRole("alert")).toContainText("data final");
+    await expect(page.getByText("Período de veiculação (opcional)")).toBeVisible();
+    const period = page.getByRole("group", { name: "Período de veiculação da recorrência" });
+    await expect(period).toBeVisible();
+    await expect(period.getByRole("spinbutton")).toHaveCount(6);
+    await expect(page.locator("input[type='date']:not([aria-hidden='true'])")).toHaveCount(0);
     await expect(
       page.getByText("Rascunho salvo neste dispositivo às 10:30."),
     ).toBeVisible();
-    // Preencher a data leva o scroll interno até o campo em alguns frames do
-    // Chromium. Este retrato documenta o formulário inteiro a partir do topo.
-    await page
-      .getByRole("dialog")
-      .last()
-      .evaluate((element) => {
-        element.scrollTop = 0;
-      });
-    await expectStableScreenshot(
-      page,
-      "campaign-form__validation",
-      V768,
-      "light",
-      { fullPage: false },
-    );
   });
 
   // ⚠️ Os sete checkboxes de público ficam ABAIXO da dobra do diálogo: os retratos que
