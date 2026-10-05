@@ -69,6 +69,12 @@ do rail ficava próximo demais das bordas. A peça canônica `RailSection` passo
 64 px para 60 px dentro do trilho de 76 px: são 8 px de respiro por lado em toda a
 suíte, sem reduzir o alvo abaixo do mínimo de toque. O teste do kit fixa essa medida.
 
+A execução `37255932603` aprovou a matriz da Produção, o kit e **78/79** retratos de
+Marketing com o novo rail. O retrato restante alternava entre o topo do diálogo e o
+campo de data que o navegador acabara de focar. O cenário agora espera o salvamento
+do rascunho e reposiciona explicitamente o scroll interno no topo; o retrato isolado
+passou sem mudar a baseline.
+
 ## Critério de fechamento
 
 O segundo commit incorpora somente esses retratos produzidos pelo Chromium pinado

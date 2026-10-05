@@ -681,6 +681,17 @@ test.describe("listas operacionais", () => {
     await page.getByLabel("Começar em (opcional)").fill("2026-12-31");
     await page.getByLabel("Parar depois de (opcional)").fill("2026-01-01");
     await expect(page.getByRole("alert")).toContainText("data final");
+    await expect(
+      page.getByText("Rascunho salvo neste dispositivo às 10:30."),
+    ).toBeVisible();
+    // Preencher a data leva o scroll interno até o campo em alguns frames do
+    // Chromium. Este retrato documenta o formulário inteiro a partir do topo.
+    await page
+      .getByRole("dialog")
+      .last()
+      .evaluate((element) => {
+        element.scrollTop = 0;
+      });
     await expectStableScreenshot(
       page,
       "campaign-form__validation",
