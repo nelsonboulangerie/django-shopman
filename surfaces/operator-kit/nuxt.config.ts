@@ -19,11 +19,10 @@ export default defineNuxtConfig({
   // que components/composables/utils/plugins em `app/` sejam auto-importados via extends.
   future: { compatibilityVersion: 4 },
 
-  // Nuxt UI é a camada estrutural de alto nível da suíte. O tema visual padrão
-  // fica deliberadamente desligado: cor, tipografia, raio, densidade e foco
-  // continuam vindo dos tokens Shopman em operator-theme.css. Componentes
-  // complexos podem usar Nuxt UI; quando a anatomia operacional pedir algo mais
-  // específico, o wrapper canônico usa Reka diretamente.
+  // Nuxt UI é a camada estrutural e visual de alto nível da suíte. O tema
+  // canônico permanece ligado; operator-theme.css traduz os tokens semânticos
+  // oficiais para a marca Shopman. Wrappers só ajustam o que o caso de uso
+  // operacional comprovar necessário, sem reconstruir a anatomia do componente.
   modules: [
     [
       "@nuxt/ui",
@@ -32,8 +31,8 @@ export default defineNuxtConfig({
         fonts: false,
         colorMode: false,
         theme: {
-          unstyled: true,
-          transitions: false,
+          unstyled: false,
+          transitions: true,
         },
         experimental: {
           componentDetection: true,

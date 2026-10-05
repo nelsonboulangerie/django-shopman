@@ -10,10 +10,15 @@
 
    ⚠️ O que NÃO pode morar aqui: diretiva que depende do node_modules do app
    (`@import "tailwindcss"`, `@import "tw-animate-css"`, `@plugin "..."`). Essas
-   ficam no tailwind.css de cada app. O Nuxt UI está em modo `unstyled`: seus
-   wrappers recebem classes do kit e não importam o tema CSS do fornecedor.
+   ficam no tailwind.css de cada app. O tema canônico do Nuxt UI permanece ligado;
+   operator-theme.css traduz seus tokens semânticos para a identidade Shopman.
    ============================================================================ */
 
+/* Importar o tema oficial não é opcional: além dos tokens semânticos, ele
+   informa ao Tailwind onde estão as classes geradas dos componentes detectados.
+   Sem esta linha a anatomia chega ao DOM, mas cores e separadores não existem no
+   CSS final. operator-theme.css vem depois para traduzir a marca. */
+@import "@nuxt/ui";
 @import "./operator-theme.css";
 @import "./operator-suite.css";
 
