@@ -113,7 +113,7 @@ const TONE_TEXT: Record<OperatorInboxAlert["tone"], string> = {
       <button
         v-else
         type="button"
-        class="relative grid size-12 shrink-0 place-items-center rounded-md text-foreground transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        class="relative grid size-11 shrink-0 place-items-center rounded-md text-foreground transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:size-12"
         :aria-label="label"
         data-operator-inbox-trigger
         data-placement="header"

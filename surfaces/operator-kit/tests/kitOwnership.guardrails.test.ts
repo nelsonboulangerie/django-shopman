@@ -185,4 +185,10 @@ describe("operator-kit: os primitivos respeitam o token de alvo de toque", () =>
     const theme = readFileSync(resolve(surfacesDir, "operator-kit/app/assets/css/operator-theme.css"), "utf8");
     expect(theme).toMatch(/--spacing-control:\s*2\.75rem;/);
   });
+
+  it("tablet touch aumenta o alvo frequente para 48 px sem inflar celular ou desktop", () => {
+    const theme = readFileSync(resolve(surfacesDir, "operator-kit/app/assets/css/operator-theme.css"), "utf8");
+    expect(theme).toMatch(/@media\s*\(pointer:\s*coarse\)\s*and\s*\(min-width:\s*600px\)/);
+    expect(theme).toMatch(/@media[\s\S]*--spacing-control:\s*3rem;/);
+  });
 });

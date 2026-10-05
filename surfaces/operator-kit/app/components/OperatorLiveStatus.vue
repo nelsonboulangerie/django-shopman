@@ -47,7 +47,10 @@ const accessible = computed(() => [props.label, props.time && `última leitura $
     <span
       v-if="showLabel"
       aria-hidden="true"
-      :class="tone === 'late' ? 'font-semibold text-warning' : tone === 'off' ? 'font-semibold text-destructive' : ''"
+      :class="[
+        tone === 'late' ? 'font-semibold text-warning' : tone === 'off' ? 'font-semibold text-destructive' : '',
+        tone === 'calm' ? 'max-[379px]:hidden' : '',
+      ]"
     >{{ label }}</span>
   </span>
 </template>

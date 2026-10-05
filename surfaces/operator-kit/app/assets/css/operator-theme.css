@@ -25,6 +25,17 @@
     "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
+/* Tablet de operação não é desktop estreito. Com ponteiro touch e largura de tablet,
+   o alvo frequente sobe para 48 px, como pede a v4. No celular, 44 px continua sendo
+   o mínimo seguro e preserva a barra de 56 px; no desktop com mouse, 44 px mantém a
+   densidade e a precisão do teclado/ponteiro. A decisão é por capacidade do dispositivo,
+   não só por largura de viewport. */
+@media (pointer: coarse) and (min-width: 600px) {
+  :root {
+    --spacing-control: 3rem;
+  }
+}
+
 @theme inline {
   /* Rail de operador (OperatorRail/RailItem) tem cor PRÓPRIA, desacoplada da ação:
      no escuro a ação é dourada-pop, mas o rail precisa recuar (chrome, não ação). */
