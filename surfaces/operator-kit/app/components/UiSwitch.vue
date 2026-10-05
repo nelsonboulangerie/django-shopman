@@ -23,11 +23,18 @@ const attrs = useAttrs();
 // Os tamanhos oficiais xs e xl correspondem aos trilhos compactos e regulares
 // já adotados: 28×16 e 44×24. O alvo permanece 44×44 nos dois casos.
 const nuxtSize = computed(() => (props.size === "sm" ? "xs" : "xl"));
-const nuxtColor = computed(() => (props.tone === "success" ? "success" : "primary"));
+const nuxtColor = computed(() =>
+  props.tone === "success" ? "success" : "primary",
+);
 const ui = computed(() => ({
   root: "size-control items-center justify-center",
   base: [
-    "after:absolute after:inset-0 after:content-['']",
+    // O trilho mantém a anatomia oficial (44×24 ou 28×16). O pseudo-elemento
+    // amplia apenas a área clicável até 44×44, sem ampliar o fundo do trilho.
+    "relative after:absolute after:content-['']",
+    props.size === "sm"
+      ? "after:-inset-y-3.5 after:-inset-x-2"
+      : "after:-inset-y-2.5 after:inset-x-0",
     props.tone === "muted" ? "data-[state=checked]:bg-accented" : "",
   ].join(" "),
 }));

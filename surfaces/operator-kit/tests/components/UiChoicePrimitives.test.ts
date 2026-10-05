@@ -40,6 +40,9 @@ describe("UiCheckbox", () => {
     expect(control.attributes("type")).toBe("button");
     expect(control.attributes("aria-checked")).toBe("false");
     expect(wrapper.get('[data-slot="checkbox"]').classes()).toContain("min-h-control");
+    expect(control.classes()).toContain("size-5");
+    expect(control.classes()).toContain("relative");
+    expect(control.classes()).toContain("after:-inset-3");
     expect(wrapper.text()).toContain("Aniversariantes de hoje");
     expect(wrapper.get("label").attributes("for")).toBe(control.attributes("id"));
   });
@@ -98,6 +101,9 @@ describe("UiSwitch", () => {
     expect(control.attributes("aria-checked")).toBe("false");
     expect(control.attributes("data-state")).toBe("unchecked");
     expect(wrapper.get('[data-slot="thumb"]').exists()).toBe(true);
+    expect(control.classes()).toContain("w-11");
+    expect(control.classes()).toContain("relative");
+    expect(control.classes()).toContain("after:-inset-y-2.5");
 
     await control.trigger("click");
     expect(wrapper.emitted("update:modelValue")).toEqual([[true]]);

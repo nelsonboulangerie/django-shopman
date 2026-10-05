@@ -47,7 +47,7 @@ const ui = computed(() => ({
   ].join(" "),
   // O pseudo-element amplia a área clicável até o root de 44 px sem transformar
   // o quadrado canônico de 20 px num bloco gigante.
-  base: "size-5 after:absolute after:inset-0 after:content-['']",
+  base: "relative size-5 after:absolute after:-inset-3 after:content-['']",
   icon: "size-4",
   wrapper: "text-sm",
   description: "text-xs font-normal",
