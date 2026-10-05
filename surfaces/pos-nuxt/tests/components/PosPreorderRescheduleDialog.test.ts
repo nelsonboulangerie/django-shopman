@@ -55,7 +55,9 @@ it("o reagendar respeita o limite de dias da casa, como a venda", async () => {
 
   day("other")?.click();
   await vi.waitFor(() => expect(document.querySelector("[data-day-other-input]")).not.toBeNull());
-  expect(document.querySelector("[data-day-other-input]")?.getAttribute("max")).toBe("2026-09-15");
+  // O DateField visível é segmentado; Reka mantém este input escondido só para
+  // integração com formulário e nele materializa o limite recebido.
+  expect(document.querySelector('[data-day-other-input] input[type="date"]')?.getAttribute("max")).toBe("2026-09-15");
   w.unmount();
 });
 

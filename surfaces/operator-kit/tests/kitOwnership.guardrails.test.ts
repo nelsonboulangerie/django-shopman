@@ -58,9 +58,14 @@ const KIT_OWNED_CHOICE_PRIMITIVES = [
   "Radio",
   "RadioGroup",
   "Select",
+  "Stepper",
   "Switch",
+  "Tabs",
   "ToggleChip",
 ] as const;
+
+/** Campos temporais preservam strings das APIs, mas sua anatomia é única. */
+const KIT_OWNED_TEMPORAL_PRIMITIVES = ["DateField", "DateTimeField", "TimeField"] as const;
 
 /** Nomes próprios que a promoção do `UiSelect` aposentou. */
 const RETIRED_COMPONENTS = ["MaterialPicker"] as const;
@@ -74,6 +79,38 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
     else if (full.endsWith(".ts") || full.endsWith(".vue")) found.push(full);
   }
   return found;
+}
+
+function sourceWithoutComments(file: string): string {
+  const source = readFileSync(file, "utf8");
+  let clean = "";
+  let index = 0;
+
+  while (index < source.length) {
+    const next = source.slice(index);
+    if (next.startsWith("/*")) {
+      const end = source.indexOf("*/", index + 2);
+      index = end === -1 ? source.length : end + 2;
+      continue;
+    }
+    if (next.startsWith("//")) {
+      const end = source.indexOf("\n", index + 2);
+      if (end === -1) break;
+      clean += "\n";
+      index = end + 1;
+      continue;
+    }
+    if (next.startsWith("<!--")) {
+      const end = source.indexOf("-->", index + 4);
+      index = end === -1 ? source.length : end + 3;
+      continue;
+    }
+
+    clean += source[index];
+    index += 1;
+  }
+
+  return clean;
 }
 
 describe("operator-kit: o que é do kit não renasce copiado no app", () => {
@@ -120,6 +157,17 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
       ).toEqual([]);
     });
 
+    it(`${app} não tem cópia própria dos campos de data e hora`, () => {
+      const offenders = KIT_OWNED_TEMPORAL_PRIMITIVES.filter((name) =>
+        existsSync(resolve(surfacesDir, app, "app/components", `Ui${name}.vue`)),
+      );
+      expect(
+        offenders,
+        `Campo temporal copiado no app: ${offenders.join(", ")}. ` +
+          `O canônico é <Ui${offenders[0] ?? "…"}> do operator-kit.`,
+      ).toEqual([]);
+    });
+
     it(`${app} não reescreve o interruptor à mão`, () => {
       const offenders: string[] = [];
       for (const file of sourceFiles(resolve(surfacesDir, app, "app"))) {
@@ -133,6 +181,49 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
       expect(
         offenders,
         `Interruptor escrito à mão (use <UiSwitch> do operator-kit):\n  ` + offenders.join("\n  "),
+      ).toEqual([]);
+    });
+
+    it(`${app} não reescreve abas compostas à mão`, () => {
+      const offenders: string[] = [];
+      for (const file of sourceFiles(resolve(surfacesDir, app, "app"))) {
+        const source = sourceWithoutComments(file);
+        if (/\brole=["']tablist["']/.test(source)) {
+          offenders.push(file.slice(surfacesDir.length + 1));
+        }
+      }
+      expect(
+        offenders,
+        `Abas escritas à mão (use <UiTabs>, <UiTabsList> e <UiTabsTrigger>):\n  ` + offenders.join("\n  "),
+      ).toEqual([]);
+    });
+
+    it(`${app} não devolve checkbox ou rádio ao desenho nativo do sistema`, () => {
+      const offenders: string[] = [];
+      for (const file of sourceFiles(resolve(surfacesDir, app, "app"))) {
+        const source = sourceWithoutComments(file);
+        if (/<input(?=[^>]*\btype=["'](?:checkbox|radio)["'])[^>]*>/i.test(source)) {
+          offenders.push(file.slice(surfacesDir.length + 1));
+        }
+      }
+      expect(
+        offenders,
+        `Controle binário nativo encontrado (use <UiCheckbox> ou <UiRadioGroup>):\n  ` + offenders.join("\n  "),
+      ).toEqual([]);
+    });
+
+    it(`${app} não devolve data ou hora ao seletor nativo do sistema`, () => {
+      const offenders: string[] = [];
+      for (const file of sourceFiles(resolve(surfacesDir, app, "app"))) {
+        const source = sourceWithoutComments(file);
+        if (/<input(?=[^>]*\btype=["'](?:date|time|datetime-local|month|week)["'])[^>]*>/i.test(source)) {
+          offenders.push(file.slice(surfacesDir.length + 1));
+        }
+      }
+      expect(
+        offenders,
+        `Campo temporal nativo encontrado (use <UiDateField>, <UiTimeField> ou <UiDateTimeField>):\n  ` +
+          offenders.join("\n  "),
       ).toEqual([]);
     });
 
@@ -174,9 +265,15 @@ describe("operator-kit: os primitivos respeitam o token de alvo de toque", () =>
 
   // Barra e escolha juntos: o interruptor entrou com um alvo de 24 px vindo do PDV,
   // e o que cobra os dois é a mesma régua.
-  for (const name of [...KIT_OWNED_TOOLBAR_PRIMITIVES, ...KIT_OWNED_CHOICE_PRIMITIVES]) {
+  for (const name of [
+    ...KIT_OWNED_TOOLBAR_PRIMITIVES,
+    ...KIT_OWNED_CHOICE_PRIMITIVES,
+    ...KIT_OWNED_TEMPORAL_PRIMITIVES,
+  ]) {
     it(`Ui${name} usa *-control, nunca altura literal`, () => {
-      const source = readFileSync(resolve(surfacesDir, "operator-kit/app/components", `Ui${name}.vue`), "utf8");
+      const direct = resolve(surfacesDir, "operator-kit/app/components", `Ui${name}.vue`);
+      const nested = resolve(surfacesDir, "operator-kit/app/components/Ui", name, `${name}.vue`);
+      const source = readFileSync(existsSync(direct) ? direct : nested, "utf8");
       expect(TOKENLESS.test(stripComments(source)), `Ui${name} voltou a cravar altura literal em vez do token`).toBe(false);
     });
   }

@@ -35,11 +35,11 @@ onBeforeUnmount(() => scanner.stop());
 
 <template>
   <UiSheet :open="open" @update:open="(v: boolean) => emit('update:open', v)">
-    <UiSheetContent side="bottom" class="max-h-[92dvh]" :data-code-scanner="title">
+    <UiSheetContent side="bottom" composition="bare" class="max-h-[92dvh]" :data-code-scanner="title">
       <UiSheetHeader class="border-b border-border p-4">
         <div class="flex items-start justify-between gap-2">
           <UiSheetTitle class="text-base">{{ title }}</UiSheetTitle>
-          <UiSheetX />
+          <UiSheetX placement="inline" />
         </div>
         <UiSheetDescription>{{ hint }}</UiSheetDescription>
       </UiSheetHeader>

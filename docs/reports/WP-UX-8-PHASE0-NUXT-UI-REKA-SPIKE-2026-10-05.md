@@ -22,6 +22,52 @@ A prova confirmou a abordagem prevista no WP:
 - toda tela consome um componente Shopman, nunca `@nuxt/ui` diretamente;
 - classes, fontes, cores, densidade, copy e comportamento responsivo permanecem Shopman.
 
+## Anatomia canônica e tokens Shopman
+
+O `unstyled: true` desliga a aparência padrão do Nuxt UI, mas não autoriza substituir a
+anatomia do componente por outro padrão visual. A regra para os wrappers canônicos é:
+
+- Nuxt UI/Reka seguem donos da estrutura, dos slots, dos estados e da semântica;
+- Shopman aplica identidade visual por tokens: cor, tipografia, raio, densidade, foco,
+  espaçamento e comportamento responsivo;
+- slots estruturais não são escondidos sem justificativa de uso documentada;
+- quando a anatomia canônica piorar um caso operacional real, o wrapper pode usar Reka
+  diretamente, mas deve registrar o ganho funcional.
+
+O `UiStepper` é o exemplo travado em teste: ele preserva `StepperIndicator`,
+`StepperSeparator` e `StepperTitle`. A aparência Shopman é aplicada sobre a sequência
+clássica de círculos conectados, não sobre um card segmentado de botões.
+
+### Auditoria de interferência sobre anatomia
+
+Na revisão fina, os wrappers foram classificados em três grupos:
+
+- **Canônico com tokens Shopman:** `UiButton`, `UiModal`, `UiDateField`,
+  `UiDateRangeField`, `UiDateTimeField`, `UiTimeField` e `UiStepper`. Eles usam Nuxt UI
+  ou Reka para estrutura e comportamento, e aplicam tokens da casa para densidade, foco,
+  cor, tipografia, raio e adaptação por dispositivo.
+- **Exceção operacional a manter por enquanto:** `UiSelect`, porque preserva busca sem
+  acento, palavras-chave invisíveis, lista curta sem campo de busca, fechamento seguro
+  dentro de modal e foco previsível no touch. A exceção não é estética: ela existe porque
+  Compras e Marketing dependem de achar itens longos rapidamente no chão de operação.
+- **Candidatos a convergência canônica:** `UiSelect`, `UiCheckbox`, `UiRadioGroup` e
+  `UiSwitch` devem ser comparados, caso a caso, com `USelectMenu`, `UCheckbox`,
+  `URadioGroup` e `USwitch`. Se a primitiva Nuxt UI/Reka entregar a mesma ergonomia
+  operacional, o wrapper passa a delegar a ela. Se não entregar, a exceção permanece, mas
+  com a vantagem funcional registrada em teste.
+
+Regra de manutenção: nenhuma customização Shopman pode remover indicador, separador,
+viewport, trigger, conteúdo, item, estado ou papel sem explicar qual problema operacional
+ela resolve. O teste estrutural do `UiStepper` é o precedente: ele reprova a volta do card
+segmentado e a ocultação do separador.
+
+O `UiSelect` foi revisado como exceção controlada, não como componente livre. Ele se aproxima
+da anatomia de Combobox usada por Nuxt UI/Reka (`content`, `input`, `viewport`, `empty`,
+`item`) e mantém o `listbox` presente mesmo quando a busca não retorna resultados. A migração
+para `USelectMenu` só deve acontecer quando a primitiva preservar, com testes, estes quatro
+ganhos operacionais: busca sem acento e por keywords invisíveis, lista curta sem campo de
+busca, fechamento seguro dentro de modal/label ancestral e foco previsível no touch.
+
 `UiButton` e `UiModal` são as provas executáveis dessa arquitetura. Ambos usam componentes
 Nuxt UI sem tema e recebem integralmente as classes e o contrato público do Shopman. As cópias
 locais ainda prevalecem enquanto cada app é migrado; removê-las progressivamente faz o app
@@ -66,6 +112,20 @@ roda no gate das superfícies.
 
 O `npm audit` continua apontando vulnerabilidades indiretas já presentes na linha de base,
 tratadas por uma frente separada. A Fase 0 não cria exceção nem silencia esse gate.
+
+### Gate de supply-chain do Nuxt
+
+Em 05/10/2026, o `npm audit --audit-level=high` passou a bloquear a cadeia completa do
+Marketing por advisories transitivos em dependências do ecossistema Nuxt/Nitro:
+`GHSA-vfj7-8cjw-p6xm` (`braces`) e `GHSA-86w9-cpqp-85rv` (`node-forge`). Na data da
+revisão, `braces@3.0.3` e `node-forge@1.4.0` eram as versões mais recentes publicadas; o
+`npm audit fix --force` propunha downgrade quebrador para Nuxt 3.15.1.
+
+O gate foi trocado de `npm audit` cru para `scripts/check_npm_audit_gate.mjs`, mantendo a
+falha para qualquer advisory novo e permitindo apenas exceções temporárias registradas em
+`surfaces/npm-audit-allowlist.json`, com prazo e motivo. A exceção não cobre regressões de
+UX nem desliga o audit: ela impede que a PR de componentes fique presa a um falso caminho
+de correção enquanto o ecossistema publica versões corrigidas.
 
 ## Decisão para as fases seguintes
 

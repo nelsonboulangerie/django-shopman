@@ -267,14 +267,17 @@ useHead({ title: "Canais" });
                   <button type="button" class="min-h-11 underline" @click="resolveCollections(sc, false)">Usar valor atual</button>
                 </div>
                 <div class="max-h-60 overflow-auto">
-                  <label
+                  <UiCheckbox
                     v-for="opt in allCollections" :key="opt.ref"
-                    class="flex min-h-control cursor-pointer items-center gap-2 rounded px-1.5 py-1.5 text-sm transition hover:bg-accent"
+                    :model-value="draft.has(opt.ref)"
+                    class="w-full rounded px-1.5 text-sm hover:bg-accent"
+                    @update:model-value="toggleDraft(opt.ref)"
                   >
-                    <input type="checkbox" :checked="draft.has(opt.ref)" class="size-4 rounded border-border accent-foreground" @change="toggleDraft(opt.ref)" />
-                    <span class="flex-1 truncate">{{ opt.name }}</span>
-                    <span class="text-xs tabular-nums text-muted-foreground/60">{{ opt.product_count }}</span>
-                  </label>
+                    <span class="flex min-w-0 flex-1 items-center gap-2">
+                      <span class="flex-1 truncate">{{ opt.name }}</span>
+                      <span class="text-xs tabular-nums text-muted-foreground/60">{{ opt.product_count }}</span>
+                    </span>
+                  </UiCheckbox>
                 </div>
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
                   <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete collectionDrafts[sc.ref]; editRef = null">Descartar</button>

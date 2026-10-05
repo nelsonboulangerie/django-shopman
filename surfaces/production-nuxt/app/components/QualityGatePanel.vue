@@ -116,43 +116,22 @@ function closedLine(order: QCOrderCardProjection): string {
 
 <template>
   <div class="grid grid-cols-1 gap-4" data-quality-gate>
-    <div
+    <UiTabs
       v-if="!hideTabs"
-      class="grid w-full grid-cols-2 gap-1 rounded-md border bg-muted/40 p-1 sm:w-auto sm:justify-self-end"
-      role="tablist"
-      aria-label="Lotes da Qualidade"
+      v-model="view"
+      class="w-full sm:w-auto sm:justify-self-end"
     >
-      <button
-        type="button"
-        role="tab"
-        :aria-selected="view === 'pending'"
-        class="flex min-h-12 items-center justify-center gap-2 rounded-sm px-4 text-sm font-semibold transition"
-        :class="
-          view === 'pending'
-            ? 'bg-background text-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'
-        "
-        @click="view = 'pending'"
-      >
-        Para confirmar
-        <span class="tabular-nums">{{ pendingCount }}</span>
-      </button>
-      <button
-        type="button"
-        role="tab"
-        :aria-selected="view === 'reviewed'"
-        class="flex min-h-12 items-center justify-center gap-2 rounded-sm px-4 text-sm font-semibold transition"
-        :class="
-          view === 'reviewed'
-            ? 'bg-background text-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'
-        "
-        @click="view = 'reviewed'"
-      >
-        Confirmados
-        <span class="tabular-nums">{{ gate.reviewed.length }}</span>
-      </button>
-    </div>
+      <UiTabsList class="grid w-full grid-cols-2 sm:w-auto" aria-label="Lotes da Qualidade">
+        <UiTabsTrigger value="pending" class="min-h-12 gap-2 font-semibold">
+          Para confirmar
+          <span class="tabular-nums">{{ pendingCount }}</span>
+        </UiTabsTrigger>
+        <UiTabsTrigger value="reviewed" class="min-h-12 gap-2 font-semibold">
+          Confirmados
+          <span class="tabular-nums">{{ gate.reviewed.length }}</span>
+        </UiTabsTrigger>
+      </UiTabsList>
+    </UiTabs>
 
     <div
       v-if="view === 'pending'"

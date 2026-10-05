@@ -212,8 +212,19 @@ describe("UiSelect", () => {
 
     await search.setValue("inexistente");
     expect(wrapper.findAll('[role="option"]')).toHaveLength(0);
+    expect(wrapper.get('[role="listbox"]').attributes("id")).toBe(search.attributes("aria-controls"));
+    expect(wrapper.get('[data-slot="select-empty"]').text()).toBe("Nenhum resultado");
     expect(wrapper.get('[role="status"]').text()).toBe("Nenhum resultado");
     expect(wrapper.text()).toContain("Nenhum resultado");
+  });
+
+  it("o campo de busca continua nomeado quando o app não passou label", async () => {
+    const wrapper = await mount(UiSelect, { props: { options: approvedTemplates } });
+    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
+
+    expect(wrapper.get('[data-slot="select-input"]').attributes("aria-label")).toBe("Buscar");
+    expect(wrapper.get('[data-slot="select-viewport"]').attributes("role")).toBe("listbox");
+    expect(wrapper.findAll('[data-slot="select-item"]')).toHaveLength(30);
   });
 
   it("navega e confirma só pelo teclado", async () => {

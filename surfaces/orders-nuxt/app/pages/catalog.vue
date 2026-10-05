@@ -235,6 +235,7 @@ function toggleSelect(sku: string) {
 }
 const visibleSkus = computed(() => rows.value.map((r) => r.sku));
 const allSelected = computed(() => visibleSkus.value.length > 0 && visibleSkus.value.every((s) => selected.value.has(s)));
+const someSelected = computed(() => selected.value.size > 0 && !allSelected.value);
 function toggleSelectAll() {
   selected.value = allSelected.value ? new Set() : new Set(visibleSkus.value);
 }
@@ -584,10 +585,11 @@ useHead({ title: "Catálogo" });
              declarada no seletor). A escolha persiste por estação. -->
         <ColumnPicker v-if="surfaces.length" v-model="hiddenColumns" :columns="columnOptions" />
         <!-- ⋯ (v3): a última leitura útil, Atualizar e Exportar moram aqui -->
-        <div class="relative">
-          <UiIconButton icon="lucide:ellipsis" label="Mais ações do catálogo" aria-haspopup="menu" :aria-expanded="headerMenuOpen" data-catalog-more @click="headerMenuOpen = !headerMenuOpen" />
-          <div v-if="headerMenuOpen" class="fixed inset-0 z-40" @click="headerMenuOpen = false" />
-          <div v-if="headerMenuOpen" class="absolute right-0 z-50 mt-1 w-64 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg" role="menu" data-catalog-menu>
+        <UiPopover v-model:open="headerMenuOpen">
+          <UiPopoverTrigger as-child>
+            <UiIconButton icon="lucide:ellipsis" label="Mais ações do catálogo" data-catalog-more />
+          </UiPopoverTrigger>
+          <UiPopoverContent v-if="headerMenuOpen" align="end" :side-offset="6" class="w-64 rounded-lg p-1.5 shadow-lg" role="menu" data-catalog-menu>
             <div class="px-2.5 pt-1 pb-2"><ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" /></div>
             <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" @click="refresh()">
               <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" :class="pending ? 'motion-safe:animate-spin' : ''" />Atualizar
@@ -595,8 +597,8 @@ useHead({ title: "Catálogo" });
             <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" data-catalog-export @click="exportCatalog">
               <Icon name="lucide:download" class="size-4 text-muted-foreground" />Exportar CSV
             </button>
-          </div>
-        </div>
+          </UiPopoverContent>
+        </UiPopover>
       </template>
       <template #filters>
         <span v-if="collections.length" class="mr-1 shrink-0 op-eyebrow text-muted-foreground">Coleção</span>
@@ -710,10 +712,13 @@ useHead({ title: "Catálogo" });
                  `border-r` fecha a coluna fixa: no scroll horizontal é essa linha que
                  diz onde o painel parado termina e a matriz que corre começa. -->
             <th class="sticky sm:left-0 top-0 z-30 w-full min-w-[260px] border-b border-r border-border bg-card px-4 py-3 text-left">
-              <label class="min-h-control flex items-center gap-3">
-                <input type="checkbox" :checked="allSelected" class="size-4 rounded border-border accent-foreground" @change="toggleSelectAll" />
-                <span class="op-eyebrow text-muted-foreground">Produto</span>
-              </label>
+              <UiCheckbox
+                :model-value="allSelected"
+                :indeterminate="someSelected"
+                label="Produto"
+                class="op-eyebrow text-muted-foreground"
+                @update:model-value="toggleSelectAll"
+              />
             </th>
             <!-- Superfícies: largura fixa e uniforme (canais + feeds). O que faz caberem
                  num desktop sem scroll é o NOME CURTO vindo do backend (short_name:
@@ -787,8 +792,13 @@ useHead({ title: "Catálogo" });
                 >
                   <Icon name="lucide:grip-vertical" class="pointer-events-none size-4" />
                 </span>
-                <label class="min-h-control flex min-w-0 flex-1 items-center gap-3">
-                  <input type="checkbox" :checked="isSelected(row.sku)" class="size-4 shrink-0 rounded border-border accent-foreground" @change="toggleSelect(row.sku)" />
+                <UiCheckbox
+                  :model-value="isSelected(row.sku)"
+                  :aria-label="`Selecionar ${row.name}`"
+                  class="shrink-0"
+                  @update:model-value="toggleSelect(row.sku)"
+                />
+                <div class="flex min-w-0 flex-1 items-center gap-3">
                   <!-- thumbnail: esmaece + P&B quando "fora"; clique amplia a foto -->
                   <img
                     v-if="row.image_url && !brokenImages.has(row.sku)" :src="row.image_url" :alt="row.name"
@@ -845,7 +855,7 @@ useHead({ title: "Catálogo" });
                       <template v-if="row.primary_collection_name"><span class="shrink-0 text-muted-foreground/40">·</span><span class="truncate">{{ row.primary_collection_name }}</span></template>
                     </span>
                   </div>
-                </label>
+                </div>
                 <!-- menu ⋯ da linha: casa das ações menos corriqueiras (editar, pausar tudo, publicar) -->
                 <UiPopover :open="menuOpen === row.sku" @update:open="(v) => (menuOpen = v ? row.sku : null)">
                   <UiPopoverTrigger as-child>
@@ -1141,18 +1151,16 @@ useHead({ title: "Catálogo" });
       @pause-channel="pauseDetailChannel"
     />
 
-    <!-- lightbox: foto ampliada (clique em qualquer lugar fecha) -->
-    <Transition
-      enter-active-class="transition duration-150 ease-out" enter-from-class="opacity-0" enter-to-class="opacity-100"
-      leave-active-class="transition duration-100 ease-in" leave-from-class="opacity-100" leave-to-class="opacity-0"
-    >
-      <div v-if="zoom" class="fixed inset-0 z-50 grid cursor-zoom-out place-items-center bg-black/70 p-8" role="dialog" aria-modal="true" @click="zoom = null" @keydown.esc="zoom = null">
+    <!-- lightbox canônico: foco preso, Escape e retorno ao disparador são do Reka. -->
+    <UiDialog :open="Boolean(zoom)" @update:open="(value) => { if (!value) zoom = null; }">
+      <UiDialogContent v-if="zoom" class="max-w-[calc(100%-2rem)] cursor-zoom-out border-0 bg-transparent p-8 shadow-none sm:max-w-[calc(100%-2rem)]" @click="zoom = null">
+        <UiDialogTitle class="sr-only">Foto ampliada de {{ zoom.name }}</UiDialogTitle>
         <figure class="flex flex-col items-center gap-3">
           <img :src="zoom.url" :alt="zoom.name" class="max-h-[80vh] max-w-[85vw] rounded-xl object-contain shadow-2xl" />
-          <figcaption class="rounded-full bg-black/40 px-3 py-1 text-sm font-medium text-white">{{ zoom.name }}</figcaption>
+          <figcaption class="rounded-full bg-black/60 px-3 py-1 text-sm font-medium text-white">{{ zoom.name }}</figcaption>
         </figure>
-      </div>
-    </Transition>
+      </UiDialogContent>
+    </UiDialog>
   </main>
 </template>
 

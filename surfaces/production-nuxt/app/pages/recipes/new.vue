@@ -202,26 +202,20 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
 
     <section v-else class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <div class="mx-auto grid max-w-4xl gap-4">
-        <div class="flex items-center gap-1 rounded-md border bg-background p-0.5" role="tablist" aria-label="Como entrar a receita">
+        <UiTabs v-model="door">
+          <UiTabsList class="bg-background p-0.5" aria-label="Como entrar a receita">
           <!-- Portas mutuamente exclusivas da captura; o tab segmentado é deliberadamente compacto. -->
-          <button
+          <UiTabsTrigger
             v-for="option in doors"
             :key="option.value"
-            type="button"
-            role="tab"
-            class="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition"
-            :class="
-              door === option.value
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-selected="door === option.value"
-            @click="door = option.value"
+            :value="option.value"
+            class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
           >
             <Icon :name="option.icon" class="size-4" />
             {{ option.label }}
-          </button>
-        </div>
+          </UiTabsTrigger>
+          </UiTabsList>
+        </UiTabs>
 
         <!-- ── Anotação / Foto: entrada ──────────────────────────────────── -->
         <template v-if="door !== 'manual'">

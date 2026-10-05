@@ -93,29 +93,29 @@ const eventPeriodInverted = computed(
       <div class="grid gap-3 sm:grid-cols-2">
         <div>
           <label
-            :for="`${idPrefix}-event-start`"
+            :for="`${idPrefix}-event-start-date`"
             class="mb-1 block text-xs font-medium text-muted-foreground"
           >
             Começa
           </label>
-          <UiInput
+          <UiDateTimeField
             :id="`${idPrefix}-event-start`"
             :model-value="options.event_start"
-            type="datetime-local"
+            label="Começo do evento"
             @update:model-value="update({ event_start: String($event ?? '') })"
           />
         </div>
         <div>
           <label
-            :for="`${idPrefix}-event-end`"
+            :for="`${idPrefix}-event-end-date`"
             class="mb-1 block text-xs font-medium text-muted-foreground"
           >
             Termina
           </label>
-          <UiInput
+          <UiDateTimeField
             :id="`${idPrefix}-event-end`"
             :model-value="options.event_end"
-            type="datetime-local"
+            label="Término do evento"
             @update:model-value="update({ event_end: String($event ?? '') })"
           />
         </div>

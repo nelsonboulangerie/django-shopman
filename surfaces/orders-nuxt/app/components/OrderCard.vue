@@ -578,20 +578,19 @@ function secondaryClass(priority: string): string {
       <!-- ⋯ do cartão: atender, seleção em lote, voltar à estação, abrir. Na Saída larga
            (v4) ele não aparece: o toque longo abre o menu, e o teclado ainda o alcança. -->
       <div class="relative shrink-0" :class="fill ? 'absolute right-3 bottom-3 size-0' : ''">
-        <button
-          type="button"
-          class="grid h-full place-items-center rounded-lg border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          :class="[touch ? 'min-h-14 w-14' : 'min-h-12 w-12', fill ? 'sr-only focus:not-sr-only' : '']"
-          aria-haspopup="menu"
-          :aria-expanded="menuOpen"
-          :aria-label="`Mais ações do pedido ${code.code}`"
-          data-card-menu
-          @click="menuOpen = !menuOpen"
-        >
-          <Icon name="lucide:ellipsis" class="size-5" />
-        </button>
-        <div v-if="menuOpen" class="fixed inset-0 z-40" @click="menuOpen = false" />
-        <div v-if="menuOpen" class="absolute right-0 bottom-full z-50 mb-1 w-60 overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-lg" role="menu">
+      <UiPopover v-model:open="menuOpen">
+        <UiPopoverTrigger as-child>
+          <button
+            type="button"
+            class="grid h-full place-items-center rounded-lg border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            :class="[touch ? 'min-h-14 w-14' : 'min-h-12 w-12', fill ? 'sr-only focus:not-sr-only' : '']"
+            :aria-label="`Mais ações do pedido ${code.code}`"
+            data-card-menu
+          >
+            <Icon name="lucide:ellipsis" class="size-5" />
+          </button>
+        </UiPopoverTrigger>
+        <UiPopoverContent v-if="menuOpen" side="top" align="end" :side-offset="4" class="w-60 overflow-hidden p-1" role="menu">
           <button
             v-if="canOpen"
             type="button"
@@ -676,7 +675,8 @@ function secondaryClass(priority: string): string {
             <Icon name="lucide:file-text" class="size-4 shrink-0 text-muted-foreground" />
             Abrir o pedido
           </NuxtLink>
-        </div>
+        </UiPopoverContent>
+      </UiPopover>
       </div>
     </div>
   </article>
