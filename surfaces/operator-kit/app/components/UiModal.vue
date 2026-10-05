@@ -55,10 +55,17 @@ const ui = computed(() => ({
     :description="description"
     :dismissible="dismissible"
     :scrollable="scrollable"
-    :close="{ 'aria-label': closeLabel }"
+    :close="true"
     :ui="ui"
   >
     <slot name="trigger" />
+
+    <template #close>
+      <button type="button" :aria-label="closeLabel" :class="ui.close">
+        <Icon name="lucide:x" aria-hidden="true" />
+        <span class="sr-only">{{ closeLabel }}</span>
+      </button>
+    </template>
 
     <template #body="scope">
       <slot name="body" v-bind="scope" />
