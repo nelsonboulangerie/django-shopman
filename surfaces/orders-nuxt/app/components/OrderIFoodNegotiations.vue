@@ -119,10 +119,11 @@ watch(() => props.orderRef, () => { for (const key of Object.keys(drafts)) Refle
           </label>
           <p v-if="draft(item.id).decision && !actionFor(item)?.enabled" class="text-sm">{{ actionFor(item)?.reason || 'Esta resposta não está disponível.' }}</p>
           <p v-if="draft(item.id).decision && changed(item)" role="alert" class="text-sm">A negociação foi atualizada. Selecione novamente a decisão para revisar os dados atuais.</p>
-          <label v-if="draft(item.id).decision" class="flex items-start gap-2 text-sm">
-            <input v-model="draft(item.id).confirmed" type="checkbox" class="mt-1" />
-            <span>{{ consequence(item) }} Confirmo esta consequência.</span>
-          </label>
+          <UiCheckbox
+            v-if="draft(item.id).decision"
+            v-model="draft(item.id).confirmed"
+            :label="`${consequence(item)} Confirmo esta consequência.`"
+          />
         </fieldset>
         <p v-if="draft(item.id).error" role="alert" class="text-sm text-destructive">{{ draft(item.id).error }}</p>
         <button v-if="draft(item.id).uncertain" type="button" class="min-h-control rounded-md border px-3 py-2 text-sm" :disabled="draft(item.id).busy" @click="submit(item, true)">Verificar mesmo envio</button>

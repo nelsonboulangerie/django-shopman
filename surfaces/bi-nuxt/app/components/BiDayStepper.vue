@@ -3,8 +3,7 @@
 // num controle só. As setas andam para o dia aberto anterior/seguinte que o servidor
 // informa (dia fechado não existe na leitura); a seta para frente some no último dia
 // que já terminou, porque o dia em curso ainda não tem resposta. O meio abre o
-// calendário do sistema; quando o navegador recusa abrir por script, o campo aparece
-// à vista (toque nunca inerte).
+// calendário canônico da suíte, igual no desktop, tablet e celular.
 import { dayCaption, dayName } from "~/presentation/overShort";
 
 const props = defineProps<{
@@ -17,23 +16,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ change: [day: string] }>();
 
-const input = ref<HTMLInputElement | null>(null);
-const showField = ref(false);
-
-function openCalendar() {
-  const field = input.value;
-  if (!field) return;
-  try {
-    field.showPicker();
-  } catch {
-    showField.value = true;
-    void nextTick(() => field.focus());
-  }
-}
-
-function onPick(event: Event) {
-  const value = (event.target as HTMLInputElement).value;
-  showField.value = false;
+function onPick(value: string) {
   if (value && value !== props.day) emit("change", value);
 }
 
@@ -54,18 +37,21 @@ const SEG = "grid size-control shrink-0 place-items-center transition hover:bg-a
       >
         <Icon name="lucide:chevron-left" class="size-4" aria-hidden="true" />
       </button>
-      <button
-        type="button"
-        class="inline-flex h-full items-center gap-2 px-3 op-label transition hover:bg-accent"
-        :aria-label="`Dia da leitura: ${dayName(day, today)}, ${dayCaption(day)}. Escolher outro dia`"
-        data-day-open
-        @click="openCalendar"
-      >
-        <Icon name="lucide:calendar" class="size-4 text-muted-foreground" aria-hidden="true" />
-        <span class="font-semibold">{{ dayName(day, today) }}</span>
-        <span class="tnum text-muted-foreground">{{ dayCaption(day) }}</span>
-        <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-      </button>
+      <UiDateField :model-value="day" :max="max" label="Dia da leitura" @update:model-value="onPick">
+        <template #trigger>
+          <button
+            type="button"
+            class="inline-flex h-full items-center gap-2 px-3 op-label transition hover:bg-accent"
+            :aria-label="`Dia da leitura: ${dayName(day, today)}, ${dayCaption(day)}. Escolher outro dia`"
+            data-day-open
+          >
+            <Icon name="lucide:calendar" class="size-4 text-muted-foreground" aria-hidden="true" />
+            <span class="font-semibold">{{ dayName(day, today) }}</span>
+            <span class="tnum text-muted-foreground">{{ dayCaption(day) }}</span>
+            <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
+          </button>
+        </template>
+      </UiDateField>
       <button
         type="button"
         :class="[SEG, 'border-l border-border']"
@@ -78,17 +64,5 @@ const SEG = "grid size-control shrink-0 place-items-center transition hover:bg-a
         <Icon name="lucide:chevron-right" class="size-4" aria-hidden="true" />
       </button>
     </div>
-    <input
-      ref="input"
-      type="date"
-      :value="day"
-      :max="max"
-      class="h-control rounded-md border border-border bg-card px-2 op-label"
-      :class="showField ? '' : 'sr-only'"
-      :tabindex="showField ? 0 : -1"
-      aria-label="Escolher o dia da leitura"
-      data-day-field
-      @change="onPick"
-    >
   </div>
 </template>

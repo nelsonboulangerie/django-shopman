@@ -71,17 +71,11 @@ function inRange(iso: string) {
     <div class="mt-3 grid grid-cols-2 gap-2">
       <label class="flex flex-col gap-1 text-xs font-medium">
         Começa às
-        <input
-          v-model="draft.startTime" type="time" step="900"
-          class="min-h-control rounded-md border bg-background px-2 text-sm tabular-nums"
-        >
+        <UiTimeField v-model="draft.startTime" label="Hora de início" :minute-step="15" />
       </label>
       <label class="flex flex-col gap-1 text-xs font-medium">
         Termina às
-        <input
-          v-model="draft.endTime" type="time" step="900"
-          class="min-h-control rounded-md border bg-background px-2 text-sm tabular-nums"
-        >
+        <UiTimeField v-model="draft.endTime" label="Hora de término" :minute-step="15" />
       </label>
     </div>
     <p v-if="line" class="mt-2 text-sm" data-period-range>{{ line }}</p>

@@ -37,12 +37,12 @@ it("failed save retains selected collections and the editor", async () => {
   setCollections.mockResolvedValue(false);
   const wrapper = render();
   await wrapper.get("[data-open-editor]").trigger("click");
-  await wrapper.get("input[type=checkbox]").setValue(true);
+  await wrapper.get('[role="checkbox"]').trigger("click");
   const apply = wrapper.findAll("button").find((button) => button.text() === "Salvar coleções")!;
   await apply.trigger("click");
   await flushPromises();
   expect(setCollections).toHaveBeenCalledWith("tv", ["bread"], "initial");
-  expect((wrapper.get("input[type=checkbox]").element as HTMLInputElement).checked).toBe(true);
+  expect(wrapper.get('[role="checkbox"]').attributes("aria-checked")).toBe("true");
   expect(wrapper.get("[data-open]").attributes("data-open")).toBe("true");
 });
 
@@ -51,7 +51,7 @@ it("same-field refresh preserves the draft and requires an explicit resolution",
   board.value = { feeds: [{ ref: "tv", name: "TV", collections: [], actions: [{ ref: "collections", enabled: true, payload_schema: { base_revision: "initial" } }], capability: "feed", kind: "google", is_active: true }], all_collections: [{ ref: "bread", name: "Pães", product_count: 1 }] };
   const wrapper = render();
   await wrapper.get("[data-open-editor]").trigger("click");
-  await wrapper.get("input[type=checkbox]").setValue(true);
+  await wrapper.get('[role="checkbox"]').trigger("click");
   const priorConfirm = window.confirm;
   const native = vi.fn(() => true);
   window.confirm = native;
@@ -67,7 +67,7 @@ it("same-field refresh preserves the draft and requires an explicit resolution",
   await flushPromises();
   let apply = wrapper.findAll("button").find((button) => button.text() === "Salvar coleções")!;
   expect(apply.attributes("disabled")).toBeDefined();
-  expect((wrapper.get("input[type=checkbox]").element as HTMLInputElement).checked).toBe(true);
+  expect(wrapper.get('[role="checkbox"]').attributes("aria-checked")).toBe("true");
   await wrapper.findAll("button").find((button) => button.text() === "Manter minha seleção")!.trigger("click");
   apply = wrapper.findAll("button").find((button) => button.text() === "Salvar coleções")!;
   await apply.trigger("click");
@@ -78,11 +78,11 @@ it("GET indisponível conserva o editor e a seleção da última leitura", async
   board.value = { feeds: [{ ref: "tv", name: "TV", collections: [], actions: [{ ref: "collections", enabled: true, payload_schema: { base_revision: "initial" } }], capability: "feed", kind: "google", is_active: true }], all_collections: [{ ref: "bread", name: "Pães", product_count: 1 }] };
   const wrapper = render();
   await wrapper.get("[data-open-editor]").trigger("click");
-  await wrapper.get("input[type=checkbox]").setValue(true);
+  await wrapper.get('[role="checkbox"]').trigger("click");
   error.value = { status: 503 };
   await flushPromises();
   expect(wrapper.text()).toContain("Exibindo a última leitura disponível");
-  expect((wrapper.get("input[type=checkbox]").element as HTMLInputElement).checked).toBe(true);
+  expect(wrapper.get('[role="checkbox"]').attributes("aria-checked")).toBe("true");
   expect(wrapper.get("[data-open]").attributes("data-open")).toBe("true");
   expect(setCollections).not.toHaveBeenCalled();
 });

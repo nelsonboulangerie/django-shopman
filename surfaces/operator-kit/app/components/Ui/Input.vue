@@ -47,9 +47,11 @@
   });
 
   const inputRef = useTemplateRef("input");
-  const styleType = computed(() =>
-    props.type === "search" || props.type === "file" ? props.type : undefined,
-  );
+  const styleType = computed<"search" | "file" | undefined>(() => {
+    if (props.type === "search") return "search";
+    if (props.type === "file") return "file";
+    return undefined;
+  });
 
   const emit = defineEmits<{
     "update:modelValue": [value: string];

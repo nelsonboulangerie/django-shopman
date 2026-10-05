@@ -308,6 +308,14 @@ const onceResolution = computed(() =>
 const dateRangeValid = computed(
   () => !startsOn.value || !endsOn.value || startsOn.value <= endsOn.value,
 );
+const recurrencePeriod = computed({
+  get: () => ({ start: startsOn.value, end: endsOn.value }),
+  set: (next: { start?: string; end?: string }) => {
+    startsOn.value = next.start ?? "";
+    endsOn.value = next.end ?? "";
+    scheduleTouched.value = true;
+  },
+});
 
 const canSubmit = computed(
   () =>
@@ -330,6 +338,14 @@ const stepReady = computed(() => [
 function stepEnabled(index: number): boolean {
   return index === 0 || stepReady.value.slice(0, index).every(Boolean);
 }
+
+const stepperItems = computed(() =>
+  COMPOSER_STEPS.map((step, index) => ({
+    title: step.label,
+    description: step.hint,
+    disabled: !stepEnabled(index),
+  })),
+);
 
 function goToStep(index: number) {
   if (index < 0 || index >= COMPOSER_STEPS.length || !stepEnabled(index))
@@ -747,48 +763,12 @@ function submit() {
       @discard="draft.discard()"
     />
 
-    <nav aria-label="Etapas da campanha">
-      <ol
-        class="grid grid-cols-5 gap-1 rounded-lg border border-border bg-muted/30 p-1"
-      >
-        <li v-for="(step, index) in COMPOSER_STEPS" :key="step.label">
-          <button
-            type="button"
-            class="flex min-h-11 w-full items-center justify-center gap-1 rounded-md px-2 text-xs font-medium transition sm:justify-start"
-            :class="
-              currentStep === index
-                ? 'bg-background text-foreground shadow-sm'
-                : index < currentStep
-                  ? 'text-primary'
-                  : 'text-muted-foreground'
-            "
-            :disabled="!stepEnabled(index)"
-            :aria-current="currentStep === index ? 'step' : undefined"
-            :aria-label="`${index + 1}. ${step.label}`"
-            @click="goToStep(index)"
-          >
-            <span
-              class="grid size-6 shrink-0 place-items-center rounded-full border text-[11px]"
-              :class="
-                currentStep === index
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : index < currentStep
-                    ? 'border-primary text-primary'
-                    : 'border-border'
-              "
-              >{{ index < currentStep ? "✓" : index + 1 }}</span
-            >
-            <span class="hidden text-left sm:inline">{{ step.label }}</span>
-          </button>
-        </li>
-      </ol>
-      <p class="mt-2 text-xs text-muted-foreground" role="status">
-        <strong class="text-foreground">
-          {{ currentStep + 1 }}. {{ COMPOSER_STEPS[currentStep]?.label }}.
-        </strong>
-        {{ COMPOSER_STEPS[currentStep]?.hint }}
-      </p>
-    </nav>
+    <UiStepper
+      :model-value="currentStep"
+      :items="stepperItems"
+      label="Etapas da campanha"
+      @update:model-value="goToStep"
+    />
 
     <div v-show="currentStep === 0">
       <label
@@ -927,11 +907,11 @@ function submit() {
           >Dia e hora</label
         >
         <div class="flex flex-wrap items-center gap-2">
-          <UiInput
+          <UiDateTimeField
             id="rule-once-at"
             v-model="onceAt"
-            type="datetime-local"
-            class="sm:w-64"
+            label="Dia e hora do disparo"
+            class="sm:max-w-md"
             @update:model-value="
               scheduleTouched = true;
               onceFold = '';
@@ -999,11 +979,11 @@ function submit() {
             class="mb-1 block text-xs font-medium text-muted-foreground"
             >Hora</label
           >
-          <UiInput
+          <UiTimeField
             id="rule-fire-at"
             v-model="fireAt"
-            type="time"
-            class="w-28"
+            label="Hora do disparo"
+            class="w-32"
             @update:model-value="scheduleTouched = true"
           />
         </div>
@@ -1034,35 +1014,23 @@ function submit() {
           </p>
         </div>
 
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label
-              for="rule-starts-on"
-              class="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              Começar em (opcional)
-            </label>
-            <UiInput
-              id="rule-starts-on"
-              v-model="startsOn"
-              type="date"
-              @update:model-value="scheduleTouched = true"
-            />
-          </div>
-          <div>
-            <label
-              for="rule-ends-on"
-              class="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              Parar depois de (opcional)
-            </label>
-            <UiInput
-              id="rule-ends-on"
-              v-model="endsOn"
-              type="date"
-              @update:model-value="scheduleTouched = true"
-            />
-          </div>
+        <div>
+          <label
+            for="rule-period"
+            class="mb-1 block text-xs font-medium text-muted-foreground"
+          >
+            Período de veiculação (opcional)
+          </label>
+          <UiDateRangeField
+            id="rule-period"
+            v-model="recurrencePeriod"
+            label="Período de veiculação da recorrência"
+            class="max-w-full sm:max-w-md"
+          />
+          <p class="mt-1 text-xs text-muted-foreground">
+            Deixe o início ou o fim vazio quando a recorrência não tiver esse
+            limite.
+          </p>
         </div>
         <p v-if="extraWindows.length" class="text-xs text-muted-foreground">
           Horários adicionais preservados:

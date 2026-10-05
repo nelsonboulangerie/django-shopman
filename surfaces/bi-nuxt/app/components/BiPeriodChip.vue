@@ -3,7 +3,6 @@
 // barra de cima que diz a janela ("28D ⌄"), com as mesmas opções do desktop num
 // painel (as granularidades, as janelas móveis e o personalizado). A janela é a mesma
 // da URL (`useBiWindow`): trocar aqui troca em todas as seções.
-import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
 import {
   PERIOD_PRESETS_CALENDAR,
   PERIOD_PRESETS_ROLLING,
@@ -44,8 +43,8 @@ const CHIP = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-
 </script>
 
 <template>
-  <PopoverRoot v-model:open="open">
-    <PopoverTrigger as-child>
+  <UiPopover v-model:open="open">
+    <UiPopoverTrigger as-child>
       <button
         type="button"
         class="mr-1 inline-flex h-10 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-3 op-label font-semibold tnum"
@@ -55,16 +54,14 @@ const CHIP = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-
         {{ chipLabel }}
         <Icon name="lucide:chevron-down" class="size-4" aria-hidden="true" />
       </button>
-    </PopoverTrigger>
-    <PopoverPortal>
-      <PopoverContent
-        side="bottom"
-        align="end"
-        :side-offset="6"
-        :collision-padding="8"
-        class="z-50 w-[min(22rem,calc(100vw-1rem))] rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg outline-hidden"
-        data-bi-period-panel
-      >
+    </UiPopoverTrigger>
+    <UiPopoverContent
+      align="end"
+      :side-offset="6"
+      :collision-padding="8"
+      class="w-[min(22rem,calc(100vw-1rem))] rounded-lg p-3 shadow-lg"
+      data-bi-period-panel
+    >
         <p class="mb-1.5 op-eyebrow text-muted-foreground">Últimos</p>
         <div class="grid grid-cols-4 gap-1.5">
           <button
@@ -89,15 +86,14 @@ const CHIP = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-
         <form class="mt-3 grid grid-cols-2 gap-2" @submit.prevent="submitCustom">
           <p class="col-span-2 op-eyebrow text-muted-foreground">Personalizado</p>
           <label class="flex flex-col gap-1 op-micro text-muted-foreground">De
-            <input v-model="from" type="date" :max="bounds.max" class="min-h-11 rounded-md border border-border bg-card px-2 op-label text-foreground">
+            <UiDateField v-model="from" :max="bounds.max" label="Início do período" />
           </label>
           <label class="flex flex-col gap-1 op-micro text-muted-foreground">Até
-            <input v-model="to" type="date" :max="bounds.max" class="min-h-11 rounded-md border border-border bg-card px-2 op-label text-foreground">
+            <UiDateField v-model="to" :max="bounds.max" label="Fim do período" />
           </label>
           <p v-if="customError" class="col-span-2 op-micro text-destructive" role="alert">{{ customError }}</p>
           <UiButton type="submit" class="col-span-2" :disabled="!from || !to || Boolean(customError)">Ver este período</UiButton>
         </form>
-      </PopoverContent>
-    </PopoverPortal>
-  </PopoverRoot>
+    </UiPopoverContent>
+  </UiPopover>
 </template>

@@ -104,22 +104,17 @@ function close(value: boolean) {
 
       <fieldset class="flex flex-col gap-1.5">
         <legend class="mb-1 text-sm font-medium">Por quanto tempo</legend>
-        <label
-          v-for="option in sw.periods"
-          :key="option.key"
-          class="flex min-h-control items-start gap-2 rounded-md border px-3 py-2 text-sm"
-          :class="option.enabled ? 'cursor-pointer hover:bg-accent' : 'opacity-60'"
-          :data-period="option.key"
-        >
-          <input
-            v-model="draft.period" type="radio" name="channel-switch-period" class="mt-1"
-            :value="option.key" :disabled="!option.enabled"
-          >
-          <span class="flex flex-col">
-            <span>{{ option.label }}</span>
-            <span v-if="!option.enabled && option.reason" class="text-xs text-muted-foreground">{{ option.reason }}</span>
-          </span>
-        </label>
+        <UiRadioGroup v-model="draft.period">
+          <UiRadio
+            v-for="option in sw.periods"
+            :key="option.key"
+            :value="option.key"
+            :label="option.label"
+            :description="!option.enabled ? option.reason : undefined"
+            :disabled="!option.enabled"
+            :data-period="option.key"
+          />
+        </UiRadioGroup>
       </fieldset>
 
       <ChannelPeriodCalendar v-if="draft.period === CUSTOM_PERIOD" v-model="draft" :today="clock" />
