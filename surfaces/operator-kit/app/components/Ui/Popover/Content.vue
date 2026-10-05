@@ -16,10 +16,14 @@
 </template>
 
 <script lang="ts" setup>
+  import { reactiveOmit } from "@vueuse/core";
   import { PopoverContent, useForwardPropsEmits } from "reka-ui";
+  import { tv } from "tailwind-variants";
   import type { PopoverContentEmits, PopoverContentProps } from "reka-ui";
   import { normalizeClass } from "vue";
   import type { HTMLAttributes } from "vue";
+
+  import { getTranslucentFloatingPanelClasses } from "../../../utils/translucent";
 
   defineOptions({ inheritAttrs: false });
 

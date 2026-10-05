@@ -206,11 +206,10 @@ watch(
 
 // O quadrado mostra o que o servidor diz (ou o formulário aberto): desligar
 // uma revenda ativa é gesto na hora; ligar abre o campo de preço.
-async function onResaleToggle(event: Event) {
-  const input = event.target as HTMLInputElement;
+async function onResaleToggle(wanted: boolean) {
   const material = selectedMaterial.value;
   if (!material) return;
-  if (input.checked) {
+  if (wanted) {
     saleOpen.value = true;
     salePriceInput.value = resaleSuggestionView(material.saleSuggestion, material.unit)?.input ?? "";
     return;
@@ -220,7 +219,6 @@ async function onResaleToggle(event: Event) {
     salePriceInput.value = "";
     return;
   }
-  input.checked = true;
   await setSale(material.sku, false);
 }
 
@@ -2311,15 +2309,13 @@ function onPackageCode(code: string) {
                     É produzido aqui: a venda dele é do Catálogo, não do Compras.
                   </p>
                   <template v-else>
-                    <label class="flex items-center gap-2.5 op-label font-semibold">
-                      <input
-                        type="checkbox" class="form-checkbox size-5 rounded border-input text-primary"
-                        :checked="Boolean(selectedMaterial.roles?.sellable) || saleOpen"
-                        :disabled="readonlyFallback || actionPending"
-                        @change="onResaleToggle"
-                      />
-                      Permitir revenda
-                    </label>
+                    <UiCheckbox
+                      :model-value="Boolean(selectedMaterial.roles?.sellable) || saleOpen"
+                      :disabled="readonlyFallback || actionPending"
+                      label="Permitir revenda"
+                      class="op-label font-semibold"
+                      @update:model-value="onResaleToggle"
+                    />
                     <p v-if="selectedMaterial.roles?.sellable" class="mt-1 pl-7 op-body">
                       <template v-if="selectedMaterial.unit === 'kg'">Vendido só no balcão, por peso:</template>
                       <template v-else>À venda no PDV:</template>

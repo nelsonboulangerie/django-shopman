@@ -63,9 +63,9 @@ it("informa rascunho à página para proteger navegação e descarte", async () 
 describe("Vendido por peso", () => {
   it("vira kg, o mesmo campo passa a ser o preço do quilo, e avisa que é só no balcão", async () => {
     const w = panel();
-    const toggle = w.find('[data-testid="sold-by-weight"] input');
+    const toggle = w.get('[data-testid="sold-by-weight"]');
     expect(w.text()).not.toContain("Preço por kg");
-    await toggle.setValue(true);
+    await toggle.trigger("click");
     expect(w.text()).toContain("Preço por kg");
     expect(w.text()).toContain("Vendido só no balcão");
     await w.find("[data-panel-save]").trigger("click");
@@ -75,7 +75,7 @@ describe("Vendido por peso", () => {
   it("desligar volta a vender por unidade e o rótulo volta a Preço", async () => {
     const w = panel();
     await w.setProps({ detail: { ...detail, unit: "kg" } });
-    await w.find('[data-testid="sold-by-weight"] input').setValue(false);
+    await w.get('[data-testid="sold-by-weight"]').trigger("click");
     expect(w.text()).not.toContain("Preço por kg");
     await w.find("[data-panel-save]").trigger("click");
     expect(w.emitted("save")).toEqual([[{ unit: "un" }]]);
@@ -86,20 +86,20 @@ describe("Permitir compra", () => {
   it("é gesto na hora, fora do rascunho, e o quadrado espera o servidor", async () => {
     const w = panel();
     await w.setProps({ roles: { purchasable: false, sellable: true, produced: false, used_in_recipe: true } });
-    const box = w.find('[data-testid="purchase-toggle"] input[type="checkbox"]');
+    const box = w.get('[data-testid="purchase-toggle"] [role="checkbox"]');
     expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("Vendável");
     expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("Usado em receita");
-    await box.setValue(true);
+    await box.trigger("click");
     expect(w.emitted("set-purchasable")).toEqual([[true]]);
     // Ninguém confirmou ainda: o quadrado volta ao que o servidor diz.
-    expect((box.element as HTMLInputElement).checked).toBe(false);
+    expect(box.attributes("aria-checked")).toBe("false");
     expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
   });
 
   it("o que é produzido aqui não oferece o interruptor", async () => {
     const w = panel();
     await w.setProps({ roles: { purchasable: false, sellable: true, produced: true, used_in_recipe: false } });
-    expect(w.find('[data-testid="purchase-toggle"] input[type="checkbox"]').exists()).toBe(false);
+    expect(w.find('[data-testid="purchase-toggle"] [role="checkbox"]').exists()).toBe(false);
     expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("É produzido aqui");
   });
 });

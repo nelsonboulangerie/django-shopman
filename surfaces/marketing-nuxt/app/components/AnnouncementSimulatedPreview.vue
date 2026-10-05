@@ -24,7 +24,7 @@ const props = withDefaults(
 );
 
 const open = ref(false);
-const activeKey = ref("");
+const activeKey = ref(props.scenes[0]?.key || "");
 /** A hora do retrato é congelada na abertura: um relógio correndo dentro de uma prévia
  *  redesenharia a tela debaixo de quem está conferindo. */
 const shownAt = ref("");
@@ -59,16 +59,6 @@ const SCENE_NOTES: Record<SimulatedScene["kind"], string> = {
 };
 
 const note = computed(() => (scene.value ? SCENE_NOTES[scene.value.kind] : ""));
-
-function step(delta: number) {
-  if (props.scenes.length < 2) return;
-  const current = props.scenes.findIndex(
-    (candidate) => candidate.key === scene.value?.key,
-  );
-  const next =
-    (current + delta + props.scenes.length) % props.scenes.length;
-  activeKey.value = props.scenes[next]?.key || "";
-}
 </script>
 
 <template>
@@ -99,37 +89,25 @@ function step(delta: number) {
         </UiDialogHeader>
 
         <!-- Um botão por FORMATO. Instagram e Facebook com o mesmo Feed são um retrato
-             só; Story e Feed do mesmo Instagram são dois. Abas nativas preservam
-             role=tab e aria-selected; as setas do teclado passam de um para o outro. -->
-        <div
+             só; Story e Feed do mesmo Instagram são dois. -->
+        <UiTabs
           v-if="scenes.length > 1"
-          class="grid grid-cols-2 gap-2 px-4 pb-3"
-          role="tablist"
-          aria-label="Formato da prévia"
-          @keydown.left.prevent="step(-1)"
-          @keydown.right.prevent="step(1)"
+          v-model="activeKey"
+          class="px-4 pb-3"
         >
-          <button
-            v-for="(candidate, index) in scenes"
-            :key="candidate.key"
-            type="button"
-            role="tab"
-            class="min-h-11 rounded-md border px-3 text-sm font-medium"
-            :class="[
-              candidate.key === scene?.key
-                ? 'border-primary bg-primary/10 text-foreground'
-                : 'border-border bg-background text-muted-foreground',
-              index === scenes.length - 1 && scenes.length % 2 === 1
-                ? 'col-span-2'
-                : '',
-            ]"
-            :aria-selected="candidate.key === scene?.key"
-            :data-scene="candidate.key"
-            @click="activeKey = candidate.key"
-          >
-            {{ candidate.label }}
-          </button>
-        </div>
+          <UiTabsList class="grid w-full grid-cols-2 gap-2 border-0 bg-transparent p-0" aria-label="Formato da prévia">
+            <UiTabsTrigger
+              v-for="(candidate, index) in scenes"
+              :key="candidate.key"
+              :value="candidate.key"
+              class="border border-border bg-background data-[state=active]:border-primary data-[state=active]:bg-primary/10"
+              :class="index === scenes.length - 1 && scenes.length % 2 === 1 ? 'col-span-2' : ''"
+              :data-scene="candidate.key"
+            >
+              {{ candidate.label }}
+            </UiTabsTrigger>
+          </UiTabsList>
+        </UiTabs>
 
         <div
           v-if="scene"

@@ -91,10 +91,7 @@ function setSoldByWeight(on: boolean) {
 // O interruptor mostra o que o SERVIDOR diz: devolve a marca ao estado atual e
 // deixa o selo novo (ou a recusa) redesenhar. Sem isso a recusa "é produzido
 // aqui" deixaria o quadrado marcado, mentindo.
-function onPurchaseChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const wanted = input.checked;
-  input.checked = Boolean(props.roles?.purchasable);
+function onPurchaseChange(wanted: boolean) {
   emit("set-purchasable", wanted);
 }
 
@@ -578,20 +575,16 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
       <!-- abas: o formulário é longo demais para uma coluna só. Rolam na horizontal
            porque cinco rótulos não cabem na largura do slide-over. -->
       <!-- as cinco abas cabem (v4): sublinhada a ativa, sem caixa; rola só se a largura faltar -->
-      <div class="flex justify-between gap-0 overflow-x-auto border-b border-border px-3 no-scrollbar" role="tablist" aria-label="Partes do produto" data-panel-tabs>
-        <button
-          v-for="t in TABS"
-          :key="t.id"
-          type="button"
-          role="tab"
-          :aria-selected="tab === t.id"
-          class="min-h-12 shrink-0 px-2 op-label whitespace-nowrap transition focus-visible:outline-none focus-visible:bg-accent"
-          :class="tab === t.id
-            ? 'font-semibold text-foreground shadow-[inset_0_-2px_0_var(--primary)]'
-            : 'text-muted-foreground hover:text-foreground'"
-          @click="tab = t.id"
-        >{{ t.label }}</button>
-      </div>
+      <UiTabs v-model="tab">
+        <UiTabsList class="flex w-full justify-between gap-0 overflow-x-auto rounded-none border-x-0 border-t-0 bg-transparent px-3 py-0 no-scrollbar" aria-label="Partes do produto" data-panel-tabs>
+          <UiTabsTrigger
+            v-for="t in TABS"
+            :key="t.id"
+            :value="t.id"
+            class="min-h-12 shrink-0 rounded-none px-2 whitespace-nowrap data-[state=active]:shadow-[inset_0_-2px_0_var(--primary)]"
+          >{{ t.label }}</UiTabsTrigger>
+        </UiTabsList>
+      </UiTabs>
 
       <div ref="bodyEl" class="flex-1 overflow-y-auto px-5 py-4">
         <div v-if="loading" class="flex items-center gap-2 py-8 text-sm text-muted-foreground">
@@ -717,14 +710,12 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             <!-- Vendido por peso: a unidade de venda vira kg e o MESMO campo de
                  preço passa a ser o preço do quilo. O preço final sai da balança
                  do balcão, então o item não vai para canal remoto. -->
-            <label class="flex items-center gap-2 text-sm" data-testid="sold-by-weight">
-              <input
-                type="checkbox" class="size-4 rounded border-border"
-                :checked="soldByWeight"
-                @change="setSoldByWeight(($event.target as HTMLInputElement).checked)"
-              />
-              Vendido por peso
-            </label>
+            <UiCheckbox
+              :model-value="soldByWeight"
+              label="Vendido por peso"
+              data-testid="sold-by-weight"
+              @update:model-value="setSoldByWeight"
+            />
             <p v-if="soldByWeight" class="-mt-2 text-xs text-muted-foreground">Vendido só no balcão: o preço final sai da balança.</p>
 
             <div class="grid grid-cols-2 gap-3">
@@ -770,15 +761,9 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               <input v-model="draft.production_cycle_hours" :class="fieldClass" type="number" min="0" placeholder="Ex.: 4" />
             </label>
 
-            <label class="flex items-center gap-2 text-sm">
-              <input v-model="draft.is_batch_produced" type="checkbox" class="size-4 rounded border-border" />
-              Produzido em lote
-            </label>
+            <UiCheckbox v-model="draft.is_batch_produced" label="Produzido em lote" />
 
-            <label class="flex items-center gap-2 text-sm">
-              <input v-model="draft.allows_next_day_sale" type="checkbox" class="size-4 rounded border-border" />
-              Pode ser vendido no dia seguinte
-            </label>
+            <UiCheckbox v-model="draft.allows_next_day_sale" label="Pode ser vendido no dia seguinte" />
 
             <!-- Permitir compra: o cadastro de compra do MESMO SKU (mesmo estoque).
                  Vale na hora, fora do "Salvar" — é interruptor, não rascunho. -->
@@ -790,14 +775,13 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               <p v-if="roles?.produced && !roles?.purchasable" class="text-xs text-muted-foreground">
                 É produzido aqui: o estoque entra pela Produção, não pela compra.
               </p>
-              <label v-else class="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox" class="size-4 rounded border-border"
-                  :checked="Boolean(roles?.purchasable)" :disabled="purchaseBusy || !roles"
-                  @change="onPurchaseChange"
-                />
-                Permitir compra
-              </label>
+              <UiCheckbox
+                v-else
+                :model-value="Boolean(roles?.purchasable)"
+                :disabled="purchaseBusy || !roles"
+                label="Permitir compra"
+                @update:model-value="onPurchaseChange"
+              />
               <p v-if="roles?.purchasable" class="text-xs text-muted-foreground">
                 Aparece no Compras: recebe nota, tem custo, mínimo e pedido.
               </p>
@@ -830,14 +814,8 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
 
             <div class="space-y-2 rounded-lg border border-border p-3">
               <p :class="sectionClass">Visibilidade</p>
-              <label class="flex items-center gap-2 text-sm">
-                <input v-model="draft.is_published" type="checkbox" class="size-4 rounded border-border" />
-                Exibido no catálogo
-              </label>
-              <label class="flex items-center gap-2 text-sm">
-                <input v-model="draft.is_sellable" type="checkbox" class="size-4 rounded border-border" />
-                Disponível para venda
-              </label>
+              <UiCheckbox v-model="draft.is_published" label="Exibido no catálogo" />
+              <UiCheckbox v-model="draft.is_sellable" label="Disponível para venda" />
             </div>
           </div>
 

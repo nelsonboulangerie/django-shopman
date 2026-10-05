@@ -213,6 +213,10 @@ const phoneZone = computed(() => {
   if (intake && triaged(intake).length) return intake.key;
   return zones.value.find((z) => triaged(z).length)?.key ?? zones.value[0]?.key ?? "intake";
 });
+
+function pickPhoneZone(value: string | number) {
+  pickedZone.value = String(value);
+}
 function pickSort(key: SortKey) {
   sort.value = key;
   sortOpen.value = false;
@@ -1042,32 +1046,30 @@ function printQueue() {
     </UiSheet>
 
     <!-- celular: as colunas viram abas -->
-    <div
+    <UiTabs
       v-if="isPhone && view === 'board' && zones.length"
-      class="flex shrink-0 border-b border-border bg-card px-2 print:hidden"
-      role="tablist"
-      aria-label="Colunas do quadro"
+      :model-value="phoneZone"
+      class="shrink-0 print:hidden"
       data-board-zone-tabs
+      @update:model-value="pickPhoneZone"
     >
-      <button
-        v-for="tab in phoneTabs"
-        :key="tab.key"
-        type="button"
-        role="tab"
-        :aria-selected="phoneZone === tab.key"
-        class="flex h-12 flex-1 items-center justify-center gap-1.5 op-body"
-        :class="phoneZone === tab.key ? 'font-semibold text-foreground shadow-[inset_0_-3px_0_var(--primary)]' : 'text-muted-foreground'"
-        :data-phone-tab="tab.key"
-        @click="pickedZone = tab.key"
-      >
-        {{ tab.title }}
-        <span
-          class="tnum"
-          :class="phoneZone === tab.key && triaged(tab.zone).length ? 'grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs text-primary-foreground' : ''"
-        >{{ triaged(tab.zone).length }}</span>
-        <span v-if="phoneExitMode && tab.late" class="size-2 rounded-full bg-warning" :aria-label="`${tab.late} passou da meta`" />
-      </button>
-    </div>
+      <UiTabsList class="flex w-full rounded-none border-x-0 border-t-0 bg-card px-2 py-0" aria-label="Colunas do quadro">
+        <UiTabsTrigger
+          v-for="tab in phoneTabs"
+          :key="tab.key"
+          :value="tab.key"
+          class="h-12 flex-1 gap-1.5 rounded-none op-body data-[state=active]:shadow-[inset_0_-3px_0_var(--primary)]"
+          :data-phone-tab="tab.key"
+        >
+          {{ tab.title }}
+          <span
+            class="tnum"
+            :class="phoneZone === tab.key && triaged(tab.zone).length ? 'grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs text-primary-foreground' : ''"
+          >{{ triaged(tab.zone).length }}</span>
+          <span v-if="phoneExitMode && tab.late" class="size-2 rounded-full bg-warning" :aria-label="`${tab.late} passou da meta`" />
+        </UiTabsTrigger>
+      </UiTabsList>
+    </UiTabs>
 
     <!-- barra da seleção em lote (o modo ligado) -->
     <div v-if="selecting" class="flex shrink-0 flex-wrap items-center gap-2 border-b bg-primary/10 px-4 py-2 text-sm print:hidden" data-bulk-bar>
@@ -1610,10 +1612,12 @@ function printQueue() {
             aria-label="Troco que voltou"
           />
         </label>
-        <label v-if="settleAsksEquipment" class="min-h-control flex items-center gap-2 text-sm" data-equipment-back>
-          <input v-model="settleEquipmentBack" type="checkbox" />
-          <span>{{ settleCard?.equipment_label }}. Voltou junto</span>
-        </label>
+        <UiCheckbox
+          v-if="settleAsksEquipment"
+          v-model="settleEquipmentBack"
+          :label="`${settleCard?.equipment_label}. Voltou junto`"
+          data-equipment-back
+        />
         <UiDialogFooter>
           <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Voltar</button>
           <button type="button" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" :disabled="settleChanged || !settleAction?.enabled || (settleRef ? isBusy(settleRef) : false)" @click="confirmSettle">

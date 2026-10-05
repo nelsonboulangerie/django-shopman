@@ -655,10 +655,12 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
             aria-label="Troco que voltou"
           />
         </label>
-        <label v-if="asksEquipmentBack" class="flex min-h-control items-center gap-2 text-sm" data-equipment-back>
-          <input v-model="settleEquipmentBack" type="checkbox" />
-          <span>{{ order?.equipment_label }}. Voltou junto</span>
-        </label>
+        <UiCheckbox
+          v-if="asksEquipmentBack"
+          v-model="settleEquipmentBack"
+          :label="`${order?.equipment_label}. Voltou junto`"
+          data-equipment-back
+        />
         <UiDialogFooter>
           <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
           <button
@@ -684,10 +686,16 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
           </UiDialogDescription>
         </UiDialogHeader>
         <div v-if="order?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
-          <label v-for="opt in order.equipment_options" :key="opt.ref" class="flex min-h-control items-center gap-2 rounded-md border px-3 py-2 text-sm">
-            <input type="checkbox" :disabled="opt.enabled === false" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
-            <span>{{ opt.label }}<span v-if="opt.reason"> · {{ opt.reason }}</span></span>
-          </label>
+          <UiCheckbox
+            v-for="opt in order.equipment_options"
+            :key="opt.ref"
+            :model-value="dispatchEquipment.includes(opt.ref)"
+            :disabled="opt.enabled === false"
+            :label="opt.label"
+            :description="opt.reason || undefined"
+            class="w-full rounded-md border px-3"
+            @update:model-value="toggleDispatchEquipment(opt.ref)"
+          />
         </div>
         <label v-if="dispatchAsksChange" class="flex items-center gap-2 text-sm">
           <span class="text-muted-foreground">R$</span>

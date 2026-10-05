@@ -24,6 +24,7 @@ export default defineConfig({
           name: "operator-kit:nuxt",
           environment: "nuxt",
           globals: true,
+          setupFiles: ["./tests/support/localStorageEnv.ts"],
           include: ["tests/composables/**/*.test.ts", "tests/components/**/*.test.ts"],
         },
       }),

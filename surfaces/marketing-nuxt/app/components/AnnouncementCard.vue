@@ -877,10 +877,10 @@ defineExpose({ openScheduling, askToReject });
       <div v-if="scheduling" class="mt-3 space-y-2">
         <div class="flex flex-wrap items-center gap-2">
           <label :for="`when-${announcement.pk}`" class="text-xs font-medium text-muted-foreground">Disparar em</label>
-          <UiInput
+          <UiDateTimeField
             :id="`when-${announcement.pk}`"
             v-model="publishAt"
-            type="datetime-local"
+            label="Data e hora do disparo"
             :aria-describedby="`when-help-${announcement.pk}`"
             @update:model-value="publishFold = ''"
           />

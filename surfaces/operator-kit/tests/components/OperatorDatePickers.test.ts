@@ -4,6 +4,7 @@ import type { VueWrapper } from "vue";
 
 import OperatorDayPicker from "../../app/components/OperatorDayPicker.vue";
 import OperatorPeriodPicker from "../../app/components/OperatorPeriodPicker.vue";
+import UiDateField from "../../app/components/UiDateField.vue";
 
 // Os dois controles de data da casa (decisão do dono, 02/10/2026), testados na fonte.
 // 01/10/2026 é quinta-feira.
@@ -51,16 +52,17 @@ describe("OperatorDayPicker (Tipo 1)", () => {
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
   });
 
-  it("Outra data abre o campo nativo com min/max, e a data escolhida vira a legenda", async () => {
+  it("Outra data abre o calendário canônico com min/max, e a data escolhida vira a legenda", async () => {
     const wrapper = await mount(OperatorDayPicker, {
       props: { modelValue: "", today: TODAY, min: TODAY, max: "2026-10-30" },
     });
     expect(wrapper.find("[data-day-other-input]").exists()).toBe(false);
     await wrapper.get('[data-day-option="other"]').trigger("click");
-    const input = wrapper.get("[data-day-other-input]");
-    expect(input.attributes("min")).toBe(TODAY);
-    expect(input.attributes("max")).toBe("2026-10-30");
-    await input.setValue("2026-10-14"); // dispara o `change` do campo de data
+    const input = wrapper.getComponent(UiDateField);
+    expect(input.props("min")).toBe(TODAY);
+    expect(input.props("max")).toBe("2026-10-30");
+    input.vm.$emit("update:modelValue", "2026-10-14");
+    await wrapper.vm.$nextTick();
     expect(wrapper.emitted("update:modelValue")).toEqual([["2026-10-14"]]);
 
     await wrapper.setProps({ modelValue: "2026-10-14" });
@@ -74,8 +76,9 @@ describe("OperatorDayPicker (Tipo 1)", () => {
       props: { modelValue: "", today: TODAY, availableDates: ["2026-10-01", "2026-10-20"] },
     });
     await wrapper.get('[data-day-option="other"]').trigger("click");
-    const input = wrapper.get("[data-day-other-input]");
-    await input.setValue("2026-10-14"); // dispara o `change` do campo de data
+    const input = wrapper.getComponent(UiDateField);
+    input.vm.$emit("update:modelValue", "2026-10-14");
+    await wrapper.vm.$nextTick();
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
     expect(wrapper.get("[data-day-other-error]").text()).toBe("Qua 14/10: fechado. Escolha outro dia.");
   });
@@ -128,8 +131,10 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
       },
     });
     await wrapper.get("[data-period-button]").trigger("click");
-    await wrapper.get("[data-period-custom-from]").setValue("2026-09-10");
-    await wrapper.get("[data-period-custom-to]").setValue("2026-09-01");
+    const fields = wrapper.findAllComponents(UiDateField);
+    fields[0]!.vm.$emit("update:modelValue", "2026-09-10");
+    fields[1]!.vm.$emit("update:modelValue", "2026-09-01");
+    await wrapper.vm.$nextTick();
     await wrapper.get("[data-period-custom-apply]").trigger("click");
     expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "custom", from: "2026-09-01", to: "2026-09-10" }]]);
   });
@@ -178,14 +183,17 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
       },
     });
     await wrapper.get("[data-period-button]").trigger("click");
-    await wrapper.get("[data-period-custom-from]").setValue("2026-10-01");
-    await wrapper.get("[data-period-custom-to]").setValue("2026-12-31");
+    const fields = wrapper.findAllComponents(UiDateField);
+    fields[0]!.vm.$emit("update:modelValue", "2026-10-01");
+    fields[1]!.vm.$emit("update:modelValue", "2026-12-31");
+    await wrapper.vm.$nextTick();
     expect(wrapper.get("[data-period-custom-error]").text()).toBe("No máximo 62 dias por vez.");
     expect(wrapper.get("[data-period-custom-apply]").attributes("disabled")).toBeDefined();
     await wrapper.get("[data-period-custom-apply]").trigger("click");
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
 
-    await wrapper.get("[data-period-custom-to]").setValue("2026-11-30");
+    fields[1]!.vm.$emit("update:modelValue", "2026-11-30");
+    await wrapper.vm.$nextTick();
     expect(wrapper.find("[data-period-custom-error]").exists()).toBe(false);
     await wrapper.get("[data-period-custom-apply]").trigger("click");
     expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "custom", from: "2026-10-01", to: "2026-11-30" }]]);

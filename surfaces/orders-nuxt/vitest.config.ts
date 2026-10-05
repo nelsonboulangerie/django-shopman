@@ -20,7 +20,7 @@ export default defineConfig({
         // dedupe("vue"): o harness compartilhado vive na operator-kit e importa "vue" de lá;
         // sem dedupe seriam DUAS instâncias do Vue no mesmo processo (refs criadas pelo
         // teste não rastreariam em watch/computed do harness).
-        resolve: { alias: appAlias, dedupe: ["vue"] },
+        resolve: { alias: appAlias, dedupe: ["vue", "reka-ui"] },
         test: {
           name: "unit",
           environment: "node",
@@ -31,7 +31,7 @@ export default defineConfig({
       },
       {
         plugins: [vue()],
-        resolve: { alias: appAlias },
+        resolve: { alias: appAlias, dedupe: ["vue", "reka-ui"] },
         test: {
           name: "component",
           environment: "happy-dom",

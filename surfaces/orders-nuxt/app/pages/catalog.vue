@@ -235,6 +235,7 @@ function toggleSelect(sku: string) {
 }
 const visibleSkus = computed(() => rows.value.map((r) => r.sku));
 const allSelected = computed(() => visibleSkus.value.length > 0 && visibleSkus.value.every((s) => selected.value.has(s)));
+const someSelected = computed(() => selected.value.size > 0 && !allSelected.value);
 function toggleSelectAll() {
   selected.value = allSelected.value ? new Set() : new Set(visibleSkus.value);
 }
@@ -711,10 +712,13 @@ useHead({ title: "Catálogo" });
                  `border-r` fecha a coluna fixa: no scroll horizontal é essa linha que
                  diz onde o painel parado termina e a matriz que corre começa. -->
             <th class="sticky sm:left-0 top-0 z-30 w-full min-w-[260px] border-b border-r border-border bg-card px-4 py-3 text-left">
-              <label class="min-h-control flex items-center gap-3">
-                <input type="checkbox" :checked="allSelected" class="size-4 rounded border-border accent-foreground" @change="toggleSelectAll" />
-                <span class="op-eyebrow text-muted-foreground">Produto</span>
-              </label>
+              <UiCheckbox
+                :model-value="allSelected"
+                :indeterminate="someSelected"
+                label="Produto"
+                class="op-eyebrow text-muted-foreground"
+                @update:model-value="toggleSelectAll"
+              />
             </th>
             <!-- Superfícies: largura fixa e uniforme (canais + feeds). O que faz caberem
                  num desktop sem scroll é o NOME CURTO vindo do backend (short_name:
@@ -788,8 +792,13 @@ useHead({ title: "Catálogo" });
                 >
                   <Icon name="lucide:grip-vertical" class="pointer-events-none size-4" />
                 </span>
-                <label class="min-h-control flex min-w-0 flex-1 items-center gap-3">
-                  <input type="checkbox" :checked="isSelected(row.sku)" class="size-4 shrink-0 rounded border-border accent-foreground" @change="toggleSelect(row.sku)" />
+                <UiCheckbox
+                  :model-value="isSelected(row.sku)"
+                  :aria-label="`Selecionar ${row.name}`"
+                  class="shrink-0"
+                  @update:model-value="toggleSelect(row.sku)"
+                />
+                <div class="flex min-w-0 flex-1 items-center gap-3">
                   <!-- thumbnail: esmaece + P&B quando "fora"; clique amplia a foto -->
                   <img
                     v-if="row.image_url && !brokenImages.has(row.sku)" :src="row.image_url" :alt="row.name"
@@ -846,7 +855,7 @@ useHead({ title: "Catálogo" });
                       <template v-if="row.primary_collection_name"><span class="shrink-0 text-muted-foreground/40">·</span><span class="truncate">{{ row.primary_collection_name }}</span></template>
                     </span>
                   </div>
-                </label>
+                </div>
                 <!-- menu ⋯ da linha: casa das ações menos corriqueiras (editar, pausar tudo, publicar) -->
                 <UiPopover :open="menuOpen === row.sku" @update:open="(v) => (menuOpen = v ? row.sku : null)">
                   <UiPopoverTrigger as-child>
