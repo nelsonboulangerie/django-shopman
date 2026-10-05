@@ -91,6 +91,7 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     expect(root.textContent).toContain("2. Destinos. Escolha onde publicar.");
     expect(root.querySelector("[data-slot='header']")?.className).toContain("rounded-lg");
     expect(root.querySelectorAll("[data-slot='trigger']")).toHaveLength(3);
+    expect(root.querySelectorAll("[data-slot='title']")[1]?.textContent?.trim()).toBe("2. Destinos");
     expect((root.querySelectorAll("[data-slot='trigger']")[2] as HTMLButtonElement).disabled).toBe(true);
     expect(root.querySelectorAll("[role='status']")[1]?.textContent?.trim()).toBe("Etapa 2 de 3");
   });

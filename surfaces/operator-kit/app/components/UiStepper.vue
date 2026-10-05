@@ -57,6 +57,9 @@ const ui = {
         <Icon v-if="Number(item.value) < current" name="lucide:check" class="size-3.5" aria-hidden="true" />
         <span v-else>{{ Number(item.value) + 1 }}</span>
       </template>
+      <template #title="{ item }">
+        <span class="sr-only">{{ Number(item.value) + 1 }}. </span>{{ item.title }}
+      </template>
     </NuxtStepper>
 
     <span class="sr-only" role="status" aria-live="polite">
