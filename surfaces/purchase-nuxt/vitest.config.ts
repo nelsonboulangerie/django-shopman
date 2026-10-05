@@ -11,7 +11,7 @@ export default defineConfig({
   test: {
     projects: [
       {
-        resolve: { alias: appAlias, dedupe: ["vue"] },
+        resolve: { alias: appAlias, dedupe: ["vue", "reka-ui"] },
         test: {
           name: "unit",
           environment: "node",
@@ -22,7 +22,7 @@ export default defineConfig({
       },
       {
         plugins: [vue()],
-        resolve: { alias: appAlias },
+        resolve: { alias: appAlias, dedupe: ["vue", "reka-ui"] },
         test: {
           name: "component",
           environment: "happy-dom",

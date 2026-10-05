@@ -48,10 +48,10 @@
       "directory": "pos-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 50,
-        "direct_reka_import_files": 50,
+        "local_ui_files": 13,
+        "direct_reka_import_files": 15,
         "manual_overlay_files": 4,
-        "native_control_occurrences": 158
+        "native_control_occurrences": 157
       },
       "surfaces": [
         {
@@ -165,10 +165,10 @@
       "directory": "kds-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 50,
-        "direct_reka_import_files": 47,
+        "local_ui_files": 13,
+        "direct_reka_import_files": 12,
         "manual_overlay_files": 1,
-        "native_control_occurrences": 25
+        "native_control_occurrences": 24
       },
       "surfaces": [
         {
@@ -202,10 +202,10 @@
       "directory": "orders-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 50,
-        "direct_reka_import_files": 47,
+        "local_ui_files": 13,
+        "direct_reka_import_files": 12,
         "manual_overlay_files": 5,
-        "native_control_occurrences": 233
+        "native_control_occurrences": 232
       },
       "surfaces": [
         {
@@ -303,10 +303,10 @@
       "directory": "production-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 50,
-        "direct_reka_import_files": 47,
+        "local_ui_files": 13,
+        "direct_reka_import_files": 12,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 97
+        "native_control_occurrences": 96
       },
       "surfaces": [
         {
@@ -428,10 +428,10 @@
       "directory": "marketing-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 51,
-        "direct_reka_import_files": 49,
+        "local_ui_files": 14,
+        "direct_reka_import_files": 14,
         "manual_overlay_files": 1,
-        "native_control_occurrences": 32
+        "native_control_occurrences": 31
       },
       "surfaces": [
         {
@@ -513,8 +513,8 @@
       "directory": "purchase-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 10,
-        "direct_reka_import_files": 11,
+        "local_ui_files": 8,
+        "direct_reka_import_files": 9,
         "manual_overlay_files": 2,
         "native_control_occurrences": 132
       },
@@ -534,8 +534,8 @@
       "directory": "bi-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 9,
-        "direct_reka_import_files": 11,
+        "local_ui_files": 1,
+        "direct_reka_import_files": 4,
         "manual_overlay_files": 1,
         "native_control_occurrences": 24
       },
