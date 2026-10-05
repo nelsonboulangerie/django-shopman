@@ -66,6 +66,19 @@
     min-height: 2.75rem;
     touch-action: manipulation;
   }
+  /* Switch, checkbox e rádio do Nuxt UI já têm um invólucro operacional de
+     44×44 px. Forçar o botão INTERNO ao mesmo mínimo transforma o trilho 44×24
+     num círculo e o checkbox 20×20 num bloco. A anatomia canônica fica no
+     controle; o alvo ampliado continua no root/pseudo-elemento do wrapper. */
+  :where(
+    [data-slot="base"][role="switch"],
+    [data-slot="base"][role="checkbox"],
+    [data-slot="base"][role="radio"],
+    [data-slot="stepper-shell"] [data-slot="trigger"]
+  ) {
+    min-width: 0;
+    min-height: 0;
+  }
   :where(
     input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
     select,

@@ -23,6 +23,100 @@ function invoke(listener: unknown, event: Event) {
   if (typeof listener === "function") listener(event);
 }
 
+// O projeto `component` roda sem o runtime Nuxt. Checkbox e switch continuam
+// sendo os wrappers REAIS do operator-kit; estes dois dublês representam apenas
+// a infraestrutura Nuxt UI/Reka abaixo deles, com o mesmo contrato observável
+// (slots, role, aria-checked e v-model). Assim a suíte não transforma uma peça
+// canônica em tag desconhecida e deixa de testar silenciosamente o formulário.
+const NuxtSwitch = defineComponent({
+  name: "NuxtSwitch",
+  inheritAttrs: false,
+  props: {
+    modelValue: Boolean,
+    disabled: Boolean,
+    ui: { type: Object, default: () => ({}) },
+  },
+  emits: ["update:modelValue"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h(
+        "div",
+        {
+          "data-slot": attrs["data-slot"] ?? "switch",
+          class: ["relative flex", props.ui.root],
+        },
+        h(
+          "button",
+          {
+            ...attrs,
+            "data-slot": "base",
+            role: "switch",
+            type: "button",
+            disabled: props.disabled,
+            "aria-checked": String(props.modelValue),
+            "data-state": props.modelValue ? "checked" : "unchecked",
+            class: props.ui.base,
+            onClick: () => emit("update:modelValue", !props.modelValue),
+          },
+          h("span", { "data-slot": "thumb" }),
+        ),
+      );
+  },
+});
+
+const NuxtCheckbox = defineComponent({
+  name: "NuxtCheckbox",
+  inheritAttrs: false,
+  props: {
+    modelValue: { type: [Boolean, String], default: false },
+    disabled: Boolean,
+    label: String,
+    description: String,
+    ui: { type: Object, default: () => ({}) },
+  },
+  emits: ["update:modelValue"],
+  setup(props, { attrs, emit, slots }) {
+    return () => {
+      const checked = props.modelValue === true;
+      const mixed = props.modelValue === "indeterminate";
+      return h(
+        "div",
+        {
+          "data-slot": attrs["data-slot"] ?? "checkbox",
+          class: ["relative flex", props.ui.root],
+        },
+        [
+          h(
+            "div",
+            { "data-slot": "container" },
+            h("button", {
+              ...attrs,
+              "data-slot": "base",
+              role: "checkbox",
+              type: "button",
+              disabled: props.disabled,
+              "aria-label": attrs["aria-label"] ?? props.label,
+              "aria-checked": mixed ? "mixed" : String(checked),
+              "data-state": mixed
+                ? "indeterminate"
+                : checked
+                  ? "checked"
+                  : "unchecked",
+              class: props.ui.base,
+              onClick: () => emit("update:modelValue", mixed || !checked),
+            }),
+          ),
+          h("div", { "data-slot": "wrapper", class: props.ui.wrapper }, [
+            h("label", slots.label?.() ?? props.label),
+            slots.description?.() ??
+              (props.description ? h("span", props.description) : null),
+          ]),
+        ],
+      );
+    };
+  },
+});
+
 const UiButton = defineComponent({
   name: "UiButton",
   inheritAttrs: false,
@@ -79,12 +173,14 @@ function temporalInput(name: string, type: "date" | "time" | "datetime-local") {
     props: { modelValue: { type: String, default: "" } },
     emits: ["update:modelValue"],
     setup(props, { attrs, emit }) {
-      return () => h("input", {
-        ...attrs,
-        type,
-        value: props.modelValue,
-        onInput: (event: Event) => emit("update:modelValue", (event.target as HTMLInputElement).value),
-      });
+      return () =>
+        h("input", {
+          ...attrs,
+          type,
+          value: props.modelValue,
+          onInput: (event: Event) =>
+            emit("update:modelValue", (event.target as HTMLInputElement).value),
+        });
     },
   });
 }
@@ -161,7 +257,14 @@ const UiStepper = defineComponent({
   name: "UiStepper",
   props: {
     modelValue: { type: Number, default: 0 },
-    items: { type: Array as () => Array<{ title: string; description?: string; disabled?: boolean }>, default: () => [] },
+    items: {
+      type: Array as () => Array<{
+        title: string;
+        description?: string;
+        disabled?: boolean;
+      }>,
+      default: () => [],
+    },
     label: { type: String, default: "Etapas" },
   },
   emits: ["update:modelValue"],
@@ -170,25 +273,47 @@ const UiStepper = defineComponent({
       if (!item.disabled) emit("update:modelValue", index);
     };
 
-    return () => h("div", { role: "group", "aria-label": props.label, "data-slot": "stepper-shell" }, [
-      h("ol", props.items.map((item, index) => h("li", [
-        h("button", {
-          type: "button",
-          disabled: item.disabled,
-          "aria-current": props.modelValue === index ? "step" : undefined,
-          "aria-label": `${index + 1}. ${item.title}`,
-          onClick: () => choose(index, item),
-          onMousedown: (event: MouseEvent) => {
-            if (event.button === 0 && !event.ctrlKey) choose(index, item);
-          },
-        }, item.title),
-      ]))),
-    ]);
+    return () =>
+      h(
+        "div",
+        {
+          role: "group",
+          "aria-label": props.label,
+          "data-slot": "stepper-shell",
+        },
+        [
+          h(
+            "ol",
+            props.items.map((item, index) =>
+              h("li", [
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    disabled: item.disabled,
+                    "aria-current":
+                      props.modelValue === index ? "step" : undefined,
+                    "aria-label": `${index + 1}. ${item.title}`,
+                    onClick: () => choose(index, item),
+                    onMousedown: (event: MouseEvent) => {
+                      if (event.button === 0 && !event.ctrlKey)
+                        choose(index, item);
+                    },
+                  },
+                  item.title,
+                ),
+              ]),
+            ),
+          ),
+        ],
+      );
   },
 });
 
 config.global.components = {
   ...config.global.components,
+  NuxtCheckbox,
+  NuxtSwitch,
   UiButton,
   UiCheckbox,
   UiDateField,

@@ -660,7 +660,9 @@ describe("CampaignForm — as escolhas são peças do kit", () => {
 
     const birthday = wrapper
       .findAll('[role="checkbox"]')
-      .find((box) => box.text().includes("Aniversariantes de hoje"))!;
+      .find(
+        (box) => box.attributes("aria-label") === "Aniversariantes de hoje",
+      )!;
 
     expect(birthday.attributes("aria-checked")).toBe("false");
     await birthday.trigger("click");
