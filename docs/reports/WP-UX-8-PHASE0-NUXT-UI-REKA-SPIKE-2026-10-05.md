@@ -38,6 +38,29 @@ O `UiStepper` é o exemplo travado em teste: ele preserva `StepperIndicator`,
 `StepperSeparator` e `StepperTitle`. A aparência Shopman é aplicada sobre a sequência
 clássica de círculos conectados, não sobre um card segmentado de botões.
 
+### Auditoria de interferência sobre anatomia
+
+Na revisão fina, os wrappers foram classificados em três grupos:
+
+- **Canônico com tokens Shopman:** `UiButton`, `UiModal`, `UiDateField`,
+  `UiDateRangeField`, `UiDateTimeField`, `UiTimeField` e `UiStepper`. Eles usam Nuxt UI
+  ou Reka para estrutura e comportamento, e aplicam tokens da casa para densidade, foco,
+  cor, tipografia, raio e adaptação por dispositivo.
+- **Exceção operacional a manter por enquanto:** `UiSelect`, porque preserva busca sem
+  acento, palavras-chave invisíveis, lista curta sem campo de busca, fechamento seguro
+  dentro de modal e foco previsível no touch. A exceção não é estética: ela existe porque
+  Compras e Marketing dependem de achar itens longos rapidamente no chão de operação.
+- **Candidatos a convergência canônica:** `UiSelect`, `UiCheckbox`, `UiRadioGroup` e
+  `UiSwitch` devem ser comparados, caso a caso, com `USelectMenu`, `UCheckbox`,
+  `URadioGroup` e `USwitch`. Se a primitiva Nuxt UI/Reka entregar a mesma ergonomia
+  operacional, o wrapper passa a delegar a ela. Se não entregar, a exceção permanece, mas
+  com a vantagem funcional registrada em teste.
+
+Regra de manutenção: nenhuma customização Shopman pode remover indicador, separador,
+viewport, trigger, conteúdo, item, estado ou papel sem explicar qual problema operacional
+ela resolve. O teste estrutural do `UiStepper` é o precedente: ele reprova a volta do card
+segmentado e a ocultação do separador.
+
 `UiButton` e `UiModal` são as provas executáveis dessa arquitetura. Ambos usam componentes
 Nuxt UI sem tema e recebem integralmente as classes e o contrato público do Shopman. As cópias
 locais ainda prevalecem enquanto cada app é migrado; removê-las progressivamente faz o app
