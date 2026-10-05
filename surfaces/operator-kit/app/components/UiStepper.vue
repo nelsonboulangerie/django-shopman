@@ -45,8 +45,8 @@ const ui = {
 <template>
   <div data-slot="stepper-shell">
     <NuxtStepper
-      class="ui-stepper-localized"
       v-model="current"
+      class="ui-stepper-localized"
       :items="normalizedItems"
       :linear="false"
       :disabled="disabled"

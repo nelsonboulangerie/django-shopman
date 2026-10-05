@@ -136,8 +136,8 @@ const nextYear = { ...navButton, "aria-label": "Próximo ano" };
     <div :class="['min-w-0', attrs.class]" data-slot="date-range-field">
       <UiPopoverTrigger as-child>
         <button
-          type="button"
           :id="id"
+          type="button"
           class="flex min-h-control w-full min-w-0 items-center gap-2 rounded-md border border-input bg-background px-3 text-left text-sm text-foreground shadow-xs outline-none transition hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 sm:hidden"
           :aria-label="`${label}: ${rangeLabel}`"
           :disabled="disabled || readonly"
@@ -149,9 +149,9 @@ const nextYear = { ...navButton, "aria-label": "Próximo ano" };
       </UiPopoverTrigger>
       <div v-localized-segments class="hidden min-w-0 sm:flex">
         <NuxtInputDate
+          :id="id"
           v-model="value"
           v-bind="fieldAttrs"
-          :id="id"
           range
           locale="pt-BR"
           granularity="day"
