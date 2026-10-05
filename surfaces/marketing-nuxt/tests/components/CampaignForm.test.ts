@@ -104,6 +104,18 @@ function form(rule: Campaign | null = null, draftOwner = "") {
   });
 }
 
+function checkboxNamed(wrapper: ReturnType<typeof form>, label: string) {
+  const choice = wrapper
+    .findAll('[role="checkbox"]')
+    .find((candidate) =>
+      candidate.element
+        .closest('[data-slot="item"], [data-slot="checkbox"]')
+        ?.textContent?.includes(label),
+    );
+  if (!choice) throw new Error(`Checkbox "${label}" não encontrado.`);
+  return choice;
+}
+
 function makeRule(over: Partial<Campaign> = {}): Campaign {
   return {
     pk: 5,
@@ -542,18 +554,9 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
       }),
     );
 
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "Sem glúten")!
-      .trigger("click");
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "Atacado")!
-      .trigger("click");
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "Cliente fiel")!
-      .trigger("click");
+    await checkboxNamed(wrapper, "Sem glúten").trigger("click");
+    await checkboxNamed(wrapper, "Atacado").trigger("click");
+    await checkboxNamed(wrapper, "Cliente fiel").trigger("click");
     await wrapper.find("#rule-audience-match").setValue("all");
     await wrapper.find("form").trigger("submit");
 
@@ -577,10 +580,7 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     });
     const first = form(rule, "operator:7");
     await first.find("#rule-name").setValue("Campanha em revisão");
-    await first
-      .findAll("button")
-      .find((button) => button.text() === "Sem glúten")!
-      .trigger("click");
+    await checkboxNamed(first, "Sem glúten").trigger("click");
     first.unmount();
 
     const restored = form(rule, "operator:7");
@@ -593,10 +593,7 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     // `aria-pressed`: escolher etiqueta é marcar item, não apertar um botão que fica
     // apertado. O leitor de tela diz "marcada", que é o que a pessoa está fazendo.
     expect(
-      restored
-        .findAll('[role="checkbox"]')
-        .find((chip) => chip.text() === "Sem glúten")!
-        .attributes("aria-checked"),
+      checkboxNamed(restored, "Sem glúten").attributes("aria-checked"),
     ).toBe("true");
     expect(restored.text()).toContain("Rascunho restaurado");
   });
@@ -660,7 +657,9 @@ describe("CampaignForm — as escolhas são peças do kit", () => {
 
     const birthday = wrapper
       .findAll('[role="checkbox"]')
-      .find((box) => box.text().includes("Aniversariantes de hoje"))!;
+      .find(
+        (box) => box.attributes("aria-label") === "Aniversariantes de hoje",
+      )!;
 
     expect(birthday.attributes("aria-checked")).toBe("false");
     await birthday.trigger("click");
@@ -675,21 +674,15 @@ describe("CampaignForm — as escolhas são peças do kit", () => {
     ).toBe(true);
   });
 
-  // ⚠️ A pílula de plataforma é um `UiToggleChip`, não um `UiCheckbox`: ela é um chip
-  // cuja caixa inteira acende e que ainda carrega o estado da plataforma. Era um
-  // `<input type="checkbox" class="sr-only">` embrulhado num `<label>` pintado —
-  // semântica escondida num lugar, alvo de toque noutro.
-  it("a pílula de plataforma é um chip com ARIA de escolha, e marcar chega ao envio", async () => {
+  it("o destino pertence ao grupo canônico, e marcar chega ao envio", async () => {
     const wrapper = form(makeRule({ platforms: [] }));
 
     expect(wrapper.find('input[type="checkbox"].sr-only').exists()).toBe(false);
-    const pill = wrapper
-      .findAll('[role="checkbox"]')
-      .find((chip) => chip.text().includes("WhatsApp"))!;
-    expect(pill.attributes("aria-checked")).toBe("false");
+    const destination = checkboxNamed(wrapper, "WhatsApp");
+    expect(destination.attributes("aria-checked")).toBe("false");
 
-    await pill.trigger("click");
-    expect(pill.attributes("aria-checked")).toBe("true");
+    await destination.trigger("click");
+    expect(destination.attributes("aria-checked")).toBe("true");
     await wrapper.find("form").trigger("submit");
     const [payload] = wrapper.emitted("submit")![0] as [
       Record<string, unknown>,
@@ -809,10 +802,7 @@ describe("CampaignForm — a voz do gestor", () => {
       updated_at: "v1",
     });
     const first = form(rule, "operator:7");
-    await first
-      .findAll("button")
-      .find((button) => button.text() === "Sem glúten")!
-      .trigger("click");
+    await checkboxNamed(first, "Sem glúten").trigger("click");
     first.unmount();
 
     const conflicted = form(

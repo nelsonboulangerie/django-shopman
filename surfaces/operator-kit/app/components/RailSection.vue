@@ -2,7 +2,7 @@
 // Item do rail da suíte (`OperatorSuiteRail`): ícone em cima, nome embaixo, selo de
 // contagem e ponto de atenção. É o `.rail-item` das prévias v3 (`_shared.css`): 64px de
 // largura, ícone de 22px, rótulo de 11px, o item ativo acende com o fundo na cor do
-// texto do rail. O fundo ativo fica em 60px dentro do rail de 76px, com 8px de
+// texto do rail. O fundo ativo fica em 68px dentro do rail de 84px, com 8px de
 // respiro em cada lado. Altura ≥ 44px (alvo de toque da casa).
 //
 // Serve às seções do app (link, `to`) e às funções do pé (botão, emite `activate`):
@@ -65,8 +65,8 @@ const a11yLabel = computed(() => {
     :title="attention ? `${label}: ${attention}` : undefined"
     :data-active="active || undefined"
     data-rail-section
-    class="relative flex w-[60px] flex-col items-center gap-[3px] rounded-[10px] pt-[7px] pb-1.5 text-center leading-[13px] font-semibold whitespace-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
-    :class="[dense ? 'px-0 text-[10px] tracking-[-0.3px]' : 'px-0 text-[11px]', active
+    class="relative flex w-[68px] flex-col items-center gap-[3px] rounded-[10px] pt-[7px] pb-1.5 text-center leading-[13px] font-semibold whitespace-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
+    :class="[dense ? 'px-0.5 text-[10px] tracking-[-0.3px]' : 'px-1 text-[11px]', active
       ? 'bg-rail-foreground text-rail shadow-[0_1px_2px_rgb(0_0_0/.18)] dark:text-background'
       : 'text-rail-foreground hover:bg-rail-foreground/10']"
     @click="to ? undefined : emit('activate')"

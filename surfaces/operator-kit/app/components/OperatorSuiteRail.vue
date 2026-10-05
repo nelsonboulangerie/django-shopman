@@ -157,7 +157,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
   <aside
     v-if="!isCollapsed"
     v-bind="attrs"
-    class="sticky top-0 hidden h-dvh w-[76px] shrink-0 flex-col items-center gap-1 overflow-y-auto bg-rail pb-2 text-rail-foreground no-scrollbar rail:flex print:hidden"
+    class="sticky top-0 hidden h-dvh w-[84px] shrink-0 flex-col items-center gap-1 overflow-y-auto bg-rail pb-2 text-rail-foreground no-scrollbar rail:flex print:hidden"
     :aria-label="`Barra do app ${appLabel}`"
     data-suite-rail
   >
@@ -169,7 +169,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
       :rel="hubUrl ? hubLink.rel : undefined"
       :aria-label="hubUrl ? `${appLabel}: ${HUB_BACK_INLINE}` : appLabel"
       :title="hubUrl ? `${appLabel}: ${HUB_BACK_INLINE}` : appLabel"
-      class="relative mt-3 mb-2 grid h-[52px] w-[60px] shrink-0 place-items-center rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
+      class="relative mt-3 mb-2 grid h-[52px] w-[68px] shrink-0 place-items-center rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
       :style="{ background: appColor }"
       data-suite-rail-app
     >
@@ -190,12 +190,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
         <Icon name="lucide:layout-grid" class="size-3 text-rail" />
       </span>
     </component>
-    <div class="mb-2 h-px w-9 shrink-0 bg-rail-foreground/20" aria-hidden="true" />
+    <div class="mb-2 h-px w-10 shrink-0 bg-rail-foreground/20" aria-hidden="true" />
 
     <nav class="flex flex-col items-center gap-1" :aria-label="label">
       <template v-for="(section, index) in topSections" :key="section.key">
         <p v-if="groupStarts(index)" class="mt-0.5 mb-1 text-[9px] leading-none font-semibold tracking-[0.09em] uppercase opacity-[.62]" data-rail-group>{{ groupStarts(index) }}</p>
-        <div v-if="section.divider && index > 0" class="my-1 h-px w-9 shrink-0 bg-rail-foreground/20" aria-hidden="true" data-rail-divider />
+        <div v-if="section.divider && index > 0" class="my-1 h-px w-10 shrink-0 bg-rail-foreground/20" aria-hidden="true" data-rail-divider />
         <RailSection
           :icon="section.icon"
           :label="section.label"
@@ -247,7 +247,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
       <slot name="foot" />
       <div
         v-if="footOrder === 'settings-first' && (footSections.length || $slots.foot)"
-        class="my-1 h-px w-9 shrink-0 bg-rail-foreground/20"
+        class="my-1 h-px w-10 shrink-0 bg-rail-foreground/20"
         aria-hidden="true"
         data-rail-foot-rule
       />

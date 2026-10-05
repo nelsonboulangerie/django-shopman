@@ -27,18 +27,20 @@ const normalizedItems = computed(() =>
 );
 const activeItem = computed(() => props.items[current.value]);
 
-const ui = {
-  root: "w-full",
-  header: "flex items-start gap-0 rounded-none border-0 bg-transparent p-0",
-  item: "group/step relative flex min-w-0 flex-1 flex-col items-center gap-2 text-center text-muted-foreground transition data-[state=active]:text-foreground data-[state=completed]:text-primary",
-  container: "relative flex w-full items-center justify-center",
-  trigger: "relative z-10 grid size-control place-items-center rounded-full outline-none transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60",
-  indicator: "grid size-7 place-items-center rounded-full border border-border bg-card text-xs font-semibold tabular-nums text-muted-foreground shadow-xs transition group-data-[state=active]/step:border-primary group-data-[state=active]/step:bg-primary group-data-[state=active]/step:text-primary-foreground group-data-[state=completed]/step:border-primary group-data-[state=completed]/step:bg-primary/10 group-data-[state=completed]/step:text-primary",
-  separator: "absolute top-1/2 left-1/2 z-0 h-0.5 w-full -translate-y-1/2 rounded-full bg-border transition group-data-[state=completed]/step:bg-primary",
-  wrapper: "pointer-events-none hidden min-w-0 max-w-28 sm:block",
-  title: "truncate text-center text-xs font-medium text-current",
-  description: "hidden",
-  content: "hidden",
+// O componente permanece no tema oficial. A única adaptação visual troca,
+// responsivamente, entre dois tamanhos que o próprio Nuxt UI oferece: `sm` no
+// celular (cinco etapas preservam um conector de verdade a 320 px) e `xl` a
+// partir de `sm`.
+// Os valores abaixo são literalmente os slots do size `xl` canônico.
+const responsiveUi = {
+  trigger:
+    "relative after:absolute after:-inset-1.5 after:content-[''] sm:size-14 sm:text-xl sm:after:inset-0",
+  icon: "sm:size-7",
+  separator:
+    "sm:start-[calc(50%+36px)] sm:end-[calc(-50%+36px)]",
+  wrapper: "hidden sm:mt-3.5 sm:block",
+  title: "sm:text-lg",
+  description: "sm:text-lg",
 };
 </script>
 
@@ -51,12 +53,9 @@ const ui = {
       :linear="false"
       :disabled="disabled"
       :aria-label="label"
-      :ui="ui"
+      size="sm"
+      :ui="responsiveUi"
     >
-      <template #indicator="{ item }">
-        <Icon v-if="Number(item.value) < current" name="lucide:check" class="size-3.5" aria-hidden="true" />
-        <span v-else>{{ Number(item.value) + 1 }}</span>
-      </template>
       <template #title="{ item }">
         <span class="sr-only">{{ Number(item.value) + 1 }}. </span>{{ item.title }}
       </template>
@@ -66,7 +65,7 @@ const ui = {
       Etapa {{ current + 1 }} de {{ items.length }}
     </span>
 
-    <p v-if="showCurrentDescription && activeItem" class="mt-2 text-xs text-muted-foreground">
+    <p v-if="showCurrentDescription && activeItem" class="mt-3 text-sm text-muted-foreground sm:hidden">
       <strong class="text-foreground">{{ current + 1 }}. {{ activeItem.title }}.</strong>
       {{ activeItem.description }}
     </p>

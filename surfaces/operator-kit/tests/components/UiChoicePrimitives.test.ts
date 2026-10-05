@@ -1,11 +1,14 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { DOMWrapper } from "@vue/test-utils";
 import { afterEach, describe, expect, it } from "vitest";
 import { defineComponent, nextTick, type VueWrapper } from "vue";
 
 import UiCheckbox from "../../app/components/UiCheckbox.vue";
+import UiCheckboxGroup from "../../app/components/UiCheckboxGroup.vue";
 import UiRadio from "../../app/components/UiRadio.vue";
 import UiRadioGroup from "../../app/components/UiRadioGroup.vue";
 import UiSelect from "../../app/components/UiSelect.vue";
+import UiSwitch from "../../app/components/UiSwitch.vue";
 import UiToggleChip from "../../app/components/UiToggleChip.vue";
 import type { ChoiceOption } from "../../app/types/choice";
 
@@ -18,6 +21,7 @@ import type { ChoiceOption } from "../../app/types/choice";
 // com uma mão só — alvo de 44 px, ARIA correto e teclado completo.
 
 const mounted: VueWrapper[] = [];
+const page = () => new DOMWrapper(document.body);
 
 async function mount(component: Parameters<typeof mountSuspended>[0], options: Parameters<typeof mountSuspended>[1] = {}) {
   const wrapper = await mountSuspended(component, options);
@@ -36,8 +40,12 @@ describe("UiCheckbox", () => {
     const control = wrapper.get('[role="checkbox"]');
     expect(control.attributes("type")).toBe("button");
     expect(control.attributes("aria-checked")).toBe("false");
-    expect(control.classes()).toContain("min-h-control");
-    expect(control.text()).toContain("Aniversariantes de hoje");
+    expect(wrapper.get('[data-slot="checkbox"]').classes()).toContain("min-h-control");
+    expect(control.classes()).toContain("size-5");
+    expect(control.classes()).toContain("relative");
+    expect(control.classes()).toContain("after:-inset-3");
+    expect(wrapper.text()).toContain("Aniversariantes de hoje");
+    expect(wrapper.get("label").attributes("for")).toBe(control.attributes("id"));
   });
 
   it("marca e desmarca", async () => {
@@ -72,7 +80,7 @@ describe("UiCheckbox", () => {
     const wrapper = await mount(UiCheckbox, { attrs: { "aria-label": "Selecionar linha" } });
     const control = wrapper.get('[role="checkbox"]');
 
-    expect(control.classes()).toContain("size-control");
+    expect(wrapper.get('[data-slot="checkbox"]').classes()).toContain("size-control");
     expect(control.attributes("aria-label")).toBe("Selecionar linha");
   });
 
@@ -80,6 +88,82 @@ describe("UiCheckbox", () => {
     const wrapper = await mount(UiCheckbox, { props: { disabled: true, label: "Ativo" } });
     await wrapper.get('[role="checkbox"]').trigger("click");
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+  });
+});
+
+describe("UiCheckboxGroup", () => {
+  const destinations: ChoiceOption<string>[] = [
+    { value: "instagram", label: "Instagram", hint: "Publicação pública" },
+    { value: "whatsapp", label: "WhatsApp", hint: "Mensagem direta" },
+    { value: "google", label: "Google", disabled: true },
+  ];
+
+  it("preserva a anatomia canônica: fieldset, legend e itens Reka", async () => {
+    const wrapper = await mount(UiCheckboxGroup, {
+      props: {
+        modelValue: ["instagram"],
+        items: destinations,
+        legend: "Disparado via",
+        variant: "table",
+      },
+    });
+
+    expect(wrapper.get('[data-slot="checkbox-group"]')).toBeTruthy();
+    expect(wrapper.get("fieldset").text()).toContain("Disparado via");
+    expect(wrapper.get("legend").text()).toBe("Disparado via");
+    const choices = wrapper.findAll('[role="checkbox"]');
+    expect(choices).toHaveLength(3);
+    expect(choices.map((choice) => choice.attributes("aria-checked"))).toEqual([
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(wrapper.findAll('[data-slot="item"]')[0]!.classes()).toContain("min-h-control");
+    expect(choices[0]!.classes()).toContain("size-5");
+    expect(wrapper.text()).toContain("Publicação pública");
+  });
+
+  it("emite a lista completa e respeita item desabilitado", async () => {
+    const wrapper = await mount(UiCheckboxGroup, {
+      props: { modelValue: ["instagram"], items: destinations },
+    });
+    const choices = wrapper.findAll('[role="checkbox"]');
+
+    await choices[1]!.trigger("click");
+    expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([
+      ["instagram", "whatsapp"],
+    ]);
+
+    await choices[2]!.trigger("click");
+    expect(wrapper.emitted("update:modelValue")).toHaveLength(1);
+  });
+});
+
+describe("UiSwitch", () => {
+  it("usa a anatomia do Nuxt UI e mantém o alvo operacional de 44 px", async () => {
+    const wrapper = await mount(UiSwitch, { props: { modelValue: false }, attrs: { "aria-label": "Ativo" } });
+
+    const root = wrapper.get('[data-slot="switch"]');
+    const control = wrapper.get('[role="switch"]');
+    expect(root.classes()).toContain("size-control");
+    expect(control.attributes("type")).toBe("button");
+    expect(control.attributes("aria-checked")).toBe("false");
+    expect(control.attributes("data-state")).toBe("unchecked");
+    expect(wrapper.get('[data-slot="thumb"]').exists()).toBe(true);
+    expect(control.classes()).toContain("w-11");
+    expect(control.classes()).toContain("relative");
+    expect(control.classes()).toContain("after:-inset-y-2.5");
+
+    await control.trigger("click");
+    expect(wrapper.emitted("update:modelValue")).toEqual([[true]]);
+  });
+
+  it("mapeia o tamanho compacto para a variante oficial xs sem reduzir o alvo", async () => {
+    const wrapper = await mount(UiSwitch, { props: { modelValue: true, size: "sm" } });
+
+    expect(wrapper.get('[data-slot="switch"]').classes()).toContain("size-control");
+    expect(wrapper.get('[role="switch"]').classes()).toContain("w-7");
+    expect(wrapper.get('[data-slot="thumb"]').classes()).toContain("size-3");
   });
 });
 
@@ -171,120 +255,122 @@ describe("UiSelect", () => {
   it("fechado, o gatilho mostra a escolha e declara o que ele abre", async () => {
     const wrapper = await mount(UiSelect, { props: { options: shortList, modelValue: "b", label: "Canal" } });
 
-    const trigger = wrapper.get('[data-slot="select-trigger"]');
+    const trigger = wrapper.get('[data-shopman-slot="select-trigger"]');
     expect(trigger.attributes("aria-haspopup")).toBe("listbox");
     expect(trigger.attributes("aria-expanded")).toBe("false");
     expect(trigger.classes()).toContain("h-control");
     expect(trigger.text()).toContain("Entrega");
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(false);
+    expect(page().find('[role="listbox"]').exists()).toBe(false);
   });
 
   it("sem escolha, mostra o texto de espera", async () => {
     const wrapper = await mount(UiSelect, { props: { options: shortList, placeholder: "Sem modelo" } });
-    expect(wrapper.get('[data-slot="select-trigger"]').text()).toContain("Sem modelo");
+    expect(wrapper.get('[data-shopman-slot="select-trigger"]').text()).toContain("Sem modelo");
   });
 
   it("lista curta abre SEM campo de search — search em três itens é obstáculo", async () => {
     const wrapper = await mount(UiSelect, { props: { options: shortList } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
 
-    expect(wrapper.get('[data-slot="select-trigger"]').attributes("aria-expanded")).toBe("true");
-    expect(wrapper.find('input[role="combobox"]').exists()).toBe(false);
+    expect(wrapper.get('[data-shopman-slot="select-trigger"]').attributes("aria-expanded")).toBe("true");
+    expect(page().find('input[role="combobox"]').exists()).toBe(false);
 
-    const formatOptions = wrapper.findAll('[role="option"]');
+    const formatOptions = page().findAll('[role="option"]');
     expect(formatOptions).toHaveLength(3);
     expect(formatOptions[0].classes()).toContain("min-h-control");
-    // Sem campo de search, quem ouve o teclado é a própria lista.
-    expect(wrapper.get('[role="listbox"]').attributes("tabindex")).toBe("0");
+    // A lista canônica mantém o item destacado como parada interna de foco.
+    expect(page().get('[role="listbox"]').attributes("tabindex")).toBe("-1");
+    expect(formatOptions[0].attributes("tabindex")).toBe("0");
   });
 
   it("lista longa abre COM search, e filtrar anuncia a contagem", async () => {
     const wrapper = await mount(UiSelect, { props: { options: approvedTemplates, label: "Modelo aprovado" } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
 
-    const search = wrapper.get('input[role="combobox"]');
-    expect(search.attributes("aria-controls")).toBe(wrapper.get('[role="listbox"]').attributes("id"));
-    expect(wrapper.get('[role="listbox"]').attributes("aria-labelledby")).toBe(
+    const search = page().get('input[role="combobox"]');
+    expect(search.attributes("aria-controls")).toBe(page().get('[role="listbox"]').attributes("id"));
+    expect(page().get('[role="listbox"]').attributes("aria-labelledby")).toBe(
       search.attributes("aria-labelledby"),
     );
-    expect(wrapper.get('[role="listbox"]').attributes("aria-label")).toBeUndefined();
-    expect(wrapper.findAll('[role="option"]')).toHaveLength(30);
+    expect(page().get('[role="listbox"]').attributes("aria-label")).toBeUndefined();
+    expect(page().findAll('[role="option"]')).toHaveLength(30);
 
     await search.setValue("cafe");
-    expect(wrapper.findAll('[role="option"]')).toHaveLength(1);
-    expect(wrapper.get('[role="status"]').text()).toBe("1 resultado");
+    expect(page().findAll('[role="option"]')).toHaveLength(1);
+    expect(page().get('[role="status"]').text()).toBe("1 resultado");
 
     await search.setValue("inexistente");
-    expect(wrapper.findAll('[role="option"]')).toHaveLength(0);
-    expect(wrapper.get('[role="listbox"]').attributes("id")).toBe(search.attributes("aria-controls"));
-    expect(wrapper.get('[data-slot="select-empty"]').text()).toBe("Nenhum resultado");
-    expect(wrapper.get('[role="status"]').text()).toBe("Nenhum resultado");
-    expect(wrapper.text()).toContain("Nenhum resultado");
+    expect(page().findAll('[role="option"]')).toHaveLength(0);
+    expect(page().get('[role="listbox"]').attributes("id")).toBe(search.attributes("aria-controls"));
+    expect(page().get('[data-slot="empty"]').text()).toBe("Nenhum resultado");
+    expect(page().get('[role="status"]').text()).toBe("Nenhum resultado");
+    expect(page().text()).toContain("Nenhum resultado");
   });
 
   it("o campo de busca continua nomeado quando o app não passou label", async () => {
     const wrapper = await mount(UiSelect, { props: { options: approvedTemplates } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
 
-    expect(wrapper.get('[data-slot="select-input"]').attributes("aria-label")).toBe("Buscar");
-    expect(wrapper.get('[data-slot="select-viewport"]').attributes("role")).toBe("listbox");
-    expect(wrapper.get('[data-slot="select-viewport"]').attributes("aria-label")).toBe("Opções");
-    expect(wrapper.findAll('[data-slot="select-item"]')).toHaveLength(30);
+    expect(page().get('input[role="combobox"]').attributes("aria-label")).toBe("Buscar");
+    expect(page().get('[role="listbox"]').attributes("aria-label")).toBe("Opções");
+    expect(page().get('[data-slot="viewport"]').attributes("role")).toBe("presentation");
+    expect(page().findAll('[data-slot="item"]')).toHaveLength(30);
   });
 
   it("navega e confirma só pelo teclado", async () => {
     const wrapper = await mount(UiSelect, { props: { options: approvedTemplates } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("keydown", { key: "ArrowDown" });
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("keydown", { key: "ArrowDown" });
 
-    const search = wrapper.get('input[role="combobox"]');
-    expect(search.attributes("aria-activedescendant")).toBe(wrapper.findAll('[role="option"]')[0].attributes("id"));
+    const search = page().get('input[role="combobox"]');
+    expect(search.attributes("aria-activedescendant")).toBe(page().findAll('[role="option"]')[0].attributes("id"));
 
-    await search.trigger("keydown", { key: "ArrowDown" });
-    expect(search.attributes("aria-activedescendant")).toBe(wrapper.findAll('[role="option"]')[1].attributes("id"));
+    await search.trigger("keydown", { key: "ArrowDown", code: "ArrowDown" });
+    expect(search.attributes("aria-activedescendant")).toBe(page().findAll('[role="option"]')[1].attributes("id"));
 
-    await search.trigger("keydown", { key: "Enter" });
+    await search.trigger("keydown", { key: "Enter", code: "Enter" });
     expect(wrapper.emitted("update:modelValue")).toEqual([["ns-1"]]);
     expect(wrapper.emitted("change")?.[0]).toEqual([approvedTemplates[1]]);
     // Confirmar fecha o painel.
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(false);
+    expect(wrapper.get('[data-shopman-slot="select-trigger"]').attributes("aria-expanded")).toBe("false");
   });
 
   it("Esc fecha sem escolher", async () => {
     const wrapper = await mount(UiSelect, { props: { options: approvedTemplates } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
-    await wrapper.get('input[role="combobox"]').trigger("keydown", { key: "Escape" });
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
+    await page().get('input[role="combobox"]').trigger("keydown", { key: "Escape", code: "Escape" });
 
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(false);
+    expect(wrapper.get('[data-shopman-slot="select-trigger"]').attributes("aria-expanded")).toBe("false");
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
   });
 
   it("abre parado na opção que está valendo, não no topo", async () => {
     const wrapper = await mount(UiSelect, { props: { options: approvedTemplates, modelValue: "ns-7" } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
 
-    const activeId = wrapper.get('input[role="combobox"]').attributes("aria-activedescendant");
-    expect(activeId).toBe(wrapper.findAll('[role="option"]')[7].attributes("id"));
-    expect(wrapper.findAll('[role="option"]')[7].attributes("aria-selected")).toBe("true");
+    const activeId = page().get('input[role="combobox"]').attributes("aria-activedescendant");
+    expect(activeId).toBe(page().findAll('[role="option"]')[7].attributes("id"));
+    expect(page().findAll('[role="option"]')[7].attributes("aria-selected")).toBe("true");
   });
 
   it("opção desabilitada não vira escolha", async () => {
     const wrapper = await mount(UiSelect, {
       props: { options: [{ value: "a", label: "Balcão" }, { value: "b", label: "Fechado", disabled: true }] },
     });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
-    await wrapper.findAll('[role="option"]')[1].trigger("click");
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
+    await page().findAll('[role="option"]')[1].trigger("click");
 
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
   });
 
   it("o app pode forçar a search numa lista curta, e proibi-la numa longa", async () => {
     const curta = await mount(UiSelect, { props: { options: shortList, searchable: true } });
-    await curta.get('[data-slot="select-trigger"]').trigger("click");
-    expect(curta.find('input[role="combobox"]').exists()).toBe(true);
+    await curta.get('[data-shopman-slot="select-trigger"]').trigger("click");
+    expect(page().find('input[role="combobox"]').exists()).toBe(true);
+    await curta.get('[data-shopman-slot="select-trigger"]').trigger("click");
 
     const longa = await mount(UiSelect, { props: { options: approvedTemplates, searchable: false } });
-    await longa.get('[data-slot="select-trigger"]').trigger("click");
-    expect(longa.find('input[role="combobox"]').exists()).toBe(false);
+    await longa.get('[data-shopman-slot="select-trigger"]').trigger("click");
+    expect(page().find('input[role="combobox"]').exists()).toBe(false);
   });
 });
 
@@ -294,14 +380,16 @@ describe("todos os três", () => {
     const grupo = await mount(UiRadioGroup, { props: { options: audienceModes } });
     const select = await mount(UiSelect, { props: { options: shortList } });
 
-    for (const control of [
-      checkbox.get('[role="checkbox"]'),
-      grupo.get('[role="radio"]'),
-      select.get('[data-slot="select-trigger"]'),
-    ]) {
-      expect(control.classes()).toContain("focus-visible:outline-2");
-      expect(control.classes()).toContain("focus-visible:outline-ring");
-    }
+    const canonicalCheckbox = checkbox.get('[role="checkbox"]');
+    expect(canonicalCheckbox.classes()).toContain("focus-visible:outline-3");
+    expect(canonicalCheckbox.classes()).toContain("focus-visible:outline-solid");
+
+    const canonicalSelect = select.get('[data-shopman-slot="select-trigger"]');
+    expect(canonicalSelect.classes()).toContain("focus-visible:outline-3");
+
+    const radio = grupo.get('[role="radio"]');
+    expect(radio.classes()).toContain("focus-visible:outline-2");
+    expect(radio.classes()).toContain("focus-visible:outline-ring");
   });
 });
 
@@ -314,7 +402,7 @@ describe("UiSelect — o que veio do MaterialPicker", () => {
       props: { options: shortList, modelValue: "b", label: "Modelo aprovado" },
     });
 
-    const trigger = wrapper.get('[data-slot="select-trigger"]');
+    const trigger = wrapper.get('[data-shopman-slot="select-trigger"]');
     // `aria-labelledby` ganha de `aria-label`: sem esta cadeia o gatilho se
     // chamaria só "Entrega", sem dizer de quê.
     const ids = trigger.attributes("aria-labelledby")!.split(" ");
@@ -327,49 +415,34 @@ describe("UiSelect — o que veio do MaterialPicker", () => {
       props: { options: shortList, modelValue: "b", labelledBy: "rotulo-do-campo" },
     });
 
-    const trigger = wrapper.get('[data-slot="select-trigger"]');
+    const trigger = wrapper.get('[data-shopman-slot="select-trigger"]');
     const valueId = trigger.get("span").attributes("id");
     expect(trigger.attributes("aria-labelledby")).toBe(`rotulo-do-campo ${valueId}`);
   });
 
-  it("fecha pelo véu inerte, e o clique do véu é CONSUMIDO", async () => {
+  it("delega a dispensa externa ao DismissableLayer canônico", async () => {
     const wrapper = await mount(UiSelect, { props: { options: shortList } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
 
-    const veil = wrapper.get("div.fixed.inset-0");
-    const event = new Event("click", { bubbles: true, cancelable: true });
-    veil.element.dispatchEvent(event);
-    await nextTick();
-
-    // `.prevent` é o que impede um `<label>` ancestral de reabrir o painel no
-    // mesmo gesto — o defeito do "dropdown que não fecha nunca".
-    expect(event.defaultPrevented).toBe(true);
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(false);
+    expect(page().get("[data-dismissable-layer]").attributes("role")).toBe("listbox");
+    expect(page().get('[data-slot="focusScope"]').exists()).toBe(true);
   });
 
-  it("o Esc não atravessa para o modal por cima", async () => {
+  it("o Esc fecha somente a camada superior", async () => {
     const wrapper = await mount(UiSelect, { props: { options: approvedTemplates } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
-
-    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
-    let leaked = false;
-    document.addEventListener("keydown", () => { leaked = true; });
-    wrapper.get('input[role="combobox"]').element.dispatchEvent(event);
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
+    await page().get('input[role="combobox"]').trigger("keydown", { key: "Escape", code: "Escape" });
     await nextTick();
 
-    expect(leaked).toBe(false);
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(false);
+    expect(wrapper.get('[data-shopman-slot="select-trigger"]').attributes("aria-expanded")).toBe("false");
   });
 
-  it("apontar para a opção não tira o cursor do campo de search", async () => {
+  it("usa o escopo de foco canônico ao navegar pelas opções", async () => {
     const wrapper = await mount(UiSelect, { props: { options: approvedTemplates } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
 
-    const event = new Event("pointerdown", { bubbles: true, cancelable: true });
-    wrapper.findAll('[role="option"]')[3].element.dispatchEvent(event);
-    // Sem o `preventDefault`, o `pointerdown` na opção tiraria o foco do input
-    // ANTES do clique, e a search perderia o cursor a cada tentativa.
-    expect(event.defaultPrevented).toBe(true);
+    expect(page().get('[data-slot="focusScope"]').attributes("tabindex")).toBe("-1");
+    expect(page().get('input[role="combobox"]').attributes("aria-activedescendant")).toBeTruthy();
   });
 
   it("search também pelo código que não aparece na linha", async () => {
@@ -381,44 +454,46 @@ describe("UiSelect — o que veio do MaterialPicker", () => {
         ],
       },
     });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
-    await wrapper.get('input[role="combobox"]').setValue("wa_notice");
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
+    await page().get('input[role="combobox"]').setValue("wa_notice");
 
-    expect(wrapper.findAll('[role="option"]')).toHaveLength(1);
-    expect(wrapper.get('[role="option"]').text()).toContain("Aviso da casa");
+    expect(page().findAll('[role="option"]')).toHaveLength(1);
+    expect(page().get('[role="option"]').text()).toContain("Aviso da casa");
   });
 
   it("clicar no resultado EMITE o valor e FECHA a lista", async () => {
     const wrapper = await mount(UiSelect, { props: { options: approvedTemplates } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
-    await wrapper.get('input[role="combobox"]').setValue("cafe");
-    await wrapper.get('[role="option"]').trigger("click");
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
+    await page().get('input[role="combobox"]').setValue("cafe");
+    await page().get('[role="option"]').trigger("click");
 
     expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual(["ns-7"]);
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(false);
-    expect(wrapper.get('[data-slot="select-trigger"]').attributes("aria-expanded")).toBe("false");
+    expect(page().find('[role="listbox"]').exists()).toBe(false);
+    expect(wrapper.get('[data-shopman-slot="select-trigger"]').attributes("aria-expanded")).toBe("false");
   });
 
   it("↓ dá a volta no fim da lista", async () => {
     const wrapper = await mount(UiSelect, { props: { options: shortList, searchable: true } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
-    const search = wrapper.get('input[role="combobox"]');
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
+    const search = page().get('input[role="combobox"]');
 
-    for (let step = 0; step < 3; step += 1) await search.trigger("keydown", { key: "ArrowDown" });
+    for (let step = 0; step < 3; step += 1) {
+      await search.trigger("keydown", { key: "ArrowDown", code: "ArrowDown" });
+    }
 
-    expect(wrapper.findAll('[role="option"]')[0].attributes("data-active")).toBe("true");
+    expect(page().findAll('[role="option"]')[0].attributes("data-highlighted")).toBe("");
   });
 
   it("filtrar de novo devolve o destaque para o primeiro resultado", async () => {
     const wrapper = await mount(UiSelect, { props: { options: approvedTemplates } });
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
-    const search = wrapper.get('input[role="combobox"]');
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
+    const search = page().get('input[role="combobox"]');
 
-    await search.trigger("keydown", { key: "ArrowDown" });
-    await search.trigger("keydown", { key: "ArrowDown" });
+    await search.trigger("keydown", { key: "ArrowDown", code: "ArrowDown" });
+    await search.trigger("keydown", { key: "ArrowDown", code: "ArrowDown" });
     await search.setValue("modelo 1");
 
-    expect(wrapper.findAll('[role="option"]')[0].attributes("data-active")).toBe("true");
+    expect(page().findAll('[role="option"]')[0].attributes("data-highlighted")).toBe("");
   });
 
   it("dentro de um <label>, escolher continua fechando — o véu não reabre", async () => {
@@ -432,22 +507,21 @@ describe("UiSelect — o que veio do MaterialPicker", () => {
     });
     const wrapper = await mount(LabelWrapper);
 
-    await wrapper.get('[data-slot="select-trigger"]').trigger("click");
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(true);
+    await wrapper.get('[data-shopman-slot="select-trigger"]').trigger("click");
+    expect(page().find('[role="listbox"]').exists()).toBe(true);
 
-    await wrapper.get("div.fixed.inset-0").trigger("click");
+    await page().findAll('[role="option"]')[1].trigger("click");
     await nextTick();
 
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(false);
+    expect(wrapper.get('[data-shopman-slot="select-trigger"]').attributes("aria-expanded")).toBe("false");
   });
 });
 
 describe("UiToggleChip", () => {
   // ⚠️ É o irmão do `UiCheckbox`, não um apelido dele. O checkbox desenha um quadrado
-  // com o rótulo ao lado; o chip é uma pílula cuja CAIXA INTEIRA acende. Onde a escolha
-  // é curta e cabem várias na linha — plataformas, etiquetas, segmentos — trocar um pelo
-  // outro é pôr a peça parecida no lugar da peça certa. Foi por isso que a conversão dos
-  // primitivos deixou essas telas de fora, com o vazio registrado em comentário.
+  // com o rótulo ao lado; o chip é uma pílula cuja CAIXA INTEIRA acende. Ele fica para
+  // escolhas compactas e posicionais, como os dias da semana. Listas nomeadas são um
+  // `UiCheckboxGroup`, mesmo quando também caberiam numa linha.
   it("é um checkbox por ARIA, com alvo de 44 px pelo token", async () => {
     const wrapper = await mount(UiToggleChip, {
       props: { modelValue: false, label: "Instagram" },
@@ -498,8 +572,8 @@ describe("UiToggleChip", () => {
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
   });
 
-  // A pílula de plataforma carrega ícone e o estado da plataforma ("· limitada") ao
-  // lado do nome; o slot existe para isso, e o rótulo simples continua sendo prop.
+  // O slot permite conteúdo composto nos casos compactos que justificam o chip; o
+  // rótulo simples continua sendo prop.
   it("aceita conteúdo composto no lugar do rótulo simples", async () => {
     const wrapper = await mount(UiToggleChip, {
       props: { modelValue: true },

@@ -36,7 +36,22 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     expect(button.disabled).toBe(true);
     expect(button.className).toContain("h-11");
     expect(button.className).toContain("bg-primary");
+    expect(button.className).toContain("disabled:opacity-75");
+    expect(button.className).not.toContain("disabled:opacity-50");
     expect(button.textContent).toContain("Salvar campanha");
+  });
+
+  it("entrega as variantes ao Nuxt UI sem empilhar o sólido sobre o contorno", async () => {
+    mounted = await mountSuspended(UiButton, {
+      attachTo: document.body,
+      props: { variant: "outline", text: "Cancelar" },
+    });
+
+    const button = document.body.querySelector<HTMLButtonElement>("button")!;
+    expect(button.className).toContain("text-default");
+    expect(button.className).toContain("ring-accented");
+    expect(button.className).not.toContain("text-inverted");
+    expect(button.className).not.toContain("bg-primary");
   });
 
   it("usa a anatomia de modal do Nuxt UI sem deixar texto ou tema padrão escapar", async () => {
@@ -72,7 +87,7 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     expect(document.body.textContent).not.toContain("Close");
   });
 
-  it("guia uma sequência com a anatomia Nuxt UI e a aparência Shopman", async () => {
+  it("guia uma sequência com o tema canônico do Nuxt UI e os tokens Shopman", async () => {
     mounted = await mountSuspended(UiStepper, {
       attachTo: document.body,
       props: {
@@ -90,15 +105,36 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     const root = document.body.querySelector("[data-slot='stepper-shell']")!;
     expect(root.textContent).toContain("2. Destinos. Escolha onde publicar.");
     const headerClass = root.querySelector("[data-slot='header']")?.className ?? "";
-    expect(headerClass).toContain("bg-transparent");
+    expect(headerClass).toBe("flex");
     expect(headerClass).not.toContain("rounded-lg");
     expect(headerClass).not.toContain("bg-muted");
     expect(root.querySelectorAll("[data-slot='trigger']")).toHaveLength(3);
+    const triggerClass = root.querySelector("[data-slot='trigger']")?.className ?? "";
+    expect(triggerClass).toContain("size-8");
+    expect(triggerClass).toContain("sm:size-14");
+    expect(triggerClass).toContain("after:-inset-1.5");
+    expect(triggerClass).toContain("sm:after:inset-0");
+    expect(triggerClass).toContain("bg-elevated");
+    expect(triggerClass).toContain("text-muted");
+    expect(triggerClass).toContain("group-data-[state=active]:bg-primary");
+    expect(triggerClass).toContain("group-data-[state=active]:text-inverted");
+    expect(triggerClass).toContain("focus-visible:outline-3");
+    expect(triggerClass).not.toContain("before:");
+    expect(root.querySelector("[data-slot='indicator']")?.className).toContain("size-full");
+    expect(root.querySelectorAll("[data-slot='indicator']")[0]?.textContent?.trim()).toBe("1");
     expect(root.querySelectorAll("[data-slot='separator']")).toHaveLength(2);
     for (const separator of root.querySelectorAll("[data-slot='separator']")) {
       expect(separator.className).toContain("h-0.5");
+      expect(separator.className).toContain("start-[calc(50%+20px)]");
+      expect(separator.className).toContain("end-[calc(-50%+20px)]");
+      expect(separator.className).toContain("sm:start-[calc(50%+36px)]");
+      expect(separator.className).toContain("sm:end-[calc(-50%+36px)]");
+      expect(separator.className).not.toContain("left-1/2");
+      expect(separator.className).not.toContain("w-full");
       expect(separator.className).not.toContain("hidden");
     }
+    expect(root.querySelector("[data-slot='wrapper']")?.className).toContain("sm:block");
+    expect(root.querySelector("[data-slot='description']")?.className).toContain("text-lg");
     expect(root.querySelectorAll("[data-slot='title']")[1]?.textContent?.trim()).toBe("2. Destinos");
     expect((root.querySelectorAll("[data-slot='trigger']")[2] as HTMLButtonElement).disabled).toBe(true);
     expect(root.querySelectorAll("[role='status']")[1]?.textContent?.trim()).toBe("Etapa 2 de 3");

@@ -25,7 +25,7 @@ describe("campaign activation switch", () => {
     expect(page).not.toContain("rounded-full transition-colors");
   });
 
-  it("o interruptor do kit mantém o alvo de toque no token, e o contrato do ARIA", () => {
+  it("o interruptor do kit usa o Nuxt UI e mantém o alvo de toque no token", () => {
     const primitive = readFileSync(
       new URL(
         "../../operator-kit/app/components/UiSwitch.vue",
@@ -34,9 +34,10 @@ describe("campaign activation switch", () => {
       "utf8",
     );
 
+    expect(primitive).toContain("<NuxtSwitch");
     expect(primitive).toContain("size-control");
-    expect(primitive).toContain('role="switch"');
-    expect(primitive).toContain(':aria-checked="modelValue"');
+    expect(primitive).toContain(':model-value="modelValue"');
+    expect(primitive).not.toContain('role="switch"');
     // Que o literal (`size-11`) não volte é cobrado no kit, onde a varredura tira
     // os comentários antes de medir — o cabeçalho do primitivo CITA o literal que
     // ele aposentou, e citar a dívida não é cometê-la.
