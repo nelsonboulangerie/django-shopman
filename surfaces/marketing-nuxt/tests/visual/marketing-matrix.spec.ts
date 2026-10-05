@@ -340,6 +340,24 @@ test.describe("Ajustes, uma rota por lugar", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: "Campanhas" }),
     ).toBeVisible();
+    const prepareButton = page
+      .getByRole("button", {
+        name: /Campanha Fornada artesanal 01/,
+      })
+      .filter({ has: page.locator("svg") })
+      .last();
+    const disabledReason = page
+      .locator("[data-campaign-disabled-reasons]")
+      .first();
+    const [prepareBox, reasonBox] = await Promise.all([
+      prepareButton.boundingBox(),
+      disabledReason.boundingBox(),
+    ]);
+    expect(prepareBox).not.toBeNull();
+    expect(reasonBox).not.toBeNull();
+    expect(reasonBox!.y - (prepareBox!.y + prepareBox!.height)).toBeGreaterThanOrEqual(
+      12,
+    );
     await expectStableScreenshot(page, "settings__campaigns", V390);
   });
 

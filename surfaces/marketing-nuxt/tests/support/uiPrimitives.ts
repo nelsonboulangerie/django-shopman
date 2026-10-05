@@ -166,14 +166,21 @@ const UiStepper = defineComponent({
   },
   emits: ["update:modelValue"],
   setup(props, { emit }) {
-    return () => h("nav", { "aria-label": props.label }, [
+    const choose = (index: number, item: { disabled?: boolean }) => {
+      if (!item.disabled) emit("update:modelValue", index);
+    };
+
+    return () => h("div", { role: "group", "aria-label": props.label, "data-slot": "stepper-shell" }, [
       h("ol", props.items.map((item, index) => h("li", [
         h("button", {
           type: "button",
           disabled: item.disabled,
           "aria-current": props.modelValue === index ? "step" : undefined,
           "aria-label": `${index + 1}. ${item.title}`,
-          onClick: () => emit("update:modelValue", index),
+          onClick: () => choose(index, item),
+          onMousedown: (event: MouseEvent) => {
+            if (event.button === 0 && !event.ctrlKey) choose(index, item);
+          },
         }, item.title),
       ]))),
     ]);

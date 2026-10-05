@@ -172,6 +172,9 @@ describe("CampaignForm — composer V2", () => {
       makeRule({ trigger: "production_finished", platforms: ["instagram"] }),
     );
 
+    expect(
+      wrapper.find('[role="group"][aria-label="Etapas da campanha"]').exists(),
+    ).toBe(true);
     expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe(
       "1. Objetivo",
     );
@@ -195,6 +198,19 @@ describe("CampaignForm — composer V2", () => {
     expect(rows[0]!.text()).not.toContain("WhatsApp");
     expect(wrapper.text()).toContain(
       "Recursos apenas catalogados para o futuro não entram nesta campanha",
+    );
+  });
+
+  it("mantém o salto para uma etapa pronta mesmo usando o primitive canônico", async () => {
+    const wrapper = form(
+      makeRule({ trigger: "production_finished", platforms: ["instagram"] }),
+    );
+    const review = wrapper.find('button[aria-label="5. Revisar"]');
+
+    expect(review.attributes("disabled")).toBeUndefined();
+    await review.trigger("mousedown", { button: 0, ctrlKey: false });
+    expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe(
+      "5. Revisar",
     );
   });
 

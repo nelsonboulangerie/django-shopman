@@ -843,19 +843,27 @@ useHead({ title: "Campanhas" });
           </div>
           <!-- ⚠️ A razão morava só no `title` do botão desabilitado, e o Firefox não
              mostra tooltip em botão desabilitado: "Indisponível" ficava sem porquê.
-             Botão morto sem frase é defeito — a frase vai por extenso, sob a linha. -->
-          <p
-            v-if="!editState(rule).enabled"
-            class="-mt-1 text-xs text-muted-foreground"
+             Botão morto sem frase é defeito — a frase vai por extenso, num rodapé
+             próprio. O respiro impede que a explicação invada o CTA sem criar uma
+             subdivisão visual desnecessária dentro do card. -->
+          <div
+            v-if="!editState(rule).enabled || !fireState(rule).enabled"
+            class="mt-3 space-y-1"
+            data-campaign-disabled-reasons
           >
-            {{ editState(rule).reason }}
-          </p>
-          <p
-            v-if="!fireState(rule).enabled"
-            class="-mt-1 text-xs text-muted-foreground"
-          >
-            {{ fireState(rule).reason }}
-          </p>
+            <p
+              v-if="!editState(rule).enabled"
+              class="text-xs text-muted-foreground"
+            >
+              {{ editState(rule).reason }}
+            </p>
+            <p
+              v-if="!fireState(rule).enabled"
+              class="text-xs text-muted-foreground"
+            >
+              {{ fireState(rule).reason }}
+            </p>
+          </div>
         </li>
       </ul>
 
