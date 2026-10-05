@@ -61,6 +61,13 @@ viewport, trigger, conteúdo, item, estado ou papel sem explicar qual problema o
 ela resolve. O teste estrutural do `UiStepper` é o precedente: ele reprova a volta do card
 segmentado e a ocultação do separador.
 
+O `UiSelect` foi revisado como exceção controlada, não como componente livre. Ele se aproxima
+da anatomia de Combobox usada por Nuxt UI/Reka (`content`, `input`, `viewport`, `empty`,
+`item`) e mantém o `listbox` presente mesmo quando a busca não retorna resultados. A migração
+para `USelectMenu` só deve acontecer quando a primitiva preservar, com testes, estes quatro
+ganhos operacionais: busca sem acento e por keywords invisíveis, lista curta sem campo de
+busca, fechamento seguro dentro de modal/label ancestral e foco previsível no touch.
+
 `UiButton` e `UiModal` são as provas executáveis dessa arquitetura. Ambos usam componentes
 Nuxt UI sem tema e recebem integralmente as classes e o contrato público do Shopman. As cópias
 locais ainda prevalecem enquanto cada app é migrado; removê-las progressivamente faz o app
