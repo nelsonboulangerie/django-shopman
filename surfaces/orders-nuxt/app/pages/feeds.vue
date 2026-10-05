@@ -56,18 +56,18 @@ const actionFor = (sc: FeedProjection, field: string) => sc.actions.find((action
 const baseFor = (sc: FeedProjection, field: string) => String(actionFor(sc, field)?.payload_schema.base_revision || "");
 const editRef = ref<string | null>(null);
 const collectionDrafts = ref<Record<string, { values: string[]; base: string }>>({});
-const draft = computed({
-  get: () => new Set(editRef.value ? collectionDrafts.value[editRef.value]?.values ?? [] : []),
-  set: (values: Set<string>) => { if (editRef.value && collectionDrafts.value[editRef.value]) collectionDrafts.value[editRef.value]!.values = [...values]; },
+const draft = computed<string[]>({
+  get: () => editRef.value ? collectionDrafts.value[editRef.value]?.values ?? [] : [],
+  set: (values) => { if (editRef.value && collectionDrafts.value[editRef.value]) collectionDrafts.value[editRef.value]!.values = [...values]; },
 });
+const collectionOptions = computed(() => allCollections.value.map((option) => ({
+  value: option.ref,
+  label: option.name,
+  hint: `${option.product_count} ${option.product_count === 1 ? "produto" : "produtos"}`,
+})));
 function openEdit(sc: FeedProjection) {
   collectionDrafts.value[sc.ref] ??= { values: sc.collections.map((c) => c.ref), base: baseFor(sc, "collections") };
   editRef.value = sc.ref;
-}
-function toggleDraft(ref_: string) {
-  const next = new Set(draft.value);
-  if (next.has(ref_)) next.delete(ref_); else next.add(ref_);
-  draft.value = next;
 }
 const collectionConflict = (sc: FeedProjection) => !!collectionDrafts.value[sc.ref] && collectionDrafts.value[sc.ref]!.base !== baseFor(sc, "collections");
 function resolveCollections(sc: FeedProjection, keep: boolean) {
@@ -260,24 +260,21 @@ useHead({ title: "Canais" });
                 </button>
               </UiPopoverTrigger>
               <UiPopoverContent align="start" :side-offset="6" class="w-60 p-2">
-                <p class="mb-1 px-1 text-xs font-medium text-muted-foreground">Coleções exibidas</p>
                 <div v-if="collectionConflict(sc)" role="alert" class="mb-2 text-xs">
                   <p>No servidor: {{ sc.collections.map((c) => c.name).join(', ') || 'nenhuma coleção' }}. Sua seleção foi preservada.</p>
                   <button type="button" class="min-h-11 underline" @click="resolveCollections(sc, true)">Manter minha seleção</button>
                   <button type="button" class="min-h-11 underline" @click="resolveCollections(sc, false)">Usar valor atual</button>
                 </div>
                 <div class="max-h-60 overflow-auto">
-                  <UiCheckbox
-                    v-for="opt in allCollections" :key="opt.ref"
-                    :model-value="draft.has(opt.ref)"
-                    class="w-full rounded px-1.5 text-sm hover:bg-accent"
-                    @update:model-value="toggleDraft(opt.ref)"
-                  >
-                    <span class="flex min-w-0 flex-1 items-center gap-2">
-                      <span class="flex-1 truncate">{{ opt.name }}</span>
-                      <span class="text-xs tabular-nums text-muted-foreground/60">{{ opt.product_count }}</span>
-                    </span>
-                  </UiCheckbox>
+                  <UiCheckboxGroup
+                    v-model="draft"
+                    :items="collectionOptions"
+                    legend="Coleções exibidas"
+                    :ui="{
+                      legend: 'mb-1 px-1 text-xs font-medium text-muted-foreground',
+                      item: 'w-full rounded px-1.5 hover:bg-accent',
+                    }"
+                  />
                 </div>
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
                   <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="delete collectionDrafts[sc.ref]; editRef = null">Descartar</button>

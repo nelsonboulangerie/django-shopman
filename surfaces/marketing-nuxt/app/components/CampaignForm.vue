@@ -20,7 +20,7 @@ import {
 import {
   platformReadinessNote,
   readinessByPlatform,
-  readinessPillClass,
+  readinessStatusClass,
 } from "~/presentation/platformReadiness";
 import type { PlatformReadiness } from "~/presentation/platformReadiness";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
@@ -46,7 +46,7 @@ const props = defineProps<{
    *  lista; o catálogo teórico de providers nunca vira opção de disparo. */
   deliveryCapabilities?: MarketingPlatformCapability[];
   /** Estado e motivo por plataforma (`/marketing/platforms/`). Ausente = tudo pronto.
-   *  Pinta a pílula e explica, ANTES do clique, onde a campanha não vai sair. */
+   *  Sinaliza a opção e explica, ANTES do clique, onde a campanha não vai sair. */
   platformReadiness?: PlatformReadiness[];
   whatsappTemplate?: string;
   busy?: boolean;
@@ -113,6 +113,25 @@ const selectedRfmSegments = ref<string[]>([]);
 const churnRiskOn = ref(false);
 const churnRiskMin = ref(0.7);
 const birthdayToday = ref(false);
+
+const PRODUCT_AUDIENCE_ITEMS: Array<Choice & { hint?: string }> = [
+  { value: "favorites", label: "Quem favoritou o produto" },
+  {
+    value: "alerts",
+    label: 'Quem pediu "me avise" deste produto',
+    hint: "A fila do sino da loja: lote para pão, reposição para o resto.",
+  },
+];
+const productAudience = computed<string[]>({
+  get: () => [
+    ...(favorites.value ? ["favorites"] : []),
+    ...(alerts.value ? ["alerts"] : []),
+  ],
+  set: (next) => {
+    favorites.value = next.includes("favorites");
+    alerts.value = next.includes("alerts");
+  },
+});
 
 const MANAGED_AUDIENCE_KEYS = new Set([
   "alerts",
@@ -198,7 +217,7 @@ function scheduleDraftSummary(schedule: Record<string, unknown>): string {
   return days ? `${days} às ${windows}` : `todo dia às ${windows}`;
 }
 
-// Prontidão por plataforma: a pílula ganha cor e palavra, e a escolhida que não
+// Prontidão por plataforma: a opção ganha cor e palavra, e a escolhida que não
 // publica ganha a frase completa embaixo — antes do clique, não depois de aprovar.
 const readinessMap = computed(() =>
   readinessByPlatform(props.platformReadiness),
@@ -211,6 +230,12 @@ const selectedReadinessNotes = computed(() =>
     .filter((option) => platforms.value.includes(option.value))
     .map((option) => ({ platform: option.value, ...readinessNote(option) }))
     .filter((note) => note.tone !== "ready"),
+);
+const platformChoiceItems = computed(() =>
+  props.platformOptions.map((option) => ({
+    ...option,
+    "data-readiness": readinessNote(option).tone,
+  })),
 );
 
 /** O aviso de conflito pede uma frase, não JSON: o formulário é quem sabe ler o campo. */
@@ -494,12 +519,6 @@ function buildAudienceRules(): Record<string, unknown> {
   return result;
 }
 
-function toggleChoice(target: string[], value: string) {
-  const index = target.indexOf(value);
-  if (index >= 0) target.splice(index, 1);
-  else target.push(value);
-}
-
 const preservedAudienceKeys = computed(() =>
   Object.keys(baseAudienceRules.value).filter(
     (key) => !MANAGED_AUDIENCE_KEYS.has(key),
@@ -734,12 +753,6 @@ const reviewAudience = computed(() =>
       )
     : "Público das contas selecionadas",
 );
-
-function togglePlatform(value: string) {
-  const index = platforms.value.indexOf(value);
-  if (index >= 0) platforms.value.splice(index, 1);
-  else platforms.value.push(value);
-}
 
 function submit() {
   if (!canSubmit.value) return;
@@ -1057,36 +1070,31 @@ function submit() {
       }}) continuam valendo.
     </p>
 
-    <fieldset v-show="currentStep === 1">
-      <legend class="mb-1 text-xs font-medium text-muted-foreground">
-        Disparado via
-      </legend>
-      <!-- ⚠️ `UiToggleChip` do kit, e não `UiCheckbox`: o checkbox desenha um quadrado
-           com rótulo ao lado, e o que está aqui é uma pílula cuja caixa inteira acende.
-           O vazio que esta tela registrava em comentário agora tem peça.
-           ⚠️ A pílula conta o estado da plataforma ANTES do clique: as quatro
-           apareciam iguais e a recusa só vinha depois de aprovar. -->
-      <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
-           Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas
-           numa linha, uma sozinha na outra, cada uma de um tamanho. Duas colunas
-           não servem aqui — a mais larga ("WhatsApp · limitada") não cabe em meia
-           tela de 320px e vaza da coluna. Empilhadas, o nome inteiro cabe, o alvo
-           de toque é a linha toda e o olho desce uma lista, não um mosaico. -->
-      <div class="grid gap-1.5 sm:flex sm:flex-wrap">
-        <UiToggleChip
-          v-for="option in platformOptions"
-          :key="option.value"
-          :model-value="platforms.includes(option.value)"
-          :class="readinessPillClass(readinessNote(option).tone)"
-          :data-readiness="readinessNote(option).tone"
-          @update:model-value="togglePlatform(option.value)"
-        >
-          {{ option.label }}
-          <span v-if="readinessNote(option).badge" class="text-xs"
-            >· {{ readinessNote(option).badge }}</span
+    <section v-show="currentStep === 1">
+      <!-- Uma pergunta, várias respostas: o `UCheckboxGroup` canônico assume
+           fieldset, legenda, teclado e modelo. A variante `table` mantém cada
+           destino como uma linha inteira de toque, sem voltar aos chips manuais. -->
+      <UiCheckboxGroup
+        v-model="platforms"
+        :items="platformChoiceItems"
+        variant="table"
+        :ui="{
+          legend: 'mb-1.5 text-xs font-medium text-muted-foreground',
+          label: 'text-sm',
+        }"
+      >
+        <template #legend>Disparado via</template>
+        <template #label="{ item }">
+          <span>{{ item.label }}</span>
+          <span
+            v-if="readinessNote(item).badge"
+            class="ml-1.5 text-xs"
+            :class="readinessStatusClass(readinessNote(item).tone)"
           >
-        </UiToggleChip>
-      </div>
+            · {{ readinessNote(item).badge }}
+          </span>
+        </template>
+      </UiCheckboxGroup>
       <!-- Prontidão é pré-condição de PUBLICAR, não de configurar: a campanha salva,
            mas o gestor sabe agora, e não depois de aprovar, onde ela não vai sair. -->
       <ul v-if="selectedReadinessNotes.length" class="mt-1.5 space-y-1">
@@ -1114,7 +1122,7 @@ function submit() {
         WhatsApp envia uma mensagem por pessoa elegível. Mensagens diretas do
         Instagram ainda não fazem parte deste app.
       </p>
-    </fieldset>
+    </section>
 
     <fieldset
       v-if="platforms.includes('whatsapp')"
@@ -1125,15 +1133,14 @@ function submit() {
         Público alvo
       </legend>
       <div class="space-y-2.5">
-        <UiCheckbox v-model="favorites" label="Quem favoritou o produto" />
-        <!-- ⚠️ O rótulo dizia "me avise quando sair do forno" e a regra pega TODA a
-             fila de avisos do produto — inclusive quem espera reposição de um item de
-             prateleira. Quem escolhe o eixo é o servidor, pela natureza do produto, e
-             o gestor não tem como (nem por que) separar os dois aqui. -->
-        <UiCheckbox
-          v-model="alerts"
-          label='Quem pediu "me avise" deste produto'
-          description="A fila do sino da loja: lote para pão, reposição para o resto."
+        <!-- A fila de “me avise” cobre lote e reposição. As duas respostas formam uma
+             pergunta única sobre sinais deste produto, então usam o grupo canônico. -->
+        <UiCheckboxGroup
+          v-model="productAudience"
+          :items="PRODUCT_AUDIENCE_ITEMS"
+          legend="Sinais deste produto"
+          variant="card"
+          :ui="{ legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground' }"
         />
         <!-- ⚠️ O número e a UNIDADE são um grupo só (`inline-flex`), não dois irmãos
              soltos no `flex-wrap`: soltos, a 390px a unidade caía sozinha na linha de
@@ -1193,65 +1200,42 @@ function submit() {
           </UiNativeSelect>
         </div>
 
-        <fieldset v-if="tags?.length">
-          <legend
-            class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
-          >
-            Etiquetas
-          </legend>
-          <!-- ⚠️ Estes três grupos acendiam em `bg-primary` SÓLIDO, escrito à mão em
-               cada um. Sólido é do botão primário; o padrão único de seleção da casa é
-               contorno + tint levíssimo, e é o que o primitivo traz. Eram a mesma peça
-               copiada três vezes, com o alvo de toque em literal e sem ARIA de escolha. -->
-          <div class="flex flex-wrap gap-1.5">
-            <UiToggleChip
-              v-for="tag in tags"
-              :key="tag.value"
-              :model-value="selectedTags.includes(tag.value)"
-              @update:model-value="toggleChoice(selectedTags, tag.value)"
-            >
-              {{ tag.label }}
-            </UiToggleChip>
-          </div>
-        </fieldset>
+        <UiCheckboxGroup
+          v-if="tags?.length"
+          v-model="selectedTags"
+          :items="tags"
+          legend="Etiquetas"
+          orientation="horizontal"
+          :ui="{
+            fieldset: 'gap-x-4 gap-y-0.5',
+            legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground',
+          }"
+        />
 
-        <fieldset v-if="priceTiers?.length">
-          <legend
-            class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
-          >
-            Faixa de preço
-          </legend>
-          <div class="flex flex-wrap gap-1.5">
-            <UiToggleChip
-              v-for="tier in priceTiers"
-              :key="tier.value"
-              :model-value="selectedPriceTiers.includes(tier.value)"
-              @update:model-value="toggleChoice(selectedPriceTiers, tier.value)"
-            >
-              {{ tier.label }}
-            </UiToggleChip>
-          </div>
-        </fieldset>
+        <UiCheckboxGroup
+          v-if="priceTiers?.length"
+          v-model="selectedPriceTiers"
+          :items="priceTiers"
+          orientation="horizontal"
+          :ui="{
+            fieldset: 'gap-x-4 gap-y-0.5',
+            legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground',
+          }"
+        >
+          <template #legend>Faixa de preço</template>
+        </UiCheckboxGroup>
 
-        <fieldset v-if="rfmSegments?.length">
-          <legend
-            class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
-          >
-            Comportamento de compra
-          </legend>
-          <div class="flex flex-wrap gap-1.5">
-            <UiToggleChip
-              v-for="segment in rfmSegments"
-              :key="segment.value"
-              :model-value="selectedRfmSegments.includes(segment.value)"
-              @update:model-value="
-                toggleChoice(selectedRfmSegments, segment.value)
-              "
-            >
-              {{ segment.label }}
-            </UiToggleChip>
-          </div>
-        </fieldset>
+        <UiCheckboxGroup
+          v-if="rfmSegments?.length"
+          v-model="selectedRfmSegments"
+          :items="rfmSegments"
+          legend="Comportamento de compra"
+          orientation="horizontal"
+          :ui="{
+            fieldset: 'gap-x-4 gap-y-0.5',
+            legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground',
+          }"
+        />
 
         <UiCheckbox v-model="birthdayToday" label="Aniversariantes de hoje" />
 

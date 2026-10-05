@@ -3,7 +3,7 @@
 // O formulário de campanha e o card de revisão ofereciam as quatro plataformas como
 // se todas publicassem, e a recusa só aparecia depois de aprovar. O servidor já sabe
 // o estado e o motivo (`/marketing/platforms/`, `delivery_readiness.py`); esta camada
-// só traduz isso em pílula pintada e frase visível junto da escolha.
+// só traduz isso em estado visual e frase visível junto da escolha.
 //
 // ⚠️ Prontidão é pré-condição de DISPARAR, não de configurar: salvar a campanha
 // continua livre. O que a tela promete é que, até resolver, nada é publicado nem
@@ -27,7 +27,7 @@ export type ReadinessTone = "ready" | "limited" | "blocked" | "unknown";
 
 export interface PlatformReadinessNote {
   tone: ReadinessTone;
-  /** Palavra curta para a pílula: "não envia"/"não publica", "não verificada", "limitada". */
+  /** Palavra curta junto do destino: "não envia"/"não publica", "não verificada", "limitada". */
   badge: string;
   /** Frase completa para baixo da escolha. Vazia quando pronta. */
   text: string;
@@ -130,11 +130,11 @@ export function canaryText(recipients: number): string {
     : `Ensaio: só ${n} contatos recebem.`;
 }
 
-/** Classes da pílula por tom — a cor conta o estado antes de qualquer clique. */
-export function readinessPillClass(tone: ReadinessTone): string {
-  if (tone === "blocked") return "border-destructive/60 text-destructive";
+/** Classes do estado por tom — a cor conta a situação antes de qualquer clique. */
+export function readinessStatusClass(tone: ReadinessTone): string {
+  if (tone === "blocked") return "text-destructive";
   if (tone === "unknown")
-    return "border-slate-400/60 text-slate-700 dark:text-slate-300";
-  if (tone === "limited") return "border-warning/60 text-warning";
+    return "text-slate-700 dark:text-slate-300";
+  if (tone === "limited") return "text-warning";
   return "";
 }

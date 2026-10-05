@@ -71,6 +71,36 @@ const vipFirst = ref(false);
 const match = ref<AudienceMatch>("any");
 const productSku = ref("");
 
+const OCCASIONAL_AUDIENCE_ITEMS: Array<Choice & { hint?: string }> = [
+  {
+    value: "win-back",
+    label: "Quem está sumindo",
+    hint: "Clientes com risco alto de não voltar.",
+  },
+  {
+    value: "birthday",
+    label: "Aniversariantes de hoje",
+    hint: "Só quem tem data cadastrada.",
+  },
+  {
+    value: "vip-first",
+    label: "Avisar os melhores clientes 15 min antes",
+    hint: "Vantagem, não exclusão: todos recebem.",
+  },
+];
+const occasionalAudience = computed<string[]>({
+  get: () => [
+    ...(winBack.value ? ["win-back"] : []),
+    ...(birthday.value ? ["birthday"] : []),
+    ...(vipFirst.value ? ["vip-first"] : []),
+  ],
+  set: (next) => {
+    winBack.value = next.includes("win-back");
+    birthday.value = next.includes("birthday");
+    vipFirst.value = next.includes("vip-first");
+  },
+});
+
 const PUBLIC_PLATFORMS = new Set(["instagram", "facebook", "google_business"]);
 const campaignPlatforms = computed(() =>
   (props.rule?.platforms ?? [])
@@ -154,26 +184,6 @@ watch(
     clear();
   },
 );
-
-// Duas funções em vez de uma que recebe o ref: o template DESEMBRULHA refs, então
-// `toggleIn(tiers, …)` chegava com o array puro e `list.value` era `undefined`.
-function toggleTier(value: string) {
-  tiers.value = tiers.value.includes(value)
-    ? tiers.value.filter((v) => v !== value)
-    : [...tiers.value, value];
-}
-
-function toggleTag(value: string) {
-  chosenTags.value = chosenTags.value.includes(value)
-    ? chosenTags.value.filter((v) => v !== value)
-    : [...chosenTags.value, value];
-}
-
-function toggleSegment(value: string) {
-  segments.value = segments.value.includes(value)
-    ? segments.value.filter((v) => v !== value)
-    : [...segments.value, value];
-}
 
 const chosen = computed<ChosenAudience>(() => {
   if (useSaved.value) return {};
@@ -391,103 +401,53 @@ watch(
     >
       <!-- Etiquetas primeiro: é o único público que o operador monta sozinho. RFM e
            churn são calculados, faixa é comercial, aniversário é cadastral. -->
-      <fieldset v-if="tags.length">
-        <legend
-          class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
-        >
-          Etiquetas
-        </legend>
-        <div class="flex flex-wrap gap-1.5">
-          <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-          <button
-            v-for="tag in tags"
-            :key="tag.value"
-            type="button"
-            class="rounded-full border px-2.5 py-1 text-xs transition"
-            :class="
-              chosenTags.includes(tag.value)
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border hover:bg-muted'
-            "
-            :aria-pressed="chosenTags.includes(tag.value)"
-            @click="toggleTag(tag.value)"
-          >
-            {{ tag.label }}
-          </button>
-        </div>
+      <section v-if="tags.length">
+        <UiCheckboxGroup
+          v-model="chosenTags"
+          :items="tags"
+          legend="Etiquetas"
+          orientation="horizontal"
+          :ui="{
+            fieldset: 'gap-x-4 gap-y-0.5',
+            legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground',
+          }"
+        />
         <p class="mt-1.5 text-xs text-muted-foreground">
           Quem etiqueta é quem atende, na ficha do cliente.
         </p>
-      </fieldset>
+      </section>
 
-      <fieldset v-if="priceTiers.length">
-        <legend
-          class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
-        >
-          Faixa de preço
-        </legend>
-        <div class="flex flex-wrap gap-1.5">
-          <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-          <button
-            v-for="tier in priceTiers"
-            :key="tier.value"
-            type="button"
-            class="rounded-full border px-2.5 py-1 text-xs transition"
-            :class="
-              tiers.includes(tier.value)
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border hover:bg-muted'
-            "
-            :aria-pressed="tiers.includes(tier.value)"
-            @click="toggleTier(tier.value)"
-          >
-            {{ tier.label }}
-          </button>
-        </div>
-      </fieldset>
+      <UiCheckboxGroup
+        v-if="priceTiers.length"
+        v-model="tiers"
+        :items="priceTiers"
+        orientation="horizontal"
+        :ui="{
+          fieldset: 'gap-x-4 gap-y-0.5',
+          legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground',
+        }"
+      >
+        <template #legend>Faixa de preço</template>
+      </UiCheckboxGroup>
 
-      <fieldset v-if="rfmSegments.length">
-        <legend
-          class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
-        >
-          Comportamento de compra
-        </legend>
-        <div class="flex flex-wrap gap-1.5">
-          <!-- Chips nativos preservam seleção múltipla e aria-pressed em pouco espaço. -->
-          <button
-            v-for="segment in rfmSegments"
-            :key="segment.value"
-            type="button"
-            class="rounded-full border px-2.5 py-1 text-xs transition"
-            :class="
-              segments.includes(segment.value)
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border hover:bg-muted'
-            "
-            :aria-pressed="segments.includes(segment.value)"
-            @click="toggleSegment(segment.value)"
-          >
-            {{ segment.label }}
-          </button>
-        </div>
-      </fieldset>
-
-      <UiCheckbox
-        v-model="winBack"
-        label="Quem está sumindo"
-        description="Clientes com risco alto de não voltar."
+      <UiCheckboxGroup
+        v-if="rfmSegments.length"
+        v-model="segments"
+        :items="rfmSegments"
+        legend="Comportamento de compra"
+        orientation="horizontal"
+        :ui="{
+          fieldset: 'gap-x-4 gap-y-0.5',
+          legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground',
+        }"
       />
 
-      <UiCheckbox
-        v-model="birthday"
-        label="Aniversariantes de hoje"
-        description="Só quem tem data cadastrada."
-      />
-
-      <UiCheckbox
-        v-model="vipFirst"
-        label="Avisar os melhores clientes 15 min antes"
-        description="Vantagem, não exclusão: todos recebem."
+      <UiCheckboxGroup
+        v-model="occasionalAudience"
+        :items="OCCASIONAL_AUDIENCE_ITEMS"
+        legend="Outros públicos"
+        variant="card"
+        :ui="{ legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground' }"
       />
 
       <p v-if="nothingChosen" class="text-xs text-muted-foreground">

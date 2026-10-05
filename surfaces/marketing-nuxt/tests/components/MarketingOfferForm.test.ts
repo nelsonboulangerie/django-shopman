@@ -13,9 +13,9 @@ const options: MarketingOfferOptions = {
     { value: "fixed", label: "Valor fixo" },
   ],
   products: [{ value: "CRO-1", label: "Croissant (CRO-1)" }],
-  collections: [],
-  channels: [],
-  customer_segments: [],
+  collections: [{ value: "cafe", label: "Café da manhã" }],
+  channels: [{ value: "web", label: "Loja on-line" }],
+  customer_segments: [{ value: "champion", label: "Campeões" }],
   fulfillment_types: [
     { value: "delivery", label: "Entrega" },
     { value: "pickup", label: "Retirada" },
@@ -31,6 +31,18 @@ function form(kind: "offer" | "coupon" = "offer") {
       stubs: { Icon: true },
     },
   });
+}
+
+function checkboxNamed(wrapper: ReturnType<typeof form>, label: string) {
+  const choice = wrapper
+    .findAll('[role="checkbox"]')
+    .find((candidate) =>
+      candidate.element
+        .closest('[data-slot="item"], [data-slot="checkbox"]')
+        ?.textContent?.includes(label),
+    );
+  if (!choice) throw new Error(`Checkbox "${label}" não encontrado.`);
+  return choice;
 }
 
 describe("MarketingOfferForm", () => {
@@ -79,5 +91,28 @@ describe("MarketingOfferForm", () => {
       "true",
     );
     expect((name.element as HTMLInputElement).value).toBe("Primeira compra");
+  });
+
+  it("usa grupos canônicos para todas as listas de múltipla escolha", async () => {
+    const wrapper = form();
+
+    expect(wrapper.find('select[multiple]').exists()).toBe(false);
+    expect(wrapper.findAll('[data-slot="checkbox-group"]')).toHaveLength(5);
+
+    await wrapper.get("#marketing-offer-name").setValue("Oferta segmentada");
+    await checkboxNamed(wrapper, "Croissant").trigger("click");
+    await checkboxNamed(wrapper, "Café da manhã").trigger("click");
+    await checkboxNamed(wrapper, "Loja on-line").trigger("click");
+    await checkboxNamed(wrapper, "Retirada").trigger("click");
+    await checkboxNamed(wrapper, "Campeões").trigger("click");
+    await wrapper.get("form").trigger("submit");
+
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toMatchObject({
+      skus: ["CRO-1"],
+      collections: ["cafe"],
+      channels: ["web"],
+      fulfillment_types: ["pickup"],
+      customer_segments: ["champion"],
+    });
   });
 });

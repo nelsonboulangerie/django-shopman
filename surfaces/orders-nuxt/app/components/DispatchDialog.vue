@@ -30,6 +30,10 @@ watch(() => props.card?.ref, () => {
 }, { immediate: true });
 
 const candidates = computed(() => (props.card ? tripCandidates(props.card, props.cards) : []));
+const candidateOptions = computed(() => candidates.value.map((candidate) => ({
+  value: candidate.ref,
+  label: `Pedido ${code(candidate.ref)}${candidate.customer_name ? ` · ${candidate.customer_name}` : ""}`,
+})));
 const trip = computed(() => (props.card ? [props.card, ...candidates.value.filter((c) => together.value.includes(c.ref))] : []));
 const machineCard = computed(() => trip.value.find((c) => c.dispatch_needs_machine) ?? null);
 const free = computed(() => (machineCard.value ? freeMachines(machineCard.value.equipment_options) : []));
@@ -40,12 +44,14 @@ const primaryLabel = computed(() => {
   return free.value.length === 1 ? `Saiu com a ${machinePhrase(free.value[0]!.label)}` : "";
 });
 
-function toggle(ref_: string) {
-  const card = candidates.value.find((c) => c.ref === ref_);
-  together.value = together.value.includes(ref_) ? together.value.filter((r) => r !== ref_) : [...together.value, ref_];
-  if (card && dispatchAsksChange(card) && changeOut.value[ref_] === undefined) {
-    changeOut.value = { ...changeOut.value, [ref_]: moneyInput(card.change_out_suggested_q) };
+function updateTogether(next: string[]) {
+  for (const ref_ of next.filter((candidate) => !together.value.includes(candidate))) {
+    const card = candidates.value.find((candidate) => candidate.ref === ref_);
+    if (card && dispatchAsksChange(card) && changeOut.value[ref_] === undefined) {
+      changeOut.value = { ...changeOut.value, [ref_]: moneyInput(card.change_out_suggested_q) };
+    }
   }
+  together.value = next;
 }
 function go(machineRef?: string) {
   const ref_ = machineRef ?? (machineCard.value ? free.value[0]?.ref : undefined);
@@ -63,21 +69,16 @@ const code = (ref_: string) => splitRef(ref_).code;
       </UiDialogHeader>
 
       <!-- outro pedido pronto: vai junto na mesma saída (uma maquininha só) -->
-      <div v-if="candidates.length" class="flex flex-col gap-1.5" data-dispatch-together>
-        <p class="text-sm font-medium">Vai junto nesta saída?</p>
-        <button
-          v-for="other in candidates"
-          :key="other.ref"
-          type="button"
-          class="min-h-control flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
-          :class="together.includes(other.ref) ? 'border-primary bg-primary/10 font-medium' : ''"
-          :aria-pressed="together.includes(other.ref)"
-          @click="toggle(other.ref)"
-        >
-          <Icon :name="together.includes(other.ref) ? 'lucide:check-square' : 'lucide:square'" class="size-4 shrink-0" />
-          <span class="min-w-0">Pedido {{ code(other.ref) }}<template v-if="other.customer_name"> · {{ other.customer_name }}</template></span>
-        </button>
-      </div>
+      <UiCheckboxGroup
+        v-if="candidates.length"
+        :model-value="together"
+        :items="candidateOptions"
+        legend="Vai junto nesta saída?"
+        variant="table"
+        data-dispatch-together
+        :ui="{ legend: 'mb-1.5 text-sm font-medium' }"
+        @update:model-value="updateTogether"
+      />
 
       <!-- troco que o entregador leva da gaveta, por pedido que pede -->
       <label v-for="c in asksChange" :key="`change-${c.ref}`" class="flex flex-col gap-1 text-sm" data-dispatch-change>

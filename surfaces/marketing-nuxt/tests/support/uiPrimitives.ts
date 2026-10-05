@@ -6,6 +6,7 @@ import { defineComponent, h, ref } from "vue";
 // stuba). Stub de checkbox/rádio/select seria justamente o lugar onde o contrato
 // que interessa — `aria-checked`, `mixed`, teclado — deixaria de ser testado aqui.
 import UiCheckbox from "../../../operator-kit/app/components/UiCheckbox.vue";
+import UiCheckboxGroup from "../../../operator-kit/app/components/UiCheckboxGroup.vue";
 import UiRadio from "../../../operator-kit/app/components/UiRadio.vue";
 import UiRadioGroup from "../../../operator-kit/app/components/UiRadioGroup.vue";
 import UiSelect from "../../../operator-kit/app/components/UiSelect.vue";
@@ -114,6 +115,60 @@ const NuxtCheckbox = defineComponent({
         ],
       );
     };
+  },
+});
+
+const NuxtCheckboxGroup = defineComponent({
+  name: "NuxtCheckboxGroup",
+  inheritAttrs: false,
+  props: {
+    modelValue: { type: Array as () => unknown[], default: () => [] },
+    items: { type: Array as () => Array<Record<string, unknown>>, default: () => [] },
+    legend: String,
+    disabled: Boolean,
+    valueKey: { type: String, default: "value" },
+    labelKey: { type: String, default: "label" },
+    descriptionKey: { type: String, default: "description" },
+    ui: { type: Object as () => Record<string, string>, default: () => ({}) },
+  },
+  emits: ["update:modelValue"],
+  setup(props, { attrs, emit, slots }) {
+    const toggle = (item: Record<string, unknown>) => {
+      if (props.disabled || item.disabled) return;
+      const value = item[props.valueKey];
+      const next = props.modelValue.includes(value)
+        ? props.modelValue.filter((current) => current !== value)
+        : [...props.modelValue, value];
+      emit("update:modelValue", next);
+    };
+    return () => h("div", { ...attrs, "data-slot": attrs["data-slot"] ?? "checkbox-group", class: props.ui.root }, [
+      h("fieldset", { "data-slot": "fieldset", class: props.ui.fieldset }, [
+        props.legend || slots.legend
+          ? h("legend", { "data-slot": "legend", class: props.ui.legend }, slots.legend?.() ?? props.legend)
+          : null,
+        ...props.items.map((item) => {
+          const value = item[props.valueKey];
+          const checked = props.modelValue.includes(value);
+          const dataAttrs = Object.fromEntries(Object.entries(item).filter(([key]) => key.startsWith("data-")));
+          return h("div", { ...dataAttrs, "data-slot": "item", class: props.ui.item }, [
+            h("button", {
+              type: "button",
+              role: "checkbox",
+              disabled: props.disabled || Boolean(item.disabled),
+              "aria-checked": String(checked),
+              class: props.ui.base,
+              onClick: () => toggle(item),
+            }),
+            h("span", { "data-slot": "wrapper" }, [
+              h("span", { "data-slot": "label" }, slots.label?.({ item }) ?? String(item[props.labelKey] ?? "")),
+              item[props.descriptionKey]
+                ? h("span", { "data-slot": "description" }, slots.description?.({ item }) ?? String(item[props.descriptionKey]))
+                : null,
+            ]),
+          ]);
+        }),
+      ]),
+    ]);
   },
 });
 
@@ -403,10 +458,12 @@ const UiStepper = defineComponent({
 config.global.components = {
   ...config.global.components,
   NuxtCheckbox,
+  NuxtCheckboxGroup,
   NuxtSelectMenu,
   NuxtSwitch,
   UiButton,
   UiCheckbox,
+  UiCheckboxGroup,
   UiDateField,
   UiDateRangeField,
   UiDateTimeField,

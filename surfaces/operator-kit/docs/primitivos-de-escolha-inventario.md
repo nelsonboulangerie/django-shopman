@@ -1,6 +1,6 @@
-# Primitivos de escolha — o que falta converter
+# Primitivos de escolha — inventário e decisões
 
-Medido em 18/09/2026, varrendo os nove apps de `surfaces/` (o Storefront fica de fora:
+Medido em 18/09/2026 e revisto em 05/10/2026, varrendo os nove apps de `surfaces/` (o Storefront fica de fora:
 não estende esta layer). Este arquivo é a lista de trabalho que sobrou da frente que
 criou `UiCheckbox`, `UiRadioGroup`/`UiRadio` e `UiSelect`; ele encolhe, nunca cresce.
 
@@ -12,43 +12,50 @@ coisa, ou a conversão muda o que o operador vê.
 
 | Arquivo | O quê |
 |---|---|
-| `operator-kit/app/components/OperatorPushSettings.vue` | categorias de aviso → `UiCheckbox` (e o rótulo da lista virou "Dispositivos ativos", regra da casa) |
+| `operator-kit/app/components/UiCheckboxGroup.vue` | wrapper fino do `UCheckboxGroup`: anatomia, teclado e formulário continuam pertencendo ao Nuxt UI/Reka |
+| `operator-kit/app/components/OperatorPushSettings.vue` | categorias de aviso → `UiCheckboxGroup`, variante canônica `card` |
 | `operator-kit/app/components/OperatorStationSetup.vue` | escolha do balcão → `UiRadioGroup` |
 | `operator-kit/app/components/OperatorPinChange.vue` | dois botões de ícone puro ganharam nome acessível |
-| `marketing-nuxt/app/components/FireCampaignPanel.vue` | 2 rádios + 3 checkboxes |
+| `marketing-nuxt/app/components/FireCampaignPanel.vue` | 2 rádios + grupos de etiquetas, faixas, comportamento e outros públicos |
+| `marketing-nuxt/app/components/CampaignForm.vue` | destinos → variante `table`; sinais do produto, etiquetas, faixas e segmentos → grupos canônicos |
+| `marketing-nuxt/app/components/MarketingOfferForm.vue` | os 5 `<select multiple>` (produtos, coleções, canais, entrega e segmentos) → grupos canônicos; saiu a dependência de Ctrl/⌘ |
 | `marketing-nuxt/app/components/AnnouncementTemplateForm.vue` | formato do Instagram (rádio) + 2 checkboxes |
 | `marketing-nuxt/app/components/AnnouncementCard.vue` | as duas ocorrências do horário ambíguo (rádio) |
 | `marketing-nuxt/app/pages/platforms.vue` | **"Modelo aprovado": um cartão por modelo → `UiSelect` com busca** |
 | `purchase-nuxt/app/components/ReceiptLineSheet.vue` | `MaterialPicker` → `UiSelect` (o picker foi promovido ao kit e apagado) |
 | `pos-nuxt/app/components/PosRecentSales.vue` | botão de atualizar ganhou nome acessível |
 | `pos-nuxt/app/components/Ui/Switch.vue` → `operator-kit/app/components/UiSwitch.vue` | **o interruptor**: promovido ao kit, 10 consumidores migrados, a cópia do PDV apagada |
+| `orders-nuxt/app/pages/feeds.vue` | coleções do feed → `UiCheckboxGroup` |
+| `orders-nuxt/app/pages/[ref].vue` · `app/components/DispatchDialog.vue` | equipamentos da entrega e pedidos da mesma saída → variante `table` |
 
-## Marketing — o que ficou
+## CheckboxGroup — fronteira depois da revisão
 
-| Arquivo:linha | Controle | Classe |
+| Caso | Decisão |
 |---|---|---|
-| `app/components/CampaignForm.vue:829` | rádio do horário ambíguo (2 opções) | mecânica — **convertido em PR de seguimento** (o arquivo está sendo reescrito noutra branch) |
-| `app/components/CampaignForm.vue:969` | pílula de plataforma com checkbox `sr-only` | decisão (ver abaixo) |
-| `app/components/CampaignForm.vue:1017,1029,1044,1175,1186,1250,1275` | 7 checkboxes de público e de publicação | mecânica — **PR de seguimento** |
-| `app/components/AnnouncementCard.vue:676` | pílula de plataforma com checkbox `sr-only` | **decisão** |
-| `app/components/FireCampaignPanel.vue:299` · `app/pages/platforms.vue:526` | `UiNativeSelect` sobre o catálogo inteiro de produtos | mecânica quando a lista passa de 12 (`UiSelect` decide sozinho) |
+| Listas nomeadas que respondem à mesma pergunta | `UiCheckboxGroup`. É o caso de destinos, etiquetas, segmentos, canais, coleções e equipamentos. |
+| Booleano isolado ou que habilita um campo dependente | `UiCheckbox`. Agrupar “comprou nos últimos + número de dias” separaria o gesto do parâmetro e pioraria a compreensão. |
+| Dias da semana | `UiToggleChip`. A grade compacta e posicional é parte do uso; não é uma lista textual genérica. |
+| Filtros de lista com aplicação imediata | Chrome de filtro (`UiFilterChip`/`FilterBar`). Não grava um campo de formulário. |
+| Seleção de linhas em tabela, carrinho ou checklist operacional | Checkbox da linha, com “marcar todos” e estado indeterminado quando houver. O grupo não deve substituir semântica de tabela. |
+| Colunas dentro de menu | `menuitemcheckbox`. Trocar pelo grupo apagaria a semântica e o teclado do menu. |
+| Escolha exclusiva | `UiRadioGroup`, não CheckboxGroup, mesmo que a aparência pudesse ser parecida. |
 
-**A pílula de plataforma é decisão, não troca.** Ela é um `<label>` com um checkbox
-`sr-only` dentro, desenhada como chip e carregando o estado de prontidão da plataforma
-("não publica", "não verificada"). Trocar por `UiCheckbox` apagaria o desenho de chip.
-A peça certa é um irmão do `UiFilterChip` que fale `aria-pressed`/`aria-checked` — isso
-é um primitivo novo (`UiToggleChip`), com três consumidores reais.
+**Regra consolidada:** o chip deixou de ser a solução padrão para listas curtas. A
+anatomia canônica do grupo é a base; `UiToggleChip` só permanece quando a forma compacta
+tem função própria. Estado adicional (por exemplo “não publica”) entra no slot de rótulo
+do grupo, sem reimplementar checkbox, fieldset ou teclado.
 
-## Os outros apps
+## Os outros apps — decisões da varredura atual
 
-| App | Checkbox | Rádio | Select longo | Observação |
-|---|---|---|---|---|
-| **orders-nuxt** | 12 | 0 | 2 | `app/pages/catalog.vue:550` é o **único "marcar todos" verdadeiro do repositório**, e hoje mente: `allSelected` é tudo-ou-nada, então seleção parcial desenha vazio. É o consumidor nomeado do `indeterminate`. `app/components/CatalogBindingReview.vue:70` amarra um anúncio externo ao catálogo LOCAL inteiro num `<select>` nativo — candidato direto ao `UiSelect`. |
-| **production-nuxt** | 5 | 0 | 2 | `app/pages/mise-en-place.vue:378` é uma tabela de conferência com `<thead>` e sem "marcar todos" — o melhor candidato NÃO atendido do indeterminado. `app/pages/reports.vue:365` filtra por receita numa lista que cresce. O `IngredientPicker.vue` é um quarto combobox à mão: mesma promoção que o `MaterialPicker` merece, mas ele busca por API, não em lista local. |
-| **purchase-nuxt** | 2 | 0 | 1 | `app/pages/index.vue:1533` escolhe insumo entre os ~56 num `<select>` nativo — a MESMA lista de que o `MaterialPicker` fugiu. Troca mecânica para `UiSelect`, e das mais valiosas. |
-| **bi-nuxt** | 0 | 0 | 3 | `app/pages/explore.vue:126` tem até 41 opções em dois `optgroup` — o maior select do repositório. `UiSelect` ainda não faz grupo; ou ele ganha `group`, ou o B.I. fica para depois. **Decisão.** |
-| **pos-nuxt** | 1 | 0 | 0 | `PosCustomerSearch` e `PosAddressAutocomplete` são comboboxes de BUSCA REMOTA — parentes do `UiSelect`, mas o que eles precisam é de um `UiCombobox` assíncrono. Não force o primitivo de lista local neles. |
-| **kds-nuxt** · **hub-nuxt** | 0 | 0 | 0 | nada a fazer |
+| App | O que não virou CheckboxGroup e por quê |
+|---|---|
+| **orders-nuxt** | Seleção do catálogo continua sendo seleção de linhas, com “marcar todos” e indeterminado. Ordenação e modo de visualização continuam `menuitemradio`. |
+| **production-nuxt** | Mise-en-place é checklist operacional dentro de tabela. Os quatro estados da lista de receitas são filtros imediatos, não valores de formulário. |
+| **purchase-nuxt** | “Permitir revenda” é um booleano isolado que abre o campo obrigatório de preço. Agrupá-lo separaria a condição da consequência. |
+| **bi-nuxt** | Não há lista de múltipla escolha candidata. Os selects longos são escolhas exclusivas e alguns preservam grupos de opções. |
+| **pos-nuxt** | Linhas para mover são seleção de itens com quantidade; opções de produto misturam mínimo/máximo, rádio, checkbox, disponibilidade e preço. A canonização desse editor é WP próprio, não troca mecânica. |
+| **kds-nuxt** | Densidade é escolha exclusiva; som é switch. A semântica atual não é de grupo múltiplo. |
+| **hub-nuxt** | As categorias de aviso já foram convertidas no componente compartilhado `OperatorPushSettings`. |
 
 ## O interruptor (`role="switch"`) — FEITO
 

@@ -98,12 +98,6 @@ function fieldError(field: string): string {
   return props.fieldErrors?.[field]?.[0] ?? "";
 }
 
-function selectedValues(event: Event): string[] {
-  const target = event.target;
-  if (!(target instanceof HTMLSelectElement)) return [];
-  return Array.from(target.selectedOptions, (option) => option.value);
-}
-
 function cents(raw: string): number {
   const normalized = raw.trim().replace(",", ".");
   const parsed = Number(normalized || 0);
@@ -248,7 +242,10 @@ function submit() {
           </label>
         </div>
 
-        <div class="grid gap-4 sm:grid-cols-2">
+        <!-- Cada DateTimeField já contém data segmentada, calendário e hora. Em meia
+             coluna os segmentos se sobrepunham; aqui cada instante recebe a largura
+             inteira do cartão, tanto no desktop quanto no touch. -->
+        <div class="grid gap-4">
           <label class="grid gap-1.5 text-sm font-medium">
             Começa em
             <UiDateTimeField
@@ -292,44 +289,35 @@ function submit() {
           </p>
         </div>
 
-        <label class="grid gap-1.5 text-sm font-medium">
-          Produtos
-          <select
-            multiple
-            size="6"
-            class="min-h-36 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            @change="skus = selectedValues($event)"
-          >
-            <option
-              v-for="choice in options?.products ?? []"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{ choice.label }}
-            </option>
-          </select>
-          <span class="text-xs font-normal text-muted-foreground">
-            Use Ctrl/⌘ para selecionar mais de um.
-          </span>
-        </label>
+        <UiCheckboxGroup
+          v-if="options?.products.length"
+          v-model="skus"
+          :items="options?.products ?? []"
+          legend="Produtos"
+          variant="table"
+          :ui="{
+            fieldset: 'max-h-72 overflow-y-auto',
+            legend: 'mb-1.5 text-sm font-medium',
+          }"
+        />
+        <p v-else class="text-sm text-muted-foreground">
+          Nenhum produto disponível para restringir esta oferta.
+        </p>
 
-        <label class="grid gap-1.5 text-sm font-medium">
-          Coleções
-          <select
-            multiple
-            size="4"
-            class="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            @change="collections = selectedValues($event)"
-          >
-            <option
-              v-for="choice in options?.collections ?? []"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{ choice.label }}
-            </option>
-          </select>
-        </label>
+        <UiCheckboxGroup
+          v-if="options?.collections.length"
+          v-model="collections"
+          :items="options?.collections ?? []"
+          legend="Coleções"
+          variant="table"
+          :ui="{
+            fieldset: 'max-h-56 overflow-y-auto',
+            legend: 'mb-1.5 text-sm font-medium',
+          }"
+        />
+        <p v-else class="text-sm text-muted-foreground">
+          Nenhuma coleção disponível para restringir esta oferta.
+        </p>
       </section>
     </div>
 
@@ -355,57 +343,27 @@ function submit() {
             >0 = ilimitado.</span
           >
         </label>
-        <label class="grid gap-1.5 text-sm font-medium">
-          Canais de venda
-          <select
-            multiple
-            size="3"
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            @change="channels = selectedValues($event)"
-          >
-            <option
-              v-for="choice in options?.channels ?? []"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{ choice.label }}
-            </option>
-          </select>
-        </label>
-        <label class="grid gap-1.5 text-sm font-medium">
-          Entrega ou retirada
-          <select
-            multiple
-            size="2"
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            @change="fulfillmentTypes = selectedValues($event)"
-          >
-            <option
-              v-for="choice in options?.fulfillment_types ?? []"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{ choice.label }}
-            </option>
-          </select>
-        </label>
-        <label class="grid gap-1.5 text-sm font-medium">
-          Segmentos de clientes
-          <select
-            multiple
-            size="3"
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            @change="customerSegments = selectedValues($event)"
-          >
-            <option
-              v-for="choice in options?.customer_segments ?? []"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{ choice.label }}
-            </option>
-          </select>
-        </label>
+        <UiCheckboxGroup
+          v-if="options?.channels.length"
+          v-model="channels"
+          :items="options?.channels ?? []"
+          legend="Canais de venda"
+          :ui="{ legend: 'mb-1.5 text-sm font-medium' }"
+        />
+        <UiCheckboxGroup
+          v-if="options?.fulfillment_types.length"
+          v-model="fulfillmentTypes"
+          :items="options?.fulfillment_types ?? []"
+          legend="Entrega ou retirada"
+          :ui="{ legend: 'mb-1.5 text-sm font-medium' }"
+        />
+        <UiCheckboxGroup
+          v-if="options?.customer_segments.length"
+          v-model="customerSegments"
+          :items="options?.customer_segments ?? []"
+          legend="Segmentos de clientes"
+          :ui="{ legend: 'mb-1.5 text-sm font-medium' }"
+        />
       </div>
       <div class="mt-4 flex flex-wrap gap-5">
         <UiCheckbox v-model="birthdayOnly" label="Somente aniversariantes" />
