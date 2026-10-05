@@ -29,6 +29,15 @@ import {
   scheduleSummary,
 } from "~/utils/marketingSchedule";
 import type { ScheduleFold } from "~/utils/marketingSchedule";
+import {
+  StepperDescription,
+  StepperIndicator,
+  StepperItem,
+  StepperRoot,
+  StepperSeparator,
+  StepperTitle,
+  StepperTrigger,
+} from "reka-ui";
 
 const props = defineProps<{
   rule: Campaign | null; // null = criando
@@ -73,6 +82,12 @@ const isActive = ref(true);
 const baseAudienceRules = ref<Record<string, unknown>>({});
 const baseSchedule = ref<Record<string, unknown>>({});
 const currentStep = ref(0);
+const activeStepperStep = computed({
+  get: () => currentStep.value + 1,
+  set: (step: number | undefined) => {
+    if (typeof step === "number") goToStep(step - 1);
+  },
+});
 
 const COMPOSER_STEPS = [
   { label: "Objetivo", hint: "Dê nome e escolha o que inicia a campanha." },
@@ -747,46 +762,78 @@ function submit() {
       @discard="draft.discard()"
     />
 
-    <nav aria-label="Etapas da campanha">
-      <ol
-        class="grid grid-cols-5 gap-1 rounded-lg border border-border bg-muted/30 p-1"
+    <nav aria-label="Etapas da campanha" data-campaign-stepper>
+      <!-- Stepper deliberadamente clássico: os marcos e a linha comunicam sequência
+           e progresso antes da leitura. No celular só a etapa atual ganha texto;
+           no desktop os cinco rótulos permanecem visíveis. -->
+      <StepperRoot
+        v-model="activeStepperStep"
+        :linear="false"
+        orientation="horizontal"
+        aria-label="Etapas da campanha"
+        class="campaign-stepper flex items-start"
       >
-        <li v-for="(step, index) in COMPOSER_STEPS" :key="step.label">
-          <button
-            type="button"
-            class="flex min-h-11 w-full items-center justify-center gap-1 rounded-md px-2 text-xs font-medium transition sm:justify-start"
+        <StepperItem
+          v-for="(step, index) in COMPOSER_STEPS"
+          :key="step.label"
+          v-slot="{ state }"
+          :step="index + 1"
+          :disabled="!stepEnabled(index)"
+          class="relative flex min-w-0 flex-1 justify-center"
+        >
+          <StepperSeparator
+            v-if="index < COMPOSER_STEPS.length - 1"
+            class="absolute top-[22px] left-1/2 h-0.5 w-full"
+            :class="state === 'completed' ? 'bg-primary' : 'bg-border'"
+          />
+          <StepperTrigger
+            class="campaign-step-button relative z-10 flex min-h-11 w-11 flex-col items-center rounded-full px-0 py-1.5 text-center font-medium transition disabled:cursor-default sm:w-full sm:rounded-md sm:px-1"
             :class="
-              currentStep === index
-                ? 'bg-background text-foreground shadow-sm'
-                : index < currentStep
+              state === 'active'
+                ? 'text-foreground'
+                : state === 'completed'
                   ? 'text-primary'
                   : 'text-muted-foreground'
             "
-            :disabled="!stepEnabled(index)"
             :aria-current="currentStep === index ? 'step' : undefined"
             :aria-label="`${index + 1}. ${step.label}`"
-            @click="goToStep(index)"
           >
-            <span
-              class="grid size-6 shrink-0 place-items-center rounded-full border text-[11px]"
+            <StepperIndicator
+              class="campaign-step-marker grid size-8 shrink-0 place-items-center rounded-full border bg-background text-xs transition"
               :class="
-                currentStep === index
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : index < currentStep
-                    ? 'border-primary text-primary'
-                    : 'border-border'
+                state === 'active'
+                  ? 'border-primary bg-primary text-primary-foreground shadow-sm'
+                  : state === 'completed'
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border text-muted-foreground'
               "
-              >{{ index < currentStep ? "✓" : index + 1 }}</span
             >
-            <span class="hidden text-left sm:inline">{{ step.label }}</span>
-          </button>
-        </li>
-      </ol>
-      <p class="mt-2 text-xs text-muted-foreground" role="status">
-        <strong class="text-foreground">
+              <Icon
+                v-if="state === 'completed'"
+                name="lucide:check"
+                class="size-4"
+                aria-hidden="true"
+              />
+              <span v-else>{{ index + 1 }}</span>
+            </StepperIndicator>
+            <StepperTitle
+              as="span"
+              class="mt-1.5 hidden max-w-full text-[11px] leading-tight sm:block md:text-xs"
+            >
+              <span class="sr-only">{{ index + 1 }}. </span>
+              {{ step.label }}
+            </StepperTitle>
+            <StepperDescription as="span" class="sr-only">
+              {{ step.hint }}
+            </StepperDescription>
+          </StepperTrigger>
+        </StepperItem>
+      </StepperRoot>
+      <p class="mt-2 text-xs text-muted-foreground sm:text-center" role="status">
+        <strong class="block text-sm text-foreground sm:hidden">
           {{ currentStep + 1 }}. {{ COMPOSER_STEPS[currentStep]?.label }}.
         </strong>
-        {{ COMPOSER_STEPS[currentStep]?.hint }}
+        <span>{{ COMPOSER_STEPS[currentStep]?.hint }}</span>
       </p>
     </nav>
 
@@ -1491,3 +1538,22 @@ function submit() {
     </div>
   </form>
 </template>
+
+<style scoped>
+/* O foco pertence ao marco, não ao quinto inteiro da barra. O anel continua com
+   3 px, contraste e offset do envelope de acessibilidade do Marketing. */
+.campaign-step-button:focus-visible {
+  outline: none !important;
+}
+
+.campaign-step-button:focus-visible .campaign-step-marker {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* O primitive anuncia o progresso em inglês. A tela já mantém uma região de
+   status em português logo abaixo, então o anúncio duplicado sai da árvore. */
+.campaign-stepper :deep(> [role="status"]) {
+  display: none;
+}
+</style>
