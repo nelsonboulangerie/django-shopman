@@ -58,6 +58,12 @@ resposta de indisponibilidade aparecer. A matriz agora espera explicitamente ess
 estado final antes do retrato; o cenário isolado passou localmente sem alteração da
 imagem canônica.
 
+Na execução `37255238187`, o gate de acessibilidade mediu o primeiro frame do tema
+escuro enquanto o rótulo `Mais` ainda herdava a cor clara. O mesmo código havia
+passado nas duas execuções anteriores e os três testes passaram localmente. O teste
+agora aguarda a cor herdada convergir para o token do tema antes de chamar o axe;
+isso preserva a exigência AA e elimina a medição intermediária.
+
 ## Critério de fechamento
 
 O segundo commit incorpora somente esses retratos produzidos pelo Chromium pinado
