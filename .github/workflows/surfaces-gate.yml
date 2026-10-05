@@ -64,6 +64,9 @@ jobs:
           python -m pip install --quiet pyyaml
           python scripts/check_surface_registry.py
 
+      - name: Gate de componentes canônicos do operador
+        run: python scripts/check_operator_component_ledger.py
+
   app-quality:
     name: ${{ matrix.app }}
     runs-on: ubuntu-latest

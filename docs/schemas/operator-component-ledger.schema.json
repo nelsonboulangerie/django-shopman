@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "operator-component-ledger.schema.json",
+  "title": "Shopman operator component ledger",
+  "type": "object",
+  "required": ["version", "scope", "families", "apps"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "scope": { "type": "object" },
+    "families": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "apps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "directory", "profiles", "baseline", "surfaces"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "directory": { "type": "string", "pattern": "-nuxt$" },
+          "profiles": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string" }
+          },
+          "baseline": {
+            "type": "object",
+            "required": ["local_ui_files", "direct_reka_import_files", "manual_overlay_files", "native_control_occurrences"],
+            "additionalProperties": false,
+            "properties": {
+              "local_ui_files": { "type": "integer", "minimum": 0 },
+              "direct_reka_import_files": { "type": "integer", "minimum": 0 },
+              "manual_overlay_files": { "type": "integer", "minimum": 0 },
+              "native_control_occurrences": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "surfaces": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["id", "source_files", "routes", "variants", "families", "status"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "source_files": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "type": "string" }
+                },
+                "routes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "type": "string" }
+                },
+                "variants": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "type": "string" }
+                },
+                "families": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "type": "string" }
+                },
+                "status": { "type": "string" },
+                "reason": { "type": "string" },
+                "owner": { "type": "string" },
+                "tests": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
