@@ -410,7 +410,7 @@ Mesma numeração do SUITE-UX-PLAN. Cada WP é um PR (ou um por app quando passa
 | WP | o quê | depende de | risco |
 |---|---|---|---|
 | **UX-5** tipografia e status | `op-*` em CSS; `status.ts`; trava de paleta | — | baixo |
-| **UX-8** primitivas no kit | uma cópia só de Button, Dialog, Sheet, Popover, Input, Textarea, Badge; apagar as 7 árvores; overlays à mão migram | — | médio |
+| **[UX-8](WP-UX-8-NUXT-UI-REKA-CANONICALIZATION.md)** Nuxt UI/Reka canônicos | estrutura, estados e acessibilidade canônicos no `operator-kit`; avaliar aparência do Nuxt UI caso a caso; migrar todas as telas dos oito apps e apagar as árvores locais | — | médio/alto |
 | **UX-12** contexto e navegação *(novo)* | `useOperatorContext`, `RailItem` com `to`, `OperatorUpButton`, `useListContext`, `useUnsavedGuard`, `appUrl()` para os 8 apps, títulos, trava de navegação | UX-8 | médio |
 | **UX-6** campo, vazio, carregando | `UiField`, `UiEmpty`, `UiSkeleton`, `UiAlert` | UX-8 | baixo |
 | **UX-2** cabeçalho único e busca única | rail v3 com seções, cabeçalho único, `OperatorSearch` com alcance, `UiSegmentedControl`, `UiMenu`, `UiBulkBar`; estado na URL | UX-12 | médio |
