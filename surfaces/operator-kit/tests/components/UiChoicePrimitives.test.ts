@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { defineComponent, nextTick, type VueWrapper } from "vue";
 
 import UiCheckbox from "../../app/components/UiCheckbox.vue";
+import UiCheckboxGroup from "../../app/components/UiCheckboxGroup.vue";
 import UiRadio from "../../app/components/UiRadio.vue";
 import UiRadioGroup from "../../app/components/UiRadioGroup.vue";
 import UiSelect from "../../app/components/UiSelect.vue";
@@ -87,6 +88,54 @@ describe("UiCheckbox", () => {
     const wrapper = await mount(UiCheckbox, { props: { disabled: true, label: "Ativo" } });
     await wrapper.get('[role="checkbox"]').trigger("click");
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+  });
+});
+
+describe("UiCheckboxGroup", () => {
+  const destinations: ChoiceOption<string>[] = [
+    { value: "instagram", label: "Instagram", hint: "Publicação pública" },
+    { value: "whatsapp", label: "WhatsApp", hint: "Mensagem direta" },
+    { value: "google", label: "Google", disabled: true },
+  ];
+
+  it("preserva a anatomia canônica: fieldset, legend e itens Reka", async () => {
+    const wrapper = await mount(UiCheckboxGroup, {
+      props: {
+        modelValue: ["instagram"],
+        items: destinations,
+        legend: "Disparado via",
+        variant: "table",
+      },
+    });
+
+    expect(wrapper.get('[data-slot="checkbox-group"]')).toBeTruthy();
+    expect(wrapper.get("fieldset").text()).toContain("Disparado via");
+    expect(wrapper.get("legend").text()).toBe("Disparado via");
+    const choices = wrapper.findAll('[role="checkbox"]');
+    expect(choices).toHaveLength(3);
+    expect(choices.map((choice) => choice.attributes("aria-checked"))).toEqual([
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(wrapper.findAll('[data-slot="item"]')[0]!.classes()).toContain("min-h-control");
+    expect(choices[0]!.classes()).toContain("size-5");
+    expect(wrapper.text()).toContain("Publicação pública");
+  });
+
+  it("emite a lista completa e respeita item desabilitado", async () => {
+    const wrapper = await mount(UiCheckboxGroup, {
+      props: { modelValue: ["instagram"], items: destinations },
+    });
+    const choices = wrapper.findAll('[role="checkbox"]');
+
+    await choices[1]!.trigger("click");
+    expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([
+      ["instagram", "whatsapp"],
+    ]);
+
+    await choices[2]!.trigger("click");
+    expect(wrapper.emitted("update:modelValue")).toHaveLength(1);
   });
 });
 
@@ -470,10 +519,9 @@ describe("UiSelect — o que veio do MaterialPicker", () => {
 
 describe("UiToggleChip", () => {
   // ⚠️ É o irmão do `UiCheckbox`, não um apelido dele. O checkbox desenha um quadrado
-  // com o rótulo ao lado; o chip é uma pílula cuja CAIXA INTEIRA acende. Onde a escolha
-  // é curta e cabem várias na linha — plataformas, etiquetas, segmentos — trocar um pelo
-  // outro é pôr a peça parecida no lugar da peça certa. Foi por isso que a conversão dos
-  // primitivos deixou essas telas de fora, com o vazio registrado em comentário.
+  // com o rótulo ao lado; o chip é uma pílula cuja CAIXA INTEIRA acende. Ele fica para
+  // escolhas compactas e posicionais, como os dias da semana. Listas nomeadas são um
+  // `UiCheckboxGroup`, mesmo quando também caberiam numa linha.
   it("é um checkbox por ARIA, com alvo de 44 px pelo token", async () => {
     const wrapper = await mount(UiToggleChip, {
       props: { modelValue: false, label: "Instagram" },
@@ -524,8 +572,8 @@ describe("UiToggleChip", () => {
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
   });
 
-  // A pílula de plataforma carrega ícone e o estado da plataforma ("· limitada") ao
-  // lado do nome; o slot existe para isso, e o rótulo simples continua sendo prop.
+  // O slot permite conteúdo composto nos casos compactos que justificam o chip; o
+  // rótulo simples continua sendo prop.
   it("aceita conteúdo composto no lugar do rótulo simples", async () => {
     const wrapper = await mount(UiToggleChip, {
       props: { modelValue: true },

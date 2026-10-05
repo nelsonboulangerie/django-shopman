@@ -3,7 +3,7 @@ import {
   canaryText,
   platformReadinessNote,
   readinessByPlatform,
-  readinessPillClass,
+  readinessStatusClass,
   readinessTone,
 } from "~/presentation/platformReadiness";
 import type { PlatformReadiness } from "~/presentation/platformReadiness";
@@ -28,7 +28,7 @@ describe("prontidão de plataforma antes do clique", () => {
       badge: "",
       text: "",
     });
-    expect(readinessPillClass("ready")).toBe("");
+    expect(readinessStatusClass("ready")).toBe("");
   });
 
   it("bloqueada: motivo do servidor + a promessa de que não publica até resolver", () => {
@@ -46,7 +46,7 @@ describe("prontidão de plataforma antes do clique", () => {
     expect(note.text).toBe(
       "Instagram: A integração existe, mas está sem credencial neste ambiente. Nada é publicado por aqui até resolver.",
     );
-    expect(readinessPillClass("blocked")).toContain("destructive");
+    expect(readinessStatusClass("blocked")).toContain("destructive");
   });
 
   it("desligada pela flag: diz desligada, sem prometer conserto de algo quebrado", () => {

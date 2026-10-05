@@ -56,7 +56,7 @@ const labelId = `${uid}-label`;
 
 const query = ref("");
 const activeValue = ref<ChoiceValue>();
-const chosen = computed(() => selectedOption(props.options, props.modelValue));
+const chosen = computed(() => selectedOption(props.options, props.modelValue) ?? undefined);
 const hasSearch = computed(() =>
   props.searchable ?? isSearchable(props.options.length, props.searchThreshold),
 );
@@ -151,6 +151,7 @@ defineExpose({ focus: () => picker.value?.triggerRef?.focus() });
     <NuxtSelectMenu
       ref="picker"
       v-bind="attrs"
+      v-model:search-term="query"
       :model-value="chosen"
       :items="filteredOptions"
       :disabled="disabled"
@@ -168,7 +169,6 @@ defineExpose({ focus: () => picker.value?.triggerRef?.focus() });
       variant="outline"
       ignore-filter
       highlight-on-hover
-      v-model:search-term="query"
       data-shopman-slot="select-trigger"
       @update:model-value="onUpdate"
       @highlight="onHighlight"

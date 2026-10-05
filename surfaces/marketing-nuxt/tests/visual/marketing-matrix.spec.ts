@@ -380,6 +380,25 @@ test.describe("Ajustes, uma rota por lugar", () => {
     await expectStableScreenshot(page, "settings__offers", V1280);
   });
 
+  test("nova oferta não comprime datas nem múltiplas escolhas no desktop", async ({
+    page,
+  }) => {
+    await openScenario(page, "board-normal", "/offers", V1280);
+    await page.getByRole("button", { name: "Criar oferta" }).click();
+    const dialog = page.getByRole("dialog", { name: "Nova oferta" });
+    await expect(dialog.getByRole("group", { name: "Produtos" })).toBeVisible();
+    await expect(
+      dialog.getByRole("group", { name: "Início da oferta", exact: true }),
+    ).toBeVisible();
+    await expectStableScreenshot(
+      page,
+      "settings__offer-form",
+      V1280,
+      "light",
+      { fullPage: false },
+    );
+  });
+
   test("novo cupom preserva formulário no mobile", async ({ page }) => {
     await openScenario(page, "board-normal", "/offers", V390);
     await page.getByRole("button", { name: "Mais: Ofertas e cupons" }).click();
@@ -672,6 +691,28 @@ test.describe("listas operacionais", () => {
       page,
       "campaign-form__new-keyboard",
       V320,
+      "light",
+      { fullPage: false },
+    );
+  });
+
+  // Destinos deixou de ser um conjunto de chips à mão: este retrato trava a anatomia
+  // oficial do CheckboxGroup (fieldset, linhas inteiras e quadrados opacos sobre a
+  // linha), justamente o detalhe que não aparecia em nenhum baseline anterior.
+  test("destinos usam o grupo canônico no mobile", async ({ page }) => {
+    await openScenario(page, "campaigns-dense", "/campaigns", V390);
+    await page.getByRole("button", { name: "Nova campanha" }).click();
+    const dialog = page.getByRole("dialog").last();
+    await dialog.getByLabel("Nome da campanha").fill("Campanha visual");
+    await openCampaignStep(page, "Destinos");
+    const group = dialog.getByRole("group", { name: "Disparado via" });
+    await expect(group).toBeVisible();
+    await group.getByRole("checkbox", { name: /Instagram/ }).click();
+    await group.evaluate((element) => element.scrollIntoView({ block: "start" }));
+    await expectStableScreenshot(
+      page,
+      "campaign-form__destinations",
+      V390,
       "light",
       { fullPage: false },
     );

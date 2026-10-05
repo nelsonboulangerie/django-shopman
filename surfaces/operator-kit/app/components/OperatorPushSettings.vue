@@ -36,10 +36,6 @@ function surfaceLabel(ref: string): string {
   return OPERATOR_APPS[ref as keyof typeof OPERATOR_APPS]?.label || ref;
 }
 
-function checked(category: string): boolean {
-  return currentDevice.value?.categories.includes(category) === true;
-}
-
 /** A linha (`variant="line"`): o estado em poucas palavras, a causa inteira quando falta algo. */
 const canActivate = computed(() => permission.value !== "denied" && supported.value && !active.value);
 const hasDetails = computed(() => Boolean(currentDevice.value) || devices.value.length > 0);
@@ -59,12 +55,9 @@ const lineState = computed(() => {
   return "";
 });
 
-async function toggleCategory(category: string): Promise<void> {
+async function updateCategorySelection(next: string[]): Promise<void> {
   const device = currentDevice.value;
   if (!device) return;
-  const next = checked(category)
-    ? device.categories.filter(value => value !== category)
-    : [...device.categories, category];
   await updateCategories(device, next);
 }
 </script>
@@ -150,18 +143,21 @@ async function toggleCategory(category: string): Promise<void> {
       :class="props.variant === 'line' ? 'rounded-xl border border-border bg-card px-4 pb-4' : ''"
       data-push-details
     >
-      <fieldset v-if="currentDevice" :class="props.variant === 'line' ? 'pt-4' : 'mt-5 border-t border-border pt-4'">
-        <legend class="text-sm font-semibold">O que chega aqui</legend>
-        <div class="mt-3 grid gap-2 sm:grid-cols-2">
-          <UiCheckbox
-            v-for="category in categories"
-            :key="category.value"
-            :model-value="checked(category.value)"
-            :label="category.label"
-            @update:model-value="toggleCategory(category.value)"
-          />
-        </div>
-      </fieldset>
+      <div v-if="currentDevice" :class="props.variant === 'line' ? 'pt-4' : 'mt-5 border-t border-border pt-4'">
+        <UiCheckboxGroup
+          :model-value="currentDevice.categories"
+          :items="categories"
+          legend="O que chega aqui"
+          variant="card"
+          orientation="horizontal"
+          :ui="{
+            fieldset: 'mt-3 gap-2',
+            legend: 'text-sm font-semibold',
+            item: 'min-w-0 basis-full sm:basis-[calc(50%-0.25rem)]',
+          }"
+          @update:model-value="updateCategorySelection"
+        />
+      </div>
 
       <div v-if="devices.length" :class="props.variant === 'line' && !currentDevice ? 'pt-4' : 'mt-5 border-t border-border pt-4'">
         <h3 class="text-sm font-semibold">Dispositivos que recebem estes avisos</h3>

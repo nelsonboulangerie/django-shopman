@@ -171,12 +171,19 @@ const dispatchAsks = computed(
   () => dispatchAsksChange.value || (order.value?.status === "ready" && (order.value?.equipment_options.length ?? 0) > 0),
 );
 const dispatchEquipment = computed({ get: () => dispatchDraft.value.equipment, set: (v: string[]) => { dispatchDraft.value.equipment = v; } });
+const dispatchEquipmentOptions = computed(() => (order.value?.equipment_options ?? []).map((option) => ({
+  value: option.ref,
+  label: option.label,
+  hint: option.reason || undefined,
+  disabled: option.enabled === false,
+})));
 const settleEquipmentBack = computed({ get: () => settlementDraft.value.equipmentBack, set: (v: boolean) => { settlementDraft.value.equipmentBack = v; } });
 const asksEquipmentBack = computed(() => Boolean(order.value?.equipment_back_pending));
-function toggleDispatchEquipment(ref_: string) {
-  dispatchEquipment.value = dispatchEquipment.value.includes(ref_)
-    ? dispatchEquipment.value.filter((r) => r !== ref_)
-    : [...dispatchEquipment.value.filter(r => !ref_.startsWith("card_machine:") || !r.startsWith("card_machine:")), ref_];
+function updateDispatchEquipment(next: string[]) {
+  const added = next.find((ref_) => !dispatchEquipment.value.includes(ref_));
+  dispatchEquipment.value = added?.startsWith("card_machine:")
+    ? [...next.filter((ref_) => !ref_.startsWith("card_machine:")), added]
+    : next;
 }
 const reasons = ref<CancellationReason[]>([]);
 const reasonsLoading = ref(false);
@@ -685,18 +692,16 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
             <template v-else>O que sai com o entregador.</template>
           </UiDialogDescription>
         </UiDialogHeader>
-        <div v-if="order?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
-          <UiCheckbox
-            v-for="opt in order.equipment_options"
-            :key="opt.ref"
-            :model-value="dispatchEquipment.includes(opt.ref)"
-            :disabled="opt.enabled === false"
-            :label="opt.label"
-            :description="opt.reason || undefined"
-            class="w-full rounded-md border px-3"
-            @update:model-value="toggleDispatchEquipment(opt.ref)"
-          />
-        </div>
+        <UiCheckboxGroup
+          v-if="dispatchEquipmentOptions.length"
+          :model-value="dispatchEquipment"
+          :items="dispatchEquipmentOptions"
+          legend="O que sai com o entregador"
+          variant="table"
+          data-dispatch-equipment
+          :ui="{ legend: 'mb-1.5 text-sm font-medium' }"
+          @update:model-value="updateDispatchEquipment"
+        />
         <label v-if="dispatchAsksChange" class="flex items-center gap-2 text-sm">
           <span class="text-muted-foreground">R$</span>
           <input
