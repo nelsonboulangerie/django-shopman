@@ -86,10 +86,10 @@ const CHIP = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-
         <form class="mt-3 grid grid-cols-2 gap-2" @submit.prevent="submitCustom">
           <p class="col-span-2 op-eyebrow text-muted-foreground">Personalizado</p>
           <label class="flex flex-col gap-1 op-micro text-muted-foreground">De
-            <input v-model="from" type="date" :max="bounds.max" class="min-h-11 rounded-md border border-border bg-card px-2 op-label text-foreground">
+            <UiDateField v-model="from" :max="bounds.max" label="Início do período" />
           </label>
           <label class="flex flex-col gap-1 op-micro text-muted-foreground">Até
-            <input v-model="to" type="date" :max="bounds.max" class="min-h-11 rounded-md border border-border bg-card px-2 op-label text-foreground">
+            <UiDateField v-model="to" :max="bounds.max" label="Fim do período" />
           </label>
           <p v-if="customError" class="col-span-2 op-micro text-destructive" role="alert">{{ customError }}</p>
           <UiButton type="submit" class="col-span-2" :disabled="!from || !to || Boolean(customError)">Ver este período</UiButton>

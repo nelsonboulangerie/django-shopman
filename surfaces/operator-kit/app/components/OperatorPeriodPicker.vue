@@ -261,23 +261,21 @@ const arrowClass =
           <div class="grid grid-cols-2 gap-2">
             <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
               De
-              <input
+              <UiDateField
                 v-model="customFrom"
-                type="date"
                 :min="min"
                 :max="max"
-                class="min-h-control w-full rounded-md border border-border bg-background px-2 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+                label="Início do período personalizado"
                 data-period-custom-from
               />
             </label>
             <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
               Até
-              <input
+              <UiDateField
                 v-model="customTo"
-                type="date"
                 :min="min"
                 :max="max"
-                class="min-h-control w-full rounded-md border border-border bg-background px-2 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+                label="Fim do período personalizado"
                 data-period-custom-to
               />
             </label>
@@ -299,12 +297,11 @@ const arrowClass =
           <div v-if="calendarPresets.length > 1 || windowCount" class="my-3 border-t border-border"></div>
           <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
             Ir para o dia
-            <input
+            <UiDateField
               v-model="jumpTo"
-              type="date"
               :min="min"
               :max="max"
-              class="min-h-control w-full rounded-md border border-border bg-background px-2 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+              label="Data para mostrar"
               data-period-jump
             />
           </label>

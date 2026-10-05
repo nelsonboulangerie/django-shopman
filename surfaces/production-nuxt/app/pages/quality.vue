@@ -280,44 +280,22 @@ const screenStarted = computed(() => {
         </div>
       </template>
       <template #actions>
-        <div
+        <UiTabs
           v-if="!correcting && kiosk && kiosk.orders.length"
-          class="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
-          role="tablist"
-          aria-label="Lotes da Qualidade"
+          v-model="view"
           data-quality-view
         >
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="view === 'pending'"
-            class="flex min-h-11 items-center justify-center gap-1.5 rounded-md px-4 op-label font-semibold transition"
-            :class="
-              view === 'pending'
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            "
-            @click="view = 'pending'"
-          >
-            Para confirmar
-            <span class="tnum">{{ gateCounts.pending }}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            :aria-selected="view === 'reviewed'"
-            class="flex min-h-11 items-center justify-center gap-1.5 rounded-md px-4 op-label font-semibold transition"
-            :class="
-              view === 'reviewed'
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            "
-            @click="view = 'reviewed'"
-          >
-            Confirmados
-            <span class="tnum">{{ gateCounts.reviewed }}</span>
-          </button>
-        </div>
+          <UiTabsList class="grid grid-cols-2 rounded-lg border-0 bg-muted" aria-label="Lotes da Qualidade">
+            <UiTabsTrigger value="pending" class="gap-1.5 font-semibold data-[state=active]:bg-card">
+              Para confirmar
+              <span class="tnum">{{ gateCounts.pending }}</span>
+            </UiTabsTrigger>
+            <UiTabsTrigger value="reviewed" class="gap-1.5 font-semibold data-[state=active]:bg-card">
+              Confirmados
+              <span class="tnum">{{ gateCounts.reviewed }}</span>
+            </UiTabsTrigger>
+          </UiTabsList>
+        </UiTabs>
       </template>
     </ProductionHeader>
 

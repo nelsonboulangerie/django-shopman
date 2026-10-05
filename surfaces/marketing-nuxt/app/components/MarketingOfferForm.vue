@@ -251,9 +251,9 @@ function submit() {
         <div class="grid gap-4 sm:grid-cols-2">
           <label class="grid gap-1.5 text-sm font-medium">
             Começa em
-            <UiInput
+            <UiDateTimeField
               v-model="validFrom"
-              type="datetime-local"
+              label="Início da oferta"
               required
               :aria-invalid="Boolean(fieldError('valid_from'))"
             />
@@ -263,9 +263,9 @@ function submit() {
           </label>
           <label class="grid gap-1.5 text-sm font-medium">
             Termina em
-            <UiInput
+            <UiDateTimeField
               v-model="validUntil"
-              type="datetime-local"
+              label="Fim da oferta"
               required
               :aria-invalid="Boolean(fieldError('valid_until'))"
             />
@@ -408,22 +408,8 @@ function submit() {
         </label>
       </div>
       <div class="mt-4 flex flex-wrap gap-5">
-        <label class="flex min-h-11 items-center gap-2 text-sm font-medium">
-          <input
-            v-model="birthdayOnly"
-            type="checkbox"
-            class="rounded border-input text-primary"
-          />
-          Somente aniversariantes
-        </label>
-        <label class="flex min-h-11 items-center gap-2 text-sm font-medium">
-          <input
-            v-model="isActive"
-            type="checkbox"
-            class="rounded border-input text-primary"
-          />
-          Ativar ao salvar
-        </label>
+        <UiCheckbox v-model="birthdayOnly" label="Somente aniversariantes" />
+        <UiCheckbox v-model="isActive" label="Ativar ao salvar" />
       </div>
     </details>
 

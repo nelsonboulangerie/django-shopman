@@ -160,7 +160,10 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     expect(wrapper.text()).not.toContain("Texto exclusivo do WhatsApp");
     expect(wrapper.text()).not.toContain("available_qty");
 
-    await wrapper.find("[data-platform='whatsapp']").trigger("click");
+    await wrapper.find("[data-platform='whatsapp']").trigger("mousedown", {
+      button: 0,
+      ctrlKey: false,
+    });
     expect(wrapper.text()).toContain("Texto exclusivo do WhatsApp");
     expect(wrapper.text()).not.toContain("Texto exclusivo do Instagram");
     wrapper.unmount();

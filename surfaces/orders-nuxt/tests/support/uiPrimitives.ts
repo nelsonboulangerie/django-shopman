@@ -7,6 +7,7 @@ import { Fragment, defineComponent, h, inject, provide } from "vue";
 // nesta mesma tela que motivou a promoção. Mesmo arranjo do Marketing
 // (`marketing-nuxt/tests/support/uiPrimitives.ts`).
 import UiSwitch from "../../../operator-kit/app/components/UiSwitch.vue";
+import UiCheckbox from "../../../operator-kit/app/components/UiCheckbox.vue";
 // O detalhe do pedido também entra de verdade: é o kit que desenha as seções do
 // `pages/[ref].vue` (a mesma tela do detalhe da encomenda no PDV), e stubá-lo
 // apagaria justamente o que os testes da página cobram.
@@ -15,6 +16,9 @@ import OperatorOrderDetail from "../../../operator-kit/app/components/OperatorOr
 // motivo: o contrato cobrado é `role="radio"`/`aria-checked` do kit.
 import UiRadio from "../../../operator-kit/app/components/UiRadio.vue";
 import UiRadioGroup from "../../../operator-kit/app/components/UiRadioGroup.vue";
+import UiTabs from "../../../operator-kit/app/components/Ui/Tabs/Tabs.vue";
+import UiTabsList from "../../../operator-kit/app/components/Ui/Tabs/List.vue";
+import UiTabsTrigger from "../../../operator-kit/app/components/Ui/Tabs/Trigger.vue";
 
 const popoverToggleKey = Symbol("popover-toggle");
 const UiPopover = defineComponent({
@@ -50,9 +54,13 @@ const passthroughRoot = (name: string) => defineComponent({
 config.global.components = {
   ...config.global.components,
   UiSwitch,
+  UiCheckbox,
   OperatorOrderDetail,
   UiRadio,
   UiRadioGroup,
+  UiTabs,
+  UiTabsList,
+  UiTabsTrigger,
   UiPopover,
   UiPopoverTrigger,
   UiPopoverContent: passthroughRoot("UiPopoverContent"),

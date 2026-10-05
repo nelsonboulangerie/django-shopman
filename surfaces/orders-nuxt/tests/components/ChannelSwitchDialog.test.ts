@@ -48,7 +48,7 @@ function render(props: Partial<{ sw: ChannelSwitchProjection }> = {}) {
 }
 
 async function choose(wrapper: ReturnType<typeof render>, period: string, reason?: string) {
-  await wrapper.get(`[data-period="${period}"] input`).setValue(true);
+  await wrapper.get(`[data-period="${period}"]`).trigger("click");
   if (reason) await wrapper.findAll("button").find((b) => b.text() === reason)!.trigger("click");
 }
 
