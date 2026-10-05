@@ -106,6 +106,20 @@ roda no gate das superfícies.
 O `npm audit` continua apontando vulnerabilidades indiretas já presentes na linha de base,
 tratadas por uma frente separada. A Fase 0 não cria exceção nem silencia esse gate.
 
+### Gate de supply-chain do Nuxt
+
+Em 05/10/2026, o `npm audit --audit-level=high` passou a bloquear a cadeia completa do
+Marketing por advisories transitivos em dependências do ecossistema Nuxt/Nitro:
+`GHSA-vfj7-8cjw-p6xm` (`braces`) e `GHSA-86w9-cpqp-85rv` (`node-forge`). Na data da
+revisão, `braces@3.0.3` e `node-forge@1.4.0` eram as versões mais recentes publicadas; o
+`npm audit fix --force` propunha downgrade quebrador para Nuxt 3.15.1.
+
+O gate foi trocado de `npm audit` cru para `scripts/check_npm_audit_gate.mjs`, mantendo a
+falha para qualquer advisory novo e permitindo apenas exceções temporárias registradas em
+`surfaces/npm-audit-allowlist.json`, com prazo e motivo. A exceção não cobre regressões de
+UX nem desliga o audit: ela impede que a PR de componentes fique presa a um falso caminho
+de correção enquanto o ecossistema publica versões corrigidas.
+
 ## Decisão para as fases seguintes
 
 A migração prossegue por família e por app. Primeiro, as cópias idênticas são substituídas

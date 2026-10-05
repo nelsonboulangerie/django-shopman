@@ -293,10 +293,10 @@ jobs:
 
       - name: Audit operator-kit supply chain
         working-directory: surfaces/operator-kit
-        run: npm audit --audit-level=high
+        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
 
       - name: Audit Marketing supply chain
-        run: npm audit --audit-level=high
+        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
 
       - name: Upload browser evidence
         if: always()
