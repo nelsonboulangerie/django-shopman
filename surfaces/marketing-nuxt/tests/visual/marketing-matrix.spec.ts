@@ -101,6 +101,13 @@ const SCENE_TABS = {
 } as const;
 
 async function waitForFaithfulPreview(page: Page) {
+  const toggle = page.getByRole("button", {
+    name: "Ver como fica em cada plataforma",
+  });
+  if ((await toggle.count()) > 0) {
+    if ((await toggle.getAttribute("aria-expanded")) !== "true")
+      await toggle.click();
+  }
   await expect(
     // ⚠️ Espera o RÓTULO da procedência, não o nome do produto: o nome aparece no
     // corpo do anúncio antes de a prévia chegar, e esperar por ele deixaria o retrato
@@ -254,8 +261,6 @@ test.describe("painel", () => {
       await expect(
         page.getByRole("heading", { level: 1, name: "Painel" }),
       ).toBeVisible();
-      if (scenario !== "board-empty" && scenario !== "board-normal")
-        await waitForFaithfulPreview(page);
       if (scenario === "board-pending") {
         await expect(
           page.getByRole("group", { name: "Disparado via" }),
@@ -275,7 +280,7 @@ test.describe("painel", () => {
         // o que a PRÓXIMA tela mostra, que é o que o "Continuar" abre.
         await expect(
           page.getByText(
-            "é o que será disparado — agora ou na hora que você marcar",
+            "O texto que você conferir na próxima tela é o que vai: agora, ou na hora que você marcar.",
             {
               exact: false,
             },
@@ -300,7 +305,6 @@ test.describe("painel", () => {
       );
     });
   }
-
 });
 
 // A casa do Marketing (UX-M1, decisão do dono de 03/10/2026). O sino deixou de ter
@@ -360,8 +364,11 @@ test.describe("Ajustes, uma rota por lugar", () => {
 
   test("novo cupom preserva formulário no mobile", async ({ page }) => {
     await openScenario(page, "board-normal", "/offers", V390);
-    await page.getByRole("button", { name: "Criar cupom" }).click();
-    await expect(page.getByRole("dialog", { name: "Novo cupom" })).toBeVisible();
+    await page.getByRole("button", { name: "Mais: Ofertas e cupons" }).click();
+    await page.getByRole("menuitem", { name: "Criar cupom" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Novo cupom" }),
+    ).toBeVisible();
     await expect(page.getByLabel("Código do cupom")).toBeVisible();
     await expectStableScreenshot(page, "settings__coupon-form", V390, "light", {
       fullPage: false,
@@ -372,8 +379,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
 test.describe("cartão de anúncio", () => {
   test("edição longa não perde ações no menor mobile", async ({ page }) => {
     await openScenario(page, "board-pending", "/__visual_board", V320);
-    await waitForFaithfulPreview(page);
-    const body = page.getByLabel("Texto do anúncio");
+    const body = page.getByLabel("Texto", { exact: true });
     await body.fill(
       "A fornada artesanal acabou de sair 👩🏽‍🍳🥖✨. أهلاً وسهلاً · ברוכים הבאים. " +
         "Reserve pelo site para retirar hoje: " +
@@ -395,16 +401,12 @@ test.describe("cartão de anúncio", () => {
       field.scrollLeft = 0;
       field.blur();
     });
-    // A edição dispara dois debounces de 400 ms: o autosave do rascunho e a
-    // prévia fiel. Capturar antes deles fotografava "Atualizando todas as
-    // plataformas…" sem o aviso de rascunho, e a corrida era decidida pela
-    // velocidade da máquina. O baseline é o estado assentado: rascunho salvo e
-    // prévia devolvida para o texto novo.
+    // A prévia da v4 fica recolhida. O estado assentado visível é o rascunho salvo;
+    // abri-la aqui faria o retrato voltar à anatomia anterior.
     await expect(
       page.getByText("Rascunho salvo neste dispositivo às 10:30."),
     ).toBeVisible();
     await expect(page.getByTestId("preview-status")).toHaveCount(0);
-    await waitForFaithfulPreview(page);
     await expectStableScreenshot(page, "announcement-card__long-edit", V320);
   });
 
@@ -412,7 +414,6 @@ test.describe("cartão de anúncio", () => {
   // sobrou: o disparo deixou de pedir cerimônia (ADR-031). Ela diz o efeito pelo nome.
   test("entregar agora abre confirmação factual", async ({ page }) => {
     await openScenario(page, "board-pending", "/__visual_board", V390);
-    await waitForFaithfulPreview(page);
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
     await expect(page.getByRole("dialog")).toContainText("12");
     await expect(page.getByRole("dialog")).toContainText("Publicar e enviar");
@@ -436,16 +437,25 @@ test.describe("cartão de anúncio", () => {
   // e a senha seguem como caminho quando o dispositivo não tem digital cadastrada.
   test("selo acima do limiar pede a segunda pessoa", async ({ page }) => {
     await openScenario(page, "seal-dual", "/__visual_board", V390);
-    await waitForFaithfulPreview(page);
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText("Acima de 500 clientes, outra pessoa confirma");
+    await expect(dialog).toContainText(
+      "Acima de 500 clientes, outra pessoa confirma",
+    );
     await expect(
-      dialog.getByRole("button", { name: "Pedir a confirmação de outra pessoa" }),
+      dialog.getByRole("button", {
+        name: "Pedir a confirmação de outra pessoa",
+      }),
     ).toBeVisible();
-    await expectStableScreenshot(page, "announcement-card__seal-dual", V390, "light", {
-      fullPage: false,
-    });
+    await expectStableScreenshot(
+      page,
+      "announcement-card__seal-dual",
+      V390,
+      "light",
+      {
+        fullPage: false,
+      },
+    );
   });
 
   test("conflito de rascunho compara as duas versões", async ({ page }) => {
@@ -464,7 +474,9 @@ test.describe("cartão de anúncio", () => {
     await expect(
       page.getByText("Este conteúdo também mudou em outra sessão."),
     ).toBeVisible();
-    await expect(page.getByText(/Dados conferidos às/)).toBeVisible();
+    await expect(
+      page.getByText(/Compare somente os campos em conflito/),
+    ).toBeVisible();
     await expectStableScreenshot(
       page,
       "announcement-card__draft-conflict",
@@ -513,9 +525,13 @@ test.describe("cartão de anúncio", () => {
   test("a prévia em tamanho real da confirmação sai do conteúdo congelado", async ({
     page,
   }) => {
-    await openScenario(page, "board-all-formats", "/__visual_board", V390);
+    // No celular a folha deixa a própria revisão visível atrás dela. No tablet, onde
+    // a caixa cobre a tela, o resumo e esta prévia acompanham a confirmação.
+    await openScenario(page, "board-all-formats", "/__visual_board", V768);
     await waitForFaithfulPreview(page);
-    await page.getByLabel("Texto do anúncio").fill("Texto selado na decisão");
+    await page
+      .getByLabel("Texto", { exact: true })
+      .fill("Texto selado na decisão");
     await expect(page.getByTestId("preview-status")).toHaveCount(0);
     await waitForFaithfulPreview(page);
     await page.getByRole("button", { name: "Continuar", exact: true }).click();
@@ -533,18 +549,20 @@ test.describe("cartão de anúncio", () => {
     await expectStableScreenshot(
       page,
       "simulated-preview__from-frozen-command",
-      V390,
+      V768,
       "light",
       { fullPage: false },
     );
   });
 
-  test("prévia de plataforma permanece ao lado da decisão", async ({
+  test("prévia de plataforma permanece disponível sem tomar a decisão", async ({
     page,
   }) => {
     await openScenario(page, "board-pending", "/__visual_board", V1280);
-    await expect(page.getByText("Prévia", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Dados conferidos às/)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Ver como fica em cada plataforma" }),
+    ).toBeVisible();
+    await expect(page.getByText("Exemplo com:")).toHaveCount(0);
     await expectStableScreenshot(
       page,
       "announcement-card__platform-preview",
@@ -566,10 +584,19 @@ test.describe("listas operacionais", () => {
       "/campaigns?state=inactive&platform=facebook&q=artesanal",
       V390,
     );
+    await page.getByRole("button", { name: "Buscar" }).click();
     await expect(
-      page.getByRole("heading", { level: 2, name: "Encontrar uma campanha" }),
+      page.getByRole("combobox", { name: "Buscar campanha" }),
+    ).toHaveValue("artesanal");
+    await expect(
+      page.getByRole("button", { name: /Desligadas 9/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByLabel("Plataforma")).toHaveValue("facebook");
+    await expect(
+      page.getByText(
+        "A busca da suíte não respondeu. O filtro desta tela continua valendo.",
+      ),
     ).toBeVisible();
-    await expect(page.getByLabel("Situação")).toHaveValue("inactive");
     await expectStableScreenshot(page, "campaigns__filters", V390);
   });
 
@@ -628,7 +655,9 @@ test.describe("listas operacionais", () => {
 
   test("edição longa mostra schema completo", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V390);
-    await page.locator("main li").first().locator("button").nth(1).click();
+    await page
+      .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
+      .click();
     await openCampaignStep(page, "Público e momento");
     await expect(page.getByRole("dialog")).toContainText("Público alvo");
     // ⚠️ Sem esta espera o retrato era cara ou coroa: às vezes a prévia fiel ainda
@@ -652,6 +681,17 @@ test.describe("listas operacionais", () => {
     await page.getByLabel("Começar em (opcional)").fill("2026-12-31");
     await page.getByLabel("Parar depois de (opcional)").fill("2026-01-01");
     await expect(page.getByRole("alert")).toContainText("data final");
+    await expect(
+      page.getByText("Rascunho salvo neste dispositivo às 10:30."),
+    ).toBeVisible();
+    // Preencher a data leva o scroll interno até o campo em alguns frames do
+    // Chromium. Este retrato documenta o formulário inteiro a partir do topo.
+    await page
+      .getByRole("dialog")
+      .last()
+      .evaluate((element) => {
+        element.scrollTop = 0;
+      });
     await expectStableScreenshot(
       page,
       "campaign-form__validation",
@@ -666,7 +706,9 @@ test.describe("listas operacionais", () => {
   // controles trocados e nenhum olho em cima é como a deriva de desenho volta.
   test("as escolhas de público são as peças do kit", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V390);
-    await page.locator("main li").first().locator("button").nth(1).click();
+    await page
+      .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
+      .click();
     await openCampaignStep(page, "Público e momento");
     // A prévia fiel chega DEPOIS e empurra o conteúdo; rolar antes dela assentar
     // retrataria o topo do diálogo, que é o que este retrato não quer.
@@ -694,7 +736,9 @@ test.describe("listas operacionais", () => {
 
   test("edição completa em desktop", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V1280);
-    await page.locator("main li").first().locator("button").nth(1).click();
+    await page
+      .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
+      .click();
     await waitForFaithfulPreview(page);
     await openCampaignStep(page, "Revisar");
     await expectStableScreenshot(
@@ -725,7 +769,9 @@ test.describe("listas operacionais", () => {
       name: "Minha campanha local",
     });
     await openScenario(page, "campaigns-dense", "/campaigns", V1440);
-    await page.locator("main li").first().locator("button").nth(1).click();
+    await page
+      .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
+      .click();
     await expect(
       page.getByText("Este conteúdo também mudou em outra sessão."),
     ).toBeVisible();
@@ -813,7 +859,7 @@ test.describe("listas operacionais", () => {
   }) => {
     await openScenario(page, "platforms-outage", "/platforms", V390);
     await expect(page.getByRole("alert")).toContainText(
-      "situação das conexões não pôde ser verificada",
+      "não significa que nenhuma plataforma esteja configurada",
     );
     await expectStableScreenshot(page, "platforms__outage", V390);
   });
@@ -1034,8 +1080,8 @@ test.describe("disparo manual seguro", () => {
       page.getByText("Este anúncio acabou de ser criado pelo seu disparo"),
     ).toBeVisible();
     await expect(page.getByText(/Nada foi disparado ainda/)).toBeVisible();
-    // A prévia fiel chega depois do card; sem esperá-la, o retrato pega o "Atualizando…".
-    await waitForFaithfulPreview(page);
+    // Na v4 a prévia fica recolhida até o operador pedir. O retrato protege a revisão
+    // no estado em que ela abre, sem reintroduzir conteúdo secundário na decisão.
     // ⚠️ A âncora `#review` rola a página, e o alvo dela AINDA CRESCE enquanto a prévia
     // carrega: o navegador parava em 15px numa rodada e 12px na outra, e o retrato
     // inteiro saía três pixels deslocado. Medido: 3 falhas em 5 rodadas, com e sem as
@@ -1062,7 +1108,6 @@ test.describe("resultado e histórico", () => {
   ] as const) {
     test(`detalhe ${state}`, async ({ page }) => {
       await openScenario(page, scenario, "/announcements/41", viewport);
-      if (scenario === "detail-pending") await waitForFaithfulPreview(page);
       await expectStableScreenshot(page, `announcement__${state}`, viewport);
     });
   }
@@ -1180,7 +1225,6 @@ test.describe("modos transversais", () => {
     page,
   }) => {
     await openScenario(page, "board-pending", "/__visual_board", V1024);
-    await waitForFaithfulPreview(page);
     await page.addStyleTag({
       content: `
         * { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important; }

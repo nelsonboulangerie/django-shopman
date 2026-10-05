@@ -221,6 +221,20 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   // página quando o axe mede o contraste).
   await expect(page.locator("[data-operator-phone-menu-panel]")).toHaveCount(0);
   await expect(page.locator("html")).toHaveClass(/dark/);
+  // A classe troca antes de o navegador terminar de recalcular a cor herdada da
+  // barra. O axe não pode medir o primeiro frame escuro ainda com o token claro.
+  await expect
+    .poll(() =>
+      page.locator("[data-operator-phone-menu]").evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--muted-foreground)";
+        element.append(probe);
+        const settled = getComputedStyle(element).color === getComputedStyle(probe).color;
+        probe.remove();
+        return settled;
+      }),
+    )
+    .toBe(true);
   await expectNoAxeViolations(page, "plataformas 320×568 em tema escuro");
   await expectNoHorizontalOverflow(page, "plataformas 320×568 em tema escuro");
   await expectTouchTargets(page, "plataformas 320×568 em tema escuro");

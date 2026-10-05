@@ -29,16 +29,24 @@ async function onCreate(payload: Record<string, unknown>) {
   dialog.value = null;
   await refreshCampaigns();
   await nextTick();
-  document.querySelector<HTMLElement>(`[data-marketing-offer="${created.ref}"]`)?.focus();
+  document
+    .querySelector<HTMLElement>(`[data-marketing-offer="${created.ref}"]`)
+    ?.focus();
 }
 
 function money(cents: number): string {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(cents / 100);
 }
 
 function offerValue(offer: (typeof offers.value)[number]): string {
   if (offer.type === "percent") return `${offer.value}%`;
-  if (offer.type === "free_delivery") return offer.value === 0 ? "Frete grátis" : `Frete grátis até ${money(offer.value)}`;
+  if (offer.type === "free_delivery")
+    return offer.value === 0
+      ? "Frete grátis"
+      : `Frete grátis até ${money(offer.value)}`;
   return money(offer.value);
 }
 
@@ -52,10 +60,27 @@ const STATUS: Record<string, string> = {
 onKeyStroke(["r", "R"], (event) => {
   const target = event.target as HTMLElement | null;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
-  if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+  if (target?.closest("input, textarea, select, [contenteditable='true']"))
+    return;
   void refresh();
 });
-const MENU = [{ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" }];
+const MENU = [
+  { key: "coupon", label: "Criar cupom", icon: "lucide:ticket-percent" },
+  {
+    key: "refresh",
+    label: "Atualizar",
+    icon: "lucide:refresh-cw",
+    shortcut: "R",
+  },
+];
+
+function selectMenu(key: string) {
+  if (key === "coupon") {
+    dialog.value = "coupon";
+    return;
+  }
+  if (key === "refresh") void refresh();
+}
 
 useHead({ title: "Ofertas e cupons" });
 </script>
@@ -64,9 +89,17 @@ useHead({ title: "Ofertas e cupons" });
   <main class="flex min-h-0 flex-1 flex-col" data-marketing-offers>
     <MarketingPageHeader title="Ofertas e cupons" phone-hides-actions>
       <template #actions>
-        <MarketingPageMenu heading="Ofertas e cupons" :items="MENU" @select="refresh()" />
+        <MarketingPageMenu
+          heading="Ofertas e cupons"
+          :items="MENU"
+          @select="selectMenu"
+        />
         <UiButton type="button" variant="outline" @click="dialog = 'coupon'">
-          <Icon name="lucide:ticket-percent" class="size-4" aria-hidden="true" />
+          <Icon
+            name="lucide:ticket-percent"
+            class="size-4"
+            aria-hidden="true"
+          />
           Criar cupom
         </UiButton>
         <UiButton type="button" @click="dialog = 'offer'">
@@ -75,23 +108,46 @@ useHead({ title: "Ofertas e cupons" });
         </UiButton>
       </template>
       <template #phone-actions>
-        <UiIconButton icon="lucide:plus" label="Criar oferta" @click="dialog = 'offer'" />
+        <MarketingPageMenu
+          heading="Ofertas e cupons"
+          :items="MENU"
+          @select="selectMenu"
+        />
+        <UiIconButton
+          icon="lucide:plus"
+          label="Criar oferta"
+          @click="dialog = 'offer'"
+        />
       </template>
     </MarketingPageHeader>
 
     <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-5 sm:px-6">
       <p class="max-w-2xl text-sm text-muted-foreground">
-        Oferta dá o benefício sozinha. Cupom pede o código na sacola e nasce com a regra dele, sem mexer em oferta que
-        já está no ar.
+        Oferta dá o benefício sozinha. Cupom pede o código na sacola e nasce com
+        a regra dele, sem mexer em oferta que já está no ar.
       </p>
 
-      <div v-if="error" class="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm" role="alert">
+      <div
+        v-if="error"
+        class="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
+        role="alert"
+      >
         <strong>As ofertas e cupons não carregaram.</strong>
-        <span class="text-muted-foreground"> Atualize antes de criar uma campanha com desconto.</span>
+        <span class="text-muted-foreground">
+          Atualize antes de criar uma campanha com desconto.</span
+        >
       </div>
 
-      <div v-if="loading && !offers.length" class="grid gap-3 md:grid-cols-2" aria-busy="true">
-        <div v-for="n in 2" :key="n" class="h-32 animate-pulse rounded-xl bg-muted" />
+      <div
+        v-if="loading && !offers.length"
+        class="grid gap-3 md:grid-cols-2"
+        aria-busy="true"
+      >
+        <div
+          v-for="n in 2"
+          :key="n"
+          class="h-32 animate-pulse rounded-xl bg-muted"
+        />
       </div>
 
       <ul v-else-if="offers.length" class="grid gap-3 md:grid-cols-2">
@@ -104,22 +160,43 @@ useHead({ title: "Ofertas e cupons" });
           :class="offer.ref === createdRef ? 'ring-2 ring-primary/30' : ''"
         >
           <div class="flex items-start gap-3">
-            <span class="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-              <Icon name="lucide:badge-percent" class="size-5" aria-hidden="true" />
+            <span
+              class="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"
+            >
+              <Icon
+                name="lucide:badge-percent"
+                class="size-5"
+                aria-hidden="true"
+              />
             </span>
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <strong>{{ offer.name }}</strong>
-                <span class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold">{{ STATUS[offer.status] ?? offer.status }}</span>
+                <span
+                  class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold"
+                  >{{ STATUS[offer.status] ?? offer.status }}</span
+                >
               </div>
               <span class="mt-1 block text-sm">{{ offerValue(offer) }}</span>
               <span class="mt-1 block text-xs text-muted-foreground">
                 <template v-if="offer.coupons.length">
-                  Cupom {{ offer.coupons.map((coupon) => coupon.code).join(", ") }} ·
-                  {{ offer.coupons.reduce((total, coupon) => total + coupon.uses_count, 0) }} usos
+                  Cupom
+                  {{ offer.coupons.map((coupon) => coupon.code).join(", ") }} ·
+                  {{
+                    offer.coupons.reduce(
+                      (total, coupon) => total + coupon.uses_count,
+                      0,
+                    )
+                  }}
+                  usos
                 </template>
-                <template v-else-if="offer.available_for_campaign">Pode ir numa campanha.</template>
-                <template v-else>Regra comercial cadastrada; não pode ir numa campanha nova agora.</template>
+                <template v-else-if="offer.available_for_campaign"
+                  >Pode ir numa campanha.</template
+                >
+                <template v-else
+                  >Regra comercial cadastrada; não pode ir numa campanha nova
+                  agora.</template
+                >
               </span>
             </div>
           </div>
@@ -132,10 +209,19 @@ useHead({ title: "Ofertas e cupons" });
           </NuxtLink>
         </li>
       </ul>
-      <div v-else class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center">
-        <Icon name="lucide:badge-percent" class="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
+      <div
+        v-else
+        class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
+      >
+        <Icon
+          name="lucide:badge-percent"
+          class="mx-auto size-8 text-muted-foreground"
+          aria-hidden="true"
+        />
         <p class="mt-2 font-semibold">Nenhuma oferta ainda</p>
-        <p class="mt-1 text-sm text-muted-foreground">Crie uma oferta automática ou um cupom para começar.</p>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Crie uma oferta automática ou um cupom para começar.
+        </p>
       </div>
     </div>
 
