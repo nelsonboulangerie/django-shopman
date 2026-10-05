@@ -38,8 +38,21 @@ As falhas misturavam três causas diferentes:
 - os quatro contratos foram corrigidos e chegam ao retrato. As imagens novas não
   são gravadas localmente: a baseline canônica só nasce no navegador pinado da CI.
 
-## Fechamento esperado
+## Prova no navegador oficial
 
-O primeiro push é deliberadamente draft: a CI produz os `actual.png` que ainda não
-existiam. Depois da revisão desses artefatos, um segundo commit incorpora apenas os
-retratos aprovados e o job precisa terminar 79/79 verde antes da fila de merge.
+O primeiro push do PR #1483 deixou toda a cadeia anterior à comparação visual
+verde: build, testes unitários e de componente, E2E e acessibilidade. A matriz
+terminou com **57/79 retratos verdes** e 22 diferenças puramente visuais, sem erro
+de navegação, seletor ou comportamento.
+
+Os 22 `actual.png` vieram do artefato `marketing-browser-gates` da execução
+`37254086207`. Todos foram inspecionados antes da promoção: painel responsivo,
+busca e filtros, formulário de cupom, formulários de campanha, conflito de edição,
+confirmações simples e em duas pessoas, prévias simuladas, indisponibilidade de
+plataformas, handoff e espaçamento WCAG. Três retratos eram novos e 19 substituíam
+baselines da anatomia anterior.
+
+## Critério de fechamento
+
+O segundo commit incorpora somente esses retratos produzidos pelo Chromium pinado
+da CI. A frente só entra na fila quando a nova execução terminar 79/79 verde.
