@@ -6,6 +6,7 @@
       :class="
         styles({
           translucent: props.translucent,
+          fullscreen: props.fullscreen,
           class: normalizeClass(props.class) || undefined,
         })
       "
@@ -40,8 +41,13 @@
 <script lang="ts" setup>
   import { DialogContent, useForwardPropsEmits } from "reka-ui";
   import type { DialogContentEmits, DialogContentProps } from "reka-ui";
+  import { tv } from "tailwind-variants";
+  import type { VariantProps } from "tailwind-variants";
+  import { reactiveOmit } from "@vueuse/core";
   import { normalizeClass } from "vue";
   import type { HTMLAttributes } from "vue";
+
+  import { getTranslucentFloatingPanelClasses } from "../../../utils/translucent";
 
   defineOptions({ inheritAttrs: false });
   const props = defineProps<
@@ -60,11 +66,13 @@
       to?: string | HTMLElement;
       /** Whether to render the content with a translucent surface. */
       translucent?: boolean;
+      /** Whether the dialog occupies the complete viewport, for camera and kiosk tasks. */
+      fullscreen?: VariantProps<typeof styles>["fullscreen"];
     }
   >();
   const emits = defineEmits<DialogContentEmits>();
   const forwarded = useForwardPropsEmits(
-    reactiveOmit(props, "icon", "title", "description", "class", "hideClose", "to", "translucent"),
+    reactiveOmit(props, "icon", "title", "description", "class", "hideClose", "to", "translucent", "fullscreen"),
     emits
   );
 
@@ -74,6 +82,11 @@
       translucent: {
         true: getTranslucentFloatingPanelClasses("background"),
       },
+      fullscreen: {
+        true: "inset-0 top-0 left-0 size-full max-h-none max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none",
+        false: "",
+      },
     },
+    defaultVariants: { fullscreen: false },
   });
 </script>

@@ -584,10 +584,11 @@ useHead({ title: "Catálogo" });
              declarada no seletor). A escolha persiste por estação. -->
         <ColumnPicker v-if="surfaces.length" v-model="hiddenColumns" :columns="columnOptions" />
         <!-- ⋯ (v3): a última leitura útil, Atualizar e Exportar moram aqui -->
-        <div class="relative">
-          <UiIconButton icon="lucide:ellipsis" label="Mais ações do catálogo" aria-haspopup="menu" :aria-expanded="headerMenuOpen" data-catalog-more @click="headerMenuOpen = !headerMenuOpen" />
-          <div v-if="headerMenuOpen" class="fixed inset-0 z-40" @click="headerMenuOpen = false" />
-          <div v-if="headerMenuOpen" class="absolute right-0 z-50 mt-1 w-64 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg" role="menu" data-catalog-menu>
+        <UiPopover v-model:open="headerMenuOpen">
+          <UiPopoverTrigger as-child>
+            <UiIconButton icon="lucide:ellipsis" label="Mais ações do catálogo" data-catalog-more />
+          </UiPopoverTrigger>
+          <UiPopoverContent v-if="headerMenuOpen" align="end" :side-offset="6" class="w-64 rounded-lg p-1.5 shadow-lg" role="menu" data-catalog-menu>
             <div class="px-2.5 pt-1 pb-2"><ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" /></div>
             <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" @click="refresh()">
               <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" :class="pending ? 'motion-safe:animate-spin' : ''" />Atualizar
@@ -595,8 +596,8 @@ useHead({ title: "Catálogo" });
             <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" data-catalog-export @click="exportCatalog">
               <Icon name="lucide:download" class="size-4 text-muted-foreground" />Exportar CSV
             </button>
-          </div>
-        </div>
+          </UiPopoverContent>
+        </UiPopover>
       </template>
       <template #filters>
         <span v-if="collections.length" class="mr-1 shrink-0 op-eyebrow text-muted-foreground">Coleção</span>
@@ -1141,18 +1142,16 @@ useHead({ title: "Catálogo" });
       @pause-channel="pauseDetailChannel"
     />
 
-    <!-- lightbox: foto ampliada (clique em qualquer lugar fecha) -->
-    <Transition
-      enter-active-class="transition duration-150 ease-out" enter-from-class="opacity-0" enter-to-class="opacity-100"
-      leave-active-class="transition duration-100 ease-in" leave-from-class="opacity-100" leave-to-class="opacity-0"
-    >
-      <div v-if="zoom" class="fixed inset-0 z-50 grid cursor-zoom-out place-items-center bg-black/70 p-8" role="dialog" aria-modal="true" @click="zoom = null" @keydown.esc="zoom = null">
+    <!-- lightbox canônico: foco preso, Escape e retorno ao disparador são do Reka. -->
+    <UiDialog :open="Boolean(zoom)" @update:open="(value) => { if (!value) zoom = null; }">
+      <UiDialogContent v-if="zoom" class="max-w-[calc(100%-2rem)] cursor-zoom-out border-0 bg-transparent p-8 shadow-none sm:max-w-[calc(100%-2rem)]" @click="zoom = null">
+        <UiDialogTitle class="sr-only">Foto ampliada de {{ zoom.name }}</UiDialogTitle>
         <figure class="flex flex-col items-center gap-3">
           <img :src="zoom.url" :alt="zoom.name" class="max-h-[80vh] max-w-[85vw] rounded-xl object-contain shadow-2xl" />
-          <figcaption class="rounded-full bg-black/40 px-3 py-1 text-sm font-medium text-white">{{ zoom.name }}</figcaption>
+          <figcaption class="rounded-full bg-black/60 px-3 py-1 text-sm font-medium text-white">{{ zoom.name }}</figcaption>
         </figure>
-      </div>
-    </Transition>
+      </UiDialogContent>
+    </UiDialog>
   </main>
 </template>
 

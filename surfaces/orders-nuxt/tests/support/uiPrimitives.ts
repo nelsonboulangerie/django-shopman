@@ -1,4 +1,5 @@
 import { config } from "@vue/test-utils";
+import { Fragment, defineComponent, h, inject, provide } from "vue";
 
 // O interruptor entra de VERDADE, não como stub: ele vive no operator-kit e é SFC
 // puro (nenhum runtime Nuxt). Stubar seria justamente apagar o contrato que estes
@@ -15,10 +16,46 @@ import OperatorOrderDetail from "../../../operator-kit/app/components/OperatorOr
 import UiRadio from "../../../operator-kit/app/components/UiRadio.vue";
 import UiRadioGroup from "../../../operator-kit/app/components/UiRadioGroup.vue";
 
+const popoverToggleKey = Symbol("popover-toggle");
+const UiPopover = defineComponent({
+  name: "UiPopover",
+  props: { open: Boolean },
+  emits: ["update:open"],
+  setup(props, { emit, slots }) {
+    provide(popoverToggleKey, () => emit("update:open", !props.open));
+    return () => h(Fragment, slots.default?.());
+  },
+});
+const UiPopoverTrigger = defineComponent({
+  name: "UiPopoverTrigger",
+  setup(_, { slots }) {
+    const toggle = inject<() => void>(popoverToggleKey, () => undefined);
+    return () => h("span", { onClick: toggle }, slots.default?.());
+  },
+});
+const passthrough = (name: string) => defineComponent({
+  name,
+  setup(_, { slots }) {
+    return () => h(Fragment, slots.default?.());
+  },
+});
+const passthroughRoot = (name: string) => defineComponent({
+  name,
+  inheritAttrs: false,
+  setup(_, { attrs, slots }) {
+    return () => h("div", attrs, slots.default?.());
+  },
+});
+
 config.global.components = {
   ...config.global.components,
   UiSwitch,
   OperatorOrderDetail,
   UiRadio,
   UiRadioGroup,
+  UiPopover,
+  UiPopoverTrigger,
+  UiPopoverContent: passthroughRoot("UiPopoverContent"),
+  UiSheet: passthrough("UiSheet"),
+  UiSheetContent: passthroughRoot("UiSheetContent"),
 };

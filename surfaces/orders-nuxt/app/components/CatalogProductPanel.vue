@@ -525,20 +525,18 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             </template>
           </p>
         </div>
-        <div class="relative ml-auto shrink-0">
-          <button
-            type="button"
-            class="grid size-control place-items-center rounded-md border border-border bg-card text-foreground transition hover:bg-accent"
-            aria-label="Mais ações do produto"
-            aria-haspopup="menu"
-            :aria-expanded="headerMenuOpen"
-            data-panel-more
-            @click="headerMenuOpen = !headerMenuOpen"
-          >
-            <Icon name="lucide:ellipsis" class="size-5" />
-          </button>
-          <div v-if="headerMenuOpen" class="fixed inset-0 z-40" @click="headerMenuOpen = false" />
-          <div v-if="headerMenuOpen" class="absolute right-0 z-50 mt-1 w-60 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg" role="menu" data-panel-menu>
+        <UiPopover v-model:open="headerMenuOpen">
+          <UiPopoverTrigger as-child>
+            <button
+              type="button"
+              class="grid size-control place-items-center rounded-md border border-border bg-card text-foreground transition hover:bg-accent"
+              aria-label="Mais ações do produto"
+              data-panel-more
+            >
+              <Icon name="lucide:ellipsis" class="size-5" />
+            </button>
+          </UiPopoverTrigger>
+          <UiPopoverContent v-if="headerMenuOpen" align="end" :side-offset="6" class="w-60 rounded-lg p-1.5 shadow-lg" role="menu" data-panel-menu>
             <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" :disabled="!detail" @click="toggleHidden">
               <Icon :name="draft.is_published ? 'lucide:eye-off' : 'lucide:eye'" class="size-4 text-muted-foreground" />{{ draft.is_published ? "Ocultar no catálogo" : "Exibir no catálogo" }}
             </button>
@@ -548,8 +546,8 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             <a v-if="historyHref" :href="historyHref" target="_blank" rel="noopener" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 op-body transition hover:bg-accent" data-panel-history>
               <Icon name="lucide:history" class="size-4 text-muted-foreground" />Histórico
             </a>
-          </div>
-        </div>
+          </UiPopoverContent>
+        </UiPopover>
         <button
           type="button"
           class="grid size-control shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"

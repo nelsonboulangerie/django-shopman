@@ -1,8 +1,6 @@
 <script setup lang="ts">
 // O ⋯ de cada gráfico (prévia `depois-bi-vendas`, pino 7): os números daquele quadro
 // num CSV, sem sair da leitura. O CSV sai dos mesmos pontos que o gráfico desenha.
-import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
-
 const props = defineProps<{
   title: string;
   /** Cabeçalho e linhas do CSV (o que o quadro mostra). */
@@ -42,25 +40,17 @@ function exportCsv() {
 </script>
 
 <template>
-  <PopoverRoot v-model:open="open">
-    <PopoverTrigger as-child>
+  <UiPopover v-model:open="open">
+    <UiPopoverTrigger as-child>
       <UiIconButton icon="lucide:ellipsis-vertical" :label="`Mais sobre ${title}`" :active="open" class="-mt-1 -mr-2" data-bi-chart-menu />
-    </PopoverTrigger>
-    <PopoverPortal>
-      <PopoverContent
-        side="bottom"
-        align="end"
-        :side-offset="6"
-        :collision-padding="8"
-        class="z-50 w-64 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg outline-hidden"
-      >
-        <div role="menu" class="flex flex-col">
-          <button type="button" role="menuitem" :class="ITEM" @click="exportCsv">
-            <Icon name="lucide:download" class="size-4 text-muted-foreground" aria-hidden="true" />
-            Exportar CSV deste quadro
-          </button>
-        </div>
-      </PopoverContent>
-    </PopoverPortal>
-  </PopoverRoot>
+    </UiPopoverTrigger>
+    <UiPopoverContent align="end" :side-offset="6" :collision-padding="8" class="w-64 rounded-lg p-1.5 shadow-lg">
+      <div role="menu" class="flex flex-col">
+        <button type="button" role="menuitem" :class="ITEM" @click="exportCsv">
+          <Icon name="lucide:download" class="size-4 text-muted-foreground" aria-hidden="true" />
+          Exportar CSV deste quadro
+        </button>
+      </div>
+    </UiPopoverContent>
+  </UiPopover>
 </template>

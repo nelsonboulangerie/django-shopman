@@ -132,12 +132,12 @@ onBeforeUnmount(stop);
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
+  <UiDialog :open="open" @update:open="(value) => { if (!value) close(); }">
+    <UiDialogContent
       v-if="open"
-      class="fixed inset-0 z-[70] flex flex-col bg-black text-white"
-      role="dialog"
-      aria-modal="true"
+      fullscreen
+      hide-close
+      class="flex flex-col bg-black text-white"
       :aria-label="title"
       data-pos-code-scanner
     >
@@ -171,6 +171,6 @@ onBeforeUnmount(stop);
           Digite o código
         </button>
       </div>
-    </div>
-  </Teleport>
+    </UiDialogContent>
+  </UiDialog>
 </template>

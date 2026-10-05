@@ -2792,15 +2792,15 @@ function onPackageCode(code: string) {
       </section>
     </div>
 
-    <div v-if="countConfirmOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Confirmar contagem">
-      <div class="w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-lg">
+    <UiDialog :open="countConfirmOpen" @update:open="(value) => (countConfirmOpen = value)">
+      <UiDialogContent v-if="countConfirmOpen" class="sm:max-w-lg">
         <div class="flex items-start gap-3">
           <Icon name="lucide:clipboard-check" class="mt-0.5 size-5 text-muted-foreground" />
           <div>
-            <h2 class="op-title">Lançar a contagem no estoque?</h2>
-            <p class="mt-1 op-body text-muted-foreground">
+            <UiDialogTitle class="op-title">Lançar a contagem no estoque?</UiDialogTitle>
+            <UiDialogDescription class="mt-1 op-body text-muted-foreground">
               Cada divergência vira um ajuste definitivo no livro de estoque, registrado com o seu usuário e o motivo informado.
-            </p>
+            </UiDialogDescription>
           </div>
         </div>
         <div v-if="countDivergentRows.length" class="mt-4 max-h-64 space-y-2 overflow-y-auto">
@@ -2831,17 +2831,18 @@ function onPackageCode(code: string) {
             Confirmar ajustes
           </button>
         </div>
-      </div>
-    </div>
+      </UiDialogContent>
+    </UiDialog>
 
-    <div v-if="scannerOpen" class="fixed inset-0 z-50 flex flex-col bg-black p-3 text-white md:p-6" role="dialog" aria-modal="true" aria-label="Escanear NF">
+    <UiDialog :open="scannerOpen" @update:open="(value) => { if (!value) stopInvoiceScanner(); }">
+    <UiDialogContent v-if="scannerOpen" fullscreen hide-close class="flex flex-col bg-black p-3 text-white md:p-6" aria-label="Escanear NF">
       <div class="flex items-center justify-between gap-3 pb-3">
         <button type="button" class="inline-flex size-12 items-center justify-center rounded-full bg-white/10" aria-label="Fechar câmera" @click="() => stopInvoiceScanner()">
           <Icon name="lucide:x" class="size-6" />
         </button>
         <div class="text-center">
           <p class="op-eyebrow text-white/60">Receber</p>
-          <h2 class="op-title">Escanear NF</h2>
+          <UiDialogTitle class="op-title text-white">Escanear NF</UiDialogTitle>
         </div>
         <button v-if="scannerCanTorch" type="button" class="inline-flex size-12 items-center justify-center rounded-full" :class="scannerTorchOn ? 'bg-suite-badge text-suite-badge-foreground' : 'bg-white/10'" :aria-label="scannerTorchOn ? 'Desligar lanterna' : 'Ligar lanterna'" @click="toggleScannerTorch">
           <Icon :name="scannerTorchOn ? 'lucide:flashlight-off' : 'lucide:flashlight'" class="size-6" />
@@ -2865,6 +2866,7 @@ function onPackageCode(code: string) {
           Ler foto da NF
         </button>
       </div>
-    </div>
+    </UiDialogContent>
+    </UiDialog>
   </main>
 </template>

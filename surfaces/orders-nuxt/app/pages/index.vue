@@ -785,22 +785,20 @@ function printQueue() {
         <template v-if="!compactHeader && !isPhone">
           <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
                no quadro e na tabela, a ordem deles -->
-          <div class="relative">
-            <button
-              type="button"
-              class="inline-flex h-control min-w-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
-              aria-haspopup="menu"
-              :aria-expanded="sortOpen"
-              :title="view === 'queue' ? 'Ordenar a Fila' : 'Ordenar (atalho: s)'"
-              data-board-sort
-              @click="sortOpen = !sortOpen"
-            >
-              <Icon name="lucide:arrow-up-down" class="size-4" />
-              <span>{{ view === "queue" ? queueSortLabel : sortLabel }}</span>
-              <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-            </button>
-            <div v-if="sortOpen" class="fixed inset-0 z-40" @click="sortOpen = false" />
-            <div v-if="sortOpen" class="absolute right-0 z-50 mt-1 w-64 overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-lg" role="menu">
+          <UiPopover v-model:open="sortOpen">
+            <UiPopoverTrigger as-child>
+              <button
+                type="button"
+                class="inline-flex h-control min-w-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
+                :title="view === 'queue' ? 'Ordenar a Fila' : 'Ordenar (atalho: s)'"
+                data-board-sort
+              >
+                <Icon name="lucide:arrow-up-down" class="size-4" />
+                <span>{{ view === "queue" ? queueSortLabel : sortLabel }}</span>
+                <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
+              </button>
+            </UiPopoverTrigger>
+            <UiPopoverContent v-if="sortOpen" align="end" :side-offset="6" class="w-64 overflow-hidden p-1" role="menu">
               <template v-if="view === 'queue'">
                 <button
                   v-for="opt in QUEUE_SORT_OPTIONS"
@@ -829,8 +827,8 @@ function printQueue() {
                   <Icon v-if="sort === opt.key" name="lucide:check" class="size-4 text-primary" />
                 </button>
               </template>
-            </div>
-          </div>
+            </UiPopoverContent>
+          </UiPopover>
 
           <!-- visão (v4): dois segmentos, Fila F | Supervisão T. A Supervisão é a tabela
                densa com seleção em lote; as três colunas (Entrada, Preparo, Saída) moram
@@ -870,17 +868,11 @@ function printQueue() {
         <!-- ⋯ da fila (do tablet para cima; no celular ele mora no fim dos recortes). O posto
              Saída (v4 `gestor-colunas`) não tem ⋯: a leitura se atualiza sozinha e o Ciente
              é tocar a faixa da Entrada que pulsa. -->
-        <div v-if="!isPhone && !exitPostView" class="relative">
-          <UiIconButton
-            icon="lucide:ellipsis"
-            label="Mais ações da fila"
-            aria-haspopup="menu"
-            :aria-expanded="moreOpen"
-            data-board-more
-            @click="moreOpen = !moreOpen"
-          />
-          <div v-if="moreOpen" class="fixed inset-0 z-40" @click="moreOpen = false" />
-          <div v-if="moreOpen" class="absolute right-0 z-50 mt-1 max-h-[calc(100dvh-5rem)] w-72 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-lg">
+        <UiPopover v-if="!isPhone && !exitPostView" v-model:open="moreOpen">
+          <UiPopoverTrigger as-child>
+            <UiIconButton icon="lucide:ellipsis" label="Mais ações da fila" data-board-more />
+          </UiPopoverTrigger>
+          <UiPopoverContent v-if="moreOpen" align="end" :side-offset="6" class="max-h-[calc(100dvh-5rem)] w-72 overflow-y-auto rounded-lg p-0 shadow-lg">
             <BoardMenu
               :metadata="readMetadata"
               :failed="Boolean(error)"
@@ -902,8 +894,8 @@ function printQueue() {
               @export="menuDo(exportCsv)"
               @print="menuDo(printQueue)"
             />
-          </div>
-        </div>
+          </UiPopoverContent>
+        </UiPopover>
       </template>
 
       <!-- recortes (v4): Todos, o eixo do fluxo (Entrega, Retirada) e o canal num
@@ -948,22 +940,20 @@ function printQueue() {
           Retirada
         </UiFilterChip>
         <!-- o canal: um seletor; o canal escolhido vira chip cheio, com o × de volta -->
-        <div v-if="channels.length" class="relative">
-          <button
-            type="button"
-            class="inline-flex h-10 items-center gap-2 rounded-full border px-3 op-label transition"
-            :class="channel !== 'all' ? 'border-primary bg-primary/10 font-semibold' : 'border-dashed border-border text-muted-foreground hover:bg-accent'"
-            aria-haspopup="menu"
-            :aria-expanded="channelOpen"
-            data-channel-picker
-            @click="channelOpen = !channelOpen"
-          >
-            <Icon :name="channel !== 'all' ? `lucide:${lucideIcon(allCards.find((c) => c.channel_ref === channel)?.channel_icon || '')}` : 'lucide:plus'" class="size-4" />
-            {{ channel !== "all" ? channelLabel(channel) : "Canal" }}
-            <span v-if="channel !== 'all'" class="tnum text-muted-foreground">{{ channels.find((o) => o.ref === channel)?.count ?? 0 }}</span>
-          </button>
-          <div v-if="channelOpen" class="fixed inset-0 z-40" @click="channelOpen = false" />
-          <div v-if="channelOpen" class="absolute left-0 z-50 mt-1 w-56 overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground shadow-lg" role="menu">
+        <UiPopover v-if="channels.length" v-model:open="channelOpen">
+          <UiPopoverTrigger as-child>
+            <button
+              type="button"
+              class="inline-flex h-10 items-center gap-2 rounded-full border px-3 op-label transition"
+              :class="channel !== 'all' ? 'border-primary bg-primary/10 font-semibold' : 'border-dashed border-border text-muted-foreground hover:bg-accent'"
+              data-channel-picker
+            >
+              <Icon :name="channel !== 'all' ? `lucide:${lucideIcon(allCards.find((c) => c.channel_ref === channel)?.channel_icon || '')}` : 'lucide:plus'" class="size-4" />
+              {{ channel !== "all" ? channelLabel(channel) : "Canal" }}
+              <span v-if="channel !== 'all'" class="tnum text-muted-foreground">{{ channels.find((o) => o.ref === channel)?.count ?? 0 }}</span>
+            </button>
+          </UiPopoverTrigger>
+          <UiPopoverContent v-if="channelOpen" align="start" :side-offset="6" class="w-56 overflow-hidden p-1" role="menu">
             <button
               type="button"
               role="menuitemradio"
@@ -989,8 +979,8 @@ function printQueue() {
               <span class="tnum text-muted-foreground">{{ opt.count }}</span>
               <Icon v-if="channel === opt.ref" name="lucide:check" class="size-4 text-primary" />
             </button>
-          </div>
-        </div>
+          </UiPopoverContent>
+        </UiPopover>
         <button
           v-if="channel !== 'all'"
           type="button"
@@ -1025,9 +1015,8 @@ function printQueue() {
     </OperatorPageHeader>
 
     <!-- celular: o painel dos controles sobe do pé, ao alcance do polegar -->
-    <template v-if="isPhone && moreOpen">
-      <div class="fixed inset-0 z-40 bg-black/30" @click="moreOpen = false" />
-      <div class="fixed inset-x-2 bottom-2 z-50 max-h-[80dvh] overflow-y-auto rounded-xl border bg-popover text-popover-foreground shadow-xl" data-board-menu-sheet>
+    <UiSheet v-if="isPhone" :open="moreOpen" @update:open="(value) => (moreOpen = value)">
+      <UiSheetContent v-if="moreOpen" side="bottom" composition="bare" class="inset-x-2 bottom-2 h-auto max-h-[80dvh] w-auto overflow-y-auto rounded-xl border" data-board-menu-sheet>
         <BoardMenu
           :metadata="readMetadata"
           :failed="Boolean(error)"
@@ -1049,8 +1038,8 @@ function printQueue() {
           @export="menuDo(exportCsv)"
           @print="menuDo(printQueue)"
         />
-      </div>
-    </template>
+      </UiSheetContent>
+    </UiSheet>
 
     <!-- celular: as colunas viram abas -->
     <div
