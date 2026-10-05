@@ -81,6 +81,38 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
   return found;
 }
 
+function sourceWithoutComments(file: string): string {
+  const source = readFileSync(file, "utf8");
+  let clean = "";
+  let index = 0;
+
+  while (index < source.length) {
+    const next = source.slice(index);
+    if (next.startsWith("/*")) {
+      const end = source.indexOf("*/", index + 2);
+      index = end === -1 ? source.length : end + 2;
+      continue;
+    }
+    if (next.startsWith("//")) {
+      const end = source.indexOf("\n", index + 2);
+      if (end === -1) break;
+      clean += "\n";
+      index = end + 1;
+      continue;
+    }
+    if (next.startsWith("<!--")) {
+      const end = source.indexOf("-->", index + 4);
+      index = end === -1 ? source.length : end + 3;
+      continue;
+    }
+
+    clean += source[index];
+    index += 1;
+  }
+
+  return clean;
+}
+
 describe("operator-kit: o que é do kit não renasce copiado no app", () => {
   for (const app of OPERATOR_APPS) {
     it(`${app} não redeclara apiPath nem operatorSessionOnError`, () => {
@@ -155,10 +187,7 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
     it(`${app} não reescreve abas compostas à mão`, () => {
       const offenders: string[] = [];
       for (const file of sourceFiles(resolve(surfacesDir, app, "app"))) {
-        const source = readFileSync(file, "utf8")
-          .replace(/\/\*[\s\S]*?\*\//g, "")
-          .replace(/\/\/[^\n]*/g, "")
-          .replace(/<!--[\s\S]*?-->/g, "");
+        const source = sourceWithoutComments(file);
         if (/\brole=["']tablist["']/.test(source)) {
           offenders.push(file.slice(surfacesDir.length + 1));
         }
@@ -172,10 +201,7 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
     it(`${app} não devolve checkbox ou rádio ao desenho nativo do sistema`, () => {
       const offenders: string[] = [];
       for (const file of sourceFiles(resolve(surfacesDir, app, "app"))) {
-        const source = readFileSync(file, "utf8")
-          .replace(/\/\*[\s\S]*?\*\//g, "")
-          .replace(/\/\/[^\n]*/g, "")
-          .replace(/<!--[\s\S]*?-->/g, "");
+        const source = sourceWithoutComments(file);
         if (/<input(?=[^>]*\btype=["'](?:checkbox|radio)["'])[^>]*>/i.test(source)) {
           offenders.push(file.slice(surfacesDir.length + 1));
         }
@@ -189,10 +215,7 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
     it(`${app} não devolve data ou hora ao seletor nativo do sistema`, () => {
       const offenders: string[] = [];
       for (const file of sourceFiles(resolve(surfacesDir, app, "app"))) {
-        const source = readFileSync(file, "utf8")
-          .replace(/\/\*[\s\S]*?\*\//g, "")
-          .replace(/\/\/[^\n]*/g, "")
-          .replace(/<!--[\s\S]*?-->/g, "");
+        const source = sourceWithoutComments(file);
         if (/<input(?=[^>]*\btype=["'](?:date|time|datetime-local|month|week)["'])[^>]*>/i.test(source)) {
           offenders.push(file.slice(surfacesDir.length + 1));
         }
