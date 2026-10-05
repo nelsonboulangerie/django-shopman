@@ -92,6 +92,31 @@
   --sidebar-accent-foreground: #3b2a1e;
   --sidebar-border: #dec9bb;
   --sidebar-ring: #6b5019;
+
+  /* Ponte Nuxt UI -> Shopman. O componente continua usando sua anatomia e seus
+     estados oficiais; apenas a linguagem visual (marca, superfícies, texto e
+     bordas) muda. Estes nomes são a API semântica oficial do Nuxt UI 4. */
+  --ui-primary: var(--primary);
+  --ui-secondary: var(--secondary-foreground);
+  --ui-success: var(--success);
+  --ui-info: var(--info);
+  --ui-warning: var(--warning);
+  --ui-error: var(--destructive);
+  --ui-text-dimmed: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
+  --ui-text-muted: var(--muted-foreground);
+  --ui-text-toned: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));
+  --ui-text: var(--foreground);
+  --ui-text-highlighted: var(--foreground);
+  --ui-text-inverted: var(--primary-foreground);
+  --ui-bg: var(--background);
+  --ui-bg-muted: color-mix(in srgb, var(--muted) 52%, var(--background));
+  --ui-bg-elevated: var(--muted);
+  --ui-bg-accented: var(--accent);
+  --ui-bg-inverted: var(--foreground);
+  --ui-border: var(--border);
+  --ui-border-muted: color-mix(in srgb, var(--border) 72%, var(--background));
+  --ui-border-accented: color-mix(in srgb, var(--border) 82%, var(--foreground));
+  --ui-border-inverted: var(--foreground);
 }
 
 .dark {
@@ -142,6 +167,12 @@
   --sidebar-accent-foreground: #f0e6d2;
   --sidebar-border: #463528;
   --sidebar-ring: #d4a53f;
+
+  /* No escuro a mesma ponte continua válida, mas os pares invertidos precisam
+     acompanhar a polaridade dos tokens Shopman. */
+  --ui-text-inverted: var(--primary-foreground);
+  --ui-bg-inverted: var(--foreground);
+  --ui-border-inverted: var(--foreground);
 }
 
 /* ============================================================================

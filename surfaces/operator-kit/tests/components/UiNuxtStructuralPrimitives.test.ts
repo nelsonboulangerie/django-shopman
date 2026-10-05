@@ -72,7 +72,7 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     expect(document.body.textContent).not.toContain("Close");
   });
 
-  it("guia uma sequência com a anatomia Nuxt UI e a aparência Shopman", async () => {
+  it("guia uma sequência com o tema canônico do Nuxt UI e os tokens Shopman", async () => {
     mounted = await mountSuspended(UiStepper, {
       attachTo: document.body,
       props: {
@@ -97,10 +97,10 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     const triggerClass = root.querySelector("[data-slot='trigger']")?.className ?? "";
     expect(triggerClass).toContain("size-10");
     expect(triggerClass).toContain("sm:size-14");
-    expect(triggerClass).toContain("bg-muted");
-    expect(triggerClass).toContain("text-muted-foreground");
+    expect(triggerClass).toContain("bg-elevated");
+    expect(triggerClass).toContain("text-muted");
     expect(triggerClass).toContain("group-data-[state=active]:bg-primary");
-    expect(triggerClass).toContain("group-data-[state=active]:text-primary-foreground");
+    expect(triggerClass).toContain("group-data-[state=active]:text-inverted");
     expect(triggerClass).toContain("focus-visible:outline-3");
     expect(triggerClass).not.toContain("before:");
     expect(root.querySelector("[data-slot='indicator']")?.className).toContain("size-full");
