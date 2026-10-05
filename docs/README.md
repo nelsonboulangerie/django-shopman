@@ -83,6 +83,7 @@ Guias de domínio seguem a estrutura: Conceitos → Modelos → Serviços → Pr
 | [Cidade aproximada do dispositivo](guides/geolite2-city.md) | `shopman/shop/services/ip_location.py` | Base GeoLite2 local na imagem, limiar de confiança de 50 km, chave de build e a atualização que NÃO é automática |
 | [Backstage realtime](guides/backstage-realtime.md) | `shopman/backstage` | SSE, canais nomeados e fallback de polling |
 | [Backstage accessibility](guides/backstage-accessibility.md) | superfícies operador | Acessibilidade das telas de operador |
+| [UX/UI canônica de operador](guides/operator-surface-ux.md) | superfícies Nuxt de operador | Como um app novo nasce visualmente canônico: operator-kit, Nuxt UI/Reka, Omotenashi e validação por dispositivo |
 | [Operations](guides/operations.md) | operação | Rotinas operacionais do dia a dia |
 | [Backup e restore](guides/backup-and-restore.md) | dados | As três camadas: Postgres gerenciado, cofre de dados curados (`export_backup`/`import_backup`), ciclo com Google Sheets |
 | [Operator security hardening](guides/operator-security-hardening.md) | operação | PIN, lock de operador, sessões staff |
