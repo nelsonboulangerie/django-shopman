@@ -92,7 +92,7 @@ function meta(status: string): StatusMeta {
         type="button"
         data-terminal-health-trigger
         data-rail-section
-        class="relative flex w-16 flex-col items-center gap-[3px] rounded-[10px] px-0 pt-[7px] pb-1.5 text-center op-eyebrow leading-[13px] tracking-normal normal-case text-rail-foreground transition hover:bg-rail-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
+        class="relative flex w-[68px] flex-col items-center gap-[3px] rounded-[10px] px-1 pt-[7px] pb-1.5 text-center op-eyebrow leading-[13px] tracking-normal normal-case text-rail-foreground transition hover:bg-rail-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
         :aria-label="`Terminal ${pos.terminal_label}: ${overall.label}`"
         :title="`${pos.terminal_label}: ${overall.label}`"
       >

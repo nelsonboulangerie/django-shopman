@@ -94,6 +94,9 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     expect(headerClass).not.toContain("rounded-lg");
     expect(headerClass).not.toContain("bg-muted");
     expect(root.querySelectorAll("[data-slot='trigger']")).toHaveLength(3);
+    expect(root.querySelector("[data-slot='trigger']")?.className).not.toContain("focus-visible:outline");
+    expect(root.querySelector("[data-slot='indicator']")?.className).toContain("before:inset-[-5px]");
+    expect(root.querySelector("[data-slot='indicator']")?.className).toContain("group-focus-visible/step-trigger:before:border-ring");
     expect(root.querySelectorAll("[data-slot='separator']")).toHaveLength(2);
     for (const separator of root.querySelectorAll("[data-slot='separator']")) {
       expect(separator.className).toContain("h-0.5");
