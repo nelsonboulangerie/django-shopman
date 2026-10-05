@@ -1,5 +1,5 @@
 import { config } from "@vue/test-utils";
-import { defineComponent, h } from "vue";
+import { defineComponent, h, ref } from "vue";
 
 // Os primitivos de ESCOLHA entram de verdade, não como stub: eles vivem no
 // operator-kit e são SFC puro (nenhum runtime Nuxt, só o `Icon`, que cada teste já
@@ -114,6 +114,96 @@ const NuxtCheckbox = defineComponent({
         ],
       );
     };
+  },
+});
+
+// O mesmo limite vale para o SelectMenu: este dublê é somente a infraestrutura
+// Nuxt UI abaixo do UiSelect real. O comportamento completo de foco, portal e
+// teclado permanece coberto no operator-kit; aqui preservamos o contrato que os
+// formulários do Marketing dirigem (gatilho, busca, opções e v-model).
+const NuxtSelectMenu = defineComponent({
+  name: "NuxtSelectMenu",
+  inheritAttrs: false,
+  props: {
+    modelValue: {
+      type: Object as () => Record<string, unknown>,
+      default: undefined,
+    },
+    items: {
+      type: Array as () => Array<Record<string, unknown>>,
+      default: () => [],
+    },
+    disabled: Boolean,
+    placeholder: String,
+    searchInput: { type: [Boolean, Object], default: false },
+    ui: { type: Object, default: () => ({}) },
+  },
+  emits: ["update:modelValue", "update:searchTerm", "highlight"],
+  setup(props, { attrs, emit, expose, slots }) {
+    const open = ref(false);
+    const triggerRef = ref<HTMLButtonElement>();
+    expose({ triggerRef });
+
+    const choose = (item: Record<string, unknown>) => {
+      if (item.disabled) return;
+      emit("update:modelValue", item);
+      open.value = false;
+    };
+
+    return () =>
+      h("div", { "data-slot": "select-menu" }, [
+        h(
+          "button",
+          {
+            ...attrs,
+            ref: triggerRef,
+            type: "button",
+            disabled: props.disabled,
+            role: "combobox",
+            "aria-haspopup": "listbox",
+            "aria-expanded": String(open.value),
+            class: [props.ui.base, attrs.class],
+            onClick: () => {
+              if (!props.disabled) open.value = !open.value;
+            },
+          },
+          slots.default?.() ?? props.placeholder,
+        ),
+        open.value
+          ? h("div", { role: "listbox", "data-dismissable-layer": "" }, [
+              props.searchInput
+                ? h("input", {
+                    ...(props.searchInput as Record<string, unknown>),
+                    role: "combobox",
+                    onInput: (event: Event) =>
+                      emit(
+                        "update:searchTerm",
+                        (event.target as HTMLInputElement).value,
+                      ),
+                  })
+                : null,
+              props.items.length
+                ? props.items.map((item) =>
+                    h(
+                      "button",
+                      {
+                        key: String(item.value),
+                        type: "button",
+                        role: "option",
+                        "aria-selected": String(item === props.modelValue),
+                        "aria-disabled": item.disabled ? "true" : undefined,
+                        "data-slot": "item",
+                        onMouseenter: () => emit("highlight", { value: item }),
+                        onClick: () => choose(item),
+                      },
+                      slots.item?.({ item }) ??
+                        String(item.label ?? item.value),
+                    ),
+                  )
+                : h("div", { "data-slot": "empty" }, slots.empty?.()),
+            ])
+          : null,
+      ]);
   },
 });
 
@@ -313,6 +403,7 @@ const UiStepper = defineComponent({
 config.global.components = {
   ...config.global.components,
   NuxtCheckbox,
+  NuxtSelectMenu,
   NuxtSwitch,
   UiButton,
   UiCheckbox,
