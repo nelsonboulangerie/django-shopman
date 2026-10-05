@@ -121,20 +121,24 @@ const content = computed(() => ({
 }));
 const ui = {
   base: "h-control w-full text-sm",
-  content: "max-h-64",
+  // O menu usa portal no body; acima de um diálogo ele precisa ficar no nível
+  // seguinte da pilha, ou o conteúdo do próprio diálogo intercepta o toque.
+  content: "z-[60] max-h-64",
   item: "min-h-control px-3 py-2.5 text-sm",
   itemDescription: "text-xs",
 };
 
-function onUpdate(value: T) {
-  const option = props.options.find((candidate) => candidate.value === value);
+function onUpdate(selected: ChoiceOption<T> | undefined) {
+  const option = props.options.find(
+    (candidate) => candidate.value === selected?.value,
+  );
   if (!option) return;
-  emit("update:modelValue", value);
+  emit("update:modelValue", option.value);
   emit("change", option);
 }
 
-function onHighlight(payload: { value: T } | undefined) {
-  activeValue.value = payload?.value;
+function onHighlight(payload: { value: ChoiceOption<T> } | undefined) {
+  activeValue.value = payload?.value.value;
 }
 
 defineExpose({ focus: () => picker.value?.triggerRef?.focus() });
@@ -147,7 +151,7 @@ defineExpose({ focus: () => picker.value?.triggerRef?.focus() });
     <NuxtSelectMenu
       ref="picker"
       v-bind="attrs"
-      :model-value="modelValue"
+      :model-value="chosen"
       :items="filteredOptions"
       :disabled="disabled"
       :placeholder="placeholder"
@@ -157,7 +161,6 @@ defineExpose({ focus: () => picker.value?.triggerRef?.focus() });
       :aria-labelledby="triggerLabelledBy"
       :ui="ui"
       class="w-full"
-      value-key="value"
       label-key="label"
       description-key="hint"
       size="lg"
