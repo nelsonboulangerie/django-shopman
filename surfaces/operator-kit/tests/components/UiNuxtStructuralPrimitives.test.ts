@@ -89,8 +89,16 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
 
     const root = document.body.querySelector("[data-slot='stepper-shell']")!;
     expect(root.textContent).toContain("2. Destinos. Escolha onde publicar.");
-    expect(root.querySelector("[data-slot='header']")?.className).toContain("rounded-lg");
+    const headerClass = root.querySelector("[data-slot='header']")?.className ?? "";
+    expect(headerClass).toContain("bg-transparent");
+    expect(headerClass).not.toContain("rounded-lg");
+    expect(headerClass).not.toContain("bg-muted");
     expect(root.querySelectorAll("[data-slot='trigger']")).toHaveLength(3);
+    expect(root.querySelectorAll("[data-slot='separator']")).toHaveLength(2);
+    for (const separator of root.querySelectorAll("[data-slot='separator']")) {
+      expect(separator.className).toContain("h-0.5");
+      expect(separator.className).not.toContain("hidden");
+    }
     expect(root.querySelectorAll("[data-slot='title']")[1]?.textContent?.trim()).toBe("2. Destinos");
     expect((root.querySelectorAll("[data-slot='trigger']")[2] as HTMLButtonElement).disabled).toBe(true);
     expect(root.querySelectorAll("[role='status']")[1]?.textContent?.trim()).toBe("Etapa 2 de 3");

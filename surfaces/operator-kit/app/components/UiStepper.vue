@@ -29,14 +29,14 @@ const activeItem = computed(() => props.items[current.value]);
 
 const ui = {
   root: "w-full",
-  header: "flex gap-1 rounded-lg border border-border bg-muted/30 p-1",
-  item: "group/step relative flex min-h-control min-w-0 flex-1 items-center rounded-md px-2 text-muted-foreground transition data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=completed]:text-primary",
-  container: "shrink-0",
-  trigger: "absolute inset-0 z-0 flex items-center rounded-md px-2 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed",
-  indicator: "relative z-10 grid size-6 shrink-0 place-items-center rounded-full border border-border text-[11px] group-data-[state=active]/step:border-primary group-data-[state=active]/step:bg-primary group-data-[state=active]/step:text-primary-foreground group-data-[state=completed]/step:border-primary group-data-[state=completed]/step:text-primary",
-  separator: "hidden",
-  wrapper: "pointer-events-none relative z-10 ml-7 hidden min-w-0 sm:block",
-  title: "truncate text-left text-xs font-medium text-current",
+  header: "flex items-start gap-0 rounded-none border-0 bg-transparent p-0",
+  item: "group/step relative flex min-w-0 flex-1 flex-col items-center gap-2 text-center text-muted-foreground transition data-[state=active]:text-foreground data-[state=completed]:text-primary",
+  container: "relative flex w-full items-center justify-center",
+  trigger: "relative z-10 grid size-9 place-items-center rounded-full outline-none transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60",
+  indicator: "grid size-7 place-items-center rounded-full border border-border bg-card text-xs font-semibold tabular-nums text-muted-foreground shadow-xs transition group-data-[state=active]/step:border-primary group-data-[state=active]/step:bg-primary group-data-[state=active]/step:text-primary-foreground group-data-[state=completed]/step:border-primary group-data-[state=completed]/step:bg-primary/10 group-data-[state=completed]/step:text-primary",
+  separator: "absolute top-1/2 left-1/2 z-0 h-0.5 w-full -translate-y-1/2 rounded-full bg-border transition group-data-[state=completed]/step:bg-primary",
+  wrapper: "pointer-events-none hidden min-w-0 max-w-28 sm:block",
+  title: "truncate text-center text-xs font-medium text-current",
   description: "hidden",
   content: "hidden",
 };

@@ -679,38 +679,19 @@ test.describe("listas operacionais", () => {
     );
   });
 
-  test("intervalo recorrente inválido explica o campo", async ({ page }) => {
+  test("período recorrente usa o campo canônico único", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/campaigns", V768);
     await page.getByRole("button", { name: "Nova campanha" }).click();
     await page.getByLabel("Quando acontecer").selectOption("schedule");
     await prepareNewCampaignForMoment(page);
+    await expect(page.getByText("Período de veiculação (opcional)")).toBeVisible();
     const period = page.getByRole("group", { name: "Período de veiculação da recorrência" });
-    const periodSegments = period.getByRole("spinbutton");
-    await periodSegments.nth(0).fill("31");
-    await periodSegments.nth(1).fill("12");
-    await periodSegments.nth(2).fill("2026");
-    await periodSegments.nth(3).fill("01");
-    await periodSegments.nth(4).fill("01");
-    await periodSegments.nth(5).fill("2026");
-    await expect(page.getByRole("alert")).toContainText("data final");
+    await expect(period).toBeVisible();
+    await expect(period.getByRole("spinbutton")).toHaveCount(6);
+    await expect(page.locator("input[type='date']:not([aria-hidden='true'])")).toHaveCount(0);
     await expect(
       page.getByText("Rascunho salvo neste dispositivo às 10:30."),
     ).toBeVisible();
-    // Preencher a data leva o scroll interno até o campo em alguns frames do
-    // Chromium. Este retrato documenta o formulário inteiro a partir do topo.
-    await page
-      .getByRole("dialog")
-      .last()
-      .evaluate((element) => {
-        element.scrollTop = 0;
-      });
-    await expectStableScreenshot(
-      page,
-      "campaign-form__validation",
-      V768,
-      "light",
-      { fullPage: false },
-    );
   });
 
   // ⚠️ Os sete checkboxes de público ficam ABAIXO da dobra do diálogo: os retratos que

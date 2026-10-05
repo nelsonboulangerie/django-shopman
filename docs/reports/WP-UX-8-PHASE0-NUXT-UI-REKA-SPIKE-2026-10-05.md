@@ -22,6 +22,22 @@ A prova confirmou a abordagem prevista no WP:
 - toda tela consome um componente Shopman, nunca `@nuxt/ui` diretamente;
 - classes, fontes, cores, densidade, copy e comportamento responsivo permanecem Shopman.
 
+## Anatomia canônica e tokens Shopman
+
+O `unstyled: true` desliga a aparência padrão do Nuxt UI, mas não autoriza substituir a
+anatomia do componente por outro padrão visual. A regra para os wrappers canônicos é:
+
+- Nuxt UI/Reka seguem donos da estrutura, dos slots, dos estados e da semântica;
+- Shopman aplica identidade visual por tokens: cor, tipografia, raio, densidade, foco,
+  espaçamento e comportamento responsivo;
+- slots estruturais não são escondidos sem justificativa de uso documentada;
+- quando a anatomia canônica piorar um caso operacional real, o wrapper pode usar Reka
+  diretamente, mas deve registrar o ganho funcional.
+
+O `UiStepper` é o exemplo travado em teste: ele preserva `StepperIndicator`,
+`StepperSeparator` e `StepperTitle`. A aparência Shopman é aplicada sobre a sequência
+clássica de círculos conectados, não sobre um card segmentado de botões.
+
 `UiButton` e `UiModal` são as provas executáveis dessa arquitetura. Ambos usam componentes
 Nuxt UI sem tema e recebem integralmente as classes e o contrato público do Shopman. As cópias
 locais ainda prevalecem enquanto cada app é migrado; removê-las progressivamente faz o app
