@@ -20,7 +20,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "docs/reference/operator-component-ledger.json"
 REGISTRY = ROOT / "surfaces/registry.json"
