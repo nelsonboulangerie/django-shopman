@@ -592,6 +592,11 @@ test.describe("listas operacionais", () => {
       page.getByRole("button", { name: /Desligadas 9/ }),
     ).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByLabel("Plataforma")).toHaveValue("facebook");
+    await expect(
+      page.getByText(
+        "A busca da suíte não respondeu. O filtro desta tela continua valendo.",
+      ),
+    ).toBeVisible();
     await expectStableScreenshot(page, "campaigns__filters", V390);
   });
 

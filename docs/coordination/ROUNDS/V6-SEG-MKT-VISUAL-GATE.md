@@ -52,6 +52,12 @@ confirmações simples e em duas pessoas, prévias simuladas, indisponibilidade 
 plataformas, handoff e espaçamento WCAG. Três retratos eram novos e 19 substituíam
 baselines da anatomia anterior.
 
+A execução seguinte (`37254821053`) chegou a **78/79**. A única diferença não era
+de layout: o teste fotografou a busca da suíte ainda em `Buscando…`, antes de a
+resposta de indisponibilidade aparecer. A matriz agora espera explicitamente esse
+estado final antes do retrato; o cenário isolado passou localmente sem alteração da
+imagem canônica.
+
 ## Critério de fechamento
 
 O segundo commit incorpora somente esses retratos produzidos pelo Chromium pinado
