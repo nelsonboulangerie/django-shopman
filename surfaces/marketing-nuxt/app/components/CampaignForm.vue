@@ -29,15 +29,6 @@ import {
   scheduleSummary,
 } from "~/utils/marketingSchedule";
 import type { ScheduleFold } from "~/utils/marketingSchedule";
-import {
-  StepperDescription,
-  StepperIndicator,
-  StepperItem,
-  StepperRoot,
-  StepperSeparator,
-  StepperTitle,
-  StepperTrigger,
-} from "reka-ui";
 
 const props = defineProps<{
   rule: Campaign | null; // null = criando
@@ -82,12 +73,6 @@ const isActive = ref(true);
 const baseAudienceRules = ref<Record<string, unknown>>({});
 const baseSchedule = ref<Record<string, unknown>>({});
 const currentStep = ref(0);
-const activeStepperStep = computed({
-  get: () => currentStep.value + 1,
-  set: (step: number | undefined) => {
-    if (typeof step === "number") goToStep(step - 1);
-  },
-});
 
 const COMPOSER_STEPS = [
   { label: "Objetivo", hint: "Dê nome e escolha o que inicia a campanha." },
@@ -323,6 +308,14 @@ const onceResolution = computed(() =>
 const dateRangeValid = computed(
   () => !startsOn.value || !endsOn.value || startsOn.value <= endsOn.value,
 );
+const recurrencePeriod = computed({
+  get: () => ({ start: startsOn.value, end: endsOn.value }),
+  set: (next: { start?: string; end?: string }) => {
+    startsOn.value = next.start ?? "";
+    endsOn.value = next.end ?? "";
+    scheduleTouched.value = true;
+  },
+});
 
 const canSubmit = computed(
   () =>
@@ -345,6 +338,14 @@ const stepReady = computed(() => [
 function stepEnabled(index: number): boolean {
   return index === 0 || stepReady.value.slice(0, index).every(Boolean);
 }
+
+const stepperItems = computed(() =>
+  COMPOSER_STEPS.map((step, index) => ({
+    title: step.label,
+    description: step.hint,
+    disabled: !stepEnabled(index),
+  })),
+);
 
 function goToStep(index: number) {
   if (index < 0 || index >= COMPOSER_STEPS.length || !stepEnabled(index))
@@ -762,80 +763,12 @@ function submit() {
       @discard="draft.discard()"
     />
 
-    <nav aria-label="Etapas da campanha" data-campaign-stepper>
-      <!-- Stepper deliberadamente clássico: os marcos e a linha comunicam sequência
-           e progresso antes da leitura. No celular só a etapa atual ganha texto;
-           no desktop os cinco rótulos permanecem visíveis. -->
-      <StepperRoot
-        v-model="activeStepperStep"
-        :linear="false"
-        orientation="horizontal"
-        aria-label="Etapas da campanha"
-        class="campaign-stepper flex items-start"
-      >
-        <StepperItem
-          v-for="(step, index) in COMPOSER_STEPS"
-          :key="step.label"
-          v-slot="{ state }"
-          :step="index + 1"
-          :disabled="!stepEnabled(index)"
-          class="relative flex min-w-0 flex-1 justify-center"
-        >
-          <StepperSeparator
-            v-if="index < COMPOSER_STEPS.length - 1"
-            class="absolute top-[22px] left-1/2 h-0.5 w-full"
-            :class="state === 'completed' ? 'bg-primary' : 'bg-border'"
-          />
-          <StepperTrigger
-            class="campaign-step-button relative z-10 flex min-h-11 w-11 flex-col items-center rounded-full px-0 py-1.5 text-center font-medium transition disabled:cursor-default sm:w-full sm:rounded-md sm:px-1"
-            :class="
-              state === 'active'
-                ? 'text-foreground'
-                : state === 'completed'
-                  ? 'text-primary'
-                  : 'text-muted-foreground'
-            "
-            :aria-current="currentStep === index ? 'step' : undefined"
-            :aria-label="`${index + 1}. ${step.label}`"
-          >
-            <StepperIndicator
-              class="campaign-step-marker grid size-8 shrink-0 place-items-center rounded-full border bg-background text-xs transition"
-              :class="
-                state === 'active'
-                  ? 'border-primary bg-primary text-primary-foreground shadow-sm'
-                  : state === 'completed'
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border text-muted-foreground'
-              "
-            >
-              <Icon
-                v-if="state === 'completed'"
-                name="lucide:check"
-                class="size-4"
-                aria-hidden="true"
-              />
-              <span v-else>{{ index + 1 }}</span>
-            </StepperIndicator>
-            <StepperTitle
-              as="span"
-              class="mt-1.5 hidden max-w-full text-[11px] leading-tight sm:block md:text-xs"
-            >
-              <span class="sr-only">{{ index + 1 }}. </span>
-              {{ step.label }}
-            </StepperTitle>
-            <StepperDescription as="span" class="sr-only">
-              {{ step.hint }}
-            </StepperDescription>
-          </StepperTrigger>
-        </StepperItem>
-      </StepperRoot>
-      <p class="mt-2 text-xs text-muted-foreground sm:text-center" role="status">
-        <strong class="block text-sm text-foreground sm:hidden">
-          {{ currentStep + 1 }}. {{ COMPOSER_STEPS[currentStep]?.label }}.
-        </strong>
-        <span>{{ COMPOSER_STEPS[currentStep]?.hint }}</span>
-      </p>
-    </nav>
+    <UiStepper
+      :model-value="currentStep"
+      :items="stepperItems"
+      label="Etapas da campanha"
+      @update:model-value="goToStep"
+    />
 
     <div v-show="currentStep === 0">
       <label
@@ -974,11 +907,11 @@ function submit() {
           >Dia e hora</label
         >
         <div class="flex flex-wrap items-center gap-2">
-          <UiInput
+          <UiDateTimeField
             id="rule-once-at"
             v-model="onceAt"
-            type="datetime-local"
-            class="sm:w-64"
+            label="Dia e hora do disparo"
+            class="sm:max-w-md"
             @update:model-value="
               scheduleTouched = true;
               onceFold = '';
@@ -1046,11 +979,11 @@ function submit() {
             class="mb-1 block text-xs font-medium text-muted-foreground"
             >Hora</label
           >
-          <UiInput
+          <UiTimeField
             id="rule-fire-at"
             v-model="fireAt"
-            type="time"
-            class="w-28"
+            label="Hora do disparo"
+            class="w-32"
             @update:model-value="scheduleTouched = true"
           />
         </div>
@@ -1081,35 +1014,23 @@ function submit() {
           </p>
         </div>
 
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label
-              for="rule-starts-on"
-              class="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              Começar em (opcional)
-            </label>
-            <UiInput
-              id="rule-starts-on"
-              v-model="startsOn"
-              type="date"
-              @update:model-value="scheduleTouched = true"
-            />
-          </div>
-          <div>
-            <label
-              for="rule-ends-on"
-              class="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              Parar depois de (opcional)
-            </label>
-            <UiInput
-              id="rule-ends-on"
-              v-model="endsOn"
-              type="date"
-              @update:model-value="scheduleTouched = true"
-            />
-          </div>
+        <div>
+          <label
+            for="rule-period"
+            class="mb-1 block text-xs font-medium text-muted-foreground"
+          >
+            Período de veiculação (opcional)
+          </label>
+          <UiDateRangeField
+            id="rule-period"
+            v-model="recurrencePeriod"
+            label="Período de veiculação da recorrência"
+            class="max-w-full sm:max-w-md"
+          />
+          <p class="mt-1 text-xs text-muted-foreground">
+            Deixe o início ou o fim vazio quando a recorrência não tiver esse
+            limite.
+          </p>
         </div>
         <p v-if="extraWindows.length" class="text-xs text-muted-foreground">
           Horários adicionais preservados:
@@ -1538,22 +1459,3 @@ function submit() {
     </div>
   </form>
 </template>
-
-<style scoped>
-/* O foco pertence ao marco, não ao quinto inteiro da barra. O anel continua com
-   3 px, contraste e offset do envelope de acessibilidade do Marketing. */
-.campaign-step-button:focus-visible {
-  outline: none !important;
-}
-
-.campaign-step-button:focus-visible .campaign-step-marker {
-  outline: 3px solid var(--ring);
-  outline-offset: 2px;
-}
-
-/* O primitive anuncia o progresso em inglês. A tela já mantém uma região de
-   status em português logo abaixo, então o anúncio duplicado sai da árvore. */
-.campaign-stepper :deep(> [role="status"]) {
-  display: none;
-}
-</style>

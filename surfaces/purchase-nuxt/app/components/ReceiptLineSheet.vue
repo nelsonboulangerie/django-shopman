@@ -223,7 +223,7 @@ function onCheck(checked: boolean) {
               <Icon name="lucide:chevron-right" class="size-5" />
             </button>
           </div>
-          <UiSheetX v-else />
+          <UiSheetX v-else placement="inline" />
         </div>
         <!-- Por cima, o título é o do diálogo (leitor de tela); encaixada, um h2. -->
         <h2 v-if="docked" class="text-base leading-snug font-semibold" data-slot="sheet-title">{{ label }}</h2>
@@ -520,6 +520,7 @@ function onCheck(checked: boolean) {
       v-if="preview"
       :data-receipt-sheet="preview.line.id"
       side="right"
+      composition="bare"
       class="w-full sm:max-w-xl"
     >
       <ReuseBody />

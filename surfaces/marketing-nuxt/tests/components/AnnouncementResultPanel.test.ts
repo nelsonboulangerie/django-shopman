@@ -2,7 +2,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { computed, defineComponent, ref, watch } from "vue";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import AnnouncementResultPanel from "~/components/AnnouncementResultPanel.vue";
-import VerificationCodeInput from "~/components/Ui/VerificationCodeInput.vue";
+import VerificationCodeInput from "../../../operator-kit/app/components/Ui/VerificationCodeInput.vue";
 import type {
   AnnouncementProjectionV2,
   MarketingActionProjectionV2,

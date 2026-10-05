@@ -13,13 +13,11 @@
 // aparecem sempre; quando o contexto não deixa, ficam apagados com o motivo curto
 // ("fechado"), para o operador ter a resposta de "e amanhã não dá?" sem procurar.
 //
-// "Outra data" abre o seletor nativo do sistema (com min/max). O campo nativo fica
-// À VISTA logo abaixo depois do toque: há navegador que recusa abrir o seletor por
-// script, e o toque não pode morrer em silêncio (clique nunca inerte).
+// "Outra data" revela o campo + calendário canônico da suíte (com min/max).
 //
 // Semântica: grupo de rádio (`role="radiogroup"`), uma parada de tabulação, setas
 // andam entre as opções. A data é escolha exclusiva, não botão que fica apertado.
-import { computed, nextTick, ref, useTemplateRef } from "vue";
+import { computed, ref } from "vue";
 
 import { dayBlockReason, otherDayCaption, quickDayOptions, weekdayAndDate } from "../presentation/dates";
 
@@ -56,7 +54,6 @@ const otherCaption = computed(() => otherDayCaption(props.modelValue, options.va
 
 const showOther = ref(false);
 const otherError = ref("");
-const otherInput = useTemplateRef<HTMLInputElement>("otherInput");
 const buttons = ref<HTMLButtonElement[]>([]);
 
 function pick(iso: string, reason: string) {
@@ -66,23 +63,13 @@ function pick(iso: string, reason: string) {
   if (iso !== props.modelValue) emit("update:modelValue", iso);
 }
 
-async function openOther() {
+function openOther() {
   if (props.disabled) return;
   showOther.value = true;
   otherError.value = "";
-  await nextTick();
-  const input = otherInput.value;
-  if (!input) return;
-  input.focus();
-  try {
-    input.showPicker?.();
-  } catch {
-    // Sem gesto reconhecido ou sem suporte: o campo já está à vista e focado.
-  }
 }
 
-function pickOther(event: Event) {
-  const iso = (event.target as HTMLInputElement).value;
+function pickOther(iso: string) {
   if (!iso) return;
   const reason = dayBlockReason(iso, context.value);
   if (reason) {
@@ -182,15 +169,14 @@ const tileClass = (selected: boolean, blocked: boolean) => [
 
     <label v-if="showOther" class="grid gap-1 text-sm">
       <span class="text-xs font-medium text-muted-foreground">Escolha a data</span>
-      <input
-        ref="otherInput"
-        type="date"
-        class="min-h-control w-full rounded-md border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
-        :value="otherSelected ? modelValue : ''"
+      <UiDateField
+        :model-value="otherSelected ? modelValue : ''"
         :min="min"
         :max="max"
+        :disabled="disabled"
+        :label="`Outra data para ${label.toLocaleLowerCase('pt-BR')}`"
         data-day-other-input
-        @change="pickOther"
+        @update:model-value="pickOther"
       />
     </label>
     <p v-if="otherError" class="text-xs font-medium text-destructive" role="alert" data-day-other-error>

@@ -64,6 +64,9 @@ jobs:
           python -m pip install --quiet pyyaml
           python scripts/check_surface_registry.py
 
+      - name: Gate de componentes canônicos do operador
+        run: python scripts/check_operator_component_ledger.py
+
   app-quality:
     name: ${{ matrix.app }}
     runs-on: ubuntu-latest
@@ -290,10 +293,10 @@ jobs:
 
       - name: Audit operator-kit supply chain
         working-directory: surfaces/operator-kit
-        run: npm audit --audit-level=high
+        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
 
       - name: Audit Marketing supply chain
-        run: npm audit --audit-level=high
+        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
 
       - name: Upload browser evidence
         if: always()

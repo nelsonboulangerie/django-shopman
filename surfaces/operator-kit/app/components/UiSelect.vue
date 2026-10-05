@@ -136,6 +136,7 @@ const triggerLabelledBy = computed(() => {
 
 /** Nome do campo para o CAMPO DE BUSCA, que não tem valor a compor. */
 const searchLabelledBy = computed(() => props.labelledBy ?? (props.label ? labelId : undefined));
+const searchAriaLabel = computed(() => (searchLabelledBy.value ? undefined : props.label ?? props.searchPlaceholder));
 
 // Só anuncia quando há busca em curso: leitor de tela falando "12 resultados"
 // numa lista que ninguém filtrou é ruído.
@@ -275,7 +276,7 @@ defineExpose({ focus: () => trigger.value?.focus() });
 
     <div
       v-if="open"
-      data-slot="select-panel"
+      data-slot="select-content"
       class="absolute inset-x-0 top-full z-50 mt-1 rounded-md border border-border bg-card shadow-lg"
     >
       <div v-if="searchable" class="border-b border-border p-2">
@@ -290,52 +291,57 @@ defineExpose({ focus: () => trigger.value?.focus() });
           :aria-controls="listId"
           :aria-activedescendant="activeId"
           :aria-labelledby="searchLabelledBy"
+          :aria-label="searchAriaLabel"
           :placeholder="searchPlaceholder"
+          data-slot="select-input"
           class="h-control w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
           @keydown="onKeydown"
         />
       </div>
 
-      <p v-if="!results.length" class="px-3 py-3 text-sm text-muted-foreground">
-        <slot name="empty" :query="query">{{ emptyText }}</slot>
-      </p>
       <ul
-        v-else
         :id="listId"
         ref="list"
         role="listbox"
         :tabindex="searchable ? -1 : 0"
         :aria-labelledby="searchLabelledBy"
         :aria-activedescendant="searchable ? undefined : activeId"
+        data-slot="select-viewport"
         class="max-h-64 overflow-y-auto py-1 outline-none"
         @keydown="onListKeydown"
       >
-        <li
-          v-for="(option, index) in results"
-          :id="optionId(index)"
-          :key="String(option.value)"
-          role="option"
-          :aria-selected="option.value === modelValue"
-          :aria-disabled="option.disabled || undefined"
-          :data-active="index === activeIndex"
-          class="flex min-h-control w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm"
-          :class="[
-            index === activeIndex ? 'bg-accent' : '',
-            option.value === modelValue ? 'font-semibold text-primary' : '',
-            option.disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
-          ]"
-          @pointerdown.prevent
-          @click="choose(option)"
-          @pointerenter="active = index"
-        >
-          <slot name="option" :option="option" :active="index === activeIndex" :selected="option.value === modelValue">
-            <span class="min-w-0">
-              <span class="block truncate">{{ option.label }}</span>
-              <span v-if="option.hint" class="block truncate text-xs text-muted-foreground">{{ option.hint }}</span>
-            </span>
-            <Icon v-if="option.value === modelValue" name="lucide:check" class="size-4 shrink-0" />
-          </slot>
+        <li v-if="!results.length" role="presentation" data-slot="select-empty" class="px-3 py-3 text-sm text-muted-foreground">
+          <slot name="empty" :query="query">{{ emptyText }}</slot>
         </li>
+        <template v-else>
+          <li
+            v-for="(option, index) in results"
+            :id="optionId(index)"
+            :key="String(option.value)"
+            role="option"
+            data-slot="select-item"
+            :aria-selected="option.value === modelValue"
+            :aria-disabled="option.disabled || undefined"
+            :data-active="index === activeIndex"
+            class="flex min-h-control w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm"
+            :class="[
+              index === activeIndex ? 'bg-accent' : '',
+              option.value === modelValue ? 'font-semibold text-primary' : '',
+              option.disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+            ]"
+            @pointerdown.prevent
+            @click="choose(option)"
+            @pointerenter="active = index"
+          >
+            <slot name="option" :option="option" :active="index === activeIndex" :selected="option.value === modelValue">
+              <span class="min-w-0">
+                <span class="block truncate">{{ option.label }}</span>
+                <span v-if="option.hint" class="block truncate text-xs text-muted-foreground">{{ option.hint }}</span>
+              </span>
+              <Icon v-if="option.value === modelValue" name="lucide:check" class="size-4 shrink-0" />
+            </slot>
+          </li>
+        </template>
       </ul>
 
       <!-- Região viva: existe desde a abertura, para o leitor de tela ter o que

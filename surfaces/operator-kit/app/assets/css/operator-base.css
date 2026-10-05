@@ -8,11 +8,10 @@
    próprio arquivo só o que é dele: as diretivas que resolvem por node_modules e
    o seu tail (impressão térmica, fontes self-hosted, alvos de toque).
 
-   ⚠️ O que NÃO pode morar aqui: diretiva que resolve por especificador nu
-   (`@import "tailwindcss"`, `@import "tw-animate-css"`, `@plugin "..."`). O kit
-   é uma layer do Nuxt, não um app: não tem node_modules com o Tailwind, e a
-   resolução parte do diretório do arquivo que declara a diretiva. Essas ficam no
-   tailwind.css de cada app, onde há node_modules para resolvê-las.
+   ⚠️ O que NÃO pode morar aqui: diretiva que depende do node_modules do app
+   (`@import "tailwindcss"`, `@import "tw-animate-css"`, `@plugin "..."`). Essas
+   ficam no tailwind.css de cada app. O Nuxt UI está em modo `unstyled`: seus
+   wrappers recebem classes do kit e não importam o tema CSS do fornecedor.
    ============================================================================ */
 
 @import "./operator-theme.css";

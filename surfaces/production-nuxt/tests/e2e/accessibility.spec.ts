@@ -263,7 +263,7 @@ for (const { route, endpoint, offset } of [
   // O Fechamento não anda para o futuro (não há lote para fechar): o dia é atrás.
   { route: "/close", endpoint: "/production/qc/?", offset: -2 },
 ]) {
-  test(`${route} usa o controle nativo de data sem depender de showPicker`, async ({
+  test(`${route} usa o controle de período canônico sem depender de showPicker`, async ({
     context,
     page,
   }) => {
@@ -290,21 +290,20 @@ for (const { route, endpoint, offset } of [
     await context.addCookies([authed]);
     await page.goto(route);
 
-    // O "Período" do kit: o botão abre o popover, e o dia se escolhe no campo
-    // nativo dele ("Ir para o dia").
-    await page.locator("[data-period-button]").first().click();
-    const input = page.getByLabel("Ir para o dia");
-    await input.click();
-    await expect(input).toBeFocused();
-    expect(await page.evaluate(() => window.__showPickerCalls)).toBe(0);
+    // O "Período" canônico muda por botões próprios. O input nativo, quando
+    // existe para integração de formulário, fica oculto e não é a superfície de
+    // toque nem de teclado do operador.
     const changedRequest = page.waitForRequest(
       (request) =>
         request.url().includes(endpoint) && request.url().includes(`date=${target}`),
     );
-    await input.fill(target);
-    await expect(input).toHaveValue(target);
-    await page.getByRole("button", { name: "Mostrar esta data" }).click();
+    const direction = offset > 0 ? "[data-period-next]" : "[data-period-prev]";
+    const step = page.locator(direction).first();
+    for (let i = 0; i < Math.abs(offset); i += 1) {
+      await step.click();
+    }
     await changedRequest;
+    expect(await page.evaluate(() => window.__showPickerCalls)).toBe(0);
   });
 }
 
@@ -357,11 +356,10 @@ test("foco permanece distinguível em contraste forçado", async ({ context, pag
   await context.addCookies([authed]);
   for (const route of ["/", "/board", "/close"]) {
     await page.goto(route);
-    await page.locator("[data-period-button]").first().click();
-    const dateInput = page.getByLabel("Ir para o dia");
-    await dateInput.focus();
-    await expect(dateInput).toBeFocused();
-    const outline = await dateInput.evaluate((node) => {
+    const periodButton = page.locator("[data-period-button]").first();
+    await periodButton.focus();
+    await expect(periodButton).toBeFocused();
+    const outline = await periodButton.evaluate((node) => {
       const style = getComputedStyle(node);
       return {
         style: style.outlineStyle,

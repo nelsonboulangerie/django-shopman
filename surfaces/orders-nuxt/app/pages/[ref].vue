@@ -406,11 +406,13 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
     </OperatorPageHeader>
 
     <!-- ⋯ do pedido: atualizar e os gestos que não são o do momento -->
-    <template v-if="menuOpen">
-      <div class="fixed inset-0 z-40" :class="isPhone ? 'bg-black/30' : ''" aria-hidden="true" @click="menuOpen = false" />
-      <div
-        class="fixed z-50 overflow-y-auto rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg"
-        :class="isPhone ? 'inset-x-2 bottom-2 max-h-[80dvh]' : 'top-16 right-4 w-80 max-h-[calc(100dvh-5rem)]'"
+    <UiSheet :open="menuOpen" @update:open="(value) => (menuOpen = value)">
+      <UiSheetContent
+        v-if="menuOpen"
+        :side="isPhone ? 'bottom' : 'right'"
+        variant="floating"
+        composition="bare"
+        class="h-auto max-h-[80dvh] overflow-y-auto rounded-lg p-1.5 md:h-[calc(100%-2rem)] md:max-h-none md:w-80"
         role="menu"
         data-detail-menu
       >
@@ -439,8 +441,8 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
           <Icon name="lucide:ban" class="size-4" />{{ order.cancel_requires_approval ? "Cancelar pedido (pede gerente)" : "Cancelar pedido" }}
         </button>
         <p v-else-if="order?.cancel_block_label" class="px-2.5 py-2 op-micro text-muted-foreground" data-cancel-block>{{ order.cancel_block_label }}</p>
-      </div>
-    </template>
+      </UiSheetContent>
+    </UiSheet>
 
     <!-- fora da loja: o detalhe mostra só o que pede decisão (G18) -->
     <div v-if="outside.askConsent.value" class="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 op-label md:mx-6" data-outside-consent>
@@ -653,10 +655,12 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
             aria-label="Troco que voltou"
           />
         </label>
-        <label v-if="asksEquipmentBack" class="flex min-h-control items-center gap-2 text-sm" data-equipment-back>
-          <input v-model="settleEquipmentBack" type="checkbox" />
-          <span>{{ order?.equipment_label }}. Voltou junto</span>
-        </label>
+        <UiCheckbox
+          v-if="asksEquipmentBack"
+          v-model="settleEquipmentBack"
+          :label="`${order?.equipment_label}. Voltou junto`"
+          data-equipment-back
+        />
         <UiDialogFooter>
           <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
           <button
@@ -682,10 +686,16 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
           </UiDialogDescription>
         </UiDialogHeader>
         <div v-if="order?.equipment_options.length" class="flex flex-col gap-1.5" data-dispatch-equipment>
-          <label v-for="opt in order.equipment_options" :key="opt.ref" class="flex min-h-control items-center gap-2 rounded-md border px-3 py-2 text-sm">
-            <input type="checkbox" :disabled="opt.enabled === false" :checked="dispatchEquipment.includes(opt.ref)" @change="toggleDispatchEquipment(opt.ref)" />
-            <span>{{ opt.label }}<span v-if="opt.reason"> · {{ opt.reason }}</span></span>
-          </label>
+          <UiCheckbox
+            v-for="opt in order.equipment_options"
+            :key="opt.ref"
+            :model-value="dispatchEquipment.includes(opt.ref)"
+            :disabled="opt.enabled === false"
+            :label="opt.label"
+            :description="opt.reason || undefined"
+            class="w-full rounded-md border px-3"
+            @update:model-value="toggleDispatchEquipment(opt.ref)"
+          />
         </div>
         <label v-if="dispatchAsksChange" class="flex items-center gap-2 text-sm">
           <span class="text-muted-foreground">R$</span>

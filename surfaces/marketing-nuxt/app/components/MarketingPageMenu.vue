@@ -3,8 +3,6 @@
 // principal da tela mora aqui, a um toque. Itens são links (para outra tela) ou ações
 // (Atualizar, com a tecla ao lado). Atalhos de teclado do app e o painel deles são do
 // kit; aqui só a tecla da própria ação.
-import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
-
 export interface MarketingMenuItem {
   key: string;
   label: string;
@@ -29,19 +27,17 @@ function choose(key: string) {
 </script>
 
 <template>
-  <PopoverRoot v-model:open="open">
-    <PopoverTrigger as-child>
+  <UiPopover v-model:open="open">
+    <UiPopoverTrigger as-child>
       <UiIconButton icon="lucide:ellipsis" :label="`Mais: ${heading}`" :active="open" data-marketing-page-menu />
-    </PopoverTrigger>
-    <PopoverPortal>
-      <PopoverContent
-        side="bottom"
-        align="end"
-        :side-offset="6"
-        :collision-padding="8"
-        class="z-50 w-64 rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg outline-hidden"
-        data-marketing-page-menu-panel
-      >
+    </UiPopoverTrigger>
+    <UiPopoverContent
+      align="end"
+      :side-offset="6"
+      :collision-padding="8"
+      class="w-64 rounded-lg p-1.5 shadow-lg"
+      data-marketing-page-menu-panel
+    >
         <p class="px-2.5 pt-1 pb-1.5 op-eyebrow text-muted-foreground">{{ heading }}</p>
         <div role="menu" class="flex flex-col">
           <template v-for="item in items" :key="item.key">
@@ -57,7 +53,6 @@ function choose(key: string) {
             </button>
           </template>
         </div>
-      </PopoverContent>
-    </PopoverPortal>
-  </PopoverRoot>
+    </UiPopoverContent>
+  </UiPopover>
 </template>
