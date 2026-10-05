@@ -28,11 +28,13 @@ const normalizedItems = computed(() =>
 const activeItem = computed(() => props.items[current.value]);
 
 // O componente permanece no tema oficial. A única adaptação visual troca,
-// responsivamente, entre dois tamanhos que o próprio Nuxt UI oferece: `md` no
-// celular (cinco etapas ainda deixam a linha respirar) e `xl` a partir de `sm`.
+// responsivamente, entre dois tamanhos que o próprio Nuxt UI oferece: `sm` no
+// celular (cinco etapas preservam um conector de verdade a 320 px) e `xl` a
+// partir de `sm`.
 // Os valores abaixo são literalmente os slots do size `xl` canônico.
 const responsiveUi = {
-  trigger: "sm:size-14 sm:text-xl",
+  trigger:
+    "relative after:absolute after:-inset-1.5 after:content-[''] sm:size-14 sm:text-xl sm:after:inset-0",
   icon: "sm:size-7",
   separator:
     "sm:start-[calc(50%+36px)] sm:end-[calc(-50%+36px)]",
@@ -51,7 +53,7 @@ const responsiveUi = {
       :linear="false"
       :disabled="disabled"
       :aria-label="label"
-      size="md"
+      size="sm"
       :ui="responsiveUi"
     >
       <template #title="{ item }">

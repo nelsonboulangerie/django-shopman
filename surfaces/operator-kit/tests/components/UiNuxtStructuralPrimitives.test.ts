@@ -36,7 +36,22 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     expect(button.disabled).toBe(true);
     expect(button.className).toContain("h-11");
     expect(button.className).toContain("bg-primary");
+    expect(button.className).toContain("disabled:opacity-75");
+    expect(button.className).not.toContain("disabled:opacity-50");
     expect(button.textContent).toContain("Salvar campanha");
+  });
+
+  it("entrega as variantes ao Nuxt UI sem empilhar o sólido sobre o contorno", async () => {
+    mounted = await mountSuspended(UiButton, {
+      attachTo: document.body,
+      props: { variant: "outline", text: "Cancelar" },
+    });
+
+    const button = document.body.querySelector<HTMLButtonElement>("button")!;
+    expect(button.className).toContain("text-default");
+    expect(button.className).toContain("ring-accented");
+    expect(button.className).not.toContain("text-inverted");
+    expect(button.className).not.toContain("bg-primary");
   });
 
   it("usa a anatomia de modal do Nuxt UI sem deixar texto ou tema padrão escapar", async () => {
@@ -95,8 +110,10 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     expect(headerClass).not.toContain("bg-muted");
     expect(root.querySelectorAll("[data-slot='trigger']")).toHaveLength(3);
     const triggerClass = root.querySelector("[data-slot='trigger']")?.className ?? "";
-    expect(triggerClass).toContain("size-10");
+    expect(triggerClass).toContain("size-8");
     expect(triggerClass).toContain("sm:size-14");
+    expect(triggerClass).toContain("after:-inset-1.5");
+    expect(triggerClass).toContain("sm:after:inset-0");
     expect(triggerClass).toContain("bg-elevated");
     expect(triggerClass).toContain("text-muted");
     expect(triggerClass).toContain("group-data-[state=active]:bg-primary");
@@ -108,8 +125,8 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     expect(root.querySelectorAll("[data-slot='separator']")).toHaveLength(2);
     for (const separator of root.querySelectorAll("[data-slot='separator']")) {
       expect(separator.className).toContain("h-0.5");
-      expect(separator.className).toContain("start-[calc(50%+28px)]");
-      expect(separator.className).toContain("end-[calc(-50%+28px)]");
+      expect(separator.className).toContain("start-[calc(50%+20px)]");
+      expect(separator.className).toContain("end-[calc(-50%+20px)]");
       expect(separator.className).toContain("sm:start-[calc(50%+36px)]");
       expect(separator.className).toContain("sm:end-[calc(-50%+36px)]");
       expect(separator.className).not.toContain("left-1/2");

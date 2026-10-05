@@ -11,14 +11,7 @@ export type UiButtonVariant =
   | "gradient";
 
 export type UiButtonSize =
-  | "xs"
-  | "sm"
-  | "default"
-  | "lg"
-  | "icon-xs"
-  | "icon-sm"
-  | "icon"
-  | "icon-lg";
+  "xs" | "sm" | "default" | "lg" | "icon-xs" | "icon-sm" | "icon" | "icon-lg";
 
 export type UiButtonEffect =
   | "expandIcon"
@@ -70,21 +63,25 @@ const props = withDefaults(defineProps<UiButtonProps>(), {
 
 const emit = defineEmits<{ click: [event: MouseEvent] }>();
 
-const base =
-  "group focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
-
-const variants: Record<UiButtonVariant, string> = {
-  default: "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
-  destructive:
-    "bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90",
-  outline:
-    "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
-  secondary:
-    "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
-  ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-  link: "text-primary underline-offset-4 hover:underline",
-  gradient:
-    "bg-[linear-gradient(314deg,color-mix(in_oklch,var(--primary),white_33%),var(--primary))] text-primary-foreground shadow-xs hover:brightness-110",
+// A aparência pertence ao Nuxt UI. Antes, o wrapper deixava o `NuxtButton`
+// gerar um botão `primary/solid` e tentava pintar outra variante por cima com
+// classes. O resultado era estruturalmente contraditório: um `outline` mantinha
+// `text-inverted` do sólido e virava texto branco sobre papel. Esta tradução é a
+// única camada da casa: nomes legados entram, variantes oficiais saem.
+const appearance: Record<
+  UiButtonVariant,
+  {
+    color: "primary" | "error" | "neutral";
+    variant: "solid" | "outline" | "soft" | "ghost" | "link";
+  }
+> = {
+  default: { color: "primary", variant: "solid" },
+  destructive: { color: "error", variant: "solid" },
+  outline: { color: "neutral", variant: "outline" },
+  secondary: { color: "neutral", variant: "soft" },
+  ghost: { color: "neutral", variant: "ghost" },
+  link: { color: "primary", variant: "link" },
+  gradient: { color: "primary", variant: "solid" },
 };
 
 const sizes: Record<UiButtonSize, string> = {
@@ -96,6 +93,17 @@ const sizes: Record<UiButtonSize, string> = {
   "icon-sm": "size-9",
   icon: "size-11",
   "icon-lg": "size-14",
+};
+
+const nuxtSizes: Record<UiButtonSize, "xs" | "sm" | "md" | "lg" | "xl"> = {
+  xs: "xs",
+  sm: "sm",
+  default: "md",
+  lg: "xl",
+  "icon-xs": "xs",
+  "icon-sm": "sm",
+  icon: "md",
+  "icon-lg": "xl",
 };
 
 const effects: Record<UiButtonEffect, string> = {
@@ -118,9 +126,11 @@ const effects: Record<UiButtonEffect, string> = {
 };
 
 const rootClass = computed(() => [
-  base,
-  variants[props.variant],
+  "active:translate-y-px",
   sizes[props.size],
+  props.variant === "gradient"
+    ? "bg-[linear-gradient(314deg,color-mix(in_oklch,var(--primary),white_33%),var(--primary))] hover:brightness-110"
+    : "",
   props.effect ? effects[props.effect] : "",
   props.skeuomorphic
     ? "[box-shadow:0px_0px_0px_1px_rgba(0,0,0,0.18)_inset,0px_-2px_0px_0px_rgba(0,0,0,0.05)_inset,var(--shadow-xs)]"
@@ -130,6 +140,7 @@ const rootClass = computed(() => [
 ]);
 
 const iconOnly = computed(() => props.size.startsWith("icon"));
+const nuxtAppearance = computed(() => appearance[props.variant]);
 </script>
 
 <template>
@@ -144,6 +155,9 @@ const iconOnly = computed(() => props.size.startsWith("icon"));
     :disabled="disabled"
     :loading="loading"
     :loading-icon="loadingIcon"
+    :color="nuxtAppearance.color"
+    :variant="nuxtAppearance.variant"
+    :size="nuxtSizes[size]"
     :leading-icon="icon && iconPlacement === 'left' ? icon : undefined"
     :trailing-icon="icon && iconPlacement === 'right' ? icon : undefined"
     :square="iconOnly"
