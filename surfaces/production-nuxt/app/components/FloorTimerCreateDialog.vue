@@ -212,15 +212,11 @@ const PAD_ADD =
         <!-- Guardar como etiqueta: escolha explícita, com a consequência escrita.
              Sem nome não há etiqueta, e nome que já existe não vira irmã. -->
         <div v-if="canSaveAsTag" class="rounded-md border border-dashed p-3">
-          <label
+          <UiCheckbox
             v-if="!twin"
+            v-model="saveAsTag"
             class="flex min-h-11 items-start gap-2.5 text-sm font-medium"
           >
-            <input
-              v-model="saveAsTag"
-              type="checkbox"
-              class="mt-0.5 size-5 shrink-0 accent-primary"
-            />
             <span>
               Guardar “{{ name.trim() }}” como etiqueta
               <span class="block text-xs font-normal text-muted-foreground">
@@ -228,7 +224,7 @@ const PAD_ADD =
                 {{ minutes }} min. O gestor pode ajustar depois.
               </span>
             </span>
-          </label>
+          </UiCheckbox>
           <p v-else class="text-sm text-muted-foreground">
             Já existe a etiqueta <strong class="text-foreground">{{ twin.label }}</strong>
             na fileira, com {{ twin.minutes }} min. Este timer vai correr com os

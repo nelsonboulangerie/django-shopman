@@ -134,21 +134,20 @@ function submit() {
         Preparando a comanda…
       </p>
       <div v-else-if="needsSelection" class="grid max-h-56 gap-1 overflow-y-auto">
-        <label
+        <div
           v-for="line in lineViews"
           :key="line.id"
           class="flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5"
           :class="selected.has(line.id) ? 'border-primary bg-primary/5' : ''"
         >
-          <input
-            type="checkbox"
-            class="size-4 accent-primary"
-            :checked="selected.has(line.id)"
-            @change="toggle(line.id)"
+          <UiCheckbox
+            :model-value="selected.has(line.id)"
+            :aria-label="`Selecionar ${line.label}`"
+            @update:model-value="toggle(line.id)"
           />
           <span class="min-w-0 flex-1 truncate text-sm">{{ line.label }}</span>
           <span class="text-xs tabular-nums text-muted-foreground">{{ line.amountDisplay }}</span>
-        </label>
+        </div>
       </div>
 
       <label v-if="mode === 'split'" class="grid gap-1 text-sm">

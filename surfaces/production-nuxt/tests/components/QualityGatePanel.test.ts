@@ -152,7 +152,7 @@ describe("QualityGatePanel — qualidade em lote", () => {
     await wrapper
       .findAll('[role="tab"]')
       .find((tab) => tab.text().includes("Confirmados"))!
-      .trigger("click");
+      .trigger("mousedown", { button: 0, ctrlKey: false });
 
     expect(wrapper.find("[data-quality-reviewed]").text()).toContain("Brioche revisado");
   });

@@ -387,31 +387,23 @@ const simulatedScenes = computed(() =>
     </div>
 
     <template v-else-if="preview && artifact">
-      <div
+      <UiTabs
         v-if="Object.keys(preview.previews).length > 1"
-        class="mt-3 flex flex-wrap gap-1.5"
-        role="tablist"
-        aria-label="Plataforma da prévia"
+        v-model="activePlatform"
+        class="mt-3"
       >
-        <!-- Abas permanecem nativas para preservar role=tab, aria-selected e navegação semântica. -->
-        <button
-          v-for="(_, platform) in preview.previews"
-          :key="platform"
-          type="button"
-          role="tab"
-          class="min-h-11 rounded-md border px-3 text-sm font-medium"
-          :class="
-            platform === activePlatform
-              ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border bg-card text-muted-foreground'
-          "
-          :aria-selected="platform === activePlatform"
-          :data-platform="platform"
-          @click="activePlatform = platform"
-        >
-          {{ platformLabels[platform] || platform }}
-        </button>
-      </div>
+        <UiTabsList class="h-auto flex-wrap border-0 bg-transparent p-0" aria-label="Plataforma da prévia">
+          <UiTabsTrigger
+            v-for="(_, platform) in preview.previews"
+            :key="platform"
+            :value="platform"
+            class="border border-border bg-card data-[state=active]:border-primary data-[state=active]:bg-primary/10"
+            :data-platform="platform"
+          >
+            {{ platformLabels[platform] || platform }}
+          </UiTabsTrigger>
+        </UiTabsList>
+      </UiTabs>
 
       <p
         v-if="preview.ai_writes"

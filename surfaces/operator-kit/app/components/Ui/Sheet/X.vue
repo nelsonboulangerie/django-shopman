@@ -15,7 +15,6 @@
   import { DialogClose } from "reka-ui";
   import type { DialogCloseProps } from "reka-ui";
   import { tv } from "tailwind-variants";
-  import type { VariantProps } from "tailwind-variants";
   import { reactiveOmit } from "@vueuse/core";
   import { normalizeClass } from "vue";
   import type { HTMLAttributes } from "vue";

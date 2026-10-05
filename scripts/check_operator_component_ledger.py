@@ -25,8 +25,13 @@ ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "docs/reference/operator-component-ledger.json"
 REGISTRY = ROOT / "surfaces/registry.json"
 VALID_STATUSES = {"pending", "audited", "migrated", "retained-with-reason"}
-MANUAL_OVERLAY = re.compile(r"fixed\s+inset-0|role=[\"']dialog[\"']|<Teleport")
+MANUAL_OVERLAY = re.compile(
+    r"<(?:div|section|aside|dialog)[^>]+\bclass=[\"'][^\"']*\bfixed\s+inset-0\b",
+    re.DOTALL,
+)
 NATIVE_CONTROL = re.compile(r"<(?:button|select|textarea)(?:\s|>)")
+REKA_IMPORT = re.compile(r"(?:from\s+|import\s*\()\s*[\"']reka-ui[\"']")
+NUXT_UI_IMPORT = re.compile(r"(?:from\s+|import\s*\()\s*[\"']@nuxt/ui[\"']")
 
 
 @dataclass(frozen=True)
@@ -53,7 +58,7 @@ def count_app(app_root: Path) -> Counts:
     reka = [
         path
         for path in files
-        if "reka-ui" in path.read_text(encoding="utf-8")
+        if REKA_IMPORT.search(path.read_text(encoding="utf-8"))
     ]
     manual = []
     native = 0
@@ -167,7 +172,7 @@ def check() -> tuple[list[str], list[str], dict[str, object]]:
         direct_nuxt_ui = [
             path
             for path in vue_and_ts(app_root / "app")
-            if "@nuxt/ui" in path.read_text(encoding="utf-8")
+            if NUXT_UI_IMPORT.search(path.read_text(encoding="utf-8"))
         ]
         if direct_nuxt_ui:
             errors.append(

@@ -1,8 +1,6 @@
 <script setup lang="ts">
 // O ⋯ das telas do Compras (Painel, Comprar e Base: Atualizar; Receber: Trocar NF, Sem NF, Ressalva
-// geral, Registrar devolução). Popover do reka-ui, como o resto da layer em apps
-// sem `UiPopover`. `vertical` desenha o ⋮ da barra do celular.
-import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
+// geral, Registrar devolução). `vertical` desenha o ⋮ da barra do celular.
 
 export interface MoreMenuItem {
   key: string;
@@ -30,8 +28,8 @@ function choose(key: string) {
 </script>
 
 <template>
-  <PopoverRoot v-model:open="open">
-    <PopoverTrigger as-child>
+  <UiPopover v-model:open="open">
+    <UiPopoverTrigger as-child>
       <button
         type="button"
         class="grid shrink-0 place-items-center rounded-md text-foreground transition hover:bg-accent"
@@ -42,14 +40,8 @@ function choose(key: string) {
       >
         <Icon :name="vertical ? 'lucide:ellipsis-vertical' : 'lucide:ellipsis'" class="size-5" />
       </button>
-    </PopoverTrigger>
-    <PopoverPortal>
-      <PopoverContent
-        align="end"
-        :side-offset="6"
-        :collision-padding="8"
-        class="z-50 w-64 rounded-md border bg-popover p-1.5 text-popover-foreground shadow-md outline-hidden"
-      >
+    </UiPopoverTrigger>
+    <UiPopoverContent align="end" :side-offset="6" :collision-padding="8" class="w-64 p-1.5">
         <div role="menu" data-purchase-more-panel>
           <template v-for="item in items" :key="item.key">
             <div v-if="item.divider" class="my-1.5 border-t border-border" />
@@ -68,7 +60,6 @@ function choose(key: string) {
             </button>
           </template>
         </div>
-      </PopoverContent>
-    </PopoverPortal>
-  </PopoverRoot>
+    </UiPopoverContent>
+  </UiPopover>
 </template>

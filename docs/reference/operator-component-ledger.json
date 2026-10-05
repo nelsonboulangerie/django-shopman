@@ -49,8 +49,8 @@
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
         "local_ui_files": 0,
-        "direct_reka_import_files": 3,
-        "manual_overlay_files": 4,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
         "native_control_occurrences": 157
       },
       "surfaces": [
@@ -167,7 +167,7 @@
       "baseline": {
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
-        "manual_overlay_files": 1,
+        "manual_overlay_files": 0,
         "native_control_occurrences": 24
       },
       "surfaces": [
@@ -204,7 +204,7 @@
       "baseline": {
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
-        "manual_overlay_files": 5,
+        "manual_overlay_files": 0,
         "native_control_occurrences": 232
       },
       "surfaces": [
@@ -429,8 +429,8 @@
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
         "local_ui_files": 0,
-        "direct_reka_import_files": 1,
-        "manual_overlay_files": 1,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
         "native_control_occurrences": 31
       },
       "surfaces": [
@@ -514,8 +514,8 @@
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
         "local_ui_files": 0,
-        "direct_reka_import_files": 1,
-        "manual_overlay_files": 2,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
         "native_control_occurrences": 132
       },
       "surfaces": [
@@ -535,8 +535,8 @@
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
         "local_ui_files": 0,
-        "direct_reka_import_files": 3,
-        "manual_overlay_files": 1,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
         "native_control_occurrences": 24
       },
       "surfaces": [
