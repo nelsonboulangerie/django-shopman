@@ -67,6 +67,7 @@ describe("OperatorSuiteRail", () => {
     const items = wrapper.findAll("nav [data-rail-section]");
     expect(items.map((item) => item.find("span").text())).toEqual(["Pedidos", "Catálogo", "Canais"]);
     expect(items[1]!.attributes("aria-current")).toBe("page");
+    expect(items[1]!.classes()).toContain("w-[60px]");
     expect(items[0]!.attributes("aria-current")).toBeUndefined();
   });
 

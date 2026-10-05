@@ -64,6 +64,11 @@ passado nas duas execuções anteriores e os três testes passaram localmente. O
 agora aguarda a cor herdada convergir para o token do tema antes de chamar o axe;
 isso preserva a exigência AA e elimina a medição intermediária.
 
+Durante a conferência da prévia local, o dono apontou que o fundo dos itens ativos
+do rail ficava próximo demais das bordas. A peça canônica `RailSection` passou de
+64 px para 60 px dentro do trilho de 76 px: são 8 px de respiro por lado em toda a
+suíte, sem reduzir o alvo abaixo do mínimo de toque. O teste do kit fixa essa medida.
+
 ## Critério de fechamento
 
 O segundo commit incorpora somente esses retratos produzidos pelo Chromium pinado
