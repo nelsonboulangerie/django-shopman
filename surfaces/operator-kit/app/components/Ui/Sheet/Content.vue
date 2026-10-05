@@ -17,23 +17,28 @@
       "
       v-bind="{ ...forwarded, ...$attrs }"
     >
-      <slot>
-        <slot name="header">
-          <UiSheetHeader>
-            <slot name="title">
-              <UiSheetTitle v-if="title" :title="title" />
-            </slot>
-            <slot name="description">
-              <UiSheetDescription v-if="description" :description="description" />
-            </slot>
-          </UiSheetHeader>
+      <template v-if="composition === 'bare'">
+        <slot />
+      </template>
+      <template v-else>
+        <slot>
+          <slot name="header">
+            <UiSheetHeader>
+              <slot name="title">
+                <UiSheetTitle v-if="title" :title="title" />
+              </slot>
+              <slot name="description">
+                <UiSheetDescription v-if="description" :description="description" />
+              </slot>
+            </UiSheetHeader>
+          </slot>
+          <slot name="content" />
+          <slot name="footer" />
         </slot>
-        <slot name="content" />
-        <slot name="footer" />
-      </slot>
-      <slot name="close">
-        <UiSheetClose :icon="icon" />
-      </slot>
+        <slot name="close">
+          <UiSheetX :icon="icon" />
+        </slot>
+      </template>
     </DialogContent>
   </UiSheetPortal>
 </template>
@@ -41,13 +46,18 @@
 <script lang="ts" setup>
   import { DialogContent, useForwardPropsEmits } from "reka-ui";
   import type { DialogContentEmits, DialogContentProps } from "reka-ui";
+  import { tv } from "tailwind-variants";
+  import type { VariantProps } from "tailwind-variants";
+  import { reactiveOmit } from "@vueuse/core";
   import { normalizeClass } from "vue";
   import type { HTMLAttributes } from "vue";
+
+  import { getTranslucentFloatingPanelClasses } from "../../../utils/translucent";
 
   defineOptions({ inheritAttrs: false });
 
   const styles = tv({
-    base: "bg-card text-card-foreground data-[state=closed]:animate-out data-[state=open]:animate-in fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
+    base: "bg-card text-card-foreground data-[state=closed]:animate-out data-[state=open]:animate-in fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out duration-200",
     variants: {
       side: {
         top: "data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b",
@@ -71,6 +81,10 @@
       fullscreen: {
         true: "inset-0 m-0 size-full rounded-none border-0",
         false: "",
+      },
+      composition: {
+        standard: "gap-4",
+        bare: "",
       },
     },
     compoundVariants: [
@@ -139,6 +153,7 @@
       side: "left",
       variant: "default",
       fullscreen: false,
+      composition: "standard",
     },
   });
 
@@ -182,9 +197,11 @@
         isBlurred?: boolean;
         /** Whether to render the content with a translucent surface. */
         translucent?: boolean;
+        /** Standard composition supplies header and close affordance; bare leaves the full structure to the caller. */
+        composition?: VariantProps<typeof styles>["composition"];
       }
     >(),
-    { isBlurred: true }
+    { isBlurred: true, composition: "standard" }
   );
   const emits = defineEmits<DialogContentEmits>();
   const forwarded = useForwardPropsEmits(
@@ -199,26 +216,27 @@
       "fullscreen",
       "isBlurred",
       "translucent",
+      "composition",
     ]),
     emits
   );
 
   defineSlots<{
     /** Default slot for custom sheet structure. */
-    default: () => any;
+    default: () => unknown;
     /** Slot for custom overlay content. */
-    overlay: () => any;
+    overlay: () => unknown;
     /** Slot for custom close button. */
-    close: () => any;
+    close: () => unknown;
     /** Slot for header content (title and description) */
-    header: () => any;
+    header: () => unknown;
     /** Slot for title content. */
-    title: () => any;
+    title: () => unknown;
     /** Slot for description content. */
-    description: () => any;
+    description: () => unknown;
     /** Slot for main content of the sheet. */
-    content: () => any;
+    content: () => unknown;
     /** Slot for footer content of the sheet. */
-    footer: () => any;
+    footer: () => unknown;
   }>();
 </script>

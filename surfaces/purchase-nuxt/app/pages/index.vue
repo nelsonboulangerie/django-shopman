@@ -2045,11 +2045,11 @@ function onPackageCode(code: string) {
 
         <!-- O comprovante de uma entrada de hoje, com Compartilhar (v3 celular a). -->
         <UiSheet :open="receiptSheetEntry != null" @update:open="(v: boolean) => { if (!v) receiptSheetEntry = null }">
-          <UiSheetContent v-if="receiptSheetEntry" side="bottom" data-receipt-voucher>
+          <UiSheetContent v-if="receiptSheetEntry" side="bottom" composition="bare" data-receipt-voucher>
             <UiSheetHeader class="border-b border-border p-4">
               <div class="flex items-start justify-between gap-2">
                 <UiSheetTitle class="text-base">Comprovante de entrada</UiSheetTitle>
-                <UiSheetX />
+                <UiSheetX placement="inline" />
               </div>
               <UiSheetDescription>{{ receiptSheetEntry.supplierName || receiptSheetEntry.supplierRef }}</UiSheetDescription>
             </UiSheetHeader>
@@ -2071,11 +2071,11 @@ function onPackageCode(code: string) {
 
         <!-- Ressalva geral: recolhida, abre pelo ⋯ ou pelo painel (C19). -->
         <UiSheet :open="ressalvaOpen" @update:open="(v: boolean) => (ressalvaOpen = v)">
-          <UiSheetContent side="bottom" data-receipt-ressalva>
+          <UiSheetContent side="bottom" composition="bare" data-receipt-ressalva>
             <UiSheetHeader class="border-b border-border p-4">
               <div class="flex items-start justify-between gap-2">
                 <UiSheetTitle class="text-base">Ressalva geral</UiSheetTitle>
-                <UiSheetX />
+                <UiSheetX placement="inline" />
               </div>
               <UiSheetDescription>Avaria, falta, devolução, observação na NF/CT-e. Vale para a entrada inteira.</UiSheetDescription>
             </UiSheetHeader>

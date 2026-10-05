@@ -11,18 +11,21 @@
 <script lang="ts" setup>
   import { DialogDescription } from "reka-ui";
   import type { DialogDescriptionProps } from "reka-ui";
+  import { tv } from "tailwind-variants";
+  import { reactiveOmit } from "@vueuse/core";
   import { normalizeClass } from "vue";
   import type { HTMLAttributes } from "vue";
-  import { reactiveOmit } from "@vueuse/core";
-  import { tv } from "tailwind-variants";
 
   const props = defineProps<
     DialogDescriptionProps & {
+      /** Custom class(es) to add to parent element. */
       class?: HTMLAttributes["class"];
-      /** O texto da descrição. */
+      /** Description text. */
       description?: string;
     }
   >();
   const forwarded = reactiveOmit(props, "class", "description");
-  const styles = tv({ base: "text-muted-foreground text-sm" });
+  const styles = tv({
+    base: "text-muted-foreground text-sm",
+  });
 </script>

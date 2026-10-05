@@ -9,6 +9,8 @@
 <script lang="ts" setup>
   import { DialogOverlay } from "reka-ui";
   import type { DialogOverlayProps } from "reka-ui";
+  import { tv } from "tailwind-variants";
+  import { reactiveOmit } from "@vueuse/core";
   import { normalizeClass } from "vue";
   import type { HTMLAttributes } from "vue";
 
@@ -35,7 +37,7 @@
     base: "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 fixed inset-0 z-50",
     variants: {
       isBlurred: {
-        true: "bg-background/50 backdrop-blur-sm",
+        true: "bg-background/60 backdrop-blur-sm",
         false: "backdrop-blur-none",
       },
     },

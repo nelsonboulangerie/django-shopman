@@ -48,8 +48,8 @@
       "directory": "pos-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 13,
-        "direct_reka_import_files": 15,
+        "local_ui_files": 0,
+        "direct_reka_import_files": 3,
         "manual_overlay_files": 4,
         "native_control_occurrences": 157
       },
@@ -165,8 +165,8 @@
       "directory": "kds-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 13,
-        "direct_reka_import_files": 12,
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
         "manual_overlay_files": 1,
         "native_control_occurrences": 24
       },
@@ -202,8 +202,8 @@
       "directory": "orders-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 13,
-        "direct_reka_import_files": 12,
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
         "manual_overlay_files": 5,
         "native_control_occurrences": 232
       },
@@ -303,8 +303,8 @@
       "directory": "production-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 13,
-        "direct_reka_import_files": 12,
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
         "native_control_occurrences": 96
       },
@@ -428,8 +428,8 @@
       "directory": "marketing-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 14,
-        "direct_reka_import_files": 14,
+        "local_ui_files": 0,
+        "direct_reka_import_files": 1,
         "manual_overlay_files": 1,
         "native_control_occurrences": 31
       },
@@ -513,8 +513,8 @@
       "directory": "purchase-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 8,
-        "direct_reka_import_files": 9,
+        "local_ui_files": 0,
+        "direct_reka_import_files": 1,
         "manual_overlay_files": 2,
         "native_control_occurrences": 132
       },
@@ -534,8 +534,8 @@
       "directory": "bi-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
-        "local_ui_files": 1,
-        "direct_reka_import_files": 4,
+        "local_ui_files": 0,
+        "direct_reka_import_files": 3,
         "manual_overlay_files": 1,
         "native_control_occurrences": 24
       },

@@ -1,5 +1,9 @@
 <template>
-  <DialogTitle data-slot="sheet-title" :class="styles({ class: normalizeClass(props.class) || undefined })" v-bind="forwarded">
+  <DialogTitle
+    data-slot="sheet-title"
+    :class="styles({ class: normalizeClass(props.class) || undefined })"
+    v-bind="forwarded"
+  >
     <slot>{{ title }}</slot>
   </DialogTitle>
 </template>
@@ -7,18 +11,21 @@
 <script lang="ts" setup>
   import { DialogTitle } from "reka-ui";
   import type { DialogTitleProps } from "reka-ui";
+  import { tv } from "tailwind-variants";
+  import { reactiveOmit } from "@vueuse/core";
   import { normalizeClass } from "vue";
   import type { HTMLAttributes } from "vue";
-  import { reactiveOmit } from "@vueuse/core";
-  import { tv } from "tailwind-variants";
 
   const props = defineProps<
     DialogTitleProps & {
+      /** Custom class(es) to add to parent element. */
       class?: HTMLAttributes["class"];
-      /** O texto do título. */
+      /** Title text. */
       title?: string;
     }
   >();
   const forwarded = reactiveOmit(props, "class", "title");
-  const styles = tv({ base: "text-foreground font-semibold" });
+  const styles = tv({
+    base: "text-foreground font-semibold",
+  });
 </script>

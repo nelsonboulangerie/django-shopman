@@ -1,6 +1,6 @@
 <template>
   <Primitive
-    data-slot="dialog-header"
+    data-slot="sheet-header"
     :class="styles({ class: normalizeClass(props.class) || undefined })"
     v-bind="forwarded"
   >
@@ -11,13 +11,15 @@
 <script lang="ts" setup>
   import { Primitive } from "reka-ui";
   import type { PrimitiveProps } from "reka-ui";
+  import { tv } from "tailwind-variants";
+  import { reactiveOmit } from "@vueuse/core";
   import { normalizeClass } from "vue";
   import type { HTMLAttributes } from "vue";
 
   const props = withDefaults(
     defineProps<
       PrimitiveProps & {
-        /** Custom class(es) to add to the parent. */
+        /** Custom class(es) to add to parent element. */
         class?: HTMLAttributes["class"];
       }
     >(),
@@ -27,6 +29,6 @@
   );
   const forwarded = reactiveOmit(props, "class");
   const styles = tv({
-    base: "flex flex-col gap-2 text-center sm:text-left",
+    base: "flex flex-col gap-1.5 p-4",
   });
 </script>
