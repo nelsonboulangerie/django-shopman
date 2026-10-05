@@ -204,6 +204,10 @@ describe("UiSelect", () => {
 
     const search = wrapper.get('input[role="combobox"]');
     expect(search.attributes("aria-controls")).toBe(wrapper.get('[role="listbox"]').attributes("id"));
+    expect(wrapper.get('[role="listbox"]').attributes("aria-labelledby")).toBe(
+      search.attributes("aria-labelledby"),
+    );
+    expect(wrapper.get('[role="listbox"]').attributes("aria-label")).toBeUndefined();
     expect(wrapper.findAll('[role="option"]')).toHaveLength(30);
 
     await search.setValue("cafe");
@@ -224,6 +228,7 @@ describe("UiSelect", () => {
 
     expect(wrapper.get('[data-slot="select-input"]').attributes("aria-label")).toBe("Buscar");
     expect(wrapper.get('[data-slot="select-viewport"]').attributes("role")).toBe("listbox");
+    expect(wrapper.get('[data-slot="select-viewport"]').attributes("aria-label")).toBe("Opções");
     expect(wrapper.findAll('[data-slot="select-item"]')).toHaveLength(30);
   });
 

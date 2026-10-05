@@ -137,6 +137,8 @@ const triggerLabelledBy = computed(() => {
 /** Nome do campo para o CAMPO DE BUSCA, que não tem valor a compor. */
 const searchLabelledBy = computed(() => props.labelledBy ?? (props.label ? labelId : undefined));
 const searchAriaLabel = computed(() => (searchLabelledBy.value ? undefined : props.label ?? props.searchPlaceholder));
+/** A lista também precisa de nome quando não há rótulo externo para herdar. */
+const listAriaLabel = computed(() => (searchLabelledBy.value ? undefined : "Opções"));
 
 // Só anuncia quando há busca em curso: leitor de tela falando "12 resultados"
 // numa lista que ninguém filtrou é ruído.
@@ -305,6 +307,7 @@ defineExpose({ focus: () => trigger.value?.focus() });
         role="listbox"
         :tabindex="searchable ? -1 : 0"
         :aria-labelledby="searchLabelledBy"
+        :aria-label="listAriaLabel"
         :aria-activedescendant="searchable ? undefined : activeId"
         data-slot="select-viewport"
         class="max-h-64 overflow-y-auto py-1 outline-none"
