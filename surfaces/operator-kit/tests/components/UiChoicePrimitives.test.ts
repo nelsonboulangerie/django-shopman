@@ -6,6 +6,7 @@ import UiCheckbox from "../../app/components/UiCheckbox.vue";
 import UiRadio from "../../app/components/UiRadio.vue";
 import UiRadioGroup from "../../app/components/UiRadioGroup.vue";
 import UiSelect from "../../app/components/UiSelect.vue";
+import UiSwitch from "../../app/components/UiSwitch.vue";
 import UiToggleChip from "../../app/components/UiToggleChip.vue";
 import type { ChoiceOption } from "../../app/types/choice";
 
@@ -36,8 +37,9 @@ describe("UiCheckbox", () => {
     const control = wrapper.get('[role="checkbox"]');
     expect(control.attributes("type")).toBe("button");
     expect(control.attributes("aria-checked")).toBe("false");
-    expect(control.classes()).toContain("min-h-control");
-    expect(control.text()).toContain("Aniversariantes de hoje");
+    expect(wrapper.get('[data-slot="checkbox"]').classes()).toContain("min-h-control");
+    expect(wrapper.text()).toContain("Aniversariantes de hoje");
+    expect(wrapper.get("label").attributes("for")).toBe(control.attributes("id"));
   });
 
   it("marca e desmarca", async () => {
@@ -72,7 +74,7 @@ describe("UiCheckbox", () => {
     const wrapper = await mount(UiCheckbox, { attrs: { "aria-label": "Selecionar linha" } });
     const control = wrapper.get('[role="checkbox"]');
 
-    expect(control.classes()).toContain("size-control");
+    expect(wrapper.get('[data-slot="checkbox"]').classes()).toContain("size-control");
     expect(control.attributes("aria-label")).toBe("Selecionar linha");
   });
 
@@ -80,6 +82,31 @@ describe("UiCheckbox", () => {
     const wrapper = await mount(UiCheckbox, { props: { disabled: true, label: "Ativo" } });
     await wrapper.get('[role="checkbox"]').trigger("click");
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+  });
+});
+
+describe("UiSwitch", () => {
+  it("usa a anatomia do Nuxt UI e mantém o alvo operacional de 44 px", async () => {
+    const wrapper = await mount(UiSwitch, { props: { modelValue: false }, attrs: { "aria-label": "Ativo" } });
+
+    const root = wrapper.get('[data-slot="switch"]');
+    const control = wrapper.get('[role="switch"]');
+    expect(root.classes()).toContain("size-control");
+    expect(control.attributes("type")).toBe("button");
+    expect(control.attributes("aria-checked")).toBe("false");
+    expect(control.attributes("data-state")).toBe("unchecked");
+    expect(wrapper.get('[data-slot="thumb"]').exists()).toBe(true);
+
+    await control.trigger("click");
+    expect(wrapper.emitted("update:modelValue")).toEqual([[true]]);
+  });
+
+  it("mapeia o tamanho compacto para a variante oficial xs sem reduzir o alvo", async () => {
+    const wrapper = await mount(UiSwitch, { props: { modelValue: true, size: "sm" } });
+
+    expect(wrapper.get('[data-slot="switch"]').classes()).toContain("size-control");
+    expect(wrapper.get('[role="switch"]').classes()).toContain("w-7");
+    expect(wrapper.get('[data-slot="thumb"]').classes()).toContain("size-3");
   });
 });
 
@@ -294,11 +321,11 @@ describe("todos os três", () => {
     const grupo = await mount(UiRadioGroup, { props: { options: audienceModes } });
     const select = await mount(UiSelect, { props: { options: shortList } });
 
-    for (const control of [
-      checkbox.get('[role="checkbox"]'),
-      grupo.get('[role="radio"]'),
-      select.get('[data-slot="select-trigger"]'),
-    ]) {
+    const canonicalCheckbox = checkbox.get('[role="checkbox"]');
+    expect(canonicalCheckbox.classes()).toContain("focus-visible:outline-3");
+    expect(canonicalCheckbox.classes()).toContain("focus-visible:outline-solid");
+
+    for (const control of [grupo.get('[role="radio"]'), select.get('[data-slot="select-trigger"]')]) {
       expect(control.classes()).toContain("focus-visible:outline-2");
       expect(control.classes()).toContain("focus-visible:outline-ring");
     }

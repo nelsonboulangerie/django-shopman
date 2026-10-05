@@ -134,8 +134,7 @@ describe("HubPushSettings", () => {
     // era lido como se fosse. Foi para o rodapé da home, com rótulo.
     expect(wrapper.text()).toContain(OPERATOR_APPS.hub.label);
     expect(wrapper.text()).not.toContain("local");
-    // Checkbox da casa (`UiCheckbox`), não o do sistema: é um botão com
-    // `role="checkbox"`, e desmarcar é o clique.
+    // Checkbox canônico do Nuxt UI, exposto pela API estável do kit.
     await wrapper.get('[role="checkbox"]').trigger("click");
     expect(state.updateCategories).toHaveBeenCalledWith(device, []);
     await wrapper.get("button.text-xs").trigger("click");
