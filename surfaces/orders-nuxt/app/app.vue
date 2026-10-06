@@ -88,12 +88,14 @@ const railItems = computed(() => {
 });
 const barItems = computed(() => [...topSections.value, ...footSections.value].map(toItem));
 const railNavUi = {
-  // A sidebar é a canônica/neutra (a mesma do catálogo): não sobrescrevemos
-  // cores. O ativo/inativo segue o tema do NavigationMenu.
   root: "w-full flex-col items-stretch gap-0.5",
   item: "w-full",
-  link: "flex-col gap-0.5 px-1 py-1.5 justify-center text-center",
-  linkLeadingIcon: "size-5",
+  // A paleta vem do escopo --ui-* no root do sidebar (OperatorOfficeShell). Só o
+  // ATIVO precisa de override: ele pinta uma pílula CLARA (bg-elevated) e o
+  // texto/ícone precisam voltar ao escuro (text-highlighted é compartilhado com
+  // hover/legenda, então não dá para trocá-lo sem apagar o resto do rail).
+  link: "flex-col gap-0.5 px-1 py-1.5 justify-center text-center transition-colors data-[active]:font-semibold! data-[active]:text-rail!",
+  linkLeadingIcon: "size-5 group-data-[active]:text-rail!",
   linkLabel: "block text-[10px]/3 font-normal",
 } as const;
 const barNavUi = {
@@ -156,14 +158,14 @@ useOperatorWindowTitle();
           :rel="hubUrl ? hubLink.rel : undefined"
           :aria-label="hubUrl ? `${appLabel}: ${HUB_BACK_INLINE}` : appLabel"
           :title="hubUrl ? `${appLabel}: ${HUB_BACK_INLINE}` : appLabel"
-          class="relative grid size-11 shrink-0 place-items-center rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          class="relative grid size-11 shrink-0 place-items-center rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"
           :style="{ background: appColor }"
           data-suite-rail-app
         >
           <img v-if="showAppImage" :src="identity?.iconSrc" class="size-8 rounded-md" alt="" decoding="async" @error="appIconBroken = true">
           <Icon v-else :name="appIconName" class="size-5 text-white" aria-hidden="true" />
-          <span v-if="hubUrl" class="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-default shadow" aria-hidden="true">
-            <Icon name="lucide:layout-grid" class="size-2.5 text-highlighted" />
+          <span v-if="hubUrl" class="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-rail-foreground shadow" aria-hidden="true">
+            <Icon name="lucide:layout-grid" class="size-2.5 text-rail" />
           </span>
         </component>
       </template>
@@ -177,16 +179,16 @@ useOperatorWindowTitle();
           <OperatorInbox v-if="railShown" placement="header" />
         </ClientOnly>
         <div class="hidden pointer-fine:block">
-          <NuxtButton icon="i-lucide-keyboard" color="neutral" variant="ghost" square aria-label="Atalhos do teclado" title="Atalhos do teclado" @click="shortcuts.open.value = true" />
+          <NuxtButton icon="i-lucide-keyboard" color="neutral" variant="ghost" square class="hover:bg-rail-foreground/12!" aria-label="Atalhos do teclado" title="Atalhos do teclado" @click="shortcuts.open.value = true" />
         </div>
-        <NuxtButton v-if="operator" icon="i-lucide-lock" color="neutral" variant="ghost" square :aria-label="`${operator.name}: travar ou trocar`" title="Bloquear" @click="lock()" />
+        <NuxtButton v-if="operator" icon="i-lucide-lock" color="neutral" variant="ghost" square class="hover:bg-rail-foreground/12!" :aria-label="`${operator.name}: travar ou trocar`" title="Bloquear" @click="lock()" />
         <NuxtPopover v-if="operator">
           <NuxtButton
             color="neutral"
             variant="soft"
             square
             :aria-label="`Menu de ${operator.name}`"
-            class="rounded-full"
+            class="rounded-full bg-rail-foreground! text-rail! hover:bg-rail-foreground/90!"
           >
             <span v-if="initials" class="text-[13px] font-semibold" aria-hidden="true">{{ initials }}</span>
             <Icon v-else name="lucide:settings-2" class="size-5" aria-hidden="true" />
