@@ -953,27 +953,3 @@ onMounted(() => {
     </div>
   </div>
 </template>
-
-<style>
-@media (pointer: coarse) {
-  [data-operator-catalog]
-    :where(
-      button,
-      a[href],
-      input:not([type="hidden"]),
-      select,
-      textarea,
-      [role="button"],
-      [role="link"],
-      [role="tab"],
-      /* Segmentos de data/hora (reka) são divs `spinbutton` de ~20 px de altura;
-         no toque eles precisam do mesmo envelope de 44/48 px dos outros controles. */
-      [role="spinbutton"]
-    ):not([role="separator"]):not([role="checkbox"]):not([role="radio"]):not(
-      [role="switch"]
-    ) {
-    min-block-size: var(--spacing-control);
-    min-inline-size: var(--spacing-control);
-  }
-}
-</style>

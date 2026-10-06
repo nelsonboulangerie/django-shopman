@@ -214,3 +214,46 @@
 :root[data-keyboard="open"] [data-slot="sheet-content"] {
   max-height: calc(var(--viewport-visible-height) - var(--viewport-visible-top));
 }
+
+/* ============================================================================
+   ALVO DE TOQUE OPERACIONAL (ponteiro grosso) — regra COMPARTILHADA.
+
+   No ponteiro fino os controles ficam no padrão compacto do Nuxt UI. No toque
+   (dedo), todo controle frequente ganha o envelope de --spacing-control: 44 px no
+   celular e 48 px no tablet, porque operator-theme.css sobe o token em
+   `(pointer: coarse) and (min-width: 600px)`. A decisão é por CAPACIDADE do
+   dispositivo, não só por largura de viewport.
+
+   Fica aqui, e não no CSS de um componente, porque o alvo é do sistema inteiro:
+   antes a regra existia só escopada ao catálogo (`[data-operator-catalog]`), e as
+   apps reais não tinham envelope nenhum no toque. Global também alcança conteúdo
+   teleportado (popover/slideover/drawer), que uma regra escopada à raiz não pega.
+
+   Notas de escopo:
+   - checkbox/radio/switch ficam DE FORA: o envelope deles é o pseudo
+     `after:size-control` do app.config, que cresce sem mexer no layout.
+   - separator não é alvo.
+   - `min-*` não se aplica a elemento inline não substituído, então link de prosa
+     (`display: inline`) não incha; só controles de fato (button/inline-block/flex)
+     recebem o piso.
+   - Segmentos de data/hora (reka) são divs `spinbutton` de ~20 px; no toque
+     precisam do mesmo envelope.
+   ============================================================================ */
+@media (pointer: coarse) {
+  :where(
+    button,
+    a[href],
+    input:not([type="hidden"]),
+    select,
+    textarea,
+    [role="button"],
+    [role="link"],
+    [role="tab"],
+    [role="spinbutton"]
+  ):not([role="separator"]):not([role="checkbox"]):not([role="radio"]):not(
+    [role="switch"]
+  ) {
+    min-block-size: var(--spacing-control);
+    min-inline-size: var(--spacing-control);
+  }
+}
