@@ -18,6 +18,7 @@ const STATES = [
   { scenario: "empty", state: "empty" },
   { scenario: "dense", state: "dense" },
   { scenario: "error", state: "recoverable-error" },
+  { scenario: "unbound-device", state: "normal" },
 ];
 
 const selectedScenario = process.env.OPERATOR_VISUAL_SCENARIO || "";

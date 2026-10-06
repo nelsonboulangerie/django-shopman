@@ -73,8 +73,10 @@ createServer((req, res) => {
   }
   if (path === "/__visual/health") { send(res, 200, { ok: true }); return; }
   if (path === "/api/v1/backstage/operator/session/") {
+    // "unbound-device" reproduz a primeira visita (WP-UX-13 §4.3): dispositivo sem
+    // posto, que é justamente quando a oferta de vínculo (A1) aparece.
     send(res, 200, {
-      station: "GESTOR-1", workstation: null,
+      station: scenario === "unbound-device" ? null : "GESTOR-1", workstation: null,
       operator: { id: 1, username: "admin", name: "Admin" },
       locked: false, pin_must_change: false, authorized: true,
     });
