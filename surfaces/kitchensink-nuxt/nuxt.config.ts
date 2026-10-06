@@ -16,11 +16,14 @@ export default defineNuxtConfig({
       // Harness hermético somente no dev server da matriz. Produção nunca pode
       // transformar uma env em bypass do gate de permissão.
       kitchenSinkHarness:
-        process.env.NODE_ENV !== "production" && process.env.KITCHENSINK_VISUAL_MATRIX === "1",
+        process.env.NODE_ENV !== "production" &&
+        process.env.KITCHENSINK_VISUAL_MATRIX === "1",
       // O NOME da chave é o contrato com a env: o Nuxt deriva
       // public.djangoBaseUrl <- NUXT_PUBLIC_DJANGO_BASE_URL.
       djangoBaseUrl:
-        process.env.NUXT_PUBLIC_DJANGO_BASE_URL || process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
+        process.env.NUXT_PUBLIC_DJANGO_BASE_URL ||
+        process.env.NUXT_DJANGO_BASE_URL ||
+        "http://127.0.0.1:8000",
     },
   },
 
@@ -42,7 +45,12 @@ export default defineNuxtConfig({
 
   fonts: {
     families: [
-      { name: "Instrument Sans", provider: "google", weights: [400, 500, 600, 700], styles: ["normal"] },
+      {
+        name: "Instrument Sans",
+        provider: "google",
+        weights: [400, 500, 600, 700],
+        styles: ["normal"],
+      },
     ],
   },
 
@@ -62,7 +70,10 @@ export default defineNuxtConfig({
   },
 
   icon: {
-    clientBundle: { scan: true, sizeLimitKb: 0 },
+    clientBundle: {
+      scan: { globInclude: ["**/*.{vue,jsx,tsx,md,mdc,mdx,yml,yaml,ts,js}"] },
+      sizeLimitKb: 0,
+    },
     mode: "svg",
     class: "shrink-0",
     fetchTimeout: 2000,
@@ -77,7 +88,10 @@ export default defineNuxtConfig({
       htmlAttrs: { lang: "pt-BR" },
       // `title` e `theme-color` saem da capability PWA (surfaces/operator-kit/app-identity.json).
       meta: [
-        { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+        {
+          name: "viewport",
+          content: "width=device-width, initial-scale=1, viewport-fit=cover",
+        },
         { name: "robots", content: "noindex, nofollow" },
       ],
     },

@@ -76,7 +76,43 @@ Há cinco receitas, não uma largura por tela: confirmação, formulário curto,
 workspace, detalhe lateral e captura em tela cheia. Popover é informação breve.
 Sheet é detalhe ou ação responsiva. Modal não substitui página.
 
-## Estados executáveis
+## Laboratório visual e contratos oficiais
+
+O início do catálogo mostra exercícios comparáveis, ainda sujeitos à decisão do
+dono: card pai suave com unidade branca, card branco com unidade suave, elevação
+discreta, ação principal em largura total, divisão 1:2 e largura pelo conteúdo.
+Não são novas variantes autorizadas para todas as apps.
+
+Badges demonstram `solid`, `outline`, `soft` e `subtle` com cores semânticas,
+primária e neutra. Grupos de checkbox e radio demonstram `list`, `card` e `table`.
+Select e SelectMenu usam popovers oficiais, incluindo busca e item indisponível.
+Calendários usam data fixa e intervalo fixo, sem depender do relógio ou do backend.
+
+A tabela compõe seleção, expansão, badges, sorting, filtro, total de coluna,
+paginação e rolagem externa. Reordenação manual tem exercício próprio com drag
+and drop e alternativa equivalente por teclado/toque. Fetch e infinite scroll
+devem consumir os contratos de dados e reconciliação do kit; não exigem nova
+estética nem um mock de rede vivo no catálogo.
+
+`useNextFocus` acompanha mudança de etapa. `usePendingAction` demonstra uma
+resposta simulada concluída explicitamente, com bloqueio de repetição.
+`useConnectivity` mostra a rede real do dispositivo separada dos estados de
+fixture. O shell usa DashboardGroup/Sidebar/Panel/Navbar/Toolbar e a página usa
+Container/Page/Header/Body/Aside oficiais.
+
+O tema é definido em `operator-theme.css` e `app/app.config.ts` na layer:
+`@theme` fornece tipografia e geometria, `--ui-*` traduz cores e superfícies para
+o contrato oficial, e slots globais mantêm legibilidade dos alertas. O painel
+não soma padding ao container da página. Ícones usam `@nuxt/icon`, SVG e coleções
+locais; o scan inclui fixtures TypeScript. Fontes usam `@nuxt/fonts` com
+Instrument Sans. Não se introduz CDN manual, fonte por componente ou paleta local.
+
+Referências: [índice para agentes](https://ui.nuxt.com/llms.txt),
+[design system](https://ui.nuxt.com/docs/getting-started/theme/design-system),
+[variáveis CSS](https://ui.nuxt.com/docs/getting-started/theme/css-variables) e
+[customização por slots](https://ui.nuxt.com/docs/getting-started/theme/components).
+
+## Cenários determinísticos
 
 O seletor do Kitchen Sink grava o cenário na URL. Os cenários cobrem `loading`,
 `empty`, `error`, `offline`, `reconnecting`, `slow-network`, `readonly`,

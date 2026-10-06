@@ -1,4 +1,5 @@
 export const kitchenSinkNavigation = [
+  { label: "Laboratório", icon: "i-lucide-flask-conical", to: "#visual-exercises" },
   { label: "Fundamentos", icon: "i-lucide-swatch-book", to: "#foundations" },
   { label: "Anatomias", icon: "i-lucide-panels-top-left", to: "#anatomies" },
   { label: "Componentes", icon: "i-lucide-box", to: "#components" },

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 import {
   kitchenSinkExceptions,
@@ -19,6 +19,10 @@ const hydrated = ref(false);
 const modalOpen = ref(false);
 const sidebarOpen = ref(true);
 const step = ref(1);
+const { reveal } = useNextFocus();
+watch(step, (value) => {
+  void reveal(`catalog-step-${value}`);
+});
 const notifications = ref(true);
 const selection = ref(true);
 const operationalMode = computed(() => route.query.mode === "operational");
@@ -137,19 +141,12 @@ onMounted(() => {
           </div>
           <div class="flex flex-wrap items-center gap-[var(--op-control-gap)]">
             <label class="op-label" for="catalog-state">Cenário</label>
-            <UiNativeSelect
+            <NuxtSelect
               id="catalog-state"
               v-model="activeState"
               aria-label="Cenário determinístico"
-            >
-              <option
-                v-for="item in kitchenSinkStateOptions"
-                :key="item.value"
-                :value="item.value"
-              >
-                {{ item.label }}
-              </option>
-            </UiNativeSelect>
+              :items="[...kitchenSinkStateOptions]"
+            />
             <UiButton text="Ação principal" icon="lucide:plus" />
           </div>
         </header>
@@ -175,6 +172,7 @@ onMounted(() => {
           title="Anatomia canônica do operador"
           description="Fixtures herméticas, composição real e um vocabulário visual deliberadamente curto."
         >
+          <OperatorKitchenSinkExercises />
           <section
             id="foundations"
             class="space-y-4"
@@ -449,6 +447,13 @@ onMounted(() => {
                 ><h3 class="op-title">Fluxo em etapas</h3></template
               >
               <UiStepper v-model="step" :items="[...kitchenSinkSteps]" />
+              <p
+                :data-focus-target="`catalog-step-${step}`"
+                class="op-body mt-3"
+              >
+                Etapa {{ step }}. O foco acompanha a tarefa pelo useNextFocus
+                canônico.
+              </p>
             </NuxtCard>
           </section>
 

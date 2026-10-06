@@ -21,9 +21,9 @@ withDefaults(defineProps<{
     >
       <slot name="sidebar" />
     </NuxtDashboardSidebar>
-    <NuxtDashboardPanel class="min-w-0">
+    <NuxtDashboardPanel class="min-w-0" :ui="{ body: 'p-0 sm:p-0 gap-0' }">
       <template #header>
-        <NuxtDashboardNavbar>
+        <NuxtDashboardNavbar class="h-auto min-h-[var(--op-header-min-height)] py-2">
           <slot name="navbar" />
         </NuxtDashboardNavbar>
         <NuxtDashboardToolbar v-if="$slots.toolbar">
