@@ -139,6 +139,27 @@ O único fix que o `npm audit` oferecia para `simple-git` é **downgrade major p
 existe correção não-quebradora. E `simple-git` é ferramenta de dev/build, não entra no
 bundle de runtime.
 
+**Prova direta (execução do #1512, 2026-10-06).** O job `Marketing — cadeia completa`
+do #1512 (run `37521131066`, job `112466492783`) terminou vermelho com **exatamente
+um passo falho**:
+
+| passo | resultado |
+|---|---|
+| Unit and component tests | success |
+| Lint | success |
+| Typecheck | success |
+| Production build | success |
+| Browser E2E | success |
+| Accessibility | success |
+| Visual regression matrix | success |
+| Security contracts | success |
+| **Audit operator-kit supply chain** | **failure** |
+| Audit Marketing supply chain | skipped (o anterior falhou) |
+
+Tudo o que é Marketing passou; o PR foi mergeado assim mesmo (o check não é
+obrigatório). Este é o canário em uma linha: o Marketing ficou vermelho por um passo
+que auditava o `operator-kit`.
+
 **Por que se repetia.** O audit do kit rodava no job do Marketing e reprovava TODOS os
 PRs; a dívida é transitiva, sem fix não-quebrador; o check não é obrigatório; e a
 allowlist cobria só `braces` e `node-forge`, então cada advisory novo (os quatro do
@@ -227,4 +248,8 @@ job de cada app consumidor.
 - `python scripts/check_surface_versions.py`: verde (38 pacotes compartilhados, 12
   apps — o `kitchensink-nuxt` do #1512 entrou alinhado);
 - `python scripts/check_theme_baseline_contract.py`: verde; teste de falha forçada
-  (tema alterado) reprovou como esperado e voltou ao verde após restaurar.
+  (tema alterado) reprovou como esperado e voltou ao verde após restaurar;
+- CI do PR #1513 (head `4d92c9f13`): `Versões das superfícies` pass (inclui o gate de
+  tema), `Supply chain — npm audit (operator-kit)` pass (9 s), `Supply chain — npm
+  audit (marketing-nuxt)` pass (14 s), `marketing-nuxt` pass; `Marketing — cadeia
+  completa` sem os passos de audit (em execução na redação).
