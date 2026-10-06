@@ -8,6 +8,15 @@
 
 > Método WP-UX-13 §4: tela **realmente aberta** e inspecionada nos viewports; o que não foi possível fica vermelho com próximo passo. Este laudo **não** implementa anatomia e **não** regenera baseline.
 
+## Correção de rumo do dono (06/10/2026) — prevalece sobre a primeira versão
+
+O dono reavaliou a fonte e corrigiu a decisão. **Nada do que já existe no kit é intocável.**
+
+1. **Rail é o DashboardSidebar**, não um rail novo. Tema renderizado: root relative hidden lg:flex, min-w-16 w-(--width), com a largura vindo de unit + defaultSize do DashboardGroup. Decisão: unit=px, default-size ~76–84, resizable=false, collapsible=false, ui.root tematizado para os tokens do rail (bg-rail / text-rail-foreground / altura) → rail fixo canônico. O que é Shopman é o **conteúdo**: seções, badge/atenção, Alt 1…9, selo/trocador — via NavigationMenu + composables do kit. **Nada** de OperatorSuiteRail novo. Abaixo de lg o DashboardSidebar é hidden; a barra de seções mobile entra como composição.
+2. **Header é o do Dashboard**, não o PageHeader. OperatorOfficeShell = DashboardGroup/Sidebar/Panel/Navbar/Toolbar; o board é superfície de escritório → cabeçalho = DashboardNavbar (leading/title/right) + DashboardToolbar (filtros). PageHeader só dentro de composição Page (fluxo de leitura), **nunca** como chrome do board.
+3. **Card de fila é o NuxtCard** (ou algo diretamente derivado dele: mesmos slots/tokens/raio). HTML semântico só **dentro** do card (badges, linhas, ações).
+4. **MoreBelow / useNextFocus** devem ser reavaliados para harmonizar com o Nuxt UI: trocar bg-background/33, ring-border/40 e ring-ring pelas classes semânticas do tema (bg-default/bg-elevated, text-highlighted/text-muted, ring-default), mesmo raio/elevação de Card/Button/Slideover, e API/props no padrão Nuxt UI. Entregar um **mapa antes/depois** (pendente, no corte de anatomia).
+
 ## Viewports inspecionados
 
 | viewport | dimensão | captura | resultado |
@@ -47,10 +56,10 @@
 - **Contexto:** v3 §2.2 quer uma busca só, com escopo `Esta tela · App · Suíte` e câmera no celular; isso é **WP-UX-11**.
 - **Solução proposta:** manter a busca local no corte; registrar a lacuna e não construir uma segunda busca.
 
-### A5 — Casca atual é Shopman (`Operator*`), não a casca canônica do kit (severidade **alta** para o objetivo)
-- **Evidência:** `GestorNav` usa `OperatorSuiteRail` + `OperatorSectionBar`; header `OperatorPageHeader`; board usa `UiFilterChip`, `UiIconButton`, `UiPopover`, `UiDialog*`, `UiSheet`, `UiTabs*`, `UiNativeSelect`, `UiCheckbox`.
-- **Contexto:** o app já se declara piloto visual (`data-suite="v3"`), mas a casca canônica entregue no kitchen sink é `DashboardGroup/Sidebar/Panel/Navbar/Toolbar`. Há **tensão de anatomia**: a v3 quer um rail compacto de 76 px (seções do app + trocador no selo), que o Nuxt UI não oferece como componente.
-- **Solução proposta:** o rail compacto é **primitiva Shopman de primeira classe** (categoria 2), construída sobre Nuxt UI/Reka com contrato, tema e testes — não é `DashboardSidebar`. O resto do chrome (header, busca, menus, overlays) converge para os componentes Nuxt UI. Ver decisão por família abaixo.
+### A5 — Casca atual é Shopman (Operator*), não a casca canônica — correção do dono: convergir para Dashboard* (severidade **alta** para o objetivo)
+- **Evidência:** GestorNav usa OperatorSuiteRail + OperatorSectionBar; header OperatorPageHeader; board usa UiFilterChip, UiIconButton, UiPopover, UiDialog*, UiSheet, UiTabs*, UiNativeSelect, UiCheckbox.
+- **Contexto:** o app já se declara piloto visual (data-suite=v3), mas a casca canônica é DashboardGroup/Sidebar/Panel/Navbar/Toolbar. A leitura anterior (rail compacto como primitiva nova do kit) foi **corrigida pelo dono**: o rail compacto se obtém **configurando o DashboardSidebar** (unit=px, default-size ~76–84, sem resize/colapso, ui.root tematizado); a especificidade Shopman vive no conteúdo (seções, badge, Alt, selo), não num componente paralelo.
+- **Solução proposta:** OperatorOfficeShell passa a ser o chrome canônico Dashboard*; conteúdo do rail via NavigationMenu + composables do kit; header via DashboardNavbar + DashboardToolbar. Sem OperatorSuiteRail, sem PageHeader como chrome, sem card cru.
 
 ### A6 — Card do pedido denso (severidade **baixa**)
 - **Evidência:** capturas mobile/tablet/desktop: código, tempo/meta, cliente, canal, pills (Entrega/Retirada, N itens), itens, pagamento, valor, botão primário, `⋯`.
@@ -72,14 +81,14 @@ Dois eixos: **estrutura** (Nuxt UI / Reka / HTML) e **aparência** (manter / ref
 
 | família | estrutura | aparência | motivo | alternativas rejeitadas |
 |---|---|---|---|---|
-| Rail de suíte + seções | Reka `NavigationMenu` (ou Nuxt UI `NavigationMenu`) sob wrapper Shopman `OperatorSuiteRail`; **não** `DashboardSidebar` | manter (tokens) + refinar | v3: rail 76 px com seções, contagem, atenção e tecla; Nuxt UI não tem rail de suíte | `DashboardSidebar` (18% de largura); sidebar offcanvas; segundo menu |
-| Header de página | Nuxt UI `PageHeader` + slots (`OperatorPageHeader` fino) | refinar | cabeçalho único v3; hoje há header + linha de filtros | cabeçalho local novo |
+| Rail (DashboardSidebar) | Nuxt UI **DashboardSidebar** com unit=px, default-size ~76–84, resizable=false, collapsible=false, ui.root tematizado; conteúdo por **NavigationMenu** + composables do kit | adotar adaptado | correção do dono: o rail é configuração do canônico, não componente paralelo | nova primitiva OperatorSuiteRail; DashboardSidebar em % (18%) |
+| Header | Nuxt UI **DashboardNavbar** (leading/title/right) + **DashboardToolbar**, dentro do OperatorOfficeShell (DashboardGroup/Sidebar/Panel) | adotar adaptado | correção do dono: board é escritório; PageHeader só dentro de Page | OperatorPageHeader como chrome; PageHeader como chrome do board |
 | Busca | `NuxtInput`/`InputMenu` sob `OperatorSuiteSearch` | manter | atalho `/`, alcance é WP-UX-11 | `input` nativo; segunda busca |
 | Botão primário/secundário/ícone | Nuxt UI `Button` sob `UiButton` | refinar (44/48 px) | matriz WP-UX-8 §5 | `<button>` cru; variante nova |
 | Chip de recorte | Nuxt UI `Button` `soft`/`outline` (ou `UiFilterChip`) | manter + consolidar recortes (A3) | padrão da suíte | `span` clicável |
 | Segmentado (Fila/Supervisão) | Nuxt UI `Tabs` `variant="pill"` (ou `UiSegmentedControl` no kit) | adotar adaptado | v3 §2.4 | `div` + botões; dois segmentados |
 | Menu (Urgência, ⋯) | Nuxt UI `DropdownMenu` (`BoardMenu` sobre ele) | adotar adaptado | portal/teclado/foco canônicos | `UiPopover` por controle |
-| Card de item de fila | HTML semântico (`li`/`article`) + tokens; **não** `NuxtCard` | manter + refinar (A6) | unidade de fila, densidade pela atenção | `NuxtCard`; grade de card |
+| Card de fila | Nuxt UI **NuxtCard** (ou diretamente derivado: mesmos slots/tokens/raio); HTML semântico só dentro | adotar adaptado | correção do dono | HTML cru como card |
 | Pílula de estado | Nuxt UI `Badge` / `UiStatusPill` no kit | adotar adaptado | 6 significados (§8); hoje há cor por canal | cor por canal como estado |
 | Progresso de preparo | Nuxt UI `Progress` | adotar adaptado | "0 de 2 prontos" | barra `div` custom |
 | Dialog / confirmação | Nuxt UI `Modal`/`AlertDialog` sobre Reka (`UiDialog*`) | manter | foco/portal/Escape | overlay manual |
@@ -88,13 +97,13 @@ Dois eixos: **estrutura** (Nuxt UI / Reka / HTML) e **aparência** (manter / ref
 | Checkbox | Nuxt UI `Checkbox` (`UiCheckbox`) | manter | seleção em lote | nativo pintado |
 | Abas de zona | Nuxt UI `Tabs` | adotar adaptado | recorte nível 2 (v3 §4.2) | abas locais |
 | Overlay de posto | Nuxt UI `Modal`/`Slideover` (família overlay) | **refinar** (A1: não cobrir o board) | contrato de chrome §3.3 | overlay opaco full-screen |
-| MoreBelow / swipe | primitiva Shopman `MoreBelow`/`useMoreBelow` (kit) | manter | necessidade transversal Omotenashi | recriar por app |
-| Próximo foco | primitiva Shopman `useNextFocus` (kit) | manter | Omotenashi mobile, pixel-perfect | scroll manual por tela |
+| MoreBelow / swipe | primitiva Shopman MoreBelow/useMoreBelow, com tokens e API harmonizados ao Nuxt UI (bg-default/bg-elevated, text-highlighted/text-muted, ring-default; mesmo raio/elevação de Card/Button/Slideover) | refinar (mapa antes/depois) | correção do dono | manter os tokens atuais; recriar por app |
+| Próximo foco | primitiva Shopman useNextFocus, com API/props no padrão Nuxt UI e tokens semânticos | refinar (mapa antes/depois) | correção do dono | manter os tokens atuais; scroll manual por tela |
 | Live status | `OperatorLiveStatus` (kit) sobre Nuxt UI | manter | v3 §2.3 | indicador local |
 | Ícones | `@nuxt/icon` + Lucide (caminho canônico Nuxt UI) | manter | decisão do dono | SVG inline por app |
 | Tipografia | tokens `op-*` sobre a escala Nuxt UI | refinar (A7) | uma escala, um significado (L3.3) | fonte menor para caber |
 
-**Leitura da decisão:** nenhuma família exige Reka/HTML direto além do **rail compacto** (que é o candidato a primitiva Shopman de primeira classe) e do **card de fila** (HTML semântico por densidade). O resto converge para componentes Nuxt UI já existentes, tematizados — exatamente a regra "o canônico cobre; o app cede".
+**Leitura da decisão (corrigida pelo dono):** o chrome converge para o canônico do Dashboard (Sidebar configurado como rail em px, Navbar/Toolbar), o conteúdo do rail é Shopman via NavigationMenu + composables do kit, e o card de fila é NuxtCard. Nenhuma família exige Reka/HTML direto. MoreBelow/useNextFocus continuam primitivas Shopman, mas com tokens e API harmonizados ao Nuxt UI.
 
 ## O que **não** foi possível abrir/rodar (vermelho explícito)
 
@@ -108,7 +117,7 @@ Dois eixos: **estrutura** (Nuxt UI / Reka / HTML) e **aparência** (manter / ref
 ## Próximo passo proposto (implementação do primeiro corte)
 
 1. **Validar este laudo e a decisão por família com o dono** (é a prévia antes da anatomia, WP-UX-13 §2.5).
-2. Abrir PR do primeiro corte (shell + `/`) com: rail compacto como primitiva do kit (contrato/tema/testes) e convergência do header/board aos canônicos; **sem** mudar rota, regra, permissão ou contrato de backend.
+2. Abrir PR do primeiro corte (shell + /) com OperatorOfficeShell = DashboardGroup/Sidebar/Panel/Navbar/Toolbar (DashboardSidebar em px como rail; conteúdo por NavigationMenu), header DashboardNavbar + DashboardToolbar, card de fila NuxtCard e MoreBelow/useNextFocus harmonizados; **sem** mudar rota, regra, permissão ou contrato de backend.
 3. Corrigir A1 (overlay de posto não cobre o board) e A3 (recortes) junto, se aprovado.
 4. Adicionar `runner` das superfícies do orders ao ledger e gerar a matriz com o Chromium da CI (baseline oficial).
 5. Artefatos do WP-UX-13 §8: inventário (feito), laudo (este), decisão canônica (acima), contact sheet antes/depois, estados, teclado/toque, a11y, desempenho, exceções, comandos.
