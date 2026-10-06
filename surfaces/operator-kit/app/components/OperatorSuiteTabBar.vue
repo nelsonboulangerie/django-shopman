@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // Bottom tab bar canônica da suíte (categoria 2): NavigationMenu com o `ui` oficial
 // do padrão "With bottom tab bar". Mora no kit para toda superfície de operador herdar.
-defineProps<{ items: any[]; ui?: any; label: string }>();
+import type { NavigationMenuItem, NavigationMenuProps } from "@nuxt/ui";
+
+defineProps<{ items: NavigationMenuItem[]; ui?: NavigationMenuProps["ui"]; label: string }>();
 </script>
 
 <template>
