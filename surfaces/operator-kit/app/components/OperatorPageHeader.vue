@@ -70,7 +70,7 @@ const { request: openSearch } = useSuiteSearchRequest();
 
 <template>
   <header
-    class="flex shrink-0 flex-col border-b border-border bg-card print:hidden"
+    class="flex min-h-[var(--op-header-min-height)] shrink-0 flex-col border-b border-border bg-card print:hidden"
     data-operator-page-header
   >
     <div class="flex flex-wrap items-center gap-x-2 gap-y-2 pr-2 pl-4 md:gap-x-3 md:px-4 md:pt-3 md:pb-2.5">

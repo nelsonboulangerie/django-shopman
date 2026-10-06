@@ -37,12 +37,12 @@ import {
   suiteResultColor,
   suiteResultLabel,
   suiteScopes,
-  suiteSearchHotkey,
   suiteTotal,
   surfaceRefForKitApp,
   type SuiteSearchResult,
   type SuiteSearchScope,
 } from "../presentation/suiteSearch";
+import { SUITE_SEARCH_SHORTCUTS } from "../shortcuts/suiteShortcuts";
 
 const props = withDefaults(
   defineProps<{
@@ -220,18 +220,22 @@ function afterOpen(event: MouseEvent, result: SuiteSearchResult) {
 
 // Teclas da tela inteira e o pedido da lupa: só a busca dona atende.
 const { isOwner } = useSuiteSearchOwnership();
-function onWindowKeydown(event: KeyboardEvent) {
-  if (event.defaultPrevented || !isOwner() || !suiteSearchHotkey(event, { slash: props.variant !== "hotkey" })) return;
-  event.preventDefault();
-  openSearch();
-}
+const searchCommands = props.variant === "hotkey"
+  ? SUITE_SEARCH_SHORTCUTS.filter((command) => command.id !== "suite.search.slash")
+  : SUITE_SEARCH_SHORTCUTS;
+const shortcutContexts = computed<ReadonlySet<string>>(() => new Set(["ready"]));
+useOperatorShortcutMap(
+  searchCommands,
+  Object.fromEntries(searchCommands.map((command) => [command.id, () => {
+    if (isOwner()) openSearch();
+  }])),
+  shortcutContexts,
+);
 const { requests } = useSuiteSearchRequest();
 watch(requests, () => {
   if (isOwner()) openSearch();
 });
-onMounted(() => window.addEventListener("keydown", onWindowKeydown));
 onBeforeUnmount(() => {
-  window.removeEventListener("keydown", onWindowKeydown);
   stopCamera();
   unlockScroll();
 });

@@ -21,12 +21,13 @@
 //
 // Teclas: Alt 1…9 levam às seções de cima, na ordem, em todo app, impressas sob o nome
 // com ponteiro fino (T-05). "?" abre a ajuda de atalhos.
-import { computed, onBeforeUnmount, onMounted, ref, useAttrs } from "vue";
+import { computed, ref, useAttrs } from "vue";
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui";
 
 import { operatorAppNamed } from "../../appIdentity";
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
-import { isShortcutsHelpKey, sectionIndexFromKey, withSectionShortcuts } from "../presentation/suiteChrome";
+import { withSectionShortcuts } from "../presentation/suiteChrome";
+import { SUITE_HELP_SHORTCUT, SUITE_SECTION_SHORTCUTS } from "../shortcuts/suiteShortcuts";
 
 defineOptions({ inheritAttrs: false });
 
@@ -125,39 +126,25 @@ function go(section: OperatorSection) {
   else emit("select", section.key);
 }
 
-function editing(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  return el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
-}
-
-// Alt+N leva à seção N; "?" abre a ajuda. Quem já tratou a tecla (a venda do PDV, a
-// Produção) marca `defaultPrevented` e a peça não repete. Com diálogo aberto, nada.
-function onKeydown(event: KeyboardEvent) {
-  if (event.defaultPrevented || event.repeat) return;
-  if (document.querySelector("[role='dialog'][data-state='open'], [role='alertdialog']")) return;
-  const index = sectionIndexFromKey(event);
-  if (index != null) {
-    const section = topSections.value[index];
-    if (!section) return;
-    event.preventDefault();
-    go(section);
-    return;
-  }
-  if (isShortcutsHelpKey(event) && !editing(event.target)) {
-    event.preventDefault();
-    shortcuts.open.value = true;
-  }
-}
-onMounted(() => window.addEventListener("keydown", onKeydown));
-onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
+const shortcutContexts = computed<ReadonlySet<string>>(() => new Set(["ready"]));
+useOperatorShortcutMap(
+  [...SUITE_SECTION_SHORTCUTS, ...SUITE_HELP_SHORTCUT],
+  Object.fromEntries([
+    ...SUITE_SECTION_SHORTCUTS.map((command, index) => [command.id, () => {
+      const section = topSections.value[index];
+      if (section) go(section);
+    }]),
+    ["suite.shortcuts-help", () => { shortcuts.open.value = true; }],
+  ]),
+  shortcutContexts,
+);
 </script>
 
 <template>
   <aside
     v-if="!isCollapsed"
     v-bind="attrs"
-    class="sticky top-0 hidden h-dvh w-[84px] shrink-0 flex-col items-center gap-1 overflow-y-auto bg-rail pb-2 text-rail-foreground no-scrollbar rail:flex print:hidden"
+    class="sticky top-0 hidden h-dvh w-[var(--op-rail-compact-width)] shrink-0 flex-col items-center gap-1 overflow-y-auto bg-rail pb-2 text-rail-foreground no-scrollbar rail:flex print:hidden"
     :aria-label="`Barra do app ${appLabel}`"
     data-suite-rail
   >

@@ -44,6 +44,7 @@ FILES = (
     "shopman/backstage/permissions.py",
     "shopman/backstage/models/closing.py",
     "surfaces/operator-kit/app-identity.json",
+    "docs/reference/operator-component-ledger.json",
     "tools/pwa-gate/check.mjs",
     "CLAUDE.md",
     "README.md",
@@ -96,6 +97,19 @@ def test_the_generated_app_extends_the_kit_and_locks_on_its_permission(repo: Pat
     package = json.loads((app / "package.json").read_text())
     assert package["name"] == "loyalty-nuxt"
     assert package["scripts"]["dev"] == "nuxt dev --host 127.0.0.1 --port 3009"
+    ledger = json.loads((repo / "docs/reference/operator-component-ledger.json").read_text())
+    generated = next(item for item in ledger["apps"] if item["id"] == "loyalty")
+    assert generated["owner"] == "surface:loyalty"
+    assert generated["surfaces"] == [
+        {
+            "id": "home",
+            "source_files": ["app/pages/index.vue"],
+            "routes": ["/"],
+            "variants": ["normal", "loading", "empty", "error"],
+            "families": ["action", "navigation", "data-display", "feedback"],
+            "status": "pending",
+        }
+    ]
 
 
 def test_the_lock_is_the_mold_lock_so_versions_start_aligned(repo: Path):

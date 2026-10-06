@@ -46,6 +46,24 @@
 :root {
   --radius: 0.625rem; /* soft (10px) — levemente mais arredondado que o antigo 8px */
 
+  /* Geometria estrutural da suíte. Shells e wrappers consomem estes papéis; apps
+     não repetem largura de rail, chrome, pane nem escala de espaçamento. */
+  --op-rail-compact-width: 5.25rem;
+  --op-rail-expanded-width: 16rem;
+  --op-header-min-height: 3.5rem;
+  --op-action-bar-min-height: 3.5rem;
+  --op-pane-min-inline-size: 18rem;
+  --op-pane-comfortable-inline-size: 24rem;
+  --op-page-inline-space: clamp(1rem, 2vw, 2rem);
+  --op-page-block-space: clamp(1rem, 2vh, 1.5rem);
+  --op-region-gap: 1.5rem;
+  --op-control-gap: 0.5rem;
+  --op-splitter-handle: 0.25rem;
+  --op-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --op-layer-chrome: 30;
+  --op-layer-resize: 35;
+  --op-layer-overlay: 50;
+
   --background: #fcf6f1; /* Faubourg-100 — paper quente do balcão */
   --foreground: #3b2a1e; /* Brass-950 — bronze quase-marrom */
   --card: #ffffff; /* surface-alt */

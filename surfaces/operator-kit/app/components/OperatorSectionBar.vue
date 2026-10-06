@@ -43,7 +43,7 @@ const layout = computed(() => phoneBarLayout(barSections.value, props.max));
 <template>
   <nav
     v-if="barSections.length > 1"
-    class="sticky bottom-0 z-30 mt-auto flex border-t border-border bg-card pb-[env(safe-area-inset-bottom)] rail:hidden print:hidden"
+    class="sticky bottom-0 z-[var(--op-layer-chrome)] mt-auto flex border-t border-border bg-card pb-[var(--op-safe-bottom)] rail:hidden print:hidden"
     :aria-label="label"
     data-operator-section-bar
     data-focus-obstruction

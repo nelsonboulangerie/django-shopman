@@ -1,12 +1,38 @@
 {
   "$schema": "../schemas/operator-component-ledger.schema.json",
   "$comment": "Cobertura canônica do WP-UX-8. Uma rota pode conter várias telas operacionais; elas aparecem em variants até virarem rotas próprias.",
-  "version": 1,
+  "version": 2,
   "scope": {
     "kind": "operator",
     "excluded": ["storefront-nuxt", "Admin/Unfold"],
     "status_values": ["pending", "audited", "migrated", "retained-with-reason"],
     "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"]
+  },
+  "audit": {
+    "owner": "WP-UX-13B",
+    "browser_lock": "surfaces/operator-kit/visual/browser-lock.json",
+    "runner": "scripts/run_operator_visual.py",
+    "evidence_root": "test-results/operator-evidence",
+    "closure_gate": "python scripts/check_operator_component_ledger.py --require-complete",
+    "viewports": [
+      { "id": "desktop-wide", "label": "1920x1080", "width": 1920, "height": 1080, "profile": "desktop-keyboard", "touch": false },
+      { "id": "desktop-common", "label": "1440x900", "width": 1440, "height": 900, "profile": "desktop-keyboard", "touch": false },
+      { "id": "desktop-low", "label": "1366x768", "width": 1366, "height": 768, "profile": "desktop-keyboard", "touch": false },
+      { "id": "desktop-compact", "label": "1280x800", "width": 1280, "height": 800, "profile": "desktop-keyboard", "touch": false },
+      { "id": "tablet-landscape", "label": "1180x820", "width": 1180, "height": 820, "profile": "tablet-touch", "touch": true },
+      { "id": "tablet-portrait", "label": "820x1180", "width": 820, "height": 1180, "profile": "tablet-touch", "touch": true },
+      { "id": "mobile-standard", "label": "390x844", "width": 390, "height": 844, "profile": "mobile-touch", "touch": true },
+      { "id": "mobile-narrow", "label": "320x568", "width": 320, "height": 568, "profile": "mobile-touch", "touch": true },
+      { "id": "zoom-200", "label": "1280x800@200%", "width": 1280, "height": 800, "profile": "desktop-keyboard", "touch": false, "zoom": 2 }
+    ],
+    "states": [
+      "loading-initial", "loading-partial", "empty", "sparse", "normal", "dense", "extreme-content", "long-content",
+      "recoverable-error", "terminal-error", "conflict", "forbidden", "session-expired", "offline",
+      "degraded", "stale", "action-pending", "success", "failure", "idempotent-repeat", "undo",
+      "modal", "popover", "menu", "tooltip", "sheet", "layered-overlays", "keyboard", "keyboard-focus",
+      "touch", "scanner", "camera", "rotation", "selected", "multi-selected", "hover", "disabled",
+      "first-visit", "saved-state", "deep-link"
+    ]
   },
   "families": [
     "action",
@@ -24,6 +50,7 @@
   "apps": [
     {
       "id": "hub",
+      "owner": "WP-UX-13C",
       "directory": "hub-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
@@ -45,6 +72,7 @@
     },
     {
       "id": "pos",
+      "owner": "WP-UX-13J",
       "directory": "pos-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
@@ -162,6 +190,7 @@
     },
     {
       "id": "kds",
+      "owner": "WP-UX-13I",
       "directory": "kds-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
@@ -199,6 +228,7 @@
     },
     {
       "id": "orders",
+      "owner": "WP-UX-13D",
       "directory": "orders-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
@@ -300,6 +330,7 @@
     },
     {
       "id": "production",
+      "owner": "WP-UX-13H",
       "directory": "production-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
@@ -425,6 +456,7 @@
     },
     {
       "id": "marketing",
+      "owner": "WP-UX-13E",
       "directory": "marketing-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
@@ -510,6 +542,7 @@
     },
     {
       "id": "purchase",
+      "owner": "WP-UX-13G",
       "directory": "purchase-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {
@@ -531,6 +564,7 @@
     },
     {
       "id": "bi",
+      "owner": "WP-UX-13F",
       "directory": "bi-nuxt",
       "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
       "baseline": {

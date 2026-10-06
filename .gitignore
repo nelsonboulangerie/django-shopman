@@ -39,6 +39,7 @@ temp/
 # Playwright
 surfaces/storefront-nuxt/test-results/
 surfaces/storefront-nuxt/playwright-report/
+surfaces/operator-kit/test-results/
 surfaces/storefront-nuxt/blob-report/
 
 # Quarentena local e guias de credencial — nunca commitar.

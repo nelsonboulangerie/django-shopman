@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { scanOperatorGeometry } from "../../../operator-kit/visual/scanner";
 
 // S5 do redesenho das Encomendas: o painel do Balcão nos cinco tamanhos do WP
 // (375, 390, 768, 1024, 1440). Sem retrato: o que se prova é a geometria, que
@@ -23,7 +24,8 @@ for (const size of SIZES) {
     await expect(panel).toBeVisible();
     await expect(detail).toBeVisible();
 
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const geometry = await scanOperatorGeometry(page, { touch: size.width < 1024 });
+    expect(geometry.filter(({ kind }) => kind === "horizontal-overflow")).toEqual([]);
     // Nada do painel passa da borda dele (nome, saldo e botões cabem).
     const overflow = await panel.evaluate((el) => [...el.querySelectorAll("*")].some((child) => {
       const box = child.getBoundingClientRect();

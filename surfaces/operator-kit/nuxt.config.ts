@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 // Nuxt layer compartilhado das superfícies de operador.
 //
 // Os apps (pos/orders/kds/production-nuxt + Central) fazem
@@ -15,6 +17,7 @@
 // neste layer (o POS mantém a própria variante, usePosOperatorLock). O storefront fica
 // de fora (superfície de cliente, branded, proxy e harness próprios).
 export default defineNuxtConfig({
+  devtools: { enabled: false },
   // Layer segue a convenção Nuxt 4 (srcDir `app/`) igual aos apps hospedeiros, para
   // que components/composables/utils/plugins em `app/` sejam auto-importados via extends.
   future: { compatibilityVersion: 4 },
@@ -41,6 +44,21 @@ export default defineNuxtConfig({
     ],
   ],
 
+  // Imports usados pelos próprios componentes do layer. O toast continua sob
+  // responsabilidade dos apps hospedeiros; o catálogo o declara somente no
+  // harness para poder compilar o layer isoladamente sem mudar essa fronteira.
+  imports: {
+    imports: [
+      { from: "tailwind-variants", name: "tv" },
+      { from: "tailwind-variants", name: "VariantProps", type: true },
+      { from: "@vueuse/core", name: "reactiveOmit" },
+      { from: "@vueuse/core", name: "useEventListener" },
+      ...(process.env.OPERATOR_KIT_CATALOG === "1"
+        ? [{ from: "vue-sonner", name: "toast", as: "useSonner" }]
+        : []),
+    ],
+  },
+
   hooks: {
     // Os oito apps já instalam @nuxtjs/color-mode e esse é o dono canônico do
     // composable. O Nuxt UI também exporta um fallback homônimo mesmo quando seu
@@ -54,16 +72,28 @@ export default defineNuxtConfig({
       );
       if (duplicate >= 0) imports.splice(duplicate, 1);
     },
+    // Catálogo vivo somente no harness explícito. Nenhum consumer publica esta
+    // rota em produção, mesmo que estenda a layer inteira.
+    ...(process.env.OPERATOR_KIT_CATALOG === "1"
+      ? {
+          "pages:extend": (pages) => {
+            pages.push({
+              name: "operator-kit-catalog",
+              path: "/__operator_kit_catalog",
+              file: fileURLToPath(new URL("./catalog/OperatorKitCatalogPage.vue", import.meta.url)),
+            });
+          },
+        }
+      : {}),
   },
 
-  // Um reka-ui só no bundle do app. Sem isto, o componente do kit que importa
-  // `reka-ui` resolve o `operator-kit/node_modules` e o app resolve o dele. Medido
-  // no build do Gestor (03/10/2026): duas cópias do DismissableLayer no bundle; com
-  // `dedupe`, uma. Duas cópias são duas pilhas de camadas, e o `OperatorConfirmDialog`
-  // aberto sobre um `UiDialog` do app não seria a camada de cima: o diálogo de baixo
-  // tomaria o toque dentro da pergunta como toque fora e puxaria o foco de volta.
+  // Uma instância de cada runtime com estado global no bundle do app. Sem isto, o
+  // componente do kit resolve `operator-kit/node_modules` e o app resolve a própria
+  // cópia: duas pilhas de DismissableLayer e dois stores de toast independentes.
+  // Nesse segundo caso o comando é aceito por uma cópia de vue-sonner, enquanto o
+  // OperatorSonner observa a outra, e a mensagem nunca aparece.
   vite: {
-    resolve: { dedupe: ["reka-ui"] },
+    resolve: { dedupe: ["reka-ui", "vue-sonner"] },
   },
 
   runtimeConfig: {

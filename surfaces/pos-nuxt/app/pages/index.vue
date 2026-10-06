@@ -94,6 +94,10 @@ function openCustomerDisplay() {
   });
 }
 
+function notifyCustomerLocked(reason: string) {
+  toast.info(reason);
+}
+
 // Write-side of the open sale: cart draft + every session command.
 const {
   cart,
@@ -1204,7 +1208,7 @@ onBeforeUnmount(() => {
           :loading="busy"
           @sales-mode-change="requestSalesMode"
           @customer-closed="focusOrderEntry"
-          @customer-locked="(reason: string) => toast.info(reason)"
+          @customer-locked="notifyCustomerLocked"
           @rename="(ref: string, spot?: string) => { if (!editing) void renameTab(ref, spot); }"
           @clear="clearOrDiscard"
           @clear-customer="clearCustomer"

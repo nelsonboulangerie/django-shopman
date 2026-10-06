@@ -457,6 +457,35 @@ def register_everywhere(repo: Repo, s: dict, sibling: dict, domain_by_spec: dict
     table["apps"][app_id] = identity
     repo.write("surfaces/operator-kit/app-identity.json", dump_json(table))
 
+    ledger_path = "docs/reference/operator-component-ledger.json"
+    ledger = json.loads(repo.read(ledger_path))
+    ledger["apps"].append(
+        {
+            "id": app_id,
+            "owner": f"surface:{app_id}",
+            "directory": d,
+            "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
+            "baseline": {
+                "local_ui_files": 0,
+                "direct_reka_import_files": 0,
+                "manual_overlay_files": 0,
+                "native_control_occurrences": 0,
+            },
+            "surfaces": [
+                {
+                    "id": "home",
+                    "source_files": ["app/pages/index.vue"],
+                    "routes": ["/"],
+                    "variants": ["normal", "loading", "empty", "error"],
+                    "families": ["action", "navigation", "data-display", "feedback"],
+                    "status": "pending",
+                }
+            ],
+        }
+    )
+    ledger["apps"].sort(key=lambda app: app["id"])
+    repo.write(ledger_path, dump_json(ledger))
+
     repo.insert_after_last(
         "tools/pwa-gate/check.mjs", r"^  [a-z]+: operatorProfile\(", f"  {app_id}: operatorProfile('{app_id}'),"
     )
