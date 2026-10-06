@@ -18,7 +18,7 @@ PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils
 
-.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close operator-visual new-surface help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -400,6 +400,23 @@ test-operator-ux: test-operator-components ## Gates transversais do Operator Kit
 	$(PYTHON) scripts/check_operator_shortcuts.py
 	@echo "── Layouts e tokens canônicos do operador ──"
 	$(PYTHON) scripts/check_operator_layout_guardrails.py
+	@echo "── Tema compartilhado do kit × baselines consumidoras ──"
+	$(PYTHON) scripts/check_theme_baseline_contract.py
+
+# O tema do kit é herdado por extends: as baselines de Marketing e POS dependem
+# dele. Este gate não regenera nada — ele reprova quando o tema muda sem que o
+# aceite (e as baselines) sejam regerados no mesmo PR. Ver
+# docs/reference/operator-visual-baselines.md.
+theme-baselines: ## Gate: tema compartilhado do kit casado com o aceite das baselines consumidoras
+	@echo "── Tema compartilhado do operator-kit × baselines ──"
+	$(PYTHON) scripts/check_theme_baseline_contract.py
+
+# ⚠️ Regravar o aceite NÃO regenera baseline. Só rode depois de regerar as
+# baselines afetadas no MESMO PR e de o dono ter revisado o antes/depois;
+# owner é obrigatório e fica registrado no contrato.
+theme-baselines-accept: ## Regrava o aceite do tema (SÓ após regenerar e revisar as baselines; owner=<quem aceitou>)
+	@test -n "$(owner)" || (echo 'uso: make theme-baselines-accept owner="<quem aceitou>"' >&2; exit 2)
+	$(PYTHON) scripts/check_theme_baseline_contract.py --accept --owner="$(owner)"
 
 test-operator-audit-close: ## Gate de fechamento: reprova pending, tela não visitada e captura ausente
 	$(PYTHON) scripts/check_operator_component_ledger.py --require-complete
