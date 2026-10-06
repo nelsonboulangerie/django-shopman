@@ -112,7 +112,10 @@ test("splitter preserva teclado, ponteiro, restauração e hidratação", async 
     page.locator('[data-operator-catalog][data-hydrated="true"]'),
   ).toBeAttached();
   await expect(
-    page.getByRole("heading", { level: 1, name: "Operator Kitchen Sink" }),
+    page.getByRole("heading", {
+      level: 1,
+      name: "Anatomia canônica do operador",
+    }),
   ).toBeVisible();
   await expect
     .poll(() =>
@@ -197,7 +200,7 @@ test("HTML inicial contém conteúdo útil antes da hidratação", async ({
   const response = await request.get("/__operator_kit_catalog?state=readonly");
   expect(response.ok()).toBe(true);
   const html = await response.text();
-  expect(html).toContain("Operator Kitchen Sink");
+  expect(html).toContain("Anatomia canônica do operador");
   expect(html).toContain("Somente leitura");
   expect(html).toContain('data-hydrated="false"');
 });
