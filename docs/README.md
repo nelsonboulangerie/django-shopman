@@ -122,6 +122,7 @@ Documentação de consulta rápida gerada a partir do código.
 | [Vocabulários fechados das superfícies](reference/suite-vocabulary.md) | Objeto, atos e grandezas do PDV, da Produção/KDS e da loja; os gestos com um nome só nos nove apps; o que já foi decidido e não se reabre |
 | [Omotenashi Copy](reference/omotenashi-copy.md) | Critérios da linguagem de UI: a definição, o teste de uma frase, os oito defeitos nomeados, as travas e a ordem da varredura |
 | [Filtro de Design de Superfícies](reference/design-surface-filter.md) | Checklist transversal para UI: tipografia, ícones, espaçamento, contraste, foco, responsividade e estados |
+| [Baselines visuais e tema do operator-kit](reference/operator-visual-baselines.md) | Como uma mudança de tema do kit regenera as baselines das consumidoras, com aceite do dono e sem baseline cega |
 
 ---
 
