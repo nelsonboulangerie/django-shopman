@@ -91,9 +91,7 @@ componentes, tokens e receitas continuam em `surfaces/operator-kit`.
 | `OperatorPageHeader` | título, posto, busca, status, filtros e ações | dentro de shell operacional | inventar cabeçalho local |
 | `OperatorSuiteRail` | navegação da suíte por seções | um modelo de seção por app | navegação de página |
 | `OperatorSectionBar` | alternativa responsiva ao rail | celular e tablet em pé | segunda fonte de navegação |
-| `UiToolbar` | ações e filtros do mesmo contexto | controles irmãos | layout geral da página |
 | `OperatorSplitter` | panes redimensionáveis, teclado e persistência | lista/detalhe e editor/prévia no desktop | duas colunas comprimidas no celular |
-| `UiModal` | decisão bloqueante com foco contido | confirmação ou formulário curto | workspace longo ou navegação |
 | Nuxt UI puro | card, alert, empty, skeleton, table, form, badge, tabs, popover | composição direta com tokens do kit | wrapper que apenas renomeia |
 
 `UiButton` conserva somente a tradução legada de hierarquia e as alturas
@@ -299,3 +297,65 @@ global, import direto de Reka/Nuxt UI fora do kit, crescimento das dívidas de
 controle, e qualquer custom property fora da lista exata de exceções. A matriz
 visual oficial cobre 1920×1080, 1440×900, 1366×768, 1280×800, 1180×820 touch,
 820×1180 touch, 390×844, 320×568 e 1280×800 a 200%.
+
+## Revisão adversarial de 06/10/2026
+
+Esta seção substitui promessas por estado medido. O que está *implementado*,
+*verificado*, *pendente* e *exceção justificada* está separado abaixo.
+
+**Implementado e verificado**
+
+- Uma única fonte decide a casca por estado: `operatorSurfaceGate` (kit, puro),
+  coberta por teste unitário para `authenticated`, `forbidden`, `checking`,
+  `anonymous`, `expired`, travado, PIN temporário e erro de rede. A casca do
+  catálogo e o molde `new-surface` consomem a mesma função; `checking` não
+  empilha mais a tela de senha e `canIdentify` sozinho não libera a página.
+- Hierarquia de título: o catálogo tem **um** `h1`, o do `PageHeader` oficial
+  ("Anatomia canônica do operador"). O `DashboardNavbar` não repete o título da
+  página; a identidade da janela vem da capability PWA.
+- Locale pt-BR do Nuxt UI ligado em `OperatorAppRoot` (`pt_br`): barra lateral,
+  alertas, calendário e menus internos saem em português. O gate visual usa os
+  rótulos oficiais ("Abrir/Recolher/Expandir barra lateral").
+- Alertas dinâmicos declaram papel: erro é `role="alert"`; sucesso, informação,
+  offline, reconexão e rede lenta são `role="status"`.
+- Grupos de checkbox/radio distinguem as três variantes na própria legenda.
+- Lista reordenável usa `ul`/`li` (semântica de lista), alternativa por teclado
+  e região `aria-live` que anuncia a nova posição.
+- Receitas recorrentes com `NuxtInputNumber` (decimal), `NuxtInputDate`,
+  `NuxtInputTime`, `NuxtDropdownMenu` (inclui destrutiva marcada e desfazer) e
+  `NuxtFileUpload` (importação e captura). São componentes oficiais, sem wrapper.
+- `UiToolbar` e `UiModal` foram removidos: tinham teste e documentação, nenhum
+  consumidor de produção. O léxico da página reflete o que existe.
+- O reporter visual registra **todas** as capturas de um teste (antes só a
+  primeira) e o ledger deriva `capture` do caminho real
+  `kitchensink/<surface>/<scenario>/<state>/<viewport>/<tema>.png`. O runner
+  `run_operator_visual.py` fixa `OPERATOR_VISUAL_EVIDENCE_ROOT` na raiz do
+  ledger, e a surface `kitchensink:home` declara `runner`.
+
+**Pendente (não declarado pronto)**
+
+- Cobertura da suíte: o ledger auditorado tem **9 apps, 61 superfícies, 254
+  variantes e 60 superfícies `pending`**; só `kitchensink:home` está `migrated`.
+  O fechamento global (`--require-complete`) continua vermelho por desenho.
+- `OperatorOfficeShell`, `OperatorOperationalShell` e `OperatorAppRoot` **não são
+  consumidos pelas oito apps reais**; elas ainda usam o chrome histórico
+  (`OperatorSuiteRail`, `OperatorPageHeader`). O catálogo demonstra o alvo, mas a
+  adoção app a app, sem regressão, segue aberta.
+- Wrappers sem consumidor de produção permanecem no kit e ainda precisam de
+  decisão (adotar ou apagar): `UiSearchInput`, `UiDateField`, `UiDateRangeField`,
+  `UiDateTimeField`, `UiTimeField`, `UiTimeRangeField`, `UiStepper`. A receita do
+  catálogo usa o componente Nuxt UI direto; o wrapper só entra se um app real o
+  consumir.
+- Evidência visual pixel a pixel **não é gate**: não há baseline versionada
+  comparada na CI. O que existe é captura por matriz, scanner de geometria e
+  auditoria de acessibilidade; regenerar baseline exige o Chromium do
+  `browser-lock.json`, não o Chromium local.
+- A matriz completa de nove viewports não foi executada nesta revisão; a
+  infraestrutura está pronta, a execução integral é etapa própria.
+
+**Exceções justificadas**
+
+As exceções de token (`receipt-print`, `far-field-board`) e de layout seguem
+registradas em `operator-token-exceptions.json` e
+`operator-layout-exceptions.json`, com app, caso de uso, limitação canônica,
+alternativas rejeitadas, justificativa, dono e teste.

@@ -110,7 +110,7 @@ def test_o_vocabulario_cobre_todo_app_de_operador():
     from pathlib import Path
 
     registry = json.loads((Path(__file__).resolve().parents[3] / "surfaces/registry.json").read_text())
-    operator_apps = {key for key, s in registry["surfaces"].items() if s["kind"] == "operator"}
+    operator_apps = {key for key, s in registry["surfaces"].items() if s["kind"] == "operator" and s.get("deployment") != "preview"}
 
     assert set(SURFACE_KINDS) == operator_apps
     for kinds in SURFACE_KINDS.values():

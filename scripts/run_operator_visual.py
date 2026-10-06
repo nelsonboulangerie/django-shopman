@@ -73,6 +73,12 @@ def main() -> int:
             command.append(runner["spec"])
         if runner.get("grep"):
             command.extend(["--grep", runner["grep"]])
+        # O reporter grava as capturas relativas à raiz declarada no ledger
+        # (audit.evidence_root). Sem fixar a raiz aqui, cada app gravaria em
+        # surfaces/<app>/test-results e o gate de fechamento não acharia o arquivo.
+        evidence_root = str(
+            ROOT / (ledger.get("audit") or {}).get("evidence_root", "test-results/operator-evidence")
+        )
 
     print(json.dumps(selection, indent=2, ensure_ascii=False))
     if args.plan:
@@ -86,6 +92,8 @@ def main() -> int:
         "OPERATOR_VISUAL_SCENARIO": args.scenario or "",
         "OPERATOR_VISUAL_VIEWPORTS": args.viewports or "",
     })
+    if args.app != "operator-kit":
+        env["OPERATOR_VISUAL_EVIDENCE_ROOT"] = evidence_root
     return subprocess.run(command, cwd=cwd, env=env, check=False).returncode
 
 

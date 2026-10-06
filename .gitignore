@@ -41,6 +41,9 @@ surfaces/storefront-nuxt/test-results/
 surfaces/storefront-nuxt/playwright-report/
 surfaces/operator-kit/test-results/
 surfaces/storefront-nuxt/blob-report/
+# Evidência da matriz visual compartilhada gravada pelo runner do ledger
+# (audit.evidence_root). É artefato gerado e sobe como artifact de CI.
+test-results/
 
 # Quarentena local e guias de credencial — nunca commitar.
 # ⚠️ LIMPAR ANTES DO GO-LIVE: estes caminhos existem na máquina do Pablo e

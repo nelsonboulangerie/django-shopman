@@ -77,7 +77,9 @@ def test_every_operator_app_has_a_tile() -> None:
     """Superfície nova sem tile é app que ninguém acha; a Central é o único launcher."""
     identity = _identity()
     # A Central é o próprio launcher: não tem tile dentro de si.
-    expected = {app for app in identity if app != "hub"}
+    surfaces = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))["surfaces"]
+    expected = {app for app in identity if app != "hub" and surfaces[app].get("deployment") != "preview"}
+    assert surfaces["kitchensink"]["hub_tile"] is None
     assert set(TILE_TO_APP.values()) == expected
 
 

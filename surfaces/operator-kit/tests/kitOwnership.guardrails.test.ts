@@ -31,7 +31,7 @@ const KIT_OWNED_DECLARATIONS = [
 ] as const;
 
 /** Componentes de barra que agora vivem no kit (nome global `Ui<Nome>`). */
-const KIT_OWNED_TOOLBAR_PRIMITIVES = ["FilterChip", "IconButton", "SearchInput", "Toolbar"] as const;
+const KIT_OWNED_TOOLBAR_PRIMITIVES = ["FilterChip", "IconButton", "SearchInput"] as const;
 
 /**
  * Primitivos de ESCOLHA, que passaram a viver no kit. Antes deles todo checkbox e

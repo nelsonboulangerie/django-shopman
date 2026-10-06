@@ -121,7 +121,12 @@ Checklist para qualquer wrapper:
 - não esconde slot estrutural sem justificar qual problema operacional resolveu;
 - usa tokens Shopman para cor, densidade, raio, tipografia e espaçamento.
 
-## Primitivas atuais
+## Vocabulário-alvo
+
+Esta tabela é o **alvo** de vocabulário, não o inventário do kit. Vários `Ui*`
+listados ainda não têm consumidor de produção e estão em decisão (adotar ou
+apagar); o inventário vivo é `docs/reference/operator-component-ledger.json` e o
+léxico executável do catálogo (`docs/reference/operator-kitchen-sink.md`).
 
 Use estes contratos antes de criar qualquer peça nova:
 
@@ -136,7 +141,7 @@ Use estes contratos antes de criar qualquer peça nova:
 | escolha exclusiva | `UiRadioGroup` e `UiRadio` |
 | liga/desliga | `UiSwitch` |
 | abas | `UiTabs`, `UiTabsList`, `UiTabsTrigger`, `UiTabsContent` |
-| modal | `UiModal` ou família `Ui/Dialog` |
+| modal | `NuxtModal` (Nuxt UI oficial) |
 | folha adaptativa | `UiSheet` |
 | menu ancorado | `UiPopover` |
 | anteparo | `UiScrim` |

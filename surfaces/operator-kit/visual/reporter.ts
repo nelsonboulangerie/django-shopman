@@ -37,28 +37,43 @@ export default class OperatorVisualReporter implements Reporter {
   }
 
   onTestEnd(test: TestCase, result: TestResult) {
-    const annotation = test.annotations.find((item) => item.type === "operator-evidence")?.description;
-    const attachment = result.attachments.find((item) => item.name.startsWith("operator-evidence:") && item.path);
-    if (!annotation || !attachment?.path || !existsSync(attachment.path)) return;
-    const identity = JSON.parse(annotation) as Omit<EvidenceRecord, "status" | "path" | "test" | "theme"> & { theme?: string };
-    const destination = join(
-      this.root,
-      safe(identity.app),
-      safe(identity.surface),
-      safe(identity.scenario),
-      safe(identity.state),
-      safe(identity.viewport.id),
-      `${safe(identity.theme ?? "light")}.png`,
-    );
-    mkdirSync(dirname(destination), { recursive: true });
-    copyFileSync(attachment.path, destination);
-    this.records.push({
-      ...identity,
-      theme: identity.theme ?? "light",
-      status: result.status,
-      path: relative(this.root, destination),
-      test: test.titlePath().join(" > "),
-    });
+    // Um teste pode capturar várias evidências (uma por viewport, cenário ou tema).
+    // Percorrer TODAS as anotações `operator-evidence` e casar cada uma com o
+    // anexo de mesmo slug; usar .find() deixava só a primeira captura no manifesto.
+    const seen = new Set<string>();
+    for (const annotation of test.annotations) {
+      if (annotation.type !== "operator-evidence" || !annotation.description) continue;
+      let identity: Omit<EvidenceRecord, "status" | "path" | "test" | "theme"> & { theme?: string };
+      try {
+        identity = JSON.parse(annotation.description);
+      } catch {
+        continue;
+      }
+      const theme = identity.theme ?? "light";
+      const slug = [identity.app, identity.surface, identity.scenario, identity.state, identity.viewport.id, theme].join("__");
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      const attachment = result.attachments.find((item) => item.name === `operator-evidence:${slug}` && item.path && existsSync(item.path));
+      if (!attachment?.path) continue;
+      const destination = join(
+        this.root,
+        safe(identity.app),
+        safe(identity.surface),
+        safe(identity.scenario),
+        safe(identity.state),
+        safe(identity.viewport.id),
+        `${safe(theme)}.png`,
+      );
+      mkdirSync(dirname(destination), { recursive: true });
+      copyFileSync(attachment.path, destination);
+      this.records.push({
+        ...identity,
+        theme,
+        status: result.status,
+        path: relative(this.root, destination),
+        test: test.titlePath().join(" > "),
+      });
+    }
   }
 
   async onEnd() {
@@ -70,7 +85,13 @@ export default class OperatorVisualReporter implements Reporter {
     };
     writeFileSync(join(this.root, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
     writeFileSync(join(this.root, "contact-sheet.html"), this.html());
-    await this.pngSheets();
+    // O contact sheet é conveniência: uma captura ausente não pode derrubar a
+    // execução inteira nem esconder que os testes passaram.
+    try {
+      await this.pngSheets();
+    } catch (error) {
+      console.warn(`[operator-visual] contact sheet incompleto: ${(error as Error).message}`);
+    }
   }
 
   private html(): string {
@@ -97,9 +118,14 @@ export default class OperatorVisualReporter implements Reporter {
       const composites: sharp.OverlayOptions[] = [];
       for (let index = 0; index < records.length; index += 1) {
         const record = records[index]!;
+        const source = join(this.root, record.path);
+        if (!existsSync(source)) {
+          console.warn(`[operator-visual] captura ausente no contact sheet: ${record.path}`);
+          continue;
+        }
         const left = (index % columns) * width;
         const top = Math.floor(index / columns) * (imageHeight + labelHeight);
-        const image = await sharp(join(this.root, record.path)).resize(width, imageHeight, { fit: "contain", background: "#ffffff" }).png().toBuffer();
+        const image = await sharp(source).resize(width, imageHeight, { fit: "contain", background: "#ffffff" }).png().toBuffer();
         const label = await sharp(Buffer.from(`<svg width="${width}" height="${labelHeight}"><rect width="100%" height="100%" fill="#fff"/><text x="10" y="20" font-family="sans-serif" font-size="13" fill="#3b2a1e">${xml(`${record.surface} · ${record.scenario}`)}</text><text x="10" y="40" font-family="sans-serif" font-size="12" fill="#6e5a48">${xml(`${record.viewport.label} · ${record.state}`)}</text></svg>`)).png().toBuffer();
         composites.push({ input: image, left, top }, { input: label, left, top: top + imageHeight });
       }

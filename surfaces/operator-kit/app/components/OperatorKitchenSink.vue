@@ -69,8 +69,9 @@ function selectSection(id: string, event?: Event) {
 const navigationItems = computed(() =>
   kitchenSinkNavigation.map((item) => ({
     label: item.label,
-    "aria-label": item.label,
+    "aria-label": "badge" in item ? `${item.label}, ${item.badge} decisões pendentes` : item.label,
     icon: item.icon,
+    badge: "badge" in item ? item.badge : undefined,
     active: selectedSection.value === item.to.slice(1),
     onSelect: (event: Event) => selectSection(item.to.slice(1), event),
   })),
@@ -158,19 +159,19 @@ const componentLexicon = [
     "Dentro de shell operacional",
   ],
   [
-    "UiToolbar",
-    "Grupo responsivo de filtros e ações",
-    "Ações irmãs no mesmo contexto",
+    "NuxtNavigationMenu",
+    "Navegação de seções, com filhos e colapso",
+    "Sidebar e menus verticais",
+  ],
+  [
+    "NuxtDropdownMenu",
+    "Ações secundárias de uma linha ou registro",
+    "Menu de contexto sem poluir o card",
   ],
   [
     "OperatorSplitter",
     "Panes redimensionáveis persistentes",
     "Lista e detalhe no desktop",
-  ],
-  [
-    "UiModal",
-    "Decisão bloqueante com foco contido",
-    "Confirmação e formulário curto",
   ],
 ] as const;
 
@@ -188,7 +189,6 @@ onMounted(() => {
 <template>
   <div
     data-operator-catalog
-    data-suite="v4"
     :data-hydrated="hydrated"
     :data-scenario="activeState"
   >
@@ -196,7 +196,6 @@ onMounted(() => {
       v-if="!operationalMode"
       ref="officeShell"
       storage-key="operator-kitchen-sink"
-      title="Operator Kitchen Sink"
     >
       <template #sidebar="{ collapsed }">
         <NuxtDashboardSearchButton
@@ -234,15 +233,14 @@ onMounted(() => {
         />
       </template>
       <template #sidebar-header="{ collapsed }"
-        ><nav
+        ><div
           class="flex min-w-0 items-center gap-2"
-          aria-label="Identidade do catálogo"
         >
           <NuxtIcon name="i-lucide-flask-conical" class="size-5 shrink-0" />
           <h2 :class="collapsed ? 'sr-only' : 'op-title truncate'">
             Catálogo do kit
           </h2>
-        </nav></template
+        </div></template
       >
       <template #sidebar-footer="{ collapsed }"
         ><NuxtButton
@@ -299,6 +297,7 @@ onMounted(() => {
           title="Anatomia canônica do operador"
           description="Fixtures herméticas, composição real e um vocabulário visual deliberadamente curto."
         >
+          <OperatorKitchenSinkDashboard />
           <OperatorKitchenSinkExercises />
           <section
             id="foundations"
@@ -320,10 +319,11 @@ onMounted(() => {
               <NuxtCard>
                 <p class="op-label">Ação</p>
                 <div class="mt-3 flex flex-wrap gap-2">
-                  <UiButton text="Primária" /><UiButton
-                    text="Secundária"
+                  <NuxtButton label="Primária" /><NuxtButton
+                    label="Secundária"
+                    color="neutral"
                     variant="outline"
-                  /><UiButton text="Discreta" variant="ghost" />
+                  /><NuxtButton label="Discreta" color="neutral" variant="ghost" />
                 </div>
               </NuxtCard>
               <NuxtCard>
@@ -439,6 +439,7 @@ onMounted(() => {
             </div>
             <NuxtAlert
               v-if="responsiveAlertOpen"
+              role="status"
               icon="i-lucide-panels-top-left"
               close
               title="Regra responsiva"
@@ -551,6 +552,7 @@ onMounted(() => {
                 </div>
                 <NuxtAlert
                   v-if="formSaved"
+                  role="status"
                   class="md:col-span-2"
                   color="success"
                   icon="i-lucide-circle-check"
@@ -596,7 +598,7 @@ onMounted(() => {
                   :data="[...kitchenSinkRows]"
                   data-operator-overflow="horizontal"
                   tabindex="0"
-                  aria-label="Pedidos de exemplo"
+                  caption="Pedidos de exemplo"
                 />
               </NuxtCard>
               <NuxtPageAside
@@ -638,7 +640,7 @@ onMounted(() => {
                 O cenário selecionado é endereçável e não usa dados vivos
               </h2>
             </div>
-            <NuxtCard v-if="activeState === 'loading'" aria-label="Carregando">
+            <NuxtCard v-if="activeState === 'loading'" aria-busy="true" role="status" aria-label="Carregando dados do catálogo">
               <div class="space-y-3">
                 <NuxtSkeleton class="h-6 w-2/3" /><NuxtSkeleton
                   class="h-11 w-full"
@@ -654,6 +656,7 @@ onMounted(() => {
             <NuxtAlert
               v-else-if="activeState === 'error'"
               v-show="stateAlertOpen"
+              role="alert"
               icon="i-lucide-circle-alert"
               close
               title="Não foi possível atualizar"
@@ -664,6 +667,7 @@ onMounted(() => {
             <NuxtAlert
               v-else-if="activeState === 'offline'"
               v-show="stateAlertOpen"
+              role="status"
               icon="i-lucide-wifi-off"
               close
               title="Sem conexão"
@@ -674,6 +678,7 @@ onMounted(() => {
             <NuxtAlert
               v-else-if="activeState === 'reconnecting'"
               v-show="stateAlertOpen"
+              role="status"
               icon="i-lucide-refresh-cw"
               close
               title="Reconectando"
@@ -684,6 +689,7 @@ onMounted(() => {
             <NuxtAlert
               v-else-if="activeState === 'slow-network'"
               v-show="stateAlertOpen"
+              role="status"
               icon="i-lucide-clock"
               close
               title="A rede está lenta"
@@ -700,7 +706,7 @@ onMounted(() => {
               <NuxtFormField class="mt-3" label="Nome confirmado"
                 ><NuxtInput model-value="Ana Ferreira" readonly class="w-full"
               /></NuxtFormField>
-              <UiButton class="mt-4" text="Salvar" disabled
+              <NuxtButton class="mt-4" label="Salvar" disabled
             /></NuxtCard>
             <NuxtEmpty
               v-else-if="activeState === 'forbidden'"
@@ -711,6 +717,7 @@ onMounted(() => {
             <NuxtAlert
               v-else-if="activeState === 'success'"
               v-show="stateAlertOpen"
+              role="status"
               icon="i-lucide-circle-check"
               close
               title="Alteração salva"
@@ -730,6 +737,7 @@ onMounted(() => {
             <NuxtAlert
               v-else
               v-show="stateAlertOpen"
+              role="status"
               icon="i-lucide-activity"
               close
               title="Operação ao vivo"
@@ -760,7 +768,7 @@ onMounted(() => {
                 /></template>
               </NuxtModal>
               <NuxtPopover>
-                <UiButton text="Abrir popover" variant="outline" />
+                <NuxtButton label="Abrir popover" color="neutral" variant="outline" />
                 <template #content
                   ><div class="max-w-64 p-4">
                     <p class="op-body">
@@ -788,8 +796,9 @@ onMounted(() => {
                   ><NuxtButton label="Concluir inspeção" @click="close"
                 /></template>
               </NuxtSlideover>
-              <UiButton
-                text="Ver shell operacional"
+              <NuxtButton
+                label="Ver shell operacional"
+                color="neutral"
                 variant="outline"
                 :to="{ path: route.path, query: { mode: 'operational' } }"
               />
@@ -921,6 +930,7 @@ onMounted(() => {
           /></NuxtCard>
           <NuxtAlert
             v-if="taskDone && taskAlertOpen"
+            role="status"
             class="mt-4"
             title="Etapa concluída"
             description="Estado confirmado pela fixture local."
@@ -955,7 +965,10 @@ onMounted(() => {
       textarea,
       [role="button"],
       [role="link"],
-      [role="tab"]
+      [role="tab"],
+      /* Segmentos de data/hora (reka) são divs `spinbutton` de ~20 px de altura;
+         no toque eles precisam do mesmo envelope de 44/48 px dos outros controles. */
+      [role="spinbutton"]
     ):not([role="separator"]):not([role="checkbox"]):not([role="radio"]):not(
       [role="switch"]
     ) {

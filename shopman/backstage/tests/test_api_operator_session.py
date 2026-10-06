@@ -54,6 +54,35 @@ def operate_production_perm(db):
 
 # ── Session / eligible ───────────────────────────────────────────────────────
 
+@pytest.mark.django_db
+def test_kitchen_sink_permission_is_valid_and_not_implicitly_granted(client, balcao, baker):
+    permission = "backstage.view_operator_kitchen_sink"
+    session_url = reverse("api-backstage-operator-session")
+    eligible_url = reverse("api-backstage-operator-eligible")
+    unlock_url = reverse("api-backstage-operator-unlock")
+    response = client.get(session_url, {"perm": permission})
+    assert response.status_code == 200
+    assert response.json()["authorized"] is False
+    eligible = client.get(eligible_url, {"perm": permission})
+    assert eligible.status_code == 200
+    assert not any(item["id"] == baker.pk for item in eligible.json()["operators"])
+    denied = client.post(unlock_url, {"operator_id": baker.pk, "pin": "4321", "perm": permission}, content_type="application/json")
+    assert denied.status_code == 403
+    viewer = _grant(baker, "view_operator_kitchen_sink")
+    assert any(item["id"] == viewer.pk for item in client.get(eligible_url, {"perm": permission}).json()["operators"])
+    unlocked = client.post(unlock_url, {"operator_id": viewer.pk, "pin": "4321", "perm": permission}, content_type="application/json")
+    assert unlocked.status_code == 200
+    assert client.get(session_url, {"perm": permission}).json()["authorized"] is True
+
+@pytest.mark.django_db
+def test_kitchen_sink_accepts_superuser_without_granting_the_permission_to_others(client, balcao):
+    user = User.objects.create_superuser("catalog-admin", password="x")
+    PinCredential.set_for(user, "4321")
+    permission = "backstage.view_operator_kitchen_sink"
+    response = client.post(reverse("api-backstage-operator-unlock"), {"operator_id": user.pk, "pin": "4321", "perm": permission}, content_type="application/json")
+    assert response.status_code == 200
+    assert client.get(reverse("api-backstage-operator-session"), {"perm": permission}).json()["authorized"] is True
+
 
 @pytest.mark.django_db
 def test_session_reports_locked_then_operator(client, balcao, baker):

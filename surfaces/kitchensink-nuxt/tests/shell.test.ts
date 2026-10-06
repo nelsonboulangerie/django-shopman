@@ -17,6 +17,22 @@ describe("casca do kitchensink", () => {
     expect(shell).toContain("OperatorLogin");
   });
 
+  it("decide cada estado por uma fonte única e testável", () => {
+    // A regra vive em operatorSurfaceGate (kit) e é coberta por teste unitário;
+    // a casca só liga os booleanos. Isto impede voltar a `canIdentify` sozinho.
+    expect(shell).toContain("operatorSurfaceGate(");
+    for (const flag of [
+      "surface.showPage",
+      "surface.showForbidden",
+      "surface.showChecking",
+      "surface.showUnavailable",
+      "surface.showLogin",
+      "surface.showLock",
+    ]) {
+      expect(shell).toContain(flag);
+    }
+  });
+
   it("estende a layer e declara a identidade PWA certa", () => {
     expect(config).toContain('extends: ["../operator-kit"]');
     expect(config).toContain("ssr: true");

@@ -4,6 +4,87 @@ import { expect, test } from "@playwright/test";
 import { captureOperatorEvidence } from "../../../operator-kit/visual/playwright";
 import type { OperatorVisualViewport } from "../../../operator-kit/visual/matrix";
 
+const AUDIT_STATE: Record<string, string> = {
+  loading: "loading-initial",
+  empty: "empty",
+  error: "recoverable-error",
+  offline: "offline",
+  reconnecting: "reconnecting",
+  "slow-network": "slow-network",
+  readonly: "readonly",
+  forbidden: "insufficient-permission",
+  success: "success",
+};
+
+test("dashboard compõe contagens, gráficos, progresso, tabs e identidade", async ({ page }, testInfo) => {
+  const viewport = testInfo.project.metadata.operatorViewport as OperatorVisualViewport;
+  test.skip(!["desktop-common", "mobile-narrow"].includes(viewport.id), "Receita rica em desktop e no limite mobile.");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await expect(page.locator('[data-hydrated="true"]')).toBeAttached();
+  await expect(page.getByRole("banner")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(page.getByRole("region", { name: "Atalhos do catálogo" }).locator('..')).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  const dashboard = page.locator("#dashboard-exercises");
+  await expect(dashboard.locator('[data-operator-trend-chart] svg').first()).toBeVisible();
+  await expect(dashboard.getByRole("table", { name: "Dados do gráfico de pedidos" })).toBeVisible();
+  const progress = dashboard.getByRole("progressbar", { name: "Pedidos separados, 18 de 24" });
+  await expect(progress).toHaveAttribute("aria-valuenow", "18");
+  await dashboard.getByRole("button", { name: "Separar próximo", exact: true }).click();
+  await expect(dashboard.getByRole("progressbar", { name: "Pedidos separados, 19 de 24" })).toHaveAttribute("aria-valuenow", "19");
+  await dashboard.getByRole("switch", { name: "Mostrar em barras" }).click();
+  await expect(dashboard.locator('[data-operator-trend-chart] svg').first()).toBeVisible();
+  await dashboard.getByRole("tab", { name: /^Fila/ }).click();
+  await dashboard.getByRole("button", { name: "Revisar NB-1048", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "NB-1048" });
+  await expect(detail).toBeVisible();
+  await expect(detail).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await detail.getByRole("button", { name: "Voltar à fila" }).click();
+  await dashboard.getByRole("tab", { name: /^Equipe/ }).click();
+  await expect(dashboard.getByText("Ana Ferreira", { exact: true })).toBeVisible();
+  await expect(dashboard.getByText("Em pausa", { exact: true })).toBeVisible();
+  await dashboard.getByRole("tab", { name: "Resumo", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(dashboard.getByRole("tab", { name: /^Fila/ })).toBeFocused();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("toggle mobile abre e fecha navegação canônica", async ({ page }, testInfo) => {
+  const viewport = testInfo.project.metadata.operatorViewport as OperatorVisualViewport;
+  test.skip(viewport.id !== "mobile-standard", "Contrato de sidebar mobile.");
+  await page.goto("/");
+  await expect(page.locator('[data-hydrated="true"]')).toBeAttached();
+  await page.getByRole("button", { name: "Abrir barra lateral" }).click();
+  const navigation = page.getByRole("navigation", { name: "Seções do catálogo" });
+  await expect(navigation.getByRole("button", { name: "Dashboard, 3 decisões pendentes" })).toBeVisible();
+  await navigation.getByRole("button", { name: "Estados", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(page.getByRole("banner")).toBeVisible();
+});
+
+test("captura canônica por viewport", async ({ page }, testInfo) => {
+  const viewport = testInfo.project.metadata.operatorViewport as OperatorVisualViewport;
+  const state =
+    viewport.id === "zoom-200" ? "keyboard-focus" : viewport.touch ? "touch" : "normal";
+  await page.goto("/");
+  await expect(page.locator('[data-operator-catalog][data-hydrated="true"]')).toBeAttached();
+  await captureOperatorEvidence(
+    page,
+    testInfo,
+    {
+      app: "kitchensink",
+      surface: "home",
+      route: "/",
+      scenario: "normal",
+      state,
+      theme: "light",
+      viewport,
+    },
+    { allowedFindings: [] },
+  );
+});
+
 test("navegação, busca e feedback preservam o chrome do dashboard", async ({
   page,
 }, testInfo) => {
@@ -14,7 +95,7 @@ test("navegação, busca e feedback preservam o chrome do dashboard", async ({
   await expect(page.locator('[data-hydrated="true"]')).toBeAttached();
   const header = page.getByRole("banner");
   const before = await header.boundingBox();
-  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await page.getByRole("button", { name: "Recolher barra lateral" }).click();
   const references = page
     .getByRole("navigation", { name: "Referências aninhadas" })
     .getByRole("button", { name: "Referências", exact: true });
@@ -38,7 +119,7 @@ test("navegação, busca e feedback preservam o chrome do dashboard", async ({
       .getByRole("button", { name: "Guia de composição" })
       .locator('[data-slot="label"]'),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "Expand sidebar" }).click();
+  await page.getByRole("button", { name: "Expandir barra lateral" }).click();
   await expect(
     page
       .getByRole("button", { name: "Guia de composição" })
@@ -68,7 +149,7 @@ test("navegação, busca e feedback preservam o chrome do dashboard", async ({
   await expect(
     page.getByText("Não foi possível atualizar", { exact: true }),
   ).toBeHidden();
-  await page.keyboard.press("Meta+k");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
   const search = page.getByRole("dialog", { name: "Buscar no catálogo" });
   await expect(search).toBeVisible();
   await expect(search).toHaveCSS("background-color", "rgb(255, 255, 255)");
@@ -133,9 +214,9 @@ test("shell operacional preserva ação, foco e navegação", async ({
     testInfo,
     {
       app: "kitchensink",
-      surface: "operational-shell",
+      surface: "home",
       route: "/?mode=operational",
-      scenario: "normal",
+      scenario: "operational-shell",
       state: "success",
       theme: "light",
       viewport,
@@ -216,7 +297,7 @@ test("tema escuro preserva contraste e geometria em todo o catálogo", async ({
     testInfo,
     {
       app: "kitchensink",
-      surface: "canonical-catalog",
+      surface: "home",
       route: "/",
       scenario: "normal",
       state: "normal",
@@ -258,6 +339,20 @@ test("estados endereçáveis não escondem controles nem quebram acessibilidade"
       (await new AxeBuilder({ page }).include("#states").analyze()).violations,
       state,
     ).toEqual([]);
+    await captureOperatorEvidence(
+      page,
+      testInfo,
+      {
+        app: "kitchensink",
+        surface: "home",
+        route: `/?state=${state}`,
+        scenario: state,
+        state: AUDIT_STATE[state] ?? state,
+        theme: "light",
+        viewport,
+      },
+      { allowedFindings: [] },
+    );
   }
 });
 
@@ -284,9 +379,9 @@ test("consumer real preserva SSR, hidratação, acessibilidade e geometria", asy
     testInfo,
     {
       app: "kitchensink",
-      surface: "canonical-catalog",
+      surface: "home",
       route: "/?state=extreme-content",
-      scenario: "normal",
+      scenario: "extreme-content",
       state: "extreme-content",
       theme: "light",
       viewport,
@@ -305,7 +400,7 @@ test("HTML SSR contém conteúdo útil sem JavaScript", async ({
   const response = await request.get("/?state=readonly");
   expect(response.ok()).toBe(true);
   const html = await response.text();
-  expect(html).toContain("Operator Kitchen Sink");
+  expect(html).toContain("Anatomia canônica do operador");
   expect(html).toContain("Somente leitura");
   expect(html).toContain('data-hydrated="false"');
 });
@@ -330,6 +425,20 @@ test("teclado percorre controles e modal devolve o foco", async ({
   await expect(
     page.getByRole("dialog", { name: "Confirmar ação" }),
   ).toBeVisible();
+  await captureOperatorEvidence(
+    page,
+    testInfo,
+    {
+      app: "kitchensink",
+      surface: "home",
+      route: "/",
+      scenario: "modal",
+      state: "modal",
+      theme: "light",
+      viewport,
+    },
+    { allowedFindings: [] },
+  );
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();
 });
@@ -375,14 +484,19 @@ test("receitas interativas preservam dados, seleção, foco e tema", async ({
   await expect(
     page.getByText("Formulário validado", { exact: true }),
   ).toBeVisible();
-  const handle = page.locator("[data-operator-navigation-resize]");
+  const handle = page.locator('[data-operator-office-shell] > [data-slot="handle"]');
+  await expect(handle).toHaveAttribute('aria-controls', /-sidebar-/);
   const beforeResize = await handle.boundingBox();
   await page.mouse.move(beforeResize!.x, beforeResize!.y + 100);
   await page.mouse.down();
   await page.mouse.move(beforeResize!.x + 40, beforeResize!.y + 100);
   await page.mouse.up();
-  expect((await handle.boundingBox())!.x).toBeGreaterThan(beforeResize!.x + 20);
-  await handle.dblclick();
+  const afterResize = await handle.boundingBox();
+  expect(afterResize!.x).toBeGreaterThan(beforeResize!.x + 20);
+  // O handle nativo desenha a linha no pseudo-elemento `before`: o elemento tem
+  // largura zero, então a ação por coordenadas exercita a mesma área que o
+  // ponteiro usa. `locator.dblclick()` reprovaria por "não visível".
+  await page.mouse.dblclick(afterResize!.x, afterResize!.y + 100);
   for (const label of ["Canal por select", "Buscar canal"]) {
     await page.getByLabel(label, { exact: true }).click();
     const option = page.getByRole("option").first();

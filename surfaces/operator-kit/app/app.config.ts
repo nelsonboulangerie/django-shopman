@@ -1,5 +1,7 @@
 export default defineAppConfig({
   ui: {
+    dashboardNavbar: { slots: { root: "bg-card" } },
+    dashboardToolbar: { slots: { root: "bg-card" } },
     checkbox: {
       slots: {
         base: "relative overflow-visible after:absolute after:content-[''] after:start-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:size-control",

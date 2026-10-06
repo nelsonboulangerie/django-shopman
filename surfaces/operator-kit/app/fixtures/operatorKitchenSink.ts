@@ -1,5 +1,15 @@
 export const kitchenSinkNavigation = [
-  { label: "Laboratório", icon: "i-lucide-flask-conical", to: "#visual-exercises" },
+  {
+    label: "Dashboard",
+    icon: "i-lucide-chart-no-axes-combined",
+    to: "#dashboard-exercises",
+    badge: 3,
+  },
+  {
+    label: "Laboratório",
+    icon: "i-lucide-flask-conical",
+    to: "#visual-exercises",
+  },
   { label: "Fundamentos", icon: "i-lucide-swatch-book", to: "#foundations" },
   { label: "Anatomias", icon: "i-lucide-panels-top-left", to: "#anatomies" },
   { label: "Componentes", icon: "i-lucide-box", to: "#components" },
@@ -94,7 +104,7 @@ export const kitchenSinkNeeds = [
   {
     apps: "Todos",
     need: "Busca, filtro e período",
-    solution: "OperatorPageHeader + UiToolbar + controles do kit",
+    solution: "OperatorPageHeader + DashboardToolbar + controles do kit",
   },
   {
     apps: "Todos",

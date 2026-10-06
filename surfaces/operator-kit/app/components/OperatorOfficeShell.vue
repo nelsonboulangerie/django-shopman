@@ -28,6 +28,8 @@ withDefaults(
     data-operator-office-shell
   >
     <NuxtDashboardSidebar
+      role="complementary"
+      aria-label="Navegação do aplicativo"
       :id="`${storageKey}-navigation`"
       v-model:open="navigationOpen"
       :default-size="sidebarDefaultSize"
@@ -45,15 +47,6 @@ withDefaults(
       <template #default="{ collapsed }"
         ><slot name="sidebar" :collapsed="collapsed"
       /></template>
-      <template #resize-handle="{ onMouseDown, onTouchStart, onDoubleClick }">
-        <NuxtDashboardResizeHandle
-          data-operator-navigation-resize
-          class="w-1 shrink-0 after:absolute after:inset-y-0 after:w-px after:bg-border hover:after:bg-primary"
-          @mousedown="onMouseDown"
-          @touchstart="onTouchStart"
-          @dblclick="onDoubleClick"
-        />
-      </template>
     </NuxtDashboardSidebar>
     <slot name="search" />
     <NuxtDashboardPanel
@@ -69,7 +62,7 @@ withDefaults(
           :ui="{ title: 'whitespace-normal break-words', root: 'flex-wrap' }"
         >
           <template #leading><NuxtDashboardSidebarCollapse /></template>
-          <template v-if="$slots.navbar" #left><slot name="navbar" /></template>
+          <template v-if="$slots.navbar" #title><slot name="navbar" /></template>
           <template #right><slot name="navbar-actions" /></template>
         </NuxtDashboardNavbar>
         <NuxtDashboardToolbar v-if="$slots.toolbar">

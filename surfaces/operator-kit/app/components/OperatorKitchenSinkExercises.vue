@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, h, ref, resolveComponent, shallowRef } from "vue";
-import { CalendarDate } from "@internationalized/date";
+import { CalendarDate, parseTime } from "@internationalized/date";
 import type { TableColumn } from "@nuxt/ui";
 import { getPaginationRowModel } from "@tanstack/vue-table";
 
@@ -31,6 +31,36 @@ const range = shallowRef({
   end: new CalendarDate(2026, 10, 12),
 });
 const filter = ref("");
+const quantity = ref(1.25);
+const pickupDate = shallowRef(new CalendarDate(2026, 10, 6));
+const pickupTime = shallowRef(parseTime("15:30"));
+const upload = ref<File | null>(null);
+// Ações de linha: o menu oficial cobre secundárias e destrutiva marcada, sem
+// empilhar botões no card nem inventar um dropdown local.
+const rowActions = [
+  {
+    label: "Ver detalhes",
+    icon: "i-lucide-eye",
+    onSelect: () => undefined,
+  },
+  {
+    label: "Reabrir separação",
+    icon: "i-lucide-rotate-ccw",
+    onSelect: () => undefined,
+  },
+  {
+    label: "Desfazer último envio",
+    icon: "i-lucide-undo-2",
+    onSelect: () => undefined,
+  },
+  { type: "separator" as const },
+  {
+    label: "Cancelar pedido",
+    icon: "i-lucide-x",
+    color: "error" as const,
+    onSelect: () => undefined,
+  },
+];
 const proposalAlertOpen = ref(true);
 const contrastAlertOpen = ref(true);
 const toast = useToast();
@@ -122,6 +152,7 @@ const columns: TableColumn<Order>[] = [
   },
   {
     accessorKey: "amount",
+    enableSorting: true,
     header: ({ column }) =>
       h(Button, {
         label: "Valor",
@@ -160,11 +191,13 @@ function finish() {
 const connectivity = useConnectivity();
 const dragged = ref<string>();
 const priority = ref(["PED-001", "PED-002", "PED-003"]);
+const moveAnnouncement = ref("");
 function move(index: number, delta: number) {
   const next = index + delta;
   if (next < 0 || next >= priority.value.length) return;
   const item = priority.value.splice(index, 1)[0]!;
   priority.value.splice(next, 0, item);
+  moveAnnouncement.value = `${item} movido para a posição ${next + 1} de ${priority.value.length}`;
 }
 function drop(target: string) {
   const source = priority.value.indexOf(dragged.value || "");
@@ -189,6 +222,7 @@ function drop(target: string) {
     </div>
     <NuxtAlert
       v-if="proposalAlertOpen"
+      role="status"
       title="Propostas visuais"
       description="Escolha hierarquia de cards e distribuição das ações. Estes exercícios não tornam todas as combinações um padrão da suíte."
       icon="i-lucide-info"
@@ -367,6 +401,7 @@ function drop(target: string) {
     <h3 class="op-title">Badges: semântica, cor e ênfase</h3>
     <NuxtAlert
       v-if="contrastAlertOpen"
+      role="status"
       color="primary"
       title="Operação confirmada"
       description="Feedback contextual com ícone, borda e fundo de baixa ênfase."
@@ -413,14 +448,14 @@ function drop(target: string) {
           v-model="channels"
           :items="choices"
           :variant="variant"
-          legend="Canais disponíveis"
+          :legend="`Canais disponíveis, variante ${variant}`"
         />
         <NuxtSeparator class="my-4" />
         <NuxtRadioGroup
           v-model="channel"
           :items="choices"
           :variant="variant"
-          legend="Canal deste pedido"
+          :legend="`Canal deste pedido, variante ${variant}`"
         />
       </NuxtCard>
     </div>
@@ -463,6 +498,84 @@ function drop(target: string) {
       /></NuxtCard>
     </div>
 
+    <h3 class="op-title">Entrada de dados e ações recorrentes</h3>
+    <div class="grid gap-3 lg:grid-cols-2">
+      <NuxtCard
+        title="Quantidade com decimal"
+        description="NuxtInputNumber oficial, com passo, mínimo, máximo e formato pt-BR"
+      >
+        <NuxtInputNumber
+          v-model="quantity"
+          :min="0"
+          :max="999"
+          :step="0.001"
+          :format-options="{
+            minimumFractionDigits: 3,
+            maximumFractionDigits: 3,
+          }"
+          locale="pt-BR"
+          class="w-full"
+          aria-label="Quantidade em quilos"
+        />
+        <p class="op-micro mt-2">
+          Quantidade em quilos. O pedido continua guardando a base inteira do
+          domínio; a máscara é apresentação.
+        </p>
+      </NuxtCard>
+      <NuxtCard
+        title="Agenda da retirada"
+        description="InputDate e InputTime oficiais, com segmentos próprios e teclado"
+      >
+        <div class="grid gap-3 sm:grid-cols-2">
+          <NuxtFormField label="Data">
+            <NuxtInputDate
+              v-model="pickupDate"
+              locale="pt-BR"
+              class="w-full"
+              aria-label="Data de retirada"
+            />
+          </NuxtFormField>
+          <NuxtFormField label="Horário">
+            <NuxtInputTime
+              v-model="pickupTime"
+              locale="pt-BR"
+              class="w-full"
+              aria-label="Horário de retirada"
+            />
+          </NuxtFormField>
+        </div>
+      </NuxtCard>
+      <NuxtCard
+        title="Ações do registro"
+        description="NuxtDropdownMenu oficial para ações secundárias e destrutiva marcada"
+      >
+        <NuxtDropdownMenu :items="rowActions">
+          <NuxtButton
+            label="Ações do pedido NB-1042"
+            color="neutral"
+            variant="outline"
+            trailing-icon="i-lucide-chevron-down"
+          />
+        </NuxtDropdownMenu>
+        <p class="op-micro mt-2">
+          Cancelamento exige confirmação destrutiva; desfazer aparece antes de a
+          ação virar definitiva.
+        </p>
+      </NuxtCard>
+      <NuxtCard
+        title="Importação e captura"
+        description="NuxtFileUpload oficial para planilha de compras e foto de etiqueta"
+      >
+        <NuxtFileUpload
+          v-model="upload"
+          label="Solte o arquivo"
+          description="CSV, XLSX ou foto. Nenhum envio real acontece nesta fixture."
+          accept=".csv,.xlsx,image/*"
+          class="w-full"
+        />
+      </NuxtCard>
+    </div>
+
     <NuxtCard
       title="Tabela operacional"
       description="Seleção, detalhes expansíveis, badges, ordenação, filtro, total e paginação"
@@ -499,7 +612,7 @@ function drop(target: string) {
           :columns="columns"
           sticky="header"
           :ui="{ root: 'overflow-visible' }"
-          aria-label="Pedidos do laboratório"
+          caption="Pedidos do laboratório"
         >
           <template #expanded="{ row }"
             ><div class="whitespace-normal" data-expanded-detail>
@@ -531,8 +644,16 @@ function drop(target: string) {
       title="Prioridade reordenável"
       description="Arraste pelo mouse ou use os botões pelo teclado e toque. Esta ordem é manual, separada da tabela ordenada por valor."
     >
-      <div class="space-y-2">
-        <div
+      <p id="priority-help" class="op-micro mb-2">
+        Use os botões ou arraste para reordenar. A ordem manual é anunciada e não
+        depende de cor nem de gesto de ponteiro.
+      </p>
+      <ul
+        class="space-y-2"
+        aria-label="Fila de prioridade"
+        aria-describedby="priority-help"
+      >
+        <li
           v-for="(item, index) in priority"
           :key="item"
           draggable="true"
@@ -559,8 +680,11 @@ function drop(target: string) {
             :aria-label="`Descer ${item}`"
             @click="move(index, 1)"
           />
-        </div>
-      </div>
+        </li>
+      </ul>
+      <p class="sr-only" role="status" aria-live="polite">
+        {{ moveAnnouncement }}
+      </p>
     </NuxtCard>
   </section>
 </template>

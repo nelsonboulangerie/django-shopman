@@ -594,28 +594,178 @@
             "zoom-200"
           ],
           "evidence": [
-            { "route": "/", "scenario": "normal", "state": "normal", "viewport": "desktop-wide", "capture": "kitchensink-normal-desktop-wide.png", "visited": true },
-            { "route": "/", "scenario": "normal", "state": "normal", "viewport": "desktop-common", "capture": "kitchensink-normal-desktop-common.png", "visited": true },
-            { "route": "/", "scenario": "normal", "state": "normal", "viewport": "desktop-low", "capture": "kitchensink-normal-desktop-low.png", "visited": true },
-            { "route": "/", "scenario": "normal", "state": "normal", "viewport": "desktop-compact", "capture": "kitchensink-normal-desktop-compact.png", "visited": true },
-            { "route": "/", "scenario": "normal", "state": "touch", "viewport": "tablet-landscape", "capture": "kitchensink-normal-tablet-landscape.png", "visited": true },
-            { "route": "/", "scenario": "normal", "state": "touch", "viewport": "tablet-portrait", "capture": "kitchensink-normal-tablet-portrait.png", "visited": true },
-            { "route": "/", "scenario": "normal", "state": "touch", "viewport": "mobile-standard", "capture": "kitchensink-normal-mobile-standard.png", "visited": true },
-            { "route": "/", "scenario": "normal", "state": "touch", "viewport": "mobile-narrow", "capture": "kitchensink-normal-mobile-narrow.png", "visited": true },
-            { "route": "/", "scenario": "normal", "state": "keyboard-focus", "viewport": "zoom-200", "capture": "kitchensink-normal-zoom-200.png", "visited": true },
-            { "route": "/?mode=operational", "scenario": "operational-shell", "state": "normal", "viewport": "desktop-common", "capture": "kitchensink-operational-shell.png", "visited": true },
-            { "route": "/?state=loading", "scenario": "loading", "state": "loading-initial", "viewport": "desktop-common", "capture": "kitchensink-loading.png", "visited": true },
-            { "route": "/?state=empty", "scenario": "empty", "state": "empty", "viewport": "desktop-common", "capture": "kitchensink-empty.png", "visited": true },
-            { "route": "/?state=error", "scenario": "error", "state": "recoverable-error", "viewport": "desktop-common", "capture": "kitchensink-error.png", "visited": true },
-            { "route": "/?state=offline", "scenario": "offline", "state": "offline", "viewport": "desktop-common", "capture": "kitchensink-offline.png", "visited": true },
-            { "route": "/?state=reconnecting", "scenario": "reconnecting", "state": "reconnecting", "viewport": "desktop-common", "capture": "kitchensink-reconnecting.png", "visited": true },
-            { "route": "/?state=slow-network", "scenario": "slow-network", "state": "slow-network", "viewport": "desktop-common", "capture": "kitchensink-slow-network.png", "visited": true },
-            { "route": "/?state=readonly", "scenario": "readonly", "state": "readonly", "viewport": "desktop-common", "capture": "kitchensink-readonly.png", "visited": true },
-            { "route": "/?state=forbidden", "scenario": "forbidden", "state": "insufficient-permission", "viewport": "desktop-common", "capture": "kitchensink-forbidden.png", "visited": true },
-            { "route": "/?state=success", "scenario": "success", "state": "success", "viewport": "desktop-common", "capture": "kitchensink-success.png", "visited": true },
-            { "route": "/?state=extreme-content", "scenario": "extreme-content", "state": "extreme-content", "viewport": "desktop-common", "capture": "kitchensink-extreme-content.png", "visited": true },
-            { "route": "/", "scenario": "modal", "state": "modal", "viewport": "desktop-common", "capture": "kitchensink-modal.png", "visited": true }
-          ]
+            {
+              "route": "/",
+              "scenario": "normal",
+              "state": "normal",
+              "viewport": "desktop-wide",
+              "capture": "kitchensink/home/normal/normal/desktop-wide/light.png",
+              "visited": true
+            },
+            {
+              "route": "/",
+              "scenario": "normal",
+              "state": "normal",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/normal/normal/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/",
+              "scenario": "normal",
+              "state": "normal",
+              "viewport": "desktop-low",
+              "capture": "kitchensink/home/normal/normal/desktop-low/light.png",
+              "visited": true
+            },
+            {
+              "route": "/",
+              "scenario": "normal",
+              "state": "normal",
+              "viewport": "desktop-compact",
+              "capture": "kitchensink/home/normal/normal/desktop-compact/light.png",
+              "visited": true
+            },
+            {
+              "route": "/",
+              "scenario": "normal",
+              "state": "touch",
+              "viewport": "tablet-landscape",
+              "capture": "kitchensink/home/normal/touch/tablet-landscape/light.png",
+              "visited": true
+            },
+            {
+              "route": "/",
+              "scenario": "normal",
+              "state": "touch",
+              "viewport": "tablet-portrait",
+              "capture": "kitchensink/home/normal/touch/tablet-portrait/light.png",
+              "visited": true
+            },
+            {
+              "route": "/",
+              "scenario": "normal",
+              "state": "touch",
+              "viewport": "mobile-standard",
+              "capture": "kitchensink/home/normal/touch/mobile-standard/light.png",
+              "visited": true
+            },
+            {
+              "route": "/",
+              "scenario": "normal",
+              "state": "touch",
+              "viewport": "mobile-narrow",
+              "capture": "kitchensink/home/normal/touch/mobile-narrow/light.png",
+              "visited": true
+            },
+            {
+              "route": "/",
+              "scenario": "normal",
+              "state": "keyboard-focus",
+              "viewport": "zoom-200",
+              "capture": "kitchensink/home/normal/keyboard-focus/zoom-200/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?mode=operational",
+              "scenario": "operational-shell",
+              "state": "success",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/operational-shell/success/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?state=loading",
+              "scenario": "loading",
+              "state": "loading-initial",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/loading/loading-initial/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?state=empty",
+              "scenario": "empty",
+              "state": "empty",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/empty/empty/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?state=error",
+              "scenario": "error",
+              "state": "recoverable-error",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/error/recoverable-error/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?state=offline",
+              "scenario": "offline",
+              "state": "offline",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/offline/offline/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?state=reconnecting",
+              "scenario": "reconnecting",
+              "state": "reconnecting",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/reconnecting/reconnecting/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?state=slow-network",
+              "scenario": "slow-network",
+              "state": "slow-network",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/slow-network/slow-network/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?state=readonly",
+              "scenario": "readonly",
+              "state": "readonly",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/readonly/readonly/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?state=forbidden",
+              "scenario": "forbidden",
+              "state": "insufficient-permission",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/forbidden/insufficient-permission/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?state=success",
+              "scenario": "success",
+              "state": "success",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/success/success/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/?state=extreme-content",
+              "scenario": "extreme-content",
+              "state": "extreme-content",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/extreme-content/extreme-content/desktop-common/light.png",
+              "visited": true
+            },
+            {
+              "route": "/",
+              "scenario": "modal",
+              "state": "modal",
+              "viewport": "desktop-common",
+              "capture": "kitchensink/home/modal/modal/desktop-common/light.png",
+              "visited": true
+            }
+          ],
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         }
       ]
     },
