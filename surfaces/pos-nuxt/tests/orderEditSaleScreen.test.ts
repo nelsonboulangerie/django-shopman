@@ -45,7 +45,9 @@ describe("tela de venda em modo edição", () => {
   it("desconto e observação de item e troca de cliente saem da tela, com a frase do porquê", () => {
     expect(page).toContain(':line-adjustments-blocked-reason="editing ? ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED : undefined"');
     expect(page).toContain(':customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"');
-    expect(page).toContain('@customer-locked="(reason: string) => toast.info(reason)"');
+    expect(page).toContain("function notifyCustomerLocked(reason: string) {");
+    expect(page).toContain("toast.info(reason);");
+    expect(page).toContain('@customer-locked="notifyCustomerLocked"');
   });
 
   it("o CPF da entrega é pedido na caixa de Salvar alterações", () => {
