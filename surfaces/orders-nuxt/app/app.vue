@@ -138,7 +138,7 @@ useOperatorWindowTitle();
 </script>
 
 <template>
-  <div class="bg-background text-foreground" data-suite="v3">
+  <div class="flex min-h-dvh bg-background text-foreground" data-suite="v3">
     <NuxtRouteAnnouncer />
     <OfflineBanner />
 
@@ -176,7 +176,7 @@ useOperatorWindowTitle();
 
       <template #sidebar-footer>
         <ClientOnly>
-          <OperatorInbox v-if="railShown" placement="rail" />
+          <OperatorInbox v-if="railShown" placement="header" />
         </ClientOnly>
         <div class="hidden pointer-fine:block">
           <NuxtButton icon="i-lucide-keyboard" color="neutral" variant="ghost" square aria-label="Atalhos do teclado" title="Atalhos do teclado" @click="shortcuts.open.value = true" />
