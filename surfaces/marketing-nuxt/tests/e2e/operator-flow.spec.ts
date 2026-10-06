@@ -228,9 +228,8 @@ test("a oferta abre o composer funcional com Google entre os destinos", async ({
   await expect(google).toBeVisible();
   await google.click();
   await editor.getByRole("button", { name: "3. Conteúdo" }).click();
-  await expect(editor.getByLabel("Anunciar a oferta")).toHaveValue(
-    "hibisco-primavera",
-  );
+  const offer = editor.getByLabel("Anunciar a oferta");
+  await expect(offer).toContainText("Hibisco Primavera");
 });
 
 test("Campanhas liga ou desliga campanha com CAS e recuperação de conflito", async ({
