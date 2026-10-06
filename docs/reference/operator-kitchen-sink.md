@@ -2,6 +2,20 @@
 
 ## Revisão adversarial contra Nuxt UI 4.11.3 (06/10/2026)
 
+A continuação cobre também o shell operacional do catálogo, navegação funcional,
+ação persistente no footer oficial de DashboardPanel, modal, popover e Slideover,
+readonly real, seleção parcial da tabela, reordenação e estados endereçáveis.
+O catálogo inteiro recebe auditoria de contraste e geometria nos temas claro e
+escuro nos nove viewports oficiais; estados adicionais e overlays interativos
+rodam em desktop e 320px. A medição não é um certificado de cada pixel: limites
+de cobertura e exceções são declarados abaixo, não escondidos por testes verdes.
+
+Uma inspeção visual de toque encontrou o checkbox inflado e o switch circular.
+A regra de tamanho mínimo agora exclui os desenhos desses controles. O tema
+amplia somente o alvo por pseudo-elemento, preservando trilho, thumb e indicador
+oficiais; a auditoria mede esse alvo e um teste clica fora do desenho do switch.
+Seleção parcial usa o estado indeterminate oficial, não somente boolean.
+
 Referência: documentação oficial corrente e implementação instalada. A versão
 estável foi conferida também no registry npm. Esta revisão não certifica a
 migração das telas existentes nem transforma o laboratório em catálogo completo.
@@ -28,9 +42,10 @@ As escolhas aprovadas de superfície branca, outline, padding, tipografia e alvo
 operacionais são tema, configurado na layer. Não autorizam implementações locais
 de foco, portal, resize, navegação, validação ou seleção. `OperatorSplitter`
 continua acrescentando persistência e atributos ARIA ao Splitter oficial; não é
-uma substituição visual. O shell operacional e seus componentes históricos ainda
-precisam de revisão própria antes de serem declarados equivalentes ao dashboard
-Nuxt UI. Os exercícios de fetched/infinite data, rede simulada e periféricos ainda
+uma substituição visual. O shell operacional do catálogo foi refeito com
+DashboardGroup, DashboardSidebar, DashboardPanel, DashboardNavbar e
+DashboardToolbar; isso não certifica os shells históricos das apps existentes.
+Os exercícios de fetched/infinite data, rede simulada e periféricos ainda
 não estão completos. A página única também não substitui receitas de telas
 dedicadas e testadas: esses limites permanecem trabalho em aberto.
 

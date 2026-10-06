@@ -17,6 +17,7 @@ const route = useRoute();
 const router = useRouter();
 const hydrated = ref(false);
 const modalOpen = ref(false);
+const taskDone = ref(false);
 const step = ref(0);
 const { reveal } = useNextFocus();
 watch(step, (value) => {
@@ -483,8 +484,8 @@ onMounted(() => {
                 :data-focus-target="`catalog-step-${step}`"
                 class="op-body mt-3"
               >
-                Etapa {{ step + 1 }}. O foco acompanha a tarefa pelo useNextFocus
-                canônico.
+                Etapa {{ step + 1 }}. O foco acompanha a tarefa pelo
+                useNextFocus canônico.
               </p>
             </NuxtCard>
           </section>
@@ -543,6 +544,9 @@ onMounted(() => {
                 Os dados estão disponíveis, mas esta pessoa não pode alterar
                 esta etapa.
               </p>
+              <NuxtFormField class="mt-3" label="Nome confirmado"
+                ><NuxtInput model-value="Ana Ferreira" readonly class="w-full"
+              /></NuxtFormField>
               <UiButton class="mt-4" text="Salvar" disabled
             /></NuxtCard>
             <NuxtEmpty
@@ -604,6 +608,25 @@ onMounted(() => {
                   </div></template
                 >
               </NuxtPopover>
+              <NuxtSlideover
+                title="Detalhe do pedido"
+                description="Inspeção contextual sem sair da lista."
+              >
+                <NuxtButton
+                  label="Abrir detalhe lateral"
+                  color="neutral"
+                  variant="outline"
+                />
+                <template #body
+                  ><NuxtFormField label="Observação do pedido"
+                    ><NuxtTextarea
+                      v-model="formState.context"
+                      class="w-full" /></NuxtFormField
+                ></template>
+                <template #footer="{ close }"
+                  ><NuxtButton label="Concluir inspeção" @click="close"
+                /></template>
+              </NuxtSlideover>
               <UiButton
                 text="Ver shell operacional"
                 variant="outline"
@@ -677,23 +700,29 @@ onMounted(() => {
       </main>
     </OperatorOfficeShell>
 
-    <section v-else data-operator-audit-id="catalog-operational-shell">
+    <div v-else data-operator-audit-id="catalog-operational-shell">
       <OperatorOperationalShell>
         <template #navigation
-          ><div
-            class="w-[var(--op-rail-compact-width)] bg-rail"
+          ><NuxtNavigationMenu
+            :items="[
+              {
+                label: 'Catálogo',
+                icon: 'i-lucide-layout-grid',
+                to: route.path,
+              },
+              {
+                label: 'Tarefa de chão',
+                icon: 'i-lucide-chef-hat',
+                active: true,
+              },
+            ]"
+            orientation="vertical"
             aria-label="Navegação operacional"
         /></template>
         <template #header>
-          <OperatorPageHeader title="Shell operacional">
-            <template #subtitle
-              ><p class="op-micro mt-1">
-                Uma tarefa principal, estado ao vivo e ação persistente
-              </p></template
-            >
-          </OperatorPageHeader>
+          <NuxtDashboardNavbar as="header" title="Shell operacional" />
         </template>
-        <div class="p-[var(--op-page-inline-space)]">
+        <div>
           <NuxtCard
             ><p class="op-eyebrow">Tarefa de chão</p>
             <h2 class="op-title">Separar pedido NB-1047</h2>
@@ -701,18 +730,33 @@ onMounted(() => {
               Chrome estável, conteúdo com largura mínima zero e barra de ação
               própria.
             </p>
-            <UiButton
+            <NuxtButton
               class="mt-4"
-              text="Voltar ao catálogo"
+              label="Voltar ao catálogo"
+              color="neutral"
               variant="outline"
               :to="route.path"
           /></NuxtCard>
+          <NuxtAlert
+            v-if="taskDone"
+            class="mt-4"
+            title="Etapa concluída"
+            description="Estado confirmado pela fixture local."
+            color="success"
+            variant="soft"
+          />
         </div>
         <template #actions
-          ><UiToolbar><UiButton text="Concluir etapa" size="lg" /></UiToolbar
-        ></template>
+          ><NuxtButton
+            label="Concluir etapa"
+            size="lg"
+            :disabled="taskDone"
+            @click="taskDone = true"
+          />
+          ></template
+        >
       </OperatorOperationalShell>
-    </section>
+    </div>
   </div>
 </template>
 
@@ -728,7 +772,9 @@ onMounted(() => {
       [role="button"],
       [role="link"],
       [role="tab"]
-    ):not([role="separator"]) {
+    ):not([role="separator"]):not([role="checkbox"]):not([role="radio"]):not(
+      [role="switch"]
+    ) {
     min-block-size: var(--spacing-control);
     min-inline-size: var(--spacing-control);
   }

@@ -65,9 +65,13 @@ const columns: TableColumn<Order>[] = [
     footer: () => h("span", { class: "sr-only" }, "Seleção"),
     header: ({ table: api }) =>
       h(Checkbox, {
-        modelValue: api.getIsAllPageRowsSelected(),
-        "onUpdate:modelValue": (value: boolean) =>
-          api.toggleAllPageRowsSelected(value),
+        modelValue: api.getIsAllPageRowsSelected()
+          ? true
+          : api.getIsSomePageRowsSelected()
+            ? "indeterminate"
+            : false,
+        "onUpdate:modelValue": (value: boolean | "indeterminate") =>
+          api.toggleAllPageRowsSelected(value === true),
         "aria-label": "Selecionar pedidos da página",
       }),
     cell: ({ row }) =>

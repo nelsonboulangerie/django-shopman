@@ -4,6 +4,178 @@ import { expect, test } from "@playwright/test";
 import { captureOperatorEvidence } from "../../../operator-kit/visual/playwright";
 import type { OperatorVisualViewport } from "../../../operator-kit/visual/matrix";
 
+test("toque amplia alvo sem deformar switch e checkbox", async ({
+  page,
+}, testInfo) => {
+  const viewport = testInfo.project.metadata
+    .operatorViewport as OperatorVisualViewport;
+  test.skip(viewport.id !== "mobile-standard", "Contrato de toque no celular.");
+  await page.goto("/");
+  await expect(
+    page.locator('[data-operator-catalog][data-hydrated="true"]'),
+  ).toBeAttached();
+  const control = page.getByRole("switch", { name: "Avisos desta tarefa" });
+  await control.scrollIntoViewIfNeeded();
+  const bounds = (await control.boundingBox())!;
+  expect(bounds.height).toBeLessThanOrEqual(24);
+  expect(bounds.width).toBeLessThanOrEqual(44);
+  await page.mouse.click(
+    bounds.x + bounds.width / 2,
+    bounds.y + bounds.height / 2 + 18,
+  );
+  await expect(control).toHaveAttribute("aria-checked", "false");
+  const checkbox = page.getByRole("checkbox", { name: "Exige revisão" });
+  expect((await checkbox.boundingBox())!.width).toBeLessThanOrEqual(20);
+});
+
+test("shell operacional preserva ação, foco e navegação", async ({
+  page,
+}, testInfo) => {
+  const viewport = testInfo.project.metadata
+    .operatorViewport as OperatorVisualViewport;
+  await page.goto("/?mode=operational");
+  await expect(
+    page.locator('[data-operator-catalog][data-hydrated="true"]'),
+  ).toBeAttached();
+  await page
+    .getByRole("button", { name: "Concluir etapa", exact: true })
+    .click();
+  await expect(
+    page.getByText("Etapa concluída", { exact: true }),
+  ).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await captureOperatorEvidence(
+    page,
+    testInfo,
+    {
+      app: "kitchensink",
+      surface: "operational-shell",
+      route: "/?mode=operational",
+      scenario: "normal",
+      state: "success",
+      theme: "light",
+      viewport,
+    },
+    { allowedFindings: [] },
+  );
+});
+
+test("overlays, seleção e reordenação mantêm contratos oficiais", async ({
+  page,
+}, testInfo) => {
+  const viewport = testInfo.project.metadata
+    .operatorViewport as OperatorVisualViewport;
+  test.skip(
+    !["desktop-common", "mobile-narrow"].includes(viewport.id),
+    "Interações em desktop e mobile.",
+  );
+  await page.goto("/");
+  await expect(
+    page.locator('[data-operator-catalog][data-hydrated="true"]'),
+  ).toBeAttached();
+  const lateral = page.getByRole("button", {
+    name: "Abrir detalhe lateral",
+    exact: true,
+  });
+  await lateral.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByRole("textbox", { name: "Observação do pedido" })
+    .fill("Retirada revisada");
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(lateral).toBeFocused();
+  const popover = page.getByRole("button", {
+    name: "Abrir popover",
+    exact: true,
+  });
+  await popover.click();
+  await expect(
+    page.getByText("Informação curta, contextual e não bloqueante.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(popover).toBeFocused();
+  const down = page.getByRole("button", {
+    name: "Descer PED-001",
+    exact: true,
+  });
+  await down.click();
+  await expect(
+    page.getByRole("button", { name: "Subir PED-001", exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Subir PED-001", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Subir PED-001", exact: true }),
+  ).toBeDisabled();
+});
+
+test("tema escuro preserva contraste e geometria em todo o catálogo", async ({
+  page,
+}, testInfo) => {
+  const viewport = testInfo.project.metadata
+    .operatorViewport as OperatorVisualViewport;
+  await page.goto("/");
+  await expect(
+    page.locator('[data-operator-catalog][data-hydrated="true"]'),
+  ).toBeAttached();
+  await page.getByRole("button", { name: "Alternar tema" }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await captureOperatorEvidence(
+    page,
+    testInfo,
+    {
+      app: "kitchensink",
+      surface: "canonical-catalog",
+      route: "/",
+      scenario: "normal",
+      state: "normal",
+      theme: "dark",
+      viewport,
+    },
+    { allowedFindings: [] },
+  );
+});
+
+test("estados endereçáveis não escondem controles nem quebram acessibilidade", async ({
+  page,
+}, testInfo) => {
+  const viewport = testInfo.project.metadata
+    .operatorViewport as OperatorVisualViewport;
+  test.skip(
+    !["desktop-common", "mobile-narrow"].includes(viewport.id),
+    "Estados completos em desktop e no limite mobile.",
+  );
+  for (const state of [
+    "loading",
+    "empty",
+    "error",
+    "offline",
+    "reconnecting",
+    "slow-network",
+    "readonly",
+    "forbidden",
+    "success",
+  ]) {
+    await page.goto(`/?state=${state}`);
+    await expect(
+      page.locator(
+        `[data-operator-catalog][data-hydrated="true"][data-scenario="${state}"]`,
+      ),
+    ).toBeAttached();
+    await page.locator("#states").scrollIntoViewIfNeeded();
+    expect(
+      (await new AxeBuilder({ page }).include("#states").analyze()).violations,
+      state,
+    ).toEqual([]);
+  }
+});
+
 test("consumer real preserva SSR, hidratação, acessibilidade e geometria", async ({
   page,
 }, testInfo) => {

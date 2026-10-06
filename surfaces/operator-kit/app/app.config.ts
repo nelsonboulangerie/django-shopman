@@ -1,5 +1,22 @@
 export default defineAppConfig({
   ui: {
+    checkbox: {
+      slots: {
+        base: "relative overflow-visible after:absolute after:content-[''] after:start-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:size-control",
+        indicator: "rounded-[inherit]",
+      },
+    },
+    switch: {
+      slots: {
+        base: "relative after:absolute after:content-[''] after:start-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:size-control",
+      },
+    },
+    radioGroup: {
+      slots: {
+        base: "relative overflow-visible after:absolute after:content-[''] after:start-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:size-control",
+        indicator: "rounded-full",
+      },
+    },
     popover: { slots: { content: "bg-popover" } },
     dropdownMenu: { slots: { content: "bg-popover" } },
     contextMenu: { slots: { content: "bg-popover" } },
