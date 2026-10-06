@@ -1,4 +1,10 @@
 <script setup lang="ts">
+const navigationOpen = ref(false);
+defineExpose({
+  closeNavigation: () => {
+    navigationOpen.value = false;
+  },
+});
 withDefaults(
   defineProps<{
     storageKey: string;
@@ -23,14 +29,18 @@ withDefaults(
   >
     <NuxtDashboardSidebar
       :id="`${storageKey}-navigation`"
+      v-model:open="navigationOpen"
       :default-size="sidebarDefaultSize"
       :min-size="sidebarMinSize"
       :max-size="sidebarMaxSize"
       resizable
       collapsible
     >
-      <template v-if="$slots['sidebar-header']" #header
-        ><slot name="sidebar-header"
+      <template v-if="$slots['sidebar-header']" #header="{ collapsed }"
+        ><slot name="sidebar-header" :collapsed="collapsed"
+      /></template>
+      <template v-if="$slots['sidebar-footer']" #footer="{ collapsed }"
+        ><slot name="sidebar-footer" :collapsed="collapsed"
       /></template>
       <template #default="{ collapsed }"
         ><slot name="sidebar" :collapsed="collapsed"
@@ -45,6 +55,7 @@ withDefaults(
         />
       </template>
     </NuxtDashboardSidebar>
+    <slot name="search" />
     <NuxtDashboardPanel
       :id="`${storageKey}-content`"
       class="min-w-0"

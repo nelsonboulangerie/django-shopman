@@ -142,6 +142,19 @@ Há cinco receitas, não uma largura por tela: confirmação, formulário curto,
 workspace, detalhe lateral e captura em tela cheia. Popover é informação breve.
 Sheet é detalhe ou ação responsiva. Modal não substitui página.
 
+Modal, detalhe lateral e drawer usam `bg-card`; popover, menus e tooltip usam
+`bg-popover` no tema da layer: branco no tema claro, superfície correspondente no
+escuro. O backdrop continua translúcido, sem cobrir o contexto com branco opaco.
+Alerts usam `subtle` por padrão. Exemplos têm ícone e
+dismiss funcional; trocar o cenário reabre o aviso. Dismiss de um aviso não cancela
+a operação nem altera o estado. Toast usa `useToast` e o toaster do `OperatorAppRoot`.
+
+A busca usa `DashboardSearch` e `DashboardSearchButton`, com `Meta+K` oficial e
+`Kbd`. O menu demonstra filhos e rodapé; o rodapé da página oferece referências.
+A navegação interna rola apenas o corpo do `DashboardPanel`, não o chrome fixo.
+`useScrollspy` acompanha as seções visíveis. O header recebe `collapsed` do
+`DashboardSidebar` e conserva apenas o ícone quando recolhido.
+
 ## Laboratório visual e contratos oficiais
 
 O início do catálogo mostra exercícios comparáveis, ainda sujeitos à decisão do

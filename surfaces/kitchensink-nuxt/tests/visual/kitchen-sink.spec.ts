@@ -4,6 +4,75 @@ import { expect, test } from "@playwright/test";
 import { captureOperatorEvidence } from "../../../operator-kit/visual/playwright";
 import type { OperatorVisualViewport } from "../../../operator-kit/visual/matrix";
 
+test("navegação, busca e feedback preservam o chrome do dashboard", async ({
+  page,
+}, testInfo) => {
+  const viewport = testInfo.project.metadata
+    .operatorViewport as OperatorVisualViewport;
+  test.skip(viewport.id !== "desktop-common", "Contrato do dashboard desktop.");
+  await page.goto("/?state=error");
+  await expect(page.locator('[data-hydrated="true"]')).toBeAttached();
+  const header = page.getByRole("banner");
+  const before = await header.boundingBox();
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Catálogo do kit" }),
+  ).toHaveClass("sr-only");
+  await expect(
+    page
+      .getByRole("button", { name: "Guia de composição" })
+      .locator('[data-slot="label"]'),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Expand sidebar" }).click();
+  await expect(
+    page
+      .getByRole("button", { name: "Guia de composição" })
+      .locator('[data-slot="label"]'),
+  ).toHaveClass(/truncate/);
+  await page.getByRole("button", { name: "Referências", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Matriz de necessidades", exact: true }),
+  ).toBeVisible();
+  const navigation = page.getByRole("navigation", {
+    name: "Seções do catálogo",
+  });
+  await navigation
+    .getByRole("button", { name: "Estados", exact: true })
+    .click();
+  await expect(
+    navigation.getByRole("button", { name: "Estados", exact: true }),
+  ).toHaveAttribute("data-active", "");
+  expect((await header.boundingBox())!.y).toBe(before!.y);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  const alert = page
+    .locator('#states [data-slot="root"]')
+    .filter({ hasText: "Não foi possível atualizar" })
+    .first();
+  await expect(alert.locator('[data-slot="icon"]')).toBeVisible();
+  await alert.getByRole("button").click();
+  await expect(
+    page.getByText("Não foi possível atualizar", { exact: true }),
+  ).toBeHidden();
+  await page.keyboard.press("Meta+k");
+  const search = page.getByRole("dialog", { name: "Buscar no catálogo" });
+  await expect(search).toBeVisible();
+  await expect(search).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await search
+    .getByRole("textbox", { name: "Buscar seção..." })
+    .fill("Receitas");
+  await search.getByRole("option", { name: "Receitas" }).click();
+  await expect(search).toBeHidden();
+  expect((await header.boundingBox())!.y).toBe(before!.y);
+  await page
+    .getByRole("button", { name: "Mostrar toast", exact: true })
+    .click();
+  await expect(
+    page.getByText("Confirmação local, sem envio ao servidor.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
 test("toque amplia alvo sem deformar switch e checkbox", async ({
   page,
 }, testInfo) => {
@@ -80,6 +149,7 @@ test("overlays, seleção e reordenação mantêm contratos oficiais", async ({
   await lateral.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await dialog
     .getByRole("textbox", { name: "Observação do pedido" })
     .fill("Retirada revisada");
@@ -322,6 +392,15 @@ test("receitas interativas preservam dados, seleção, foco e tema", async ({
     .last();
   await lastDetails.click();
   const expandedDetails = tableRegion.getByText(/PED-\d+: retirada no balcão/);
+  const detail = tableRegion.locator("[data-expanded-detail]");
+  expect(
+    await detail.evaluate((element) => getComputedStyle(element).whiteSpace),
+  ).toBe("normal");
+  expect(
+    await detail.evaluate(
+      (element) => getComputedStyle(element.parentElement!).paddingBottom,
+    ),
+  ).toBe("16px");
   await expandedDetails.scrollIntoViewIfNeeded();
   const bounds = await expandedDetails.boundingBox();
   const regionBounds = await tableRegion.boundingBox();

@@ -18,6 +18,10 @@ export default defineAppConfig({
       },
     },
     popover: { slots: { content: "bg-popover" } },
+    slideover: { slots: { content: "bg-card" } },
+    modal: { slots: { content: "bg-card" } },
+    drawer: { slots: { content: "bg-card" } },
+    tooltip: { slots: { content: "bg-popover text-default" } },
     dropdownMenu: { slots: { content: "bg-popover" } },
     contextMenu: { slots: { content: "bg-popover" } },
     card: {
@@ -79,6 +83,7 @@ export default defineAppConfig({
       defaultVariants: { size: "md" },
     },
     alert: {
+      defaultVariants: { variant: "subtle" },
       slots: {
         title: "text-default",
         description: "text-default opacity-100",

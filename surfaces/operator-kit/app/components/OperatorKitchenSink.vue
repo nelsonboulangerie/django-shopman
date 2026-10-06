@@ -18,6 +18,55 @@ const router = useRouter();
 const hydrated = ref(false);
 const modalOpen = ref(false);
 const taskDone = ref(false);
+const stateAlertOpen = ref(true);
+const responsiveAlertOpen = ref(true);
+const taskAlertOpen = ref(true);
+const searchOpen = ref(false);
+const selectedSection = ref("visual-exercises");
+const officeShell = ref<{ closeNavigation: () => void } | null>(null);
+const { activeHeadings, updateHeadings } = useScrollspy();
+watch(activeHeadings, (headings) => {
+  if (headings[0]) selectedSection.value = headings[0];
+});
+function selectSection(id: string, event?: Event) {
+  event?.preventDefault();
+  const target = document.getElementById(id);
+  const scrollArea = target?.closest<HTMLElement>('[data-slot="body"]');
+  if (!target || !scrollArea) return;
+  // Rolar apenas o corpo do panel: scrollIntoView também desloca o chrome fixo.
+  scrollArea.scrollTo({
+    top:
+      scrollArea.scrollTop +
+      target.getBoundingClientRect().top -
+      scrollArea.getBoundingClientRect().top -
+      12,
+    behavior: "instant",
+  });
+  target.setAttribute("tabindex", "-1");
+  target.focus({ preventScroll: true });
+  selectedSection.value = id;
+  searchOpen.value = false;
+  officeShell.value?.closeNavigation();
+}
+const navigationItems = computed(() =>
+  kitchenSinkNavigation.map((item) => ({
+    label: item.label,
+    icon: item.icon,
+    active: selectedSection.value === item.to.slice(1),
+    onSelect: (event: Event) => selectSection(item.to.slice(1), event),
+  })),
+);
+const searchGroups = computed(() => [
+  {
+    id: "catalog",
+    label: "Seções do catálogo",
+    items: kitchenSinkNavigation.map((item) => ({
+      label: item.label,
+      icon: item.icon,
+      onSelect: () => selectSection(item.to.slice(1)),
+    })),
+  },
+]);
 const step = ref(0);
 const { reveal } = useNextFocus();
 watch(step, (value) => {
@@ -41,6 +90,9 @@ const activeState = computed<KitchenSinkState>({
     else query.state = state;
     void router.replace({ path: route.path, query });
   },
+});
+watch(activeState, () => {
+  stateAlertOpen.value = true;
 });
 
 const splitter = [
@@ -105,6 +157,12 @@ const componentLexicon = [
 
 onMounted(() => {
   hydrated.value = true;
+  updateHeadings(
+    kitchenSinkNavigation.flatMap((item) => {
+      const section = document.getElementById(item.to.slice(1));
+      return section ? [section] : [];
+    }),
+  );
 });
 </script>
 
@@ -117,22 +175,74 @@ onMounted(() => {
   >
     <OperatorOfficeShell
       v-if="!operationalMode"
+      ref="officeShell"
       storage-key="operator-kitchen-sink"
       title="Operator Kitchen Sink"
     >
       <template #sidebar="{ collapsed }">
+        <NuxtDashboardSearchButton
+          label="Buscar no catálogo"
+          :collapsed="collapsed"
+        />
         <NuxtNavigationMenu
-          :items="[...kitchenSinkNavigation]"
+          :items="navigationItems"
           orientation="vertical"
           :collapsed="collapsed"
           aria-label="Seções do catálogo"
         />
+        <NuxtNavigationMenu
+          :items="[
+            {
+              label: 'Referências',
+              icon: 'i-lucide-book-open',
+              children: [
+                {
+                  label: 'Matriz de necessidades',
+                  onSelect: () => selectSection('matrix'),
+                },
+                {
+                  label: 'Exceções justificadas',
+                  onSelect: () => selectSection('exceptions'),
+                },
+              ],
+            },
+          ]"
+          orientation="vertical"
+          :collapsed="collapsed"
+          aria-label="Referências aninhadas"
+        />
       </template>
-      <template #sidebar-header
-        ><nav aria-label="Identidade do catálogo">
-          <h2 class="op-title">Catálogo do kit</h2>
+      <template #sidebar-header="{ collapsed }"
+        ><nav
+          class="flex min-w-0 items-center gap-2"
+          aria-label="Identidade do catálogo"
+        >
+          <NuxtIcon name="i-lucide-flask-conical" class="size-5 shrink-0" />
+          <h2 :class="collapsed ? 'sr-only' : 'op-title truncate'">
+            Catálogo do kit
+          </h2>
         </nav></template
       >
+      <template #sidebar-footer="{ collapsed }"
+        ><NuxtButton
+          icon="i-lucide-life-buoy"
+          :label="collapsed ? undefined : 'Guia de composição'"
+          :square="collapsed"
+          class="min-w-0 w-full"
+          :ui="{ label: 'truncate', base: collapsed ? 'justify-center' : '' }"
+          aria-label="Guia de composição"
+          color="neutral"
+          variant="ghost"
+          @click="selectSection('recipes')"
+      /></template>
+      <template #search
+        ><NuxtDashboardSearch
+          v-model:open="searchOpen"
+          :groups="searchGroups"
+          title="Buscar no catálogo"
+          description="Encontre componentes, receitas e referências."
+          placeholder="Buscar seção..."
+      /></template>
 
       <template #navbar-actions
         ><NuxtBadge color="neutral" variant="outline"
@@ -307,9 +417,13 @@ onMounted(() => {
               </NuxtCard>
             </div>
             <NuxtAlert
+              v-if="responsiveAlertOpen"
+              icon="i-lucide-panels-top-left"
+              close
               title="Regra responsiva"
               description="O splitter existe no desktop. No celular, lista e detalhe viram sequência ou sheet, sem comprimir duas panes."
               color="info"
+              @update:open="responsiveAlertOpen = $event"
             />
           </section>
 
@@ -418,9 +532,11 @@ onMounted(() => {
                   v-if="formSaved"
                   class="md:col-span-2"
                   color="success"
-                  variant="soft"
+                  icon="i-lucide-circle-check"
+                  close
                   title="Formulário validado"
                   description="Exemplo salvo apenas nesta fixture local."
+                  @update:open="formSaved = $event"
                 />
               </NuxtForm>
             </NuxtCard>
@@ -516,27 +632,43 @@ onMounted(() => {
             />
             <NuxtAlert
               v-else-if="activeState === 'error'"
+              v-show="stateAlertOpen"
+              icon="i-lucide-circle-alert"
+              close
               title="Não foi possível atualizar"
               description="Tente novamente. O dado anterior continua identificado como desatualizado."
               color="error"
+              @update:open="stateAlertOpen = $event"
             />
             <NuxtAlert
               v-else-if="activeState === 'offline'"
+              v-show="stateAlertOpen"
+              icon="i-lucide-wifi-off"
+              close
               title="Sem conexão"
               description="Você pode revisar o que já foi carregado. Ações que enviam dados estão indisponíveis."
               color="warning"
+              @update:open="stateAlertOpen = $event"
             />
             <NuxtAlert
               v-else-if="activeState === 'reconnecting'"
+              v-show="stateAlertOpen"
+              icon="i-lucide-refresh-cw"
+              close
               title="Reconectando"
               description="A tela mantém o último dado confirmado enquanto tenta restabelecer a atualização ao vivo."
               color="info"
+              @update:open="stateAlertOpen = $event"
             />
             <NuxtAlert
               v-else-if="activeState === 'slow-network'"
+              v-show="stateAlertOpen"
+              icon="i-lucide-clock"
+              close
               title="A rede está lenta"
               description="A ação continua em andamento. Não repita o gesto enquanto a confirmação não chegar."
               color="warning"
+              @update:open="stateAlertOpen = $event"
             />
             <NuxtCard v-else-if="activeState === 'readonly'"
               ><h3 class="op-title">Somente leitura</h3>
@@ -557,9 +689,13 @@ onMounted(() => {
             />
             <NuxtAlert
               v-else-if="activeState === 'success'"
+              v-show="stateAlertOpen"
+              icon="i-lucide-circle-check"
+              close
               title="Alteração salva"
               description="O novo estado já é a fonte da verdade e pode ser conferido na lista."
               color="success"
+              @update:open="stateAlertOpen = $event"
             />
             <NuxtCard v-else-if="activeState === 'extreme-content'"
               ><h3 class="op-title break-words [overflow-wrap:anywhere]">
@@ -572,9 +708,13 @@ onMounted(() => {
             >
             <NuxtAlert
               v-else
+              v-show="stateAlertOpen"
+              icon="i-lucide-activity"
+              close
               title="Operação ao vivo"
               description="A última leitura útil chegou agora."
               color="success"
+              @update:open="stateAlertOpen = $event"
             />
 
             <div class="flex flex-wrap gap-[var(--op-control-gap)]">
@@ -697,6 +837,27 @@ onMounted(() => {
             </div>
           </section>
         </OperatorPage>
+        <footer
+          class="border-t border-default px-[var(--op-page-inline-space)] py-4"
+        >
+          <nav
+            aria-label="Rodapé do catálogo"
+            class="flex flex-wrap items-center gap-3"
+          >
+            <NuxtButton
+              v-for="item in kitchenSinkNavigation.slice(-3)"
+              :key="item.to"
+              color="neutral"
+              variant="link"
+              @click="selectSection(item.to.slice(1))"
+              >{{ item.label }}</NuxtButton
+            >
+            <span class="op-micro"
+              >Busca <NuxtKbd value="meta" /> <NuxtKbd value="k" />. Fechar
+              <NuxtKbd value="escape" />.</span
+            >
+          </nav>
+        </footer>
       </main>
     </OperatorOfficeShell>
 
@@ -707,7 +868,7 @@ onMounted(() => {
             :items="[
               {
                 label: 'Catálogo',
-                icon: 'i-lucide-layout-grid',
+                icon: 'i-lucide-flask-conical',
                 to: route.path,
               },
               {
@@ -738,12 +899,14 @@ onMounted(() => {
               :to="route.path"
           /></NuxtCard>
           <NuxtAlert
-            v-if="taskDone"
+            v-if="taskDone && taskAlertOpen"
             class="mt-4"
             title="Etapa concluída"
             description="Estado confirmado pela fixture local."
             color="success"
-            variant="soft"
+            icon="i-lucide-circle-check"
+            close
+            @update:open="taskAlertOpen = $event"
           />
         </div>
         <template #actions

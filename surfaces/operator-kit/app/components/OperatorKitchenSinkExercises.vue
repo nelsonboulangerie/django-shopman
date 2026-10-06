@@ -31,6 +31,9 @@ const range = shallowRef({
   end: new CalendarDate(2026, 10, 12),
 });
 const filter = ref("");
+const proposalAlertOpen = ref(true);
+const contrastAlertOpen = ref(true);
+const toast = useToast();
 const page = ref(1);
 const rowSelection = ref({});
 const expanded = ref({});
@@ -185,10 +188,13 @@ function drop(target: string) {
       </p>
     </div>
     <NuxtAlert
+      v-if="proposalAlertOpen"
       title="Propostas visuais"
       description="Escolha hierarquia de cards e distribuição das ações. Estes exercícios não tornam todas as combinações um padrão da suíte."
-      variant="soft"
+      icon="i-lucide-info"
+      close
       color="info"
+      @update:open="proposalAlertOpen = $event"
     />
 
     <NuxtCard
@@ -262,14 +268,10 @@ function drop(target: string) {
         description="Plano pai discreto, conteúdo interno branco"
         variant="soft"
       >
-        <NuxtCard
-          title="Pedido confirmado"
-          description="O card interno é a unidade de trabalho"
-          variant="outline"
-          class="bg-card"
-          ><NuxtBadge color="success" variant="soft"
-            >Pronto</NuxtBadge
-          ></NuxtCard
+        <NuxtCard variant="outline" class="bg-card"
+          ><p class="op-label">Pedido confirmado</p>
+          <p class="op-body mb-2">O card interno é a unidade de trabalho.</p>
+          <NuxtBadge color="success" variant="soft">Pronto</NuxtBadge></NuxtCard
         >
       </NuxtCard>
       <NuxtCard
@@ -278,11 +280,10 @@ function drop(target: string) {
         variant="outline"
         class="bg-card"
       >
-        <NuxtCard
-          title="Pedido confirmado"
-          description="Bloco interno subordinado"
-          variant="soft"
-          ><NuxtBadge color="success" variant="outline"
+        <NuxtCard variant="soft"
+          ><p class="op-label">Pedido confirmado</p>
+          <p class="op-body mb-2">Bloco interno subordinado.</p>
+          <NuxtBadge color="success" variant="outline"
             >Pronto</NuxtBadge
           ></NuxtCard
         >
@@ -292,12 +293,10 @@ function drop(target: string) {
         description="Sombra apenas na unidade interna"
         variant="outline"
       >
-        <NuxtCard
-          title="Pedido confirmado"
-          description="Compare se a sombra esclarece ou pesa"
-          variant="outline"
-          class="bg-card shadow-sm"
-          ><NuxtBadge color="success" variant="subtle"
+        <NuxtCard variant="outline" class="bg-card shadow-sm"
+          ><p class="op-label">Pedido confirmado</p>
+          <p class="op-body mb-2">Compare se a sombra esclarece ou pesa.</p>
+          <NuxtBadge color="success" variant="subtle"
             >Pronto</NuxtBadge
           ></NuxtCard
         >
@@ -324,45 +323,71 @@ function drop(target: string) {
     >
 
     <h3 class="op-title">Ações e espaço disponível</h3>
-    <div class="grid gap-3 lg:grid-cols-3">
+    <div class="grid items-start gap-3 lg:grid-cols-3">
       <NuxtCard
         title="A. Principal ocupa a linha"
         description="Uma decisão principal, alternativa discreta"
       >
-        <div class="space-y-2">
-          <NuxtButton block>Confirmar recebimento</NuxtButton
-          ><NuxtButton block color="neutral" variant="ghost">Voltar</NuxtButton>
-        </div>
+        <template #footer
+          ><div class="space-y-2">
+            <NuxtButton block>Confirmar recebimento</NuxtButton
+            ><NuxtButton block color="neutral" variant="ghost"
+              >Voltar</NuxtButton
+            >
+          </div></template
+        >
       </NuxtCard>
       <NuxtCard
         title="B. Um terço e dois terços"
         description="Alternativa visível sem igualar importância"
       >
-        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
-          <NuxtButton block color="neutral" variant="outline">Voltar</NuxtButton
-          ><NuxtButton block class="whitespace-normal text-center"
-            >Confirmar recebimento</NuxtButton
-          >
-        </div>
+        <template #footer
+          ><div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
+            <NuxtButton block color="neutral" variant="outline"
+              >Voltar</NuxtButton
+            ><NuxtButton block class="whitespace-normal text-center"
+              >Confirmar recebimento</NuxtButton
+            >
+          </div></template
+        >
       </NuxtCard>
       <NuxtCard
         title="C. Largura pelo conteúdo"
         description="Desktop compacto, mobile com ação estável"
       >
-        <div class="flex flex-wrap justify-end gap-2">
-          <NuxtButton color="neutral" variant="outline">Voltar</NuxtButton
-          ><NuxtButton>Confirmar</NuxtButton>
-        </div>
+        <template #footer
+          ><div class="flex flex-wrap justify-end gap-2">
+            <NuxtButton color="neutral" variant="outline">Voltar</NuxtButton
+            ><NuxtButton>Confirmar</NuxtButton>
+          </div></template
+        >
       </NuxtCard>
     </div>
 
     <h3 class="op-title">Badges: semântica, cor e ênfase</h3>
     <NuxtAlert
-      variant="solid"
+      v-if="contrastAlertOpen"
       color="primary"
       title="Operação confirmada"
-      description="Título e descrição preservam contraste sobre fundo sólido."
+      description="Feedback contextual com ícone, borda e fundo de baixa ênfase."
+      icon="i-lucide-circle-check"
+      close
+      @update:open="contrastAlertOpen = $event"
     />
+    <NuxtButton
+      color="neutral"
+      variant="outline"
+      @click="
+        toast.add({
+          title: 'Exemplo salvo',
+          description: 'Confirmação local, sem envio ao servidor.',
+          icon: 'i-lucide-circle-check',
+          color: 'success',
+          duration: 0,
+        })
+      "
+      >Mostrar toast</NuxtButton
+    >
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <NuxtCard v-for="variant in badgeVariants" :key="variant" :title="variant"
         ><div class="flex flex-wrap gap-2">
@@ -477,7 +502,7 @@ function drop(target: string) {
           aria-label="Pedidos do laboratório"
         >
           <template #expanded="{ row }"
-            ><div class="p-3">
+            ><div class="whitespace-normal" data-expanded-detail>
               <p class="op-label">{{ row.original.ref }}: retirada no balcão</p>
               <p class="op-body">
                 Pagamento confirmado. Dois itens. Detalhes acessíveis sem sair
