@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import CanonicalSplitter from "@nuxt/ui/components/Splitter.vue";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import { createOperatorSplitterStorage } from "../utils/operatorSplitterStorage";
 
@@ -15,20 +15,23 @@ export interface OperatorSplitterItem {
   class?: string;
 }
 
-const props = withDefaults(defineProps<{
-  id: string;
-  persistenceKey: string;
-  items: readonly OperatorSplitterItem[];
-  orientation?: "horizontal" | "vertical";
-  keyboardResizeBy?: number;
-  handleLabel?: string;
-  disabled?: boolean;
-}>(), {
-  orientation: "horizontal",
-  keyboardResizeBy: 2,
-  handleLabel: "Redimensionar painéis",
-  disabled: false,
-});
+const props = withDefaults(
+  defineProps<{
+    id: string;
+    persistenceKey: string;
+    items: readonly OperatorSplitterItem[];
+    orientation?: "horizontal" | "vertical";
+    keyboardResizeBy?: number;
+    handleLabel?: string;
+    disabled?: boolean;
+  }>(),
+  {
+    orientation: "horizontal",
+    keyboardResizeBy: 2,
+    handleLabel: "Redimensionar painéis",
+    disabled: false,
+  },
+);
 
 const emit = defineEmits<{
   layout: [sizes: number[]];
@@ -38,11 +41,15 @@ const emit = defineEmits<{
 
 const renderKey = ref(0);
 const autoSaveId = computed(() => `shopman:${props.persistenceKey}`);
-const storage = computed(() => createOperatorSplitterStorage(props.items.length));
-const normalizedItems = computed(() => props.items.map((item, index) => ({
-  ...item,
-  slot: item.slot || `panel-${index}`,
-})));
+const storage = computed(() =>
+  createOperatorSplitterStorage(props.items.length),
+);
+const normalizedItems = computed(() =>
+  props.items.map((item, index) => ({
+    ...item,
+    slot: item.slot || `panel-${index}`,
+  })),
+);
 
 function reset() {
   storage.value.removeItem?.(`reka:${autoSaveId.value}`);
@@ -56,6 +63,55 @@ function onResize(index: number, size: number, previousSize?: number) {
 function onDragging(index: number, dragging: boolean) {
   emit("dragging", index, dragging);
 }
+
+function splitterElement(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  return document.querySelector<HTMLElement>(
+    `[data-slot="root"][data-panel-group-id="${CSS.escape(props.id)}"]`,
+  );
+}
+
+/**
+ * O handle do Splitter do Nuxt UI é focável e tem role=separator, mas a versão
+ * corrente não expõe os atributos de valor exigidos pela ARIA. O wrapper já
+ * conhece limites e layout, então completa o contrato sem duplicar o splitter.
+ */
+function syncHandleAccessibility() {
+  const root = splitterElement();
+  if (!root) return;
+  const panels = [...root.querySelectorAll<HTMLElement>("[data-slot='panel']")];
+  const handles = [
+    ...root.querySelectorAll<HTMLElement>(
+      "[data-slot='handle'][role='separator']",
+    ),
+  ];
+  handles.forEach((handle, index) => {
+    const item = normalizedItems.value[index];
+    const panelSize = Number(panels[index]?.dataset.panelSize);
+    const value = Number.isFinite(panelSize)
+      ? panelSize
+      : (item?.defaultSize ?? 50);
+    handle.setAttribute("aria-label", `${props.handleLabel} ${index + 1}`);
+    handle.setAttribute("aria-valuemin", String(item?.minSize ?? 0));
+    handle.setAttribute("aria-valuemax", String(item?.maxSize ?? 100));
+    handle.setAttribute("aria-valuenow", String(Math.round(value * 10) / 10));
+    const controlled = [
+      normalizedItems.value[index]?.id,
+      normalizedItems.value[index + 1]?.id,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    if (controlled) handle.setAttribute("aria-controls", controlled);
+  });
+}
+
+function onLayout(sizes: number[]) {
+  emit("layout", sizes);
+}
+
+onMounted(() => {
+  window.setTimeout(syncHandleAccessibility, 100);
+});
 
 defineExpose({ reset });
 </script>
@@ -75,19 +131,27 @@ defineExpose({ reset });
     :ui="{
       root: 'min-w-0',
       panel: 'min-w-0 overflow-hidden',
-      handle: 'group relative z-[var(--op-layer-resize)] bg-border focus-visible:outline-3 focus-visible:outline-offset-[-3px] focus-visible:outline-primary data-[orientation=horizontal]:w-[var(--op-splitter-handle)] data-[orientation=vertical]:h-[var(--op-splitter-handle)]',
+      handle:
+        'group relative z-[var(--op-layer-resize)] bg-border focus-visible:outline-3 focus-visible:outline-offset-[-3px] focus-visible:outline-primary data-[orientation=horizontal]:w-[var(--op-splitter-handle)] data-[orientation=vertical]:h-[var(--op-splitter-handle)]',
     }"
     data-operator-splitter
-    @layout="emit('layout', $event)"
+    @layout="onLayout"
     @resize="onResize"
     @dragging="onDragging"
   >
-    <template v-for="item in normalizedItems" :key="item.id" #[item.slot]="slotProps">
+    <template
+      v-for="item in normalizedItems"
+      :key="item.id"
+      #[item.slot]="slotProps"
+    >
       <slot :name="item.slot" v-bind="slotProps" />
     </template>
     <template #resize-handle="{ index }">
       <span class="sr-only">{{ handleLabel }} {{ index + 1 }}</span>
-      <span class="pointer-events-none absolute inset-0 m-auto h-10 w-1 rounded-full bg-muted-foreground/35 group-hover:bg-muted-foreground/60" aria-hidden="true" />
+      <span
+        class="pointer-events-none absolute inset-0 m-auto h-10 w-1 rounded-full bg-muted-foreground/35 group-hover:bg-muted-foreground/60"
+        aria-hidden="true"
+      />
     </template>
   </CanonicalSplitter>
 </template>

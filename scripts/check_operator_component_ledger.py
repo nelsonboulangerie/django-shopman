@@ -204,8 +204,14 @@ def check(
                 )
             exceptions = surface.get("exceptions") or []
             for index, exception in enumerate(exceptions):
-                if not all(exception.get(key) for key in ("kind", "reason", "owner", "test")):
-                    errors.append(f"{surface_id}: exceção {index + 1} incompleta (kind, reason, owner e test)")
+                required = (
+                    "kind", "app", "surface", "use_case", "canonical_limitation",
+                    "rejected_alternatives", "justification", "owner", "test",
+                )
+                if not all(exception.get(key) for key in required):
+                    errors.append(f"{surface_id}: exceção {index + 1} incompleta ({', '.join(required)})")
+                if not isinstance(exception.get("rejected_alternatives"), list):
+                    errors.append(f"{surface_id}: exceção {index + 1} sem lista rejected_alternatives")
 
             if status and status != "pending":
                 declared_states = set(surface.get("states") or [])

@@ -1,30 +1,69 @@
 <script setup lang="ts">
-withDefaults(defineProps<{
-  storageKey: string;
-  sidebarDefaultSize?: number;
-  sidebarMinSize?: number;
-  sidebarMaxSize?: number;
-}>(), {
-  sidebarDefaultSize: 18,
-  sidebarMinSize: 14,
-  sidebarMaxSize: 24,
+const navigationOpen = ref(false);
+defineExpose({
+  closeNavigation: () => {
+    navigationOpen.value = false;
+  },
 });
+withDefaults(
+  defineProps<{
+    storageKey: string;
+    title?: string;
+    sidebarDefaultSize?: number;
+    sidebarMinSize?: number;
+    sidebarMaxSize?: number;
+  }>(),
+  {
+    sidebarDefaultSize: 18,
+    sidebarMinSize: 14,
+    sidebarMaxSize: 24,
+  },
+);
 </script>
 
 <template>
-  <NuxtDashboardGroup :storage-key="storageKey" class="min-h-dvh" data-operator-office-shell>
+  <NuxtDashboardGroup
+    :storage-key="storageKey"
+    class="min-h-dvh"
+    data-operator-office-shell
+  >
     <NuxtDashboardSidebar
+      role="complementary"
+      aria-label="Navegação do aplicativo"
+      :id="`${storageKey}-navigation`"
+      v-model:open="navigationOpen"
       :default-size="sidebarDefaultSize"
       :min-size="sidebarMinSize"
       :max-size="sidebarMaxSize"
       resizable
+      collapsible
     >
-      <slot name="sidebar" />
+      <template v-if="$slots['sidebar-header']" #header="{ collapsed }"
+        ><slot name="sidebar-header" :collapsed="collapsed"
+      /></template>
+      <template v-if="$slots['sidebar-footer']" #footer="{ collapsed }"
+        ><slot name="sidebar-footer" :collapsed="collapsed"
+      /></template>
+      <template #default="{ collapsed }"
+        ><slot name="sidebar" :collapsed="collapsed"
+      /></template>
     </NuxtDashboardSidebar>
-    <NuxtDashboardPanel class="min-w-0">
+    <slot name="search" />
+    <NuxtDashboardPanel
+      :id="`${storageKey}-content`"
+      class="min-w-0"
+      :ui="{ body: 'p-0 sm:p-0 gap-0' }"
+    >
       <template #header>
-        <NuxtDashboardNavbar>
-          <slot name="navbar" />
+        <NuxtDashboardNavbar
+          as="header"
+          class="h-auto min-h-[var(--op-header-min-height)] py-2"
+          :title="title"
+          :ui="{ title: 'whitespace-normal break-words', root: 'flex-wrap' }"
+        >
+          <template #leading><NuxtDashboardSidebarCollapse /></template>
+          <template v-if="$slots.navbar" #title><slot name="navbar" /></template>
+          <template #right><slot name="navbar-actions" /></template>
         </NuxtDashboardNavbar>
         <NuxtDashboardToolbar v-if="$slots.toolbar">
           <slot name="toolbar" />

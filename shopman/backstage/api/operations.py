@@ -694,6 +694,8 @@ _OPERATOR_UNLOCK_PERMS = {
     "shop.view_marketing",
     # B.I. (surfaces/bi-nuxt, ADR-021): mesma armadilha da campanha acima.
     "backstage.view_bi",
+    # Preview protegido do catálogo, sem concessão automática aos operadores.
+    "backstage.view_operator_kitchen_sink",
     # Clientes do Gestor: não destrava app nenhum. A barra do Gestor pergunta
     # por ela para mostrar a aba só a quem pode usá-la (decisão do dono,
     # 24/09/2026) — a resposta é sim/não sobre quem está operando, nunca a lista.

@@ -90,6 +90,16 @@
       "subdomain": "compras",
       "base_url_env": "SHOPMAN_PURCHASE_BASE_URL",
       "hub_tile": "purchase"
+    },
+    "kitchensink": {
+      "dir": "kitchensink-nuxt",
+      "kind": "operator",
+      "dev_port": 3009,
+      "service": null,
+      "subdomain": null,
+      "base_url_env": null,
+      "hub_tile": null,
+      "deployment": "preview"
     }
   },
   "operator_groups": {

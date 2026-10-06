@@ -39,11 +39,13 @@ export function defineOperatorVisualConfig(options: OperatorVisualConfigOptions)
     forbidOnly: true,
     retries: 0,
     workers: 1,
-    timeout: 60_000,
+    // O primeiro navegador de cada servidor de dev paga a compilação lazy do
+    // bundle; 60s de teste / 10s de asserção reprovavam por frio, não por bug.
+    timeout: 90_000,
     globalSetup: join(visualRoot, "globalSetup.ts"),
     reporter: [["list"], [join(visualRoot, "reporter.ts")]],
     expect: {
-      timeout: 10_000,
+      timeout: 45_000,
       toHaveScreenshot: { animations: "disabled", caret: "hide", maxDiffPixelRatio: 0.001, threshold: 0.2 },
     },
     ...(options.webServer ? { webServer: options.webServer } : {}),

@@ -44,7 +44,7 @@ ROOT = Path(__file__).resolve().parent.parent
 REGISTRY = Path("surfaces/registry.json")
 KINDS = {"customer", "operator"}
 FIELDS = {"dir", "kind", "dev_port", "service", "subdomain", "base_url_env", "hub_tile"}
-OPTIONAL_FIELDS = {"ready_path"}
+OPTIONAL_FIELDS = {"ready_path", "deployment"}
 DEPLOY_SPECS = (Path(".do/app.subdomains.yaml"), Path(".do/app.alpha-subdomains.yaml"))
 
 
@@ -54,15 +54,20 @@ class Surface:
     dir: str
     kind: str
     dev_port: int
-    service: str
+    service: str | None
     subdomain: str | None
     base_url_env: str | None
     hub_tile: str | None
     ready_path: str | None = None
+    deployment: str | None = None
 
     @property
     def is_operator(self) -> bool:
         return self.kind == "operator"
+
+    @property
+    def is_deployed(self) -> bool:
+        return self.deployment != "preview"
 
 
 class Registry:
@@ -80,6 +85,14 @@ class Registry:
     @property
     def operators(self) -> list[Surface]:
         return [s for s in self.surfaces if s.is_operator]
+
+    @property
+    def deployed_surfaces(self) -> list[Surface]:
+        return [s for s in self.surfaces if s.is_deployed]
+
+    @property
+    def deployed_operators(self) -> list[Surface]:
+        return [s for s in self.operators if s.is_deployed]
 
     def read(self, path: Path | str) -> str:
         return (self.root / path).read_text(encoding="utf-8")
@@ -111,14 +124,18 @@ def check_registry_shape(reg: Registry) -> list[str]:
         if extra:
             errors.append(f"{where}: {key} com campo desconhecido {sorted(extra)}")
     for s in reg.surfaces:
+        if s.deployment not in {None, "preview"}:
+            errors.append(f"{where}: {s.id} com deployment {s.deployment!r} (use preview ou omita)")
         if s.kind not in KINDS:
             errors.append(f"{where}: {s.id} com kind {s.kind!r} (use {sorted(KINDS)})")
         if s.dir != f"{s.id}-nuxt":
             errors.append(f"{where}: {s.id} mora em {s.dir}; o diretório é sempre <id>-nuxt")
-        if s.is_operator and s.service not in reg.groups:
+        if s.is_operator and s.is_deployed and s.service not in reg.groups:
             errors.append(f"{where}: {s.id} é de operador e o serviço {s.service!r} não é um grupo")
-        if s.is_operator and not s.subdomain:
+        if s.is_operator and s.is_deployed and not s.subdomain:
             errors.append(f"{where}: {s.id} é de operador e não tem subdomínio")
+        if not s.is_deployed and any((s.service, s.subdomain, s.base_url_env, s.hub_tile)):
+            errors.append(f"{where}: {s.id} é preview e não pode declarar service, subdomain, base_url_env ou hub_tile")
     for field in ("dev_port", "subdomain", "base_url_env", "hub_tile"):
         values = [getattr(s, field) for s in reg.surfaces if getattr(s, field) is not None]
         for value in sorted({v for v in values if values.count(v) > 1}, key=str):
@@ -205,7 +222,7 @@ def check_operator_groups(reg: Registry) -> list[str]:
         if name in reg.groups and group.get("description") != reg.groups[name]:
             errors.append(f"{where}: descrição de {name} diverge de {REGISTRY}")
         members = {(app["id"], app["surface"], app.get("readyPath")) for app in group.get("apps") or []}
-        expected = {(s.id, s.dir, s.ready_path) for s in reg.operators if s.service == name}
+        expected = {(s.id, s.dir, s.ready_path) for s in reg.deployed_operators if s.service == name}
         errors += _diff(f"{where} ({name})", "o app", expected, members)
     return errors
 
@@ -214,7 +231,7 @@ def check_operator_dockerfile(reg: Registry) -> list[str]:
     where = "surfaces/Dockerfile.operator-group"
     source = reg.read(where)
     errors = []
-    for s in reg.operators:
+    for s in reg.deployed_operators:
         if not re.search(rf"^FROM kit AS {re.escape(s.id)}$", source, re.M):
             errors.append(f"{where}: falta o estágio `FROM kit AS {s.id}`")
         copy = f"COPY --from={s.id} /repo/surfaces/{s.dir}/.output ./apps/{s.dir}/.output"
@@ -249,7 +266,7 @@ def check_deploy_spec(reg: Registry, path: Path) -> list[str]:
     if domain is None:
         return [f"{where}: sem host `api.` no ingress; não sei qual é o domínio da loja"]
 
-    for s in reg.surfaces:
+    for s in reg.deployed_surfaces:
         if s.service not in services:
             errors.append(f"{where}: falta o service {s.service} (de {s.id})")
         if s.subdomain:
@@ -271,11 +288,11 @@ def check_deploy_spec(reg: Registry, path: Path) -> list[str]:
             continue
         raw = _env_map(services[group].get("envs")).get("OPERATOR_HOSTS", "")
         declared = {tuple(pair.split("=", 1)) for pair in raw.split(",") if "=" in pair}
-        expected = {(s.id, f"{s.subdomain}.{domain}") for s in reg.operators if s.service == group}
+        expected = {(s.id, f"{s.subdomain}.{domain}") for s in reg.deployed_operators if s.service == group}
         errors += _diff(f"{where} (OPERATOR_HOSTS de {group})", "o par", expected, declared)
 
     # Host roteado para um grupo que o registro não conhece: app fantasma.
-    known = {f"{s.subdomain}.{domain}" for s in reg.operators}
+    known = {f"{s.subdomain}.{domain}" for s in reg.deployed_operators}
     for host, component in by_host.items():
         if component in reg.groups and host not in known:
             errors.append(f"{where}: {host} vai para {component} e nenhum app do registro tem esse subdomínio")

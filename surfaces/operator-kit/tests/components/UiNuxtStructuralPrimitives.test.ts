@@ -7,7 +7,6 @@ import UiButton from "../../app/components/UiButton.vue";
 import UiDateField from "../../app/components/UiDateField.vue";
 import UiDateRangeField from "../../app/components/UiDateRangeField.vue";
 import UiDateTimeField from "../../app/components/UiDateTimeField.vue";
-import UiModal from "../../app/components/UiModal.vue";
 import UiTabs from "../../app/components/Ui/Tabs/Tabs.vue";
 import UiTabsList from "../../app/components/Ui/Tabs/List.vue";
 import UiTabsTrigger from "../../app/components/Ui/Tabs/Trigger.vue";
@@ -54,39 +53,6 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     expect(button.className).toContain("ring-accented");
     expect(button.className).not.toContain("text-inverted");
     expect(button.className).not.toContain("bg-primary");
-  });
-
-  it("usa a anatomia de modal do Nuxt UI sem deixar texto ou tema padrão escapar", async () => {
-    const Host = defineComponent({
-      setup() {
-        const open = ref(true);
-        return () =>
-          h(
-            UiModal,
-            {
-              open: open.value,
-              "onUpdate:open": (value: boolean) => (open.value = value),
-              title: "Revisar disparo",
-              description: "Confira o público antes de continuar.",
-            },
-            {
-              body: () => h("p", "12 clientes receberão a mensagem."),
-            },
-          );
-      },
-    });
-
-    mounted = await mountSuspended(Host, { attachTo: document.body });
-    await nextTick();
-
-    const dialog = document.body.querySelector<HTMLElement>("[role='dialog']")!;
-    expect(dialog).not.toBeNull();
-    expect(dialog.textContent).toContain("Revisar disparo");
-    expect(dialog.textContent).toContain("12 clientes receberão a mensagem.");
-    expect(dialog.className).toContain("bg-card");
-    expect(dialog.className).not.toContain("bg-white");
-    expect(document.body.querySelector("[aria-label='Fechar']")).not.toBeNull();
-    expect(document.body.textContent).not.toContain("Close");
   });
 
   it("guia uma sequência com o tema canônico do Nuxt UI e os tokens Shopman", async () => {

@@ -41,6 +41,7 @@ class DayClosing(models.Model):
             ("audit_stock", "Pode auditar e ajustar o estoque de insumos (contagem no Compras)"),
             ("view_bi", "Pode ver o B.I. (leitura analítica cross-suite)"),
             ("export_backup", "Pode baixar o backup de dados curados"),
+            ("view_operator_kitchen_sink", "Pode usar o Catálogo do operador no app dedicado"),
         ]
 
     def __str__(self):

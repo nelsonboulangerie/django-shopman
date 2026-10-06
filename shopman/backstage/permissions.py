@@ -163,6 +163,11 @@ def can_manage_campaigns(user) -> bool:
     )
 
 
+def can_view_operator_kitchen_sink(user) -> bool:
+    """Gate do app Catálogo do operador: a porta do app e o tile da Central."""
+    return is_superuser(user) or user.has_perm("backstage.view_operator_kitchen_sink")
+
+
 def can_view_operator_alerts(user) -> bool:
     return is_staff(user) and (
         is_superuser(user)

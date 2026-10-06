@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { DEPLOYED_OPERATOR_SURFACES } from "./support/surfaceRegistry";
 
 // Busca da suíte: trava de forma (V6-BUSCA; T-10, T-11, H01, H03 das auditorias v4).
 //
@@ -23,13 +23,19 @@ function vueFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) return entry.name === "node_modules" || entry.name.startsWith(".") ? [] : vueFiles(path);
+    if (entry.isDirectory())
+      return entry.name === "node_modules" || entry.name.startsWith(".")
+        ? []
+        : vueFiles(path);
     return entry.name.endsWith(".vue") ? [path] : [];
   });
 }
 
 function appSources(app: string): Array<{ path: string; source: string }> {
-  return vueFiles(join(surfacesDir, app, "app")).map((path) => ({ path, source: readFileSync(path, "utf8") }));
+  return vueFiles(join(surfacesDir, app, "app")).map((path) => ({
+    path,
+    source: readFileSync(path, "utf8"),
+  }));
 }
 
 /** O conteúdo de cada `<template #search>` (ou `v-slot:search`) de um SFC. */
@@ -47,27 +53,36 @@ function searchSlots(source: string): string[] {
 
 describe("busca da suíte (V6-BUSCA)", () => {
   it("os oito apps e a Central têm a busca da suíte no lugar da v4", () => {
-    const missing = OPERATOR_SURFACES.filter((app) => {
+    const missing = DEPLOYED_OPERATOR_SURFACES.filter((app) => {
       const sources = appSources(app);
       // O cabeçalho do kit já traz a busca (padrão `search = true`); quem não o usa
       // monta a peça direto (a Central, a Venda do PDV).
-      return !sources.some(({ source }) => /<OperatorPageHeader\b|<OperatorSuiteSearch\b/.test(source));
+      return !sources.some(({ source }) =>
+        /<OperatorPageHeader\b|<OperatorSuiteSearch\b/.test(source),
+      );
     });
     expect(missing).toEqual([]);
   });
 
   it("a Central tem a barra grande da busca no cabeçalho (v4 `hub.jpg`, v3 `depois-hub-celular`)", () => {
-    const hub = appSources("hub-nuxt").map(({ source }) => source).join("\n");
+    const hub = appSources("hub-nuxt")
+      .map(({ source }) => source)
+      .join("\n");
     expect(hub).toMatch(/<OperatorSuiteSearch\b[^>]*variant="hero"/);
   });
 
   it("o cabeçalho nasce com a busca da suíte (só se desliga por escrito)", () => {
-    const header = readFileSync(join(kitDir, "app/components/OperatorPageHeader.vue"), "utf8");
+    const header = readFileSync(
+      join(kitDir, "app/components/OperatorPageHeader.vue"),
+      "utf8",
+    );
     expect(header).toMatch(/search: true/);
     expect(header).toMatch(/<slot name="search"><OperatorSuiteSearch\b/);
-    const off = OPERATOR_SURFACES.flatMap((app) =>
+    const off = DEPLOYED_OPERATOR_SURFACES.flatMap((app) =>
       appSources(app)
-        .filter(({ source }) => /<OperatorPageHeader\b[^>]*:search="false"/.test(source))
+        .filter(({ source }) =>
+          /<OperatorPageHeader\b[^>]*:search="false"/.test(source),
+        )
         .map(({ path }) => relative(surfacesDir, path)),
     );
     expect(off).toEqual([]);
@@ -75,7 +90,7 @@ describe("busca da suíte (V6-BUSCA)", () => {
 
   it("o `#search` do cabeçalho é sempre a busca da suíte, e uma só", () => {
     const offenders: string[] = [];
-    for (const app of OPERATOR_SURFACES) {
+    for (const app of DEPLOYED_OPERATOR_SURFACES) {
       for (const { path, source } of appSources(app)) {
         for (const slot of searchSlots(source)) {
           // Cabeçalho do app que só repassa o slot (o `MarketingPageHeader`): quem

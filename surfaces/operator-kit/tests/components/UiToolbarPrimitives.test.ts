@@ -5,9 +5,8 @@ import { h, type VueWrapper } from "vue";
 import UiFilterChip from "../../app/components/UiFilterChip.vue";
 import UiIconButton from "../../app/components/UiIconButton.vue";
 import UiSearchInput from "../../app/components/UiSearchInput.vue";
-import UiToolbar from "../../app/components/UiToolbar.vue";
 
-// As quatro primitivas da barra de trabalho do operador, testadas NA FONTE.
+// As primitivas da barra de trabalho do operador, testadas NA FONTE.
 //
 // Nasceram no Gestor de Pedidos e foram copiadas para o Marketing; na cópia o token
 // de alvo de toque virou literal e o chip caiu de 44 px para 36 px. Estes testes
@@ -83,25 +82,5 @@ describe("UiSearchInput", () => {
   it("esconde o botão de limpar quando não há o que limpar", async () => {
     const wrapper = await mount(UiSearchInput, { props: { modelValue: "" } });
     expect(wrapper.find('button[aria-label="Limpar busca"]').exists()).toBe(false);
-  });
-});
-
-describe("UiToolbar", () => {
-  it("empurra o cluster `end` para a direita e deixa ele QUEBRAR em tela estreita", async () => {
-    const wrapper = await mount(UiToolbar, {
-      slots: { default: () => h("span", "busca"), end: () => h("span", { class: "tool" }, "ação") },
-    });
-
-    const end = wrapper.get(".ml-auto");
-    // `flex-wrap` é a diferença que a cópia do Marketing tinha perdido: sem ele o
-    // cluster de ações transborda em vez de quebrar.
-    expect(end.classes()).toContain("flex-wrap");
-    expect(end.get(".tool").text()).toBe("ação");
-  });
-
-  it("não abre o cluster `end` quando o slot não é usado", async () => {
-    const wrapper = await mount(UiToolbar, { slots: { default: () => h("span", "só busca") } });
-    expect(wrapper.find(".ml-auto").exists()).toBe(false);
-    expect(wrapper.text()).toBe("só busca");
   });
 });

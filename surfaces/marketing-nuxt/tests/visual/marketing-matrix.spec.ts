@@ -388,7 +388,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
     const dialog = page.getByRole("dialog", { name: "Nova oferta" });
     await expect(dialog.getByRole("group", { name: "Produtos" })).toBeVisible();
     await expect(
-      dialog.getByRole("group", { name: "Início da oferta", exact: true }),
+      dialog.getByRole("group", { name: "Período de validade", exact: true }),
     ).toBeVisible();
     await expectStableScreenshot(
       page,

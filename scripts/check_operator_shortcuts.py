@@ -10,10 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 EXCEPTIONS = ROOT / "docs/reference/operator-global-shortcut-exceptions.json"
-OPERATOR_DIRS = (
-    "hub-nuxt", "pos-nuxt", "kds-nuxt", "orders-nuxt", "production-nuxt",
-    "marketing-nuxt", "purchase-nuxt", "bi-nuxt", "operator-kit",
-)
+REGISTRY = ROOT / "surfaces/registry.json"
 LISTENER = re.compile(
     r"(?:window|document)\.addEventListener\(\s*['\"]keydown['\"]|"
     r"useEventListener\([^;]{0,300}?['\"]keydown['\"]",
@@ -26,7 +23,13 @@ CANONICAL = {
 
 def listeners() -> set[str]:
     found: set[str] = set()
-    for directory in OPERATOR_DIRS:
+    registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    directories = [
+        surface["dir"]
+        for surface in registry["surfaces"].values()
+        if surface["kind"] == "operator"
+    ] + ["operator-kit"]
+    for directory in directories:
         app = ROOT / "surfaces" / directory / "app"
         for suffix in ("*.vue", "*.ts", "*.js", "*.mjs"):
             for path in app.rglob(suffix):

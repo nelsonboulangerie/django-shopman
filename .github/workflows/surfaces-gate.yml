@@ -92,6 +92,7 @@ jobs:
           - hub-nuxt
           - marketing-nuxt
           - bi-nuxt
+          - kitchensink-nuxt
 
     defaults:
       run:
@@ -152,6 +153,14 @@ jobs:
         if: matrix.app == 'operator-kit'
         run: npm run test:visual
 
+      - name: Install Chromium for the Kitchen Sink consumer matrix
+        if: matrix.app == 'kitchensink-nuxt'
+        run: npx playwright install chromium
+
+      - name: Kitchen Sink SSR, hydration, accessibility and visual matrix
+        if: matrix.app == 'kitchensink-nuxt'
+        run: npm run test:visual
+
       - name: Upload shared operator evidence
         if: always() && matrix.app == 'operator-kit'
         uses: actions/upload-artifact@v7
@@ -188,6 +197,8 @@ jobs:
             surface: purchase-nuxt
           - app: bi
             surface: bi-nuxt
+          - app: kitchensink
+            surface: kitchensink-nuxt
 
     steps:
       - name: Checkout

@@ -1,10 +1,50 @@
 {
-  "$comment": "Shells locais anteriores ao WP-UX-13B. Não autorizam novas cópias. O WP do app decide adoção, composição ou exceção operacional.",
-  "version": 1,
+  "$comment": "Shells locais anteriores ao cânone. Não autorizam novas cópias e só permanecem com necessidade, limitação, alternativas e teste explícitos.",
+  "version": 2,
   "exceptions": [
-    { "path": "surfaces/pos-nuxt/app/components/PosCustomerDisplayShell.vue", "reason": "Segundo monitor do cliente, jornada distinta do shell do operador.", "owner": "WP-UX-13J", "test": "surfaces/pos-nuxt/tests/e2e/customer-display.spec.ts" },
-    { "path": "surfaces/pos-nuxt/app/components/PosOperatorShell.vue", "reason": "Shell legado do fluxo contínuo de venda; será confrontado com o shell operacional canônico no WP do PDV.", "owner": "WP-UX-13J", "test": "surfaces/pos-nuxt/tests/components/PosShell.test.ts" },
-    { "path": "surfaces/pos-nuxt/app/components/PosPreordersShell.vue", "reason": "Composição legada das encomendas, pendente da auditoria integral do PDV.", "owner": "WP-UX-13J", "test": "surfaces/pos-nuxt/tests/**/*.test.ts" },
-    { "path": "surfaces/pos-nuxt/app/components/PosSettingsShell.vue", "reason": "Navegação local de ajustes anterior à família Dashboard; decisão fica no WP do PDV.", "owner": "WP-UX-13J", "test": "surfaces/pos-nuxt/tests/**/*.test.ts" }
+    {
+      "path": "surfaces/pos-nuxt/app/components/PosCustomerDisplayShell.vue",
+      "app": "pos",
+      "surface": "customer-display",
+      "use_case": "Segundo monitor público do cliente durante a venda",
+      "canonical_limitation": "Os shells canônicos pressupõem sessão, navegação e ações de operador, proibidas nesta audiência.",
+      "rejected_alternatives": ["Exibir o shell do operador sem rail", "Tratar o monitor como pane do PDV"],
+      "justification": "Audiência, privacidade e ciclo por BroadcastChannel são funcionalmente distintos.",
+      "owner": "WP-UX-13J",
+      "test": "surfaces/pos-nuxt/tests/e2e/customer-display.spec.ts"
+    },
+    {
+      "path": "surfaces/pos-nuxt/app/components/PosOperatorShell.vue",
+      "app": "pos",
+      "surface": "sale",
+      "use_case": "Fluxo contínuo de venda e pagamento",
+      "canonical_limitation": "Dívida transitória: ainda não foi migrado para OperatorOperationalShell com split responsivo.",
+      "rejected_alternatives": ["Declarar o visual atual como terceira família de shell", "Migrar parcialmente e quebrar teclado, periféricos ou pagamento"],
+      "justification": "Permanece somente até a migração atômica do WP do PDV, sem autorizar novos usos.",
+      "owner": "WP-UX-13J",
+      "test": "surfaces/pos-nuxt/tests/components/PosShell.test.ts"
+    },
+    {
+      "path": "surfaces/pos-nuxt/app/components/PosPreordersShell.vue",
+      "app": "pos",
+      "surface": "preorders",
+      "use_case": "Lista e detalhe de encomendas no balcão",
+      "canonical_limitation": "Dívida transitória anterior ao OperatorOfficeShell e ao OperatorSplitter.",
+      "rejected_alternatives": ["Promover o shell local", "Trocar só o cabeçalho e manter duas anatomias"],
+      "justification": "A migração deve preservar seleção, deep link e foco antes de remover a composição antiga.",
+      "owner": "WP-UX-13J",
+      "test": "surfaces/pos-nuxt/tests/**/*.test.ts"
+    },
+    {
+      "path": "surfaces/pos-nuxt/app/components/PosSettingsShell.vue",
+      "app": "pos",
+      "surface": "settings",
+      "use_case": "Navegação local dos ajustes do PDV",
+      "canonical_limitation": "Dívida transitória anterior à receita office de cadastros e ajustes.",
+      "rejected_alternatives": ["Criar uma família settings", "Manter apenas diferenças estéticas"],
+      "justification": "O WP do PDV precisa migrar rotas e foco como uma unidade, sem expandir este shell.",
+      "owner": "WP-UX-13J",
+      "test": "surfaces/pos-nuxt/tests/**/*.test.ts"
+    }
   ]
 }

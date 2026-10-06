@@ -278,6 +278,8 @@ if DEBUG:
         "http://127.0.0.1:3007",
         "http://localhost:3008",
         "http://127.0.0.1:3008",
+        "http://localhost:3009",
+        "http://127.0.0.1:3009",
     ]
 
 SHOPMAN_INSTANCE_APPS = _csv_env_list("SHOPMAN_INSTANCE_APPS")

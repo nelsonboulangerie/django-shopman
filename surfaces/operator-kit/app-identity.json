@@ -79,6 +79,15 @@
       "color": "#414F91",
       "article": "o",
       "install": "Abra os números da operação direto da tela inicial deste dispositivo."
+    },
+    "kitchensink": {
+      "label": "Catálogo do operador",
+      "description": "Catálogo do operador da operação.",
+      "symbol": "lucide:panels-top-left",
+      "fallbackIcon": "panels-top-left",
+      "color": "#44546F",
+      "article": "o",
+      "install": "Abra o Catálogo do operador direto da tela inicial deste dispositivo."
     }
   }
 }

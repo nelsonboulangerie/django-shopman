@@ -9,8 +9,10 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 # A lista vem do registro único; cópia à mão aqui era mais um lugar para esquecer.
-SURFACES = tuple(
-    surface["dir"] for surface in json.loads((ROOT / "surfaces" / "registry.json").read_text())["surfaces"].values()
+REGISTRY = json.loads((ROOT / "surfaces" / "registry.json").read_text())["surfaces"]
+SURFACES = tuple(surface["dir"] for surface in REGISTRY.values())
+DEPLOYED_SURFACES = tuple(
+    surface["dir"] for surface in REGISTRY.values() if surface.get("deployment") != "preview"
 )
 NUXT_RUNTIMES = (*SURFACES, "operator-kit")
 
@@ -87,12 +89,12 @@ def test_operator_groups_cover_every_operator_surface_exactly_once():
     groups = _operator_groups()
     assert set(groups) == {"operator-floor", "operator-office"}
     members = [app["surface"] for apps in groups.values() for app in apps]
-    assert sorted(members) == sorted(s for s in SURFACES if s != "storefront-nuxt")
+    assert sorted(members) == sorted(s for s in DEPLOYED_SURFACES if s != "storefront-nuxt")
     assert len(members) == len(set(members))
     registry = json.loads((ROOT / "surfaces" / "registry.json").read_text())["surfaces"]
     for name, apps in groups.items():
         assert sorted(app["surface"] for app in apps) == sorted(
-            s["dir"] for s in registry.values() if s["service"] == name
+            s["dir"] for s in registry.values() if s.get("service") == name
         ), f"{name} diverge do registro de superfícies"
     for apps in groups.values():
         for app in apps:
@@ -161,7 +163,7 @@ def test_alpha_app_platform_spec_routes_all_nuxt_apps():
         )
 
     assert_image("storefront-nuxt", "storefront")
-    for surface in SURFACES:
+    for surface in DEPLOYED_SURFACES:
         if surface == "storefront-nuxt":
             continue
         assert surface not in services, f"{surface} voltou a ter service próprio (ADR-030)"
@@ -181,6 +183,17 @@ def test_alpha_app_platform_spec_routes_all_nuxt_apps():
     source = (ROOT / ".do" / "app.alpha-subdomains.yaml").read_text()
     assert "compras.boulangerie.com.br" in source
     assert "SHOPMAN_PURCHASE_BASE_URL" in source
+
+
+def test_preview_surfaces_are_isolated_from_operator_deployment():
+    for surface in REGISTRY.values():
+        if surface.get("deployment") != "preview":
+            continue
+        assert _group_of(surface["dir"]) is None
+        for field in ("service", "subdomain", "base_url_env", "hub_tile"):
+            assert surface.get(field) is None
+        for spec in DEPLOY_SPECS:
+            assert surface["dir"] not in spec.read_text()
 
 
 def test_operator_group_env_prefixes_name_apps_of_that_group():

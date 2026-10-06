@@ -156,12 +156,16 @@ import {{ definePwaCapability }} from "../operator-kit/pwa.config";
 
 export default defineNuxtConfig({{
   extends: ["../operator-kit"],
-  ssr: false,
+  // Superfície nova nasce com o mesmo contrato das apps reais. Client-only é
+  // exceção operacional e precisa de justificativa própria, nunca o molde.
+  ssr: true,
 
   compatibilityDate: "2026-05-16",
   devtools: {{ enabled: false }},
 
   runtimeConfig: {{
+    operatorSecurityHeaders: true,
+    operatorUpstreamFailFast: true,
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
     public: {{
       // O NOME da chave é o contrato com a env: o Nuxt deriva
@@ -242,37 +246,37 @@ export default defineNuxtConfig({{
 
 def app_vue(perm: str, label: str, article: str) -> str:
     return f"""<script setup lang="ts">
-// Casca do app: gate de operador + rail + outlet. As telas são páginas próprias (pages/).
+// Casca do app: gate de operador + raiz Nuxt UI + outlet. O shell e a navegação
+// são escolhidos pela receita da página, sem reintroduzir o OperatorRail legado.
 const OPERATOR_PERM = "{perm}";
-const {{ canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock }} = useOperatorLock(OPERATOR_PERM);
-
-const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
+const {{ canIdentify, sessionState, sessionUnavailable, refresh, locked, mustChange }} = useOperatorLock(OPERATOR_PERM);
+const surface = computed(() => operatorSurfaceGate({{
+  sessionState: sessionState.value,
+  canIdentify: canIdentify.value,
+  sessionUnavailable: sessionUnavailable.value,
+  locked: locked.value,
+  mustChange: mustChange.value,
+  harness: false,
+}}));
 
 useOperatorWindowTitle();
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-background text-foreground">
+  <OperatorAppRoot>
     <NuxtRouteAnnouncer />
     <OfflineBanner />
-    <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
-      <OperatorRail
-        :hub-url="hubUrl"
-        :operator-name="operator?.name"
-        @lock="lock"
-      />
-    </div>
-    <div class="flex min-w-0 flex-1 flex-col">
-      <NuxtPage v-if="canIdentify" />
-    </div>
+    <NuxtPage v-slot="{{ Component }}"><component :is="Component" v-if="surface.showPage" /></NuxtPage>
+    <main v-if="surface.showForbidden"><NuxtEmpty icon="i-lucide-shield-x" title="Seu acesso não inclui {article} {label}" description="Peça a um responsável a permissão de acesso. Entrar novamente não concede essa permissão." /></main>
+    <main v-else-if="surface.showChecking" role="status" aria-busy="true"><NuxtSkeleton class="h-48" /><p>Conferindo acesso.</p></main>
     <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy
          subiria a tela de senha com a sessão viva. -->
-    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="{article} {label}" @retry="refresh()" />
-    <OperatorLogin v-if="!canIdentify && !sessionUnavailable" />
-    <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
+    <OperatorSessionUnavailable v-if="surface.showUnavailable" scope="{article} {label}" @retry="refresh()" />
+    <OperatorLogin v-if="surface.showLogin" />
+    <OperatorLock v-else-if="surface.showLock" :perm="OPERATOR_PERM" />
     <OperatorSonner />
     <OperatorPwaRuntime />
-  </div>
+  </OperatorAppRoot>
 </template>
 """
 
@@ -308,6 +312,9 @@ describe("casca do {app_id}", () => {{
 
   it("estende a layer e declara a identidade PWA certa", () => {{
     expect(config).toContain('extends: ["../operator-kit"]');
+    expect(config).toContain("ssr: true");
+    expect(config).toContain("operatorSecurityHeaders: true");
+    expect(config).toContain("operatorUpstreamFailFast: true");
     expect(config).toContain('app: "{app_id}"');
   }});
 }});

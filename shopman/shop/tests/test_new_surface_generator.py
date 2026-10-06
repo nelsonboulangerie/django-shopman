@@ -91,12 +91,20 @@ def test_a_generated_surface_passes_the_registry_gate(repo: Path):
 def test_the_generated_app_extends_the_kit_and_locks_on_its_permission(repo: Path):
     generator.create(repo, **ARGS)
     app = repo / "surfaces" / "loyalty-nuxt"
-    assert 'extends: ["../operator-kit"]' in (app / "nuxt.config.ts").read_text()
-    assert 'const OPERATOR_PERM = "backstage.view_loyalty"' in (app / "app" / "app.vue").read_text()
+    config = (app / "nuxt.config.ts").read_text()
+    shell = (app / "app" / "app.vue").read_text()
+    assert 'extends: ["../operator-kit"]' in config
+    assert "ssr: true" in config
+    assert "operatorSecurityHeaders: true" in config
+    assert "operatorUpstreamFailFast: true" in config
+    assert 'const OPERATOR_PERM = "backstage.view_loyalty"' in shell
+    assert "<OperatorAppRoot>" in shell
+    assert "<OperatorRail" not in shell
     assert (app / "tests" / "shell.test.ts").is_file()
     package = json.loads((app / "package.json").read_text())
     assert package["name"] == "loyalty-nuxt"
-    assert package["scripts"]["dev"] == "nuxt dev --host 127.0.0.1 --port 3009"
+    registry = json.loads((repo / "surfaces/registry.json").read_text())
+    assert package["scripts"]["dev"] == f"nuxt dev --host 127.0.0.1 --port {registry['surfaces']['loyalty']['dev_port']}"
     ledger = json.loads((repo / "docs/reference/operator-component-ledger.json").read_text())
     generated = next(item for item in ledger["apps"] if item["id"] == "loyalty")
     assert generated["owner"] == "surface:loyalty"

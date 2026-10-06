@@ -10,13 +10,35 @@ import { fileURLToPath } from "node:url";
 interface RegisteredSurface {
   dir: string;
   kind: "customer" | "operator";
+  deployment?: "preview";
 }
 
-const registryPath = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "registry.json");
-const registry = JSON.parse(readFileSync(registryPath, "utf8")) as { surfaces: Record<string, RegisteredSurface> };
+const registryPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+  "registry.json",
+);
+const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
+  surfaces: Record<string, RegisteredSurface>;
+};
 
 /** Diretórios dos apps de operador (`pos-nuxt`, …), em ordem alfabética. */
-export const OPERATOR_SURFACES: readonly string[] = Object.values(registry.surfaces)
+export const OPERATOR_SURFACES: readonly string[] = Object.values(
+  registry.surfaces,
+)
   .filter((surface) => surface.kind === "operator")
+  .map((surface) => surface.dir)
+  .sort();
+
+/** Apps que participam da operação e, portanto, precisam do chrome completo da suíte. */
+export const DEPLOYED_OPERATOR_SURFACES: readonly string[] = Object.values(
+  registry.surfaces,
+)
+  .filter(
+    (surface) =>
+      surface.kind === "operator" && surface.deployment !== "preview",
+  )
   .map((surface) => surface.dir)
   .sort();

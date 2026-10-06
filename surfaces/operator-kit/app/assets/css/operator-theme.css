@@ -54,8 +54,8 @@
   --op-action-bar-min-height: 3.5rem;
   --op-pane-min-inline-size: 18rem;
   --op-pane-comfortable-inline-size: 24rem;
-  --op-page-inline-space: clamp(1rem, 2vw, 2rem);
-  --op-page-block-space: clamp(1rem, 2vh, 1.5rem);
+  --op-page-inline-space: clamp(0.75rem, 2vw, 1.5rem);
+  --op-page-block-space: clamp(0.75rem, 1.5vh, 1rem);
   --op-region-gap: 1.5rem;
   --op-control-gap: 0.5rem;
   --op-splitter-handle: 0.25rem;
@@ -82,11 +82,11 @@
 
   --destructive: #b43325; /* tijolo — erro/destrutivo */
   --destructive-foreground: #ffffff;
-  --success: #3e7d44; /* verde-folha — confirmação/despacho/dinheiro */
+  --success: #356c3b; /* verde-folha — confirmação/despacho/dinheiro */
   --success-foreground: #ffffff;
   --warning: #965411; /* âmbar queimado — AA como texto inclusive sobre warning/10 */
   --warning-foreground: #ffffff;
-  --info: #3f6e8c; /* azul-poeira — informação neutra */
+  --info: #345f78; /* azul-poeira — informação neutra */
   --info-foreground: #ffffff;
 
   --border: #dec9bb; /* Faubourg-500 (rosé) */
@@ -120,7 +120,7 @@
   --ui-info: var(--info);
   --ui-warning: var(--warning);
   --ui-error: var(--destructive);
-  --ui-text-dimmed: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
+  --ui-text-dimmed: color-mix(in srgb, var(--muted-foreground) 85%, var(--foreground));
   --ui-text-muted: var(--muted-foreground);
   --ui-text-toned: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));
   --ui-text: var(--foreground);
