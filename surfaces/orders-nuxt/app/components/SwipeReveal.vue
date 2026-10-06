@@ -58,7 +58,7 @@ function pick(action: SwipeAction) {
         v-for="action in actions"
         :key="action.key"
         type="button"
-        class="flex flex-1 flex-col items-center justify-center gap-1 op-label font-semibold text-white disabled:opacity-60"
+        class="flex flex-1 flex-col items-center justify-center gap-1 text-sm font-semibold text-white disabled:opacity-60"
         :class="action.tone === 'danger' ? 'bg-destructive' : 'bg-info'"
         :disabled="action.disabled"
         :tabindex="open ? 0 : -1"

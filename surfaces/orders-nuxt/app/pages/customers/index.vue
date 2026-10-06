@@ -39,7 +39,7 @@ const loading = computed(() => pending.value && !list.value);
   <main class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Clientes">
       <template #status>
-        <span class="hidden op-micro text-muted-foreground lg:inline">Buscar, comparar e unificar cadastros</span>
+        <span class="hidden text-xs text-muted-foreground lg:inline">Buscar, comparar e unificar cadastros</span>
       </template>
       <template #search>
         <OperatorSuiteSearch v-model="search" screen-label="filtrando os clientes" placeholder="Nome, telefone, CPF…" aria-label="Buscar cliente" />

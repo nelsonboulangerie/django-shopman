@@ -38,7 +38,7 @@ const emit = defineEmits<{
   showAll: [];
 }>();
 
-const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent";
+const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm transition hover:bg-accent";
 </script>
 
 <template>
@@ -49,7 +49,7 @@ const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 t
     <button type="button" role="menuitem" :class="ITEM" aria-label="Atualizar (atalho: r)" data-board-refresh @click="emit('refresh')">
       <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" :class="pending ? 'motion-safe:animate-spin' : ''" aria-hidden="true" />
       <span class="flex-1">Atualizar</span>
-      <kbd class="hidden font-mono op-micro text-muted-foreground pointer-fine:inline" aria-hidden="true">R</kbd>
+      <kbd class="hidden font-mono text-xs text-muted-foreground pointer-fine:inline" aria-hidden="true">R</kbd>
     </button>
     <button v-if="attentionPending" type="button" role="menuitem" :class="ITEM" aria-label="Reconhecer aviso de pedido novo" @click="emit('acknowledge')">
       <Icon name="lucide:check" class="size-4 text-muted-foreground" aria-hidden="true" />
@@ -67,7 +67,7 @@ const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 t
     <button v-if="!full" type="button" role="menuitemradio" :aria-checked="viewMode === 'board'" :class="ITEM" data-board-columns-view @click="emit('view', viewMode === 'board' ? (queueAvailable ? 'queue' : 'table') : 'board')">
       <Icon name="lucide:columns-3" class="size-4" :class="viewMode === 'board' ? 'text-primary' : 'text-muted-foreground'" aria-hidden="true" />
       <span class="flex-1">{{ viewMode === "board" ? "Voltar à Fila" : "Ver em colunas" }}</span>
-      <kbd class="hidden font-mono op-micro text-muted-foreground pointer-fine:inline" aria-hidden="true">V</kbd>
+      <kbd class="hidden font-mono text-xs text-muted-foreground pointer-fine:inline" aria-hidden="true">V</kbd>
     </button>
     <button type="button" role="menuitem" :class="ITEM" data-board-select @click="emit('select')">
       <Icon name="lucide:list-checks" class="size-4 text-muted-foreground" aria-hidden="true" />
@@ -75,7 +75,7 @@ const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 t
     </button>
 
     <template v-if="full">
-      <p class="mt-1.5 border-t border-border px-2.5 pt-2.5 pb-1 op-eyebrow text-muted-foreground">Ordenar</p>
+      <p class="mt-1.5 border-t border-border px-2.5 pt-2.5 pb-1 text-xs uppercase tracking-wider font-semibold text-muted-foreground">Ordenar</p>
       <button
         v-for="opt in SORT_OPTIONS"
         :key="opt.key"
@@ -88,7 +88,7 @@ const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 t
         <Icon :name="sort === opt.key ? 'lucide:check' : 'lucide:arrow-up-down'" class="size-4" :class="sort === opt.key ? 'text-primary' : 'text-muted-foreground'" aria-hidden="true" />
         {{ opt.label }}
       </button>
-      <p class="mt-1.5 border-t border-border px-2.5 pt-2.5 pb-1 op-eyebrow text-muted-foreground">Ver como</p>
+      <p class="mt-1.5 border-t border-border px-2.5 pt-2.5 pb-1 text-xs uppercase tracking-wider font-semibold text-muted-foreground">Ver como</p>
       <button v-if="queueAvailable" type="button" role="menuitemradio" :aria-checked="viewMode === 'queue'" :class="ITEM" @click="emit('view', 'queue')">
         <Icon name="lucide:list-checks" class="size-4" :class="viewMode === 'queue' ? 'text-primary' : 'text-muted-foreground'" aria-hidden="true" />
         Fila

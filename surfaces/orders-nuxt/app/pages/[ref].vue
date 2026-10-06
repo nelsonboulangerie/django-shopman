@@ -266,7 +266,7 @@ const { denied: stationLocked } = useStationLock();
 
 // ── O cabeçalho de uma linha e o gesto do momento (G14/G15) ─────────────────
 const isPhone = useMediaQuery("(max-width: 767.98px)");
-const MENU_ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent disabled:opacity-50";
+const MENU_ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm transition hover:bg-accent disabled:opacity-50";
 function menuDo(fn: () => unknown) {
   menuOpen.value = false;
   void fn();
@@ -341,7 +341,7 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
       <template #lead>
         <NuxtLink
           :to="backLocation"
-          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
           :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'"
           data-detail-back
         >
@@ -353,7 +353,7 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
       <template #status>
         <!-- Celular e desktop pelo CSS (não pela largura lida no JS): o servidor desenha
              o mesmo que o navegador vai mostrar. -->
-        <span v-if="order" class="inline-flex min-w-0 items-center gap-1 op-micro text-muted-foreground md:hidden" data-detail-channel>
+        <span v-if="order" class="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground md:hidden" data-detail-channel>
           <Icon :name="channelIcon" class="size-4 shrink-0" />{{ order.channel_name || order.channel_ref }}
         </span>
         <span
@@ -381,7 +381,7 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
         <a
           v-if="returnTicket"
           :href="returnTicket.href"
-          class="inline-flex h-control items-center gap-2 rounded-full bg-destructive/85 px-4 op-label font-semibold text-white transition hover:bg-destructive"
+          class="inline-flex h-control items-center gap-2 rounded-full bg-destructive/85 px-4 text-sm font-semibold text-white transition hover:bg-destructive"
           data-detail-return
         >
           <Icon name="lucide:corner-up-left" class="size-4" />{{ returnTicket.label }}
@@ -393,7 +393,7 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
           v-if="rejectAction"
           type="button"
           :disabled="busy || !rejectAction.enabled"
-          class="inline-flex h-control items-center gap-1.5 rounded-md border border-border bg-card px-3.5 op-label font-semibold text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+          class="inline-flex h-control items-center gap-1.5 rounded-md border border-border bg-card px-3.5 text-sm font-semibold text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
           data-action="reject"
           @click="openDialog('reject')"
         >Recusar</button>
@@ -402,7 +402,7 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
           type="button"
           :disabled="busy || !primary.enabled"
           :title="primary.reason || undefined"
-          class="inline-flex h-control items-center gap-2 rounded-md px-4 op-label font-semibold transition"
+          class="inline-flex h-control items-center gap-2 rounded-md px-4 text-sm font-semibold transition"
           :class="primary.enabled ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'cursor-not-allowed border-2 border-dashed border-border text-muted-foreground'"
           :data-action="primary.key === 'advance' && !primary.enabled ? 'advance-blocked' : primary.key"
           @click="runPrimary"
@@ -447,18 +447,18 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
         <button v-if="order?.can_cancel" type="button" role="menuitem" :disabled="busy" :class="MENU_ITEM" class="text-destructive" data-action="cancel" @click="menuDo(() => openDialog('cancel'))">
           <Icon name="lucide:ban" class="size-4" />{{ order.cancel_requires_approval ? "Cancelar pedido (pede gerente)" : "Cancelar pedido" }}
         </button>
-        <p v-else-if="order?.cancel_block_label" class="px-2.5 py-2 op-micro text-muted-foreground" data-cancel-block>{{ order.cancel_block_label }}</p>
+        <p v-else-if="order?.cancel_block_label" class="px-2.5 py-2 text-xs text-muted-foreground" data-cancel-block>{{ order.cancel_block_label }}</p>
       </UiSheetContent>
     </UiSheet>
 
     <!-- fora da loja: o detalhe mostra só o que pede decisão (G18) -->
-    <div v-if="outside.askConsent.value" class="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 op-label md:mx-6" data-outside-consent>
+    <div v-if="outside.askConsent.value" class="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 text-sm font-medium md:mx-6" data-outside-consent>
       <Icon name="lucide:map-pin" class="size-4 text-info" />
       <span class="min-w-0 flex-1 basis-[16rem]">Usar a localização deste dispositivo para, fora da loja, mostrar só o que pede decisão?</span>
       <button type="button" class="h-9 rounded-md px-3 font-semibold text-muted-foreground hover:bg-accent" @click="outside.decline()">Agora não</button>
       <button type="button" class="h-9 rounded-md bg-primary px-3 font-semibold text-primary-foreground" @click="outside.allow()">Permitir</button>
     </div>
-    <p v-if="outside.away.value" class="mx-4 mt-3 flex items-center gap-2 rounded-lg bg-info/12 px-3 py-2 op-label font-semibold text-info md:mx-6" data-outside-band>
+    <p v-if="outside.away.value" class="mx-4 mt-3 flex items-center gap-2 rounded-lg bg-info/12 px-3 py-2 text-sm font-semibold text-info md:mx-6" data-outside-band>
       <Icon name="lucide:map-pin-off" class="size-4 shrink-0" />Você está fora da loja: mostrando o que pede decisão
       <button type="button" class="ml-auto shrink-0 font-semibold underline underline-offset-2" @click="outside.showAll()">Ver tudo</button>
     </p>
@@ -502,7 +502,7 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
               <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ order.payment_status_label ? `${order.payment_method_label} · ${order.payment_status_label}` : order.payment_method_label }}
             </span>
           </div>
-          <p v-if="deadlineText" class="flex items-center gap-2 rounded-lg bg-muted px-3 py-2.5 op-body" data-detail-deadline>
+          <p v-if="deadlineText" class="flex items-center gap-2 rounded-lg bg-muted px-3 py-2.5 text-sm" data-detail-deadline>
             <Icon name="lucide:timer" class="size-5 shrink-0 text-warning" />
             <span>{{ deadlineText.before }} <b class="tnum">{{ deadlineText.left }}</b> {{ deadlineText.after }}</span>
           </p>
@@ -517,7 +517,7 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
               <Icon name="lucide:undo-2" class="size-4" /> <span class="tabular-nums">{{ undo.kind === "handoff" ? `Desfazer ${undo.countdown}` : "Desfazer" }}</span>
             </button>
           </div>
-          <p v-if="advanceAction && !advanceAction.enabled && order.advance_block_reason" class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 op-label" data-detail-block>
+          <p v-if="advanceAction && !advanceAction.enabled && order.advance_block_reason" class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium" data-detail-block>
             <Icon name="lucide:lock" class="mt-0.5 size-4 shrink-0 text-destructive" />
             <span><b class="font-semibold">{{ order.advance_block_label.replace(/…$/, "") || "Bloqueado" }}</b> · {{ order.advance_block_reason }}</span>
           </p>
@@ -598,7 +598,7 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
         v-if="rejectAction"
         type="button"
         :disabled="busy || !rejectAction.enabled"
-        class="h-14 rounded-xl border border-border bg-card px-5 op-action font-semibold text-destructive disabled:opacity-50"
+        class="h-14 rounded-xl border border-border bg-card px-5 text-base font-semibold text-destructive disabled:opacity-50"
         data-action="reject"
         @click="openDialog('reject')"
       >Recusar</button>
@@ -606,7 +606,7 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
         v-if="primary"
         type="button"
         :disabled="busy || !primary.enabled"
-        class="flex h-14 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl op-action font-semibold"
+        class="flex h-14 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl text-base font-semibold"
         :class="primary.enabled ? 'bg-primary text-primary-foreground' : 'cursor-not-allowed border-2 border-dashed border-border text-muted-foreground'"
         :data-action="primary.key"
         @click="runPrimary"

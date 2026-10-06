@@ -506,7 +506,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
         <div class="min-w-0">
           <p class="sr-only">Editar produto</p>
           <h2 class="truncate text-xl leading-tight font-semibold text-foreground">{{ detail?.name || "Produto" }}</h2>
-          <p class="flex min-w-0 flex-wrap items-center gap-x-1.5 op-micro text-muted-foreground" data-panel-subtitle>
+          <p class="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground" data-panel-subtitle>
             <span class="font-mono">{{ sku }}</span>
             <template v-if="detail">
               <span aria-hidden="true">·</span>
@@ -534,13 +534,13 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             </button>
           </UiPopoverTrigger>
           <UiPopoverContent v-if="headerMenuOpen" align="end" :side-offset="6" class="w-60 rounded-lg p-1.5 shadow-lg" role="menu" data-panel-menu>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" :disabled="!detail" @click="toggleHidden">
+            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm transition hover:bg-accent" :disabled="!detail" @click="toggleHidden">
               <Icon :name="draft.is_published ? 'lucide:eye-off' : 'lucide:eye'" class="size-4 text-muted-foreground" />{{ draft.is_published ? "Ocultar no catálogo" : "Exibir no catálogo" }}
             </button>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent disabled:opacity-50" :disabled="purchaseBusy || !roles" @click="togglePurchaseFromMenu">
+            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm transition hover:bg-accent disabled:opacity-50" :disabled="purchaseBusy || !roles" @click="togglePurchaseFromMenu">
               <Icon name="lucide:shopping-basket" class="size-4 text-muted-foreground" />{{ roles?.purchasable ? "Tirar a permissão de compra" : "Permitir compra" }}
             </button>
-            <a v-if="historyHref" :href="historyHref" target="_blank" rel="noopener" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 op-body transition hover:bg-accent" data-panel-history>
+            <a v-if="historyHref" :href="historyHref" target="_blank" rel="noopener" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-sm transition hover:bg-accent" data-panel-history>
               <Icon name="lucide:history" class="size-4 text-muted-foreground" />Histórico
             </a>
           </UiPopoverContent>
@@ -615,21 +615,21 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             >
               <div class="px-3.5 py-3" :class="unavailableCount ? 'bg-destructive/6' : 'bg-muted/40'">
                 <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="op-label font-semibold">Disponibilidade nos canais</h3>
-                  <span v-if="unavailableCount" class="pill-destructive inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold">
+                  <h3 class="text-sm font-semibold">Disponibilidade nos canais</h3>
+                  <span v-if="unavailableCount" class="pill-destructive inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-semibold">
                     <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ availabilityHeadline }}
                   </span>
-                  <span v-else class="pill-success inline-flex h-6 items-center rounded-full px-2 op-micro font-semibold">À venda em todos</span>
-                  <span class="ml-auto op-micro text-muted-foreground">vale na hora</span>
+                  <span v-else class="pill-success inline-flex h-6 items-center rounded-full px-2 text-xs font-semibold">À venda em todos</span>
+                  <span class="ml-auto text-xs text-muted-foreground">vale na hora</span>
                 </div>
-                <p v-if="unavailableCount && detail?.back_at" class="mt-1 op-micro text-muted-foreground" data-panel-back>
+                <p v-if="unavailableCount && detail?.back_at" class="mt-1 text-xs text-muted-foreground" data-panel-back>
                   Volta <b class="text-foreground">~{{ detail.back_at }}</b>: {{ detail.back_reason }}. Segue o estoque em todos os canais.
                 </p>
               </div>
               <div v-for="row in availability" :key="row.ref" class="flex min-h-12 items-center gap-3 border-t border-border px-3.5 py-2" data-panel-channel>
                 <Icon :name="channelIcon(row)" class="size-4 shrink-0 text-muted-foreground" />
-                <span class="w-28 shrink-0 op-body">{{ row.name }}</span>
-                <span class="min-w-0 flex-1 op-micro">
+                <span class="w-28 shrink-0 text-sm">{{ row.name }}</span>
+                <span class="min-w-0 flex-1 text-xs">
                   <span class="block">
                     <b v-if="row.state !== 'available'" class="font-semibold text-destructive">{{ row.state === "paused" ? "Pausado" : row.kind === "display" ? "Fora de estoque" : "Esgotado" }}</b>
                     <span v-else class="text-muted-foreground">À venda</span>
@@ -644,7 +644,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
                 <button
                   v-if="channelCells?.[row.ref]"
                   type="button"
-                  class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3 op-label font-semibold transition hover:bg-accent disabled:opacity-50"
+                  class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-semibold transition hover:bg-accent disabled:opacity-50"
                   :disabled="!channelCells[row.ref]!.enabled || channelCells[row.ref]!.busy"
                   :aria-label="channelCells[row.ref]!.paused ? `Retomar ${row.name}` : `Pausar ${row.name}`"
                   data-panel-pause
@@ -653,7 +653,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
                   <Icon :name="channelCells[row.ref]!.paused ? 'lucide:play' : 'lucide:pause'" class="size-4" />{{ channelCells[row.ref]!.paused ? "Retomar" : "Pausar" }}
                 </button>
               </div>
-              <p class="flex items-start gap-1.5 border-t border-border px-3.5 py-2 op-micro text-muted-foreground">
+              <p class="flex items-start gap-1.5 border-t border-border px-3.5 py-2 text-xs text-muted-foreground">
                 <Icon name="lucide:sparkles" class="mt-0.5 size-3 shrink-0" />
                 O sistema avisa o iFood, a Meta e o Google sozinho quando o estoque zera e quando volta. Pausar é para o que não é falta de estoque.
               </p>
@@ -1081,7 +1081,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
         <button
           v-if="tab === 'geral' && detail && !belowVisible"
           type="button"
-          class="mr-auto inline-flex min-h-control items-center gap-1 text-left op-micro text-muted-foreground transition hover:text-foreground"
+          class="mr-auto inline-flex min-h-control items-center gap-1 text-left text-xs text-muted-foreground transition hover:text-foreground"
           data-panel-below
           @click="showBelow"
         >Descrição e foto seguem abaixo <Icon name="lucide:chevron-down" class="size-4 shrink-0" /></button>

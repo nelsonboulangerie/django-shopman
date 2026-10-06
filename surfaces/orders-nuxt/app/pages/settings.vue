@@ -14,7 +14,7 @@ useHead({ title: "Ajustes" });
     </OperatorPageHeader>
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
-      <p v-if="expeditesOnly" class="rounded-md border border-dashed p-6 text-center op-body text-muted-foreground">
+      <p v-if="expeditesOnly" class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
         Os ajustes do Gestor são de quem gerencia pedidos. Daqui você opera a Saída.
       </p>
       <nav v-else class="mx-auto flex max-w-3xl flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-card" aria-label="Ajustes do Gestor">
@@ -29,10 +29,10 @@ useHead({ title: "Ajustes" });
             <Icon :name="entry.icon" class="size-5" aria-hidden="true" />
           </span>
           <span class="min-w-0 flex-1">
-            <span class="block op-title">{{ entry.label }}</span>
-            <span class="block truncate op-micro text-muted-foreground">{{ entry.description }}</span>
+            <span class="block text-base font-semibold">{{ entry.label }}</span>
+            <span class="block truncate text-xs text-muted-foreground">{{ entry.description }}</span>
           </span>
-          <span v-if="entry.attention" class="inline-flex shrink-0 items-center gap-1.5 rounded-full pill-warning px-2 py-0.5 op-micro font-semibold">
+          <span v-if="entry.attention" class="inline-flex shrink-0 items-center gap-1.5 rounded-full pill-warning px-2 py-0.5 text-xs font-semibold">
             <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ entry.attention }}
           </span>
           <Icon name="lucide:chevron-right" class="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />

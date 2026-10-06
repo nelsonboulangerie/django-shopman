@@ -108,12 +108,12 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
     <!-- a Fila: só o que pede um fato humano, por urgência -->
     <section class="flex min-w-0 flex-col gap-2.5" aria-labelledby="queue-title">
       <div class="flex items-baseline gap-2 border-b border-border pb-2">
-        <h2 id="queue-title" class="op-eyebrow">{{ title }}</h2>
-        <span class="op-label tnum text-muted-foreground" data-queue-count>{{ items.length }}</span>
-        <span class="ml-auto hidden op-micro text-muted-foreground sm:inline" data-queue-sort-hint>{{ sortHint }}</span>
+        <h2 id="queue-title" class="text-xs uppercase tracking-wider font-semibold">{{ title }}</h2>
+        <span class="text-sm font-medium tnum text-muted-foreground" data-queue-count>{{ items.length }}</span>
+        <span class="ml-auto hidden text-xs text-muted-foreground sm:inline" data-queue-sort-hint>{{ sortHint }}</span>
       </div>
 
-      <p v-if="!items.length" class="rounded-lg border border-dashed border-border p-6 text-center op-body text-muted-foreground" data-queue-empty>
+      <p v-if="!items.length" class="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground" data-queue-empty>
         {{ emptyText }}
       </p>
 
@@ -129,45 +129,45 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
       >
         <!-- código, tempo na etapa e a meta -->
         <div class="min-w-0">
-          <NuxtLink v-if="canOpen" :to="`/${item.card.ref}`" class="block op-figure leading-none hover:underline" :aria-label="`Abrir pedido ${item.card.ref}`">{{ splitRef(item.card.ref).code }}</NuxtLink>
-          <p v-else class="op-figure leading-none">{{ splitRef(item.card.ref).code }}</p>
-          <p class="mt-1.5 op-title tnum" :class="queueToneClass(item.tone)" :data-queue-tone="item.tone" data-queue-time>{{ item.timeLabel }}</p>
-          <p class="op-micro text-muted-foreground" data-queue-goal>{{ item.goalLabel }}</p>
+          <NuxtLink v-if="canOpen" :to="`/${item.card.ref}`" class="block text-2xl tabular-nums font-semibold leading-none hover:underline" :aria-label="`Abrir pedido ${item.card.ref}`">{{ splitRef(item.card.ref).code }}</NuxtLink>
+          <p v-else class="text-2xl tabular-nums font-semibold leading-none">{{ splitRef(item.card.ref).code }}</p>
+          <p class="mt-1.5 text-base font-semibold tnum" :class="queueToneClass(item.tone)" :data-queue-tone="item.tone" data-queue-time>{{ item.timeLabel }}</p>
+          <p class="text-xs text-muted-foreground" data-queue-goal>{{ item.goalLabel }}</p>
         </div>
 
         <!-- quem, o quê e o estado escrito (a cópia não se corta: quebra a linha) -->
         <div class="flex min-w-0 flex-col gap-1.5">
-          <p class="op-body">
+          <p class="text-sm">
             <span class="font-semibold">{{ queueWho(item.card, channelLabel(item.card.channel_ref)).name }}</span>
             <span class="text-muted-foreground"> · {{ queueWho(item.card, channelLabel(item.card.channel_ref)).rest }}</span>
           </p>
-          <p class="op-body text-foreground/85">{{ item.card.items_summary }}</p>
+          <p class="text-sm text-foreground/85">{{ item.card.items_summary }}</p>
           <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <template v-if="undoLine(item.card, nowMs)?.kind === 'auto_ready'">
               <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-muted px-2 text-xs font-semibold whitespace-nowrap text-muted-foreground" data-queue-auto>
                 <Icon name="lucide:sparkles" class="size-3.5" />{{ undoLine(item.card, nowMs)!.label }}<template v-if="undoLine(item.card, nowMs)!.canUndo"> ·
                   <button type="button" class="font-semibold text-foreground underline underline-offset-[3px] disabled:opacity-60" :disabled="isBusy(item.card.ref)" @click="emit('action', item.card.ref, 'undo_ready')">desfazer</button></template>
               </span>
-              <span class="op-micro text-muted-foreground">{{ undoLine(item.card, nowMs)!.canUndo ? undoLine(item.card, nowMs)!.detail : `Cozinha concluiu às ${clock(item.card.ready_at_iso)}` }}</span>
+              <span class="text-xs text-muted-foreground">{{ undoLine(item.card, nowMs)!.canUndo ? undoLine(item.card, nowMs)!.detail : `Cozinha concluiu às ${clock(item.card.ready_at_iso)}` }}</span>
             </template>
             <template v-else-if="item.kind === 'confirm'">
-              <span class="pill-primary inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold"><span class="size-1.5 rounded-full bg-current" aria-hidden="true" />Novo</span>
-              <span v-if="item.card.confirmation_deadline_iso && confirmationRemainingLabel(item.card.confirmation_deadline_iso, nowMs)" class="op-micro text-muted-foreground" data-queue-deadline>
+              <span class="pill-primary inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-semibold"><span class="size-1.5 rounded-full bg-current" aria-hidden="true" />Novo</span>
+              <span v-if="item.card.confirmation_deadline_iso && confirmationRemainingLabel(item.card.confirmation_deadline_iso, nowMs)" class="text-xs text-muted-foreground" data-queue-deadline>
                 {{ item.card.confirmation_action === "cancel" ? "cancela sozinho em" : "aceita sozinho em" }}
                 <span class="font-semibold tnum text-foreground">{{ confirmationRemainingLabel(item.card.confirmation_deadline_iso, nowMs) }}</span>
               </span>
             </template>
             <template v-else-if="item.kind === 'blocked'">
-              <span class="pill-destructive inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2 op-micro font-semibold whitespace-nowrap" data-queue-block><Icon name="lucide:lock" class="size-3.5" />{{ blockLabel(item.card) }}</span>
-              <span class="min-w-0 op-micro text-muted-foreground" data-queue-block-reason>{{ item.card.advance_block_reason }}</span>
+              <span class="pill-destructive inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2 text-xs font-semibold whitespace-nowrap" data-queue-block><Icon name="lucide:lock" class="size-3.5" />{{ blockLabel(item.card) }}</span>
+              <span class="min-w-0 text-xs text-muted-foreground" data-queue-block-reason>{{ item.card.advance_block_reason }}</span>
             </template>
             <template v-else-if="item.kind === 'station' && readyStation(item.card)">
-              <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-secondary px-2 op-micro font-semibold"><Icon name="lucide:printer" class="size-3.5" />{{ readyStation(item.card)!.station_name }} no papel</span>
-              <span class="op-micro text-muted-foreground">{{ item.card.kitchen?.missing_label }}</span>
+              <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-secondary px-2 text-xs font-semibold"><Icon name="lucide:printer" class="size-3.5" />{{ readyStation(item.card)!.station_name }} no papel</span>
+              <span class="text-xs text-muted-foreground">{{ item.card.kitchen?.missing_label }}</span>
             </template>
             <template v-else-if="!item.kind">
-              <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-muted px-2 op-micro font-semibold text-muted-foreground" data-queue-moving><span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ item.card.status_label }}</span>
-              <span class="op-micro text-muted-foreground">nada pede você agora</span>
+              <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-muted px-2 text-xs font-semibold text-muted-foreground" data-queue-moving><span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ item.card.status_label }}</span>
+              <span class="text-xs text-muted-foreground">nada pede você agora</span>
             </template>
           </div>
           <div v-if="actionError(item.card.ref)" class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive" role="alert">
@@ -181,26 +181,26 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
         <!-- pagamento, total e o gesto -->
         <div class="flex min-w-0 flex-col gap-1.5">
           <div class="flex items-baseline justify-between gap-2">
-            <span class="min-w-0 op-micro leading-tight text-muted-foreground" data-queue-payment>{{ item.card.change_label || item.card.payment_method_label }}</span>
-            <span class="shrink-0 op-title tnum">{{ item.card.total_display }}</span>
+            <span class="min-w-0 text-xs leading-tight text-muted-foreground" data-queue-payment>{{ item.card.change_label || item.card.payment_method_label }}</span>
+            <span class="shrink-0 text-base font-semibold tnum">{{ item.card.total_display }}</span>
           </div>
           <template v-if="item.kind === 'station' && readyStation(item.card)">
             <button
               type="button"
-              class="inline-flex h-action items-center justify-center gap-2 rounded-md bg-primary op-label font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+              class="inline-flex h-action items-center justify-center gap-2 rounded-md bg-primary text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
               :disabled="isBusy(item.card.ref)"
               data-queue-primary
               @click="emit('station-ready', item.card, readyStation(item.card)!.station_ref)"
             >
               <Icon name="lucide:check" class="size-4" />Pronto de {{ readyStation(item.card)!.station_name }}
-              <kbd v-if="item.card.ref === focusRef" class="ml-1 hidden font-mono op-micro opacity-70 pointer-fine:inline" data-queue-key>Enter</kbd>
+              <kbd v-if="item.card.ref === focusRef" class="ml-1 hidden font-mono text-xs opacity-70 pointer-fine:inline" data-queue-key>Enter</kbd>
             </button>
           </template>
           <div v-else-if="queueGesture(item).primary" class="flex gap-1.5">
             <button
               v-if="queueGesture(item).secondary"
               type="button"
-              class="inline-flex h-action items-center rounded-md border border-border bg-card px-3 op-label font-semibold text-muted-foreground transition hover:bg-accent disabled:opacity-60"
+              class="inline-flex h-action items-center rounded-md border border-border bg-card px-3 text-sm font-semibold text-muted-foreground transition hover:bg-accent disabled:opacity-60"
               :disabled="isBusy(item.card.ref) || queueGesture(item).secondary!.disabled"
               :title="queueGesture(item).secondary!.reason || undefined"
               data-queue-secondary
@@ -208,7 +208,7 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
             >{{ queueGesture(item).secondary!.label }}</button>
             <button
               type="button"
-              class="inline-flex h-action min-w-0 flex-1 items-center justify-center gap-2 rounded-md op-label font-semibold transition"
+              class="inline-flex h-action min-w-0 flex-1 items-center justify-center gap-2 rounded-md text-sm font-semibold transition"
               :class="queueGesture(item).primary!.disabled
                 ? 'cursor-default border-2 border-dashed border-border text-muted-foreground'
                 : 'bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] disabled:opacity-60'"
@@ -219,7 +219,7 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
             >
               <Icon :name="queueGesture(item).primary!.disabled ? 'lucide:lock' : item.kind === 'dispatch' ? 'lucide:bike' : item.kind === 'handoff' ? 'lucide:hand-platter' : queueGesture(item).primary!.icon" class="size-4 shrink-0" />
               <span>{{ queueGesture(item).primary!.verb }}</span>
-              <kbd v-if="printedKey(item)" class="ml-1 hidden font-mono op-micro opacity-70 pointer-fine:inline" data-queue-key>{{ printedKey(item) }}</kbd>
+              <kbd v-if="printedKey(item)" class="ml-1 hidden font-mono text-xs opacity-70 pointer-fine:inline" data-queue-key>{{ printedKey(item) }}</kbd>
             </button>
           </div>
         </div>
@@ -229,11 +229,11 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
       <button
         v-if="rest.count"
         type="button"
-        class="mt-0.5 flex min-h-12 items-center gap-3 rounded-lg border border-dashed border-border px-4 py-2 text-left op-label transition hover:bg-accent"
+        class="mt-0.5 flex min-h-12 items-center gap-3 rounded-lg border border-dashed border-border px-4 py-2 text-left text-sm font-medium transition hover:bg-accent"
         data-queue-rest
         @click="emit('scope', 'all')"
       >
-        <span class="op-title tnum">+{{ rest.count }}</span>
+        <span class="text-base font-semibold tnum">+{{ rest.count }}</span>
         <span class="min-w-0 font-normal text-muted-foreground">{{ rest.text }}</span>
         <span class="ml-auto inline-flex shrink-0 items-center gap-1 font-semibold">Ver todos<Icon name="lucide:chevron-right" class="size-4" /></span>
       </button>
@@ -243,18 +243,18 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
     <aside class="flex min-w-0 flex-col gap-4" aria-label="Em andamento e o que o sistema fez">
       <section>
         <div class="mb-2.5 flex items-baseline gap-2 border-b border-border pb-2">
-          <h2 class="op-eyebrow">Em andamento</h2><span class="op-label tnum text-muted-foreground">{{ progressCount }}</span>
+          <h2 class="text-xs uppercase tracking-wider font-semibold">Em andamento</h2><span class="text-sm font-medium tnum text-muted-foreground">{{ progressCount }}</span>
         </div>
         <div class="rounded-lg border border-border bg-card" data-queue-progress>
           <div v-for="line in progress" :key="line.key" class="queue-row">
             <Icon :name="line.icon" class="size-4 text-info" />
-            <span class="flex-1 op-body">{{ line.label }}</span>
+            <span class="flex-1 text-sm">{{ line.label }}</span>
             <span
-              class="op-micro text-muted-foreground"
+              class="text-xs text-muted-foreground"
               :title="line.key === 'kitchen' && awareness?.kitchen_eta_basis ? `Previsão ${awareness.kitchen_eta_basis}` : undefined"
               :data-queue-progress-detail="line.key"
             >{{ line.detail }}</span>
-            <span class="w-6 text-right op-title tnum">{{ line.count }}</span>
+            <span class="w-6 text-right text-base font-semibold tnum">{{ line.count }}</span>
           </div>
         </div>
       </section>
@@ -262,49 +262,49 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
       <section>
         <div class="mb-2.5 flex items-baseline gap-2 border-b border-border pb-2">
           <Icon name="lucide:sparkles" class="size-3.5 self-center text-muted-foreground" />
-          <h2 class="op-eyebrow">O sistema fez</h2>
-          <span class="ml-auto op-micro text-muted-foreground">últimos {{ awareness?.system_window_minutes ?? 15 }} min</span>
+          <h2 class="text-xs uppercase tracking-wider font-semibold">O sistema fez</h2>
+          <span class="ml-auto text-xs text-muted-foreground">últimos {{ awareness?.system_window_minutes ?? 15 }} min</span>
         </div>
         <div class="rounded-lg border border-border bg-card" data-queue-system>
-          <p v-if="!systemActions.length" class="queue-row op-micro text-muted-foreground">Nada automático neste intervalo.</p>
+          <p v-if="!systemActions.length" class="queue-row text-xs text-muted-foreground">Nada automático neste intervalo.</p>
           <div v-for="line in systemActions" :key="`${line.order_ref}-${line.at_iso}`" class="queue-row">
-            <span class="w-11 op-label font-semibold tnum">{{ splitRef(line.order_ref).code }}</span>
-            <span class="min-w-0 flex-1 op-body">{{ line.verb }} <span class="text-muted-foreground">· {{ line.reason }}</span></span>
+            <span class="w-11 text-sm font-semibold tnum">{{ splitRef(line.order_ref).code }}</span>
+            <span class="min-w-0 flex-1 text-sm">{{ line.verb }} <span class="text-muted-foreground">· {{ line.reason }}</span></span>
             <button
               v-if="systemUndoOpen(line) && cardFor(line.order_ref)"
               type="button"
-              class="h-9 rounded-md px-3 op-label font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-60"
+              class="h-9 rounded-md px-3 text-sm font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-60"
               :disabled="isBusy(line.order_ref)"
               data-queue-system-undo
               @click="emit('action', line.order_ref, 'undo_ready')"
             >Desfazer</button>
-            <span v-else class="pr-3 op-micro tnum text-muted-foreground">{{ line.at_display }}</span>
+            <span v-else class="pr-3 text-xs tnum text-muted-foreground">{{ line.at_display }}</span>
           </div>
         </div>
-        <p class="mt-2 op-micro leading-snug text-muted-foreground">Aviso ao cliente só sai depois da janela de desfazer. "Marcar pronto" à mão continua no ⋯ do pedido.</p>
+        <p class="mt-2 text-xs leading-snug text-muted-foreground">Aviso ao cliente só sai depois da janela de desfazer. "Marcar pronto" à mão continua no ⋯ do pedido.</p>
       </section>
 
       <section v-if="outages.length || menuChannels.length">
         <div class="mb-2.5 flex items-baseline gap-2 border-b border-border pb-2">
-          <h2 class="op-eyebrow">Agora no cardápio</h2>
-          <span v-if="awareness?.menu_outages_more" class="ml-auto op-micro text-muted-foreground">+{{ awareness.menu_outages_more }} fora do ar</span>
+          <h2 class="text-xs uppercase tracking-wider font-semibold">Agora no cardápio</h2>
+          <span v-if="awareness?.menu_outages_more" class="ml-auto text-xs text-muted-foreground">+{{ awareness.menu_outages_more }} fora do ar</span>
         </div>
         <div class="rounded-lg border border-border bg-card" data-queue-menu>
           <div v-for="outage in outages" :key="outage.sku" class="queue-row py-2">
             <span class="min-w-0 flex-1">
-              <span class="block op-body">{{ outage.line }}</span>
-              <span class="inline-flex items-center gap-1 op-micro text-muted-foreground"><Icon name="lucide:sparkles" class="size-3" />{{ outage.detail }}</span>
+              <span class="block text-sm">{{ outage.line }}</span>
+              <span class="inline-flex items-center gap-1 text-xs text-muted-foreground"><Icon name="lucide:sparkles" class="size-3" />{{ outage.detail }}</span>
             </span>
           </div>
           <!-- o canal: "iFood ligado · desligar pede gerente · [interruptor]" (v4). O
                interruptor abre o MESMO diálogo de Canais (período, motivo, gerente). -->
           <div v-for="row in menuChannels" :key="row.ref" class="queue-row" data-queue-channel>
             <Icon :name="row.ref === 'ifood' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
-            <NuxtLink v-if="awareness?.can_open_channels" :to="row.focus_path" class="min-w-0 flex-1 op-body hover:underline" :title="`Abrir ${row.name} em Canais`">
+            <NuxtLink v-if="awareness?.can_open_channels" :to="row.focus_path" class="min-w-0 flex-1 text-sm hover:underline" :title="`Abrir ${row.name} em Canais`">
               {{ row.name }} {{ row.active ? "ligado" : "desligado" }}
             </NuxtLink>
-            <span v-else class="min-w-0 flex-1 op-body">{{ row.name }} {{ row.active ? "ligado" : "desligado" }}</span>
-            <span v-if="switchHint(row)" class="hidden shrink-0 op-micro text-muted-foreground sm:inline" data-queue-channel-hint>{{ switchHint(row) }}</span>
+            <span v-else class="min-w-0 flex-1 text-sm">{{ row.name }} {{ row.active ? "ligado" : "desligado" }}</span>
+            <span v-if="switchHint(row)" class="hidden shrink-0 text-xs text-muted-foreground sm:inline" data-queue-channel-hint>{{ switchHint(row) }}</span>
             <UiSwitch
               v-if="row.switch"
               tone="success"

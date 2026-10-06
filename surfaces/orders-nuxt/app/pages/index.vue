@@ -747,7 +747,7 @@ function printQueue() {
         <button
           v-if="attentionPending && !exitPostView && !isPhone"
           type="button"
-          class="inline-flex h-control items-center gap-2 rounded-md border border-primary/50 bg-primary/10 px-3 op-label font-semibold transition hover:bg-primary/15"
+          class="inline-flex h-control items-center gap-2 rounded-md border border-primary/50 bg-primary/10 px-3 text-sm font-semibold transition hover:bg-primary/15"
           aria-label="Reconhecer aviso de pedido novo"
           @click="acknowledgeAttention"
         >
@@ -757,7 +757,7 @@ function printQueue() {
         <!-- a visão deste posto e o caminho de volta às três colunas -->
         <template v-if="view === 'board' && !boardLayout.allOpen.value && !isPhone">
           <span
-            class="hidden h-control items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3.5 op-label lg:inline-flex"
+            class="hidden h-control items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3.5 text-sm font-medium lg:inline-flex"
             :title="boardLayout.memoryText.value"
             data-board-view-label
           >
@@ -767,7 +767,7 @@ function printQueue() {
           </span>
           <button
             type="button"
-            class="inline-flex h-control items-center gap-2 rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
+            class="inline-flex h-control items-center gap-2 rounded-md border border-border bg-card px-4 text-sm font-semibold transition hover:bg-accent"
             title="Mostrar as 3 colunas (atalhos: 1, 2 e 3)"
             data-board-show-all
             @click="boardLayout.showAll()"
@@ -799,7 +799,7 @@ function printQueue() {
             <UiPopoverTrigger as-child>
               <button
                 type="button"
-                class="inline-flex h-control min-w-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
+                class="inline-flex h-control min-w-control items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium transition hover:bg-accent"
                 :title="view === 'queue' ? 'Ordenar a Fila' : 'Ordenar (atalho: s)'"
                 data-board-sort
               >
@@ -816,10 +816,10 @@ function printQueue() {
                   type="button"
                   role="menuitemradio"
                   :aria-checked="queueSort === opt.key"
-                  class="flex min-h-control w-full items-center justify-between gap-2 px-3 py-1.5 text-left op-body transition hover:bg-accent"
+                  class="flex min-h-control w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm transition hover:bg-accent"
                   @click="pickQueueSort(opt.key)"
                 >
-                  <span class="flex flex-col"><span>{{ opt.label }}</span><span class="op-micro text-muted-foreground">{{ opt.hint }}</span></span>
+                  <span class="flex flex-col"><span>{{ opt.label }}</span><span class="text-xs text-muted-foreground">{{ opt.hint }}</span></span>
                   <Icon v-if="queueSort === opt.key" name="lucide:check" class="size-4 shrink-0 text-primary" />
                 </button>
               </template>
@@ -830,7 +830,7 @@ function printQueue() {
                   type="button"
                   role="menuitemradio"
                   :aria-checked="sort === opt.key"
-                  class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left op-body transition hover:bg-accent"
+                  class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left text-sm transition hover:bg-accent"
                   @click="pickSort(opt.key)"
                 >
                   {{ opt.label }}
@@ -847,7 +847,7 @@ function printQueue() {
             <button
               v-if="queueAvailable"
               type="button"
-              class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
+              class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition"
               :class="view === 'queue' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
               aria-label="Fila: o que precisa de você"
               title="Fila: o que precisa de você (atalho: f)"
@@ -856,11 +856,11 @@ function printQueue() {
             >
               <Icon name="lucide:list-checks" class="size-4" />
               <span aria-hidden="true">Fila</span>
-              <kbd class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">F</kbd>
+              <kbd class="ml-0.5 hidden font-mono text-xs text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">F</kbd>
             </button>
             <button
               type="button"
-              class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
+              class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition"
               :class="view === 'table' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
               aria-label="Supervisão: tabela densa, seleção em lote"
               title="Supervisão: tabela densa, seleção em lote (atalho: t)"
@@ -870,7 +870,7 @@ function printQueue() {
             >
               <Icon name="lucide:table-2" class="size-4" />
               <span aria-hidden="true">Supervisão</span>
-              <kbd class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">T</kbd>
+              <kbd class="ml-0.5 hidden font-mono text-xs text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">T</kbd>
             </button>
           </div>
         </template>
@@ -954,7 +954,7 @@ function printQueue() {
           <UiPopoverTrigger as-child>
             <button
               type="button"
-              class="inline-flex h-control items-center gap-2 rounded-full border px-3 op-label transition"
+              class="inline-flex h-control items-center gap-2 rounded-full border px-3 text-sm font-medium transition"
               :class="channel !== 'all' ? 'border-primary bg-primary/10 font-semibold' : 'border-dashed border-border text-muted-foreground hover:bg-accent'"
               data-channel-picker
             >
@@ -968,7 +968,7 @@ function printQueue() {
               type="button"
               role="menuitemradio"
               :aria-checked="channel === 'all'"
-              class="flex min-h-control w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent"
+              class="flex min-h-control w-full items-center gap-2.5 px-3 text-left text-sm transition hover:bg-accent"
               @click="channel = 'all'; channelOpen = false"
             >
               <Icon name="lucide:layers" class="size-4 text-muted-foreground" />
@@ -981,7 +981,7 @@ function printQueue() {
               type="button"
               role="menuitemradio"
               :aria-checked="channel === opt.ref"
-              class="flex min-h-control w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent"
+              class="flex min-h-control w-full items-center gap-2.5 px-3 text-left text-sm transition hover:bg-accent"
               @click="channel = opt.ref; channelOpen = false"
             >
               <Icon :name="`lucide:${lucideIcon(allCards.find((c) => c.channel_ref === opt.ref)?.channel_icon || '')}`" class="size-4 text-muted-foreground" />
@@ -1005,7 +1005,7 @@ function printQueue() {
         <span v-if="isPhone" class="order-first">
         <button
           type="button"
-          class="inline-flex h-control items-center gap-2 rounded-full border border-border bg-card px-3 op-label font-semibold"
+          class="inline-flex h-control items-center gap-2 rounded-full border border-border bg-card px-3 text-sm font-semibold"
           aria-haspopup="menu"
           :aria-expanded="moreOpen"
           aria-label="Mais ações da fila"
@@ -1064,7 +1064,7 @@ function printQueue() {
           v-for="tab in phoneTabs"
           :key="tab.key"
           :value="tab.key"
-          class="h-12 flex-1 gap-1.5 rounded-none op-body data-[state=active]:shadow-[inset_0_-3px_0_var(--primary)]"
+          class="h-12 flex-1 gap-1.5 rounded-none text-sm data-[state=active]:shadow-[inset_0_-3px_0_var(--primary)]"
           :data-phone-tab="tab.key"
         >
           {{ tab.title }}
@@ -1118,7 +1118,7 @@ function printQueue() {
       <!-- puxe para atualizar (celular) -->
       <p
         v-if="isPhone && (pull > 0 || pullRefreshing)"
-        class="flex shrink-0 items-center justify-center gap-2 overflow-hidden op-micro text-muted-foreground"
+        class="flex shrink-0 items-center justify-center gap-2 overflow-hidden text-xs text-muted-foreground"
         :style="{ height: `${pullRefreshing ? 40 : pull}px` }"
         aria-live="polite"
         data-pull-refresh
@@ -1202,19 +1202,19 @@ function printQueue() {
                  aqui; no posto Saída, também os recortes do fluxo e onde a arrumação mora. -->
             <div v-if="!isPhone" class="flex min-h-11 items-center gap-2" :class="wideColumn(zone.key) ? '' : 'border-b border-border pb-2'">
               <Icon v-if="!wideColumn(zone.key)" :name="zone.icon" class="size-4 text-muted-foreground" />
-              <h2 class="op-eyebrow">{{ zone.title }}</h2>
-              <span class="op-label tnum text-muted-foreground"><b class="font-semibold text-foreground">{{ triaged(zone).length }}</b><template v-if="wideColumn(zone.key)">{{ triaged(zone).length === 1 ? " pronto ou quase" : " prontos ou quase" }}</template></span>
-              <span v-if="wideColumn(zone.key)" class="ml-3 hidden items-center gap-1.5 op-micro text-muted-foreground lg:inline-flex" :title="boardLayout.memoryText.value" data-board-layout-memory>
+              <h2 class="text-xs uppercase tracking-wider font-semibold">{{ zone.title }}</h2>
+              <span class="text-sm tnum text-muted-foreground"><b class="font-semibold text-foreground">{{ triaged(zone).length }}</b><template v-if="wideColumn(zone.key)">{{ triaged(zone).length === 1 ? " pronto ou quase" : " prontos ou quase" }}</template></span>
+              <span v-if="wideColumn(zone.key)" class="ml-3 hidden items-center gap-1.5 text-xs text-muted-foreground lg:inline-flex" :title="boardLayout.memoryText.value" data-board-layout-memory>
                 <Icon name="lucide:cloud-check" class="size-4" aria-hidden="true" />{{ layoutMemory }}
               </span>
-              <span v-else class="ml-auto hidden truncate op-micro text-muted-foreground sm:block" :title="zone.subtitle">{{ zone.subtitle }}</span>
+              <span v-else class="ml-auto hidden truncate text-xs text-muted-foreground sm:block" :title="zone.subtitle">{{ zone.subtitle }}</span>
               <template v-if="wideColumn(zone.key)">
                 <span class="flex-1" />
                 <button
                   v-for="opt in EXIT_FILTERS"
                   :key="opt.key"
                   type="button"
-                  class="inline-flex h-11 items-center gap-1.5 rounded-full border px-3.5 op-label transition"
+                  class="inline-flex h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition"
                   :class="fulfillment === opt.key ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
                   :aria-pressed="fulfillment === opt.key"
                   @click="fulfillment = opt.key"
@@ -1237,7 +1237,7 @@ function printQueue() {
               <span class="grid size-11 place-items-center rounded-full bg-success/10 text-success">
                 <Icon name="lucide:circle-check" class="size-6" />
               </span>
-              <p class="op-label font-normal text-muted-foreground">{{ zoneEmptyText(zone.key) }}</p>
+              <p class="text-sm font-normal text-muted-foreground">{{ zoneEmptyText(zone.key) }}</p>
             </div>
 
             <!-- celular, a Saída da v4: o mais antigo expandido, o resto em linhas de
@@ -1289,7 +1289,7 @@ function printQueue() {
               <button
                 v-if="exitOverflow(zone).length"
                 type="button"
-                class="flex min-h-11 shrink-0 flex-wrap items-center justify-center gap-x-2 rounded-lg border border-dashed border-border px-3 op-label transition hover:bg-accent"
+                class="flex min-h-11 shrink-0 flex-wrap items-center justify-center gap-x-2 rounded-lg border border-dashed border-border px-3 text-sm font-medium transition hover:bg-accent"
                 data-exit-overflow
                 @click="exitShowAll = true"
               >
@@ -1300,7 +1300,7 @@ function printQueue() {
               <button
                 v-else-if="exitShowAll && triaged(zone).length > exitCapacity"
                 type="button"
-                class="flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-dashed border-border op-label text-muted-foreground transition hover:bg-accent"
+                class="flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-dashed border-border text-sm font-medium text-muted-foreground transition hover:bg-accent"
                 @click="exitShowAll = false"
               >
                 Mostrar só os {{ exitCapacity }} primeiros
@@ -1338,7 +1338,7 @@ function printQueue() {
                 @volumes="(count) => declareVolumes(card.ref, count, zone.key === 'expedition' ? 'exit' : 'orders')"
               />
               </SwipeReveal>
-              <p v-if="isPhone && triaged(zone).length" class="flex items-center justify-center gap-1.5 py-1 op-micro text-muted-foreground" data-swipe-hint>
+              <p v-if="isPhone && triaged(zone).length" class="flex items-center justify-center gap-1.5 py-1 text-xs text-muted-foreground" data-swipe-hint>
                 <Icon name="lucide:hand" class="size-4" />{{ !canManageOrders ? "Puxe para atualizar" : zone.key === "intake" ? "Deslize para Atender ou Recusar · puxe para atualizar" : "Deslize para Atender · puxe para atualizar" }}
               </p>
             </div>

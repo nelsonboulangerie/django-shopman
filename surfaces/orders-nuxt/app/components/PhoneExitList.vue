@@ -90,36 +90,36 @@ const offset = (card: OrderCardProjection) => (drag.value?.ref === card.ref ? dr
 
 <template>
   <div class="flex min-h-full flex-col gap-2.5 pb-2" data-phone-exit>
-    <p class="op-micro text-muted-foreground">O mais antigo no topo</p>
+    <p class="text-xs text-muted-foreground">O mais antigo no topo</p>
 
     <!-- o mais antigo, expandido -->
     <article v-if="focus" class="flex flex-col gap-2.5 rounded-xl border-2 border-primary bg-card p-3.5" :data-phone-exit-focus="focus.ref">
       <div class="flex items-start gap-2">
         <div class="min-w-0 flex-1">
-          <NuxtLink v-if="canOpen" :to="`/${focus.ref}`" class="block op-code hover:underline" :aria-label="`Abrir pedido ${focus.ref}`">{{ splitRef(focus.ref).code }}</NuxtLink>
-          <p v-else class="op-code">{{ splitRef(focus.ref).code }}</p>
-          <p class="op-title break-words">{{ focus.customer_name || "Sem cliente" }}</p>
+          <NuxtLink v-if="canOpen" :to="`/${focus.ref}`" class="block text-4xl tabular-nums font-bold hover:underline" :aria-label="`Abrir pedido ${focus.ref}`">{{ splitRef(focus.ref).code }}</NuxtLink>
+          <p v-else class="text-4xl tabular-nums font-bold">{{ splitRef(focus.ref).code }}</p>
+          <p class="text-base font-semibold break-words">{{ focus.customer_name || "Sem cliente" }}</p>
         </div>
         <div class="flex shrink-0 flex-col items-end gap-1 pt-1">
           <span :class="[sealClass(cardSeal(focus, { next: focus.ref === nextRef }).tone), 'inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-semibold whitespace-nowrap']">
             <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ cardSeal(focus, { next: focus.ref === nextRef }).label }}
           </span>
-          <span class="op-micro tnum text-muted-foreground">{{ cardClock(focus, nowMs).text }}</span>
+          <span class="text-xs tnum text-muted-foreground">{{ cardClock(focus, nowMs).text }}</span>
         </div>
       </div>
       <div class="flex flex-wrap gap-2">
-        <span class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-secondary px-2.5 op-body font-semibold text-secondary-foreground">
+        <span class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-secondary px-2.5 text-sm font-semibold text-secondary-foreground">
           <Icon :name="focus.fulfillment_type === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4" />{{ focus.fulfillment_label }}
         </span>
-        <span v-if="packLabel(focus)" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-secondary px-2.5 op-body font-semibold text-secondary-foreground tnum">
+        <span v-if="packLabel(focus)" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-secondary px-2.5 text-sm font-semibold text-secondary-foreground tnum">
           <Icon name="lucide:package" class="size-4" />{{ packLabel(focus) }}
         </span>
       </div>
       <ul class="flex flex-col divide-y divide-border border-t border-border" data-phone-exit-items>
-        <li v-for="(line, i) in items" :key="i" class="py-1.5 op-body">{{ line }}</li>
+        <li v-for="(line, i) in items" :key="i" class="py-1.5 text-sm">{{ line }}</li>
       </ul>
-      <p v-if="focus.delivery_address" class="flex items-start gap-1.5 op-micro text-muted-foreground"><Icon name="lucide:map-pin" class="mt-0.5 size-3.5 shrink-0" />{{ focus.delivery_address }}</p>
-      <p v-if="blocked(focus)" class="flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/12 px-2.5 py-1.5 op-label" data-phone-exit-block>
+      <p v-if="focus.delivery_address" class="flex items-start gap-1.5 text-xs text-muted-foreground"><Icon name="lucide:map-pin" class="mt-0.5 size-3.5 shrink-0" />{{ focus.delivery_address }}</p>
+      <p v-if="blocked(focus)" class="flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/12 px-2.5 py-1.5 text-sm font-medium" data-phone-exit-block>
         <Icon name="lucide:lock" class="mt-0.5 size-4 shrink-0 text-destructive" />{{ focus.advance_block_reason || blocked(focus) }}
       </p>
       <div v-if="actionError(focus.ref)" class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive" role="alert">
@@ -137,7 +137,7 @@ const offset = (card: OrderCardProjection) => (drag.value?.ref === card.ref ? dr
       class="relative overflow-hidden rounded-xl"
       :data-phone-exit-row="card.ref"
     >
-      <div class="absolute inset-0 flex items-center gap-2 bg-primary px-4 op-label font-semibold text-primary-foreground" aria-hidden="true">
+      <div class="absolute inset-0 flex items-center gap-2 bg-primary px-4 text-sm font-semibold text-primary-foreground" aria-hidden="true">
         <Icon name="lucide:hand-platter" class="size-5" />{{ thumbLabel(card) }}
       </div>
       <button
@@ -152,17 +152,17 @@ const offset = (card: OrderCardProjection) => (drag.value?.ref === card.ref ? dr
         @pointercancel="drag = null"
         @keydown.enter.prevent="picked = card.ref"
       >
-        <span class="w-14 shrink-0 op-title font-bold tnum">{{ splitRef(card.ref).code }}</span>
+        <span class="w-14 shrink-0 text-base font-bold tnum">{{ splitRef(card.ref).code }}</span>
         <span class="min-w-0 flex-1">
-          <span class="block op-body font-semibold">{{ card.customer_name || "Sem cliente" }}</span>
-          <span v-if="blocked(card)" class="flex items-center gap-1 op-micro font-semibold text-destructive"><Icon name="lucide:lock" class="size-3.5" />{{ blocked(card) }}</span>
-          <span v-else class="block op-micro text-muted-foreground">{{ rowLine(card) }}</span>
+          <span class="block text-sm font-semibold">{{ card.customer_name || "Sem cliente" }}</span>
+          <span v-if="blocked(card)" class="flex items-center gap-1 text-xs font-semibold text-destructive"><Icon name="lucide:lock" class="size-3.5" />{{ blocked(card) }}</span>
+          <span v-else class="block text-xs text-muted-foreground">{{ rowLine(card) }}</span>
         </span>
         <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
       </button>
     </div>
 
-    <p v-if="swipeable" class="flex items-center justify-center gap-1.5 op-micro text-muted-foreground" data-phone-exit-hint>
+    <p v-if="swipeable" class="flex items-center justify-center gap-1.5 text-xs text-muted-foreground" data-phone-exit-hint>
       <Icon name="lucide:hand" class="size-4" />Deslize uma linha para entregar outro pedido
     </p>
 
@@ -171,7 +171,7 @@ const offset = (card: OrderCardProjection) => (drag.value?.ref === card.ref ? dr
     <div v-if="focus && primaryOf(focus)" class="fixed inset-x-3 bottom-[calc(4rem+env(safe-area-inset-bottom)+0.75rem)] z-20 md:hidden">
       <button
         type="button"
-        class="flex h-14 w-full items-center justify-center gap-2 rounded-xl op-action font-semibold transition"
+        class="flex h-14 w-full items-center justify-center gap-2 rounded-xl text-base font-semibold transition"
         :class="primaryOf(focus)!.disabled
           ? 'cursor-default border-2 border-dashed border-border bg-card text-muted-foreground'
           : 'bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 active:scale-[0.98] disabled:opacity-60'"

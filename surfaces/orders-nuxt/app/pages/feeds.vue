@@ -157,10 +157,10 @@ useHead({ title: "Canais" });
   <main class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Canais">
       <template #status>
-        <span class="hidden op-micro text-muted-foreground lg:inline">Venda e exibição do catálogo</span>
+        <span class="hidden text-xs text-muted-foreground lg:inline">Venda e exibição do catálogo</span>
       </template>
       <template #actions>
-        <p class="hidden op-micro text-muted-foreground lg:block">
+        <p class="hidden text-xs text-muted-foreground lg:block">
           <span class="tabular-nums">{{ feeds.length + catalogChannels.length }}</span> canais
         </p>
         <!-- criar/configurar a fundo (novo canal de exibição, opções) é no Admin -->

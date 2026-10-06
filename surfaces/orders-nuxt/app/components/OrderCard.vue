@@ -164,7 +164,7 @@ function pressEnd() {
 onBeforeUnmount(pressEnd);
 
 const CHIP = "inline-flex min-h-control items-center gap-1.5 rounded-lg bg-secondary px-2.5 font-semibold text-secondary-foreground";
-const chipSize = computed(() => props.touch ? "h-9 op-body" : "h-8 text-sm");
+const chipSize = computed(() => props.touch ? "h-9 text-sm" : "h-8 text-sm");
 function segClass(state: string): string {
   if (state === "done") return "bg-success";
   if (state === "alert") return "bg-destructive";
@@ -235,19 +235,19 @@ function secondaryClass(priority: string): string {
           :aria-label="`Abrir pedido ${card.ref}`"
         >
           <span
-            class="block op-code break-all group-hover:underline"
+            class="block text-4xl tabular-nums font-bold break-all group-hover:underline"
             :class="handoff ? 'line-through decoration-success/60' : ''"
           >{{ code.code }}</span>
         </NuxtLink>
         <div v-else class="flex flex-col justify-start" :class="touch ? 'min-h-action' : 'min-h-control'" data-card-code>
-          <span class="block op-code break-all" :class="handoff ? 'line-through decoration-success/60' : ''">{{ code.code }}</span>
+          <span class="block text-4xl tabular-nums font-bold break-all" :class="handoff ? 'line-through decoration-success/60' : ''">{{ code.code }}</span>
         </div>
         <span
           v-if="card.channel_display_id"
           class="block break-all text-xs font-medium tnum text-muted-foreground"
           data-channel-display-id
         >iFood #{{ card.channel_display_id }}</span>
-        <p class="op-title break-words" data-card-who>
+        <p class="text-base font-semibold break-words" data-card-who>
           <span>{{ card.customer_name || "Sem cliente" }}</span> <span class="font-normal whitespace-nowrap text-muted-foreground">· {{ channelLabel(card.channel_ref) }}</span>
         </p>
       </div>
@@ -258,7 +258,7 @@ function secondaryClass(priority: string): string {
         </span>
         <span
           v-if="clock.countdown"
-          class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 op-micro font-semibold tnum"
+          class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold tnum"
           :class="timerChip(clock.tone)"
           :title="card.confirmation_action === 'cancel' ? 'Cancelado automaticamente se vencer' : 'Confirmado automaticamente se vencer'"
           role="timer"
@@ -266,12 +266,12 @@ function secondaryClass(priority: string): string {
         >{{ clock.text }}</span>
         <span
           v-else
-          class="op-micro tnum"
+          class="text-xs tnum"
           :class="clock.tone === 'late' ? 'font-bold text-warning' : clock.tone === 'warning' ? 'font-semibold text-warning' : 'text-muted-foreground'"
           data-card-clock
         ><template v-if="seal.label !== card.status_label && !card.ready_at_iso && !card.dispatched_at_iso">{{ card.status_label }} · </template>{{ clock.text }}</span>
       </div>
-      <span v-else class="shrink-0 pt-1 op-micro text-muted-foreground">{{ card.fulfillment_label }}<template v-if="pack"> · {{ pack }}</template></span>
+      <span v-else class="shrink-0 pt-1 text-xs text-muted-foreground">{{ card.fulfillment_label }}<template v-if="pack"> · {{ pack }}</template></span>
     </div>
 
     <!-- Entregue, na janela do desfazer: o cartão fica no lugar, com o anel do tempo. -->
@@ -280,9 +280,9 @@ function secondaryClass(priority: string): string {
         <span class="grid size-12 shrink-0 place-items-center rounded-full" :style="ringStyle" aria-hidden="true">
           <span class="grid size-9 place-items-center rounded-full bg-card text-success"><Icon name="lucide:check" class="size-5" /></span>
         </span>
-        <p class="op-action">{{ handoff.label }}</p>
+        <p class="text-base font-semibold">{{ handoff.label }}</p>
       </div>
-      <p class="op-micro leading-snug text-muted-foreground" data-undo-detail>{{ handoff.detail }}<span v-if="handoff.alreadyOut" data-undo-already-out> · {{ handoff.alreadyOut }}</span></p>
+      <p class="text-xs leading-snug text-muted-foreground" data-undo-detail>{{ handoff.detail }}<span v-if="handoff.alreadyOut" data-undo-already-out> · {{ handoff.alreadyOut }}</span></p>
     </template>
 
     <template v-else>
@@ -349,7 +349,7 @@ function secondaryClass(priority: string): string {
       <NuxtPopover v-if="!fill" mode="hover">
         <button
           type="button"
-          class="min-h-control w-full truncate text-left op-body text-foreground/85 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          class="min-h-control w-full truncate text-left text-sm text-foreground/85 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
           :title="card.items_summary"
           data-card-items
         >{{ card.items_summary }}</button>
@@ -358,11 +358,11 @@ function secondaryClass(priority: string): string {
             <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {{ card.items_count }} {{ card.items_count === 1 ? "item" : "itens" }}
             </p>
-            <p class="op-body text-foreground">{{ card.items_summary }}</p>
+            <p class="text-sm text-foreground">{{ card.items_summary }}</p>
             <NuxtLink
               v-if="canOpen && !negotiationOnly"
               :to="`/${card.ref}`"
-              class="mt-2 inline-flex items-center gap-1 op-label font-semibold text-primary"
+              class="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-primary"
             >
               <Icon name="lucide:file-text" class="size-3.5" /> Ver o pedido
             </NuxtLink>
@@ -370,21 +370,21 @@ function secondaryClass(priority: string): string {
         </template>
       </NuxtPopover>
 
-      <p v-if="card.courier_status_label" class="flex items-center gap-1.5 truncate op-micro text-muted-foreground">
+      <p v-if="card.courier_status_label" class="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
         <Icon name="lucide:bike" class="size-3.5 shrink-0" /> {{ card.courier_status_label }}
       </p>
       <!-- para onde vai -->
-      <p v-if="card.delivery_address" class="flex items-start gap-1.5 op-micro text-muted-foreground" data-card-address>
+      <p v-if="card.delivery_address" class="flex items-start gap-1.5 text-xs text-muted-foreground" data-card-address>
         <Icon name="lucide:map-pin" class="mt-0.5 size-3.5 shrink-0" />
         <span class="line-clamp-2">{{ card.delivery_address }}</span>
       </p>
       <!-- troco da entrega: o que o cliente disse, o que saiu da gaveta, o que voltou -->
-      <p v-if="card.change_label" class="flex items-center gap-1.5 op-micro text-muted-foreground" :class="{ 'font-medium text-foreground': card.change_back_pending }" data-change-label>
+      <p v-if="card.change_label" class="flex items-center gap-1.5 text-xs text-muted-foreground" :class="{ 'font-medium text-foreground': card.change_back_pending }" data-change-label>
         <Icon name="lucide:coins" class="size-3.5 shrink-0" />
         <span class="truncate">{{ card.change_label }}</span>
       </p>
       <!-- a maquininha na rua: o único sinal dela no quadro é esta linha -->
-      <p v-if="onRoad" class="flex items-center gap-1.5 op-micro font-medium" data-equipment-label>
+      <p v-if="onRoad" class="flex items-center gap-1.5 text-xs font-medium" data-equipment-label>
         <Icon :name="card.equipment_label ? 'lucide:smartphone-nfc' : 'lucide:bike'" class="size-3.5 shrink-0" />
         <span class="truncate">{{ onRoad }}</span>
       </p>
@@ -403,8 +403,8 @@ function secondaryClass(priority: string): string {
             data-kitchen-station
           />
         </div>
-        <p v-if="progress.done" class="op-micro text-muted-foreground">{{ progress.summary }}<span v-if="fill && paymentAttention" class="text-warning" data-card-payment-note> · {{ card.payment_method_label.toLowerCase() }}</span></p>
-        <p v-else class="op-label">
+        <p v-if="progress.done" class="text-xs text-muted-foreground">{{ progress.summary }}<span v-if="fill && paymentAttention" class="text-warning" data-card-payment-note> · {{ card.payment_method_label.toLowerCase() }}</span></p>
+        <p v-else class="text-sm font-medium">
           <span class="text-muted-foreground">{{ progress.summary }} · </span><b class="font-semibold text-info" data-kitchen-missing>{{ progress.missing }}</b>
         </p>
         <!-- só a estação que pede alguém: papel perdido, item cancelado, o Pronto da estação sem tela -->
@@ -416,7 +416,7 @@ function secondaryClass(priority: string): string {
           data-kitchen-attention
         >
           <Icon :name="chip.icon" class="size-3.5 shrink-0" />
-          <span class="min-w-0 flex-1 truncate op-micro">
+          <span class="min-w-0 flex-1 truncate text-xs">
             <b class="font-semibold text-foreground">{{ chip.station }}</b> · {{ chip.detail }}<span v-if="chip.cancelledNote" class="font-semibold text-destructive dark:text-red-300"> · {{ chip.cancelledNote }}</span>
           </span>
           <button
@@ -435,7 +435,7 @@ function secondaryClass(priority: string): string {
         </div>
       </div>
 
-      <p v-if="fill && paymentAttention && !progress?.done" class="op-micro text-warning" data-card-payment-note>{{ card.payment_method_label }}</p>
+      <p v-if="fill && paymentAttention && !progress?.done" class="text-xs text-warning" data-card-payment-note>{{ card.payment_method_label }}</p>
 
       <!-- o sistema fez: "Pronto · automático · desfazer" -->
       <div v-if="undo && undo.kind === 'auto_ready'" class="flex flex-wrap items-center gap-x-2 gap-y-1" :data-undo="undo.kind">
@@ -450,11 +450,11 @@ function secondaryClass(priority: string): string {
               @click="emit('action', undo.action)"
             >desfazer</button></template>
         </span>
-        <span class="op-micro text-muted-foreground" data-undo-detail>{{ undo.detail }}</span>
-        <span v-if="undo.alreadyOut" class="op-micro text-muted-foreground" data-undo-already-out>· {{ undo.alreadyOut }}</span>
+        <span class="text-xs text-muted-foreground" data-undo-detail>{{ undo.detail }}</span>
+        <span v-if="undo.alreadyOut" class="text-xs text-muted-foreground" data-undo-already-out>· {{ undo.alreadyOut }}</span>
       </div>
 
-      <div v-if="danfe" class="space-y-0.5 op-micro" data-danfe :data-danfe-attention="danfe.attention || undefined">
+      <div v-if="danfe" class="space-y-0.5 text-xs" data-danfe :data-danfe-attention="danfe.attention || undefined">
         <div class="flex items-center gap-1.5" :class="danfe.attention ? 'font-medium text-warning' : 'text-muted-foreground'">
           <Icon :name="danfe.attention ? 'lucide:triangle-alert' : card.danfe_printed ? 'lucide:receipt-text' : 'lucide:receipt'" class="size-3.5 shrink-0" />
           <span class="truncate" data-danfe-status>{{ danfe.status }}</span>
@@ -488,7 +488,7 @@ function secondaryClass(priority: string): string {
     </NuxtLink>
     <p v-if="card.ifood_cancellation_notice" class="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs" role="status" data-ifood-cancellation>{{ card.ifood_cancellation_notice }}</p>
     <p v-if="card.ifood_remote_ahead_label" class="rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-medium" role="status" data-ifood-remote-ahead>{{ card.ifood_remote_ahead_label }}</p>
-    <p v-if="card.ifood_schedule_label" class="op-micro text-muted-foreground" data-ifood-schedule>{{ card.ifood_schedule_label }}</p>
+    <p v-if="card.ifood_schedule_label" class="text-xs text-muted-foreground" data-ifood-schedule>{{ card.ifood_schedule_label }}</p>
     <p v-if="card.ifood_pickup_code" class="flex items-baseline gap-2 rounded-md bg-muted px-2.5 py-1.5" data-ifood-pickup-code>
       <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Código de retirada</span>
       <span class="ml-auto text-base font-bold tnum">{{ card.ifood_pickup_code }}</span>
@@ -496,7 +496,7 @@ function secondaryClass(priority: string): string {
 
     <!-- aguardando produção -->
     <div v-if="card.awaiting_work_orders.length && !handoff" class="flex flex-col gap-1">
-      <div v-for="wo in card.awaiting_work_orders" :key="wo.ref" class="flex items-center gap-1.5 rounded-md bg-muted/60 px-2 py-1 op-micro text-muted-foreground">
+      <div v-for="wo in card.awaiting_work_orders" :key="wo.ref" class="flex items-center gap-1.5 rounded-md bg-muted/60 px-2 py-1 text-xs text-muted-foreground">
         <Icon name="lucide:factory" class="size-3 shrink-0" />
         <span class="truncate">{{ wo.output_sku }} · {{ wo.status_label }}</span>
         <span class="ml-auto tnum">{{ wo.progress_pct }}%</span>
@@ -511,9 +511,9 @@ function secondaryClass(priority: string): string {
       class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/12 px-2.5 py-1.5"
     >
       <Icon name="lucide:lock" class="mt-0.5 size-4 shrink-0 text-destructive" />
-      <p class="op-label leading-snug" data-advance-block>{{ card.advance_block_reason }}</p>
+      <p class="text-sm font-medium leading-snug" data-advance-block>{{ card.advance_block_reason }}</p>
     </div>
-    <p v-else-if="!negotiationOnly && card.advance_block_reason && !handoff" class="op-micro text-muted-foreground" data-advance-block>
+    <p v-else-if="!negotiationOnly && card.advance_block_reason && !handoff" class="text-xs text-muted-foreground" data-advance-block>
       {{ card.advance_block_reason }}
     </p>
 
@@ -534,11 +534,11 @@ function secondaryClass(priority: string): string {
 
     <!-- pagamento e total, logo acima do gesto -->
     <div v-if="!negotiationOnly && !handoff && !fill" class="flex items-baseline justify-between gap-2">
-      <span class="inline-flex min-w-0 items-center gap-1.5 op-micro" :class="paymentClass" data-card-payment>
+      <span class="inline-flex min-w-0 items-center gap-1.5 text-xs" :class="paymentClass" data-card-payment>
         <Icon v-if="card.payment_method_label" :name="paymentIcon" class="size-3.5 shrink-0" />
         <span class="truncate">{{ card.payment_method_label }}</span>
       </span>
-      <span class="shrink-0 op-title tnum">{{ card.total_display }}</span>
+      <span class="shrink-0 text-base font-semibold tnum">{{ card.total_display }}</span>
     </div>
 
     <!-- o gesto: um botão largo com o verbo e o nome; o resto no ⋯ -->
@@ -546,7 +546,7 @@ function secondaryClass(priority: string): string {
       <button
         v-if="handoff && handoff.canUndo"
         type="button"
-        class="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-success/50 bg-card op-action transition hover:bg-accent disabled:opacity-60"
+        class="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-success/50 bg-card text-base font-semibold transition hover:bg-accent disabled:opacity-60"
         :class="touch ? 'h-14' : 'h-12'"
         :disabled="busy"
         data-undo-button
@@ -561,7 +561,7 @@ function secondaryClass(priority: string): string {
           :key="aff.ref"
           type="button"
           :disabled="busy"
-          class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border bg-card px-3 op-label font-semibold transition active:scale-[0.98] disabled:opacity-60"
+          class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border bg-card px-3 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-60"
           :class="[touch ? 'h-14' : 'h-12', secondaryClass(aff.priority)]"
           :title="aff.reason || undefined"
           @click="emit('action', aff.ref)"
@@ -576,7 +576,7 @@ function secondaryClass(priority: string): string {
           :title="primary.reason || (primaryLabel !== primary.label ? primary.label : undefined)"
           class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 font-semibold transition"
           :class="[
-            touch ? 'h-14 op-action' : 'h-12 op-body font-semibold',
+            touch ? 'h-14 text-base' : 'h-12 text-sm font-semibold',
             primary.disabled
               ? 'cursor-default border-2 border-dashed border-border text-muted-foreground card-stripes'
               : 'bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] disabled:opacity-60',
@@ -590,7 +590,7 @@ function secondaryClass(priority: string): string {
         <div
           v-else-if="waitingFor"
           class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg bg-muted px-3 font-medium text-muted-foreground"
-          :class="touch ? 'h-14 op-title font-medium' : 'h-12 op-body'"
+          :class="touch ? 'h-14 text-base font-medium' : 'h-12 text-sm'"
           data-card-waiting
         >
           <Icon name="lucide:chef-hat" class="size-5 shrink-0" />
@@ -620,7 +620,7 @@ function secondaryClass(priority: string): string {
             v-if="canOpen"
             type="button"
             role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent"
+            class="flex w-full items-center gap-2.5 px-3 text-left text-sm transition hover:bg-accent"
             :class="target"
             :aria-label="card.assigned_operator ? `Atendido por ${card.assigned_operator}. Toque para liberar` : 'Atender este pedido'"
             data-card-assign
@@ -632,7 +632,7 @@ function secondaryClass(priority: string): string {
           <button
             type="button"
             role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent"
+            class="flex w-full items-center gap-2.5 px-3 text-left text-sm transition hover:bg-accent"
             :class="target"
             data-card-select-mode
             @click="pick(() => (selecting ? emit('toggle-select') : emit('select-mode')))"
@@ -641,31 +641,31 @@ function secondaryClass(priority: string): string {
             {{ selecting ? (selected ? "Desmarcar este pedido" : "Marcar este pedido") : "Selecionar vários" }}
           </button>
           <div v-if="volumesEditing" class="flex flex-col gap-2 px-3 py-2" data-card-volumes-editor>
-            <p class="op-label font-semibold">Quantos volumes saem?</p>
+            <p class="text-sm font-semibold">Quantos volumes saem?</p>
             <div class="flex items-center gap-2">
               <button type="button" class="grid place-items-center rounded-md border border-border transition hover:bg-accent" :class="target" aria-label="Um volume a menos" @click="stepVolumes(-1)">
                 <Icon name="lucide:minus" class="size-4" />
               </button>
-              <span class="min-w-10 text-center op-title tnum" aria-live="polite" data-card-volumes-draft>{{ volumesDraft }}</span>
+              <span class="min-w-10 text-center text-base font-semibold tnum" aria-live="polite" data-card-volumes-draft>{{ volumesDraft }}</span>
               <button type="button" class="grid place-items-center rounded-md border border-border transition hover:bg-accent" :class="target" aria-label="Um volume a mais" @click="stepVolumes(1)">
                 <Icon name="lucide:plus" class="size-4" />
               </button>
               <button
                 type="button"
-                class="ml-auto inline-flex items-center rounded-md bg-primary px-3 op-label font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+                class="ml-auto inline-flex items-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
                 :class="target"
                 :disabled="busy"
                 data-card-volumes-save
                 @click="saveVolumes"
               >Gravar</button>
             </div>
-            <p class="op-micro text-muted-foreground">{{ volumesDraft === 0 ? "Zero apaga: o cartão volta a contar itens." : "Sacolas ou caixas, contadas por quem embalou." }}</p>
+            <p class="text-xs text-muted-foreground">{{ volumesDraft === 0 ? "Zero apaga: o cartão volta a contar itens." : "Sacolas ou caixas, contadas por quem embalou." }}</p>
           </div>
           <button
             v-else-if="volumesAction"
             type="button"
             role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent disabled:opacity-60"
+            class="flex w-full items-center gap-2.5 px-3 text-left text-sm transition hover:bg-accent disabled:opacity-60"
             :class="target"
             :disabled="busy || !volumesAction.enabled"
             :title="volumesAction.reason || undefined"
@@ -680,7 +680,7 @@ function secondaryClass(priority: string): string {
             :key="option.ticketPk"
             type="button"
             role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent disabled:opacity-60"
+            class="flex w-full items-center gap-2.5 px-3 text-left text-sm transition hover:bg-accent disabled:opacity-60"
             :class="target"
             :disabled="busy"
             data-card-recall
@@ -693,7 +693,7 @@ function secondaryClass(priority: string): string {
             v-if="canOpen"
             :to="`/${card.ref}`"
             role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 op-body transition hover:bg-accent"
+            class="flex w-full items-center gap-2.5 px-3 text-sm transition hover:bg-accent"
             :class="target"
             data-card-open
           >

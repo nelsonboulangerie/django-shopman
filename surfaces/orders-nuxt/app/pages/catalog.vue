@@ -591,24 +591,24 @@ useHead({ title: "Catálogo" });
           </UiPopoverTrigger>
           <UiPopoverContent v-if="headerMenuOpen" align="end" :side-offset="6" class="w-64 rounded-lg p-1.5 shadow-lg" role="menu" data-catalog-menu>
             <div class="px-2.5 pt-1 pb-2"><ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" /></div>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" @click="refresh()">
+            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm transition hover:bg-accent" @click="refresh()">
               <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" :class="pending ? 'motion-safe:animate-spin' : ''" />Atualizar
             </button>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" data-catalog-export @click="exportCatalog">
+            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm transition hover:bg-accent" data-catalog-export @click="exportCatalog">
               <Icon name="lucide:download" class="size-4 text-muted-foreground" />Exportar CSV
             </button>
           </UiPopoverContent>
         </UiPopover>
       </template>
       <template #filters>
-        <span v-if="collections.length" class="mr-1 shrink-0 op-eyebrow text-muted-foreground">Coleção</span>
+        <span v-if="collections.length" class="mr-1 shrink-0 text-xs uppercase tracking-wider font-semibold text-muted-foreground">Coleção</span>
       <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
       <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex items-center gap-0.5">
         <!-- abas planas (v3 `depois-gestor-catalogo`): a ativa numa caixa; arrastar reordena -->
         <button
           key="__all"
           type="button"
-          class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-md px-2 op-label transition"
+          class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-md px-2 text-sm font-medium transition"
           :class="collectionRef === '' ? 'border border-border bg-card font-semibold text-foreground shadow-xs' : 'text-foreground/80 hover:bg-accent'"
           :aria-pressed="collectionRef === ''"
           data-collection-tab
@@ -619,7 +619,7 @@ useHead({ title: "Catálogo" });
           :key="c.ref"
           type="button"
           :data-dragkey="c.ref"
-          class="inline-flex min-h-control shrink-0 cursor-grab touch-none items-center gap-1.5 rounded-md px-2 op-label transition-[opacity,box-shadow,background-color] active:cursor-grabbing"
+          class="inline-flex min-h-control shrink-0 cursor-grab touch-none items-center gap-1.5 rounded-md px-2 text-sm font-medium transition-[opacity,box-shadow,background-color] active:cursor-grabbing"
           :class="[collDragKey === c.ref ? 'opacity-50 shadow-md' : '', collectionRef === c.ref ? 'border border-border bg-card font-semibold text-foreground shadow-xs' : 'text-foreground/80 hover:bg-accent']"
           :aria-pressed="collectionRef === c.ref"
           data-collection-tab
@@ -635,7 +635,7 @@ useHead({ title: "Catálogo" });
       </TransitionGroup>
         <!-- "23 de 131 produtos · 4 canais · 4 feeds" no fim da linha das coleções (v3),
              inteiro: a frase não se corta na borda. -->
-        <p class="ml-auto hidden shrink-0 pl-3 op-micro whitespace-nowrap text-muted-foreground lg:block" data-catalog-counts>
+        <p class="ml-auto hidden shrink-0 pl-3 text-xs whitespace-nowrap text-muted-foreground lg:block" data-catalog-counts>
           <span class="tabular-nums">{{ catalogCountLine }}</span>
         </p>
       </template>
@@ -721,7 +721,7 @@ useHead({ title: "Catálogo" });
                 :model-value="allSelected"
                 :indeterminate="someSelected"
                 label="Produto"
-                class="op-eyebrow text-muted-foreground"
+                class="text-xs uppercase tracking-wider font-semibold text-muted-foreground"
                 @update:model-value="toggleSelectAll"
               />
             </th>
@@ -744,10 +744,10 @@ useHead({ title: "Catálogo" });
                   <a
                     v-if="s.output_path"
                     :href="`${djangoBase}${s.output_path}`" target="_blank" rel="noopener"
-                    class="op-eyebrow whitespace-nowrap hover:text-foreground hover:underline"
+                    class="text-xs uppercase tracking-wider font-semibold whitespace-nowrap hover:text-foreground hover:underline"
                     :title="`Abrir ${s.name}`" @click.stop
                   >{{ s.short_name }}</a>
-                  <span v-else class="op-eyebrow whitespace-nowrap">{{ s.short_name }}</span>
+                  <span v-else class="text-xs uppercase tracking-wider font-semibold whitespace-nowrap">{{ s.short_name }}</span>
                 </span>
                 <!-- Linha 2 só quando há estado a dizer: o sync da plataforma. O papel da
                      superfície (feed/menuboard) já é dito pelo ícone + title. -->

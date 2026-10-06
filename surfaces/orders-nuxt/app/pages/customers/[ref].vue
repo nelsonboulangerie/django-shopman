@@ -39,7 +39,7 @@ const notFound = computed(() => httpError(error.value).status === 404);
       <template #lead>
         <NuxtLink
           to="/customers"
-          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
           @click.prevent="router.back()"
         >
           <Icon name="lucide:chevron-left" class="size-5 md:size-4" />

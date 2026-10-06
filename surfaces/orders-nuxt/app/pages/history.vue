@@ -55,7 +55,7 @@ const loading = computed(() => pending.value && !history.value);
   <main class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Histórico">
       <template #status>
-        <span class="hidden op-micro text-muted-foreground lg:inline">Pedidos concluídos e cancelados</span>
+        <span class="hidden text-xs text-muted-foreground lg:inline">Pedidos concluídos e cancelados</span>
       </template>
       <template #search>
         <OperatorSuiteSearch v-model="search" screen-label="filtrando o histórico" placeholder="Pedido, nome ou telefone" aria-label="Buscar pedido no histórico" />
