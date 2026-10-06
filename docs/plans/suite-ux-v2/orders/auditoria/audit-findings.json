@@ -1,0 +1,3330 @@
+[
+  {
+    "id": "orders-board",
+    "route": "/",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      },
+      {
+        "t": "Abrir pedido WEB-261006-H58",
+        "w": 92,
+        "h": 24
+      },
+      {
+        "t": "Abrir pedido PDV-261006-F33",
+        "w": 92,
+        "h": 24
+      },
+      {
+        "t": "Abrir pedido PDV-261006-S61",
+        "w": 92,
+        "h": 24
+      },
+      {
+        "t": "Abrir pedido PDV-261006-X00",
+        "w": 92,
+        "h": 24
+      },
+      {
+        "t": "Loja online: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "iFood: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "WhatsApp: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      }
+    ],
+    "low": [
+      {
+        "t": "Pedidos",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "orders-board__desktop__light.png"
+  },
+  {
+    "id": "order-detail",
+    "route": "/BIV-260825-0",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Pedidos",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "order-detail__desktop__light.png"
+  },
+  {
+    "id": "catalog",
+    "route": "/catalog",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [
+      {
+        "t": "Aconchego Chai Kãnfa · Lata 50g",
+        "cw": 177,
+        "sw": 213
+      },
+      {
+        "t": "Aconchego Chai Kãnfa · Pouch 50g",
+        "cw": 177,
+        "sw": 226
+      },
+      {
+        "t": "Azeite Defumado Mirante 250ml",
+        "cw": 177,
+        "sw": 211
+      },
+      {
+        "t": "Azeite Defumado Picante Mirante 250ml",
+        "cw": 177,
+        "sw": 263
+      },
+      {
+        "t": "Berinjela Insalata Duga 320g",
+        "cw": 177,
+        "sw": 184
+      },
+      {
+        "t": "Mercearia",
+        "cw": 27,
+        "sw": 55
+      },
+      {
+        "t": "Bichon au Citron",
+        "cw": 79,
+        "sw": 108
+      },
+      {
+        "t": "Caixa Presente Dijon (embalagem)",
+        "cw": 177,
+        "sw": 225
+      },
+      {
+        "t": "Caixa Presente Lille (embalagem)",
+        "cw": 177,
+        "sw": 217
+      },
+      {
+        "t": "Caixa Presente Mimo (embalagem)",
+        "cw": 177,
+        "sw": 228
+      },
+      {
+        "t": "Caixa Presente Nice (embalagem)",
+        "cw": 177,
+        "sw": 220
+      },
+      {
+        "t": "Chalosofia Kãnfa · Pouch 50g",
+        "cw": 177,
+        "sw": 187
+      }
+    ],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      },
+      {
+        "t": "PRODUTO",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Abrir Catálogo Meta",
+        "w": 36,
+        "h": 16
+      },
+      {
+        "t": "Abrir Google Shopping",
+        "w": 56,
+        "h": 16
+      },
+      {
+        "t": "Abrir TV do Café",
+        "w": 23,
+        "h": 16
+      },
+      {
+        "t": "Abrir TV do Salão",
+        "w": 25,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Lata 50g",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Oculto. Toque para pausar neste canal.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Pouch 50",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Azeite Defumado Mirante 250ml",
+        "w": 20,
+        "h": 20
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "catalog__desktop__light.png"
+  },
+  {
+    "id": "channel-catalog",
+    "route": "/channels/google-shopping/catalog",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "channel-catalog__desktop__light.png"
+  },
+  {
+    "id": "customers",
+    "route": "/customers",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "customers__desktop__light.png"
+  },
+  {
+    "id": "customer-detail",
+    "route": "/customers/CLI-001",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "customer-detail__desktop__light.png"
+  },
+  {
+    "id": "customer-merges",
+    "route": "/customers/merges",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "customer-merges__desktop__light.png"
+  },
+  {
+    "id": "channels",
+    "route": "/feeds",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      },
+      {
+        "t": "Catálogo Meta: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Google Shopping: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: modo automático desligado; lig",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: modo automático desligado; li",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Loja online: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "WhatsApp: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "iFood: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "channels__desktop__light.png"
+  },
+  {
+    "id": "history",
+    "route": "/history",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "history__desktop__light.png"
+  },
+  {
+    "id": "settings",
+    "route": "/settings",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "settings__desktop__light.png"
+  },
+  {
+    "id": "workstations",
+    "route": "/workstations",
+    "vp": "desktop",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "workstations__desktop__light.png"
+  },
+  {
+    "id": "orders-board",
+    "route": "/",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      },
+      {
+        "t": "Abrir pedido WEB-261006-H58",
+        "w": 92,
+        "h": 24
+      },
+      {
+        "t": "Abrir pedido PDV-261006-F33",
+        "w": 92,
+        "h": 24
+      },
+      {
+        "t": "Abrir pedido PDV-261006-S61",
+        "w": 92,
+        "h": 24
+      },
+      {
+        "t": "Abrir pedido PDV-261006-X00",
+        "w": 92,
+        "h": 24
+      },
+      {
+        "t": "Loja online: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "iFood: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "WhatsApp: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      }
+    ],
+    "low": [
+      {
+        "t": "Pedidos",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "orders-board__desktop__dark.png"
+  },
+  {
+    "id": "order-detail",
+    "route": "/BIV-260825-0",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Pedidos",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "order-detail__desktop__dark.png"
+  },
+  {
+    "id": "catalog",
+    "route": "/catalog",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [
+      {
+        "t": "Aconchego Chai Kãnfa · Lata 50g",
+        "cw": 177,
+        "sw": 213
+      },
+      {
+        "t": "Aconchego Chai Kãnfa · Pouch 50g",
+        "cw": 177,
+        "sw": 226
+      },
+      {
+        "t": "Azeite Defumado Mirante 250ml",
+        "cw": 177,
+        "sw": 211
+      },
+      {
+        "t": "Azeite Defumado Picante Mirante 250ml",
+        "cw": 177,
+        "sw": 263
+      },
+      {
+        "t": "Berinjela Insalata Duga 320g",
+        "cw": 177,
+        "sw": 184
+      },
+      {
+        "t": "Mercearia",
+        "cw": 27,
+        "sw": 55
+      },
+      {
+        "t": "Bichon au Citron",
+        "cw": 79,
+        "sw": 108
+      },
+      {
+        "t": "Caixa Presente Dijon (embalagem)",
+        "cw": 177,
+        "sw": 225
+      },
+      {
+        "t": "Caixa Presente Lille (embalagem)",
+        "cw": 177,
+        "sw": 217
+      },
+      {
+        "t": "Caixa Presente Mimo (embalagem)",
+        "cw": 177,
+        "sw": 228
+      },
+      {
+        "t": "Caixa Presente Nice (embalagem)",
+        "cw": 177,
+        "sw": 220
+      },
+      {
+        "t": "Chalosofia Kãnfa · Pouch 50g",
+        "cw": 177,
+        "sw": 187
+      }
+    ],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      },
+      {
+        "t": "PRODUTO",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Abrir Catálogo Meta",
+        "w": 36,
+        "h": 16
+      },
+      {
+        "t": "Abrir Google Shopping",
+        "w": 56,
+        "h": 16
+      },
+      {
+        "t": "Abrir TV do Café",
+        "w": 23,
+        "h": 16
+      },
+      {
+        "t": "Abrir TV do Salão",
+        "w": 25,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Lata 50g",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Oculto. Toque para pausar neste canal.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Pouch 50",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Azeite Defumado Mirante 250ml",
+        "w": 20,
+        "h": 20
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "catalog__desktop__dark.png"
+  },
+  {
+    "id": "channel-catalog",
+    "route": "/channels/google-shopping/catalog",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "channel-catalog__desktop__dark.png"
+  },
+  {
+    "id": "customers",
+    "route": "/customers",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "customers__desktop__dark.png"
+  },
+  {
+    "id": "customer-detail",
+    "route": "/customers/CLI-001",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "customer-detail__desktop__dark.png"
+  },
+  {
+    "id": "customer-merges",
+    "route": "/customers/merges",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "customer-merges__desktop__dark.png"
+  },
+  {
+    "id": "channels",
+    "route": "/feeds",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      },
+      {
+        "t": "Catálogo Meta: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Google Shopping: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: modo automático desligado; lig",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: modo automático desligado; li",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Loja online: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "WhatsApp: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "iFood: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "channels__desktop__dark.png"
+  },
+  {
+    "id": "history",
+    "route": "/history",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "history__desktop__dark.png"
+  },
+  {
+    "id": "settings",
+    "route": "/settings",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "settings__desktop__dark.png"
+  },
+  {
+    "id": "workstations",
+    "route": "/workstations",
+    "vp": "desktop",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "",
+        "w": 63,
+        "h": 12
+      },
+      {
+        "t": "Atalhos do teclado",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Admin: travar ou trocar",
+        "w": 32,
+        "h": 32
+      },
+      {
+        "t": "Menu de Admin",
+        "w": 31,
+        "h": 31
+      },
+      {
+        "t": "Usar sem vincular",
+        "w": 118,
+        "h": 28
+      }
+    ],
+    "low": [
+      {
+        "t": "Ajustes",
+        "ratio": 1,
+        "size": 10
+      },
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "workstations__desktop__dark.png"
+  },
+  {
+    "id": "orders-board",
+    "route": "/",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "orders-board__tablet__light.png"
+  },
+  {
+    "id": "order-detail",
+    "route": "/BIV-260825-0",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "order-detail__tablet__light.png"
+  },
+  {
+    "id": "catalog",
+    "route": "/catalog",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [
+      {
+        "t": "Baguete Gergelim",
+        "cw": 55,
+        "sw": 118
+      },
+      {
+        "t": "Baguette de Tradition",
+        "cw": 55,
+        "sw": 140
+      },
+      {
+        "t": "Brioche Burger Bun",
+        "cw": 55,
+        "sw": 126
+      },
+      {
+        "t": "Brioche Burger Bun (pc. 2un.)",
+        "cw": 55,
+        "sw": 189
+      },
+      {
+        "t": "Campagne Passas & Castanhas",
+        "cw": 55,
+        "sw": 204
+      },
+      {
+        "t": "Cappuccino",
+        "cw": 55,
+        "sw": 79
+      },
+      {
+        "t": "Chá Bleu",
+        "cw": 55,
+        "sw": 58
+      },
+      {
+        "t": "Chá Camille",
+        "cw": 55,
+        "sw": 78
+      },
+      {
+        "t": "Chá Hibisco",
+        "cw": 55,
+        "sw": 78
+      },
+      {
+        "t": "Chá Rouge",
+        "cw": 55,
+        "sw": 71
+      },
+      {
+        "t": "Chá Sophie",
+        "cw": 55,
+        "sw": 75
+      },
+      {
+        "t": "Chá Tônica Frutas Vermelhas",
+        "cw": 55,
+        "sw": 190
+      }
+    ],
+    "outside": [
+      {
+        "t": "Todas 131 Rústicos 23 Macios 18 Folhados 7",
+        "right": 1115
+      },
+      {
+        "t": "Bebidas quentes. Para reordenar, use as se",
+        "right": 784
+      },
+      {
+        "t": "11",
+        "right": 776
+      },
+      {
+        "t": "Bebidas geladas. Para reordenar, use as se",
+        "right": 921
+      },
+      {
+        "t": "8",
+        "right": 913
+      },
+      {
+        "t": "Mercearia. Para reordenar, use as setas pa",
+        "right": 1027
+      },
+      {
+        "t": "46",
+        "right": 1019
+      },
+      {
+        "t": "Combos. Para reordenar, use as setas para ",
+        "right": 1115
+      },
+      {
+        "t": "0",
+        "right": 1107
+      },
+      {
+        "t": "ProdutoPDVSiteiFoodWhatsAppMetaGoogleTV1TV",
+        "right": 1189
+      },
+      {
+        "t": "Meta",
+        "right": 847
+      },
+      {
+        "t": "Catálogo Meta: feed (só exibe, não vende)",
+        "right": 839
+      }
+    ],
+    "small": [
+      {
+        "t": "PRODUTO",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Lata 50g",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Oculto. Toque para pausar neste canal.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Pouch 50",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Azeite Defumado Mirante 250ml",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Azeite Defumado Picante Mirante",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguete Gergelim",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Disponível. Toque para pausar neste canal.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Disponível. Toque para pausar neste feed.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Baguete Gergelim Pequena",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Oculto. Toque para pausar neste feed.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Baguete Lanche",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguette Campagne",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguette de Tradition",
+        "w": 20,
+        "h": 20
+      }
+    ],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "catalog__tablet__light.png"
+  },
+  {
+    "id": "channel-catalog",
+    "route": "/channels/google-shopping/catalog",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "channel-catalog__tablet__light.png"
+  },
+  {
+    "id": "customers",
+    "route": "/customers",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "customers__tablet__light.png"
+  },
+  {
+    "id": "customer-detail",
+    "route": "/customers/CLI-001",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "customer-detail__tablet__light.png"
+  },
+  {
+    "id": "customer-merges",
+    "route": "/customers/merges",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "customer-merges__tablet__light.png"
+  },
+  {
+    "id": "channels",
+    "route": "/feeds",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "Catálogo Meta: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Google Shopping: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: modo automático desligado; lig",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: modo automático desligado; li",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Loja online: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "WhatsApp: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "iFood: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      }
+    ],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "channels__tablet__light.png"
+  },
+  {
+    "id": "history",
+    "route": "/history",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "history__tablet__light.png"
+  },
+  {
+    "id": "settings",
+    "route": "/settings",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "settings__tablet__light.png"
+  },
+  {
+    "id": "workstations",
+    "route": "/workstations",
+    "vp": "tablet",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "workstations__tablet__light.png"
+  },
+  {
+    "id": "orders-board",
+    "route": "/",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "orders-board__tablet__dark.png"
+  },
+  {
+    "id": "order-detail",
+    "route": "/BIV-260825-0",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "order-detail__tablet__dark.png"
+  },
+  {
+    "id": "catalog",
+    "route": "/catalog",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [
+      {
+        "t": "Baguete Gergelim",
+        "cw": 55,
+        "sw": 118
+      },
+      {
+        "t": "Baguette de Tradition",
+        "cw": 55,
+        "sw": 140
+      },
+      {
+        "t": "Brioche Burger Bun",
+        "cw": 55,
+        "sw": 126
+      },
+      {
+        "t": "Brioche Burger Bun (pc. 2un.)",
+        "cw": 55,
+        "sw": 189
+      },
+      {
+        "t": "Campagne Passas & Castanhas",
+        "cw": 55,
+        "sw": 204
+      },
+      {
+        "t": "Cappuccino",
+        "cw": 55,
+        "sw": 79
+      },
+      {
+        "t": "Chá Bleu",
+        "cw": 55,
+        "sw": 58
+      },
+      {
+        "t": "Chá Camille",
+        "cw": 55,
+        "sw": 78
+      },
+      {
+        "t": "Chá Hibisco",
+        "cw": 55,
+        "sw": 78
+      },
+      {
+        "t": "Chá Rouge",
+        "cw": 55,
+        "sw": 71
+      },
+      {
+        "t": "Chá Sophie",
+        "cw": 55,
+        "sw": 75
+      },
+      {
+        "t": "Chá Tônica Frutas Vermelhas",
+        "cw": 55,
+        "sw": 190
+      }
+    ],
+    "outside": [
+      {
+        "t": "Todas 131 Rústicos 23 Macios 18 Folhados 7",
+        "right": 1115
+      },
+      {
+        "t": "Bebidas quentes. Para reordenar, use as se",
+        "right": 784
+      },
+      {
+        "t": "11",
+        "right": 776
+      },
+      {
+        "t": "Bebidas geladas. Para reordenar, use as se",
+        "right": 921
+      },
+      {
+        "t": "8",
+        "right": 913
+      },
+      {
+        "t": "Mercearia. Para reordenar, use as setas pa",
+        "right": 1027
+      },
+      {
+        "t": "46",
+        "right": 1019
+      },
+      {
+        "t": "Combos. Para reordenar, use as setas para ",
+        "right": 1115
+      },
+      {
+        "t": "0",
+        "right": 1107
+      },
+      {
+        "t": "ProdutoPDVSiteiFoodWhatsAppMetaGoogleTV1TV",
+        "right": 1189
+      },
+      {
+        "t": "Meta",
+        "right": 847
+      },
+      {
+        "t": "Catálogo Meta: feed (só exibe, não vende)",
+        "right": 839
+      }
+    ],
+    "small": [
+      {
+        "t": "PRODUTO",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Lata 50g",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Oculto. Toque para pausar neste canal.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Pouch 50",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Azeite Defumado Mirante 250ml",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Azeite Defumado Picante Mirante",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguete Gergelim",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Disponível. Toque para pausar neste canal.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Disponível. Toque para pausar neste feed.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Baguete Gergelim Pequena",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Oculto. Toque para pausar neste feed.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Baguete Lanche",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguette Campagne",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguette de Tradition",
+        "w": 20,
+        "h": 20
+      }
+    ],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "catalog__tablet__dark.png"
+  },
+  {
+    "id": "channel-catalog",
+    "route": "/channels/google-shopping/catalog",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "channel-catalog__tablet__dark.png"
+  },
+  {
+    "id": "customers",
+    "route": "/customers",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "customers__tablet__dark.png"
+  },
+  {
+    "id": "customer-detail",
+    "route": "/customers/CLI-001",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "customer-detail__tablet__dark.png"
+  },
+  {
+    "id": "customer-merges",
+    "route": "/customers/merges",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "customer-merges__tablet__dark.png"
+  },
+  {
+    "id": "channels",
+    "route": "/feeds",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "Catálogo Meta: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Google Shopping: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: modo automático desligado; lig",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: modo automático desligado; li",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Loja online: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "WhatsApp: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "iFood: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      }
+    ],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "channels__tablet__dark.png"
+  },
+  {
+    "id": "history",
+    "route": "/history",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "history__tablet__dark.png"
+  },
+  {
+    "id": "settings",
+    "route": "/settings",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "settings__tablet__dark.png"
+  },
+  {
+    "id": "workstations",
+    "route": "/workstations",
+    "vp": "tablet",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "workstations__tablet__dark.png"
+  },
+  {
+    "id": "orders-board",
+    "route": "/",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [
+      {
+        "t": "1x Brioche Burger Bun, 2x Chá Hibisco, 2x ",
+        "cw": 304,
+        "sw": 482
+      },
+      {
+        "t": "2x Deli Milho & Bacon, 2x Focaccia Alecrim",
+        "cw": 304,
+        "sw": 374
+      }
+    ],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "orders-board__mobile__light.png"
+  },
+  {
+    "id": "order-detail",
+    "route": "/BIV-260825-0",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "order-detail__mobile__light.png"
+  },
+  {
+    "id": "catalog",
+    "route": "/catalog",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [
+      {
+        "t": "Aconchego Chai Kãnfa · Lata 50g",
+        "cw": 7,
+        "sw": 213
+      },
+      {
+        "t": "Aconchego Chai Kãnfa · Pouch 50g",
+        "cw": 7,
+        "sw": 226
+      },
+      {
+        "t": "Azeite Defumado Mirante 250ml",
+        "cw": 7,
+        "sw": 211
+      },
+      {
+        "t": "Azeite Defumado Picante Mirante 250ml",
+        "cw": 7,
+        "sw": 263
+      },
+      {
+        "t": "Baguete Gergelim",
+        "cw": 63,
+        "sw": 118
+      },
+      {
+        "t": "Baguete Gergelim Pequena",
+        "cw": 7,
+        "sw": 178
+      },
+      {
+        "t": "Baguete Lanche",
+        "cw": 7,
+        "sw": 105
+      },
+      {
+        "t": "Baguette Campagne",
+        "cw": 7,
+        "sw": 135
+      },
+      {
+        "t": "Baguette de Tradition",
+        "cw": 63,
+        "sw": 140
+      },
+      {
+        "t": "Berinjela Insalata Duga 320g",
+        "cw": 7,
+        "sw": 184
+      },
+      {
+        "t": "Brioche Burger Bun",
+        "cw": 63,
+        "sw": 126
+      },
+      {
+        "t": "Brioche Burger Bun (pc. 2un.)",
+        "cw": 63,
+        "sw": 189
+      }
+    ],
+    "outside": [
+      {
+        "t": "Todas 131 Rústicos 23 Macios 18 Folhados 7",
+        "right": 1115
+      },
+      {
+        "t": "Folhados. Para reordenar, use as setas par",
+        "right": 453
+      },
+      {
+        "t": "7",
+        "right": 445
+      },
+      {
+        "t": "Salgados. Para reordenar, use as setas par",
+        "right": 554
+      },
+      {
+        "t": "18",
+        "right": 546
+      },
+      {
+        "t": "Doces. Para reordenar, use as setas para c",
+        "right": 635
+      },
+      {
+        "t": "16",
+        "right": 627
+      },
+      {
+        "t": "Bebidas quentes. Para reordenar, use as se",
+        "right": 784
+      },
+      {
+        "t": "11",
+        "right": 776
+      },
+      {
+        "t": "Bebidas geladas. Para reordenar, use as se",
+        "right": 921
+      },
+      {
+        "t": "8",
+        "right": 913
+      },
+      {
+        "t": "Mercearia. Para reordenar, use as setas pa",
+        "right": 1027
+      }
+    ],
+    "small": [
+      {
+        "t": "PRODUTO",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Lata 50g",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Oculto. Toque para pausar neste canal.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Pouch 50",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Azeite Defumado Mirante 250ml",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Azeite Defumado Picante Mirante",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguete Gergelim",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Disponível. Toque para pausar neste canal.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Disponível. Toque para pausar neste feed.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Baguete Gergelim Pequena",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Oculto. Toque para pausar neste feed.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Baguete Lanche",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguette Campagne",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguette de Tradition",
+        "w": 20,
+        "h": 20
+      }
+    ],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "catalog__mobile__light.png"
+  },
+  {
+    "id": "channel-catalog",
+    "route": "/channels/google-shopping/catalog",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [
+      {
+        "t": "Google Shopping · Revisão de vínculos",
+        "cw": 222,
+        "sw": 332
+      }
+    ],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "channel-catalog__mobile__light.png"
+  },
+  {
+    "id": "customers",
+    "route": "/customers",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "customers__mobile__light.png"
+  },
+  {
+    "id": "customer-detail",
+    "route": "/customers/CLI-001",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "customer-detail__mobile__light.png"
+  },
+  {
+    "id": "customer-merges",
+    "route": "/customers/merges",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "customer-merges__mobile__light.png"
+  },
+  {
+    "id": "channels",
+    "route": "/feeds",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "Catálogo Meta: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Google Shopping: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: modo automático desligado; lig",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: modo automático desligado; li",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Loja online: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "WhatsApp: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "iFood: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      }
+    ],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "channels__mobile__light.png"
+  },
+  {
+    "id": "history",
+    "route": "/history",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "history__mobile__light.png"
+  },
+  {
+    "id": "settings",
+    "route": "/settings",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [
+      {
+        "t": "Loja online, iFood, WhatsApp e o catálogo ",
+        "cw": 244,
+        "sw": 306
+      }
+    ],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "settings__mobile__light.png"
+  },
+  {
+    "id": "workstations",
+    "route": "/workstations",
+    "vp": "mobile",
+    "theme": "light",
+    "status": 200,
+    "overflowX": false,
+    "dark": "light|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 2.76,
+        "size": 12
+      }
+    ],
+    "file": "workstations__mobile__light.png"
+  },
+  {
+    "id": "orders-board",
+    "route": "/",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [
+      {
+        "t": "1x Brioche Burger Bun, 2x Chá Hibisco, 2x ",
+        "cw": 304,
+        "sw": 482
+      },
+      {
+        "t": "2x Deli Milho & Bacon, 2x Focaccia Alecrim",
+        "cw": 304,
+        "sw": 374
+      }
+    ],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "orders-board__mobile__dark.png"
+  },
+  {
+    "id": "order-detail",
+    "route": "/BIV-260825-0",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "order-detail__mobile__dark.png"
+  },
+  {
+    "id": "catalog",
+    "route": "/catalog",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [
+      {
+        "t": "Aconchego Chai Kãnfa · Lata 50g",
+        "cw": 7,
+        "sw": 213
+      },
+      {
+        "t": "Aconchego Chai Kãnfa · Pouch 50g",
+        "cw": 7,
+        "sw": 226
+      },
+      {
+        "t": "Azeite Defumado Mirante 250ml",
+        "cw": 7,
+        "sw": 211
+      },
+      {
+        "t": "Azeite Defumado Picante Mirante 250ml",
+        "cw": 7,
+        "sw": 263
+      },
+      {
+        "t": "Baguete Gergelim",
+        "cw": 63,
+        "sw": 118
+      },
+      {
+        "t": "Baguete Gergelim Pequena",
+        "cw": 7,
+        "sw": 178
+      },
+      {
+        "t": "Baguete Lanche",
+        "cw": 7,
+        "sw": 105
+      },
+      {
+        "t": "Baguette Campagne",
+        "cw": 7,
+        "sw": 135
+      },
+      {
+        "t": "Baguette de Tradition",
+        "cw": 63,
+        "sw": 140
+      },
+      {
+        "t": "Berinjela Insalata Duga 320g",
+        "cw": 7,
+        "sw": 184
+      },
+      {
+        "t": "Brioche Burger Bun",
+        "cw": 63,
+        "sw": 126
+      },
+      {
+        "t": "Brioche Burger Bun (pc. 2un.)",
+        "cw": 63,
+        "sw": 189
+      }
+    ],
+    "outside": [
+      {
+        "t": "Todas 131 Rústicos 23 Macios 18 Folhados 7",
+        "right": 1115
+      },
+      {
+        "t": "Folhados. Para reordenar, use as setas par",
+        "right": 453
+      },
+      {
+        "t": "7",
+        "right": 445
+      },
+      {
+        "t": "Salgados. Para reordenar, use as setas par",
+        "right": 554
+      },
+      {
+        "t": "18",
+        "right": 546
+      },
+      {
+        "t": "Doces. Para reordenar, use as setas para c",
+        "right": 635
+      },
+      {
+        "t": "16",
+        "right": 627
+      },
+      {
+        "t": "Bebidas quentes. Para reordenar, use as se",
+        "right": 784
+      },
+      {
+        "t": "11",
+        "right": 776
+      },
+      {
+        "t": "Bebidas geladas. Para reordenar, use as se",
+        "right": 921
+      },
+      {
+        "t": "8",
+        "right": 913
+      },
+      {
+        "t": "Mercearia. Para reordenar, use as setas pa",
+        "right": 1027
+      }
+    ],
+    "small": [
+      {
+        "t": "PRODUTO",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Lata 50g",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Oculto. Toque para pausar neste canal.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Aconchego Chai Kãnfa · Pouch 50",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Azeite Defumado Mirante 250ml",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Azeite Defumado Picante Mirante",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguete Gergelim",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Disponível. Toque para pausar neste canal.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Disponível. Toque para pausar neste feed.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Baguete Gergelim Pequena",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Oculto. Toque para pausar neste feed.",
+        "w": 28,
+        "h": 16
+      },
+      {
+        "t": "Selecionar Baguete Lanche",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguette Campagne",
+        "w": 20,
+        "h": 20
+      },
+      {
+        "t": "Selecionar Baguette de Tradition",
+        "w": 20,
+        "h": 20
+      }
+    ],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "catalog__mobile__dark.png"
+  },
+  {
+    "id": "channel-catalog",
+    "route": "/channels/google-shopping/catalog",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [
+      {
+        "t": "Google Shopping · Revisão de vínculos",
+        "cw": 222,
+        "sw": 332
+      }
+    ],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "channel-catalog__mobile__dark.png"
+  },
+  {
+    "id": "customers",
+    "route": "/customers",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "customers__mobile__dark.png"
+  },
+  {
+    "id": "customer-detail",
+    "route": "/customers/CLI-001",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "customer-detail__mobile__dark.png"
+  },
+  {
+    "id": "customer-merges",
+    "route": "/customers/merges",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "customer-merges__mobile__dark.png"
+  },
+  {
+    "id": "channels",
+    "route": "/feeds",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [
+      {
+        "t": "Catálogo Meta: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Google Shopping: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Café: modo automático desligado; lig",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "TV do Salão: modo automático desligado; li",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "Loja online: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "WhatsApp: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      },
+      {
+        "t": "iFood: ligado. Desligar…",
+        "w": 44,
+        "h": 24
+      }
+    ],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "channels__mobile__dark.png"
+  },
+  {
+    "id": "history",
+    "route": "/history",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "history__mobile__dark.png"
+  },
+  {
+    "id": "settings",
+    "route": "/settings",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [
+      {
+        "t": "Loja online, iFood, WhatsApp e o catálogo ",
+        "cw": 244,
+        "sw": 306
+      }
+    ],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "settings__mobile__dark.png"
+  },
+  {
+    "id": "workstations",
+    "route": "/workstations",
+    "vp": "mobile",
+    "theme": "dark",
+    "status": 200,
+    "overflowX": false,
+    "dark": "dark|undefined",
+    "trunc": [],
+    "outside": [],
+    "small": [],
+    "low": [
+      {
+        "t": "Usar sem vincular",
+        "ratio": 1.83,
+        "size": 12
+      }
+    ],
+    "file": "workstations__mobile__dark.png"
+  }
+]
