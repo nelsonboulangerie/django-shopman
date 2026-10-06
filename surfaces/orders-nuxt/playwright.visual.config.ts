@@ -17,7 +17,9 @@ export default defineOperatorVisualConfig({
     {
       command: "node tests/visual/mockBackend.mjs",
       port: backendPort,
-      reuseExistingServer: false,
+      // Run interrompida deixa o mock preso e a seguinte nem inicia ("port already used").
+      // Localmente reusar é seguro: mesma worktree, mock estático.
+      reuseExistingServer: !process.env.CI,
       timeout: 30_000,
       env: { MOCK_PORT: String(backendPort) },
     },
@@ -28,7 +30,7 @@ export default defineOperatorVisualConfig({
         "NUXT_PUBLIC_DJANGO_BASE_URL=http://127.0.0.1:" + backendPort + " " +
         "npx nuxt dev --host 127.0.0.1 --port " + appPort,
       url: "http://127.0.0.1:" + appPort + "/",
-      reuseExistingServer: false,
+      reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
   ],
