@@ -17,7 +17,6 @@ const route = useRoute();
 const router = useRouter();
 const hydrated = ref(false);
 const modalOpen = ref(false);
-const sidebarOpen = ref(true);
 const step = ref(1);
 const { reveal } = useNextFocus();
 watch(step, (value) => {
@@ -116,20 +115,17 @@ onMounted(() => {
       storage-key="operator-kitchen-sink"
     >
       <template #sidebar>
-        <NuxtSidebar
-          v-model:open="sidebarOpen"
-          title="Catálogo do kit"
-          collapsible="offcanvas"
-          close
-          rail
-        >
-          <NuxtNavigationMenu
-            :items="[...kitchenSinkNavigation]"
-            orientation="vertical"
-            aria-label="Seções do catálogo"
-          />
-        </NuxtSidebar>
+        <NuxtNavigationMenu
+          :items="[...kitchenSinkNavigation]"
+          orientation="vertical"
+          aria-label="Seções do catálogo"
+        />
       </template>
+      <template #sidebar-header
+        ><nav aria-label="Identidade do catálogo">
+          <h2 class="op-title">Catálogo do kit</h2>
+        </nav></template
+      >
 
       <template #navbar>
         <header
@@ -358,7 +354,7 @@ onMounted(() => {
               <NuxtForm :state="{}" class="grid gap-4 md:grid-cols-2">
                 <NuxtFormField
                   label="Nome"
-                  description="Como aparece para a pessoa operadora"
+                  help="Como aparece para a pessoa operadora"
                   ><NuxtInput placeholder="Nome inequívoco" class="w-full"
                 /></NuxtFormField>
                 <NuxtFormField label="Responsável"
@@ -367,8 +363,7 @@ onMounted(() => {
                     default-value="Ana Ferreira"
                     class="w-full"
                     aria-label="Responsável"
-                  /></NuxtFormField
-                >
+                /></NuxtFormField>
                 <NuxtFormField label="Contexto" class="md:col-span-2"
                   ><NuxtTextarea
                     placeholder="Explique necessidade, consequência e próximo passo"
@@ -379,15 +374,10 @@ onMounted(() => {
                   label="Exige revisão"
                   description="Mantém a decisão explícita antes de concluir."
                 />
-                <div
-                  class="flex items-center justify-between gap-3 rounded-md border p-3"
-                >
-                  <span class="op-body">Avisos desta tarefa</span
-                  ><UiSwitch
-                    v-model="notifications"
-                    aria-label="Avisos desta tarefa"
-                  />
-                </div>
+                <NuxtSwitch
+                  v-model="notifications"
+                  label="Avisos desta tarefa"
+                />
                 <div
                   class="flex flex-wrap gap-[var(--op-control-gap)] md:col-span-2"
                   data-action-group

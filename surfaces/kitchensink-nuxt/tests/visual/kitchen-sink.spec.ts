@@ -94,6 +94,24 @@ test("receitas interativas preservam dados, seleção, foco e tema", async ({
     name: "Salvar exemplo",
     exact: true,
   });
+  const nameBounds = await page
+    .getByPlaceholder("Nome inequívoco")
+    .boundingBox();
+  const ownerBounds = await page
+    .getByLabel("Responsável", { exact: true })
+    .boundingBox();
+  expect(Math.abs(nameBounds!.y - ownerBounds!.y)).toBeLessThanOrEqual(1);
+  await expect(
+    page.getByRole("switch", { name: "Avisos desta tarefa" }),
+  ).toBeVisible();
+  const handle = page.locator("[data-operator-navigation-resize]");
+  const beforeResize = await handle.boundingBox();
+  await page.mouse.move(beforeResize!.x, beforeResize!.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(beforeResize!.x + 40, beforeResize!.y + 100);
+  await page.mouse.up();
+  expect((await handle.boundingBox())!.x).toBeGreaterThan(beforeResize!.x + 20);
+  await handle.dblclick();
   for (const label of ["Canal por select", "Buscar canal"]) {
     await page.getByLabel(label, { exact: true }).click();
     const option = page.getByRole("option").first();
