@@ -40,7 +40,7 @@
     "@iconify-json/lucide": "1.2.137",
     "@iconify-json/tabler": "1.2.40",
     "@internationalized/date": "3.12.4",
-    "@nuxt/kit": "3.21.11",
+    "@nuxt/kit": "^4.5.2",
     "@nuxt/ui": "^4.11.3",
     "@vite-pwa/nuxt": "1.1.1",
     "sharp": "0.35.4",
