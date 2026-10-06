@@ -353,6 +353,12 @@ function drop(target: string) {
     </div>
 
     <h3 class="op-title">Badges: semântica, cor e ênfase</h3>
+    <NuxtAlert
+      variant="solid"
+      color="primary"
+      title="Operação confirmada"
+      description="Título e descrição preservam contraste sobre fundo sólido."
+    />
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <NuxtCard v-for="variant in badgeVariants" :key="variant" :title="variant"
         ><div class="flex flex-wrap gap-2">

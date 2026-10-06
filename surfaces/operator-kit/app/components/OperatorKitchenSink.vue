@@ -362,10 +362,12 @@ onMounted(() => {
                   ><NuxtInput placeholder="Nome inequívoco" class="w-full"
                 /></NuxtFormField>
                 <NuxtFormField label="Responsável"
-                  ><UiNativeSelect class="w-full" aria-label="Responsável"
-                    ><option>Ana Ferreira</option>
-                    <option>Marcos Lima</option></UiNativeSelect
-                  ></NuxtFormField
+                  ><NuxtSelect
+                    :items="['Ana Ferreira', 'Marcos Lima']"
+                    default-value="Ana Ferreira"
+                    class="w-full"
+                    aria-label="Responsável"
+                  /></NuxtFormField
                 >
                 <NuxtFormField label="Contexto" class="md:col-span-2"
                   ><NuxtTextarea

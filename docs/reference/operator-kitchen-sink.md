@@ -1,5 +1,13 @@
 # Operator Kitchen Sink canônico
 
+O card padrão é `NuxtCard` outline: branco no tema claro (`bg-card`), borda,
+sem sombra. Formulários e exemplos de controles usam esse padrão. No tema escuro,
+a superfície acompanha `--card`, sem impor branco. Header, body e footer usam
+padding de 1rem, inclusive no desktop. Cards solid mantêm texto invertido também
+na descrição. Input, Select e SelectMenu padrão usam `size="md"`, 44px (48px em
+tablet touch) e texto de 14px. Textarea mantém a tipografia, mas altura multilinha.
+Outros tamanhos exigem necessidade demonstrada, não escolha estética arbitrária.
+
 O Operator Kitchen Sink é a superfície executável do design system das apps de
 operador. Ele não é uma galeria paralela: a página real
 `surfaces/kitchensink-nuxt` compõe `OperatorKitchenSink`, cujas fixtures,
