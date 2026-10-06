@@ -249,7 +249,12 @@ job de cada app consumidor.
   apps — o `kitchensink-nuxt` do #1512 entrou alinhado);
 - `python scripts/check_theme_baseline_contract.py`: verde; teste de falha forçada
   (tema alterado) reprovou como esperado e voltou ao verde após restaurar;
-- CI do PR #1513 (head `4d92c9f13`): `Versões das superfícies` pass (inclui o gate de
-  tema), `Supply chain — npm audit (operator-kit)` pass (9 s), `Supply chain — npm
-  audit (marketing-nuxt)` pass (14 s), `marketing-nuxt` pass; `Marketing — cadeia
-  completa` sem os passos de audit (em execução na redação).
+- CI do PR #1513 (head `fb07eb33d`): `Versões das superfícies` pass (inclui o gate de
+  tema), `Supply chain — npm audit (operator-kit)` pass, `Supply chain — npm audit
+  (marketing-nuxt)` pass, `marketing-nuxt` pass e **`Marketing — cadeia completa`
+  pass com TODOS os passos verdes** — unit, lint, tipo, build, E2E, a11y, visual e
+  security (run `37526092411`) — agora sem nenhum passo de audit;
+- `Produção — matriz Playwright AA` falhou uma vez por flake em `guards.spec.ts:61`
+  (o lock não interceptou `Alt+2` a tempo) e **passou na re-execução**; não é
+  regressão deste PR (o diff de `operator-kit` é só `sharp`/`shell-quote`/
+  `source-map-js`, nenhum deles de runtime).
