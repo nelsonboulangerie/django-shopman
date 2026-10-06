@@ -9,11 +9,23 @@ withDefaults(
   defineProps<{
     storageKey: string;
     title?: string;
+    /**
+     * Rail fixo da suíte: `DashboardSidebar` em px, sem redimensionar nem colapsar.
+     * O padrão (`false`) é o painel percentual de escritório.
+     */
+    rail?: boolean;
+    /** Renderiza a navbar do Dashboard. `false` deixa a página dona do próprio cabeçalho (transição). */
+    navbar?: boolean;
+    /** Largura do rail (px). 64 = 4rem, o piso oficial do DashboardSidebar (min-w-16). */
+    sidebarSize?: number;
     sidebarDefaultSize?: number;
     sidebarMinSize?: number;
     sidebarMaxSize?: number;
   }>(),
   {
+    rail: false,
+    navbar: true,
+    sidebarSize: 64,
     sidebarDefaultSize: 18,
     sidebarMinSize: 14,
     sidebarMaxSize: 24,
@@ -24,19 +36,31 @@ withDefaults(
 <template>
   <NuxtDashboardGroup
     :storage-key="storageKey"
+    :unit="rail ? 'px' : '%'"
     class="min-h-dvh"
     data-operator-office-shell
   >
     <NuxtDashboardSidebar
-      role="complementary"
-      aria-label="Navegação do aplicativo"
       :id="`${storageKey}-navigation`"
       v-model:open="navigationOpen"
-      :default-size="sidebarDefaultSize"
-      :min-size="sidebarMinSize"
-      :max-size="sidebarMaxSize"
-      resizable
-      collapsible
+      role="complementary"
+      aria-label="Navegação do aplicativo"
+      :default-size="rail ? sidebarSize : sidebarDefaultSize"
+      :min-size="rail ? sidebarSize : sidebarMinSize"
+      :max-size="rail ? sidebarSize : sidebarMaxSize"
+      :resizable="!rail"
+      :collapsible="!rail"
+      :toggle="!rail"
+      :ui="
+        rail
+          ? {
+              root: 'bg-rail text-rail-foreground',
+              header: 'px-0 justify-center',
+              body: 'items-center gap-1 px-0',
+              footer: 'flex-col items-center gap-1 px-0',
+            }
+          : undefined
+      "
     >
       <template v-if="$slots['sidebar-header']" #header="{ collapsed }"
         ><slot name="sidebar-header" :collapsed="collapsed"
@@ -54,14 +78,14 @@ withDefaults(
       class="min-w-0"
       :ui="{ body: 'p-0 sm:p-0 gap-0' }"
     >
-      <template #header>
+      <template v-if="navbar" #header>
         <NuxtDashboardNavbar
           as="header"
           class="h-auto min-h-[var(--op-header-min-height)] py-2"
           :title="title"
           :ui="{ title: 'whitespace-normal break-words', root: 'flex-wrap' }"
         >
-          <template #leading><NuxtDashboardSidebarCollapse /></template>
+          <template v-if="!rail" #leading><NuxtDashboardSidebarCollapse /></template>
           <template v-if="$slots.navbar" #title><slot name="navbar" /></template>
           <template #right><slot name="navbar-actions" /></template>
         </NuxtDashboardNavbar>
