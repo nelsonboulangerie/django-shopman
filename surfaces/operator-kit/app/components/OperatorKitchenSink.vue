@@ -26,7 +26,25 @@ const selectedSection = ref("visual-exercises");
 const officeShell = ref<{ closeNavigation: () => void } | null>(null);
 const { activeHeadings, updateHeadings } = useScrollspy();
 watch(activeHeadings, (headings) => {
-  if (headings[0]) selectedSection.value = headings[0];
+  const visible = headings
+    .flatMap((id) => {
+      const section = document.getElementById(id);
+      const body = section?.closest<HTMLElement>('[data-slot="body"]');
+      return section && body
+        ? [
+            {
+              id,
+              distance: Math.abs(
+                section.getBoundingClientRect().top -
+                  body.getBoundingClientRect().top -
+                  12,
+              ),
+            },
+          ]
+        : [];
+    })
+    .sort((a, b) => a.distance - b.distance);
+  if (visible[0]) selectedSection.value = visible[0].id;
 });
 function selectSection(id: string, event?: Event) {
   event?.preventDefault();
@@ -51,6 +69,7 @@ function selectSection(id: string, event?: Event) {
 const navigationItems = computed(() =>
   kitchenSinkNavigation.map((item) => ({
     label: item.label,
+    "aria-label": item.label,
     icon: item.icon,
     active: selectedSection.value === item.to.slice(1),
     onSelect: (event: Event) => selectSection(item.to.slice(1), event),
@@ -194,6 +213,7 @@ onMounted(() => {
           :items="[
             {
               label: 'Referências',
+              'aria-label': 'Referências',
               icon: 'i-lucide-book-open',
               children: [
                 {
@@ -210,6 +230,7 @@ onMounted(() => {
           orientation="vertical"
           :collapsed="collapsed"
           aria-label="Referências aninhadas"
+          :popover="{ mode: 'click' }"
         />
       </template>
       <template #sidebar-header="{ collapsed }"

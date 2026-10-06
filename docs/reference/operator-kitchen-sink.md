@@ -155,6 +155,10 @@ A navegação interna rola apenas o corpo do `DashboardPanel`, não o chrome fix
 `useScrollspy` acompanha as seções visíveis. O header recebe `collapsed` do
 `DashboardSidebar` e conserva apenas o ícone quando recolhido.
 
+Menus verticais com filhos declaram `popover` explicitamente: `collapsed` sozinho
+não expõe os filhos. No catálogo, o popover usa `mode: 'click'` para suportar clique
+e teclado, sem depender de hover; os itens conservam nomes acessíveis recolhidos.
+
 ## Laboratório visual e contratos oficiais
 
 O início do catálogo mostra exercícios comparáveis, ainda sujeitos à decisão do

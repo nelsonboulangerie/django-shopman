@@ -15,6 +15,21 @@ test("navegação, busca e feedback preservam o chrome do dashboard", async ({
   const header = page.getByRole("banner");
   const before = await header.boundingBox();
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  const references = page
+    .getByRole("navigation", { name: "Referências aninhadas" })
+    .getByRole("button", { name: "Referências", exact: true });
+  await references.click();
+  const nestedOption = page.getByRole("button", {
+    name: "Matriz de necessidades",
+    exact: true,
+  });
+  await expect(nestedOption).toBeVisible();
+  await page.keyboard.press("Escape");
+  await references.focus();
+  await page.keyboard.press("Enter");
+  await expect(nestedOption).toBeVisible();
+  await nestedOption.click();
+  expect((await header.boundingBox())!.y).toBe(before!.y);
   await expect(
     page.getByRole("heading", { name: "Catálogo do kit" }),
   ).toHaveClass("sr-only");
