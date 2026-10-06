@@ -113,6 +113,24 @@ test("receitas interativas preservam dados, seleção, foco e tema", async ({
       (element) => getComputedStyle(element.parentElement!).padding,
     ),
   ).toBe("0px");
+  const lastDetails = tableRegion
+    .getByRole("button", { name: /Detalhes de/ })
+    .last();
+  await lastDetails.click();
+  const expandedDetails = tableRegion.getByText(/PED-\d+: retirada no balcão/);
+  await expandedDetails.scrollIntoViewIfNeeded();
+  const bounds = await expandedDetails.boundingBox();
+  const regionBounds = await tableRegion.boundingBox();
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(
+    regionBounds!.y + regionBounds!.height,
+  );
+  const columnFooter = tableRegion.locator("tfoot");
+  expect(
+    await columnFooter.evaluate(
+      (element) => getComputedStyle(element).position,
+    ),
+  ).not.toBe("sticky");
+  await lastDetails.click();
   await save.click();
   await expect(save).toBeDisabled();
   await page

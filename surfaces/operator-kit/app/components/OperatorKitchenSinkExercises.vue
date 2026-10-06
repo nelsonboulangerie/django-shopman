@@ -467,7 +467,8 @@ function drop(target: string) {
           }"
           :data="visibleRows"
           :columns="columns"
-          sticky
+          sticky="header"
+          :ui="{ root: 'overflow-visible' }"
           aria-label="Pedidos do laboratório"
         >
           <template #expanded="{ row }"
