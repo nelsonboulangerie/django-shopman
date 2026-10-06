@@ -25,6 +25,18 @@
       "owner": "WP-UX-13H",
       "test": "surfaces/production-nuxt/tests/boardDisplay.test.ts",
       "tokens": ["--accent", "--background", "--board-amber", "--board-bg", "--board-cyan", "--board-dim", "--board-green", "--board-line", "--board-panel", "--board-text", "--border", "--card", "--foreground", "--muted", "--muted-foreground", "--primary", "--primary-foreground", "--ring", "--scale-display", "--scale-row"]
+    },
+    {
+      "path": "surfaces/marketing-nuxt/app/app.vue",
+      "app": "marketing",
+      "surface": "app-identity-seal",
+      "use_case": "Selo do app e miniaturas da fila de decisões usam a cor de identidade publicada no head",
+      "canonical_limitation": "O primary canônico não distingue o app; remover a cor hoje muda 4 baselines visuais de Marketing, fora do escopo deste PR.",
+      "rejected_alternatives": ["Atualizar as 4 baselines dentro do PR do catálogo", "Fixar a cor por componente em vez do token no head"],
+      "justification": "Exceção transitória com remoção agendada no WP de Marketing (WP-UX-13E), que fará antes/depois, decisão de família e baseline própria.",
+      "owner": "WP-UX-13E",
+      "test": "surfaces/marketing-nuxt/tests/visual/marketing-matrix.spec.ts",
+      "tokens": ["--app-color"]
     }
   ]
 }
