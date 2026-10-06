@@ -108,7 +108,11 @@ useHead({ title: "Confirmação" });
     </MarketingPageHeader>
 
     <div class="mx-auto flex w-full max-w-lg flex-col gap-3 px-4 py-5">
-      <div v-if="pending && !control" class="h-48 animate-pulse rounded-xl bg-muted" aria-busy="true" />
+      <UiSkeleton
+        v-if="pending && !control"
+        class="h-48 rounded-xl"
+        label="Carregando segunda conferência"
+      />
       <div v-else-if="error || !control" class="rounded-xl border border-dashed border-border px-5 py-8 text-center" role="alert">
         <p class="font-semibold">Este pedido não existe mais</p>
         <p class="mt-1 text-sm text-muted-foreground">Ele vence em poucos minutos. Quem pediu pode chamar de novo.</p>

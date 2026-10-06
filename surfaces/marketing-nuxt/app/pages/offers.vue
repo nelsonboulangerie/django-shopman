@@ -143,10 +143,11 @@ useHead({ title: "Ofertas e cupons" });
         class="grid gap-3 md:grid-cols-2"
         aria-busy="true"
       >
-        <div
+        <UiSkeleton
           v-for="n in 2"
           :key="n"
-          class="h-32 animate-pulse rounded-xl bg-muted"
+          class="h-32 rounded-xl"
+          label="Carregando ofertas"
         />
       </div>
 

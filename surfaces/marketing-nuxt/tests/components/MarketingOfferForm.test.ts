@@ -115,4 +115,24 @@ describe("MarketingOfferForm", () => {
       customer_segments: ["champion"],
     });
   });
+
+  it("edita vigência em um período e um intervalo de horas sem alterar o payload", async () => {
+    const wrapper = form();
+
+    wrapper.getComponent({ name: "UiDateRangeField" }).vm.$emit("update:modelValue", {
+      start: "2026-10-10",
+      end: "2026-10-18",
+    });
+    wrapper.getComponent({ name: "UiTimeRangeField" }).vm.$emit("update:modelValue", {
+      start: "08:30",
+      end: "19:15",
+    });
+    await wrapper.get("#marketing-offer-name").setValue("Semana do pão");
+    await wrapper.get("form").trigger("submit");
+
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toMatchObject({
+      valid_from: "2026-10-10T08:30",
+      valid_until: "2026-10-18T19:15",
+    });
+  });
 });

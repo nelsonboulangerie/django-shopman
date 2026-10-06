@@ -244,11 +244,12 @@ useHead({ title: "Enviados" });
       aria-busy="true"
       aria-label="Carregando histórico"
     >
-      <div
+      <UiSkeleton
         v-for="n in 3"
         :key="n"
-        class="h-36 animate-pulse rounded-md bg-muted"
-      ></div>
+        class="h-36 rounded-md"
+        label="Carregando histórico"
+      />
     </div>
 
     <div

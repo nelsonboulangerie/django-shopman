@@ -146,7 +146,12 @@ describe("CampaignForm — a oferta anunciada", () => {
   it("manda a oferta escolhida", async () => {
     const wrapper = form(makeRule({ trigger: "production_finished" }));
 
-    await wrapper.find("#rule-offer").setValue("relampago-17h30");
+    await wrapper.get("#rule-offer").trigger("click");
+    const offer = wrapper
+      .findAll('[role="option"]')
+      .find((option) => option.text().includes("Relâmpago das 17h30"));
+    if (!offer) throw new Error("Oferta pesquisável não encontrada.");
+    await offer.trigger("click");
     await wrapper.find("form").trigger("submit");
 
     const [payload] = wrapper.emitted("submit")![0] as [
@@ -157,9 +162,7 @@ describe("CampaignForm — a oferta anunciada", () => {
 
   it("relê a oferta da regra aberta", () => {
     const wrapper = form(makeRule({ promotion_ref: "relampago-17h30" }));
-    expect(
-      (wrapper.find("#rule-offer").element as HTMLSelectElement).value,
-    ).toBe("relampago-17h30");
+    expect(wrapper.get("#rule-offer").text()).toContain("Relâmpago das 17h30");
   });
 
   it("some quando não há oferta viva — seletor vazio não ajuda ninguém", () => {

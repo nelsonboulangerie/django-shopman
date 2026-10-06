@@ -334,6 +334,34 @@ const UiDateField = temporalInput("UiDateField", "date");
 const UiDateTimeField = temporalInput("UiDateTimeField", "datetime-local");
 const UiTimeField = temporalInput("UiTimeField", "time");
 
+const NuxtFormField = defineComponent({
+  name: "NuxtFormField",
+  inheritAttrs: false,
+  props: {
+    label: String,
+    help: String,
+    error: String,
+  },
+  setup(props, { attrs, slots }) {
+    return () =>
+      h("div", { ...attrs, "data-slot": "form-field" }, [
+        props.label ? h("span", props.label) : null,
+        slots.default?.(),
+        props.help ? h("span", props.help) : null,
+        props.error ? h("span", { role: "alert" }, props.error) : null,
+      ]);
+  },
+});
+
+const UiSkeleton = defineComponent({
+  name: "UiSkeleton",
+  inheritAttrs: false,
+  props: { label: { type: String, default: "Carregando" } },
+  setup(props, { attrs }) {
+    return () => h("div", { ...attrs, role: "status", "aria-label": props.label });
+  },
+});
+
 const UiDateRangeField = defineComponent({
   name: "UiDateRangeField",
   inheritAttrs: false,
@@ -360,6 +388,43 @@ const UiDateRangeField = defineComponent({
         h("input", {
           "aria-label": "Fim do período",
           type: "date",
+          value: props.modelValue.end ?? "",
+          onInput: (event: Event) =>
+            emit("update:modelValue", {
+              start: props.modelValue.start ?? "",
+              end: (event.target as HTMLInputElement).value,
+            }),
+        }),
+      ]);
+  },
+});
+
+const UiTimeRangeField = defineComponent({
+  name: "UiTimeRangeField",
+  inheritAttrs: false,
+  props: {
+    modelValue: {
+      type: Object as () => { start?: string; end?: string },
+      default: () => ({ start: "", end: "" }),
+    },
+  },
+  emits: ["update:modelValue"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h("div", { ...attrs, role: "group" }, [
+        h("input", {
+          "aria-label": "Horário inicial",
+          type: "time",
+          value: props.modelValue.start ?? "",
+          onInput: (event: Event) =>
+            emit("update:modelValue", {
+              start: (event.target as HTMLInputElement).value,
+              end: props.modelValue.end ?? "",
+            }),
+        }),
+        h("input", {
+          "aria-label": "Horário final",
+          type: "time",
           value: props.modelValue.end ?? "",
           onInput: (event: Event) =>
             emit("update:modelValue", {
@@ -457,6 +522,7 @@ const UiStepper = defineComponent({
 
 config.global.components = {
   ...config.global.components,
+  NuxtFormField,
   NuxtCheckbox,
   NuxtCheckboxGroup,
   NuxtSelectMenu,
@@ -471,6 +537,7 @@ config.global.components = {
   UiRadio,
   UiRadioGroup,
   UiSelect,
+  UiSkeleton,
   UiSwitch,
   UiStepper,
   UiTabs,
@@ -478,5 +545,6 @@ config.global.components = {
   UiTabsTrigger,
   UiTextarea,
   UiTimeField,
+  UiTimeRangeField,
   UiToggleChip,
 };

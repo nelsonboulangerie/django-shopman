@@ -703,6 +703,22 @@ const selectedTemplate = computed(
     null,
 );
 
+const templateOptions = computed(() =>
+  props.templates.map((template) => ({
+    value: template.pk,
+    label: template.name,
+    keywords: `${template.pk} ${template.body}`,
+  })),
+);
+
+const offerOptions = computed(() => [
+  {
+    value: "",
+    label: "Nenhuma (só contar a novidade)",
+  },
+  ...props.offers,
+]);
+
 const deliveryCapabilityMap = computed(() =>
   Object.fromEntries(
     (props.deliveryCapabilities ?? []).map((capability) => [
@@ -820,19 +836,20 @@ function submit() {
 
       <div v-show="currentStep === 2">
         <label
+          id="rule-template-label"
           for="rule-template"
           class="mb-1 block text-xs font-medium text-muted-foreground"
           >Usar o modelo</label
         >
-        <UiNativeSelect id="rule-template" v-model="templateId" class="w-full">
-          <option
-            v-for="template in templates"
-            :key="template.pk"
-            :value="template.pk"
-          >
-            {{ template.name }}
-          </option>
-        </UiNativeSelect>
+        <UiSelect
+          id="rule-template"
+          v-model="templateId"
+          :options="templateOptions"
+          labelled-by="rule-template-label"
+          placeholder="Escolha o modelo"
+          search-placeholder="Buscar modelo"
+          empty-text="Nenhum modelo encontrado"
+        />
         <p
           v-if="templates.length === 0"
           class="mt-1 text-xs text-muted-foreground"
@@ -865,16 +882,20 @@ function submit() {
          envio, que é quando o preço envelheceria. -->
     <div v-if="offers.length" v-show="currentStep === 2">
       <label
+        id="rule-offer-label"
         for="rule-offer"
         class="mb-1 block text-xs font-medium text-muted-foreground"
         >Anunciar a oferta</label
       >
-      <UiNativeSelect id="rule-offer" v-model="promotionRef" class="w-full">
-        <option value="">Nenhuma (só contar a novidade)</option>
-        <option v-for="offer in offers" :key="offer.value" :value="offer.value">
-          {{ offer.label }}
-        </option>
-      </UiNativeSelect>
+      <UiSelect
+        id="rule-offer"
+        v-model="promotionRef"
+        :options="offerOptions"
+        labelled-by="rule-offer-label"
+        placeholder="Escolha a oferta"
+        search-placeholder="Buscar oferta"
+        empty-text="Nenhuma oferta encontrada"
+      />
       <p class="mt-1 text-xs text-muted-foreground">
         Com oferta, quem toca no link já recebe a sacola montada.
       </p>

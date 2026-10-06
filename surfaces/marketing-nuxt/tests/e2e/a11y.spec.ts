@@ -53,6 +53,13 @@ async function expectTouchTargets(page: Page, context: string) {
         )
           return [];
         const input = node as HTMLInputElement;
+        if (node.getAttribute("role") === "switch") {
+          const target = node.closest('[data-slot="switch"]');
+          if (target) {
+            const targetRect = target.getBoundingClientRect();
+            if (targetRect.width >= 44 && targetRect.height >= 44) return [];
+          }
+        }
         if (["checkbox", "radio"].includes(input.type)) {
           const label =
             node.closest("label") ??
