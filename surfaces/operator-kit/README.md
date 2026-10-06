@@ -1,4 +1,4 @@
-# operator-kit — Nuxt layer compartilhado das superfícies de operador
+# operator-kit: Nuxt layer compartilhado das superfícies de operador
 
 Fundação comum das oito superfícies de operador: `pos-nuxt`, `orders-nuxt`,
 `kds-nuxt`, `production-nuxt`, `purchase-nuxt`, `marketing-nuxt`, `bi-nuxt` e a
@@ -9,6 +9,8 @@ do design system sem absorver regras específicas de cada domínio.
 `nuxt.config.ts` do `HEAD`.
 
 O **storefront-nuxt fica de fora** (superfície de cliente, branded, harness próprio).
+O `kitchensink-nuxt` é o consumidor de referência e preview; não leva
+implementação canônica para fora deste layer.
 
 ## UX transversal do WP-UX-13B
 
@@ -19,7 +21,7 @@ estão documentados em
 As peças estruturais novas são `<OperatorAppRoot>`, `<OperatorOfficeShell>`,
 `<OperatorOperationalShell>`, `<OperatorPage>` e `<OperatorSplitter>`. Elas compõem as
 famílias oficiais do Nuxt UI; não são uma anatomia paralela. O catálogo roda somente no
-harness:
+harness e na surface protegida `kitchensink-nuxt`:
 
 ```bash
 npm run catalog:dev
@@ -29,6 +31,8 @@ npm run test:visual
 
 Nenhum app deve criar shell, Sidebar, NavigationMenu, Page ou Splitter local. Uma
 necessidade operacional comprovada entra no ledger com responsável e teste.
+O léxico, anatomias, matriz dos oito apps, exceções e guia de adoção ficam em
+[`operator-kitchen-sink.md`](../../docs/reference/operator-kitchen-sink.md).
 
 ## Como um app consome
 

@@ -204,7 +204,7 @@ const scheduledLine = computed(() =>
               class="grid size-[60px] shrink-0 place-items-center rounded-lg"
               :class="
                 item.kind === 'review'
-                  ? 'bg-[color-mix(in_oklab,var(--app-color,var(--primary))_14%,transparent)] text-[var(--app-color,var(--primary))]'
+                  ? 'bg-primary/10 text-primary'
                   : 'bg-destructive/10 text-destructive'
               "
               aria-hidden="true"

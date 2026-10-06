@@ -77,6 +77,9 @@ const profiles = {
   marketing: operatorProfile('marketing'),
   purchase: operatorProfile('purchase'),
   bi: operatorProfile('bi'),
+  // O catálogo tem uma única rota canônica. Inventar atalhos para âncoras ou cenários
+  // tornaria estados de teste em navegação de produto.
+  kitchensink: operatorProfile('kitchensink', { shortcuts: false }),
 }
 const requestedApp = process.argv.find(value => value.startsWith('--app='))?.split('=', 2)[1]
 const profile = profiles[requestedApp]

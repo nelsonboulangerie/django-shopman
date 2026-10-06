@@ -7,22 +7,10 @@ export type UiButtonVariant =
   | "outline"
   | "secondary"
   | "ghost"
-  | "link"
-  | "gradient";
+  | "link";
 
 export type UiButtonSize =
   "xs" | "sm" | "default" | "lg" | "icon-xs" | "icon-sm" | "icon" | "icon-lg";
-
-export type UiButtonEffect =
-  | "expandIcon"
-  | "ringHover"
-  | "shine"
-  | "shineHover"
-  | "gooeyRight"
-  | "gooeyLeft"
-  | "underline"
-  | "hoverUnderline"
-  | "gradientSlideShow";
 
 export type UiButtonProps = {
   type?: "button" | "submit" | "reset";
@@ -41,8 +29,6 @@ export type UiButtonProps = {
   icon?: string;
   loadingIcon?: string;
   block?: boolean;
-  effect?: UiButtonEffect;
-  skeuomorphic?: boolean;
 };
 </script>
 
@@ -81,7 +67,6 @@ const appearance: Record<
   secondary: { color: "neutral", variant: "soft" },
   ghost: { color: "neutral", variant: "ghost" },
   link: { color: "primary", variant: "link" },
-  gradient: { color: "primary", variant: "solid" },
 };
 
 const sizes: Record<UiButtonSize, string> = {
@@ -106,35 +91,9 @@ const nuxtSizes: Record<UiButtonSize, "xs" | "sm" | "md" | "lg" | "xl"> = {
   "icon-lg": "xl",
 };
 
-const effects: Record<UiButtonEffect, string> = {
-  expandIcon: "group relative gap-0",
-  ringHover: "hover:ring-ring/50 transition-all duration-300 hover:ring-3",
-  shine:
-    "before:animate-shine relative overflow-hidden bg-position-[0s_ease] before:absolute before:inset-0 before:rounded-[inherit] before:bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.5)_50%,transparent_75%,transparent_100%)] before:bg-size-[250%_250%,100%_100%] before:bg-no-repeat",
-  shineHover:
-    "relative overflow-hidden before:absolute before:inset-0 before:rounded-[inherit] before:bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.5)_50%,transparent_75%,transparent_100%)] before:bg-size-[250%_250%,100%_100%] before:bg-position-[200%_0,0_0] before:bg-no-repeat before:transition-[background-position_0s_ease] before:duration-1000 hover:before:bg-position-[-100%_0,0_0]",
-  gooeyRight:
-    "relative z-0 overflow-hidden duration-500 before:absolute before:inset-0 before:-z-10 before:translate-x-[150%] before:translate-y-[150%] before:scale-[2.5] before:rounded-[100%] before:bg-linear-to-r before:from-white/40 before:transition-transform before:duration-1000 hover:before:translate-x-[0%] hover:before:translate-y-[0%]",
-  gooeyLeft:
-    "relative z-0 overflow-hidden duration-500 after:absolute after:inset-0 after:-z-10 after:translate-x-[-150%] after:translate-y-[150%] after:scale-[2.5] after:rounded-[100%] after:bg-linear-to-l after:from-white/40 after:transition-transform after:duration-1000 hover:after:translate-x-[0%] hover:after:translate-y-[0%]",
-  underline:
-    "after:bg-primary relative no-underline! after:absolute after:bottom-2 after:h-px after:w-2/3 after:origin-bottom-left after:scale-x-100 after:transition-transform after:duration-300 after:ease-in-out hover:after:origin-bottom-right hover:after:scale-x-0",
-  hoverUnderline:
-    "after:bg-primary relative no-underline! after:absolute after:bottom-2 after:h-px after:w-2/3 after:origin-bottom-right after:scale-x-0 after:transition-transform after:duration-300 after:ease-in-out hover:after:origin-bottom-left hover:after:scale-x-100",
-  gradientSlideShow:
-    "animate-gradient-flow bg-[linear-gradient(-45deg,var(--gradient-lime),var(--gradient-ocean),var(--gradient-wine),var(--gradient-rust))] bg-size-[400%] text-white",
-};
-
 const rootClass = computed(() => [
   "active:translate-y-px",
   sizes[props.size],
-  props.variant === "gradient"
-    ? "bg-[linear-gradient(314deg,color-mix(in_oklch,var(--primary),white_33%),var(--primary))] hover:brightness-110"
-    : "",
-  props.effect ? effects[props.effect] : "",
-  props.skeuomorphic
-    ? "[box-shadow:0px_0px_0px_1px_rgba(0,0,0,0.18)_inset,0px_-2px_0px_0px_rgba(0,0,0,0.05)_inset,var(--shadow-xs)]"
-    : "",
   props.block ? "w-full" : "",
   normalizeClass(props.class),
 ]);

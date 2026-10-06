@@ -1,0 +1,30 @@
+{
+  "$comment": "Tokens fora do operator-kit só sobrevivem quando o meio físico ou o modo de uso impede o tema canônico. O gate compara a lista exata e recusa crescimento silencioso.",
+  "version": 1,
+  "exceptions": [
+    {
+      "path": "surfaces/pos-nuxt/app/assets/css/tailwind.css",
+      "app": "pos",
+      "surface": "receipt-print",
+      "use_case": "Comprovante em bobina térmica de 80 mm",
+      "canonical_limitation": "Tokens de viewport não representam largura, altura e margem do papel físico.",
+      "rejected_alternatives": ["Fixar milímetros no componente", "Tratar a bobina como viewport responsivo"],
+      "justification": "As cinco medidas descrevem o meio de impressão e não criam uma variante visual interativa.",
+      "owner": "WP-UX-13J",
+      "test": "surfaces/pos-nuxt/tests/receiptPrint.test.ts",
+      "tokens": ["--pos-receipt-width", "--pos-roll-height", "--pos-roll-margin-x", "--pos-roll-margin-y", "--pos-roll-width"]
+    },
+    {
+      "path": "surfaces/production-nuxt/app/pages/board.vue",
+      "app": "production",
+      "surface": "far-field-board",
+      "use_case": "Quadro autenticado lido a vários metros da área de produção",
+      "canonical_limitation": "A escala de proximidade do operador não atende leitura distante, contraste contínuo e sinalização sem interação.",
+      "rejected_alternatives": ["Ampliar os tokens de toda a suíte", "Criar uma segunda paleta genérica para todos os apps"],
+      "justification": "O modo distante conserva semântica e contraste, mas isola escala e superfícies no único consumidor comprovado.",
+      "owner": "WP-UX-13H",
+      "test": "surfaces/production-nuxt/tests/boardDisplay.test.ts",
+      "tokens": ["--accent", "--background", "--board-amber", "--board-bg", "--board-cyan", "--board-dim", "--board-green", "--board-line", "--board-panel", "--board-text", "--border", "--card", "--foreground", "--muted", "--muted-foreground", "--primary", "--primary-foreground", "--ring", "--scale-display", "--scale-row"]
+    }
+  ]
+}

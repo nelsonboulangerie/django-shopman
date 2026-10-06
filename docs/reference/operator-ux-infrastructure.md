@@ -1,5 +1,9 @@
 # Infraestrutura de UX das superfícies de operador
 
+O catálogo executável e as decisões de convergência ficam em
+[`operator-kitchen-sink.md`](operator-kitchen-sink.md). Este documento descreve
+os mecanismos; o Kitchen Sink define como compô-los em anatomias e receitas.
+
 Esta é a referência de consumo do `WP-UX-13B`. Ela vale para os oito apps Nuxt de
 operador. Storefront e Admin/Unfold ficam fora. A auditoria específica de cada app só
 começa depois do merge desta infraestrutura; o PDV continua suspenso até esse ponto.

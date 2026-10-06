@@ -309,7 +309,7 @@ async function submit() {
       <UiDialogHeader class="flex-row items-start gap-3 text-left">
         <span
           v-if="sealed"
-          class="grid size-10 shrink-0 place-items-center rounded-full bg-[color-mix(in_oklab,var(--app-color,var(--primary))_14%,transparent)] text-[var(--app-color,var(--primary))]"
+          class="grid size-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"
           aria-hidden="true"
         >
           <Icon name="lucide:stamp" class="size-5" />

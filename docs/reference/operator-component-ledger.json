@@ -4,9 +4,21 @@
   "version": 2,
   "scope": {
     "kind": "operator",
-    "excluded": ["storefront-nuxt", "Admin/Unfold"],
-    "status_values": ["pending", "audited", "migrated", "retained-with-reason"],
-    "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"]
+    "excluded": [
+      "storefront-nuxt",
+      "Admin/Unfold"
+    ],
+    "status_values": [
+      "pending",
+      "audited",
+      "migrated",
+      "retained-with-reason"
+    ],
+    "profiles": [
+      "desktop-keyboard",
+      "tablet-touch",
+      "mobile-touch"
+    ]
   },
   "audit": {
     "owner": "WP-UX-13B",
@@ -15,23 +27,126 @@
     "evidence_root": "test-results/operator-evidence",
     "closure_gate": "python scripts/check_operator_component_ledger.py --require-complete",
     "viewports": [
-      { "id": "desktop-wide", "label": "1920x1080", "width": 1920, "height": 1080, "profile": "desktop-keyboard", "touch": false },
-      { "id": "desktop-common", "label": "1440x900", "width": 1440, "height": 900, "profile": "desktop-keyboard", "touch": false },
-      { "id": "desktop-low", "label": "1366x768", "width": 1366, "height": 768, "profile": "desktop-keyboard", "touch": false },
-      { "id": "desktop-compact", "label": "1280x800", "width": 1280, "height": 800, "profile": "desktop-keyboard", "touch": false },
-      { "id": "tablet-landscape", "label": "1180x820", "width": 1180, "height": 820, "profile": "tablet-touch", "touch": true },
-      { "id": "tablet-portrait", "label": "820x1180", "width": 820, "height": 1180, "profile": "tablet-touch", "touch": true },
-      { "id": "mobile-standard", "label": "390x844", "width": 390, "height": 844, "profile": "mobile-touch", "touch": true },
-      { "id": "mobile-narrow", "label": "320x568", "width": 320, "height": 568, "profile": "mobile-touch", "touch": true },
-      { "id": "zoom-200", "label": "1280x800@200%", "width": 1280, "height": 800, "profile": "desktop-keyboard", "touch": false, "zoom": 2 }
+      {
+        "id": "desktop-wide",
+        "label": "1920x1080",
+        "width": 1920,
+        "height": 1080,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      {
+        "id": "desktop-low",
+        "label": "1366x768",
+        "width": 1366,
+        "height": 768,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      {
+        "id": "desktop-compact",
+        "label": "1280x800",
+        "width": 1280,
+        "height": 800,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      {
+        "id": "tablet-landscape",
+        "label": "1180x820",
+        "width": 1180,
+        "height": 820,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      {
+        "id": "mobile-narrow",
+        "label": "320x568",
+        "width": 320,
+        "height": 568,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      {
+        "id": "zoom-200",
+        "label": "1280x800@200%",
+        "width": 1280,
+        "height": 800,
+        "profile": "desktop-keyboard",
+        "touch": false,
+        "zoom": 2
+      }
     ],
     "states": [
-      "loading-initial", "loading-partial", "empty", "sparse", "normal", "dense", "extreme-content", "long-content",
-      "recoverable-error", "terminal-error", "conflict", "forbidden", "session-expired", "offline",
-      "degraded", "stale", "action-pending", "success", "failure", "idempotent-repeat", "undo",
-      "modal", "popover", "menu", "tooltip", "sheet", "layered-overlays", "keyboard", "keyboard-focus",
-      "touch", "scanner", "camera", "rotation", "selected", "multi-selected", "hover", "disabled",
-      "first-visit", "saved-state", "deep-link"
+      "loading-initial",
+      "loading-partial",
+      "empty",
+      "sparse",
+      "normal",
+      "dense",
+      "extreme-content",
+      "long-content",
+      "recoverable-error",
+      "terminal-error",
+      "conflict",
+      "forbidden",
+      "session-expired",
+      "offline",
+      "reconnecting",
+      "slow-network",
+      "degraded",
+      "stale",
+      "readonly",
+      "insufficient-permission",
+      "hydration-clean",
+      "action-pending",
+      "success",
+      "failure",
+      "idempotent-repeat",
+      "undo",
+      "modal",
+      "popover",
+      "menu",
+      "tooltip",
+      "sheet",
+      "layered-overlays",
+      "keyboard",
+      "keyboard-focus",
+      "touch",
+      "scanner",
+      "camera",
+      "rotation",
+      "selected",
+      "multi-selected",
+      "hover",
+      "disabled",
+      "first-visit",
+      "saved-state",
+      "deep-link"
     ]
   },
   "families": [
@@ -49,524 +164,14 @@
   ],
   "apps": [
     {
-      "id": "hub",
-      "owner": "WP-UX-13C",
-      "directory": "hub-nuxt",
-      "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
-      "baseline": {
-        "local_ui_files": 0,
-        "direct_reka_import_files": 0,
-        "manual_overlay_files": 0,
-        "native_control_occurrences": 3
-      },
-      "surfaces": [
-        {
-          "id": "home",
-          "source_files": ["app/app.vue"],
-          "routes": ["/"],
-          "variants": ["apps", "needs-attention", "device-notices", "blocked", "offline"],
-          "families": ["action", "navigation", "data-display", "feedback", "search"],
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": "pos",
-      "owner": "WP-UX-13J",
-      "directory": "pos-nuxt",
-      "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
-      "baseline": {
-        "local_ui_files": 0,
-        "direct_reka_import_files": 0,
-        "manual_overlay_files": 0,
-        "native_control_occurrences": 157
-      },
-      "surfaces": [
-        {
-          "id": "sale",
-          "source_files": ["app/pages/index.vue"],
-          "routes": ["/"],
-          "variants": ["product-search", "cart", "item-editor", "payment", "last-sales"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "search"],
-          "status": "pending"
-        },
-        {
-          "id": "customer-display",
-          "source_files": ["app/pages/display.vue"],
-          "routes": ["/display"],
-          "variants": ["idle", "cart", "payment", "result"],
-          "families": ["data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "preorders",
-          "source_files": ["app/pages/preorders/index.vue"],
-          "routes": ["/preorders"],
-          "variants": ["today", "search", "empty", "error"],
-          "families": ["action", "field", "navigation", "data-display", "feedback", "search", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "preorder-detail",
-          "source_files": ["app/pages/preorders/[ref].vue"],
-          "routes": ["/preorders/:ref"],
-          "variants": ["summary", "pickup", "payment", "handoff"],
-          "families": ["action", "field", "overlay", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "cash-session",
-          "source_files": ["app/pages/session/index.vue"],
-          "routes": ["/session"],
-          "variants": ["closed", "open", "drawer", "refunds", "customer-credit", "close-confirmation"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "cash-closing",
-          "source_files": ["app/pages/session/closing.vue"],
-          "routes": ["/session/closing"],
-          "variants": ["count", "review", "difference", "drawer", "sealed"],
-          "families": ["action", "field", "overlay", "navigation", "data-display", "feedback", "sequence"],
-          "status": "pending"
-        },
-        {
-          "id": "cash-report",
-          "source_files": ["app/pages/session/report.vue"],
-          "routes": ["/session/report"],
-          "variants": ["summary", "movements", "print"],
-          "families": ["action", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "settings-card-machines",
-          "source_files": ["app/pages/settings/card-machines.vue"],
-          "routes": ["/settings/card-machines"],
-          "variants": ["list", "editing"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "settings-kitchen",
-          "source_files": ["app/pages/settings/kitchen.vue"],
-          "routes": ["/settings/kitchen"],
-          "variants": ["routing", "printers"],
-          "families": ["action", "field", "selection", "navigation", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "settings-printers",
-          "source_files": ["app/pages/settings/printers.vue"],
-          "routes": ["/settings/printers"],
-          "variants": ["list", "test", "editing"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "settings-seating",
-          "source_files": ["app/pages/settings/seating.vue"],
-          "routes": ["/settings/seating"],
-          "variants": ["areas", "tables", "editing"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display"],
-          "status": "pending"
-        },
-        {
-          "id": "settings-shortcuts",
-          "source_files": ["app/pages/settings/shortcuts.vue"],
-          "routes": ["/settings/shortcuts"],
-          "variants": ["reference"],
-          "families": ["navigation", "data-display", "search"],
-          "status": "pending"
-        },
-        {
-          "id": "settings-terminal",
-          "source_files": ["app/pages/settings/terminal.vue"],
-          "routes": ["/settings/terminal"],
-          "variants": ["identity", "hardware", "health"],
-          "families": ["action", "field", "selection", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": "kds",
-      "owner": "WP-UX-13I",
-      "directory": "kds-nuxt",
-      "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
-      "baseline": {
-        "local_ui_files": 0,
-        "direct_reka_import_files": 0,
-        "manual_overlay_files": 0,
-        "native_control_occurrences": 24
-      },
-      "surfaces": [
-        {
-          "id": "stations",
-          "source_files": ["app/pages/index.vue"],
-          "routes": ["/"],
-          "variants": ["list", "empty", "blocked"],
-          "families": ["action", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "station",
-          "source_files": ["app/pages/[ref].vue"],
-          "routes": ["/:ref"],
-          "variants": ["preparation", "dispatch", "ticket-detail", "completed", "sound-blocked"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback", "search", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "pickup-board",
-          "source_files": ["app/pages/pickup.vue"],
-          "routes": ["/pickup"],
-          "variants": ["waiting", "ready", "empty", "offline"],
-          "families": ["action", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": "orders",
-      "owner": "WP-UX-13D",
-      "directory": "orders-nuxt",
-      "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
-      "baseline": {
-        "local_ui_files": 0,
-        "direct_reka_import_files": 0,
-        "manual_overlay_files": 0,
-        "native_control_occurrences": 232
-      },
-      "surfaces": [
-        {
-          "id": "orders-board",
-          "source_files": ["app/pages/index.vue"],
-          "routes": ["/"],
-          "variants": ["board", "table", "bulk", "reject", "settlement", "dispatch"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "search"],
-          "status": "pending"
-        },
-        {
-          "id": "order-detail",
-          "source_files": ["app/pages/[ref].vue"],
-          "routes": ["/:ref"],
-          "variants": ["summary", "timeline", "customer", "payment", "fiscal", "fulfillment"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "catalog",
-          "source_files": ["app/pages/catalog.vue"],
-          "routes": ["/catalog"],
-          "variants": ["matrix", "product-sheet", "bulk-price", "collections", "channels"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "search", "file-capture"],
-          "status": "pending"
-        },
-        {
-          "id": "channel-catalog",
-          "source_files": ["app/pages/channels/[ref]/catalog.vue"],
-          "routes": ["/channels/:ref/catalog"],
-          "variants": ["products", "availability", "publication"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "search"],
-          "status": "pending"
-        },
-        {
-          "id": "customers",
-          "source_files": ["app/pages/customers/index.vue"],
-          "routes": ["/customers"],
-          "variants": ["list", "segments", "search", "empty"],
-          "families": ["action", "field", "selection", "navigation", "data-display", "feedback", "search"],
-          "status": "pending"
-        },
-        {
-          "id": "customer-detail",
-          "source_files": ["app/pages/customers/[ref].vue"],
-          "routes": ["/customers/:ref"],
-          "variants": ["profile", "orders", "addresses", "preferences", "loyalty"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "customer-merges",
-          "source_files": ["app/pages/customers/merges.vue"],
-          "routes": ["/customers/merges"],
-          "variants": ["candidates", "comparison", "confirmation"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "channels",
-          "source_files": ["app/pages/feeds.vue"],
-          "routes": ["/feeds"],
-          "variants": ["channels", "feeds", "sync", "error"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "history",
-          "source_files": ["app/pages/history.vue"],
-          "routes": ["/history"],
-          "variants": ["events", "filters", "detail"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "search", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "settings",
-          "source_files": ["app/pages/settings.vue"],
-          "routes": ["/settings"],
-          "variants": ["operations", "notifications", "channels"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "workstations",
-          "source_files": ["app/pages/workstations.vue"],
-          "routes": ["/workstations"],
-          "variants": ["list", "detail", "provisioning"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": "production",
-      "owner": "WP-UX-13H",
-      "directory": "production-nuxt",
-      "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
-      "baseline": {
-        "local_ui_files": 0,
-        "direct_reka_import_files": 0,
-        "manual_overlay_files": 0,
-        "native_control_occurrences": 96
-      },
-      "surfaces": [
-        {
-          "id": "production-day",
-          "source_files": ["app/pages/index.vue"],
-          "routes": ["/"],
-          "variants": ["opening", "in-progress", "batch-confirmation", "commitments", "shortage"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "search", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "board",
-          "source_files": ["app/pages/board.vue"],
-          "routes": ["/board"],
-          "variants": ["summary", "full-screen", "offline"],
-          "families": ["action", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "close",
-          "source_files": ["app/pages/close.vue"],
-          "routes": ["/close"],
-          "variants": ["pending", "review", "confirmation", "complete"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "sequence"],
-          "status": "pending"
-        },
-        {
-          "id": "mise-en-place",
-          "source_files": ["app/pages/mise-en-place.vue"],
-          "routes": ["/mise-en-place"],
-          "variants": ["list", "item", "confirmation"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "plan",
-          "source_files": ["app/pages/plan.vue"],
-          "routes": ["/plan"],
-          "variants": ["suggestions", "manual", "review", "commit"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "quality",
-          "source_files": ["app/pages/quality.vue"],
-          "routes": ["/quality"],
-          "variants": ["queue", "inspection", "batch", "exception"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "file-capture"],
-          "status": "pending"
-        },
-        {
-          "id": "recipes",
-          "source_files": ["app/pages/recipes/index.vue"],
-          "routes": ["/recipes"],
-          "variants": ["list", "filters", "empty"],
-          "families": ["action", "field", "selection", "navigation", "data-display", "feedback", "search"],
-          "status": "pending"
-        },
-        {
-          "id": "recipe-new",
-          "source_files": ["app/pages/recipes/new.vue"],
-          "routes": ["/recipes/new"],
-          "variants": ["identity", "ingredients", "procedure", "review"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "feedback", "sequence", "file-capture"],
-          "status": "pending"
-        },
-        {
-          "id": "recipe-detail",
-          "source_files": ["app/pages/recipes/[ref]/index.vue"],
-          "routes": ["/recipes/:ref"],
-          "variants": ["summary", "formula", "procedure", "versions", "publish", "archive"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "recipe-edit",
-          "source_files": ["app/pages/recipes/[ref]/edit.vue"],
-          "routes": ["/recipes/:ref/edit"],
-          "variants": ["identity", "ingredients", "procedure", "review", "unsaved"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "feedback", "sequence", "file-capture"],
-          "status": "pending"
-        },
-        {
-          "id": "recipe-compare",
-          "source_files": ["app/pages/recipes/compare.vue"],
-          "routes": ["/recipes/compare"],
-          "variants": ["selection", "comparison"],
-          "families": ["action", "selection", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "reports",
-          "source_files": ["app/pages/reports.vue"],
-          "routes": ["/reports"],
-          "variants": ["overview", "period", "export"],
-          "families": ["action", "field", "selection", "navigation", "data-display", "feedback", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "settings",
-          "source_files": ["app/pages/settings.vue"],
-          "routes": ["/settings"],
-          "variants": ["station", "labels", "defaults"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "timers",
-          "source_files": ["app/pages/timers.vue"],
-          "routes": ["/timers"],
-          "variants": ["active", "create", "ringing", "history"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "date-time"],
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": "marketing",
-      "owner": "WP-UX-13E",
-      "directory": "marketing-nuxt",
-      "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
-      "baseline": {
-        "local_ui_files": 0,
-        "direct_reka_import_files": 0,
-        "manual_overlay_files": 0,
-        "native_control_occurrences": 31
-      },
-      "surfaces": [
-        {
-          "id": "today",
-          "source_files": ["app/pages/index.vue"],
-          "routes": ["/"],
-          "variants": ["decisions", "calendar", "empty", "blocked"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "campaigns",
-          "source_files": ["app/pages/campaigns.vue"],
-          "routes": ["/campaigns"],
-          "variants": ["list", "filters", "create", "edit", "review", "prepare-send", "blocked"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "search", "sequence", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "announcement-detail",
-          "source_files": ["app/pages/announcements/[id].vue"],
-          "routes": ["/announcements/:id"],
-          "variants": ["compose", "preview", "platforms", "schedule", "publish", "results"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "file-capture", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "history",
-          "source_files": ["app/pages/history.vue"],
-          "routes": ["/history"],
-          "variants": ["list", "filters", "detail", "export"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "search", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "offers",
-          "source_files": ["app/pages/offers.vue"],
-          "routes": ["/offers"],
-          "variants": ["offers", "coupons", "create", "edit"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "platforms",
-          "source_files": ["app/pages/platforms.vue"],
-          "routes": ["/platforms"],
-          "variants": ["connections", "catalog", "account", "disconnect"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback"],
-          "status": "pending"
-        },
-        {
-          "id": "scheduled",
-          "source_files": ["app/pages/scheduled.vue"],
-          "routes": ["/scheduled"],
-          "variants": ["calendar", "list", "cancel"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback", "date-time"],
-          "status": "pending"
-        },
-        {
-          "id": "second-control",
-          "source_files": ["app/pages/second-control/[ref].vue"],
-          "routes": ["/second-control/:ref"],
-          "variants": ["code", "trusted-device", "success", "expired"],
-          "families": ["action", "field", "navigation", "feedback", "sequence"],
-          "status": "pending"
-        },
-        {
-          "id": "templates",
-          "source_files": ["app/pages/templates.vue"],
-          "routes": ["/templates"],
-          "variants": ["list", "preview", "apply"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback", "search"],
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": "purchase",
-      "owner": "WP-UX-13G",
-      "directory": "purchase-nuxt",
-      "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
-      "baseline": {
-        "local_ui_files": 0,
-        "direct_reka_import_files": 0,
-        "manual_overlay_files": 0,
-        "native_control_occurrences": 132
-      },
-      "surfaces": [
-        {
-          "id": "purchase-workspace",
-          "source_files": ["app/pages/index.vue"],
-          "routes": ["/"],
-          "variants": ["dashboard", "buy", "receive-list", "receive-invoice", "base-materials", "base-suppliers", "base-costs", "base-count", "material-detail", "supplier-detail", "minimums-bulk"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "search", "date-time", "file-capture"],
-          "status": "pending"
-        }
-      ]
-    },
-    {
       "id": "bi",
       "owner": "WP-UX-13F",
       "directory": "bi-nuxt",
-      "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
+      "profiles": [
+        "desktop-keyboard",
+        "tablet-touch",
+        "mobile-touch"
+      ],
       "baseline": {
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
@@ -576,66 +181,1726 @@
       "surfaces": [
         {
           "id": "overview",
-          "source_files": ["app/pages/index.vue"],
-          "routes": ["/"],
-          "variants": ["kpis", "alerts", "sources"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback", "date-time"],
+          "source_files": [
+            "app/pages/index.vue"
+          ],
+          "routes": [
+            "/"
+          ],
+          "variants": [
+            "kpis",
+            "alerts",
+            "sources"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
           "status": "pending"
         },
         {
           "id": "sales",
-          "source_files": ["app/pages/sales.vue"],
-          "routes": ["/sales"],
-          "variants": ["kpis", "revenue", "hours", "channels", "products"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback", "date-time"],
+          "source_files": [
+            "app/pages/sales.vue"
+          ],
+          "routes": [
+            "/sales"
+          ],
+          "variants": [
+            "kpis",
+            "revenue",
+            "hours",
+            "channels",
+            "products"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
           "status": "pending"
         },
         {
           "id": "cash",
-          "source_files": ["app/pages/cash.vue"],
-          "routes": ["/cash"],
-          "variants": ["summary", "differences", "movements", "shifts"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback", "date-time"],
+          "source_files": [
+            "app/pages/cash.vue"
+          ],
+          "routes": [
+            "/cash"
+          ],
+          "variants": [
+            "summary",
+            "differences",
+            "movements",
+            "shifts"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
           "status": "pending"
         },
         {
           "id": "customers",
-          "source_files": ["app/pages/customers.vue"],
-          "routes": ["/customers"],
-          "variants": ["overview", "segments", "retention", "rfm"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback", "date-time"],
+          "source_files": [
+            "app/pages/customers.vue"
+          ],
+          "routes": [
+            "/customers"
+          ],
+          "variants": [
+            "overview",
+            "segments",
+            "retention",
+            "rfm"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
           "status": "pending"
         },
         {
           "id": "profiles",
-          "source_files": ["app/pages/profiles.vue"],
-          "routes": ["/profiles"],
-          "variants": ["list", "profile", "orders", "preferences"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "search"],
+          "source_files": [
+            "app/pages/profiles.vue"
+          ],
+          "routes": [
+            "/profiles"
+          ],
+          "variants": [
+            "list",
+            "profile",
+            "orders",
+            "preferences"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
           "status": "pending"
         },
         {
           "id": "forecast",
-          "source_files": ["app/pages/forecast.vue"],
-          "routes": ["/forecast"],
-          "variants": ["demand", "products", "confidence", "exceptions"],
-          "families": ["action", "selection", "overlay", "navigation", "data-display", "feedback", "date-time"],
+          "source_files": [
+            "app/pages/forecast.vue"
+          ],
+          "routes": [
+            "/forecast"
+          ],
+          "variants": [
+            "demand",
+            "products",
+            "confidence",
+            "exceptions"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
           "status": "pending"
         },
         {
           "id": "scenarios",
-          "source_files": ["app/pages/scenarios.vue"],
-          "routes": ["/scenarios"],
-          "variants": ["list", "editor", "comparison"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback"],
+          "source_files": [
+            "app/pages/scenarios.vue"
+          ],
+          "routes": [
+            "/scenarios"
+          ],
+          "variants": [
+            "list",
+            "editor",
+            "comparison"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
           "status": "pending"
         },
         {
           "id": "explore",
-          "source_files": ["app/pages/explore.vue"],
-          "routes": ["/explore"],
-          "variants": ["builder", "table", "chart", "saved-view"],
-          "families": ["action", "field", "selection", "overlay", "navigation", "data-display", "feedback", "search", "date-time"],
+          "source_files": [
+            "app/pages/explore.vue"
+          ],
+          "routes": [
+            "/explore"
+          ],
+          "variants": [
+            "builder",
+            "table",
+            "chart",
+            "saved-view"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search",
+            "date-time"
+          ],
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "hub",
+      "owner": "WP-UX-13C",
+      "directory": "hub-nuxt",
+      "profiles": [
+        "desktop-keyboard",
+        "tablet-touch",
+        "mobile-touch"
+      ],
+      "baseline": {
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
+        "native_control_occurrences": 3
+      },
+      "surfaces": [
+        {
+          "id": "home",
+          "source_files": [
+            "app/app.vue"
+          ],
+          "routes": [
+            "/"
+          ],
+          "variants": [
+            "apps",
+            "needs-attention",
+            "device-notices",
+            "blocked",
+            "offline"
+          ],
+          "families": [
+            "action",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "kds",
+      "owner": "WP-UX-13I",
+      "directory": "kds-nuxt",
+      "profiles": [
+        "desktop-keyboard",
+        "tablet-touch",
+        "mobile-touch"
+      ],
+      "baseline": {
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
+        "native_control_occurrences": 24
+      },
+      "surfaces": [
+        {
+          "id": "stations",
+          "source_files": [
+            "app/pages/index.vue"
+          ],
+          "routes": [
+            "/"
+          ],
+          "variants": [
+            "list",
+            "empty",
+            "blocked"
+          ],
+          "families": [
+            "action",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "station",
+          "source_files": [
+            "app/pages/[ref].vue"
+          ],
+          "routes": [
+            "/:ref"
+          ],
+          "variants": [
+            "preparation",
+            "dispatch",
+            "ticket-detail",
+            "completed",
+            "sound-blocked"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "pickup-board",
+          "source_files": [
+            "app/pages/pickup.vue"
+          ],
+          "routes": [
+            "/pickup"
+          ],
+          "variants": [
+            "waiting",
+            "ready",
+            "empty",
+            "offline"
+          ],
+          "families": [
+            "action",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "kitchensink",
+      "owner": "surface:kitchensink",
+      "directory": "kitchensink-nuxt",
+      "profiles": [
+        "desktop-keyboard",
+        "tablet-touch",
+        "mobile-touch"
+      ],
+      "baseline": {
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
+        "native_control_occurrences": 0
+      },
+      "surfaces": [
+        {
+          "id": "home",
+          "source_files": [
+            "app/pages/index.vue"
+          ],
+          "routes": [
+            "/"
+          ],
+          "variants": [
+            "normal",
+            "operational-shell",
+            "loading",
+            "empty",
+            "error",
+            "offline",
+            "reconnecting",
+            "slow-network",
+            "readonly",
+            "forbidden",
+            "success",
+            "extreme-content",
+            "modal"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "sequence",
+            "date-time",
+            "search"
+          ],
+          "status": "migrated",
+          "states": [
+            "normal",
+            "loading-initial",
+            "empty",
+            "recoverable-error",
+            "offline",
+            "reconnecting",
+            "slow-network",
+            "readonly",
+            "insufficient-permission",
+            "success",
+            "extreme-content",
+            "modal",
+            "keyboard-focus",
+            "touch",
+            "hydration-clean"
+          ],
+          "viewports": [
+            "desktop-wide",
+            "desktop-common",
+            "desktop-low",
+            "desktop-compact",
+            "tablet-landscape",
+            "tablet-portrait",
+            "mobile-standard",
+            "mobile-narrow",
+            "zoom-200"
+          ],
+          "evidence": [
+            { "route": "/", "scenario": "normal", "state": "normal", "viewport": "desktop-wide", "capture": "kitchensink-normal-desktop-wide.png", "visited": true },
+            { "route": "/", "scenario": "normal", "state": "normal", "viewport": "desktop-common", "capture": "kitchensink-normal-desktop-common.png", "visited": true },
+            { "route": "/", "scenario": "normal", "state": "normal", "viewport": "desktop-low", "capture": "kitchensink-normal-desktop-low.png", "visited": true },
+            { "route": "/", "scenario": "normal", "state": "normal", "viewport": "desktop-compact", "capture": "kitchensink-normal-desktop-compact.png", "visited": true },
+            { "route": "/", "scenario": "normal", "state": "touch", "viewport": "tablet-landscape", "capture": "kitchensink-normal-tablet-landscape.png", "visited": true },
+            { "route": "/", "scenario": "normal", "state": "touch", "viewport": "tablet-portrait", "capture": "kitchensink-normal-tablet-portrait.png", "visited": true },
+            { "route": "/", "scenario": "normal", "state": "touch", "viewport": "mobile-standard", "capture": "kitchensink-normal-mobile-standard.png", "visited": true },
+            { "route": "/", "scenario": "normal", "state": "touch", "viewport": "mobile-narrow", "capture": "kitchensink-normal-mobile-narrow.png", "visited": true },
+            { "route": "/", "scenario": "normal", "state": "keyboard-focus", "viewport": "zoom-200", "capture": "kitchensink-normal-zoom-200.png", "visited": true },
+            { "route": "/?mode=operational", "scenario": "operational-shell", "state": "normal", "viewport": "desktop-common", "capture": "kitchensink-operational-shell.png", "visited": true },
+            { "route": "/?state=loading", "scenario": "loading", "state": "loading-initial", "viewport": "desktop-common", "capture": "kitchensink-loading.png", "visited": true },
+            { "route": "/?state=empty", "scenario": "empty", "state": "empty", "viewport": "desktop-common", "capture": "kitchensink-empty.png", "visited": true },
+            { "route": "/?state=error", "scenario": "error", "state": "recoverable-error", "viewport": "desktop-common", "capture": "kitchensink-error.png", "visited": true },
+            { "route": "/?state=offline", "scenario": "offline", "state": "offline", "viewport": "desktop-common", "capture": "kitchensink-offline.png", "visited": true },
+            { "route": "/?state=reconnecting", "scenario": "reconnecting", "state": "reconnecting", "viewport": "desktop-common", "capture": "kitchensink-reconnecting.png", "visited": true },
+            { "route": "/?state=slow-network", "scenario": "slow-network", "state": "slow-network", "viewport": "desktop-common", "capture": "kitchensink-slow-network.png", "visited": true },
+            { "route": "/?state=readonly", "scenario": "readonly", "state": "readonly", "viewport": "desktop-common", "capture": "kitchensink-readonly.png", "visited": true },
+            { "route": "/?state=forbidden", "scenario": "forbidden", "state": "insufficient-permission", "viewport": "desktop-common", "capture": "kitchensink-forbidden.png", "visited": true },
+            { "route": "/?state=success", "scenario": "success", "state": "success", "viewport": "desktop-common", "capture": "kitchensink-success.png", "visited": true },
+            { "route": "/?state=extreme-content", "scenario": "extreme-content", "state": "extreme-content", "viewport": "desktop-common", "capture": "kitchensink-extreme-content.png", "visited": true },
+            { "route": "/", "scenario": "modal", "state": "modal", "viewport": "desktop-common", "capture": "kitchensink-modal.png", "visited": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "marketing",
+      "owner": "WP-UX-13E",
+      "directory": "marketing-nuxt",
+      "profiles": [
+        "desktop-keyboard",
+        "tablet-touch",
+        "mobile-touch"
+      ],
+      "baseline": {
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
+        "native_control_occurrences": 31
+      },
+      "surfaces": [
+        {
+          "id": "today",
+          "source_files": [
+            "app/pages/index.vue"
+          ],
+          "routes": [
+            "/"
+          ],
+          "variants": [
+            "decisions",
+            "calendar",
+            "empty",
+            "blocked"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "campaigns",
+          "source_files": [
+            "app/pages/campaigns.vue"
+          ],
+          "routes": [
+            "/campaigns"
+          ],
+          "variants": [
+            "list",
+            "filters",
+            "create",
+            "edit",
+            "review",
+            "prepare-send",
+            "blocked"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search",
+            "sequence",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "announcement-detail",
+          "source_files": [
+            "app/pages/announcements/[id].vue"
+          ],
+          "routes": [
+            "/announcements/:id"
+          ],
+          "variants": [
+            "compose",
+            "preview",
+            "platforms",
+            "schedule",
+            "publish",
+            "results"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "file-capture",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "history",
+          "source_files": [
+            "app/pages/history.vue"
+          ],
+          "routes": [
+            "/history"
+          ],
+          "variants": [
+            "list",
+            "filters",
+            "detail",
+            "export"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "offers",
+          "source_files": [
+            "app/pages/offers.vue"
+          ],
+          "routes": [
+            "/offers"
+          ],
+          "variants": [
+            "offers",
+            "coupons",
+            "create",
+            "edit"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "platforms",
+          "source_files": [
+            "app/pages/platforms.vue"
+          ],
+          "routes": [
+            "/platforms"
+          ],
+          "variants": [
+            "connections",
+            "catalog",
+            "account",
+            "disconnect"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "scheduled",
+          "source_files": [
+            "app/pages/scheduled.vue"
+          ],
+          "routes": [
+            "/scheduled"
+          ],
+          "variants": [
+            "calendar",
+            "list",
+            "cancel"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "second-control",
+          "source_files": [
+            "app/pages/second-control/[ref].vue"
+          ],
+          "routes": [
+            "/second-control/:ref"
+          ],
+          "variants": [
+            "code",
+            "trusted-device",
+            "success",
+            "expired"
+          ],
+          "families": [
+            "action",
+            "field",
+            "navigation",
+            "feedback",
+            "sequence"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "templates",
+          "source_files": [
+            "app/pages/templates.vue"
+          ],
+          "routes": [
+            "/templates"
+          ],
+          "variants": [
+            "list",
+            "preview",
+            "apply"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "orders",
+      "owner": "WP-UX-13D",
+      "directory": "orders-nuxt",
+      "profiles": [
+        "desktop-keyboard",
+        "tablet-touch",
+        "mobile-touch"
+      ],
+      "baseline": {
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
+        "native_control_occurrences": 232
+      },
+      "surfaces": [
+        {
+          "id": "orders-board",
+          "source_files": [
+            "app/pages/index.vue"
+          ],
+          "routes": [
+            "/"
+          ],
+          "variants": [
+            "board",
+            "table",
+            "bulk",
+            "reject",
+            "settlement",
+            "dispatch"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "order-detail",
+          "source_files": [
+            "app/pages/[ref].vue"
+          ],
+          "routes": [
+            "/:ref"
+          ],
+          "variants": [
+            "summary",
+            "timeline",
+            "customer",
+            "payment",
+            "fiscal",
+            "fulfillment"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "catalog",
+          "source_files": [
+            "app/pages/catalog.vue"
+          ],
+          "routes": [
+            "/catalog"
+          ],
+          "variants": [
+            "matrix",
+            "product-sheet",
+            "bulk-price",
+            "collections",
+            "channels"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search",
+            "file-capture"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "channel-catalog",
+          "source_files": [
+            "app/pages/channels/[ref]/catalog.vue"
+          ],
+          "routes": [
+            "/channels/:ref/catalog"
+          ],
+          "variants": [
+            "products",
+            "availability",
+            "publication"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "customers",
+          "source_files": [
+            "app/pages/customers/index.vue"
+          ],
+          "routes": [
+            "/customers"
+          ],
+          "variants": [
+            "list",
+            "segments",
+            "search",
+            "empty"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "customer-detail",
+          "source_files": [
+            "app/pages/customers/[ref].vue"
+          ],
+          "routes": [
+            "/customers/:ref"
+          ],
+          "variants": [
+            "profile",
+            "orders",
+            "addresses",
+            "preferences",
+            "loyalty"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "customer-merges",
+          "source_files": [
+            "app/pages/customers/merges.vue"
+          ],
+          "routes": [
+            "/customers/merges"
+          ],
+          "variants": [
+            "candidates",
+            "comparison",
+            "confirmation"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "channels",
+          "source_files": [
+            "app/pages/feeds.vue"
+          ],
+          "routes": [
+            "/feeds"
+          ],
+          "variants": [
+            "channels",
+            "feeds",
+            "sync",
+            "error"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "history",
+          "source_files": [
+            "app/pages/history.vue"
+          ],
+          "routes": [
+            "/history"
+          ],
+          "variants": [
+            "events",
+            "filters",
+            "detail"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "search",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "settings",
+          "source_files": [
+            "app/pages/settings.vue"
+          ],
+          "routes": [
+            "/settings"
+          ],
+          "variants": [
+            "operations",
+            "notifications",
+            "channels"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "workstations",
+          "source_files": [
+            "app/pages/workstations.vue"
+          ],
+          "routes": [
+            "/workstations"
+          ],
+          "variants": [
+            "list",
+            "detail",
+            "provisioning"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "pos",
+      "owner": "WP-UX-13J",
+      "directory": "pos-nuxt",
+      "profiles": [
+        "desktop-keyboard",
+        "tablet-touch",
+        "mobile-touch"
+      ],
+      "baseline": {
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
+        "native_control_occurrences": 157
+      },
+      "surfaces": [
+        {
+          "id": "sale",
+          "source_files": [
+            "app/pages/index.vue"
+          ],
+          "routes": [
+            "/"
+          ],
+          "variants": [
+            "product-search",
+            "cart",
+            "item-editor",
+            "payment",
+            "last-sales"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "customer-display",
+          "source_files": [
+            "app/pages/display.vue"
+          ],
+          "routes": [
+            "/display"
+          ],
+          "variants": [
+            "idle",
+            "cart",
+            "payment",
+            "result"
+          ],
+          "families": [
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "preorders",
+          "source_files": [
+            "app/pages/preorders/index.vue"
+          ],
+          "routes": [
+            "/preorders"
+          ],
+          "variants": [
+            "today",
+            "search",
+            "empty",
+            "error"
+          ],
+          "families": [
+            "action",
+            "field",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "preorder-detail",
+          "source_files": [
+            "app/pages/preorders/[ref].vue"
+          ],
+          "routes": [
+            "/preorders/:ref"
+          ],
+          "variants": [
+            "summary",
+            "pickup",
+            "payment",
+            "handoff"
+          ],
+          "families": [
+            "action",
+            "field",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "cash-session",
+          "source_files": [
+            "app/pages/session/index.vue"
+          ],
+          "routes": [
+            "/session"
+          ],
+          "variants": [
+            "closed",
+            "open",
+            "drawer",
+            "refunds",
+            "customer-credit",
+            "close-confirmation"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "cash-closing",
+          "source_files": [
+            "app/pages/session/closing.vue"
+          ],
+          "routes": [
+            "/session/closing"
+          ],
+          "variants": [
+            "count",
+            "review",
+            "difference",
+            "drawer",
+            "sealed"
+          ],
+          "families": [
+            "action",
+            "field",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "sequence"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "cash-report",
+          "source_files": [
+            "app/pages/session/report.vue"
+          ],
+          "routes": [
+            "/session/report"
+          ],
+          "variants": [
+            "summary",
+            "movements",
+            "print"
+          ],
+          "families": [
+            "action",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "settings-card-machines",
+          "source_files": [
+            "app/pages/settings/card-machines.vue"
+          ],
+          "routes": [
+            "/settings/card-machines"
+          ],
+          "variants": [
+            "list",
+            "editing"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "settings-kitchen",
+          "source_files": [
+            "app/pages/settings/kitchen.vue"
+          ],
+          "routes": [
+            "/settings/kitchen"
+          ],
+          "variants": [
+            "routing",
+            "printers"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "navigation",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "settings-printers",
+          "source_files": [
+            "app/pages/settings/printers.vue"
+          ],
+          "routes": [
+            "/settings/printers"
+          ],
+          "variants": [
+            "list",
+            "test",
+            "editing"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "settings-seating",
+          "source_files": [
+            "app/pages/settings/seating.vue"
+          ],
+          "routes": [
+            "/settings/seating"
+          ],
+          "variants": [
+            "areas",
+            "tables",
+            "editing"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "settings-shortcuts",
+          "source_files": [
+            "app/pages/settings/shortcuts.vue"
+          ],
+          "routes": [
+            "/settings/shortcuts"
+          ],
+          "variants": [
+            "reference"
+          ],
+          "families": [
+            "navigation",
+            "data-display",
+            "search"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "settings-terminal",
+          "source_files": [
+            "app/pages/settings/terminal.vue"
+          ],
+          "routes": [
+            "/settings/terminal"
+          ],
+          "variants": [
+            "identity",
+            "hardware",
+            "health"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "production",
+      "owner": "WP-UX-13H",
+      "directory": "production-nuxt",
+      "profiles": [
+        "desktop-keyboard",
+        "tablet-touch",
+        "mobile-touch"
+      ],
+      "baseline": {
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
+        "native_control_occurrences": 96
+      },
+      "surfaces": [
+        {
+          "id": "production-day",
+          "source_files": [
+            "app/pages/index.vue"
+          ],
+          "routes": [
+            "/"
+          ],
+          "variants": [
+            "opening",
+            "in-progress",
+            "batch-confirmation",
+            "commitments",
+            "shortage"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "board",
+          "source_files": [
+            "app/pages/board.vue"
+          ],
+          "routes": [
+            "/board"
+          ],
+          "variants": [
+            "summary",
+            "full-screen",
+            "offline"
+          ],
+          "families": [
+            "action",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "close",
+          "source_files": [
+            "app/pages/close.vue"
+          ],
+          "routes": [
+            "/close"
+          ],
+          "variants": [
+            "pending",
+            "review",
+            "confirmation",
+            "complete"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "sequence"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "mise-en-place",
+          "source_files": [
+            "app/pages/mise-en-place.vue"
+          ],
+          "routes": [
+            "/mise-en-place"
+          ],
+          "variants": [
+            "list",
+            "item",
+            "confirmation"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "plan",
+          "source_files": [
+            "app/pages/plan.vue"
+          ],
+          "routes": [
+            "/plan"
+          ],
+          "variants": [
+            "suggestions",
+            "manual",
+            "review",
+            "commit"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "quality",
+          "source_files": [
+            "app/pages/quality.vue"
+          ],
+          "routes": [
+            "/quality"
+          ],
+          "variants": [
+            "queue",
+            "inspection",
+            "batch",
+            "exception"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "file-capture"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "recipes",
+          "source_files": [
+            "app/pages/recipes/index.vue"
+          ],
+          "routes": [
+            "/recipes"
+          ],
+          "variants": [
+            "list",
+            "filters",
+            "empty"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "recipe-new",
+          "source_files": [
+            "app/pages/recipes/new.vue"
+          ],
+          "routes": [
+            "/recipes/new"
+          ],
+          "variants": [
+            "identity",
+            "ingredients",
+            "procedure",
+            "review"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "feedback",
+            "sequence",
+            "file-capture"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "recipe-detail",
+          "source_files": [
+            "app/pages/recipes/[ref]/index.vue"
+          ],
+          "routes": [
+            "/recipes/:ref"
+          ],
+          "variants": [
+            "summary",
+            "formula",
+            "procedure",
+            "versions",
+            "publish",
+            "archive"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "recipe-edit",
+          "source_files": [
+            "app/pages/recipes/[ref]/edit.vue"
+          ],
+          "routes": [
+            "/recipes/:ref/edit"
+          ],
+          "variants": [
+            "identity",
+            "ingredients",
+            "procedure",
+            "review",
+            "unsaved"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "feedback",
+            "sequence",
+            "file-capture"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "recipe-compare",
+          "source_files": [
+            "app/pages/recipes/compare.vue"
+          ],
+          "routes": [
+            "/recipes/compare"
+          ],
+          "variants": [
+            "selection",
+            "comparison"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "reports",
+          "source_files": [
+            "app/pages/reports.vue"
+          ],
+          "routes": [
+            "/reports"
+          ],
+          "variants": [
+            "overview",
+            "period",
+            "export"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "settings",
+          "source_files": [
+            "app/pages/settings.vue"
+          ],
+          "routes": [
+            "/settings"
+          ],
+          "variants": [
+            "station",
+            "labels",
+            "defaults"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "timers",
+          "source_files": [
+            "app/pages/timers.vue"
+          ],
+          "routes": [
+            "/timers"
+          ],
+          "variants": [
+            "active",
+            "create",
+            "ringing",
+            "history"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "purchase",
+      "owner": "WP-UX-13G",
+      "directory": "purchase-nuxt",
+      "profiles": [
+        "desktop-keyboard",
+        "tablet-touch",
+        "mobile-touch"
+      ],
+      "baseline": {
+        "local_ui_files": 0,
+        "direct_reka_import_files": 0,
+        "manual_overlay_files": 0,
+        "native_control_occurrences": 132
+      },
+      "surfaces": [
+        {
+          "id": "purchase-workspace",
+          "source_files": [
+            "app/pages/index.vue"
+          ],
+          "routes": [
+            "/"
+          ],
+          "variants": [
+            "dashboard",
+            "buy",
+            "receive-list",
+            "receive-invoice",
+            "base-materials",
+            "base-suppliers",
+            "base-costs",
+            "base-count",
+            "material-detail",
+            "supplier-detail",
+            "minimums-bulk"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search",
+            "date-time",
+            "file-capture"
+          ],
           "status": "pending"
         }
       ]
