@@ -1,15 +1,14 @@
 # Design compartilhado das superfícies Nuxt
 
 - **Owner:** Design/Produto
-- **Última verificação:** 2026-09-10 contra as superfícies do `HEAD`
+- **Última verificação:** 2026-10-05 contra as superfícies do `HEAD`
 
 Este documento registra somente padrões realmente compartilhados. O storefront é
 branded; as oito superfícies de operador estendem `surfaces/operator-kit` e seguem o
-canon de [`backstage-design-system.md`](backstage-design-system.md). Quando precisa de
-uma família de controles, o app mantém primitivas vendadas em `app/components/Ui`,
-construídas sobre Vue/Reka/Tailwind.
-O repositório atual não depende de Nuxt UI; nomes `UButton`/`UCard` de documentos
-antigos não são contrato do produto.
+canon de [`backstage-design-system.md`](backstage-design-system.md). As primitivas
+`Ui*` do `operator-kit` são wrappers finos dos componentes oficiais do Nuxt UI,
+fundados em Reka UI e tematizados pelos tokens Shopman. O app consumidor não
+reconstrói a anatomia do componente.
 
 ## Regra de composição
 
@@ -21,6 +20,35 @@ antigos não são contrato do produto.
    `presentation/` transforma dados sem I/O.
 5. Nenhuma camada visual deriva autorização, preço, estoque, consentimento, prazo ou
    transição. Renderize Projection + Actions do backend.
+
+## Regra de canonização
+
+1. Abra o exemplo oficial do componente e use essa composição como baseline.
+2. Preserve raiz, subcomponentes, estados e teclado do Nuxt UI. Personalize tokens,
+   idioma, tamanho de toque, conteúdo e slots previstos pelo próprio componente.
+3. Reka ou HTML direto só substituem o componente pronto quando uma necessidade
+   operacional comprovada exige outra anatomia. A exceção registra caso de uso,
+   ganho, regressões evitadas e testes; “parecer igual” não é justificativa.
+4. Não copie a aparência do exemplo reconstruindo seus controles. Se o Nuxt UI já
+   entrega a interação, o wrapper deve montá-lo de fato.
+
+| necessidade | primitiva canônica |
+|---|---|
+| data única | `UiDateField`: `UInputDate` + `UPopover` + `UCalendar` |
+| período | `UiDateRangeField`: os mesmos componentes com `range`; um mês no celular e dois no desktop |
+| hora única ou intervalo | `UiTimeField` / `UiTimeRangeField`: `UInputTime`, dentro de `UFormField` na tela |
+| horário de entrega ou retirada | opções do servidor; `UiSelect` em lista longa/compacta e cartões exclusivos quando comparar disponibilidade e motivo ajuda |
+| lista exclusiva longa, dinâmica ou pesquisável | `UiSelect`: `USelectMenu` |
+| lista exclusiva pequena e fixa | select canônico sem busca |
+| lista de escolhas múltiplas nomeadas | `UiCheckboxGroup`; `card`, `table` ou `list` conforme o caso |
+| carregamento que preserva a forma final | `UiSkeleton`: `USkeleton` |
+| dois painéis persistentes que o operador precisa redimensionar | `USplitter`; não usar em grades responsivas comuns |
+
+Datas indisponíveis, limites e horários inválidos entram nas props canônicas
+(`min-value`, `max-value`, `is-date-disabled`, `is-date-unavailable` e
+`is-time-unavailable`), nunca como validação visual paralela.
+Horário logístico nunca é digitado livremente: o servidor projeta os slots que a
+operação consegue prometer. `UInputTime` fica reservado a horários administrativos.
 
 ## Hierarquia e ergonomia
 

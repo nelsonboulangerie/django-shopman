@@ -117,7 +117,12 @@ async function toggleActive(row: WorkstationManageRow) {
         </form>
 
         <div v-if="pending && !state" class="space-y-2">
-          <div v-for="i in 3" :key="i" class="h-24 animate-pulse rounded-lg border bg-muted/40"></div>
+          <UiSkeleton
+            v-for="i in 3"
+            :key="i"
+            class="h-24 rounded-lg border"
+            label="Carregando estação"
+          />
         </div>
 
         <ul v-else class="grid gap-3" data-workstation-list>

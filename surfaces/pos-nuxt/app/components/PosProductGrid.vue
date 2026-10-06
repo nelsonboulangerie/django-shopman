@@ -329,7 +329,12 @@ function onSearchEscape() {
       <!-- Skeleton só no PRIMEIRO carregamento: um refresh de fundo com a grade
            já populada não pisca 12 tiles pulsando em cima do catálogo. -->
       <div v-if="pending && !products.length" class="grid gap-2.5" :class="densityCols">
-        <div v-for="idx in 12" :key="idx" class="h-[150px] animate-pulse rounded-lg border bg-muted" />
+        <UiSkeleton
+          v-for="idx in 12"
+          :key="idx"
+          class="h-[150px] rounded-lg border"
+          label="Carregando produto"
+        />
       </div>
       <div
         v-else-if="!filteredProducts.length && hiddenCount > 0"

@@ -55,6 +55,7 @@ const KIT_OWNED_TOOLBAR_PRIMITIVES = ["FilterChip", "IconButton", "SearchInput",
  */
 const KIT_OWNED_CHOICE_PRIMITIVES = [
   "Checkbox",
+  "CheckboxGroup",
   "Radio",
   "RadioGroup",
   "Select",
@@ -65,7 +66,16 @@ const KIT_OWNED_CHOICE_PRIMITIVES = [
 ] as const;
 
 /** Campos temporais preservam strings das APIs, mas sua anatomia é única. */
-const KIT_OWNED_TEMPORAL_PRIMITIVES = ["DateField", "DateTimeField", "TimeField"] as const;
+const KIT_OWNED_TEMPORAL_PRIMITIVES = [
+  "DateField",
+  "DateRangeField",
+  "DateTimeField",
+  "TimeField",
+  "TimeRangeField",
+] as const;
+
+/** Feedback visual de carregamento permanece no Nuxt UI em toda a suíte. */
+const KIT_OWNED_FEEDBACK_PRIMITIVES = ["Skeleton"] as const;
 
 /** Nomes próprios que a promoção do `UiSelect` aposentou. */
 const RETIRED_COMPONENTS = ["MaterialPicker"] as const;
@@ -165,6 +175,31 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
         offenders,
         `Campo temporal copiado no app: ${offenders.join(", ")}. ` +
           `O canônico é <Ui${offenders[0] ?? "…"}> do operator-kit.`,
+      ).toEqual([]);
+    });
+
+    it(`${app} não tem cópia própria dos primitivos de feedback`, () => {
+      const offenders = KIT_OWNED_FEEDBACK_PRIMITIVES.filter((name) =>
+        existsSync(resolve(surfacesDir, app, "app/components", `Ui${name}.vue`)),
+      );
+      expect(
+        offenders,
+        `Primitivo de feedback copiado no app: ${offenders.join(", ")}. ` +
+          `O canônico é <Ui${offenders[0] ?? "…"}> do operator-kit.`,
+      ).toEqual([]);
+    });
+
+    it(`${app} não reconstrói Skeleton com classes soltas`, () => {
+      const offenders: string[] = [];
+      for (const file of sourceFiles(resolve(surfacesDir, app, "app"))) {
+        const source = sourceWithoutComments(file);
+        if (/class=["'][^"']*animate-pulse[^"']*bg-muted|class=["'][^"']*bg-muted[^"']*animate-pulse/.test(source)) {
+          offenders.push(file.slice(surfacesDir.length + 1));
+        }
+      }
+      expect(
+        offenders,
+        `Skeleton artesanal encontrado (use <UiSkeleton> do operator-kit):\n  ` + offenders.join("\n  "),
       ).toEqual([]);
     });
 

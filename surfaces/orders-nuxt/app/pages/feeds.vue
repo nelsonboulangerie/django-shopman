@@ -186,7 +186,12 @@ useHead({ title: "Canais" });
       </div>
       <!-- skeleton -->
       <div v-if="loading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <div v-for="i in 3" :key="i" class="h-40 animate-pulse rounded-xl border border-border bg-muted/40"></div>
+        <UiSkeleton
+          v-for="i in 3"
+          :key="i"
+          class="h-40 rounded-xl border border-border"
+          label="Carregando feed"
+        />
       </div>
 
       <div v-else-if="feeds.length" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

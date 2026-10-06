@@ -530,11 +530,11 @@ useHead({ title: "Anúncio" });
       </div>
     </section>
 
-    <div
+    <UiSkeleton
       v-if="pending && !announcement"
-      class="h-64 animate-pulse rounded-md bg-muted"
-      aria-busy="true"
-    ></div>
+      class="h-64 rounded-md"
+      label="Carregando anúncio"
+    />
 
     <div
       v-else-if="error || !announcement"
@@ -654,15 +654,15 @@ useHead({ title: "Anúncio" });
         </p>
       </article>
 
-      <div
+      <UiSkeleton
         v-if="
           announcement.status !== 'pending_review' &&
           resultPending &&
           !resultAnnouncement
         "
-        class="mt-4 h-48 animate-pulse rounded-md bg-muted"
-        aria-busy="true"
-      ></div>
+        class="mt-4 h-48 rounded-md"
+        label="Carregando resultado"
+      />
       <div
         v-else-if="
           announcement.status !== 'pending_review' &&

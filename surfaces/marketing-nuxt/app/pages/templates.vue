@@ -112,11 +112,12 @@ useHead({ title: "Modelos" });
       class="space-y-2"
       aria-busy="true"
     >
-      <div
+      <UiSkeleton
         v-for="n in 3"
         :key="n"
-        class="h-16 animate-pulse rounded-md bg-muted"
-      ></div>
+        class="h-16 rounded-md"
+        label="Carregando modelos"
+      />
     </div>
 
     <!-- Vazio é o estado que mais importa aqui: era exatamente ele que travava tudo. -->

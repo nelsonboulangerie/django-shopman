@@ -244,6 +244,18 @@ const testEventOptions = computed(() => [
   ...notificationEventOptions.value,
 ]);
 
+const testTargetOptions = computed(() =>
+  waTemplate.testTargets.value.map((target) => ({
+    value: target.ref,
+    label: target.label,
+  })),
+);
+
+const testProductOptions = computed(() => [
+  { value: "", label: "Sem produto (só o texto do modelo)" },
+  ...products.value,
+]);
+
 const selectedTestBinding = computed(() =>
   testEvent.value === "announcement_published"
     ? null
@@ -354,11 +366,12 @@ useHead({ title: "Plataformas" });
       class="space-y-2"
       aria-busy="true"
     >
-      <div
+      <UiSkeleton
         v-for="n in 4"
         :key="n"
-        class="h-24 animate-pulse rounded-md bg-muted"
-      ></div>
+        class="h-24 rounded-md"
+        label="Carregando plataformas"
+      />
     </div>
 
     <div
@@ -485,11 +498,12 @@ useHead({ title: "Plataformas" });
               class="mt-3 space-y-2"
               aria-busy="true"
             >
-              <div
+              <UiSkeleton
                 v-for="n in 2"
                 :key="n"
-                class="h-10 animate-pulse rounded-md bg-muted"
-              ></div>
+                class="h-10 rounded-md"
+                label="Carregando modelos aprovados"
+              />
             </div>
 
             <!-- Não conseguir perguntar à plataforma NÃO é "não há modelo". -->
@@ -661,43 +675,26 @@ useHead({ title: "Plataformas" });
                 Este aviso precisa estar ativo e ligado a um modelo aprovado
                 antes do teste.
               </p>
-              <div>
-                <label
-                  for="test-target"
-                  class="mb-1 block text-xs font-medium text-muted-foreground"
-                >
-                  Número verificado
-                </label>
-                <UiNativeSelect id="test-target" v-model="testTargetRef">
-                  <option value="" disabled>Escolha o número</option>
-                  <option
-                    v-for="target in waTemplate.testTargets.value"
-                    :key="target.ref"
-                    :value="target.ref"
-                  >
-                    {{ target.label }}
-                  </option>
-                </UiNativeSelect>
-              </div>
+              <UiSelect
+                id="test-target"
+                v-model="testTargetRef"
+                :options="testTargetOptions"
+                label="Número verificado"
+                placeholder="Escolha o número"
+                search-placeholder="Buscar número"
+                empty-text="Nenhum número encontrado"
+              />
               <!-- ⚠️ Era "SKU (opcional)" em texto livre: o gestor não decora código
                      de produto. A lista é a mesma do disparo manual (options.products). -->
-              <div>
-                <label
-                  for="test-product"
-                  class="mb-1 block text-xs font-medium text-muted-foreground"
-                  >Produto (opcional)</label
-                >
-                <UiNativeSelect id="test-product" v-model="testSku">
-                  <option value="">Sem produto (só o texto do modelo)</option>
-                  <option
-                    v-for="product in products"
-                    :key="product.value"
-                    :value="product.value"
-                  >
-                    {{ product.label }}
-                  </option>
-                </UiNativeSelect>
-              </div>
+              <UiSelect
+                id="test-product"
+                v-model="testSku"
+                :options="testProductOptions"
+                label="Produto opcional"
+                placeholder="Sem produto (só o texto do modelo)"
+                search-placeholder="Buscar produto"
+                empty-text="Nenhum produto encontrado"
+              />
               <UiButton
                 type="button"
                 :disabled="

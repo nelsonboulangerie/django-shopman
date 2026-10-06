@@ -459,8 +459,8 @@ function refreshAll() {
         aria-busy="true"
         data-preorders-search-loading
       >
-        <span class="h-4 w-32 animate-pulse rounded bg-muted" />
-        <span class="h-16 animate-pulse rounded-md bg-muted/70" />
+        <UiSkeleton class="h-4 w-32 rounded" label="Procurando encomendas" />
+        <UiSkeleton class="h-16 rounded-md" label="Procurando encomendas" />
         <span class="sr-only">Procurando encomendas…</span>
       </section>
 
@@ -601,10 +601,20 @@ function refreshAll() {
         data-preorders-period-loading
       >
         <div class="flex gap-2">
-          <span v-for="index in 3" :key="index" class="h-8 w-24 animate-pulse rounded-full bg-muted" />
+          <UiSkeleton
+            v-for="index in 3"
+            :key="index"
+            class="h-8 w-24 rounded-full"
+            label="Carregando filtros de encomendas"
+          />
         </div>
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <span v-for="index in 3" :key="index" class="h-40 animate-pulse rounded-md bg-muted/70" />
+          <UiSkeleton
+            v-for="index in 3"
+            :key="index"
+            class="h-40 rounded-md"
+            label="Carregando encomendas"
+          />
         </div>
         <span class="sr-only">Carregando as encomendas…</span>
       </section>

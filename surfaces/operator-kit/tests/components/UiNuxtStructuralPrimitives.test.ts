@@ -1,4 +1,5 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { parseTime } from "@internationalized/date";
 import { afterEach, describe, expect, it } from "vitest";
 import { defineComponent, h, nextTick, ref } from "vue";
 
@@ -12,6 +13,7 @@ import UiTabsList from "../../app/components/Ui/Tabs/List.vue";
 import UiTabsTrigger from "../../app/components/Ui/Tabs/Trigger.vue";
 import UiStepper from "../../app/components/UiStepper.vue";
 import UiTimeField from "../../app/components/UiTimeField.vue";
+import UiTimeRangeField from "../../app/components/UiTimeRangeField.vue";
 
 let mounted: Awaited<ReturnType<typeof mountSuspended>> | null = null;
 
@@ -202,9 +204,6 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
 
     expect(document.body.querySelector("input[type='date']:not([aria-hidden='true'])")).toBeNull();
     expect(document.body.querySelector("[data-slot='date-range-field']")).not.toBeNull();
-    expect(document.body.querySelector("[data-slot='date-range-mobile-trigger']")?.textContent).toContain(
-      "05/10/2026 a 14/10/2026",
-    );
     expect(document.body.querySelectorAll("[data-segment='day']").length).toBeGreaterThanOrEqual(2);
     expect(document.body.querySelector("[data-segment='day']")?.getAttribute("aria-label")).toBe("Dia");
 
@@ -215,6 +214,29 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     calendar.querySelector<HTMLButtonElement>("[data-date-range-clear-end]")?.click();
     await nextTick();
     expect(mounted.emitted("update:modelValue")?.at(-1)).toEqual([{ start: "2026-10-05", end: "" }]);
+  });
+
+  it("oferece intervalo de horas no UInputTime canônico sem mudar o contrato da API", async () => {
+    mounted = await mountSuspended(UiTimeRangeField, {
+      attachTo: document.body,
+      props: {
+        modelValue: { start: "08:30", end: "17:45" },
+        min: "06:00",
+        max: "22:00",
+        label: "Horário da oferta",
+      },
+    });
+
+    expect(document.body.querySelector("input[type='time']:not([aria-hidden='true'])")).toBeNull();
+    expect(document.body.querySelector("[data-slot='time-range-field']")).not.toBeNull();
+    expect(document.body.querySelectorAll("[data-segment='hour']").length).toBeGreaterThanOrEqual(2);
+
+    mounted.getComponent({ name: "NuxtInputTime" }).vm.$emit("update:modelValue", {
+      start: parseTime("09:15"),
+      end: parseTime("18:00"),
+    });
+    await nextTick();
+    expect(mounted.emitted("update:modelValue")?.at(-1)).toEqual([{ start: "09:15", end: "18:00" }]);
   });
 
   it("mantém hora e data+hora nos contratos string das APIs, sem input nativo", async () => {
