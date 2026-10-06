@@ -686,10 +686,15 @@ useHead({ title: "Catálogo" });
       <!-- matrix -->
       <div v-if="loading" class="overflow-hidden rounded-xl border border-border bg-card">
       <div v-for="i in 8" :key="i" class="flex items-center gap-3 border-b border-border px-4 py-3 last:border-0">
-        <div class="size-10 animate-pulse rounded-md bg-muted"></div>
-        <div class="h-4 w-40 animate-pulse rounded bg-muted"></div>
+        <UiSkeleton class="size-10 rounded-md" label="Carregando produto" />
+        <UiSkeleton class="h-4 w-40 rounded" label="Carregando produto" />
         <div class="ml-auto flex gap-2">
-          <div v-for="j in 6" :key="j" class="h-8 w-[76px] animate-pulse rounded-md bg-muted"></div>
+          <UiSkeleton
+            v-for="j in 6"
+            :key="j"
+            class="h-8 w-[76px] rounded-md"
+            label="Carregando disponibilidade"
+          />
         </div>
       </div>
     </div>

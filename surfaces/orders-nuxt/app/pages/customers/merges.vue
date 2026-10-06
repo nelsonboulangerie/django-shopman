@@ -50,7 +50,12 @@ async function confirmUndo() {
       </div>
 
       <div v-if="pending && !merges" class="space-y-2">
-        <div v-for="i in 4" :key="i" class="h-20 animate-pulse rounded-lg border bg-muted/40"></div>
+        <UiSkeleton
+          v-for="i in 4"
+          :key="i"
+          class="h-20 rounded-lg border"
+          label="Carregando uniões de clientes"
+        />
       </div>
 
       <ul v-else-if="merges?.items.length" class="divide-y rounded-lg border bg-card" data-merge-list>

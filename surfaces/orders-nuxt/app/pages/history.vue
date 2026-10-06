@@ -98,7 +98,12 @@ const loading = computed(() => pending.value && !history.value);
       </div>
 
       <div v-if="loading" class="space-y-2">
-        <div v-for="i in 6" :key="i" class="h-14 animate-pulse rounded-lg border bg-muted/40"></div>
+        <UiSkeleton
+          v-for="i in 6"
+          :key="i"
+          class="h-14 rounded-lg border"
+          label="Carregando histórico"
+        />
       </div>
 
       <ul v-else-if="items.length" class="divide-y rounded-lg border bg-card" data-history-list>

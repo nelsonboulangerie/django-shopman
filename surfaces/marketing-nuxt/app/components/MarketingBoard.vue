@@ -407,11 +407,12 @@ useHead(() => ({
         class="space-y-3"
         aria-busy="true"
       >
-        <div
+        <UiSkeleton
           v-for="n in 2"
           :key="n"
-          class="h-48 animate-pulse rounded-md bg-muted"
-        ></div>
+          class="h-48 rounded-md"
+          label="Carregando quadro de marketing"
+        />
       </div>
 
       <div

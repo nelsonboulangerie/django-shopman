@@ -19,9 +19,12 @@ coisa, ou a conversão muda o que o operador vê.
 | `marketing-nuxt/app/components/FireCampaignPanel.vue` | 2 rádios + grupos de etiquetas, faixas, comportamento e outros públicos |
 | `marketing-nuxt/app/components/CampaignForm.vue` | destinos → variante `table`; sinais do produto, etiquetas, faixas e segmentos → grupos canônicos |
 | `marketing-nuxt/app/components/MarketingOfferForm.vue` | os 5 `<select multiple>` (produtos, coleções, canais, entrega e segmentos) → grupos canônicos; saiu a dependência de Ctrl/⌘ |
+| `marketing-nuxt/app/components/MarketingOfferForm.vue` | listas múltiplas → variante `card`; vigência → `UiDateRangeField` + `UiTimeRangeField`, preservando o payload ISO |
+| `marketing-nuxt/app/components/CampaignForm.vue` | modelos e ofertas dinâmicos → `UiSelect`/`USelectMenu` pesquisável |
 | `marketing-nuxt/app/components/AnnouncementTemplateForm.vue` | formato do Instagram (rádio) + 2 checkboxes |
 | `marketing-nuxt/app/components/AnnouncementCard.vue` | as duas ocorrências do horário ambíguo (rádio) |
 | `marketing-nuxt/app/pages/platforms.vue` | **"Modelo aprovado": um cartão por modelo → `UiSelect` com busca** |
+| `marketing-nuxt/app/pages/platforms.vue` | número verificado e produto do teste → `UiSelect` com busca |
 | `purchase-nuxt/app/components/ReceiptLineSheet.vue` | `MaterialPicker` → `UiSelect` (o picker foi promovido ao kit e apagado) |
 | `pos-nuxt/app/components/PosRecentSales.vue` | botão de atualizar ganhou nome acessível |
 | `pos-nuxt/app/components/Ui/Switch.vue` → `operator-kit/app/components/UiSwitch.vue` | **o interruptor**: promovido ao kit, 10 consumidores migrados, a cópia do PDV apagada |
@@ -39,6 +42,7 @@ coisa, ou a conversão muda o que o operador vê.
 | Seleção de linhas em tabela, carrinho ou checklist operacional | Checkbox da linha, com “marcar todos” e estado indeterminado quando houver. O grupo não deve substituir semântica de tabela. |
 | Colunas dentro de menu | `menuitemcheckbox`. Trocar pelo grupo apagaria a semântica e o teclado do menu. |
 | Escolha exclusiva | `UiRadioGroup`, não CheckboxGroup, mesmo que a aparência pudesse ser parecida. |
+| Horário de entrega ou retirada | Só slots devolvidos pelo servidor. Lista longa/compacta usa `UiSelect`; poucas opções que precisam comparar indisponibilidade e motivo podem permanecer em cartões exclusivos. Nunca `UiTimeField`. |
 
 **Regra consolidada:** o chip deixou de ser a solução padrão para listas curtas. A
 anatomia canônica do grupo é a base; `UiToggleChip` só permanece quando a forma compacta
@@ -100,3 +104,8 @@ arquivo em comum para ninguém procurar.
   produz o estado que o guardrail chama de dívida: duas implementações vivas, uma delas
   destinada a divergir em silêncio. Se a branch não puder rodar a suíte de todos os
   consumidores, ela não é a branch da promoção.
+- **Skeleton não é uma `div` cinza artesanal.** A forma continua pertencendo à tela,
+  mas animação, tema e semântica vêm de `UiSkeleton`/`USkeleton`.
+- **Splitter não substitui grid.** Ele só entra quando há dois painéis persistentes e
+  o operador ganha ao decidir a divisão. O quadro redimensionável do Gestor de Pedidos
+  é candidato real; formulários de Marketing e grades que apenas quebram no mobile não são.

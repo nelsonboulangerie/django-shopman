@@ -76,7 +76,12 @@ const notFound = computed(() => httpError(error.value).status === 404);
       </div>
 
       <div v-if="pending && !customer" class="space-y-3">
-        <div v-for="i in 3" :key="i" class="h-28 animate-pulse rounded-lg border bg-muted/40"></div>
+        <UiSkeleton
+          v-for="i in 3"
+          :key="i"
+          class="h-28 rounded-lg border"
+          label="Carregando cliente"
+        />
       </div>
 
       <div v-else-if="customer" class="mx-auto grid max-w-5xl gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">

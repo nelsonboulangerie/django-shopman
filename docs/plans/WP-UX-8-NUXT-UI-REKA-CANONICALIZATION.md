@@ -112,13 +112,11 @@ adotar parte da aparência do Nuxt UI quando ela melhorar hierarquia, legibilida
 densidade ou adaptação ao dispositivo. Nenhuma aparência entra apenas por ser o default da
 biblioteca.
 
-### 4.3 Nuxt UI direto versus contrato reproduzido no kit
+### 4.3 Nuxt UI direto como regra; Reka direto como exceção provada
 
-O WP começa com uma prova técnica no `operator-kit`, usando a versão estável mais recente
-compatível com a suíte. A prova compara:
-
-1. componente Nuxt UI consumido por um wrapper Shopman, com tema e slots próprios;
-2. wrapper Shopman construído diretamente sobre Reka, seguindo a anatomia pública do Nuxt UI.
+O WP começa pelo componente Nuxt UI consumido por um wrapper Shopman fino, com tema,
+idioma e slots próprios. A composição publicada na documentação oficial é a baseline:
+não se reproduz visualmente um componente com botões, campos ou estados paralelos.
 
 O Nuxt UI direto é preferido quando:
 
@@ -128,12 +126,14 @@ O Nuxt UI direto é preferido quando:
 - a personalização não exige lutar contra classes e defaults;
 - a API Shopman permanece estável e pequena.
 
-Reka direto é preferido quando:
+Reka direto só é aceito quando:
 
 - a interação operacional exige anatomia própria;
 - o componente Nuxt UI acrescenta camadas ou peso sem benefício;
 - o comportamento precisa ser especializado para estação, scanner, teclado ou toque;
-- a aparência só seria obtida anulando a maior parte do componente pronto.
+- a aparência só seria obtida anulando a maior parte do componente pronto;
+- a divergência de anatomia, o ganho operacional e os testes de não regressão ficam
+  registrados no ledger da família.
 
 HTML semântico continua sendo a escolha certa para controles simples sem estado composto.
 
@@ -188,13 +188,15 @@ O veredito inicial orienta a investigação. A prova da Fase 0 pode refiná-lo.
 | Stepper | Stepper | Reka | clássico Shopman | linearidade e descrição móvel |
 | CommandPalette e busca | CommandPalette | Nuxt UI/Reka | anatomia Nuxt UI adaptada | busca assíncrona e alcance |
 | Toast e feedback | Toast | Nuxt UI ou infraestrutura atual | Shopman | duplicação e anúncio por leitor |
-| Alert, Empty e Skeleton | Alert, Empty, Skeleton | HTML semântico | Shopman | consistência de estado |
+| Alert e Empty | Alert, Empty | Nuxt UI ou HTML semântico | Shopman | consistência de estado |
+| Skeleton | Skeleton | Nuxt UI | Shopman | forma final, anúncio acessível e movimento reduzido |
 | Card e Stat | Card | HTML semântico | Shopman | hierarquia e ações concorrentes |
 | Table e DataTable | Table | Nuxt UI ou tabela semântica | caso a caso | mobile, seleção e virtualização |
 | Pagination | Pagination | Nuxt UI/Reka | Shopman | nome acessível e alvo |
 | Accordion e Collapsible | Accordion, Collapsible | Reka | caso a caso | foco e conteúdo oculto |
 | Navigation e Sidebar | NavigationMenu, Sidebar | Nuxt UI/Reka | anatomia Shopman v3 | rotas, mobile e estação |
-| Calendar e DatePicker | Calendar | Nuxt UI/Reka | adaptada ao domínio | fuso, teclado e toque |
+| Data, período e hora | InputDate, Calendar, InputTime, FormField | Nuxt UI | adaptada ao domínio | fuso, limites, teclado e toque |
+| Painéis redimensionáveis | Splitter | Nuxt UI/Reka | Shopman | persistência, teclado e colapso móvel |
 | FileUpload e captura | FileUpload | HTML/Nuxt UI | especializada | câmera, tamanho e permissão |
 
 O stepper de Campanhas, validado no PR #1485, é o primeiro exemplo: Reka fornece a estrutura e

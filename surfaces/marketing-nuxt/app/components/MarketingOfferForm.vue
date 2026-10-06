@@ -34,6 +34,42 @@ const fulfillmentTypes = ref<string[]>([]);
 const customerSegments = ref<string[]>([]);
 const birthdayOnly = ref(false);
 const isActive = ref(true);
+const minValidityDate = localInput(now).slice(0, 10);
+
+const validityDates = computed({
+  get: () => ({
+    start: validFrom.value.slice(0, 10),
+    end: validUntil.value.slice(0, 10),
+  }),
+  set: (next: { start?: string; end?: string }) => {
+    const startTime = validFrom.value.slice(11, 16) || "00:00";
+    const endTime = validUntil.value.slice(11, 16) || "23:59";
+    validFrom.value = next.start ? `${next.start}T${startTime}` : "";
+    validUntil.value = next.end ? `${next.end}T${endTime}` : "";
+  },
+});
+
+const validityTimes = computed({
+  get: () => ({
+    start: validFrom.value.slice(11, 16),
+    end: validUntil.value.slice(11, 16),
+  }),
+  set: (next: { start?: string; end?: string }) => {
+    const startDate = validFrom.value.slice(0, 10);
+    const endDate = validUntil.value.slice(0, 10);
+    validFrom.value = startDate && next.start ? `${startDate}T${next.start}` : "";
+    validUntil.value = endDate && next.end ? `${endDate}T${next.end}` : "";
+  },
+});
+
+const validityProblem = computed(() => {
+  const startsAt = Date.parse(validFrom.value);
+  const endsAt = Date.parse(validUntil.value);
+  if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt)) return "";
+  return endsAt <= startsAt
+    ? "O fim da vigência precisa acontecer depois do início."
+    : "";
+});
 
 const valueLabel = computed(() => {
   if (type.value === "percent") return "Percentual de desconto";
@@ -146,8 +182,8 @@ function submit() {
       </ul>
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-      <section class="space-y-4 rounded-xl border border-border bg-card p-5">
+    <div class="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+      <section class="min-w-0 space-y-4 rounded-xl border border-border bg-card p-4 sm:p-5">
         <div>
           <p class="text-xs font-semibold uppercase tracking-wide text-primary">
             {{
@@ -242,42 +278,42 @@ function submit() {
           </label>
         </div>
 
-        <!-- Cada DateTimeField já contém data segmentada, calendário e hora. Em meia
-             coluna os segmentos se sobrepunham; aqui cada instante recebe a largura
-             inteira do cartão, tanto no desktop quanto no touch. -->
         <div class="grid gap-4">
-          <label class="grid gap-1.5 text-sm font-medium">
-            Começa em
-            <UiDateTimeField
-              v-model="validFrom"
-              label="Início da oferta"
+          <NuxtFormField
+            label="Período de validade"
+            required
+            :error="fieldError('valid_from') || fieldError('valid_until') || undefined"
+          >
+            <UiDateRangeField
+              id="marketing-offer-validity-dates"
+              v-model="validityDates"
+              label="Período de validade"
+              :min="minValidityDate"
+              :clearable="false"
+              :allow-open-ended="false"
               required
-              :aria-invalid="Boolean(fieldError('valid_from'))"
+              :aria-invalid="Boolean(fieldError('valid_from') || fieldError('valid_until'))"
             />
-            <span v-if="fieldError('valid_from')" class="text-xs text-destructive">
-              {{ fieldError("valid_from") }}
-            </span>
-          </label>
-          <label class="grid gap-1.5 text-sm font-medium">
-            Termina em
-            <UiDateTimeField
-              v-model="validUntil"
-              label="Fim da oferta"
+          </NuxtFormField>
+
+          <NuxtFormField
+            label="Horário de início e fim"
+            :help="`Horário da loja: ${options?.shop_timezone || 'configurado pelo servidor'}.`"
+            :error="validityProblem || undefined"
+            required
+          >
+            <UiTimeRangeField
+              id="marketing-offer-validity-times"
+              v-model="validityTimes"
+              label="Horário de início e fim"
               required
-              :aria-invalid="Boolean(fieldError('valid_until'))"
+              :aria-invalid="Boolean(validityProblem)"
             />
-            <span v-if="fieldError('valid_until')" class="text-xs text-destructive">
-              {{ fieldError("valid_until") }}
-            </span>
-          </label>
+          </NuxtFormField>
         </div>
-        <p class="text-xs text-muted-foreground">
-          Horário da loja:
-          {{ options?.shop_timezone || "configurado pelo servidor" }}.
-        </p>
       </section>
 
-      <section class="space-y-4 rounded-xl border border-border bg-card p-5">
+      <section class="min-w-0 space-y-4 rounded-xl border border-border bg-card p-4 sm:p-5">
         <div>
           <p class="text-xs font-semibold uppercase tracking-wide text-primary">
             Alcance
@@ -294,7 +330,7 @@ function submit() {
           v-model="skus"
           :items="options?.products ?? []"
           legend="Produtos"
-          variant="table"
+          variant="card"
           :ui="{
             fieldset: 'max-h-72 overflow-y-auto',
             legend: 'mb-1.5 text-sm font-medium',
@@ -309,7 +345,7 @@ function submit() {
           v-model="collections"
           :items="options?.collections ?? []"
           legend="Coleções"
-          variant="table"
+          variant="card"
           :ui="{
             fieldset: 'max-h-56 overflow-y-auto',
             legend: 'mb-1.5 text-sm font-medium',
@@ -348,6 +384,7 @@ function submit() {
           v-model="channels"
           :items="options?.channels ?? []"
           legend="Canais de venda"
+          variant="card"
           :ui="{ legend: 'mb-1.5 text-sm font-medium' }"
         />
         <UiCheckboxGroup
@@ -355,6 +392,7 @@ function submit() {
           v-model="fulfillmentTypes"
           :items="options?.fulfillment_types ?? []"
           legend="Entrega ou retirada"
+          variant="card"
           :ui="{ legend: 'mb-1.5 text-sm font-medium' }"
         />
         <UiCheckboxGroup
@@ -362,6 +400,7 @@ function submit() {
           v-model="customerSegments"
           :items="options?.customer_segments ?? []"
           legend="Segmentos de clientes"
+          variant="card"
           :ui="{ legend: 'mb-1.5 text-sm font-medium' }"
         />
       </div>
