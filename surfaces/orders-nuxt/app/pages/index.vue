@@ -295,6 +295,11 @@ const isNarrow = useMediaQuery("(max-width: 1023.98px)");
 const mounted = ref(false);
 onMounted(() => { mounted.value = true; });
 const compactHeader = computed(() => mounted.value && (exitPostView.value || (isNarrow.value && !isPhone.value)));
+// Item 4: o header canônico consome este model; o estado e os efeitos ficam aqui (dono).
+provideGestorBoardHeader({
+  title: "Pedidos",
+  eyebrow: computed(() => (exitPostView.value && boardLayout.station.value ? "Posto Saída · este dispositivo" : "")),
+});
 
 // O rail conta o que o quadro vê: pedidos novos em Pedidos e o que está na Saída, e
 // acende "Saída" quando o posto está só com ela. Fora do quadro, a contagem leve do rail.
@@ -714,7 +719,7 @@ function printQueue() {
          a seleção em lote e a última leitura útil moram no ⋯; Ciente aparece aqui só
          enquanto há pedido novo esperando. No posto Saída (`gestor-colunas4.html`):
          "Visão: Saída", "Mostrar as 3 colunas" e o som; o resto no ⋯. -->
-    <OperatorPageHeader title="Pedidos" :eyebrow="exitPostView && boardLayout.station.value ? 'Posto Saída · este dispositivo' : ''">
+    <GestorBoardHeader>
       <template #status>
         <!-- No celular o título não se corta: o estado vai por extenso só na falha; o
              resto fica no ponto, na hora e no nome acessível. -->
@@ -949,7 +954,7 @@ function printQueue() {
           <UiPopoverTrigger as-child>
             <button
               type="button"
-              class="inline-flex h-10 items-center gap-2 rounded-full border px-3 op-label transition"
+              class="inline-flex h-control items-center gap-2 rounded-full border px-3 op-label transition"
               :class="channel !== 'all' ? 'border-primary bg-primary/10 font-semibold' : 'border-dashed border-border text-muted-foreground hover:bg-accent'"
               data-channel-picker
             >
@@ -1000,7 +1005,7 @@ function printQueue() {
         <span v-if="isPhone" class="order-first">
         <button
           type="button"
-          class="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card px-3 op-label font-semibold"
+          class="inline-flex h-control items-center gap-2 rounded-full border border-border bg-card px-3 op-label font-semibold"
           aria-haspopup="menu"
           :aria-expanded="moreOpen"
           aria-label="Mais ações da fila"
@@ -1017,7 +1022,7 @@ function printQueue() {
         <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
         <ChannelQueueSignal />
       </template>
-    </OperatorPageHeader>
+    </GestorBoardHeader>
 
     <!-- celular: o painel dos controles sobe do pé, ao alcance do polegar -->
     <UiSheet v-if="isPhone" :open="moreOpen" @update:open="(value) => (moreOpen = value)">

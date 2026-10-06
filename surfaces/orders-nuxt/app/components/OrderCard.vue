@@ -163,7 +163,7 @@ function pressEnd() {
 }
 onBeforeUnmount(pressEnd);
 
-const CHIP = "inline-flex items-center gap-1.5 rounded-lg bg-secondary px-2.5 font-semibold text-secondary-foreground";
+const CHIP = "inline-flex min-h-control items-center gap-1.5 rounded-lg bg-secondary px-2.5 font-semibold text-secondary-foreground";
 const chipSize = computed(() => props.touch ? "h-9 op-body" : "h-8 text-sm");
 function segClass(state: string): string {
   if (state === "done") return "bg-success";

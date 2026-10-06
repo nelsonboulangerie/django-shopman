@@ -171,14 +171,7 @@ useOperatorWindowTitle();
       </template>
 
       <template #sidebar>
-        <NuxtNavigationMenu
-          orientation="vertical"
-          collapsed
-          :items="railItems"
-          :ui="railNavUi"
-          aria-label="Seções do Gestor"
-          class="w-full"
-        />
+        <OperatorSuiteRailMenu :items="railItems" :ui="railNavUi" label="Seções do Gestor" />
       </template>
 
       <template #sidebar-footer>
@@ -219,9 +212,7 @@ useOperatorWindowTitle();
     </OperatorOfficeShell>
 
     <!-- Bottom tab bar canônica (<lg): NavigationMenu com o ui oficial. -->
-    <nav v-if="canIdentify && !locked && !mustChange" class="fixed inset-x-0 bottom-0 z-40 border-t border-default bg-card lg:hidden print:hidden">
-      <NuxtNavigationMenu :items="barItems" :ui="barNavUi" aria-label="Seções do Gestor" class="w-full" />
-    </nav>
+    <OperatorSuiteTabBar v-if="canIdentify && !locked && !mustChange" :items="barItems" :ui="barNavUi" label="Seções do Gestor" />
 
     <OperatorSessionUnavailable v-if="sessionUnavailable" scope="os pedidos" @retry="refresh()" />
     <OperatorLogin v-if="!canIdentify && !sessionUnavailable" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
