@@ -121,3 +121,54 @@ Dois eixos: **estrutura** (Nuxt UI / Reka / HTML) e **aparência** (manter / ref
 3. Corrigir A1 (overlay de posto não cobre o board) e A3 (recortes) junto, se aprovado.
 4. Adicionar `runner` das superfícies do orders ao ledger e gerar a matriz com o Chromium da CI (baseline oficial).
 5. Artefatos do WP-UX-13 §8: inventário (feito), laudo (este), decisão canônica (acima), contact sheet antes/depois, estados, teclado/toque, a11y, desempenho, exceções, comandos.
+
+## Segunda passada — implementação e de-para (06/10/2026)
+
+O corte visível foi implementado e verificado; a matriz do board roda **claro + escuro** no harness oficial e passa. Esta seção é o **de-para** "função anterior → novo lugar" e a revisão estrutural/semântica.
+
+### De-para por achado/família
+
+| antes (achado) | depois (novo lugar) | evidência |
+|---|---|---|
+| **A1** oferta de posto em overlay opaco cobrindo o board | `OperatorStationSetup` (kit) = `NuxtBanner` **no fluxo** + `NuxtSlideover` com os passos; board operável atrás. A chamada vai no slot `#title` (Banner não tem prop `description`). | `650c67be6`, `9abb84b13`; `corte-a1-banner.png` |
+| **A3** "Precisa de você / Todos / Atrasados / Entrega / Retirada / +Canal" | base **"Precisa de você"**; `Todos` sai; **"Atrasados" vira ordenação** (`QueueSort "late"`); ficam fluxo (Entrega/Retirada) + canal | `96e318073` |
+| **A5** casca `OperatorSuiteRail` + `OperatorSectionBar` + `OperatorPageHeader` | `OperatorOfficeShell` modo **rail** (`unit=px`, **64 px**, sem resize/colapso, `ui.root` `bg-rail`/`text-rail-foreground`) + **bottom tab bar**; rail e tab viram primitivas do kit (`OperatorSuiteRailMenu`, `OperatorSuiteTabBar`); `app.vue` só passa items/ui | `6b2a6e482`, `75731882a`; `corte-rail-card.png` |
+| **header** `OperatorPageHeader` (chrome) | `GestorBoardHeader` (orders) + `OperatorCanonicalHeader` (**kit**, categoria 2) sobre `NuxtDashboardNavbar` + `NuxtDashboardToolbar`; estado pelo view-model `useGestorBoardHeader` (provide/inject; **um** dono de SSE/som) | `75731882a`; `corte-header-desktop.png`, `corte-header-mobile.png` |
+| **A6** card HTML denso | card veste `NuxtCard` (`variant="outline"`, bordas condicionais por `ui.root`); resumo vira `NuxtPopover`; pagamento/canal de relance; **uma** ação primária + ⋯ | `d266b6282` |
+| **A7** cabeçalhos fora do token | **purga de `op-*`** da superfície → escala canônica do Nuxt UI/Tailwind (ver mapa abaixo); zero `op-*` no app | este commit |
+| **altura de controle** campos 44 × botões 32 | fonte única: base = **padrão Nuxt UI** no ponteiro fino; **44 (celular) / 48 (tablet)** só no `@media (pointer: coarse)` — regra **compartilhada** no kit (`operator-base.css`), não escopada no catálogo | `584f5ced0`, `df06368c6` |
+| **gate de geometria** | harness passa a emular o ponteiro do viewport (`hasTouch`/`isMobile`) e o piso de toque virou regra do kit; scanner verde sem allowlist | `e725c003f` |
+
+### Purga de `op-*` → escala canônica (188 trocas, 16 arquivos)
+
+| token | classes canônicas | delta |
+|---|---|---|
+| `op-micro` | `text-xs` | 12/16 → 12/16 (perde `letter-spacing .02em`) |
+| `op-label` | `text-sm` (+ `font-medium` se a marcação não tiver peso) | 13 → 14 |
+| `op-body` | `text-sm` | 15 → 14 |
+| `op-title` | `text-base` (+ `font-semibold`) | 16/24 → 16/24 (exato) |
+| `op-eyebrow` | `text-xs uppercase tracking-wider` (+ `font-semibold`) | 11 → 12 |
+| `op-action` | `text-base` (+ `font-semibold`) | 17 → 16 |
+| `op-code` | `text-4xl tabular-nums` (+ `font-bold`) | 35,2 → 36 |
+| `op-figure` | `text-2xl tabular-nums` (+ `font-semibold`) | 24/28 → 24/32 |
+
+Regra do peso: o peso do utilitário só é emitido quando a marcação **não** tem `font-*` explícito — o explícito sempre venceu. `op-*` segue no **kit** (os outros apps usam); saiu só da superfície orders.
+
+### Dark (obrigatório)
+
+A matriz agora roda **claro e escuro** para cada viewport/estado. O Gestor é **light-first** (`colorMode.preference: "light"`), então o dark não vem do `prefers-color-scheme`: a spec crava a preferência no storage do color-mode (`orders-nuxt-color-mode`) por `addInitScript` antes do boot e passa `theme` à evidência. Contraste AA no escuro: os tokens do tema já são cobertos pelo guardrail (`guardrails.test.ts`, claro **e** escuro); a captura dark fica em `captures/`.
+
+### Revisão estrutural/semântica
+
+- **Navegação primária** = rail `DashboardSidebar` (desktop) / bottom tab bar (mobile) — as mesmas seções nas duas formas; **secundária** = `DashboardToolbar` (recortes de fluxo/canal). Não há duas navegações competindo.
+- **Card**: uma ação primária; o resto em expansão/detalhe. Pagamento e canal aparecem de relance, sem decorar.
+- **Copy**: os avisos de estado (bloqueio, "o sistema fez", meta de tempo) mantêm a frase que muda a decisão; hints decorativos saíram junto da densidade do card.
+
+### Continua vermelho (fora deste corte)
+
+- **A2** — "Saída" com duas portas: muda fronteira/rota, **aguarda decisão do dono** (FUNCTION-PLAN §9/§13.3).
+- **A4** — busca com escopo `Esta tela · App · Suíte` + câmera: **WP-UX-11**.
+- **A8** — automação "pronto quando a Cozinha conclui": decisão do dono (a UI reserva o lugar).
+- **MoreBelow / useNextFocus** — mapa antes/depois de tokens/API (família "refinar").
+- **Passo 3 do header** — shell dona do DOM via `<Teleport>` (refactor invisível, sessão dedicada).
+
