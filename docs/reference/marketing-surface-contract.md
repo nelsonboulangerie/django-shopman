@@ -566,7 +566,12 @@ significa "na próxima passada" e pode levar alguns minutos** — não é defeit
   URL; imprime a consequência e o comando exato, sem publicar;
 - `make admin`: garante o corte Nuxt operacional/Admin audit-only;
 - job `Marketing — cadeia completa`: instalação, unit/component, lint, tipos, build,
-  E2E, acessibilidade, visual, segurança e auditoria de dependências.
+  E2E, acessibilidade, visual e segurança — só o que o Marketing precisa provar;
+- job `Supply chain — npm audit`: o `npm audit --audit-level=high` de `operator-kit` e
+  `marketing-nuxt`, com a allowlist versionada em `surfaces/npm-audit-allowlist.json`.
+  Ele saiu de dentro do job de Marketing para que um vermelho de Marketing volte a
+  significar Marketing; o histórico está em
+  [2026-10-06-marketing-ci-health.md](../reports/2026-10-06-marketing-ci-health.md).
 
 Runbooks: [`docs/runbooks/README.md`](../runbooks/README.md). Simulador:
 [`docs/operations/marketing-local-simulator.md`](../operations/marketing-local-simulator.md).

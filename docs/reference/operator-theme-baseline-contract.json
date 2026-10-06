@@ -1,0 +1,28 @@
+{
+  "_leia": [
+    "Aceite versionado do tema compartilhado do operator-kit (app.config.ts + CSS de tokens) contra as baselines visuais das apps que o herdam por extends.",
+    "themeFingerprint é o sha256 do conteúdo das themeSources; o gate scripts/check_theme_baseline_contract.py reprova quando ele muda.",
+    "Mudou o tema? Regere as baselines afetadas NO MESMO PR, revise o antes/depois com o dono e regrave o aceite: make theme-baselines-accept owner=\"<quem aceitou>\".",
+    "Baseline não se regenera cega; o processo está em docs/reference/operator-visual-baselines.md."
+  ],
+  "themeSources": [
+    "surfaces/operator-kit/app/app.config.ts",
+    "surfaces/operator-kit/app/assets/css/operator-base.css",
+    "surfaces/operator-kit/app/assets/css/operator-suite.css",
+    "surfaces/operator-kit/app/assets/css/operator-theme.css"
+  ],
+  "consumers": [
+    {
+      "app": "marketing-nuxt",
+      "baselines": "surfaces/marketing-nuxt/tests/visual/baselines"
+    },
+    {
+      "app": "pos-nuxt",
+      "baselines": "surfaces/pos-nuxt/tests/visual/baselines"
+    }
+  ],
+  "themeFingerprint": "sha256:be27c72b66fb73af6575478f16ee92c9c1cd290f7e5fe4b8580a148c6f4985ae",
+  "acceptedOn": "2026-10-06",
+  "owner": "WP-UX-13E (#1512)",
+  "note": "Aceite do tema já com o app.config.ts canônico do #1512 (merge 35d95104d), que regenerou as baselines de Marketing no próprio PR (commit c37a70a3b). O contrato nasce neste PR porque o gate é novo; daqui em diante, PR de tema regrava o aceite junto com as baselines."
+}

@@ -11,6 +11,30 @@
       "package": "node-forge",
       "expiresOn": "2026-11-15",
       "reason": "Transitivo de Nuxt/Nitro via listhen/@nuxt/cli. Em 2026-10-05, node-forge@1.4.0 é a versão mais recente publicada; npm audit fix --force propõe downgrade quebrador para nuxt@3.15.1."
+    },
+    {
+      "ghsa": "GHSA-v5rq-49vh-5v5c",
+      "package": "simple-git",
+      "expiresOn": "2026-11-20",
+      "reason": "Transitivo dev/build do toolchain Nuxt (@nuxt/devtools, simple-git e @simple-git/argv-parser). Detecção de edição insegura omite a variável de ambiente VISUAL. Em 2026-10-06 o único fix oferecido pelo npm audit é downgrade major para nuxt@3.7.4; não há @nuxt/devtools publicado que use simple-git corrigido. Não entra no bundle de runtime."
+    },
+    {
+      "ghsa": "GHSA-x6jw-m9v5-85vh",
+      "package": "simple-git",
+      "expiresOn": "2026-11-20",
+      "reason": "Transitivo dev/build do toolchain Nuxt (@nuxt/devtools via simple-git). A guarda de operação insegura não bloqueia configuração de trailer. Em 2026-10-06 o único fix oferecido pelo npm audit é downgrade major para nuxt@3.7.4; não há @nuxt/devtools publicado que use simple-git corrigido. Não entra no bundle de runtime."
+    },
+    {
+      "ghsa": "GHSA-g4wm-2vf7-vfgr",
+      "package": "simple-git",
+      "expiresOn": "2026-11-20",
+      "reason": "Transitivo dev/build do toolchain Nuxt (@nuxt/devtools via simple-git). Execução de comando por include de configuração Git não bloqueado. Em 2026-10-06 o único fix oferecido pelo npm audit é downgrade major para nuxt@3.7.4; não há @nuxt/devtools publicado que use simple-git corrigido. Não entra no bundle de runtime."
+    },
+    {
+      "ghsa": "GHSA-858h-whjf-mvg5",
+      "package": "simple-git",
+      "expiresOn": "2026-11-20",
+      "reason": "Transitivo dev/build do toolchain Nuxt (@nuxt/devtools via simple-git). Bypass da guarda via abreviação de opção longa do Git (residual de CVE-2026-28291). Em 2026-10-06 o único fix oferecido pelo npm audit é downgrade major para nuxt@3.7.4; não há @nuxt/devtools publicado que use simple-git corrigido. Não entra no bundle de runtime."
     }
   ]
 }
