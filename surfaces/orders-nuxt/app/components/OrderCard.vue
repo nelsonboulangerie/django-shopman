@@ -178,8 +178,9 @@ function secondaryClass(priority: string): string {
 </script>
 
 <template>
-  <article
-    class="relative flex flex-col gap-2 rounded-xl border bg-card p-3.5 transition"
+  <NuxtCard
+    variant="outline"
+    :ui="{ root: 'relative flex flex-col gap-2 rounded-xl border border-border bg-card p-3.5 shadow-none ring-0 transition' }"
     :class="[
       fill ? 'h-full' : '',
       handoff ? 'border-success/50 bg-success/8' : '',
@@ -343,7 +344,31 @@ function secondaryClass(priority: string): string {
 
       <!-- Saída larga (v4): o cartão fica com código, nome, etiquetas, traços e a frase; os
            itens moram no detalhe e no cartão da coluna. -->
-      <p v-if="!fill" class="op-body text-foreground/85" :title="card.items_summary">{{ card.items_summary }}</p>
+      <!-- O que vai sair: a linha é o resumo; o detalhe (a lista) abre no Popover e no
+           pedido — a projection do cartão carrega só o resumo, não as linhas. -->
+      <NuxtPopover v-if="!fill" mode="hover">
+        <button
+          type="button"
+          class="min-h-control w-full truncate text-left op-body text-foreground/85 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          :title="card.items_summary"
+          data-card-items
+        >{{ card.items_summary }}</button>
+        <template #content>
+          <div class="w-64 p-3">
+            <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {{ card.items_count }} {{ card.items_count === 1 ? "item" : "itens" }}
+            </p>
+            <p class="op-body text-foreground">{{ card.items_summary }}</p>
+            <NuxtLink
+              v-if="canOpen && !negotiationOnly"
+              :to="`/${card.ref}`"
+              class="mt-2 inline-flex items-center gap-1 op-label font-semibold text-primary"
+            >
+              <Icon name="lucide:file-text" class="size-3.5" /> Ver o pedido
+            </NuxtLink>
+          </div>
+        </template>
+      </NuxtPopover>
 
       <p v-if="card.courier_status_label" class="flex items-center gap-1.5 truncate op-micro text-muted-foreground">
         <Icon name="lucide:bike" class="size-3.5 shrink-0" /> {{ card.courier_status_label }}
@@ -679,7 +704,7 @@ function secondaryClass(priority: string): string {
       </UiPopover>
       </div>
     </div>
-  </article>
+  </NuxtCard>
 </template>
 
 <style scoped>
