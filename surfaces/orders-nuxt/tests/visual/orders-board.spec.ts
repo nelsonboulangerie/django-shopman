@@ -25,14 +25,27 @@ const selectedScenario = process.env.OPERATOR_VISUAL_SCENARIO || "";
 const scenarios = STATES.filter((item) => !selectedScenario || item.scenario === selectedScenario);
 
 for (const viewport of selectedOperatorViewports()) {
-  for (const item of scenarios) {
-    test("orders-board " + item.scenario + " · " + viewport.id, async ({ page, request }, testInfo) => {
-      await request.get(BACKEND + "/__visual/scenario?set=" + item.scenario);
-      await page.setViewportSize({
+  // O CONTEXTO precisa emular a capacidade do viewport. O envelope de toque
+  // (--spacing-control: 44 no celular, 48 no tablet) vive em
+  // `@media (pointer: coarse)`. Com o contexto padrão o browser reporta
+  // `pointer: fine`, a regra não casa e o scanner — avisado `touch: true` pelo
+  // metadata do viewport — reprova controles que o CSS nunca pôde crescer. O
+  // `test.use` por viewport dá ao browser a mesma capacidade que o scanner assume.
+  test.describe(viewport.id, () => {
+    test.use({
+      viewport: {
         width: Math.round(viewport.width / (viewport.zoom || 1)),
         height: Math.round(viewport.height / (viewport.zoom || 1)),
-      });
-      const boardRead = page
+      },
+      hasTouch: viewport.touch,
+      isMobile: viewport.profile === "mobile-touch",
+      deviceScaleFactor: viewport.zoom || 1,
+    });
+
+    for (const item of scenarios) {
+      test("orders-board " + item.scenario + " · " + viewport.id, async ({ page, request }, testInfo) => {
+        await request.get(BACKEND + "/__visual/scenario?set=" + item.scenario);
+        const boardRead = page
         .waitForResponse(
           (response) =>
             response.url().includes("/api/v1/backstage/orders/") &&
@@ -69,6 +82,7 @@ for (const viewport of selectedOperatorViewports()) {
         // horizontal — achados reais da auditoria (WP-UX-13D), não do harness.
         { allowedFindings: [] },
       );
-    });
-  }
+      });
+    }
+  });
 }
