@@ -17,6 +17,100 @@ const baseAlerts = readFixture("alerts.json");
 const baseAttention = readFixture("channel-attention.json");
 const baseRailCounts = readFixture("rail-counts.json");
 
+// Espelho de `shopman/backstage/workstation_vocabulary.py`: COPY, KIND_LABELS e
+// SURFACE_KINDS["orders"] = (dispatch, office). O dono renomeia um posto mudando
+// UMA linha lá; aqui é o snapshot estático da matriz. Nenhum texto de posto nasce
+// no front: a tela lê desta projection.
+const STATION_KINDS = [
+  { kind: "dispatch", label: "Expedição" },
+  { kind: "office", label: "Escritório" },
+];
+
+const STATION_COPY = {
+  setup_title: "Vincular este dispositivo a um posto de trabalho?",
+  setup_lead:
+    "Escolha uma vez. Depois ele abre direto no trabalho deste posto e pede só o " +
+    "PIN de quem for operar.",
+  setup_choice_label: "Posto:",
+  setup_confirm: "Vincular a este posto",
+  setup_confirm_shared: "Vincular também a este posto",
+  setup_busy: "Vinculando…",
+  setup_dismiss: "Usar sem vincular",
+  setup_error: "Não foi possível vincular este dispositivo ao posto.",
+  setup_empty:
+    "Ainda não há posto para este app. Quem gere operadores cadastra os postos " +
+    "no Gestor, em Postos.",
+  context_prefix: "Posto",
+  release: "Desvincular deste posto",
+  cash_desk_hint: "Com gaveta e turno",
+  devices_one: "1 dispositivo",
+  devices_many: "{n} dispositivos",
+  open_shift_hint: "caixa aberto",
+  shared_cash_desk:
+    "Este caixa já tem {others}. Todos vão usar a mesma gaveta e o mesmo turno. " +
+    "Confirme para vincular este dispositivo ao mesmo posto.",
+  unknown: "Posto não encontrado.",
+  not_a_workstation: "Este dispositivo não está vinculado a nenhum posto.",
+  manage_title: "Postos",
+  manage_lead:
+    "Onde cada dispositivo fica. Vinculado a um posto, ele abre direto no " +
+    "trabalho do posto e pede só o PIN de quem for operar.",
+  manage_new: "Novo posto",
+  manage_name_label: "Nome do posto",
+  manage_kind_label: "Tipo",
+  manage_create: "Criar posto",
+  manage_rename: "Renomear",
+  manage_save: "Salvar",
+  manage_deactivate: "Desativar posto",
+  manage_deactivate_warning: "Desativar desvincula todos os dispositivos deste posto.",
+  manage_keep_active: "Manter ativo",
+  manage_activate: "Reativar posto",
+  manage_inactive: "Desativado",
+  manage_cash_desk_note: "O posto Caixa nasce com o caixa, no cadastro de terminais.",
+  manage_devices_none: "Nenhum dispositivo vinculado a este posto.",
+  manage_device_last_used: "Usado por último em {when}",
+  manage_device_never_used: "Ainda não usado",
+  manage_error: "Não foi possível salvar o posto.",
+};
+
+// A opção da lista tem o card + ocupação (services/workstations.option). O hint já
+// vem montado pelo servidor ("tipo · ocupação").
+const STATION_WORKSTATIONS = [
+  {
+    ref: "EXPEDICAO",
+    label: "Expedição",
+    kind: "dispatch",
+    kind_label: "Expedição",
+    has_cash_desk: false,
+    context_label: "Posto Expedição",
+    active_devices: 1,
+    has_open_shift: false,
+    hint: "1 dispositivo",
+  },
+  {
+    ref: "ESCRITORIO",
+    label: "Escritório",
+    kind: "office",
+    kind_label: "Escritório",
+    has_cash_desk: false,
+    context_label: "Posto Escritório",
+    active_devices: 0,
+    has_open_shift: false,
+    hint: "",
+  },
+];
+
+function stationCard(option) {
+  return {
+    ref: option.ref,
+    label: option.label,
+    kind: option.kind,
+    kind_label: option.kind_label,
+    has_cash_desk: option.has_cash_desk,
+    context_label: option.context_label,
+  };
+}
+
 let scenario = "normal";
 
 function dayInSaoPaulo(offsetDays) {
@@ -53,6 +147,10 @@ function queuePayload() {
 }
 
 function send(res, status, payload) {
+  // A matriz navega e cancela fetches o tempo todo; escrever num socket já fechado
+  // emitia 'error' sem listener e derrubava o processo (era o ECONNREFUSED das
+  // rodadas seguintes). Fixture de teste não morre por aborto de cliente.
+  if (res.writableEnded || res.destroyed) return;
   const body = JSON.stringify(payload);
   res.statusCode = status;
   res.setHeader("content-type", "application/json; charset=utf-8");
@@ -61,7 +159,9 @@ function send(res, status, payload) {
   res.end(body);
 }
 
-createServer((req, res) => {
+const server = createServer((req, res) => {
+  res.on("error", () => {});
+  req.on("error", () => {});
   const url = new URL(req.url || "/", "http://127.0.0.1:" + port);
   const path = url.pathname;
 
@@ -82,6 +182,20 @@ createServer((req, res) => {
     });
     return;
   }
+  if (path === "/api/v1/backstage/operator/station/") {
+    // A1 (WP-UX-13 §4.3): a oferta de vínculo aparece quando o dispositivo ainda
+    // não é posto. `unbound-device` serve esse mundo; nos demais a sessão já traz
+    // `station`, então a tela nem chama esta rota.
+    const unbound = scenario === "unbound-device";
+    send(res, 200, {
+      station: unbound ? "" : "GESTOR-1",
+      workstation: unbound ? null : stationCard(STATION_WORKSTATIONS[0]),
+      kinds: STATION_KINDS,
+      workstations: STATION_WORKSTATIONS,
+      copy: STATION_COPY,
+    });
+    return;
+  }
   if (path === "/api/v1/backstage/orders/board-layout/") {
     send(res, 200, { station: "GESTOR-1", columns: null });
     return;
@@ -97,8 +211,21 @@ createServer((req, res) => {
   if (path === "/api/v1/backstage/orders/rail-counts/") { send(res, 200, baseRailCounts); return; }
   if (path === "/api/v1/backstage/alerts/") { send(res, 200, baseAlerts); return; }
   if (path === "/api/v1/backstage/channels/attention/") { send(res, 200, baseAttention); return; }
-  if (path.indexOf("/events/") >= 0 || path.indexOf("/sse/") >= 0) { res.statusCode = 204; res.end(); return; }
+  if (path.indexOf("/events/") >= 0 || path.indexOf("/sse/") >= 0) {
+    if (!res.writableEnded && !res.destroyed) { res.statusCode = 204; res.end(); }
+    return;
+  }
   send(res, 200, {});
-}).listen(port, "127.0.0.1", () => {
+});
+// Um parse ruim de HTTP na borda não pode derrubar o backend: responde 400 e segue.
+server.on("clientError", (error, socket) => {
+  if (socket.writable) socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+});
+// Rede de segurança do fixture: ele existe para servir a matriz inteira, então
+// nenhuma exceção inesperada deve encerrá-lo no meio da rodada.
+process.on("uncaughtException", (error) => {
+  console.error("[orders-visual-mock] exceção ignorada:", error && error.message ? error.message : error);
+});
+server.listen(port, "127.0.0.1", () => {
   console.log("[orders-visual-mock] listening on http://127.0.0.1:" + port);
 });
