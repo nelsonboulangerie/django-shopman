@@ -20,6 +20,10 @@ export default defineNuxtConfig({
   // Superfície de operador: herda BFF/resiliência/telemetria/DS do kit compartilhado.
   extends: ["../operator-kit"],
 
+  // A matriz visual roda em modo client-only (sem SSR): o backend é o mock
+  // hermético do runner. Em qualquer outro modo o SSR continua ligado.
+  ssr: process.env.ORDERS_VISUAL_CLIENT_ONLY !== "1",
+
   compatibilityDate: "2026-05-16",
   devtools: { enabled: false },
 

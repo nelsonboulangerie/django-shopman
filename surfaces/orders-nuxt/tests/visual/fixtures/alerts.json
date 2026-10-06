@@ -1,0 +1,408 @@
+{
+  "alerts": [
+    {
+      "pk": 7,
+      "rev": 0,
+      "type": "production_stock_short",
+      "type_label": "Produção sem insumo suficiente",
+      "severity": "error",
+      "severity_label": "Erro",
+      "audience": "production",
+      "message": "Produção WO-2026-00022 (CRO) falhou por estoque insuficiente: sementes de validação: manteiga francesa abaixo do ponto de reposição",
+      "order_ref": "WO-2026-00022",
+      "created_at_display": "06/10 às 15:43",
+      "actions": [
+        {
+          "ref": "open-context:7",
+          "kind": "open_alert_context",
+          "label": "Resolver no contexto",
+          "priority": 10,
+          "enabled": true,
+          "reason": "",
+          "method": "GET",
+          "href": "/close?q=WO-2026-00022&date=2026-10-06",
+          "payload_schema": "",
+          "expected_rev": null,
+          "idempotency": {
+            "required": false,
+            "key_scope": ""
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Abrir"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "7",
+          "source_alert_effect": "keeps_open",
+          "proof": ".eJxlUVtPwyAY_S88-OIav7KVTpLF9GFeotEX44wvDaPf1k6ECnRZZvzvQluzGB_hnMO58EWE9I3RpcUN4cS0qBNptMeD5zmZ_KLvja5GuBQKrS9HUqDUg_RCKuPw6nOxekooUJYAAKVnlfC46M8pJMACHw8tSo9VsNwTrjulJsSZzkqMN40LfuE5VwuaMQ5rOq-ma7bJGWOzy4z37o7HXHvknUPLU67erFrWGuWx-HDXD_fb_PhSzJZ3ps1vbx5LyDwVO5jK16wIAVprdjj02qJGK2IY4YPpKedzOufBPsvPAThAUG0surrstG_Uf-ac0xMzTmNDwHKPdmiT_jEdxxyaBL5DNQwSt4pA3y0C3Tpqxr8ZupLvH-2xi4U:1xEALR:jt-7nIRKj5tcvnzzROcihBZHTcCWMOModCYSZEIhB98"
+        },
+        {
+          "ref": "acknowledge:7",
+          "kind": "acknowledge_alert",
+          "label": "Visto",
+          "priority": 20,
+          "enabled": true,
+          "reason": "",
+          "method": "POST",
+          "href": "/api/v1/backstage/alerts/7/ack/",
+          "payload_schema": "AlertAckMutationRequest",
+          "expected_rev": 0,
+          "idempotency": {
+            "required": true,
+            "key_scope": "backstage.alert-ack:7"
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Confirmar"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "7",
+          "source_alert_effect": "acknowledges",
+          "proof": ".eJxlkctOwzAQRf_FW1rZSRs7eJdFeQjECiHEJnKcyaM1TmQ7ARXx74wbKlSxHM-ZufeOv4jSoR9s6aAhEouDHT4M1C1IQVbn5qG39WW3VAZcQKJbBqkaezontELGB9UCPQGeCoovFEH4HEEHqFFpJpKtiB8mpyGWvUcRXOI7lWZcsirN603FG8E5315nclklo5kZ5OTByUSaN2d2nQV9LN79zeNDK44vxXZ3P4zi7vapZFlI1Z5t9GtWoProhj0sYVqw4FR0ogKKpizl64StGX9OconymbhiTDKGU40D35WTDb35T-Yy_SP1YINDg-UMbkmTXIieL3hKgrwHs1yjRien08ZssTFVceb3P5as5PsHVkuJ7A:1xEALR:e3iC8tTKPlSRXeshF2mpBRY8BoYhcqY9E433xAhNlYQ"
+        }
+      ]
+    },
+    {
+      "pk": 5,
+      "rev": 0,
+      "type": "production_late",
+      "type_label": "Produção atrasada",
+      "severity": "warning",
+      "severity_label": "Aviso",
+      "audience": "production",
+      "message": "Produção WO-2026-00019 (CI) está há 135 min em andamento.",
+      "order_ref": "WO-2026-00019",
+      "created_at_display": "06/10 às 15:43",
+      "actions": [
+        {
+          "ref": "open-context:5",
+          "kind": "open_alert_context",
+          "label": "Resolver no contexto",
+          "priority": 10,
+          "enabled": true,
+          "reason": "",
+          "method": "GET",
+          "href": "/?q=WO-2026-00019&date=2026-10-06",
+          "payload_schema": "",
+          "expected_rev": null,
+          "idempotency": {
+            "required": false,
+            "key_scope": ""
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Abrir"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "5",
+          "source_alert_effect": "keeps_open",
+          "proof": ".eJxlUVtPgzAY_S998MURP9gorMlieJiXaPTFqPGFFPgYzFqwLWSZ8b_bUsxifGzPOT2XfhFemraTucKaMNL1KIOykwYPhsVk8Yu-t7Ka4ZwLVCafSZbSeOnF5efm5TGIIKIBAITrs4ob3EznEAKgloqHHkuDlXUbCZODEAuiu0GV6G5aba3sS7rhUUwZFFFaLQtaJ5TS1Tpmk7FmLtKIbNCoWMjEmxLbRmJ5zD701f3dLjk-Z6vtbdcnN9cPOcQm4ntYlq9xZgP0qtujr7RDiYq7MNxY01POpzBl1j5OzgEYgFXVCnWTD9K04j8zZdGJ6VZRNmA-ovJtwj-m846-ieVrFH4Qt5UDpm4OGAqnmb_FdyXfP4QniXM:1xEALR:rIYeYUHbymBYNvPyDiijrUNWSpcbTfIawEX2zamf4Go"
+        },
+        {
+          "ref": "acknowledge:5",
+          "kind": "acknowledge_alert",
+          "label": "Visto",
+          "priority": 20,
+          "enabled": true,
+          "reason": "",
+          "method": "POST",
+          "href": "/api/v1/backstage/alerts/5/ack/",
+          "payload_schema": "AlertAckMutationRequest",
+          "expected_rev": 0,
+          "idempotency": {
+            "required": true,
+            "key_scope": "backstage.alert-ack:5"
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Confirmar"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "5",
+          "source_alert_effect": "acknowledges",
+          "proof": ".eJxlkctOwzAQRf_FW1rZSWsnzC6L8hCIFUKITeQ4k0cbnMh2Airi35k0VKhiOZ4zc-8dfzFtQtvb3GHFgIqD7T86LGsEyVbn5qG15WU31x26QESzDHI9tHyKeEGMD7pGfgI8l5xeOIH4OaAJWJLSxECsmO9HZ3AuW08itMQ3OpYKRBGn5aZQVaKU2l5LWFbBbGZCGD06iKB7c92usWiO2bu_eXyok-NLtt3d90Nyd_uUCxlivRcb8yozUh9cv8clTI0WnZ6d6ECisYjVOhJroZ6jFEheJldCgBA0VTn0TT7a0Hb_yRTiP9L0NjgymE_oljTRhej5gqckxHvslmuU5OR02jnb3BiLeeb3P5as7PsHUKeJ6A:1xEALR:tYZxMyACv2ygfn64iR2Sbj35lh1gGtUscCMyFsgdfo0"
+        }
+      ]
+    },
+    {
+      "pk": 4,
+      "rev": 0,
+      "type": "production_late",
+      "type_label": "Produção atrasada",
+      "severity": "warning",
+      "severity_label": "Aviso",
+      "audience": "production",
+      "message": "Produção WO-2026-00020 (FORMA) está há 633 min em andamento.",
+      "order_ref": "WO-2026-00020",
+      "created_at_display": "06/10 às 15:43",
+      "actions": [
+        {
+          "ref": "open-context:4",
+          "kind": "open_alert_context",
+          "label": "Resolver no contexto",
+          "priority": 10,
+          "enabled": true,
+          "reason": "",
+          "method": "GET",
+          "href": "/?q=WO-2026-00020&date=2026-10-06",
+          "payload_schema": "",
+          "expected_rev": null,
+          "idempotency": {
+            "required": false,
+            "key_scope": ""
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Abrir"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "4",
+          "source_alert_effect": "keeps_open",
+          "proof": ".eJxlUVtPgzAY_S998MURPzoos8lieJiXaPTFOOMLKfAxmLVgW8gy43-3BcxifGzPOT2XfhFR2KZVmcaKcNJ2qIKiVRYPlkdk8Yu-N6qc4UxI1DabSY5ST9KLq8_19imgQFkAABTOSmFxPZ5DCIA5Kh46LCyWzm0gXPVSLohpe12gv2mMs3IvmVrQmHHI6apc5qxKGGPRZcxHY8N9pAF5b1DzkMs3LTe1wuKYfpjrh_tdcnxJo81d2yW3N48ZxJaKPSyL1zh1ATrd7nGqtEOFWvgwwjrTU87ncMWdfZycA3AAp6o0mjrrlW3kf-aK0xPTr6JdwGxAPbUJ_5jOO05NHN-gnAbxW3lg7OaBPvea-VumruT7B3f2iWo:1xEALR:hA_JBQuOQRjREhPRsue898Mv7BGlnWIcjUub81begr4"
+        },
+        {
+          "ref": "acknowledge:4",
+          "kind": "acknowledge_alert",
+          "label": "Visto",
+          "priority": 20,
+          "enabled": true,
+          "reason": "",
+          "method": "POST",
+          "href": "/api/v1/backstage/alerts/4/ack/",
+          "payload_schema": "AlertAckMutationRequest",
+          "expected_rev": 0,
+          "idempotency": {
+            "required": true,
+            "key_scope": "backstage.alert-ack:4"
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Confirmar"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "4",
+          "source_alert_effect": "acknowledges",
+          "proof": ".eJxlkctOwzAQRf8lW1rZSRMneJdFeQjECiHEJnKSyaM1dmQ7ARXx74xjKlSxHM-ZufeOvyLRuFGrykAXcSyOSn9IaHvgabQ5N4-jai-7lZBgHBJDGCRiGskSkxoZ60QPZAUsSQm-EAThc4LGQYtKS8TpJrJ6Ng34crQogkvsIJKMcVonRburWZczxtLrjIdV3JtZgM8WDI-5fDNyPyhoTuW7vXl86PPTS5nu7_WU390-VTRziTjQXfOalag-GX2AEKYHBUZ4J8KhaEITto3plrLnuOAon-VXlHJKcaozYIdqVm6U_8mCJ39ko5UzaLBawIQ08YXo-YJrEuQtyHCNFp2sp_XZfGOu_czvf4Ss0fcPTdWJ5g:1xEALR:m-V31v64tKWP-ua8xjwj7cZE6pvgAop_CnD8UB5jQGY"
+        }
+      ]
+    },
+    {
+      "pk": 3,
+      "rev": 0,
+      "type": "production_late",
+      "type_label": "Produção atrasada",
+      "severity": "warning",
+      "severity_label": "Aviso",
+      "audience": "production",
+      "message": "Produção WO-2026-00021 (KUP) está há 623 min em andamento.",
+      "order_ref": "WO-2026-00021",
+      "created_at_display": "06/10 às 15:43",
+      "actions": [
+        {
+          "ref": "open-context:3",
+          "kind": "open_alert_context",
+          "label": "Resolver no contexto",
+          "priority": 10,
+          "enabled": true,
+          "reason": "",
+          "method": "GET",
+          "href": "/?q=WO-2026-00021&date=2026-10-06",
+          "payload_schema": "",
+          "expected_rev": null,
+          "idempotency": {
+            "required": false,
+            "key_scope": ""
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Abrir"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "3",
+          "source_alert_effect": "keeps_open",
+          "proof": ".eJxlUVtPgzAY_S998MURP8oos8lieJiXaPTFOOMLKfAxmLVgW8gy43-3BcxifGzPOT2XfhFR2KZVmcaKcNJ2qIKiVRYPlkdk8Yu-N6qc4UxI1DabSY5ST9KLq8_19imgQFkAADQ8K4XF9XgOIQDmqHjosLBYOreBcNVLuSCm7XWB_qYxzsq9ZGpBY8Yhp6syylmVMMaWlzEfjQ33kQbkvUHNQy7ftNzUCotj-mGuH-53yfElXW7u2i65vXnMILZU7CEqXuPUBeh0u8ep0g4VauHDCOtMTzmfwxV39nFyDsABnKrSaOqsV7aR_5krTk9Mv4p2AbMB9dQm_GM67zg1cXyDchrEb-WBsZsH-txr5m-ZupLvH3e4iWo:1xEALR:qXR8fTUtCDHQgAeF_hZGYvV27tWBA0cC9WV37WQmehY"
+        },
+        {
+          "ref": "acknowledge:3",
+          "kind": "acknowledge_alert",
+          "label": "Visto",
+          "priority": 20,
+          "enabled": true,
+          "reason": "",
+          "method": "POST",
+          "href": "/api/v1/backstage/alerts/3/ack/",
+          "payload_schema": "AlertAckMutationRequest",
+          "expected_rev": 0,
+          "idempotency": {
+            "required": true,
+            "key_scope": "backstage.alert-ack:3"
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Confirmar"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "3",
+          "source_alert_effect": "acknowledges",
+          "proof": ".eJxlkU1PhDAQhv9Lr-6mBZaCc-OwfkTjyRjjhZQyfOxiIW1Bs8b_7gBuzMbjdJ6Z932nX0xp3_Ymt1gxoOJo-o8OyxohYptz89ia8rKbqw6tJ6JZB7kaWj4FvCDGeVUjXwDHI04vnED8HFB7LElpYiA2zPWj1TiXrSMRWuIaFcYSRBGmZVTIKpFS7q5jWFfBbGZCGB1aCKB7s92-MahP2bu7eXyok9NLttvf90Nyd_uUi9iH6iAi_RpnpD7Y_oBrmBoNWjU7UZ5EQxHKbSC2Qj4HKZB8nFwJAULQVGXRNflofNv9J1MI_0jdG2_JYD6hXdMEF6LnCy5JiHfYrdcoycly2jnb3BiLeeb3P9as7PsHSwOJ5A:1xEALR:fGW3dRQyfBcpeREZkcdQ2IR4g7zo49oBbdu9SPDOzno"
+        }
+      ]
+    },
+    {
+      "pk": 2,
+      "rev": 0,
+      "type": "production_late",
+      "type_label": "Produção atrasada",
+      "severity": "warning",
+      "severity_label": "Aviso",
+      "audience": "production",
+      "message": "Produção WO-2026-00027 (BICH) está há 463 min em andamento.",
+      "order_ref": "WO-2026-00027",
+      "created_at_display": "06/10 às 15:43",
+      "actions": [
+        {
+          "ref": "open-context:2",
+          "kind": "open_alert_context",
+          "label": "Resolver no contexto",
+          "priority": 10,
+          "enabled": true,
+          "reason": "",
+          "method": "GET",
+          "href": "/?q=WO-2026-00027&date=2026-10-06",
+          "payload_schema": "",
+          "expected_rev": null,
+          "idempotency": {
+            "required": false,
+            "key_scope": ""
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Abrir"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "2",
+          "source_alert_effect": "keeps_open",
+          "proof": ".eJxlUVtPgzAY_S998MURP7pRsMlieJiXaPTFOOMLKfAxmLVgW8gy43-3BcxifGzPOT2XfhFR2KZVmcaKcNJ2qIKiVRYPllOy-EXfG1XOcCYkapvNJEepJ-nF1ed6-xRQoCwAABqflcLiejyHEABzVDx0WFgsndtAuOqlXBDT9rpAf9MYZ-VeMrWgEeOQ06Rc5qyKGWOry4iPxob7SAPy3qDmIZdvWm5qhcUx_TDXD_e7-PiSrjZ3bRff3jxmEFkq9rAsXqPUBeh0u8ep0g4VauHDCOtMTzmfw4Q7-yg-B-AATlVpNHXWK9vI_8yE0xPTr6JdwGxAPbUJ_5jOO05NHN-gnAbxW3lg7OaBPvea-VumruT7B34eiW8:1xEALR:y8FbXd4N6c_FGI7xo-Jg3DdPlcWYQzHuoZ5Yb7kfeXA"
+        },
+        {
+          "ref": "acknowledge:2",
+          "kind": "acknowledge_alert",
+          "label": "Visto",
+          "priority": 20,
+          "enabled": true,
+          "reason": "",
+          "method": "POST",
+          "href": "/api/v1/backstage/alerts/2/ack/",
+          "payload_schema": "AlertAckMutationRequest",
+          "expected_rev": 0,
+          "idempotency": {
+            "required": true,
+            "key_scope": "backstage.alert-ack:2"
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Confirmar"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "2",
+          "source_alert_effect": "acknowledges",
+          "proof": ".eJxlkctOwzAQRf_FW1rZcRsnzC6L8hCIFUKITeQkk0cb7Mh2Airi35k0VKhiOZ4zc-8dfzFdhs6a3GHNgIqDsR89Vg2CZKtz89CZ6rKb6x5dIKJdBrkeOj5FvCDGB90gPwGeS04vnED8HLAMWJHSxECsmLejK3EuO08itMS3WsYKRCHTalOoOlFKba9jWFbBbGZCGD06iKB_c_2uNVges3d_8_jQJMeXbLu7t0Nyd_uUizhIvReb8jXOSH1wdo9LmAYNOj070YFEpZBqHYm1UM9RCiQfJ1dCgBA0VTv0bT6a0PX_yRTkH1laExwZzCd0S5roQvR8wVMS4j32yzUqcnI67ZxtbozFPPP7H0tW9v0DSDGJ4g:1xEALR:QiZw6A7O0zJI5Ld7UFw7SIBIyyMhGZusyXdQspWCWLU"
+        }
+      ]
+    },
+    {
+      "pk": 1,
+      "rev": 0,
+      "type": "production_late",
+      "type_label": "Produção atrasada",
+      "severity": "warning",
+      "severity_label": "Aviso",
+      "audience": "production",
+      "message": "Produção WO-2026-00028 (MDLN) está há 403 min em andamento.",
+      "order_ref": "WO-2026-00028",
+      "created_at_display": "06/10 às 15:43",
+      "actions": [
+        {
+          "ref": "open-context:1",
+          "kind": "open_alert_context",
+          "label": "Resolver no contexto",
+          "priority": 10,
+          "enabled": true,
+          "reason": "",
+          "method": "GET",
+          "href": "/?q=WO-2026-00028&date=2026-10-06",
+          "payload_schema": "",
+          "expected_rev": null,
+          "idempotency": {
+            "required": false,
+            "key_scope": ""
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Abrir"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "1",
+          "source_alert_effect": "keeps_open",
+          "proof": ".eJxlUVtPgzAY_S998MURP7pRsMlieJiXaPTFOOMLKfAxmLVgW8gy43-3BcxifGzPOT2XfhFR2KZVmcaKcNJ2qIKiVRYPlodk8Yu-N6qc4UxI1DabSY5ST9KLq8_19imgQFkAADQ5K4XF9XgOIQDmqHjosLBYOreBcNVLuSCm7XWB_qYxzsq9ZGpBI8Yhp0m5zFkVM8ZWlxEfjQ33kQbkvUHNQy7ftNzUCotj-mGuH-538fElXW3u2i6-vXnMILJU7GFZvEapC9Dpdo9TpR0q1MKHEdaZnnI-hwl39lF8DsABnKrSaOqsV7aR_5kJpyemX0W7gNmAemoT_jGdd5yaOL5BOQ3it_LA2M0Dfe4187dMXcn3D33giW8:1xEALR:e4KA75xnC6AZE3fwXyWM7_0UlPow9n39gm5H0-QuV_g"
+        },
+        {
+          "ref": "acknowledge:1",
+          "kind": "acknowledge_alert",
+          "label": "Visto",
+          "priority": 20,
+          "enabled": true,
+          "reason": "",
+          "method": "POST",
+          "href": "/api/v1/backstage/alerts/1/ack/",
+          "payload_schema": "AlertAckMutationRequest",
+          "expected_rev": 0,
+          "idempotency": {
+            "required": true,
+            "key_scope": "backstage.alert-ack:1"
+          },
+          "confirmation": {
+            "required": false,
+            "reason_required": false,
+            "title": "",
+            "confirm_label": "Confirmar"
+          },
+          "approval_requirement": null,
+          "source_alert_ref": "1",
+          "source_alert_effect": "acknowledges",
+          "proof": ".eJxlkctOwzAQRf_FW1rZThsnzC6L8hCIFUKITeQ4k0cbnMh2Airi35k0VKhiOZ4zc-8dfzFtQtvb3GHFgIqD7T86LGsEyVbn5qG15WU31x26QESzDHI9tHySvCDGB10jPwGeS04vnED8HNAELElpYiBWzPejMziXrScRWuIbHcUKRBGl5aZQVaKU2l7HsKyC2cyEMHp0IKF7c92usWiO2bu_eXyok-NLtt3d90Nyd_uUizhEei825jXOSH1w_R6XMDVadHp2ogOJRiJSaynWQj3LFEg-Tq6EACFoqnLom3y0oe3-kylEf6TpbXBkMJ_QLWnkhej5gqckxHvslmuU5OR02jnb3BiLeeb3P5as7PsHRV-J4A:1xEALR:u2sMC4gLRukUCFWTT2YVEgDikpx583GZKLZmbrpzOZY"
+        }
+      ]
+    }
+  ],
+  "counts": {
+    "active": 6,
+    "critical": 0
+  },
+  "generated_at": "2026-10-06T18:56:57+00:00",
+  "source_revision": "sha256:0b28d3b6f7666495:alerts:active:user:1:lZrlEhneczAmsFLKg7zVA4EIop7HGN_05t2aj03cX5A",
+  "fresh_until": "2026-10-06T18:58:27+00:00",
+  "contract_version": 1
+}
