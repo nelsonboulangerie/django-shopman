@@ -207,6 +207,13 @@ useOperatorWindowTitle();
       </template>
 
       <div v-show="!locked && !mustChange" class="flex min-h-0 flex-1 flex-col">
+        <!-- A1: a oferta de posto é banner NO FLUXO do board (não overlay). -->
+        <OperatorStationSetup
+          v-if="stationSetup.offer.value"
+          @done="stationSetup.done()"
+          @dismiss="stationSetup.dismiss()"
+          @unavailable="stationSetup.dismiss({ remember: false })"
+        />
         <NuxtPage :key="workspaceOwner ?? 'unidentified'" />
       </div>
     </OperatorOfficeShell>
@@ -219,12 +226,6 @@ useOperatorWindowTitle();
     <OperatorSessionUnavailable v-if="sessionUnavailable" scope="os pedidos" @retry="refresh()" />
     <OperatorLogin v-if="!canIdentify && !sessionUnavailable" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
     <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
-    <OperatorStationSetup
-      v-if="stationSetup.offer.value"
-      @done="stationSetup.done()"
-      @dismiss="stationSetup.dismiss()"
-      @unavailable="stationSetup.dismiss({ remember: false })"
-    />
     <OperatorShortcutsHelp :sections="topSections" :app-label="appLabel" />
     <OperatorSonner />
     <OperatorPwaRuntime />

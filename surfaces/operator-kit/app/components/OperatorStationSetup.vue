@@ -27,6 +27,8 @@ const { workstations, copy, allowed, loaded, busy, error, confirmFor, load, prov
   props.surface,
 );
 const escolhido = ref("");
+// A1: a oferta é banner; os passos abrem no Slideover sob demanda.
+const open = ref(false);
 
 onMounted(async () => {
   await load();
@@ -50,28 +52,44 @@ async function confirmar() {
 </script>
 
 <template>
-  <div
+  <!-- A1: a oferta de posto é BANNER, não parede. O board fica operável atrás; os
+       passos (escolher posto e confirmar) moram no Slideover. O "Usar sem vincular"
+       continua lembrado neste navegador (useStationSetupOffer). -->
+  <NuxtBanner
     v-if="loaded && allowed"
-    class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-background p-4 text-foreground"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="station-setup-title"
+    :title="copy.setup_title"
+    :description="copy.setup_lead"
+    icon="i-lucide-map-pin"
+    class="mb-3 shrink-0"
     data-station-setup
   >
-    <!-- Na camada da suíte (`data-suite="v3"`): o cartão calmo das prévias (borda, raio de
-         14px, papéis tipográficos `op-*`, gestos de 48px com rótulo seminegrito). -->
-    <div class="grid w-full max-w-sm gap-4 text-center suite:max-w-md suite:gap-5 suite:rounded-[14px] suite:border suite:border-border suite:bg-card suite:p-6 suite:shadow-sm sm:suite:p-8">
-      <div class="mx-auto grid size-14 place-items-center rounded-full border bg-muted suite:size-12 suite:rounded-xl suite:border-0 suite:bg-secondary">
-        <Icon name="lucide:map-pin" class="size-7 text-muted-foreground suite:size-6 suite:text-foreground" />
-      </div>
-      <div class="grid gap-1.5">
-        <h2 id="station-setup-title" class="text-lg font-semibold suite:op-heading">{{ copy.setup_title }}</h2>
-        <p class="text-sm text-muted-foreground suite:op-body">{{ copy.setup_lead }}</p>
-      </div>
+    <template #actions>
+      <NuxtButton
+        v-if="options.length"
+        size="sm"
+        :label="copy.setup_confirm"
+        data-station-setup-open
+        @click="open = true"
+      />
+      <NuxtButton
+        size="sm"
+        color="neutral"
+        variant="ghost"
+        :label="copy.setup_dismiss"
+        data-station-setup-dismiss
+        @click="emit('dismiss')"
+      />
+    </template>
+  </NuxtBanner>
 
+  <NuxtSlideover
+    v-model:open="open"
+    :title="copy.setup_title"
+    :description="copy.setup_lead"
+    data-station-setup-steps
+  >
+    <template #body>
       <div v-if="options.length" class="grid gap-2 text-left">
-        <!-- "Posto:" num seletor (decisão do dono, 03/10): com um posto só, já vem
-             marcado. A segunda linha do escolhido diz o tipo e quem já está nele. -->
         <label class="grid gap-1.5 text-sm suite:op-label">
           <span class="font-medium suite:op-eyebrow suite:text-muted-foreground">{{ copy.setup_choice_label }}</span>
           <UiNativeSelect
@@ -93,32 +111,28 @@ async function confirmar() {
         >{{ error }}</p>
       </div>
       <p v-else class="text-sm text-muted-foreground suite:op-body" data-station-setup-empty>{{ copy.setup_empty }}</p>
+    </template>
 
-      <!-- `<button>` cru e não `UiButton`: o kit não alcança a biblioteca Ui de cada
-           app, e esta tela sobe nos oito (ver OperatorSessionUnavailable). -->
-      <div class="grid gap-2">
-        <button
+    <template #footer>
+      <div class="grid w-full gap-2">
+        <NuxtButton
           v-if="options.length"
-          type="button"
-          class="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50 suite:rounded-lg suite:op-title"
-          :disabled="busy || !escolhido"
-          :aria-busy="busy"
+          block
+          :loading="busy"
+          :label="busy ? copy.setup_busy : pedeConfirmacao ? copy.setup_confirm_shared : copy.setup_confirm"
           data-station-setup-confirm
           @click="confirmar"
-        >
-          <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:check'" class="size-5" />
-          {{ busy ? copy.setup_busy : pedeConfirmacao ? copy.setup_confirm_shared : copy.setup_confirm }}
-        </button>
-        <button
-          type="button"
-          class="inline-flex h-12 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition hover:bg-foreground/8 disabled:opacity-50 suite:rounded-lg suite:border suite:border-border suite:op-label suite:font-semibold"
+        />
+        <NuxtButton
+          block
+          color="neutral"
+          variant="outline"
+          :label="copy.setup_dismiss"
           :disabled="busy"
-          data-station-setup-dismiss
+          data-station-setup-slideover-dismiss
           @click="emit('dismiss')"
-        >
-          {{ copy.setup_dismiss }}
-        </button>
+        />
       </div>
-    </div>
-  </div>
+    </template>
+  </NuxtSlideover>
 </template>
