@@ -57,12 +57,16 @@ async function confirmar() {
        continua lembrado neste navegador (useStationSetupOffer). -->
   <NuxtBanner
     v-if="loaded && allowed"
-    :title="copy.setup_title"
-    :description="copy.setup_lead"
     icon="i-lucide-map-pin"
     class="mb-3 shrink-0"
     data-station-setup
   >
+    <!-- O Banner do Nuxt UI não tem prop `description` (props: title/icon/
+         actions/close/to/color). A chamada vai no slot #title junto do título. -->
+    <template #title>
+      <span class="font-semibold">{{ copy.setup_title }}</span>
+      <span class="font-normal">{{ copy.setup_lead }}</span>
+    </template>
     <template #actions>
       <NuxtButton
         v-if="options.length"
