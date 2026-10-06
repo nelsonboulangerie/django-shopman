@@ -88,7 +88,7 @@ describe("G02: densidade pela atenção", () => {
       { key: "kitchen" as const, label: "Na Cozinha", icon: "", count: 5, detail: "" },
       { key: "road" as const, label: "Na rua", icon: "", count: 2, detail: "" },
     ];
-    expect(restLine(lines, 5)).toEqual({ count: 12, text: "mais 5 pedem você · em andamento: 5 na cozinha, 2 na rua" });
+    expect(restLine(lines, 5)).toEqual({ count: 12, text: "mais 5 pedem por você · em andamento: 5 na cozinha, 2 na rua" });
     expect(restLine(lines)).toEqual({ count: 7, text: "em andamento, nada pede você: 5 na cozinha, 2 na rua" });
   });
 });

@@ -59,7 +59,12 @@ async function confirmar() {
     v-if="loaded && allowed"
     icon="i-lucide-map-pin"
     class="mb-3 shrink-0"
-    :ui="{ container: 'h-auto min-h-12 py-2', title: 'min-w-0 whitespace-normal' }"
+    :ui="{
+      root: 'border-b border-default bg-elevated!',
+      container: 'h-auto min-h-12 py-2',
+      icon: 'text-primary!',
+      title: 'min-w-0 whitespace-normal text-highlighted!',
+    }"
     data-station-setup
   >
     <!-- O Banner do Nuxt UI não tem prop `description` (props: title/icon/

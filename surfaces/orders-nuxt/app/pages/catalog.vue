@@ -564,7 +564,7 @@ useHead({ title: "Catálogo" });
   <main class="flex min-h-0 flex-1 flex-col">
     <!-- Cabeçalho de uma linha (UX-KIT-V1, prévia v3 `orders-catalog3.html`): título +
          ao vivo + busca e filtro + colunas; as coleções na segunda linha. -->
-    <OperatorPageHeader title="Catálogo" :filters-wrap="false">
+    <OperatorPageHeader title="Catálogo" :filters-wrap="true">
       <template #status>
         <OperatorLiveStatus
           :tone="error ? 'off' : realtime === 'live' ? 'live' : realtime === 'connecting' ? 'late' : 'calm'"
@@ -603,7 +603,7 @@ useHead({ title: "Catálogo" });
       <template #filters>
         <span v-if="collections.length" class="mr-1 shrink-0 text-xs uppercase tracking-wider font-semibold text-muted-foreground">Coleção</span>
       <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
-      <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex items-center gap-0.5">
+      <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex flex-wrap items-center gap-x-0.5 gap-y-1">
         <!-- abas planas (v3 `depois-gestor-catalogo`): a ativa numa caixa; arrastar reordena -->
         <button
           key="__all"
@@ -699,7 +699,95 @@ useHead({ title: "Catálogo" });
       </div>
     </div>
 
-    <div v-else-if="rows.length" role="region" aria-label="Produtos e canais. Role para o lado para ver todos os canais." tabindex="0" class="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-xs">
+    <div v-else-if="rows.length" class="min-h-0 flex-1">
+      <!-- MOBILE (<sm): a matriz de 8 colunas não cabe em 390px. O produto vira cartão
+           (nome inteiro + SKU + preço) e os canais viram uma faixa de controles; o toque
+           no produto abre o painel de detalhe com as demais ações. -->
+      <div class="h-full space-y-2 overflow-auto sm:hidden" data-catalog-mobile>
+        <article
+          v-for="row in displayRows"
+          :key="row.sku"
+          class="rounded-xl border border-border bg-card p-3"
+          :class="isSelected(row.sku) ? 'border-primary/50' : ''"
+          :data-catalog-card="row.sku"
+        >
+          <div class="flex items-start gap-3">
+            <img
+              v-if="row.image_url && !brokenImages.has(row.sku)" :src="row.image_url" :alt="row.name"
+              class="size-11 shrink-0 rounded-md object-cover ring-1 ring-border"
+              :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
+              @error="imageFailed(row.sku)"
+            />
+            <div
+              v-else
+              class="grid size-11 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground ring-1 ring-border"
+              :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
+              aria-hidden="true"
+            >
+              <Icon name="lucide:package" class="size-4" />
+            </div>
+            <button
+              type="button"
+              class="min-w-0 flex-1 text-left"
+              :aria-label="`Abrir ${row.name}`"
+              @click="openDetail(row)"
+            >
+              <span class="flex items-start gap-1.5">
+                <span class="min-w-0 flex-1 text-sm font-medium leading-snug" :class="rowStatuses[row.sku]?.off ? 'text-muted-foreground line-through decoration-1' : 'text-foreground'">{{ row.name }}</span>
+                <span
+                  v-if="rowStatuses[row.sku]?.label"
+                  class="shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium"
+                  :class="{
+                    'bg-destructive/10 text-destructive': rowStatuses[row.sku]?.tone === 'danger',
+                    'bg-warning/15 text-amber-600 dark:text-amber-400': rowStatuses[row.sku]?.tone === 'amber',
+                    'bg-muted text-muted-foreground': rowStatuses[row.sku]?.tone === 'muted',
+                  }"
+                >{{ rowStatuses[row.sku]?.label }}</span>
+              </span>
+              <span class="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span class="min-w-0 truncate font-mono" :title="row.sku">{{ row.sku }}</span>
+                <span class="shrink-0 text-muted-foreground/40" aria-hidden="true">·</span>
+                <span class="shrink-0 tabular-nums">{{ row.base_price_display }}</span>
+                <template v-if="row.primary_collection_name"><span class="shrink-0 text-muted-foreground/40" aria-hidden="true">·</span><span class="min-w-0 truncate">{{ row.primary_collection_name }}</span></template>
+              </span>
+            </button>
+          </div>
+          <div class="mt-2.5 flex flex-wrap gap-1.5">
+            <div
+              v-for="cell in visibleCells(row)"
+              :key="cell.surface_ref"
+              class="flex min-h-control items-center gap-1.5 rounded-md border border-border px-2"
+            >
+              <span class="text-xs font-medium text-muted-foreground">{{ visibleSurfaces.find(s => s.ref === cell.surface_ref)?.short_name || surfaceName(cell.surface_ref) }}</span>
+              <template v-if="cell.in_listing">
+                <UiSwitch
+                  size="sm"
+                  :tone="rowStatuses[row.sku]?.off ? 'muted' : 'success'"
+                  :model-value="cell.is_sellable"
+                  :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
+                  :aria-label="cell.is_sellable ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.` : `Ativar neste ${surfaceWord(cell)}`"
+                  @update:model-value="toggleCell(row, cell)"
+                />
+                <button
+                  v-if="isCellTransactional(cell)"
+                  type="button"
+                  class="min-h-control min-w-control inline-flex items-center justify-center rounded px-0.5 leading-none transition hover:bg-muted disabled:opacity-40"
+                  :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
+                  :title="priceTitle(row, cell)"
+                  :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display}. Toque para editar.`"
+                  @click="startEdit(row, cell)"
+                >
+                  <span v-if="cellPrice(row, cell).differs" class="text-xs font-semibold tabular-nums" :class="cell.is_sellable ? 'text-foreground' : 'text-muted-foreground line-through'">{{ cell.price_display.replace("R$ ", "") }}</span>
+                  <Icon v-else name="lucide:circle-dollar-sign" class="size-3.5 text-muted-foreground/40" />
+                </button>
+              </template>
+              <span v-else class="text-xs text-muted-foreground/40" aria-hidden="true">—</span>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div role="region" aria-label="Produtos e canais. Role para o lado para ver todos os canais." tabindex="0" class="hidden h-full overflow-auto rounded-xl border border-border bg-card shadow-xs sm:block">
       <!-- `table-fixed`: sem ele o conteúdo do cabeçalho (nome longo do canal, rótulo
            do feed) estica a coluna e a matriz fica desalinhada. Fixo, toda superfície
            tem a MESMA largura e o nome trunca com o title inteiro. O `min-w` faz a
@@ -708,7 +796,7 @@ useHead({ title: "Catálogo" });
            impede table-fixed de reduzir Produto a zero quando há muitos canais. -->
       <table
         class="w-full min-w-[1024px] table-fixed border-separate border-spacing-0 text-sm"
-        :style="{ minWidth: `${Math.max(1024, 260 + visibleSurfaces.length * 114)}px` }"
+        :style="{ minWidth: `${Math.max(1080, 300 + visibleSurfaces.length * 114)}px` }"
       >
         <thead>
           <tr>
@@ -716,7 +804,7 @@ useHead({ title: "Catálogo" });
                  as colunas de superfície ficam no seu tamanho fixo (uniformes).
                  `border-r` fecha a coluna fixa: no scroll horizontal é essa linha que
                  diz onde o painel parado termina e a matriz que corre começa. -->
-            <th class="sticky sm:left-0 top-0 z-30 w-full min-w-[260px] border-b border-r border-border bg-card px-4 py-3 text-left">
+            <th class="sticky sm:left-0 top-0 z-30 w-full min-w-[300px] border-b border-r border-border bg-card px-4 py-3 text-left">
               <UiCheckbox
                 :model-value="allSelected"
                 :indeterminate="someSelected"
@@ -822,9 +910,9 @@ useHead({ title: "Catálogo" });
                     aria-hidden="true"
                     data-letter-tile
                   >{{ letterTile(row.name).letter }}</div>
-                  <div class="flex min-w-0 flex-col">
-                    <span class="flex items-center gap-1.5 truncate font-medium" :class="rowStatuses[row.sku]?.off ? 'text-muted-foreground' : 'text-foreground'">
-                      <span class="truncate" :class="rowStatuses[row.sku]?.off ? 'line-through decoration-1' : ''">{{ row.name }}</span>
+                  <div class="flex min-w-0 flex-1 flex-col">
+                    <span class="flex items-start gap-1.5 font-medium" :class="rowStatuses[row.sku]?.off ? 'text-muted-foreground' : 'text-foreground'">
+                      <span class="line-clamp-2 min-w-0" :title="row.name" :class="rowStatuses[row.sku]?.off ? 'line-through decoration-1' : ''">{{ row.name }}</span>
                       <span
                         v-if="rowStatuses[row.sku]?.label"
                         class="shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium"
@@ -854,7 +942,7 @@ useHead({ title: "Catálogo" });
                     <!-- uma linha só: com a coluna em largura fixa, sem `nowrap` o SKU +
                          preço + coleção quebram e a linha da matriz cresce. -->
                     <span class="flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
-                      <span class="shrink-0 font-mono">{{ row.sku }}</span>
+                      <span class="min-w-0 truncate font-mono" :title="row.sku">{{ row.sku }}</span>
                       <span class="shrink-0 text-muted-foreground/40">·</span>
                       <span class="shrink-0 tabular-nums">{{ row.base_price_display }}</span>
                       <template v-if="row.primary_collection_name"><span class="shrink-0 text-muted-foreground/40">·</span><span class="truncate">{{ row.primary_collection_name }}</span></template>
@@ -1033,6 +1121,7 @@ useHead({ title: "Catálogo" });
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
       <div v-else-if="!pending && !error" class="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">

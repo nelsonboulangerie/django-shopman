@@ -152,13 +152,21 @@ const { request: openSearch } = useSuiteSearchRequest();
       </ClientOnly>
     </div>
 
-    <div
-      v-if="$slots.filters"
-      class="flex items-center gap-1.5 overflow-x-auto px-4 pb-2.5 no-scrollbar *:shrink-0"
-      :class="filtersWrap ? 'md:flex-wrap md:overflow-visible' : ''"
-      data-page-header-filters
-    >
-      <slot name="filters" />
+    <div v-if="$slots.filters" class="relative">
+      <div
+        class="flex items-center gap-1.5 overflow-x-auto px-4 pb-2.5 no-scrollbar *:shrink-0"
+        :class="filtersWrap ? 'md:flex-wrap md:overflow-visible' : ''"
+        data-page-header-filters
+      >
+        <slot name="filters" />
+      </div>
+      <!-- Afordância de rolagem no celular: sem ela a trilha corta em silêncio (o
+           "Fol…" da auditoria). Some no >=md, onde a trilha quebra em vez de rolar. -->
+      <div
+        class="pointer-events-none absolute inset-y-0 right-0 w-8 md:hidden"
+        style="background: linear-gradient(to left, var(--ui-bg), transparent)"
+        aria-hidden="true"
+      />
     </div>
     <slot name="below" />
   </header>

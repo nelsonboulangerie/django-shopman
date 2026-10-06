@@ -64,7 +64,13 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
   } as OrderCardProjection;
 }
 
-const stubs = { Icon: true, NuxtLink: { template: "<a><slot /></a>" } };
+const stubs = {
+  Icon: true,
+  NuxtLink: { template: "<a><slot /></a>" },
+  // O root do cartão veste `NuxtCard` (semântica fica no `as="article"` do componente);
+  // aqui o stub devolve o `<article>` que os testes leem.
+  NuxtCard: { template: "<article><slot /></article>" },
+};
 function mountCard(props: Record<string, unknown>) {
   return mount(OrderCard, { props, global: { stubs } });
 }

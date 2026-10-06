@@ -179,6 +179,7 @@ function secondaryClass(priority: string): string {
 
 <template>
   <NuxtCard
+    as="article"
     variant="outline"
     :ui="{ root: 'relative flex flex-col gap-2 rounded-xl border border-border bg-card p-3.5 shadow-none ring-0 transition' }"
     :class="[
@@ -346,7 +347,7 @@ function secondaryClass(priority: string): string {
            itens moram no detalhe e no cartão da coluna. -->
       <!-- O que vai sair: a linha é o resumo; o detalhe (a lista) abre no Popover e no
            pedido — a projection do cartão carrega só o resumo, não as linhas. -->
-      <NuxtPopover v-if="!fill" mode="hover">
+      <NuxtPopover v-if="!fill && !negotiationOnly" mode="hover">
         <button
           type="button"
           class="min-h-control w-full truncate text-left text-sm text-foreground/85 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
@@ -602,7 +603,7 @@ function secondaryClass(priority: string): string {
 
       <!-- ⋯ do cartão: atender, seleção em lote, voltar à estação, abrir. Na Saída larga
            (v4) ele não aparece: o toque longo abre o menu, e o teclado ainda o alcança. -->
-      <div class="relative shrink-0" :class="fill ? 'absolute right-3 bottom-3 size-0' : ''">
+      <div v-if="!negotiationOnly" class="relative shrink-0" :class="fill ? 'absolute right-3 bottom-3 size-0' : ''">
       <UiPopover v-model:open="menuOpen">
         <UiPopoverTrigger as-child>
           <button
