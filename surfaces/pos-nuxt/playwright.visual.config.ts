@@ -1,28 +1,14 @@
-import { defineConfig } from "@playwright/test";
+import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 
 const appPort = 33012;
 const backendPort = 38792;
 
-export default defineConfig({
+export default defineOperatorVisualConfig({
+  app: "pos-nuxt",
+  matrix: false,
   testDir: "./tests/visual",
-  testMatch: "**/*.spec.ts",
   outputDir: "./test-results/visual",
   snapshotPathTemplate: "{testDir}/baselines/{arg}{ext}",
-  fullyParallel: false,
-  forbidOnly: true,
-  retries: 0,
-  workers: 1,
-  timeout: 60_000,
-  reporter: [["list"]],
-  expect: {
-    timeout: 10_000,
-    toHaveScreenshot: {
-      animations: "disabled",
-      caret: "hide",
-      maxDiffPixelRatio: 0.001,
-      threshold: 0.2,
-    },
-  },
   webServer: [
     {
       command: "node tests/visual/mockBackend.mjs",
@@ -44,14 +30,6 @@ export default defineConfig({
   ],
   use: {
     baseURL: `http://127.0.0.1:${appPort}`,
-    browserName: "chromium",
-    headless: true,
     bypassCSP: true,
-    colorScheme: "light",
-    locale: "pt-BR",
-    reducedMotion: "reduce",
-    serviceWorkers: "block",
-    timezoneId: "America/Sao_Paulo",
-    trace: "retain-on-failure",
   },
 });

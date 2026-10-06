@@ -1,0 +1,10 @@
+{
+  "$comment": "Shells locais anteriores ao WP-UX-13B. Não autorizam novas cópias. O WP do app decide adoção, composição ou exceção operacional.",
+  "version": 1,
+  "exceptions": [
+    { "path": "surfaces/pos-nuxt/app/components/PosCustomerDisplayShell.vue", "reason": "Segundo monitor do cliente, jornada distinta do shell do operador.", "owner": "WP-UX-13J", "test": "surfaces/pos-nuxt/tests/e2e/customer-display.spec.ts" },
+    { "path": "surfaces/pos-nuxt/app/components/PosOperatorShell.vue", "reason": "Shell legado do fluxo contínuo de venda; será confrontado com o shell operacional canônico no WP do PDV.", "owner": "WP-UX-13J", "test": "surfaces/pos-nuxt/tests/components/PosShell.test.ts" },
+    { "path": "surfaces/pos-nuxt/app/components/PosPreordersShell.vue", "reason": "Composição legada das encomendas, pendente da auditoria integral do PDV.", "owner": "WP-UX-13J", "test": "surfaces/pos-nuxt/tests/**/*.test.ts" },
+    { "path": "surfaces/pos-nuxt/app/components/PosSettingsShell.vue", "reason": "Navegação local de ajustes anterior à família Dashboard; decisão fica no WP do PDV.", "owner": "WP-UX-13J", "test": "surfaces/pos-nuxt/tests/**/*.test.ts" }
+  ]
+}

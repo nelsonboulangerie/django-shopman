@@ -10,6 +10,26 @@ do design system sem absorver regras específicas de cada domínio.
 
 O **storefront-nuxt fica de fora** (superfície de cliente, branded, harness próprio).
 
+## UX transversal do WP-UX-13B
+
+Layouts canônicos, matriz visual, scanner geométrico, Splitter, atalhos e catálogo vivo
+estão documentados em
+[`docs/reference/operator-ux-infrastructure.md`](../../docs/reference/operator-ux-infrastructure.md).
+
+As peças estruturais novas são `<OperatorAppRoot>`, `<OperatorOfficeShell>`,
+`<OperatorOperationalShell>`, `<OperatorPage>` e `<OperatorSplitter>`. Elas compõem as
+famílias oficiais do Nuxt UI; não são uma anatomia paralela. O catálogo roda somente no
+harness:
+
+```bash
+npm run catalog:dev
+npm run catalog:build
+npm run test:visual
+```
+
+Nenhum app deve criar shell, Sidebar, NavigationMenu, Page ou Splitter local. Uma
+necessidade operacional comprovada entra no ledger com responsável e teste.
+
 ## Como um app consome
 
 No `nuxt.config.ts` do app:

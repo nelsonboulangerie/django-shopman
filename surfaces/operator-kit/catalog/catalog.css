@@ -1,0 +1,25 @@
+@import "tailwindcss";
+@import "../app/assets/css/operator-base.css";
+
+/* O catálogo exercita o envelope operacional, não apenas a caixa visual. Nos
+   consumidores, a auditoria de cada jornada decide onde o mesmo envelope entra
+   sem deformar checkbox, switch ou outro controle composto. */
+@media (pointer: coarse) {
+  [data-operator-catalog] :where(
+    button,
+    a[href],
+    input:not([type="hidden"]),
+    select,
+    textarea,
+    [role="button"],
+    [role="link"],
+    [role="tab"]
+  ):not([role="separator"]) {
+    min-block-size: var(--spacing-control);
+    min-inline-size: var(--spacing-control);
+  }
+}
+
+[data-operator-catalog] [data-action-group] {
+  gap: var(--op-control-gap);
+}

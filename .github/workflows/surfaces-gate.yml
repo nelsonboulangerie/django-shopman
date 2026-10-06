@@ -67,6 +67,12 @@ jobs:
       - name: Gate de componentes canônicos do operador
         run: python scripts/check_operator_component_ledger.py
 
+      - name: Gate de atalhos globais do operador
+        run: python scripts/check_operator_shortcuts.py
+
+      - name: Gate de layouts e tokens do operador
+        run: python scripts/check_operator_layout_guardrails.py
+
   app-quality:
     name: ${{ matrix.app }}
     runs-on: ubuntu-latest
@@ -133,6 +139,27 @@ jobs:
       # junto com este gate.
       - name: Typecheck
         run: npm run typecheck --if-present
+
+      - name: Build do catálogo canônico
+        if: matrix.app == 'operator-kit'
+        run: npm run catalog:build
+
+      - name: Install pinned Chromium for the shared visual runner
+        if: matrix.app == 'operator-kit'
+        run: npx playwright install chromium
+
+      - name: Shared visual runner and geometry scanner
+        if: matrix.app == 'operator-kit'
+        run: npm run test:visual
+
+      - name: Upload shared operator evidence
+        if: always() && matrix.app == 'operator-kit'
+        uses: actions/upload-artifact@v7
+        with:
+          name: operator-kit-visual-evidence
+          path: surfaces/operator-kit/test-results/operator-evidence
+          if-no-files-found: error
+          retention-days: 14
 
   pwa-quality:
     name: PWA — ${{ matrix.app }}
