@@ -21,8 +21,8 @@
       "baselines": "surfaces/pos-nuxt/tests/visual/baselines"
     }
   ],
-  "themeFingerprint": "sha256:be27c72b66fb73af6575478f16ee92c9c1cd290f7e5fe4b8580a148c6f4985ae",
+  "themeFingerprint": "sha256:da7509de7588f13bef268b9b18ea275382faea0fee5b3871fb0b2d40e49a5f8a",
   "acceptedOn": "2026-10-06",
-  "owner": "WP-UX-13E (#1512)",
+  "owner": "Pablo Valentini (#1516)",
   "note": "Aceite do tema já com o app.config.ts canônico do #1512 (merge 35d95104d), que regenerou as baselines de Marketing no próprio PR (commit c37a70a3b). O contrato nasce neste PR porque o gate é novo; daqui em diante, PR de tema regrava o aceite junto com as baselines."
 }
