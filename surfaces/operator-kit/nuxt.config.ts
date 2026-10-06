@@ -87,14 +87,13 @@ export default defineNuxtConfig({
       : {}),
   },
 
-  // Um reka-ui só no bundle do app. Sem isto, o componente do kit que importa
-  // `reka-ui` resolve o `operator-kit/node_modules` e o app resolve o dele. Medido
-  // no build do Gestor (03/10/2026): duas cópias do DismissableLayer no bundle; com
-  // `dedupe`, uma. Duas cópias são duas pilhas de camadas, e o `OperatorConfirmDialog`
-  // aberto sobre um `UiDialog` do app não seria a camada de cima: o diálogo de baixo
-  // tomaria o toque dentro da pergunta como toque fora e puxaria o foco de volta.
+  // Uma instância de cada runtime com estado global no bundle do app. Sem isto, o
+  // componente do kit resolve `operator-kit/node_modules` e o app resolve a própria
+  // cópia: duas pilhas de DismissableLayer e dois stores de toast independentes.
+  // Nesse segundo caso o comando é aceito por uma cópia de vue-sonner, enquanto o
+  // OperatorSonner observa a outra, e a mensagem nunca aparece.
   vite: {
-    resolve: { dedupe: ["reka-ui"] },
+    resolve: { dedupe: ["reka-ui", "vue-sonner"] },
   },
 
   runtimeConfig: {

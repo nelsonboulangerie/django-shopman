@@ -30,4 +30,8 @@ describe("catálogo vivo", () => {
     expect(config).toContain('process.env.OPERATOR_KIT_CATALOG === "1"');
     expect(config).toContain('path: "/__operator_kit_catalog"');
   });
+
+  it("mantém uma instância dos runtimes globais entre a layer e o app", () => {
+    expect(config).toContain('dedupe: ["reka-ui", "vue-sonner"]');
+  });
 });
