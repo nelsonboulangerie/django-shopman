@@ -11,7 +11,7 @@
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:visual": "playwright test --config playwright.visual.config.ts",
-    "typecheck": "OPERATOR_KIT_CATALOG=1 nuxt typecheck"
+    "typecheck": "OPERATOR_KIT_CATALOG=1 nuxt prepare && OPERATOR_KIT_CATALOG=1 vue-tsc --build tsconfig.operator-kit.json --noEmit"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
