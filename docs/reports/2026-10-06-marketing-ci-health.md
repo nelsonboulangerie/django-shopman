@@ -1,6 +1,6 @@
 # Marketing — cadeia causal das falhas recorrentes do CI (2026-10-06)
 
-- **Frente:** `codex/supply-chain-audit`, base `origin/main` = `f650d01b2`
+- **Frente:** `codex/supply-chain-audit`; rebaseado sobre `origin/main` = `35d95104d` (merge do #1512). O diagnóstico parte de `f650d01b2`; a evidência de execução foi refeita no topo mergeado.
 - **Escopo:** saúde do app Marketing + supply chain das superfícies Nuxt
 - **Regra que este relatório defende:** o check de Marketing tem de significar
   Marketing. Vermelho crônico e alheio é pior que nenhum check, porque treina todo
@@ -14,7 +14,7 @@ Marketing:
 | # | Tipo | Origem real | Correção permanente |
 |---|---|---|---|
 | i | drift de baseline pelo tema compartilhado do `operator-kit` | tema da layer, herdado por `extends` | contrato de tema × baselines + gate (este PR) e regeração no mesmo PR |
-| ii | label/rótulo obsoleto na spec visual | cópia da tela do Marketing muda e a spec não acompanha | #1512 corrige o rótulo; regra de varredura de specs no mesmo PR |
+| ii | label/rótulo obsoleto na spec visual | cópia da tela do Marketing muda e a spec não acompanha | #1512 (mergeado) corrigiu o rótulo; regra de varredura de specs no mesmo PR |
 | iii | `npm audit` do `operator-kit` rodando DENTRO do job de Marketing | toolchain Nuxt transitivo do kit, atribuído ao app errado | job `Supply chain — npm audit` (este PR) + allowlist com prazo |
 | iv | retrato não assentado (races) e vermelho não obrigatório tolerado | spec e desenho de check | espera de estado assentado + relógio fixo; check deixa de carregar dívida alheia |
 
@@ -52,8 +52,9 @@ paisagem.
 
 **Evidência.** O `operator-kit` é layer consumida por `extends`; o Marketing não tem
 `app.config.ts` próprio e herda o tema do kit. O #1512 (branch
-`codex/operator-kitchen-sink`) adiciona `surfaces/operator-kit/app/app.config.ts` e
-ajusta `operator-theme.css`; junto, muda exatamente 4 baselines de Marketing:
+`codex/operator-kitchen-sink`, mergeado em `35d95104d`) adicionou
+`surfaces/operator-kit/app/app.config.ts` e ajustou `operator-theme.css`; junto,
+mudou exatamente 4 baselines de Marketing:
 
 - `surfaces/marketing-nuxt/tests/visual/baselines/campaign-form__weekdays-320__320x568__light.png`
 - `surfaces/marketing-nuxt/tests/visual/baselines/platforms__test-receipt__768x1024__light.png`
@@ -87,9 +88,10 @@ resolver (sem macOS), então mergeava por cima.
   [`operator-visual-baselines.md`](../reference/operator-visual-baselines.md): PR de
   tema regera as baselines afetadas NO MESMO PR e regrava o aceite com
   `make theme-baselines-accept owner="<quem aceitou>"`;
-- [ ] **O #1512 precisa regravar o aceite** depois de regenerar as 4 baselines: o
-  contrato nasce com o fingerprint do `main` (sem `app.config.ts`) e o gate vai
-  reprovar o #1512 até isso — de propósito.
+- [x] **O aceite do tema foi regravado depois do #1512**: o #1512 entrou no `main`
+  (`35d95104d`) com as 4 baselines de Marketing regeradas no mesmo PR (commit
+  `c37a70a3b`); este PR grava o fingerprint já com o `app.config.ts` (owner
+  `WP-UX-13E (#1512)`), sem tocar em baseline.
 
 ⚠️ Nenhuma baseline foi regerada neste PR. Regenerar baseline é ato com dono e com
 antes/depois revisado; o gate existe para impedir o contrário.
@@ -214,8 +216,7 @@ job de cada app consumidor.
 
 ## O que fica de fora (com dono)
 
-- **#1512**: regerar as 4 baselines + regravar o aceite do tema
-  (`make theme-baselines-accept owner=...`); corrigir o rótulo da spec (já no PR).
+- **#1512**: nada pendente — mergeado em `35d95104d` com baselines e rótulo.
 - **Marketing**: fonte única do rótulo acessível de formulário (follow-up).
 - **Dono**: decidir sobre tornar `Marketing — cadeia completa` required check.
 
@@ -223,7 +224,7 @@ job de cada app consumidor.
 
 - gate antes: `check_npm_audit_gate.mjs` exit 1 nas duas superfícies;
 - gate depois: exit 0 nas duas, com exceções temporárias rastreadas;
-- `python scripts/check_surface_versions.py`: verde (38 pacotes compartilhados, 11
-  apps);
+- `python scripts/check_surface_versions.py`: verde (38 pacotes compartilhados, 12
+  apps — o `kitchensink-nuxt` do #1512 entrou alinhado);
 - `python scripts/check_theme_baseline_contract.py`: verde; teste de falha forçada
   (tema alterado) reprovou como esperado e voltou ao verde após restaurar.
