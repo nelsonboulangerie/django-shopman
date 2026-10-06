@@ -1,5 +1,48 @@
 # Operator Kitchen Sink canônico
 
+## Revisão adversarial contra Nuxt UI 4.11.3 (06/10/2026)
+
+Referência: documentação oficial corrente e implementação instalada. A versão
+estável foi conferida também no registry npm. Esta revisão não certifica a
+migração das telas existentes nem transforma o laboratório em catálogo completo.
+
+| Achado | Correção ou limite explícito |
+| --- | --- |
+| Sidebar independente aninhada em DashboardSidebar | Removida. Apenas DashboardGroup, DashboardSidebar e DashboardPanel gerenciam layout e estado. |
+| Conteúdo da navbar no slot central, oculto no mobile | Título pela prop oficial; ações no slot right; seletor contextual na DashboardToolbar. |
+| Navegação repetida na toolbar e botão sem comportamento | Toolbar agora representa contexto, não repete o menu global; botão sem ação removido. |
+| Sidebar sem collapse e IDs implícitos | Collapse oficial, NavigationMenu recebe collapsed e painéis têm IDs determinísticos. |
+| Resize handle com role presentation | Removida alteração de semântica; eventos encaminhados ao handle oficial. |
+| Form state vazio e controles desconectados | Estado reativo, names, v-model, validate e submit reais, herméticos. |
+| Switch sem descrição e checkbox com API legada | NuxtSwitch e NuxtCheckbox diretos, com label e description oficiais. |
+| Descrição do Switch 4.11.3 não associada por ARIA no componente puro | Slot description e aria-describedby explícitos, sem substituir o controle. Regressão testada no consumidor. |
+| Título da navbar truncado em 320px | Quebra de linha no slot de título e toolbar contextual, sem reduzir a fonte. |
+| Modal montado separado do acionador | NuxtModal direto com acionador no slot default e ações nos slots oficiais. |
+| Tabela dentro de card com padding e duas rolagens | Body sem padding; uma área de scroll; apenas header sticky; footer participa do fluxo. |
+| Seleção da tabela indexada pela posição | getRowId usa a ref estável, preservando identidade ao filtrar ou ordenar. |
+| Segunda tabela prometia transformação em cards sem implementá-la | Copy corrigida para rolagem explícita; removido padding ao redor da tabela. |
+| Stepper com adaptação local de anatomia | Exemplo usa NuxtStepper direto, com navegação não linear explicitamente demonstrada. |
+| Off-line, rede lenta e reconexão simulados por copy | São cenários visuais, não teste de rede. O laboratório demonstra useConnectivity real separadamente. |
+
+As escolhas aprovadas de superfície branca, outline, padding, tipografia e alvos
+operacionais são tema, configurado na layer. Não autorizam implementações locais
+de foco, portal, resize, navegação, validação ou seleção. `OperatorSplitter`
+continua acrescentando persistência e atributos ARIA ao Splitter oficial; não é
+uma substituição visual. O shell operacional e seus componentes históricos ainda
+precisam de revisão própria antes de serem declarados equivalentes ao dashboard
+Nuxt UI. Os exercícios de fetched/infinite data, rede simulada e periféricos ainda
+não estão completos. A página única também não substitui receitas de telas
+dedicadas e testadas: esses limites permanecem trabalho em aberto.
+
+Fontes: [DashboardGroup](https://ui.nuxt.com/docs/components/dashboard-group),
+[DashboardSidebar](https://ui.nuxt.com/docs/components/dashboard-sidebar),
+[DashboardNavbar](https://ui.nuxt.com/docs/components/dashboard-navbar),
+[DashboardPanel](https://ui.nuxt.com/docs/components/dashboard-panel),
+[Form](https://ui.nuxt.com/docs/components/form),
+[Switch](https://ui.nuxt.com/docs/components/switch),
+[Table](https://ui.nuxt.com/docs/components/table),
+[Modal](https://ui.nuxt.com/docs/components/modal).
+
 O card padrão é `NuxtCard` outline: branco no tema claro (`bg-card`), borda,
 sem sombra. Formulários e exemplos de controles usam esse padrão. No tema escuro,
 a superfície acompanha `--card`, sem impor branco. Header, body e footer usam

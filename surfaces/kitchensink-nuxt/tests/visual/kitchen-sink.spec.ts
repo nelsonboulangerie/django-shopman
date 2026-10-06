@@ -104,6 +104,20 @@ test("receitas interativas preservam dados, seleção, foco e tema", async ({
   await expect(
     page.getByRole("switch", { name: "Avisos desta tarefa" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("switch", { name: "Avisos desta tarefa" }),
+  ).toHaveAccessibleDescription(
+    "Receba avisos quando esta tarefa mudar de estado.",
+  );
+  await page.getByRole("button", { name: "Salvar formulário" }).click();
+  await expect(
+    page.getByText("Informe o nome.", { exact: true }),
+  ).toBeVisible();
+  await page.getByPlaceholder("Nome inequívoco").fill("Pedido de teste");
+  await page.getByRole("button", { name: "Salvar formulário" }).click();
+  await expect(
+    page.getByText("Formulário validado", { exact: true }),
+  ).toBeVisible();
   const handle = page.locator("[data-operator-navigation-resize]");
   const beforeResize = await handle.boundingBox();
   await page.mouse.move(beforeResize!.x, beforeResize!.y + 100);

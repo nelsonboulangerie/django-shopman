@@ -2,6 +2,7 @@
 withDefaults(
   defineProps<{
     storageKey: string;
+    title?: string;
     sidebarDefaultSize?: number;
     sidebarMinSize?: number;
     sidebarMaxSize?: number;
@@ -21,18 +22,21 @@ withDefaults(
     data-operator-office-shell
   >
     <NuxtDashboardSidebar
+      :id="`${storageKey}-navigation`"
       :default-size="sidebarDefaultSize"
       :min-size="sidebarMinSize"
       :max-size="sidebarMaxSize"
       resizable
+      collapsible
     >
       <template v-if="$slots['sidebar-header']" #header
         ><slot name="sidebar-header"
       /></template>
-      <slot name="sidebar" />
+      <template #default="{ collapsed }"
+        ><slot name="sidebar" :collapsed="collapsed"
+      /></template>
       <template #resize-handle="{ onMouseDown, onTouchStart, onDoubleClick }">
         <NuxtDashboardResizeHandle
-          role="presentation"
           data-operator-navigation-resize
           class="w-1 shrink-0 after:absolute after:inset-y-0 after:w-px after:bg-border hover:after:bg-primary"
           @mousedown="onMouseDown"
@@ -41,12 +45,21 @@ withDefaults(
         />
       </template>
     </NuxtDashboardSidebar>
-    <NuxtDashboardPanel class="min-w-0" :ui="{ body: 'p-0 sm:p-0 gap-0' }">
+    <NuxtDashboardPanel
+      :id="`${storageKey}-content`"
+      class="min-w-0"
+      :ui="{ body: 'p-0 sm:p-0 gap-0' }"
+    >
       <template #header>
         <NuxtDashboardNavbar
+          as="header"
           class="h-auto min-h-[var(--op-header-min-height)] py-2"
+          :title="title"
+          :ui="{ title: 'whitespace-normal break-words', root: 'flex-wrap' }"
         >
-          <template #left><slot name="navbar" /></template>
+          <template #leading><NuxtDashboardSidebarCollapse /></template>
+          <template v-if="$slots.navbar" #left><slot name="navbar" /></template>
+          <template #right><slot name="navbar-actions" /></template>
         </NuxtDashboardNavbar>
         <NuxtDashboardToolbar v-if="$slots.toolbar">
           <slot name="toolbar" />

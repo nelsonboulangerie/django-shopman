@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import {
   kitchenSinkExceptions,
@@ -17,13 +17,17 @@ const route = useRoute();
 const router = useRouter();
 const hydrated = ref(false);
 const modalOpen = ref(false);
-const step = ref(1);
+const step = ref(0);
 const { reveal } = useNextFocus();
 watch(step, (value) => {
   void reveal(`catalog-step-${value}`);
 });
 const notifications = ref(true);
 const selection = ref(true);
+const formState = reactive({ name: "", owner: "Ana Ferreira", context: "" });
+const formSaved = ref(false);
+const validateForm = (state: typeof formState) =>
+  state.name.trim() ? [] : [{ name: "name", message: "Informe o nome." }];
 const operationalMode = computed(() => route.query.mode === "operational");
 const activeState = computed<KitchenSinkState>({
   get: () =>
@@ -113,11 +117,13 @@ onMounted(() => {
     <OperatorOfficeShell
       v-if="!operationalMode"
       storage-key="operator-kitchen-sink"
+      title="Operator Kitchen Sink"
     >
-      <template #sidebar>
+      <template #sidebar="{ collapsed }">
         <NuxtNavigationMenu
           :items="[...kitchenSinkNavigation]"
           orientation="vertical"
+          :collapsed="collapsed"
           aria-label="Seções do catálogo"
         />
       </template>
@@ -127,38 +133,31 @@ onMounted(() => {
         </nav></template
       >
 
-      <template #navbar>
-        <header
-          class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3"
-        >
-          <div class="min-w-0">
-            <p class="op-eyebrow text-muted">Operator Kit</p>
-            <h1 class="op-heading break-words">Operator Kitchen Sink</h1>
-          </div>
-          <div class="flex flex-wrap items-center gap-[var(--op-control-gap)]">
-            <label class="op-label" for="catalog-state">Cenário</label>
-            <NuxtSelect
-              id="catalog-state"
-              v-model="activeState"
-              aria-label="Cenário determinístico"
-              :items="[...kitchenSinkStateOptions]"
-            />
-            <UiButton text="Ação principal" icon="lucide:plus" />
-          </div>
-        </header>
-      </template>
+      <template #navbar-actions
+        ><NuxtBadge color="neutral" variant="outline"
+          >Fixtures locais</NuxtBadge
+        ></template
+      >
 
       <template #toolbar>
         <div
-          class="overflow-x-auto"
+          class="flex min-w-0 flex-1 flex-wrap items-center gap-2 py-2"
           data-operator-overflow="horizontal"
           role="region"
           aria-label="Atalhos do catálogo"
         >
-          <NuxtNavigationMenu
-            :items="[...kitchenSinkNavigation]"
-            highlight
-            aria-label="Atalhos das seções"
+          <label class="op-label" for="catalog-state">Cenário</label>
+          <NuxtSelect
+            id="catalog-state"
+            v-model="activeState"
+            aria-label="Cenário determinístico"
+            :items="[...kitchenSinkStateOptions]"
+          />
+          <NuxtButton
+            label="Shell operacional"
+            color="neutral"
+            variant="outline"
+            :to="{ path: route.path, query: { mode: 'operational' } }"
           />
         </div>
       </template>
@@ -207,7 +206,7 @@ onMounted(() => {
               <NuxtCard>
                 <p class="op-label">Geometria</p>
                 <p class="op-body mt-3">
-                  Raio único, borda única, três alturas de controle e
+                  Raio único, borda única, alvos operacionais de 44 e 48 px e
                   espaçamento por papel sem valores locais.
                 </p>
               </NuxtCard>
@@ -351,25 +350,38 @@ onMounted(() => {
               <template #header
                 ><h3 class="op-title">Controles e formulário</h3></template
               >
-              <NuxtForm :state="{}" class="grid gap-4 md:grid-cols-2">
+              <NuxtForm
+                :state="formState"
+                :validate="validateForm"
+                class="grid gap-4 md:grid-cols-2"
+                @submit="formSaved = true"
+              >
                 <NuxtFormField
                   label="Nome"
+                  name="name"
                   help="Como aparece para a pessoa operadora"
-                  ><NuxtInput placeholder="Nome inequívoco" class="w-full"
+                  ><NuxtInput
+                    v-model="formState.name"
+                    placeholder="Nome inequívoco"
+                    class="w-full"
                 /></NuxtFormField>
-                <NuxtFormField label="Responsável"
+                <NuxtFormField label="Responsável" name="owner"
                   ><NuxtSelect
+                    v-model="formState.owner"
                     :items="['Ana Ferreira', 'Marcos Lima']"
-                    default-value="Ana Ferreira"
                     class="w-full"
                     aria-label="Responsável"
                 /></NuxtFormField>
-                <NuxtFormField label="Contexto" class="md:col-span-2"
+                <NuxtFormField
+                  label="Contexto"
+                  name="context"
+                  class="md:col-span-2"
                   ><NuxtTextarea
+                    v-model="formState.context"
                     placeholder="Explique necessidade, consequência e próximo passo"
                     class="w-full"
                 /></NuxtFormField>
-                <UiCheckbox
+                <NuxtCheckbox
                   v-model="selection"
                   label="Exige revisão"
                   description="Mantém a decisão explícita antes de concluir."
@@ -377,16 +389,38 @@ onMounted(() => {
                 <NuxtSwitch
                   v-model="notifications"
                   label="Avisos desta tarefa"
-                />
+                  description="Receba avisos quando esta tarefa mudar de estado."
+                  aria-describedby="task-notifications-description"
+                  ><template #description
+                    ><span id="task-notifications-description"
+                      >Receba avisos quando esta tarefa mudar de estado.</span
+                    ></template
+                  ></NuxtSwitch
+                >
                 <div
                   class="flex flex-wrap gap-[var(--op-control-gap)] md:col-span-2"
                   data-action-group
                 >
-                  <UiButton text="Salvar" /><UiButton
-                    text="Cancelar"
+                  <NuxtButton label="Salvar formulário" type="submit" />
+                  <NuxtButton
+                    label="Limpar formulário"
+                    color="neutral"
                     variant="outline"
-                  /><UiButton text="Excluir" variant="destructive" />
+                    @click="
+                      formState.name = '';
+                      formState.context = '';
+                      formSaved = false;
+                    "
+                  />
                 </div>
+                <NuxtAlert
+                  v-if="formSaved"
+                  class="md:col-span-2"
+                  color="success"
+                  variant="soft"
+                  title="Formulário validado"
+                  description="Exemplo salvo apenas nesta fixture local."
+                />
               </NuxtForm>
             </NuxtCard>
           </section>
@@ -414,14 +448,15 @@ onMounted(() => {
             <div
               class="grid gap-[var(--op-region-gap)] xl:grid-cols-[minmax(0,1fr)_20rem]"
             >
-              <NuxtCard>
+              <NuxtCard :ui="{ root: 'overflow-visible', body: 'p-0 sm:p-0' }">
                 <template #header
                   ><h3 class="op-title">
-                    Tabela vira cartões quando comparar colunas deixa de caber
+                    Comparação tabular com rolagem explícita
                   </h3></template
                 >
                 <NuxtTable
                   :data="[...kitchenSinkRows]"
+                  data-operator-overflow="horizontal"
                   tabindex="0"
                   aria-label="Pedidos de exemplo"
                 />
@@ -438,12 +473,17 @@ onMounted(() => {
               <template #header
                 ><h3 class="op-title">Fluxo em etapas</h3></template
               >
-              <UiStepper v-model="step" :items="[...kitchenSinkSteps]" />
+              <NuxtStepper
+                v-model="step"
+                :items="[...kitchenSinkSteps]"
+                :linear="false"
+                class="w-full"
+              />
               <p
                 :data-focus-target="`catalog-step-${step}`"
                 class="op-body mt-3"
               >
-                Etapa {{ step }}. O foco acompanha a tarefa pelo useNextFocus
+                Etapa {{ step + 1 }}. O foco acompanha a tarefa pelo useNextFocus
                 canônico.
               </p>
             </NuxtCard>
@@ -534,12 +574,12 @@ onMounted(() => {
             />
 
             <div class="flex flex-wrap gap-[var(--op-control-gap)]">
-              <UiButton text="Abrir confirmação" @click="modalOpen = true" />
-              <UiModal
+              <NuxtModal
                 v-model:open="modalOpen"
                 title="Confirmar ação"
                 description="A consequência aparece antes do gesto final."
               >
+                <NuxtButton label="Abrir confirmação" />
                 <template #body
                   ><p class="op-body">
                     O foco fica na camada superior e volta ao acionador quando a
@@ -547,12 +587,13 @@ onMounted(() => {
                   </p></template
                 >
                 <template #footer="{ close }"
-                  ><UiButton text="Confirmar" @click="close" /><UiButton
-                    text="Voltar"
+                  ><NuxtButton label="Confirmar" @click="close" /><NuxtButton
+                    label="Voltar"
+                    color="neutral"
                     variant="outline"
                     @click="close"
                 /></template>
-              </UiModal>
+              </NuxtModal>
               <NuxtPopover>
                 <UiButton text="Abrir popover" variant="outline" />
                 <template #content

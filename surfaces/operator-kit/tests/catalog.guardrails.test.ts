@@ -27,13 +27,15 @@ describe("catálogo vivo", () => {
     for (const component of [
       "OperatorOfficeShell",
       "OperatorOperationalShell",
-      "NuxtSidebar",
       "NuxtNavigationMenu",
       "OperatorPage",
       "OperatorSplitter",
       "NuxtForm",
       "NuxtTable",
-      "UiModal",
+      "NuxtModal",
+      "NuxtStepper",
+      "NuxtCheckbox",
+      "NuxtSwitch",
       "NuxtSkeleton",
       "NuxtEmpty",
       "NuxtAlert",
@@ -48,6 +50,15 @@ describe("catálogo vivo", () => {
     ]) {
       expect(officeShell, component).toContain(component);
     }
+  });
+
+  it("não reintroduz navegação independente dentro do dashboard nem formulário decorativo", () => {
+    expect(source).not.toContain("<NuxtSidebar");
+    expect(source).not.toContain(':state="{}"');
+    expect(source).toContain(':validate="validateForm"');
+    expect(source).toContain('name="name"');
+    expect(officeShell).not.toContain('role="presentation"');
+    expect(officeShell).toContain("NuxtDashboardSidebarCollapse");
   });
 
   it("mantém a implementação no kit e a página do harness como composição", () => {

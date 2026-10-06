@@ -466,6 +466,7 @@ function drop(target: string) {
             getPaginationRowModel: getPaginationRowModel(),
           }"
           :data="visibleRows"
+          :get-row-id="(row) => row.ref"
           :columns="columns"
           sticky="header"
           :ui="{ root: 'overflow-visible' }"
