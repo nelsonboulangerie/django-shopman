@@ -21,6 +21,13 @@ const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
 const publicConfig = useRuntimeConfig().public;
 const hubUrl = publicConfig.operatorHubUrl as string;
+// A cor do app (a mesma do selo no rail) vira `--app-color` no `<html>`: as miniaturas
+// da fila de decisões e o carimbo do selo usam o tom dela, como na prévia v4. No
+// `<html>`, e não no shell, porque o selo é diálogo teleportado para fora dele.
+const appColor = (
+  publicConfig.operatorPwa as { identity?: { color?: string } } | undefined
+)?.identity?.color;
+if (appColor) useHead({ htmlAttrs: { style: `--app-color: ${appColor}` } });
 const { attrsFor: appLinkAttrsFor } = useOperatorAppLink();
 const hubLink = computed(() => appLinkAttrsFor(hubUrl));
 

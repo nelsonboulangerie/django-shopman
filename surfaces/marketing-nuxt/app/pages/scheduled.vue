@@ -97,7 +97,7 @@ useHead({ title: "Agendados" });
           >
           <span
             v-else
-            class="grid size-[60px] shrink-0 place-items-center rounded-md bg-primary/10 text-primary"
+            class="grid size-[60px] shrink-0 place-items-center rounded-lg bg-[color-mix(in_oklab,var(--app-color,var(--primary))_14%,transparent)] text-[var(--app-color,var(--primary))]"
             aria-hidden="true"
           >
             <Icon :name="decisionIcon(item.trigger)" class="size-7" />
