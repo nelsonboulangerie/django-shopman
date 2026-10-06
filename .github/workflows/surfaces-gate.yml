@@ -73,6 +73,54 @@ jobs:
       - name: Gate de layouts e tokens do operador
         run: python scripts/check_operator_layout_guardrails.py
 
+      # O tema compartilhado do kit (app.config.ts + CSS de tokens) é herdado por
+      # extends; mexer nele reapinta as baselines visuais das apps consumidoras. O
+      # contrato registra o fingerprint aceito e o gate reprova quando o tema muda
+      # sem que as baselines afetadas sejam regeradas no MESMO PR, com aceite do
+      # dono. Baseline não se regenera cego — ver o relatório de saúde do Marketing.
+      - name: Gate do tema compartilhado x baselines consumidoras
+        run: python scripts/check_theme_baseline_contract.py
+
+  # Supply chain: o `npm audit` das superfícies Nuxt vive aqui, não dentro do job de
+  # um app. Antes, o audit do operator-kit rodava no job "Marketing — cadeia completa"
+  # (o Marketing instala a layer e era o único job macOS com o kit à mão). Efeito
+  # medido: o Marketing ficava vermelho por dívida TRANSITIVA do toolchain Nuxt do kit
+  # — simple-git/node-forge via @nuxt/devtools/listhen — que não é dele. O check de
+  # Marketing deixava de significar Marketing, e um vermelho crônico e alheio é pior
+  # que nenhum check.
+  #
+  # O audit NÃO precisa de `node_modules`: `npm audit` lê o `package-lock.json` e a
+  # API do registry. Por isso este job é checkout + Node + leitura — sem `npm ci`,
+  # sem build e sem macOS. A allowlist versionada (`surfaces/npm-audit-allowlist.json`)
+  # é a única exceção, e cada entrada tem prazo e motivo.
+  supply-chain:
+    name: Supply chain — npm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - operator-kit
+          - marketing-nuxt
+
+    defaults:
+      run:
+        working-directory: surfaces/${{ matrix.app }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Audit ${{ matrix.app }} supply chain
+        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
+
   app-quality:
     name: ${{ matrix.app }}
     runs-on: ubuntu-latest
@@ -328,13 +376,6 @@ jobs:
 
       - name: Security contracts
         run: npm run test:security
-
-      - name: Audit operator-kit supply chain
-        working-directory: surfaces/operator-kit
-        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
-
-      - name: Audit Marketing supply chain
-        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
 
       - name: Upload browser evidence
         if: always()
