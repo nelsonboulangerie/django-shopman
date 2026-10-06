@@ -60,8 +60,11 @@ const railSections = computed(() => sections.value.filter((section) => section.w
 const topSections = computed(() => withSectionShortcuts(railSections.value.filter((section) => !section.foot)));
 const footSections = computed(() => railSections.value.filter((section) => section.foot));
 
+// Contraste no rail (fundo --rail bronze): o chip/badge e o rodapé seguem o mesmo
+// contrato do texto — rail-foreground sobre rail. Sem os tokens da superfície padrão.
+const RAIL_CHIP = "bg-rail-foreground! text-rail! font-semibold ring-0!";
 function chipFor(section: OperatorSection) {
-  if (section.badge) return { text: section.badge, color: section.attention ? ("warning" as const) : ("neutral" as const) };
+  if (section.badge) return { text: section.badge, color: section.attention ? ("warning" as const) : ("neutral" as const), class: RAIL_CHIP };
   if (section.attention) return { color: "warning" as const };
   return undefined;
 }
@@ -87,7 +90,10 @@ const barItems = computed(() => [...topSections.value, ...footSections.value].ma
 const railNavUi = {
   root: "w-full flex-col items-stretch gap-0.5",
   item: "w-full",
-  link: "flex-col gap-0.5 px-1 py-1.5 justify-center text-center",
+  // Sobre o bg-rail, o tema do Nuxt UI cai em text-muted/text-primary (contraste
+  // baixo). Aqui o rail fala seus próprios tokens: inativo rail-foreground/70,
+  // ativo rail-foreground com pílula rail-foreground/12.
+  link: "flex-col gap-0.5 px-1 py-1.5 justify-center text-center text-rail-foreground! transition-colors before:bg-transparent! hover:text-rail! hover:before:bg-rail-foreground! data-[active]:font-semibold! data-[active]:text-rail! data-[active]:before:bg-rail-foreground!",
   linkLeadingIcon: "size-5",
   linkLabel: "block text-[10px]/3 font-normal",
 } as const;
@@ -179,16 +185,16 @@ useOperatorWindowTitle();
           <OperatorInbox v-if="railShown" placement="header" />
         </ClientOnly>
         <div class="hidden pointer-fine:block">
-          <NuxtButton icon="i-lucide-keyboard" color="neutral" variant="ghost" square aria-label="Atalhos do teclado" title="Atalhos do teclado" @click="shortcuts.open.value = true" />
+          <NuxtButton icon="i-lucide-keyboard" color="neutral" variant="ghost" square class="text-rail-foreground! hover:bg-rail-foreground/12! hover:text-rail-foreground!" aria-label="Atalhos do teclado" title="Atalhos do teclado" @click="shortcuts.open.value = true" />
         </div>
-        <NuxtButton v-if="operator" icon="i-lucide-lock" color="neutral" variant="ghost" square :aria-label="`${operator.name}: travar ou trocar`" title="Bloquear" @click="lock()" />
+        <NuxtButton v-if="operator" icon="i-lucide-lock" color="neutral" variant="ghost" square class="text-rail-foreground! hover:bg-rail-foreground/12! hover:text-rail-foreground!" :aria-label="`${operator.name}: travar ou trocar`" title="Bloquear" @click="lock()" />
         <NuxtPopover v-if="operator">
           <NuxtButton
             color="neutral"
             variant="soft"
             square
             :aria-label="`Menu de ${operator.name}`"
-            class="rounded-full"
+            class="rounded-full bg-rail-foreground/25! text-rail-foreground! hover:bg-rail-foreground/35!"
           >
             <span v-if="initials" class="text-[13px] font-semibold" aria-hidden="true">{{ initials }}</span>
             <Icon v-else name="lucide:settings-2" class="size-5" aria-hidden="true" />
