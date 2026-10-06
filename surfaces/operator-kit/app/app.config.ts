@@ -1,10 +1,13 @@
 export default defineAppConfig({
   ui: {
+    popover: { slots: { content: "bg-popover" } },
+    dropdownMenu: { slots: { content: "bg-popover" } },
+    contextMenu: { slots: { content: "bg-popover" } },
     card: {
       slots: {
-        header: "p-4",
-        body: "p-4",
-        footer: "p-4",
+        header: "p-4 sm:px-4",
+        body: "p-4 sm:p-4",
+        footer: "p-4 sm:px-4",
       },
       variants: {
         variant: {
@@ -19,11 +22,39 @@ export default defineAppConfig({
       defaultVariants: { size: "md" },
     },
     select: {
-      variants: { size: { md: { base: "h-control px-3 py-2 text-sm" } } },
+      slots: { content: "bg-popover" },
+      variants: {
+        size: {
+          md: {
+            base: "h-control px-3 py-2 text-sm",
+            leading: "ps-3",
+            trailing: "pe-3",
+            item: "min-h-control items-center px-3 py-2 text-sm gap-2",
+          },
+        },
+      },
+      compoundVariants: [
+        { size: "md", leading: true, class: "ps-10" },
+        { size: "md", trailing: true, class: "pe-10" },
+      ],
       defaultVariants: { size: "md" },
     },
     selectMenu: {
-      variants: { size: { md: { base: "h-control px-3 py-2 text-sm" } } },
+      slots: { content: "bg-popover" },
+      variants: {
+        size: {
+          md: {
+            base: "h-control px-3 py-2 text-sm",
+            leading: "ps-3",
+            trailing: "pe-3",
+            item: "min-h-control items-center px-3 py-2 text-sm gap-2",
+          },
+        },
+      },
+      compoundVariants: [
+        { size: "md", leading: true, class: "ps-10" },
+        { size: "md", trailing: true, class: "pe-10" },
+      ],
       defaultVariants: { size: "md" },
     },
     textarea: {

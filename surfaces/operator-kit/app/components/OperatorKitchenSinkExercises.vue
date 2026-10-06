@@ -437,6 +437,7 @@ function drop(target: string) {
     <NuxtCard
       title="Tabela operacional"
       description="Seleção, detalhes expansíveis, badges, ordenação, filtro, total e paginação"
+      :ui="{ root: 'overflow-visible', body: 'p-0 sm:p-0' }"
     >
       <template #header
         ><div class="flex flex-wrap items-center justify-between gap-2">
@@ -449,7 +450,7 @@ function drop(target: string) {
           /></div
       ></template>
       <div
-        class="max-h-96 overflow-auto p-1"
+        class="max-h-96 overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
         data-operator-overflow="horizontal"
         tabindex="0"
         role="region"

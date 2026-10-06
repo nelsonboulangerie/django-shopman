@@ -94,6 +94,25 @@ test("receitas interativas preservam dados, seleção, foco e tema", async ({
     name: "Salvar exemplo",
     exact: true,
   });
+  for (const label of ["Canal por select", "Buscar canal"]) {
+    await page.getByLabel(label, { exact: true }).click();
+    const option = page.getByRole("option").first();
+    await expect(option).toBeVisible();
+    expect(
+      await option.evaluate(
+        (element) => element.getBoundingClientRect().height,
+      ),
+    ).toBeGreaterThanOrEqual(44);
+    await page.keyboard.press("Escape");
+  }
+  const tableRegion = page.getByRole("region", {
+    name: "Tabela com rolagem externa",
+  });
+  expect(
+    await tableRegion.evaluate(
+      (element) => getComputedStyle(element.parentElement!).padding,
+    ),
+  ).toBe("0px");
   await save.click();
   await expect(save).toBeDisabled();
   await page
