@@ -388,10 +388,11 @@ const queueOrder = computed(() => {
   return scope.value === "attention" ? order.slice(0, QUEUE_FOCUS) : order;
 });
 const scopeCounts = computed(() => queueScopeCounts(queueCards.value, nowMs.value));
+// A base da Fila é "Precisa de você". "Atrasados" saiu daqui e virou ORDENAÇÃO
+// (QUEUE_SORT_OPTIONS); "Todos" deixou de ser recorte — o que muda o trabalho são
+// o fluxo (Entrega/Retirada) e o canal.
 const QUEUE_SCOPES: { key: QueueScope; label: string }[] = [
   { key: "attention", label: "Precisa de você" },
-  { key: "all", label: "Todos" },
-  { key: "late", label: "Atrasados" },
 ];
 const queueSortLabel = computed(() => QUEUE_SORT_OPTIONS.find((o) => o.key === queueSort.value)?.label ?? "Urgência");
 function pickQueueSort(key: QueueSort) {

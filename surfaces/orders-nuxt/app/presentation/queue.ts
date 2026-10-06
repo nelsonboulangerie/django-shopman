@@ -11,10 +11,11 @@ export type QueueTone = "ok" | "warning" | "late";
 /** O recorte da Fila (v4): "Precisa de você" (o padrão), "Todos" e "Atrasados". */
 export type QueueScope = "attention" | "all" | "late";
 /** A ordem da Fila ("Urgência ▾"): tempo contra a meta, chegada ou os mais novos. */
-export type QueueSort = "urgency" | "arrival" | "recent";
+export type QueueSort = "urgency" | "arrival" | "recent" | "late";
 
 export const QUEUE_SORT_OPTIONS: { key: QueueSort; label: string; hint: string }[] = [
   { key: "urgency", label: "Urgência", hint: "Mais urgente primeiro (tempo contra a meta)" },
+  { key: "late", label: "Atrasados", hint: "Os que passaram da meta, primeiro" },
   { key: "arrival", label: "Chegada", hint: "Quem chegou primeiro no topo" },
   { key: "recent", label: "Mais recentes", hint: "O que acabou de chegar no topo" },
 ];
@@ -121,6 +122,7 @@ export function queueItems(
   const sort = opts.sort ?? "urgency";
   if (sort === "arrival") return items.sort((a, b) => a.card.created_at_iso.localeCompare(b.card.created_at_iso));
   if (sort === "recent") return items.sort((a, b) => b.card.created_at_iso.localeCompare(a.card.created_at_iso));
+  if (sort === "late") return items.sort((a, b) => Number(a.tone !== "late") - Number(b.tone !== "late") || byUrgency(a, b));
   // No "Todos", o que pede alguém vem antes do que só está andando.
   return items.sort((a, b) => Number(!a.kind) - Number(!b.kind) || byUrgency(a, b));
 }
