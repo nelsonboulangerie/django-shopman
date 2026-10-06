@@ -54,12 +54,9 @@ withDefaults(
       :ui="
         rail
           ? {
-              // O rail é superfície própria: escopamos os tokens --ui-* no root
-              // para que NavigationMenu/inbox/botões/chip herdem a paleta do rail
-              // (claro/escuro seguem --rail/--rail-foreground). Assim o app não
-              // precisa empilhar overrides por item.
-              root:
-                'bg-rail text-rail-foreground [--ui-text:var(--rail-foreground)] [--ui-text-muted:var(--rail-foreground)] [--ui-text-dimmed:var(--rail-foreground)] [--ui-text-highlighted:var(--rail-foreground)] [--ui-bg:var(--rail)] [--ui-bg-elevated:var(--rail-foreground)] [--ui-border:color-mix(in_oklab,var(--rail-foreground)_22%,var(--rail))] [--foreground:var(--rail-foreground)] [--muted-foreground:var(--rail-foreground)] [--accent:color-mix(in_oklab,var(--rail-foreground)_14%,transparent)] [--border:color-mix(in_oklab,var(--rail-foreground)_22%,transparent)] [--card:var(--rail)]',
+              // O rail fixo é a MESMA sidebar canônica do catálogo (superfície
+              // neutra, rótulos escuros). Não sobrescrevemos a paleta: só a
+              // arrumação da coluna de 64px (itens centrados, collapsed labels).
               header: 'px-0 justify-center',
               body: 'items-center gap-1 px-0',
               footer: 'flex-col items-center gap-1 px-0',
