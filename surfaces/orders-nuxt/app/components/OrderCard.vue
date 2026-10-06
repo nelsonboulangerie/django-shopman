@@ -542,7 +542,7 @@ function secondaryClass(priority: string): string {
     </div>
 
     <!-- o gesto: um botão largo com o verbo e o nome; o resto no ⋯ -->
-    <div v-if="!negotiationOnly" class="flex items-stretch gap-2">
+    <div v-if="!negotiationOnly" class="flex items-stretch gap-3">
       <button
         v-if="handoff && handoff.canUndo"
         type="button"
@@ -578,7 +578,7 @@ function secondaryClass(priority: string): string {
           :class="[
             touch ? 'h-14 text-base' : 'h-12 text-sm font-semibold',
             primary.disabled
-              ? 'cursor-default border-2 border-dashed border-border text-muted-foreground card-stripes'
+              ? 'cursor-not-allowed border border-border bg-muted text-muted-foreground'
               : 'bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] disabled:opacity-60',
           ]"
           data-card-primary

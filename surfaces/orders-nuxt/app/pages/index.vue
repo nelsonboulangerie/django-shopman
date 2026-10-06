@@ -940,7 +940,7 @@ function printQueue() {
           </template>
           Todos
         </UiFilterChip>
-        <span class="mx-1 h-6 w-px shrink-0 bg-border" aria-hidden="true" />
+        <span class="mx-2 self-center h-6 w-px shrink-0 bg-border max-md:hidden" aria-hidden="true" />
         <UiFilterChip :active="fulfillment === 'delivery'" :count="fulfillment_.delivery" @click="fulfillment = fulfillment === 'delivery' ? 'all' : 'delivery'">
           <template #icon><Icon name="lucide:bike" class="size-4" /></template>
           Entrega
@@ -954,8 +954,8 @@ function printQueue() {
           <UiPopoverTrigger as-child>
             <button
               type="button"
-              class="inline-flex h-control items-center gap-2 rounded-full border px-3 text-sm font-medium transition"
-              :class="channel !== 'all' ? 'border-primary bg-primary/10 font-semibold' : 'border-dashed border-border text-muted-foreground hover:bg-accent'"
+              class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 suite:gap-2 suite:text-[13px]"
+              :class="channel !== 'all' ? 'border-primary bg-primary/10 font-semibold suite:text-foreground' : 'border-dashed border-border text-muted-foreground hover:bg-accent'"
               data-channel-picker
             >
               <Icon :name="channel !== 'all' ? `lucide:${lucideIcon(allCards.find((c) => c.channel_ref === channel)?.channel_icon || '')}` : 'lucide:plus'" class="size-4" />

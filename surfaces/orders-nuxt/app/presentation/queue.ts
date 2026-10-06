@@ -187,7 +187,7 @@ export function restLine(lines: ProgressLine[], hidden = 0): { count: number; te
   if (!count) return { count: 0, text: "" };
   const parts = lines.filter((line) => line.count).map((line) => `${line.count} ${line.label.toLowerCase()}`);
   if (!hidden) return { count, text: `em andamento, nada pede você: ${parts.join(", ")}` };
-  const ask = `mais ${hidden} ${hidden === 1 ? "pede" : "pedem"} você`;
+  const ask = `mais ${hidden} ${hidden === 1 ? "pede" : "pedem"} por você`;
   return { count, text: parts.length ? `${ask} · em andamento: ${parts.join(", ")}` : ask };
 }
 

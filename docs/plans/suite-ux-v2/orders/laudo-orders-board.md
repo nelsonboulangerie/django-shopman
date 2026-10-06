@@ -171,4 +171,20 @@ A matriz agora roda **claro e escuro** para cada viewport/estado. O Gestor é **
 - **A8** — automação "pronto quando a Cozinha conclui": decisão do dono (a UI reserva o lugar).
 - **MoreBelow / useNextFocus** — mapa antes/depois de tokens/API (família "refinar").
 - **Passo 3 do header** — shell dona do DOM via `<Teleport>` (refactor invisível, sessão dedicada).
+## Revisão de design (pós-dono) — 2026-10-06
+
+O dono reprovou o corte ("várias coisas desalinhadas"). A matriz de geometria (90/90) não pega hierarquia/alinhamento. Correções com antes/depois em `captures/`:
+
+| # | Achado | Correção |
+|---|---|---|
+| 1 | Banner A1: título e chamada colados ("trabalho?Escolha") e truncando no celular | slot `#title` com espaço explícito + quebra; `container: h-auto` (o Banner tem `h-12` fixo) — `OperatorStationSetup.vue` (kit) |
+| 2 | Chips: divisor cruzando o pill; "+ Canal" fora do vocabulário | "+ Canal" unificado ao `UiFilterChip` (`min-h-control`/`text-xs`/`suite`); divisor `mx-2` e `max-md:hidden`; gap da toolbar 8px |
+| 3 | Header: busca x botões desalinhados | a toolbar é **44px por desenho** (`h-control`); a busca voltou a `h-control`. Medido: busca 44 = Ciente 44 = Urgência 44 |
+| 4 | Card: disabled destoava; "⋯" colado | disabled vira `bg-muted` sem listras; gap do rodapé do cartão 8→12px |
+| 5 | Copy "mais N pedem você" | "pedem **por** você" (`queue.ts`) |
+| 6 | Separadores quase invisíveis | **registrado**: `border`/`background` = **1.45** (claro) / **1.51** (dark); WCAG 1.4.11 pede 3:1. Candidatos: `#a37c67` (claro, 3.39) e `#7e624c` (dark, 3.14). Token do kit (9 apps) → **WP de tema** |
+
+Checklist para os próximos apps: `checklist-revisao-design.md`.
+
+Capturas: `design-before-*` / `design-after-*` (desktop, mobile, claro e escuro).
 

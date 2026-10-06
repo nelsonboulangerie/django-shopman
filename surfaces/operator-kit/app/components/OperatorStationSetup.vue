@@ -59,13 +59,15 @@ async function confirmar() {
     v-if="loaded && allowed"
     icon="i-lucide-map-pin"
     class="mb-3 shrink-0"
+    :ui="{ container: 'h-auto min-h-12 py-2', title: 'min-w-0 whitespace-normal' }"
     data-station-setup
   >
     <!-- O Banner do Nuxt UI não tem prop `description` (props: title/icon/
-         actions/close/to/color). A chamada vai no slot #title junto do título. -->
+         actions/close/to/color). A chamada vai no slot #title, EMPILHADA: inline,
+         título e chamada ficavam colados ("trabalho?Escolha") e no celular o
+         texto truncava ("Vincular este dispositivo a u…"). -->
     <template #title>
-      <span class="font-semibold">{{ copy.setup_title }}</span>
-      <span class="font-normal">{{ copy.setup_lead }}</span>
+      <span class="font-semibold">{{ copy.setup_title }}</span>{{ ' ' }}<span class="font-normal">{{ copy.setup_lead }}</span>
     </template>
     <template #actions>
       <NuxtButton

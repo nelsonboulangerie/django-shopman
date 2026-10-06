@@ -95,7 +95,7 @@ const { request: openSearch } = useSuiteSearchRequest();
   <NuxtDashboardToolbar v-if="$slots.filters || $slots.below" class="bg-card">
     <div
       v-if="$slots.filters"
-      class="flex flex-wrap items-center gap-1.5 px-4 pb-2.5 *:shrink-0"
+      class="flex flex-wrap items-center gap-2 px-4 pb-2.5 *:shrink-0"
       :class="filtersWrap ? 'md:flex-wrap md:overflow-visible' : ''"
       data-page-header-filters
     >
