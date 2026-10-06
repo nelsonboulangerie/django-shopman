@@ -52,13 +52,20 @@ async function expectTouchTargets(page: Page, context: string) {
         const node = element as HTMLElement;
         const style = getComputedStyle(node);
         // Checkbox/radio may be visually compact while its associated label is
-        // the actual pointer target. Measure that explicit native hit area.
+        // the actual pointer target. `UiCheckbox` follows the same anatomy, but
+        // Reka renders the control as a button inside the canonical 44 px root.
+        // Measure the explicit hit area instead of the 20 px painted square.
+        const canonicalCheckbox =
+          node.getAttribute("role") === "checkbox"
+            ? node.closest<HTMLElement>('[data-slot="checkbox"]')
+            : null;
         const target =
-          node instanceof HTMLInputElement &&
+          canonicalCheckbox ||
+          (node instanceof HTMLInputElement &&
           ["checkbox", "radio"].includes(node.type) &&
           node.closest("label")
             ? node.closest("label")!
-            : node;
+            : node);
         const rect = target.getBoundingClientRect();
         if (
           style.display === "none" ||
