@@ -60,11 +60,11 @@ const railSections = computed(() => sections.value.filter((section) => section.w
 const topSections = computed(() => withSectionShortcuts(railSections.value.filter((section) => !section.foot)));
 const footSections = computed(() => railSections.value.filter((section) => section.foot));
 
-// Contraste no rail (fundo --rail bronze): o chip/badge e o rodapé seguem o mesmo
-// contrato do texto — rail-foreground sobre rail. Sem os tokens da superfície padrão.
-const RAIL_CHIP = "bg-rail-foreground! text-rail! font-semibold ring-0!";
+// O badge numérico do item usa bg-inverted/text-inverted (contraste alto sobre o
+// rail); NÃO se pinta o wrapper do ícone (linkLeadingChip), senão o ícone claro
+// some sobre um círculo claro. A paleta do rail vem do escopo --ui-*.
 function chipFor(section: OperatorSection) {
-  if (section.badge) return { text: section.badge, color: section.attention ? ("warning" as const) : ("neutral" as const), class: RAIL_CHIP };
+  if (section.badge) return { text: section.badge, color: section.attention ? ("warning" as const) : ("neutral" as const) };
   if (section.attention) return { color: "warning" as const };
   return undefined;
 }
@@ -90,11 +90,12 @@ const barItems = computed(() => [...topSections.value, ...footSections.value].ma
 const railNavUi = {
   root: "w-full flex-col items-stretch gap-0.5",
   item: "w-full",
-  // Sobre o bg-rail, o tema do Nuxt UI cai em text-muted/text-primary (contraste
-  // baixo). Aqui o rail fala seus próprios tokens: inativo rail-foreground/70,
-  // ativo rail-foreground com pílula rail-foreground/12.
-  link: "flex-col gap-0.5 px-1 py-1.5 justify-center text-center text-rail-foreground! transition-colors before:bg-transparent! hover:text-rail! hover:before:bg-rail-foreground! data-[active]:font-semibold! data-[active]:text-rail! data-[active]:before:bg-rail-foreground!",
-  linkLeadingIcon: "size-5",
+  // A paleta vem do escopo --ui-* no root do sidebar (OperatorOfficeShell). Só o
+  // ATIVO precisa de override: ele pinta uma pílula CLARA (bg-elevated) e o
+  // texto/ícone precisam voltar ao escuro (text-highlighted é compartilhado com
+  // hover/legenda, então não dá para trocá-lo sem apagar o resto do rail).
+  link: "flex-col gap-0.5 px-1 py-1.5 justify-center text-center transition-colors data-[active]:font-semibold! data-[active]:text-rail!",
+  linkLeadingIcon: "size-5 group-data-[active]:text-rail!",
   linkLabel: "block text-[10px]/3 font-normal",
 } as const;
 const barNavUi = {
@@ -185,16 +186,16 @@ useOperatorWindowTitle();
           <OperatorInbox v-if="railShown" placement="header" />
         </ClientOnly>
         <div class="hidden pointer-fine:block">
-          <NuxtButton icon="i-lucide-keyboard" color="neutral" variant="ghost" square class="text-rail-foreground! hover:bg-rail-foreground/12! hover:text-rail-foreground!" aria-label="Atalhos do teclado" title="Atalhos do teclado" @click="shortcuts.open.value = true" />
+          <NuxtButton icon="i-lucide-keyboard" color="neutral" variant="ghost" square class="hover:bg-rail-foreground/12!" aria-label="Atalhos do teclado" title="Atalhos do teclado" @click="shortcuts.open.value = true" />
         </div>
-        <NuxtButton v-if="operator" icon="i-lucide-lock" color="neutral" variant="ghost" square class="text-rail-foreground! hover:bg-rail-foreground/12! hover:text-rail-foreground!" :aria-label="`${operator.name}: travar ou trocar`" title="Bloquear" @click="lock()" />
+        <NuxtButton v-if="operator" icon="i-lucide-lock" color="neutral" variant="ghost" square class="hover:bg-rail-foreground/12!" :aria-label="`${operator.name}: travar ou trocar`" title="Bloquear" @click="lock()" />
         <NuxtPopover v-if="operator">
           <NuxtButton
             color="neutral"
             variant="soft"
             square
             :aria-label="`Menu de ${operator.name}`"
-            class="rounded-full bg-rail-foreground/25! text-rail-foreground! hover:bg-rail-foreground/35!"
+            class="rounded-full bg-rail-foreground! text-rail! hover:bg-rail-foreground/90!"
           >
             <span v-if="initials" class="text-[13px] font-semibold" aria-hidden="true">{{ initials }}</span>
             <Icon v-else name="lucide:settings-2" class="size-5" aria-hidden="true" />
