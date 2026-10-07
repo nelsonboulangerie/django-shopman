@@ -158,6 +158,8 @@ export interface OperatorAlertLike {
   message: string;
   order_ref?: string | null;
   created_at_display: string;
+  /** Prazo em que a causa decide sozinha (ISO); vazio sem prazo. */
+  respond_by_iso?: string;
   actions?: ReadonlyArray<{ kind: string; enabled: boolean; label: string; href?: string | null }>;
 }
 
@@ -171,6 +173,7 @@ export interface InboxAlertView {
   canAck: boolean;
   href?: string;
   hrefLabel?: string;
+  respondByIso?: string;
 }
 
 /**
@@ -191,5 +194,44 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
     seen: !canAck,
     canAck,
     ...(context ? { href: context.href ?? undefined, hrefLabel: context.label } : {}),
+    ...(alert.respond_by_iso ? { respondByIso: alert.respond_by_iso } : {}),
   };
+}
+
+/** De quanto em quanto tempo o aviso com prazo, já visto, volta a lembrar (dono, 07/10). */
+export const URGENT_REMINDER_MINUTES = 5;
+
+export interface UrgentAlertsView<T> {
+  /** O aviso que interrompe a tela agora: com prazo correndo e ainda sem Visto. */
+  blocking: T | null;
+  /** Os já vistos cujo prazo ainda corre: lembram até a causa acabar. */
+  reminders: T[];
+}
+
+/**
+ * Quais avisos interrompem a tela. Só os que têm prazo (`respondByIso`) entram: sem
+ * prazo, a caixa de Avisos basta. Prazo vencido não interrompe nem lembra mais (a
+ * decisão já saiu sem a loja). Entre os não vistos, o de prazo mais curto primeiro.
+ */
+export function urgentAlerts<T extends { respondByIso?: string; seen?: boolean }>(
+  items: readonly T[],
+  nowMs: number,
+): UrgentAlertsView<T> {
+  const running = items
+    .map((item) => ({ item, deadline: Date.parse(item.respondByIso ?? "") }))
+    .filter(({ deadline }) => Number.isFinite(deadline) && deadline > nowMs)
+    .sort((a, b) => a.deadline - b.deadline);
+  return {
+    blocking: running.find(({ item }) => !item.seen)?.item ?? null,
+    reminders: running.filter(({ item }) => item.seen).map(({ item }) => item),
+  };
+}
+
+/** "faltam 6 min" · "falta 1 min" · "menos de 1 min" */
+export function deadlineLeftLabel(respondByIso: string, nowMs: number): string {
+  const left = Date.parse(respondByIso) - nowMs;
+  if (!Number.isFinite(left) || left <= 0) return "prazo vencido";
+  const minutes = Math.floor(left / 60_000);
+  if (minutes < 1) return "menos de 1 min";
+  return minutes === 1 ? "falta 1 min" : `faltam ${minutes} min`;
 }

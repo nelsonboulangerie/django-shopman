@@ -483,7 +483,7 @@ describe("Gestor canônico em Nuxt UI", () => {
         (boardColumn.match(/<NuxtTabs\b/g)?.length ?? 0) +
         (boardHeading.match(/<NuxtTabs\b/g)?.length ?? 0),
       // Escopo da Fila, recorte do fluxo (o mesmo na Saída), abas das colunas no
-      // celular e no tablet em pé, e a visão Fila | Supervisão.
+      // celular e no tablet em pé, e a visão Grade | Lista.
     ).toBeGreaterThanOrEqual(4);
     expect(board).toContain("<OperatorSplitter");
     expect(board).not.toContain("<QueueColumnResizeHandle");
@@ -618,9 +618,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       /data-queue-system[\s\S]*?color="neutral"[\s\S]*?variant="subtle"[\s\S]*?:label="`\$\{awareness\?\.system_window_minutes \?\? 15\} min`"/,
     );
     expect(queue).toContain("'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
-    expect(queue).toContain(
-      ":variant=\"item.card.ref === focusRef ? 'subtle' : 'outline'\"",
-    );
+    // O item da vez: destaque semântico oficial (PageCard highlight), dono 07/10.
+    expect(queue).toContain(':highlight="item.card.ref === focusRef"');
+    expect(queue).toContain('highlight-color="primary"');
   });
 
   it("não usa cards como simples divisores dentro de outros cards", () => {
@@ -697,7 +697,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     );
     expect(card).toContain(":variant=\"selected ? 'subtle' : 'outline'\"");
     expect(card).toContain("<template #header>");
-    expect(card).toContain('<template v-if="!negotiationOnly" #footer>');
+    expect(card).toContain("<template #footer>");
     // 1/3 + 2/3 quando o rodapé tem largura para isso; abaixo, empilha legível.
     expect(card).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
     expect(card).toContain('class="@container flex items-end gap-2"');

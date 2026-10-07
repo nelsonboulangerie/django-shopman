@@ -82,7 +82,11 @@ const items = computed(() => {
       ? [
           {
             label:
-              props.viewMode === "board" ? "Voltar à Fila" : "Ver em colunas",
+              props.viewMode === "board"
+                ? props.queueAvailable
+                  ? "Voltar à grade"
+                  : "Voltar à lista"
+                : "Ver em colunas",
             icon: "i-lucide-columns-3",
             kbds: ["V"],
             onSelect: () =>
@@ -119,11 +123,11 @@ const items = computed(() => {
         ...(props.queueAvailable
           ? [
               {
-                label: "Fila",
+                label: "Grade",
                 icon:
                   props.viewMode === "queue"
                     ? "i-lucide-check"
-                    : "i-lucide-list-checks",
+                    : "i-lucide-layout-grid",
                 onSelect: () => emit("view", "queue"),
               },
             ]
@@ -137,9 +141,8 @@ const items = computed(() => {
           onSelect: () => emit("view", "board"),
         },
         {
-          label: "Supervisão",
-          icon:
-            props.viewMode === "table" ? "i-lucide-check" : "i-lucide-table-2",
+          label: "Lista",
+          icon: props.viewMode === "table" ? "i-lucide-check" : "i-lucide-list",
           onSelect: () => emit("view", "table"),
         },
       ]

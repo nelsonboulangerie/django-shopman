@@ -177,9 +177,12 @@ export function galleryQueue(base) {
 
   const ifood_negotiation_orders = [
     make("I15", {
-      status: "preparing", status_label: "Em preparo", channel_ref: "ifood", channel_display_id: "9921",
+      channel_ref: "ifood", channel_display_id: "9921",
       customer_name: "Marina",
-      ifood_negotiations: [{ id: "neg-1", kind: "cancellation", label: "Cliente pediu cancelamento", deadline_iso: iso(300) }],
+      status: "completed", status_label: "Concluído",
+      attention: "negotiation", attention_since_iso: iso(-180), goal_minutes: 10,
+      goal_label: "responder até " + new Date(Date.now() + 420_000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }),
+      ifood_negotiations: [{ id: "neg-1", type: "AFTER_DELIVERY", action: "CANCELLATION", expires_at: iso(420), state: "open", can_respond: true }],
       ifood_cancellation_notice: "O cliente pediu cancelamento no iFood. Responda até 15:10.",
       ifood_remote_ahead_label: "No iFood este pedido já aparece como pronto.",
       actions: [action("advance", "Marcar pronto"), ...menu],

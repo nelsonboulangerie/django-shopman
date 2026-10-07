@@ -585,8 +585,8 @@ export function triageCards(
   return sortCards(filtered, opts.sort);
 }
 
-/** "queue": a Fila "Precisa de você" (v4, abre nela no desktop); "board": a Supervisão,
- *  o quadro de três colunas; "table": a tabela densa. */
+/** "queue": a Grade, os cartões da Fila "Precisa de você" (abre nela no desktop);
+ *  "board": o quadro de três colunas; "table": a Lista, a tabela densa. */
 export type ViewMode = "queue" | "board" | "table";
 
 export interface FlatRow {

@@ -44,6 +44,56 @@ def _save(order, records):
     data["ifood"]["handshake_pending"] = any(r.get("state") != "settled" for r in records.values())
     order.data = data
     order.save(update_fields=["data", "updated_at"])
+    # Toda mudança de estado passa por aqui; o aviso do Gestor acompanha depois do
+    # commit (chegou, o operador respondeu, o iFood decidiu, venceu).
+    order_ref = order.ref
+    transaction.on_commit(lambda: sync_alert(order_ref), robust=True)
+
+
+ALERT_TYPE = "ifood_negotiation_open"
+_ACTION_LABELS = {"CANCELLATION": "cancelamento", "PARTIAL_CANCELLATION": "cancelamento parcial"}
+_TIMEOUT_LABELS = {
+    "ACCEPT_CANCELLATION": "o iFood aceita o cancelamento",
+    "REJECT_CANCELLATION": "o iFood recusa o pedido do cliente",
+}
+
+
+def _alert_text(order, raw, expires):
+    action = _ACTION_LABELS.get(raw.get("action"), "uma mudança")
+    when = timezone.localtime(expires).strftime("%H:%M")
+    outcome = _TIMEOUT_LABELS.get(raw.get("timeoutAction"), "o iFood decide sozinho")
+    return (
+        f"O cliente do pedido {order.ref} pediu {action} no iFood. "
+        f"Responda até {when}; sem resposta, {outcome}."
+    )
+
+
+def sync_alert(order_ref):
+    """Um aviso com prazo por negociação aberta; nenhum quando não há o que responder.
+
+    O aviso é a interrupção do Gestor: sem Visto, a tela abre o modal; depois do
+    Visto, lembra até a causa acabar. A causa acaba quando ninguém mais pode
+    responder (o operador respondeu, o iFood decidiu, o prazo venceu)."""
+    from shopman.shop.adapters import alert as alert_adapter
+    from shopman.shop.services.observability import create_operator_alert
+
+    order = Order.objects.filter(ref=order_ref, channel_ref="ifood").first()
+    if order is None:
+        return
+    open_records = [(dispute_id, record) for dispute_id, record in _records(order).items() if _open(record)]
+    if not open_records:
+        alert_adapter.resolve(ALERT_TYPE, order_ref=order.ref, actor="ifood_handshake")
+        return
+    for _dispute_id, record in open_records:
+        raw = record.get("raw") or {}
+        expires = _expiry(raw)
+        create_operator_alert(
+            type=ALERT_TYPE,
+            severity="error",
+            message=_alert_text(order, raw, expires),
+            order_ref=order.ref,
+            respond_by=expires,
+        )
 
 
 def _extra(raw, key, default=None):
@@ -122,6 +172,20 @@ def _notice(record):
     }.get(record.get("state"), "Negociação vencida ou cenário não suportado; consulte o iFood.")
 
 
+def open_deadline(order):
+    """A negociação aberta de prazo mais curto: ``(recebida, prazo)`` ou ``None``.
+
+    É o que a Fila do Gestor ordena: o pedido espera uma resposta ao iFood."""
+    windows = []
+    for record in _records(order).values():
+        if not _open(record):
+            continue
+        expires = _expiry(record.get("raw") or {})
+        received = parse_datetime(str(record.get("received_at") or "")) or expires
+        windows.append((received, expires))
+    return min(windows, key=lambda window: window[1]) if windows else None
+
+
 def projection(order):
     rows = []
     for dispute_id, record in _records(order).items():
@@ -171,6 +235,8 @@ def persist_event(order, event, *, settlement):
                 raise HandshakeValidationError("Disputa repetida com conteúdo divergente.")
             return False
         record["raw"] = deepcopy(raw)
+        # Quando a loja ficou sabendo: o relógio da Fila conta daqui até o prazo.
+        record["received_at"] = timezone.now().isoformat()
     record["last_event_id"] = str(event["id"])
     _save(order, records)
     return True

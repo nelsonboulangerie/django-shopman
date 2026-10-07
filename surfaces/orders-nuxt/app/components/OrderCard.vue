@@ -45,7 +45,6 @@ const props = withDefaults(
     selected?: boolean;
     selecting?: boolean;
     next?: boolean;
-    negotiationOnly?: boolean;
     danfePrinting?: boolean;
     canOpen?: boolean;
     /** Celular (G17): o Recusar mora no deslize do cartão; a ação principal fica larga. */
@@ -93,25 +92,16 @@ const seal = computed(() => cardSeal(props.card, { next: props.next }));
 
 // A Cozinha neste pedido: a barra por estação, o "Pronto" da estação sem tela e o
 // "Voltar para…" no menu do pedido.
-const progress = computed(() =>
-  props.negotiationOnly ? null : stationProgress(props.card.kitchen),
-);
+const progress = computed(() => stationProgress(props.card.kitchen));
 const attentionStations = computed(() =>
-  props.negotiationOnly
-    ? []
-    : kitchenChips(props.card.kitchen).filter(
-        (chip) =>
-          chip.canMarkReady || chip.tone === "alert" || chip.cancelledNote,
-      ),
+  kitchenChips(props.card.kitchen).filter(
+    (chip) => chip.canMarkReady || chip.tone === "alert" || chip.cancelledNote,
+  ),
 );
-const recallOptions = computed(() =>
-  props.negotiationOnly ? [] : kitchenRecallOptions(props.card.kitchen),
-);
+const recallOptions = computed(() => kitchenRecallOptions(props.card.kitchen));
 
 const onRoad = computed(() => onRoadLine(props.card));
-const affordances = computed(() =>
-  props.negotiationOnly ? [] : cardAffordances(props.card),
-);
+const affordances = computed(() => cardAffordances(props.card));
 const primary = computed(
   () =>
     affordances.value.find((a) => a.priority === "primary" || a.disabled) ??
@@ -155,14 +145,10 @@ const paymentIcon = computed(() => {
   );
 });
 
-const danfe = computed(() =>
-  props.negotiationOnly ? null : danfeLine(props.card),
-);
+const danfe = computed(() => danfeLine(props.card));
 // "O sistema fez · desfazer": o pronto que veio da Cozinha, ou a saída tocada ainda na
 // janela. O fato fica à vista; o gesto só enquanto o prazo corre.
-const undo = computed(() =>
-  props.negotiationOnly ? null : undoLine(props.card, nowMs.value),
-);
+const undo = computed(() => undoLine(props.card, nowMs.value));
 const handoff = computed(() =>
   undo.value?.kind === "handoff" ? undo.value : null,
 );
@@ -251,7 +237,7 @@ const cardMenuItems = computed(() => [
 // Toque longo liga a seleção em lote (como no celular de qualquer lista).
 let pressTimer: ReturnType<typeof setTimeout> | null = null;
 function pressStart(event: PointerEvent) {
-  if (props.negotiationOnly || props.selecting || event.button > 0) return;
+  if (props.selecting || event.button > 0) return;
   if ((event.target as HTMLElement).closest("button, a, input, textarea"))
     return;
   // Toque longo liga a seleção em lote em qualquer coluna.
@@ -324,7 +310,7 @@ function nuxtIcon(icon: string): string {
           :class="handoff ? 'opacity-55' : ''"
         >
           <NuxtButton
-            v-if="selecting && !negotiationOnly"
+            v-if="selecting"
             :icon="selected ? 'i-lucide-check-square-2' : 'i-lucide-square'"
             color="neutral"
             variant="ghost"
@@ -336,7 +322,7 @@ function nuxtIcon(icon: string): string {
           />
           <div class="min-w-0 flex-1">
             <NuxtLink
-              v-if="canOpen && !negotiationOnly"
+              v-if="canOpen"
               :to="`/${card.ref}`"
               class="group inline-flex flex-col justify-start"
               :aria-label="`Abrir pedido ${card.ref}`"
@@ -735,7 +721,7 @@ function nuxtIcon(icon: string): string {
         </div>
 
         <NuxtAlert
-          v-if="!negotiationOnly && card.fiscal_status === 'failed'"
+          v-if="card.fiscal_status === 'failed'"
           color="warning"
           variant="subtle"
           icon="i-lucide-triangle-alert"
@@ -845,12 +831,7 @@ function nuxtIcon(icon: string): string {
          a frase não trava o gesto do momento (ex.: o pedido novo ainda sem próxima
          etapa), ela fica à vista em texto calmo, como antes. -->
       <NuxtAlert
-        v-if="
-          !negotiationOnly &&
-          card.advance_block_reason &&
-          !handoff &&
-          seal.tone === 'error'
-        "
+        v-if="card.advance_block_reason && !handoff && seal.tone === 'error'"
         color="error"
         variant="subtle"
         icon="i-lucide-lock"
@@ -858,7 +839,7 @@ function nuxtIcon(icon: string): string {
         data-advance-block
       />
       <NuxtAlert
-        v-else-if="!negotiationOnly && card.advance_block_reason && !handoff"
+        v-else-if="card.advance_block_reason && !handoff"
         color="neutral"
         variant="soft"
         icon="i-lucide-lock"
@@ -878,13 +859,10 @@ function nuxtIcon(icon: string): string {
         @update:open="emit('dismiss-error')"
       />
 
-      <div v-if="!negotiationOnly" class="flex-1" />
+      <div class="flex-1" />
 
       <!-- pagamento e total, logo acima do gesto -->
-      <div
-        v-if="!negotiationOnly && !handoff"
-        class="flex items-baseline justify-between gap-2"
-      >
+      <div v-if="!handoff" class="flex items-baseline justify-between gap-2">
         <NuxtBadge
           v-if="card.payment_method_label"
           :color="paymentColor"
@@ -899,7 +877,7 @@ function nuxtIcon(icon: string): string {
 
     <!-- O próximo gesto ocupa o footer oficial do Card, como na receita do
          Kitchen Sink. A divisão e o padding passam a pertencer ao NuxtCard. -->
-    <template v-if="!negotiationOnly" #footer>
+    <template #footer>
       <!-- @container: o rodapé decide pela própria largura (card largo, coluna estreita,
            grade da Saída), não pelo breakpoint da página. -->
       <div class="@container flex items-end gap-2">

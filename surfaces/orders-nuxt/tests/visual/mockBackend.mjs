@@ -19,6 +19,45 @@ const baseAttention = readFixture("channel-attention.json");
 const baseRailCounts = readFixture("rail-counts.json");
 
 let scenario = "normal";
+// "Visto" do aviso com prazo no cenário gallery: o mock lembra quem já viu.
+const acknowledged = new Set();
+
+function urgentAlert() {
+  const pk = 900;
+  const respondBy = new Date(Date.now() + 7 * 60_000).toISOString();
+  const actions = [{
+    ref: `open-context:${pk}`, kind: "open_alert_context", label: "Responder no pedido", priority: 10,
+    enabled: true, reason: "", method: "GET", href: "/WEB-261007-I15#ifood-negotiations",
+    payload_schema: "", expected_rev: null, idempotency: { required: false, key_scope: "" },
+    confirmation: { required: false, reason_required: false, title: "", confirm_label: "Abrir" },
+    approval_requirement: null, source_alert_ref: String(pk), source_alert_effect: "keeps_open", proof: "",
+  }];
+  if (!acknowledged.has(pk)) actions.push({
+    ref: `acknowledge:${pk}`, kind: "acknowledge_alert", label: "Visto", priority: 20, enabled: true,
+    reason: "", method: "POST", href: `/api/v1/backstage/alerts/${pk}/ack/`,
+    payload_schema: "AlertAckMutationRequest", expected_rev: 0,
+    idempotency: { required: true, key_scope: `backstage.alert-ack:${pk}` },
+    confirmation: { required: false, reason_required: false, title: "", confirm_label: "Confirmar" },
+    approval_requirement: null, source_alert_ref: String(pk), source_alert_effect: "acknowledges", proof: "",
+  });
+  return {
+    pk, rev: 0, type: "ifood_negotiation_open", type_label: "iFood: negociação esperando resposta",
+    severity: "error", severity_label: "Erro", audience: "orders",
+    message: "O cliente do pedido WEB-261007-I15 pediu cancelamento no iFood. Responda até "
+      + new Date(respondBy).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })
+      + "; sem resposta, o iFood aceita o cancelamento.",
+    order_ref: "WEB-261007-I15", created_at_display: "agora", respond_by_iso: respondBy, actions,
+  };
+}
+
+function alertsPayload() {
+  const payload = JSON.parse(JSON.stringify(baseAlerts));
+  if (scenario === "gallery") {
+    payload.alerts = [urgentAlert(), ...payload.alerts];
+    payload.counts.active += 1;
+  }
+  return payload;
+}
 
 function dayInSaoPaulo(offsetDays) {
   const at = new Date(Date.now() + offsetDays * 86400000);
@@ -77,7 +116,7 @@ createServer((req, res) => {
 
   if (path === "/__visual/scenario") {
     const next = url.searchParams.get("set");
-    if (next) scenario = next;
+    if (next) { scenario = next; acknowledged.clear(); }
     send(res, 200, { scenario });
     return;
   }
@@ -107,7 +146,13 @@ createServer((req, res) => {
     return;
   }
   if (path === "/api/v1/backstage/orders/rail-counts/") { send(res, 200, baseRailCounts); return; }
-  if (path === "/api/v1/backstage/alerts/") { send(res, 200, baseAlerts); return; }
+  if (path === "/api/v1/backstage/alerts/") { send(res, 200, alertsPayload()); return; }
+  const ackMatch = path.match(/^\/api\/v1\/backstage\/alerts\/(\d+)\/ack\/$/);
+  if (req.method === "POST" && ackMatch) {
+    acknowledged.add(Number(ackMatch[1]));
+    send(res, 200, { ok: true, pk: Number(ackMatch[1]) });
+    return;
+  }
   if (path === "/api/v1/backstage/channels/attention/") { send(res, 200, baseAttention); return; }
   if (path.indexOf("/events/") >= 0 || path.indexOf("/sse/") >= 0) { res.statusCode = 204; res.end(); return; }
   send(res, 200, {});

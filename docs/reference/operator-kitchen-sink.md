@@ -200,6 +200,21 @@ A contagem de uma seção (Pedidos 2, Saída 5) mora no `chip` do item do
 a largura do rótulo. O "Mais" da barra do celular ocupa a largura do próprio
 conteúdo (`shrink-0`), não metade da barra.
 
+Aviso com prazo (`respondByIso` no item da caixa de Avisos, `respond_by` no
+`OperatorAlert`) interrompe a tela: `OperatorUrgentAlert` abre um `NuxtModal` que não
+fecha sozinho, com a mensagem, a contagem regressiva num `NuxtAlert` e dois gestos em
+1/3 + 2/3 ("Visto" e o lugar exato). Depois do Visto, o mesmo aviso volta como toast
+a cada `URGENT_REMINDER_MINUTES` (5) até a causa acabar ou o prazo vencer. Aviso sem
+prazo nunca interrompe: a caixa de Avisos basta. O critério é o prazo, não a
+severidade (`critical` também manda e-mail para a TI). Primeiro caso: a negociação do
+iFood (`ifood_negotiation_open`), decisão do dono de 07/10/2026.
+
+Visão de registros: dois segmentos genéricos, **Grade** (cartões) e **Lista** (a
+tabela), com as teclas G e L. Servem a qualquer tela com muitos registros. O item da
+vez numa lista de cartões (o mais urgente, ou o que o operador escolheu) é
+`NuxtPageCard` `outline` com `highlight` na cor primária, o destaque semântico deste
+catálogo; os demais ficam sem destaque.
+
 Navegação entre áreas (Ajustes) é `NuxtPageGrid` de `NuxtPageCard` com `to`,
 ícone e descrição, espaçada por `--op-region-gap` como no catálogo.
 

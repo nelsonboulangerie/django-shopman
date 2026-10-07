@@ -300,7 +300,7 @@ describe("pedido de teste da homologação", () => {
   });
 });
 
-it("links negotiations on a completed order without batch or fulfillment actions", () => {
+it("pedido com negociação aberta leva à resposta pela ação do Alert", () => {
   const order = card({
     status: "completed",
     status_label: "Concluído",
@@ -308,19 +308,10 @@ it("links negotiations on a completed order without batch or fulfillment actions
       { id: "dispute" },
     ] as OrderCardProjection["ifood_negotiations"],
   });
-  const w = mount(OrderCard, {
-    props: { card: order, negotiationOnly: true },
-    global: { stubs },
-  });
+  const w = mountCard({ card: order });
   expect(w.get("[data-ifood-negotiation-link]").attributes("to")).toBe(
     `/${order.ref}#ifood-negotiations`,
   );
-  expect(w.find('[aria-label="Selecionar pedido"]').exists()).toBe(false);
-  expect(w.find('[aria-label="Atender este pedido"]').exists()).toBe(false);
-  // O único controle é a ação do próprio Alert, que abre a solicitação.
-  expect(
-    w.findAll("button").map((button) => button.text()),
-  ).toEqual(["Abrir solicitação"]);
 });
 
 describe("iFood à frente do estado local", () => {

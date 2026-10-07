@@ -71,6 +71,7 @@ _ALERT_RESPONSE = inline_serializer(
         "message": serializers.CharField(),
         "order_ref": serializers.CharField(),
         "created_at_display": serializers.CharField(),
+        "respond_by_iso": serializers.CharField(),
         "actions": _ACTION_RESPONSE.__class__(many=True),
     },
 )

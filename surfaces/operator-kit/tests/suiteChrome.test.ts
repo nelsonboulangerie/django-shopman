@@ -12,6 +12,9 @@ import {
   isShortcutsHelpKey,
   mergeShortcutGroups,
   operatorAlertToInbox,
+  urgentAlerts,
+  deadlineLeftLabel,
+  URGENT_REMINDER_MINUTES,
   phoneBarLayout,
   sectionIndexFromKey,
   sectionShortcut,
@@ -113,5 +116,49 @@ describe("Avisos: um selo para a caixa inteira", () => {
       ],
     });
     expect(view).toMatchObject({ key: 3, tone: "critical", eyebrow: "Erro · Pagamento", meta: "21:55 · pedido W07", canAck: true, seen: false, href: "/W07" });
+  });
+});
+
+describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => {
+  const NOW = Date.parse("2026-10-07T15:00:00Z");
+  const at = (minutes: number) => new Date(NOW + minutes * 60_000).toISOString();
+
+  it("o prazo do servidor chega ao item da caixa de Avisos", () => {
+    const view = operatorAlertToInbox({
+      pk: 7, type_label: "iFood: negociação esperando resposta", severity: "error",
+      severity_label: "Erro", message: "O cliente pediu cancelamento.", order_ref: "IFOOD-9",
+      created_at_display: "07/10 às 12:00", respond_by_iso: at(8), actions: [],
+    });
+    expect(view.respondByIso).toBe(at(8));
+    const semPrazo = operatorAlertToInbox({
+      pk: 8, type_label: "x", severity: "warning", severity_label: "Aviso", message: "m",
+      created_at_display: "", respond_by_iso: "", actions: [],
+    });
+    expect(semPrazo).not.toHaveProperty("respondByIso");
+  });
+
+  it("bloqueia o não visto de prazo mais curto; os vistos só lembram", () => {
+    const items = [
+      { key: 1, respondByIso: at(9), seen: false },
+      { key: 2, respondByIso: at(3), seen: false },
+      { key: 3, respondByIso: at(5), seen: true },
+      { key: 4, seen: false },
+    ];
+    const view = urgentAlerts(items, NOW);
+    expect(view.blocking?.key).toBe(2);
+    expect(view.reminders.map((item) => item.key)).toEqual([3]);
+  });
+
+  it("prazo vencido não interrompe nem lembra: a decisão já saiu", () => {
+    const view = urgentAlerts([{ key: 1, respondByIso: at(-1), seen: false }], NOW);
+    expect(view).toEqual({ blocking: null, reminders: [] });
+  });
+
+  it("o lembrete é de 5 minutos e o tempo restante se diz em minutos", () => {
+    expect(URGENT_REMINDER_MINUTES).toBe(5);
+    expect(deadlineLeftLabel(at(6.5), NOW)).toBe("faltam 6 min");
+    expect(deadlineLeftLabel(at(1.2), NOW)).toBe("falta 1 min");
+    expect(deadlineLeftLabel(at(0.5), NOW)).toBe("menos de 1 min");
+    expect(deadlineLeftLabel(at(-1), NOW)).toBe("prazo vencido");
   });
 });

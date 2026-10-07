@@ -293,6 +293,10 @@ class OperatorAlert(models.Model):
         # NCM —, então a divergência precisa chegar a alguém (decisão do dono,
         # 24/09/2026: "pendências que sobrarem confirmamos nas próximas NFs").
         ("purchase_invoice_fiscal_divergence", "Compras: NF-e diverge do cadastro fiscal"),
+        # O cliente abriu uma negociação no iFood (cancelamento, reembolso) e a loja
+        # tem minutos para responder; sem resposta, o iFood aplica a ação de prazo
+        # dele. Tem `respond_by`: o Gestor interrompe a tela até alguém ver.
+        ("ifood_negotiation_open", "iFood: negociação esperando resposta"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -345,6 +349,7 @@ class OperatorAlert(models.Model):
         "danfe_print_failed",
         "kitchen_print_failed",
         "concierge_handoff",
+        "ifood_negotiation_open",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
@@ -383,6 +388,15 @@ class OperatorAlert(models.Model):
         max_length=100,
         blank=True,
         help_text="Processo ou identidade que confirmou a resolução da causa.",
+    )
+    respond_by = models.DateTimeField(
+        "responder até",
+        null=True,
+        blank=True,
+        help_text=(
+            "Prazo em que a causa decide sozinha (ex.: o iFood aplica a ação de prazo). "
+            "Com prazo e sem Visto, a superfície interrompe a tela até alguém ver."
+        ),
     )
     created_at = models.DateTimeField("criado em", auto_now_add=True)
 

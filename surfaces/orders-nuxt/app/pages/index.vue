@@ -153,7 +153,7 @@ watch(
   },
 );
 // A pessoa chega depois da primeira leitura (a sessão carrega no cliente): relê a URL
-// antes de o recorte reescrevê-la, para "/?view=board" abrir na Supervisão.
+// antes de o recorte reescrevê-la, para "/?view=board" abrir nas colunas.
 watch(
   () => context.state.value.owner,
   (owner) => {
@@ -548,7 +548,7 @@ watch(
 // O posto de saída é tablet de toque: todo alvo do cartão sobe para 48 px.
 // A Fila "Precisa de você" (V4-G4) é a casa do desktop e do tablet deitado. O celular e
 // o tablet em pé seguem com as colunas em abas, e o posto Saída com a Saída larga: lá a
-// escolha "Fila" vira a Supervisão. Antes de montar (SSR), vale a escolha guardada.
+// escolha "Grade" vira a Lista. Antes de montar (SSR), vale a escolha guardada.
 const isWide = useMediaQuery("(min-width: 1024px)");
 const queueAvailable = computed(
   () => !boardLayout.exitPost.value && (!mountedView.value || isWide.value),
@@ -560,9 +560,9 @@ const view = computed(() =>
 );
 const viewTabs = computed(() => [
   ...(queueAvailable.value
-    ? [{ value: "queue", label: "Fila", icon: "i-lucide-list-checks" }]
+    ? [{ value: "queue", label: "Grade", icon: "i-lucide-layout-grid" }]
     : []),
-  { value: "table", label: "Supervisão", icon: "i-lucide-table-2" },
+  { value: "table", label: "Lista", icon: "i-lucide-list" },
 ]);
 function pickView(value: string | number) {
   const next = String(value);
@@ -648,10 +648,19 @@ const shortcutHint = (key: string) =>
 // ── a Fila "Precisa de você" (V4-G4) ────────────────────────────────────────
 // Os mesmos recortes do quadro (busca, canal, Entrega/Retirada), mais as encomendas
 // que ainda pedem aceite. O foco começa no mais urgente; ↑/↓ andam, Enter faz o gesto.
-const queueCards = computed<OrderCardProjection[]>(() => [
-  ...tableRows.value.map((row) => row.card),
-  ...triagedPreorders.value.flatMap((group) => group.cards),
-]);
+// A Fila também recebe o pedido em negociação no iFood, inclusive o já entregue (o
+// cliente reclama depois): ele espera uma resposta como qualquer outro (dono, 07/10).
+const queueCards = computed<OrderCardProjection[]>(() => {
+  const cards = [
+    ...tableRows.value.map((row) => row.card),
+    ...triagedPreorders.value.flatMap((group) => group.cards),
+  ];
+  const seen = new Set(cards.map((card) => card.ref));
+  return [
+    ...cards,
+    ...negotiationCards.value.filter((card) => !seen.has(card.ref)),
+  ];
+});
 // O que as setas alcançam: o que a Fila mostra (em "Precisa de você", os 4 em foco).
 const queueOrder = computed(() => {
   const order = queueItems(queueCards.value, nowMs.value, {
@@ -741,12 +750,12 @@ const queueFocus = computed(() => {
 });
 function queueKey(e: KeyboardEvent): boolean {
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-  if (key === "f" && queueAvailable.value) {
+  if (key === "g" && queueAvailable.value) {
     e.preventDefault();
     viewMode.value = "queue";
     return true;
   }
-  if (key === "t") {
+  if (key === "l") {
     e.preventDefault();
     viewMode.value = "table";
     return true;
@@ -1295,9 +1304,10 @@ function printQueue() {
             />
           </NuxtDropdownMenu>
 
-          <!-- visão (v4): dois segmentos, Fila F | Supervisão T. A Supervisão é a tabela
-               densa com seleção em lote; as três colunas (Entrada, Preparo, Saída) moram
-               no ⋯ e na tecla V, e o posto Saída abre nelas. -->
+          <!-- visão: dois segmentos genéricos, Grade G (os cartões da Fila) | Lista L (a
+               tabela densa, com seleção em lote), nomes que servem a qualquer tela com
+               muitos registros (dono, 07/10/2026). As três colunas (Entrada, Preparo,
+               Saída) moram no ⋯ e na tecla V, e o posto Saída abre nelas. -->
           <NuxtTabs
             :model-value="view"
             :items="viewTabs"
@@ -1556,26 +1566,6 @@ function printQueue() {
       />
 
       <template v-if="queue">
-        <section
-          v-if="negotiationCards.length"
-          class="mb-6 space-y-3"
-          data-ifood-negotiation-orders
-        >
-          <h2 class="text-sm font-bold uppercase tracking-wide">
-            Negociações iFood pendentes
-          </h2>
-          <p class="text-sm text-muted-foreground">
-            Confira solicitações e prazos, inclusive de pedidos já encerrados.
-          </p>
-          <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            <OrderCard
-              v-for="card in negotiationCards"
-              :key="`negotiation-${card.ref}`"
-              :card="card"
-              negotiation-only
-            />
-          </div>
-        </section>
         <!-- no results across all zones for the active filters -->
         <NuxtEmpty
           v-if="hasFilter && !visibleCount"
@@ -1693,7 +1683,7 @@ function printQueue() {
           />
         </template>
 
-        <!-- Supervisão é uma NuxtTable canônica; ela própria controla células,
+        <!-- A Lista é uma NuxtTable canônica; ela própria controla células,
              cabeçalho fixo e rolagem horizontal, sem wrapper visual paralelo. -->
         <NuxtTable
           v-else
@@ -1703,7 +1693,7 @@ function printQueue() {
           :get-row-id="(row) => row.card.ref"
           :row-selection="supervisionRowSelection"
           sticky="header"
-          caption="Supervisão dos pedidos em andamento"
+          caption="Lista dos pedidos em andamento"
           data-supervision-table
         >
           <template #select-header>

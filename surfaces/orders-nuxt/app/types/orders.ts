@@ -124,6 +124,8 @@ export interface AlertProjection {
   message: string;
   order_ref: string;
   created_at_display: string;
+  /** Prazo em que a causa decide sozinha (ISO); vazio sem prazo. */
+  respond_by_iso?: string;
   actions: Array<{
     ref: string;
     kind: string;

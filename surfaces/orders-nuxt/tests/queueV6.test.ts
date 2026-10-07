@@ -8,6 +8,7 @@ import { timerChip } from "../app/presentation/board";
 import {
   kitchenDetail,
   QUEUE_FOCUS,
+  queueGesture,
   queueItems,
   queueScopeCounts,
   queueToneClass,
@@ -55,13 +56,13 @@ describe("G05: a cópia da Fila não se corta", () => {
   });
 });
 
-describe("G07: Fila F | Supervisão T, dois segmentos", () => {
-  it("a Supervisão é a tabela densa; as colunas saem do alternador", () => {
+describe("Grade G | Lista L, dois segmentos genéricos (dono, 07/10/2026)", () => {
+  it("a Lista é a tabela densa; as colunas saem do alternador", () => {
     const page = readFileSync(new URL("../app/pages/index.vue", import.meta.url), "utf8");
     const items = page.slice(page.indexOf("const viewTabs"), page.indexOf("function pickView"));
     const control = page.slice(page.lastIndexOf("<NuxtTabs", page.indexOf("data-view-switch")), page.indexOf("/>", page.indexOf("data-view-switch")));
-    expect(items).toContain('value: "queue"');
-    expect(items).toContain('value: "table"');
+    expect(items).toContain('value: "queue", label: "Grade"');
+    expect(items).toContain('value: "table", label: "Lista"');
     expect(items).not.toContain('value: "board"');
     expect(control).toContain(':items="viewTabs"');
     expect(control).toContain('@update:model-value="pickView"');
@@ -113,5 +114,24 @@ describe("G10: próximo pronto em ~N min", () => {
     expect(kitchenDetail([card({ ready_eta_iso: ago(30) })], NOW, 1380)).toBe("o mais antigo há 23 min · passou da previsão");
     expect(kitchenDetail([card()], NOW, 600)).toBe("o mais antigo há 10 min");
     expect(kitchenDetail([], NOW, 0)).toBe("");
+  });
+});
+
+describe("negociação do iFood na Fila (dono, 07/10/2026)", () => {
+  it("passa à frente pelo prazo, como o pedido que o sistema cancela", () => {
+    const negotiation = card({
+      ref: "NEG-1", attention: "negotiation", attention_since_iso: ago(3 * 60),
+      goal_minutes: 10, goal_label: "responder até 15:15",
+    });
+    const late = card({ ref: "LATE-1", attention_since_iso: ago(40 * 60) });
+    const items = queueItems([late, negotiation], NOW);
+    expect(items.map((item) => item.card.ref)).toEqual(["NEG-1", "LATE-1"]);
+    expect(items[0]!.cancelsIn).toBe(7 * 60);
+  });
+
+  it("a linha não oferece o gesto do cartão: responde-se no pedido", () => {
+    const negotiation = card({ ref: "NEG-2", attention: "negotiation", attention_since_iso: ago(60), goal_minutes: 10 });
+    const [item] = queueItems([negotiation], NOW);
+    expect(queueGesture(item!)).toEqual({ primary: null, secondary: null, shortcut: "" });
   });
 });

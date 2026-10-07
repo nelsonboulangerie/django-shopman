@@ -270,6 +270,8 @@ const tabItems = computed(() => phoneLayout.value.visible.map(itemFor));
       </NuxtDashboardToolbar>
     </div>
   </OperatorOfficeShell>
+  <!-- Aviso com prazo correndo: interrompe a tela até alguém ver (dono, 07/10). -->
+  <ClientOnly><OperatorUrgentAlert /></ClientOnly>
   <OperatorShortcutsHelp
     :sections="topSections"
     :app-label="label.replace(/^Seções d[oa] /, '')"

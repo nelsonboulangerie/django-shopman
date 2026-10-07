@@ -30,6 +30,7 @@ Chaves em inglês; frases em português, prontas para a tela.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 #: O fato humano que o pedido espera, ou ``""`` quando não espera ninguém.
 ATTENTION_KINDS = (
+    "negotiation",   # responder a negociação do iFood antes do prazo dele
     "confirm",       # aceitar ou recusar o pedido novo
     "blocked",       # bloqueado por um fato de fora (pagamento): avança sozinho
     "start",         # iniciar o preparo (canal com ``prep_start=operator``)
@@ -115,6 +117,10 @@ def _confirmation_goal(channel_config) -> int:
 
 def attention_kind(order: Order, card) -> str:
     """O fato humano que o pedido espera agora (``ATTENTION_KINDS``) ou ``""``."""
+    # Negociação aberta vence tudo: o iFood decide sozinho no prazo, inclusive em
+    # pedido já entregue (o cliente reclama depois).
+    if any(negotiation.can_respond for negotiation in (card.ifood_negotiations or ())):
+        return "negotiation"
     status = card.status
     advance = _action(card, "advance")
     advance_ready = bool(advance and advance.enabled and advance.priority == "primary")
@@ -149,6 +155,17 @@ def card_attention(order: Order, card, channel_config=None) -> dict:
     kind = attention_kind(order, card)
     if not kind:
         return {}
+    if kind == "negotiation":
+        from shopman.shop.services.ifood_handshake import open_deadline
+
+        received, expires = open_deadline(order)
+        goal = max(1, math.ceil((expires - received).total_seconds() / 60))
+        return {
+            "attention": kind,
+            "attention_since_iso": _iso(received),
+            "goal_minutes": goal,
+            "goal_label": f"responder até {timezone.localtime(expires):%H:%M}",
+        }
     if kind in ("confirm",) or (kind == "blocked" and order.status == Order.Status.NEW):
         goal, since = _confirmation_goal(channel_config), order.created_at
     else:

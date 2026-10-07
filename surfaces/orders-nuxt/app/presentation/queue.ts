@@ -85,6 +85,16 @@ function cancelSeconds(
   card: OrderCardProjection,
   nowMs: number,
 ): number | null {
+  // A negociação do iFood também decide sozinha no prazo: entra na mesma régua do
+  // pedido que o sistema cancela (o prazo é o fim da meta, contada da chegada).
+  if (card.attention === "negotiation") {
+    const since = Date.parse(card.attention_since_iso);
+    if (!Number.isFinite(since) || !card.goal_minutes) return null;
+    return Math.max(
+      0,
+      Math.round((since + card.goal_minutes * 60_000 - nowMs) / 1000),
+    );
+  }
   if (card.confirmation_action !== "cancel" || !card.confirmation_deadline_iso)
     return null;
   const at = Date.parse(card.confirmation_deadline_iso);
@@ -123,8 +133,8 @@ function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
   };
 }
 
-/** A ordem "mais urgente primeiro" (G11): o pedido que o sistema vai CANCELAR sozinho
- *  passa à frente (perder a venda não se desfaz), o de prazo mais curto primeiro; depois,
+/** A ordem "mais urgente primeiro" (G11): o pedido que o sistema vai CANCELAR sozinho,
+ *  e a negociação que o iFood decide sozinho, passam à frente (não se desfaz), o de prazo mais curto primeiro; depois,
  *  o tempo contra a meta; empate, o mais antigo. */
 function byUrgency(a: QueueItem, b: QueueItem): number {
   if (a.cancelsIn !== null || b.cancelsIn !== null) {
@@ -292,7 +302,10 @@ export interface QueueGesture {
 
 /** O botão da linha: só o fato humano é botão (v4). O rótulo do servidor vira `title`. */
 export function queueGesture(item: QueueItem): QueueGesture {
-  if (!item.kind) return { primary: null, secondary: null, shortcut: "" };
+  // A negociação do iFood se responde no pedido (motivo, prova, contraproposta), não
+  // com o gesto do cartão: a linha oferece "Responder", que é um link.
+  if (!item.kind || item.kind === "negotiation")
+    return { primary: null, secondary: null, shortcut: "" };
   const affordances = cardAffordances(item.card);
   const primary =
     affordances.find((aff) => aff.priority === "primary" || aff.disabled) ??

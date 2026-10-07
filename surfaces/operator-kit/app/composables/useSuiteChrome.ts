@@ -37,6 +37,9 @@ export interface OperatorInboxAlert {
   hrefLabel?: string;
   /** O servidor oferece "Visto" para este alerta. */
   canAck?: boolean;
+  /** Prazo em que a causa decide sozinha (ISO). Com prazo e sem Visto, o
+   *  `OperatorUrgentAlert` interrompe a tela; depois do Visto, lembra. */
+  respondByIso?: string;
 }
 
 export interface OperatorInboxAlertSource {

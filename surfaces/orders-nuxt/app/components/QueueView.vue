@@ -8,8 +8,8 @@
 //
 //   EM ANDAMENTO 7 · O SISTEMA FEZ (últimos 15 min) · AGORA NO CARDÁPIO
 //
-// Só o fato humano é botão. A Supervisão (a tabela densa, seleção em lote) segue a um
-// toque (alternador e tecla T); as três colunas, no ⋯ e na tecla V; o detalhe abre pelo
+// Só o fato humano é botão. A Lista (a tabela densa, seleção em lote) segue a um
+// toque (alternador e tecla L); as três colunas, no ⋯ e na tecla V; o detalhe abre pelo
 // código. Recortes (v4): "Precisa de você" com 4 em foco e o resto num "+N", "Todos" e
 // "Atrasados". O tempo é âmbar com intensidade: vermelho é só o bloqueio com motivo.
 // Nada aqui decide estado: o fato, a meta, a previsão da Cozinha e o "o sistema fez"
@@ -190,11 +190,15 @@ function switchHint(row: {
         data-queue-empty
       />
 
-      <NuxtCard
+      <!-- O item da vez (o mais urgente, ou o que o operador escolheu) recebe o destaque
+           semântico do Kitchen Sink: PageCard com highlight na cor primária. -->
+      <NuxtPageCard
         v-for="item in shown"
         :key="item.card.ref"
         as="article"
-        :variant="item.card.ref === focusRef ? 'subtle' : 'outline'"
+        variant="outline"
+        :highlight="item.card.ref === focusRef"
+        highlight-color="primary"
         :data-queue-item="item.kind || 'moving'"
         :data-queue-ref="item.card.ref"
         :aria-current="item.card.ref === focusRef || undefined"
@@ -258,7 +262,9 @@ function switchHint(row: {
               data-queue-payment
             >
               <Icon
-                :name="item.card.change_label ? 'lucide:coins' : 'lucide:wallet'"
+                :name="
+                  item.card.change_label ? 'lucide:coins' : 'lucide:wallet'
+                "
                 class="mt-px size-3.5 shrink-0"
               />
               <span>{{
@@ -289,6 +295,18 @@ function switchHint(row: {
                     ? undoLine(item.card, nowMs)!.detail
                     : `Cozinha concluiu às ${clock(item.card.ready_at_iso)}`
                 }}</span>
+              </template>
+              <template v-else-if="item.kind === 'negotiation'">
+                <NuxtBadge
+                  color="error"
+                  variant="subtle"
+                  icon="i-lucide-message-square-warning"
+                  label="Negociação iFood"
+                  data-queue-negotiation
+                />
+                <span class="op-micro text-muted-foreground"
+                  >no prazo, o iFood decide sem a loja</span
+                >
               </template>
               <template v-else-if="item.kind === 'confirm'">
                 <NuxtBadge color="primary" variant="subtle" label="Novo" />
@@ -374,7 +392,19 @@ function switchHint(row: {
             <span class="shrink-0 op-title tnum xl:self-end">{{
               item.card.total_display
             }}</span>
-            <template v-if="item.kind === 'station' && readyStation(item.card)">
+            <NuxtButton
+              v-if="item.kind === 'negotiation'"
+              :to="`/${item.card.ref}#ifood-negotiations`"
+              icon="i-lucide-message-square-reply"
+              label="Responder"
+              color="primary"
+              block
+              class="min-w-0 flex-1"
+              data-queue-primary
+            />
+            <template
+              v-else-if="item.kind === 'station' && readyStation(item.card)"
+            >
               <NuxtButton
                 icon="i-lucide-check"
                 color="primary"
@@ -487,7 +517,7 @@ function switchHint(row: {
             </div>
           </div>
         </div>
-      </NuxtCard>
+      </NuxtPageCard>
 
       <!-- o excedente vira número: nunca paginação. "Ver todos" abre o recorte Todos. -->
       <NuxtButton
