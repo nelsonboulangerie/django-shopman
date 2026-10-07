@@ -73,12 +73,10 @@ function itemFor(section: OperatorSection) {
     icon: section.icon,
     to: section.to,
     active: active.value === section.key,
-    // A contagem mora no Chip do ícone, não num Badge ao lado do rótulo: o rail
-    // recolhido não desenha Badge, e na barra do celular o Badge tirava a largura
-    // do rótulo. Chip numérico 4xl; sem número, o indicativo 2xl de atenção.
-    // `inset: false` explícito: o NavigationMenu liga inset por padrão, e aqui o Chip
-    // envolve só o ícone (20 px), então inset o punha em cima do desenho. Fora dele
-    // o Chip fica no canto, como o do sino sobre o botão.
+    // Barra do celular: a contagem mora no Chip do ícone, não num Badge ao lado do
+    // rótulo (o Badge tirava a largura do rótulo). Chip numérico 4xl; sem número, o
+    // indicativo 2xl. `inset: false`: o NavigationMenu liga inset por padrão e ele
+    // cobriria o desenho do ícone de 20 px.
     chip: section.badge
       ? { color: "warning" as const, text: section.badge, size: "4xl" as const, inset: false }
       : section.attention
@@ -92,8 +90,31 @@ function itemFor(section: OperatorSection) {
   };
 }
 
-const railItems = computed(() => topSections.value.map(itemFor));
-const footItems = computed(() => footSections.value.map(itemFor));
+/** Uma seção no rail: a mesma peça do sino (Chip inset em volta de um Button
+ *  quadrado), para que contagem, espaçamento e estado ativo sejam iguais em toda a
+ *  coluna. O NavigationMenu recolhido punha o Chip em volta do ícone de 20 px e
+ *  empilhava os itens sem o espaço do pé do rail. */
+function railButtonFor(section: OperatorSection) {
+  return {
+    key: section.key,
+    label: section.label,
+    icon: section.icon,
+    to: section.to,
+    active: active.value === section.key,
+    // Com número, Chip numérico (4xl); sem número, o indicativo de atenção (2xl).
+    chip: {
+      show: Boolean(section.badge || section.attention),
+      text: section.badge ? String(section.badge) : undefined,
+    },
+    ariaLabel: [section.label, section.badgeLabel, section.attention]
+      .filter(Boolean)
+      .join(", "),
+    onClick: section.to ? undefined : () => emit("select", section.key),
+  };
+}
+
+const railItems = computed(() => topSections.value.map(railButtonFor));
+const footItems = computed(() => footSections.value.map(railButtonFor));
 const tabItems = computed(() => phoneLayout.value.visible.map(itemFor));
 </script>
 
@@ -106,22 +127,43 @@ const tabItems = computed(() => phoneLayout.value.visible.map(itemFor));
     </template>
 
     <template #sidebar>
-      <!-- O corpo canônico do DashboardSidebar rola no eixo vertical. Um menu
-           com largura intrínseca alguns pixels maior fazia esse mesmo corpo criar
-           também um scrollbar horizontal no rodapé do rail. O contêiner limita o
-           filho à largura disponível sem alterar a geometria dos controles. -->
-      <div
-        class="flex w-full min-w-0 justify-center overflow-x-hidden"
+      <!-- As seções usam a mesma peça e o mesmo espaçamento (gap-1.5) do pé do rail:
+           Chip inset em volta de um Button quadrado com link, tooltip ao lado. -->
+      <nav
+        class="flex w-full min-w-0 flex-col items-center gap-1.5"
+        :aria-label="label"
         data-suite-rail-navigation
       >
-        <NuxtNavigationMenu
-          class="min-w-0"
-          orientation="vertical"
-          collapsed
-          :items="railItems"
-          :aria-label="label"
-        />
-      </div>
+        <NuxtTooltip
+          v-for="item in railItems"
+          :key="item.key"
+          :text="item.label"
+          :content="{ side: 'right' }"
+        >
+          <NuxtChip
+            :show="item.chip.show"
+            color="warning"
+            :text="item.chip.text"
+            :size="item.chip.text ? '4xl' : '2xl'"
+            inset
+          >
+            <NuxtButton
+              :to="item.to"
+              :icon="item.icon"
+              color="neutral"
+              variant="ghost"
+              active-color="primary"
+              active-variant="soft"
+              :active="item.active"
+              square
+              :aria-label="item.ariaLabel"
+              :aria-current="item.active ? 'page' : undefined"
+              :data-section="item.key"
+              @click="item.onClick?.()"
+            />
+          </NuxtChip>
+        </NuxtTooltip>
+      </nav>
     </template>
 
     <template #sidebar-footer>
@@ -132,14 +174,35 @@ const tabItems = computed(() => phoneLayout.value.visible.map(itemFor));
         class="flex w-full min-w-0 flex-col items-center gap-1.5"
         data-suite-rail-footer
       >
-        <NuxtNavigationMenu
-          v-if="footItems.length"
-          class="w-fit"
-          orientation="vertical"
-          collapsed
-          :items="footItems"
-          :aria-label="`${label}: ajustes`"
-        />
+        <NuxtTooltip
+          v-for="item in footItems"
+          :key="item.key"
+          :text="item.label"
+          :content="{ side: 'right' }"
+        >
+          <NuxtChip
+            :show="item.chip.show"
+            color="warning"
+            :text="item.chip.text"
+            :size="item.chip.text ? '4xl' : '2xl'"
+            inset
+          >
+            <NuxtButton
+              :to="item.to"
+              :icon="item.icon"
+              color="neutral"
+              variant="ghost"
+              active-color="primary"
+              active-variant="soft"
+              :active="item.active"
+              square
+              :aria-label="item.ariaLabel"
+              :aria-current="item.active ? 'page' : undefined"
+              :data-section="item.key"
+              @click="item.onClick?.()"
+            />
+          </NuxtChip>
+        </NuxtTooltip>
         <ClientOnly><OperatorInbox placement="rail" /></ClientOnly>
         <NuxtButton
           class="hidden pointer-fine:inline-flex"

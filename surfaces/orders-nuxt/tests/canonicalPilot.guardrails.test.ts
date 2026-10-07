@@ -382,26 +382,18 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(
       chips.filter(({ tag }) => !/\binset\b/.test(tag)).map(({ file }) => file),
     ).toEqual([]);
+    // A regra aprovada: Chip com número é o numérico (4xl, texto de 12 px); sem
+    // número é o indicativo (2xl); o On/Off é xl. A única expressão aceita é o
+    // tamanho amarrado ao próprio texto: `:size="X ? '4xl' : '2xl'"` com `:text="X"`.
+    const chipSizeOk = ({ file, tag }: { file: string; tag: string }) => {
+      if (file.endsWith("OperatorLiveStatus.vue")) return /\bsize="xl"/.test(tag);
+      const bound = tag.match(/:size="([\w.]+) \? '4xl' : '2xl'"/);
+      if (bound) return tag.includes(`:text="${bound[1]}"`);
+      const hasText = /(?:^|\s):?text=/.test(tag);
+      return hasText ? /\bsize="4xl"/.test(tag) : /\bsize="2xl"/.test(tag);
+    };
     expect(
-      chips
-        .filter(({ tag }) => !/\bsize="(?:2xl|4xl)"/.test(tag))
-        .filter(
-          ({ file, tag }) =>
-            !file.endsWith("OperatorLiveStatus.vue") ||
-            !/\bsize="xl"/.test(tag),
-        )
-        .map(({ file }) => file),
-    ).toEqual([]);
-    expect(
-      chips
-        .filter(({ file, tag }) =>
-          file.endsWith("OperatorInbox.vue")
-            ? !/\bsize="4xl"/.test(tag)
-            : file.endsWith("OperatorLiveStatus.vue")
-              ? !/\bsize="xl"/.test(tag)
-              : !/\bsize="2xl"/.test(tag),
-        )
-        .map(({ file }) => file),
+      chips.filter((chip) => !chipSizeOk(chip)).map(({ file }) => file),
     ).toEqual([]);
     expect(appConfig).toMatch(
       /kbd:\s*\{[\s\S]*?defaultVariants:\s*\{\s*variant:\s*["']soft["']\s*\}/,
@@ -757,7 +749,12 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(shell).toContain("data-suite-rail-footer");
     expect(shell).toContain("flex-col items-center");
     expect(shell).toContain("data-suite-rail-navigation");
-    expect(shell).toContain("justify-center overflow-x-hidden");
+    // Seções e pé do rail: a mesma peça do sino (Chip inset + Button quadrado) e o
+    // mesmo espaçamento, em vez de um NavigationMenu recolhido com outra geometria.
+    expect(shell).toContain(
+      'class="flex w-full min-w-0 flex-col items-center gap-1.5"\n        :aria-label="label"\n        data-suite-rail-navigation',
+    );
+    expect(shell).not.toMatch(/<NuxtNavigationMenu[^>]*\bcollapsed\b/);
     expect(shell).not.toContain('class="w-fit self-center"');
     expect(shell).toContain('<OperatorInbox placement="rail" />');
     expect(queue).toContain("sm:grid-cols-[80px_minmax(0,1fr)]");

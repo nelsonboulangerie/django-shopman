@@ -1244,38 +1244,34 @@ function printQueue() {
              mesmos 3 estados do KDS: ligado, desligado e ligado-mas-bloqueado pelo
              autoplay (ponto âmbar até o 1º gesto). -->
         <NuxtFieldGroup v-if="!isPhone" data-sound-group>
-          <NuxtChip
-            :show="soundOn && soundBlocked"
-            color="warning"
-            size="2xl"
-            inset
-          >
-            <NuxtButton
-              :icon="soundOn ? 'i-lucide-volume-2' : 'i-lucide-volume-x'"
-              color="neutral"
-              variant="outline"
-              square
-              :aria-label="
-                soundOn && soundBlocked
-                  ? 'Som bloqueado: toque para ativar'
-                  : soundOn
-                    ? 'Som de pedido novo ativo'
-                    : 'Som de pedido novo desativado'
-              "
-              :title="
-                soundOn && soundBlocked
-                  ? 'Som bloqueado: toque para ativar'
-                  : 'Som de pedido novo'
-              "
-              data-sound-toggle
-              @click="handleSoundAction"
-            />
-          </NuxtChip>
+          <!-- Filhos diretos do FieldGroup, sem Chip no meio: o grupo arredonda só as
+               pontas e cola as bordas pelo primeiro e último filho. "Som bloqueado
+               pelo navegador" é a cor do próprio botão (warning) até o 1º gesto. -->
+          <NuxtButton
+            :icon="soundOn ? 'i-lucide-volume-2' : 'i-lucide-volume-x'"
+            :color="soundOn && soundBlocked ? 'warning' : 'neutral'"
+            variant="outline"
+            square
+            :aria-label="
+              soundOn && soundBlocked
+                ? 'Som bloqueado: toque para ativar'
+                : soundOn
+                  ? 'Som de pedido novo ativo'
+                  : 'Som de pedido novo desativado'
+            "
+            :title="
+              soundOn && soundBlocked
+                ? 'Som bloqueado: toque para ativar'
+                : 'Som de pedido novo'
+            "
+            data-sound-toggle
+            @click="handleSoundAction"
+          />
           <NuxtButton
             v-if="attentionPending && !exitPostView"
             icon="i-lucide-check"
             label="Ciente"
-            color="primary"
+            color="neutral"
             variant="outline"
             aria-label="Reconhecer aviso de pedido novo"
             @click="acknowledgeAttention"
