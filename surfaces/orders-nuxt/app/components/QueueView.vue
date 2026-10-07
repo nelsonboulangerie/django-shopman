@@ -247,9 +247,13 @@ function switchHint(row: {
             <p class="op-body text-foreground/85">
               {{ item.card.items_summary }}
             </p>
-            <!-- pagamento é fato do pedido: mora com os itens, não espreme o gesto -->
+            <!-- pagamento é fato do pedido: mora com os itens, não espreme o gesto. No
+                 bloqueado, o selo do bloqueio já diz o pagamento ("Pix pendente"). -->
             <p
-              v-if="item.card.change_label || item.card.payment_method_label"
+              v-if="
+                item.card.change_label ||
+                (item.card.payment_method_label && item.kind !== 'blocked')
+              "
               class="flex items-start gap-1.5 op-micro text-muted-foreground"
               data-queue-payment
             >
