@@ -132,7 +132,10 @@ describe("catálogo vivo", () => {
       appConfig.indexOf("// Altura de controle"),
     );
     expect(cardConfig).toContain('header: "p-4 sm:p-4"');
-    expect(cardConfig).toContain('body: "p-4 sm:p-4"');
+    // 16 px, e zero quando a tabela é o conteúdo inteiro (integrada ao card).
+    expect(cardConfig).toContain(
+      'body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0"',
+    );
     expect(cardConfig).toContain('footer: "p-4 sm:p-4"');
     expect(cardConfig).toContain('container: "p-4 sm:p-4"');
     expect(cardConfig).not.toMatch(/shadow-|rounded-|ring-/);
