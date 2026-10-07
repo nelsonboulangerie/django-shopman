@@ -73,10 +73,17 @@ function itemFor(section: OperatorSection) {
     icon: section.icon,
     to: section.to,
     active: active.value === section.key,
-    badge: section.badge || undefined,
-    chip: section.attention
-      ? { color: "warning" as const, inset: true }
-      : undefined,
+    // A contagem mora no Chip do ícone, não num Badge ao lado do rótulo: o rail
+    // recolhido não desenha Badge, e na barra do celular o Badge tirava a largura
+    // do rótulo. Chip numérico 4xl; sem número, o indicativo 2xl de atenção.
+    chip: section.badge
+      ? { color: "warning" as const, text: section.badge, size: "4xl" as const, inset: true }
+      : section.attention
+        ? { color: "warning" as const, size: "2xl" as const, inset: true }
+        : undefined,
+    "aria-label": [section.label, section.badgeLabel, section.attention]
+      .filter(Boolean)
+      .join(", "),
     tooltip: { text: section.label },
     onSelect: section.to ? undefined : () => emit("select", section.key),
   };

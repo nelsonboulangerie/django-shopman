@@ -10,16 +10,16 @@ const line = computed(() => rangeLine(draft.value));
   <div class="grid gap-4" data-period-calendar>
     <div class="grid gap-4 sm:grid-cols-2">
       <NuxtFormField label="Data de início">
-        <NuxtInput v-model="draft.startDate" type="date" />
+        <NuxtInput v-model="draft.startDate" class="w-full" type="date" />
       </NuxtFormField>
       <NuxtFormField label="Hora de início">
-        <NuxtInput v-model="draft.startTime" type="time" :step="900" />
+        <NuxtInput v-model="draft.startTime" class="w-full" type="time" :step="900" />
       </NuxtFormField>
       <NuxtFormField label="Data de término">
-        <NuxtInput v-model="draft.endDate" type="date" />
+        <NuxtInput v-model="draft.endDate" class="w-full" type="date" />
       </NuxtFormField>
       <NuxtFormField label="Hora de término">
-        <NuxtInput v-model="draft.endTime" type="time" :step="900" />
+        <NuxtInput v-model="draft.endTime" class="w-full" type="time" :step="900" />
       </NuxtFormField>
     </div>
     <NuxtAlert

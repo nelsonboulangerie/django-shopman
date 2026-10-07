@@ -205,6 +205,7 @@ async function confirm() {
             <NuxtInput
               id="merge-search"
               v-model="search"
+              class="w-full"
               type="search"
               autocomplete="off"
               placeholder="Nome, telefone, CPF, e-mail ou código"

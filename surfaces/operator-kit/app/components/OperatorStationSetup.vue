@@ -131,6 +131,7 @@ async function confirmar() {
           >
             <NuxtSelect
               v-model="escolhido"
+              class="w-full"
               :items="options"
               value-key="value"
               label-key="label"
@@ -196,6 +197,7 @@ async function confirmar() {
         >
           <NuxtSelect
             v-model="escolhido"
+            class="w-full"
             :items="options"
             value-key="value"
             label-key="label"

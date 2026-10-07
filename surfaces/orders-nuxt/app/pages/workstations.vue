@@ -148,6 +148,7 @@ async function toggleActive(row: WorkstationManageRow) {
             <NuxtFormField :label="c.manage_name_label">
               <NuxtInput
                 v-model="newLabel"
+                class="w-full"
                 type="text"
                 maxlength="80"
                 :disabled="Boolean(busy)"
@@ -155,6 +156,7 @@ async function toggleActive(row: WorkstationManageRow) {
             </NuxtFormField>
             <NuxtFormField :label="c.manage_kind_label">
               <NuxtSelect
+                class="w-full"
                 :model-value="newKind || undefined"
                 :items="newKindItems"
                 :disabled="Boolean(busy)"

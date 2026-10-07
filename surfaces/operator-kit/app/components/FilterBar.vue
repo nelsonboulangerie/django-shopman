@@ -258,6 +258,7 @@ function clearAll() {
               <NuxtFormField v-if="step.type === 'text'" :label="step.label">
                 <NuxtInput
                   v-model="draft[0]"
+                  class="w-full"
                   type="search"
                   :placeholder="step.placeholder || step.label"
                   data-filter-input="text"
@@ -267,6 +268,7 @@ function clearAll() {
                 <NuxtFormField label="De">
                   <NuxtInput
                     v-model="draft[0]"
+                    class="w-full"
                     :type="step.type === 'date-range' ? 'date' : 'number'"
                     :placeholder="
                       step.type === 'number-range'
@@ -279,6 +281,7 @@ function clearAll() {
                 <NuxtFormField label="Até">
                   <NuxtInput
                     v-model="draft[1]"
+                    class="w-full"
                     :type="step.type === 'date-range' ? 'date' : 'number'"
                     data-filter-input="to"
                   />

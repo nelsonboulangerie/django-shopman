@@ -194,6 +194,7 @@ useHead({ title: "Revisão de vínculos" });
                 </p>
                 <NuxtFormField label="Arquivo JSON da captura">
                   <NuxtInput
+                    class="w-full"
                     type="file"
                     accept=".json,application/json"
                     :disabled="busy || reading || Boolean(error)"

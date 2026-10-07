@@ -484,7 +484,7 @@ function switchHint(row: {
         color="neutral"
         variant="outline"
         trailing-icon="i-lucide-chevron-right"
-        :label="`+${rest.count} ${rest.text} · Ver todos`"
+        :label="`+${rest.count}${hidden ? ':' : ''} ${rest.text} · Ver todos`"
         data-queue-rest
         @click="emit('scope', 'all')"
       />

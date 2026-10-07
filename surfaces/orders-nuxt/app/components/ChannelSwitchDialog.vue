@@ -172,6 +172,7 @@ function close(value: boolean) {
           />
           <NuxtTextarea
             v-model="draft.reason"
+            class="w-full"
             :rows="2"
             maxlength="200"
             :placeholder="

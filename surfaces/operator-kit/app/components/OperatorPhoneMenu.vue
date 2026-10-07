@@ -89,10 +89,9 @@ function choose(section: OperatorSection) {
       color="warning"
       size="2xl"
       inset
-      class="min-w-0 flex-1"
+      class="shrink-0"
     >
       <NuxtButton
-        block
         icon="i-lucide-ellipsis"
         label="Mais"
         :color="activeInOverflow ? 'primary' : 'neutral'"

@@ -805,6 +805,7 @@ const sectionClass =
               <NuxtFormField label="Nome no cardápio">
                 <NuxtInput
                   v-model="draft.name"
+                  class="w-full"
                   type="text"
                   placeholder="Ex.: Pão francês"
                 />
@@ -1002,6 +1003,7 @@ const sectionClass =
               >
                 <NuxtInput
                   v-model="draft.keywordsText"
+                  class="w-full"
                   type="text"
                   placeholder="padaria, pão artesanal, fermentação natural"
                 />
@@ -1010,6 +1012,7 @@ const sectionClass =
               <NuxtFormField label="URL da imagem">
                 <NuxtInput
                   v-model="draft.image_url"
+                  class="w-full"
                   type="url"
                   placeholder="https://…"
                 />
@@ -1047,6 +1050,7 @@ const sectionClass =
                 >
                   <NuxtInput
                     v-model="draft.priceText"
+                    class="w-full"
                     type="text"
                     inputmode="decimal"
                     placeholder="0,00"
@@ -1056,6 +1060,7 @@ const sectionClass =
                 <NuxtFormField v-if="!soldByWeight" label="Unidade">
                   <NuxtInput
                     v-model="draft.unit"
+                    class="w-full"
                     type="text"
                     placeholder="un, lt"
                   />
@@ -1066,6 +1071,7 @@ const sectionClass =
                 <NuxtFormField label="Peso por unidade (g)">
                   <NuxtInput
                     v-model.number="draft.unit_weight_g"
+                    class="w-full"
                     type="number"
                     :min="0"
                     placeholder="Ex.: 150"
@@ -1074,6 +1080,7 @@ const sectionClass =
                 <NuxtFormField label="Validade (dias)">
                   <NuxtInput
                     v-model.number="draft.shelf_life_days"
+                    class="w-full"
                     type="number"
                     :min="0"
                     placeholder="Vazio = não perece"
@@ -1083,6 +1090,7 @@ const sectionClass =
 
               <NuxtFormField label="Política de disponibilidade">
                 <NuxtSelect
+                  class="w-full"
                   :model-value="availabilityPolicyValue"
                   :items="[...POLICIES]"
                   @update:model-value="setAvailabilityPolicy"
@@ -1092,6 +1100,7 @@ const sectionClass =
               <NuxtFormField label="Dica de conservação">
                 <NuxtInput
                   v-model="draft.storage_tip"
+                  class="w-full"
                   type="text"
                   maxlength="300"
                   placeholder="Ex.: guarde em saco de pano por até 2 dias"
@@ -1101,6 +1110,7 @@ const sectionClass =
               <NuxtFormField label="Ciclo de produção (horas)">
                 <NuxtInput
                   v-model.number="draft.production_cycle_hours"
+                  class="w-full"
                   type="number"
                   :min="0"
                   placeholder="Ex.: 4"
@@ -1248,6 +1258,7 @@ const sectionClass =
                   >
                     <NuxtInput
                       v-model="draft.allergensText"
+                      class="w-full"
                       type="text"
                       placeholder="glúten, leite, gergelim"
                     />
@@ -1259,6 +1270,7 @@ const sectionClass =
                   >
                     <NuxtInput
                       v-model="draft.dietaryText"
+                      class="w-full"
                       type="text"
                       placeholder="100% vegetal, sem lactose"
                     />
@@ -1268,6 +1280,7 @@ const sectionClass =
                     <NuxtFormField label="Serve">
                       <NuxtInput
                         v-model="draft.serves"
+                        class="w-full"
                         type="text"
                         placeholder="Ex.: 2 a 4 pessoas"
                       />
@@ -1275,6 +1288,7 @@ const sectionClass =
                     <NuxtFormField label="Medidas aproximadas">
                       <NuxtInput
                         v-model="draft.approx_dimensions"
+                        class="w-full"
                         type="text"
                         placeholder="Ex.: aprox. 24 x 12 cm"
                       />
@@ -1301,6 +1315,7 @@ const sectionClass =
                     >
                       <NuxtInput
                         v-model.number="draft.nutrition[f.key]"
+                        class="w-full"
                         type="number"
                         :min="0"
                         :step="f.step"
@@ -1319,6 +1334,7 @@ const sectionClass =
                     >
                       <NuxtInput
                         v-model.number="draft.nutrition[f.key]"
+                        class="w-full"
                         type="number"
                         :min="0"
                         :step="f.step"
@@ -1337,6 +1353,7 @@ const sectionClass =
                     >
                       <NuxtInput
                         v-model.number="draft.nutrition[f.key]"
+                        class="w-full"
                         type="number"
                         :min="0"
                         :step="f.step"
@@ -1364,6 +1381,7 @@ const sectionClass =
               <NuxtFormField label="Marca">
                 <NuxtInput
                   v-model="draft.social.brand"
+                  class="w-full"
                   type="text"
                   placeholder="Ex.: Nelson Boulangerie"
                 />
@@ -1373,6 +1391,7 @@ const sectionClass =
                 <NuxtFormField label="GTIN / código de barras">
                   <NuxtInput
                     v-model="draft.social.gtin"
+                    class="w-full"
                     type="text"
                     inputmode="numeric"
                     placeholder="8, 12, 13 ou 14 dígitos"
@@ -1380,6 +1399,7 @@ const sectionClass =
                 </NuxtFormField>
                 <NuxtFormField label="Condição">
                   <NuxtSelect
+                    class="w-full"
                     :model-value="conditionValue"
                     :items="[...CONDITIONS]"
                     @update:model-value="setCondition"
@@ -1457,6 +1477,7 @@ const sectionClass =
               <NuxtFormField label="MPN (código do fabricante)">
                 <NuxtInput
                   v-model="draft.social.mpn"
+                  class="w-full"
                   type="text"
                   placeholder="Opcional"
                 />
@@ -1465,6 +1486,7 @@ const sectionClass =
               <NuxtFormField label="Categoria Google">
                 <NuxtInput
                   v-model="draft.social.google_product_category"
+                  class="w-full"
                   type="text"
                   placeholder="Ex.: Food, Beverages & Tobacco > Food Items > Bakery"
                 />
@@ -1473,6 +1495,7 @@ const sectionClass =
               <NuxtFormField label="Categoria TikTok">
                 <NuxtInput
                   v-model="draft.social.tiktok_category_id"
+                  class="w-full"
                   type="text"
                   placeholder="ID da categoria (opcional)"
                 />
@@ -1523,6 +1546,7 @@ const sectionClass =
               <NuxtFormField label="Perfil fiscal">
                 <NuxtSelect
                   v-model="draft.fiscal.profile"
+                  class="w-full"
                   :items="
                     fiscalProfiles.map((profile) => ({
                       value: profile.key,
@@ -1539,6 +1563,7 @@ const sectionClass =
                 >
                   <NuxtInput
                     v-model="draft.fiscal.ncm"
+                    class="w-full"
                     type="text"
                     inputmode="numeric"
                     maxlength="8"
@@ -1549,6 +1574,7 @@ const sectionClass =
                 <NuxtFormField label="Unidade comercial">
                   <NuxtInput
                     v-model="draft.fiscal.unit"
+                    class="w-full"
                     type="text"
                     maxlength="6"
                     placeholder="UN"
@@ -1559,6 +1585,7 @@ const sectionClass =
               <NuxtFormField label="Origem da mercadoria">
                 <NuxtSelect
                   v-model="draft.fiscal.origin"
+                  class="w-full"
                   :items="
                     (props.detail?.fiscal_origins ?? []).map((origin) => ({
                       value: origin.key,
@@ -1579,6 +1606,7 @@ const sectionClass =
               >
                 <NuxtInput
                   v-model="draft.fiscal.cest"
+                  class="w-full"
                   type="text"
                   inputmode="numeric"
                   maxlength="7"

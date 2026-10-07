@@ -141,6 +141,7 @@ const code = (ref_: string) => splitRef(ref_).code;
         >
           <NuxtInput
             v-model="changeOut[c.ref]"
+            class="w-full"
             type="text"
             inputmode="decimal"
             icon="i-lucide-circle-dollar-sign"

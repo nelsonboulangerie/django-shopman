@@ -663,20 +663,18 @@ const outside = useOutsideStore(
           />
         </span>
       </template>
-      <template #phone-actions>
-        <div class="relative">
-          <NuxtButton
-            type="button"
-            icon="i-lucide-ellipsis-vertical"
-            color="neutral"
-            variant="ghost"
-            square
-            aria-label="Mais ações do pedido"
-            :aria-expanded="menuOpen"
-            data-action="menu-phone"
-            @click="menuOpen = !menuOpen"
-          />
-        </div>
+      <template v-if="isPhone" #phone-actions>
+        <NuxtButton
+          type="button"
+          icon="i-lucide-ellipsis-vertical"
+          color="neutral"
+          variant="ghost"
+          square
+          aria-label="Mais ações do pedido"
+          :aria-expanded="menuOpen"
+          data-action="menu-phone"
+          @click="menuOpen = !menuOpen"
+        />
       </template>
       <template v-if="!isPhone" #actions>
         <!-- bilhete de volta: quem veio de outro app volta para onde estava -->
@@ -688,18 +686,16 @@ const outside = useOutsideStore(
           color="error"
           data-detail-return
         />
-        <div class="relative">
-          <NuxtButton
-            icon="i-lucide-ellipsis"
-            label="Mais ações do pedido"
-            color="neutral"
-            variant="outline"
-            aria-haspopup="menu"
-            :aria-expanded="menuOpen"
-            data-action="menu"
-            @click="menuOpen = !menuOpen"
-          />
-        </div>
+        <NuxtButton
+          icon="i-lucide-ellipsis"
+          label="Mais ações do pedido"
+          color="neutral"
+          variant="outline"
+          aria-haspopup="dialog"
+          :aria-expanded="menuOpen"
+          data-action="menu"
+          @click="menuOpen = !menuOpen"
+        />
         <NuxtButton
           v-if="rejectAction"
           type="button"
@@ -984,6 +980,7 @@ const outside = useOutsideStore(
                 <NuxtTextarea
                   id="order-notes"
                   v-model="notes"
+                  class="w-full"
                   :rows="3"
                   placeholder="Escreva uma nota…"
                 />
@@ -1122,6 +1119,7 @@ const outside = useOutsideStore(
           <NuxtFormField label="Valor recebido">
             <NuxtInput
               v-model="amount"
+              class="w-full"
               type="text"
               inputmode="decimal"
               placeholder="Ex.: 15,00"
@@ -1134,6 +1132,7 @@ const outside = useOutsideStore(
           >
             <NuxtInput
               v-model="changeBack"
+              class="w-full"
               type="text"
               inputmode="decimal"
               placeholder="0,00"
@@ -1199,6 +1198,7 @@ const outside = useOutsideStore(
           >
             <NuxtInput
               v-model="changeOut"
+              class="w-full"
               type="text"
               inputmode="decimal"
               placeholder="Ex.: 20,00"

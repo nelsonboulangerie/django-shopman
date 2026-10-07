@@ -71,6 +71,7 @@ async function submit() {
             id="operator-login-username"
             ref="usernameInput"
             v-model="username"
+            class="w-full"
             type="text"
             autocomplete="username"
             autocapitalize="none"
@@ -85,6 +86,7 @@ async function submit() {
           <NuxtInput
             id="operator-login-password"
             v-model="password"
+            class="w-full"
             type="password"
             autocomplete="current-password"
             placeholder="Senha"

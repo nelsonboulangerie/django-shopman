@@ -261,6 +261,7 @@ watch(
               <legend class="text-sm font-medium">Escolha sua resposta</legend>
               <NuxtFormField label="Decisão">
                 <NuxtSelect
+                  class="w-full"
                   :model-value="draft(item.id).decision"
                   :items="[
                     { label: 'Selecione uma decisão', value: '' },
@@ -282,6 +283,7 @@ watch(
               >
                 <NuxtSelect
                   v-model="draft(item.id).reason"
+                  class="w-full"
                   :items="[
                     { label: 'Selecione um motivo', value: '' },
                     ...reasons(item).map((reason) => ({
@@ -300,6 +302,7 @@ watch(
               >
                 <NuxtTextarea
                   v-model="draft(item.id).detail"
+                  class="w-full"
                   maxlength="250"
                   :rows="3"
                   @input="draft(item.id).confirmed = false"

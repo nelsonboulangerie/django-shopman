@@ -244,6 +244,7 @@ function backToToday() {
                 <NuxtFormField label="De">
                   <NuxtInput
                     v-model="customFrom"
+                    class="w-full"
                     type="date"
                     :min="min"
                     :max="max"
@@ -254,6 +255,7 @@ function backToToday() {
                 <NuxtFormField label="Até">
                   <NuxtInput
                     v-model="customTo"
+                    class="w-full"
                     type="date"
                     :min="min"
                     :max="max"
@@ -288,6 +290,7 @@ function backToToday() {
               <NuxtFormField label="Ir para o dia">
                 <NuxtInput
                   v-model="jumpTo"
+                  class="w-full"
                   type="date"
                   :min="min"
                   :max="max"

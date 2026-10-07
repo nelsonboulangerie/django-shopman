@@ -570,7 +570,9 @@ const exitPostView = computed(
 // visão entram no ⋯, para o cabeçalho não quebrar em duas linhas.
 // Só depois de montar: o servidor não sabe a largura, e classe divergente na hidratação
 // não é corrigida pelo Vue (o campo ficaria com a largura do servidor).
-const isNarrow = useMediaQuery("(max-width: 1023.98px)");
+// Abaixo do xl, título, busca e todos os controles não cabem numa linha (a 1024 px o
+// título "Pedidos" virava "Pe…"): ordenar e a visão vão para o ⋯.
+const isNarrow = useMediaQuery("(max-width: 1279.98px)");
 const mounted = ref(false);
 onMounted(() => {
   mounted.value = true;
@@ -2015,6 +2017,7 @@ function printQueue() {
           <NuxtSelect
             v-else-if="isMarketplaceReject"
             v-model="rejectCode"
+            class="w-full"
             :items="
               rejectReasons.map((reason) => ({
                 label: reason.description,
@@ -2029,6 +2032,7 @@ function printQueue() {
           <NuxtTextarea
             v-else
             v-model="rejectReason"
+            class="w-full"
             :rows="3"
             placeholder="Motivo da recusa…"
             aria-label="Motivo da recusa"
@@ -2123,6 +2127,7 @@ function printQueue() {
           <NuxtFormField label="Valor recebido">
             <NuxtInput
               v-model="settleAmount"
+              class="w-full"
               type="text"
               inputmode="decimal"
               placeholder="Ex.: 15,00"
@@ -2136,6 +2141,7 @@ function printQueue() {
           >
             <NuxtInput
               v-model="settleChangeBack"
+              class="w-full"
               type="text"
               inputmode="decimal"
               placeholder="0,00"

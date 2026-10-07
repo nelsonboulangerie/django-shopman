@@ -62,15 +62,19 @@ function submitComment() {
     <template v-if="commentAllowed" #footer>
       <!-- Comentar é a ação da linha do tempo; o footer oficial separa a entrada
            do histórico já confirmado sem inventar borda ou padding local. -->
-      <NuxtFormField label="Comentar no histórico" data-order-comment>
-        <NuxtTextarea
-          v-model="comment"
-          :rows="2"
-          placeholder="Escreva uma atualização…"
-          autoresize
-          @keydown.meta.enter.prevent="submitComment"
-        />
+      <div class="flex flex-col gap-2">
+        <NuxtFormField label="Comentar no histórico" data-order-comment>
+          <NuxtTextarea
+            v-model="comment"
+            class="w-full"
+            :rows="2"
+            placeholder="Escreva uma atualização…"
+            autoresize
+            @keydown.meta.enter.prevent="submitComment"
+          />
+        </NuxtFormField>
         <NuxtButton
+          class="self-end"
           :disabled="!comment.trim() || busy"
           :loading="busy"
           icon="i-lucide-message-square-plus"
@@ -80,7 +84,7 @@ function submitComment() {
           data-order-comment-submit
           @click="submitComment"
         />
-      </NuxtFormField>
+      </div>
     </template>
   </NuxtCard>
 </template>

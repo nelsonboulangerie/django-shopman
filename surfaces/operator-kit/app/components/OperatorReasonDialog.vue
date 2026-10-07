@@ -265,6 +265,7 @@ function submit() {
             <NuxtTextarea
               ref="reasonInput"
               v-model="reason"
+              class="w-full"
               :rows="3"
               :maxlength="maxlength"
               :placeholder="

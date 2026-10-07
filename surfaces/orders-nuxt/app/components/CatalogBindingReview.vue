@@ -77,7 +77,7 @@ function acceptCurrent(item: CatalogReviewItem) {
 <template>
   <section class="space-y-4" aria-label="Revisão de vínculos">
     <NuxtFormField label="Buscar anúncio, código ou SKU">
-      <NuxtInput v-model="search" type="search" />
+      <NuxtInput v-model="search" class="w-full" type="search" />
     </NuxtFormField>
     <p class="text-sm text-muted-foreground">
       {{ board.items.length }} anúncios ·
@@ -188,6 +188,7 @@ function acceptCurrent(item: CatalogReviewItem) {
           </p>
           <NuxtFormField label="Produto local para vincular">
             <NuxtSelect
+              class="w-full"
               :model-value="drafts[item.item_id]?.sku || ''"
               :items="[
                 { label: 'Selecione um produto', value: '' },

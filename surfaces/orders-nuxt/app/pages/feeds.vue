@@ -589,6 +589,7 @@ useHead({ title: "Canais" });
                     <NuxtFormField label="Trocar a cada" hint="segundos">
                       <NuxtInput
                         v-model.number="draftSeconds"
+                        class="w-full"
                         type="number"
                         :min="0"
                         :step="1"
@@ -601,6 +602,7 @@ useHead({ title: "Canais" });
                     >
                       <NuxtInput
                         v-model.number="draftItems"
+                        class="w-full"
                         type="number"
                         :min="0"
                         :step="1"
@@ -683,6 +685,7 @@ useHead({ title: "Canais" });
                     >
                       <NuxtTextarea
                         v-model="automaticMessages[0]"
+                        class="w-full"
                         :rows="3"
                         :maxlength="240"
                         placeholder="Atendimento de seg. a sáb., das 9h às 18h"
@@ -691,6 +694,7 @@ useHead({ title: "Canais" });
                     <NuxtFormField label="Frase 2" hint="opcional">
                       <NuxtTextarea
                         v-model="automaticMessages[1]"
+                        class="w-full"
                         :rows="3"
                         :maxlength="240"
                         placeholder="Nelson Boulangerie: minha padaria favorita"

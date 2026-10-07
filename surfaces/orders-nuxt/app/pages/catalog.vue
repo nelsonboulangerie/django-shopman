@@ -1683,6 +1683,7 @@ useHead({ title: "Catálogo" });
                         >
                           <NuxtInput
                             v-model="priceInput"
+                            class="w-full"
                             type="text"
                             inputmode="decimal"
                             autofocus
