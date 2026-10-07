@@ -3,4 +3,6 @@
 import type { OrderHistoryProjection } from "~/generated/ordersContract";
 import type { ReadMetadata } from "./readMetadata";
 
-export type OrderHistoryResponse = ReadMetadata & { history: OrderHistoryProjection };
+export type OrderHistoryResponse = ReadMetadata & {
+  history: OrderHistoryProjection;
+};

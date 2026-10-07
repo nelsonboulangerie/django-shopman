@@ -9,16 +9,28 @@ import type { ChannelAttentionProjection } from "~/types/channelAttention";
 const POLL_MS = 60_000;
 
 export function useChannelAttention() {
-  const { data, refresh } = useFetch<{ attention: ChannelAttentionProjection }>("/api/v1/backstage/channels/attention/", {
-    key: useOperatorResourceKey("channel-attention"),
-    server: false,
-  });
+  const { data, refresh } = useFetch<{ attention: ChannelAttentionProjection }>(
+    "/api/v1/backstage/channels/attention/",
+    {
+      key: useOperatorResourceKey("channel-attention"),
+      server: false,
+    },
+  );
   useBackstageEvents("catalog", () => refresh());
-  const attention = computed<ChannelAttentionProjection | null>(() => data.value?.attention ?? null);
+  const attention = computed<ChannelAttentionProjection | null>(
+    () => data.value?.attention ?? null,
+  );
 
   let timer: ReturnType<typeof setInterval> | null = null;
-  onMounted(() => { timer = setInterval(() => { void refresh(); }, POLL_MS); });
-  onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
+  onMounted(() => {
+    timer = setInterval(() => {
+      void refresh();
+    }, POLL_MS);
+  });
+  onBeforeUnmount(() => {
+    if (timer) clearInterval(timer);
+    timer = null;
+  });
 
   return { attention, refresh };
 }

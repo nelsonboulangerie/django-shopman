@@ -15,25 +15,15 @@
    ============================================================================ */
 
 @theme {
-  /* Alvos operacionais: frequentes 44 px, ação primária 48 px. */
+  /* Escala opt-in para fluxos de toque que a pedem explicitamente. */
   --spacing-control: 2.75rem;
   --spacing-action: 3rem;
   /* Corpo/UI = Instrument Sans, a família canônica do design system (mesma da
      vitrine). O app hospedeiro incorpora os webfonts licenciados e declara os
      pesos 400–700 no próprio CSS; o kit nunca busca fontes em runtime. */
-  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-}
-
-/* Tablet de operação não é desktop estreito. Com ponteiro touch e largura de tablet,
-   o alvo frequente sobe para 48 px, como pede a v4. No celular, 44 px continua sendo
-   o mínimo seguro e preserva a barra de 56 px; no desktop com mouse, 44 px mantém a
-   densidade e a precisão do teclado/ponteiro. A decisão é por capacidade do dispositivo,
-   não só por largura de viewport. */
-@media (pointer: coarse) and (min-width: 600px) {
-  :root {
-    --spacing-control: 3rem;
-  }
+  --font-sans:
+    "Instrument Sans", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
 @theme inline {
@@ -58,10 +48,8 @@
   --op-page-block-space: clamp(0.75rem, 1.5vh, 1rem);
   --op-region-gap: 1.5rem;
   --op-control-gap: 0.5rem;
-  --op-splitter-handle: 0.25rem;
   --op-safe-bottom: env(safe-area-inset-bottom, 0px);
   --op-layer-chrome: 30;
-  --op-layer-resize: 35;
   --op-layer-overlay: 50;
 
   --background: #fcf6f1; /* Faubourg-100 — paper quente do balcão */
@@ -120,9 +108,17 @@
   --ui-info: var(--info);
   --ui-warning: var(--warning);
   --ui-error: var(--destructive);
-  --ui-text-dimmed: color-mix(in srgb, var(--muted-foreground) 85%, var(--foreground));
+  --ui-text-dimmed: color-mix(
+    in srgb,
+    var(--muted-foreground) 85%,
+    var(--foreground)
+  );
   --ui-text-muted: var(--muted-foreground);
-  --ui-text-toned: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));
+  --ui-text-toned: color-mix(
+    in srgb,
+    var(--foreground) 78%,
+    var(--muted-foreground)
+  );
   --ui-text: var(--foreground);
   --ui-text-highlighted: var(--foreground);
   --ui-text-inverted: var(--primary-foreground);
@@ -133,7 +129,11 @@
   --ui-bg-inverted: var(--foreground);
   --ui-border: var(--border);
   --ui-border-muted: color-mix(in srgb, var(--border) 72%, var(--background));
-  --ui-border-accented: color-mix(in srgb, var(--border) 82%, var(--foreground));
+  --ui-border-accented: color-mix(
+    in srgb,
+    var(--border) 82%,
+    var(--foreground)
+  );
   --ui-border-inverted: var(--foreground);
 }
 

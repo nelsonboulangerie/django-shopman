@@ -7,13 +7,19 @@ interface OperatorPwaRuntimeConfig {
   push?: { surfaceRef?: string };
 }
 
-withDefaults(defineProps<{
-  showPrompts?: boolean;
-}>(), {
-  showPrompts: true,
-});
+withDefaults(
+  defineProps<{
+    showPrompts?: boolean;
+  }>(),
+  {
+    showPrompts: true,
+  },
+);
 
-const publicConfig = useRuntimeConfig().public as { operatorPwa?: OperatorPwaRuntimeConfig; appVersion?: string };
+const publicConfig = useRuntimeConfig().public as {
+  operatorPwa?: OperatorPwaRuntimeConfig;
+  appVersion?: string;
+};
 const config = (publicConfig.operatorPwa || {}) as OperatorPwaRuntimeConfig;
 const enabled = Boolean(config.app);
 const route = useRoute();
@@ -49,9 +55,17 @@ const autoUpdate = usePwaAutoUpdate({
   <OperatorConfirmDialog />
   <ClientOnly v-if="enabled && showPrompts">
     <OperatorPwaInstallInvite :app="config.app!" />
-    <!-- Aplicando sozinho, o aviso sairia da tela no mesmo instante em que ela
-         recarrega: pisca sem ninguém para ler. -->
-    <OperatorPwaUpdatePrompt v-if="!autoUpdate.applying.value" />
-    <OperatorPushInvite v-if="config.push && config.app !== 'hub'" />
+    <!-- Avisos persistentes do app compartilham uma região: update e push podem
+         coexistir e nunca devem ocupar o mesmo canto um por cima do outro. -->
+    <aside
+      class="fixed inset-x-4 bottom-[calc(var(--ui-header-height)+1rem+env(safe-area-inset-bottom))] z-[60] flex flex-col gap-2 sm:end-6 sm:start-auto sm:w-[28rem] lg:bottom-[calc(1.5rem+env(safe-area-inset-bottom))]"
+      aria-live="polite"
+      data-operator-pwa-notices
+    >
+      <!-- Aplicando sozinho, o aviso sairia da tela no mesmo instante em que ela
+           recarrega: pisca sem ninguém para ler. -->
+      <OperatorPwaUpdatePrompt v-if="!autoUpdate.applying.value" />
+      <OperatorPushInvite v-if="config.push && config.app !== 'hub'" />
+    </aside>
   </ClientOnly>
 </template>

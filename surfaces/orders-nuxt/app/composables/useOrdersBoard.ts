@@ -9,13 +9,26 @@ import { useOrderIntention } from "./useOrderIntention";
 //     /events/orders/ do Django) → refresh on push.
 // Writes go through the django proxy (CSRF handled there) and reconcile via refresh.
 // SSE/poll are client-only (EventSource is a browser API).
-import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";
-import { preorderGroups, treatableOrderRefs, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
+import type {
+  CancellationReason,
+  OrderQueueResponse,
+  TwoZoneQueueProjection,
+} from "~/types/orders";
+import {
+  preorderGroups,
+  treatableOrderRefs,
+  zonesView,
+  type PreorderGroup,
+  type ZoneView,
+} from "~/presentation/board";
 import { stationReadyPath, stationRecallPath } from "~/presentation/kitchen";
 import { showTreatableOrderNotification } from "~/utils/treatableNotification";
 import { useOperatorAppName } from "../../../operator-kit/app/composables/useOperatorWindowTitle";
 import { windowTitle } from "../../../operator-kit/app/presentation/windowTitle";
-import { openResilientEventSource, type ResilientEventSource } from "../../../operator-kit/app/utils/resilientEventSource";
+import {
+  openResilientEventSource,
+  type ResilientEventSource,
+} from "../../../operator-kit/app/utils/resilientEventSource";
 
 export type { CancellationReason };
 
@@ -131,7 +144,12 @@ export function useOrdersBoard() {
   const { flagIfStationLocked } = useStationLock();
 
   // Fetch the canonical queue after session hydration, avoiding duplicate rendering of the full board.
-  const { data, pending, error, refresh: fetchQueue } = useFetch<OrderQueueResponse>(path, {
+  const {
+    data,
+    pending,
+    error,
+    refresh: fetchQueue,
+  } = useFetch<OrderQueueResponse>(path, {
     key: useOperatorResourceKey("orders-queue"),
     dedupe: "defer",
     server: false,
@@ -142,20 +160,40 @@ export function useOrdersBoard() {
 
   const refresh = coalesceRefresh(() => fetchQueue());
 
-  watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
+  watch(
+    error,
+    (value) => {
+      if (value) flagIfStationLocked(value);
+    },
+    { immediate: true },
+  );
 
   const readMetadata = useReadMetadata(data, error);
-  const lastConfirmed = shallowRef<TwoZoneQueueProjection | null>(data.value?.queue ?? null);
-  watch([data, error], ([value, failure]) => {
-    if (value?.queue && !failure) lastConfirmed.value = value.queue;
-  }, { flush: "sync" });
-  const queue = computed<TwoZoneQueueProjection | null>(() => data.value?.queue ?? (error.value ? lastConfirmed.value : null));
-  const zones = computed<ZoneView[]>(() => (queue.value ? zonesView(queue.value) : []));
+  const lastConfirmed = shallowRef<TwoZoneQueueProjection | null>(
+    data.value?.queue ?? null,
+  );
+  watch(
+    [data, error],
+    ([value, failure]) => {
+      if (value?.queue && !failure) lastConfirmed.value = value.queue;
+    },
+    { flush: "sync" },
+  );
+  const queue = computed<TwoZoneQueueProjection | null>(
+    () => data.value?.queue ?? (error.value ? lastConfirmed.value : null),
+  );
+  const zones = computed<ZoneView[]>(() =>
+    queue.value ? zonesView(queue.value) : [],
+  );
   const totalCount = computed(() => queue.value?.total_count ?? 0);
   // Encomendas confirmadas para datas futuras, agrupadas pela data combinada.
-  const preorders = computed<PreorderGroup[]>(() => (queue.value ? preorderGroups(queue.value) : []));
+  const preorders = computed<PreorderGroup[]>(() =>
+    queue.value ? preorderGroups(queue.value) : [],
+  );
   // Maquininhas na rua: o quadro responde "onde está" sem abrir card.
-  const equipmentAvailable = computed(() => queue.value?.equipment_available ?? []);
+  const equipmentAvailable = computed(
+    () => queue.value?.equipment_available ?? [],
+  );
   const equipmentOut = computed(() => queue.value?.equipment_out ?? []);
   // A impressora desta estação — a DANFE da sacola sai por ela (useDanfePrint).
   const deviceAgent = computed(() => data.value?.device_agent ?? null);
@@ -195,7 +233,9 @@ export function useOrdersBoard() {
   function seenTreatableRefs(day: string): Set<string> {
     if (!import.meta.client) return new Set();
     try {
-      const value = JSON.parse(localStorage.getItem(gestorAttentionStorageKey(day)) || "[]");
+      const value = JSON.parse(
+        localStorage.getItem(gestorAttentionStorageKey(day)) || "[]",
+      );
       return new Set(Array.isArray(value) ? value.map(String) : []);
     } catch {
       return new Set();
@@ -210,7 +250,10 @@ export function useOrdersBoard() {
     const seen = seenTreatableRefs(day);
     for (const ref_ of pendingAttentionRefs) seen.add(ref_);
     try {
-      localStorage.setItem(gestorAttentionStorageKey(day), JSON.stringify([...seen].slice(-500)));
+      localStorage.setItem(
+        gestorAttentionStorageKey(day),
+        JSON.stringify([...seen].slice(-500)),
+      );
     } catch {
       // Sem storage, a assinatura ainda impede repetição nesta montagem.
     }
@@ -235,10 +278,10 @@ export function useOrdersBoard() {
     // O mesmo gesto que liga o som pode pedir a permissão da notificação local.
     // A assinatura Web Push continua sendo uma ação própria e explícita.
     if (
-      soundOn.value
-      && typeof window !== "undefined"
-      && "Notification" in window
-      && Notification.permission === "default"
+      soundOn.value &&
+      typeof window !== "undefined" &&
+      "Notification" in window &&
+      Notification.permission === "default"
     ) {
       void Notification.requestPermission().catch(() => {
         // silêncio-deliberado: som e título continuam mesmo se o prompt falhar
@@ -272,10 +315,12 @@ export function useOrdersBoard() {
     startAlert();
     if (document.visibilityState !== "visible") {
       startTitleAlert(ref_);
-      const worker = "serviceWorker" in navigator ? navigator.serviceWorker : undefined;
+      const worker =
+        "serviceWorker" in navigator ? navigator.serviceWorker : undefined;
       const location = window.location;
       void showTreatableOrderNotification(ref_, {
-        permission: "Notification" in window ? Notification.permission : "denied",
+        permission:
+          "Notification" in window ? Notification.permission : "denied",
         serviceWorker: worker,
         actionUrl: location
           ? `${location.pathname || "/"}${location.search || ""}${location.hash || ""}`
@@ -321,14 +366,16 @@ export function useOrdersBoard() {
   // só habilita o gesto a reconhecer; tentar tocar com autoplay bloqueado
   // continua não valendo como recibo.
   watch(playbackCount, (count, previous) => {
-    if (count > previous && attentionPending.value) pendingAttentionHeard = true;
+    if (count > previous && attentionPending.value)
+      pendingAttentionHeard = true;
   });
 
   // Toque/tecla na tela depois de o aviso ter soado = o operador está ali e
   // ouviu. O gesto que destrava o autoplay não conta (ainda não soou): ele faz
   // o kit tocar, e o próximo gesto (ou o Ciente) reconhece.
   const acknowledgeOnGesture = () => {
-    if (attentionPending.value && pendingAttentionHeard) rememberPendingTreatableRefs();
+    if (attentionPending.value && pendingAttentionHeard)
+      rememberPendingTreatableRefs();
   };
 
   // Uma única régua para SSE, poll, retorno da aba e primeira abertura. Assim
@@ -351,10 +398,14 @@ export function useOrdersBoard() {
       void Promise.resolve(refresh()).finally(scheduleServiceDayRefresh);
     }, delay);
   }
-  watch(queue, () => {
-    evaluateTreatableAttention();
-    scheduleServiceDayRefresh();
-  }, { flush: "post" });
+  watch(
+    queue,
+    () => {
+      evaluateTreatableAttention();
+      scheduleServiceDayRefresh();
+    },
+    { flush: "post" },
+  );
 
   function connectSse() {
     if (source) return;
@@ -387,8 +438,13 @@ export function useOrdersBoard() {
       url: ssePath("/sse/orders", config.app.baseURL),
       events: ["backstage-orders-update"],
       onEvent: onPush,
-      onOpen: () => { realtime.value = "live"; refresh(); },
-      onDown: () => { realtime.value = "polling"; },
+      onOpen: () => {
+        realtime.value = "live";
+        refresh();
+      },
+      onDown: () => {
+        realtime.value = "polling";
+      },
     });
   }
 
@@ -397,7 +453,10 @@ export function useOrdersBoard() {
   let stopWaitingForRead: (() => void) | undefined;
   function connectWhenReady() {
     if (source) return;
-    if (!pending.value && !error.value) { connectSse(); return; }
+    if (!pending.value && !error.value) {
+      connectSse();
+      return;
+    }
     stopWaitingForRead?.();
     stopWaitingForRead = watch([pending, error], ([p, e]) => {
       if (p || e) return;
@@ -431,7 +490,10 @@ export function useOrdersBoard() {
     stopWaitingForRead?.();
     if (pollTimer) clearInterval(pollTimer);
     if (serviceDayTimer) clearTimeout(serviceDayTimer);
-    if (source) { source.close(); source = null; }
+    if (source) {
+      source.close();
+      source = null;
+    }
     stopTitleAlert();
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("online", onVisible);
@@ -467,28 +529,79 @@ export function useOrdersBoard() {
   // ``send``: o gesto fala com outro endpoint que não o do pedido (o "Pronto" da
   // estação sem tela e o "Voltar para…" da Cozinha), com a mesma trava por pedido,
   // o mesmo erro no cartão e a mesma releitura.
-  async function act(ref_: string, action: string, body?: Record<string, unknown>, send?: () => Promise<unknown>): Promise<boolean> {
+  async function act(
+    ref_: string,
+    action: string,
+    body?: Record<string, unknown>,
+    send?: () => Promise<unknown>,
+  ): Promise<boolean> {
     if (busy.value.has(ref_)) return false;
     if (error.value) {
-      setActionError(ref_, "A leitura está desatualizada. Atualize o quadro antes de confirmar.");
+      setActionError(
+        ref_,
+        "A leitura está desatualizada. Atualize o quadro antes de confirmar.",
+      );
       return false;
     }
     clearActionError(ref_); // a fresh attempt clears the previous reason
     busy.value = new Set(busy.value).add(ref_);
     try {
       if (send) await send();
-      else if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "courier-back", "comment", "settle-delivery-cash", "undo-handoff", "undo-ready", "volumes"].includes(action)) {
-        const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === ref_);
-        const equipment = queue.value?.equipment_out?.find((item) => item.order_ref === ref_);
-        await intentions.execute(ref_, action, (card?.actions ?? equipment?.actions)?.find((item) => item.ref === action), body ?? {});
+      else if (
+        [
+          "confirm",
+          "advance",
+          "reject",
+          "cancel",
+          "notes",
+          "assign",
+          "unassign",
+          "equipment-back",
+          "courier-back",
+          "comment",
+          "settle-delivery-cash",
+          "undo-handoff",
+          "undo-ready",
+          "volumes",
+        ].includes(action)
+      ) {
+        const card = [
+          ...zones.value.flatMap((zone) => zone.cards),
+          ...(queue.value?.preorders ?? []),
+        ].find((item) => item.ref === ref_);
+        const equipment = queue.value?.equipment_out?.find(
+          (item) => item.order_ref === ref_,
+        );
+        await intentions.execute(
+          ref_,
+          action,
+          (card?.actions ?? equipment?.actions)?.find(
+            (item) => item.ref === action,
+          ),
+          body ?? {},
+        );
       } else {
-        await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${action}/`, {
-          method: "POST", body: body ?? {},
-        });
+        await $fetch(
+          `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${action}/`,
+          {
+            method: "POST",
+            body: body ?? {},
+          },
+        );
       }
-      try { await refresh(); }
-      catch { setActionError(ref_, "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação."); }
-      if (error.value) setActionError(ref_, "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação.");
+      try {
+        await refresh();
+      } catch {
+        setActionError(
+          ref_,
+          "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação.",
+        );
+      }
+      if (error.value)
+        setActionError(
+          ref_,
+          "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação.",
+        );
       return true;
     } catch (error) {
       // 409 = o pedido mudou de estado antes da ação chegar (ex.: a confirmação
@@ -496,8 +609,10 @@ export function useOrdersBoard() {
       // fingir que a ação "falhou por bug".
       const conflict = httpError(error).status === 409;
       const message = conflict
-        ? httpErrorMessage(error, "O pedido mudou de estado antes da ação chegar.") +
-          " Atualizamos o quadro: confira o pedido antes de tentar de novo."
+        ? httpErrorMessage(
+            error,
+            "O pedido mudou de estado antes da ação chegar.",
+          ) + " Atualizamos o quadro: confira o pedido antes de tentar de novo."
         : httpErrorMessage(error, "Falha na ação. Tente de novo.");
       setActionError(ref_, message);
       useSonner.error(message);
@@ -515,14 +630,29 @@ export function useOrdersBoard() {
   const confirm = (ref_: string) => act(ref_, "confirm");
   // A Cozinha no cartão (SUITE-UX §15): o "Pronto" da estação que só recebe papel
   // e o ticket que volta à cozinha. Os endpoints são os da Saída da Cozinha.
-  const markStationReady = (ref_: string, orderPk: number, stationRef: string) =>
-    act(ref_, "station-ready", undefined, () => $fetch<unknown>(stationReadyPath(orderPk, stationRef), { method: "POST" }));
+  const markStationReady = (
+    ref_: string,
+    orderPk: number,
+    stationRef: string,
+  ) =>
+    act(ref_, "station-ready", undefined, () =>
+      $fetch<unknown>(stationReadyPath(orderPk, stationRef), {
+        method: "POST",
+      }),
+    );
   const recallStation = (ref_: string, ticketPk: number) =>
-    act(ref_, "station-recall", undefined, () => $fetch<unknown>(stationRecallPath(ticketPk), { method: "POST" }));
+    act(ref_, "station-recall", undefined, () =>
+      $fetch<unknown>(stationRecallPath(ticketPk), { method: "POST" }),
+    );
   // ``change_out``: troco que o entregador leva da gaveta no despacho (reais);
   // só quando a tela perguntou. O servidor exige o valor quando o pedido pede troco.
   // ``tripRef``: sai na MESMA saída de outro pedido (mesmo entregador, mesma maquininha).
-  const advance = (ref_: string, changeOut?: string, equipment?: string[], tripRef?: string) => {
+  const advance = (
+    ref_: string,
+    changeOut?: string,
+    equipment?: string[],
+    tripRef?: string,
+  ) => {
     const body: Record<string, unknown> = {};
     if (changeOut !== undefined) body.change_out = changeOut;
     if (equipment && equipment.length) body.equipment = equipment;
@@ -543,7 +673,13 @@ export function useOrdersBoard() {
     act(ref_, "reject", { reason, cancellation_code });
   // ``change_back``: o troco que voltou com o entregador (reais, zero vale);
   // obrigatório no servidor quando saiu troco no despacho.
-  const settleCash = (ref_: string, amount: string, changeBack?: string, equipmentBack?: boolean, baseRevision?: string) =>
+  const settleCash = (
+    ref_: string,
+    amount: string,
+    changeBack?: string,
+    equipmentBack?: boolean,
+    baseRevision?: string,
+  ) =>
     act(ref_, "settle-delivery-cash", {
       amount,
       ...(changeBack === undefined ? {} : { change_back: changeBack }),
@@ -553,7 +689,9 @@ export function useOrdersBoard() {
 
   // Valid cancellation reasons for a ref: for iFood, the live per-order list
   // ({code, description}); empty for channels without reason codes.
-  async function fetchCancellationReasons(ref_: string): Promise<CancellationReason[]> {
+  async function fetchCancellationReasons(
+    ref_: string,
+  ): Promise<CancellationReason[]> {
     const res = await $fetch<{ reasons: CancellationReason[] }>(
       `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/cancellation-reasons/`,
     );
@@ -562,8 +700,11 @@ export function useOrdersBoard() {
   const assign = (ref_: string) => act(ref_, "assign");
   // Volumes declarados por quem embalou (0 apaga a declaração). ``surface`` diz de onde:
   // o ⋯ do cartão ("orders") ou a coluna/posto Saída ("exit"); o evento guarda as duas.
-  const declareVolumes = (ref_: string, volumes: number, surface: "orders" | "exit" = "orders") =>
-    act(ref_, "volumes", { volumes, surface });
+  const declareVolumes = (
+    ref_: string,
+    volumes: number,
+    surface: "orders" | "exit" = "orders",
+  ) => act(ref_, "volumes", { volumes, surface });
   const unassign = (ref_: string) => act(ref_, "unassign");
 
   // Bulk action over many refs: fire all POSTs, capture per-ref failures inline,
@@ -577,8 +718,16 @@ export function useOrdersBoard() {
     await Promise.all(
       targets.map(async (r) => {
         try {
-          const card = [...zones.value.flatMap((zone) => zone.cards), ...(queue.value?.preorders ?? [])].find((item) => item.ref === r);
-          await intentions.execute(r, action, card?.actions?.find((item) => item.ref === action), {});
+          const card = [
+            ...zones.value.flatMap((zone) => zone.cards),
+            ...(queue.value?.preorders ?? []),
+          ].find((item) => item.ref === r);
+          await intentions.execute(
+            r,
+            action,
+            card?.actions?.find((item) => item.ref === action),
+            {},
+          );
         } catch (error) {
           failures += 1;
           setActionError(r, httpErrorMessage(error, "Falha na ação."));
@@ -589,19 +738,51 @@ export function useOrdersBoard() {
     targets.forEach((r) => next.delete(r));
     busy.value = next;
     await refresh();
-    if (failures) useSonner.error(`${failures} pedido(s) não puderam ser atualizados.`);
+    if (failures)
+      useSonner.error(`${failures} pedido(s) não puderam ser atualizados.`);
     return failures;
   }
   const confirmMany = (refs: string[]) => actMany(refs, "confirm");
   const advanceMany = (refs: string[]) => actMany(refs, "advance");
 
   return {
-    readMetadata, queue, zones, totalCount, deviceAgent, preorders, realtime, pending, error,
-    refresh, isBusy, actionError, clearActionError, confirm, advance, reject,
-    fetchCancellationReasons, settleCash, equipmentBack, courierBack, equipmentOut,
-    equipmentAvailable, assign, unassign, declareVolumes, confirmMany, advanceMany, undoHandoff, undoReady,
-    markStationReady, recallStation,
-    soundOn, soundBlocked, alerting, attentionPending, toggleSound,
-    activateAttentionSound, acknowledgeAttention,
+    readMetadata,
+    queue,
+    zones,
+    totalCount,
+    deviceAgent,
+    preorders,
+    realtime,
+    pending,
+    error,
+    refresh,
+    isBusy,
+    actionError,
+    clearActionError,
+    confirm,
+    advance,
+    reject,
+    fetchCancellationReasons,
+    settleCash,
+    equipmentBack,
+    courierBack,
+    equipmentOut,
+    equipmentAvailable,
+    assign,
+    unassign,
+    declareVolumes,
+    confirmMany,
+    advanceMany,
+    undoHandoff,
+    undoReady,
+    markStationReady,
+    recallStation,
+    soundOn,
+    soundBlocked,
+    alerting,
+    attentionPending,
+    toggleSound,
+    activateAttentionSound,
+    acknowledgeAttention,
   };
 }

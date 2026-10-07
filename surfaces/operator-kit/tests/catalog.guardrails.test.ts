@@ -18,6 +18,26 @@ describe("catálogo vivo", () => {
     new URL("../app/components/OperatorOfficeShell.vue", import.meta.url),
     "utf8",
   );
+  const suiteShell = readFileSync(
+    new URL("../app/components/OperatorSuiteShell.vue", import.meta.url),
+    "utf8",
+  );
+  const pwaRuntime = readFileSync(
+    new URL("../app/components/OperatorPwaRuntime.vue", import.meta.url),
+    "utf8",
+  );
+  const offlineBanner = readFileSync(
+    new URL("../app/components/OfflineBanner.vue", import.meta.url),
+    "utf8",
+  );
+  const appConfig = readFileSync(
+    new URL("../app/app.config.ts", import.meta.url),
+    "utf8",
+  );
+  const operatorBase = readFileSync(
+    new URL("../app/assets/css/operator-base.css", import.meta.url),
+    "utf8",
+  );
   const config = readFileSync(
     new URL("../nuxt.config.ts", import.meta.url),
     "utf8",
@@ -26,6 +46,7 @@ describe("catálogo vivo", () => {
   it("demonstra layouts completos e famílias oficiais", () => {
     for (const component of [
       "OperatorOfficeShell",
+      "OperatorSuiteShell",
       "OperatorOperationalShell",
       "NuxtNavigationMenu",
       "OperatorPage",
@@ -61,11 +82,60 @@ describe("catálogo vivo", () => {
     expect(officeShell).toContain("NuxtDashboardSidebarCollapse");
   });
 
+  it("usa o painel full-bleed oficial no shell operacional e mantém o chrome fora da rolagem", () => {
+    expect(officeShell).toContain('<NuxtDashboardPanel v-if="navbar"');
+    expect(officeShell).toContain("<NuxtDashboardPanel v-else");
+    expect(suiteShell).not.toContain('class="min-h-0 flex-1 overflow-y-auto"');
+    expect(suiteShell).toContain("border-t border-default border-b-0");
+    expect(suiteShell).toContain("data-suite-rail-footer");
+    expect(suiteShell).toContain("flex-col items-center");
+  });
+
   it("mantém a implementação no kit e a página do harness como composição", () => {
     expect(page).toContain("<OperatorKitchenSink />");
     expect(page).not.toContain("NuxtCard");
     expect(fixtures).toContain("kitchenSinkNeeds");
     expect(fixtures).toContain("kitchenSinkExceptions");
+  });
+
+  it("empilha avisos persistentes sem sobreposição e delega a anatomia ao Alert", () => {
+    expect(pwaRuntime).toContain("data-operator-pwa-notices");
+    expect(pwaRuntime).toContain("flex flex-col gap-2");
+    expect(pwaRuntime).toContain("<OperatorPwaUpdatePrompt");
+    expect(pwaRuntime).toContain("<OperatorPushInvite");
+    expect(pwaRuntime).toContain(
+      "bottom-[calc(var(--ui-header-height)+1rem+env(safe-area-inset-bottom))]",
+    );
+    expect(pwaRuntime).toContain(
+      "lg:bottom-[calc(1.5rem+env(safe-area-inset-bottom))]",
+    );
+  });
+
+  it("usa Banner para o anúncio global de perda de conexão", () => {
+    expect(offlineBanner).toContain("<NuxtBanner");
+    expect(offlineBanner).not.toContain("<NuxtAlert");
+  });
+
+  it("mantém a geometria oficial do Nuxt UI sem inflar controles globalmente", () => {
+    expect(appConfig).not.toMatch(/\bbutton:\s*\{[\s\S]*?min-h-control/);
+    expect(appConfig).not.toMatch(/\binput:\s*\{[\s\S]*?h-control/);
+    expect(operatorBase).not.toMatch(/@media\s*\(pointer:\s*coarse\)/);
+    expect(operatorBase).not.toContain(
+      "min-block-size: var(--spacing-control)",
+    );
+    expect(operatorBase).not.toContain('[role="tab"]');
+  });
+
+  it("preserva a anatomia oficial e a densidade operacional única do Card", () => {
+    const cardConfig = appConfig.slice(
+      appConfig.indexOf("card:"),
+      appConfig.indexOf("// Altura de controle"),
+    );
+    expect(cardConfig).toContain('header: "p-4 sm:p-4"');
+    expect(cardConfig).toContain('body: "p-4 sm:p-4"');
+    expect(cardConfig).toContain('footer: "p-4 sm:p-4"');
+    expect(cardConfig).toContain('container: "p-4 sm:p-4"');
+    expect(cardConfig).not.toMatch(/shadow-|rounded-|ring-/);
   });
 
   it("expõe os estados operacionais pedidos como cenários determinísticos", () => {

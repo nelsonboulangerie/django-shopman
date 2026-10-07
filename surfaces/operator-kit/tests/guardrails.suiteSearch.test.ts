@@ -77,7 +77,7 @@ describe("busca da suíte (V6-BUSCA)", () => {
       "utf8",
     );
     expect(header).toMatch(/search: true/);
-    expect(header).toMatch(/<slot name="search"><OperatorSuiteSearch\b/);
+    expect(header).toMatch(/<slot name="search"\s*>\s*<OperatorSuiteSearch\b/);
     const off = DEPLOYED_OPERATOR_SURFACES.flatMap((app) =>
       appSources(app)
         .filter(({ source }) =>

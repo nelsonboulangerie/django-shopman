@@ -8,10 +8,9 @@ import UiSearchInput from "../../app/components/UiSearchInput.vue";
 
 // As primitivas da barra de trabalho do operador, testadas NA FONTE.
 //
-// Nasceram no Gestor de Pedidos e foram copiadas para o Marketing; na cópia o token
-// de alvo de toque virou literal e o chip caiu de 44 px para 36 px. Estes testes
-// prendem o contrato que o guardrail de arquivo (kitOwnership.guardrails) só
-// consegue farejar por texto: o que de fato vai ao DOM.
+// Primitivas legadas ainda consumidas por apps em migração. Elas fazem opt-in no
+// token de alvo onde seu contrato antigo exige; não há regra global que infle os
+// componentes canônicos do Nuxt UI.
 
 const mounted: VueWrapper[] = [];
 
@@ -26,7 +25,7 @@ afterEach(() => {
 });
 
 describe("UiFilterChip", () => {
-  it("é um botão de 44 px pelo token, com rótulo, ícone e contagem", async () => {
+  it("preserva o tamanho compacto canônico, com rótulo, ícone e contagem", async () => {
     const wrapper = await mount(UiFilterChip, {
       props: { active: true, count: 12 },
       slots: { default: () => "Balcão", icon: () => h("i", { class: "glyph" }) },
@@ -34,8 +33,9 @@ describe("UiFilterChip", () => {
 
     const button = wrapper.get("button");
     expect(button.attributes("type")).toBe("button");
-    expect(button.classes()).toContain("min-h-control");
-    expect(button.classes()).toContain("bg-primary");
+    expect(button.classes()).not.toContain("min-h-control");
+    expect(button.classes()).toContain("py-1.5");
+    expect(button.classes()).toContain("bg-primary/10");
     expect(wrapper.get(".glyph").exists()).toBe(true);
     expect(wrapper.text()).toContain("Balcão");
     expect(wrapper.text()).toContain("12");
@@ -44,7 +44,7 @@ describe("UiFilterChip", () => {
   it("some com a contagem quando ela não existe, e fica neutro sem active", async () => {
     const wrapper = await mount(UiFilterChip, { slots: { default: () => "Todos" } });
 
-    expect(wrapper.get("button").classes()).toContain("text-muted-foreground");
+    expect(wrapper.get("button").classes()).toContain("text-default");
     expect(wrapper.text()).toBe("Todos");
   });
 });

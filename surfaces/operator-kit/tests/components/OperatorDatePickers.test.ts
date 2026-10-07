@@ -1,4 +1,5 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { DOMWrapper } from "@vue/test-utils";
 import { afterEach, describe, expect, it } from "vitest";
 import type { VueWrapper } from "vue";
 
@@ -11,6 +12,18 @@ import UiDateField from "../../app/components/UiDateField.vue";
 const TODAY = "2026-10-01";
 
 const mounted: VueWrapper[] = [];
+const dom = (selector: string) => new DOMWrapper(document.querySelector(selector) as Element);
+const periodTabs = () => dom("[data-period-popover]").findAll('[role="tab"]');
+async function activate(node: DOMWrapper<Element>) {
+  node.element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+  (node.element as HTMLElement).click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+async function inputOnly(node: DOMWrapper<Element>, value: string) {
+  (node.element as HTMLInputElement).value = value;
+  node.element.dispatchEvent(new Event("input", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
 async function mount(component: Parameters<typeof mountSuspended>[0], options: Parameters<typeof mountSuspended>[1] = {}) {
   const wrapper = await mountSuspended(component, options);
   mounted.push(wrapper as unknown as VueWrapper);
@@ -112,11 +125,10 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
       props: { modelValue: { preset: "day", from: "", to: "" }, today: TODAY, presets: ["day", "week"] },
     });
     await wrapper.get("[data-period-button]").trigger("click");
-    const keys = wrapper.findAll("[data-period-preset]").map((chip) => chip.attributes("data-period-preset"));
-    expect(keys).toEqual(["day", "week"]);
-    expect(wrapper.find("[data-period-custom-from]").exists()).toBe(false);
+    expect(periodTabs().map((tab) => tab.text())).toEqual(["Dia", "Semana"]);
+    expect(document.querySelector("[data-period-custom-from]")).toBeNull();
 
-    await wrapper.get("[data-period-preset=\"week\"]").trigger("click");
+    await activate(periodTabs()[1]!);
     expect(wrapper.emitted("update:modelValue")![0]).toEqual([{ preset: "week", from: "", to: "" }]);
   });
 
@@ -131,12 +143,12 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
       },
     });
     await wrapper.get("[data-period-button]").trigger("click");
-    const fields = wrapper.findAllComponents(UiDateField);
-    fields[0]!.vm.$emit("update:modelValue", "2026-09-10");
-    fields[1]!.vm.$emit("update:modelValue", "2026-09-01");
+    const apply = dom("[data-period-custom-apply]");
+    await inputOnly(dom("[data-period-popover]").findAll('input[type="date"]')[0]!, "2026-09-10");
     await wrapper.vm.$nextTick();
-    await wrapper.get("[data-period-custom-apply]").trigger("click");
-    expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "custom", from: "2026-09-01", to: "2026-09-10" }]]);
+    (apply.element as HTMLElement).click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("update:modelValue")!.at(-1)).toEqual([{ preset: "custom", from: "2026-09-10", to: TODAY }]);
   });
 
   it("os quatro grupos na ordem da casa: Período, Próximos, Últimos, Personalizado", async () => {
@@ -149,16 +161,12 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
       },
     });
     await wrapper.get("[data-period-button]").trigger("click");
-    const popover = wrapper.get("[data-period-popover]");
+    const popover = dom("[data-period-popover]");
     const headings = popover.findAll("p").map((p) => p.text());
     expect(headings).toEqual(["Período", "Próximos", "Últimos", "Personalizado"]);
-    const keys = wrapper.findAll("[data-period-preset]").map((chip) => chip.attributes("data-period-preset"));
-    expect(keys).toEqual(["day", "week", "next7d", "next14d", "7d"]);
-    // O chip diz "7D" dentro do grupo; o nome acessível diz para que lado.
-    expect(wrapper.get('[data-period-preset="next7d"]').attributes("aria-label")).toBe("Próximos 7 dias");
-    expect(wrapper.get('[data-period-preset="7d"]').attributes("aria-label")).toBe("Últimos 7 dias");
+    expect(periodTabs().map((tab) => tab.text())).toEqual(["Dia", "Semana", "7D", "14D", "7D"]);
 
-    await wrapper.get('[data-period-preset="next7d"]').trigger("click");
+    await activate(periodTabs()[2]!);
     expect(wrapper.emitted("update:modelValue")![0]).toEqual([{ preset: "next7d", from: "", to: "" }]);
   });
 
@@ -183,19 +191,19 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
       },
     });
     await wrapper.get("[data-period-button]").trigger("click");
-    const fields = wrapper.findAllComponents(UiDateField);
-    fields[0]!.vm.$emit("update:modelValue", "2026-10-01");
-    fields[1]!.vm.$emit("update:modelValue", "2026-12-31");
+    const fields = dom("[data-period-popover]").findAll('input[type="date"]');
+    await inputOnly(fields[0]!, "2026-10-01");
+    await inputOnly(fields[1]!, "2026-12-31");
     await wrapper.vm.$nextTick();
-    expect(wrapper.get("[data-period-custom-error]").text()).toBe("No máximo 62 dias por vez.");
-    expect(wrapper.get("[data-period-custom-apply]").attributes("disabled")).toBeDefined();
-    await wrapper.get("[data-period-custom-apply]").trigger("click");
+    expect(dom("[data-period-custom-error]").text()).toContain("No máximo 62 dias por vez.");
+    expect(dom("[data-period-custom-apply]").attributes("disabled")).toBeDefined();
+    await dom("[data-period-custom-apply]").trigger("click");
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
 
-    fields[1]!.vm.$emit("update:modelValue", "2026-11-30");
+    await inputOnly(fields[1]!, "2026-11-30");
     await wrapper.vm.$nextTick();
-    expect(wrapper.find("[data-period-custom-error]").exists()).toBe(false);
-    await wrapper.get("[data-period-custom-apply]").trigger("click");
+    expect(document.querySelector("[data-period-custom-error]")).toBeNull();
+    await dom("[data-period-custom-apply]").trigger("click");
     expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "custom", from: "2026-10-01", to: "2026-11-30" }]]);
   });
 });

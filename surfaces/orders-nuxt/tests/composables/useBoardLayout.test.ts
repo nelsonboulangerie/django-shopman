@@ -143,4 +143,21 @@ describe("useBoardLayout", () => {
     board.toggle("expedition");
     expect(board.isOpen("expedition")).toBe(true);
   });
+
+  it("persiste um resize do Splitter oficial, mas ignora layouts idênticos", async () => {
+    env.fetchMock.mockResolvedValueOnce({ station: "passe", columns: null });
+    const board = useBoardLayout(() => TITLES);
+    await board.load();
+    env.fetchMock.mockResolvedValue({});
+
+    board.applySizes([50, 25, 25]);
+    expect(board.layout.value.intake!.weight).toBe(1.5);
+    expect(board.layout.value.prep!.weight).toBe(0.75);
+    await vi.advanceTimersByTimeAsync(BOARD_LAYOUT_SAVE_DELAY_MS);
+    expect(puts()).toHaveLength(1);
+
+    board.applySizes([50, 25, 25]);
+    await vi.advanceTimersByTimeAsync(BOARD_LAYOUT_SAVE_DELAY_MS);
+    expect(puts()).toHaveLength(1);
+  });
 });

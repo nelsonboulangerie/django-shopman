@@ -53,7 +53,6 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
   else useSonner.warning(result.message);
 });
 
-const ROW = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent";
 </script>
 
 <template>
@@ -65,59 +64,56 @@ const ROW = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 te
       </p>
     </div>
 
-    <button
+    <NuxtButton
       v-if="props.mode === 'phone' && operatorName"
-      type="button"
-      :class="ROW"
+      block
+      color="neutral"
+      variant="ghost"
+      icon="i-lucide-lock"
+      label="Bloquear"
+      description="Outra pessoa entra com o PIN dela"
       data-operator-menu-lock
       @click="emit('lock')"
-    >
-      <Icon name="lucide:lock" class="size-4 text-muted-foreground" aria-hidden="true" />
-      <span class="min-w-0 flex-1">
-        Bloquear
-        <span class="block op-micro text-muted-foreground">Outra pessoa entra com o PIN dela</span>
-      </span>
-    </button>
+    />
 
     <ClientOnly>
-      <button type="button" :class="ROW" data-operator-menu-theme @click="toggleTheme">
-        <Icon name="lucide:moon" class="size-4 text-muted-foreground" aria-hidden="true" />
-        {{ themeLabel }}
-      </button>
-      <button
+      <NuxtButton block color="neutral" variant="ghost" icon="i-lucide-moon" :label="themeLabel" data-operator-menu-theme @click="toggleTheme" />
+      <NuxtButton
         v-if="orientation.available.value"
-        type="button"
-        :class="ROW"
+        block
+        color="neutral"
+        variant="ghost"
+        :icon="orientation.isLocked.value ? 'i-lucide-lock-keyhole' : 'i-lucide-rotate-cw-square'"
+        :label="orientationLabel"
         :aria-pressed="orientation.isLocked.value"
         :disabled="orientationPending"
+        :loading="orientationPending"
         data-orientation-lock
         @click="toggleOrientation"
-      >
-        <Icon :name="orientation.isLocked.value ? 'lucide:lock-keyhole' : 'lucide:rotate-cw-square'" class="size-4 text-muted-foreground" aria-hidden="true" />
-        {{ orientationLabel }}
-      </button>
+      />
     </ClientOnly>
 
-    <button
+    <NuxtButton
       v-if="props.mode === 'rail'"
-      type="button"
-      :class="ROW"
+      block
+      color="neutral"
+      variant="ghost"
+      icon="i-lucide-panel-left-close"
+      label="Ocultar a barra"
       data-suite-rail-hide
       @click="emit('hide')"
-    >
-      <Icon name="lucide:panel-left-close" class="size-4 text-muted-foreground" aria-hidden="true" />
-      Ocultar a barra
-    </button>
+    />
 
     <!-- Capacidade do serviço: o estado escrito, sempre com o número. Quando passa do
          limite, ela também entra na caixa de Avisos. -->
     <ClientOnly>
       <div
         v-if="authorized && reading"
-        class="mt-1 border-t border-border px-2.5 pt-2 pb-1"
+        class="mt-1 px-2.5 pt-2 pb-1"
         data-operator-menu-capacity
         :data-capacity-level="level"
       >
+        <NuxtSeparator class="mb-2" />
         <p class="flex items-center gap-2 op-label">
           <Icon name="lucide:gauge" class="size-4 text-muted-foreground" aria-hidden="true" />
           <span class="flex-1">Capacidade do serviço</span>

@@ -9,13 +9,31 @@ defineProps<{ sw: ChannelSwitchProjection }>();
 </script>
 
 <template>
-  <div v-if="sw.closed_by_shop || sw.state_line || sw.scheduled_line" class="flex flex-col gap-1" data-switch-state>
-    <p v-if="sw.closed_by_shop" class="flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-300" data-switch-closed-by-shop>
+  <div
+    v-if="sw.closed_by_shop || sw.state_line || sw.scheduled_line"
+    class="flex flex-col gap-1"
+    data-switch-state
+  >
+    <p
+      v-if="sw.closed_by_shop"
+      class="flex items-center gap-1.5 text-sm font-medium text-warning"
+      data-switch-closed-by-shop
+    >
       <Icon name="lucide:clock" class="size-3.5 shrink-0" />
       {{ sw.closed_by_shop }}
     </p>
-    <p v-if="sw.state_line" class="text-xs text-muted-foreground" data-switch-trail>{{ sw.state_line }}</p>
-    <p v-if="sw.scheduled_line" class="flex items-center gap-1.5 text-xs text-muted-foreground" data-switch-scheduled>
+    <p
+      v-if="sw.state_line"
+      class="text-xs text-muted-foreground"
+      data-switch-trail
+    >
+      {{ sw.state_line }}
+    </p>
+    <p
+      v-if="sw.scheduled_line"
+      class="flex items-center gap-1.5 text-xs text-muted-foreground"
+      data-switch-scheduled
+    >
       <Icon name="lucide:calendar-clock" class="size-3.5 shrink-0" />
       {{ sw.scheduled_line }}
     </p>

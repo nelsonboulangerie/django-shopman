@@ -25,6 +25,15 @@ describe("OperatorPwaUpdatePrompt", () => {
     state.needRefresh.value = true;
     await nextTick();
     expect(wrapper.text()).toContain("Nova versão disponível");
+    expect(wrapper.text()).toContain("A tela será recarregada");
+    const alert = wrapper.get("[data-operator-pwa-update]");
+    expect(alert.attributes("data-orientation")).toBe("horizontal");
+    expect(alert.classes()).toContain(
+      "bg-[color-mix(in_srgb,var(--info)_10%,var(--card))]",
+    );
+    expect(alert.classes()).not.toContain("bg-info/10");
+    expect(alert.classes()).toContain("ring-info/25");
+    expect(wrapper.get("button").text()).toContain("Atualizar agora");
   });
 
   it("não aplica a versão antes do clique explícito", async () => {

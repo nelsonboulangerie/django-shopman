@@ -58,10 +58,13 @@ describe("G05: a cópia da Fila não se corta", () => {
 describe("G07: Fila F | Supervisão T, dois segmentos", () => {
   it("a Supervisão é a tabela densa; as colunas saem do alternador", () => {
     const page = readFileSync(new URL("../app/pages/index.vue", import.meta.url), "utf8");
-    const segment = page.slice(page.indexOf("data-view-switch"), page.indexOf("</div>", page.indexOf("data-view-switch")));
-    expect(segment).toContain("viewMode = 'queue'");
-    expect(segment).toContain("viewMode = 'table'");
-    expect(segment).not.toContain("viewMode = 'board'");
+    const items = page.slice(page.indexOf("const viewTabs"), page.indexOf("function pickView"));
+    const control = page.slice(page.lastIndexOf("<NuxtTabs", page.indexOf("data-view-switch")), page.indexOf("/>", page.indexOf("data-view-switch")));
+    expect(items).toContain('value: "queue"');
+    expect(items).toContain('value: "table"');
+    expect(items).not.toContain('value: "board"');
+    expect(control).toContain(':items="viewTabs"');
+    expect(control).toContain('@update:model-value="pickView"');
   });
 });
 

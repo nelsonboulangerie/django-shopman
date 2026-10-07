@@ -43,10 +43,18 @@ def main() -> int:
         app = apps.get(args.app)
         if not app:
             parser.error(f"app desconhecido: {args.app}")
+        # O cenário pode ser uma variante/subtela OU um estado de auditoria
+        # (a matriz oficial nomeia estado: normal, vazio, erro, denso…). Sem esta
+        # segunda porta, `--scenario normal` não seleciona superfície nenhuma.
+        audit_states = set((ledger.get("audit") or {}).get("states") or [])
         candidates = [
             surface for surface in app["surfaces"]
             if (not args.route or args.route in surface["routes"])
-            and (not args.scenario or args.scenario in surface["variants"])
+            and (
+                not args.scenario
+                or args.scenario in surface["variants"]
+                or args.scenario in audit_states
+            )
         ]
         if not candidates:
             parser.error("nenhuma tela do ledger casa com a rota/cenário")

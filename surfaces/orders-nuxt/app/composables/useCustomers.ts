@@ -14,26 +14,42 @@ import type {
 const BASE = "/api/v1/backstage/customers";
 
 export function useCustomerList(query: Ref<CustomerListQuery>) {
-  const { data, pending, error, refresh } = useFetch<CustomerListResponse>(`${BASE}/`, {
-    key: useOperatorResourceKey("customers:list"),
-    query: computed(() => ({ q: query.value.q || undefined, filter: query.value.filter, page: query.value.page })),
-    dedupe: "defer",
-    onResponseError: operatorSessionOnError,
-  });
+  const { data, pending, error, refresh } = useFetch<CustomerListResponse>(
+    `${BASE}/`,
+    {
+      key: useOperatorResourceKey("customers:list"),
+      query: computed(() => ({
+        q: query.value.q || undefined,
+        filter: query.value.filter,
+        page: query.value.page,
+      })),
+      dedupe: "defer",
+      onResponseError: operatorSessionOnError,
+    },
+  );
   const readMetadata = useReadMetadata(data, error);
   // A última lista confirmada fica na tela enquanto a próxima página carrega.
   const lastConfirmed = shallowRef(data.value?.list ?? null);
-  watch(data, (value) => { if (value?.list) lastConfirmed.value = value.list; }, { flush: "sync" });
+  watch(
+    data,
+    (value) => {
+      if (value?.list) lastConfirmed.value = value.list;
+    },
+    { flush: "sync" },
+  );
   const list = computed(() => data.value?.list ?? lastConfirmed.value);
   return { list, pending, error, refresh, readMetadata };
 }
 
 export function useCustomerDetail(ref_: Ref<string>) {
-  const { data, pending, error, refresh } = useFetch<CustomerDetailResponse>(() => `${BASE}/${encodeURIComponent(ref_.value)}/`, {
-    key: useOperatorResourceKey(`customers:detail:${ref_.value}`),
-    dedupe: "defer",
-    onResponseError: operatorSessionOnError,
-  });
+  const { data, pending, error, refresh } = useFetch<CustomerDetailResponse>(
+    () => `${BASE}/${encodeURIComponent(ref_.value)}/`,
+    {
+      key: useOperatorResourceKey(`customers:detail:${ref_.value}`),
+      dedupe: "defer",
+      onResponseError: operatorSessionOnError,
+    },
+  );
   const readMetadata = useReadMetadata(data, error);
   const customer = computed(() => data.value?.customer ?? null);
   return { customer, pending, error, refresh, readMetadata };
@@ -41,7 +57,9 @@ export function useCustomerDetail(ref_: Ref<string>) {
 
 /** Busca curta para o "Unificar com…": a mesma lista, primeira página. */
 export async function searchCustomers(q: string) {
-  const response = await $fetch<CustomerListResponse>(`${BASE}/`, { query: { q } });
+  const response = await $fetch<CustomerListResponse>(`${BASE}/`, {
+    query: { q },
+  });
   return response.list.items;
 }
 
@@ -60,11 +78,14 @@ export function postMerge(sourceRef: string, targetRef: string) {
 }
 
 export function useCustomerMerges() {
-  const { data, pending, error, refresh } = useFetch<MergeAuditListResponse>(`${BASE}/merges/`, {
-    key: useOperatorResourceKey("customers:merges"),
-    dedupe: "defer",
-    onResponseError: operatorSessionOnError,
-  });
+  const { data, pending, error, refresh } = useFetch<MergeAuditListResponse>(
+    `${BASE}/merges/`,
+    {
+      key: useOperatorResourceKey("customers:merges"),
+      dedupe: "defer",
+      onResponseError: operatorSessionOnError,
+    },
+  );
   const readMetadata = useReadMetadata(data, error);
   const merges = computed(() => data.value?.merges ?? null);
   const busyId = ref("");
@@ -81,13 +102,29 @@ export function useCustomerMerges() {
       });
       return true;
     } catch (failure) {
-      message.value = httpErrorMessage(failure, "Não foi possível desfazer a unificação.");
+      message.value = httpErrorMessage(
+        failure,
+        "Não foi possível desfazer a unificação.",
+      );
       return false;
     } finally {
       busyId.value = "";
-      try { await refresh(); } catch { /* a leitura falha em silêncio; o erro dela aparece no aviso da tela */ }
+      try {
+        await refresh();
+      } catch {
+        /* a leitura falha em silêncio; o erro dela aparece no aviso da tela */
+      }
     }
   }
 
-  return { merges, pending, error, refresh, readMetadata, undo, busyId, message };
+  return {
+    merges,
+    pending,
+    error,
+    refresh,
+    readMetadata,
+    undo,
+    busyId,
+    message,
+  };
 }

@@ -19,8 +19,7 @@
 // em vez de o servidor cortar em silêncio.
 //
 // O estado é do consumidor (`v-model`): quem guarda na URL guarda na URL.
-import { onClickOutside } from "@vueuse/core";
-import { computed, ref, useTemplateRef } from "vue";
+import { computed, ref } from "vue";
 
 import {
   CUSTOM_PERIOD,
@@ -83,39 +82,53 @@ const bounds = computed<PeriodBounds>(() => ({
   maxSpanDays: props.maxSpanDays,
 }));
 const range = computed(() => resolvePeriod(props.modelValue, bounds.value));
-const buttonLabel = computed(() => periodLabel(props.modelValue, range.value, bounds.value.today));
+const buttonLabel = computed(() =>
+  periodLabel(props.modelValue, range.value, bounds.value.today),
+);
 const steps = computed(() => periodStepLabels(props.modelValue.preset));
 const prev = computed(() => stepPeriod(props.modelValue, -1, bounds.value));
 const next = computed(() => stepPeriod(props.modelValue, 1, bounds.value));
 const current = computed(() => isCurrentPeriod(props.modelValue));
 
-const allowed = computed(() => PERIOD_PRESETS.filter((preset) => props.presets.includes(preset.key)));
-const calendarPresets = computed(() => allowed.value.filter((preset) => preset.kind === "calendar"));
-const rollingPresets = computed(() => allowed.value.filter((preset) => preset.kind === "rolling"));
-const upcomingPresets = computed(() => allowed.value.filter((preset) => preset.kind === "upcoming"));
-const windowCount = computed(() => rollingPresets.value.length + upcomingPresets.value.length);
-const columns = (count: number) => `grid-template-columns: repeat(${Math.min(Math.max(count, 1), 4)}, minmax(0, 1fr))`;
+const allowed = computed(() =>
+  PERIOD_PRESETS.filter((preset) => props.presets.includes(preset.key)),
+);
+const calendarPresets = computed(() =>
+  allowed.value.filter((preset) => preset.kind === "calendar"),
+);
+const rollingPresets = computed(() =>
+  allowed.value.filter((preset) => preset.kind === "rolling"),
+);
+const upcomingPresets = computed(() =>
+  allowed.value.filter((preset) => preset.kind === "upcoming"),
+);
+const windowCount = computed(
+  () => rollingPresets.value.length + upcomingPresets.value.length,
+);
+const presetItems = (presets: typeof allowed.value) =>
+  presets.map((preset) => ({
+    value: preset.key,
+    label: preset.label,
+    "aria-label": preset.title || preset.label,
+    "data-period-preset": preset.key,
+  }));
 
 const open = ref(false);
 const customFrom = ref("");
 const customTo = ref("");
 const jumpTo = ref("");
-const root = useTemplateRef<HTMLElement>("root");
-onClickOutside(root, () => {
-  open.value = false;
-});
 
 function set(selection: PeriodSelection | null) {
   if (selection) emit("update:modelValue", selection);
 }
 
-function toggle() {
-  if (!open.value) {
+function onOpen(value: boolean) {
+  if (value) {
     customFrom.value = range.value.date_from;
     customTo.value = range.value.date_to;
     jumpTo.value = range.value.date_from;
   }
-  open.value = !open.value;
+  open.value = value;
 }
 
 function pick(key: string) {
@@ -126,7 +139,9 @@ function pick(key: string) {
 // O motivo só aparece depois das duas datas: "Escolha as duas datas" antes de
 // qualquer toque seria bronca por nada.
 const customError = computed(() =>
-  customFrom.value && customTo.value ? customPeriodError(customFrom.value, customTo.value, bounds.value) : "",
+  customFrom.value && customTo.value
+    ? customPeriodError(customFrom.value, customTo.value, bounds.value)
+    : "",
 );
 
 function submitCustom() {
@@ -149,183 +164,170 @@ function backToToday() {
   }
   set(currentPeriod(props.modelValue));
 }
-
-const chipClass = (active: boolean) =>
-  active
-    ? "bg-card font-semibold text-foreground shadow-sm"
-    : "text-muted-foreground hover:bg-card/60 hover:text-foreground";
-const arrowClass =
-  "grid size-control shrink-0 place-items-center rounded-md border border-border bg-background text-foreground transition hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40 suite:bg-card suite:disabled:opacity-100 suite:disabled:text-muted-foreground/40";
 </script>
 
 <template>
-  <div ref="root" class="flex flex-wrap items-center gap-2" role="group" :aria-label="label" data-period-picker>
-    <!-- Visual da suíte (`suite:`, V4-BI): as três peças viram UM controle, como o
-         período do cabeçalho de `bi-sobra4.html` (‹ · botão · › com divisórias). -->
-    <div class="relative flex items-center gap-1 suite:gap-0">
-      <button
-        type="button"
-        :class="[arrowClass, 'suite:rounded-r-none']"
+  <div
+    class="flex flex-wrap items-center gap-2"
+    role="group"
+    :aria-label="label"
+    data-period-picker
+  >
+    <NuxtFieldGroup>
+      <NuxtButton
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-chevron-left"
+        square
         :aria-label="steps.prev"
         :title="steps.prev"
         :disabled="!prev"
         data-period-prev
         @click="set(prev)"
-      >
-        <Icon name="lucide:chevron-left" class="size-5" aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        class="inline-flex min-h-control items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground suite:rounded-none suite:border-x-0 suite:bg-card suite:text-[13px] suite:font-semibold suite:hover:bg-accent"
-        :aria-expanded="open"
-        :aria-label="`${label}: ${buttonLabel}`"
-        data-period-button
-        @click="toggle"
-      >
-        <Icon name="lucide:calendar-range" class="size-4 text-muted-foreground" aria-hidden="true" />
-        <span class="tabular-nums" data-period-label>{{ buttonLabel }}</span>
-        <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        :class="[arrowClass, 'suite:rounded-l-none']"
+      />
+      <NuxtPopover :open="open" :content="{ align }" @update:open="onOpen">
+        <NuxtButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-calendar-range"
+          trailing-icon="i-lucide-chevron-down"
+          :label="buttonLabel"
+          :aria-label="`${label}: ${buttonLabel}`"
+          data-period-button
+          data-period-label
+        />
+        <template #content>
+          <div class="w-80 max-w-[calc(100vw-2rem)] p-3" data-period-popover>
+            <template
+              v-if="
+                calendarPresets.length > 1 ||
+                (calendarPresets.length && windowCount)
+              "
+            >
+              <p class="mb-2 text-sm font-medium">Período</p>
+              <NuxtTabs
+                :model-value="modelValue.preset"
+                :items="presetItems(calendarPresets)"
+                :content="false"
+                variant="pill"
+                aria-label="Período do calendário"
+                @update:model-value="pick(String($event))"
+              />
+            </template>
+            <template v-if="upcomingPresets.length">
+              <p class="mt-3 mb-2 text-sm font-medium">Próximos</p>
+              <NuxtTabs
+                :model-value="modelValue.preset"
+                :items="presetItems(upcomingPresets)"
+                :content="false"
+                variant="pill"
+                aria-label="Próximos dias"
+                @update:model-value="pick(String($event))"
+              />
+            </template>
+            <template v-if="rollingPresets.length">
+              <p class="mt-3 mb-2 text-sm font-medium">Últimos</p>
+              <NuxtTabs
+                :model-value="modelValue.preset"
+                :items="presetItems(rollingPresets)"
+                :content="false"
+                variant="pill"
+                aria-label="Janelas móveis"
+                @update:model-value="pick(String($event))"
+              />
+            </template>
+
+            <NuxtSeparator v-if="allowed.length && custom" class="my-3" />
+            <template v-if="custom">
+              <p class="mb-2 text-sm font-medium">Personalizado</p>
+              <div class="grid grid-cols-2 gap-2">
+                <NuxtFormField label="De">
+                  <NuxtInput
+                    v-model="customFrom"
+                    type="date"
+                    :min="min"
+                    :max="max"
+                    aria-label="Início do período personalizado"
+                    data-period-custom-from
+                  />
+                </NuxtFormField>
+                <NuxtFormField label="Até">
+                  <NuxtInput
+                    v-model="customTo"
+                    type="date"
+                    :min="min"
+                    :max="max"
+                    aria-label="Fim do período personalizado"
+                    data-period-custom-to
+                  />
+                </NuxtFormField>
+              </div>
+              <NuxtAlert
+                v-if="customError"
+                class="mt-2"
+                color="error"
+                variant="subtle"
+                :title="customError"
+                data-period-custom-error
+              />
+              <div class="mt-2">
+                <NuxtButton
+                  block
+                  :disabled="!customFrom || !customTo || !!customError"
+                  label="Aplicar período"
+                  data-period-custom-apply
+                  @click="submitCustom"
+                />
+              </div>
+            </template>
+            <template v-else>
+              <NuxtSeparator
+                v-if="calendarPresets.length > 1 || windowCount"
+                class="my-3"
+              />
+              <NuxtFormField label="Ir para o dia">
+                <NuxtInput
+                  v-model="jumpTo"
+                  type="date"
+                  :min="min"
+                  :max="max"
+                  aria-label="Data para mostrar"
+                  data-period-jump
+                />
+              </NuxtFormField>
+              <div class="mt-2">
+                <NuxtButton
+                  block
+                  :disabled="!jumpTo"
+                  label="Mostrar esta data"
+                  data-period-jump-apply
+                  @click="submitJump"
+                />
+              </div>
+            </template>
+          </div>
+        </template>
+      </NuxtPopover>
+      <NuxtButton
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-chevron-right"
+        square
         :aria-label="steps.next"
         :title="steps.next"
         :disabled="!next"
         data-period-next
         @click="set(next)"
-      >
-        <Icon name="lucide:chevron-right" class="size-5" aria-hidden="true" />
-      </button>
+      />
+    </NuxtFieldGroup>
 
-      <div
-        v-if="open"
-        class="absolute top-full z-20 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-card p-3 shadow-md"
-        :class="align === 'end' ? 'right-0' : 'left-0'"
-        data-period-popover
-      >
-        <template v-if="calendarPresets.length > 1 || (calendarPresets.length && windowCount)">
-          <p class="mb-2 text-xs font-medium text-muted-foreground">Período</p>
-          <div class="grid gap-1.5 rounded-md bg-muted p-1" :style="columns(calendarPresets.length)" role="group" aria-label="Período do calendário">
-            <button
-              v-for="preset in calendarPresets"
-              :key="preset.key"
-              type="button"
-              class="inline-flex min-h-control items-center justify-center rounded-md px-1 text-sm whitespace-nowrap transition-all"
-              :class="chipClass(modelValue.preset === preset.key)"
-              :data-period-preset="preset.key"
-              @click="pick(preset.key)"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
-        </template>
-        <template v-if="upcomingPresets.length">
-          <p class="mt-3 mb-2 text-xs font-medium text-muted-foreground">Próximos</p>
-          <div class="grid gap-1.5 rounded-md bg-muted p-1" :style="columns(upcomingPresets.length)" role="group" aria-label="Próximos dias">
-            <button
-              v-for="preset in upcomingPresets"
-              :key="preset.key"
-              type="button"
-              class="inline-flex min-h-control items-center justify-center rounded-md px-1 text-sm whitespace-nowrap transition-all"
-              :class="chipClass(modelValue.preset === preset.key)"
-              :aria-label="preset.title"
-              :data-period-preset="preset.key"
-              @click="pick(preset.key)"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
-        </template>
-        <template v-if="rollingPresets.length">
-          <p class="mt-3 mb-2 text-xs font-medium text-muted-foreground">Últimos</p>
-          <div class="grid gap-1.5 rounded-md bg-muted p-1" :style="columns(rollingPresets.length)" role="group" aria-label="Janelas móveis">
-            <button
-              v-for="preset in rollingPresets"
-              :key="preset.key"
-              type="button"
-              class="inline-flex min-h-control items-center justify-center rounded-md px-1 text-sm whitespace-nowrap transition-all"
-              :class="chipClass(modelValue.preset === preset.key)"
-              :aria-label="preset.title"
-              :data-period-preset="preset.key"
-              @click="pick(preset.key)"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
-        </template>
-
-        <template v-if="custom">
-          <div v-if="allowed.length" class="my-3 border-t border-border"></div>
-          <p class="mb-2 text-xs font-medium text-muted-foreground">Personalizado</p>
-          <div class="grid grid-cols-2 gap-2">
-            <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              De
-              <UiDateField
-                v-model="customFrom"
-                :min="min"
-                :max="max"
-                label="Início do período personalizado"
-                data-period-custom-from
-              />
-            </label>
-            <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              Até
-              <UiDateField
-                v-model="customTo"
-                :min="min"
-                :max="max"
-                label="Fim do período personalizado"
-                data-period-custom-to
-              />
-            </label>
-          </div>
-          <p v-if="customError" class="mt-2 text-xs font-medium text-destructive" role="alert" data-period-custom-error>
-            {{ customError }}
-          </p>
-          <button
-            type="button"
-            class="mt-2 inline-flex min-h-control w-full items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50"
-            :disabled="!customFrom || !customTo || !!customError"
-            data-period-custom-apply
-            @click="submitCustom"
-          >
-            Aplicar período
-          </button>
-        </template>
-        <template v-else>
-          <div v-if="calendarPresets.length > 1 || windowCount" class="my-3 border-t border-border"></div>
-          <label class="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            Ir para o dia
-            <UiDateField
-              v-model="jumpTo"
-              :min="min"
-              :max="max"
-              label="Data para mostrar"
-              data-period-jump
-            />
-          </label>
-          <button
-            type="button"
-            class="mt-2 inline-flex min-h-control w-full items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50"
-            :disabled="!jumpTo"
-            data-period-jump-apply
-            @click="submitJump"
-          >
-            Mostrar esta data
-          </button>
-        </template>
-      </div>
-    </div>
-
-    <button
+    <NuxtButton
       v-if="!current"
-      type="button"
-      class="inline-flex min-h-control items-center rounded-md px-3 text-sm font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+      color="neutral"
+      variant="link"
+      label="Voltar para hoje"
       data-period-today
       @click="backToToday"
-    >
-      Voltar para hoje
-    </button>
+    />
   </div>
 </template>

@@ -51,6 +51,14 @@ function press(d: string) {
 function backspace() {
   setActive(activeValue().slice(0, -1));
 }
+function replaceActive(values: string[]) {
+  setActive(
+    values
+      .filter((value) => /^[0-9]$/.test(value))
+      .join("")
+      .slice(0, 8),
+  );
+}
 
 function advance() {
   if (!canAdvance.value || props.busy) return;
@@ -94,78 +102,79 @@ const shownError = computed(() => localError.value || props.error || "");
 
 <template>
   <div>
-    <div class="mb-4 flex items-center gap-2">
-      <Icon name="lucide:key-round" class="size-5 text-muted-foreground" />
-      <h2 class="text-lg font-bold">
-        {{ forced ? "Defina um novo PIN" : "Trocar meu PIN" }}
-      </h2>
-    </div>
-    <p class="mb-3 text-sm text-muted-foreground">
-      <template v-if="forced">
-        O gerente resetou seu PIN. Digite o PIN temporário e escolha um novo
-        antes de operar.
-      </template>
-      <template v-else>
-        {{ operatorName }}, informe o PIN atual e escolha um novo.
-      </template>
-    </p>
+    <NuxtAlert
+      class="mb-3"
+      color="neutral"
+      variant="subtle"
+      icon="i-lucide-key-round"
+      :title="forced ? 'Defina um novo PIN' : 'Trocar meu PIN'"
+      :description="
+        forced
+          ? 'O gerente resetou seu PIN. Digite o PIN temporário e escolha um novo antes de operar.'
+          : `${operatorName}, informe o PIN atual e escolha um novo.`
+      "
+    />
 
-    <button
-      type="button"
-      class="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      @click="back"
-    >
-      <Icon name="lucide:chevron-left" class="size-4" />
-      {{ step === "current" ? "Cancelar" : "Voltar" }}
-    </button>
-
-    <p class="mb-2 text-sm font-semibold">{{ label }}</p>
-    <div
-      class="mb-2 flex h-10 items-center justify-center rounded-md border bg-background text-3xl tracking-[0.4em] tabular-nums"
-    >
-      {{ "•".repeat(activeValue().length) || "—" }}
+    <div class="mb-2">
+      <NuxtButton
+        color="neutral"
+        variant="link"
+        icon="i-lucide-chevron-left"
+        :label="step === 'current' ? 'Cancelar' : 'Voltar'"
+        @click="back"
+      />
     </div>
-    <p v-if="shownError" class="mb-2 text-sm font-medium text-destructive">
-      {{ shownError }}
-    </p>
+
+    <NuxtFormField :label="label">
+      <NuxtPinInput
+        :model-value="activeValue().split('')"
+        :length="8"
+        mask
+        size="xl"
+        @update:model-value="replaceActive"
+      />
+    </NuxtFormField>
+    <NuxtAlert
+      v-if="shownError"
+      class="my-2"
+      color="error"
+      variant="subtle"
+      :title="shownError"
+    />
 
     <div class="grid grid-cols-3 gap-2">
-      <button
+      <NuxtButton
         v-for="d in ['1', '2', '3', '4', '5', '6', '7', '8', '9']"
         :key="d"
-        type="button"
-        class="rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
+        color="neutral"
+        variant="outline"
+        size="xl"
+        :label="d"
         @click="press(d)"
-      >
-        {{ d }}
-      </button>
-      <button
-        type="button"
+      />
+      <NuxtButton
+        color="neutral"
+        variant="outline"
+        size="xl"
+        icon="i-lucide-delete"
         aria-label="Apagar o último dígito"
-        class="rounded-lg border bg-background py-3 text-sm transition hover:bg-accent"
         @click="backspace"
-      >
-        <Icon name="lucide:delete" class="mx-auto size-5" />
-      </button>
-      <button
-        type="button"
-        class="rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
+      />
+      <NuxtButton
+        color="neutral"
+        variant="outline"
+        size="xl"
+        label="0"
         @click="press('0')"
-      >
-        0
-      </button>
-      <button
-        type="button"
+      />
+      <NuxtButton
+        size="xl"
+        :icon="step === 'confirm' ? 'i-lucide-check' : 'i-lucide-arrow-right'"
         :disabled="!canAdvance || busy"
+        :loading="busy"
         :aria-label="step === 'confirm' ? 'Confirmar o novo PIN' : 'Continuar'"
-        class="rounded-lg border border-transparent bg-primary py-3 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
         @click="advance"
-      >
-        <Icon
-          :name="step === 'confirm' ? 'lucide:check' : 'lucide:arrow-right'"
-          class="mx-auto size-5"
-        />
-      </button>
+      />
     </div>
   </div>
 </template>

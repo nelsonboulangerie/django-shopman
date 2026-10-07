@@ -32,11 +32,21 @@ export const ORDERS_ALL_COLUMNS = "/?columns=all";
 export const ORDERS_EXIT_POST = "/?columns=expedition";
 
 /** As rotas que moram em Ajustes: estar numa delas acende o item Ajustes. */
-export const SETTINGS_ROUTES = ["/history", "/catalog", "/customers", "/feeds", "/channels", "/workstations"];
+export const SETTINGS_ROUTES = [
+  "/history",
+  "/catalog",
+  "/customers",
+  "/feeds",
+  "/channels",
+  "/workstations",
+];
 
 function badge(count: number | undefined, noun: [string, string]) {
   if (!count) return {};
-  return { badge: String(count), badgeLabel: `${count} ${count === 1 ? noun[0] : noun[1]}` };
+  return {
+    badge: String(count),
+    badgeLabel: `${count} ${count === 1 ? noun[0] : noun[1]}`,
+  };
 }
 
 export function gestorSections({
@@ -46,9 +56,23 @@ export function gestorSections({
   exitCount,
 }: GestorSectionsInput): OperatorSection[] {
   const operation: OperatorSection[] = [
-    { key: "orders", label: "Pedidos", icon: "lucide:clipboard-list", to: ORDERS_ALL_COLUMNS, group: "Operação", ...badge(intakeCount, ["pedido novo", "pedidos novos"]) },
+    {
+      key: "orders",
+      label: "Pedidos",
+      icon: "lucide:clipboard-list",
+      to: ORDERS_ALL_COLUMNS,
+      group: "Operação",
+      ...badge(intakeCount, ["pedido novo", "pedidos novos"]),
+    },
     // O posto do passe: o mesmo quadro com Entrada e Preparo recolhidas (SUITE-UX §16).
-    { key: "exit", label: "Saída", icon: "lucide:package-check", to: ORDERS_EXIT_POST, group: "Operação", ...badge(exitCount, ["pedido na Saída", "pedidos na Saída"]) },
+    {
+      key: "exit",
+      label: "Saída",
+      icon: "lucide:package-check",
+      to: ORDERS_EXIT_POST,
+      group: "Operação",
+      ...badge(exitCount, ["pedido na Saída", "pedidos na Saída"]),
+    },
   ];
   if (expeditesOnly) return operation;
   return [
@@ -78,10 +102,30 @@ export function gestorSettingsSections({
 }: GestorSectionsInput): GestorSettingsEntry[] {
   return [
     // Os pedidos que já saíram do quadro: concluídos, cancelados e devolvidos.
-    { key: "history", label: "Histórico", icon: "lucide:history", to: "/history", description: "Pedidos concluídos, cancelados e devolvidos" },
-    { key: "catalog", label: "Catálogo", icon: "lucide:book-open", to: "/catalog", description: "Produtos, preços, coleções e disponibilidade" },
+    {
+      key: "history",
+      label: "Histórico",
+      icon: "lucide:history",
+      to: "/history",
+      description: "Pedidos concluídos, cancelados e devolvidos",
+    },
+    {
+      key: "catalog",
+      label: "Catálogo",
+      icon: "lucide:book-open",
+      to: "/catalog",
+      description: "Produtos, preços, coleções e disponibilidade",
+    },
     ...(canManageCustomers
-      ? [{ key: "customers", label: "Clientes", icon: "lucide:users", to: "/customers", description: "Cadastro, histórico e unificações" }]
+      ? [
+          {
+            key: "customers",
+            label: "Clientes",
+            icon: "lucide:users",
+            to: "/customers",
+            description: "Cadastro, histórico e unificações",
+          },
+        ]
       : []),
     {
       key: "feeds",
@@ -94,7 +138,15 @@ export function gestorSettingsSections({
     },
     // Onde cada dispositivo fica (UX-POSTO1).
     ...(canManageWorkstations
-      ? [{ key: "workstations", label: "Postos", icon: "lucide:map-pin", to: "/workstations", description: "Onde cada dispositivo fica" }]
+      ? [
+          {
+            key: "workstations",
+            label: "Postos",
+            icon: "lucide:map-pin",
+            to: "/workstations",
+            description: "Onde cada dispositivo fica",
+          },
+        ]
       : []),
   ];
 }

@@ -11,7 +11,9 @@ const tab = ref("overview");
 const bars = ref(false);
 const completed = ref(18);
 const detailOpen = ref(false);
-const selectedTask = ref<(typeof kitchenSinkQueue)[number]>(kitchenSinkQueue[0]!);
+const selectedTask = ref<(typeof kitchenSinkQueue)[number]>(
+  kitchenSinkQueue[0]!,
+);
 const chartColumns = [
   { accessorKey: "label", header: "Hora" },
   { accessorKey: "orders", header: "Pedidos confirmados" },
@@ -126,7 +128,11 @@ const chartColumns = [
             <NuxtCard
               title="Atualização em andamento"
               description="Sem percentual inventado quando o total é desconhecido"
-              ><div role="status">Atualizando dados do turno<NuxtProgress aria-hidden="true" /></div></NuxtCard>
+              ><div role="status">
+                Atualizando dados do turno<NuxtProgress
+                  aria-hidden="true"
+                /></div
+            ></NuxtCard>
             <NuxtCard
               title="Teclado do dashboard"
               description="Atalhos reais, não rótulos sem comportamento"
@@ -198,6 +204,7 @@ const chartColumns = [
             >
               <NuxtChip
                 :color="person.status === 'Em pausa' ? 'warning' : 'success'"
+                size="2xl"
                 inset
                 ><NuxtAvatar :alt="person.name" :text="person.initials"
               /></NuxtChip>

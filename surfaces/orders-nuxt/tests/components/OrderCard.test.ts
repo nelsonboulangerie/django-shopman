@@ -59,7 +59,11 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     confirmation_deadline_iso: "",
     confirmation_action: "confirm",
     revisions: {},
-    actions: fixtureActions({ can_advance: true, next_action_label: "Iniciar preparo", ...over }),
+    actions: fixtureActions({
+      can_advance: true,
+      next_action_label: "Iniciar preparo",
+      ...over,
+    }),
     ...over,
   } as OrderCardProjection;
 }
@@ -107,17 +111,22 @@ describe("OrderCard — render", () => {
   });
 
   it("cliente ausente cai no fallback 'Sem cliente'", () => {
-    expect(mountCard({ card: card({ customer_name: "" }) }).text()).toContain("Sem cliente");
+    expect(mountCard({ card: card({ customer_name: "" }) }).text()).toContain(
+      "Sem cliente",
+    );
   });
 
-  it("can_confirm (não selecionado): selo Novo e a moldura na cor da decisão", () => {
+  it("can_confirm (não selecionado): selo Novo e estado primário", () => {
     const w = mountCard({ card: card({ can_confirm: true }) });
     expect(w.get("[data-card-seal]").text()).toBe("Novo");
-    expect(w.find("article").classes()).toContain("border-primary/70");
+    expect(w.find("article").attributes("data-card-state")).toBe("primary");
   });
 
   it("o estado continua escrito quando o selo diz outra coisa (Novo, Próximo, Bloqueado)", () => {
-    const w = mountCard({ card: card({ status: "ready", status_label: "Pronto" }), next: true });
+    const w = mountCard({
+      card: card({ status: "ready", status_label: "Pronto" }),
+      next: true,
+    });
     expect(w.get("[data-card-seal]").text()).toBe("Próximo");
     expect(w.get("[data-card-clock]").text()).toContain("Pronto · ");
   });
@@ -126,14 +135,18 @@ describe("OrderCard — render", () => {
 describe("OrderCard — ações emitidas", () => {
   it("botão de affordance emite 'action'", async () => {
     const w = mountCard({ card: card({ can_advance: true }) });
-    const btn = w.findAll("button").find((b) => b.text().includes("Iniciar preparo"))!;
+    const btn = w
+      .findAll("button")
+      .find((b) => b.text().includes("Iniciar preparo"))!;
     await btn.trigger("click");
     expect(w.emitted("action")).toBeTruthy();
   });
 
   it("busy desabilita os botões de ação", () => {
     const w = mountCard({ card: card({ can_advance: true }), busy: true });
-    const btn = w.findAll("button").find((b) => b.text().includes("Iniciar preparo"))!;
+    const btn = w
+      .findAll("button")
+      .find((b) => b.text().includes("Iniciar preparo"))!;
     expect(btn.attributes("disabled")).toBeDefined();
   });
 
@@ -159,18 +172,23 @@ describe("OrderCard — ações emitidas", () => {
     const w = mountCard({ card: card({ assigned_operator: "Rita" }) });
     expect(w.get("[data-card-assigned]").text()).toContain("Rita");
     await w.get("[data-card-menu]").trigger("click");
-    expect(w.get("[data-card-assign]").attributes("aria-label")).toBe("Atendido por Rita. Toque para liberar");
+    expect(w.get("[data-card-assign]").attributes("aria-label")).toBe(
+      "Liberar (Rita atende)",
+    );
   });
 
-  it("selected → aria-pressed + ring de seleção", () => {
+  it("selected → estado canônico aria-pressed", () => {
     const w = mountCard({ card: card(), selected: true, selecting: true });
-    expect(w.find('[aria-label="Desmarcar pedido"]').attributes("aria-pressed")).toBe("true");
-    expect(w.find("article").classes()).toContain("ring-primary");
+    expect(
+      w.find('[aria-label="Desmarcar pedido"]').attributes("aria-pressed"),
+    ).toBe("true");
   });
 
   it("erro inline renderiza a razão + dispensar emite 'dismiss-error'", async () => {
     const w = mountCard({ card: card(), error: "Pagamento não confirmado" });
-    expect(w.find('[role="alert"]').text()).toContain("Pagamento não confirmado");
+    expect(w.find('[role="alert"]').text()).toContain(
+      "Pagamento não confirmado",
+    );
     await w.find('[aria-label="Dispensar aviso"]').trigger("click");
     expect(w.emitted("dismiss-error")).toBeTruthy();
   });
@@ -181,15 +199,21 @@ describe("OrderCard — indicações mínimas: presente e observação do client
   // Antes o Gestor não lia `order_notes` em lugar nenhum — a observação do
   // cliente chegava ao KDS e nunca a quem gerencia a fila.
   it("presente com destinatário ganha selo e o aria diz que há destinatário", () => {
-    const w = mountCard({ card: card({ is_gift: true, gift_has_recipient: true }) });
+    const w = mountCard({
+      card: card({ is_gift: true, gift_has_recipient: true }),
+    });
     const badge = w.find("[data-gift-badge]");
     expect(badge.exists()).toBe(true);
     expect(badge.attributes("aria-label")).toBe("Presente com destinatário");
   });
 
   it("presente sem destinatário (retirada): o aria vira 'Embalar para presente'", () => {
-    const w = mountCard({ card: card({ is_gift: true, gift_has_recipient: false }) });
-    expect(w.find("[data-gift-badge]").attributes("aria-label")).toBe("Embalar para presente");
+    const w = mountCard({
+      card: card({ is_gift: true, gift_has_recipient: false }),
+    });
+    expect(w.find("[data-gift-badge]").attributes("aria-label")).toBe(
+      "Embalar para presente",
+    );
   });
 
   it("observação do cliente vira selo de presença, sem carregar o texto", () => {
@@ -209,7 +233,9 @@ describe("OrderCard — indicações mínimas: presente e observação do client
 describe("OrderCard — countdown do prazo (relógio compartilhado)", () => {
   it("renderiza m:ss quando há prazo futuro", () => {
     nowMs.value = Date.parse("2026-01-01T12:00:00Z");
-    const w = mountCard({ card: card({ confirmation_deadline_iso: "2026-01-01T12:01:30Z" }) });
+    const w = mountCard({
+      card: card({ confirmation_deadline_iso: "2026-01-01T12:01:30Z" }),
+    });
     const timer = w.find('[role="timer"]');
     expect(timer.exists()).toBe(true);
     expect(timer.text()).toContain("1:30");
@@ -224,30 +250,45 @@ describe("OrderCard — countdown do prazo (relógio compartilhado)", () => {
 describe("OrderCard iFood", () => {
   it("preserva o estado operacional e mostra cancelamento pendente junto da cobrança", () => {
     const notice = "Cancelamento solicitado ao iFood. Aguardando confirmação.";
-    const w = mountCard({ card: card({
-      channel_ref: "ifood",
-      can_advance: false,
-      next_action_label: "",
-      advance_block_label: "Aguardando iFood",
-      advance_block_reason: notice,
-      ifood_cancellation_notice: notice,
-    }) });
+    const w = mountCard({
+      card: card({
+        channel_ref: "ifood",
+        can_advance: false,
+        next_action_label: "",
+        advance_block_label: "Aguardando iFood",
+        advance_block_reason: notice,
+        ifood_cancellation_notice: notice,
+      }),
+    });
     expect(w.get("[data-ifood-cancellation]").text()).toBe(notice);
     // O desdobramento por bandeira é do detalhe: no card ele empurrava a decisão
     // para baixo da dobra sem ajudar a decidir nada.
     expect(w.find("[data-ifood-payment]").exists()).toBe(false);
     expect(w.text()).toContain("Confirmado");
-    const blocked = w.findAll("button").find((button) => button.text().includes("Aguardando iFood"));
+    const blocked = w
+      .findAll("button")
+      .find((button) => button.text().includes("Aguardando iFood"));
     expect(blocked?.attributes("disabled")).toBeDefined();
-    expect(w.findAll("button").some((button) => button.text().includes("Iniciar preparo"))).toBe(false);
+    expect(
+      w
+        .findAll("button")
+        .some((button) => button.text().includes("Iniciar preparo")),
+    ).toBe(false);
   });
 });
 
 describe("pedido de teste da homologação", () => {
   it("abre o card com o aviso, antes do código", () => {
     const label = "Pedido de teste do iFood";
-    const notice = "Pedido de teste do iFood: avance as etapas normalmente, mas não produza nem entregue nada.";
-    const w = mountCard({ card: card({ channel_ref: "ifood", test_order_label: label, test_order_notice: notice }) });
+    const notice =
+      "Pedido de teste do iFood: avance as etapas normalmente, mas não produza nem entregue nada.";
+    const w = mountCard({
+      card: card({
+        channel_ref: "ifood",
+        test_order_label: label,
+        test_order_notice: notice,
+      }),
+    });
     const aviso = w.get("[data-test-order-notice]");
     expect(aviso.text()).toContain(label);
     expect(aviso.text()).toContain("não produza nem entregue");
@@ -260,9 +301,20 @@ describe("pedido de teste da homologação", () => {
 });
 
 it("links negotiations on a completed order without batch or fulfillment actions", () => {
-  const order = card({ status: "completed", status_label: "Concluído", ifood_negotiations: [{ id: "dispute" }] as OrderCardProjection["ifood_negotiations"] });
-  const w = mount(OrderCard, { props: { card: order, negotiationOnly: true }, global: { stubs } });
-  expect(w.get("[data-ifood-negotiation-link]").attributes("to")).toBe(`/${order.ref}#ifood-negotiations`);
+  const order = card({
+    status: "completed",
+    status_label: "Concluído",
+    ifood_negotiations: [
+      { id: "dispute" },
+    ] as OrderCardProjection["ifood_negotiations"],
+  });
+  const w = mount(OrderCard, {
+    props: { card: order, negotiationOnly: true },
+    global: { stubs },
+  });
+  expect(w.get("[data-ifood-negotiation-link]").attributes("to")).toBe(
+    `/${order.ref}#ifood-negotiations`,
+  );
   expect(w.find('[aria-label="Selecionar pedido"]').exists()).toBe(false);
   expect(w.find('[aria-label="Atender este pedido"]').exists()).toBe(false);
   expect(w.findAll("button")).toHaveLength(0);
@@ -271,8 +323,15 @@ it("links negotiations on a completed order without batch or fulfillment actions
 describe("iFood à frente do estado local", () => {
   // 21/09: o 1416 seguia "Em preparo" um minuto depois de encerrado no iFood.
   it("mostra a instrução quando o iFood já concluiu", () => {
-    const w = mountCard({ card: card({ channel_ref: "ifood", ifood_remote_ahead_label: "Concluído no iFood · Finalize aqui" }) });
-    expect(w.get("[data-ifood-remote-ahead]").text()).toBe("Concluído no iFood · Finalize aqui");
+    const w = mountCard({
+      card: card({
+        channel_ref: "ifood",
+        ifood_remote_ahead_label: "Concluído no iFood · Finalize aqui",
+      }),
+    });
+    expect(w.get("[data-ifood-remote-ahead]").text()).toBe(
+      "Concluído no iFood · Finalize aqui",
+    );
   });
   it("não mostra nada no caso normal", () => {
     const w = mountCard({ card: card({ channel_ref: "ifood" }) });
@@ -282,22 +341,43 @@ describe("iFood à frente do estado local", () => {
 
 describe("OrderCard — maquininha na rua", () => {
   it("o único sinal é a linha do card: com que maquininha saiu e com quem foi junto", () => {
-    const w = mountCard({ card: card({ status: "dispatched", equipment_label: "Saiu com a maquininha Azul", trip_with: ["DLV-0418"], equipment_back_pending: true }) });
-    expect(w.get("[data-equipment-label]").text()).toBe("Saiu com a maquininha Azul · junto com 0418");
+    const w = mountCard({
+      card: card({
+        status: "dispatched",
+        equipment_label: "Saiu com a maquininha Azul",
+        trip_with: ["DLV-0418"],
+        equipment_back_pending: true,
+      }),
+    });
+    expect(w.get("[data-equipment-label]").text()).toBe(
+      "Saiu com a maquininha Azul · junto com 0418",
+    );
     expect(w.text()).not.toContain("Entregador levou");
   });
   it("sem maquininha na rua, nada", () => {
-    expect(mountCard({ card: card() }).find("[data-equipment-label]").exists()).toBe(false);
+    expect(
+      mountCard({ card: card() }).find("[data-equipment-label]").exists(),
+    ).toBe(false);
   });
 });
 
 describe("OrderCard — a DANFE da sacola", () => {
   it("sem nota autorizada (ou no iFood), nenhuma linha", () => {
-    expect(mountCard({ card: card() }).find("[data-danfe]").exists()).toBe(false);
+    expect(mountCard({ card: card() }).find("[data-danfe]").exists()).toBe(
+      false,
+    );
   });
   it("na fila da impressora: diz que está saindo e o botão espera", () => {
-    const w = mountCard({ card: card({ status: "dispatched", danfe_printable: true, danfe_state: "sending" }) });
-    expect(w.get("[data-danfe-status]").text()).toBe("DANFE saindo na impressora");
+    const w = mountCard({
+      card: card({
+        status: "dispatched",
+        danfe_printable: true,
+        danfe_state: "sending",
+      }),
+    });
+    expect(w.get("[data-danfe-status]").text()).toBe(
+      "DANFE saindo na impressora",
+    );
     expect(w.get("[data-danfe-print]").attributes("disabled")).toBeDefined();
   });
   it("não saiu: diz por quê e deixa imprimir", async () => {
@@ -306,17 +386,29 @@ describe("OrderCard — a DANFE da sacola", () => {
         status: "dispatched",
         danfe_printable: true,
         danfe_state: "not_printed",
-        danfe_problem: "A impressora de Balcão não buscou a DANFE. Confira se o computador dela está ligado.",
+        danfe_problem:
+          "A impressora de Balcão não buscou a DANFE. Confira se o computador dela está ligado.",
       }),
     });
     expect(w.get("[data-danfe-status]").text()).toBe("DANFE não impressa");
-    expect(w.get("[data-danfe-problem]").text()).toContain("não buscou a DANFE");
-    expect(w.get("[data-danfe]").attributes("data-danfe-attention")).toBeDefined();
+    expect(w.get("[data-danfe-problem]").text()).toContain(
+      "não buscou a DANFE",
+    );
+    expect(
+      w.get("[data-danfe]").attributes("data-danfe-attention"),
+    ).toBeDefined();
     await w.get("[data-danfe-print]").trigger("click");
     expect(w.emitted("print-danfe")).toHaveLength(1);
   });
   it("já impressa: o gesto é reimprimir, e fica travado enquanto imprime", () => {
-    const w = mountCard({ card: card({ danfe_printable: true, danfe_printed: true, danfe_state: "printed" }), danfePrinting: true });
+    const w = mountCard({
+      card: card({
+        danfe_printable: true,
+        danfe_printed: true,
+        danfe_state: "printed",
+      }),
+      danfePrinting: true,
+    });
     expect(w.get("[data-danfe-status]").text()).toBe("DANFE impressa");
     expect(w.get("[data-danfe-print]").attributes("disabled")).toBeDefined();
     expect(w.get("[data-danfe-print]").text()).toBe("Imprimindo…");
@@ -325,48 +417,83 @@ describe("OrderCard — a DANFE da sacola", () => {
 
 describe("OrderCard: a NFC-e que não autorizou", () => {
   it("aparece no card e leva ao pedido, onde está Reprocessar NFC-e", () => {
-    const w = mountCard({ card: card({ fiscal_status: "failed", fiscal_status_label: "NFC-e não autorizada" }) });
+    const w = mountCard({
+      card: card({
+        fiscal_status: "failed",
+        fiscal_status_label: "NFC-e não autorizada",
+      }),
+    });
     const link = w.get("[data-fiscal-failed]");
     expect(link.text()).toContain("NFC-e não autorizada");
     expect(link.text()).toContain("reprocessar");
   });
   it("nota em dia não ocupa o card", () => {
-    expect(mountCard({ card: card({ fiscal_status: "authorized" }) }).find("[data-fiscal-failed]").exists()).toBe(false);
+    expect(
+      mountCard({ card: card({ fiscal_status: "authorized" }) })
+        .find("[data-fiscal-failed]")
+        .exists(),
+    ).toBe(false);
   });
 });
 
 describe("OrderCard: por que o botão está travado", () => {
   it("a frase inteira fica à vista, não só no tooltip", () => {
     const w = mountCard({
-      card: card({ advance_block_reason: "Encomenda para uma data futura. O preparo abre no dia combinado." }),
+      card: card({
+        advance_block_reason:
+          "Encomenda para uma data futura. O preparo abre no dia combinado.",
+      }),
     });
-    expect(w.get("[data-advance-block]").text()).toBe("Encomenda para uma data futura. O preparo abre no dia combinado.");
+    expect(w.get("[data-advance-block]").text()).toBe(
+      "Encomenda para uma data futura. O preparo abre no dia combinado.",
+    );
   });
   it("sem bloqueio, nada", () => {
-    expect(mountCard({ card: card({ advance_block_reason: "" }) }).find("[data-advance-block]").exists()).toBe(false);
+    expect(
+      mountCard({ card: card({ advance_block_reason: "" }) })
+        .find("[data-advance-block]")
+        .exists(),
+    ).toBe(false);
   });
 });
 
 describe("OrderCard: quem embalou declara os volumes", () => {
   const volumesAction = (enabled = true) => ({
-    ref: "volumes", label: "Declarar volumes", enabled, reason: enabled ? "" : "Sem permissão", priority: "menu",
-    kind: "mutation", href: "", method: "POST", payload_schema: { expected_actor_id: 1, base_revision: "v" },
-    idempotency: "required", confirmation: {},
+    ref: "volumes",
+    label: "Declarar volumes",
+    enabled,
+    reason: enabled ? "" : "Sem permissão",
+    priority: "menu",
+    kind: "mutation",
+    href: "",
+    method: "POST",
+    payload_schema: { expected_actor_id: 1, base_revision: "v" },
+    idempotency: "required",
+    confirmation: {},
   });
-  it("a etiqueta abre o editor num toque, e Gravar emite o número", async () => {
+  it("a etiqueta é leitura; a ação Volumes do menu abre o editor e Gravar emite o número", async () => {
     const base = card();
-    const w = mountCard({ card: { ...base, actions: [...base.actions, volumesAction()] } });
-    await w.get("[data-card-pack-declare]").trigger("click");
+    const w = mountCard({
+      card: { ...base, actions: [...base.actions, volumesAction()] },
+    });
+    expect(w.find("[data-card-pack]").exists()).toBe(true);
+    await w.get("[data-card-menu]").trigger("click");
+    await w.get("[data-card-volumes]").trigger("click");
     expect(w.find("[data-card-volumes-editor]").exists()).toBe(true);
-    expect(w.get("[data-card-volumes-draft]").text()).toBe("3");
+    expect(w.get("[data-card-volumes-draft] input").attributes("value")).toBe(
+      "3",
+    );
     await w.get("[aria-label='Um volume a menos']").trigger("click");
     await w.get("[data-card-volumes-save]").trigger("click");
     expect(w.emitted("volumes")?.[0]).toEqual([2]);
   });
-  it("sem o gesto liberado, a etiqueta é só leitura", () => {
+  it("sem o gesto liberado, a etiqueta continua leitura e a ação fica desabilitada", async () => {
     const base = card();
-    const w = mountCard({ card: { ...base, actions: [...base.actions, volumesAction(false)] } });
-    expect(w.find("[data-card-pack-declare]").exists()).toBe(false);
+    const w = mountCard({
+      card: { ...base, actions: [...base.actions, volumesAction(false)] },
+    });
     expect(w.find("[data-card-pack]").exists()).toBe(true);
+    await w.get("[data-card-menu]").trigger("click");
+    expect(w.get("[data-card-volumes]").attributes("disabled")).toBeDefined();
   });
 });

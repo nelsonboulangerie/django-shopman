@@ -36,7 +36,6 @@ const CABECALHOS_PROPRIOS_CONHECIDOS: string[] = [
   // da layer. Cabeçalho próprio novo volta a reprovar até ser declarado aqui com motivo.
 ].sort();
 
-
 function vueFiles(dir: string): string[] {
   let found: string[] = [];
   for (const entry of readdirSync(dir)) {
@@ -82,7 +81,6 @@ describe("guardrail do cabeçalho de seções", () => {
   // (celular), as duas peças da layer. O Gestor é o piloto; quem migrar entra aqui.
   it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
     const migrados = [
-      "orders-nuxt/app/components/GestorNav.vue",
       "kds-nuxt/app/components/KdsNav.vue",
       // V4-MKT: a segunda linha de Ajustes do Marketing (Campanhas, Modelos, Ofertas e
       // cupons, Plataformas) mora em `MarketingSettingsNav.vue`, na linha de recortes
@@ -104,13 +102,23 @@ describe("guardrail do cabeçalho de seções", () => {
       expect(source, file).not.toContain("<nav");
       expect(source, file).not.toContain("<OperatorAppBar");
     }
+
+    // O piloto já eliminou o adaptador intermediário: o app entrega suas seções
+    // diretamente ao shell canônico, que monta rail e barra móvel uma única vez.
+    const orders = readFileSync(
+      join(SURFACES, "orders-nuxt/app/app.vue"),
+      "utf8",
+    );
+    expect(orders).toContain("<OperatorSuiteShell");
+    expect(orders).toContain(':sections="sections"');
+    expect(orders).toContain(':current="current"');
+    expect(orders).not.toContain("<GestorNav");
   });
 });
 
 // V6-KIT (auditoria v4, 04/10/2026): o chrome da suíte é UM em todo app. Cada trava
 // abaixo nasceu de uma divergência medida que pode voltar.
 const NAVS = [
-  "orders-nuxt/app/components/GestorNav.vue",
   "kds-nuxt/app/components/KdsNav.vue",
   "marketing-nuxt/app/components/MarketingNav.vue",
   "pos-nuxt/app/components/PosFunctionRail.vue",
@@ -118,10 +126,14 @@ const NAVS = [
   "bi-nuxt/app/components/BiNav.vue",
   "purchase-nuxt/app/components/PurchaseNav.vue",
 ];
-const KIT = (name: string) => readFileSync(join(SURFACES, "operator-kit/app/components", name), "utf8");
+const KIT = (name: string) =>
+  readFileSync(join(SURFACES, "operator-kit/app/components", name), "utf8");
 
 function sourcesOf(app: string): Array<[string, string]> {
-  return vueFiles(join(SURFACES, app, "app")).map((file) => [relative(SURFACES, file), readFileSync(file, "utf8")]);
+  return vueFiles(join(SURFACES, app, "app")).map((file) => [
+    relative(SURFACES, file),
+    readFileSync(file, "utf8"),
+  ]);
 }
 
 describe("guardrail do chrome da suíte (V6-KIT)", () => {
@@ -132,22 +144,38 @@ describe("guardrail do chrome da suíte (V6-KIT)", () => {
     for (const app of APPS) {
       for (const [file, source] of sourcesOf(app)) {
         if (file.startsWith("operator-kit/")) continue;
-        if (/<(NotificationBell|AlertsBell|OperatorInbox)\b/.test(source) && !file.endsWith("hub-nuxt/app/app.vue") && !file.endsWith("pos-nuxt/app/pages/index.vue")) proprios.push(file);
+        if (
+          /<(NotificationBell|AlertsBell|OperatorInbox)\b/.test(source) &&
+          !file.endsWith("hub-nuxt/app/app.vue") &&
+          !file.endsWith("pos-nuxt/app/pages/index.vue")
+        )
+          proprios.push(file);
         if (/\s:?label="(Alertas|Avisos)"/.test(source)) proprios.push(file);
         if (/["']lucide:bell["']/.test(source)) proprios.push(file);
       }
     }
     expect(proprios).toEqual([]);
-    expect(KIT("OperatorSuiteRail.vue").match(/<OperatorInbox\b/g)).toHaveLength(2); // uma por ordem do pé, só uma renderiza
-    expect(KIT("OperatorPageHeader.vue").match(/<OperatorInbox\b/g)).toHaveLength(1);
+    expect(
+      KIT("OperatorSuiteRail.vue").match(/<OperatorInbox\b/g),
+    ).toHaveLength(2); // uma por ordem do pé, só uma renderiza
+    expect(
+      KIT("OperatorPageHeader.vue").match(/<OperatorInbox\b/g),
+    ).toHaveLength(1);
   });
 
   // K02/T-03: o velocímetro com ponto vermelho saiu do rail para o menu das iniciais
   // (e para a caixa de Avisos quando passa do limite).
   it("sem medidor de capacidade no rail; ele mora no menu do operador", () => {
-    expect(KIT("OperatorSuiteRail.vue")).not.toContain("<OperatorCapacityStatus");
-    expect(KIT("OperatorMenuItems.vue")).toContain("data-operator-menu-capacity");
-    for (const file of NAVS) expect(readFileSync(join(SURFACES, file), "utf8"), file).not.toContain("Capacity");
+    expect(KIT("OperatorSuiteRail.vue")).not.toContain(
+      "<OperatorCapacityStatus",
+    );
+    expect(KIT("OperatorMenuItems.vue")).toContain(
+      "data-operator-menu-capacity",
+    );
+    for (const file of NAVS)
+      expect(readFileSync(join(SURFACES, file), "utf8"), file).not.toContain(
+        "Capacity",
+      );
   });
 
   // K04/T-14: a ordem do pé é a da v4 (`_rail3bottom.html`): seções do pé e o slot do
@@ -163,15 +191,24 @@ describe("guardrail do chrome da suíte (V6-KIT)", () => {
     const shortcuts = at('label="Atalhos"', foot);
     const lock = at('label="Bloquear"', foot);
     const menu = at("data-suite-rail-menu", lock);
-    expect([sections, slot, rule, inbox, shortcuts, lock, menu].every((n) => n > foot)).toBe(true);
-    expect([sections, slot, rule, inbox, shortcuts, lock, menu]).toEqual([sections, slot, rule, inbox, shortcuts, lock, menu].sort((a, b) => a - b));
+    expect(
+      [sections, slot, rule, inbox, shortcuts, lock, menu].every(
+        (n) => n > foot,
+      ),
+    ).toBe(true);
+    expect([sections, slot, rule, inbox, shortcuts, lock, menu]).toEqual(
+      [sections, slot, rule, inbox, shortcuts, lock, menu].sort(
+        (a, b) => a - b,
+      ),
+    );
   });
 
   // K11/H02/T-04: Bloquear em todo app, a Central inclusive. A prop que o escondia morreu.
   it("Bloquear em todo app: ninguém esconde o item", () => {
     expect(KIT("OperatorSuiteRail.vue")).not.toContain("lockable");
     for (const app of APPS) {
-      for (const [file, source] of sourcesOf(app)) expect(source, file).not.toContain("lockable");
+      for (const [file, source] of sourcesOf(app))
+        expect(source, file).not.toContain("lockable");
     }
   });
 
@@ -183,7 +220,7 @@ describe("guardrail do chrome da suíte (V6-KIT)", () => {
       const source = readFileSync(join(SURFACES, file), "utf8");
       const bar = source.slice(source.indexOf("<OperatorSectionBar"));
       expect(bar, file).toContain(":operator-name=");
-      expect(bar, file).toContain('@lock="emit(\'lock\')"');
+      expect(bar, file).toContain("@lock=\"emit('lock')\"");
     }
     const hub = readFileSync(join(SURFACES, "hub-nuxt/app/app.vue"), "utf8");
     expect(hub).toContain("<OperatorPhoneMenu");
@@ -197,7 +234,9 @@ describe("guardrail do chrome da suíte (V6-KIT)", () => {
     expect(KIT("OperatorSectionBar.vue")).toContain("rail:hidden");
     expect(KIT("OperatorSectionBar.vue")).not.toContain("md:hidden");
     for (const file of NAVS) {
-      expect(readFileSync(join(SURFACES, file), "utf8"), file).not.toContain("767.98px");
+      expect(readFileSync(join(SURFACES, file), "utf8"), file).not.toContain(
+        "767.98px",
+      );
     }
   });
 

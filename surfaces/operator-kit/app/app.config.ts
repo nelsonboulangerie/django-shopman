@@ -19,6 +19,21 @@ export default defineAppConfig({
         indicator: "rounded-full",
       },
     },
+    // O maior tamanho oficial (3xl) basta para presença, mas não para contagens
+    // como “6” e “9+”. Só o Chip numérico recebe um degrau extra. Mantemos o
+    // círculo de 16 px aprovado, com texto de 12 px para manter a leitura compacta.
+    chip: {
+      variants: {
+        size: {
+          "4xl": "h-4 min-w-4 px-1 text-[12px]/none",
+        },
+      },
+    },
+    // `soft` é uma variante oficial do Kbd. Defini-la aqui evita que atalhos
+    // idênticos mudem de aparência conforme a tela ou o componente consumidor.
+    kbd: {
+      defaultVariants: { variant: "soft" },
+    },
     popover: { slots: { content: "bg-popover" } },
     slideover: { slots: { content: "bg-card" } },
     modal: { slots: { content: "bg-card" } },
@@ -26,11 +41,72 @@ export default defineAppConfig({
     tooltip: { slots: { content: "bg-popover text-default" } },
     dropdownMenu: { slots: { content: "bg-popover" } },
     contextMenu: { slots: { content: "bg-popover" } },
+    // O `subtle` oficial usa cor/10, portanto é translúcido. Nas superfícies de
+    // operador os Alerts também aparecem sobre conteúdo rolável; a tinta precisa
+    // ser pré-composta com a superfície do tema para continuar sutil, mas opaca.
+    // A anatomia, o padding, a borda e as variantes continuam sendo do Nuxt UI.
+    alert: {
+      compoundVariants: [
+        {
+          color: "primary",
+          variant: "subtle",
+          class: {
+            root: "bg-[color-mix(in_srgb,var(--primary)_10%,var(--card))]",
+          },
+        },
+        {
+          color: "secondary",
+          variant: "subtle",
+          class: {
+            root: "bg-[color-mix(in_srgb,var(--secondary-foreground)_10%,var(--card))]",
+          },
+        },
+        {
+          color: "success",
+          variant: "subtle",
+          class: {
+            root: "bg-[color-mix(in_srgb,var(--success)_10%,var(--card))]",
+          },
+        },
+        {
+          color: "info",
+          variant: "subtle",
+          class: {
+            root: "bg-[color-mix(in_srgb,var(--info)_10%,var(--card))]",
+          },
+        },
+        {
+          color: "warning",
+          variant: "subtle",
+          class: {
+            root: "bg-[color-mix(in_srgb,var(--warning)_10%,var(--card))]",
+          },
+        },
+        {
+          color: "error",
+          variant: "subtle",
+          class: {
+            root: "bg-[color-mix(in_srgb,var(--destructive)_10%,var(--card))]",
+          },
+        },
+        {
+          color: "neutral",
+          variant: "subtle",
+          class: {
+            root: "bg-[color-mix(in_srgb,var(--muted)_50%,var(--card))]",
+          },
+        },
+      ],
+    },
     card: {
+      // Densidade operacional única. O UCard oficial sobe para 24 px no body em
+      // `sm`; no Gestor isso desperdiça uma linha útil em cada unidade da fila.
+      // Conservamos anatomia, variantes e divisores do Nuxt UI, mas fixamos os
+      // três slots em 16 px — exatamente o contrato documentado no Kitchen Sink.
       slots: {
-        header: "p-4 sm:px-4",
+        header: "p-4 sm:p-4",
         body: "p-4 sm:p-4",
-        footer: "p-4 sm:px-4",
+        footer: "p-4 sm:p-4",
       },
       variants: {
         variant: {
@@ -40,65 +116,21 @@ export default defineAppConfig({
       },
       defaultVariants: { variant: "outline" },
     },
-    input: {
-      variants: { size: { md: { base: "h-control px-3 py-2 text-sm" } } },
-      defaultVariants: { size: "md" },
+    // PageCard fica reservado a cartões navegáveis ou destaques semânticos. Sua
+    // densidade acompanha UCard para não criar uma segunda escala de padding.
+    pageCard: {
+      slots: {
+        container: "p-4 sm:p-4",
+      },
     },
+    // Altura de controle: padrões compactos oficiais do Nuxt UI. Fluxos que
+    // realmente precisam de alvo maior fazem opt-in no próprio componente; uma
+    // regra global desalinharia tabs, toolbars, menus, paginação e rail.
     select: {
       slots: { content: "bg-popover" },
-      variants: {
-        size: {
-          md: {
-            base: "h-control px-3 py-2 text-sm",
-            leading: "ps-3",
-            trailing: "pe-3",
-            item: "min-h-control items-center px-3 py-2 text-sm gap-2",
-          },
-        },
-      },
-      compoundVariants: [
-        { size: "md", leading: true, class: "ps-10" },
-        { size: "md", trailing: true, class: "pe-10" },
-      ],
-      defaultVariants: { size: "md" },
     },
     selectMenu: {
       slots: { content: "bg-popover" },
-      variants: {
-        size: {
-          md: {
-            base: "h-control px-3 py-2 text-sm",
-            leading: "ps-3",
-            trailing: "pe-3",
-            item: "min-h-control items-center px-3 py-2 text-sm gap-2",
-          },
-        },
-      },
-      compoundVariants: [
-        { size: "md", leading: true, class: "ps-10" },
-        { size: "md", trailing: true, class: "pe-10" },
-      ],
-      defaultVariants: { size: "md" },
-    },
-    textarea: {
-      variants: { size: { md: { base: "px-3 py-2 text-sm" } } },
-      defaultVariants: { size: "md" },
-    },
-    alert: {
-      defaultVariants: { variant: "subtle" },
-      slots: {
-        title: "text-default",
-        description: "text-default opacity-100",
-      },
-      compoundVariants: [
-        {
-          variant: "solid",
-          class: {
-            title: "text-inherit",
-            description: "text-inherit opacity-100",
-          },
-        },
-      ],
     },
   },
 });

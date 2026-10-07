@@ -23,9 +23,13 @@ const props = defineProps<{
   identity?: OperatorInstallIdentity;
 }>();
 
-const runtimeIdentity = (useRuntimeConfig().public?.operatorPwa as { identity?: OperatorInstallIdentity } | undefined)
-  ?.identity;
-const identity = computed<OperatorInstallIdentity | null>(() => props.identity || runtimeIdentity || null);
+const runtimeIdentity = (
+  useRuntimeConfig().public?.operatorPwa as
+    { identity?: OperatorInstallIdentity } | undefined
+)?.identity;
+const identity = computed<OperatorInstallIdentity | null>(
+  () => props.identity || runtimeIdentity || null,
+);
 
 const pwa = usePwaInstall({ app: props.app });
 const plan = computed(() => pwa.plan.value);
@@ -34,9 +38,18 @@ const visible = computed(() => pwa.canInvite.value);
 // Um toque resolve, ou a pessoa vai seguir passos — o título diz qual dos dois é, antes
 // de ela decidir se tem tempo agora.
 const title = computed(() => {
-  const named = identity.value ? `${identity.value.article} ${identity.value.label}` : "este aplicativo";
-  return plan.value.kind === "prompt" ? `Instale ${named}` : `Coloque ${named} na tela inicial`;
+  const named = identity.value
+    ? `${identity.value.article} ${identity.value.label}`
+    : "este aplicativo";
+  return plan.value.kind === "prompt"
+    ? `Instale ${named}`
+    : `Coloque ${named} na tela inicial`;
 });
+const description = computed(
+  () =>
+    identity.value?.install ||
+    "Abra este aplicativo direto da tela inicial, sem procurar o endereço no navegador.",
+);
 
 async function install() {
   if (await pwa.install()) pwa.dismissAsDone();
@@ -44,43 +57,46 @@ async function install() {
 </script>
 
 <template>
-  <aside
-    v-if="visible"
-    class="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-md rounded-md border border-border bg-card p-4 text-card-foreground shadow-xl"
-    aria-live="polite"
+  <NuxtModal
+    :open="visible"
+    :dismissible="false"
+    :close="false"
+    :title="title"
     data-operator-pwa-install
   >
-    <p class="text-sm font-semibold">{{ title }}</p>
-    <p v-if="identity" class="mt-1 mb-3 text-sm text-muted-foreground">{{ identity.install }}</p>
+    <template #body>
+      <div class="flex flex-col gap-4">
+        <p class="text-sm text-muted-foreground">
+          {{ description }}
+        </p>
+        <OperatorInstallSteps v-if="plan.kind === 'steps'" :plan="plan" />
+      </div>
+    </template>
 
-    <OperatorInstallSteps v-if="plan.kind === 'steps'" :plan="plan" />
-
-    <div class="mt-4 flex gap-2">
-      <button
-        type="button"
-        class="h-11 flex-1 rounded-md px-4 text-sm font-medium text-muted-foreground hover:bg-muted"
-        @click="pwa.dismiss()"
-      >
-        Agora não
-      </button>
-      <button
-        v-if="plan.kind === 'prompt'"
-        type="button"
-        class="h-11 flex-1 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
-        @click="install"
-      >
-        Instalar
-      </button>
-      <!-- Ninguém sabe daqui se ela seguiu os passos; quem sabe é ela. Dizer "já
-           instalei" encerra o convite de vez em vez de repeti-lo na semana seguinte. -->
-      <button
-        v-else
-        type="button"
-        class="h-11 flex-1 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
-        @click="pwa.dismissAsDone()"
-      >
-        Já instalei
-      </button>
-    </div>
-  </aside>
+    <template #footer>
+      <div class="grid w-full grid-cols-2 gap-2">
+        <NuxtButton
+          block
+          color="neutral"
+          variant="outline"
+          label="Agora não"
+          @click="pwa.dismiss()"
+        />
+        <NuxtButton
+          v-if="plan.kind === 'prompt'"
+          block
+          label="Instalar"
+          @click="install"
+        />
+        <!-- Ninguém sabe daqui se ela seguiu os passos; quem sabe é ela. Dizer "já
+             instalei" encerra o convite de vez em vez de repeti-lo na semana seguinte. -->
+        <NuxtButton
+          v-else
+          block
+          label="Já instalei"
+          @click="pwa.dismissAsDone()"
+        />
+      </div>
+    </template>
+  </NuxtModal>
 </template>

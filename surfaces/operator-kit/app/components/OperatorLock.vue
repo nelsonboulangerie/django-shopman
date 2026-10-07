@@ -77,11 +77,16 @@ onBeforeUnmount(() => {
   document.removeEventListener("visibilitychange", onVisibility);
 });
 
-async function onPin(payload: { person: IdentifiablePerson | null; username: string; pin: string }) {
+async function onPin(payload: {
+  person: IdentifiablePerson | null;
+  username: string;
+  pin: string;
+}) {
   // A peça compartilhada devolve o mínimo comum (`username`, `name`). Aqui o
   // bloqueio precisa do ID numérico, então recupera o card completo da lista —
   // é o que evita a peça ter de conhecer o formato de cada consumidor.
-  const card = eligible.value.find((op) => op.username === payload.username) ?? null;
+  const card =
+    eligible.value.find((op) => op.username === payload.username) ?? null;
   if (!card) return;
   picked.value = card;
   const ok = await unlock({ operatorId: card.id, pin: payload.pin });
@@ -143,7 +148,7 @@ async function submitForcedChange(payload: {
     tabindex="-1"
     class="fixed inset-0 outline-none z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
   >
-    <div class="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg">
+    <NuxtCard class="w-full max-w-md">
       <!-- Forced change: manager reset the operator's PIN; rotate before operating. -->
       <OperatorPinChange
         v-if="mustChange && operator"
@@ -168,15 +173,14 @@ async function submitForcedChange(payload: {
       <!-- "Perdi meu crachá": o crachá morre agora. A tela É a confirmação —
            diz o que acontece e só age depois do PIN. -->
       <template v-else-if="lostBadge">
-        <div class="mb-3 flex items-center gap-2">
-          <Icon name="lucide:badge-x" class="size-5 text-muted-foreground" />
-          <h2 class="text-lg font-bold">Perdi meu crachá</h2>
-        </div>
-        <div class="mb-4 space-y-1 rounded-lg border border-dashed p-3 text-sm">
-          <p>Seu crachá para de funcionar agora.</p>
-          <p>Seu PIN continua valendo: você segue trabalhando.</p>
-          <p class="text-muted-foreground">Um gerente emite outro crachá.</p>
-        </div>
+        <NuxtAlert
+          class="mb-4"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-badge-x"
+          title="Perdi meu crachá"
+          description="Seu crachá para de funcionar agora. Seu PIN continua valendo: você segue trabalhando. Um gerente emite outro crachá."
+        />
 
         <!-- O erro é desenhado pelo `OperatorIdentify` (que também limpa o PIN
              quando ele muda): repeti-lo aqui daria a mesma frase duas vezes. -->
@@ -190,13 +194,13 @@ async function submitForcedChange(payload: {
           @pin="submitLostBadge"
         />
 
-        <button
-          type="button"
-          class="mt-3 inline-flex w-full items-center justify-center text-sm text-muted-foreground hover:text-foreground"
+        <NuxtButton
+          block
+          color="neutral"
+          variant="ghost"
+          label="Cancelar"
           @click="lostBadge = false"
-        >
-          Cancelar
-        </button>
+        />
       </template>
 
       <template v-else>
@@ -208,19 +212,20 @@ async function submitForcedChange(payload: {
 
                aqui         → você ASSUME o balcão (a sessão troca)
                autorização  → você CONTINUA quem era (o gerente só assina) -->
-        <div class="mb-4 flex items-center gap-2">
-          <Icon name="lucide:lock" class="size-5 text-muted-foreground" />
-          <h2 class="text-lg font-bold">Identifique-se para operar</h2>
-        </div>
-        <p class="-mt-3 mb-4 text-sm text-muted-foreground">Você assume o balcão.</p>
+        <NuxtAlert
+          class="mb-4"
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-lock"
+          title="Identifique-se para operar"
+          description="Você assume o balcão."
+        />
 
-        <div
+        <NuxtEmpty
           v-if="!eligible.length"
-          class="grid place-items-center gap-1.5 rounded-lg border border-dashed py-8 text-center text-muted-foreground"
-        >
-          <Icon name="lucide:user-x" class="size-6" />
-          <p class="text-sm">Nenhum operador habilitado para esta tela.</p>
-        </div>
+          icon="i-lucide-user-x"
+          title="Nenhum operador habilitado para esta tela"
+        />
 
         <!-- A identificação inteira (crachá, lista, PIN) mora no
              `OperatorIdentify`, e o diálogo de autorização do gerente usa a
@@ -241,24 +246,24 @@ async function submitForcedChange(payload: {
             <!-- Discreto, mas não escondido: quem perdeu o crachá precisa achar
                  sozinho, então é texto legível ao lado do irmão, e não um menu. -->
             <div class="flex items-center justify-center gap-4">
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              <NuxtButton
+                color="neutral"
+                variant="link"
+                icon="i-lucide-key-round"
+                label="Trocar meu PIN"
                 @click="startChange"
-              >
-                <Icon name="lucide:key-round" class="size-4" /> Trocar meu PIN
-              </button>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              />
+              <NuxtButton
+                color="neutral"
+                variant="link"
+                icon="i-lucide-badge-x"
+                label="Perdi meu crachá"
                 @click="lostBadge = true"
-              >
-                <Icon name="lucide:badge-x" class="size-4" /> Perdi meu crachá
-              </button>
+              />
             </div>
           </template>
         </OperatorIdentify>
       </template>
-    </div>
+    </NuxtCard>
   </div>
 </template>

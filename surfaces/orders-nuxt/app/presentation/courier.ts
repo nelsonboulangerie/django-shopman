@@ -39,7 +39,14 @@ export function courierSteps(letter: string): CourierStep[] {
   if (idx === undefined) return [];
   return STEPS.map((step, i) => ({
     ...step,
-    state: i < idx ? "done" : i === idx ? (letter === "F" ? "done" : "current") : "pending",
+    state:
+      i < idx
+        ? "done"
+        : i === idx
+          ? letter === "F"
+            ? "done"
+            : "current"
+          : "pending",
   }));
 }
 
@@ -49,7 +56,8 @@ export function courierTone(letter: string): CourierTone {
   if (letter === "F") return "success";
   if (letter === "E") return "active";
   if (letter === "A" || letter === "S") return "info";
-  if (letter === "D" || letter === "G" || letter === "P" || letter === "U") return "muted";
+  if (letter === "D" || letter === "G" || letter === "P" || letter === "U")
+    return "muted";
   return "muted";
 }
 
@@ -57,13 +65,13 @@ export function courierTone(letter: string): CourierTone {
 export function courierToneBadge(tone: CourierTone): string {
   switch (tone) {
     case "danger":
-      return "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300";
+      return "border-error/40 bg-error/10 text-error";
     case "success":
-      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+      return "border-success/40 bg-success/10 text-success";
     case "active":
       return "border-primary/40 bg-primary/10 text-primary";
     case "info":
-      return "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+      return "border-info/40 bg-info/10 text-info";
     default:
       return "border-border bg-muted text-muted-foreground";
   }

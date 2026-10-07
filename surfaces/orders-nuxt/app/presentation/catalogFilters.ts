@@ -3,7 +3,11 @@
 // A matriz já vem inteira do servidor (a coleção é o único recorte server-side, nas
 // pills), então filtrar aqui é instantâneo e não custa request. Cada dimensão é um
 // OU interno (marcar "erro" e "nunca" mostra os dois); entre dimensões é E.
-import type { ActiveFilters, FilterDimension, FilterOption } from "../../../operator-kit/app/types/filters";
+import type {
+  ActiveFilters,
+  FilterDimension,
+  FilterOption,
+} from "../../../operator-kit/app/types/filters";
 import type { CatalogRowProjection, SurfaceProjection } from "~/types/catalog";
 
 // Ids das dimensões — chaves em inglês, rótulos em pt-BR (convenção do projeto).
@@ -27,13 +31,20 @@ const SYNC_OPTIONS: { value: SyncBucket; label: string }[] = [
 ];
 
 function projectionRefs(surfaces: SurfaceProjection[]): Set<string> {
-  return new Set(surfaces.filter((s) => s.is_projection_target).map((s) => s.ref));
+  return new Set(
+    surfaces.filter((s) => s.is_projection_target).map((s) => s.ref),
+  );
 }
 
-function matchesSync(row: CatalogRowProjection, targets: Set<string>, buckets: string[]): boolean {
+function matchesSync(
+  row: CatalogRowProjection,
+  targets: Set<string>,
+  buckets: string[],
+): boolean {
   return row.cells.some((cell) => {
     if (!cell.in_listing || !targets.has(cell.surface_ref)) return false;
-    const bucket: SyncBucket = cell.sync_status === "" ? "never" : (cell.sync_status as SyncBucket);
+    const bucket: SyncBucket =
+      cell.sync_status === "" ? "never" : (cell.sync_status as SyncBucket);
     return buckets.includes(bucket);
   });
 }
@@ -88,7 +99,9 @@ export function catalogDimensions(
       id: FILTER_SYNC,
       label: "Status de envio",
       type: "multi-select",
-      options: counted(SYNC_OPTIONS, rows, (row, value) => matchesSync(row, targets, [value])),
+      options: counted(SYNC_OPTIONS, rows, (row, value) =>
+        matchesSync(row, targets, [value]),
+      ),
     });
   }
 
@@ -99,7 +112,9 @@ export function catalogDimensions(
     options: surfaces.map((s) => ({
       value: s.ref,
       label: s.name,
-      count: rows.filter((r) => r.cells.some((c) => c.surface_ref === s.ref && c.in_listing)).length,
+      count: rows.filter((r) =>
+        r.cells.some((c) => c.surface_ref === s.ref && c.in_listing),
+      ).length,
     })),
   });
 
@@ -110,16 +125,30 @@ export function catalogDimensions(
       id: FILTER_STOCK,
       label: "Estoque",
       type: "multi-select",
-      options: counted(STOCK_OPTIONS, rows, (row, value) => stockBucket(row) === value),
+      options: counted(
+        STOCK_OPTIONS,
+        rows,
+        (row, value) => stockBucket(row) === value,
+      ),
     },
   );
 
   if (hasTargets) {
-    dimensions.push({ id: FILTER_PIM, label: "Dados sociais completos", type: "boolean", options: [] });
+    dimensions.push({
+      id: FILTER_PIM,
+      label: "Dados sociais completos",
+      type: "boolean",
+      options: [],
+    });
   }
 
   // Vocação (só para o B.I.): o "Classificar" do aviso da lista liga este recorte.
-  dimensions.push({ id: FILTER_VOCATION, label: "Com vocação", type: "boolean", options: [] });
+  dimensions.push({
+    id: FILTER_VOCATION,
+    label: "Com vocação",
+    type: "boolean",
+    options: [],
+  });
 
   return dimensions;
 }
@@ -140,7 +169,11 @@ export function matchesFilters(
   if (sync.length && !matchesSync(row, targets, sync)) return false;
 
   const surfaceRefs = filters[FILTER_SURFACE] ?? [];
-  if (surfaceRefs.length && !row.cells.some((c) => c.in_listing && surfaceRefs.includes(c.surface_ref))) return false;
+  if (
+    surfaceRefs.length &&
+    !row.cells.some((c) => c.in_listing && surfaceRefs.includes(c.surface_ref))
+  )
+    return false;
 
   const stock = filters[FILTER_STOCK] ?? [];
   if (stock.length && !stock.includes(stockBucket(row))) return false;
@@ -152,10 +185,12 @@ export function matchesFilters(
   if (sellable !== undefined && row.is_sellable !== sellable) return false;
 
   const pimComplete = asBool(filters[FILTER_PIM]);
-  if (pimComplete !== undefined && row.pim_complete !== pimComplete) return false;
+  if (pimComplete !== undefined && row.pim_complete !== pimComplete)
+    return false;
 
   const hasVocation = asBool(filters[FILTER_VOCATION]);
-  if (hasVocation !== undefined && row.has_vocation !== hasVocation) return false;
+  if (hasVocation !== undefined && row.has_vocation !== hasVocation)
+    return false;
 
   return true;
 }
@@ -182,12 +217,17 @@ export function vocationPendingFilters(): ActiveFilters {
 // O checklist de um canal manda para cá já recortado ("3 produtos recusados pelo
 // iFood → Ver e corrigir" abre `/catalog?surface=ifood&sync=error`). Só entram os
 // valores que a dimensão conhece: parâmetro torto não vira filtro que zera a tela.
-const QUERY_DIMENSIONS: Record<string, { id: string; values?: readonly string[] }> = {
+const QUERY_DIMENSIONS: Record<
+  string,
+  { id: string; values?: readonly string[] }
+> = {
   surface: { id: FILTER_SURFACE },
   sync: { id: FILTER_SYNC, values: SYNC_OPTIONS.map((o) => o.value) },
 };
 
-export function filtersFromQuery(query: Record<string, unknown>): ActiveFilters {
+export function filtersFromQuery(
+  query: Record<string, unknown>,
+): ActiveFilters {
   const filters: ActiveFilters = {};
   for (const [param, { id, values }] of Object.entries(QUERY_DIMENSIONS)) {
     const raw = query[param];
