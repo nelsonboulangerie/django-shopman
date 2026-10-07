@@ -198,8 +198,8 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
   };
 }
 
-/** De quanto em quanto tempo o aviso com prazo, já visto, volta a lembrar (dono, 07/10). */
-export const URGENT_REMINDER_MINUTES = 5;
+/** De quanto em quanto tempo o aviso com prazo, já visto, volta a lembrar: 1 min (dono, 07/10). */
+export const URGENT_REMINDER_MINUTES = 1;
 
 export interface UrgentAlertsView<T> {
   /** O aviso que interrompe a tela agora: com prazo correndo e ainda sem Visto. */

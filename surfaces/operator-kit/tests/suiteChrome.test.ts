@@ -155,7 +155,7 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
   });
 
   it("o lembrete é de 5 minutos e o tempo restante se diz em minutos", () => {
-    expect(URGENT_REMINDER_MINUTES).toBe(5);
+    expect(URGENT_REMINDER_MINUTES).toBe(1);
     expect(deadlineLeftLabel(at(6.5), NOW)).toBe("faltam 6 min");
     expect(deadlineLeftLabel(at(1.2), NOW)).toBe("falta 1 min");
     expect(deadlineLeftLabel(at(0.5), NOW)).toBe("menos de 1 min");
