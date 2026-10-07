@@ -2,11 +2,12 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { galleryQueue } from "./galleryCards.mjs";
 
 // Backend hermético da matriz visual do Gestor. Sem Django, sem dados vivos:
 // as fixtures abaixo foram CAPTURADAS do backend real (seed Nelson) e o mock só
 // reescreve os campos de relógio para o quadro não nascer "desatualizado".
-// O estado é trocado por GET /__visual/scenario?set=<normal|empty|dense|error>.
+// O estado é trocado por GET /__visual/scenario?set=<normal|empty|dense|error|gallery>.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.MOCK_PORT || 38793);
@@ -37,6 +38,15 @@ function queuePayload() {
     for (const key of emptyKeys) q[key] = [];
     q.preparing_count = 0; q.expedition_delivery_count = 0;
     q.expedition_count = 0; q.total_count = 0; q.preorders_count = 0;
+  }
+  if (scenario === "gallery") {
+    const gallery = galleryQueue(q.prep[0]);
+    Object.assign(q, gallery);
+    q.preparing_count = gallery.prep.length;
+    q.expedition_delivery_count = gallery.expedition_delivery.length;
+    q.expedition_count = gallery.expedition_pickup.length + gallery.expedition_delivery.length;
+    q.preorders_count = gallery.preorders.length;
+    q.total_count = Object.values(gallery).reduce((sum, list) => sum + list.length, 0);
   }
   if (scenario === "dense") {
     const base = q.prep[0] || q.expedition_pickup[0];
@@ -82,6 +92,10 @@ createServer((req, res) => {
   }
   if (path === "/api/v1/backstage/orders/board-layout/") {
     send(res, 200, { station: "GESTOR-1", columns: null });
+    return;
+  }
+  if (req.method === "POST" && path.indexOf("ERR07") >= 0) {
+    send(res, 409, { detail: "O pedido mudou em outra estação. Atualize e tente de novo.", field: null, errors: {} });
     return;
   }
   if (path === "/api/v1/backstage/orders/") {

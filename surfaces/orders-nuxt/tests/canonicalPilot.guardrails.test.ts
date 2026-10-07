@@ -616,7 +616,7 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(queue).toMatch(
-      /data-queue-progress[\s\S]*?color="neutral"[\s\S]*?variant="subtle"[\s\S]*?:label="`\$\{progressCount\} pedidos`"/,
+      /data-queue-progress[\s\S]*?color="neutral"[\s\S]*?variant="subtle"[\s\S]*?:label="`\$\{progressCount\} /,
     );
     expect(queue).toMatch(
       /data-queue-system[\s\S]*?color="neutral"[\s\S]*?variant="subtle"[\s\S]*?:label="`\$\{awareness\?\.system_window_minutes \?\? 15\} min`"/,

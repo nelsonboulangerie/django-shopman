@@ -317,7 +317,10 @@ it("links negotiations on a completed order without batch or fulfillment actions
   );
   expect(w.find('[aria-label="Selecionar pedido"]').exists()).toBe(false);
   expect(w.find('[aria-label="Atender este pedido"]').exists()).toBe(false);
-  expect(w.findAll("button")).toHaveLength(0);
+  // O único controle é a ação do próprio Alert, que abre a solicitação.
+  expect(
+    w.findAll("button").map((button) => button.text()),
+  ).toEqual(["Abrir solicitação"]);
 });
 
 describe("iFood à frente do estado local", () => {

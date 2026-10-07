@@ -1536,8 +1536,7 @@ function printQueue() {
 
     <section
       ref="queueViewport"
-      class="flex min-h-0 flex-1 flex-col gap-4 p-4 sm:p-6"
-      :class="view === 'board' ? 'overflow-hidden' : 'overflow-auto'"
+      class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 sm:p-6"
       @scroll.passive="rememberPosition"
       @click.capture="rememberFocus"
     >
@@ -1642,7 +1641,7 @@ function printQueue() {
             id="orders-board-columns"
             :persistence-key="boardSplitterPersistenceKey"
             :items="boardSplitterItems"
-            class="min-h-0 flex-1"
+            class="min-h-128 flex-1"
             handle-label="Ajustar largura das colunas"
             data-board-columns
             @layout="boardLayout.applySizes"
@@ -1726,6 +1725,7 @@ function printQueue() {
              cabeçalho fixo e rolagem horizontal, sem wrapper visual paralelo. -->
         <NuxtTable
           v-else
+          class="min-h-128 flex-1"
           :data="tableRows"
           :columns="supervisionColumns"
           :get-row-id="(row) => row.card.ref"

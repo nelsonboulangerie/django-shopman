@@ -361,6 +361,7 @@ const NuxtAlert = defineComponent({
               "button",
               {
                 ...itemDataAttrs(action),
+                ...(action.to ? { to: String(action.to) } : {}),
                 type: "button",
                 disabled: Boolean(action.disabled),
                 onClick: (event: Event) => {

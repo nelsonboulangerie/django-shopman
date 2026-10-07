@@ -163,7 +163,7 @@ function switchHint(row: {
 
 <template>
   <div
-    class="grid min-h-0 gap-5 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_400px]"
+    class="grid shrink-0 gap-5 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_400px]"
     data-queue-view
   >
     <!-- a Fila: só o que pede um fato humano, por urgência -->
@@ -502,7 +502,7 @@ function switchHint(row: {
             <NuxtBadge
               color="neutral"
               variant="subtle"
-              :label="`${progressCount} pedidos`"
+              :label="`${progressCount} ${progressCount === 1 ? 'pedido' : 'pedidos'}`"
             />
           </div>
         </template>

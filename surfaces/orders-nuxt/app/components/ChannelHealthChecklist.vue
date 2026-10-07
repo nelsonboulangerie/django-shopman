@@ -204,6 +204,7 @@ function run(action: HealthAction) {
           :label="copied ? 'Endereço copiado' : 'Copiar endereço'"
           color="info"
           variant="outline"
+          size="xs"
           @click="copyAddress"
         />
       </template>

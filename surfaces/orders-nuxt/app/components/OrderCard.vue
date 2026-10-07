@@ -353,7 +353,8 @@ function nuxtIcon(icon: string): string {
             >
             <p class="op-title break-words" data-card-who>
               <span>{{ card.customer_name || "Sem cliente" }}</span>
-              <span class="font-normal whitespace-nowrap text-muted-foreground"
+              {{ " " }}<span
+                class="font-normal whitespace-nowrap text-muted-foreground"
                 >· {{ channelLabel(card.channel_ref) }}</span
               >
             </p>
@@ -425,6 +426,7 @@ function nuxtIcon(icon: string): string {
       <!-- Entregue, na janela do desfazer: o cartão fica no lugar, com o anel do tempo. -->
       <template v-if="handoff">
         <NuxtBadge
+          class="self-start"
           color="success"
           variant="subtle"
           icon="i-lucide-check"
@@ -606,21 +608,24 @@ function nuxtIcon(icon: string): string {
             :icon="chip.icon"
             :title="chip.station"
             :description="`${chip.detail}${chip.cancelledNote ? ` · ${chip.cancelledNote}` : ''}`"
+            :actions="
+              chip.canMarkReady
+                ? [
+                    {
+                      icon: 'i-lucide-check',
+                      label: `Pronto de ${chip.station}`,
+                      color: chip.tone === 'alert' ? 'error' : 'neutral',
+                      variant: 'outline',
+                      disabled: busy,
+                      'aria-label': `Pronto de ${chip.station} no pedido ${code.code}`,
+                      'data-kitchen-ready': '',
+                      onClick: () => emit('station-ready', chip.ref),
+                    },
+                  ]
+                : undefined
+            "
             data-kitchen-attention
-          >
-            <template v-if="chip.canMarkReady" #actions>
-              <NuxtButton
-                icon="i-lucide-check"
-                :label="`Pronto de ${chip.station}`"
-                :color="chip.tone === 'alert' ? 'error' : 'neutral'"
-                variant="outline"
-                :disabled="busy"
-                :aria-label="`Pronto de ${chip.station} no pedido ${code.code}`"
-                data-kitchen-ready
-                @click="emit('station-ready', chip.ref)"
-              />
-            </template>
-          </NuxtAlert>
+          />
         </div>
 
         <!-- o sistema fez: "Pronto · automático · desfazer" -->
@@ -655,80 +660,102 @@ function nuxtIcon(icon: string): string {
           >
         </div>
 
-        <div
-          v-if="danfe"
-          class="space-y-0.5 op-micro"
-          data-danfe
-          :data-danfe-attention="danfe.attention || undefined"
-        >
-          <div
-            class="flex items-center gap-1.5"
-            :class="
-              danfe.attention
-                ? 'font-medium text-warning'
-                : 'text-muted-foreground'
-            "
-          >
-            <Icon
-              :name="
-                danfe.attention
-                  ? 'lucide:triangle-alert'
-                  : card.danfe_printed
-                    ? 'lucide:receipt-text'
-                    : 'lucide:receipt'
-              "
-              class="size-3.5 shrink-0"
-            />
-            <span class="truncate" data-danfe-status>{{ danfe.status }}</span>
-            <NuxtButton
-              icon="i-lucide-printer"
-              :label="
-                danfePrinting || danfe.sending ? 'Imprimindo…' : danfe.action
-              "
-              color="neutral"
-              variant="outline"
-              :disabled="danfePrinting || danfe.sending"
-              data-danfe-print
-              @click="emit('print-danfe')"
-            />
-          </div>
-          <p v-if="danfe.problem" class="text-warning" data-danfe-problem>
-            {{ danfe.problem }}
-          </p>
-        </div>
-
-        <NuxtLink
-          v-if="!negotiationOnly && card.fiscal_status === 'failed'"
-          :to="`/${card.ref}`"
-          data-fiscal-failed
-        >
-          <NuxtAlert
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            title="NFC-e não autorizada"
-            description="Abrir e reprocessar"
-          />
-        </NuxtLink>
-      </template>
-
-      <NuxtLink
-        v-if="card.ifood_negotiations?.length"
-        :to="`/${card.ref}#ifood-negotiations`"
-        data-ifood-negotiation-link
-      >
+        <!-- DANFE que não saiu é aviso (Alert com a ação na cor dele); a que saiu ou
+             vai sair sozinha é fato, com a reimpressão compacta ao lado. -->
         <NuxtAlert
+          v-if="danfe && danfe.attention"
           color="warning"
           variant="subtle"
-          icon="i-lucide-message-square-warning"
-          title="Negociação iFood"
-          description="Abrir solicitação e conferir prazo"
+          icon="i-lucide-triangle-alert"
+          :actions="[
+            {
+              label: danfePrinting || danfe.sending ? 'Imprimindo…' : danfe.action,
+              icon: 'i-lucide-printer',
+              color: 'warning',
+              variant: 'outline',
+              disabled: danfePrinting || danfe.sending,
+              'data-danfe-print': '',
+              onClick: () => emit('print-danfe'),
+            },
+          ]"
+          data-danfe
+          data-danfe-attention
+        >
+          <template #title>
+            <span data-danfe-status>{{ danfe.status }}</span>
+          </template>
+          <template v-if="danfe.problem" #description>
+            <span data-danfe-problem>{{ danfe.problem }}</span>
+          </template>
+        </NuxtAlert>
+        <div
+          v-else-if="danfe"
+          class="flex items-center gap-1.5 op-micro text-muted-foreground"
+          data-danfe
+        >
+          <Icon
+            :name="card.danfe_printed ? 'lucide:receipt-text' : 'lucide:receipt'"
+            class="size-3.5 shrink-0"
+          />
+          <span class="min-w-0 flex-1 truncate" data-danfe-status>{{
+            danfe.status
+          }}</span>
+          <NuxtButton
+            icon="i-lucide-printer"
+            :label="danfePrinting || danfe.sending ? 'Imprimindo…' : danfe.action"
+            color="neutral"
+            variant="outline"
+            size="xs"
+            class="shrink-0"
+            :disabled="danfePrinting || danfe.sending"
+            data-danfe-print
+            @click="emit('print-danfe')"
+          />
+        </div>
+
+        <NuxtAlert
+          v-if="!negotiationOnly && card.fiscal_status === 'failed'"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-triangle-alert"
+          title="NFC-e não autorizada"
+          description="O pedido tem o Reprocessar NFC-e."
+          :actions="[
+            {
+              label: 'Abrir e reprocessar',
+              to: `/${card.ref}`,
+              color: 'warning',
+              variant: 'outline',
+              'data-fiscal-failed-open': '',
+            },
+          ]"
+          data-fiscal-failed
         />
-      </NuxtLink>
+      </template>
+
+      <NuxtAlert
+        v-if="card.ifood_negotiations?.length"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-message-square-warning"
+        title="Negociação iFood"
+        description="O iFood espera resposta dentro do prazo."
+        :actions="[
+          {
+            label: 'Abrir solicitação',
+            to: `/${card.ref}#ifood-negotiations`,
+            color: 'warning',
+            variant: 'outline',
+            'data-ifood-negotiation-link': '',
+          },
+        ]"
+        data-ifood-negotiation
+      />
       <NuxtAlert
         v-if="card.ifood_cancellation_notice"
         color="warning"
         variant="subtle"
+        icon="i-lucide-circle-x"
         :title="card.ifood_cancellation_notice"
         role="status"
         data-ifood-cancellation
@@ -737,6 +764,7 @@ function nuxtIcon(icon: string): string {
         v-if="card.ifood_remote_ahead_label"
         color="info"
         variant="subtle"
+        icon="i-lucide-info"
         :title="card.ifood_remote_ahead_label"
         role="status"
         data-ifood-remote-ahead
@@ -846,7 +874,7 @@ function nuxtIcon(icon: string): string {
     <!-- O próximo gesto ocupa o footer oficial do Card, como na receita do
          Kitchen Sink. A divisão e o padding passam a pertencer ao NuxtCard. -->
     <template v-if="!negotiationOnly" #footer>
-      <div class="flex items-stretch gap-2">
+      <div class="flex items-center gap-2">
         <NuxtButton
           v-if="handoff && handoff.canUndo"
           block
@@ -922,7 +950,7 @@ function nuxtIcon(icon: string): string {
         <div v-else class="flex-1" />
 
         <!-- ⋯ do cartão: atender, seleção em lote, voltar à estação, abrir. -->
-        <div class="relative shrink-0">
+        <div class="shrink-0">
           <NuxtPopover
             v-model:open="menuOpen"
             :content="{ side: 'top', align: 'end', sideOffset: 4 }"

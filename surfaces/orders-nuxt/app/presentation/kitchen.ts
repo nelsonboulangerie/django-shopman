@@ -81,15 +81,6 @@ export function kitchenChipView(
   };
 }
 
-/** Classes do chip por tom: verde só no pronto, vermelho só no papel perdido. */
-export function kitchenChipTone(tone: KitchenChipTone): string {
-  if (tone === "done") return "border-success/40 bg-success/10 text-success";
-  if (tone === "alert") return "border-error/40 bg-error/10 text-error";
-  if (tone === "working")
-    return "border-foreground/20 bg-foreground/5 text-foreground";
-  return "border-border bg-card text-muted-foreground";
-}
-
 /** Os chips que o cartão mostra. Pedido pronto (todas as estações prontas) não
  *  repete "pronto" em cada uma: a coluna já diz, e o gesto que sobra (voltar à
  *  cozinha) mora no menu do pedido. */
