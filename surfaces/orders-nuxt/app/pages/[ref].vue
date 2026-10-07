@@ -746,7 +746,7 @@ const outside = useOutsideStore(
     </NuxtDrawer>
 
     <div
-      class="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-auto p-4 sm:p-6"
+      class="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-auto p-4 *:shrink-0 sm:p-6"
     >
       <!-- fora da loja: o detalhe mostra só o que pede decisão (G18) -->
       <NuxtAlert
@@ -847,7 +847,7 @@ const outside = useOutsideStore(
         <template #actions>
           <section
             v-if="
-              (isPhone && order.status_label) ||
+              (isPhone && order.payment_method_label) ||
               deadlineText ||
               undo ||
               (advanceAction &&
@@ -858,19 +858,15 @@ const outside = useOutsideStore(
             data-detail-state
           >
             <div
-              v-if="isPhone"
+              v-if="isPhone && order.payment_method_label"
               class="flex flex-wrap items-center gap-2"
               data-detail-pills
             >
-              <NuxtBadge
-                :color="statusColor(order.status)"
-                variant="subtle"
-                :label="order.status_label"
-              />
+              <!-- o estado já está no cabeçalho, em toda largura; aqui só o fato -->
               <NuxtBadge
                 v-if="order.payment_method_label"
                 color="neutral"
-                variant="subtle"
+                variant="soft"
                 :label="
                   order.payment_status_label
                     ? `${order.payment_method_label} · ${order.payment_status_label}`

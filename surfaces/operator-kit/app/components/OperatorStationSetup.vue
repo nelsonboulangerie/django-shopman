@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 // VINCULAR ESTE DISPOSITIVO A UM POSTO DE TRABALHO: uma vez por máquina, em qualquer app.
 //
 // Aparece para quem gere operadores, logado, num dispositivo que ainda não é posto.
@@ -70,6 +71,9 @@ async function confirmar() {
   if (await provision(escolhido.value, { confirm: pedeConfirmacao.value }))
     emit("done");
 }
+// No celular as ações vão para baixo do texto (orientação oficial do Alert); ao lado,
+// elas espremiam a frase numa coluna estreita.
+const phone = useMediaQuery("(max-width: 767.98px)");
 </script>
 
 <template>
@@ -77,7 +81,7 @@ async function confirmar() {
     <NuxtAlert
       color="neutral"
       variant="soft"
-      orientation="horizontal"
+      :orientation="phone ? 'vertical' : 'horizontal'"
       icon="i-lucide-map-pin"
       :title="copy.setup_title"
       class="shrink-0"
@@ -89,7 +93,7 @@ async function confirmar() {
       <template #actions>
         <NuxtButton
           v-if="options.length"
-          size="sm"
+          size="xs"
           color="neutral"
           variant="outline"
           :label="copy.setup_confirm"
@@ -98,7 +102,7 @@ async function confirmar() {
         />
         <NuxtButton
           v-else-if="emptyTo"
-          size="sm"
+          size="xs"
           color="neutral"
           variant="outline"
           icon="i-lucide-map-pin-plus"
@@ -107,7 +111,7 @@ async function confirmar() {
           data-station-setup-empty-link
         />
         <NuxtButton
-          size="sm"
+          size="xs"
           color="neutral"
           variant="outline"
           label="Agora não"

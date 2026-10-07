@@ -47,8 +47,12 @@ const emit = defineEmits<{
 </script>
 
 <template>
+  <!-- No Splitter a coluna ocupa o painel (h-full, min-h-0); solta no contêiner que
+       rola (abas do celular e do tablet), ela tem a altura da área visível, senão
+       encolhe a zero ao lado da negociação e dos agendados. -->
   <section
-    class="flex h-full min-h-0 min-w-0 flex-col gap-3"
+    class="flex min-w-0 flex-col gap-3"
+    :class="phone ? 'min-h-full flex-1' : 'h-full min-h-0'"
     :data-zone="zone.key"
   >
     <NuxtDashboardToolbar v-if="!phone && heading" as="header">

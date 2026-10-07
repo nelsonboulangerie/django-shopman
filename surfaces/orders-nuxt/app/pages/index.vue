@@ -385,6 +385,11 @@ function menuDo(fn: () => void, close = true) {
 }
 // Celular (abaixo de md): as colunas viram abas.
 const isPhone = useMediaQuery("(max-width: 767.98px)");
+// Tablet em pé: três colunas de ~240 px cortavam selo e prazo do cartão. Abaixo do
+// lg, com mais de uma coluna aberta, o quadro usa as abas do celular.
+const isNarrowTablet = useMediaQuery(
+  "(min-width: 768px) and (max-width: 1023.98px)",
+);
 // Celular (prévia v3 `orders-phone3.html`): Entrada, Preparo e Saída viram abas, uma
 // coluna por vez, com a contagem na aba. Abre na que tem pedido novo; sem pedido novo,
 // na primeira que tem pedido. O toque do operador manda dali em diante.
@@ -418,7 +423,10 @@ const phoneTabs = computed(() => {
         { key: "expedition", title: "Prontos para sair" },
         { key: "prep", title: "Em preparo" },
       ]
-    : zones.value.map((zone) => ({ key: zone.key, title: zone.title }));
+    : (isPhone.value ? zones.value : desktopZones.value).map((zone) => ({
+        key: zone.key,
+        title: zone.title,
+      }));
   return tabs.flatMap((tab) => {
     const zone = byKey.get(tab.key as ZoneView["key"]);
     return zone ? [{ ...tab, zone, late: lateCount(zone) }] : [];
@@ -487,6 +495,10 @@ const hasChannelQueueSignal = computed(() =>
 );
 const desktopZones = computed(() =>
   zones.value.filter((zone) => boardLayout.isOpen(zone.key)),
+);
+const boardAsTabs = computed(
+  () =>
+    isPhone.value || (isNarrowTablet.value && desktopZones.value.length > 1),
 );
 const phoneZones = computed(() =>
   zones.value.filter((zone) => zone.key === phoneZone.value),
@@ -1460,7 +1472,7 @@ function printQueue() {
 
     <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. -->
     <NuxtDashboardToolbar
-      v-if="isPhone && view === 'board' && zones.length"
+      v-if="boardAsTabs && view === 'board' && zones.length"
       class="py-2"
     >
       <NuxtTabs
@@ -1538,7 +1550,7 @@ function printQueue() {
 
     <section
       ref="queueViewport"
-      class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 sm:p-6"
+      class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 *:shrink-0 sm:p-6"
       @scroll.passive="rememberPosition"
       @click.capture="rememberFocus"
     >
@@ -1639,7 +1651,7 @@ function printQueue() {
              mantêm uma coluna por vez: nenhuma alça ou faixa paralela ao Nuxt UI. -->
         <template v-else-if="view === 'board'">
           <OperatorSplitter
-            v-if="!isPhone"
+            v-if="!boardAsTabs"
             id="orders-board-columns"
             :persistence-key="boardSplitterPersistenceKey"
             :items="boardSplitterItems"

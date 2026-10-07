@@ -803,6 +803,7 @@ function nuxtIcon(icon: string): string {
       </p>
       <NuxtBadge
         v-if="card.ifood_pickup_code"
+        class="self-start"
         color="neutral"
         variant="subtle"
         icon="i-lucide-key-round"
