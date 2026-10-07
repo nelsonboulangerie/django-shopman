@@ -119,6 +119,25 @@ export default defineAppConfig({
       },
       defaultVariants: { variant: "outline" },
     },
+    // Tabela mora dentro do card branco (dono, 07/10/2026). O cabeçalho fixo e a
+    // coluna fixada do Nuxt UI pintam `bg-default/75`, que aqui é o bege da página
+    // a 75%: a tabela ficava creme por cima do card, e o que rola por baixo da coluna
+    // fixada vazava por ela. Mesmo fundo do card, opaco; o resto é o oficial.
+    table: {
+      variants: {
+        pinned: {
+          true: { th: "sticky bg-card z-1", td: "sticky bg-card z-1" },
+        },
+        sticky: {
+          true: {
+            thead: "sticky top-0 inset-x-0 bg-card z-1",
+            tfoot: "sticky bottom-0 inset-x-0 bg-card z-1",
+          },
+          header: { thead: "sticky top-0 inset-x-0 bg-card z-1" },
+          footer: { tfoot: "sticky bottom-0 inset-x-0 bg-card z-1" },
+        },
+      },
+    },
     // PageCard fica reservado a cartões navegáveis ou destaques semânticos. Sua
     // densidade acompanha UCard para não criar uma segunda escala de padding.
     pageCard: {

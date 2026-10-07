@@ -147,7 +147,7 @@ const catalogColumns = computed(() => [
     id: "product",
     header: "Produto",
     meta: {
-      class: { th: "min-w-[260px]", td: "min-w-[260px]" },
+      class: { th: "min-w-[260px]", td: "min-w-[260px] py-2" },
     },
   },
   ...visibleSurfaces.value.map((surface: SurfaceProjection) => ({
@@ -157,22 +157,25 @@ const catalogColumns = computed(() => [
     meta: {
       class: {
         th: [
-          "min-w-[114px] align-top",
-          firstFeedRef.value === surface.ref
-            ? "border-l-2 border-l-primary/40"
-            : "border-l border-l-border",
+          "align-top",
+          firstFeedRef.value === surface.ref ? "border-s border-s-default" : "",
         ].join(" "),
         td: [
-          "min-w-[114px]",
-          firstFeedRef.value === surface.ref
-            ? "border-l-2 border-l-primary/40"
-            : "border-l border-l-border",
+          "py-2",
+          firstFeedRef.value === surface.ref ? "border-s border-s-default" : "",
         ].join(" "),
       },
     },
   })),
+  // O ⋯ da linha mora na última coluna, fixada à direita: perto do nome ele
+  // ficava a meia tela do texto, e a coluna do produto esticava para guardá-lo.
+  {
+    id: "actions",
+    header: "",
+    meta: { class: { th: "w-px", td: "w-px py-2" } },
+  },
 ]);
-const catalogColumnPinning = ref({ left: ["product"] });
+const catalogColumnPinning = ref({ left: ["product"], right: ["actions"] });
 const catalogTableMeta = {
   class: {
     tr: (row: { original: CatalogRowProjection }) =>
@@ -1315,7 +1318,7 @@ useHead({ title: "Catálogo" });
            para a tabela continuar rolando por dentro. -->
       <NuxtCard
         v-if="loading || rows.length"
-        class="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)]"
+        class="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]"
       >
         <NuxtTable
           v-model:column-pinning="catalogColumnPinning"
@@ -1459,7 +1462,7 @@ useHead({ title: "Catálogo" });
                     <NuxtAvatar
                       :src="row.image_url"
                       :alt="row.name"
-                      size="lg"
+                      size="md"
                       :class="
                         rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''
                       "
@@ -1469,14 +1472,14 @@ useHead({ title: "Catálogo" });
                   <!-- Sem foto (ou foto quebrada), o fallback continua sendo UAvatar. -->
                   <span
                     v-else
-                    class="inline-flex size-12 shrink-0 items-center justify-center"
+                    class="inline-flex shrink-0 p-1.5"
                     aria-hidden="true"
                     data-letter-tile
                   >
                     <NuxtAvatar
                       :text="letterTile(row.name).letter"
                       color="primary"
-                      size="lg"
+                      size="md"
                       :class="
                         rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''
                       "
@@ -1491,15 +1494,7 @@ useHead({ title: "Catálogo" });
                           : 'text-foreground'
                       "
                     >
-                      <span
-                        class="truncate"
-                        :class="
-                          rowStatuses[row.sku]?.off
-                            ? 'line-through decoration-1'
-                            : ''
-                        "
-                        >{{ row.name }}</span
-                      >
+                      <span class="truncate">{{ row.name }}</span>
                       <NuxtBadge
                         v-if="rowStatuses[row.sku]?.label"
                         :color="
@@ -1562,21 +1557,24 @@ useHead({ title: "Catálogo" });
                     </span>
                   </div>
                 </div>
-                <!-- menu ⋯ da linha: casa das ações menos corriqueiras (editar, pausar tudo, publicar) -->
-                <NuxtDropdownMenu
-                  :items="rowMenuItems(row)"
-                  :content="{ align: 'end' }"
-                >
-                  <NuxtButton
-                    icon="i-lucide-ellipsis-vertical"
-                    color="neutral"
-                    variant="ghost"
-                    square
-                    :aria-label="`Ações de ${row.name}`"
-                  />
-                </NuxtDropdownMenu>
               </div>
             </template>
+          </template>
+
+          <!-- ⋯ da linha: as ações menos corriqueiras (editar, pausar tudo, publicar) -->
+          <template #actions-cell="{ row: tableRow }">
+            <NuxtDropdownMenu
+              :items="rowMenuItems(tableRow.original)"
+              :content="{ align: 'end' }"
+            >
+              <NuxtButton
+                icon="i-lucide-ellipsis-vertical"
+                color="neutral"
+                variant="ghost"
+                square
+                :aria-label="`Ações de ${tableRow.original.name}`"
+              />
+            </NuxtDropdownMenu>
           </template>
 
           <template
@@ -1595,12 +1593,14 @@ useHead({ title: "Catálogo" });
                 <div
                   v-if="cell.in_listing"
                   class="flex items-center justify-center gap-1"
+                  :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
                 >
-                  <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off) OU
-                     linha "fora" (esgotado/etc.: mantém a POSIÇÃO ligada, mas dessatura p/ cinza).
+                  <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off).
+                     Linha "fora" (esgotado/oculto) mantém a POSIÇÃO e esmaece a célula, como a
+                     foto da linha: o `neutral` do Switch pinta escuro e gritava mais que o verde.
                      Vale para canal (vende) E feed (só exibe) — a mesma pausa por item. -->
                   <NuxtSwitch
-                    :color="rowStatuses[row.sku]?.off ? 'neutral' : 'success'"
+                    color="success"
                     :model-value="cell.is_sellable"
                     :disabled="
                       isBusy(cellKey(row.sku, cell.surface_ref)) ||

@@ -790,4 +790,35 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(board).toContain(`:title="exitPostView ? 'Saída' : 'Pedidos'"`);
     expect(board).not.toContain("viewLabel");
   });
+
+  it("tabela no card é branca de ponta a ponta, e a do Catálogo cabe no card", () => {
+    const appConfig = readFileSync(
+      new URL("../../operator-kit/app/app.config.ts", import.meta.url),
+      "utf8",
+    ).replaceAll(/\s+/g, " ");
+    // O oficial pinta cabeçalho fixo e coluna fixada com `bg-default/75` (o bege da
+    // página): a tabela ficava creme dentro do card branco (dono, 07/10/2026).
+    expect(appConfig).toContain(
+      'pinned: { true: { th: "sticky bg-card z-1", td: "sticky bg-card z-1" }',
+    );
+    expect(appConfig).toContain(
+      'header: { thead: "sticky top-0 inset-x-0 bg-card z-1" }',
+    );
+    const catalog = readFileSync(
+      new URL("../app/pages/catalog.vue", import.meta.url),
+      "utf8",
+    );
+    // Grade sem coluna declarada deixa a tabela crescer até o conteúdo e o card
+    // corta a ponta direita, onde mora o ⋯ fixado.
+    expect(catalog).toContain(
+      "grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
+    );
+    expect(catalog).toContain('right: ["actions"]');
+    expect(catalog).toContain("#actions-cell");
+    // Sem grade de planilha: só a divisa entre canais e feeds.
+    expect(catalog).not.toContain("border-l border-l-border");
+    // O selo "Oculto" já diz; riscar o nome repetia, e o Switch neutral pintava escuro.
+    expect(catalog).not.toContain("line-through decoration-1");
+    expect(catalog).not.toContain("rowStatuses[row.sku]?.off ? 'neutral' : 'success'");
+  });
 });
