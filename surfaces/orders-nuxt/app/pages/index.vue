@@ -14,7 +14,6 @@ import {
   bulkableRefs,
   cardAffordances,
   changeBackSuggestionQ,
-  channelLabel,
   channelOptions,
   elapsedLabel,
   flattenZones,
@@ -265,18 +264,33 @@ const tableRows = computed(() =>
 );
 // A Lista (dono, 07/10/2026): linhas integradas num card branco; a linha principal tem
 // só o gesto do momento e o ⋯; o resto (detalhes e todas as ações) abre na própria
-// linha. A coluna de seleção só existe no modo de seleção em lote.
+// linha. A coluna de seleção fica sempre: marcar uma linha liga a barra de lote.
 const supervisionColumns = computed(() => [
   { id: "expand", header: "" },
-  ...(selecting.value ? [{ id: "select", header: "" }] : []),
-  { id: "code", header: "Pedido" },
+  { id: "select", header: "" },
+  { id: "order", header: "Pedido" },
   { id: "stage", header: "Etapa" },
-  { id: "customer", header: "Cliente" },
   { id: "items", header: "Itens" },
   { id: "total", header: "Total" },
   { id: "elapsed", header: "Tempo" },
   { id: "actions", header: "Próximo passo" },
 ]);
+// Paginação só quando passa de uma página (dono, 07/10/2026).
+const SUPERVISION_PAGE_SIZE = 25;
+const supervisionPage = ref(1);
+const supervisionRows = computed(() =>
+  tableRows.value.slice(
+    (supervisionPage.value - 1) * SUPERVISION_PAGE_SIZE,
+    supervisionPage.value * SUPERVISION_PAGE_SIZE,
+  ),
+);
+watch(
+  () => tableRows.value.length,
+  (total) => {
+    const last = Math.max(1, Math.ceil(total / SUPERVISION_PAGE_SIZE));
+    if (supervisionPage.value > last) supervisionPage.value = last;
+  },
+);
 const supervisionExpanded = ref<Record<string, boolean>>({});
 /** O gesto do momento numa linha da Lista: o primário (ou o travado, com o cadeado). */
 function rowPrimary(card: OrderCardProjection) {
@@ -1714,7 +1728,7 @@ function printQueue() {
         <NuxtCard v-else class="min-w-0" data-supervision-card>
           <NuxtTable
             v-model:expanded="supervisionExpanded"
-            :data="tableRows"
+            :data="supervisionRows"
             :columns="supervisionColumns"
             :get-row-id="(row) => row.card.ref"
             :row-selection="supervisionRowSelection"
@@ -1738,53 +1752,49 @@ function printQueue() {
               />
             </template>
             <template #select-header>
-              <NuxtButton
-                :icon="
+              <NuxtCheckbox
+                :model-value="
                   allVisibleSelected
-                    ? 'i-lucide-check-square-2'
-                    : 'i-lucide-square'
+                    ? true
+                    : selected.size
+                      ? 'indeterminate'
+                      : false
                 "
-                color="neutral"
-                variant="ghost"
-                square
-                :aria-label="
-                  allVisibleSelected ? 'Desmarcar todos' : 'Selecionar todos'
-                "
-                :aria-pressed="allVisibleSelected"
-                @click="toggleSelectAll"
+                aria-label="Selecionar todos os pedidos da lista"
+                @update:model-value="toggleSelectAll"
               />
             </template>
             <template #select-cell="{ row }">
-              <NuxtButton
-                :icon="
-                  isSelected(row.original.card.ref)
-                    ? 'i-lucide-check-square-2'
-                    : 'i-lucide-square'
-                "
-                color="neutral"
-                variant="ghost"
-                square
-                :aria-label="
-                  isSelected(row.original.card.ref)
-                    ? 'Desmarcar pedido'
-                    : 'Selecionar pedido'
-                "
-                :aria-pressed="isSelected(row.original.card.ref)"
-                @click="toggleSelect(row.original.card.ref)"
+              <NuxtCheckbox
+                :model-value="isSelected(row.original.card.ref)"
+                :aria-label="`Selecionar o pedido ${row.original.card.ref}`"
+                @update:model-value="toggleSelect(row.original.card.ref)"
               />
             </template>
-            <template #code-cell="{ row }">
-              <NuxtButton
-                v-if="canManageOrders"
-                :to="`/${row.original.card.ref}`"
-                :label="splitRef(row.original.card.ref).code"
-                color="neutral"
-                variant="link"
-                :aria-label="`Abrir pedido ${row.original.card.ref}`"
-              />
-              <span v-else class="font-semibold tabular-nums">{{
-                splitRef(row.original.card.ref).code
-              }}</span>
+            <template #order-cell="{ row }">
+              <div class="flex min-w-0 flex-col">
+                <NuxtLink
+                  v-if="canManageOrders"
+                  :to="`/${row.original.card.ref}`"
+                  class="font-semibold tabular-nums hover:underline"
+                  :aria-label="`Abrir pedido ${row.original.card.ref}`"
+                  >{{ splitRef(row.original.card.ref).code }}</NuxtLink
+                >
+                <span v-else class="font-semibold tabular-nums">{{
+                  splitRef(row.original.card.ref).code
+                }}</span>
+                <span
+                  class="inline-flex max-w-48 items-center gap-1 text-xs text-muted-foreground"
+                >
+                  <Icon
+                    :name="`lucide:${lucideIcon(row.original.card.channel_icon)}`"
+                    class="size-3.5 shrink-0"
+                  />
+                  <span class="truncate">{{
+                    row.original.card.customer_name || "Sem cliente"
+                  }}</span>
+                </span>
+              </div>
             </template>
             <template #stage-cell="{ row }">
               <NuxtBadge
@@ -1801,23 +1811,9 @@ function printQueue() {
                 :label="row.original.card.status_label"
               />
             </template>
-            <template #customer-cell="{ row }">
-              <span class="block max-w-44 truncate">{{
-                row.original.card.customer_name || "Sem cliente"
-              }}</span>
-              <span
-                class="inline-flex items-center gap-1 text-xs text-muted-foreground"
-              >
-                <Icon
-                  :name="`lucide:${lucideIcon(row.original.card.channel_icon)}`"
-                  class="size-3.5"
-                />
-                {{ channelLabel(row.original.card.channel_ref) }}
-              </span>
-            </template>
             <template #items-cell="{ row }">
               <span
-                class="block max-w-56 truncate text-muted-foreground"
+                class="block max-w-40 truncate text-muted-foreground xl:max-w-64"
                 :title="row.original.card.items_summary"
                 >{{ row.original.card.items_summary }}</span
               >
@@ -1976,6 +1972,18 @@ function printQueue() {
               </div>
             </template>
           </NuxtTable>
+          <template v-if="tableRows.length > SUPERVISION_PAGE_SIZE" #footer>
+            <div class="flex items-center justify-between gap-3">
+              <span class="op-micro text-muted-foreground tnum"
+                >{{ tableRows.length }} pedidos</span
+              >
+              <NuxtPagination
+                v-model:page="supervisionPage"
+                :total="tableRows.length"
+                :items-per-page="SUPERVISION_PAGE_SIZE"
+              />
+            </div>
+          </template>
         </NuxtCard>
 
         <!-- Agendados: pedidos confirmados para datas futuras, fora das colunas

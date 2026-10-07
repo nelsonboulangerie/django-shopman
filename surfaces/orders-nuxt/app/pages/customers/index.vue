@@ -162,81 +162,88 @@ const customerColumns = [
         />
       </div>
 
-      <NuxtTable
-        v-else-if="items.length"
-        :data="items"
-        :columns="customerColumns"
-        :get-row-id="(row) => row.ref"
-        :on-select="
-          (_event, row) =>
-            router.push(`/customers/${encodeURIComponent(row.original.ref)}`)
-        "
-        caption="Clientes encontrados"
-        data-customer-list
-      >
-        <template #customer-cell="{ row }">
-          <div class="min-w-52" :data-customer-row="row.original.ref">
-            <span class="flex flex-wrap items-center gap-2">
-              <NuxtLink
-                :to="`/customers/${encodeURIComponent(row.original.ref)}`"
-                class="font-medium hover:underline"
-                >{{ row.original.name }}</NuxtLink
+      <!-- Tabela integrada a um card branco, sem padding (o tema tira o padding do
+           corpo quando a tabela é o conteúdo inteiro), como a Lista do Gestor. -->
+      <NuxtCard v-else-if="items.length" class="min-w-0">
+        <NuxtTable
+          :data="items"
+          :columns="customerColumns"
+          :get-row-id="(row) => row.ref"
+          :on-select="
+            (_event, row) =>
+              router.push(`/customers/${encodeURIComponent(row.original.ref)}`)
+          "
+          caption="Clientes encontrados"
+          data-customer-list
+        >
+          <template #customer-cell="{ row }">
+            <div class="min-w-52" :data-customer-row="row.original.ref">
+              <span class="flex flex-wrap items-center gap-2">
+                <NuxtLink
+                  :to="`/customers/${encodeURIComponent(row.original.ref)}`"
+                  class="font-medium hover:underline"
+                  >{{ row.original.name }}</NuxtLink
+                >
+                <NuxtBadge
+                  v-if="row.original.source_label"
+                  color="neutral"
+                  variant="subtle"
+                  :label="row.original.source_label"
+                />
+                <NuxtBadge
+                  v-if="row.original.duplicate_hint"
+                  color="warning"
+                  variant="subtle"
+                  :label="row.original.duplicate_hint"
+                />
+              </span>
+              <span class="block font-mono text-xs text-muted-foreground">{{
+                row.original.ref
+              }}</span>
+            </div>
+          </template>
+          <template #contact-cell="{ row }">
+            <span
+              :class="row.original.phone_display ? '' : 'text-muted-foreground'"
+              >{{ row.original.phone_display || "Sem telefone" }}</span
+            >
+            <span
+              v-if="row.original.document_display"
+              class="block text-xs text-muted-foreground"
+              >CPF {{ row.original.document_display }}</span
+            >
+          </template>
+          <template #orders-cell="{ row }">
+            <span class="text-muted-foreground">
+              {{ row.original.orders_label
+              }}<template v-if="row.original.last_order_display">
+                · último {{ row.original.last_order_display }}</template
               >
-              <NuxtBadge
-                v-if="row.original.source_label"
-                color="neutral"
-                variant="subtle"
-                :label="row.original.source_label"
-              />
-              <NuxtBadge
-                v-if="row.original.duplicate_hint"
-                color="warning"
-                variant="subtle"
-                :label="row.original.duplicate_hint"
-              />
             </span>
-            <span class="block font-mono text-xs text-muted-foreground">{{
-              row.original.ref
+          </template>
+        </NuxtTable>
+        <template v-if="list && (list.page > 1 || list.has_next)" #footer>
+          <div class="flex items-center justify-between gap-3">
+            <span class="op-micro text-muted-foreground tnum">{{
+              list.total_label
             }}</span>
+            <NuxtPagination
+              :page="list.page"
+              :total="list.total"
+              :items-per-page="list.page_size"
+              :disabled="pending"
+              aria-label="Páginas"
+              @update:page="goToPage"
+            />
           </div>
         </template>
-        <template #contact-cell="{ row }">
-          <span
-            :class="row.original.phone_display ? '' : 'text-muted-foreground'"
-            >{{ row.original.phone_display || "Sem telefone" }}</span
-          >
-          <span
-            v-if="row.original.document_display"
-            class="block text-xs text-muted-foreground"
-            >CPF {{ row.original.document_display }}</span
-          >
-        </template>
-        <template #orders-cell="{ row }">
-          <span class="text-muted-foreground">
-            {{ row.original.orders_label
-            }}<template v-if="row.original.last_order_display">
-              · último {{ row.original.last_order_display }}</template
-            >
-          </span>
-        </template>
-      </NuxtTable>
+      </NuxtCard>
 
       <NuxtEmpty
         v-else-if="list"
         icon="i-lucide-users"
         title="Nenhum cliente neste recorte"
         :description="`${list.total_label}.`"
-      />
-
-      <NuxtPagination
-        v-if="list && (list.page > 1 || list.has_next)"
-        class="mt-3 justify-center"
-        :page="list.page"
-        :total="list.total"
-        :items-per-page="list.page_size"
-        :disabled="pending"
-        aria-label="Páginas"
-        @update:page="goToPage"
       />
     </section>
   </main>

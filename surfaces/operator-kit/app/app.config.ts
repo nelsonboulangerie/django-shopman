@@ -103,9 +103,12 @@ export default defineAppConfig({
       // `sm`; no Gestor isso desperdiça uma linha útil em cada unidade da fila.
       // Conservamos anatomia, variantes e divisores do Nuxt UI, mas fixamos os
       // três slots em 16 px — exatamente o contrato documentado no Kitchen Sink.
+      // Tabela que é o conteúdo inteiro do card fica integrada a ele, sem padding
+      // (dono, 07/10/2026): a borda e o fundo branco são do card, as linhas vão de
+      // ponta a ponta. Com mais coisas no corpo (o resumo do pedido), o padding fica.
       slots: {
         header: "p-4 sm:p-4",
-        body: "p-4 sm:p-4",
+        body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0",
         footer: "p-4 sm:p-4",
       },
       variants: {
@@ -121,6 +124,13 @@ export default defineAppConfig({
     pageCard: {
       slots: {
         container: "p-4 sm:p-4",
+      },
+      // Mesmo fundo do UCard outline: cartão é branco, também o horizontal da Grade
+      // (dono, 07/10/2026). O bege fica só para a página.
+      variants: {
+        variant: {
+          outline: { root: "bg-card" },
+        },
       },
     },
     // Altura de controle: padrões compactos oficiais do Nuxt UI. Fluxos que

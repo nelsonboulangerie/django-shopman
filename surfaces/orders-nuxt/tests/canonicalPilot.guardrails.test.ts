@@ -684,7 +684,7 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(appConfig).toMatch(
-      /card:\s*\{[\s\S]*?header:\s*["']p-4 sm:p-4["'][\s\S]*?body:\s*["']p-4 sm:p-4["'][\s\S]*?footer:\s*["']p-4 sm:p-4["']/,
+      /card:\s*\{[\s\S]*?header:\s*["']p-4 sm:p-4["'][\s\S]*?body:\s*["']p-4 sm:p-4 has-\[>\[data-slot=root\]:only-child>table\]:p-0["'][\s\S]*?footer:\s*["']p-4 sm:p-4["']/,
     );
     expect(appConfig).toMatch(
       /pageCard:\s*\{[\s\S]*?container:\s*["']p-4 sm:p-4["']/,
