@@ -106,9 +106,11 @@ export default defineAppConfig({
       // Tabela que é o conteúdo inteiro do card fica integrada a ele, sem padding
       // (dono, 07/10/2026): a borda e o fundo branco são do card, as linhas vão de
       // ponta a ponta. Com mais coisas no corpo (o resumo do pedido), o padding fica.
+      // Accordion como conteúdo inteiro é uma lista emoldurada: sem padding vertical,
+      // o gatilho de cada item já dá o respiro (Em andamento, dono, 07/10/2026).
       slots: {
         header: "p-4 sm:p-4",
-        body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0",
+        body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0 has-[>[data-slot=root]:only-child>[data-slot=item]]:py-0",
         footer: "p-4 sm:p-4",
       },
       variants: {

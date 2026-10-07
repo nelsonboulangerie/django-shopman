@@ -630,73 +630,82 @@ function switchHint(row: {
             >
               {{ group.detail }}
             </p>
-            <NuxtAccordion
+            <!-- Lista emoldurada (dono, 07/10/2026): um card sem cabeçalho nem rodapé
+                 por grupo, uma coluna só, como uma tabela sem cabeçalho. O kit tira o
+                 padding vertical do corpo quando o Accordion é o conteúdo inteiro. -->
+            <NuxtCard
               v-if="group.orders.length"
-              type="multiple"
-              :items="group.items"
-              trailing-icon="i-lucide-chevron-down"
+              :data-queue-working-list="group.key"
             >
-              <template #default="{ item }">
-                <span class="flex min-w-0 flex-1 items-baseline gap-2">
-                  <span class="font-semibold tnum">{{ item.code }}</span>
-                  <span class="min-w-0 break-words text-muted-foreground">{{
-                    item.who
-                  }}</span>
-                </span>
-              </template>
-              <template #trailing="{ item }">
-                <span class="flex shrink-0 items-center gap-2">
-                  <span class="op-micro text-muted-foreground">{{
-                    item.summary
-                  }}</span>
-                  <NuxtBadge
-                    color="neutral"
-                    variant="subtle"
-                    :label="item.age"
-                  />
-                </span>
-              </template>
-              <template #body="{ item }">
-                <div class="flex flex-col gap-2" data-queue-working-detail>
-                  <div
-                    v-for="station in item.stations"
-                    :key="station.ref"
-                    class="flex flex-col gap-1"
-                  >
-                    <p class="flex items-center gap-2 op-label">
-                      <span class="flex-1 font-medium">{{ station.name }}</span>
-                      <NuxtBadge
-                        :color="station.tone"
-                        variant="subtle"
-                        :label="station.label"
-                      />
-                    </p>
+              <NuxtAccordion type="multiple" :items="group.items">
+                <template #default="{ item }">
+                  <span class="flex min-w-0 flex-1 items-baseline gap-2">
+                    <span class="font-semibold tnum">{{ item.code }}</span>
+                    <span class="min-w-0 break-words text-muted-foreground">{{
+                      item.who
+                    }}</span>
+                  </span>
+                </template>
+                <template #trailing="{ item }">
+                  <span class="flex shrink-0 items-center gap-2">
+                    <span class="op-micro text-muted-foreground">{{
+                      item.summary
+                    }}</span>
+                    <NuxtBadge
+                      color="neutral"
+                      variant="subtle"
+                      :label="item.age"
+                    />
+                    <Icon
+                      name="lucide:chevron-down"
+                      class="size-4 text-dimmed transition-transform group-data-[state=open]:rotate-180"
+                    />
+                  </span>
+                </template>
+                <template #body="{ item }">
+                  <div class="flex flex-col gap-2" data-queue-working-detail>
+                    <div
+                      v-for="station in item.stations"
+                      :key="station.ref"
+                      class="flex flex-col gap-1"
+                    >
+                      <p class="flex items-center gap-2 op-label">
+                        <span class="flex-1 font-medium">{{
+                          station.name
+                        }}</span>
+                        <NuxtBadge
+                          :color="station.tone"
+                          variant="subtle"
+                          :label="station.label"
+                        />
+                      </p>
+                      <p
+                        v-if="station.items.length"
+                        class="op-micro text-muted-foreground"
+                      >
+                        {{ station.items.join(" · ") }}
+                      </p>
+                    </div>
                     <p
-                      v-if="station.items.length"
+                      v-if="!item.stations.length"
                       class="op-micro text-muted-foreground"
                     >
-                      {{ station.items.join(" · ") }}
+                      {{ item.items }}
                     </p>
+                    <NuxtButton
+                      v-if="canOpen"
+                      :to="`/${item.value}`"
+                      class="self-start"
+                      label="Abrir o pedido"
+                      icon="i-lucide-file-text"
+                      color="neutral"
+                      variant="link"
+                      size="xs"
+                    />
                   </div>
-                  <p
-                    v-if="!item.stations.length"
-                    class="op-micro text-muted-foreground"
-                  >
-                    {{ item.items }}
-                  </p>
-                  <NuxtButton
-                    v-if="canOpen"
-                    :to="`/${item.value}`"
-                    class="self-start"
-                    label="Abrir o pedido"
-                    icon="i-lucide-file-text"
-                    color="neutral"
-                    variant="link"
-                    size="xs"
-                  />
-                </div>
-              </template>
-            </NuxtAccordion>
+                </template>
+              </NuxtAccordion>
+            </NuxtCard>
             <p v-else class="op-micro text-muted-foreground">
               {{ group.emptyText }}
             </p>

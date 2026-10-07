@@ -684,7 +684,7 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(appConfig).toMatch(
-      /card:\s*\{[\s\S]*?header:\s*["']p-4 sm:p-4["'][\s\S]*?body:\s*["']p-4 sm:p-4 has-\[>\[data-slot=root\]:only-child>table\]:p-0["'][\s\S]*?footer:\s*["']p-4 sm:p-4["']/,
+      /card:\s*\{[\s\S]*?header:\s*["']p-4 sm:p-4["'][\s\S]*?body:\s*["']p-4 sm:p-4 has-\[>\[data-slot=root\]:only-child>table\]:p-0 has-\[>\[data-slot=root\]:only-child>\[data-slot=item\]\]:py-0["'][\s\S]*?footer:\s*["']p-4 sm:p-4["']/,
     );
     expect(appConfig).toMatch(
       /pageCard:\s*\{[\s\S]*?container:\s*["']p-4 sm:p-4["']/,
@@ -820,5 +820,20 @@ describe("Gestor canônico em Nuxt UI", () => {
     // O selo "Oculto" já diz; riscar o nome repetia, e o Switch neutral pintava escuro.
     expect(catalog).not.toContain("line-through decoration-1");
     expect(catalog).not.toContain("rowStatuses[row.sku]?.off ? 'neutral' : 'success'");
+  });
+
+  it("Em andamento agrupa cada grupo numa lista emoldurada", () => {
+    const queue = readFileSync(
+      new URL("../app/components/QueueView.vue", import.meta.url),
+      "utf8",
+    );
+    expect(queue).toContain(':data-queue-working-list="group.key"');
+    const appConfig = readFileSync(
+      new URL("../../operator-kit/app/app.config.ts", import.meta.url),
+      "utf8",
+    );
+    expect(appConfig).toContain(
+      "has-[>[data-slot=root]:only-child>[data-slot=item]]:py-0",
+    );
   });
 });
