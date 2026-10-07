@@ -33,6 +33,7 @@ import {
   queueItems,
   queueWho,
   restLine,
+  workingOrders,
   type QueueItem,
   type QueueScope,
   type QueueSort,
@@ -88,9 +89,46 @@ const rest = computed(() =>
     ? restLine(progress.value, hidden.value)
     : { count: 0, text: "" },
 );
-const progressCount = computed(() =>
-  progress.value.reduce((n, line) => n + line.count, 0),
+const working = computed(() => workingOrders(props.cards, props.nowMs));
+const workingCount = computed(
+  () => working.value.kitchen.length + working.value.road.length,
 );
+function accordionItems(orders: ReturnType<typeof workingOrders>["kitchen"]) {
+  return orders.map((order) => ({
+    value: order.card.ref,
+    label: `${splitRef(order.card.ref).code} ${order.card.customer_name}`,
+    code: splitRef(order.card.ref).code,
+    who: order.card.customer_name || "Sem cliente",
+    summary: order.summary,
+    age: order.ageLabel,
+    items: order.card.items_summary,
+    stations: order.stations,
+  }));
+}
+const workingGroups = computed(() => {
+  const detail = (key: "kitchen" | "road") =>
+    progress.value.find((line) => line.key === key)?.detail ?? "";
+  return [
+    {
+      key: "kitchen",
+      label: "Na Cozinha",
+      icon: "lucide:chef-hat",
+      orders: working.value.kitchen,
+      items: accordionItems(working.value.kitchen),
+      detail: detail("kitchen"),
+      emptyText: "Nada na cozinha agora.",
+    },
+    {
+      key: "road",
+      label: "Na rua",
+      icon: "lucide:bike",
+      orders: working.value.road,
+      items: accordionItems(working.value.road),
+      detail: detail("road"),
+      emptyText: "Nenhuma entrega na rua.",
+    },
+  ];
+});
 const systemActions = computed(() => props.awareness?.system_actions ?? []);
 const outages = computed(() => props.awareness?.menu_outages ?? []);
 const menuChannels = computed(() => props.awareness?.menu_channels ?? []);
@@ -560,6 +598,8 @@ function switchHint(row: {
       class="flex min-w-0 flex-col gap-4"
       aria-label="Em andamento e o que o sistema fez"
     >
+      <!-- Em andamento (dono, 07/10/2026): o que está de fato na cozinha, pedido a
+           pedido; aberto, cada estação com o estado e os itens que foram para ela. -->
       <NuxtCard data-queue-progress>
         <template #header>
           <div class="flex items-center justify-between gap-3">
@@ -567,30 +607,101 @@ function switchHint(row: {
             <NuxtBadge
               color="neutral"
               variant="subtle"
-              :label="`${progressCount} ${progressCount === 1 ? 'pedido' : 'pedidos'}`"
+              :label="`${workingCount} ${workingCount === 1 ? 'pedido' : 'pedidos'}`"
             />
           </div>
         </template>
-        <template v-for="(line, index) in progress" :key="line.key">
-          <div
-            class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 py-2 first:pt-0 last:pb-0"
+        <div class="flex flex-col gap-3">
+          <section
+            v-for="group in workingGroups"
+            :key="group.key"
+            class="flex flex-col gap-1"
+            :data-queue-working="group.key"
           >
-            <Icon :name="line.icon" class="row-span-2 size-4 text-info" />
-            <span class="min-w-0 op-body">{{ line.label }}</span>
-            <span class="op-title tnum">{{ line.count }}</span>
-            <span
-              class="col-span-2 col-start-2 min-w-0 op-micro leading-snug text-muted-foreground"
-              :title="
-                line.key === 'kitchen' && awareness?.kitchen_eta_basis
-                  ? `Previsão ${awareness.kitchen_eta_basis}`
-                  : undefined
-              "
-              :data-queue-progress-detail="line.key"
-              >{{ line.detail }}</span
+            <p class="flex items-center gap-2 op-label">
+              <Icon :name="group.icon" class="size-4 text-info" />
+              <span class="flex-1">{{ group.label }}</span>
+              <span class="op-title tnum">{{ group.orders.length }}</span>
+            </p>
+            <p
+              v-if="group.detail"
+              class="op-micro leading-snug text-muted-foreground"
+              :data-queue-progress-detail="group.key"
             >
-          </div>
-          <NuxtSeparator v-if="index < progress.length - 1" />
-        </template>
+              {{ group.detail }}
+            </p>
+            <NuxtAccordion
+              v-if="group.orders.length"
+              type="multiple"
+              :items="group.items"
+              trailing-icon="i-lucide-chevron-down"
+            >
+              <template #default="{ item }">
+                <span class="flex min-w-0 flex-1 items-baseline gap-2">
+                  <span class="font-semibold tnum">{{ item.code }}</span>
+                  <span class="min-w-0 break-words text-muted-foreground">{{
+                    item.who
+                  }}</span>
+                </span>
+              </template>
+              <template #trailing="{ item }">
+                <span class="flex shrink-0 items-center gap-2">
+                  <span class="op-micro text-muted-foreground">{{
+                    item.summary
+                  }}</span>
+                  <NuxtBadge
+                    color="neutral"
+                    variant="subtle"
+                    :label="item.age"
+                  />
+                </span>
+              </template>
+              <template #body="{ item }">
+                <div class="flex flex-col gap-2" data-queue-working-detail>
+                  <div
+                    v-for="station in item.stations"
+                    :key="station.ref"
+                    class="flex flex-col gap-1"
+                  >
+                    <p class="flex items-center gap-2 op-label">
+                      <span class="flex-1 font-medium">{{ station.name }}</span>
+                      <NuxtBadge
+                        :color="station.tone"
+                        variant="subtle"
+                        :label="station.label"
+                      />
+                    </p>
+                    <p
+                      v-if="station.items.length"
+                      class="op-micro text-muted-foreground"
+                    >
+                      {{ station.items.join(" · ") }}
+                    </p>
+                  </div>
+                  <p
+                    v-if="!item.stations.length"
+                    class="op-micro text-muted-foreground"
+                  >
+                    {{ item.items }}
+                  </p>
+                  <NuxtButton
+                    v-if="canOpen"
+                    :to="`/${item.value}`"
+                    class="self-start"
+                    label="Abrir o pedido"
+                    icon="i-lucide-file-text"
+                    color="neutral"
+                    variant="link"
+                    size="xs"
+                  />
+                </div>
+              </template>
+            </NuxtAccordion>
+            <p v-else class="op-micro text-muted-foreground">
+              {{ group.emptyText }}
+            </p>
+          </section>
+        </div>
       </NuxtCard>
 
       <NuxtCard data-queue-system>

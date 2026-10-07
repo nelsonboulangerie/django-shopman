@@ -13,6 +13,7 @@ import {
   queueScopeCounts,
   queueToneClass,
   restLine,
+  workingOrders,
   type QueueTone,
 } from "../app/presentation/queue";
 import type { OrderCardProjection } from "../app/types/orders";
@@ -133,5 +134,33 @@ describe("negociação do iFood na Fila (dono, 07/10/2026)", () => {
     const negotiation = card({ ref: "NEG-2", attention: "negotiation", attention_since_iso: ago(60), goal_minutes: 10 });
     const [item] = queueItems([negotiation], NOW);
     expect(queueGesture(item!)).toEqual({ primary: null, secondary: null, shortcut: "" });
+  });
+});
+
+describe("Em andamento: o que está de fato na cozinha (dono, 07/10/2026)", () => {
+  const station = (over: Record<string, unknown>) => ({
+    station_ref: "cafes", station_name: "Cafés", prints: false, state: "in_progress",
+    state_label: "em preparo", paper_label: "", paper_failed: false, cancelled_items: 0,
+    can_mark_ready: false, recall_ticket_pk: null, items: [], ...over,
+  });
+  it("lista os pedidos da cozinha, o mais antigo primeiro, com cada estação e seus itens", () => {
+    const old = card({
+      ref: "W-OLD", status: "preparing", created_at_iso: ago(20 * 60),
+      kitchen: { order_pk: 1, missing_label: "Falta Lanches", stations: [
+        station({ station_name: "Cafés", state: "done", state_label: "pronto", items: ["2x Café"] }),
+        station({ station_ref: "lanches", station_name: "Lanches", prints: true, paper_failed: true, items: ["1x Misto"] }),
+      ] },
+    } as Partial<OrderCardProjection>);
+    const fresh = card({ ref: "W-NEW", status: "accepted", created_at_iso: ago(2 * 60), kitchen: null });
+    const road = card({ ref: "W-ROAD", status: "dispatched", dispatched_at_iso: ago(5 * 60), courier_status_label: "a 5 min do cliente" });
+    const { kitchen, road: onRoad } = workingOrders([fresh, old, road, old], NOW);
+    expect(kitchen.map((w) => w.card.ref)).toEqual(["W-OLD", "W-NEW"]);
+    expect(kitchen[0]!.summary).toBe("1 de 2 prontas");
+    expect(kitchen[0]!.stations.map((s) => [s.name, s.label, s.tone, s.items])).toEqual([
+      ["Cafés", "pronto", "success", ["2x Café"]],
+      ["Lanches", "papel não saiu", "error", ["1x Misto"]],
+    ]);
+    expect(kitchen[1]!.summary).toBe("sem estação");
+    expect(onRoad.map((w) => [w.card.ref, w.summary])).toEqual([["W-ROAD", "a 5 min do cliente"]]);
   });
 });

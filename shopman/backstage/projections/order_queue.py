@@ -269,6 +269,8 @@ class KitchenStationProjection:
     can_mark_ready: bool = False
     #: "Voltar para Lanches": o ticket concluído que volta à cozinha.
     recall_ticket_pk: int | None = None
+    #: O que foi para esta estação ("2x Croissant"): conferir se chegou onde devia.
+    items: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1933,6 +1935,7 @@ def _kitchen_progress(order: Order, chips) -> KitchenProgressProjection | None:
             cancelled_items=chip.cancelled_items,
             can_mark_ready=chip.can_mark_ready,
             recall_ticket_pk=None if leaving else chip.recall_ticket_pk,
+            items=chip.items,
         )
         for chip in chips
     )

@@ -348,3 +348,97 @@ export function queueWho(
 export function queueCode(card: Pick<OrderCardProjection, "ref">): string {
   return splitRef(card.ref).code;
 }
+
+/** Uma estação de um pedido em andamento: onde está e o que foi para ela. */
+export interface KitchenStationLine {
+  ref: string;
+  name: string;
+  /** "na fila" · "em preparo" · "pronto" · "papel não saiu" */
+  label: string;
+  tone: "success" | "info" | "neutral" | "error";
+  items: string[];
+}
+
+/** Um pedido em andamento, para conferir na cozinha ou na rua. */
+export interface WorkingOrder {
+  card: OrderCardProjection;
+  /** "Na Cozinha": quantas estações prontas ("1 de 3 prontas"); "Na rua": quem leva. */
+  summary: string;
+  seconds: number;
+  /** "12 min": o tempo na régua da Fila. */
+  ageLabel: string;
+  stations: KitchenStationLine[];
+}
+
+function stationLine(
+  station: NonNullable<OrderCardProjection["kitchen"]>["stations"][number],
+): KitchenStationLine {
+  if (station.paper_failed)
+    return {
+      ref: station.station_ref,
+      name: station.station_name,
+      label: "papel não saiu",
+      tone: "error",
+      items: [...(station.items ?? [])],
+    };
+  const tone =
+    station.state === "done"
+      ? "success"
+      : station.state === "in_progress"
+        ? "info"
+        : "neutral";
+  return {
+    ref: station.station_ref,
+    name: station.station_name,
+    label: station.state_label,
+    tone,
+    items: [...(station.items ?? [])],
+  };
+}
+
+/** "Em andamento" por pedido (dono, 07/10/2026): o que está de fato na cozinha, em
+ *  que estação, e os itens que foram para cada uma; e o que está na rua. O mais
+ *  antigo primeiro, que é o que mais pede um olhar. */
+export function workingOrders(
+  cards: OrderCardProjection[],
+  nowMs: number,
+): { kitchen: WorkingOrder[]; road: WorkingOrder[] } {
+  const seen = new Set<string>();
+  const unique = cards.filter((card) =>
+    seen.has(card.ref) ? false : (seen.add(card.ref), true),
+  );
+  const age = (card: OrderCardProjection, since: string) =>
+    secondsSince(since, nowMs) ?? card.elapsed_seconds ?? 0;
+  const kitchen = unique
+    .filter((card) => KITCHEN.has(card.status))
+    .map((card) => {
+      const stations = (card.kitchen?.stations ?? []).map(stationLine);
+      const done = stations.filter((s) => s.tone === "success").length;
+      const seconds = age(card, card.created_at_iso);
+      return {
+        card,
+        stations,
+        seconds,
+        ageLabel: minutesLabel(seconds),
+        summary: stations.length
+          ? `${done} de ${stations.length} ${stations.length === 1 ? "pronta" : "prontas"}`
+          : "sem estação",
+      };
+    })
+    .sort((a, b) => b.seconds - a.seconds);
+  const road = unique
+    .filter((card) => ROAD.has(card.status))
+    .map((card) => {
+      const seconds = age(card, card.dispatched_at_iso || card.created_at_iso);
+      return {
+        card,
+        stations: [],
+        seconds,
+        ageLabel: minutesLabel(seconds),
+        summary:
+          card.courier_status_label || card.equipment_label || "a caminho",
+      };
+    })
+    .sort((a, b) => b.seconds - a.seconds);
+  return { kitchen, road };
+}

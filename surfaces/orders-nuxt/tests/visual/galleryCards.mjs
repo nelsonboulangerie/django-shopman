@@ -85,9 +85,9 @@ export function galleryQueue(base) {
       items_summary: "1x Quiche lorraine · 2x Cappuccino · 1x Suco de laranja", items_count: 4,
       has_customer_note: true, is_gift: true, assigned_operator: "Admin",
       kitchen: { order_pk: 4, missing_label: "Faltam Bebidas e Salgados", stations: [
-        station({ station_ref: "cafes", station_name: "Cafés", state: "done", state_label: "pronto" }),
-        station({ station_ref: "bebidas", station_name: "Bebidas", prints: true, paper_label: "Papel impresso", can_mark_ready: true }),
-        station({ station_ref: "salgados", station_name: "Salgados", paper_failed: true, paper_label: "Papel não saiu na impressora", state: "pending", state_label: "na fila", cancelled_items: 1 }),
+        station({ station_ref: "cafes", station_name: "Cafés", state: "done", state_label: "pronto", items: ["2x Cappuccino"] }),
+        station({ station_ref: "bebidas", station_name: "Bebidas", prints: true, paper_label: "Papel impresso", can_mark_ready: true, items: ["1x Suco de laranja"] }),
+        station({ station_ref: "salgados", station_name: "Salgados", paper_failed: true, paper_label: "Papel não saiu na impressora", state: "pending", state_label: "na fila", cancelled_items: 1, items: ["1x Quiche lorraine"] }),
       ] },
       actions: [action("advance", "Marcar pronto", { priority: "menu" }), ...menu],
     }),

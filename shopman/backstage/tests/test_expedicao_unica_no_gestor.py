@@ -310,3 +310,20 @@ def test_the_narrow_rule_does_not_depend_on_staff_flags(client, expeditor):
     assert response.status_code in (400, 403)
     preparing.refresh_from_db()
     assert preparing.status == Order.Status.PREPARING
+
+
+def test_o_cartao_diz_o_que_foi_para_cada_estacao(client, gestor, lanches, cafes):
+    """Em andamento (dono, 07/10/2026): conferir se cada item chegou onde devia."""
+    order = _order("GES-ITENS", status=Order.Status.PREPARING)
+    KDSTicket.objects.create(
+        session_key=order.session_key, kds_instance=lanches, status="pending",
+        items=[{"sku": "MISTO", "name": "Misto quente", "qty": 2, "line_id": "1"}],
+    )
+    KDSTicket.objects.create(
+        session_key=order.session_key, kds_instance=cafes, status="done",
+        items=[{"sku": "CAFE", "name": "Café coado", "qty": "1.000", "line_id": "2"}],
+    )
+    client.force_login(gestor)
+    stations = {s["station_name"]: s for s in _card(client, order.ref)["kitchen"]["stations"]}
+    assert stations["Lanches"]["items"] == ["2x Misto quente"]
+    assert stations["Cafés"]["items"] == ["1x Café coado"]
