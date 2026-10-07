@@ -29,13 +29,27 @@ useHead({ title: "Ajustes" });
         title="Ajustes restritos"
         description="Os ajustes do Gestor são de quem gerencia pedidos. Daqui você opera a Saída."
       />
-      <NuxtNavigationMenu
+      <!-- Navegação entre áreas: PageGrid de PageCard (contrato de Card do kit), com
+           a descrição de cada área à vista e o aviso de atenção como Badge. -->
+      <NuxtPageGrid
         v-else
-        class="mx-auto w-full max-w-3xl"
-        orientation="vertical"
-        :items="settingsItems"
+        class="gap-[var(--op-region-gap)]"
         aria-label="Ajustes do Gestor"
-      />
+      >
+        <NuxtPageCard
+          v-for="item in settingsItems"
+          :key="item.to"
+          :to="item.to"
+          :icon="item.icon"
+          :title="item.label"
+          :description="item.description"
+          :data-settings-section="item['data-settings-section']"
+        >
+          <template v-if="item.badge" #footer>
+            <NuxtBadge color="warning" variant="subtle" :label="item.badge" />
+          </template>
+        </NuxtPageCard>
+      </NuxtPageGrid>
     </section>
   </main>
 </template>

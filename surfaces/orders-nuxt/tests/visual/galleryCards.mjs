@@ -103,7 +103,7 @@ export function galleryQueue(base) {
     }),
     make("W06", { attention: "start",
       status: "accepted", status_label: "Aceito", customer_name: "Elisa",
-      waitlist_label: "Esperando a fornada das 16:00", waitlist_state: "confirming",
+      waitlist_label: "Esperando o lote das 16:00", waitlist_state: "confirming",
       awaiting_work_orders: [
         { ref: "WO-101", output_sku: "BAGUETE", status_label: "no forno", progress_pct: 60 },
         { ref: "WO-102", output_sku: "CROISSANT-MANTEIGA-TRADICIONAL", status_label: "fermentando", progress_pct: 20 },

@@ -14,6 +14,7 @@
 // O que a v4 não mostra no cartão fica a um toque: atribuir ("Atender") e a seleção em
 // lote moram no ⋯ do cartão (e no toque longo); o detalhe abre pelo código. Nenhuma
 // ação saiu: só mudou de lugar. O cor do estado é funcional; o resto é neutro.
+import type { ButtonProps } from "#ui/types";
 import type { OrderCardProjection } from "~/types/orders";
 import {
   cardAffordances,
@@ -276,6 +277,14 @@ function segmentValue(state: string): number {
   if (state === "working" || state === "alert") return 50;
   return 0;
 }
+/** Ação de Alert com ganchos de teste ou nome acessível: o tipo `ButtonProps` não
+ *  declara `data-*` nem `aria-label`, mas o Nuxt UI os repassa ao botão. */
+function action(
+  props: ButtonProps,
+  attrs: Record<string, string>,
+): ButtonProps {
+  return { ...props, ...attrs };
+}
 function nuxtIcon(icon: string): string {
   return icon.startsWith("lucide:")
     ? `i-lucide-${icon.slice("lucide:".length)}`
@@ -353,7 +362,8 @@ function nuxtIcon(icon: string): string {
             >
             <p class="op-title break-words" data-card-who>
               <span>{{ card.customer_name || "Sem cliente" }}</span>
-              {{ " " }}<span
+              {{ " "
+              }}<span
                 class="font-normal whitespace-nowrap text-muted-foreground"
                 >· {{ channelLabel(card.channel_ref) }}</span
               >
@@ -611,16 +621,20 @@ function nuxtIcon(icon: string): string {
             :actions="
               chip.canMarkReady
                 ? [
-                    {
-                      icon: 'i-lucide-check',
-                      label: `Pronto de ${chip.station}`,
-                      color: chip.tone === 'alert' ? 'error' : 'neutral',
-                      variant: 'outline',
-                      disabled: busy,
-                      'aria-label': `Pronto de ${chip.station} no pedido ${code.code}`,
-                      'data-kitchen-ready': '',
-                      onClick: () => emit('station-ready', chip.ref),
-                    },
+                    action(
+                      {
+                        icon: 'i-lucide-check',
+                        label: `Pronto de ${chip.station}`,
+                        color: chip.tone === 'alert' ? 'error' : 'neutral',
+                        variant: 'outline',
+                        disabled: busy,
+                        onClick: () => emit('station-ready', chip.ref),
+                      },
+                      {
+                        'aria-label': `Pronto de ${chip.station} no pedido ${code.code}`,
+                        'data-kitchen-ready': '',
+                      },
+                    ),
                   ]
                 : undefined
             "
@@ -668,15 +682,18 @@ function nuxtIcon(icon: string): string {
           variant="subtle"
           icon="i-lucide-triangle-alert"
           :actions="[
-            {
-              label: danfePrinting || danfe.sending ? 'Imprimindo…' : danfe.action,
-              icon: 'i-lucide-printer',
-              color: 'warning',
-              variant: 'outline',
-              disabled: danfePrinting || danfe.sending,
-              'data-danfe-print': '',
-              onClick: () => emit('print-danfe'),
-            },
+            action(
+              {
+                label:
+                  danfePrinting || danfe.sending ? 'Imprimindo…' : danfe.action,
+                icon: 'i-lucide-printer',
+                color: 'warning',
+                variant: 'outline',
+                disabled: danfePrinting || danfe.sending,
+                onClick: () => emit('print-danfe'),
+              },
+              { 'data-danfe-print': '' },
+            ),
           ]"
           data-danfe
           data-danfe-attention
@@ -694,7 +711,9 @@ function nuxtIcon(icon: string): string {
           data-danfe
         >
           <Icon
-            :name="card.danfe_printed ? 'lucide:receipt-text' : 'lucide:receipt'"
+            :name="
+              card.danfe_printed ? 'lucide:receipt-text' : 'lucide:receipt'
+            "
             class="size-3.5 shrink-0"
           />
           <span class="min-w-0 flex-1 truncate" data-danfe-status>{{
@@ -702,7 +721,9 @@ function nuxtIcon(icon: string): string {
           }}</span>
           <NuxtButton
             icon="i-lucide-printer"
-            :label="danfePrinting || danfe.sending ? 'Imprimindo…' : danfe.action"
+            :label="
+              danfePrinting || danfe.sending ? 'Imprimindo…' : danfe.action
+            "
             color="neutral"
             variant="outline"
             size="xs"
@@ -721,13 +742,15 @@ function nuxtIcon(icon: string): string {
           title="NFC-e não autorizada"
           description="O pedido tem o Reprocessar NFC-e."
           :actions="[
-            {
-              label: 'Abrir e reprocessar',
-              to: `/${card.ref}`,
-              color: 'warning',
-              variant: 'outline',
-              'data-fiscal-failed-open': '',
-            },
+            action(
+              {
+                label: 'Abrir e reprocessar',
+                to: `/${card.ref}`,
+                color: 'warning',
+                variant: 'outline',
+              },
+              { 'data-fiscal-failed-open': '' },
+            ),
           ]"
           data-fiscal-failed
         />
@@ -741,13 +764,15 @@ function nuxtIcon(icon: string): string {
         title="Negociação iFood"
         description="O iFood espera resposta dentro do prazo."
         :actions="[
-          {
-            label: 'Abrir solicitação',
-            to: `/${card.ref}#ifood-negotiations`,
-            color: 'warning',
-            variant: 'outline',
-            'data-ifood-negotiation-link': '',
-          },
+          action(
+            {
+              label: 'Abrir solicitação',
+              to: `/${card.ref}#ifood-negotiations`,
+              color: 'warning',
+              variant: 'outline',
+            },
+            { 'data-ifood-negotiation-link': '' },
+          ),
         ]"
         data-ifood-negotiation
       />
@@ -790,29 +815,29 @@ function nuxtIcon(icon: string): string {
         v-if="card.awaiting_work_orders.length && !handoff"
         class="flex flex-col gap-1.5"
       >
-        <NuxtProgress
+        <div
           v-for="wo in card.awaiting_work_orders"
           :key="wo.ref"
-          :model-value="wo.progress_pct"
-          :max="100"
-          color="primary"
-          size="sm"
-          status
-          :get-value-label="
-            () => `${wo.output_sku}, ${wo.status_label}, ${wo.progress_pct}%`
-          "
+          class="flex flex-col gap-1"
           data-work-order-progress
         >
-          <template #status>
-            <span class="flex min-w-0 items-center gap-1.5">
-              <Icon name="lucide:factory" class="size-3 shrink-0" />
-              <span class="truncate"
-                >{{ wo.output_sku }} · {{ wo.status_label }}</span
-              >
-            </span>
-            <span class="ms-auto shrink-0 tnum">{{ wo.progress_pct }}%</span>
-          </template>
-        </NuxtProgress>
+          <p class="flex items-center gap-1.5 op-micro text-muted-foreground">
+            <Icon name="lucide:factory" class="size-3 shrink-0" />
+            <span class="min-w-0 flex-1 truncate"
+              >{{ wo.output_sku }} · {{ wo.status_label }}</span
+            >
+            <span class="shrink-0 tnum">{{ wo.progress_pct }}%</span>
+          </p>
+          <NuxtProgress
+            :model-value="wo.progress_pct"
+            :max="100"
+            color="primary"
+            size="sm"
+            :get-value-label="
+              () => `${wo.output_sku}, ${wo.status_label}, ${wo.progress_pct}%`
+            "
+          />
+        </div>
       </div>
 
       <!-- bloqueio antes do gesto (v4): o motivo escrito no cartão, com o cadeado. Quando
@@ -847,7 +872,7 @@ function nuxtIcon(icon: string): string {
         variant="subtle"
         icon="i-lucide-triangle-alert"
         :title="error"
-        :close="{ label: 'Dispensar aviso' }"
+        :close="action({}, { 'aria-label': 'Dispensar aviso' })"
         data-card-error
         @update:open="emit('dismiss-error')"
       />
@@ -964,7 +989,7 @@ function nuxtIcon(icon: string): string {
               data-card-menu
             />
             <template #content>
-              <div v-if="menuOpen">
+              <div v-if="menuOpen" class="p-2">
                 <NuxtFormField
                   v-if="volumesEditing"
                   label="Quantos volumes saem?"

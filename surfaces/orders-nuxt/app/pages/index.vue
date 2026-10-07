@@ -1643,7 +1643,7 @@ function printQueue() {
             id="orders-board-columns"
             :persistence-key="boardSplitterPersistenceKey"
             :items="boardSplitterItems"
-            class="min-h-128 flex-1"
+            class="min-h-full flex-1"
             handle-label="Ajustar largura das colunas"
             data-board-columns
             @layout="boardLayout.applySizes"
@@ -1727,7 +1727,7 @@ function printQueue() {
              cabeçalho fixo e rolagem horizontal, sem wrapper visual paralelo. -->
         <NuxtTable
           v-else
-          class="min-h-128 flex-1"
+          class="min-h-full flex-1"
           :data="tableRows"
           :columns="supervisionColumns"
           :get-row-id="(row) => row.card.ref"

@@ -88,8 +88,7 @@ export default defineNuxtConfig({
     '@vueuse/nuxt',
     '@nuxt/icon',
     '@nuxt/fonts',
-    '@nuxt/eslint',
-    "vue-sonner/nuxt"
+    '@nuxt/eslint'
   ],
 
   // Instrument Sans self-hospedada com os PESOS da escala do operador (body=500,
@@ -111,8 +110,9 @@ export default defineNuxtConfig({
       name: 'VariantProps',
       type: true
     }, {
-      from: "vue-sonner",
-      name: "toast",
+      // Contrato de aviso da suíte → toast do Nuxt UI (utils/operatorToast.ts).
+      from: "~/utils/operatorToast",
+      name: "operatorToast",
       as: "useSonner"
     }]
   },

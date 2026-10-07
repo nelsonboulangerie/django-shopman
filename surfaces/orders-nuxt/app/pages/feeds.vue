@@ -373,6 +373,7 @@ useHead({ title: "Canais" });
           v-for="sc in feeds"
           :key="sc.ref"
           as="article"
+          class="grid grid-rows-[auto_minmax(0,1fr)_auto]"
           :data-channel-card="sc.ref"
           :data-focus-target="sc.ref"
         >
@@ -764,6 +765,7 @@ useHead({ title: "Canais" });
             v-for="channel in catalogChannels"
             :key="channel.ref"
             as="article"
+            class="grid grid-rows-[auto_minmax(0,1fr)_auto]"
             :data-focus-target="channel.ref"
             :data-channel-card="channel.ref"
           >

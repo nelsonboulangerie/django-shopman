@@ -1376,20 +1376,22 @@ useHead({ title: "Catálogo" });
                     : 'text-primary/70'
                 "
               />
+              <span class="op-eyebrow whitespace-nowrap">{{
+                surface.short_name
+              }}</span>
               <NuxtButton
                 v-if="surface.output_path"
                 :to="`${djangoBase}${surface.output_path}`"
                 target="_blank"
-                :label="surface.short_name"
+                icon="i-lucide-external-link"
                 color="neutral"
                 variant="link"
                 size="xs"
+                square
+                :aria-label="`Abrir ${surface.name}`"
                 :title="`Abrir ${surface.name}`"
                 @click.stop
               />
-              <span v-else class="op-eyebrow whitespace-nowrap">{{
-                surface.short_name
-              }}</span>
             </span>
             <NuxtBadge
               v-if="syncBadge(surface.sync_status)"

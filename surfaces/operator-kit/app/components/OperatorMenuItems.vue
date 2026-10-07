@@ -67,6 +67,7 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
     <NuxtButton
       v-if="props.mode === 'phone' && operatorName"
       block
+      class="justify-start"
       color="neutral"
       variant="ghost"
       icon="i-lucide-lock"
@@ -77,10 +78,11 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
     />
 
     <ClientOnly>
-      <NuxtButton block color="neutral" variant="ghost" icon="i-lucide-moon" :label="themeLabel" data-operator-menu-theme @click="toggleTheme" />
+      <NuxtButton block class="justify-start" color="neutral" variant="ghost" icon="i-lucide-moon" :label="themeLabel" data-operator-menu-theme @click="toggleTheme" />
       <NuxtButton
         v-if="orientation.available.value"
         block
+        class="justify-start"
         color="neutral"
         variant="ghost"
         :icon="orientation.isLocked.value ? 'i-lucide-lock-keyhole' : 'i-lucide-rotate-cw-square'"
@@ -96,6 +98,7 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
     <NuxtButton
       v-if="props.mode === 'rail'"
       block
+      class="justify-start"
       color="neutral"
       variant="ghost"
       icon="i-lucide-panel-left-close"

@@ -394,28 +394,33 @@ defineExpose({ focus: openSearch, open: openSearch });
             @update:search-term="setText"
           >
             <template #empty>
+              <!-- O #empty do CommandPalette centraliza o texto; o Alert volta ao início. -->
               <NuxtAlert
                 v-if="!ready"
+                class="text-start"
                 color="neutral"
                 variant="subtle"
+                icon="i-lucide-info"
                 :title="COPY.typeMore"
                 data-suite-search-hint
               />
               <NuxtAlert
                 v-else-if="status === 'error'"
+                class="text-start"
                 color="error"
                 variant="subtle"
+                icon="i-lucide-circle-alert"
                 :title="hasScreen ? COPY.failed : COPY.failedNoScreen"
+                :actions="[
+                  {
+                    label: COPY.retry,
+                    color: 'error',
+                    variant: 'outline',
+                    onClick: retry,
+                  },
+                ]"
                 data-suite-search-error
-              >
-                <template #actions
-                  ><NuxtButton
-                    color="error"
-                    variant="outline"
-                    :label="COPY.retry"
-                    @click="retry"
-                /></template>
-              </NuxtAlert>
+              />
               <NuxtEmpty
                 v-else-if="status === 'loading'"
                 icon="i-line-md-loading-loop"

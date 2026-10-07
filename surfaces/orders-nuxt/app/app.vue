@@ -149,7 +149,6 @@ useOperatorWindowTitle();
         @success="restoreAuthenticatedWorkspace"
       />
       <OperatorLock v-else-if="surface.showLock" :perm="OPERATOR_PERM" />
-      <OperatorSonner />
       <OperatorPwaRuntime />
     </div>
   </OperatorAppRoot>
