@@ -72,8 +72,14 @@ const railShown = useSuiteRailShown();
 
 const { data: operatorSession } =
   useNuxtData<OperatorSession>("operator-session");
+// O app pode dispensar o selo do posto (`operatorHeader.workstationBadge: false` no
+// app.config) quando o título já diz a visão e o posto mora no menu do operador.
+const appConfig = useAppConfig() as {
+  operatorHeader?: { workstationBadge?: boolean };
+};
 const eyebrowText = computed(() => {
   if (props.eyebrow) return props.eyebrow;
+  if (appConfig.operatorHeader?.workstationBadge === false) return "";
   const context = operatorSession.value?.workstation?.context_label ?? "";
   return context ? `${context} · este dispositivo` : "";
 });

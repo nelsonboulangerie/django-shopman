@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { TabsItem } from "#ui/types";
 // Order board — the operator hub. Reads the two-zone queue projection + realtime
 // (SSE + 30s poll) via useOrdersBoard; renders Entrada / Preparo / Saída columns of
 // OrderCards; the gestures POST through the django proxy (CSRF handled there) and
@@ -477,15 +478,7 @@ function onSwipe(card: OrderCardProjection, key: string) {
 // ── colunas ajustáveis e recolhíveis, lembradas por posto (SUITE-UX §16) ──
 // O tablet do passe fica só com a Saída: é o mesmo quadro, com Entrada e Preparo
 // recolhidas numa faixa. Nenhuma ação muda; muda só o que cabe na tela.
-// A legenda do chrome não pode expor as chaves do contrato enquanto a fila ainda
-// carrega ("Visão: expedition"). Os nomes curtos são vocabulário estável da UI; os
-// títulos mais descritivos continuam pertencendo aos cabeçalhos das colunas.
-const zoneTitles = computed<Record<string, string>>(() => ({
-  intake: "Entrada",
-  prep: "Preparo",
-  expedition: "Saída",
-}));
-const boardLayout = useBoardLayout(() => zoneTitles.value);
+const boardLayout = useBoardLayout();
 // O sinal de canal decide se a segunda linha do cabeçalho existe. Montar sempre o
 // slot #feedback e deixar só o filho vazio criava a faixa horizontal sem conteúdo que
 // aparecia acima da toolbar da Saída.
@@ -624,16 +617,19 @@ const exitFilterTabs = EXIT_FILTERS.map((option) => ({
   label: option.label,
   icon: option.icon.replace("lucide:", "i-lucide-"),
 }));
+// A faixa de recortes do fluxo: na Saída, os três da expedição; no celular, a versão
+// curta; no resto, com as contagens.
+const fulfillmentFilterTabs = computed<TabsItem[]>(() =>
+  exitPostView.value
+    ? exitFilterTabs
+    : isPhone.value
+      ? fulfillmentCompactTabs.value
+      : fulfillmentTabs.value,
+);
 const nowMs = useNowTick(() => queue.value?.intake[0]?.server_now_iso ?? "");
 function zoneNext(zone: ZoneView): string {
   return zone.key === "expedition" ? nextOutRef(triaged(zone)) : "";
 }
-// Onde a arrumação do posto mora (a frase curta da v4).
-const layoutMemory = computed(() => {
-  if (!boardLayout.station.value) return "vale até recarregar a tela";
-  if (boardLayout.saveFailed.value) return "não deu para guardar neste posto";
-  return "lembrada neste posto · salva no servidor";
-});
 // A coluna sozinha na tela (posto Saída) usa a largura: grade de cartões, não fila única.
 function wideColumn(key: string): boolean {
   return !isPhone.value && key === "expedition" && boardLayout.exitPost.value;
@@ -1188,14 +1184,7 @@ function printQueue() {
          enquanto há pedido novo esperando. No posto Saída (`gestor-colunas4.html`):
          "Visão: Saída", "Mostrar as 3 colunas" e o som; o resto no ⋯. -->
     <OperatorPageHeader
-      title="Pedidos"
-      :eyebrow="
-        view === 'board' && !boardLayout.allOpen.value
-          ? `${boardLayout.viewLabel.value}${boardLayout.station.value ? ' · este dispositivo' : ''}`
-          : exitPostView && boardLayout.station.value
-            ? 'Posto Saída · este dispositivo'
-            : ''
-      "
+      :title="exitPostView ? 'Saída' : 'Pedidos'"
       :filters-wrap="false"
     >
       <template #status>
@@ -1235,17 +1224,6 @@ function printQueue() {
         />
       </template>
       <template v-if="!isPhone" #actions>
-        <!-- No posto Saída a faixa da Entrada pulsa e o Ciente fica no ⋯ (a linha da v4
-             não tem lugar para ele ao lado da busca, no tablet). -->
-        <NuxtButton
-          v-if="attentionPending && !exitPostView && !isPhone"
-          icon="i-lucide-check"
-          label="Ciente"
-          color="primary"
-          variant="soft"
-          aria-label="Reconhecer aviso de pedido novo"
-          @click="acknowledgeAttention"
-        />
         <!-- a visão deste posto e o caminho de volta às três colunas -->
         <template
           v-if="view === 'board' && !boardLayout.allOpen.value && !isPhone"
@@ -1260,36 +1238,49 @@ function printQueue() {
             @click="boardLayout.showAll()"
           />
         </template>
-        <!-- som de pedido novo (mesmos 3 estados do KDS): ligado / desligado /
-             ligado-mas-bloqueado pelo autoplay (ponto âmbar até o 1º gesto). -->
-        <NuxtChip
-          v-if="!isPhone"
-          :show="soundOn && soundBlocked"
-          color="warning"
-          size="2xl"
-          inset
-        >
+        <!-- O som de pedido novo e o "Ciente" que o cala formam um grupo só: o Ciente
+             aparece enquanto há pedido novo tocando e, reconhecido, some, deixando o
+             botão do som sozinho. No posto Saída o Ciente fica no ⋯. O som tem os
+             mesmos 3 estados do KDS: ligado, desligado e ligado-mas-bloqueado pelo
+             autoplay (ponto âmbar até o 1º gesto). -->
+        <NuxtFieldGroup v-if="!isPhone" data-sound-group>
+          <NuxtChip
+            :show="soundOn && soundBlocked"
+            color="warning"
+            size="2xl"
+            inset
+          >
+            <NuxtButton
+              :icon="soundOn ? 'i-lucide-volume-2' : 'i-lucide-volume-x'"
+              color="neutral"
+              variant="outline"
+              square
+              :aria-label="
+                soundOn && soundBlocked
+                  ? 'Som bloqueado: toque para ativar'
+                  : soundOn
+                    ? 'Som de pedido novo ativo'
+                    : 'Som de pedido novo desativado'
+              "
+              :title="
+                soundOn && soundBlocked
+                  ? 'Som bloqueado: toque para ativar'
+                  : 'Som de pedido novo'
+              "
+              data-sound-toggle
+              @click="handleSoundAction"
+            />
+          </NuxtChip>
           <NuxtButton
-            :icon="soundOn ? 'i-lucide-volume-2' : 'i-lucide-volume-x'"
-            color="neutral"
+            v-if="attentionPending && !exitPostView"
+            icon="i-lucide-check"
+            label="Ciente"
+            color="primary"
             variant="outline"
-            square
-            :aria-label="
-              soundOn && soundBlocked
-                ? 'Som bloqueado: toque para ativar'
-                : soundOn
-                  ? 'Som de pedido novo ativo'
-                  : 'Som de pedido novo desativado'
-            "
-            :title="
-              soundOn && soundBlocked
-                ? 'Som bloqueado: toque para ativar'
-                : 'Som de pedido novo'
-            "
-            data-sound-toggle
-            @click="handleSoundAction"
+            aria-label="Reconhecer aviso de pedido novo"
+            @click="acknowledgeAttention"
           />
-        </NuxtChip>
+        </NuxtFieldGroup>
 
         <template v-if="!compactHeader && !isPhone">
           <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
@@ -1351,8 +1342,7 @@ function printQueue() {
       </template>
 
       <!-- recortes (v4): Todos, o eixo do fluxo (Entrega, Retirada) e o canal num
-           seletor só ("+ Canal"). No posto Saída os recortes do fluxo sobem para a
-           cabeça da coluna, como na prévia. -->
+           seletor só. O posto Saída usa a mesma faixa: o título já diz a visão. -->
       <!-- A Saída no celular (v4 `cozinha-celular` (a)) não tem a linha de recortes: a
            barra de cima, as duas abas e a lista. -->
       <template
@@ -1364,70 +1354,52 @@ function printQueue() {
         "
         #filters
       >
-        <!-- No posto de Saída, este é o cabeçalho operacional da coluna. Ele pertence
-             à DashboardToolbar canônica imediatamente sob a DashboardNavbar, não a
-             um segundo bloco solto dentro do padding do conteúdo. -->
-        <OrderBoardHeading
-          v-if="exitPostView && desktopZones[0]"
-          :zone="desktopZones[0]"
-          :cards="triaged(desktopZones[0])"
-          wide
-          :fulfillment="fulfillment"
-          :exit-filter-tabs="exitFilterTabs"
-          :layout-memory="layoutMemory"
-          :layout-memory-title="boardLayout.memoryText.value"
-          :can-collapse="false"
-          :shortcut="shortcutHint(desktopZones[0].key)"
-          @update-fulfillment="pickFulfillment"
-        />
-        <template v-else>
-          <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
+        <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
              muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. -->
-          <NuxtTabs
-            v-if="view === 'queue'"
-            :model-value="scope"
-            :items="queueScopeTabs"
-            :content="false"
-            variant="pill"
-            data-queue-scopes
-            @update:model-value="pickScope"
-          />
-          <NuxtTabs
-            :model-value="fulfillment"
-            :items="isPhone ? fulfillmentCompactTabs : fulfillmentTabs"
-            :content="false"
-            variant="pill"
-            aria-label="Tipo de entrega"
-            @update:model-value="pickFulfillment"
-          />
-          <NuxtSelect
-            v-if="channels.length"
-            v-model="channel"
-            :items="channelItems"
-            aria-label="Canal"
-            data-channel-picker
-          />
-          <!-- celular: os controles do quadro num painel só ("Filtros" da prévia v3), no começo
+        <NuxtTabs
+          v-if="view === 'queue'"
+          :model-value="scope"
+          :items="queueScopeTabs"
+          :content="false"
+          variant="pill"
+          data-queue-scopes
+          @update:model-value="pickScope"
+        />
+        <NuxtTabs
+          :model-value="fulfillment"
+          :items="fulfillmentFilterTabs"
+          :content="false"
+          variant="pill"
+          aria-label="Tipo de entrega"
+          @update:model-value="pickFulfillment"
+        />
+        <NuxtSelect
+          v-if="channels.length"
+          v-model="channel"
+          :items="channelItems"
+          aria-label="Canal"
+          data-channel-picker
+        />
+        <!-- celular: os controles do quadro num painel só ("Filtros" da prévia v3), no começo
              da linha para nunca ficar fora da tela -->
-          <NuxtChip
-            v-if="isPhone"
-            :show="attentionPending || (soundOn && soundBlocked)"
-            color="warning"
-            size="2xl"
-            inset
-          >
-            <NuxtButton
-              icon="i-lucide-sliders-horizontal"
-              label="Filtros"
-              color="neutral"
-              variant="outline"
-              aria-haspopup="dialog"
-              :aria-expanded="moreOpen"
-              data-board-more
-              @click="moreOpen = true"
-            />
-          </NuxtChip>
-        </template>
+        <NuxtChip
+          v-if="isPhone"
+          :show="attentionPending || (soundOn && soundBlocked)"
+          color="warning"
+          size="2xl"
+          inset
+        >
+          <NuxtButton
+            icon="i-lucide-sliders-horizontal"
+            label="Filtros"
+            color="neutral"
+            variant="outline"
+            aria-haspopup="dialog"
+            :aria-expanded="moreOpen"
+            data-board-more
+            @click="moreOpen = true"
+          />
+        </NuxtChip>
       </template>
       <template v-if="hasChannelQueueSignal" #feedback>
         <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
@@ -1670,10 +1642,6 @@ function printQueue() {
                 :wide="wideColumn(zone.key)"
                 :can-open="canManageOrders"
                 :selecting="selecting"
-                :fulfillment="fulfillment"
-                :exit-filter-tabs="exitFilterTabs"
-                :layout-memory="layoutMemory"
-                :layout-memory-title="boardLayout.memoryText.value"
                 :can-collapse="boardLayout.canCollapse(zone.key)"
                 :shortcut="shortcutHint(zone.key)"
                 :is-busy="isBusy"
@@ -1682,7 +1650,6 @@ function printQueue() {
                 :danfe-printing="danfePrint.isPrinting"
                 :swipe-actions="swipeActions"
                 :heading="!exitPostView"
-                @update-fulfillment="pickFulfillment"
                 @collapse="boardLayout.toggle(zone.key)"
                 @action="onAction"
                 @dismiss-error="clearActionError"
@@ -1710,10 +1677,6 @@ function printQueue() {
             :wide="false"
             :can-open="canManageOrders"
             :selecting="selecting"
-            :fulfillment="fulfillment"
-            :exit-filter-tabs="exitFilterTabs"
-            :layout-memory="layoutMemory"
-            :layout-memory-title="boardLayout.memoryText.value"
             :can-collapse="false"
             :shortcut="shortcutHint(zone.key)"
             :is-busy="isBusy"
@@ -1721,7 +1684,6 @@ function printQueue() {
             :is-selected="isSelected"
             :danfe-printing="danfePrint.isPrinting"
             :swipe-actions="swipeActions"
-            @update-fulfillment="pickFulfillment"
             @action="onAction"
             @dismiss-error="clearActionError"
             @toggle-select="toggleSelect"

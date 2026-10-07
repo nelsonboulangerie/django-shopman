@@ -490,14 +490,18 @@ describe("Gestor canônico em Nuxt UI", () => {
       (board.match(/<NuxtTabs\b/g)?.length ?? 0) +
         (boardColumn.match(/<NuxtTabs\b/g)?.length ?? 0) +
         (boardHeading.match(/<NuxtTabs\b/g)?.length ?? 0),
-    ).toBeGreaterThanOrEqual(5);
+      // Escopo da Fila, recorte do fluxo (o mesmo na Saída), abas das colunas no
+      // celular e no tablet em pé, e a visão Fila | Supervisão.
+    ).toBeGreaterThanOrEqual(4);
     expect(board).toContain("<OperatorSplitter");
     expect(board).not.toContain("<QueueColumnResizeHandle");
     expect(board).not.toContain("<QueueColumnStrip");
     expect(board).toContain('v-if="hasChannelQueueSignal" #feedback');
     expect(boardColumn).toContain('v-if="!phone && heading" as="header"');
     expect(boardColumn).toContain("<OrderBoardHeading");
-    expect(board).toContain('v-if="exitPostView && desktopZones[0]"');
+    // O posto Saída usa a mesma faixa de recortes; não há cabeçalho de coluna na toolbar.
+    expect(board).toContain(':items="fulfillmentFilterTabs"');
+    expect(board).not.toContain('v-if="exitPostView && desktopZones[0]"');
     expect(board).toContain(':heading="!exitPostView"');
     expect(board).toMatch(
       /<NuxtDashboardToolbar[\s\S]*?v-if="boardAsTabs && view === 'board' && zones\.length"[\s\S]*?class="py-2"/,
@@ -695,12 +699,16 @@ describe("Gestor canônico em Nuxt UI", () => {
     );
     expect(card).toMatch(/<NuxtCard\s+as="article"/);
     expect(card).toContain(
-      'class="grid h-full grid-rows-[auto_minmax(0,1fr)_auto]"',
+      // 1fr, não minmax(0,1fr): numa grade que rola, o corpo não pode encolher
+      // abaixo do conteúdo (o rodapé subia por cima dele na Saída).
+      'class="grid h-full grid-rows-[auto_1fr_auto]"',
     );
     expect(card).toContain(":variant=\"selected ? 'subtle' : 'outline'\"");
     expect(card).toContain("<template #header>");
     expect(card).toContain('<template v-if="!negotiationOnly" #footer>');
-    expect(card).toContain("'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
+    // 1/3 + 2/3 quando o rodapé tem largura para isso; abaixo, empilha legível.
+    expect(card).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
+    expect(card).toContain('class="@container flex items-end gap-2"');
     expect(feeds.match(/<template #header>/g)?.length).toBeGreaterThanOrEqual(
       2,
     );
@@ -753,7 +761,9 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(shell).not.toContain('class="w-fit self-center"');
     expect(shell).toContain('<OperatorInbox placement="rail" />');
     expect(queue).toContain("sm:grid-cols-[80px_minmax(0,1fr)]");
-    expect(queue).toContain("lg:grid-cols-[80px_minmax(0,1fr)_184px]");
+    // Três colunas só a partir do xl, com 240 px para total e gesto; abaixo disso
+    // o gesto desce para baixo do conteúdo (184 px cortavam "Recusar | Aceitar").
+    expect(queue).toContain("xl:grid-cols-[92px_minmax(0,1fr)_240px]");
     expect(queue).toContain('<template v-if="printedKey(item)" #trailing>');
     expect(queue).toMatch(
       /<NuxtKbd\s+value="enter"\s+size="sm"\s+variant="soft"\s+data-queue-key/,
@@ -779,7 +789,8 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(board).not.toContain("data-board-view-label");
-    expect(board).toContain('expedition: "Saída"');
-    expect(board).toContain("boardLayout.viewLabel.value");
+    // A visão do posto é o título da página; não há selo repetindo-a.
+    expect(board).toContain(`:title="exitPostView ? 'Saída' : 'Pedidos'"`);
+    expect(board).not.toContain("viewLabel");
   });
 });

@@ -201,11 +201,11 @@ function switchHint(row: {
         @pointerdown="emit('focus', item.card.ref)"
       >
         <div
-          class="grid gap-3 sm:grid-cols-[80px_minmax(0,1fr)] sm:items-start lg:grid-cols-[80px_minmax(0,1fr)_184px] lg:items-center lg:gap-4 xl:grid-cols-[92px_minmax(0,1fr)_212px]"
+          class="grid gap-3 sm:grid-cols-[80px_minmax(0,1fr)] sm:items-start xl:grid-cols-[92px_minmax(0,1fr)_240px] xl:items-center xl:gap-4"
         >
           <!-- código, tempo na etapa e a meta -->
           <div
-            class="flex min-w-0 flex-col items-start gap-1 sm:row-span-2 lg:row-span-1"
+            class="flex min-w-0 flex-col items-start gap-1 sm:row-span-2 xl:row-span-1"
           >
             <NuxtLink
               v-if="canOpen"
@@ -231,7 +231,7 @@ function switchHint(row: {
 
           <!-- quem, o quê e o estado escrito (a cópia não se corta: quebra a linha) -->
           <div
-            class="flex min-w-0 flex-col gap-1.5 sm:col-start-2 lg:col-start-auto"
+            class="flex min-w-0 flex-col gap-1.5 sm:col-start-2 xl:col-start-auto"
           >
             <p class="op-body">
               <span class="font-semibold">{{
@@ -246,6 +246,20 @@ function switchHint(row: {
             </p>
             <p class="op-body text-foreground/85">
               {{ item.card.items_summary }}
+            </p>
+            <!-- pagamento é fato do pedido: mora com os itens, não espreme o gesto -->
+            <p
+              v-if="item.card.change_label || item.card.payment_method_label"
+              class="flex items-start gap-1.5 op-micro text-muted-foreground"
+              data-queue-payment
+            >
+              <Icon
+                :name="item.card.change_label ? 'lucide:coins' : 'lucide:wallet'"
+                class="mt-px size-3.5 shrink-0"
+              />
+              <span>{{
+                item.card.change_label || item.card.payment_method_label
+              }}</span>
             </p>
             <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               <template
@@ -349,26 +363,19 @@ function switchHint(row: {
           </div>
 
           <!-- pagamento, total e o gesto -->
+          <!-- total e gesto: numa linha sob o conteúdo; na coluna própria a partir do xl -->
           <div
-            class="flex min-w-0 flex-col gap-1.5 sm:col-start-2 lg:col-start-auto"
+            class="flex min-w-0 items-center gap-3 sm:col-start-2 xl:col-start-auto xl:flex-col xl:items-stretch xl:gap-1.5"
           >
-            <div class="flex items-baseline justify-between gap-2">
-              <span
-                class="min-w-0 op-micro leading-tight text-muted-foreground"
-                data-queue-payment
-                >{{
-                  item.card.change_label || item.card.payment_method_label
-                }}</span
-              >
-              <span class="shrink-0 op-title tnum">{{
-                item.card.total_display
-              }}</span>
-            </div>
+            <span class="shrink-0 op-title tnum xl:self-end">{{
+              item.card.total_display
+            }}</span>
             <template v-if="item.kind === 'station' && readyStation(item.card)">
               <NuxtButton
                 icon="i-lucide-check"
                 color="primary"
                 block
+                class="min-w-0 flex-1"
                 :disabled="isBusy(item.card.ref)"
                 data-queue-primary
                 @click="
@@ -394,7 +401,7 @@ function switchHint(row: {
             </template>
             <div
               v-else-if="queueGesture(item).primary"
-              class="grid gap-1.5"
+              class="grid min-w-0 flex-1 gap-1.5"
               :class="
                 queueGesture(item).secondary
                   ? 'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'

@@ -14,10 +14,6 @@ withDefaults(
     wide: boolean;
     canOpen: boolean;
     selecting: boolean;
-    fulfillment: string;
-    exitFilterTabs: { value: string; label: string; icon: string }[];
-    layoutMemory: string;
-    layoutMemoryTitle: string;
     canCollapse: boolean;
     shortcut: string;
     isBusy: (ref: string) => boolean;
@@ -42,7 +38,6 @@ const emit = defineEmits<{
   volumes: [cardRef: string, count: number, context: "exit" | "orders"];
   swipe: [card: OrderCardProjection, key: string];
   collapse: [];
-  updateFulfillment: [value: string | number];
 }>();
 </script>
 
@@ -52,21 +47,15 @@ const emit = defineEmits<{
        encolhe a zero ao lado da negociação e dos agendados. -->
   <section
     class="flex min-w-0 flex-col gap-3"
-    :class="phone ? 'min-h-full flex-1' : 'h-full min-h-0'"
+    :class="phone ? 'min-h-full flex-1' : 'h-full min-h-0 w-full'"
     :data-zone="zone.key"
   >
     <NuxtDashboardToolbar v-if="!phone && heading" as="header">
       <OrderBoardHeading
         :zone="zone"
         :cards="cards"
-        :wide="wide"
-        :fulfillment="fulfillment"
-        :exit-filter-tabs="exitFilterTabs"
-        :layout-memory="layoutMemory"
-        :layout-memory-title="layoutMemoryTitle"
         :can-collapse="canCollapse"
         :shortcut="shortcut"
-        @update-fulfillment="emit('updateFulfillment', $event)"
         @collapse="emit('collapse')"
       />
     </NuxtDashboardToolbar>
@@ -79,7 +68,7 @@ const emit = defineEmits<{
 
     <template v-else-if="wide">
       <div
-        class="grid min-h-0 flex-1 gap-3 overflow-y-auto pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
+        class="grid min-h-0 flex-1 auto-rows-max gap-3 overflow-y-auto pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
         data-zone-cards
       >
         <OrderCard

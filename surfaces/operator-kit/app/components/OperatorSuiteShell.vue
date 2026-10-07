@@ -76,10 +76,13 @@ function itemFor(section: OperatorSection) {
     // A contagem mora no Chip do ícone, não num Badge ao lado do rótulo: o rail
     // recolhido não desenha Badge, e na barra do celular o Badge tirava a largura
     // do rótulo. Chip numérico 4xl; sem número, o indicativo 2xl de atenção.
+    // `inset: false` explícito: o NavigationMenu liga inset por padrão, e aqui o Chip
+    // envolve só o ícone (20 px), então inset o punha em cima do desenho. Fora dele
+    // o Chip fica no canto, como o do sino sobre o botão.
     chip: section.badge
-      ? { color: "warning" as const, text: section.badge, size: "4xl" as const, inset: true }
+      ? { color: "warning" as const, text: section.badge, size: "4xl" as const, inset: false }
       : section.attention
-        ? { color: "warning" as const, size: "2xl" as const, inset: true }
+        ? { color: "warning" as const, size: "2xl" as const, inset: false }
         : undefined,
     "aria-label": [section.label, section.badgeLabel, section.attention]
       .filter(Boolean)

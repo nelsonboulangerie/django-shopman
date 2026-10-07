@@ -295,7 +295,7 @@ function nuxtIcon(icon: string): string {
 <template>
   <NuxtCard
     as="article"
-    class="grid h-full grid-rows-[auto_minmax(0,1fr)_auto]"
+    class="grid h-full grid-rows-[auto_1fr_auto]"
     :variant="selected ? 'subtle' : 'outline'"
     :data-card-state="handoff ? 'handoff' : seal.tone"
     :aria-selected="selecting ? selected : undefined"
@@ -900,7 +900,9 @@ function nuxtIcon(icon: string): string {
     <!-- O próximo gesto ocupa o footer oficial do Card, como na receita do
          Kitchen Sink. A divisão e o padding passam a pertencer ao NuxtCard. -->
     <template v-if="!negotiationOnly" #footer>
-      <div class="flex items-center gap-2">
+      <!-- @container: o rodapé decide pela própria largura (card largo, coluna estreita,
+           grade da Saída), não pelo breakpoint da página. -->
+      <div class="@container flex items-end gap-2">
         <NuxtButton
           v-if="handoff && handoff.canUndo"
           block
@@ -919,7 +921,7 @@ function nuxtIcon(icon: string): string {
           class="grid min-w-0 flex-1 gap-2"
           :class="
             primary && secondary.length === 1
-              ? 'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
+              ? '@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
               : secondary.length > 1
                 ? 'grid-cols-2'
                 : 'grid-cols-1'

@@ -18,7 +18,6 @@ import {
   openQueueColumn,
   openQueueKeys,
   queueGridTemplate,
-  queueViewLabel,
   resizeQueueColumns,
   showAllQueueColumns,
   toggleQueueColumn,
@@ -46,7 +45,7 @@ interface ResizeStart {
   rightPx: number;
 }
 
-export function useBoardLayout(titles: () => Record<string, string>) {
+export function useBoardLayout() {
   const keys = BOARD_ZONE_KEYS as readonly string[];
   const layout = ref<QueueColumnLayout>(defaultQueueLayout(keys));
   const station = ref("");
@@ -77,6 +76,12 @@ export function useBoardLayout(titles: () => Record<string, string>) {
       });
       saveFailed.value = false;
     } catch {
+      // Uma vez por falha (não a cada gesto): a arrumação continua na tela, só não
+      // fica guardada no posto.
+      if (!saveFailed.value)
+        useSonner.error(
+          "Não deu para guardar a arrumação neste posto: ela vale até recarregar a tela.",
+        );
       saveFailed.value = true;
     }
   }
@@ -168,17 +173,6 @@ export function useBoardLayout(titles: () => Record<string, string>) {
 
   const gridTemplate = computed(() => queueGridTemplate(layout.value, keys));
   const allOpen = computed(() => allQueueColumnsOpen(layout.value, keys));
-  const viewLabel = computed(() =>
-    queueViewLabel(layout.value, keys, titles()),
-  );
-  /** De quem é a arrumação: o posto lembra, ou ela vale só até recarregar. */
-  const memoryText = computed(() => {
-    if (!station.value)
-      return "Este dispositivo não é um posto: a arrumação vale até recarregar a tela.";
-    if (saveFailed.value)
-      return "Não deu para guardar a arrumação neste posto: ela vale até recarregar a tela.";
-    return "Arrumação lembrada neste posto, no servidor.";
-  });
 
   onMounted(() => {
     void load();
@@ -209,7 +203,5 @@ export function useBoardLayout(titles: () => Record<string, string>) {
     applySizes,
     gridTemplate,
     allOpen,
-    viewLabel,
-    memoryText,
   };
 }
