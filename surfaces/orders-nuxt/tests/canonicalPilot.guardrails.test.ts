@@ -693,7 +693,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(card).toContain(
       // 1fr, não minmax(0,1fr): numa grade que rola, o corpo não pode encolher
       // abaixo do conteúdo (o rodapé subia por cima dele na Saída).
-      'class="grid h-full grid-rows-[auto_1fr_auto]"',
+      'class="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto]"',
     );
     expect(card).toContain(":variant=\"selected ? 'subtle' : 'outline'\"");
     expect(card).toContain("<template #header>");

@@ -73,6 +73,11 @@ function mountCard(props: Record<string, unknown>) {
   return mount(OrderCard, { props, global: { stubs } });
 }
 
+/** Os avisos longos moram no Popover da pílula (dono, 07/10/2026): abrir antes de ler. */
+async function openNotice(w: ReturnType<typeof mountCard>, key: string) {
+  await w.get(`[data-card-notice="${key}"]`).trigger("click");
+}
+
 describe("OrderCard — para onde vai", () => {
   // O Gestor é a tela de quem DESPACHA e não mostrava endereço em canto nenhum:
   // a projection não trazia o campo e o app não tinha uma ocorrência de
@@ -248,7 +253,7 @@ describe("OrderCard — countdown do prazo (relógio compartilhado)", () => {
 });
 
 describe("OrderCard iFood", () => {
-  it("preserva o estado operacional e mostra cancelamento pendente junto da cobrança", () => {
+  it("preserva o estado operacional e mostra cancelamento pendente junto da cobrança", async () => {
     const notice = "Cancelamento solicitado ao iFood. Aguardando confirmação.";
     const w = mountCard({
       card: card({
@@ -260,6 +265,7 @@ describe("OrderCard iFood", () => {
         ifood_cancellation_notice: notice,
       }),
     });
+    await openNotice(w, "ifood-cancellation");
     expect(w.get("[data-ifood-cancellation]").text()).toBe(notice);
     // O desdobramento por bandeira é do detalhe: no card ele empurrava a decisão
     // para baixo da dobra sem ajudar a decidir nada.
@@ -278,7 +284,7 @@ describe("OrderCard iFood", () => {
 });
 
 describe("pedido de teste da homologação", () => {
-  it("abre o card com o aviso, antes do código", () => {
+  it("o aviso fica no card como pílula e abre a frase inteira", async () => {
     const label = "Pedido de teste do iFood";
     const notice =
       "Pedido de teste do iFood: avance as etapas normalmente, mas não produza nem entregue nada.";
@@ -289,6 +295,10 @@ describe("pedido de teste da homologação", () => {
         test_order_notice: notice,
       }),
     });
+    expect(w.get('[data-card-notice="test-order"]').text()).toBe(
+      "Pedido de teste",
+    );
+    await openNotice(w, "test-order");
     const aviso = w.get("[data-test-order-notice]");
     expect(aviso.text()).toContain(label);
     expect(aviso.text()).toContain("não produza nem entregue");
@@ -296,11 +306,11 @@ describe("pedido de teste da homologação", () => {
 
   it("não marca nada num pedido de verdade", () => {
     const w = mountCard({ card: card({ channel_ref: "ifood" }) });
-    expect(w.find("[data-test-order-notice]").exists()).toBe(false);
+    expect(w.find('[data-card-notice="test-order"]').exists()).toBe(false);
   });
 });
 
-it("pedido com negociação aberta leva à resposta pela ação do Alert", () => {
+it("pedido com negociação aberta leva à resposta pela ação do Alert", async () => {
   const order = card({
     status: "completed",
     status_label: "Concluído",
@@ -309,6 +319,7 @@ it("pedido com negociação aberta leva à resposta pela ação do Alert", () =>
     ] as OrderCardProjection["ifood_negotiations"],
   });
   const w = mountCard({ card: order });
+  await openNotice(w, "negotiation");
   expect(w.get("[data-ifood-negotiation-link]").attributes("to")).toBe(
     `/${order.ref}#ifood-negotiations`,
   );
@@ -316,20 +327,21 @@ it("pedido com negociação aberta leva à resposta pela ação do Alert", () =>
 
 describe("iFood à frente do estado local", () => {
   // 21/09: o 1416 seguia "Em preparo" um minuto depois de encerrado no iFood.
-  it("mostra a instrução quando o iFood já concluiu", () => {
+  it("mostra a instrução quando o iFood já concluiu", async () => {
     const w = mountCard({
       card: card({
         channel_ref: "ifood",
         ifood_remote_ahead_label: "Concluído no iFood · Finalize aqui",
       }),
     });
+    await openNotice(w, "ifood-ahead");
     expect(w.get("[data-ifood-remote-ahead]").text()).toBe(
       "Concluído no iFood · Finalize aqui",
     );
   });
   it("não mostra nada no caso normal", () => {
     const w = mountCard({ card: card({ channel_ref: "ifood" }) });
-    expect(w.find("[data-ifood-remote-ahead]").exists()).toBe(false);
+    expect(w.find('[data-card-notice="ifood-ahead"]').exists()).toBe(false);
   });
 });
 
@@ -384,13 +396,14 @@ describe("OrderCard — a DANFE da sacola", () => {
           "A impressora de Balcão não buscou a DANFE. Confira se o computador dela está ligado.",
       }),
     });
-    expect(w.get("[data-danfe-status]").text()).toBe("DANFE não impressa");
-    expect(w.get("[data-danfe-problem]").text()).toContain(
-      "não buscou a DANFE",
+    expect(w.get('[data-card-notice="danfe"]').text()).toBe(
+      "DANFE não impressa",
     );
-    expect(
-      w.get("[data-danfe]").attributes("data-danfe-attention"),
-    ).toBeDefined();
+    await openNotice(w, "danfe");
+    const aviso = w.get("[data-danfe]");
+    expect(aviso.attributes("data-danfe-attention")).toBeDefined();
+    expect(aviso.text()).toContain("DANFE não impressa");
+    expect(aviso.text()).toContain("não buscou a DANFE");
     await w.get("[data-danfe-print]").trigger("click");
     expect(w.emitted("print-danfe")).toHaveLength(1);
   });
@@ -410,13 +423,14 @@ describe("OrderCard — a DANFE da sacola", () => {
 });
 
 describe("OrderCard: a NFC-e que não autorizou", () => {
-  it("aparece no card e leva ao pedido, onde está Reprocessar NFC-e", () => {
+  it("aparece no card e leva ao pedido, onde está Reprocessar NFC-e", async () => {
     const w = mountCard({
       card: card({
         fiscal_status: "failed",
         fiscal_status_label: "NFC-e não autorizada",
       }),
     });
+    await openNotice(w, "fiscal");
     const link = w.get("[data-fiscal-failed]");
     expect(link.text()).toContain("NFC-e não autorizada");
     expect(link.text()).toContain("reprocessar");
@@ -424,20 +438,21 @@ describe("OrderCard: a NFC-e que não autorizou", () => {
   it("nota em dia não ocupa o card", () => {
     expect(
       mountCard({ card: card({ fiscal_status: "authorized" }) })
-        .find("[data-fiscal-failed]")
+        .find('[data-card-notice="fiscal"]')
         .exists(),
     ).toBe(false);
   });
 });
 
 describe("OrderCard: por que o botão está travado", () => {
-  it("a frase inteira fica à vista, não só no tooltip", () => {
+  it("a frase inteira fica a um toque (pílula e Popover), não só no tooltip", async () => {
     const w = mountCard({
       card: card({
         advance_block_reason:
           "Encomenda para uma data futura. O preparo abre no dia combinado.",
       }),
     });
+    await openNotice(w, "block");
     expect(w.get("[data-advance-block]").text()).toBe(
       "Encomenda para uma data futura. O preparo abre no dia combinado.",
     );
@@ -445,7 +460,7 @@ describe("OrderCard: por que o botão está travado", () => {
   it("sem bloqueio, nada", () => {
     expect(
       mountCard({ card: card({ advance_block_reason: "" }) })
-        .find("[data-advance-block]")
+        .find('[data-card-notice="block"]')
         .exists(),
     ).toBe(false);
   });

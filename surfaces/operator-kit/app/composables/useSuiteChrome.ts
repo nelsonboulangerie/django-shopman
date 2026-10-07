@@ -43,7 +43,7 @@ export interface OperatorInboxAlert {
 }
 
 export interface OperatorInboxAlertSource {
-  /** Título da seção ("Da operação"; o Marketing diz "Decisões"). */
+  /** Título da seção ("Gerais"; o Marketing diz "Decisões"). */
   title?: string;
   /** Quando não há nada ("Nenhum alerta agora."). */
   emptyText?: string;

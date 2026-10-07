@@ -37,6 +37,7 @@ import {
   type QueueScope,
   type QueueSort,
 } from "~/presentation/queue";
+import OrderCardMenu from "./OrderCardMenu.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -64,8 +65,10 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: "action", ref: string, action: AffordanceRef): void;
   (e: "station-ready", card: OrderCardProjection, stationRef: string): void;
-  (e: "focus" | "dismiss-error" | "switch", ref: string): void;
+  (e: "focus" | "dismiss-error" | "switch" | "select-mode", ref: string): void;
   (e: "scope", scope: QueueScope): void;
+  (e: "toggle-assign", card: OrderCardProjection): void;
+  (e: "volumes" | "station-recall", ref: string, value: number): void;
 }>();
 
 const items = computed(() =>
@@ -392,128 +395,149 @@ function switchHint(row: {
             <span class="shrink-0 op-title tnum xl:self-end">{{
               item.card.total_display
             }}</span>
-            <NuxtButton
-              v-if="item.kind === 'negotiation'"
-              :to="`/${item.card.ref}#ifood-negotiations`"
-              icon="i-lucide-message-square-reply"
-              label="Responder"
-              color="primary"
-              block
-              class="min-w-0 flex-1"
-              data-queue-primary
-            />
-            <template
-              v-else-if="item.kind === 'station' && readyStation(item.card)"
-            >
+            <!-- o gesto da linha e o ⋯ do pedido (as mesmas opções do cartão do quadro) -->
+            <div class="flex min-w-0 flex-1 items-center gap-1.5">
               <NuxtButton
-                icon="i-lucide-check"
+                v-if="item.kind === 'negotiation'"
+                :to="`/${item.card.ref}#ifood-negotiations`"
+                icon="i-lucide-message-square-reply"
+                label="Responder"
                 color="primary"
                 block
                 class="min-w-0 flex-1"
-                :disabled="isBusy(item.card.ref)"
                 data-queue-primary
-                @click="
-                  emit(
-                    'station-ready',
-                    item.card,
-                    readyStation(item.card)!.station_ref,
-                  )
+              />
+              <template
+                v-else-if="item.kind === 'station' && readyStation(item.card)"
+              >
+                <NuxtButton
+                  icon="i-lucide-check"
+                  color="primary"
+                  block
+                  class="min-w-0 flex-1"
+                  :disabled="isBusy(item.card.ref)"
+                  data-queue-primary
+                  @click="
+                    emit(
+                      'station-ready',
+                      item.card,
+                      readyStation(item.card)!.station_ref,
+                    )
+                  "
+                >
+                  <span class="min-w-0 text-center leading-tight">{{
+                    `Pronto de ${readyStation(item.card)!.station_name}`
+                  }}</span>
+                  <template v-if="item.card.ref === focusRef" #trailing>
+                    <NuxtKbd
+                      value="enter"
+                      size="sm"
+                      variant="soft"
+                      data-queue-key
+                    />
+                  </template>
+                </NuxtButton>
+              </template>
+              <div
+                v-else-if="queueGesture(item).primary"
+                class="grid min-w-0 flex-1 gap-1.5"
+                :class="
+                  queueGesture(item).secondary
+                    ? 'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
+                    : 'grid-cols-1'
                 "
               >
-                <span class="min-w-0 text-center leading-tight">{{
-                  `Pronto de ${readyStation(item.card)!.station_name}`
-                }}</span>
-                <template v-if="item.card.ref === focusRef" #trailing>
-                  <NuxtKbd
-                    value="enter"
-                    size="sm"
-                    variant="soft"
-                    data-queue-key
-                  />
-                </template>
-              </NuxtButton>
-            </template>
-            <div
-              v-else-if="queueGesture(item).primary"
-              class="grid min-w-0 flex-1 gap-1.5"
-              :class="
-                queueGesture(item).secondary
-                  ? 'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
-                  : 'grid-cols-1'
-              "
-            >
-              <NuxtButton
-                v-if="queueGesture(item).secondary"
-                block
-                class="min-w-0"
-                color="neutral"
-                variant="outline"
-                :disabled="
-                  isBusy(item.card.ref) ||
-                  queueGesture(item).secondary!.disabled
+                <NuxtButton
+                  v-if="queueGesture(item).secondary"
+                  block
+                  class="min-w-0"
+                  color="neutral"
+                  variant="outline"
+                  :disabled="
+                    isBusy(item.card.ref) ||
+                    queueGesture(item).secondary!.disabled
+                  "
+                  :title="queueGesture(item).secondary!.reason || undefined"
+                  data-queue-secondary
+                  @click="
+                    emit(
+                      'action',
+                      item.card.ref,
+                      queueGesture(item).secondary!.ref,
+                    )
+                  "
+                >
+                  <span class="min-w-0 text-center leading-tight">{{
+                    queueGesture(item).secondary!.label
+                  }}</span>
+                </NuxtButton>
+                <NuxtButton
+                  :icon="
+                    queueGesture(item).primary!.disabled
+                      ? 'i-lucide-lock'
+                      : item.kind === 'dispatch'
+                        ? 'i-lucide-bike'
+                        : item.kind === 'handoff'
+                          ? 'i-lucide-hand-platter'
+                          : queueGesture(item).primary!.icon.replace(
+                              'lucide:',
+                              'i-lucide-',
+                            )
+                  "
+                  :color="
+                    queueGesture(item).primary!.disabled ? 'neutral' : 'primary'
+                  "
+                  :variant="
+                    queueGesture(item).primary!.disabled ? 'outline' : 'solid'
+                  "
+                  block
+                  class="min-w-0"
+                  :disabled="
+                    isBusy(item.card.ref) ||
+                    queueGesture(item).primary!.disabled
+                  "
+                  :title="
+                    queueGesture(item).primary!.reason ||
+                    (queueGesture(item).primary!.verb !==
+                    queueGesture(item).primary!.label
+                      ? queueGesture(item).primary!.label
+                      : undefined)
+                  "
+                  data-queue-primary
+                  @click="
+                    emit(
+                      'action',
+                      item.card.ref,
+                      queueGesture(item).primary!.ref,
+                    )
+                  "
+                >
+                  <span class="min-w-0 text-center leading-tight">{{
+                    queueGesture(item).primary!.verb
+                  }}</span>
+                  <template v-if="printedKey(item)" #trailing>
+                    <NuxtKbd
+                      :value="printedKey(item)"
+                      size="sm"
+                      variant="soft"
+                      data-queue-key
+                    />
+                  </template>
+                </NuxtButton>
+              </div>
+              <div v-else class="flex-1" />
+              <OrderCardMenu
+                class="shrink-0"
+                :card="item.card"
+                :busy="isBusy(item.card.ref)"
+                :can-open="canOpen"
+                @toggle-assign="emit('toggle-assign', item.card)"
+                @select-mode="emit('select-mode', item.card.ref)"
+                @volumes="(count) => emit('volumes', item.card.ref, count)"
+                @station-recall="
+                  (pk) => emit('station-recall', item.card.ref, pk)
                 "
-                :title="queueGesture(item).secondary!.reason || undefined"
-                data-queue-secondary
-                @click="
-                  emit(
-                    'action',
-                    item.card.ref,
-                    queueGesture(item).secondary!.ref,
-                  )
-                "
-              >
-                <span class="min-w-0 text-center leading-tight">{{
-                  queueGesture(item).secondary!.label
-                }}</span>
-              </NuxtButton>
-              <NuxtButton
-                :icon="
-                  queueGesture(item).primary!.disabled
-                    ? 'i-lucide-lock'
-                    : item.kind === 'dispatch'
-                      ? 'i-lucide-bike'
-                      : item.kind === 'handoff'
-                        ? 'i-lucide-hand-platter'
-                        : queueGesture(item).primary!.icon.replace(
-                            'lucide:',
-                            'i-lucide-',
-                          )
-                "
-                :color="
-                  queueGesture(item).primary!.disabled ? 'neutral' : 'primary'
-                "
-                :variant="
-                  queueGesture(item).primary!.disabled ? 'outline' : 'solid'
-                "
-                block
-                class="min-w-0"
-                :disabled="
-                  isBusy(item.card.ref) || queueGesture(item).primary!.disabled
-                "
-                :title="
-                  queueGesture(item).primary!.reason ||
-                  (queueGesture(item).primary!.verb !==
-                  queueGesture(item).primary!.label
-                    ? queueGesture(item).primary!.label
-                    : undefined)
-                "
-                data-queue-primary
-                @click="
-                  emit('action', item.card.ref, queueGesture(item).primary!.ref)
-                "
-              >
-                <span class="min-w-0 text-center leading-tight">{{
-                  queueGesture(item).primary!.verb
-                }}</span>
-                <template v-if="printedKey(item)" #trailing>
-                  <NuxtKbd
-                    :value="printedKey(item)"
-                    size="sm"
-                    variant="soft"
-                    data-queue-key
-                  />
-                </template>
-              </NuxtButton>
+              />
             </div>
           </div>
         </div>

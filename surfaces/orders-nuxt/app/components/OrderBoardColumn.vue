@@ -66,9 +66,11 @@ const emit = defineEmits<{
       :title="zoneEmptyText(zone.key)"
     />
 
+    <!-- p-px: o contorno do Card é um ring 1 px para fora; sem o respiro, a área que
+         rola o cortava no topo e na lateral. -->
     <template v-else-if="wide">
       <div
-        class="grid min-h-0 flex-1 auto-rows-max gap-3 overflow-y-auto pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
+        class="grid min-h-0 flex-1 auto-rows-max gap-3 overflow-y-auto p-px pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
         data-zone-cards
       >
         <OrderCard
@@ -101,7 +103,7 @@ const emit = defineEmits<{
 
     <div
       v-else
-      class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-3"
+      class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-px pb-3"
       data-zone-cards
     >
       <SwipeReveal

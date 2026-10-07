@@ -70,7 +70,7 @@ async function restoreAuthenticatedWorkspace() {
 const { sections, current } = useGestorSections();
 const { alerts, activeCount, ack } = useAlerts();
 provideOperatorInboxAlerts(() => ({
-  title: "Da operação",
+  title: "Gerais",
   emptyText: "Nenhum alerta de pedido agora.",
   items: alerts.value.map(operatorAlertToInbox),
   count: activeCount.value,

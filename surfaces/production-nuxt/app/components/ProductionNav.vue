@@ -26,7 +26,7 @@ const phoneCurrent = computed(() => activeSectionKey(route.path, phone.value));
 if (props.place === "rail") {
   const { alerts, activeCount, ack, isPending } = useAlerts();
   provideOperatorInboxAlerts(() => ({
-    title: "Da operação",
+    title: "Gerais",
     emptyText: "Nenhum alerta agora.",
     items: alerts.value.map(operatorAlertToInbox),
     count: activeCount.value,

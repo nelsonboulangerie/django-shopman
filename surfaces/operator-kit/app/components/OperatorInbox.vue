@@ -87,8 +87,8 @@ const tabs = computed(() => [
   {
     value: "operation",
     label: operationCount.value
-      ? `${source.value?.title || "Da operação"} · ${operationCount.value}`
-      : source.value?.title || "Da operação",
+      ? `${source.value?.title || "Gerais"} · ${operationCount.value}`
+      : source.value?.title || "Gerais",
     "data-operator-inbox-tab": "operation",
   },
   {

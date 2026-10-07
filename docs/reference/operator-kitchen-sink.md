@@ -215,6 +215,18 @@ vez numa lista de cartões (o mais urgente, ou o que o operador escolheu) é
 `NuxtPageCard` `outline` com `highlight` na cor primária, o destaque semântico deste
 catálogo; os demais ficam sem destaque.
 
+Aviso longo dentro de uma unidade de trabalho (DANFE não impressa, NFC-e, iFood,
+motivo do bloqueio, papel da cozinha) não ocupa o cartão: vira uma pílula
+(`NuxtButton` `soft` `xs`, na cor do aviso, com nome curto) que abre um `NuxtPopover`
+com o `NuxtAlert` inteiro e a ação dele. O erro de uma ação continua inline, porque é
+a resposta ao toque. O cabeçalho do cartão tem duas linhas: código e selos; quem e o
+canal, numa linha só.
+
+A Lista é a `NuxtTable` dentro de um `NuxtCard`: a linha principal tem só o gesto do
+momento (com nome) e o ⋯ do pedido; o chevron da primeira coluna abre a linha com os
+detalhes e todas as outras ações. A coluna de seleção só aparece no modo de seleção
+em lote. O ⋯ é um componente só (`OrderCardMenu`) no cartão, na Grade e na Lista.
+
 Navegação entre áreas (Ajustes) é `NuxtPageGrid` de `NuxtPageCard` com `to`,
 ícone e descrição, espaçada por `--op-region-gap` como no catálogo.
 

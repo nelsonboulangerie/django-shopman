@@ -209,6 +209,8 @@ describe("OrderCard: a Cozinha no cartão", () => {
         .findAll("[data-kitchen-station]")
         .map((s) => s.attributes("aria-label")),
     ).toEqual(["Lanches: na fila", "Cafés: em preparo"]);
+    // a estação que pede alguém é uma pílula; o Pronto mora no Popover dela
+    await wrapper.get('[data-card-notice="station-lanches"]').trigger("click");
     const ready = wrapper.get("[data-kitchen-ready]");
     expect(ready.text()).toBe("Pronto de Lanches");
     await ready.trigger("click");
@@ -257,7 +259,7 @@ describe("OrderCard: a Cozinha no cartão", () => {
     );
   });
 
-  it("posto de saída: mantém a densidade canônica padrão", () => {
+  it("posto de saída: mantém a densidade canônica padrão", async () => {
     const wrapper = mountCard(
       card({
         kitchen: kitchen(
@@ -273,6 +275,7 @@ describe("OrderCard: a Cozinha no cartão", () => {
         ),
       }),
     );
+    await wrapper.get('[data-card-notice="station-lanches"]').trigger("click");
     expect(
       wrapper.get("[data-kitchen-ready]").attributes("size"),
     ).toBeUndefined();

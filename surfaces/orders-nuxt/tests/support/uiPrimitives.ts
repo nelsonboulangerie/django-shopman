@@ -1,5 +1,5 @@
 import { config } from "@vue/test-utils";
-import { Fragment, defineComponent, h, inject, provide } from "vue";
+import { Fragment, defineComponent, h, inject, provide, ref } from "vue";
 
 // O interruptor entra de VERDADE, não como stub: ele vive no operator-kit e é SFC
 // puro (nenhum runtime Nuxt). Stubar seria justamente apagar o contrato que estes
@@ -398,17 +398,26 @@ const NuxtAlert = defineComponent({
 const NuxtPopover = defineComponent({
   name: "NuxtPopover",
   inheritAttrs: false,
-  props: { open: Boolean },
+  // Como o Popover real: controlado por `v-model:open` quando o pai o liga; senão,
+  // o próprio toque no gatilho abre e fecha.
+  props: { open: { type: Boolean, default: undefined } },
   emits: ["update:open"],
   setup(props, { attrs, emit, slots }) {
+    const inner = ref(false);
+    const isOpen = () => (props.open === undefined ? inner.value : props.open);
     return () =>
-      h("div", { ...attrs, "data-open": String(props.open) }, [
+      h("div", { ...attrs, "data-open": String(isOpen()) }, [
         h(
           "span",
-          { onClick: () => emit("update:open", !props.open) },
+          {
+            onClick: () => {
+              if (props.open === undefined) inner.value = !inner.value;
+              emit("update:open", !isOpen());
+            },
+          },
           slots.default?.(),
         ),
-        props.open ? slots.content?.() : null,
+        isOpen() ? slots.content?.() : null,
       ]);
   },
 });

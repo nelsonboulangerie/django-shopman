@@ -17,6 +17,25 @@ const baseQueue = readFixture("orders-board.json");
 const baseAlerts = readFixture("alerts.json");
 const baseAttention = readFixture("channel-attention.json");
 const baseRailCounts = readFixture("rail-counts.json");
+// Respostas GET gravadas do Django real (seed Nelson, sintético) para as telas que a
+// galeria não cobre: Ajustes, Histórico, Catálogo, Canais, Clientes, Postos e o detalhe
+// do pedido. Casa pelo caminho com a query e, sem ela, só pelo caminho.
+const recorded = readFixture("recorded-django.json");
+function recordedFor(url) {
+  const exact = recorded[url.pathname + url.search];
+  if (exact) return exact;
+  const key = Object.keys(recorded).find((k) => k.split("?")[0] === url.pathname);
+  return key ? recorded[key] : null;
+}
+const detailTemplate = recorded["/api/v1/backstage/orders/IFOOD-261006-W01/"];
+/** O detalhe de um pedido da galeria: o detalhe real gravado, com os dados do card. */
+function galleryDetail(ref) {
+  const card = [].concat(...Object.values(queuePayload().queue).filter(Array.isArray)).find((c) => c && c.ref === ref);
+  if (!card || !detailTemplate) return null;
+  const body = JSON.parse(JSON.stringify(detailTemplate));
+  body.order = { ...body.order, ...card, ref, items: body.order.items, timeline: body.order.timeline };
+  return body;
+}
 
 let scenario = "normal";
 // "Visto" do aviso com prazo no cenário gallery: o mock lembra quem já viu.
@@ -155,6 +174,11 @@ createServer((req, res) => {
   }
   if (path === "/api/v1/backstage/channels/attention/") { send(res, 200, baseAttention); return; }
   if (path.indexOf("/events/") >= 0 || path.indexOf("/sse/") >= 0) { res.statusCode = 204; res.end(); return; }
+  if (req.method === "GET") {
+    const detail = path.match(/^\/api\/v1\/backstage\/orders\/([A-Z0-9-]+)\/$/);
+    const body = (detail && !recorded[path] && galleryDetail(detail[1])) || recordedFor(url);
+    if (body) { send(res, 200, body); return; }
+  }
   send(res, 200, {});
 }).listen(port, "127.0.0.1", () => {
   console.log("[orders-visual-mock] listening on http://127.0.0.1:" + port);

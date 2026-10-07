@@ -61,17 +61,24 @@ const displayDescription = computed(
     :description="displayDescription"
     data-operator-login
   >
-    <template #body>
-      <OperatorLoginForm
-        :title="displayTitle"
-        :description="displayDescription"
-        :icon="icon"
-        :icon-src="iconSrc"
-        :login-url="loginUrl"
-        :large-fields="largeFields"
-        :reload-on-success="reloadOnSuccess"
-        @success="emit('success')"
-      />
+    <!-- Como era antes (dono, 07/10/2026): um bloco só, sem a faixa de cabeçalho do
+         Modal. Com #content, o Nuxt UI mantém título e descrição como DialogTitle e
+         DialogDescription ocultos (o leitor de tela continua ouvindo) e o selo, o
+         título e os campos ficam juntos, centralizados. -->
+    <template #content>
+      <div class="p-6">
+        <OperatorLoginForm
+          heading
+          :title="displayTitle"
+          :description="displayDescription"
+          :icon="icon"
+          :icon-src="iconSrc"
+          :login-url="loginUrl"
+          :large-fields="largeFields"
+          :reload-on-success="reloadOnSuccess"
+          @success="emit('success')"
+        />
+      </div>
     </template>
   </NuxtModal>
 
