@@ -149,8 +149,12 @@ ou sheet. Não se reduz tipografia para manter duas panes.
 
 ### Formulários e fluxos
 
-`NuxtForm` + `NuxtFormField` organizam campos. Ajuda esclarece formato ou
-consequência. Ações ficam no final e seguem a hierarquia primária, secundária,
+`NuxtForm` + `NuxtFormField` organizam campos. Controle filho direto de
+`NuxtFormField` (`Input`, `Textarea`, `Select`, `SelectMenu`, `InputNumber`) leva
+`class="w-full"`: a raiz oficial é `inline-flex` e, sem isso, o campo fica com a
+largura do placeholder ao lado de um botão `block`. Controle em linha (filtro de
+toolbar, renomear em linha, barra de lote) mantém a largura intrínseca. Ajuda
+esclarece formato ou consequência. Ações ficam no final e seguem a hierarquia primária, secundária,
 destrutiva. Fluxos com etapas usam `UiStepper` e `useNextFocus`; a etapa atual
 declara `data-focus-target`.
 
@@ -173,7 +177,11 @@ Modal, detalhe lateral e drawer usam `bg-card`; popover, menus e tooltip usam
 escuro. O backdrop continua translúcido, sem cobrir o contexto com branco opaco.
 Alerts usam `subtle` por padrão. Exemplos têm ícone e
 dismiss funcional; trocar o cenário reabre o aviso. Dismiss de um aviso não cancela
-a operação nem altera o estado. Toast usa `useToast` e o toaster do `OperatorAppRoot`.
+a operação nem altera o estado. Toast usa `useToast` e o toaster do `OperatorAppRoot`;
+no Gestor, o contrato `useSonner` que o kit chama cai nesse mesmo toaster
+(`utils/operatorToast.ts`), sem um segundo toaster. Ação de Alert entra pela prop
+`actions` (o Nuxt UI a desenha `xs`), não por botão manual no slot; o `close`
+dispensável leva só `aria-label`, nunca `label`, que vira texto ao lado do título.
 Quando um Alert oferece ação, o botão usa `outline` e a mesma cor semântica do
 Alert; ações neutras não apagam a gravidade de um aviso `error`, `warning` ou
 `info`. Na caixa de Avisos esse contrato vale para abrir, reconhecer, atualizar e
@@ -185,6 +193,20 @@ O contador numérico de Avisos usa a extensão temática `4xl` (16 px, texto de 
 px), pois o componente oficial termina em `3xl` e esse tamanho não comporta
 contagens com dois caracteres. Todos continuam sendo os componentes Nuxt UI, sem
 bolinha ou tecla recriada por CSS local.
+
+A contagem de uma seção (Pedidos 2, Saída 5) mora no `chip` do item do
+`NavigationMenu`, Chip numérico `4xl` warning `inset`; sem número, o indicativo
+`2xl`. O rail recolhido não desenha `badge`, e na barra do celular o Badge tirava
+a largura do rótulo. O "Mais" da barra do celular ocupa a largura do próprio
+conteúdo (`shrink-0`), não metade da barra.
+
+Navegação entre áreas (Ajustes) é `NuxtPageGrid` de `NuxtPageCard` com `to`,
+ícone e descrição, espaçada por `--op-region-gap` como no catálogo.
+
+Superfície principal que rola por dentro (Splitter do quadro, `NuxtTable` com
+cabeçalho fixo) é item flex com `min-h-full flex-1`: tem sempre a altura da área
+visível e o que vem antes e depois (negociação iFood, agendados) rola em volta.
+`min-h-0` num item com `overflow` próprio o encolhe a zero quando há vizinhos.
 
 A busca usa `DashboardSearch` e `DashboardSearchButton`, com `Meta+K` oficial e
 `Kbd`. O menu demonstra filhos e rodapé; o rodapé da página oferece referências.
