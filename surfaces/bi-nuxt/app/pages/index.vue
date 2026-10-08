@@ -26,7 +26,6 @@ import {
   carryLabel,
   collectionsOf,
   compareCaption,
-  compareName,
   compareOptions,
   filterRows,
   hiddenRowsSummary,
@@ -39,6 +38,7 @@ import {
   typicalLine,
   verdictMeta,
 } from "~/presentation/overShort";
+import type { BiMenuItem } from "~/presentation/bi";
 import { todayIso } from "../../../operator-kit/app/presentation/dates";
 
 // ── Sobrou ou faltou ─────────────────────────────────────────────────────────
@@ -94,7 +94,11 @@ const counts = computed(() => ({
   right: day.value?.summary.right ?? 0,
 }));
 
-/** Grade da tabela: um bloco de duas colunas no celular e no tablet; sete colunas no desktop largo. */
+/**
+ * Grade da tabela: um bloco de duas colunas no celular e no tablet; sete colunas no
+ * desktop largo. As larguras fixas são as do conteúdo de cada coluna (a etiqueta do
+ * veredito, a barra fez × vendeu, a hora, o histórico e o botão de abrir).
+ */
 const COLUMNS =
   "grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1.3fr)_104px_minmax(200px,230px)_92px_118px_minmax(0,1.1fr)_168px]";
 
@@ -136,6 +140,16 @@ const { run: carryToPlan, pending: carrying } = usePendingAction(async () => {
   }
 });
 const explainOpen = ref(false);
+// "Como é calculado" é um item do ⋯ da página (o BiPageMenu recebe os itens por prop).
+const pageMenuItems = computed<BiMenuItem[]>(() => [
+  {
+    label: explainOpen.value ? "Esconder como é calculado" : "Como é calculado",
+    icon: "i-lucide-circle-help",
+    onSelect: () => {
+      explainOpen.value = !explainOpen.value;
+    },
+  },
+]);
 
 // Teclas do desktop: [ e ] andam um dia aberto; / leva à busca.
 const search = ref<{ focus: () => void } | null>(null);
@@ -158,6 +172,18 @@ onKeyStroke("/", (event) => {
 });
 
 const CHIP_DOT = { short: "bg-destructive", over: "bg-warning", right: "bg-success" } as const;
+
+// Recorte por veredito: NuxtTabs em pílula, como os recortes do Gestor. Cabe nas Tabs
+// porque é escolha de UM entre quatro e o "Todos" está na fileira: o filtro se desliga
+// tocando "Todos" (antes, tocar de novo o chip aceso também desligava; o "Todos"
+// continua a um toque). `all` é o valor do "Todos": as Tabs não aceitam valor vazio.
+const verdictTabs = computed(() => [
+  { value: "all", label: "Todos", badge: rows.value.length },
+  ...VERDICTS.map((key) => ({ value: key, label: verdictMeta(key).label, badge: counts.value[key] })),
+]);
+function pickVerdict(value: string | number) {
+  verdict.value = value === "all" ? "" : String(value);
+}
 
 // ── Os lotes no período (a janela de análise) ───────────────────────────────
 
@@ -243,78 +269,55 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
           :max="yesterday"
           @change="setDay"
         />
-        <BiPageMenu v-slot="{ itemClass, close }">
-          <button type="button" role="menuitem" :class="itemClass" @click="explainOpen = !explainOpen; close()">
-            <Icon name="lucide:circle-help" class="size-4 text-muted-foreground" aria-hidden="true" />
-            {{ explainOpen ? "Esconder como é calculado" : "Como é calculado" }}
-          </button>
-        </BiPageMenu>
-        <UiButton
+        <BiPageMenu :items="pageMenuItems" />
+        <NuxtButton
           v-if="day?.plan_day"
           class="hidden md:inline-flex"
-          :disabled="carrying"
+          icon="i-lucide-arrow-right-left"
+          :label="carryLabel(day.plan_day)"
+          :loading="carrying"
           data-bi-carry
           @click="carryToPlan()"
-        >
-          <Icon name="lucide:arrow-right-left" class="size-4" aria-hidden="true" />
-          {{ carryLabel(day.plan_day) }}
-        </UiButton>
+        />
       </template>
       <template #phone-actions>
         <BiShareButton />
       </template>
       <template v-if="day" #filters>
-        <label
-          class="relative inline-flex min-h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition focus-within:ring-2 focus-within:ring-ring/40 hover:bg-accent"
-          data-bi-compare
-        >
-          <Icon name="lucide:git-compare-arrows" class="size-4 text-muted-foreground" aria-hidden="true" />
-          <span class="font-normal text-muted-foreground">Comparar com:</span>
-          <span class="font-semibold">{{ compareName(day.day, day.compare) }}</span>
-          <span class="hidden tnum font-normal text-muted-foreground sm:inline">({{ compareCaption(day.day, day.compare_days) }})</span>
-          <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-          <select
-            :value="compare"
-            class="absolute inset-0 cursor-pointer opacity-0"
-            aria-label="Comparar com"
-            @change="setCompare(($event.target as HTMLSelectElement).value)"
-          >
+        <!-- Lista curta: UiNativeSelect visível, a peça do kit por decisão do dono
+             (operator-kit/README.md, "lista curta"). Antes era um seletor nativo invisível
+             sobre um rótulo; a janela dos dias comparados segue ao lado. -->
+        <label class="inline-flex items-center gap-2 op-label text-muted-foreground" data-bi-compare>
+          Comparar com
+          <UiNativeSelect :value="compare" @change="setCompare(($event.target as HTMLSelectElement).value)">
             <option v-for="option in compareChoices" :key="option.key" :value="option.key">
               {{ option.label }} ({{ option.reach }})
             </option>
-          </select>
+          </UiNativeSelect>
+          <span class="hidden op-micro tnum sm:inline">{{ compareCaption(day.day, day.compare_days) }}</span>
         </label>
-        <span class="mx-1 h-6 w-px bg-border" aria-hidden="true" />
-        <UiFilterChip :active="!verdict" :count="rows.length" :aria-pressed="!verdict" @click="verdict = ''">
-          <template #icon><Icon v-if="!verdict" name="lucide:check" class="size-4 text-primary" aria-hidden="true" /></template>
-          Todos
-        </UiFilterChip>
-        <UiFilterChip
-          v-for="key in VERDICTS"
-          :key="key"
-          :active="verdict === key"
-          :count="counts[key]"
-          :aria-pressed="verdict === key"
-          @click="verdict = verdict === key ? '' : key"
+        <NuxtSeparator orientation="vertical" class="h-6" />
+        <NuxtTabs
+          :model-value="verdict || 'all'"
+          :items="verdictTabs"
+          :content="false"
+          variant="pill"
+          aria-label="Recorte por veredito"
+          data-bi-verdict-tabs
+          @update:model-value="pickVerdict"
         >
-          <template #icon><span class="size-2 rounded-full" :class="CHIP_DOT[key]" aria-hidden="true" /></template>
-          {{ verdictMeta(key).label }}
-        </UiFilterChip>
-        <template v-if="collections.length">
-          <span class="mx-1 h-6 w-px bg-border" aria-hidden="true" />
-          <label
-            class="relative inline-flex min-h-control items-center gap-2 rounded-full border px-3 op-label transition focus-within:ring-2 focus-within:ring-ring/40"
-            :class="collection ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
-          >
-            <Icon name="lucide:layers" class="size-4" aria-hidden="true" />
-            Coleção: {{ collections.find((c) => c.ref === collection)?.name ?? "todas" }}
-            <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-            <select v-model="collection" class="absolute inset-0 cursor-pointer opacity-0" aria-label="Coleção">
-              <option value="">Todas as coleções</option>
-              <option v-for="item in collections" :key="item.ref" :value="item.ref">{{ item.name }}</option>
-            </select>
-          </label>
-        </template>
+          <template #leading="{ item }">
+            <span v-if="item.value !== 'all'" class="size-2 rounded-full" :class="CHIP_DOT[item.value as keyof typeof CHIP_DOT]" aria-hidden="true" />
+          </template>
+        </NuxtTabs>
+        <NuxtSeparator v-if="collections.length" orientation="vertical" class="h-6" />
+        <label v-if="collections.length" class="inline-flex items-center gap-2 op-label text-muted-foreground">
+          Coleção
+          <UiNativeSelect v-model="collection">
+            <option value="">Todas as coleções</option>
+            <option v-for="item in collections" :key="item.ref" :value="item.ref">{{ item.name }}</option>
+          </UiNativeSelect>
+        </label>
         <span class="hidden flex-1 lg:block" aria-hidden="true" />
         <span class="hidden items-center gap-1.5 op-micro text-muted-foreground lg:inline-flex" :title="'O dia da leitura mora no endereço: o link copiado abre esta mesma leitura.'">
           <Icon name="lucide:link" class="size-3.5" aria-hidden="true" />{{ shareQuery }}
@@ -326,15 +329,16 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
       <BiPageState :pending="dayPending && !day" :error="dayError" what="a leitura do dia" @retry="dayRefresh()" />
 
       <template v-if="day">
-        <div v-if="explainOpen" class="rounded-lg border border-border bg-card px-4 py-3 op-label leading-6" data-bi-explain>
+        <NuxtCard v-if="explainOpen" class="op-label leading-6" data-bi-explain>
           <p class="op-eyebrow text-muted-foreground">Como é calculado</p>
           <p><b>Fez</b>: o realizado dos lotes fechados do dia. <b>Vendeu</b>: as vendas do dia, de todos os canais.</p>
           <p><b>Acabou às</b>: a hora da venda em que o vendido alcançou o feito. <b>Vendas perdidas</b>: o ritmo até acabar, estendido até o fechamento{{ day.closes_at ? ` (${day.closes_at})` : "" }}, com teto de 2× o vendido. É a mesma conta que a sugestão do Planejamento usa.</p>
           <p><b>Faltou</b>: acabou antes da última hora. <b>Na medida</b>: acabou na última hora, sobrou até 2, ou vendeu mais do que fez (havia estoque de antes). <b>Sobrou</b>: sobrou mais que isso. A comparação é a média dos últimos {{ day.compare_days.length || 4 }} dias iguais com a loja aberta.</p>
           <p><b>Custo</b>: a ficha técnica ativa vezes o custo do fornecedor preferencial de cada insumo. Insumo sem custo deixa o produto sem custo (nada é estimado).</p>
-        </div>
+        </NuxtCard>
 
-        <!-- A resposta: uma frase e três números, cada um com o típico ao lado. -->
+        <!-- A resposta: uma frase e três números, cada um com o típico ao lado.
+             `xl:grid-cols-[1.4fr_1fr_1fr_1fr]`: a frase pede mais largura que um número. -->
         <div class="grid gap-3 sm:grid-cols-3 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <BiAnswer :text="overShortAnswer(day)" class="sm:col-span-3 xl:col-span-1" />
           <StatTile label="Faltou" :value="formatInt(day.summary.short)" tone="destructive" :unit="shortUnit(day)" :hint="typicalLine(day, 'short')" />
@@ -343,20 +347,22 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
         </div>
         <!-- No celular o gesto principal não cabe na barra de cima (BI-11): desce para
              logo depois da resposta, na largura toda, ao alcance do polegar. -->
-        <UiButton
+        <NuxtButton
           v-if="day.plan_day"
-          class="h-12 w-full md:hidden"
-          :disabled="carrying"
+          class="h-12 w-full justify-center md:hidden"
+          icon="i-lucide-arrow-right-left"
+          :label="carryLabel(day.plan_day)"
+          :loading="carrying"
           data-bi-carry-phone
           @click="carryToPlan()"
-        >
-          <Icon name="lucide:arrow-right-left" class="size-4" aria-hidden="true" />
-          {{ carryLabel(day.plan_day) }}
-        </UiButton>
+        />
 
-        <div class="overflow-hidden rounded-lg border border-border bg-card" data-over-short-table>
+        <!-- A leitura produto a produto é uma lista em grade (não uma <table>): no
+             desktop largo, sete colunas com cabeçalho; abaixo, um bloco de três linhas
+             por produto, com o "Ver lotes e vendas" abrindo o detalhe embaixo. -->
+        <NuxtCard data-over-short-table>
           <div
-            class="hidden h-10 items-center gap-3 border-b border-border bg-muted/60 px-4 op-eyebrow text-muted-foreground lg:grid"
+            class="hidden h-10 items-center gap-3 border-b border-border op-eyebrow text-muted-foreground lg:grid"
             :class="COLUMNS"
             aria-hidden="true"
           >
@@ -384,21 +390,22 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
               <OverShortDetail :row="row" :day="day.day" :compare="day.compare" :close-url="closeUrl" :orders-url="ordersUrl" />
             </OverShortRow>
           </template>
-          <p v-else-if="rows.length" class="px-4 py-4 op-body text-muted-foreground">Nenhum produto neste recorte.</p>
-          <p v-else class="px-4 py-4 op-body text-muted-foreground">
+          <p v-else-if="rows.length" class="op-body text-muted-foreground">Nenhum produto neste recorte.</p>
+          <p v-else class="op-body text-muted-foreground">
             Nenhum lote fechado neste dia. A leitura começa quando a Produção fecha o primeiro lote.
           </p>
-          <button
+          <NuxtButton
             v-if="hidden.length"
-            type="button"
-            class="flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left op-label text-muted-foreground transition hover:bg-accent"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-chevron-down"
+            :label="hiddenRowsSummary(hidden)"
+            block
+            class="mt-2 justify-start"
             data-over-short-more
             @click="showAll = true"
-          >
-            <Icon name="lucide:chevron-down" class="size-4 shrink-0" aria-hidden="true" />
-            {{ hiddenRowsSummary(hidden) }}
-          </button>
-        </div>
+          />
+        </NuxtCard>
       </template>
 
       <!-- Os lotes no período: a janela de análise do B.I. -->
