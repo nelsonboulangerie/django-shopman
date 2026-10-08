@@ -57,6 +57,8 @@ const CEILING: Record<string, Partial<Record<Rule, number>>> = {
     cardVariant: 2,
     alertOutsideSet: 15,
   },
+  // Transitório: o piloto do B.I. (#1536) nasceu antes do conjunto; PR-B2 a B7 zeram.
+  "bi-nuxt": { buttonVariant: 3, badgeVariant: 2, cardVariant: 2, alertOutsideSet: 1 },
   "marketing-nuxt": { arbitraryTextSize: 63 },
   "pos-nuxt": { arbitraryTextSize: 7 },
   "production-nuxt": { arbitraryTextSize: 8 },
