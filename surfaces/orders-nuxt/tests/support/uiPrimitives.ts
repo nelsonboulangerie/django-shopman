@@ -785,15 +785,27 @@ const NuxtNavigationMenu = defineComponent({
   },
 });
 
+// Como o real: os itens só existem com o menu aberto (o gatilho abre; escolher fecha).
 const NuxtDropdownMenu = defineComponent({
   name: "NuxtDropdownMenu",
   inheritAttrs: false,
   props: { items: { type: Array as () => unknown[], default: () => [] } },
   setup(props, { attrs, slots }) {
+    const open = ref(false);
     return () =>
       h("div", attrs, [
-        slots.default?.(),
-        h("div", menuItems(props.items, slots)),
+        h(
+          "div",
+          { onClickCapture: () => (open.value = !open.value) },
+          slots.default?.(),
+        ),
+        open.value
+          ? h(
+              "div",
+              { onClick: () => (open.value = false) },
+              menuItems(props.items, slots),
+            )
+          : null,
       ]);
   },
 });

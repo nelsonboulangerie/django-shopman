@@ -2,8 +2,10 @@
 // O ⋯ de um pedido: atender, seleção em lote, declarar volumes, voltar para a estação
 // e abrir o pedido. Uma peça só para o cartão do quadro e a linha da Grade (dono,
 // 07/10/2026: as opções sumiam da Grade), para as duas nunca divergirem.
+// É NuxtDropdownMenu, o ⋯ canônico; os volumes, que pedem um número, abrem um modal
+// próprio (o editor não cabe dentro de um menu).
 import type { OrderCardProjection } from "~/types/orders";
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { splitRef } from "~/presentation/board";
 import { kitchenRecallOptions } from "~/presentation/kitchen";
 
@@ -30,26 +32,17 @@ const recallOptions = computed(() => kitchenRecallOptions(props.card.kitchen));
 const volumesAction = computed(
   () => props.card.actions.find((action) => action.ref === "volumes") ?? null,
 );
-const open = ref(false);
-const volumesEditing = ref(false);
+const volumesOpen = ref(false);
 const volumesDraft = ref(0);
-watch(open, (isOpen) => {
-  if (!isOpen) volumesEditing.value = false;
-});
 function openVolumes() {
   volumesDraft.value =
     props.card.volumes ||
     Math.max(1, Math.min(props.card.items_count || 1, 99));
-  volumesEditing.value = true;
+  volumesOpen.value = true;
 }
 function saveVolumes() {
-  open.value = false;
-  volumesEditing.value = false;
+  volumesOpen.value = false;
   emit("volumes", volumesDraft.value);
-}
-function pick(fn: () => void) {
-  open.value = false;
-  fn();
 }
 
 const items = computed(() => [
@@ -63,7 +56,7 @@ const items = computed(() => [
             ? "i-lucide-user-check"
             : "i-lucide-user-plus",
           "data-card-assign": "",
-          onSelect: () => pick(() => emit("toggle-assign")),
+          onSelect: () => emit("toggle-assign"),
         },
       ]
     : []),
@@ -76,11 +69,9 @@ const items = computed(() => [
     icon: "i-lucide-list-checks",
     "data-card-select-mode": "",
     onSelect: () =>
-      pick(() =>
-        props.selecting ? emit("toggle-select") : emit("select-mode"),
-      ),
+      props.selecting ? emit("toggle-select") : emit("select-mode"),
   },
-  ...(!volumesEditing.value && volumesAction.value
+  ...(volumesAction.value
     ? [
         {
           label: props.card.volumes
@@ -89,10 +80,7 @@ const items = computed(() => [
           icon: "i-lucide-package",
           "data-card-volumes": "",
           disabled: props.busy || !volumesAction.value.enabled,
-          onSelect: (event: Event) => {
-            event.preventDefault();
-            openVolumes();
-          },
+          onSelect: openVolumes,
         },
       ]
     : []),
@@ -101,7 +89,7 @@ const items = computed(() => [
     icon: "i-lucide-rotate-ccw",
     "data-card-recall": "",
     disabled: props.busy,
-    onSelect: () => pick(() => emit("station-recall", option.ticketPk)),
+    onSelect: () => emit("station-recall", option.ticketPk),
   })),
   ...(props.canOpen
     ? [
@@ -116,10 +104,7 @@ const items = computed(() => [
 </script>
 
 <template>
-  <NuxtPopover
-    v-model:open="open"
-    :content="{ side: 'top', align: 'end', sideOffset: 4 }"
-  >
+  <NuxtDropdownMenu :items="items" :content="{ side: 'top', align: 'end' }">
     <NuxtButton
       color="neutral"
       variant="outline"
@@ -128,36 +113,48 @@ const items = computed(() => [
       :aria-label="`Mais ações do pedido ${code.code}`"
       data-card-menu
     />
-    <template #content>
-      <div v-if="open" class="p-2">
-        <NuxtFormField
-          v-if="volumesEditing"
-          label="Quantos volumes saem?"
-          :description="
-            volumesDraft === 0
-              ? 'Zero apaga: o cartão volta a contar itens.'
-              : 'Sacolas ou caixas, contadas por quem embalou.'
-          "
-          data-card-volumes-editor
-        >
-          <div class="flex items-center gap-2">
-            <NuxtInputNumber
-              v-model="volumesDraft"
-              :min="0"
-              :max="99"
-              data-card-volumes-draft
-            />
-            <NuxtButton
-              label="Gravar"
-              color="primary"
-              :disabled="busy"
-              data-card-volumes-save
-              @click="saveVolumes"
-            />
-          </div>
-        </NuxtFormField>
-        <NuxtNavigationMenu v-else orientation="vertical" :items="items" />
+  </NuxtDropdownMenu>
+  <NuxtModal
+    v-model:open="volumesOpen"
+    :title="`Volumes do pedido ${code.code}`"
+    description="Sacolas ou caixas, contadas por quem embalou."
+    data-card-volumes-editor
+  >
+    <template #body>
+      <NuxtFormField
+        label="Quantos volumes saem?"
+        :help="
+          volumesDraft === 0
+            ? 'Zero apaga: o cartão volta a contar itens.'
+            : undefined
+        "
+      >
+        <NuxtInputNumber
+          v-model="volumesDraft"
+          class="w-full"
+          :min="0"
+          :max="99"
+          data-card-volumes-draft
+          @keydown.enter="saveVolumes"
+        />
+      </NuxtFormField>
+    </template>
+    <template #footer>
+      <div class="flex w-full justify-end gap-2">
+        <NuxtButton
+          label="Cancelar"
+          color="neutral"
+          variant="ghost"
+          @click="volumesOpen = false"
+        />
+        <NuxtButton
+          label="Gravar"
+          color="primary"
+          :disabled="busy"
+          data-card-volumes-save
+          @click="saveVolumes"
+        />
       </div>
     </template>
-  </NuxtPopover>
+  </NuxtModal>
 </template>
