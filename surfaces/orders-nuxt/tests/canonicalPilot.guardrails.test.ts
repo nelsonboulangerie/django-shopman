@@ -414,7 +414,8 @@ describe("Gestor canônico em Nuxt UI", () => {
     // número é o indicativo (2xl); o On/Off é xl. A única expressão aceita é o
     // tamanho amarrado ao próprio texto: `:size="X ? '4xl' : '2xl'"` com `:text="X"`.
     const chipSizeOk = ({ file, tag }: { file: string; tag: string }) => {
-      if (file.endsWith("OperatorLiveStatus.vue")) return /\bsize="xl"/.test(tag);
+      if (file.endsWith("OperatorLiveStatus.vue"))
+        return /\bsize="xl"/.test(tag);
       // O sinal do rail da suíte (PR-K4, dono 08/10/2026): o tamanho sai de
       // `railSignalChip` (número 4xl; ponto no tamanho padrão do NavigationMenu),
       // com teste próprio em `operator-kit/tests/suiteChrome.test.ts`.
@@ -529,7 +530,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(board).not.toContain('v-if="exitPostView && desktopZones[0]"');
     expect(board).toContain(':heading="!exitPostView"');
     expect(board).toMatch(
-      /<NuxtDashboardToolbar[\s\S]*?v-if="boardAsTabs && view === 'board' && zones\.length"[\s\S]*?class="py-2"/,
+      /<OperatorToolbar[\s\S]*?v-if="boardAsTabs && view === 'board' && zones\.length"[\s\S]*?class="py-2"/,
     );
     const header = board.slice(
       board.indexOf("<OperatorPageHeader"),
@@ -732,7 +733,9 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(card).toContain("<template #header>");
     expect(card).toContain("<template #footer>");
     // 1/3 + 2/3 quando o rodapé tem largura para isso; abaixo, empilha legível.
-    expect(card).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
+    expect(card).toContain(
+      "'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'",
+    );
     expect(card).toContain('class="@container flex items-end gap-2"');
     expect(feeds.match(/<template #header>/g)?.length).toBeGreaterThanOrEqual(
       2,
@@ -858,7 +861,9 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(catalog).not.toContain("border-l border-l-border");
     // O selo "Oculto" já diz; riscar o nome repetia, e o Switch neutral pintava escuro.
     expect(catalog).not.toContain("line-through decoration-1");
-    expect(catalog).not.toContain("rowStatuses[row.sku]?.off ? 'neutral' : 'success'");
+    expect(catalog).not.toContain(
+      "rowStatuses[row.sku]?.off ? 'neutral' : 'success'",
+    );
   });
 
   it("Em andamento agrupa cada grupo numa lista emoldurada", () => {
@@ -874,5 +879,26 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(appConfig).toContain(
       "has-[>[data-slot=root]:only-child>[data-slot=item]]:py-0",
     );
+  });
+
+  it("menu de ação é DropdownMenu ou ActionList; NavigationMenu é do kit (ledger)", () => {
+    const offenders = readdirSync(new URL("../app", import.meta.url), {
+      recursive: true,
+    })
+      .map(String)
+      .filter((path) => path.endsWith(".vue"))
+      .filter((path) =>
+        readFileSync(
+          new URL(`../app/${path}`, import.meta.url),
+          "utf8",
+        ).includes("<NuxtNavigationMenu"),
+      );
+    expect(offenders).toEqual([]);
+    const cardMenu = readFileSync(
+      new URL("../app/components/OrderCardMenu.vue", import.meta.url),
+      "utf8",
+    );
+    expect(cardMenu).toContain("<NuxtDropdownMenu");
+    expect(cardMenu).toContain("<NuxtModal");
   });
 });
