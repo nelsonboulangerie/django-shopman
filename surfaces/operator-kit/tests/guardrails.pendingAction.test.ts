@@ -167,7 +167,6 @@ const KNOWN_INERT: Record<string, string[]> = {
   ],
   "marketing-nuxt/app/pages/platforms.vue": ["onVerifyCatalog"],
   "marketing-nuxt/app/pages/templates.vue": ["confirmRemove"],
-  "operator-kit/app/components/OperatorPwaInstallInvite.vue": ["install"],
   "orders-nuxt/app/components/ChannelHealthChecklist.vue": ["copyAddress"],
   "orders-nuxt/app/pages/catalog.vue": ["saveOrderDraft"],
   "pos-nuxt/app/components/PosAddressAutocomplete.vue": ["accept"],

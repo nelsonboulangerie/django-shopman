@@ -1,17 +1,40 @@
 # Compara as capturas antes/depois do capture-before-after.mjs: fração de pixels que
 # mudaram (limiar 24/255), do maior para o menor. Requer Pillow.
-import sys, glob, os
+import glob
+import os
+import sys
+
 from PIL import Image, ImageChops
-d = sys.argv[1]
-rows = []
-for a in sorted(glob.glob(f"{d}/*__antes.png")):
-    b = a.replace("__antes.png", "__depois.png")
-    if not os.path.exists(b): continue
-    ia, ib = Image.open(a).convert("RGB"), Image.open(b).convert("RGB")
-    if ia.size != ib.size:
-        rows.append((1.0, os.path.basename(a)[:-11], f"tamanho {ia.size}->{ib.size}")); continue
-    diff = ImageChops.difference(ia, ib).convert("L").point(lambda p: 255 if p > 24 else 0)
-    n = sum(diff.histogram()[255:]) / (ia.size[0] * ia.size[1])
-    rows.append((n, os.path.basename(a)[:-11], ""))
-for n, name, note in sorted(rows, reverse=True):
-    print(f"{n:7.4f} {name} {note}")
+
+THRESHOLD = 24
+SUFFIX_BEFORE = "__antes.png"
+SUFFIX_AFTER = "__depois.png"
+
+
+def compare(directory: str) -> list[tuple[float, str, str]]:
+    rows = []
+    for before in sorted(glob.glob(f"{directory}/*{SUFFIX_BEFORE}")):
+        after = before.replace(SUFFIX_BEFORE, SUFFIX_AFTER)
+        if not os.path.exists(after):
+            continue
+        name = os.path.basename(before)[: -len(SUFFIX_BEFORE)]
+        image_before = Image.open(before).convert("RGB")
+        image_after = Image.open(after).convert("RGB")
+        if image_before.size != image_after.size:
+            rows.append((1.0, name, f"tamanho {image_before.size}->{image_after.size}"))
+            continue
+        diff = ImageChops.difference(image_before, image_after).convert("L")
+        diff = diff.point(lambda p: 255 if p > THRESHOLD else 0)
+        width, height = image_before.size
+        rows.append((sum(diff.histogram()[255:]) / (width * height), name, ""))
+    return sorted(rows, reverse=True)
+
+
+def main() -> int:
+    for fraction, name, note in compare(sys.argv[1]):
+        print(f"{fraction:7.4f} {name} {note}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
