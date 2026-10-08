@@ -60,7 +60,7 @@ const visibleItems = computed(() => layout.value.visible.map((section) => ({
     data-focus-obstruction
   >
     <NuxtNavigationMenu
-      class="min-w-0 flex-1"
+      class="min-w-0 flex-1 suite-page:**:data-[slot=link]:min-h-control"
       orientation="horizontal"
       :items="visibleItems"
       :aria-label="label"

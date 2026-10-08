@@ -560,6 +560,44 @@ describe("OperatorPageHeader", () => {
     expect(actions.text()).toContain("Atualizar");
   });
 
+  // Opt-in pela página que veste a suíte (os sete apps não migrados): no celular os
+  // controles saem da barra de 56px para uma linha própria, como no `main`. Na barra
+  // eles espremiam o selo do app (axe target-size) e a página rolava na horizontal
+  // (matriz da Produção a 390 px). Sem o marcador (o Gestor), ficam onde estão.
+  it("na página da suíte, no celular, os controles descem para a linha de baixo", async () => {
+    const marker = document.createElement("div");
+    marker.setAttribute("data-suite", "v3");
+    document.body.append(marker);
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("max-width: 767.98px"),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    try {
+      const wrapper = await mountHeader({
+        actions: "<button>Atualizar</button>",
+      });
+      await nextTick();
+      const actions = wrapper.findAll("[data-page-header-actions]");
+      expect(actions).toHaveLength(1);
+      expect(actions[0]!.text()).toContain("Atualizar");
+      expect(
+        wrapper
+          .get("[data-operator-page-header]")
+          .find("[data-page-header-actions]")
+          .exists(),
+      ).toBe(false);
+      expect(actions[0]!.classes()).toContain("overflow-x-auto");
+    } finally {
+      marker.remove();
+    }
+  });
+
   it("a toolbar de recortes preserva respiro vertical ao redor das tabs", async () => {
     const wrapper = await mountHeader({ filters: "<button>Todos</button>" });
     const filters = wrapper.get("[data-page-header-filters]");

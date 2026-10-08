@@ -19,6 +19,12 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{ success: [] }>();
+// Alvo de toque do `main` (44 px; 48 em tablet touch) só nas páginas que vestem a
+// suíte (`suite-page:`, os sete apps não migrados): o Gestor fica no tamanho oficial.
+// Os campos ganham o mesmo envelope pelo `app.config` (input `lg`/`xl`); o botão, aqui.
+const touchAction = computed(() =>
+  props.largeFields ? "suite-page:min-h-action" : "suite-page:min-h-control",
+);
 const username = ref("");
 const password = ref("");
 const pending = ref(false);
@@ -124,6 +130,7 @@ async function submit() {
         block
         icon="i-lucide-log-in"
         :size="largeFields ? 'xl' : 'lg'"
+        :class="touchAction"
         :loading="pending"
         :disabled="pending || !username.trim() || !password"
         :label="pending ? 'Entrando…' : 'Entrar'"

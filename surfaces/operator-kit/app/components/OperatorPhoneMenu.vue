@@ -94,6 +94,7 @@ function choose(section: OperatorSection) {
       <NuxtButton
         icon="i-lucide-ellipsis"
         label="Mais"
+        class="suite-page:min-h-control"
         :color="activeInOverflow ? 'primary' : 'neutral'"
         :variant="activeInOverflow ? 'soft' : 'ghost'"
         :aria-label="
@@ -129,7 +130,7 @@ function choose(section: OperatorSection) {
   <!-- Barra de 56px (quem não tem barra embaixo): as iniciais. -->
   <NuxtPopover v-else v-model:open="open">
     <NuxtButton
-      class="rail:hidden"
+      class="rail:hidden suite-page:size-control suite-page:justify-center"
       color="neutral"
       variant="ghost"
       square
