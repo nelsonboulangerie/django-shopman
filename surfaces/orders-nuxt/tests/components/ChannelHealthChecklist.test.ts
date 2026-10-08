@@ -67,7 +67,7 @@ describe("ChannelHealthChecklist", () => {
     });
     const link = wrapper.get("[data-health-item=refused] [data-health-action]");
     expect(link.text()).toBe("Ver e corrigir");
-    expect(link.attributes("data-to")).toBe("/catalog?surface=ifood&sync=error");
+    expect(link.attributes("href")).toBe("/catalog?surface=ifood&sync=error");
   });
 
   it("sem checklist para o canal, não desenha nada", () => {

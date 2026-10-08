@@ -39,9 +39,10 @@ def visible_alert_audiences(user) -> frozenset[str]:
 
 
 #: Os recortes que uma superfície pode pedir ao sino. ``orders`` é o Gestor de
-#: pedidos: só o que é de pedido (público ``orders``, ou um alerta preso a um
-#: pedido). Infraestrutura, marketing, B.I. e compras não têm botão nem decisão
-#: no quadro, e continuam no Admin e no e-mail crítico, onde alguém age.
+#: pedidos, o painel do gerente (dono, 08/10/2026): quem recebe é quem está
+#: logado, e ele vê tudo o que as permissões dele cobrem (pedidos, produção,
+#: operação; o financeiro panorâmico só com a permissão do dono, pelo público
+#: ``finance``). PDV e KDS não pedem este recorte: lá manda o posto.
 ALERT_SCOPES = frozenset({"orders"})
 
 #: Presos a um pedido, mas sem gesto nem decisão no Gestor: quem resolve é o
@@ -53,12 +54,31 @@ ORDERS_SCOPE_EXCLUDED = frozenset({
     "fiscal_intermediary_not_declared",
     "fiscal_intermediary_base_unknown",
     "checkout_convenience_pending",
+    # A "outra mesa" do WhatsApp (vaga, parceria, fornecedor): Admin, sem acordar o balcão.
+    "concierge_other_desk",
+})
+
+#: Avisos do sistema: quem age é a TI, pelo e-mail crítico e pelo Admin. Ficam
+#: fora do painel do gerente até o dono decidir o contrário (proposta de 08/10).
+SYSTEM_TYPES = frozenset({
+    "directive_failed_spike",
+    "directive_backlog",
+    "directive_worker_stale",
+    "unhandled_exception",
+    "webhook_failed",
+    "integration_failed",
+    "integration_config_drift",
+    "geoip_database_stale",
+    "operator_capacity_critical",
+    "concierge_unavailable",
+    "concierge_empty_output",
+    "concierge_handoff_sync",
+    "concierge_output_blocked",
+    "concierge_output_pending",
 })
 
 
 def _active_for(user=None, *, scope: str = ""):
-    from django.db.models import Q
-
     from shopman.backstage.models import OperatorAlert
 
     # Reconhecer registra ciência; somente resolver encerra a causa. Um alerta
@@ -67,7 +87,7 @@ def _active_for(user=None, *, scope: str = ""):
     if user is not None:
         qs = qs.filter(audience__in=visible_alert_audiences(user))
     if scope == "orders":
-        qs = qs.filter(Q(audience="orders") | ~Q(order_ref="")).exclude(type__in=ORDERS_SCOPE_EXCLUDED)
+        qs = qs.exclude(type__in=ORDERS_SCOPE_EXCLUDED | SYSTEM_TYPES)
     return qs
 
 

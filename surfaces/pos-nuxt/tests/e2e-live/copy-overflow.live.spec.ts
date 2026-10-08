@@ -155,7 +155,7 @@ for (const rail of RAILS) for (const viewport of VIEWPORTS) {
     const context = await browser.newContext({ viewport });
     const page = await context.newPage();
     await login(page);
-    if (rail === "extended") await page.getByRole("button", { name: "Expandir barra" }).click();
+    if (rail === "extended") await page.getByRole("button", { name: "Expandir a barra lateral" }).click();
     await measure(page, "comandas");
     await step(page, "ultimas-vendas", async () => {
       await page.getByRole("button", { name: /Últimas vendas|Vendas recentes/ }).first().click();

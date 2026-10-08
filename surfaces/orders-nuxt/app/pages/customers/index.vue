@@ -5,24 +5,46 @@
 // 19/09/2026, nascia um por pedido. A busca e os filtros daqui são o caminho para
 // achá-lo; a ficha (`/customers/<ref>`) é onde se compara e unifica. A URL guarda a
 // busca, então voltar da ficha devolve a mesma lista.
-import { listQueryFromRoute, routeQueryFromList, type CustomerFilter } from "~/presentation/customers";
+import {
+  listQueryFromRoute,
+  routeQueryFromList,
+  type CustomerFilter,
+} from "~/presentation/customers";
 
 useHead({ title: "Clientes" });
 
 const route = useRoute();
 const router = useRouter();
 const listQuery = computed(() => listQueryFromRoute(route.query));
-const { list, pending, error, refresh, readMetadata } = useCustomerList(listQuery);
+const { list, pending, error, refresh, readMetadata } =
+  useCustomerList(listQuery);
 
 const search = ref(listQuery.value.q);
-watch(() => listQuery.value.q, (q) => { if (q !== search.value.trim()) search.value = q; });
-watchDebounced(search, (q) => {
-  if (q.trim() === listQuery.value.q) return;
-  router.replace({ query: routeQueryFromList({ ...listQuery.value, q: q.trim(), page: 1 }) });
-}, { debounce: 300 });
+watch(
+  () => listQuery.value.q,
+  (q) => {
+    if (q !== search.value.trim()) search.value = q;
+  },
+);
+watchDebounced(
+  search,
+  (q) => {
+    if (q.trim() === listQuery.value.q) return;
+    router.replace({
+      query: routeQueryFromList({ ...listQuery.value, q: q.trim(), page: 1 }),
+    });
+  },
+  { debounce: 300 },
+);
 
 function setFilter(filter: string) {
-  router.replace({ query: routeQueryFromList({ ...listQuery.value, filter: filter as CustomerFilter, page: 1 }) });
+  router.replace({
+    query: routeQueryFromList({
+      ...listQuery.value,
+      filter: filter as CustomerFilter,
+      page: 1,
+    }),
+  });
 }
 function goToPage(page: number) {
   router.replace({ query: routeQueryFromList({ ...listQuery.value, page }) });
@@ -33,124 +55,196 @@ const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
 
 const items = computed(() => list.value?.items ?? []);
 const loading = computed(() => pending.value && !list.value);
+const filterItems = computed(() =>
+  (list.value?.filters ?? []).map((option) => ({
+    value: option.ref,
+    label: option.label,
+  })),
+);
+const customerColumns = [
+  { id: "customer", header: "Cliente" },
+  { id: "contact", header: "Contato" },
+  { id: "orders", header: "Pedidos" },
+];
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Clientes">
+    <OperatorPageHeader title="Clientes" :filters-wrap="false">
       <template #status>
-        <span class="hidden op-micro text-muted-foreground lg:inline">Buscar, comparar e unificar cadastros</span>
+        <span class="hidden op-micro text-muted-foreground lg:inline"
+          >Buscar, comparar e unificar cadastros</span
+        >
       </template>
       <template #search>
-        <OperatorSuiteSearch v-model="search" screen-label="filtrando os clientes" placeholder="Nome, telefone, CPF…" aria-label="Buscar cliente" />
+        <OperatorSuiteSearch
+          v-model="search"
+          screen-label="filtrando os clientes"
+          placeholder="Nome, telefone, CPF…"
+          aria-label="Buscar cliente"
+        />
       </template>
-      <template #actions>
-        <NuxtLink
-          to="/customers/merges"
-          class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
-        >
-          <Icon name="lucide:history" class="size-4" />
-          <span class="hidden sm:inline">Unificações</span>
-        </NuxtLink>
-        <a
-          v-if="adminBaseUrl"
-          :href="`${adminBaseUrl}/admin/guestman/customer/`"
-          target="_blank"
-          rel="noopener"
-          class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          title="Cadastrar ou editar cliente (abre o Admin)"
-        >
-          <Icon name="lucide:settings" class="size-4" />
-          <span class="hidden sm:inline">Admin</span>
-          <Icon name="lucide:external-link" class="size-3.5 opacity-60" />
-        </a>
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+      <template #filters>
+        <NuxtTabs
+          :model-value="listQuery.filter"
+          :items="filterItems"
+          :content="false"
+          variant="pill"
+          aria-label="Filtrar clientes"
+          @update:model-value="setFilter(String($event))"
+        />
+        <div class="flex items-center gap-3">
+          <NuxtButton
+            to="/customers/merges"
+            icon="i-lucide-history"
+            label="Unificações"
+            color="neutral"
+            variant="outline"
+          />
+          <NuxtButton
+            v-if="adminBaseUrl"
+            :to="`${adminBaseUrl}/admin/guestman/customer/`"
+            target="_blank"
+            icon="i-lucide-settings"
+            trailing-icon="i-lucide-external-link"
+            label="Admin"
+            color="neutral"
+            variant="outline"
+            title="Cadastrar ou editar cliente (abre o Admin)"
+          />
+          <NuxtButton
+            icon="i-lucide-refresh-cw"
+            label="Atualizar"
+            color="neutral"
+            variant="outline"
+            :loading="pending"
+            @click="refresh()"
+          />
+          <span
+            v-if="list"
+            class="text-xs text-muted-foreground tabular-nums"
+            data-customer-total
+            >{{ list.total_label }}</span
+          >
+          <ReadFreshness
+            inline
+            :metadata="readMetadata"
+            :failed="Boolean(error)"
+          />
+        </div>
       </template>
     </OperatorPageHeader>
-    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
 
-    <section class="min-h-0 flex-1 overflow-auto p-4">
-      <div class="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar clientes">
-        <UiFilterChip
-          v-for="option in list?.filters ?? []"
-          :key="option.ref"
-          :active="option.active"
-          :aria-pressed="option.active"
-          :data-customer-filter="option.ref"
-          @click="setFilter(option.ref)"
-        >
-          {{ option.label }}
-        </UiFilterChip>
-        <span v-if="list" class="ml-auto text-xs text-muted-foreground tabular-nums" data-customer-total>{{ list.total_label }}</span>
-      </div>
-
-      <div v-if="error" role="alert" class="mb-3 rounded-md border border-destructive p-3 text-sm">
-        {{ httpErrorMessage(error, "Não foi possível carregar os clientes.") }}
-        {{ list ? "Exibindo a última lista carregada." : "" }}
-        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
-      </div>
+    <section class="min-h-0 flex-1 space-y-4 overflow-auto p-4 sm:p-6">
+      <NuxtAlert
+        v-if="error"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        title="Não foi possível carregar os clientes"
+        :description="`${httpErrorMessage(error, 'Não foi possível carregar os clientes.')} ${list ? 'Exibindo a última lista carregada.' : ''}`"
+        :actions="[
+          {
+            label: 'Tentar de novo',
+            color: 'error',
+            variant: 'outline',
+            onClick: () => refresh(),
+          },
+        ]"
+      />
 
       <div v-if="loading" class="space-y-2">
-        <UiSkeleton
+        <NuxtSkeleton
           v-for="i in 6"
           :key="i"
-          class="h-14 rounded-lg border"
-          label="Carregando clientes"
+          class="h-12 w-full"
+          aria-label="Carregando clientes"
         />
       </div>
 
-      <ul v-else-if="items.length" class="divide-y rounded-lg border bg-card" data-customer-list>
-        <li v-for="row in items" :key="row.ref">
-          <NuxtLink
-            :to="`/customers/${encodeURIComponent(row.ref)}`"
-            class="grid gap-1 px-4 py-3 transition hover:bg-accent sm:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1fr)] sm:items-center sm:gap-4"
-            :data-customer-row="row.ref"
-          >
-            <span class="min-w-0">
+      <!-- Tabela integrada a um card branco, sem padding (o tema tira o padding do
+           corpo quando a tabela é o conteúdo inteiro), como a Lista do Gestor. -->
+      <NuxtCard v-else-if="items.length" class="min-w-0">
+        <NuxtTable
+          :data="items"
+          :columns="customerColumns"
+          :get-row-id="(row) => row.ref"
+          :on-select="
+            (_event, row) =>
+              router.push(`/customers/${encodeURIComponent(row.original.ref)}`)
+          "
+          caption="Clientes encontrados"
+          data-customer-list
+        >
+          <template #customer-cell="{ row }">
+            <div class="min-w-52" :data-customer-row="row.original.ref">
               <span class="flex flex-wrap items-center gap-2">
-                <span class="truncate font-medium">{{ row.name }}</span>
-                <span v-if="row.source_label" class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{{ row.source_label }}</span>
-                <span
-                  v-if="row.duplicate_hint"
-                  class="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-200"
-                >{{ row.duplicate_hint }}</span>
+                <NuxtLink
+                  :to="`/customers/${encodeURIComponent(row.original.ref)}`"
+                  class="font-medium hover:underline"
+                  >{{ row.original.name }}</NuxtLink
+                >
+                <NuxtBadge
+                  v-if="row.original.source_label"
+                  color="neutral"
+                  variant="subtle"
+                  :label="row.original.source_label"
+                />
+                <NuxtBadge
+                  v-if="row.original.duplicate_hint"
+                  color="warning"
+                  variant="subtle"
+                  :label="row.original.duplicate_hint"
+                />
               </span>
-              <span class="font-mono text-xs text-muted-foreground">{{ row.ref }}</span>
+              <span class="block font-mono text-xs text-muted-foreground">{{
+                row.original.ref
+              }}</span>
+            </div>
+          </template>
+          <template #contact-cell="{ row }">
+            <span
+              :class="row.original.phone_display ? '' : 'text-muted-foreground'"
+              >{{ row.original.phone_display || "Sem telefone" }}</span
+            >
+            <span
+              v-if="row.original.document_display"
+              class="block text-xs text-muted-foreground"
+              >CPF {{ row.original.document_display }}</span
+            >
+          </template>
+          <template #orders-cell="{ row }">
+            <span class="text-muted-foreground">
+              {{ row.original.orders_label
+              }}<template v-if="row.original.last_order_display">
+                · último {{ row.original.last_order_display }}</template
+              >
             </span>
-            <span class="text-sm">
-              <span :class="row.phone_display ? '' : 'text-muted-foreground'">{{ row.phone_display || "Sem telefone" }}</span>
-              <span v-if="row.document_display" class="block text-xs text-muted-foreground">CPF {{ row.document_display }}</span>
-            </span>
-            <span class="text-sm text-muted-foreground">
-              {{ row.orders_label }}<template v-if="row.last_order_display"> · último {{ row.last_order_display }}</template>
-            </span>
-          </NuxtLink>
-        </li>
-      </ul>
+          </template>
+        </NuxtTable>
+        <template v-if="list && (list.page > 1 || list.has_next)" #footer>
+          <div class="flex items-center justify-between gap-3">
+            <span class="op-micro text-muted-foreground tnum">{{
+              list.total_label
+            }}</span>
+            <NuxtPagination
+              :page="list.page"
+              :total="list.total"
+              :items-per-page="list.page_size"
+              :disabled="pending"
+              aria-label="Páginas"
+              @update:page="goToPage"
+            />
+          </div>
+        </template>
+      </NuxtCard>
 
-      <p v-else-if="list" class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        {{ list.total_label }}.
-      </p>
-
-      <nav v-if="list && (list.page > 1 || list.has_next)" class="mt-3 flex items-center justify-between" aria-label="Páginas">
-        <button
-          type="button"
-          class="min-h-control rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-40"
-          :disabled="list.page <= 1 || pending"
-          @click="goToPage(list.page - 1)"
-        >
-          Anteriores
-        </button>
-        <span class="text-xs text-muted-foreground tabular-nums">Página {{ list.page }}</span>
-        <button
-          type="button"
-          class="min-h-control rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-40"
-          :disabled="!list.has_next || pending"
-          @click="goToPage(list.page + 1)"
-        >
-          Próximos
-        </button>
-      </nav>
+      <NuxtEmpty
+        v-else-if="list"
+        icon="i-lucide-users"
+        title="Nenhum cliente neste recorte"
+        :description="`${list.total_label}.`"
+      />
     </section>
   </main>
 </template>

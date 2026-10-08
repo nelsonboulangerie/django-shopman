@@ -93,6 +93,10 @@ export async function scanOperatorGeometry(
       // outline para dentro. O envelope de foco não ultrapassa o recorte.
       if (element.matches('[data-slot="handle"][role="separator"]'))
         return false;
+      // Barras compactas usam deliberadamente o anel interno: ele permanece
+      // inteiro mesmo quando o item precisa recortar label/ícone nas bordas.
+      if ([...element.classList].some((name) => name.includes("ring-inset")))
+        return false;
       const rect = element.getBoundingClientRect();
       let parent = element.parentElement;
       let scrollableX = false;
@@ -116,6 +120,25 @@ export async function scanOperatorGeometry(
         parent = parent.parentElement;
       }
       return false;
+    }
+    function pointVisibleThroughAncestors(
+      element: Element,
+      x: number,
+      y: number,
+    ): boolean {
+      let parent = element.parentElement;
+      while (parent && parent !== document.body) {
+        const style = getComputedStyle(parent);
+        const overflowX = style.overflowX || style.overflow;
+        const overflowY = style.overflowY || style.overflow;
+        const frame = parent.getBoundingClientRect();
+        if (/(auto|scroll|hidden|clip)/.test(overflowX) && (x < frame.left || x > frame.right))
+          return false;
+        if (/(auto|scroll|hidden|clip)/.test(overflowY) && (y < frame.top || y > frame.bottom))
+          return false;
+        parent = parent.parentElement;
+      }
+      return true;
     }
     function distance(a: DOMRect, b: DOMRect): number {
       const dx = Math.max(a.left - b.right, b.left - a.right, 0);
@@ -217,26 +240,45 @@ export async function scanOperatorGeometry(
         add(
           "focus-clipping",
           element,
-          "Controle ou seu foco é cortado por ancestral com overflow.",
+          `Controle “${
+            element.getAttribute("aria-label") ||
+            element.textContent?.trim().replace(/\s+/g, " ").slice(0, 60) ||
+            "sem nome"
+          }” ou seu foco é cortado por ancestral com overflow.`,
         );
-      const centerX = Math.min(
-        innerWidth - 1,
-        Math.max(0, rect.left + rect.width / 2),
-      );
-      const centerY = Math.min(
-        innerHeight - 1,
-        Math.max(0, rect.top + rect.height / 2),
-      );
-      const top = document.elementFromPoint(centerX, centerY);
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      // Um controle abaixo/acima da área visível pertence ao fluxo rolável; não
+      // está "coberto" pelo chrome só porque o ponto foi artificialmente preso à
+      // borda do viewport. O teste de obstrução só faz sentido quando o centro do
+      // próprio controle está realmente visível.
+      const centerVisible =
+        centerX >= 0 &&
+        centerX < innerWidth &&
+        centerY >= 0 &&
+        centerY < innerHeight &&
+        pointVisibleThroughAncestors(element, centerX, centerY);
+      const top = centerVisible ? document.elementFromPoint(centerX, centerY) : null;
       if (top && !element.contains(top) && !top.contains(element)) {
+        // Controles que pertencem ao próprio chrome fixo (por exemplo, itens da
+        // navegação inferior) não podem ser diagnosticados como cobertos por
+        // esse mesmo chrome. Portais e wrappers internos do Nuxt UI podem fazer
+        // elementFromPoint devolver um irmão visual em vez do botão original.
+        const ownChrome = element.closest(
+          "[data-focus-obstruction], [data-operator-fixed-chrome]",
+        );
         const obstruction = chrome.find(
           (candidate) => candidate === top || candidate.contains(top),
         );
-        if (obstruction && !obstruction.contains(element))
+        if (obstruction && !ownChrome && !obstruction.contains(element))
           add(
             "covered-by-chrome",
             element,
-            "Controle está coberto pelo chrome fixo.",
+            `Controle “${
+              element.getAttribute("aria-label") ||
+              element.textContent?.trim().replace(/\s+/g, " ").slice(0, 60) ||
+              "sem nome"
+            }” está coberto pelo chrome fixo.`,
           );
       }
     }

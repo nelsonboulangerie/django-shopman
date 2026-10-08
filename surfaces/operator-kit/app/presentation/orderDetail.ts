@@ -39,7 +39,7 @@ export function statusTone(status: string): Tone {
 export function toneBadge(tone: Tone | string): string {
   switch (tone) {
     case "danger":
-      return "border-destructive/40 bg-destructive/10 text-destructive";
+      return "border-error/40 bg-error/10 text-error";
     case "warning":
       return "border-warning/40 bg-warning/10 text-warning";
     case "success":
@@ -85,19 +85,27 @@ export function joinFacts(...parts: (string | null | undefined)[]): string {
 }
 
 /** "12 pedidos · última compra há 12 dias" — só com o que o servidor sabe. */
-export function profileHistory(profile: OrderDetailCustomerProfile | null): string {
+export function profileHistory(
+  profile: OrderDetailCustomerProfile | null,
+): string {
   if (!profile) return "";
   return joinFacts(
     profile.orders_label,
-    profile.last_order_display ? `última compra ${profile.last_order_display}` : "",
+    profile.last_order_display
+      ? `última compra ${profile.last_order_display}`
+      : "",
   );
 }
 
 /** "ticket médio R$ 42,00 · costuma levar Pão francês". */
-export function profileHabits(profile: OrderDetailCustomerProfile | null): string {
+export function profileHabits(
+  profile: OrderDetailCustomerProfile | null,
+): string {
   if (!profile) return "";
   return joinFacts(
-    profile.average_ticket_display ? `ticket médio ${profile.average_ticket_display}` : "",
+    profile.average_ticket_display
+      ? `ticket médio ${profile.average_ticket_display}`
+      : "",
     profile.favorite_product ? `costuma levar ${profile.favorite_product}` : "",
   );
 }
@@ -113,20 +121,26 @@ export function relayExpiresLabel(iso: string): string {
 
 /** O cadastro do cliente no Admin — o CRUD de cliente ainda mora lá. Vazio sem
  *  cliente identificado ou sem endereço do Admin configurado. */
-export function customerAdminUrl(adminBaseUrl: string, customerRef: string): string {
+export function customerAdminUrl(
+  adminBaseUrl: string,
+  customerRef: string,
+): string {
   if (!customerRef || !adminBaseUrl) return "";
   return `${adminBaseUrl}/admin/guestman/customer/?q=${encodeURIComponent(customerRef)}`;
 }
 
 /** Há alguma forma de alcançar a pessoa? Sem nenhuma, o bloco não aparece —
  *  vale mais uma tela honesta do que uma fileira de botões que não levam a nada. */
-export function hasCustomerContact(order: OperatorOrderDetail, adminUrl: string): boolean {
+export function hasCustomerContact(
+  order: OperatorOrderDetail,
+  adminUrl: string,
+): boolean {
   return Boolean(
     order.customer_phone_uri ||
-      order.customer_relay_phone ||
-      order.customer_whatsapp_url ||
-      order.customer_email ||
-      adminUrl,
+    order.customer_relay_phone ||
+    order.customer_whatsapp_url ||
+    order.customer_email ||
+    adminUrl,
   );
 }
 
@@ -138,12 +152,17 @@ export function fiscalHref(link: { href?: string; url?: string }): string {
 // ── Ações ──────────────────────────────────────────────────────────────────
 
 /** A ação `ref` que o servidor ofereceu para este pedido, se ofereceu. */
-export function detailAction(order: Pick<OperatorOrderDetail, "actions"> | null | undefined, ref: string): OrderDetailAction | undefined {
+export function detailAction(
+  order: Pick<OperatorOrderDetail, "actions"> | null | undefined,
+  ref: string,
+): OrderDetailAction | undefined {
   return order?.actions?.find((action) => action.ref === ref);
 }
 
 /** Comentar no histórico: só quando o servidor oferece e deixa (o contexto e a
  *  permissão são dele — o balcão e o Gestor comentam pela mesma rota). */
-export function canComment(order: Pick<OperatorOrderDetail, "actions"> | null | undefined): boolean {
+export function canComment(
+  order: Pick<OperatorOrderDetail, "actions"> | null | undefined,
+): boolean {
   return Boolean(detailAction(order, "comment")?.enabled);
 }

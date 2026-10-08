@@ -20,7 +20,10 @@ export interface CellView {
 
 // ── client-side search (rows already collection-scoped server-side) ────────────
 
-export function filterRows(rows: CatalogRowProjection[], query: string): CatalogRowProjection[] {
+export function filterRows(
+  rows: CatalogRowProjection[],
+  query: string,
+): CatalogRowProjection[] {
   const q = query.trim().toLowerCase();
   if (!q) return rows;
   return rows.filter(
@@ -33,7 +36,10 @@ export function filterRows(rows: CatalogRowProjection[], query: string): Catalog
 
 // ── cell semantics ─────────────────────────────────────────────────────────────
 
-export function cellState(row: CatalogRowProjection, cell: SurfaceCellProjection): CellState {
+export function cellState(
+  row: CatalogRowProjection,
+  cell: SurfaceCellProjection,
+): CellState {
   if (!cell.in_listing) return "absent";
   // Product-level switches gate every surface; listing-level gates this one.
   const published = row.is_published && cell.is_published;
@@ -44,8 +50,8 @@ export function cellState(row: CatalogRowProjection, cell: SurfaceCellProjection
 }
 
 const CELL_TONES: Record<CellState, string> = {
-  available: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  paused: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  available: "border-success/40 bg-success/10 text-success",
+  paused: "border-warning/40 bg-warning/10 text-warning",
   unpublished: "border-border bg-muted text-muted-foreground",
   absent: "border-dashed border-border bg-transparent text-muted-foreground/60",
 };
@@ -57,7 +63,10 @@ const CELL_LABELS: Record<CellState, string> = {
   absent: "Não ofertado",
 };
 
-export function cellView(row: CatalogRowProjection, cell: SurfaceCellProjection): CellView {
+export function cellView(
+  row: CatalogRowProjection,
+  cell: SurfaceCellProjection,
+): CellView {
   const state = cellState(row, cell);
   return { state, label: CELL_LABELS[state], toneClass: CELL_TONES[state] };
 }
@@ -82,8 +91,10 @@ export interface RowStatus {
 // Escala de estados "fora", do mais deliberado ao mais urgente:
 // Oculto (cinza) · Pausado (âmbar) · Esgotado (vermelho/danger).
 export function rowStatus(row: CatalogRowProjection): RowStatus {
-  if (!row.is_published) return { off: true, label: "Oculto", tone: "muted", hint: "" };
-  if (!row.is_sellable) return { off: true, label: "Pausado", tone: "amber", hint: "" };
+  if (!row.is_published)
+    return { off: true, label: "Oculto", tone: "muted", hint: "" };
+  if (!row.is_sellable)
+    return { off: true, label: "Pausado", tone: "amber", hint: "" };
   // Depois das duas chaves DELIBERADAS e antes de Esgotado, de propósito: aqui
   // ninguém escondeu nada — o produto caiu fora do cardápio como efeito colateral
   // de desativar a categoria. Esgotado se resolve sozinho no próximo lote;
@@ -101,7 +112,8 @@ export function rowStatus(row: CatalogRowProjection): RowStatus {
   // Esgotado = fato de ESTOQUE, ortogonal à pausa. Danger pra saltar à vista (cliente
   // não consegue comprar agora) e diferenciar do Pausado — mesmo repondo no lote.
   // Vem antes de "Indisponível" porque o gate de pausa das células não enxerga estoque.
-  if (row.sold_out) return { off: true, label: "Esgotado", tone: "danger", hint: "" };
+  if (row.sold_out)
+    return { off: true, label: "Esgotado", tone: "danger", hint: "" };
   const listed = row.cells.some((c) => c.in_listing);
   if (listed && !availableAnywhere(row)) {
     return { off: true, label: "Indisponível", tone: "amber", hint: "" };
@@ -128,7 +140,8 @@ export function cellPrice(
 ): CellPriceView {
   const price = cell.price_q ?? row.base_price_q;
   const base = row.base_price_q;
-  const delta: PriceDelta = price > base ? "up" : price < base ? "down" : "same";
+  const delta: PriceDelta =
+    price > base ? "up" : price < base ? "down" : "same";
   return { delta, differs: delta !== "same", display: cell.price_display };
 }
 
@@ -162,14 +175,27 @@ export function surfaceDisplayIcon(surface: SurfaceProjection): string {
 
 // Rótulo CURTO (cabe na coluna estreita da matriz) + `title` com a frase inteira,
 // que é o que o operador lê ao pousar o mouse.
-const SYNC: Record<SurfaceSyncStatus, { label: string; title: string; toneClass: string } | null> = {
-  ok: { label: "Em dia", title: "Sincronizado", toneClass: "text-emerald-600 dark:text-emerald-400" },
-  error: { label: "Erro", title: "Erro de sincronização", toneClass: "text-destructive" },
-  never: { label: "Nunca", title: "Nunca sincronizado", toneClass: "text-amber-600 dark:text-amber-400" },
+const SYNC: Record<
+  SurfaceSyncStatus,
+  { label: string; title: string; toneClass: string } | null
+> = {
+  ok: { label: "Em dia", title: "Sincronizado", toneClass: "text-success" },
+  error: {
+    label: "Erro",
+    title: "Erro de sincronização",
+    toneClass: "text-error",
+  },
+  never: {
+    label: "Nunca",
+    title: "Nunca sincronizado",
+    toneClass: "text-warning",
+  },
   na: null, // não é alvo de projeção → sem badge
 };
 
-export function syncBadge(status: SurfaceSyncStatus): { label: string; title: string; toneClass: string } | null {
+export function syncBadge(
+  status: SurfaceSyncStatus,
+): { label: string; title: string; toneClass: string } | null {
   return SYNC[status];
 }
 
@@ -182,20 +208,44 @@ export interface CellSyncView {
   status: CellSyncStatus;
   show: boolean; // renderiza o selo? (esconde em superfície que não projeta)
   label: string; // rótulo curto p/ tooltip/leitor de tela
-  dot: string; // glifo do selo (●/○/…)
-  toneClass: string; // cor do selo
+  icon: string; // ícone Lucide canônico; evita glifo solto com geometria irregular
+  color: "success" | "warning" | "error" | "neutral";
   actionable: boolean; // oferece "sincronizar agora"? (error/pending/nunca em alvo)
 }
 
 const CELL_SYNC: Record<
   Exclude<CellSyncStatus, "">,
-  { label: string; dot: string; toneClass: string }
+  {
+    label: string;
+    icon: string;
+    color: CellSyncView["color"];
+  }
 > = {
-  synced: { label: "Sincronizado", dot: "●", toneClass: "text-emerald-600 dark:text-emerald-400" },
-  pending: { label: "Sincronizando", dot: "◐", toneClass: "text-amber-600 dark:text-amber-400" },
-  error: { label: "Erro de sync", dot: "▲", toneClass: "text-destructive" },
-  retracted: { label: "Retirado", dot: "○", toneClass: "text-muted-foreground" },
-  skipped: { label: "Ignorado", dot: "○", toneClass: "text-muted-foreground/70" },
+  synced: {
+    label: "Sincronizado",
+    icon: "i-lucide-circle-check",
+    color: "success",
+  },
+  pending: {
+    label: "Sincronizando",
+    icon: "i-lucide-refresh-cw",
+    color: "warning",
+  },
+  error: {
+    label: "Erro de sync",
+    icon: "i-lucide-triangle-alert",
+    color: "error",
+  },
+  retracted: {
+    label: "Retirado",
+    icon: "i-lucide-circle-minus",
+    color: "neutral",
+  },
+  skipped: {
+    label: "Ignorado",
+    icon: "i-lucide-circle-slash",
+    color: "neutral",
+  },
 };
 
 export function cellSyncView(
@@ -205,7 +255,14 @@ export function cellSyncView(
   // Superfície que não projeta (feed de pull) → sem selo de sync.
   const projects = !!surface?.is_projection_target;
   if (!projects) {
-    return { status: cell.sync_status, show: false, label: "", dot: "", toneClass: "", actionable: false };
+    return {
+      status: cell.sync_status,
+      show: false,
+      label: "",
+      icon: "",
+      color: "neutral",
+      actionable: false,
+    };
   }
   const status = cell.sync_status;
   if (status === "") {
@@ -214,8 +271,8 @@ export function cellSyncView(
       status,
       show: cell.in_listing,
       label: "Nunca sincronizado",
-      dot: "○",
-      toneClass: "text-muted-foreground/60",
+      icon: "i-lucide-circle-help",
+      color: "neutral",
       actionable: cell.in_listing,
     };
   }
@@ -224,16 +281,23 @@ export function cellSyncView(
     status,
     show: true,
     label: meta.label,
-    dot: meta.dot,
-    toneClass: meta.toneClass,
+    icon: meta.icon,
+    color: meta.color,
     actionable: status === "error" || status === "pending",
   };
 }
 
 // Conta as células em erro de uma linha (badge de atenção na coluna do produto).
-export function syncErrorCount(row: CatalogRowProjection, surfaces: SurfaceProjection[]): number {
-  const targets = new Set(surfaces.filter((s) => s.is_projection_target).map((s) => s.ref));
-  return row.cells.filter((c) => targets.has(c.surface_ref) && c.sync_status === "error").length;
+export function syncErrorCount(
+  row: CatalogRowProjection,
+  surfaces: SurfaceProjection[],
+): number {
+  const targets = new Set(
+    surfaces.filter((s) => s.is_projection_target).map((s) => s.ref),
+  );
+  return row.cells.filter(
+    (c) => targets.has(c.surface_ref) && c.sync_status === "error",
+  ).length;
 }
 
 // ── PIM social (resumo da linha) — Arc H ───────────────────────────────────────
@@ -253,7 +317,9 @@ export function pimSummary(row: CatalogRowProjection): PimSummary {
   const missing: string[] = [];
   if (!s.brand) missing.push("marca");
   if (!s.google_product_category) missing.push("categoria");
-  const filled = [s.brand, s.google_product_category, s.gtin].filter(Boolean).length;
+  const filled = [s.brand, s.google_product_category, s.gtin].filter(
+    Boolean,
+  ).length;
   return {
     complete: row.pim_complete,
     brand: s.brand,
@@ -263,27 +329,35 @@ export function pimSummary(row: CatalogRowProjection): PimSummary {
   };
 }
 
-// ── a letra no quadrado colorido (G20) ──────────────────────────────────────────
-// Sem foto, ou com a foto quebrada, o produto aparece como na v3/v4: a inicial num
-// quadrado de cor estável (a mesma cor para o mesmo nome, em toda tela).
-const TILE_COLORS = ["#8a6a2f", "#7a3b2e", "#a0662a", "#6b4a3a", "#8c2f3f", "#a77b2c", "#5f5a2a", "#7d4f22"];
-
-export function letterTile(name: string): { letter: string; color: string } {
+// ── inicial do avatar do produto (G20) ─────────────────────────────────────────
+// Sem foto, ou com a foto quebrada, o UAvatar oficial mostra uma inicial. A cor e
+// a geometria pertencem ao tema Nuxt UI; o app não mantém uma paleta paralela.
+export function letterTile(name: string): { letter: string } {
   const clean = (name || "").trim();
   const letter = (clean.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
-  let hash = 0;
-  for (const ch of clean) hash = (hash * 31 + (ch.codePointAt(0) ?? 0)) >>> 0;
-  return { letter, color: TILE_COLORS[hash % TILE_COLORS.length]! };
+  return { letter };
 }
 
 // ── Exportar (⋯ do cabeçalho, v3) ────────────────────────────────────────────
 // O recorte da tela como está: produto, SKU, preço, coleção e o estado em cada coluna
 // visível ("à venda", "pausado"…), na ordem da matriz.
-export function catalogCsv(rows: CatalogRowProjection[], surfaces: SurfaceProjection[]): string {
-  const esc = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-  const header = ["Produto", "SKU", "Preço", "Coleção", ...surfaces.map((s) => s.name)];
+export function catalogCsv(
+  rows: CatalogRowProjection[],
+  surfaces: SurfaceProjection[],
+): string {
+  const esc = (value: unknown) =>
+    `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const header = [
+    "Produto",
+    "SKU",
+    "Preço",
+    "Coleção",
+    ...surfaces.map((s) => s.name),
+  ];
   const body = rows.map((row) => {
-    const bySurface = new Map(row.cells.map((cell) => [cell.surface_ref, cell]));
+    const bySurface = new Map(
+      row.cells.map((cell) => [cell.surface_ref, cell]),
+    );
     return [
       row.name,
       row.sku,
@@ -293,7 +367,9 @@ export function catalogCsv(rows: CatalogRowProjection[], surfaces: SurfaceProjec
         const cell = bySurface.get(s.ref);
         return cell ? cellView(row, cell).label : "";
       }),
-    ].map(esc).join(",");
+    ]
+      .map(esc)
+      .join(",");
   });
   return [header.map(esc).join(","), ...body].join("\n");
 }

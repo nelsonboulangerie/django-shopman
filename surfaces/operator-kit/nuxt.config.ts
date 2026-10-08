@@ -34,6 +34,10 @@ export default defineNuxtConfig({
         fonts: false,
         colorMode: false,
         theme: {
+          // Só as cores do conjunto mínimo (dono, 08/10/2026, PR #1539): cor que não
+          // é gerada não pode ser usada, e o tipo de `color` dos componentes encolhe
+          // junto. O `neutral` o Nuxt UI sempre gera. `secondary` saiu: zero usos.
+          colors: ["primary", "info", "success", "warning", "error"],
           unstyled: false,
           transitions: true,
         },
@@ -94,6 +98,17 @@ export default defineNuxtConfig({
   // OperatorSonner observa a outra, e a mensagem nunca aparece.
   vite: {
     resolve: { dedupe: ["reka-ui", "vue-sonner"] },
+  },
+
+  // O Drawer do Nuxt UI vem do `vaul-vue`, que só existe em `operator-kit/node_modules`
+  // e o Nuxt UI não põe no `transpile` (põe só o `reka-ui`). No SSR do `nuxt dev` ele
+  // era carregado pelo Node, fora do Vite, e puxava o `reka-ui` e o `vue` da cópia do
+  // kit: duas instâncias de Vue, e o primeiro Drawer com gatilho no SSR (o "Mais" da
+  // barra de seções) derrubava a página com "Cannot read properties of null (reading
+  // 'ce')". Era o que fazia o e2e do Marketing esperar 120 s por um servidor que só
+  // respondia 500. Transpilado, ele passa pelo `dedupe` acima como o resto.
+  build: {
+    transpile: ["vaul-vue"],
   },
 
   runtimeConfig: {

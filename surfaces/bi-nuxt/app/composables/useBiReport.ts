@@ -4,6 +4,7 @@
 // a tendência). `extra` leva os recortes próprios da tela (o canal e a base de
 // comparação das Vendas), que moram na URL como a janela.
 import type { Ref } from "vue";
+import type { BIReading } from "~/types/bi";
 
 export function useBiReport<T>(
   kind: "production" | "sales" | "cash" | "customers",
@@ -11,7 +12,7 @@ export function useBiReport<T>(
 ) {
   const { range } = useBiWindow();
 
-  const { data, pending, error, refresh } = useFetch<{ bi: T }>(
+  const { data, pending, error, refresh } = useFetch<BIReading<T>>(
     `/api/v1/backstage/bi/${kind}/`,
     {
       key: `bi-${kind}`,
@@ -22,6 +23,7 @@ export function useBiReport<T>(
   );
 
   const report = computed(() => data.value?.bi ?? null);
+  const freshness = computed(() => ({ generated_at: data.value?.generated_at ?? null }));
 
-  return { report, pending, error, refresh, data };
+  return { report, freshness, pending, error, refresh, data };
 }

@@ -1,5 +1,5 @@
 import { mockNuxtImport, mountSuspended, registerEndpoint } from "@nuxt/test-utils/runtime";
-import { flushPromises, type VueWrapper } from "@vue/test-utils";
+import { DOMWrapper, flushPromises, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, reactive, ref } from "vue";
 
@@ -561,9 +561,21 @@ const refsIn = (wrapper: { findAll: (s: string) => { attributes: (n: string) => 
   wrapper.findAll("[data-preorder]").map((c) => c.attributes("data-preorder"));
 
 /** "Filtrar" → a dimensão: o segundo passo da barra, com as opções e a contagem. */
+// O painel do filtro é um NuxtPopover: o conteúdo vai para o portal no <body>, fora
+// da árvore do wrapper. Procurar dentro do wrapper testava o desenho antigo (o
+// popover inline), não o componente real.
+function inPopover(selector: string) {
+  return new DOMWrapper(document.body.querySelector(selector) as Element);
+}
+function allInPopover(selector: string) {
+  return [...document.body.querySelectorAll(selector)].map((el) => new DOMWrapper(el as Element));
+}
+
 async function pickFilter(wrapper: Awaited<ReturnType<typeof mount>>, dimension: string) {
   await wrapper.find("[data-filter-trigger]").trigger("click");
-  await wrapper.find(`[data-filter-dimension="${dimension}"]`).trigger("click");
+  await flushPromises();
+  await inPopover(`[data-filter-dimension="${dimension}"]`).trigger("click");
+  await flushPromises();
 }
 
 async function typeSearch(wrapper: Awaited<ReturnType<typeof mount>>, value: string) {
@@ -717,10 +729,11 @@ describe("Encomendas — filtros e o lote das vias que faltam", () => {
     expect(wrapper.find("[data-operator-page-header] [data-preorders-print]").exists()).toBe(true);
     // O "Filtrar" fica para o resto: o que tem botão de um toque não se repete nele.
     await pickFilter(wrapper, "pay");
-    expect(wrapper.findAll("[data-filter-option]").map((o) => [o.find(".truncate").text(), o.find(".tabular-nums").text()]))
+    expect(allInPopover("[data-filter-option]").map((o) => [o.find(".truncate").text(), o.find(".tabular-nums").text()]))
       .toEqual([["Pagas", "1"]]);
-    await wrapper.find("[data-filter-back]").trigger("click");
-    expect(wrapper.find('[data-filter-dimension="fulfillment"]').exists()).toBe(false);
+    await inPopover("[data-filter-back]").trigger("click");
+    await flushPromises();
+    expect(document.body.querySelector('[data-filter-dimension="fulfillment"]')).toBeNull();
     await wrapper.find("[data-filter-trigger]").trigger("click");
     // Entregas é um toque só (P1), e o botão apertado é o que diz o recorte.
     await wrapper.find('[data-preorders-shortcut="fulfillment:delivery"]').trigger("click");

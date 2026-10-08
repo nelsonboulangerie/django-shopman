@@ -8,10 +8,12 @@ import { timerChip } from "../app/presentation/board";
 import {
   kitchenDetail,
   QUEUE_FOCUS,
+  queueGesture,
   queueItems,
   queueScopeCounts,
   queueToneClass,
   restLine,
+  workingOrders,
   type QueueTone,
 } from "../app/presentation/queue";
 import type { OrderCardProjection } from "../app/types/orders";
@@ -55,13 +57,16 @@ describe("G05: a cópia da Fila não se corta", () => {
   });
 });
 
-describe("G07: Fila F | Supervisão T, dois segmentos", () => {
-  it("a Supervisão é a tabela densa; as colunas saem do alternador", () => {
+describe("Grade G | Lista L, dois segmentos genéricos (dono, 07/10/2026)", () => {
+  it("a Lista é a tabela densa; as colunas saem do alternador", () => {
     const page = readFileSync(new URL("../app/pages/index.vue", import.meta.url), "utf8");
-    const segment = page.slice(page.indexOf("data-view-switch"), page.indexOf("</div>", page.indexOf("data-view-switch")));
-    expect(segment).toContain("viewMode = 'queue'");
-    expect(segment).toContain("viewMode = 'table'");
-    expect(segment).not.toContain("viewMode = 'board'");
+    const items = page.slice(page.indexOf("const viewTabs"), page.indexOf("function pickView"));
+    const control = page.slice(page.lastIndexOf("<NuxtTabs", page.indexOf("data-view-switch")), page.indexOf("/>", page.indexOf("data-view-switch")));
+    expect(items).toContain('value: "queue", label: "Grade"');
+    expect(items).toContain('value: "table", label: "Lista"');
+    expect(items).not.toContain('value: "board"');
+    expect(control).toContain(':items="viewTabs"');
+    expect(control).toContain('@update:model-value="pickView"');
   });
 });
 
@@ -110,5 +115,52 @@ describe("G10: próximo pronto em ~N min", () => {
     expect(kitchenDetail([card({ ready_eta_iso: ago(30) })], NOW, 1380)).toBe("o mais antigo há 23 min · passou da previsão");
     expect(kitchenDetail([card()], NOW, 600)).toBe("o mais antigo há 10 min");
     expect(kitchenDetail([], NOW, 0)).toBe("");
+  });
+});
+
+describe("negociação do iFood na Fila (dono, 07/10/2026)", () => {
+  it("passa à frente pelo prazo, como o pedido que o sistema cancela", () => {
+    const negotiation = card({
+      ref: "NEG-1", attention: "negotiation", attention_since_iso: ago(3 * 60),
+      goal_minutes: 10, goal_label: "responder até 15:15",
+    });
+    const late = card({ ref: "LATE-1", attention_since_iso: ago(40 * 60) });
+    const items = queueItems([late, negotiation], NOW);
+    expect(items.map((item) => item.card.ref)).toEqual(["NEG-1", "LATE-1"]);
+    expect(items[0]!.cancelsIn).toBe(7 * 60);
+  });
+
+  it("a linha não oferece o gesto do cartão: responde-se no pedido", () => {
+    const negotiation = card({ ref: "NEG-2", attention: "negotiation", attention_since_iso: ago(60), goal_minutes: 10 });
+    const [item] = queueItems([negotiation], NOW);
+    expect(queueGesture(item!)).toEqual({ primary: null, secondary: null, shortcut: "" });
+  });
+});
+
+describe("Em andamento: o que está de fato na cozinha (dono, 07/10/2026)", () => {
+  const station = (over: Record<string, unknown>) => ({
+    station_ref: "cafes", station_name: "Cafés", prints: false, state: "in_progress",
+    state_label: "em preparo", paper_label: "", paper_failed: false, cancelled_items: 0,
+    can_mark_ready: false, recall_ticket_pk: null, items: [], ...over,
+  });
+  it("lista os pedidos da cozinha, o mais antigo primeiro, com cada estação e seus itens", () => {
+    const old = card({
+      ref: "W-OLD", status: "preparing", created_at_iso: ago(20 * 60),
+      kitchen: { order_pk: 1, missing_label: "Falta Lanches", stations: [
+        station({ station_name: "Cafés", state: "done", state_label: "pronto", items: ["2x Café"] }),
+        station({ station_ref: "lanches", station_name: "Lanches", prints: true, paper_failed: true, items: ["1x Misto"] }),
+      ] },
+    } as Partial<OrderCardProjection>);
+    const fresh = card({ ref: "W-NEW", status: "accepted", created_at_iso: ago(2 * 60), kitchen: null });
+    const road = card({ ref: "W-ROAD", status: "dispatched", dispatched_at_iso: ago(5 * 60), courier_status_label: "a 5 min do cliente" });
+    const { kitchen, road: onRoad } = workingOrders([fresh, old, road, old], NOW);
+    expect(kitchen.map((w) => w.card.ref)).toEqual(["W-OLD", "W-NEW"]);
+    expect(kitchen[0]!.summary).toBe("1 de 2 prontas");
+    expect(kitchen[0]!.stations.map((s) => [s.name, s.label, s.tone, s.items])).toEqual([
+      ["Cafés", "pronto", "success", ["2x Café"]],
+      ["Lanches", "papel não saiu", "error", ["1x Misto"]],
+    ]);
+    expect(kitchen[1]!.summary).toBe("sem estação");
+    expect(onRoad.map((w) => [w.card.ref, w.summary])).toEqual([["W-ROAD", "a 5 min do cliente"]]);
   });
 });

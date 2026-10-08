@@ -1,56 +1,61 @@
 <script setup lang="ts">
-// "Ao vivo" discreto, ao lado do título (prévias v3: um ponto com a hora). Só cresce
-// quando a leitura atrasa: aí o texto aparece por extenso ("Sem conexão", "Atualiza a
-// cada 30 s"), porque a cor nunca fala sozinha. O detalhe completo fica no `title` e no
-// nome acessível (`role="status"`).
+// Estado compacto da atualização automática. O texto visível responde somente à
+// pergunta operacional (ON/OFF) e mantém a hora da última leitura; o rótulo completo
+// continua no nome acessível e no title.
 //
-// Tons:
-//   live  → ponto verde, só a hora;
-//   calm  → ponto neutro, a hora + o rótulo curto (o quadro segue atualizando sozinho);
-//   late  → ponto âmbar, rótulo por extenso;
-//   off   → ponto vermelho, rótulo por extenso.
+// Cor binária do estado: todo On é success; Off é error. `calm` e `late`
+// continuam enriquecendo o rótulo acessível, sem criar uma terceira leitura
+// cromática para um estado que permanece ligado.
 import { computed } from "vue";
 
-const props = withDefaults(defineProps<{
-  tone?: "live" | "calm" | "late" | "off";
-  /** A hora da última leitura útil ("22:03"). */
-  time?: string;
-  /** Rótulo curto do estado ("Ao vivo", "Atualiza a cada 30 s", "Sem conexão"). */
-  label: string;
-  /** Detalhe para o toque/hover e leitor de tela. */
-  detail?: string;
-}>(), { tone: "live", time: "", detail: "" });
+const props = withDefaults(
+  defineProps<{
+    tone?: "live" | "calm" | "late" | "off";
+    /** A hora da última leitura útil ("22:03"). */
+    time?: string;
+    /** Rótulo curto do estado ("Ao vivo", "Atualiza a cada 30 s", "Sem conexão"). */
+    label: string;
+    /** Detalhe para o toque/hover e leitor de tela. */
+    detail?: string;
+  }>(),
+  { tone: "live", time: "", detail: "" },
+);
 
-const dotClass = computed(() => {
-  switch (props.tone) {
-    case "calm": return "bg-muted-foreground shadow-[0_0_0_3px_color-mix(in_oklab,var(--muted-foreground)_18%,transparent)]";
-    case "late": return "bg-warning shadow-[0_0_0_3px_color-mix(in_oklab,var(--warning)_22%,transparent)]";
-    case "off": return "bg-destructive shadow-[0_0_0_3px_color-mix(in_oklab,var(--destructive)_22%,transparent)]";
-    default: return "";
-  }
+const badgeColor = computed(() => {
+  return props.tone === "off" ? ("error" as const) : ("success" as const);
 });
-const showLabel = computed(() => props.tone !== "live" || !props.time);
-const accessible = computed(() => [props.label, props.time && `última leitura ${props.time}`, props.detail].filter(Boolean).join(". "));
+const accessible = computed(() =>
+  [
+    props.label,
+    props.tone !== "off" && props.time && `última leitura ${props.time}`,
+    props.detail,
+  ]
+    .filter(Boolean)
+    .join(". "),
+);
+const state = computed(() => (props.tone === "off" ? "Off" : "On"));
+// Desligado não tem “hora da última leitura” no rótulo: ela pareceria a hora em
+// que o modo foi desligado ou uma leitura ainda vigente. O detalhe acessível
+// continua explicando o estado completo.
+const display = computed(() =>
+  props.tone === "off"
+    ? state.value
+    : [state.value, props.time].filter(Boolean).join(" "),
+);
 </script>
 
 <template>
-  <span
-    class="inline-flex shrink-0 items-center gap-1.5 op-micro tnum text-muted-foreground"
+  <NuxtBadge
+    :color="badgeColor"
+    :label="display"
     role="status"
     :aria-label="accessible"
     :title="accessible"
     :data-live-tone="tone"
     data-operator-live-status
   >
-    <span class="live-dot" :class="dotClass" aria-hidden="true" />
-    <span v-if="time" class="max-[379px]:hidden" aria-hidden="true">{{ time }}</span>
-    <span
-      v-if="showLabel"
-      aria-hidden="true"
-      :class="[
-        tone === 'late' ? 'font-semibold text-warning' : tone === 'off' ? 'font-semibold text-destructive' : '',
-        tone === 'calm' ? 'max-[379px]:hidden' : '',
-      ]"
-    >{{ label }}</span>
-  </span>
+    <template #leading>
+      <NuxtChip as="span" :color="badgeColor" size="xl" inset standalone />
+    </template>
+  </NuxtBadge>
 </template>

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { scanOperatorGeometry } from "../visual/scanner";
 
@@ -13,6 +13,7 @@ const page = {
 };
 
 afterEach(() => {
+  vi.restoreAllMocks();
   document.body.innerHTML = "";
   Object.defineProperty(document.documentElement, "scrollWidth", { configurable: true, value: 0 });
   Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 0 });
@@ -78,5 +79,25 @@ describe("scanner geométrico", () => {
 
     const findings = await scanOperatorGeometry(page as never);
     expect(findings.some(({ kind }) => kind === "focus-clipping")).toBe(true);
+  });
+
+  it("não confunde conteúdo rolável fora do viewport com chrome sobreposto", async () => {
+    Object.defineProperty(globalThis, "innerWidth", { configurable: true, value: 390 });
+    Object.defineProperty(globalThis, "innerHeight", { configurable: true, value: 844 });
+    Object.defineProperty(document.documentElement, "scrollWidth", { configurable: true, value: 390 });
+    Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 390 });
+    const button = document.createElement("button");
+    button.style.opacity = "1";
+    button.getBoundingClientRect = () => rect(12, 1200, 100, 44);
+    const chrome = document.createElement("nav");
+    chrome.dataset.focusObstruction = "";
+    chrome.style.opacity = "1";
+    chrome.getBoundingClientRect = () => rect(0, 768, 390, 76);
+    document.body.append(button, chrome);
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(chrome);
+
+    const findings = await scanOperatorGeometry(page as never, { touch: true });
+    expect(findings.some(({ kind }) => kind === "covered-by-chrome")).toBe(false);
+    expect(document.elementFromPoint).not.toHaveBeenCalled();
   });
 });

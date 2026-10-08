@@ -4,7 +4,12 @@
 // a etapa conta (`attention_since_iso`) e a meta (`goal_minutes`, `goal_label`); aqui só
 // se mede contra o relógio e se ordena. Puro: testado em `tests/queue.test.ts`.
 import type { OrderCardProjection } from "~/types/orders";
-import { cardAffordances, secondsSince, splitRef, type Affordance } from "./board";
+import {
+  cardAffordances,
+  secondsSince,
+  splitRef,
+  type Affordance,
+} from "./board";
 
 export type QueueTone = "ok" | "warning" | "late";
 
@@ -13,10 +18,22 @@ export type QueueScope = "attention" | "all" | "late";
 /** A ordem da Fila ("Urgência ▾"): tempo contra a meta, chegada ou os mais novos. */
 export type QueueSort = "urgency" | "arrival" | "recent";
 
-export const QUEUE_SORT_OPTIONS: { key: QueueSort; label: string; hint: string }[] = [
-  { key: "urgency", label: "Urgência", hint: "Mais urgente primeiro (tempo contra a meta)" },
+export const QUEUE_SORT_OPTIONS: {
+  key: QueueSort;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    key: "urgency",
+    label: "Urgência",
+    hint: "Mais urgente primeiro (tempo contra a meta)",
+  },
   { key: "arrival", label: "Chegada", hint: "Quem chegou primeiro no topo" },
-  { key: "recent", label: "Mais recentes", hint: "O que acabou de chegar no topo" },
+  {
+    key: "recent",
+    label: "Mais recentes",
+    hint: "O que acabou de chegar no topo",
+  },
 ];
 
 /** Quantos itens a Fila mostra em foco; o resto vira "+N" (SPEC4 §4, densidade pela atenção). */
@@ -64,18 +81,45 @@ export function queueToneClass(tone: QueueTone): string {
   return "text-foreground";
 }
 
-function cancelSeconds(card: OrderCardProjection, nowMs: number): number | null {
-  if (card.confirmation_action !== "cancel" || !card.confirmation_deadline_iso) return null;
+function cancelSeconds(
+  card: OrderCardProjection,
+  nowMs: number,
+): number | null {
+  // A negociação do iFood também decide sozinha no prazo: entra na mesma régua do
+  // pedido que o sistema cancela (o prazo é o fim da meta, contada da chegada).
+  if (card.attention === "negotiation") {
+    const since = Date.parse(card.attention_since_iso);
+    if (!Number.isFinite(since) || !card.goal_minutes) return null;
+    return Math.max(
+      0,
+      Math.round((since + card.goal_minutes * 60_000 - nowMs) / 1000),
+    );
+  }
+  if (card.confirmation_action !== "cancel" || !card.confirmation_deadline_iso)
+    return null;
   const at = Date.parse(card.confirmation_deadline_iso);
-  return Number.isFinite(at) ? Math.max(0, Math.round((at - nowMs) / 1000)) : null;
+  return Number.isFinite(at)
+    ? Math.max(0, Math.round((at - nowMs) / 1000))
+    : null;
 }
 
 function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
   if (!card.attention) {
-    const seconds = secondsSince(card.created_at_iso, nowMs) ?? card.elapsed_seconds ?? 0;
-    return { card, kind: "", seconds, timeLabel: minutesLabel(seconds), goalLabel: card.status_label, tone: "ok", urgency: 0, cancelsIn: null };
+    const seconds =
+      secondsSince(card.created_at_iso, nowMs) ?? card.elapsed_seconds ?? 0;
+    return {
+      card,
+      kind: "",
+      seconds,
+      timeLabel: minutesLabel(seconds),
+      goalLabel: card.status_label,
+      tone: "ok",
+      urgency: 0,
+      cancelsIn: null,
+    };
   }
-  const seconds = secondsSince(card.attention_since_iso, nowMs) ?? card.elapsed_seconds ?? 0;
+  const seconds =
+    secondsSince(card.attention_since_iso, nowMs) ?? card.elapsed_seconds ?? 0;
   const goal = card.goal_minutes || 0;
   return {
     card,
@@ -89,8 +133,8 @@ function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
   };
 }
 
-/** A ordem "mais urgente primeiro" (G11): o pedido que o sistema vai CANCELAR sozinho
- *  passa à frente (perder a venda não se desfaz), o de prazo mais curto primeiro; depois,
+/** A ordem "mais urgente primeiro" (G11): o pedido que o sistema vai CANCELAR sozinho,
+ *  e a negociação que o iFood decide sozinho, passam à frente (não se desfaz), o de prazo mais curto primeiro; depois,
  *  o tempo contra a meta; empate, o mais antigo. */
 function byUrgency(a: QueueItem, b: QueueItem): number {
   if (a.cancelsIn !== null || b.cancelsIn !== null) {
@@ -98,7 +142,11 @@ function byUrgency(a: QueueItem, b: QueueItem): number {
     if (b.cancelsIn === null) return -1;
     if (a.cancelsIn !== b.cancelsIn) return a.cancelsIn - b.cancelsIn;
   }
-  return b.urgency - a.urgency || b.seconds - a.seconds || a.card.ref.localeCompare(b.card.ref);
+  return (
+    b.urgency - a.urgency ||
+    b.seconds - a.seconds ||
+    a.card.ref.localeCompare(b.card.ref)
+  );
 }
 
 /** Os pedidos do recorte, na ordem pedida. "Precisa de você": só o que espera alguém;
@@ -119,14 +167,25 @@ export function queueItems(
     items.push(item);
   }
   const sort = opts.sort ?? "urgency";
-  if (sort === "arrival") return items.sort((a, b) => a.card.created_at_iso.localeCompare(b.card.created_at_iso));
-  if (sort === "recent") return items.sort((a, b) => b.card.created_at_iso.localeCompare(a.card.created_at_iso));
+  if (sort === "arrival")
+    return items.sort((a, b) =>
+      a.card.created_at_iso.localeCompare(b.card.created_at_iso),
+    );
+  if (sort === "recent")
+    return items.sort((a, b) =>
+      b.card.created_at_iso.localeCompare(a.card.created_at_iso),
+    );
   // No "Todos", o que pede alguém vem antes do que só está andando.
-  return items.sort((a, b) => Number(!a.kind) - Number(!b.kind) || byUrgency(a, b));
+  return items.sort(
+    (a, b) => Number(!a.kind) - Number(!b.kind) || byUrgency(a, b),
+  );
 }
 
 /** As contagens dos recortes: "Precisa de você N · Todos N · ● Atrasados N". */
-export function queueScopeCounts(cards: OrderCardProjection[], nowMs: number): Record<QueueScope, number> {
+export function queueScopeCounts(
+  cards: OrderCardProjection[],
+  nowMs: number,
+): Record<QueueScope, number> {
   const attention = queueItems(cards, nowMs);
   return {
     attention: attention.length,
@@ -148,27 +207,61 @@ const KITCHEN = new Set(["accepted", "preparing"]);
 const ROAD = new Set(["dispatched", "delivered"]);
 
 /** "Em andamento": o que não pede ninguém, agregado (Na Cozinha, Na rua). */
-export function inProgress(cards: OrderCardProjection[], nowMs: number): ProgressLine[] {
+export function inProgress(
+  cards: OrderCardProjection[],
+  nowMs: number,
+): ProgressLine[] {
   const quiet = cards.filter((card) => !card.attention);
-  const oldest = (list: OrderCardProjection[], since: (card: OrderCardProjection) => string) => {
-    const ages = list.map((card) => secondsSince(since(card), nowMs) ?? card.elapsed_seconds ?? 0);
+  const oldest = (
+    list: OrderCardProjection[],
+    since: (card: OrderCardProjection) => string,
+  ) => {
+    const ages = list.map(
+      (card) => secondsSince(since(card), nowMs) ?? card.elapsed_seconds ?? 0,
+    );
     return ages.length ? Math.max(...ages) : 0;
   };
   const kitchen = quiet.filter((card) => KITCHEN.has(card.status));
   const road = quiet.filter((card) => ROAD.has(card.status));
-  const detail = (count: number, seconds: number) => (count ? `o mais antigo há ${minutesLabel(seconds)}` : "");
+  const detail = (count: number, seconds: number) =>
+    count ? `o mais antigo há ${minutesLabel(seconds)}` : "";
   return [
-    { key: "kitchen", label: "Na Cozinha", icon: "lucide:cooking-pot", count: kitchen.length, detail: kitchenDetail(kitchen, nowMs, oldest(kitchen, (card) => card.created_at_iso)) },
-    { key: "road", label: "Na rua", icon: "lucide:bike", count: road.length, detail: detail(road.length, oldest(road, (card) => card.dispatched_at_iso || card.created_at_iso)) },
+    {
+      key: "kitchen",
+      label: "Na Cozinha",
+      icon: "lucide:cooking-pot",
+      count: kitchen.length,
+      detail: kitchenDetail(
+        kitchen,
+        nowMs,
+        oldest(kitchen, (card) => card.created_at_iso),
+      ),
+    },
+    {
+      key: "road",
+      label: "Na rua",
+      icon: "lucide:bike",
+      count: road.length,
+      detail: detail(
+        road.length,
+        oldest(road, (card) => card.dispatched_at_iso || card.created_at_iso),
+      ),
+    },
   ];
 }
 
 /** "próximo pronto em ~4 min" (G10): a previsão mais próxima entre os pedidos na Cozinha
  *  (`ready_eta_iso`, do início real mais o tempo que os preparos estão levando). Sem
  *  previsão, ou com ela vencida, o fato que se sabe: o mais antigo e há quanto tempo. */
-export function kitchenDetail(kitchen: OrderCardProjection[], nowMs: number, oldestSeconds: number): string {
+export function kitchenDetail(
+  kitchen: OrderCardProjection[],
+  nowMs: number,
+  oldestSeconds: number,
+): string {
   if (!kitchen.length) return "";
-  const etas = kitchen.map((card) => Date.parse(card.ready_eta_iso || "")).filter((at) => Number.isFinite(at));
+  const etas = kitchen
+    .map((card) => Date.parse(card.ready_eta_iso || ""))
+    .filter((at) => Number.isFinite(at));
   const oldest = `o mais antigo há ${minutesLabel(oldestSeconds)}`;
   if (!etas.length) return oldest;
   const left = (Math.min(...etas) - nowMs) / 1000;
@@ -179,14 +272,23 @@ export function kitchenDetail(kitchen: OrderCardProjection[], nowMs: number, old
 /** O excedente da Fila num número só (nunca paginação): os que ainda pedem você além dos
  *  em foco e o que está andando. "+7 em andamento, nada pede você: 5 na Cozinha, 2 na rua";
  *  com fila escondida, "+12: mais 5 pedem você · em andamento: 5 na Cozinha, 2 na rua". */
-export function restLine(lines: ProgressLine[], hidden = 0): { count: number; text: string } {
+export function restLine(
+  lines: ProgressLine[],
+  hidden = 0,
+): { count: number; text: string } {
   const moving = lines.reduce((n, line) => n + line.count, 0);
   const count = moving + hidden;
   if (!count) return { count: 0, text: "" };
-  const parts = lines.filter((line) => line.count).map((line) => `${line.count} ${line.label.toLowerCase()}`);
-  if (!hidden) return { count, text: `em andamento, nada pede você: ${parts.join(", ")}` };
+  const parts = lines
+    .filter((line) => line.count)
+    .map((line) => `${line.count} ${line.label.toLowerCase()}`);
+  if (!hidden)
+    return { count, text: `em andamento, nada pede você: ${parts.join(", ")}` };
   const ask = `mais ${hidden} ${hidden === 1 ? "pede" : "pedem"} você`;
-  return { count, text: parts.length ? `${ask} · em andamento: ${parts.join(", ")}` : ask };
+  return {
+    count,
+    text: parts.length ? `${ask} · em andamento: ${parts.join(", ")}` : ask,
+  };
 }
 
 export interface QueueGesture {
@@ -200,26 +302,46 @@ export interface QueueGesture {
 
 /** O botão da linha: só o fato humano é botão (v4). O rótulo do servidor vira `title`. */
 export function queueGesture(item: QueueItem): QueueGesture {
-  if (!item.kind) return { primary: null, secondary: null, shortcut: "" };
+  // A negociação do iFood se responde no pedido (motivo, prova, contraproposta), não
+  // com o gesto do cartão: a linha oferece "Responder", que é um link.
+  if (!item.kind || item.kind === "negotiation")
+    return { primary: null, secondary: null, shortcut: "" };
   const affordances = cardAffordances(item.card);
-  const primary = affordances.find((aff) => aff.priority === "primary" || aff.disabled) ?? null;
-  const secondary = item.kind === "confirm" ? affordances.find((aff) => aff.ref === "reject") ?? null : null;
+  const primary =
+    affordances.find((aff) => aff.priority === "primary" || aff.disabled) ??
+    null;
+  const secondary =
+    item.kind === "confirm"
+      ? (affordances.find((aff) => aff.ref === "reject") ?? null)
+      : null;
   if (!primary) return { primary: null, secondary, shortcut: "" };
   let verb = primary.label;
   if (!primary.disabled) {
     if (primary.ref === "confirm") verb = "Aceitar";
-    else if (item.kind === "dispatch" && primary.ref === "advance") verb = "Saiu";
-    else if (item.kind === "handoff" && primary.ref === "advance") verb = item.card.fulfillment_type === "delivery" ? "Entregue" : "Retirou";
+    else if (item.kind === "dispatch" && primary.ref === "advance")
+      verb = "Saiu";
+    else if (item.kind === "handoff" && primary.ref === "advance")
+      verb = item.card.fulfillment_type === "delivery" ? "Entregue" : "Retirou";
   }
-  return { primary: { ...primary, verb }, secondary, shortcut: primary.ref === "confirm" && !primary.disabled ? "A" : "Enter" };
+  return {
+    primary: { ...primary, verb },
+    secondary,
+    shortcut: primary.ref === "confirm" && !primary.disabled ? "A" : "Enter",
+  };
 }
 
 /** "João Oliveira" e o resto da linha ("Entrega · Rua Paranaguá, 800 · iFood"). */
-export function queueWho(card: OrderCardProjection, channel: string): { name: string; rest: string } {
+export function queueWho(
+  card: OrderCardProjection,
+  channel: string,
+): { name: string; rest: string } {
   const parts = [card.fulfillment_label];
   if (card.delivery_address) parts.push(card.delivery_address);
   if (channel) parts.push(channel);
-  return { name: card.customer_name || "Sem cliente", rest: parts.filter(Boolean).join(" · ") };
+  return {
+    name: card.customer_name || "Sem cliente",
+    rest: parts.filter(Boolean).join(" · "),
+  };
 }
 
 /** O código curto da linha ("R7K"). */
@@ -227,3 +349,96 @@ export function queueCode(card: Pick<OrderCardProjection, "ref">): string {
   return splitRef(card.ref).code;
 }
 
+/** Uma estação de um pedido em andamento: onde está e o que foi para ela. */
+export interface KitchenStationLine {
+  ref: string;
+  name: string;
+  /** "na fila" · "em preparo" · "pronto" · "papel não saiu" */
+  label: string;
+  tone: "success" | "info" | "neutral" | "error";
+  items: string[];
+}
+
+/** Um pedido em andamento, para conferir na cozinha ou na rua. */
+export interface WorkingOrder {
+  card: OrderCardProjection;
+  /** "Na Cozinha": quantas estações prontas ("1 de 3 prontas"); "Na rua": quem leva. */
+  summary: string;
+  seconds: number;
+  /** "12 min": o tempo na régua da Fila. */
+  ageLabel: string;
+  stations: KitchenStationLine[];
+}
+
+function stationLine(
+  station: NonNullable<OrderCardProjection["kitchen"]>["stations"][number],
+): KitchenStationLine {
+  if (station.paper_failed)
+    return {
+      ref: station.station_ref,
+      name: station.station_name,
+      label: "papel não saiu",
+      tone: "error",
+      items: [...(station.items ?? [])],
+    };
+  const tone =
+    station.state === "done"
+      ? "success"
+      : station.state === "in_progress"
+        ? "info"
+        : "neutral";
+  return {
+    ref: station.station_ref,
+    name: station.station_name,
+    label: station.state_label,
+    tone,
+    items: [...(station.items ?? [])],
+  };
+}
+
+/** "Em andamento" por pedido (dono, 07/10/2026): o que está de fato na cozinha, em
+ *  que estação, e os itens que foram para cada uma; e o que está na rua. O mais
+ *  antigo primeiro, que é o que mais pede um olhar. */
+export function workingOrders(
+  cards: OrderCardProjection[],
+  nowMs: number,
+): { kitchen: WorkingOrder[]; road: WorkingOrder[] } {
+  const seen = new Set<string>();
+  const unique = cards.filter((card) =>
+    seen.has(card.ref) ? false : (seen.add(card.ref), true),
+  );
+  const age = (card: OrderCardProjection, since: string) =>
+    secondsSince(since, nowMs) ?? card.elapsed_seconds ?? 0;
+  const kitchen = unique
+    .filter((card) => KITCHEN.has(card.status))
+    .map((card) => {
+      const stations = (card.kitchen?.stations ?? []).map(stationLine);
+      const done = stations.filter((s) => s.tone === "success").length;
+      const seconds = age(card, card.created_at_iso);
+      return {
+        card,
+        stations,
+        seconds,
+        ageLabel: minutesLabel(seconds),
+        summary: stations.length
+          ? `${done} de ${stations.length} ${stations.length === 1 ? "pronta" : "prontas"}`
+          : "sem estação",
+      };
+    })
+    .sort((a, b) => b.seconds - a.seconds);
+  const road = unique
+    .filter((card) => ROAD.has(card.status))
+    .map((card) => {
+      const seconds = age(card, card.dispatched_at_iso || card.created_at_iso);
+      return {
+        card,
+        stations: [],
+        seconds,
+        ageLabel: minutesLabel(seconds),
+        summary:
+          card.courier_status_label || card.equipment_label || "a caminho",
+      };
+    })
+    .sort((a, b) => b.seconds - a.seconds);
+  return { kitchen, road };
+}

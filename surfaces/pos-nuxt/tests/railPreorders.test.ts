@@ -33,10 +33,9 @@ describe("Encomendas na barra lateral do PDV", () => {
     expect(posSections({ ...base, preorders: { allowed: false } }).map((s) => s.key)).not.toContain("preorders");
     const withBadge = posSections({
       ...base,
-      preorders: { allowed: true, badge: "4", ariaLabel: "Encomendas: 4 para entregar hoje" },
+      preorders: { allowed: true, badge: "4" },
     }).find((s) => s.key === "preorders")!;
     expect(withBadge.badge).toBe("4");
-    expect(withBadge.badgeLabel).toBe("4 para entregar hoje");
     expect(RAIL).toContain("usePosPreordersRail()");
   });
 

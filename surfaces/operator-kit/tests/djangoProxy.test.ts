@@ -29,24 +29,35 @@ import {
   resolveDjangoBaseUrl,
 } from "../server/utils/djangoBaseUrl";
 
-const proxySource = readFileSync(fileURLToPath(new URL("../server/utils/djangoProxy.ts", import.meta.url)), "utf8");
+const proxySource = readFileSync(
+  fileURLToPath(new URL("../server/utils/djangoProxy.ts", import.meta.url)),
+  "utf8",
+);
 
 describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => {
   it("não deixa a sessão direta do Admin atravessar a fronteira do BFF", () => {
-    expect(operatorCookieHeaderForDjango(
-      "sessionid=admin-session; csrftoken=admin-csrf; shopman_station_trust_pdv=station-1",
-    )).toBe("shopman_station_trust_pdv=station-1");
-    expect(operatorCookieHeaderForDjango("sessionid=admin-session; csrftoken=admin-csrf")).toBe("");
+    expect(
+      operatorCookieHeaderForDjango(
+        "sessionid=admin-session; csrftoken=admin-csrf; shopman_station_trust_pdv=station-1",
+      ),
+    ).toBe("shopman_station_trust_pdv=station-1");
+    expect(
+      operatorCookieHeaderForDjango(
+        "sessionid=admin-session; csrftoken=admin-csrf",
+      ),
+    ).toBe("");
   });
 
   it("traduz a sessão namespaced compartilhada entre as superfícies e preserva outros cookies", () => {
-    const upstreamCookie = operatorCookieHeaderForDjango([
-      "sessionid=admin-session",
-      "csrftoken=admin-csrf",
-      "shopman_station_trust_pdv=station-1",
-      "shopman_operator_sessionid=operator-session",
-      "shopman_operator_csrftoken=operator-csrf",
-    ].join("; "));
+    const upstreamCookie = operatorCookieHeaderForDjango(
+      [
+        "sessionid=admin-session",
+        "csrftoken=admin-csrf",
+        "shopman_station_trust_pdv=station-1",
+        "shopman_operator_sessionid=operator-session",
+        "shopman_operator_csrftoken=operator-csrf",
+      ].join("; "),
+    );
 
     expect(upstreamCookie).toBe(
       "shopman_station_trust_pdv=station-1; sessionid=operator-session; csrftoken=operator-csrf",
@@ -57,33 +68,60 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
   });
 
   it("o relógio de atividade do dispositivo é do navegador e não chega ao Django", () => {
-    expect(operatorCookieHeaderForDjango(
-      "shopman_operator_activity=1789639200000; shopman_operator_sessionid=operator-session",
-    )).toBe("sessionid=operator-session");
+    expect(
+      operatorCookieHeaderForDjango(
+        "shopman_operator_activity=1789639200000; shopman_operator_sessionid=operator-session",
+      ),
+    ).toBe("sessionid=operator-session");
   });
 
   it("reescreve login e CSRF para o namespace de operador sem perder os atributos", () => {
-    expect(operatorSetCookieHeaderForBrowser(
-      "sessionid=operator-session; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
-    )).toBe(
+    expect(
+      operatorSetCookieHeaderForBrowser(
+        "sessionid=operator-session; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
+      ),
+    ).toBe(
       "shopman_operator_sessionid=operator-session; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
     );
-    expect(operatorSetCookieHeaderForBrowser(
-      "csrftoken=operator-csrf; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
-    )).toBe(
+    expect(
+      operatorSetCookieHeaderForBrowser(
+        "csrftoken=operator-csrf; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
+      ),
+    ).toBe(
       "shopman_operator_csrftoken=operator-csrf; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
     );
   });
 
+  it("torna o cookie host-only e utilizável no servidor local HTTP", () => {
+    expect(
+      operatorSetCookieHeaderForBrowser(
+        "sessionid=operator-session; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
+        { hostname: "127.0.0.1", protocol: "http:" },
+      ),
+    ).toBe(
+      "shopman_operator_sessionid=operator-session; Path=/; HttpOnly; SameSite=Lax",
+    );
+    expect(
+      operatorSetCookieHeaderForBrowser(
+        "csrftoken=operator-csrf; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
+        { hostname: "localhost", protocol: "http:" },
+      ),
+    ).toBe("shopman_operator_csrftoken=operator-csrf; Path=/; SameSite=Lax");
+  });
+
   it("reescreve a expiração do logout para apagar somente a sessão de operador", () => {
-    expect(operatorSetCookieHeaderForBrowser(
-      "sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
-    )).toBe(
+    expect(
+      operatorSetCookieHeaderForBrowser(
+        "sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
+      ),
+    ).toBe(
       "shopman_operator_sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
     );
-    expect(operatorSetCookieHeaderForBrowser(
-      "shopman_station_trust_pdv=station-1; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
-    )).toBe(
+    expect(
+      operatorSetCookieHeaderForBrowser(
+        "shopman_station_trust_pdv=station-1; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
+      ),
+    ).toBe(
       "shopman_station_trust_pdv=station-1; Domain=.boulangerie.com.br; Path=/; Secure; SameSite=Lax",
     );
   });
@@ -91,33 +129,55 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
   it("preserva o cookie de sessão do Django ao atualizar o estado de CSRF", () => {
     const cookie = "sessionid=session-123; csrftoken=old-token";
     expect(csrfTokenFromCookieHeader(cookie)).toBe("old-token");
-    expect(mergeSetCookieIntoCookieHeader(cookie, "csrftoken=new-token; Path=/; SameSite=Lax")).toBe(
-      "sessionid=session-123; csrftoken=new-token",
-    );
-    expect(mergeSetCookieIntoCookieHeader(cookie, "other=value=with-equals; Path=/")).toBe(
+    expect(
+      mergeSetCookieIntoCookieHeader(
+        cookie,
+        "csrftoken=new-token; Path=/; SameSite=Lax",
+      ),
+    ).toBe("sessionid=session-123; csrftoken=new-token");
+    expect(
+      mergeSetCookieIntoCookieHeader(cookie, "other=value=with-equals; Path=/"),
+    ).toBe(
       "sessionid=session-123; csrftoken=old-token; other=value=with-equals",
     );
   });
 
   it('mantém valores de cookie com "=" intactos (assinados/base64)', () => {
     const cookie = "csrftoken=old-token";
-    expect(mergeSetCookieIntoCookieHeader(cookie, "sessionid=abc.def=ghi==; Path=/; HttpOnly")).toBe(
-      "csrftoken=old-token; sessionid=abc.def=ghi==",
-    );
+    expect(
+      mergeSetCookieIntoCookieHeader(
+        cookie,
+        "sessionid=abc.def=ghi==; Path=/; HttpOnly",
+      ),
+    ).toBe("csrftoken=old-token; sessionid=abc.def=ghi==");
   });
 
   it("aceita cookies Django válidos e recusa atributos, prefixos ou bytes inseguros", () => {
-    expect(isSafeDjangoSetCookieHeader(
-      "sessionid=abc.def=ghi==; expires=Wed, 09 Sep 2026 20:00:00 GMT; Max-Age=31449600; Path=/; Secure; HttpOnly; SameSite=Lax",
-    )).toBe(true);
-    expect(isSafeDjangoSetCookieHeader("__Host-sessionid=s1; Path=/; Secure; HttpOnly; SameSite=Strict")).toBe(true);
-    expect(isSafeDjangoSetCookieHeader("__Host-sessionid=s1; Path=/; HttpOnly")).toBe(false);
-    expect(isSafeDjangoSetCookieHeader("sessionid=s1; Path=/; Surprise=enabled")).toBe(false);
-    expect(isSafeDjangoSetCookieHeader("sessionid=s1\r\nX-Injected: yes; Path=/")).toBe(false);
+    expect(
+      isSafeDjangoSetCookieHeader(
+        "sessionid=abc.def=ghi==; expires=Wed, 09 Sep 2026 20:00:00 GMT; Max-Age=31449600; Path=/; Secure; HttpOnly; SameSite=Lax",
+      ),
+    ).toBe(true);
+    expect(
+      isSafeDjangoSetCookieHeader(
+        "__Host-sessionid=s1; Path=/; Secure; HttpOnly; SameSite=Strict",
+      ),
+    ).toBe(true);
+    expect(
+      isSafeDjangoSetCookieHeader("__Host-sessionid=s1; Path=/; HttpOnly"),
+    ).toBe(false);
+    expect(
+      isSafeDjangoSetCookieHeader("sessionid=s1; Path=/; Surprise=enabled"),
+    ).toBe(false);
+    expect(
+      isSafeDjangoSetCookieHeader("sessionid=s1\r\nX-Injected: yes; Path=/"),
+    ).toBe(false);
   });
 
   it("repassa somente redirects same-origin por caminho absoluto", () => {
-    expect(isSafeDjangoLocation("/admin/login/?next=%2Fcampaigns%2F")).toBe(true);
+    expect(isSafeDjangoLocation("/admin/login/?next=%2Fcampaigns%2F")).toBe(
+      true,
+    );
     expect(isSafeDjangoLocation("https://evil.example/steal")).toBe(false);
     expect(isSafeDjangoLocation("//evil.example/steal")).toBe(false);
     expect(isSafeDjangoLocation("/\\evil.example/steal")).toBe(false);
@@ -130,52 +190,83 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
     expect(proxySource).toContain('getRequestHeader(event, "idempotency-key")');
     // O Origin do navegador é LIDO só pela trava de origem (isForeignMutationOrigin),
     // nunca repassado ao Django; o Referer nem é lido.
-    expect(proxySource).not.toMatch(/headers\.(origin|referer)\s*=\s*getRequestHeader/);
+    expect(proxySource).not.toMatch(
+      /headers\.(origin|referer)\s*=\s*getRequestHeader/,
+    );
     expect(proxySource).not.toContain('getRequestHeader(event, "referer")');
     expect(proxySource).toContain("if (isForeignMutationOrigin(event))");
   });
 
   it("preserva por allowlist a revalidação e os metadados operacionais", () => {
-    expect(DJANGO_CONDITIONAL_REQUEST_HEADERS).toEqual(["if-none-match", "x-request-id"]);
-    expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).toEqual(expect.arrayContaining([
-      "retry-after",
-      "etag",
+    expect(DJANGO_CONDITIONAL_REQUEST_HEADERS).toEqual([
+      "if-none-match",
       "x-request-id",
-      "x-api-version",
-      "x-contract-version",
-      "x-resource-version",
-      "ratelimit-limit",
-      "ratelimit-remaining",
-      "ratelimit-reset",
-    ]));
+    ]);
+    expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).toEqual(
+      expect.arrayContaining([
+        "retry-after",
+        "etag",
+        "x-request-id",
+        "x-api-version",
+        "x-contract-version",
+        "x-resource-version",
+        "ratelimit-limit",
+        "ratelimit-remaining",
+        "ratelimit-reset",
+      ]),
+    );
     expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).not.toContain("cache-control");
-    expect(proxySource).toContain("for (const name of DJANGO_CONDITIONAL_REQUEST_HEADERS)");
-    expect(proxySource).toContain("for (const name of DJANGO_OPERATIONAL_RESPONSE_HEADERS)");
-  });
-
-  it("mantém a checagem de X-API-Version fiada dentro do proxy", () => {
-    expect(proxySource).toContain('warnOnApiVersionMismatch(response.headers.get("x-api-version")');
-    expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).toContain("x-api-version");
-    expect(proxySource).toContain('applyPrivateNoStore(event, response.headers.get("vary"))');
-  });
-
-  it("recusa upstream ausente, local ou HTTP remoto em production", () => {
-    for (const value of [undefined, "http://127.0.0.1:8000/", "http://api.example.test/"]) {
-      expect(() => resolveDjangoBaseUrl(value, { production: true })).toThrow();
-    }
-    expect(resolveDjangoBaseUrl("https://api.example.test/", { production: true })).toBe(
-      "https://api.example.test",
+    expect(proxySource).toContain(
+      "for (const name of DJANGO_CONDITIONAL_REQUEST_HEADERS)",
+    );
+    expect(proxySource).toContain(
+      "for (const name of DJANGO_OPERATIONAL_RESPONSE_HEADERS)",
     );
   });
 
+  it("mantém a checagem de X-API-Version fiada dentro do proxy", () => {
+    expect(proxySource).toContain(
+      'warnOnApiVersionMismatch(response.headers.get("x-api-version")',
+    );
+    expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).toContain("x-api-version");
+    expect(proxySource).toContain(
+      'applyPrivateNoStore(event, response.headers.get("vary"))',
+    );
+  });
+
+  it("recusa upstream ausente, local ou HTTP remoto em production", () => {
+    for (const value of [
+      undefined,
+      "http://127.0.0.1:8000/",
+      "http://api.example.test/",
+    ]) {
+      expect(() => resolveDjangoBaseUrl(value, { production: true })).toThrow();
+    }
+    expect(
+      resolveDjangoBaseUrl("https://api.example.test/", { production: true }),
+    ).toBe("https://api.example.test");
+  });
+
   it("faz fail-fast pela configuração real de build e só libera localhost em dev/test explícito", () => {
-    expect(isProductionRuntime({ NODE_ENV: "production", SHOPMAN_ENVIRONMENT: "staging" })).toBe(true);
-    expect(isExplicitTestRuntime({ NODE_ENV: "production", SHOPMAN_ENVIRONMENT: "test" })).toBe(false);
-    expect(isExplicitTestRuntime({
-      NODE_ENV: "production",
-      SHOPMAN_ENVIRONMENT: "test",
-      SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "1",
-    })).toBe(true);
+    expect(
+      isProductionRuntime({
+        NODE_ENV: "production",
+        SHOPMAN_ENVIRONMENT: "staging",
+      }),
+    ).toBe(true);
+    expect(
+      isExplicitTestRuntime({
+        NODE_ENV: "production",
+        SHOPMAN_ENVIRONMENT: "test",
+      }),
+    ).toBe(false);
+    expect(
+      isExplicitTestRuntime({
+        NODE_ENV: "production",
+        SHOPMAN_ENVIRONMENT: "test",
+        SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "1",
+      }),
+    ).toBe(true);
     expect(() => configuredDjangoBaseUrl({ NODE_ENV: "production" })).toThrow();
     expect(() =>
       configuredDjangoBaseUrl({
@@ -204,11 +295,17 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
         SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "1",
       }),
     ).toBe("http://127.0.0.1:8000");
-    expect(() => configuredDjangoBaseUrl({ NODE_ENV: "production", SHOPMAN_ENVIRONMENT: "test" })).toThrow();
-    expect(configuredDjangoBaseUrl({ NODE_ENV: "development" })).toBe("http://127.0.0.1:8000");
+    expect(() =>
+      configuredDjangoBaseUrl({
+        NODE_ENV: "production",
+        SHOPMAN_ENVIRONMENT: "test",
+      }),
+    ).toThrow();
+    expect(configuredDjangoBaseUrl({ NODE_ENV: "development" })).toBe(
+      "http://127.0.0.1:8000",
+    );
   });
 });
-
 
 describe("BFF — intenção e precondição", () => {
   it("preserva somente os headers autorizados da intenção, sem aceitar identidade do cliente", () => {

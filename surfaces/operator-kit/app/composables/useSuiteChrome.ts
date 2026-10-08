@@ -37,10 +37,19 @@ export interface OperatorInboxAlert {
   hrefLabel?: string;
   /** O servidor oferece "Visto" para este alerta. */
   canAck?: boolean;
+  /** Prazo em que a causa decide sozinha (ISO). Com prazo e sem Visto, o
+   *  `OperatorUrgentAlert` interrompe a tela; depois do Visto, lembra. */
+  respondByIso?: string;
+  /** `external`: vencido, sai (o mundo lá fora decidiu); `house`: vencido, fica. */
+  deadlineKind?: "external" | "house";
+  /** De onde vem ("iFood") e do que se trata ("Cliente pediu cancelamento"). */
+  origin?: string;
+  originIcon?: string;
+  subject?: string;
 }
 
 export interface OperatorInboxAlertSource {
-  /** Título da seção ("Da operação"; o Marketing diz "Decisões"). */
+  /** Título da seção ("Gerais"; o Marketing diz "Decisões"). */
   title?: string;
   /** Quando não há nada ("Nenhum alerta agora."). */
   emptyText?: string;

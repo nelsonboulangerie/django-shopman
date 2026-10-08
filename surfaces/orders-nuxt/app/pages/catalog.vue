@@ -4,12 +4,35 @@
 // inline reprice per cell; the collection axis (chips) scopes the view; selection +
 // a floating bulk bar act on the active recorte. Desktop-first, horizontal scroll on
 // narrow screens. The backend owns availability rules; this renders intent + reconciles.
-import { catalogCsv, cellPrice, cellSyncView, cellView, filterRows, letterTile, rowStatus, surfaceDisplayIcon, syncBadge, syncErrorCount } from "~/presentation/catalog";
-import { catalogDimensions, filterByDimensions, filtersFromQuery, vocationPendingFilters } from "~/presentation/catalogFilters";
+import {
+  catalogCsv,
+  cellPrice,
+  cellSyncView,
+  cellView,
+  filterRows,
+  letterTile,
+  rowStatus,
+  surfaceDisplayIcon,
+  syncBadge,
+  syncErrorCount,
+} from "~/presentation/catalog";
+import {
+  catalogDimensions,
+  filterByDimensions,
+  filtersFromQuery,
+  vocationPendingFilters,
+} from "~/presentation/catalogFilters";
 import { vocationNotice } from "~/presentation/vocation";
 import { realtimeIndicator } from "~/presentation/board";
-import { keepVisible, reconcile } from "../../../operator-kit/app/presentation/columnPicker";
-import type { Action, CatalogPricePreview, CatalogPublicationPreview } from "~/generated/ordersContract";
+import {
+  keepVisible,
+  reconcile,
+} from "../../../operator-kit/app/presentation/columnPicker";
+import type {
+  Action,
+  CatalogPricePreview,
+  CatalogPublicationPreview,
+} from "~/generated/ordersContract";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
 import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import type {
@@ -20,29 +43,73 @@ import type {
   ProductDetailProjection,
   SkuRoles,
   SurfaceCellProjection,
+  SurfaceProjection,
 } from "~/types/catalog";
 
 const collectionRef = ref("");
 const {
-  readMetadata, realtime, matrix, pending, error, refresh, isBusy, cellKey, productKey, detailKey, setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice,
-  resync, fetchProductDetail, saveProductDetail, setPurchasable, productConflict, acknowledgeProductConflict, errorMsg, reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy,
-  aiAssist, aiAssistKey,
+  readMetadata,
+  realtime,
+  matrix,
+  pending,
+  error,
+  refresh,
+  isBusy,
+  cellKey,
+  productKey,
+  detailKey,
+  setCell,
+  setProduct,
+  bulkSet,
+  previewBulkSet,
+  bulkPrice,
+  previewBulkPrice,
+  resync,
+  fetchProductDetail,
+  saveProductDetail,
+  setPurchasable,
+  productConflict,
+  acknowledgeProductConflict,
+  errorMsg,
+  reorderCollections,
+  reorderItems,
+  curationAction,
+  verifyOrder,
+  bulkBusy,
+  aiAssist,
+  aiAssistKey,
 } = useCatalogMatrix(collectionRef);
 
 const surfaces = computed(() => matrix.value?.surfaces ?? []);
 // Cabeçalho de uma linha (UX-KIT-V1): a hora da última leitura útil ao lado do título.
 const readClock = computed(() => {
   const at = readMetadata.value?.generated_at;
-  return at ? new Date(at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+  return at
+    ? new Date(at).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "";
 });
 // Collection navigation remains available while only the row resource changes.
-const collections = shallowRef<CollectionProjection[]>(matrix.value?.collections ?? []);
-watch(() => matrix.value?.collections, value => { if (value) collections.value = value; }, { flush: "sync" });
+const collections = shallowRef<CollectionProjection[]>(
+  matrix.value?.collections ?? [],
+);
+watch(
+  () => matrix.value?.collections,
+  (value) => {
+    if (value) collections.value = value;
+  },
+  { flush: "sync" },
+);
 // Superfícies = canais (transacionam) + feeds (só empurram dados). Índice p/ a
 // célula saber o papel da coluna e onde começa a banda de feeds. No backend o model
 // do feed chama-se ``Feed`` — daí os nomes internos aqui.
-const surfaceByRef = computed(() => new Map(surfaces.value.map((s) => [s.ref, s])));
-const isCellTransactional = (cell: SurfaceCellProjection) => surfaceByRef.value.get(cell.surface_ref)?.transactional ?? true;
+const surfaceByRef = computed(
+  () => new Map(surfaces.value.map((s) => [s.ref, s])),
+);
+const isCellTransactional = (cell: SurfaceCellProjection) =>
+  surfaceByRef.value.get(cell.surface_ref)?.transactional ?? true;
 
 // ── colunas visíveis (ColumnPicker) ────────────────────────────────────────────
 // A escolha é do operador e vale por estação. Cookie (não localStorage) pelo mesmo
@@ -57,21 +124,103 @@ const hiddenColumns = useCookie<HiddenColumns>("catalog-hidden-columns", {
 });
 // Só as superfícies entram no seletor — a coluna do produto não é declarada, e é por
 // isso que ela não tem como ser ocultada.
-const columnOptions = computed(() => surfaces.value.map((s) => ({ id: s.ref, label: s.name })));
+const columnOptions = computed(() =>
+  surfaces.value.map((s) => ({ id: s.ref, label: s.name })),
+);
 // Higieniza contra superfície que sumiu do servidor (senão o registro vira lixo).
-const hidden = computed<HiddenColumns>(() => reconcile(columnOptions.value, hiddenColumns.value));
-const visibleSurfaces = computed(() => keepVisible(surfaces.value, hidden.value, (s) => s.ref));
-const visibleCells = (row: CatalogRowProjection) => keepVisible(row.cells, hidden.value, (c) => c.surface_ref);
+const hidden = computed<HiddenColumns>(() =>
+  reconcile(columnOptions.value, hiddenColumns.value),
+);
+const visibleSurfaces = computed(() =>
+  keepVisible(surfaces.value, hidden.value, (s) => s.ref),
+);
 // A divisória da banda de feeds acompanha o recorte: cai no primeiro feed VISÍVEL.
-const firstFeedRef = computed(() => visibleSurfaces.value.find((s) => !s.transactional)?.ref ?? "");
-const channelsCount = computed(() => surfaces.value.filter((s) => s.transactional).length);
-const feedsCount = computed(() => surfaces.value.filter((s) => !s.transactional).length);
+const firstFeedRef = computed(
+  () => visibleSurfaces.value.find((s) => !s.transactional)?.ref ?? "",
+);
+const surfaceColumnId = (ref: string) =>
+  `surface_${ref.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+const cellFor = (row: CatalogRowProjection, surfaceRef: string) =>
+  row.cells.find((cell) => cell.surface_ref === surfaceRef)!;
+const catalogColumns = computed(() => [
+  {
+    id: "product",
+    header: "Produto",
+    meta: {
+      class: { th: "min-w-[260px]", td: "min-w-[260px] py-2" },
+    },
+  },
+  ...visibleSurfaces.value.map((surface: SurfaceProjection) => ({
+    id: surfaceColumnId(surface.ref),
+    accessorFn: (row: CatalogRowProjection) => cellFor(row, surface.ref),
+    header: surface.short_name,
+    meta: {
+      class: {
+        th: [
+          "align-top",
+          firstFeedRef.value === surface.ref ? "border-s border-s-default" : "",
+        ].join(" "),
+        td: [
+          "py-2",
+          firstFeedRef.value === surface.ref ? "border-s border-s-default" : "",
+        ].join(" "),
+      },
+    },
+  })),
+  // O ⋯ da linha mora na última coluna, fixada à direita: perto do nome ele
+  // ficava a meia tela do texto, e a coluna do produto esticava para guardá-lo.
+  {
+    id: "actions",
+    header: "",
+    meta: { class: { th: "w-px", td: "w-px py-2" } },
+  },
+]);
+const catalogColumnPinning = ref({ left: ["product"], right: ["actions"] });
+const catalogTableMeta = {
+  class: {
+    tr: (row: { original: CatalogRowProjection }) =>
+      [
+        "group transition-[opacity,box-shadow]",
+        rowDragKey.value === row.original.sku ? "opacity-40" : "",
+        rowDragKey.value &&
+        rowOverKey.value === row.original.sku &&
+        rowDragKey.value !== row.original.sku
+          ? "shadow-[inset_0_2px_0_0_var(--color-primary)]"
+          : "",
+      ].join(" "),
+  },
+};
+const channelsCount = computed(
+  () => surfaces.value.filter((s) => s.transactional).length,
+);
+const feedsCount = computed(
+  () => surfaces.value.filter((s) => !s.transactional).length,
+);
+const syncColor = (
+  status: string,
+): "success" | "warning" | "error" | "neutral" =>
+  status === "ok"
+    ? "success"
+    : status === "error"
+      ? "error"
+      : status === "never"
+        ? "warning"
+        : "neutral";
 const catalogCountLine = computed(() => {
   const total = matrix.value?.rows?.length ?? 0;
   const shown = rows.value.length;
-  const products = shown === total ? `${total} ${total === 1 ? "produto" : "produtos"}` : `${shown} de ${total} produtos`;
-  const parts = [products, `${channelsCount.value} ${channelsCount.value === 1 ? "canal" : "canais"}`];
-  if (feedsCount.value) parts.push(`${feedsCount.value} ${feedsCount.value === 1 ? "feed" : "feeds"}`);
+  const products =
+    shown === total
+      ? `${total} ${total === 1 ? "produto" : "produtos"}`
+      : `${shown} de ${total} produtos`;
+  const parts = [
+    products,
+    `${channelsCount.value} ${channelsCount.value === 1 ? "canal" : "canais"}`,
+  ];
+  if (feedsCount.value)
+    parts.push(
+      `${feedsCount.value} ${feedsCount.value === 1 ? "feed" : "feeds"}`,
+    );
   return parts.join(" · ");
 });
 const query = ref("");
@@ -80,18 +229,28 @@ const query = ref("");
 // servidor. Aqui é tudo client-side — a matriz já veio inteira.
 // Chegando de um checklist de canal (`?surface=ifood&sync=error`), a tela já abre recortada.
 const filters = ref<ActiveFilters>(filtersFromQuery(useRoute().query));
-const searched = computed<CatalogRowProjection[]>(() => filterRows(matrix.value?.rows ?? [], query.value));
+const searched = computed<CatalogRowProjection[]>(() =>
+  filterRows(matrix.value?.rows ?? [], query.value),
+);
 // As contagens das opções são lidas sobre o resultado da BUSCA (antes dos filtros),
 // senão marcar uma opção zeraria as contagens das outras.
-const dimensions = computed(() => catalogDimensions(surfaces.value, searched.value));
-const rows = computed<CatalogRowProjection[]>(
-  () => filterByDimensions(searched.value, surfaces.value, filters.value),
+const dimensions = computed(() =>
+  catalogDimensions(surfaces.value, searched.value),
+);
+const rows = computed<CatalogRowProjection[]>(() =>
+  filterByDimensions(searched.value, surfaces.value, filters.value),
 );
 // status por linha (esmaecer/foto P&B/selo) computado uma vez por refresh.
-const rowStatuses = computed(() => Object.fromEntries(rows.value.map((r) => [r.sku, rowStatus(r)])));
+const rowStatuses = computed(() =>
+  Object.fromEntries(rows.value.map((r) => [r.sku, rowStatus(r)])),
+);
 // há alguma superfície que projeta? (iFood/Meta/…) — gateia a UI de sync/PIM.
-const hasProjectionTargets = computed(() => surfaces.value.some((s) => s.is_projection_target));
-const activeCollection = computed(() => collections.value.find((c) => c.ref === collectionRef.value) ?? null);
+const hasProjectionTargets = computed(() =>
+  surfaces.value.some((s) => s.is_projection_target),
+);
+const activeCollection = computed(
+  () => collections.value.find((c) => c.ref === collectionRef.value) ?? null,
+);
 const loading = computed(() => pending.value && !matrix.value);
 
 // zoom da foto (clique na thumbnail amplia num lightbox)
@@ -105,16 +264,24 @@ function imageFailed(sku: string) {
 // A foto que já falhou antes de a tela hidratar (desenhada no servidor) não dispara
 // mais o `error`: confere as que terminaram sem imagem, ao montar e a cada leitura.
 function sweepBrokenImages() {
-  for (const img of document.querySelectorAll<HTMLImageElement>("img[data-catalog-thumb]")) {
-    if (img.complete && img.naturalWidth === 0 && img.dataset.catalogThumb) imageFailed(img.dataset.catalogThumb);
+  for (const img of document.querySelectorAll<HTMLImageElement>(
+    "img[data-catalog-thumb]",
+  )) {
+    if (img.complete && img.naturalWidth === 0 && img.dataset.catalogThumb)
+      imageFailed(img.dataset.catalogThumb);
   }
 }
-onMounted(() => { nextTick(sweepBrokenImages); });
-watch(() => matrix.value?.rows, () => { if (import.meta.client) nextTick(sweepBrokenImages); });
+onMounted(() => {
+  nextTick(sweepBrokenImages);
+});
+watch(
+  () => matrix.value?.rows,
+  () => {
+    if (import.meta.client) nextTick(sweepBrokenImages);
+  },
+);
 // ⋯ do cabeçalho (v3): a última leitura útil, Atualizar e Exportar.
-const headerMenuOpen = ref(false);
 function exportCatalog() {
-  headerMenuOpen.value = false;
   const csv = catalogCsv(rows.value, visibleSurfaces.value);
   const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -129,7 +296,9 @@ function exportCatalog() {
 // Override = null → ordem do servidor (determinístico p/ SSR); só é setado durante o
 // drag otimista, e zerado após o POST+refresh (que já vem reordenado).
 function reorderView<T extends { ref?: string; sku?: string }>(
-  server: T[], override: string[] | null, key: (t: T) => string,
+  server: T[],
+  override: string[] | null,
+  key: (t: T) => string,
 ): T[] {
   if (!override) return server;
   const byKey = new Map(server.map((t) => [key(t), t]));
@@ -137,17 +306,31 @@ function reorderView<T extends { ref?: string; sku?: string }>(
   return out.length === server.length ? out : server;
 }
 
-const orderDraft = ref<{ operation: "reorder-collections" | "reorder-items"; ref: string; ordered: string[]; action?: Action } | null>(null);
+const orderDraft = ref<{
+  operation: "reorder-collections" | "reorder-items";
+  ref: string;
+  ordered: string[];
+  action?: Action;
+} | null>(null);
 const orderSaving = ref(false);
 const confirmDiscard = useConfirm();
 onBeforeRouteLeave(() => {
-  if (orderSaving.value || bulkBusy.value || (detailSku.value && isBusy(detailKey(detailSku.value)))
-    || (editing.value && isBusy(cellKey(editing.value.sku, editing.value.surface)))) return false;
-  return !hasUnsavedDraft.value || confirmDiscard({
-    title: "Sair sem salvar as alterações do catálogo?",
-    description: "O que você alterou e ainda não salvou se perde (ordem, preço, publicação ou ficha do produto). O que já foi salvo continua salvo.",
-    confirmLabel: "Descartar e sair",
-  });
+  if (
+    orderSaving.value ||
+    bulkBusy.value ||
+    (detailSku.value && isBusy(detailKey(detailSku.value))) ||
+    (editing.value && isBusy(cellKey(editing.value.sku, editing.value.surface)))
+  )
+    return false;
+  return (
+    !hasUnsavedDraft.value ||
+    confirmDiscard({
+      title: "Sair sem salvar as alterações do catálogo?",
+      description:
+        "O que você alterou e ainda não salvou se perde (ordem, preço, publicação ou ficha do produto). O que já foi salvo continua salvo.",
+      confirmLabel: "Descartar e sair",
+    })
+  );
 });
 let observedCollectionAction: Action | undefined;
 let observedItemAction: Action | undefined;
@@ -155,13 +338,17 @@ let observedCollectionRef = "";
 async function saveOrderDraft(useCurrent = false, checkOnly = false) {
   const draft = orderDraft.value;
   if (!draft || orderSaving.value) return;
-  const action = useCurrent ? curationAction(draft.operation, draft.ref) : draft.action;
+  const action = useCurrent
+    ? curationAction(draft.operation, draft.ref)
+    : draft.action;
   if (useCurrent && !action) return;
   orderSaving.value = true;
   try {
-    const ok = checkOnly ? await verifyOrder(draft.operation, draft.ref) : draft.operation === "reorder-items"
-      ? await reorderItems(draft.ref, draft.ordered, action)
-      : await reorderCollections(draft.ordered, action);
+    const ok = checkOnly
+      ? await verifyOrder(draft.operation, draft.ref)
+      : draft.operation === "reorder-items"
+        ? await reorderItems(draft.ref, draft.ordered, action)
+        : await reorderCollections(draft.ordered, action);
     if (ok && orderDraft.value === draft) orderDraft.value = null;
   } finally {
     orderSaving.value = false;
@@ -169,64 +356,121 @@ async function saveOrderDraft(useCurrent = false, checkOnly = false) {
     rowOverride.value = null;
   }
 }
-const currentOrder = computed(() => orderDraft.value?.operation === "reorder-items"
-  ? (orderDraft.value.ref === collectionRef.value ? (matrix.value?.rows ?? []).map(row => row.sku) : [])
-  : collections.value.map(group => group.ref));
-const canReviewOrder = computed(() => !!orderDraft.value && !!curationAction(orderDraft.value.operation, orderDraft.value.ref)
-  && currentOrder.value.length === orderDraft.value.ordered.length
-  && currentOrder.value.every(key => orderDraft.value!.ordered.includes(key)));
+const currentOrder = computed(() =>
+  orderDraft.value?.operation === "reorder-items"
+    ? orderDraft.value.ref === collectionRef.value
+      ? (matrix.value?.rows ?? []).map((row) => row.sku)
+      : []
+    : collections.value.map((group) => group.ref),
+);
+const canReviewOrder = computed(
+  () =>
+    !!orderDraft.value &&
+    !!curationAction(orderDraft.value.operation, orderDraft.value.ref) &&
+    currentOrder.value.length === orderDraft.value.ordered.length &&
+    currentOrder.value.every((key) => orderDraft.value!.ordered.includes(key)),
+);
 function orderLabel(key: string) {
   return orderDraft.value?.operation === "reorder-items"
-    ? matrix.value?.rows.find(row => row.sku === key)?.name || key
-    : collections.value.find(group => group.ref === key)?.name || key;
+    ? matrix.value?.rows.find((row) => row.sku === key)?.name || key
+    : collections.value.find((group) => group.ref === key)?.name || key;
 }
 const collectionOverride = ref<string[] | null>(null);
-const orderedCollections = computed(
-  () => reorderView<CollectionProjection>(collections.value, collectionOverride.value, (c) => c.ref),
+const orderedCollections = computed(() =>
+  reorderView<CollectionProjection>(
+    collections.value,
+    collectionOverride.value,
+    (c) => c.ref,
+  ),
 );
+const collectionTabs = computed(() => [
+  {
+    label: "Todas",
+    value: "",
+    badge: String(matrix.value?.rows?.length ?? rows.value.length),
+  },
+  ...orderedCollections.value.map((collection) => ({
+    label: collection.name,
+    value: collection.ref,
+    icon: collection.is_smart ? "i-lucide-sparkles" : undefined,
+    badge: String(collection.product_count),
+  })),
+]);
 const {
-  dragKey: collDragKey, onPointerDown: collPointerDown, onKeyDown: collKeyDown,
+  dragKey: _collDragKey,
+  onPointerDown: collPointerDown,
+  onKeyDown: collKeyDown,
 } = useDragReorder(
   () => orderedCollections.value.map((c) => c.ref),
   (order) => {
     if (orderDraft.value) return;
     collectionOverride.value = order;
-    orderDraft.value = { operation: "reorder-collections", ref: "", ordered: order, action: observedCollectionAction };
+    orderDraft.value = {
+      operation: "reorder-collections",
+      ref: "",
+      ordered: order,
+      action: observedCollectionAction,
+    };
     saveOrderDraft();
   },
-  () => { observedCollectionAction = curationAction("reorder-collections"); },
+  () => {
+    observedCollectionAction = curationAction("reorder-collections");
+  },
 );
 
 // ── reordenar produtos (handle na linha) — só numa coleção MANUAL, sem busca ────
 // Arrastar só faz sentido sobre a coleção INTEIRA: com busca ou filtro ativo a lista
 // é um recorte, e a ordem gravada sairia errada.
 const canReorderRows = computed(
-  () => collectionRef.value !== ""
-    && !activeCollection.value?.is_smart
-    && query.value.trim() === ""
-    && Object.keys(filters.value).length === 0,
+  () =>
+    collectionRef.value !== "" &&
+    !activeCollection.value?.is_smart &&
+    query.value.trim() === "" &&
+    Object.keys(filters.value).length === 0,
 );
 const rowOverride = ref<string[] | null>(null);
-const orderedRows = computed(
-  () => reorderView<CatalogRowProjection>(rows.value, rowOverride.value, (r) => r.sku),
+const orderedRows = computed(() =>
+  reorderView<CatalogRowProjection>(
+    rows.value,
+    rowOverride.value,
+    (r) => r.sku,
+  ),
 );
-const displayRows = computed(() => (canReorderRows.value ? orderedRows.value : rows.value));
+const displayRows = computed(() =>
+  canReorderRows.value ? orderedRows.value : rows.value,
+);
 const {
-  dragKey: rowDragKey, overKey: rowOverKey, onPointerDown: rowPointerDown, onKeyDown: rowKeyDown,
+  dragKey: rowDragKey,
+  overKey: rowOverKey,
+  onPointerDown: rowPointerDown,
+  onKeyDown: rowKeyDown,
 } = useDragReorder(
   () => displayRows.value.map((r) => r.sku),
   (order) => {
     if (orderDraft.value) return;
     rowOverride.value = order;
-    orderDraft.value = { operation: "reorder-items", ref: observedCollectionRef, ordered: order, action: observedItemAction };
+    orderDraft.value = {
+      operation: "reorder-items",
+      ref: observedCollectionRef,
+      ordered: order,
+      action: observedItemAction,
+    };
     saveOrderDraft();
   },
-  () => { observedCollectionRef = collectionRef.value; observedItemAction = curationAction("reorder-items", observedCollectionRef); },
+  () => {
+    observedCollectionRef = collectionRef.value;
+    observedItemAction = curationAction("reorder-items", observedCollectionRef);
+  },
 );
 
 // ── selection + floating bulk bar (acts on the active recorte) ─────────────────
 const selected = ref<Set<string>>(new Set());
 const isSelected = (sku: string) => selected.value.has(sku);
+// Entrega o estado ao UTable para que a própria anatomia canônica marque a linha
+// (`data-selected` + variante oficial), em vez de pintar apenas a célula Produto.
+const catalogRowSelection = computed<Record<string, boolean>>(() =>
+  Object.fromEntries([...selected.value].map((sku) => [sku, true])),
+);
 function toggleSelect(sku: string) {
   const next = new Set(selected.value);
   if (next.has(sku)) next.delete(sku);
@@ -234,49 +478,112 @@ function toggleSelect(sku: string) {
   selected.value = next;
 }
 const visibleSkus = computed(() => rows.value.map((r) => r.sku));
-const allSelected = computed(() => visibleSkus.value.length > 0 && visibleSkus.value.every((s) => selected.value.has(s)));
-const someSelected = computed(() => selected.value.size > 0 && !allSelected.value);
+const allSelected = computed(
+  () =>
+    visibleSkus.value.length > 0 &&
+    visibleSkus.value.every((s) => selected.value.has(s)),
+);
+const someSelected = computed(
+  () => selected.value.size > 0 && !allSelected.value,
+);
 function toggleSelectAll() {
   selected.value = allSelected.value ? new Set() : new Set(visibleSkus.value);
 }
-function clearSelection() { selected.value = new Set(); }
+function clearSelection() {
+  selected.value = new Set();
+}
 watch(collectionRef, clearSelection);
 
 const bulkSurface = ref("");
-watchEffect(() => { if (!bulkSurface.value && surfaces.value.length) bulkSurface.value = surfaces.value[0]!.ref; });
+watchEffect(() => {
+  if (!bulkSurface.value && surfaces.value.length)
+    bulkSurface.value = surfaces.value[0]!.ref;
+});
 // Feed só pausa/reativa em lote — sem publicar/reprecificar (não transaciona).
 const bulkSurfaceIsFeed = computed(() => {
   const s = surfaceByRef.value.get(bulkSurface.value);
   return !!s && !s.transactional;
 });
-const channelSurfaces = computed(() => surfaces.value.filter((s) => s.transactional));
-const feedSurfaces = computed(() => surfaces.value.filter((s) => !s.transactional));
-type PublicationDraft = { surface: string; skus: string[]; patch: { is_sellable?: boolean; is_published?: boolean }; preview: CatalogPublicationPreview };
+const channelSurfaces = computed(() =>
+  surfaces.value.filter((s) => s.transactional),
+);
+const feedSurfaces = computed(() =>
+  surfaces.value.filter((s) => !s.transactional),
+);
+const bulkSurfaceItems = computed(() => [
+  { label: "Todos os canais", value: "*" },
+  ...(channelSurfaces.value.length
+    ? [
+        { type: "label" as const, label: "Canais" },
+        ...channelSurfaces.value.map((surface) => ({
+          label: surface.name,
+          value: surface.ref,
+        })),
+      ]
+    : []),
+  ...(feedSurfaces.value.length
+    ? [
+        { type: "label" as const, label: "Feeds" },
+        ...feedSurfaces.value.map((surface) => ({
+          label: surface.name,
+          value: surface.ref,
+        })),
+      ]
+    : []),
+]);
+type PublicationDraft = {
+  surface: string;
+  skus: string[];
+  patch: { is_sellable?: boolean; is_published?: boolean };
+  preview: CatalogPublicationPreview;
+};
 const publicationDraft = ref<PublicationDraft | null>(null);
 async function bulk(patch: PublicationDraft["patch"]) {
-  if (!bulkSurface.value || selected.value.size === 0 || publicationDraft.value) return;
-  const surface = bulkSurface.value, skus = [...selected.value];
+  if (!bulkSurface.value || selected.value.size === 0 || publicationDraft.value)
+    return;
+  const surface = bulkSurface.value,
+    skus = [...selected.value];
   const preview = await previewBulkSet(surface, { skus }, patch);
   if (preview) publicationDraft.value = { surface, skus, patch, preview };
 }
 async function reviewPublication() {
   const draft = publicationDraft.value;
   if (!draft) return;
-  const preview = await previewBulkSet(draft.surface, { skus: draft.skus }, draft.patch);
-  if (preview && publicationDraft.value === draft) publicationDraft.value = { ...draft, preview };
+  const preview = await previewBulkSet(
+    draft.surface,
+    { skus: draft.skus },
+    draft.patch,
+  );
+  if (preview && publicationDraft.value === draft)
+    publicationDraft.value = { ...draft, preview };
 }
 async function confirmPublication() {
   const draft = publicationDraft.value;
   if (!draft) return;
-  const count = await bulkSet(draft.surface, { skus: draft.skus }, draft.patch, draft.preview);
+  const count = await bulkSet(
+    draft.surface,
+    { skus: draft.skus },
+    draft.patch,
+    draft.preview,
+  );
   if (count !== null && publicationDraft.value === draft) {
     publicationDraft.value = null;
-    selected.value = new Set([...selected.value].filter(sku => !draft.skus.includes(sku)));
+    selected.value = new Set(
+      [...selected.value].filter((sku) => !draft.skus.includes(sku)),
+    );
   }
 }
 function publicationState(value: Record<string, boolean>) {
-  return [value.is_published === undefined ? "" : value.is_published ? "Exibido" : "Oculto",
-    value.is_sellable ? "Habilitado nesta célula" : "Pausado nesta célula"].filter(Boolean).join(" · ");
+  return [
+    value.is_published === undefined
+      ? ""
+      : value.is_published
+        ? "Exibido"
+        : "Oculto",
+    value.is_sellable ? "Habilitado nesta célula" : "Pausado nesta célula",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // ── reprecificação em lote (popover) ───────────────────────────────────────────
@@ -290,13 +597,31 @@ const priceOps = [
 const priceInputBulk = ref("");
 const pricePreview = ref<CatalogPricePreview | null>(null);
 let priceRequest = 0;
-const priceBase = () => JSON.stringify([priceOp.value, priceInputBulk.value, bulkSurface.value, [...selected.value].sort()]);
-watch(priceBase, () => { priceRequest++; pricePreview.value = null; }, { flush: "sync" });
+const priceBase = () =>
+  JSON.stringify([
+    priceOp.value,
+    priceInputBulk.value,
+    bulkSurface.value,
+    [...selected.value].sort(),
+  ]);
+watch(
+  priceBase,
+  () => {
+    priceRequest++;
+    pricePreview.value = null;
+  },
+  { flush: "sync" },
+);
 const surfaceLabel = (ref_: string) =>
-  ref_ === "*" ? "Todos os canais" : (surfaces.value.find((s) => s.ref === ref_)?.name ?? ref_);
+  ref_ === "*"
+    ? "Todos os canais"
+    : (surfaces.value.find((s) => s.ref === ref_)?.name ?? ref_);
 // número digitado (aceita vírgula/percentual/negativo); em centavos p/ set/delta.
 function parsedPriceValue(): number | null {
-  const raw = priceInputBulk.value.replace(/[^0-9,.-]/g, "").replace(/\./g, "").replace(",", ".");
+  const raw = priceInputBulk.value
+    .replace(/[^0-9,.-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
   const n = Number.parseFloat(raw);
   if (!Number.isFinite(n)) return null;
   return priceOp.value === "pct" ? Math.round(n) : Math.round(n * 100);
@@ -311,12 +636,22 @@ async function applyBulkPrice() {
   if (!pricePreview.value) {
     const request = ++priceRequest;
     const base = priceBase();
-    const preview = await previewBulkPrice(bulkSurface.value, { skus: [...selected.value] }, { op: priceOp.value, value });
-    if (request === priceRequest && base === priceBase() && priceOpen.value) pricePreview.value = preview;
+    const preview = await previewBulkPrice(
+      bulkSurface.value,
+      { skus: [...selected.value] },
+      { op: priceOp.value, value },
+    );
+    if (request === priceRequest && base === priceBase() && priceOpen.value)
+      pricePreview.value = preview;
     return;
   }
   const base = priceBase();
-  const ok = await bulkPrice(bulkSurface.value, { skus: [...selected.value] }, { op: priceOp.value, value }, pricePreview.value);
+  const ok = await bulkPrice(
+    bulkSurface.value,
+    { skus: [...selected.value] },
+    { op: priceOp.value, value },
+    pricePreview.value,
+  );
   if (ok === null || base !== priceBase()) return;
   priceOpen.value = false;
   priceInputBulk.value = "";
@@ -336,6 +671,68 @@ function toggleProductPublish(row: CatalogRowProjection) {
 // row actions menu (⋯) — casa das ações menos corriqueiras (editar, pausar tudo,
 // (des)publicar). Um menu por vez; keyed por sku.
 const menuOpen = ref<string | null>(null);
+const headerMenuItems = computed(() => [
+  [
+    {
+      type: "label" as const,
+      slot: "freshness",
+      label: "Leitura do catálogo",
+    },
+  ],
+  [
+    {
+      label: "Atualizar",
+      icon: "i-lucide-refresh-cw",
+      loading: pending.value,
+      onSelect: () => refresh(),
+    },
+    {
+      label: "Exportar CSV",
+      icon: "i-lucide-download",
+      onSelect: exportCatalog,
+    },
+  ],
+]);
+function rowMenuItems(row: CatalogRowProjection) {
+  const primary = [
+    {
+      label: "Editar detalhes",
+      icon: "i-lucide-pencil",
+      onSelect: () => openDetail(row),
+    },
+    {
+      label: row.is_sellable
+        ? "Pausar em todos os canais"
+        : "Ativar em todos os canais",
+      icon: row.is_sellable ? "i-lucide-pause" : "i-lucide-play",
+      disabled: isBusy(productKey(row.sku)) || !row.product_action?.enabled,
+      onSelect: () => toggleProduct(row),
+    },
+    {
+      label: row.is_published ? "Ocultar no catálogo" : "Exibir no catálogo",
+      icon: row.is_published ? "i-lucide-eye-off" : "i-lucide-eye",
+      disabled: isBusy(productKey(row.sku)) || !row.product_action?.enabled,
+      onSelect: () => toggleProductPublish(row),
+    },
+  ];
+  const projection = hasProjectionTargets.value
+    ? [
+        {
+          label: "Dados para redes sociais",
+          icon: "i-lucide-sparkles",
+          badge: row.pim_complete ? undefined : "Incompleto",
+          onSelect: () => openDetail(row, "social"),
+        },
+        {
+          label: "Reenviar às plataformas",
+          icon: "i-lucide-refresh-cw",
+          disabled: isBusy(productKey(row.sku)) || !row.resync_action?.enabled,
+          onSelect: () => resyncRow(row),
+        },
+      ]
+    : [];
+  return projection.length ? [primary, projection] : [primary];
+}
 
 // host do Django (não o do Gestor) — usado nos deep-links de saída dos feeds.
 const djangoBase = useRuntimeConfig().public.djangoBaseUrl as string;
@@ -343,7 +740,8 @@ const djangoBase = useRuntimeConfig().public.djangoBaseUrl as string;
 // ── cell pause/resume + inline reprice ─────────────────────────────────────────
 // A pausa por célula vale para canal (vende) e feed (só exibe). No feed o backend
 // grava em Feed.options[paused_skus]; aqui é o mesmo gesto.
-const surfaceWord = (cell: SurfaceCellProjection) => (isCellTransactional(cell) ? "canal" : "feed");
+const surfaceWord = (cell: SurfaceCellProjection) =>
+  isCellTransactional(cell) ? "canal" : "feed";
 function toggleCell(row: CatalogRowProjection, cell: SurfaceCellProjection) {
   if (!cell.in_listing) return;
   setCell(row.sku, cell.surface_ref, { is_sellable: !cell.is_sellable });
@@ -351,13 +749,22 @@ function toggleCell(row: CatalogRowProjection, cell: SurfaceCellProjection) {
 // O "Pausar" por canal do painel (G22): o MESMO interruptor da célula da tabela.
 const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
 const detailChannelCells = computed(() => {
-  const row = (matrix.value?.rows ?? []).find((item) => item.sku === detailSku.value);
+  const row = (matrix.value?.rows ?? []).find(
+    (item) => item.sku === detailSku.value,
+  );
   if (!row) return {};
-  return Object.fromEntries(row.cells.filter((cell) => cell.in_listing).map((cell) => [cell.surface_ref, {
-    paused: !cell.is_sellable,
-    enabled: Boolean(cell.action?.enabled ?? true),
-    busy: isBusy(cellKey(row.sku, cell.surface_ref)),
-  }]));
+  return Object.fromEntries(
+    row.cells
+      .filter((cell) => cell.in_listing)
+      .map((cell) => [
+        cell.surface_ref,
+        {
+          paused: !cell.is_sellable,
+          enabled: Boolean(cell.action?.enabled ?? true),
+          busy: isBusy(cellKey(row.sku, cell.surface_ref)),
+        },
+      ]),
+  );
 });
 async function pauseDetailChannel(surface: string, pause: boolean) {
   const sku = detailSku.value;
@@ -365,53 +772,100 @@ async function pauseDetailChannel(surface: string, pause: boolean) {
   if (!(await setCell(sku, surface, { is_sellable: !pause }))) return;
   // Relê só a disponibilidade: o rascunho aberto no painel não se perde.
   const fresh = await fetchProductDetail(sku);
-  if (fresh && detailSku.value === sku) detailAvailability.value = fresh.channel_availability ?? [];
+  if (fresh && detailSku.value === sku)
+    detailAvailability.value = fresh.channel_availability ?? [];
 }
-const detailAvailability = ref<ProductDetailProjection["channel_availability"] | null>(null);
-const editing = ref<{ sku: string; surface: string; action?: Action; original: string } | null>(null);
+const detailAvailability = ref<
+  ProductDetailProjection["channel_availability"] | null
+>(null);
+const editing = ref<{
+  sku: string;
+  surface: string;
+  action?: Action;
+  original: string;
+} | null>(null);
 const priceInput = ref("");
-async function startEdit(row: CatalogRowProjection, cell: SurfaceCellProjection) {
+async function startEdit(
+  row: CatalogRowProjection,
+  cell: SurfaceCellProjection,
+) {
   if (!cell.in_listing) return;
   if (editing.value && !(await closePrice())) return;
   priceInput.value = ((cell.price_q ?? 0) / 100).toFixed(2).replace(".", ",");
-  editing.value = { sku: row.sku, surface: cell.surface_ref, action: cell.action ?? undefined, original: priceInput.value };
+  editing.value = {
+    sku: row.sku,
+    surface: cell.surface_ref,
+    action: cell.action ?? undefined,
+    original: priceInput.value,
+  };
 }
 function priceConflict(cell: SurfaceCellProjection) {
-  const before = editing.value?.action?.payload_schema.base_revisions as Record<string, string> | undefined;
-  const current = cell.action?.payload_schema.base_revisions as Record<string, string> | undefined;
+  const before = editing.value?.action?.payload_schema.base_revisions as
+    Record<string, string> | undefined;
+  const current = cell.action?.payload_schema.base_revisions as
+    Record<string, string> | undefined;
   return !!before && before.price_q !== current?.price_q;
 }
 async function closePrice() {
-  if (editing.value && isBusy(cellKey(editing.value.sku, editing.value.surface))) return false;
-  if (editing.value && priceInput.value !== editing.value.original && !(await confirmDiscard({
-    title: "Descartar o preço digitado?",
-    description: "O novo preço não foi salvo. O produto continua com o preço atual.",
-  }))) return false;
+  if (
+    editing.value &&
+    isBusy(cellKey(editing.value.sku, editing.value.surface))
+  )
+    return false;
+  if (
+    editing.value &&
+    priceInput.value !== editing.value.original &&
+    !(await confirmDiscard({
+      title: "Descartar o preço digitado?",
+      description:
+        "O novo preço não foi salvo. O produto continua com o preço atual.",
+    }))
+  )
+    return false;
   editing.value = null;
   return true;
 }
 function keepPrice(cell: SurfaceCellProjection) {
   if (editing.value && cell.action) editing.value.action = cell.action;
 }
-const isEditing = (sku: string, surface: string) => editing.value?.sku === sku && editing.value?.surface === surface;
+const isEditing = (sku: string, surface: string) =>
+  editing.value?.sku === sku && editing.value?.surface === surface;
 function parseBrl(text: string): number | null {
-  const cleaned = text.replace(/[^0-9,.-]/g, "").replace(/\./g, "").replace(",", ".");
+  const cleaned = text
+    .replace(/[^0-9,.-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
   const value = Number.parseFloat(cleaned);
   return Number.isFinite(value) && value >= 0 ? Math.round(value * 100) : null;
 }
-async function commitPrice(row: CatalogRowProjection, cell: SurfaceCellProjection) {
+async function commitPrice(
+  row: CatalogRowProjection,
+  cell: SurfaceCellProjection,
+) {
   if (priceConflict(cell)) return;
   const price_q = parseBrl(priceInput.value);
   if (price_q === null) return;
-  if (price_q === cell.price_q) { editing.value = null; return; }
+  if (price_q === cell.price_q) {
+    editing.value = null;
+    return;
+  }
   const originalEditor = editing.value;
-  const ok = await setCell(row.sku, cell.surface_ref, { price_q }, editing.value?.action);
+  const ok = await setCell(
+    row.sku,
+    cell.surface_ref,
+    { price_q },
+    editing.value?.action,
+  );
   if (ok && editing.value === originalEditor) editing.value = null;
 }
 
 // nome do canal (para o rótulo do popover de preço) + tooltip do valor no ícone $.
-const surfaceName = (ref: string) => surfaces.value.find((s) => s.ref === ref)?.name ?? ref;
-function priceTitle(row: CatalogRowProjection, cell: SurfaceCellProjection): string {
+const surfaceName = (ref: string) =>
+  surfaces.value.find((s) => s.ref === ref)?.name ?? ref;
+function priceTitle(
+  row: CatalogRowProjection,
+  cell: SurfaceCellProjection,
+): string {
   const p = cellPrice(row, cell);
   return p.differs
     ? `${cell.price_display} · ${p.delta === "up" ? "acima" : "abaixo"} do base`
@@ -420,8 +874,10 @@ function priceTitle(row: CatalogRowProjection, cell: SurfaceCellProjection): str
 
 // ── sync por célula + PIM (Arc H) ──────────────────────────────────────────────
 // Selo de sync por (produto × plataforma): resolve a superfície p/ saber se projeta.
-const cellSync = (cell: SurfaceCellProjection) => cellSyncView(surfaceByRef.value.get(cell.surface_ref), cell);
-const rowSyncErrors = (row: CatalogRowProjection) => syncErrorCount(row, surfaces.value);
+const cellSync = (cell: SurfaceCellProjection) =>
+  cellSyncView(surfaceByRef.value.get(cell.surface_ref), cell);
+const rowSyncErrors = (row: CatalogRowProjection) =>
+  syncErrorCount(row, surfaces.value);
 function resyncCell(row: CatalogRowProjection, cell: SurfaceCellProjection) {
   resync(row.sku, cell.surface_ref);
 }
@@ -439,9 +895,14 @@ const detail = ref<ProductDetailProjection | null>(null);
 const detailLoading = ref(false);
 const detailTab = ref("geral");
 const detailDirty = ref(false);
-const hasUnsavedDraft = computed(() => !!orderDraft.value || !!publicationDraft.value || detailDirty.value
-  || !!(editing.value && priceInput.value !== editing.value.original)
-  || !!(priceOpen.value && priceInputBulk.value.trim()));
+const hasUnsavedDraft = computed(
+  () =>
+    !!orderDraft.value ||
+    !!publicationDraft.value ||
+    detailDirty.value ||
+    !!(editing.value && priceInput.value !== editing.value.original) ||
+    !!(priceOpen.value && priceInputBulk.value.trim()),
+);
 function beforeUnload(event: BeforeUnloadEvent) {
   if (!hasUnsavedDraft.value) return;
   event.preventDefault();
@@ -452,11 +913,17 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
 async function selectCollection(next: string) {
   if (next === collectionRef.value) return;
   if (editing.value && !(await closePrice())) return;
-  if (priceOpen.value && priceInputBulk.value.trim() && !(await confirmDiscard({
-    title: "Trocar de coleção sem aplicar o preço em lote?",
-    description: "O preço em lote que você digitou se perde, e nenhum preço muda.",
-    confirmLabel: "Descartar e trocar",
-  }))) return;
+  if (
+    priceOpen.value &&
+    priceInputBulk.value.trim() &&
+    !(await confirmDiscard({
+      title: "Trocar de coleção sem aplicar o preço em lote?",
+      description:
+        "O preço em lote que você digitou se perde, e nenhum preço muda.",
+      confirmLabel: "Descartar e trocar",
+    }))
+  )
+    return;
   priceOpen.value = false;
   collectionRef.value = next;
 }
@@ -485,14 +952,23 @@ async function openDetail(row: CatalogRowProjection, tab = "geral") {
 const route = useRoute();
 const queryText = (value: unknown) => (typeof value === "string" ? value : "");
 const skuFromLink = ref(queryText(route.query.sku));
-watch(() => route.query.sku, (value) => { skuFromLink.value = queryText(value); });
-watch([skuFromLink, () => matrix.value?.rows], ([sku, rows]) => {
-  if (import.meta.server || !sku || !rows) return;
-  const row = rows.find((candidate) => candidate.sku === sku);
-  if (!row) return;
-  skuFromLink.value = "";
-  void openDetail(row, queryText(route.query.tab) || "geral");
-}, { immediate: true });
+watch(
+  () => route.query.sku,
+  (value) => {
+    skuFromLink.value = queryText(value);
+  },
+);
+watch(
+  [skuFromLink, () => matrix.value?.rows],
+  ([sku, rows]) => {
+    if (import.meta.server || !sku || !rows) return;
+    const row = rows.find((candidate) => candidate.sku === sku);
+    if (!row) return;
+    skuFromLink.value = "";
+    void openDetail(row, queryText(route.query.tab) || "geral");
+  },
+  { immediate: true },
+);
 // Vocação (só para o B.I.): o aviso discreto da lista conta os produtos à venda
 // sem vocação, da loja inteira. "Classificar" recorta a lista neles (todas as
 // coleções) e abre o primeiro já na aba "Preço e config", onde a vocação mora.
@@ -537,7 +1013,8 @@ async function togglePurchasable(enabled: boolean) {
   const product = await setPurchasable(sku, enabled);
   // Só os selos mudam, e moram fora de `detail`: trocar o detalhe reidrataria o
   // painel e apagaria o rascunho que o gestor ainda não salvou.
-  if (product && sku === detailSku.value && request === detailRequest) detailRoles.value = product.roles ?? null;
+  if (product && sku === detailSku.value && request === detailRequest)
+    detailRoles.value = product.roles ?? null;
 }
 
 function reviewProductConflict(keepDraft: boolean) {
@@ -551,8 +1028,11 @@ function reviewProductConflict(keepDraft: boolean) {
 function assistFor(sku: Ref<string | null>) {
   return {
     assist: (field: AssistableField, currentValue: string) =>
-      sku.value ? aiAssist(sku.value, field, currentValue) : Promise.resolve(""),
-    assistBusy: (field: AssistableField) => (sku.value ? isBusy(aiAssistKey(sku.value, field)) : false),
+      sku.value
+        ? aiAssist(sku.value, field, currentValue)
+        : Promise.resolve(""),
+    assistBusy: (field: AssistableField) =>
+      sku.value ? isBusy(aiAssistKey(sku.value, field)) : false,
   };
 }
 const detailAssist = assistFor(detailSku);
@@ -567,568 +1047,938 @@ useHead({ title: "Catálogo" });
     <OperatorPageHeader title="Catálogo" :filters-wrap="false">
       <template #status>
         <OperatorLiveStatus
-          :tone="error ? 'off' : realtime === 'live' ? 'live' : realtime === 'connecting' ? 'late' : 'calm'"
+          :tone="
+            error
+              ? 'off'
+              : realtime === 'live'
+                ? 'live'
+                : realtime === 'connecting'
+                  ? 'late'
+                  : 'calm'
+          "
           :time="readClock"
-          :label="error ? 'Atualização falhou' : realtimeIndicator(realtime).label"
+          :label="
+            error ? 'Atualização falhou' : realtimeIndicator(realtime).label
+          "
           :detail="realtimeIndicator(realtime).title"
         />
       </template>
       <template #search>
-        <OperatorSuiteSearch v-model="query" screen-label="filtrando o catálogo" placeholder="Buscar produto ou SKU" aria-label="Buscar produto ou SKU" />
+        <OperatorSuiteSearch
+          v-model="query"
+          screen-label="filtrando o catálogo"
+          placeholder="Buscar produto ou SKU"
+          aria-label="Buscar produto ou SKU"
+        />
       </template>
       <template #actions>
-        <!-- recorte por dimensões (envio, canal, publicação, venda, estoque, PIM) —
-             logo depois da busca; a coleção continua nas pills, que também reordenam. No
-             celular desce com os controles para a linha que rola (a busca é a tela cheia). -->
-        <FilterBar v-model="filters" :dimensions="dimensions" touch />
-        <!-- quais canais/feeds aparecem como coluna; a do produto nunca some (não é
-             declarada no seletor). A escolha persiste por estação. -->
-        <ColumnPicker v-if="surfaces.length" v-model="hiddenColumns" :columns="columnOptions" />
         <!-- ⋯ (v3): a última leitura útil, Atualizar e Exportar moram aqui -->
-        <UiPopover v-model:open="headerMenuOpen">
-          <UiPopoverTrigger as-child>
-            <UiIconButton icon="lucide:ellipsis" label="Mais ações do catálogo" data-catalog-more />
-          </UiPopoverTrigger>
-          <UiPopoverContent v-if="headerMenuOpen" align="end" :side-offset="6" class="w-64 rounded-lg p-1.5 shadow-lg" role="menu" data-catalog-menu>
-            <div class="px-2.5 pt-1 pb-2"><ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" /></div>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" @click="refresh()">
-              <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" :class="pending ? 'motion-safe:animate-spin' : ''" />Atualizar
-            </button>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" data-catalog-export @click="exportCatalog">
-              <Icon name="lucide:download" class="size-4 text-muted-foreground" />Exportar CSV
-            </button>
-          </UiPopoverContent>
-        </UiPopover>
+        <NuxtDropdownMenu :items="headerMenuItems" :content="{ align: 'end' }">
+          <NuxtButton
+            icon="i-lucide-ellipsis"
+            color="neutral"
+            variant="outline"
+            square
+            aria-label="Mais ações do catálogo"
+            data-catalog-more
+          />
+          <template #freshness>
+            <ReadFreshness
+              inline
+              :metadata="readMetadata"
+              :failed="Boolean(error)"
+            />
+          </template>
+        </NuxtDropdownMenu>
       </template>
       <template #filters>
-        <span v-if="collections.length" class="mr-1 shrink-0 op-eyebrow text-muted-foreground">Coleção</span>
-      <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
-      <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex items-center gap-0.5">
-        <!-- abas planas (v3 `depois-gestor-catalogo`): a ativa numa caixa; arrastar reordena -->
-        <button
-          key="__all"
-          type="button"
-          class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-md px-2 op-label transition"
-          :class="collectionRef === '' ? 'border border-border bg-card font-semibold text-foreground shadow-xs' : 'text-foreground/80 hover:bg-accent'"
-          :aria-pressed="collectionRef === ''"
-          data-collection-tab
-          @click="selectCollection('')"
-        >Todas <span class="tnum text-muted-foreground">{{ matrix?.rows?.length ?? rows.length }}</span></button>
-        <button
-          v-for="c in orderedCollections"
-          :key="c.ref"
-          type="button"
-          :data-dragkey="c.ref"
-          class="inline-flex min-h-control shrink-0 cursor-grab touch-none items-center gap-1.5 rounded-md px-2 op-label transition-[opacity,box-shadow,background-color] active:cursor-grabbing"
-          :class="[collDragKey === c.ref ? 'opacity-50 shadow-md' : '', collectionRef === c.ref ? 'border border-border bg-card font-semibold text-foreground shadow-xs' : 'text-foreground/80 hover:bg-accent']"
-          :aria-pressed="collectionRef === c.ref"
-          data-collection-tab
-          aria-keyshortcuts="ArrowUp ArrowDown"
-          :title="`${c.name}. Para reordenar, use as setas para cima ou para baixo.`"
-          @click="selectCollection(c.ref)"
-          @pointerdown="collPointerDown(c.ref, $event)"
-          @keydown="collKeyDown(c.ref, $event)"
+        <!-- Recortes e escolha de colunas pertencem à DashboardToolbar, não à
+             faixa de identidade da DashboardNavbar. -->
+        <FilterBar v-model="filters" :dimensions="dimensions" touch />
+        <ColumnPicker
+          v-if="surfaces.length"
+          v-model="hiddenColumns"
+          :columns="columnOptions"
+        />
+        <span
+          v-if="collections.length"
+          class="me-1 shrink-0 op-eyebrow text-muted-foreground"
+          >Coleção</span
         >
-          <Icon v-if="c.is_smart" name="lucide:sparkles" class="size-4 opacity-70" title="Coleção por regra" />
-          {{ c.name }} <span class="tnum text-muted-foreground">{{ c.product_count }}</span>
-        </button>
-      </TransitionGroup>
+        <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
+        <NuxtTabs
+          v-if="collections.length"
+          :model-value="collectionRef"
+          :items="collectionTabs"
+          :content="false"
+          variant="pill"
+          aria-label="Coleção do catálogo"
+          data-collection-tabs
+          @update:model-value="selectCollection(String($event))"
+          @keydown.up.prevent.stop="
+            collectionRef && collKeyDown(collectionRef, $event)
+          "
+          @keydown.down.prevent.stop="
+            collectionRef && collKeyDown(collectionRef, $event)
+          "
+        >
+          <template #default="{ item }">
+            <span
+              class="touch-none"
+              :data-dragkey="item.value || undefined"
+              :title="
+                item.value
+                  ? `${item.label}. Para reordenar, use as setas para cima ou para baixo.`
+                  : item.label
+              "
+              @pointerdown="
+                item.value && collPointerDown(String(item.value), $event)
+              "
+              >{{ item.label }}</span
+            >
+          </template>
+        </NuxtTabs>
         <!-- "23 de 131 produtos · 4 canais · 4 feeds" no fim da linha das coleções (v3),
              inteiro: a frase não se corta na borda. -->
-        <p class="ml-auto hidden shrink-0 pl-3 op-micro whitespace-nowrap text-muted-foreground lg:block" data-catalog-counts>
+        <p
+          class="hidden shrink-0 op-micro whitespace-nowrap text-muted-foreground lg:block"
+          data-catalog-counts
+        >
           <span class="tabular-nums">{{ catalogCountLine }}</span>
         </p>
       </template>
     </OperatorPageHeader>
 
-    <section class="flex min-h-0 flex-1 flex-col gap-4 p-4">
-      <p v-if="errorMsg" role="alert" class="text-sm text-destructive">{{ errorMsg }}</p>
+    <section class="flex min-h-0 flex-1 flex-col gap-4 p-4 sm:p-6">
+      <NuxtAlert
+        v-if="errorMsg"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        :description="errorMsg"
+      />
       <!-- Vocação: aviso de uma linha, tom neutro. Serve só ao B.I.; não pede pressa. -->
-      <p v-if="vocation" class="-my-2 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground" data-testid="vocation-notice">
+      <p
+        v-if="vocation"
+        class="-my-2 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground"
+        data-testid="vocation-notice"
+      >
         <span>{{ vocation.headline }} ({{ vocation.names }})</span>
         <span class="text-muted-foreground/50" aria-hidden="true">·</span>
-        <button type="button" class="min-h-control underline underline-offset-2 hover:text-foreground" @click="classifyVocation">Classificar</button>
+        <NuxtButton
+          type="button"
+          label="Classificar"
+          color="neutral"
+          variant="link"
+          @click="classifyVocation"
+        />
       </p>
-      <p v-if="error" role="alert" class="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-        Não foi possível atualizar o catálogo. {{ matrix ? "Exibindo a última leitura disponível." : "" }} <button class="min-h-control min-w-control underline" @click="refresh()">Tentar de novo</button>
-      </p>
+      <NuxtAlert
+        v-if="error"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        title="Não foi possível atualizar o catálogo"
+        :description="
+          matrix
+            ? 'Exibindo a última leitura disponível.'
+            : 'Tente atualizar para consultar os produtos.'
+        "
+        :actions="[
+          {
+            label: 'Tentar de novo',
+            color: 'error',
+            variant: 'outline',
+            onClick: () => refresh(),
+          },
+        ]"
+      />
 
-      <div v-if="orderDraft" role="status" class="space-y-2 rounded border p-3 text-sm">
-        <p>{{ orderSaving ? "Confirmando a ordenação…" : "A ordenação ainda precisa de conferência. Seu arraste foi preservado." }}</p>
-        <p>Seu arraste: {{ orderDraft.ordered.map(orderLabel).join(" → ") }}</p>
-        <p v-if="!orderSaving">Ordem atual: {{ currentOrder.map(orderLabel).join(" → ") || "Abra a coleção deste arraste para conferir." }}</p>
-        <div v-if="!orderSaving" class="flex flex-wrap gap-2">
-          <button type="button" class="min-h-12 rounded border px-3" @click="saveOrderDraft(false, true)">Verificar esta gravação</button>
-          <button v-if="canReviewOrder" type="button" class="min-h-12 rounded border px-3" @click="saveOrderDraft(true)">Aplicar meu arraste à ordem atual</button>
-          <button type="button" class="min-h-12 rounded border px-3" @click="orderDraft = null">Descartar o rascunho de ordem</button>
-        </div>
-      </div>
-
-      <section v-if="publicationDraft" aria-label="Prévia de publicação" class="space-y-3 rounded border bg-card p-4">
-        <h2 class="font-semibold">Confira {{ publicationDraft.preview.cells.length }} células em {{ surfaceLabel(publicationDraft.surface) }}</h2>
-        <p class="text-sm text-muted-foreground">Esta prévia mostra o escopo da decisão. Após confirmar, acompanhe a sincronização das plataformas separadamente nas células.</p>
-        <ul class="max-h-64 space-y-1 overflow-auto text-sm">
-          <li v-for="cell in publicationDraft.preview.cells" :key="`${cell.sku}:${cell.surface_ref}:${cell.tier}`">
-            {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }}<span v-if="cell.tier"> · mínimo {{ cell.tier }}</span>:
-            {{ publicationState(cell.before) }} → {{ publicationState(cell.after) }}
-          </li>
-          <li v-for="cell in publicationDraft.preview.skipped" :key="`${cell.sku}:${cell.surface_ref}`">
-            {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }}: {{ cell.reason }} Nenhuma alteração.
-          </li>
-        </ul>
-        <div class="flex flex-wrap gap-2">
-          <button type="button" :disabled="bulkBusy" class="min-h-action rounded bg-primary px-3 text-primary-foreground disabled:opacity-50" @click="confirmPublication">Confirmar este lote</button>
-          <button type="button" :disabled="bulkBusy" class="min-h-control rounded border px-3 disabled:opacity-50" @click="reviewPublication">Atualizar esta prévia</button>
-          <button type="button" :disabled="bulkBusy" class="min-h-control rounded border px-3 disabled:opacity-50" @click="publicationDraft = null">Descartar esta prévia</button>
-        </div>
-      </section>
-
-      <!-- matrix -->
-      <div v-if="loading" class="overflow-hidden rounded-xl border border-border bg-card">
-      <div v-for="i in 8" :key="i" class="flex items-center gap-3 border-b border-border px-4 py-3 last:border-0">
-        <UiSkeleton class="size-10 rounded-md" label="Carregando produto" />
-        <UiSkeleton class="h-4 w-40 rounded" label="Carregando produto" />
-        <div class="ml-auto flex gap-2">
-          <UiSkeleton
-            v-for="j in 6"
-            :key="j"
-            class="h-8 w-[76px] rounded-md"
-            label="Carregando disponibilidade"
-          />
-        </div>
-      </div>
-    </div>
-
-    <div v-else-if="rows.length" role="region" aria-label="Produtos e canais. Role para o lado para ver todos os canais." tabindex="0" class="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-xs">
-      <!-- `table-fixed`: sem ele o conteúdo do cabeçalho (nome longo do canal, rótulo
-           do feed) estica a coluna e a matriz fica desalinhada. Fixo, toda superfície
-           tem a MESMA largura e o nome trunca com o title inteiro. O `min-w` faz a
-           tabela rolar em tela estreita em vez de espremer a coluna do produto.
-           Reservar também 260px + todas as superfícies: min-width em th não
-           impede table-fixed de reduzir Produto a zero quando há muitos canais. -->
-      <table
-        class="w-full min-w-[1024px] table-fixed border-separate border-spacing-0 text-sm"
-        :style="{ minWidth: `${Math.max(1024, 260 + visibleSurfaces.length * 114)}px` }"
+      <NuxtAlert
+        v-if="orderDraft"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-list-restart"
+        :title="
+          orderSaving
+            ? 'Confirmando a ordenação…'
+            : 'A ordenação ainda precisa de conferência'
+        "
       >
-        <thead>
-          <tr>
-            <!-- Produto: `w-full` faz esta coluna absorver toda a folga da tabela, então
-                 as colunas de superfície ficam no seu tamanho fixo (uniformes).
-                 `border-r` fecha a coluna fixa: no scroll horizontal é essa linha que
-                 diz onde o painel parado termina e a matriz que corre começa. -->
-            <th class="sticky sm:left-0 top-0 z-30 w-full min-w-[260px] border-b border-r border-border bg-card px-4 py-3 text-left">
-              <UiCheckbox
-                :model-value="allSelected"
-                :indeterminate="someSelected"
-                label="Produto"
-                class="op-eyebrow text-muted-foreground"
-                @update:model-value="toggleSelectAll"
+        <template #description
+          ><div class="space-y-2">
+            <p>
+              {{
+                orderSaving
+                  ? "Confirmando a ordenação…"
+                  : "A ordenação ainda precisa de conferência. Seu arraste foi preservado."
+              }}
+            </p>
+            <p>
+              Seu arraste: {{ orderDraft.ordered.map(orderLabel).join(" → ") }}
+            </p>
+            <p v-if="!orderSaving">
+              Ordem atual:
+              {{
+                currentOrder.map(orderLabel).join(" → ") ||
+                "Abra a coleção deste arraste para conferir."
+              }}
+            </p>
+            <div v-if="!orderSaving" class="flex flex-wrap gap-2">
+              <NuxtButton
+                type="button"
+                label="Verificar esta gravação"
+                @click="saveOrderDraft(false, true)"
               />
-            </th>
-            <!-- Superfícies: largura fixa e uniforme (canais + feeds). O que faz caberem
-                 num desktop sem scroll é o NOME CURTO vindo do backend (short_name:
-                 "Site", "Meta", "TV1"); o nome completo fica no title. -->
-            <th
-              v-for="s in visibleSurfaces"
-              :key="s.ref"
-              class="sticky top-0 z-20 w-[114px] border-b border-border bg-card px-2 py-2 text-left align-top"
-              :class="firstFeedRef === s.ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
+              <NuxtButton
+                v-if="canReviewOrder"
+                type="button"
+                label="Aplicar meu arraste à ordem atual"
+                color="warning"
+                variant="outline"
+                @click="saveOrderDraft(true)"
+              />
+              <NuxtButton
+                type="button"
+                label="Descartar o rascunho de ordem"
+                color="neutral"
+                variant="ghost"
+                @click="orderDraft = null"
+              />
+            </div></div
+        ></template>
+      </NuxtAlert>
+
+      <NuxtCard
+        v-if="publicationDraft"
+        variant="subtle"
+        aria-label="Prévia de publicação"
+      >
+        <template #header
+          ><h2 class="font-semibold">
+            Confira {{ publicationDraft.preview.cells.length }} células em
+            {{ surfaceLabel(publicationDraft.surface) }}
+          </h2></template
+        >
+        <div class="space-y-3">
+          <p class="text-sm text-muted-foreground">
+            Esta prévia mostra o escopo da decisão. Após confirmar, acompanhe a
+            sincronização das plataformas separadamente nas células.
+          </p>
+          <ul class="max-h-64 space-y-1 overflow-auto text-sm">
+            <li
+              v-for="cell in publicationDraft.preview.cells"
+              :key="`${cell.sku}:${cell.surface_ref}:${cell.tier}`"
             >
-              <!-- Canal ou feed desligado não chega aqui: sai das colunas e só a aba
-                   Canais o mostra, para religar. -->
-              <div class="flex flex-col gap-0.5">
-                <!-- versalete (v3: PDV · SITE · IFOOD · WHATSAPP · META · GOOGLE · TV 1 · TV 2);
-                     o feed com saída pública abre pelo próprio nome -->
-                <span class="flex items-center gap-1 text-muted-foreground" :title="s.transactional ? s.name : `${s.name}: feed (só exibe, não vende)`" data-surface-head>
-                  <Icon :name="surfaceDisplayIcon(s)" class="size-3.5 shrink-0" :class="s.transactional ? 'text-muted-foreground' : 'text-primary/70'" />
-                  <a
-                    v-if="s.output_path"
-                    :href="`${djangoBase}${s.output_path}`" target="_blank" rel="noopener"
-                    class="op-eyebrow whitespace-nowrap hover:text-foreground hover:underline"
-                    :title="`Abrir ${s.name}`" @click.stop
-                  >{{ s.short_name }}</a>
-                  <span v-else class="op-eyebrow whitespace-nowrap">{{ s.short_name }}</span>
-                </span>
-                <!-- Linha 2 só quando há estado a dizer: o sync da plataforma. O papel da
-                     superfície (feed/menuboard) já é dito pelo ícone + title. -->
-                <span v-if="syncBadge(s.sync_status)" class="flex items-center gap-1">
-                  <span
-                    class="truncate text-xs font-medium leading-tight"
-                    :class="syncBadge(s.sync_status)!.toneClass" :title="syncBadge(s.sync_status)!.title"
-                  >● {{ syncBadge(s.sync_status)!.label }}</span>
-                </span>
+              {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref)
+              }}<span v-if="cell.tier"> · mínimo {{ cell.tier }}</span
+              >: {{ publicationState(cell.before) }} →
+              {{ publicationState(cell.after) }}
+            </li>
+            <li
+              v-for="cell in publicationDraft.preview.skipped"
+              :key="`${cell.sku}:${cell.surface_ref}`"
+            >
+              {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }}:
+              {{ cell.reason }} Nenhuma alteração.
+            </li>
+          </ul>
+        </div>
+        <template #footer>
+          <div class="flex flex-wrap gap-2">
+            <NuxtButton
+              type="button"
+              label="Confirmar este lote"
+              :disabled="bulkBusy"
+              @click="confirmPublication"
+            />
+            <NuxtButton
+              type="button"
+              label="Atualizar esta prévia"
+              color="neutral"
+              variant="outline"
+              :disabled="bulkBusy"
+              @click="reviewPublication"
+            />
+            <NuxtButton
+              type="button"
+              label="Descartar esta prévia"
+              color="neutral"
+              variant="ghost"
+              :disabled="bulkBusy"
+              @click="publicationDraft = null"
+            />
+          </div>
+        </template>
+      </NuxtCard>
+
+      <!-- A matriz é NuxtTable (colunas dinâmicas, pinning da coluna Produto, header
+           sticky, carregamento e rolagem horizontal são do componente oficial),
+           integrada a um card branco sem padding. O card é uma grade de uma linha
+           para a tabela continuar rolando por dentro. -->
+      <NuxtCard
+        v-if="loading || rows.length"
+        class="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]"
+      >
+        <NuxtTable
+          v-model:column-pinning="catalogColumnPinning"
+          :data="loading ? [] : displayRows"
+          :columns="catalogColumns"
+          :meta="catalogTableMeta"
+          :get-row-id="(row) => row.sku"
+          :row-selection="catalogRowSelection"
+          :loading="loading"
+          sticky="header"
+          class="h-full"
+          caption="Produtos e disponibilidade por canal"
+          data-catalog-matrix
+        >
+          <template #loading>
+            <div
+              class="space-y-3"
+              role="status"
+              aria-label="Carregando catálogo"
+            >
+              <div
+                v-for="i in 8"
+                :key="i"
+                class="flex items-center gap-3"
+                aria-hidden="true"
+              >
+                <NuxtSkeleton class="size-10 shrink-0" />
+                <NuxtSkeleton class="h-4 w-48 max-w-[40%]" />
+                <div class="ms-auto flex gap-2">
+                  <NuxtSkeleton
+                    v-for="j in 6"
+                    :key="j"
+                    class="size-8 shrink-0"
+                  />
+                </div>
               </div>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="row in displayRows"
-            :key="row.sku"
-            :data-dragkey="row.sku"
-            class="group transition-[opacity,box-shadow]"
-            :class="[
-              rowDragKey === row.sku ? 'opacity-40' : '',
-              rowDragKey && rowOverKey === row.sku && rowDragKey !== row.sku ? 'shadow-[inset_0_2px_0_0_var(--color-primary)]' : '',
-            ]"
+            </div>
+          </template>
+
+          <template #product-header>
+            <NuxtCheckbox
+              :model-value="allSelected"
+              :indeterminate="someSelected"
+              label="Produto"
+              @update:model-value="toggleSelectAll"
+            />
+          </template>
+
+          <template
+            v-for="surface in visibleSurfaces"
+            :key="`head-${surface.ref}`"
+            #[`${surfaceColumnId(surface.ref)}-header`]
           >
-            <!-- product -->
-            <!-- Fundo OPACO, sempre: a coluna fica parada enquanto as células passam por
-                 baixo, e tinta translúcida (bg-muted/40) deixaria o conteúdo em trânsito
-                 aparecer através dela. Um único utilitário de fundo por estado — dois na
-                 mesma célula competem na folha de estilo, não na ordem do atributo. -->
-            <td
-              class="sm:sticky sm:left-0 z-10 border-b border-r border-border px-4 py-2.5"
-              :class="isSelected(row.sku) ? 'bg-muted' : 'bg-card group-hover:bg-muted'"
-            >
-              <div class="flex items-center gap-3">
-                <!-- handle de arrastar (pointer events): aparece só quando a coleção ativa é reordenável -->
-                <span
-                  v-if="canReorderRows"
-                  role="button" tabindex="0"
-                  class="-ml-1 grid size-control shrink-0 cursor-grab touch-none select-none place-items-center rounded text-muted-foreground/50 transition hover:text-foreground active:cursor-grabbing"
-                  aria-label="Arrastar para reordenar"
-                  aria-keyshortcuts="ArrowUp ArrowDown"
-                  aria-description="Use as setas para cima ou para baixo para mover este produto."
-                  title="Arrastar ou usar as setas para reordenar nesta coleção"
-                  @pointerdown="rowPointerDown(row.sku, $event)"
-                  @keydown="rowKeyDown(row.sku, $event)"
+            <div class="flex flex-col gap-0.5">
+              <span
+                class="flex items-center gap-1 text-muted-foreground"
+                :title="
+                  surface.transactional
+                    ? surface.name
+                    : `${surface.name}: feed (só exibe, não vende)`
+                "
+                data-surface-head
+              >
+                <Icon
+                  :name="surfaceDisplayIcon(surface)"
+                  class="size-3.5 shrink-0"
+                  :class="
+                    surface.transactional
+                      ? 'text-muted-foreground'
+                      : 'text-primary/70'
+                  "
+                />
+                <span class="op-eyebrow whitespace-nowrap">{{
+                  surface.short_name
+                }}</span>
+                <NuxtButton
+                  v-if="surface.output_path"
+                  :to="`${djangoBase}${surface.output_path}`"
+                  target="_blank"
+                  icon="i-lucide-external-link"
+                  color="neutral"
+                  variant="link"
+                  size="xs"
+                  square
+                  :aria-label="`Abrir ${surface.name}`"
+                  :title="`Abrir ${surface.name}`"
                   @click.stop
-                >
-                  <Icon name="lucide:grip-vertical" class="pointer-events-none size-4" />
+                />
+              </span>
+              <NuxtBadge
+                v-if="syncBadge(surface.sync_status)"
+                :color="syncColor(surface.sync_status)"
+                variant="subtle"
+                :label="syncBadge(surface.sync_status)!.label"
+                :title="syncBadge(surface.sync_status)!.title"
+              />
+            </div>
+          </template>
+
+          <template #product-cell="{ row: tableRow }">
+            <template v-for="row in [tableRow.original]" :key="row.sku">
+              <div
+                :data-dragkey="row.sku"
+                class="flex min-w-[260px] items-center gap-3"
+              >
+                <!-- handle de arrastar (pointer events): aparece só quando a coleção ativa é reordenável -->
+                <span v-if="canReorderRows" class="touch-none">
+                  <NuxtButton
+                    type="button"
+                    icon="i-lucide-grip-vertical"
+                    color="neutral"
+                    variant="ghost"
+                    square
+                    aria-label="Arrastar para reordenar"
+                    aria-keyshortcuts="ArrowUp ArrowDown"
+                    aria-description="Use as setas para cima ou para baixo para mover este produto."
+                    title="Arrastar ou usar as setas para reordenar nesta coleção"
+                    @pointerdown="rowPointerDown(row.sku, $event)"
+                    @keydown="rowKeyDown(row.sku, $event)"
+                    @click.stop
+                  />
                 </span>
-                <UiCheckbox
+                <NuxtCheckbox
                   :model-value="isSelected(row.sku)"
                   :aria-label="`Selecionar ${row.name}`"
-                  class="shrink-0"
                   @update:model-value="toggleSelect(row.sku)"
                 />
                 <div class="flex min-w-0 flex-1 items-center gap-3">
-                  <!-- thumbnail: esmaece + P&B quando "fora"; clique amplia a foto -->
-                  <img
-                    v-if="row.image_url && !brokenImages.has(row.sku)" :src="row.image_url" :alt="row.name"
-                    class="size-10 shrink-0 cursor-zoom-in rounded-md object-cover ring-1 ring-border transition hover:ring-2 hover:ring-primary/50"
-                    :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
+                  <!-- UAvatar mantém foto e fallback na mesma geometria canônica. -->
+                  <NuxtButton
+                    v-if="row.image_url && !brokenImages.has(row.sku)"
+                    color="neutral"
+                    variant="ghost"
+                    square
+                    :aria-label="`Ampliar foto de ${row.name}`"
                     :data-catalog-thumb="row.sku"
-                    @error="imageFailed(row.sku)"
-                    @click.stop.prevent="zoom = { url: row.image_url, name: row.name }"
-                  />
-                  <!-- sem foto (ou foto quebrada): a letra no quadrado colorido (v3/v4) -->
-                  <div
+                    @click.stop.prevent="
+                      zoom = { url: row.image_url, name: row.name }
+                    "
+                  >
+                    <NuxtAvatar
+                      :src="row.image_url"
+                      :alt="row.name"
+                      size="md"
+                      :class="
+                        rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''
+                      "
+                      @error="imageFailed(row.sku)"
+                    />
+                  </NuxtButton>
+                  <!-- Sem foto (ou foto quebrada), o fallback continua sendo UAvatar. -->
+                  <span
                     v-else
-                    class="grid size-10 shrink-0 place-items-center rounded-md text-base font-semibold text-white"
-                    :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
-                    :style="{ background: letterTile(row.name).color }"
+                    class="inline-flex shrink-0 p-1.5"
                     aria-hidden="true"
                     data-letter-tile
-                  >{{ letterTile(row.name).letter }}</div>
+                  >
+                    <NuxtAvatar
+                      :text="letterTile(row.name).letter"
+                      color="primary"
+                      size="md"
+                      :class="
+                        rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''
+                      "
+                    />
+                  </span>
                   <div class="flex min-w-0 flex-col">
-                    <span class="flex items-center gap-1.5 truncate font-medium" :class="rowStatuses[row.sku]?.off ? 'text-muted-foreground' : 'text-foreground'">
-                      <span class="truncate" :class="rowStatuses[row.sku]?.off ? 'line-through decoration-1' : ''">{{ row.name }}</span>
-                      <span
+                    <span
+                      class="flex items-center gap-1.5 truncate font-medium"
+                      :class="
+                        rowStatuses[row.sku]?.off
+                          ? 'text-muted-foreground'
+                          : 'text-foreground'
+                      "
+                    >
+                      <span class="truncate">{{ row.name }}</span>
+                      <NuxtBadge
                         v-if="rowStatuses[row.sku]?.label"
-                        class="shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium"
+                        :color="
+                          rowStatuses[row.sku]?.tone === 'danger'
+                            ? 'error'
+                            : rowStatuses[row.sku]?.tone === 'amber'
+                              ? 'warning'
+                              : 'neutral'
+                        "
+                        variant="subtle"
+                        :label="rowStatuses[row.sku]?.label"
                         :title="rowStatuses[row.sku]?.hint || undefined"
-                        :class="{
-                          'bg-destructive/10 text-destructive': rowStatuses[row.sku]?.tone === 'danger',
-                          'bg-warning/15 text-amber-600 dark:text-amber-400': rowStatuses[row.sku]?.tone === 'amber',
-                          'bg-muted text-muted-foreground': rowStatuses[row.sku]?.tone === 'muted',
-                        }"
-                      >{{ rowStatuses[row.sku]?.label }}</span>
+                      />
                       <!-- esgotado que repõe por produção: o próximo lote reativa sozinho -->
-                      <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">Repõe {{ row.replenish_qty }} no lote</span>
+                      <span
+                        v-if="row.sold_out && row.replenish_qty"
+                        class="shrink-0 text-xs font-normal text-muted-foreground"
+                        >Repõe {{ row.replenish_qty }} no lote</span
+                      >
                       <!-- estoque baixo (produto ainda ativo): aviso discreto -->
-                      <span v-else-if="!rowStatuses[row.sku]?.off && row.low_stock" class="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">Resta {{ row.stock_qty }}</span>
+                      <NuxtBadge
+                        v-else-if="!rowStatuses[row.sku]?.off && row.low_stock"
+                        color="warning"
+                        variant="subtle"
+                        :label="`Resta ${row.stock_qty}`"
+                      />
                       <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->
-                      <button
+                      <NuxtButton
                         v-if="rowSyncErrors(row)"
                         type="button"
-                        class="min-h-control min-w-control inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/20 disabled:opacity-50"
-                        :disabled="isBusy(productKey(row.sku)) || !row.resync_action?.enabled"
+                        icon="i-lucide-triangle-alert"
+                        :label="String(rowSyncErrors(row))"
+                        color="error"
+                        variant="soft"
+                        size="xs"
+                        :disabled="
+                          isBusy(productKey(row.sku)) ||
+                          !row.resync_action?.enabled
+                        "
                         :title="`Erro de sincronização em ${rowSyncErrors(row)} plataforma(s). Toque para reenviar tudo.`"
                         @click.stop="resyncRow(row)"
-                      >
-                        <Icon name="lucide:triangle-alert" class="size-3" /> {{ rowSyncErrors(row) }}
-                      </button>
+                      />
                     </span>
                     <!-- uma linha só: com a coluna em largura fixa, sem `nowrap` o SKU +
                          preço + coleção quebram e a linha da matriz cresce. -->
-                    <span class="flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
+                    <span
+                      class="flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-xs text-muted-foreground"
+                    >
                       <span class="shrink-0 font-mono">{{ row.sku }}</span>
                       <span class="shrink-0 text-muted-foreground/40">·</span>
-                      <span class="shrink-0 tabular-nums">{{ row.base_price_display }}</span>
-                      <template v-if="row.primary_collection_name"><span class="shrink-0 text-muted-foreground/40">·</span><span class="truncate">{{ row.primary_collection_name }}</span></template>
+                      <span class="shrink-0 tabular-nums">{{
+                        row.base_price_display
+                      }}</span>
+                      <template v-if="row.primary_collection_name"
+                        ><span class="shrink-0 text-muted-foreground/40">·</span
+                        ><span class="truncate">{{
+                          row.primary_collection_name
+                        }}</span></template
+                      >
                     </span>
                   </div>
                 </div>
-                <!-- menu ⋯ da linha: casa das ações menos corriqueiras (editar, pausar tudo, publicar) -->
-                <UiPopover :open="menuOpen === row.sku" @update:open="(v) => (menuOpen = v ? row.sku : null)">
-                  <UiPopoverTrigger as-child>
-                    <button
-                      type="button"
-                      class="grid size-control shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                      :class="menuOpen === row.sku ? 'bg-accent text-foreground' : ''"
-                      :aria-label="`Ações de ${row.name}`"
-                    >
-                      <Icon name="lucide:ellipsis-vertical" class="size-4" />
-                    </button>
-                  </UiPopoverTrigger>
-                  <UiPopoverContent align="end" :side-offset="4" class="w-56 p-1">
-                    <button
-                      type="button"
-                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent"
-                      @click="openDetail(row)"
-                    >
-                      <Icon name="lucide:pencil" class="size-4 text-muted-foreground" /> Editar detalhes
-                    </button>
-                    <button
-                      type="button" :disabled="isBusy(productKey(row.sku)) || !row.product_action?.enabled"
-                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
-                      @click="toggleProduct(row)"
-                    >
-                      <Icon :name="row.is_sellable ? 'lucide:pause' : 'lucide:play'" class="size-4 text-muted-foreground" />
-                      {{ row.is_sellable ? "Pausar em todos os canais" : "Ativar em todos os canais" }}
-                    </button>
-                    <button
-                      type="button" :disabled="isBusy(productKey(row.sku)) || !row.product_action?.enabled"
-                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
-                      @click="toggleProductPublish(row)"
-                    >
-                      <Icon :name="row.is_published ? 'lucide:eye-off' : 'lucide:eye'" class="size-4 text-muted-foreground" />
-                      {{ row.is_published ? "Ocultar no catálogo" : "Exibir no catálogo" }}
-                    </button>
-                    <!-- PIM + sync (só quando há plataforma que projeta) -->
-                    <template v-if="hasProjectionTargets">
-                    <div class="my-1 h-px bg-border"></div>
-                    <button
-                      type="button"
-                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent"
-                      @click="openDetail(row, 'social')"
-                    >
-                      <Icon name="lucide:sparkles" class="size-4 text-muted-foreground" />
-                      Dados para redes sociais
-                      <span
-                        v-if="!row.pim_complete"
-                        class="ml-auto rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
-                      >Incompleto</span>
-                    </button>
-                    <button
-                      type="button" :disabled="isBusy(productKey(row.sku)) || !row.resync_action?.enabled"
-                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
-                      @click="resyncRow(row)"
-                    >
-                      <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" />
-                      Reenviar às plataformas
-                    </button>
-                    </template>
-                  </UiPopoverContent>
-                </UiPopover>
               </div>
-            </td>
-            <!-- cells (heatmap). Banda de feeds começa com uma divisória mais forte.
-                 Toggle · preço · selo de sync ficam LADO A LADO numa linha só: são três
-                 coisas que o operador lê de relance, e empilhar não é o jeito de ganhar
-                 largura — quem resolve isso é o nome curto da coluna (surface.short_name). -->
-            <td
-              v-for="cell in visibleCells(row)"
-              :key="cell.surface_ref"
-              class="border-b border-border px-1 py-1.5 group-hover:bg-muted/20"
-              :class="firstFeedRef === cell.surface_ref ? 'border-l-2 border-l-primary/40' : 'border-l border-l-border'"
+            </template>
+          </template>
+
+          <!-- ⋯ da linha: as ações menos corriqueiras (editar, pausar tudo, publicar) -->
+          <template #actions-cell="{ row: tableRow }">
+            <NuxtDropdownMenu
+              :items="rowMenuItems(tableRow.original)"
+              :content="{ align: 'end' }"
             >
-              <div
-                v-if="cell.in_listing"
-                class="flex min-h-control items-center justify-center gap-1"
+              <NuxtButton
+                icon="i-lucide-ellipsis-vertical"
+                color="neutral"
+                variant="ghost"
+                square
+                :aria-label="`Ações de ${tableRow.original.name}`"
+              />
+            </NuxtDropdownMenu>
+          </template>
+
+          <template
+            v-for="surface in visibleSurfaces"
+            :key="`cell-${surface.ref}`"
+            #[`${surfaceColumnId(surface.ref)}-cell`]="{ row: tableRow }"
+          >
+            <template
+              v-for="row in [tableRow.original]"
+              :key="`${row.sku}-${surface.ref}`"
+            >
+              <template
+                v-for="cell in [cellFor(row, surface.ref)]"
+                :key="cell.surface_ref"
               >
-                <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off) OU
-                     linha "fora" (esgotado/etc.: mantém a POSIÇÃO ligada, mas dessatura p/ cinza).
+                <div
+                  v-if="cell.in_listing"
+                  class="flex items-center justify-center gap-1"
+                  :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
+                >
+                  <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off).
+                     Linha "fora" (esgotado/oculto) mantém a POSIÇÃO e esmaece a célula, como a
+                     foto da linha: o `neutral` do Switch pinta escuro e gritava mais que o verde.
                      Vale para canal (vende) E feed (só exibe) — a mesma pausa por item. -->
-                <UiSwitch
-                  size="sm"
-                  :tone="rowStatuses[row.sku]?.off ? 'muted' : 'success'"
-                  :model-value="cell.is_sellable"
-                  :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
-                  :aria-label="cell.is_sellable ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.` : `Ativar neste ${surfaceWord(cell)}`"
-                  :title="cell.is_sellable ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.` : `Pausado. Toque para ativar neste ${surfaceWord(cell)}.`"
-                  @update:model-value="toggleCell(row, cell)"
-                />
+                  <NuxtSwitch
+                    color="success"
+                    :model-value="cell.is_sellable"
+                    :disabled="
+                      isBusy(cellKey(row.sku, cell.surface_ref)) ||
+                      !cell.action?.enabled
+                    "
+                    :aria-label="
+                      cell.is_sellable
+                        ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.`
+                        : `Ativar neste ${surfaceWord(cell)}`
+                    "
+                    :title="
+                      cell.is_sellable
+                        ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.`
+                        : `Pausado. Toque para ativar neste ${surfaceWord(cell)}.`
+                    "
+                    @update:model-value="toggleCell(row, cell)"
+                  />
 
-                <span v-if="cell.pause_audit" class="max-w-40 text-xs text-muted-foreground">{{ cell.pause_audit }}</span>
+                  <span
+                    v-if="cell.pause_audit"
+                    class="max-w-40 text-xs text-muted-foreground"
+                    >{{ cell.pause_audit }}</span
+                  >
 
-                <!-- Feed não vende: sem divisória nem preço — só a pausa por item. -->
-                <template v-if="isCellTransactional(cell)">
-                <!-- divisória: deixa claro que toggle e preço são controles distintos -->
-                <div class="h-5 w-px shrink-0 bg-border"></div>
+                  <!-- Feed não vende: sem divisória nem preço — só a pausa por item. -->
+                  <template v-if="isCellTransactional(cell)">
+                    <!-- divisória: deixa claro que toggle e preço são controles distintos -->
+                    <NuxtSeparator orientation="vertical" class="h-5" />
 
-                <!-- ÁREA 2 — preço, ao lado do toggle: base = ícone $ apagado; ALTERADO =
+                    <!-- ÁREA 2 — preço, ao lado do toggle: base = ícone $ apagado; ALTERADO =
                      seta ↑/↓ colorida + valor. title = valor; clique = popover. -->
-                <UiPopover :open="isEditing(row.sku, cell.surface_ref)" @update:open="(v) => { if (!v) void closePrice() }">
-                  <UiPopoverAnchor as-child>
-                    <button
-                      type="button"
-                      class="flex min-h-control min-w-control items-center justify-center rounded px-0.5 py-0.5 leading-none transition hover:bg-muted disabled:opacity-40"
-                      :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
-                      :title="priceTitle(row, cell)"
-                      :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display}. Toque para editar.`"
-                      @click="startEdit(row, cell)"
+                    <NuxtPopover
+                      :open="isEditing(row.sku, cell.surface_ref)"
+                      :content="{ align: 'center' }"
+                      @update:open="
+                        (v) => {
+                          if (!v) void closePrice();
+                        }
+                      "
                     >
-                      <span v-if="cellPrice(row, cell).differs" class="flex items-center gap-0.5">
+                      <NuxtButton
+                        type="button"
+                        color="neutral"
+                        variant="ghost"
+                        size="xs"
+                        :disabled="
+                          isBusy(cellKey(row.sku, cell.surface_ref)) ||
+                          !cell.action?.enabled
+                        "
+                        :title="priceTitle(row, cell)"
+                        :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display}. Toque para editar.`"
+                        @click="startEdit(row, cell)"
+                      >
+                        <span
+                          v-if="cellPrice(row, cell).differs"
+                          class="flex items-center gap-0.5"
+                        >
+                          <Icon
+                            :name="
+                              cellPrice(row, cell).delta === 'up'
+                                ? 'lucide:arrow-up'
+                                : 'lucide:arrow-down'
+                            "
+                            class="size-2.5 shrink-0"
+                            :class="
+                              rowStatuses[row.sku]?.off
+                                ? 'text-muted-foreground/60'
+                                : cellPrice(row, cell).delta === 'up'
+                                  ? 'text-warning'
+                                  : 'text-success'
+                            "
+                          />
+                          <span
+                            class="text-xs font-semibold tabular-nums"
+                            :class="
+                              cell.is_sellable
+                                ? 'text-foreground'
+                                : 'text-muted-foreground line-through'
+                            "
+                            >{{ cell.price_display.replace("R$ ", "") }}</span
+                          >
+                        </span>
                         <Icon
-                          :name="cellPrice(row, cell).delta === 'up' ? 'lucide:arrow-up' : 'lucide:arrow-down'"
-                          class="size-2.5 shrink-0"
-                          :class="rowStatuses[row.sku]?.off
-                            ? 'text-muted-foreground/60'
-                            : (cellPrice(row, cell).delta === 'up' ? 'text-amber-600 dark:text-amber-400' : 'text-success dark:text-lime-400')"
+                          v-else
+                          name="lucide:circle-dollar-sign"
+                          class="size-3.5 text-muted-foreground/40"
                         />
-                        <span class="text-xs font-semibold tabular-nums" :class="cell.is_sellable ? 'text-foreground' : 'text-muted-foreground line-through'">{{ cell.price_display.replace("R$ ", "") }}</span>
-                      </span>
-                      <Icon v-else name="lucide:circle-dollar-sign" class="size-3.5 text-muted-foreground/40" />
-                    </button>
-                  </UiPopoverAnchor>
-                  <UiPopoverContent align="center" :side-offset="6" class="w-52 p-3">
-                    <p class="mb-2 text-xs font-medium text-muted-foreground">Preço · {{ surfaceName(cell.surface_ref) }}</p>
-                    <input
-                      v-model="priceInput" type="text" inputmode="decimal" autofocus
-                      class="min-h-control h-9 w-full rounded-md border bg-background px-2.5 text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
-                      @keyup.enter="commitPrice(row, cell)" @keyup.esc="closePrice()"
-                    />
-                    <p class="mt-1 text-xs text-muted-foreground">Base do produto: {{ row.base_price_display }}</p>
-                    <div v-if="priceConflict(cell)" role="alert" class="mt-2 space-y-2 text-xs">
-                      <p>O preço mudou para {{ cell.price_display }}. Seu valor digitado foi mantido.</p>
-                      <button type="button" class="min-h-12 rounded border px-2" @click="keepPrice(cell)">Conferir e manter meu preço</button>
-                    </div>
-            <div class="mt-2.5 flex justify-end gap-1.5">
-                      <button type="button" class="min-h-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="closePrice()">Cancelar</button>
-                      <button type="button" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" class="min-h-12 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="commitPrice(row, cell)">Salvar preço</button>
-                    </div>
-                  </UiPopoverContent>
-                </UiPopover>
-                </template>
+                      </NuxtButton>
+                      <template #content>
+                        <div class="w-64 space-y-3 p-4">
+                          <NuxtFormField
+                            :label="`Preço · ${surfaceName(cell.surface_ref)}`"
+                            :description="`Base do produto: ${row.base_price_display}`"
+                          >
+                            <NuxtInput
+                              v-model="priceInput"
+                              class="w-full"
+                              type="text"
+                              inputmode="decimal"
+                              autofocus
+                              @keyup.enter="commitPrice(row, cell)"
+                              @keyup.esc="closePrice()"
+                            />
+                          </NuxtFormField>
+                          <NuxtAlert
+                            v-if="priceConflict(cell)"
+                            color="warning"
+                            variant="subtle"
+                            title="O preço mudou"
+                            :description="`Agora: ${cell.price_display}. Seu valor digitado foi mantido.`"
+                            :actions="[
+                              {
+                                label: 'Conferir e manter meu preço',
+                                color: 'warning',
+                                variant: 'outline',
+                                onClick: () => keepPrice(cell),
+                              },
+                            ]"
+                          />
+                          <div class="flex justify-end gap-2">
+                            <NuxtButton
+                              color="neutral"
+                              variant="ghost"
+                              label="Cancelar"
+                              @click="closePrice()"
+                            />
+                            <NuxtButton
+                              label="Salvar preço"
+                              :disabled="
+                                priceConflict(cell) ||
+                                isBusy(cellKey(row.sku, cell.surface_ref))
+                              "
+                              @click="commitPrice(row, cell)"
+                            />
+                          </div>
+                        </div>
+                      </template>
+                    </NuxtPopover>
+                  </template>
 
-                <!-- ÁREA 3 — selo de SYNC (produto × plataforma), inline ao lado do preço,
+                  <!-- ÁREA 3 — selo de SYNC (produto × plataforma), inline ao lado do preço,
                      só em superfície que projeta. Acionável (erro/sincronizando/nunca) =
                      botão "reenviar agora"; senão só informa. Vem por último para não
                      empurrar o toggle de lugar nas colunas em que não aparece. -->
-                <template v-if="cellSync(cell).show">
-                  <button
-                    v-if="cellSync(cell).actionable"
-                    type="button"
-                    class="grid size-control shrink-0 place-items-center rounded-full text-xs leading-none transition hover:scale-125 disabled:opacity-40"
-                    :class="cellSync(cell).toneClass"
-                    :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !row.resync_action?.enabled"
-                    :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''}. Toque para reenviar agora.`"
-                    :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}. Toque para reenviar agora.`"
-                    @click="resyncCell(row, cell)"
-                  >{{ cellSync(cell).dot }}</button>
-                  <span
-                    v-else
-                    class="shrink-0 text-xs leading-none"
-                    :class="cellSync(cell).toneClass"
-                    :title="cellSync(cell).label"
-                    :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}`"
-                  >{{ cellSync(cell).dot }}</span>
-                </template>
-              </div>
-              <div v-else class="grid h-10 place-items-center rounded-md text-xs text-muted-foreground/30">—</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+                  <template v-if="cellSync(cell).show">
+                    <NuxtButton
+                      v-if="cellSync(cell).actionable"
+                      type="button"
+                      :icon="cellSync(cell).icon"
+                      :color="cellSync(cell).color"
+                      variant="ghost"
+                      square
+                      :disabled="
+                        isBusy(cellKey(row.sku, cell.surface_ref)) ||
+                        !row.resync_action?.enabled
+                      "
+                      :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''}. Toque para reenviar agora.`"
+                      :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}. Toque para reenviar agora.`"
+                      @click="resyncCell(row, cell)"
+                    />
+                    <Icon
+                      v-else
+                      :name="cellSync(cell).icon"
+                      class="size-4 shrink-0"
+                      :class="{
+                        'text-success': cellSync(cell).color === 'success',
+                        'text-warning': cellSync(cell).color === 'warning',
+                        'text-error': cellSync(cell).color === 'error',
+                        'text-muted-foreground':
+                          cellSync(cell).color === 'neutral',
+                      }"
+                      :title="cellSync(cell).label"
+                      :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}`"
+                    />
+                  </template>
+                </div>
+                <div
+                  v-else
+                  class="grid h-10 place-items-center rounded-md text-xs text-muted-foreground/30"
+                >
+                  —
+                </div>
+              </template>
+            </template>
+          </template>
+        </NuxtTable>
+      </NuxtCard>
 
-      <div v-else-if="!pending && !error" class="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
-        <Icon name="lucide:package-search" class="mb-2 size-8 text-muted-foreground/40" />
-        <p v-if="Object.keys(filters).length || query.trim()" class="text-sm text-muted-foreground">
-          Nenhum produto com esses filtros.
-          <button v-if="Object.keys(filters).length" class="min-h-control min-w-control underline" @click="filters = {}">Limpar filtros</button>
-        </p>
-        <p v-else class="text-sm text-muted-foreground">Nenhum produto {{ activeCollection ? `na coleção ${activeCollection.name}` : "no catálogo" }}.</p>
-      </div>
+      <NuxtEmpty
+        v-else-if="!pending && !error"
+        icon="i-lucide-package-search"
+        :title="
+          Object.keys(filters).length || query.trim()
+            ? 'Nenhum produto com esses filtros'
+            : `Nenhum produto ${activeCollection ? `na coleção ${activeCollection.name}` : 'no catálogo'}`
+        "
+        :actions="
+          Object.keys(filters).length
+            ? [
+                {
+                  label: 'Limpar filtros',
+                  onClick: () => {
+                    filters = {};
+                  },
+                },
+              ]
+            : []
+        "
+      />
     </section>
 
-    <!-- floating bulk bar (selection-scoped) -->
-    <Transition
-      enter-active-class="transition duration-150 ease-out" enter-from-class="translate-y-3 opacity-0" enter-to-class="translate-y-0 opacity-100"
-      leave-active-class="transition duration-100 ease-in" leave-from-class="translate-y-0 opacity-100" leave-to-class="translate-y-3 opacity-0"
-    >
-      <!-- inverted surface: bg-foreground → preta no claro, branca no escuro (alto contraste,
-           destaca a ação em curso sobre a matriz). Controles internos usam background/* p/ inverter junto. -->
-      <div v-if="selected.size" class="fixed inset-x-0 bottom-5 z-30 mx-auto flex w-fit max-w-[95vw] flex-wrap items-center gap-2 rounded-xl bg-foreground px-3 py-2 text-background shadow-lg">
+    <!-- A seleção em lote é chrome contextual do painel, não um Card flutuante. -->
+    <NuxtDashboardToolbar v-if="selected.size" as="footer" data-catalog-bulk>
+      <div class="flex min-w-max items-center gap-2">
         <span class="flex items-center gap-1.5 px-1 text-sm font-medium">
           <Icon v-if="bulkBusy" name="line-md:loading-loop" class="size-4" />
-          <span class="tabular-nums">{{ selected.size }}</span> selecionado{{ selected.size === 1 ? "" : "s" }}
+          <span class="tabular-nums">{{ selected.size }}</span> selecionado{{
+            selected.size === 1 ? "" : "s"
+          }}
         </span>
-        <div class="flex items-center gap-1 rounded-lg bg-background/10 px-2 py-1 text-sm">
-          <span class="text-xs opacity-70">em</span>
-          <!-- Exceção intencional: a barra é invertida e não usa o chevron global. -->
-          <UiNativeSelect v-model="bulkSurface" class="border-transparent bg-transparent bg-none font-medium text-background shadow-none [&>option]:text-foreground [&>optgroup]:text-foreground">
-            <option value="*">Todos os canais</option>
-            <optgroup v-if="channelSurfaces.length" label="Canais">
-              <option v-for="s in channelSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
-            </optgroup>
-            <optgroup v-if="feedSurfaces.length" label="Feeds">
-              <option v-for="s in feedSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
-            </optgroup>
-          </UiNativeSelect>
-        </div>
-        <div class="h-5 w-px bg-background/20"></div>
-        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: false })"><Icon name="lucide:pause" class="size-3.5" /> Pausar</button>
-        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: true })"><Icon name="lucide:play" class="size-3.5" /> Ativar</button>
+        <NuxtSelect
+          v-model="bulkSurface"
+          :items="bulkSurfaceItems"
+          aria-label="Aplicar seleção em"
+        />
+        <NuxtSeparator orientation="vertical" class="h-5" />
+        <NuxtButton
+          :disabled="bulkBusy"
+          icon="i-lucide-pause"
+          label="Pausar"
+          color="neutral"
+          variant="outline"
+          @click="bulk({ is_sellable: false })"
+        />
+        <NuxtButton
+          :disabled="bulkBusy"
+          icon="i-lucide-play"
+          label="Ativar"
+          color="neutral"
+          variant="outline"
+          @click="bulk({ is_sellable: true })"
+        />
 
         <!-- Preço e publicação só para canais (transacionam). Feed só pausa/reativa. -->
         <template v-if="!bulkSurfaceIsFeed">
-        <!-- reprecificação em lote: popover ancorado (superfície normal, legível sobre a barra invertida) -->
-        <UiPopover :open="priceOpen" @update:open="(v) => (priceOpen = v)">
-          <UiPopoverTrigger as-child>
-            <button :disabled="bulkBusy" class="inline-flex min-h-control items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50">
-              <Icon name="lucide:tag" class="size-3.5" /> Preço…
-            </button>
-          </UiPopoverTrigger>
-          <UiPopoverContent align="center" :side-offset="10" class="w-64 p-3">
-            <p class="mb-2 text-xs font-medium text-muted-foreground"><span class="tabular-nums">{{ selected.size }}</span> selecionado{{ selected.size === 1 ? "" : "s" }} em {{ surfaceLabel(bulkSurface) }}</p>
-            <div class="mb-2 inline-flex w-full rounded-md border p-0.5 text-xs">
-              <button
-                v-for="o in priceOps" :key="o.k" type="button"
-                class="min-h-control min-w-control flex-1 rounded px-2 py-1 font-medium transition"
-                :class="priceOp === o.k ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
-                @click="priceOp = o.k"
-              >{{ o.l }}</button>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <span class="w-5 shrink-0 text-center text-sm text-muted-foreground">{{ priceOp === "pct" ? "%" : "R$" }}</span>
-              <input
-                v-model="priceInputBulk" type="text" inputmode="decimal" autofocus
-                :placeholder="priceOp === 'set' ? '15,00' : priceOp === 'pct' ? '+10 ou -20' : '+1,00 ou -0,50'"
-                class="min-h-control h-9 w-full rounded-md border bg-background px-2.5 text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
-                @keyup.enter="applyBulkPrice"
-              />
-            </div>
-            <p class="mt-1.5 text-xs leading-tight text-muted-foreground">
-              {{ priceOp === "set" ? "Define o preço de todos os selecionados." : priceOp === "pct" ? "Aumenta (+) ou reduz (−) por porcentagem." : "Soma (+) ou subtrai (−) do preço atual." }}
-              A mudança é permanente. Para promoção, use as regras.
-            </p>
-            <div v-if="pricePreview" class="mt-3 max-h-64 overflow-auto rounded border p-2" aria-live="polite">
-              <p class="mb-2 text-xs font-semibold">Revise {{ pricePreview.cells.length }} células antes de confirmar</p>
-              <ul class="space-y-1 text-xs">
-                <li v-for="cell in pricePreview.cells" :key="cell.id">
-                  {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }} · mínimo {{ cell.tier }}:
-                  {{ (cell.before_q / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }} →
-                  {{ (cell.after_q / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }}
-                </li>
-              </ul>
-            </div>
-            <div class="mt-2.5 flex justify-end gap-1.5">
-              <button type="button" class="min-h-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="priceOpen = false">Cancelar</button>
-              <button type="button" :disabled="!priceValid || bulkBusy" class="min-h-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyBulkPrice">{{ pricePreview ? "Confirmar alterações" : "Revisar alterações" }}</button>
-            </div>
-          </UiPopoverContent>
-        </UiPopover>
+          <!-- reprecificação em lote: popover ancorado (superfície normal, legível sobre a barra invertida) -->
+          <NuxtPopover
+            :open="priceOpen"
+            :content="{ align: 'center' }"
+            @update:open="(v) => (priceOpen = v)"
+          >
+            <NuxtButton
+              :disabled="bulkBusy"
+              icon="i-lucide-tag"
+              label="Preço…"
+              color="neutral"
+              variant="outline"
+            />
+            <template #content>
+              <div class="w-72 space-y-3 p-4">
+                <p class="text-sm font-medium">
+                  <span class="tabular-nums">{{ selected.size }}</span>
+                  selecionado{{ selected.size === 1 ? "" : "s" }} em
+                  {{ surfaceLabel(bulkSurface) }}
+                </p>
+                <NuxtTabs
+                  v-model="priceOp"
+                  :items="
+                    priceOps.map((option) => ({
+                      label: option.l,
+                      value: option.k,
+                    }))
+                  "
+                  :content="false"
+                />
+                <div class="flex items-center gap-1.5">
+                  <span
+                    class="w-5 shrink-0 text-center text-sm text-muted-foreground"
+                    >{{ priceOp === "pct" ? "%" : "R$" }}</span
+                  >
+                  <NuxtInput
+                    v-model="priceInputBulk"
+                    type="text"
+                    inputmode="decimal"
+                    autofocus
+                    :placeholder="
+                      priceOp === 'set'
+                        ? '15,00'
+                        : priceOp === 'pct'
+                          ? '+10 ou -20'
+                          : '+1,00 ou -0,50'
+                    "
+                    @keyup.enter="applyBulkPrice"
+                  />
+                </div>
+                <p class="mt-1.5 text-xs leading-tight text-muted-foreground">
+                  {{
+                    priceOp === "set"
+                      ? "Define o preço de todos os selecionados."
+                      : priceOp === "pct"
+                        ? "Aumenta (+) ou reduz (−) por porcentagem."
+                        : "Soma (+) ou subtrai (−) do preço atual."
+                  }}
+                  A mudança é permanente. Para promoção, use as regras.
+                </p>
+                <NuxtCard v-if="pricePreview" variant="soft" aria-live="polite">
+                  <template #header
+                    ><p class="text-xs font-semibold">
+                      Revise {{ pricePreview.cells.length }} células antes de
+                      confirmar
+                    </p></template
+                  >
+                  <ul class="space-y-1 text-xs">
+                    <li v-for="cell in pricePreview.cells" :key="cell.id">
+                      {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }} ·
+                      mínimo {{ cell.tier }}:
+                      {{
+                        (cell.before_q / 100).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })
+                      }}
+                      →
+                      {{
+                        (cell.after_q / 100).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })
+                      }}
+                    </li>
+                  </ul>
+                </NuxtCard>
+                <div class="mt-2.5 flex justify-end gap-1.5">
+                  <NuxtButton
+                    color="neutral"
+                    variant="ghost"
+                    label="Cancelar"
+                    @click="priceOpen = false"
+                  />
+                  <NuxtButton
+                    :label="
+                      pricePreview
+                        ? 'Confirmar alterações'
+                        : 'Revisar alterações'
+                    "
+                    :disabled="!priceValid || bulkBusy"
+                    @click="applyBulkPrice"
+                  />
+                </div>
+              </div>
+            </template>
+          </NuxtPopover>
 
-        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: false })">Ocultar</button>
-        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: true })">Exibir</button>
+          <NuxtButton
+            :disabled="bulkBusy"
+            label="Ocultar"
+            color="neutral"
+            variant="ghost"
+            @click="bulk({ is_published: false })"
+          />
+          <NuxtButton
+            :disabled="bulkBusy"
+            label="Exibir"
+            color="neutral"
+            variant="ghost"
+            @click="bulk({ is_published: true })"
+          />
         </template>
-        <button class="min-h-control min-w-control grid size-9 place-items-center rounded-md text-background/70 transition hover:bg-background/10 hover:text-background" title="Limpar seleção" @click="clearSelection"><Icon name="lucide:x" class="size-4" /></button>
+        <NuxtButton
+          icon="i-lucide-x"
+          color="neutral"
+          variant="ghost"
+          square
+          aria-label="Limpar seleção"
+          @click="clearSelection"
+        />
       </div>
-    </Transition>
+    </NuxtDashboardToolbar>
 
     <!-- painel de produto (edição completa, incluindo dados sociais e fiscais) —
          slide-over à direita -->
@@ -1150,29 +2000,37 @@ useHead({ title: "Catálogo" });
       :admin-base-url="adminBaseUrl"
       @review-conflict="reviewProductConflict"
       @dirty-change="detailDirty = $event"
-      @update:open="(v) => { if (!v) closeDetail(); }"
+      @update:open="
+        (v) => {
+          if (!v) closeDetail();
+        }
+      "
       @save="saveDetail"
       @set-purchasable="togglePurchasable"
       @pause-channel="pauseDetailChannel"
     />
 
     <!-- lightbox canônico: foco preso, Escape e retorno ao disparador são do Reka. -->
-    <UiDialog :open="Boolean(zoom)" @update:open="(value) => { if (!value) zoom = null; }">
-      <UiDialogContent v-if="zoom" class="max-w-[calc(100%-2rem)] cursor-zoom-out border-0 bg-transparent p-8 shadow-none sm:max-w-[calc(100%-2rem)]" @click="zoom = null">
-        <UiDialogTitle class="sr-only">Foto ampliada de {{ zoom.name }}</UiDialogTitle>
-        <figure class="flex flex-col items-center gap-3">
-          <img :src="zoom.url" :alt="zoom.name" class="max-h-[80vh] max-w-[85vw] rounded-xl object-contain shadow-2xl" />
-          <figcaption class="rounded-full bg-black/60 px-3 py-1 text-sm font-medium text-white">{{ zoom.name }}</figcaption>
+    <NuxtModal
+      :open="Boolean(zoom)"
+      fullscreen
+      :title="zoom ? `Foto ampliada de ${zoom.name}` : 'Foto ampliada'"
+      @update:open="
+        (value) => {
+          if (!value) zoom = null;
+        }
+      "
+    >
+      <template #body>
+        <figure v-if="zoom" class="flex flex-col items-center gap-3">
+          <img
+            :src="zoom.url"
+            :alt="zoom.name"
+            class="max-h-[80vh] max-w-[85vw] rounded-lg object-contain"
+          />
+          <figcaption>{{ zoom.name }}</figcaption>
         </figure>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+    </NuxtModal>
   </main>
 </template>
-
-<style>
-/* FLIP: os chips deslizam suavemente para a nova posição ao reordenar (não é um
-   "pulo") — dá o feedback de que a intenção do operador está acontecendo. */
-.chip-move {
-  transition: transform 0.24s cubic-bezier(0.2, 0, 0, 1);
-}
-</style>

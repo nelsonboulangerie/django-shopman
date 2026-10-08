@@ -16,9 +16,11 @@
 // volta os filtros ativos; interpretar o valor é dele. Para guardar na URL, use
 // `useRouteFilters` (ou `filtersToQuery`/`filtersFromQuery`).
 //
-// `touch`: a mesma barra com alvos de toque de balcão (`min-h-control`, 44 px) no
-// gatilho, nos chips, no X e nos itens do popover. Sem ele, a barra é a compacta
-// de mesa (28 px), feita para mouse. No painel de baixo os itens são sempre de toque.
+// `touch`: a mesma barra no tamanho `md` oficial do Nuxt UI. Nos apps que vestem a
+// suíte (ver `useSuiteMarker`), também o envelope de toque do balcão (`min-h-control`,
+// 44 px; 48 px em tablet touch) no gatilho, nos chips, no X e nos itens do painel; sem
+// `touch`, ali, só os itens do painel ganham o envelope no celular. Sem `touch`, a barra
+// usa `xs`, compacta para mouse. Nenhuma regra CSS global infla os controles.
 import {
   activeDimensions,
   chipLabel,
@@ -40,49 +42,49 @@ const props = withDefaults(
     modelValue: ActiveFilters;
     /** Rótulo do gatilho. */
     label?: string;
-    /** Alvos de toque de 44 px (balcão, tablet). Padrão: compacta de mesa. */
+    /** Tamanho `md` do Nuxt UI (balcão, tablet). Padrão: `xs` de mesa. */
     touch?: boolean;
   }>(),
   { label: "Filtro", touch: false },
 );
 
-const size = computed(() => (props.touch
-  ? {
-      chip: "min-h-control pl-3.5 pr-0.5 text-sm",
-      remove: "size-10",
-      removeIcon: "size-4",
-      trigger: "min-h-control px-3.5 text-sm",
-      triggerIcon: "size-4",
-      menu: "sm:top-full sm:mt-1 sm:w-72",
-      item: "min-h-control px-3 text-base",
-    }
-  : {
-      chip: "h-7 pl-2.5 pr-1 text-xs",
-      remove: "size-5",
-      removeIcon: "size-3",
-      trigger: "h-7 px-2.5 text-xs",
-      triggerIcon: "size-3.5",
-      menu: "sm:top-8 sm:w-64",
-      item: "max-sm:min-h-control px-2.5 py-1.5 text-sm",
-    }));
+const controlSize = computed(() =>
+  props.touch ? ("md" as const) : ("xs" as const),
+);
+// Alvo de toque, OPT-IN pelo marcador da suíte (`useSuiteMarker`): nos sete apps não
+// migrados `touch` volta a dar o `min-h-control` do `main` (44 px; 48 em tablet
+// touch), e no celular os itens do painel são sempre de toque. O Gestor passa `touch`
+// contando com o `md` canônico (32 px) e fica como está.
+const root = ref<HTMLElement | null>(null);
+const suiteMarked = useSuiteMarker(root);
+const touchTarget = computed(() =>
+  props.touch && suiteMarked.value ? "min-h-control" : undefined,
+);
+const itemTarget = computed(() => {
+  if (!suiteMarked.value) return undefined;
+  return props.touch ? "min-h-control" : "max-sm:min-h-control";
+});
 
 const emit = defineEmits<{ "update:modelValue": [ActiveFilters] }>();
 
 const open = ref(false);
 // Campo aberto no 2º passo (null = lista de campos).
 const step = ref<FilterDimension | null>(null);
-const root = ref<HTMLElement | null>(null);
 const search = ref("");
 // Rascunho dos campos digitados: só vira filtro no "Aplicar" (ou Enter).
 const draft = ref<string[]>(["", ""]);
 
-const chips = computed(() => activeDimensions(props.dimensions, props.modelValue));
+const chips = computed(() =>
+  activeDimensions(props.dimensions, props.modelValue),
+);
 const hasFilters = computed(() => chips.value.length > 0);
-const visibleOptions = computed(() => (step.value ? searchOptions(optionsFor(step.value), search.value) : []));
+const visibleOptions = computed(() =>
+  step.value ? searchOptions(optionsFor(step.value), search.value) : [],
+);
 
-function openMenu() {
-  step.value = null;
-  open.value = !open.value;
+function onOpen(value: boolean) {
+  if (value) step.value = null;
+  open.value = value;
 }
 
 function close() {
@@ -110,7 +112,10 @@ function pick(dimension: FilterDimension, value: string) {
 }
 
 function applyDraft(dimension: FilterDimension) {
-  const values = dimension.type === "text" ? [draft.value[0] ?? ""] : [draft.value[0] ?? "", draft.value[1] ?? ""];
+  const values =
+    dimension.type === "text"
+      ? [draft.value[0] ?? ""]
+      : [draft.value[0] ?? "", draft.value[1] ?? ""];
   emit("update:modelValue", setValues(props.modelValue, dimension.id, values));
   close();
 }
@@ -124,208 +129,230 @@ function clearAll() {
   emit("update:modelValue", {});
   close();
 }
-
-// Fechar ao clicar fora / Esc — o popover é leve demais para merecer um portal.
-function onDocumentPointerDown(event: PointerEvent) {
-  if (!open.value) return;
-  if (root.value && !root.value.contains(event.target as Node)) close();
-}
-
-onMounted(() => document.addEventListener("pointerdown", onDocumentPointerDown));
-onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPointerDown));
 </script>
 
 <template>
   <div
     ref="root"
-    class="relative flex items-center gap-1.5 max-sm:no-scrollbar max-sm:flex-nowrap max-sm:overflow-x-auto sm:flex-wrap"
-    @keydown.esc="close"
+    class="flex items-center gap-1.5 max-sm:no-scrollbar max-sm:flex-nowrap max-sm:overflow-x-auto sm:flex-wrap"
   >
     <!-- chips do recorte ativo: "campo: valores" (toque edita) + X -->
-    <span
+    <NuxtFieldGroup
       v-for="dimension in chips"
       :key="dimension.id"
-      class="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-accent/60 font-medium text-foreground"
-      :class="size.chip"
+      class="shrink-0"
       :data-filter-chip="dimension.id"
     >
-      <button
-        type="button"
-        class="max-w-[18rem] truncate text-left"
+      <NuxtButton
+        color="neutral"
+        variant="soft"
+        :size="controlSize"
+        :class="touchTarget"
+        :label="chipLabel(dimension, modelValue)"
         :aria-label="`Editar filtro ${chipLabel(dimension, modelValue)}`"
         data-filter-edit
         @click="editDimension(dimension)"
-      >{{ chipLabel(dimension, modelValue) }}</button>
-      <button
-        type="button"
-        class="grid shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-background hover:text-foreground"
-        :class="size.remove"
+      />
+      <NuxtButton
+        color="neutral"
+        variant="soft"
+        :size="controlSize"
+        :class="touchTarget"
+        icon="i-lucide-x"
+        square
         :aria-label="`Remover filtro ${dimension.label}`"
         data-filter-remove
         @click="remove(dimension)"
-      >
-        <Icon name="lucide:x" :class="size.removeIcon" />
-      </button>
-    </span>
+      />
+    </NuxtFieldGroup>
 
     <!-- gatilho + popover de dois passos -->
-    <button
-      type="button"
-      class="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-border font-medium text-muted-foreground transition hover:border-solid hover:bg-accent hover:text-foreground"
-      :class="[size.trigger, open ? 'border-solid bg-accent text-foreground' : '']"
-      aria-haspopup="dialog"
-      :aria-expanded="open"
-      data-filter-trigger
-      @click="openMenu"
-    >
-      <Icon name="lucide:list-filter" :class="size.triggerIcon" />
-      {{ label }}
-    </button>
+    <NuxtPopover :open="open" @update:open="onOpen">
+      <NuxtButton
+        class="shrink-0"
+        :class="touchTarget"
+        color="neutral"
+        variant="outline"
+        :size="controlSize"
+        icon="i-lucide-list-filter"
+        :label="label"
+        data-filter-trigger
+      />
 
-    <button
+      <template #content>
+        <div
+          class="w-72 max-w-[calc(100vw-2rem)] p-2"
+          :aria-label="step ? `Filtrar por ${step.label}` : 'Escolher filtro'"
+          data-filter-panel
+        >
+          <div v-if="!step" class="grid gap-1">
+            <NuxtButton
+              v-for="dimension in dimensions"
+              :key="dimension.id"
+              block
+              color="neutral"
+              variant="ghost"
+              trailing-icon="i-lucide-chevron-right"
+              :class="itemTarget"
+              :label="dimension.label"
+              :data-filter-dimension="dimension.id"
+              @click="pickDimension(dimension)"
+            />
+          </div>
+
+          <template v-else>
+            <NuxtButton
+              block
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-chevron-left"
+              :class="itemTarget"
+              :label="step.label"
+              data-filter-back
+              @click="step = null"
+            />
+            <NuxtSeparator class="my-2" />
+
+            <template v-if="isListType(step)">
+              <div v-if="needsSearch(step)" class="mb-2">
+                <NuxtInput
+                  v-model="search"
+                  type="search"
+                  icon="i-lucide-search"
+                  :placeholder="`Buscar em ${step.label}`"
+                  :aria-label="`Buscar em ${step.label}`"
+                  data-filter-search
+                />
+              </div>
+              <div class="grid max-h-64 gap-1 overflow-auto">
+                <NuxtButton
+                  v-for="option in visibleOptions"
+                  :key="option.value"
+                  block
+                  color="neutral"
+                  :variant="
+                    isSelected(modelValue, step, option.value)
+                      ? 'soft'
+                      : 'ghost'
+                  "
+                  :icon="
+                    isSelected(modelValue, step, option.value)
+                      ? 'i-lucide-check'
+                      : undefined
+                  "
+                  :class="itemTarget"
+                  :label="option.label"
+                  :aria-pressed="isSelected(modelValue, step, option.value)"
+                  :data-filter-option="`${step.id}:${option.value}`"
+                  @click="pick(step, option.value)"
+                >
+                  <!-- A contagem é outra grandeza: fica à parte do rótulo, como no
+                       `main`, e não costurada nele ("Pagas · 1"). -->
+                  <template v-if="option.count !== undefined" #trailing>
+                    <NuxtBadge
+                      class="ms-auto tabular-nums"
+                      color="neutral"
+                      :label="String(option.count)"
+                    />
+                  </template>
+                </NuxtButton>
+                <NuxtEmpty
+                  v-if="!visibleOptions.length"
+                  icon="i-lucide-search-x"
+                  :title="
+                    search
+                      ? 'Nenhuma opção com essa busca'
+                      : 'Nenhuma opção para escolher agora'
+                  "
+                  data-filter-empty
+                />
+              </div>
+              <div v-if="step.type === 'multi-select'" class="mt-2">
+                <NuxtButton
+                  block
+                  label="Pronto"
+                  data-filter-done
+                  @click="close"
+                />
+              </div>
+            </template>
+
+            <NuxtForm
+              v-else
+              :state="draft"
+              class="space-y-2"
+              data-filter-form
+              @submit="applyDraft(step)"
+            >
+              <NuxtFormField v-if="step.type === 'text'" :label="step.label">
+                <NuxtInput
+                  v-model="draft[0]"
+                  class="w-full"
+                  type="search"
+                  :placeholder="step.placeholder || step.label"
+                  data-filter-input="text"
+                />
+              </NuxtFormField>
+              <!-- Data é o campo canônico (UiDateField), nunca o nativo: um por
+                   linha, porque três segmentos e o calendário não cabem em meia
+                   largura do painel. -->
+              <div v-else-if="step.type === 'date-range'" class="grid gap-2">
+                <NuxtFormField label="De">
+                  <UiDateField
+                    v-model="draft[0]"
+                    :label="`${step.label}, de`"
+                    data-filter-input="from"
+                  />
+                </NuxtFormField>
+                <NuxtFormField label="Até">
+                  <UiDateField
+                    v-model="draft[1]"
+                    :label="`${step.label}, até`"
+                    data-filter-input="to"
+                  />
+                </NuxtFormField>
+              </div>
+              <div v-else-if="isRangeType(step)" class="grid grid-cols-2 gap-2">
+                <NuxtFormField label="De">
+                  <NuxtInput
+                    v-model="draft[0]"
+                    class="w-full"
+                    type="number"
+                    :placeholder="step.placeholder"
+                    data-filter-input="from"
+                  />
+                </NuxtFormField>
+                <NuxtFormField label="Até">
+                  <NuxtInput
+                    v-model="draft[1]"
+                    class="w-full"
+                    type="number"
+                    data-filter-input="to"
+                  />
+                </NuxtFormField>
+              </div>
+              <NuxtButton
+                type="submit"
+                block
+                label="Aplicar"
+                data-filter-apply
+              />
+            </NuxtForm>
+          </template>
+        </div>
+      </template>
+    </NuxtPopover>
+
+    <NuxtButton
       v-if="hasFilters"
-      type="button"
-      class="inline-flex shrink-0 items-center rounded-full font-medium text-muted-foreground transition hover:text-foreground"
-      :class="size.trigger"
+      class="shrink-0"
+      color="neutral"
+      variant="link"
+      :size="controlSize"
+      :class="touchTarget"
+      label="Limpar filtros"
       data-filter-clear
       @click="clearAll"
-    >
-      Limpar filtros
-    </button>
-
-    <!-- celular: fundo do painel de baixo (tocar fora fecha) -->
-    <div v-if="open" class="fixed inset-0 z-40 bg-black/40 sm:hidden" aria-hidden="true" data-filter-backdrop @click="close" />
-
-    <div
-      v-if="open"
-      role="dialog"
-      :aria-label="step ? `Filtrar por ${step.label}` : 'Escolher filtro'"
-      class="z-50 border border-border bg-card p-1 shadow-lg max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[80dvh] max-sm:overflow-auto max-sm:rounded-t-2xl max-sm:p-2 max-sm:pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:absolute sm:left-0 sm:rounded-lg"
-      :class="size.menu"
-      data-filter-panel
-    >
-      <!-- passo 1: campos -->
-      <div v-if="!step" role="menu">
-        <p class="px-2.5 pb-1 pt-1.5 text-xs font-medium text-muted-foreground sm:hidden">Filtrar por</p>
-        <button
-          v-for="dimension in dimensions"
-          :key="dimension.id"
-          type="button"
-          role="menuitem"
-          class="flex w-full items-center gap-2 rounded text-left transition hover:bg-accent"
-          :class="size.item"
-          :data-filter-dimension="dimension.id"
-          @click="pickDimension(dimension)"
-        >
-          <span class="truncate">{{ dimension.label }}</span>
-          <Icon name="lucide:chevron-right" class="ml-auto size-3.5 shrink-0 text-muted-foreground" />
-        </button>
-      </div>
-
-      <!-- passo 2: o campo escolhido -->
-      <template v-else>
-        <button
-          type="button"
-          class="mb-0.5 flex w-full items-center gap-1 rounded text-left font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          :class="touch ? 'min-h-control px-3 text-sm' : 'px-2 py-1.5 text-xs max-sm:min-h-control'"
-          data-filter-back
-          @click="step = null"
-        >
-          <Icon name="lucide:chevron-left" class="size-3.5" /> {{ step.label }}
-        </button>
-
-        <!-- lista: marcar valores, com busca quando é longa -->
-        <template v-if="isListType(step)">
-          <input
-            v-if="needsSearch(step)"
-            v-model="search"
-            type="search"
-            class="mb-1 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-sm:min-h-control"
-            :placeholder="`Buscar em ${step.label}`"
-            :aria-label="`Buscar em ${step.label}`"
-            data-filter-search
-          >
-          <div role="menu" class="overflow-auto" :class="touch ? 'max-h-80' : 'max-h-64'">
-            <button
-              v-for="option in visibleOptions"
-              :key="option.value"
-              type="button"
-              role="menuitemcheckbox"
-              :aria-checked="isSelected(modelValue, step, option.value)"
-              class="flex w-full items-center gap-2 rounded text-left transition hover:bg-accent"
-              :class="size.item"
-              :data-filter-option="`${step.id}:${option.value}`"
-              @click="pick(step, option.value)"
-            >
-              <span
-                class="grid size-4 shrink-0 place-items-center rounded border transition"
-                :class="isSelected(modelValue, step, option.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border'"
-              >
-                <Icon v-if="isSelected(modelValue, step, option.value)" name="lucide:check" class="size-3" />
-              </span>
-              <span class="truncate">{{ option.label }}</span>
-              <span v-if="option.count !== undefined" class="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-                {{ option.count }}
-              </span>
-            </button>
-            <p v-if="!visibleOptions.length" class="px-2.5 py-2 text-sm text-muted-foreground" data-filter-empty>
-              {{ search ? "Nenhuma opção com essa busca." : "Nenhuma opção para escolher agora." }}
-            </p>
-          </div>
-          <button
-            v-if="step.type === 'multi-select'"
-            type="button"
-            class="mt-1 w-full rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 max-sm:min-h-control sm:hidden"
-            data-filter-done
-            @click="close"
-          >
-            Pronto
-          </button>
-        </template>
-
-        <!-- campo digitado: texto ou intervalo De/Até -->
-        <form v-else class="space-y-2 p-1.5" data-filter-form @submit.prevent="applyDraft(step)">
-          <input
-            v-if="step.type === 'text'"
-            v-model="draft[0]"
-            type="search"
-            class="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-sm:min-h-control"
-            :placeholder="step.placeholder || step.label"
-            :aria-label="step.label"
-            data-filter-input="text"
-          >
-          <div v-else-if="isRangeType(step)" class="grid grid-cols-2 gap-2">
-            <label class="grid gap-1 text-xs text-muted-foreground">
-              De
-              <input
-                v-model="draft[0]"
-                :type="step.type === 'date-range' ? 'date' : 'number'"
-                class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-sm:min-h-control"
-                :placeholder="step.type === 'number-range' ? step.placeholder : undefined"
-                data-filter-input="from"
-              >
-            </label>
-            <label class="grid gap-1 text-xs text-muted-foreground">
-              Até
-              <input
-                v-model="draft[1]"
-                :type="step.type === 'date-range' ? 'date' : 'number'"
-                class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-sm:min-h-control"
-                data-filter-input="to"
-              >
-            </label>
-          </div>
-          <button
-            type="submit"
-            class="w-full rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 max-sm:min-h-control"
-            data-filter-apply
-          >
-            Aplicar
-          </button>
-        </form>
-      </template>
-    </div>
+    />
   </div>
 </template>

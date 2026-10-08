@@ -1,0 +1,4119 @@
+{
+  "/api/v1/backstage/operator/tenant/": {
+    "tenant": {
+      "short_name": "Nelson"
+    }
+  },
+  "/api/v1/backstage/operator/session/?perm=backstage.view_bi": {
+    "station": "",
+    "workstation": null,
+    "operator": {
+      "id": 1,
+      "username": "admin",
+      "name": "Admin"
+    },
+    "locked": false,
+    "pin_must_change": false,
+    "authorized": true
+  },
+  "/api/v1/backstage/bi/production/?date_from=2026-09-11&date_to=2026-10-08": {
+    "bi": {
+      "date_from": "2026-09-11",
+      "date_to": "2026-10-08",
+      "days": [
+        {
+          "date": "2026-09-11",
+          "planned": "378",
+          "started": "378",
+          "finished": "360",
+          "loss": "18",
+          "yield_percent": 95,
+          "full_price": "354",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-12",
+          "planned": "378",
+          "started": "378",
+          "finished": "360",
+          "loss": "18",
+          "yield_percent": 95,
+          "full_price": "354",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-13",
+          "planned": "0",
+          "started": "0",
+          "finished": "0",
+          "loss": "0",
+          "yield_percent": null,
+          "full_price": "0",
+          "discounted": "0"
+        },
+        {
+          "date": "2026-09-14",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-15",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-16",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-17",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-18",
+          "planned": "378",
+          "started": "378",
+          "finished": "360",
+          "loss": "18",
+          "yield_percent": 95,
+          "full_price": "354",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-19",
+          "planned": "378",
+          "started": "378",
+          "finished": "360",
+          "loss": "18",
+          "yield_percent": 95,
+          "full_price": "354",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-20",
+          "planned": "0",
+          "started": "0",
+          "finished": "0",
+          "loss": "0",
+          "yield_percent": null,
+          "full_price": "0",
+          "discounted": "0"
+        },
+        {
+          "date": "2026-09-21",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-22",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-23",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-24",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-25",
+          "planned": "378",
+          "started": "378",
+          "finished": "360",
+          "loss": "18",
+          "yield_percent": 95,
+          "full_price": "354",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-26",
+          "planned": "378",
+          "started": "378",
+          "finished": "360",
+          "loss": "18",
+          "yield_percent": 95,
+          "full_price": "354",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-27",
+          "planned": "0",
+          "started": "0",
+          "finished": "0",
+          "loss": "0",
+          "yield_percent": null,
+          "full_price": "0",
+          "discounted": "0"
+        },
+        {
+          "date": "2026-09-28",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-29",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-09-30",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-10-01",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-10-02",
+          "planned": "378",
+          "started": "378",
+          "finished": "360",
+          "loss": "18",
+          "yield_percent": 95,
+          "full_price": "354",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-10-03",
+          "planned": "378",
+          "started": "378",
+          "finished": "360",
+          "loss": "18",
+          "yield_percent": 95,
+          "full_price": "354",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-10-04",
+          "planned": "0",
+          "started": "0",
+          "finished": "0",
+          "loss": "0",
+          "yield_percent": null,
+          "full_price": "0",
+          "discounted": "0"
+        },
+        {
+          "date": "2026-10-05",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-10-06",
+          "planned": "315",
+          "started": "315",
+          "finished": "297",
+          "loss": "18",
+          "yield_percent": 94,
+          "full_price": "291",
+          "discounted": "6"
+        },
+        {
+          "date": "2026-10-07",
+          "planned": "315",
+          "started": "315",
+          "finished": "257",
+          "loss": "58",
+          "yield_percent": 82,
+          "full_price": "252",
+          "discounted": "5"
+        },
+        {
+          "date": "2026-10-08",
+          "planned": "159732.487",
+          "started": "159734.487",
+          "finished": "159725.487",
+          "loss": "9",
+          "yield_percent": 100,
+          "full_price": "159725.487",
+          "discounted": "0"
+        }
+      ],
+      "oven_time_by_recipe": [
+        {
+          "ref": "baguete",
+          "label": "Baguette de Tradition",
+          "runs": 8,
+          "avg_minutes": "26.6",
+          "p50_minutes": "27.1",
+          "p90_minutes": "30.9",
+          "avg_planned_minutes": "24.8"
+        },
+        {
+          "ref": "bichon",
+          "label": "Bichon au Citron",
+          "runs": 6,
+          "avg_minutes": "24.5",
+          "p50_minutes": "23.5",
+          "p90_minutes": "28.5",
+          "avg_planned_minutes": "21.2"
+        },
+        {
+          "ref": "campagne",
+          "label": "Pain de Campagne",
+          "runs": 10,
+          "avg_minutes": "24.6",
+          "p50_minutes": "22.6",
+          "p90_minutes": "31.3",
+          "avg_planned_minutes": "23.2"
+        },
+        {
+          "ref": "ciabatta",
+          "label": "Ciabatta",
+          "runs": 8,
+          "avg_minutes": "22.2",
+          "p50_minutes": "21.4",
+          "p90_minutes": "26.2",
+          "avg_planned_minutes": "20.9"
+        },
+        {
+          "ref": "coelhinho",
+          "label": "Coelhinho de Chocolate",
+          "runs": 11,
+          "avg_minutes": "26.1",
+          "p50_minutes": "28.8",
+          "p90_minutes": "30.6",
+          "avg_planned_minutes": "24.6"
+        },
+        {
+          "ref": "creme-levain",
+          "label": "Levain",
+          "runs": 1,
+          "avg_minutes": "33.0",
+          "p50_minutes": "33.0",
+          "p90_minutes": "33.0",
+          "avg_planned_minutes": "30.0"
+        },
+        {
+          "ref": "croissant",
+          "label": "Croissant Manteiga",
+          "runs": 10,
+          "avg_minutes": "25.5",
+          "p50_minutes": "22.8",
+          "p90_minutes": "31.4",
+          "avg_planned_minutes": "24.0"
+        },
+        {
+          "ref": "focaccia-dia",
+          "label": "Focaccia do dia",
+          "runs": 7,
+          "avg_minutes": "28.0",
+          "p50_minutes": "29.5",
+          "p90_minutes": "31.3",
+          "avg_planned_minutes": "25.0"
+        },
+        {
+          "ref": "folhado-dia",
+          "label": "Folhado do dia",
+          "runs": 10,
+          "avg_minutes": "25.6",
+          "p50_minutes": "24.8",
+          "p90_minutes": "31.6",
+          "avg_planned_minutes": "22.8"
+        },
+        {
+          "ref": "kuro-pan",
+          "label": "Kuro Pan",
+          "runs": 9,
+          "avg_minutes": "23.0",
+          "p50_minutes": "22.8",
+          "p90_minutes": "28.4",
+          "avg_planned_minutes": "23.0"
+        },
+        {
+          "ref": "madeleine",
+          "label": "Madeleine",
+          "runs": 9,
+          "avg_minutes": "28.0",
+          "p50_minutes": "27.0",
+          "p90_minutes": "31.3",
+          "avg_planned_minutes": "26.6"
+        },
+        {
+          "ref": "massa-butter",
+          "label": "Massa Butter",
+          "runs": 1,
+          "avg_minutes": "31.9",
+          "p50_minutes": "31.9",
+          "p90_minutes": "31.9",
+          "avg_planned_minutes": "30.0"
+        },
+        {
+          "ref": "massa-campagne",
+          "label": "Massa Campagne",
+          "runs": 1,
+          "avg_minutes": "29.5",
+          "p50_minutes": "29.5",
+          "p90_minutes": "29.5",
+          "avg_planned_minutes": "30.0"
+        },
+        {
+          "ref": "massa-ciabatta",
+          "label": "Massa Ciabatta",
+          "runs": 1,
+          "avg_minutes": "30.3",
+          "p50_minutes": "30.3",
+          "p90_minutes": "30.3",
+          "avg_planned_minutes": "25.0"
+        },
+        {
+          "ref": "massa-croissant",
+          "label": "Massa Croissant",
+          "runs": 1,
+          "avg_minutes": "29.9",
+          "p50_minutes": "29.9",
+          "p90_minutes": "29.9",
+          "avg_planned_minutes": "25.0"
+        },
+        {
+          "ref": "massa-folhado",
+          "label": "Massa Folhado",
+          "runs": 1,
+          "avg_minutes": "30.4",
+          "p50_minutes": "30.4",
+          "p90_minutes": "30.4",
+          "avg_planned_minutes": "30.0"
+        },
+        {
+          "ref": "massa-pasta-autolizada",
+          "label": "Pasta Autolizada",
+          "runs": 1,
+          "avg_minutes": "25.5",
+          "p50_minutes": "25.5",
+          "p90_minutes": "25.5",
+          "avg_planned_minutes": "22.0"
+        },
+        {
+          "ref": "massa-tradicao",
+          "label": "Massa Tradição",
+          "runs": 1,
+          "avg_minutes": "18.8",
+          "p50_minutes": "18.8",
+          "p90_minutes": "18.8",
+          "avg_planned_minutes": "18.0"
+        },
+        {
+          "ref": "massa-yudane",
+          "label": "Yudane",
+          "runs": 1,
+          "avg_minutes": "32.0",
+          "p50_minutes": "32.0",
+          "p90_minutes": "32.0",
+          "avg_planned_minutes": "25.0"
+        },
+        {
+          "ref": "pain-chocolat",
+          "label": "Pain au Chocolat",
+          "runs": 8,
+          "avg_minutes": "26.4",
+          "p50_minutes": "26.9",
+          "p90_minutes": "34.2",
+          "avg_planned_minutes": "23.9"
+        },
+        {
+          "ref": "recheio-maca",
+          "label": "Recheio de Maçã & Canela",
+          "runs": 1,
+          "avg_minutes": "24.9",
+          "p50_minutes": "24.9",
+          "p90_minutes": "24.9",
+          "avg_planned_minutes": "22.0"
+        },
+        {
+          "ref": "shokupan",
+          "label": "Shokupan",
+          "runs": 11,
+          "avg_minutes": "26.9",
+          "p50_minutes": "25.9",
+          "p90_minutes": "34.2",
+          "avg_planned_minutes": "25.4"
+        }
+      ],
+      "oven_time_by_oven": [
+        {
+          "ref": "producao",
+          "label": "producao",
+          "runs": 117,
+          "avg_minutes": "25.9",
+          "p50_minutes": "26.2",
+          "p90_minutes": "32.0",
+          "avg_planned_minutes": "24.0"
+        }
+      ],
+      "batches_finished": 296,
+      "batches_started_assumed": 0,
+      "batches_measured": 117,
+      "oven_coverage_percent": 40,
+      "previous": {
+        "date_from": "2026-08-14",
+        "date_to": "2026-09-10",
+        "batches_finished": 84,
+        "started_total": "2331",
+        "finished_total": "2205",
+        "loss_total": "126",
+        "finished_by_day": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "297",
+          "360",
+          "360",
+          "0",
+          "297",
+          "297",
+          "297",
+          "297"
+        ]
+      }
+    }
+  },
+  "/api/v1/backstage/bi/over-short/": {
+    "bi": {
+      "day": "2026-10-07",
+      "weekday_label": "quarta",
+      "opens_at": "09:00",
+      "closes_at": "18:00",
+      "compare_days": [
+        "2026-09-30",
+        "2026-09-23",
+        "2026-09-16",
+        "2026-09-09"
+      ],
+      "previous_day": "2026-10-06",
+      "next_day": "",
+      "plan_day": "2026-10-14",
+      "rows": [
+        {
+          "sku": "CN",
+          "name": "Chausson",
+          "collection_ref": "folhados",
+          "collection": "Folhados",
+          "verdict": "over",
+          "made": "28",
+          "sold": "0",
+          "leftover": "28",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "0",
+          "typical_made": "29",
+          "history": [
+            "over",
+            "over",
+            "over",
+            "over"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00094",
+              "finished_at": "11:04",
+              "qty": "28"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "30",
+          "planned_lots": 1,
+          "orders": 0,
+          "alert_requests": 0,
+          "unavailable": [],
+          "shift": ""
+        },
+        {
+          "sku": "BICH",
+          "name": "Bichon au Citron",
+          "collection_ref": "folhados",
+          "collection": "Folhados",
+          "verdict": "over",
+          "made": "22",
+          "sold": "0",
+          "leftover": "22",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "0",
+          "typical_made": "24",
+          "history": [
+            "over",
+            "over",
+            "over",
+            "over"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00095",
+              "finished_at": "11:08",
+              "qty": "22"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "25",
+          "planned_lots": 1,
+          "orders": 0,
+          "alert_requests": 0,
+          "unavailable": [],
+          "shift": ""
+        },
+        {
+          "sku": "CI",
+          "name": "Ciabatta",
+          "collection_ref": "rusticos",
+          "collection": "Rústicos",
+          "verdict": "over",
+          "made": "21",
+          "sold": "3",
+          "leftover": "18",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "0",
+          "typical_made": "23",
+          "history": [
+            "over",
+            "over",
+            "over",
+            "over"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00087",
+              "finished_at": "06:59",
+              "qty": "21"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 8,
+              "sold": "3",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "24",
+          "planned_lots": 1,
+          "orders": 1,
+          "alert_requests": 0,
+          "unavailable": [],
+          "shift": "morning"
+        },
+        {
+          "sku": "COE",
+          "name": "Coelhinho de Chocolate",
+          "collection_ref": "macios",
+          "collection": "Macios",
+          "verdict": "over",
+          "made": "16",
+          "sold": "1",
+          "leftover": "15",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "0",
+          "typical_made": "15",
+          "history": [
+            "over",
+            "over",
+            "over",
+            "over"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00092",
+              "finished_at": "08:20",
+              "qty": "16"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "1",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "16",
+          "planned_lots": 1,
+          "orders": 1,
+          "alert_requests": 0,
+          "unavailable": [],
+          "shift": "morning"
+        },
+        {
+          "sku": "FORMA",
+          "name": "Shokupan",
+          "collection_ref": "macios",
+          "collection": "Macios",
+          "verdict": "over",
+          "made": "18",
+          "sold": "4",
+          "leftover": "14",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "1",
+          "typical_made": "17",
+          "history": [
+            "over",
+            "over",
+            "over",
+            "over"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00088",
+              "finished_at": "07:40",
+              "qty": "18"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 7,
+              "sold": "4",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 8,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "18",
+          "planned_lots": 1,
+          "orders": 1,
+          "alert_requests": 0,
+          "unavailable": [],
+          "shift": "morning"
+        },
+        {
+          "sku": "FOA",
+          "name": "Focaccia Alecrim",
+          "collection_ref": "rusticos",
+          "collection": "Rústicos",
+          "verdict": "over",
+          "made": "9",
+          "sold": "0",
+          "leftover": "9",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "0",
+          "typical_made": "9",
+          "history": [
+            "over",
+            "over",
+            "over",
+            "over"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00093",
+              "finished_at": "09:53",
+              "qty": "9"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "10",
+          "planned_lots": 1,
+          "orders": 0,
+          "alert_requests": 0,
+          "unavailable": [],
+          "shift": ""
+        },
+        {
+          "sku": "KUP",
+          "name": "Kuro Pan",
+          "collection_ref": "macios",
+          "collection": "Macios",
+          "verdict": "over",
+          "made": "7",
+          "sold": "0",
+          "leftover": "7",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "0",
+          "typical_made": "7",
+          "history": [
+            "over",
+            "over",
+            "over",
+            "over"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00089",
+              "finished_at": "07:55",
+              "qty": "7"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "8",
+          "planned_lots": 1,
+          "orders": 0,
+          "alert_requests": 0,
+          "unavailable": [],
+          "shift": ""
+        },
+        {
+          "sku": "MDLN",
+          "name": "Madeleine",
+          "collection_ref": "doces",
+          "collection": "Doces",
+          "verdict": "right",
+          "made": "68",
+          "sold": "73",
+          "leftover": "0",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "80",
+          "typical_made": "67",
+          "history": [
+            "right",
+            "short",
+            "right",
+            "right"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00096",
+              "finished_at": "12:56",
+              "qty": "68"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "1",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "72",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "68",
+          "planned_lots": 1,
+          "orders": 40,
+          "alert_requests": 0,
+          "unavailable": [],
+          "shift": ""
+        },
+        {
+          "sku": "PCHOC",
+          "name": "Pain au Chocolat",
+          "collection_ref": "folhados",
+          "collection": "Folhados",
+          "verdict": "right",
+          "made": "33",
+          "sold": "100",
+          "leftover": "0",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "91",
+          "typical_made": "35",
+          "history": [
+            "right",
+            "right",
+            "right",
+            "right"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00091",
+              "finished_at": "08:19",
+              "qty": "33"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "100",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "36",
+          "planned_lots": 1,
+          "orders": 47,
+          "alert_requests": 0,
+          "unavailable": [
+            {
+              "at": "13:00",
+              "channels": [
+                "Site",
+                "Meta",
+                "Google"
+              ],
+              "automatic": false
+            }
+          ],
+          "shift": ""
+        },
+        {
+          "sku": "TRADI",
+          "name": "Baguette de Tradition",
+          "collection_ref": "rusticos",
+          "collection": "Rústicos",
+          "verdict": "right",
+          "made": "21",
+          "sold": "101",
+          "leftover": "0",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "90",
+          "typical_made": "21",
+          "history": [
+            "right",
+            "right",
+            "right",
+            "right"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00085",
+              "finished_at": "05:59",
+              "qty": "21"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 7,
+              "sold": "10",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 8,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "91",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "22",
+          "planned_lots": 1,
+          "orders": 45,
+          "alert_requests": 0,
+          "unavailable": [
+            {
+              "at": "16:00",
+              "channels": [
+                "Site",
+                "Meta",
+                "Google"
+              ],
+              "automatic": false
+            }
+          ],
+          "shift": ""
+        },
+        {
+          "sku": "CPG",
+          "name": "Pain de Campagne",
+          "collection_ref": "rusticos",
+          "collection": "Rústicos",
+          "verdict": "right",
+          "made": "14",
+          "sold": "96",
+          "leftover": "0",
+          "soldout_at": "",
+          "lost_estimate": "",
+          "typical_sold": "86",
+          "typical_made": "15",
+          "history": [
+            "right",
+            "right",
+            "right",
+            "right"
+          ],
+          "leftover_cost_q": null,
+          "lots": [
+            {
+              "ref": "WO-2026-00086",
+              "finished_at": "07:47",
+              "qty": "14"
+            }
+          ],
+          "sales_by_hour": [
+            {
+              "hour": 9,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 10,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 11,
+              "sold": "96",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 12,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 13,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 14,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 15,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 16,
+              "sold": "0",
+              "estimated_lost": "0"
+            },
+            {
+              "hour": 17,
+              "sold": "0",
+              "estimated_lost": "0"
+            }
+          ],
+          "history_days": [
+            "2026-09-30",
+            "2026-09-23",
+            "2026-09-16",
+            "2026-09-09"
+          ],
+          "planned": "16",
+          "planned_lots": 1,
+          "orders": 49,
+          "alert_requests": 0,
+          "unavailable": [],
+          "shift": ""
+        }
+      ],
+      "summary": {
+        "short": 0,
+        "over": 7,
+        "right": 4,
+        "lost_estimate": "0",
+        "leftover_units": "113",
+        "leftover_cost_q": 0,
+        "cost_complete": false
+      },
+      "typical": {
+        "days": 4,
+        "short": "0",
+        "over": "7",
+        "leftover_units": "120",
+        "leftover_cost_q": 0
+      },
+      "compare": "typical",
+      "answer_short": [],
+      "answer_over": [
+        {
+          "label": "Macios",
+          "kind": "collection",
+          "shift": "morning",
+          "count": 3
+        },
+        {
+          "label": "Folhados",
+          "kind": "collection",
+          "shift": "",
+          "count": 2
+        },
+        {
+          "label": "Rústicos",
+          "kind": "collection",
+          "shift": "morning",
+          "count": 2
+        }
+      ]
+    }
+  },
+  "/api/v1/backstage/notifications/?all=1&limit=30": {
+    "notifications": [],
+    "unread_count": 0,
+    "actionable_count": 0,
+    "unseen_count": 0,
+    "unresolved_count": 0
+  },
+  "/api/v1/backstage/operator/station/?surface=bi": {
+    "station": "",
+    "workstation": null,
+    "kinds": [
+      {
+        "kind": "office",
+        "label": "Escritório"
+      }
+    ],
+    "workstations": [],
+    "copy": {
+      "setup_title": "Vincular este dispositivo a um posto de trabalho?",
+      "setup_lead": "Escolha uma vez. Depois ele abre direto no trabalho deste posto e pede só o PIN de quem for operar.",
+      "setup_choice_label": "Posto:",
+      "setup_confirm": "Vincular a este posto",
+      "setup_confirm_shared": "Vincular também a este posto",
+      "setup_busy": "Vinculando…",
+      "setup_dismiss": "Usar sem vincular",
+      "setup_error": "Não foi possível vincular este dispositivo ao posto.",
+      "setup_empty": "Ainda não há posto para este app. Quem gere operadores cadastra os postos no Gestor, em Postos.",
+      "context_prefix": "Posto",
+      "release": "Desvincular deste posto",
+      "cash_desk_hint": "Com gaveta e turno",
+      "devices_one": "1 dispositivo",
+      "devices_many": "{n} dispositivos",
+      "open_shift_hint": "caixa aberto",
+      "shared_cash_desk": "Este caixa já tem {others}. Todos vão usar a mesma gaveta e o mesmo turno. Confirme para vincular este dispositivo ao mesmo posto.",
+      "unknown": "Posto não encontrado.",
+      "not_a_workstation": "Este dispositivo não está vinculado a nenhum posto.",
+      "manage_title": "Postos",
+      "manage_lead": "Onde cada dispositivo fica. Vinculado a um posto, ele abre direto no trabalho do posto e pede só o PIN de quem for operar.",
+      "manage_new": "Novo posto",
+      "manage_name_label": "Nome do posto",
+      "manage_kind_label": "Tipo",
+      "manage_create": "Criar posto",
+      "manage_rename": "Renomear",
+      "manage_save": "Salvar",
+      "manage_deactivate": "Desativar posto",
+      "manage_deactivate_warning": "Desativar desvincula todos os dispositivos deste posto.",
+      "manage_keep_active": "Manter ativo",
+      "manage_activate": "Reativar posto",
+      "manage_inactive": "Desativado",
+      "manage_cash_desk_note": "O posto Caixa nasce com o caixa, no cadastro de terminais.",
+      "manage_devices_none": "Nenhum dispositivo vinculado a este posto.",
+      "manage_device_last_used": "Usado por último em {when}",
+      "manage_device_never_used": "Ainda não usado",
+      "manage_error": "Não foi possível salvar o posto."
+    }
+  },
+  "/api/v1/backstage/bi/sales/?date_from=2026-09-11&date_to=2026-10-08": {
+    "bi": {
+      "date_from": "2026-09-11",
+      "date_to": "2026-10-08",
+      "days": [
+        {
+          "date": "2026-09-11",
+          "orders": 127,
+          "revenue_q": 1270645,
+          "average_ticket_q": 10005,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-12",
+          "orders": 178,
+          "revenue_q": 1234331,
+          "average_ticket_q": 6934,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-13",
+          "orders": 0,
+          "revenue_q": 0,
+          "average_ticket_q": 0,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-14",
+          "orders": 94,
+          "revenue_q": 706626,
+          "average_ticket_q": 7517,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-15",
+          "orders": 135,
+          "revenue_q": 1001830,
+          "average_ticket_q": 7420,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-16",
+          "orders": 127,
+          "revenue_q": 865456,
+          "average_ticket_q": 6814,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-17",
+          "orders": 128,
+          "revenue_q": 1135398,
+          "average_ticket_q": 8870,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-18",
+          "orders": 139,
+          "revenue_q": 1286298,
+          "average_ticket_q": 9253,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-19",
+          "orders": 183,
+          "revenue_q": 1275195,
+          "average_ticket_q": 6968,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-20",
+          "orders": 0,
+          "revenue_q": 0,
+          "average_ticket_q": 0,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-21",
+          "orders": 104,
+          "revenue_q": 716689,
+          "average_ticket_q": 6891,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-22",
+          "orders": 126,
+          "revenue_q": 885818,
+          "average_ticket_q": 7030,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-23",
+          "orders": 115,
+          "revenue_q": 834292,
+          "average_ticket_q": 7254,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-24",
+          "orders": 125,
+          "revenue_q": 1172353,
+          "average_ticket_q": 9378,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-25",
+          "orders": 136,
+          "revenue_q": 1348135,
+          "average_ticket_q": 9912,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-26",
+          "orders": 176,
+          "revenue_q": 1253064,
+          "average_ticket_q": 7119,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-27",
+          "orders": 0,
+          "revenue_q": 0,
+          "average_ticket_q": 0,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-28",
+          "orders": 101,
+          "revenue_q": 680059,
+          "average_ticket_q": 6733,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-29",
+          "orders": 81,
+          "revenue_q": 596515,
+          "average_ticket_q": 7364,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-09-30",
+          "orders": 94,
+          "revenue_q": 734245,
+          "average_ticket_q": 7811,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-10-01",
+          "orders": 135,
+          "revenue_q": 1219522,
+          "average_ticket_q": 9033,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-10-02",
+          "orders": 180,
+          "revenue_q": 1596656,
+          "average_ticket_q": 8870,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-10-03",
+          "orders": 190,
+          "revenue_q": 1282402,
+          "average_ticket_q": 6749,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-10-04",
+          "orders": 0,
+          "revenue_q": 0,
+          "average_ticket_q": 0,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-10-05",
+          "orders": 133,
+          "revenue_q": 923782,
+          "average_ticket_q": 6945,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-10-06",
+          "orders": 110,
+          "revenue_q": 777429,
+          "average_ticket_q": 7067,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-10-07",
+          "orders": 117,
+          "revenue_q": 857635,
+          "average_ticket_q": 7330,
+          "source": "shopman"
+        },
+        {
+          "date": "2026-10-08",
+          "orders": 20,
+          "revenue_q": 221200,
+          "average_ticket_q": 11060,
+          "source": "shopman"
+        }
+      ],
+      "by_channel": [
+        {
+          "channel_ref": "pdv",
+          "name": "PDV",
+          "kind": "counter",
+          "orders": 2979,
+          "revenue_q": 22767875
+        },
+        {
+          "channel_ref": "web",
+          "name": "Loja online",
+          "kind": "web",
+          "orders": 39,
+          "revenue_q": 601300
+        },
+        {
+          "channel_ref": "whatsapp",
+          "name": "WhatsApp",
+          "kind": "whatsapp",
+          "orders": 35,
+          "revenue_q": 505200
+        },
+        {
+          "channel_ref": "ifood",
+          "name": "iFood",
+          "kind": "marketplace",
+          "orders": 1,
+          "revenue_q": 1200
+        }
+      ],
+      "top_skus": [
+        {
+          "sku": "CPG",
+          "name": "Pain de Campagne",
+          "qty": "2405",
+          "revenue_q": 6199846
+        },
+        {
+          "sku": "TRADI",
+          "name": "Baguette de Tradition",
+          "qty": "2562",
+          "revenue_q": 4787692
+        },
+        {
+          "sku": "PCHOC",
+          "name": "Pain au Chocolat",
+          "qty": "2598",
+          "revenue_q": 4531224
+        },
+        {
+          "sku": "CRO",
+          "name": "Croissant",
+          "qty": "2657",
+          "revenue_q": 4002962
+        },
+        {
+          "sku": "MDLN",
+          "name": "Madeleine",
+          "qty": "2676",
+          "revenue_q": 1840851
+        },
+        {
+          "sku": "FORMA",
+          "name": "Shokupan",
+          "qty": "142",
+          "revenue_q": 397600
+        },
+        {
+          "sku": "CI",
+          "name": "Ciabatta",
+          "qty": "181",
+          "revenue_q": 325800
+        },
+        {
+          "sku": "KUP",
+          "name": "Kuro Pan",
+          "qty": "61",
+          "revenue_q": 134200
+        },
+        {
+          "sku": "COE",
+          "name": "Coelhinho de Chocolate",
+          "qty": "122",
+          "revenue_q": 122000
+        },
+        {
+          "sku": "CHA-INTUICAO-KANFA-L70",
+          "name": "Intuição Chai Kãnfa · Lata 70g",
+          "qty": "9",
+          "revenue_q": 79200
+        }
+      ],
+      "orders_by_hour": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10,
+        18,
+        12,
+        16,
+        72,
+        2887,
+        8,
+        14,
+        17,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "orders_by_weekday": [
+        432,
+        452,
+        453,
+        408,
+        582,
+        727,
+        0
+      ],
+      "orders_total": 3054,
+      "revenue_total_q": 23875575,
+      "average_ticket_q": 7817,
+      "cancelled_total": 0,
+      "historical_days": 0,
+      "sources": [
+        "shopman"
+      ],
+      "source_conflicts": [],
+      "previous": {
+        "date_from": "2026-08-14",
+        "date_to": "2026-09-10",
+        "orders_total": 3126,
+        "revenue_total_q": 21340433,
+        "average_ticket_q": 6826,
+        "revenue_by_day": [
+          1137695,
+          1145622,
+          0,
+          1004039,
+          839725,
+          1059605,
+          912331,
+          926002,
+          1017617,
+          0,
+          957095,
+          1002792,
+          983839,
+          635438,
+          1136211,
+          1487193,
+          0,
+          825744,
+          745013,
+          809834,
+          759714,
+          807786,
+          822214,
+          0,
+          41100,
+          513291,
+          812939,
+          957594
+        ]
+      },
+      "channel": "",
+      "channels": [
+        {
+          "ref": "pdv",
+          "name": "PDV",
+          "kind": "counter"
+        },
+        {
+          "ref": "web",
+          "name": "Loja online",
+          "kind": "web"
+        },
+        {
+          "ref": "whatsapp",
+          "name": "WhatsApp",
+          "kind": "whatsapp"
+        },
+        {
+          "ref": "ifood",
+          "name": "iFood",
+          "kind": "marketplace"
+        }
+      ],
+      "compare": "previous",
+      "closed_weekdays": [
+        6
+      ]
+    }
+  },
+  "/api/v1/backstage/bi/cash/?date_from=2026-09-11&date_to=2026-10-08": {
+    "bi": {
+      "date_from": "2026-09-11",
+      "date_to": "2026-10-08",
+      "days": [
+        {
+          "date": "2026-09-11",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-12",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-13",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-14",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-15",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-16",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-17",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-18",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-19",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-20",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-21",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-22",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-23",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-24",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-25",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-26",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-27",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-28",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-29",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-09-30",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-10-01",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-10-02",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-10-03",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-10-04",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-10-05",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-10-06",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-10-07",
+          "shifts": 1,
+          "difference_q": -300,
+          "sangria_q": 10000,
+          "suprimento_q": 0
+        },
+        {
+          "date": "2026-10-08",
+          "shifts": 0,
+          "difference_q": 0,
+          "sangria_q": 0,
+          "suprimento_q": 0
+        }
+      ],
+      "by_operator": [
+        {
+          "operator": "admin",
+          "shifts": 1,
+          "difference_q": -300,
+          "drawer_openings": 0,
+          "drawer_unlocks": 0,
+          "change_requests": 0,
+          "account_settled_q": 16000
+        }
+      ],
+      "payment_methods": [],
+      "shifts_total": 1,
+      "difference_total_q": -300,
+      "closings_missing": 27,
+      "previous": {
+        "date_from": "2026-08-14",
+        "date_to": "2026-09-10",
+        "shifts_total": 0,
+        "difference_total_q": 0,
+        "difference_by_day": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "drawer_by_hour": [],
+      "accounts": {
+        "sales_q": 55600,
+        "settled_q": 16000,
+        "settled_cash_q": 16000,
+        "open_q": 39600,
+        "open_customers": 2,
+        "top_open": [
+          {
+            "customer_name": "Restaurante Sabor da Terra",
+            "balance_q": 24000
+          },
+          {
+            "customer_name": "Café Parisiense",
+            "balance_q": 15600
+          }
+        ]
+      },
+      "drawer_by_operator": [],
+      "drawer_anomalies": []
+    }
+  },
+  "/api/v1/backstage/bi/customers/?date_from=2026-09-11&date_to=2026-10-08": {
+    "bi": {
+      "date_from": "2026-09-11",
+      "date_to": "2026-10-08",
+      "segments": [
+        {
+          "segment": "loyal_customer",
+          "customers": 7
+        }
+      ],
+      "new_by_week": [
+        {
+          "week_start": "2026-10-05",
+          "new_customers": 7
+        }
+      ],
+      "customers_total": 7,
+      "with_insight": 7,
+      "at_risk": 0,
+      "average_ticket_q": 0
+    }
+  },
+  "/api/v1/backstage/bi/consumption-profiles/?date_from=2026-09-11&date_to=2026-10-08&weekday&hour_band": {
+    "bi": {
+      "date_from": "2026-09-11",
+      "date_to": "2026-10-08",
+      "weekday": null,
+      "hour_band": "",
+      "readings": [
+        {
+          "key": "floor",
+          "label": "Piso (ambíguo = leva)"
+        },
+        {
+          "key": "current",
+          "label": "Vigente (ambíguo não decide)"
+        },
+        {
+          "key": "ceiling",
+          "label": "Teto (ambíguo = consome aqui)"
+        }
+      ],
+      "bands": [
+        {
+          "key": "morning",
+          "label": "Manhã",
+          "title": "Manhã · 9–11h",
+          "start": 9,
+          "end": 11,
+          "hours": 2
+        },
+        {
+          "key": "lunch",
+          "label": "Almoço",
+          "title": "Almoço · 11–14h",
+          "start": 11,
+          "end": 14,
+          "hours": 3
+        },
+        {
+          "key": "afternoon",
+          "label": "Tarde",
+          "title": "Tarde · 14–17h",
+          "start": 14,
+          "end": 17,
+          "hours": 3
+        },
+        {
+          "key": "late",
+          "label": "Fim de dia",
+          "title": "Fim de dia · 17–19h",
+          "start": 17,
+          "end": 19,
+          "hours": 2
+        },
+        {
+          "key": "outside",
+          "label": "Fora do expediente",
+          "title": "Fora do expediente",
+          "start": 0,
+          "end": 0,
+          "hours": 0
+        }
+      ],
+      "profiles": [
+        {
+          "reading": "floor",
+          "profile": "A",
+          "label": "A · Só pra levar",
+          "orders": 2998,
+          "orders_share": 98.3,
+          "revenue_q": 22914275,
+          "revenue_share": 96,
+          "average_ticket_q": 7643,
+          "units_per_order": "4.6",
+          "distinct_per_order": "2.0",
+          "orders_by_band": [
+            77,
+            2888,
+            10,
+            0,
+            23
+          ],
+          "revenue_by_band_q": [
+            2694700,
+            19782475,
+            118800,
+            0,
+            318300
+          ]
+        },
+        {
+          "reading": "floor",
+          "profile": "B",
+          "label": "B · Consumo local + pra levar",
+          "orders": 38,
+          "orders_share": 1.2,
+          "revenue_q": 853100,
+          "revenue_share": 3.6,
+          "average_ticket_q": 22450,
+          "units_per_order": "9.8",
+          "distinct_per_order": "3.3",
+          "orders_by_band": [
+            5,
+            16,
+            6,
+            0,
+            11
+          ],
+          "revenue_by_band_q": [
+            105600,
+            304800,
+            151600,
+            0,
+            291100
+          ]
+        },
+        {
+          "reading": "floor",
+          "profile": "C",
+          "label": "C · Só consumo local",
+          "orders": 15,
+          "orders_share": 0.5,
+          "revenue_q": 97000,
+          "revenue_share": 0.4,
+          "average_ticket_q": 6466,
+          "units_per_order": "3.7",
+          "distinct_per_order": "1.2",
+          "orders_by_band": [
+            6,
+            5,
+            1,
+            0,
+            3
+          ],
+          "revenue_by_band_q": [
+            41200,
+            42400,
+            2200,
+            0,
+            11200
+          ]
+        },
+        {
+          "reading": "floor",
+          "profile": "unclassified",
+          "label": "Sem etiqueta",
+          "orders": 0,
+          "orders_share": 0,
+          "revenue_q": 0,
+          "revenue_share": 0,
+          "average_ticket_q": 0,
+          "units_per_order": "0",
+          "distinct_per_order": "0",
+          "orders_by_band": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "revenue_by_band_q": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "reading": "current",
+          "profile": "A",
+          "label": "A · Só pra levar",
+          "orders": 2998,
+          "orders_share": 98.3,
+          "revenue_q": 22914275,
+          "revenue_share": 96,
+          "average_ticket_q": 7643,
+          "units_per_order": "4.6",
+          "distinct_per_order": "2.0",
+          "orders_by_band": [
+            77,
+            2888,
+            10,
+            0,
+            23
+          ],
+          "revenue_by_band_q": [
+            2694700,
+            19782475,
+            118800,
+            0,
+            318300
+          ]
+        },
+        {
+          "reading": "current",
+          "profile": "B",
+          "label": "B · Consumo local + pra levar",
+          "orders": 30,
+          "orders_share": 1,
+          "revenue_q": 747500,
+          "revenue_share": 3.1,
+          "average_ticket_q": 24916,
+          "units_per_order": "10.0",
+          "distinct_per_order": "3.4",
+          "orders_by_band": [
+            4,
+            14,
+            3,
+            0,
+            9
+          ],
+          "revenue_by_band_q": [
+            95000,
+            274400,
+            116000,
+            0,
+            262100
+          ]
+        },
+        {
+          "reading": "current",
+          "profile": "C",
+          "label": "C · Só consumo local",
+          "orders": 23,
+          "orders_share": 0.8,
+          "revenue_q": 202600,
+          "revenue_share": 0.8,
+          "average_ticket_q": 8808,
+          "units_per_order": "5.5",
+          "distinct_per_order": "1.8",
+          "orders_by_band": [
+            7,
+            7,
+            4,
+            0,
+            5
+          ],
+          "revenue_by_band_q": [
+            51800,
+            72800,
+            37800,
+            0,
+            40200
+          ]
+        },
+        {
+          "reading": "current",
+          "profile": "unclassified",
+          "label": "Sem etiqueta",
+          "orders": 0,
+          "orders_share": 0,
+          "revenue_q": 0,
+          "revenue_share": 0,
+          "average_ticket_q": 0,
+          "units_per_order": "0",
+          "distinct_per_order": "0",
+          "orders_by_band": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "revenue_by_band_q": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "reading": "ceiling",
+          "profile": "A",
+          "label": "A · Só pra levar",
+          "orders": 535,
+          "orders_share": 17.5,
+          "revenue_q": 3854431,
+          "revenue_share": 16.2,
+          "average_ticket_q": 7204,
+          "units_per_order": "3.2",
+          "distinct_per_order": "1.2",
+          "orders_by_band": [
+            32,
+            493,
+            3,
+            0,
+            7
+          ],
+          "revenue_by_band_q": [
+            1065100,
+            2650931,
+            37000,
+            0,
+            101400
+          ]
+        },
+        {
+          "reading": "ceiling",
+          "profile": "B",
+          "label": "B · Consumo local + pra levar",
+          "orders": 1487,
+          "orders_share": 48.7,
+          "revenue_q": 14275417,
+          "revenue_share": 59.8,
+          "average_ticket_q": 9600,
+          "units_per_order": "5.3",
+          "distinct_per_order": "2.6",
+          "orders_by_band": [
+            8,
+            1454,
+            7,
+            0,
+            18
+          ],
+          "revenue_by_band_q": [
+            176800,
+            13454817,
+            193100,
+            0,
+            450700
+          ]
+        },
+        {
+          "reading": "ceiling",
+          "profile": "C",
+          "label": "C · Só consumo local",
+          "orders": 1029,
+          "orders_share": 33.7,
+          "revenue_q": 5734527,
+          "revenue_share": 24,
+          "average_ticket_q": 5572,
+          "units_per_order": "4.3",
+          "distinct_per_order": "1.5",
+          "orders_by_band": [
+            48,
+            962,
+            7,
+            0,
+            12
+          ],
+          "revenue_by_band_q": [
+            1599600,
+            4023927,
+            42500,
+            0,
+            68500
+          ]
+        },
+        {
+          "reading": "ceiling",
+          "profile": "unclassified",
+          "label": "Sem etiqueta",
+          "orders": 0,
+          "orders_share": 0,
+          "revenue_q": 0,
+          "revenue_share": 0,
+          "average_ticket_q": 0,
+          "units_per_order": "0",
+          "distinct_per_order": "0",
+          "orders_by_band": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "revenue_by_band_q": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "counter_orders": 3051,
+      "counter_revenue_q": 23864375,
+      "delivery_orders": 3,
+      "delivery_revenue_q": 11200,
+      "revenue_total_q": 23875575,
+      "coverage": 100,
+      "days_with_sales": 24,
+      "estimate": {
+        "seated_orders": 1308.6,
+        "seated_share": 42.9,
+        "seated_revenue_q": 10625239,
+        "seated_revenue_share": 44.5,
+        "takeaway_orders": 1742.4,
+        "takeaway_share": 57.1,
+        "weighted_orders": 3051,
+        "unweighted_orders": 0,
+        "seated_by_band": [
+          34.55,
+          1242.1,
+          10.3,
+          0,
+          21.65
+        ],
+        "orders_by_band": [
+          88,
+          2909,
+          17,
+          0,
+          37
+        ]
+      },
+      "sensitivity": {
+        "orders_changed": 2471,
+        "share_changed": 81,
+        "ranges": [
+          {
+            "profile": "A",
+            "label": "A · Só pra levar",
+            "min_orders": 535,
+            "max_orders": 2998,
+            "min_share": 17.5,
+            "max_share": 98.3,
+            "min_revenue_q": 3854431,
+            "max_revenue_q": 22914275
+          },
+          {
+            "profile": "B",
+            "label": "B · Consumo local + pra levar",
+            "min_orders": 30,
+            "max_orders": 1487,
+            "min_share": 1,
+            "max_share": 48.7,
+            "min_revenue_q": 747500,
+            "max_revenue_q": 14275417
+          },
+          {
+            "profile": "C",
+            "label": "C · Só consumo local",
+            "min_orders": 15,
+            "max_orders": 1029,
+            "min_share": 0.5,
+            "max_share": 33.7,
+            "min_revenue_q": 97000,
+            "max_revenue_q": 5734527
+          },
+          {
+            "profile": "unclassified",
+            "label": "Sem etiqueta",
+            "min_orders": 0,
+            "max_orders": 0,
+            "min_share": 0,
+            "max_share": 0,
+            "min_revenue_q": 0,
+            "max_revenue_q": 0
+          }
+        ]
+      },
+      "categories": [
+        {
+          "category": "Rústicos",
+          "revenue_q": 11615738,
+          "share": 48.7,
+          "ready_beverage_q": 0
+        },
+        {
+          "category": "Folhados",
+          "revenue_q": 8576286,
+          "share": 35.9,
+          "ready_beverage_q": 0
+        },
+        {
+          "category": "Doces",
+          "revenue_q": 1899351,
+          "share": 8,
+          "ready_beverage_q": 0
+        },
+        {
+          "category": "Macios",
+          "revenue_q": 812300,
+          "share": 3.4,
+          "ready_beverage_q": 0
+        },
+        {
+          "category": "Mercearia",
+          "revenue_q": 601500,
+          "share": 2.5,
+          "ready_beverage_q": 0
+        },
+        {
+          "category": "Salgados",
+          "revenue_q": 153400,
+          "share": 0.6,
+          "ready_beverage_q": 0
+        },
+        {
+          "category": "Bebidas quentes",
+          "revenue_q": 140400,
+          "share": 0.6,
+          "ready_beverage_q": 0
+        },
+        {
+          "category": "Bebidas geladas",
+          "revenue_q": 65400,
+          "share": 0.3,
+          "ready_beverage_q": 10800
+        }
+      ],
+      "category_lines_revenue_q": 23864375,
+      "category_header_gap_q": 0,
+      "beverage": {
+        "orders_with_beverage": 39,
+        "strike_rate": 1.3,
+        "prepared_rate": 1.1,
+        "ready_revenue_q": 10800,
+        "ready_share": 0,
+        "local_orders": 53,
+        "per_local_order": "2.7",
+        "beverage_only_orders": 8,
+        "beverage_only_share": 0.3,
+        "beverage_only_ticket_q": 6275,
+        "beverage_only_by_band": [
+          3,
+          3,
+          0,
+          0,
+          2
+        ],
+        "by_weekday_band": [
+          {
+            "weekday": 0,
+            "band": "morning",
+            "orders": 1,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 0,
+            "band": "lunch",
+            "orders": 423,
+            "with_beverage": 1,
+            "rate": 0.2
+          },
+          {
+            "weekday": 0,
+            "band": "afternoon",
+            "orders": 3,
+            "with_beverage": 1,
+            "rate": 33.3
+          },
+          {
+            "weekday": 0,
+            "band": "late",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 1,
+            "band": "morning",
+            "orders": 2,
+            "with_beverage": 2,
+            "rate": 100
+          },
+          {
+            "weekday": 1,
+            "band": "lunch",
+            "orders": 443,
+            "with_beverage": 3,
+            "rate": 0.7
+          },
+          {
+            "weekday": 1,
+            "band": "afternoon",
+            "orders": 2,
+            "with_beverage": 1,
+            "rate": 50
+          },
+          {
+            "weekday": 1,
+            "band": "late",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 2,
+            "band": "morning",
+            "orders": 3,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 2,
+            "band": "lunch",
+            "orders": 443,
+            "with_beverage": 4,
+            "rate": 0.9
+          },
+          {
+            "weekday": 2,
+            "band": "afternoon",
+            "orders": 1,
+            "with_beverage": 1,
+            "rate": 100
+          },
+          {
+            "weekday": 2,
+            "band": "late",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 3,
+            "band": "morning",
+            "orders": 37,
+            "with_beverage": 2,
+            "rate": 5.4
+          },
+          {
+            "weekday": 3,
+            "band": "lunch",
+            "orders": 354,
+            "with_beverage": 1,
+            "rate": 0.3
+          },
+          {
+            "weekday": 3,
+            "band": "afternoon",
+            "orders": 1,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 3,
+            "band": "late",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 4,
+            "band": "morning",
+            "orders": 42,
+            "with_beverage": 2,
+            "rate": 4.8
+          },
+          {
+            "weekday": 4,
+            "band": "lunch",
+            "orders": 533,
+            "with_beverage": 5,
+            "rate": 0.9
+          },
+          {
+            "weekday": 4,
+            "band": "afternoon",
+            "orders": 5,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 4,
+            "band": "late",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 5,
+            "band": "morning",
+            "orders": 3,
+            "with_beverage": 1,
+            "rate": 33.3
+          },
+          {
+            "weekday": 5,
+            "band": "lunch",
+            "orders": 713,
+            "with_beverage": 2,
+            "rate": 0.3
+          },
+          {
+            "weekday": 5,
+            "band": "afternoon",
+            "orders": 5,
+            "with_beverage": 2,
+            "rate": 40
+          },
+          {
+            "weekday": 5,
+            "band": "late",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 6,
+            "band": "morning",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 6,
+            "band": "lunch",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 6,
+            "band": "afternoon",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          },
+          {
+            "weekday": 6,
+            "band": "late",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          }
+        ],
+        "by_weekday": [
+          {
+            "weekday": 0,
+            "band": "",
+            "orders": 432,
+            "with_beverage": 5,
+            "rate": 1.2
+          },
+          {
+            "weekday": 1,
+            "band": "",
+            "orders": 452,
+            "with_beverage": 8,
+            "rate": 1.8
+          },
+          {
+            "weekday": 2,
+            "band": "",
+            "orders": 453,
+            "with_beverage": 6,
+            "rate": 1.3
+          },
+          {
+            "weekday": 3,
+            "band": "",
+            "orders": 405,
+            "with_beverage": 6,
+            "rate": 1.5
+          },
+          {
+            "weekday": 4,
+            "band": "",
+            "orders": 582,
+            "with_beverage": 7,
+            "rate": 1.2
+          },
+          {
+            "weekday": 5,
+            "band": "",
+            "orders": 727,
+            "with_beverage": 7,
+            "rate": 1
+          },
+          {
+            "weekday": 6,
+            "band": "",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          }
+        ],
+        "by_band": [
+          {
+            "weekday": -1,
+            "band": "morning",
+            "orders": 88,
+            "with_beverage": 7,
+            "rate": 8
+          },
+          {
+            "weekday": -1,
+            "band": "lunch",
+            "orders": 2909,
+            "with_beverage": 16,
+            "rate": 0.6
+          },
+          {
+            "weekday": -1,
+            "band": "afternoon",
+            "orders": 17,
+            "with_beverage": 5,
+            "rate": 29.4
+          },
+          {
+            "weekday": -1,
+            "band": "late",
+            "orders": 0,
+            "with_beverage": 0,
+            "rate": 0
+          }
+        ]
+      },
+      "revpash": [
+        {
+          "band": "morning",
+          "title": "Manhã · 9–11h",
+          "hours": 2,
+          "revenue_local_q": 146800,
+          "days": 24,
+          "seats": 24,
+          "revpash_q": 127
+        },
+        {
+          "band": "lunch",
+          "title": "Almoço · 11–14h",
+          "hours": 3,
+          "revenue_local_q": 347200,
+          "days": 24,
+          "seats": 24,
+          "revpash_q": 200
+        },
+        {
+          "band": "afternoon",
+          "title": "Tarde · 14–17h",
+          "hours": 3,
+          "revenue_local_q": 153800,
+          "days": 24,
+          "seats": 24,
+          "revpash_q": 89
+        },
+        {
+          "band": "late",
+          "title": "Fim de dia · 17–19h",
+          "hours": 2,
+          "revenue_local_q": 0,
+          "days": 24,
+          "seats": 24,
+          "revpash_q": 0
+        }
+      ],
+      "seats": 24,
+      "seats_source": "informado pelo dono (18/08/2026)",
+      "previous": {
+        "date_from": "2026-08-14",
+        "date_to": "2026-09-10",
+        "counter_orders": 2949,
+        "counter_revenue_q": 20161437,
+        "rows": [
+          {
+            "reading": "current",
+            "profile": "A",
+            "label": "A · Só pra levar",
+            "orders": 2939,
+            "orders_share": 99.7,
+            "revenue_q": 19971737,
+            "revenue_share": 99.1,
+            "average_ticket_q": 6795,
+            "units_per_order": "4.1",
+            "distinct_per_order": "2.0",
+            "orders_by_band": [
+              506,
+              1754,
+              343,
+              166,
+              170
+            ],
+            "revenue_by_band_q": [
+              3797873,
+              11763392,
+              2187039,
+              1040818,
+              1182615
+            ]
+          },
+          {
+            "reading": "current",
+            "profile": "B",
+            "label": "B · Consumo local + pra levar",
+            "orders": 6,
+            "orders_share": 0.2,
+            "revenue_q": 149600,
+            "revenue_share": 0.7,
+            "average_ticket_q": 24933,
+            "units_per_order": "9.8",
+            "distinct_per_order": "3.3",
+            "orders_by_band": [
+              1,
+              1,
+              1,
+              0,
+              3
+            ],
+            "revenue_by_band_q": [
+              37800,
+              17500,
+              34400,
+              0,
+              59900
+            ]
+          },
+          {
+            "reading": "current",
+            "profile": "C",
+            "label": "C · Só consumo local",
+            "orders": 4,
+            "orders_share": 0.1,
+            "revenue_q": 40100,
+            "revenue_share": 0.2,
+            "average_ticket_q": 10025,
+            "units_per_order": "5.2",
+            "distinct_per_order": "2.0",
+            "orders_by_band": [
+              0,
+              2,
+              1,
+              0,
+              1
+            ],
+            "revenue_by_band_q": [
+              0,
+              8400,
+              15600,
+              0,
+              16100
+            ]
+          },
+          {
+            "reading": "current",
+            "profile": "unclassified",
+            "label": "Sem etiqueta",
+            "orders": 0,
+            "orders_share": 0,
+            "revenue_q": 0,
+            "revenue_share": 0,
+            "average_ticket_q": 0,
+            "units_per_order": "0",
+            "distinct_per_order": "0",
+            "orders_by_band": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "revenue_by_band_q": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "estimate": {
+          "seated_orders": 1264.8,
+          "seated_share": 42.9,
+          "seated_revenue_q": 8971096,
+          "seated_revenue_share": 44.5,
+          "takeaway_orders": 1684.2,
+          "takeaway_share": 57.1,
+          "weighted_orders": 2949,
+          "unweighted_orders": 0,
+          "seated_by_band": [
+            219.3,
+            748,
+            148.65,
+            71.3,
+            77.55
+          ],
+          "orders_by_band": [
+            507,
+            1757,
+            345,
+            166,
+            174
+          ]
+        }
+      }
+    }
+  },
+  "/api/v1/backstage/bi/views/": {
+    "views": []
+  },
+  "/api/v1/backstage/bi/explore/?date_from=2026-09-11&date_to=2026-10-08&metric=revenue&by=time&by2": {
+    "bi": {
+      "metric": "revenue",
+      "metric_label": "Faturamento",
+      "unit": "q",
+      "dimension": "time",
+      "dimension_label": "Tempo (dia)",
+      "dimension2": "",
+      "dimension2_label": "",
+      "date_from": "2026-09-11",
+      "date_to": "2026-10-08",
+      "aggregation": "sum",
+      "rows": [
+        {
+          "key": "2026-09-11",
+          "label": "2026-09-11",
+          "key2": "",
+          "label2": "",
+          "value": 1270645
+        },
+        {
+          "key": "2026-09-12",
+          "label": "2026-09-12",
+          "key2": "",
+          "label2": "",
+          "value": 1234331
+        },
+        {
+          "key": "2026-09-14",
+          "label": "2026-09-14",
+          "key2": "",
+          "label2": "",
+          "value": 706626
+        },
+        {
+          "key": "2026-09-15",
+          "label": "2026-09-15",
+          "key2": "",
+          "label2": "",
+          "value": 1001830
+        },
+        {
+          "key": "2026-09-16",
+          "label": "2026-09-16",
+          "key2": "",
+          "label2": "",
+          "value": 865456
+        },
+        {
+          "key": "2026-09-17",
+          "label": "2026-09-17",
+          "key2": "",
+          "label2": "",
+          "value": 1135398
+        },
+        {
+          "key": "2026-09-18",
+          "label": "2026-09-18",
+          "key2": "",
+          "label2": "",
+          "value": 1286298
+        },
+        {
+          "key": "2026-09-19",
+          "label": "2026-09-19",
+          "key2": "",
+          "label2": "",
+          "value": 1275195
+        },
+        {
+          "key": "2026-09-21",
+          "label": "2026-09-21",
+          "key2": "",
+          "label2": "",
+          "value": 716689
+        },
+        {
+          "key": "2026-09-22",
+          "label": "2026-09-22",
+          "key2": "",
+          "label2": "",
+          "value": 885818
+        },
+        {
+          "key": "2026-09-23",
+          "label": "2026-09-23",
+          "key2": "",
+          "label2": "",
+          "value": 834292
+        },
+        {
+          "key": "2026-09-24",
+          "label": "2026-09-24",
+          "key2": "",
+          "label2": "",
+          "value": 1172353
+        },
+        {
+          "key": "2026-09-25",
+          "label": "2026-09-25",
+          "key2": "",
+          "label2": "",
+          "value": 1348135
+        },
+        {
+          "key": "2026-09-26",
+          "label": "2026-09-26",
+          "key2": "",
+          "label2": "",
+          "value": 1253064
+        },
+        {
+          "key": "2026-09-28",
+          "label": "2026-09-28",
+          "key2": "",
+          "label2": "",
+          "value": 680059
+        },
+        {
+          "key": "2026-09-29",
+          "label": "2026-09-29",
+          "key2": "",
+          "label2": "",
+          "value": 596515
+        },
+        {
+          "key": "2026-09-30",
+          "label": "2026-09-30",
+          "key2": "",
+          "label2": "",
+          "value": 734245
+        },
+        {
+          "key": "2026-10-01",
+          "label": "2026-10-01",
+          "key2": "",
+          "label2": "",
+          "value": 1219522
+        },
+        {
+          "key": "2026-10-02",
+          "label": "2026-10-02",
+          "key2": "",
+          "label2": "",
+          "value": 1596656
+        },
+        {
+          "key": "2026-10-03",
+          "label": "2026-10-03",
+          "key2": "",
+          "label2": "",
+          "value": 1282402
+        },
+        {
+          "key": "2026-10-05",
+          "label": "2026-10-05",
+          "key2": "",
+          "label2": "",
+          "value": 923782
+        },
+        {
+          "key": "2026-10-06",
+          "label": "2026-10-06",
+          "key2": "",
+          "label2": "",
+          "value": 777429
+        },
+        {
+          "key": "2026-10-07",
+          "label": "2026-10-07",
+          "key2": "",
+          "label2": "",
+          "value": 857635
+        },
+        {
+          "key": "2026-10-08",
+          "label": "2026-10-08",
+          "key2": "",
+          "label2": "",
+          "value": 221200
+        }
+      ],
+      "truncated": 0,
+      "metrics": [
+        {
+          "key": "revenue",
+          "label": "Faturamento",
+          "unit": "q",
+          "dimensions": [
+            "time",
+            "channel",
+            "hour",
+            "weekday",
+            "month_of_year",
+            "week_of_year",
+            "source",
+            "consumption_mode",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "orders",
+          "label": "Pedidos",
+          "unit": "count",
+          "dimensions": [
+            "time",
+            "channel",
+            "hour",
+            "weekday",
+            "month_of_year",
+            "week_of_year",
+            "source",
+            "consumption_mode",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "average_ticket",
+          "label": "Ticket médio",
+          "unit": "q",
+          "dimensions": [
+            "time",
+            "channel",
+            "hour",
+            "weekday",
+            "month_of_year",
+            "week_of_year",
+            "source",
+            "consumption_mode",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "mean"
+        },
+        {
+          "key": "qty_sold",
+          "label": "Quantidade vendida",
+          "unit": "qty",
+          "dimensions": [
+            "time",
+            "sku",
+            "hour",
+            "weekday",
+            "month_of_year",
+            "week_of_year",
+            "source",
+            "consumption_mode",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "qty_produced",
+          "label": "Quantidade produzida",
+          "unit": "qty",
+          "dimensions": [
+            "time",
+            "recipe",
+            "oven",
+            "operator",
+            "weekday",
+            "grade",
+            "defect"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "loss",
+          "label": "Perda de produção",
+          "unit": "qty",
+          "dimensions": [
+            "time",
+            "recipe",
+            "oven",
+            "operator",
+            "weekday",
+            "defect"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "yield_percent",
+          "label": "Aproveitamento",
+          "unit": "percent",
+          "dimensions": [
+            "time",
+            "recipe",
+            "oven",
+            "operator",
+            "weekday"
+          ],
+          "aggregation": "mean"
+        },
+        {
+          "key": "oven_minutes",
+          "label": "Tempo de forno",
+          "unit": "minutes",
+          "dimensions": [
+            "time",
+            "recipe",
+            "oven",
+            "operator"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "cash_difference",
+          "label": "Quebra de caixa",
+          "unit": "q",
+          "dimensions": [
+            "time",
+            "operator"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "soldout_days",
+          "label": "Dias que acabaram",
+          "unit": "count",
+          "dimensions": [
+            "sku",
+            "time",
+            "weekday",
+            "month_of_year",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "hours_without_stock",
+          "label": "Horas sem produto na prateleira",
+          "unit": "hours",
+          "dimensions": [
+            "sku",
+            "time",
+            "weekday",
+            "month_of_year",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "unavailable_hours",
+          "label": "Horas sem poder vender",
+          "unit": "hours",
+          "dimensions": [
+            "sku",
+            "time",
+            "weekday",
+            "month_of_year",
+            "channel",
+            "outage_reason",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "paused_hours",
+          "label": "Horas pausado",
+          "unit": "hours",
+          "dimensions": [
+            "sku",
+            "time",
+            "weekday",
+            "month_of_year",
+            "channel",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "unavailable_share",
+          "label": "% do expediente sem vender",
+          "unit": "percent",
+          "dimensions": [
+            "sku",
+            "time",
+            "weekday",
+            "month_of_year",
+            "channel",
+            "outage_reason",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "mean"
+        },
+        {
+          "key": "leftover",
+          "label": "Sobra no fim do dia",
+          "unit": "qty",
+          "dimensions": [
+            "sku",
+            "time",
+            "weekday",
+            "month_of_year",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "payment_received",
+          "label": "Recebido por forma de pagamento",
+          "unit": "q",
+          "dimensions": [
+            "payment_method",
+            "time",
+            "hour",
+            "weekday",
+            "month_of_year",
+            "week_of_year",
+            "channel",
+            "source",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "payment_orders",
+          "label": "Pedidos por forma de pagamento",
+          "unit": "count",
+          "dimensions": [
+            "payment_method",
+            "time",
+            "hour",
+            "weekday",
+            "month_of_year",
+            "week_of_year",
+            "channel",
+            "source",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "payment_pending",
+          "label": "A receber na entrega",
+          "unit": "q",
+          "dimensions": [
+            "payment_method",
+            "time",
+            "weekday",
+            "month_of_year",
+            "week_of_year",
+            "channel",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "room_minutes",
+          "label": "Tempo de salão por lotação",
+          "unit": "minutes",
+          "dimensions": [
+            "room_load",
+            "hour",
+            "weekday",
+            "time",
+            "month_of_year",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "room_peak_groups",
+          "label": "Pico de grupos no salão",
+          "unit": "count",
+          "dimensions": [
+            "hour",
+            "weekday",
+            "time",
+            "month_of_year",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "max"
+        },
+        {
+          "key": "room_full_minutes",
+          "label": "Tempo no teto do salão",
+          "unit": "minutes",
+          "dimensions": [
+            "hour",
+            "weekday",
+            "time",
+            "month_of_year",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        },
+        {
+          "key": "room_revenue_per_spot_hour",
+          "label": "Faturamento por lugar-hora",
+          "unit": "q",
+          "dimensions": [
+            "time",
+            "weekday",
+            "month_of_year",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "mean"
+        },
+        {
+          "key": "room_turns",
+          "label": "Giro por lugar",
+          "unit": "count",
+          "dimensions": [
+            "time",
+            "weekday",
+            "month_of_year",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "mean"
+        },
+        {
+          "key": "room_tab_minutes",
+          "label": "Tempo de comanda aberta",
+          "unit": "minutes",
+          "dimensions": [
+            "time",
+            "weekday",
+            "month_of_year",
+            "day_kind",
+            "temperature",
+            "rain"
+          ],
+          "aggregation": "sum"
+        }
+      ]
+    }
+  },
+  "/api/v1/backstage/bi/forecast/?target=2026-10-09&horizon=day": {
+    "bi": {
+      "horizon": "day",
+      "target": "2026-10-09",
+      "date_from": "2026-10-09",
+      "date_to": "2026-10-09",
+      "days": [
+        {
+          "date": "2026-10-09",
+          "weekday": 4,
+          "weekday_label": "sexta-feira",
+          "closed": false,
+          "closed_reason": "",
+          "revenue_q": {
+            "expected": 1103323.8063851441,
+            "low": 938204.8489434302,
+            "high": 1322464.2646815719
+          },
+          "orders": {
+            "expected": 140.3684210526316,
+            "low": 120.78608710680955,
+            "high": 165.19767441860466
+          },
+          "branches": [
+            {
+              "key": "cold",
+              "label": "Se fizer menos de 25 °C",
+              "sample_size": 47,
+              "revenue_q": {
+                "expected": 1099430.0192576344,
+                "low": 920955.1188371377,
+                "high": 1342009.0006204299
+              },
+              "orders": {
+                "expected": 135.41324921135646,
+                "low": 118.26921781594679,
+                "high": 161.37448031303498
+              }
+            },
+            {
+              "key": "warm",
+              "label": "Se fizer 25 °C ou mais",
+              "sample_size": 48,
+              "revenue_q": {
+                "expected": 1108680.6208521023,
+                "low": 1004408.9785273441,
+                "high": 1291742.6079979031
+              },
+              "orders": {
+                "expected": 143.79261817396934,
+                "low": 128.07830188679247,
+                "high": 166.13118415025195
+              }
+            },
+            {
+              "key": "rain",
+              "label": "Se chover",
+              "sample_size": 64,
+              "revenue_q": {
+                "expected": 1029950.5737513152,
+                "low": 893111.5372447873,
+                "high": 1165366.3821197064
+              },
+              "orders": {
+                "expected": 132.06780678067807,
+                "low": 117.35004741583688,
+                "high": 143.89794453186468
+              }
+            },
+            {
+              "key": "dry",
+              "label": "Se não chover",
+              "sample_size": 31,
+              "revenue_q": {
+                "expected": 1290463.5837843951,
+                "low": 1104403.389111163,
+                "high": 1457737.927384503
+              },
+              "orders": {
+                "expected": 163.4344262295082,
+                "low": 143.84486619042542,
+                "high": 181.584229390681
+              }
+            }
+          ],
+          "occasion": {
+            "name": "Aniversário de Londrina",
+            "is_eve": true,
+            "years": [
+              {
+                "date": "2025-10-09",
+                "revenue_q": 838971,
+                "ratio": 1.2044516002604233
+              }
+            ],
+            "expected_revenue_q": 1180015.6861943398
+          },
+          "basis": {
+            "sample_size": 95,
+            "applied": [
+              "weekday"
+            ],
+            "relaxed": [
+              "temperature",
+              "season",
+              "day_kind"
+            ],
+            "unavailable": [],
+            "window_from": "2024-11-05",
+            "window_to": "2026-10-07",
+            "excluded_closed": 0,
+            "excluded_disrupted": 0,
+            "without_sales": 5,
+            "without_level": 0,
+            "level_revenue_q": 979712,
+            "level_days": 24
+          },
+          "missing_reason": ""
+        }
+      ],
+      "total_revenue_q": null,
+      "total_orders": null,
+      "total_missing_days": []
+    }
+  },
+  "/api/v1/backstage/bi/change/?target=2026-10-09&horizon=day": {
+    "bi": {
+      "horizon": "day",
+      "target": "2026-10-09",
+      "date_from": "2026-10-09",
+      "date_to": "2026-10-09",
+      "days": [
+        {
+          "date": "2026-10-09",
+          "weekday": 4,
+          "weekday_label": "sexta-feira",
+          "closed": false,
+          "closed_reason": "",
+          "change_q": {
+            "expected": 19957.742327282227,
+            "low": 15823.897584276065,
+            "high": 26613.131958180318
+          },
+          "coin_floor_q": 2195.351656001045,
+          "cash_orders": {
+            "expected": 49.808149405772504,
+            "low": 42.85957929596468,
+            "high": 58.61852963240811
+          },
+          "cash_share_percent": 35,
+          "cash_share_days": 99,
+          "missing_reason": ""
+        }
+      ],
+      "total_change_q": null,
+      "total_missing_days": [],
+      "habit": {
+        "per_cash_order_q": {
+          "expected": 400.6923076923077,
+          "low": 369.2032876712329,
+          "high": 454.00545058139534
+        },
+        "band": "interquartile",
+        "measured_days": 35,
+        "measured_orders": 1279,
+        "unmeasured_orders": 197,
+        "window_from": "2026-04-10",
+        "window_to": "2026-10-07"
+      },
+      "mix": {
+        "tendency": "mostly_coins",
+        "coin_value_percent": 11,
+        "small_change_percent": 70,
+        "sample_size": 1159
+      },
+      "missing_reason": ""
+    }
+  },
+  "/api/v1/backstage/bi/scenarios/": {
+    "bi": {
+      "configured": false,
+      "focuses": [
+        {
+          "key": "sales",
+          "label": "Vendas"
+        },
+        {
+          "key": "production",
+          "label": "Produção"
+        }
+      ],
+      "reports": []
+    }
+  }
+}

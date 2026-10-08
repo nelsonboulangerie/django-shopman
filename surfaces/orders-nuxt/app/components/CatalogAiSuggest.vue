@@ -34,7 +34,13 @@ async function onSuggest() {
   const request = ++generation;
   const base = [props.sku, props.field, props.current];
   const result = await props.assist(props.field, props.current);
-  if (request === generation && base.every((value, i) => value === [props.sku, props.field, props.current][i])) suggestion.value = result;
+  if (
+    request === generation &&
+    base.every(
+      (value, i) => value === [props.sku, props.field, props.current][i],
+    )
+  )
+    suggestion.value = result;
 }
 
 function onAccept() {
@@ -43,60 +49,67 @@ function onAccept() {
 }
 
 // Trocar de produto com uma sugestão aberta não pode vazar o texto do anterior.
-watch(() => [props.sku, props.field, props.current], () => { generation++; suggestion.value = ""; }, { flush: "sync" });
-onBeforeUnmount(() => { generation++; });
+watch(
+  () => [props.sku, props.field, props.current],
+  () => {
+    generation++;
+    suggestion.value = "";
+  },
+  { flush: "sync" },
+);
+onBeforeUnmount(() => {
+  generation++;
+});
 </script>
 
 <template>
-  <label class="block">
-    <span class="mb-1 flex items-center justify-between gap-2">
-      <span class="text-xs font-medium text-muted-foreground">{{ label }}</span>
-      <button
+  <NuxtFormField :label="label" :description="hint">
+    <template #hint>
+      <NuxtButton
         type="button"
+        icon="i-lucide-sparkles"
+        :label="busy ? 'Sugerindo…' : 'Sugerir'"
+        color="neutral"
+        variant="ghost"
+        size="xs"
+        :loading="busy"
         :disabled="busy"
-        class="min-h-control min-w-control inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-50"
         :aria-label="`Sugerir ${label} com IA`"
         @click.prevent="onSuggest"
-      >
-        <Icon
-          :name="busy ? 'line-md:loading-loop' : 'lucide:sparkles'"
-          class="size-3.5"
-        />
-        {{ busy ? "Sugerindo…" : "Sugerir" }}
-      </button>
-    </span>
+      />
+    </template>
 
     <slot />
 
-    <span v-if="hint" class="mt-1 block text-xs text-muted-foreground">{{ hint }}</span>
-
     <!-- prévia da sugestão: comparativa quando o campo já tem texto, para o
          operador ver o que perde antes de aceitar -->
-    <span v-if="suggestion" class="mt-2 block rounded-lg border border-primary/30 bg-primary/5 p-3">
-      <span class="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-foreground">
-        <Icon name="lucide:sparkles" class="size-3.5 text-primary" />
-        Sugestão
-      </span>
-
-      <span v-if="current.trim()" class="mb-2 block">
-        <span class="block text-xs font-medium text-muted-foreground">Texto atual</span>
-        <span class="block whitespace-pre-wrap text-sm text-muted-foreground">{{ current }}</span>
-      </span>
-
-      <span class="block whitespace-pre-wrap text-sm text-foreground">{{ suggestion }}</span>
-
-      <span class="mt-2 flex items-center gap-2">
-        <button
-          type="button"
-          class="min-h-action min-w-action rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90"
-          @click.prevent="onAccept"
-        >Aceitar</button>
-        <button
-          type="button"
-          class="min-h-control min-w-control rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-accent"
-          @click.prevent="suggestion = ''"
-        >Descartar</button>
-      </span>
-    </span>
-  </label>
+    <NuxtAlert
+      v-if="suggestion"
+      color="primary"
+      variant="subtle"
+      icon="i-lucide-sparkles"
+      title="Sugestão"
+      :description="
+        current.trim()
+          ? `Texto atual: ${current}\n\nSugestão: ${suggestion}`
+          : suggestion
+      "
+      :actions="[
+        {
+          label: 'Aceitar',
+          color: 'primary',
+          variant: 'outline',
+          onClick: () => onAccept(),
+        },
+        {
+          label: 'Descartar',
+          color: 'primary',
+          variant: 'outline',
+          onClick: () => {
+            suggestion = '';
+          },
+        },
+      ]"
+    />
+  </NuxtFormField>
 </template>

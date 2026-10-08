@@ -15,6 +15,7 @@ def create(
     *,
     order_ref: str = "",
     audience: str = "",
+    respond_by=None,
 ) -> Any:
     """Create an OperatorAlert. Returns the created instance."""
     from shopman.backstage.models import OperatorAlert
@@ -25,6 +26,7 @@ def create(
         audience=audience or OperatorAlert.audience_for_type(type),
         message=message,
         order_ref=order_ref,
+        respond_by=respond_by,
     )
 
 

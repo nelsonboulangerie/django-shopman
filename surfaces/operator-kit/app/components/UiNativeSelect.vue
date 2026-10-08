@@ -1,4 +1,8 @@
 <script setup lang="ts">
+// APOSENTADO (dono, 08/10/2026, PR #1539): nenhum uso novo. Escolha numa lista é
+// `NuxtSelect` (curta e fixa) ou `NuxtSelectMenu` (longa ou que cresce). Os usos de
+// hoje são teto no ledger (`ui_native_select_occurrences`) e só caem; o componente
+// morre com o último deles. Ver "Conjunto mínimo da suíte" no README do kit.
 import { getCurrentInstance, normalizeClass } from "vue";
 import type { HTMLAttributes } from "vue";
 import { twMerge } from "tailwind-merge";

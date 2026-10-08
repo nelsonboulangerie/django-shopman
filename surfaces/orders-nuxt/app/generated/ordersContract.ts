@@ -397,6 +397,7 @@ export interface KitchenStationProjection {
   cancelled_items: number;
   can_mark_ready: boolean;
   recall_ticket_pk: number | null;
+  items: string[];
 }
 
 /** Em que pé a Cozinha está com o pedido: o progresso por estação no cartão. */

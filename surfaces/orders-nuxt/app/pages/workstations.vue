@@ -10,7 +10,10 @@
 //
 // Toda palavra da tela vem do servidor (`copy`): os nomes dos postos ainda estão em
 // decisão, e renomear é uma linha no backend.
-import { workstationKindIcon, type WorkstationCopy } from "../../../operator-kit/app/presentation/workstation";
+import {
+  workstationKindIcon,
+  type WorkstationCopy,
+} from "../../../operator-kit/app/presentation/workstation";
 import type { WorkstationManageRow } from "../../../operator-kit/app/types/operator";
 import {
   creatableKinds,
@@ -20,20 +23,47 @@ import {
   editableKinds,
 } from "~/presentation/workstations";
 
-const { state, copy, pending, error, refresh, busy, message, create, update, releaseDevice } = useWorkstations();
+const {
+  state,
+  copy,
+  pending,
+  error,
+  refresh,
+  busy,
+  message,
+  create,
+  update,
+  releaseDevice,
+} = useWorkstations();
 
 useHead({ title: computed(() => copy.value?.manage_title ?? "") });
 
 const rows = computed(() => state.value?.workstations ?? []);
 const kinds = computed(() => state.value?.kinds ?? []);
 const newKinds = computed(() => creatableKinds(kinds.value));
+const newKindItems = computed(() =>
+  newKinds.value.map((kind) => ({ label: kind.label, value: kind.kind })),
+);
+const kindItems = (row: WorkstationManageRow) =>
+  editableKinds(kinds.value, row).map((kind) => ({
+    label: kind.label,
+    value: kind.kind,
+  }));
 const c = computed<Partial<WorkstationCopy>>(() => copy.value ?? {});
 
 const newLabel = ref("");
-const newKind = ref("");
-watch(newKinds, (list) => {
-  if (!newKind.value && list.length) newKind.value = list[0]!.kind;
-}, { immediate: true });
+const newKind = ref<WorkstationManageRow["kind"] | "">("");
+function setNewKind(value: string | number) {
+  if (newKinds.value.some((kind) => kind.kind === value))
+    newKind.value = value as WorkstationManageRow["kind"];
+}
+watch(
+  newKinds,
+  (list) => {
+    if (!newKind.value && list.length) newKind.value = list[0]!.kind;
+  },
+  { immediate: true },
+);
 
 async function submitNew() {
   if (!newLabel.value.trim() || !newKind.value) return;
@@ -67,149 +97,201 @@ async function toggleActive(row: WorkstationManageRow) {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader :title="c.manage_title ?? ''">
-      <template #actions>
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+    <OperatorPageHeader :title="c.manage_title ?? ''" :filters-wrap="false">
+      <template #filters>
+        <NuxtButton
+          icon="i-lucide-refresh-cw"
+          label="Atualizar"
+          color="neutral"
+          variant="outline"
+          :loading="pending"
+          @click="refresh()"
+        />
       </template>
     </OperatorPageHeader>
 
-    <section class="min-h-0 flex-1 overflow-auto p-4" data-workstations>
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6" data-workstations>
       <div class="mx-auto grid max-w-3xl gap-4">
         <p class="text-sm text-muted-foreground">{{ c.manage_lead }}</p>
 
-        <div v-if="error" role="alert" class="rounded-md border border-destructive p-3 text-sm">
-          {{ httpErrorMessage(error, c.manage_error ?? "") }}
-          <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
-        </div>
-        <p v-if="message" role="alert" class="text-sm text-destructive">{{ message }}</p>
+        <NuxtAlert
+          v-if="error"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-triangle-alert"
+          title="Não foi possível carregar os postos"
+          :description="httpErrorMessage(error, c.manage_error ?? '')"
+          :actions="[
+            {
+              label: 'Tentar de novo',
+              color: 'error',
+              variant: 'outline',
+              onClick: () => refresh(),
+            },
+          ]"
+        />
+        <NuxtAlert
+          v-if="message"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :description="message"
+        />
 
         <!-- Novo posto -->
-        <form
-          class="grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"
-          data-workstation-new
-          @submit.prevent="submitNew"
-        >
-          <label class="grid gap-1 text-sm">
-            <span class="font-medium">{{ c.manage_name_label }}</span>
-            <input
-              v-model="newLabel"
-              type="text"
-              maxlength="80"
-              class="min-h-11 rounded-md border bg-background px-3"
-              :disabled="Boolean(busy)"
-            >
-          </label>
-          <label class="grid gap-1 text-sm">
-            <span class="font-medium">{{ c.manage_kind_label }}</span>
-            <UiNativeSelect v-model="newKind" class="min-h-11" :disabled="Boolean(busy)">
-              <option v-for="kind in newKinds" :key="kind.kind" :value="kind.kind">{{ kind.label }}</option>
-            </UiNativeSelect>
-          </label>
-          <button
-            type="submit"
-            class="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-            :disabled="Boolean(busy) || !newLabel.trim() || !newKind"
+        <NuxtCard data-workstation-new>
+          <NuxtForm
+            :state="{ label: newLabel, kind: newKind }"
+            class="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end"
+            @submit="submitNew"
           >
-            <Icon :name="busy === 'create' ? 'line-md:loading-loop' : 'lucide:plus'" class="size-4" />
-            {{ c.manage_create }}
-          </button>
-          <p class="text-xs text-muted-foreground sm:col-span-3">{{ c.manage_cash_desk_note }}</p>
-        </form>
+            <NuxtFormField :label="c.manage_name_label">
+              <NuxtInput
+                v-model="newLabel"
+                class="w-full"
+                type="text"
+                maxlength="80"
+                :disabled="Boolean(busy)"
+              />
+            </NuxtFormField>
+            <NuxtFormField :label="c.manage_kind_label">
+              <NuxtSelect
+                class="w-full"
+                :model-value="newKind || undefined"
+                :items="newKindItems"
+                :disabled="Boolean(busy)"
+                @update:model-value="setNewKind"
+              />
+            </NuxtFormField>
+            <NuxtButton
+              type="submit"
+              icon="i-lucide-plus"
+              :label="c.manage_create"
+              :disabled="Boolean(busy) || !newLabel.trim() || !newKind"
+              :loading="busy === 'create'"
+            />
+            <p class="text-xs text-muted-foreground sm:col-span-3">
+              {{ c.manage_cash_desk_note }}
+            </p>
+          </NuxtForm>
+        </NuxtCard>
 
         <div v-if="pending && !state" class="space-y-2">
-          <UiSkeleton
+          <NuxtSkeleton
             v-for="i in 3"
             :key="i"
-            class="h-24 rounded-lg border"
-            label="Carregando estação"
+            class="h-24 w-full"
+            aria-label="Carregando estação"
           />
         </div>
 
         <ul v-else class="grid gap-3" data-workstation-list>
-          <li
+          <NuxtCard
             v-for="row in rows"
             :key="row.ref"
-            class="grid gap-3 rounded-lg border bg-card p-4"
-            :class="row.is_active ? '' : 'opacity-70'"
+            as="li"
             :data-workstation-row="row.ref"
           >
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="flex min-w-0 items-start gap-3">
-                <span class="grid size-10 shrink-0 place-items-center rounded-md bg-muted">
-                  <Icon :name="workstationKindIcon(row.kind)" class="size-5 text-muted-foreground" />
-                </span>
-                <div class="min-w-0">
-                  <form v-if="renaming === row.ref" class="flex flex-wrap gap-2" @submit.prevent="saveRename(row)">
-                    <input
-                      v-model="renameDraft"
-                      type="text"
-                      maxlength="80"
-                      :aria-label="c.manage_name_label"
-                      class="min-h-11 rounded-md border bg-background px-3 text-sm"
+            <template #header>
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="flex min-w-0 items-start gap-3">
+                  <NuxtAvatar :icon="workstationKindIcon(row.kind)" size="lg" />
+                  <div class="min-w-0">
+                    <NuxtForm
+                      v-if="renaming === row.ref"
+                      :state="{ label: renameDraft }"
+                      class="flex flex-wrap gap-2"
+                      @submit="saveRename(row)"
                     >
-                    <button
-                      type="submit"
-                      class="min-h-11 rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
-                      :disabled="Boolean(busy) || !renameDraft.trim()"
-                    >{{ c.manage_save }}</button>
-                  </form>
-                  <p v-else class="font-medium">{{ row.label }}</p>
-                  <p class="text-xs text-muted-foreground">
-                    {{ row.kind_label }}<template v-if="row.has_cash_desk"> · {{ c.cash_desk_hint }}</template>
-                    <template v-if="!row.is_active"> · {{ c.manage_inactive }}</template>
-                  </p>
+                      <NuxtInput
+                        v-model="renameDraft"
+                        type="text"
+                        maxlength="80"
+                        :aria-label="c.manage_name_label"
+                      />
+                      <NuxtButton
+                        type="submit"
+                        color="neutral"
+                        variant="outline"
+                        :label="c.manage_save"
+                        :disabled="Boolean(busy) || !renameDraft.trim()"
+                      />
+                    </NuxtForm>
+                    <p v-else class="font-medium">{{ row.label }}</p>
+                    <p class="text-xs text-muted-foreground">
+                      {{ row.kind_label
+                      }}<template v-if="row.has_cash_desk">
+                        · {{ c.cash_desk_hint }}</template
+                      >
+                      <template v-if="!row.is_active">
+                        · {{ c.manage_inactive }}</template
+                      >
+                    </p>
+                  </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <NuxtSelect
+                    :model-value="row.kind"
+                    :items="kindItems(row)"
+                    :aria-label="c.manage_kind_label"
+                    :disabled="Boolean(busy)"
+                    @update:model-value="
+                      (kind) => update(row.ref, { kind: String(kind) })
+                    "
+                  />
+                  <NuxtButton
+                    v-if="renaming !== row.ref"
+                    type="button"
+                    color="neutral"
+                    variant="outline"
+                    :label="c.manage_rename"
+                    :disabled="Boolean(busy)"
+                    @click="startRename(row)"
+                  />
+                  <NuxtButton
+                    type="button"
+                    :color="row.is_active ? 'error' : 'neutral'"
+                    variant="outline"
+                    :label="
+                      row.is_active ? c.manage_deactivate : c.manage_activate
+                    "
+                    :disabled="Boolean(busy)"
+                    :data-workstation-toggle="row.ref"
+                    @click="toggleActive(row)"
+                  />
                 </div>
               </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <UiNativeSelect
-                  :model-value="row.kind"
-                  class="min-h-11 text-sm"
-                  :aria-label="c.manage_kind_label"
-                  :disabled="Boolean(busy)"
-                  @update:model-value="(kind) => update(row.ref, { kind: String(kind) })"
-                >
-                  <option v-for="kind in editableKinds(kinds, row)" :key="kind.kind" :value="kind.kind">{{ kind.label }}</option>
-                </UiNativeSelect>
-                <button
-                  v-if="renaming !== row.ref"
-                  type="button"
-                  class="min-h-11 rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
-                  :disabled="Boolean(busy)"
-                  @click="startRename(row)"
-                >{{ c.manage_rename }}</button>
-                <button
-                  type="button"
-                  class="min-h-11 rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
-                  :disabled="Boolean(busy)"
-                  :data-workstation-toggle="row.ref"
-                  @click="toggleActive(row)"
-                >{{ row.is_active ? c.manage_deactivate : c.manage_activate }}</button>
-              </div>
-            </div>
+            </template>
 
-            <div class="grid gap-1 border-t pt-3">
-              <p class="text-xs font-medium text-muted-foreground">{{ devicesSummary(row, c) }}</p>
-              <ul v-if="row.devices.length" class="divide-y">
+            <div class="grid gap-1">
+              <p class="text-xs font-medium text-muted-foreground">
+                {{ devicesSummary(row, c) }}
+              </p>
+              <ul v-if="row.devices.length" class="divide-y divide-border">
                 <li
                   v-for="device in row.devices"
                   :key="device.id"
-                  class="flex flex-wrap items-center justify-between gap-2 py-2"
+                  class="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-1 last:pb-0"
                   :data-workstation-device="device.id"
                 >
                   <div class="min-w-0 text-sm">
                     <p>{{ deviceName(device) }}</p>
-                    <p class="text-xs text-muted-foreground">{{ deviceUsageLine(device, c) }}</p>
+                    <p class="text-xs text-muted-foreground">
+                      {{ deviceUsageLine(device, c) }}
+                    </p>
                   </div>
-                  <button
+                  <NuxtButton
                     type="button"
-                    class="min-h-11 rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
+                    color="error"
+                    variant="outline"
+                    :label="c.release"
                     :disabled="Boolean(busy)"
                     @click="releaseDevice(row.ref, device.id)"
-                  >{{ c.release }}</button>
+                  />
                 </li>
               </ul>
             </div>
-          </li>
+          </NuxtCard>
         </ul>
       </div>
     </section>

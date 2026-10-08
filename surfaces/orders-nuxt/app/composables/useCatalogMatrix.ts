@@ -3,7 +3,11 @@ import { useBackstageEvents } from "./useBackstageEvents";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
-import type { Action, CatalogPricePreview, CatalogPublicationPreview } from "~/generated/ordersContract";
+import type {
+  Action,
+  CatalogPricePreview,
+  CatalogPublicationPreview,
+} from "~/generated/ordersContract";
 // Catalog matrix read/write. Single source for the produto × superfície grid:
 //   - useFetch the canonical matrix projection (GET /api/v1/backstage/catalog/);
 //   - poll every 30s, coalescing wake and mutation refreshes;
@@ -35,7 +39,9 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   const detailActions = new Map<string, Action>();
   const productConflicts = ref<Record<string, ProductEditConflict>>({});
   const productConflict = (sku: string) => productConflicts.value[sku] ?? null;
-  function acknowledgeProductConflict(sku: string): ProductDetailProjection | null {
+  function acknowledgeProductConflict(
+    sku: string,
+  ): ProductDetailProjection | null {
     const conflict = productConflicts.value[sku];
     if (!conflict?.action) return null;
     detailActions.set(sku, conflict.action);
@@ -48,7 +54,12 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   // product_queryset). Changing the ref refetches the matrix.
   const collection = collectionRef ?? ref("");
   const resourceKey = useOperatorResourceKey("catalog-matrix");
-  const { data, pending, error, refresh: fetchMatrix } = useFetch<CatalogMatrixResponse>(path, {
+  const {
+    data,
+    pending,
+    error,
+    refresh: fetchMatrix,
+  } = useFetch<CatalogMatrixResponse>(path, {
     key: computed(() => `${resourceKey}:${collection.value}`),
     server: true,
     query: { collection },
@@ -57,14 +68,36 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   });
 
   const refresh = coalesceRefresh(() => fetchMatrix());
-  const matchesScope = (value: CatalogMatrixResponse | null | undefined) => (value?.collection_ref ?? "") === collection.value;
-  const readMetadata = useReadMetadata(computed(() => matchesScope(data.value) ? data.value : null), error, collection);
-  const lastConfirmed = shallowRef<CatalogMatrixProjection | null>(matchesScope(data.value) ? data.value?.matrix ?? null : null);
-  watch(collection, () => { lastConfirmed.value = null; }, { flush: "sync" });
-  watch([data, error], ([value, failure]) => {
-    if (value?.matrix && !failure && matchesScope(value)) lastConfirmed.value = value.matrix;
-  }, { flush: "sync" });
-  const matrix = computed<CatalogMatrixProjection | null>(() => matchesScope(data.value) ? data.value?.matrix ?? lastConfirmed.value : lastConfirmed.value);
+  const matchesScope = (value: CatalogMatrixResponse | null | undefined) =>
+    (value?.collection_ref ?? "") === collection.value;
+  const readMetadata = useReadMetadata(
+    computed(() => (matchesScope(data.value) ? data.value : null)),
+    error,
+    collection,
+  );
+  const lastConfirmed = shallowRef<CatalogMatrixProjection | null>(
+    matchesScope(data.value) ? (data.value?.matrix ?? null) : null,
+  );
+  watch(
+    collection,
+    () => {
+      lastConfirmed.value = null;
+    },
+    { flush: "sync" },
+  );
+  watch(
+    [data, error],
+    ([value, failure]) => {
+      if (value?.matrix && !failure && matchesScope(value))
+        lastConfirmed.value = value.matrix;
+    },
+    { flush: "sync" },
+  );
+  const matrix = computed<CatalogMatrixProjection | null>(() =>
+    matchesScope(data.value)
+      ? (data.value?.matrix ?? lastConfirmed.value)
+      : lastConfirmed.value,
+  );
 
   const { realtime } = useBackstageEvents("catalog", refresh);
 
@@ -77,31 +110,60 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   const clearError = () => (errorMsg.value = "");
   function canWrite() {
     if (!error.value && matchesScope(data.value)) return true;
-    errorMsg.value = "A leitura do catálogo está desatualizada. Atualize antes de aplicar; seu rascunho foi mantido.";
+    errorMsg.value =
+      "A leitura do catálogo está desatualizada. Atualize antes de aplicar; seu rascunho foi mantido.";
     return false;
   }
   async function refreshAfterCommit() {
-    try { await refresh(); }
-    catch { errorMsg.value = "Alteração confirmada. A leitura atualizada falhou; atualize antes de continuar."; }
-    if (error.value) errorMsg.value = "Alteração confirmada. A leitura atualizada falhou; atualize antes de continuar.";
+    try {
+      await refresh();
+    } catch {
+      errorMsg.value =
+        "Alteração confirmada. A leitura atualizada falhou; atualize antes de continuar.";
+    }
+    if (error.value)
+      errorMsg.value =
+        "Alteração confirmada. A leitura atualizada falhou; atualize antes de continuar.";
   }
 
-  async function setCell(sku: string, surface: string, patch: CellPatch, observed?: Action): Promise<boolean> {
+  async function setCell(
+    sku: string,
+    surface: string,
+    patch: CellPatch,
+    observed?: Action,
+  ): Promise<boolean> {
     const key = cellKey(sku, surface);
     if (busy.value.has(key) || !canWrite()) return false;
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      const action = observed ?? matrix.value?.rows.find(row => row.sku === sku)?.cells.find(cell => cell.surface_ref === surface)?.action;
-      await intentions.executePath(`catalog:cell:${sku}:${surface}`, "/api/v1/backstage/catalog/cell/", action ?? undefined,
-        { sku, surface_ref: surface, ...patch });
+      const action =
+        observed ??
+        matrix.value?.rows
+          .find((row) => row.sku === sku)
+          ?.cells.find((cell) => cell.surface_ref === surface)?.action;
+      await intentions.executePath(
+        `catalog:cell:${sku}:${surface}`,
+        "/api/v1/backstage/catalog/cell/",
+        action ?? undefined,
+        { sku, surface_ref: surface, ...patch },
+      );
       await refreshAfterCommit();
       return true;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Falha ao atualizar. Tente de novo.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        error instanceof Error
+          ? error.message
+          : "Falha ao atualizar. Tente de novo.",
+      );
       useSonner.error(errorMsg.value);
       if (httpError(error).status === 409) {
-        try { await refresh(); } catch { errorMsg.value += " A leitura atualizada também falhou."; }
+        try {
+          await refresh();
+        } catch {
+          errorMsg.value += " A leitura atualizada também falhou.";
+        }
       }
       return false;
     } finally {
@@ -123,15 +185,31 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      const action = matrix.value?.rows.find(row => row.sku === sku)?.product_action;
-      await intentions.executePath(`catalog:product:${sku}`, "/api/v1/backstage/catalog/product/", action ?? undefined, { sku, patch });
+      const action = matrix.value?.rows.find(
+        (row) => row.sku === sku,
+      )?.product_action;
+      await intentions.executePath(
+        `catalog:product:${sku}`,
+        "/api/v1/backstage/catalog/product/",
+        action ?? undefined,
+        { sku, patch },
+      );
       await refreshAfterCommit();
       return true;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Falha ao atualizar. Tente de novo.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        error instanceof Error
+          ? error.message
+          : "Falha ao atualizar. Tente de novo.",
+      );
       useSonner.error(errorMsg.value);
       if (httpError(error).status === 409) {
-        try { await refresh(); } catch { errorMsg.value += " A leitura atualizada também falhou."; }
+        try {
+          await refresh();
+        } catch {
+          errorMsg.value += " A leitura atualizada também falhou.";
+        }
       }
       return false;
     } finally {
@@ -153,10 +231,23 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     clearError();
     bulkBusy.value = true;
     try {
-      const body = { surface_ref: surface, ...scope, ...patch, base_revision: preview.base_revision, expected_actor_id: preview.expected_actor_id };
-      const res = await intentions.executePath("catalog:bulk-publication", "/api/v1/backstage/catalog/bulk/", {
-        enabled: true, reason: "", payload_schema: body,
-      }, body);
+      const body = {
+        surface_ref: surface,
+        ...scope,
+        ...patch,
+        base_revision: preview.base_revision,
+        expected_actor_id: preview.expected_actor_id,
+      };
+      const res = await intentions.executePath(
+        "catalog:bulk-publication",
+        "/api/v1/backstage/catalog/bulk/",
+        {
+          enabled: true,
+          reason: "",
+          payload_schema: body,
+        },
+        body,
+      );
       await refreshAfterCommit();
       const count = res?.count ?? 0;
       useSonner.success(`${count} item(ns) atualizado(s).`);
@@ -170,35 +261,63 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     }
   }
 
-  async function previewBulkSet(surface: string, scope: { collection_ref?: string; skus?: string[] }, patch: Pick<CellPatch, "is_published" | "is_sellable">): Promise<CatalogPublicationPreview | null> {
+  async function previewBulkSet(
+    surface: string,
+    scope: { collection_ref?: string; skus?: string[] },
+    patch: Pick<CellPatch, "is_published" | "is_sellable">,
+  ): Promise<CatalogPublicationPreview | null> {
     if (bulkBusy.value || !canWrite()) return null;
     clearError();
     bulkBusy.value = true;
     try {
-      const result = await $fetch<{ preview: CatalogPublicationPreview }>("/api/v1/backstage/catalog/bulk/", {
-        method: "POST", body: { surface_ref: surface, ...scope, ...patch, preview: true },
-      });
+      const result = await $fetch<{ preview: CatalogPublicationPreview }>(
+        "/api/v1/backstage/catalog/bulk/",
+        {
+          method: "POST",
+          body: { surface_ref: surface, ...scope, ...patch, preview: true },
+        },
+      );
       return result.preview;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Não foi possível preparar a prévia de publicação.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível preparar a prévia de publicação.",
+      );
       useSonner.error(errorMsg.value);
       return null;
-    } finally { bulkBusy.value = false; }
+    } finally {
+      bulkBusy.value = false;
+    }
   }
 
   // Reprecificação em lote: op set|pct|delta, value em centavos (set/delta) ou
   // pontos percentuais (pct). Escopo por coleção OU lista de skus.
-  async function previewBulkPrice(surface: string, scope: { collection_ref?: string; skus?: string[] }, patch: { op: "set" | "pct" | "delta"; value: number }): Promise<CatalogPricePreview | null> {
+  async function previewBulkPrice(
+    surface: string,
+    scope: { collection_ref?: string; skus?: string[] },
+    patch: { op: "set" | "pct" | "delta"; value: number },
+  ): Promise<CatalogPricePreview | null> {
     if (bulkBusy.value) return null;
     bulkBusy.value = true;
     try {
-      const response = await $fetch<{ preview: CatalogPricePreview }>("/api/v1/backstage/catalog/bulk-price/", { method: "POST", body: { surface_ref: surface, ...scope, ...patch, preview: true } });
+      const response = await $fetch<{ preview: CatalogPricePreview }>(
+        "/api/v1/backstage/catalog/bulk-price/",
+        {
+          method: "POST",
+          body: { surface_ref: surface, ...scope, ...patch, preview: true },
+        },
+      );
       return response.preview;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Não foi possível preparar a prévia.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível preparar a prévia.",
+      );
       useSonner.error(errorMsg.value);
       return null;
-    } finally { bulkBusy.value = false; }
+    } finally {
+      bulkBusy.value = false;
+    }
   }
 
   async function bulkPrice(
@@ -211,20 +330,46 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     clearError();
     bulkBusy.value = true;
     try {
-      const body = { surface_ref: surface, ...scope, ...patch, base_revision: preview.base_revision, expected_actor_id: preview.expected_actor_id };
-      const result = await intentions.executePath("catalog:bulk-price", "/api/v1/backstage/catalog/bulk-price/", {
-        enabled: true, reason: "", payload_schema: body,
-      }, body);
+      const body = {
+        surface_ref: surface,
+        ...scope,
+        ...patch,
+        base_revision: preview.base_revision,
+        expected_actor_id: preview.expected_actor_id,
+      };
+      const result = await intentions.executePath(
+        "catalog:bulk-price",
+        "/api/v1/backstage/catalog/bulk-price/",
+        {
+          enabled: true,
+          reason: "",
+          payload_schema: body,
+        },
+        body,
+      );
       await refreshAfterCommit();
       const count = result.count ?? 0;
-      useSonner.success(`${count} preço(s) atualizado(s). Acompanhe a sincronização nas células.`);
+      useSonner.success(
+        `${count} preço(s) atualizado(s). Acompanhe a sincronização nas células.`,
+      );
       return count;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Não foi possível confirmar a alteração de preços.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        error instanceof Error
+          ? error.message
+          : "Não foi possível confirmar a alteração de preços.",
+      );
       useSonner.error(errorMsg.value);
-      try { await refresh(); } catch { errorMsg.value += " A leitura atualizada também falhou."; }
+      try {
+        await refresh();
+      } catch {
+        errorMsg.value += " A leitura atualizada também falhou.";
+      }
       return null;
-    } finally { bulkBusy.value = false; }
+    } finally {
+      bulkBusy.value = false;
+    }
   }
 
   // ── sync por plataforma (Arc H) ────────────────────────────────────────────
@@ -237,14 +382,27 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      const action = matrix.value?.rows.find(row => row.sku === sku)?.resync_action;
-      await intentions.executePath(`catalog:resync:${sku}:${channelRef ?? "*"}`, "/api/v1/backstage/catalog/resync/", action ?? undefined,
-        { sku, ...(channelRef ? { channel_ref: channelRef } : {}) });
-      useSonner.success(channelRef ? "Reenvio agendado." : "Reenvio agendado em todos os canais.");
+      const action = matrix.value?.rows.find(
+        (row) => row.sku === sku,
+      )?.resync_action;
+      await intentions.executePath(
+        `catalog:resync:${sku}:${channelRef ?? "*"}`,
+        "/api/v1/backstage/catalog/resync/",
+        action ?? undefined,
+        { sku, ...(channelRef ? { channel_ref: channelRef } : {}) },
+      );
+      useSonner.success(
+        channelRef
+          ? "Reenvio agendado."
+          : "Reenvio agendado em todos os canais.",
+      );
       await refreshAfterCommit();
       return true;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Falha ao reenviar. Tente de novo.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Falha ao reenviar. Tente de novo.",
+      );
       useSonner.error(errorMsg.value);
       return false;
     } finally {
@@ -280,10 +438,14 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   // fetch canônico da matriz para refletir nome/preço/publicação na linha.
   const detailKey = (sku: string) => `detail@${sku}`;
 
-  async function fetchProductDetail(sku: string): Promise<ProductDetailProjection | null> {
+  async function fetchProductDetail(
+    sku: string,
+  ): Promise<ProductDetailProjection | null> {
     clearError();
     try {
-      const res = await $fetch<ProductDetailResponse>(`/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`);
+      const res = await $fetch<ProductDetailResponse>(
+        `/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`,
+      );
       if (res?.action) detailActions.set(sku, res.action);
       Reflect.deleteProperty(productConflicts.value, sku);
       return res?.product ?? null;
@@ -294,25 +456,45 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     }
   }
 
-  async function saveProductDetail(sku: string, patch: ProductDetailPatch): Promise<boolean> {
+  async function saveProductDetail(
+    sku: string,
+    patch: ProductDetailPatch,
+  ): Promise<boolean> {
     const key = detailKey(sku);
-    if (busy.value.has(key) || productConflicts.value[sku] || !canWrite()) return false;
+    if (busy.value.has(key) || productConflicts.value[sku] || !canWrite())
+      return false;
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      await intentions.executePath(`catalog:${sku}:detail`, `/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`,
-        detailActions.get(sku), { patch });
+      await intentions.executePath(
+        `catalog:${sku}:detail`,
+        `/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`,
+        detailActions.get(sku),
+        { patch },
+      );
       useSonner.success("Produto salvo.");
-      try { await refresh(); }
-      catch { errorMsg.value = "Produto salvo. A leitura do catálogo falhou; atualize antes de continuar."; }
+      try {
+        await refresh();
+      } catch {
+        errorMsg.value =
+          "Produto salvo. A leitura do catálogo falhou; atualize antes de continuar.";
+      }
       return true;
     } catch (error) {
       const failure = httpError(error);
       const data = failure.data as Partial<ProductEditConflict> | null;
-      if (failure.status === 409 && data?.product?.sku === sku && data.action && Array.isArray(data.conflicting_fields)) {
+      if (
+        failure.status === 409 &&
+        data?.product?.sku === sku &&
+        data.action &&
+        Array.isArray(data.conflicting_fields)
+      ) {
         productConflicts.value[sku] = data as ProductEditConflict;
       }
-      errorMsg.value = httpErrorMessage(error, "Falha ao salvar. Confira os campos.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Falha ao salvar. Confira os campos.",
+      );
       useSonner.error(errorMsg.value);
       return false;
     } finally {
@@ -325,20 +507,29 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   // "Permitir compra": liga/desliga o cadastro de compra do MESMO SKU. Gesto
   // próprio, fora do rascunho do painel — vale na hora, como o interruptor que é.
   // Devolve o detalhe novo (com os selos) ou null na recusa ("é produzido aqui").
-  async function setPurchasable(sku: string, enabled: boolean): Promise<ProductDetailProjection | null> {
+  async function setPurchasable(
+    sku: string,
+    enabled: boolean,
+  ): Promise<ProductDetailProjection | null> {
     const key = `purchase@${sku}`;
     if (busy.value.has(key) || !canWrite()) return null;
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      const res = await $fetch<{ product: ProductDetailProjection; message: string }>(
+      const res = await $fetch<{
+        product: ProductDetailProjection;
+        message: string;
+      }>(
         `/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/purchase/`,
         { method: "POST", body: { enabled } },
       );
       useSonner.success(res.message);
       return res.product;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Não foi possível mudar a compra deste produto.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível mudar a compra deste produto.",
+      );
       useSonner.error(errorMsg.value);
       return null;
     } finally {
@@ -353,7 +544,8 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   // persiste é o salvar do painel, depois de o operador aceitar. Sem chave no
   // deployment o backend responde 503; aqui isso vira um aviso informativo, não
   // um erro: o assist é conveniência, e o operador segue escrevendo à mão.
-  const aiAssistKey = (sku: string, field: AssistableField) => `ai-assist-${sku}-${field}`;
+  const aiAssistKey = (sku: string, field: AssistableField) =>
+    `ai-assist-${sku}-${field}`;
 
   async function aiAssist(
     sku: string,
@@ -365,17 +557,28 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      const res = await $fetch<AiAssistResponse>("/api/v1/backstage/catalog/ai-assist/", {
-        method: "POST",
-        body: { sku, field, current_value: currentValue, context: {} },
-      });
+      const res = await $fetch<AiAssistResponse>(
+        "/api/v1/backstage/catalog/ai-assist/",
+        {
+          method: "POST",
+          body: { sku, field, current_value: currentValue, context: {} },
+        },
+      );
       return res?.suggestion ?? "";
     } catch (error) {
       const { status } = httpError(error);
       if (status === 503) {
-        useSonner.info(httpErrorMessage(error, "Sugestão de IA não está configurada nesta loja."));
+        useSonner.info(
+          httpErrorMessage(
+            error,
+            "Sugestão de IA não está configurada nesta loja.",
+          ),
+        );
       } else {
-        errorMsg.value = httpErrorMessage(error, "Não consegui sugerir agora. Tente de novo.");
+        errorMsg.value = httpErrorMessage(
+          error,
+          "Não consegui sugerir agora. Tente de novo.",
+        );
         useSonner.error(errorMsg.value);
       }
       return "";
@@ -388,45 +591,116 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
 
   // The action captured at pointer-down represents the order the person saw.
   function curationAction(operation: string, ref_ = "") {
-    return data.value?.actions?.find(action => action.ref === operation && action.payload_schema.ref === ref_);
+    return data.value?.actions?.find(
+      (action) =>
+        action.ref === operation && action.payload_schema.ref === ref_,
+    );
   }
-  async function reorder(operation: string, ref_: string, ordered: string[], observed?: Action): Promise<boolean> {
+  async function reorder(
+    operation: string,
+    ref_: string,
+    ordered: string[],
+    observed?: Action,
+  ): Promise<boolean> {
     const key = `curation:${operation}:${ref_}`;
     if (!canWrite() || busy.value.has(key)) return false;
     clearError();
     busy.value = new Set(busy.value).add(key);
     try {
-      await intentions.executePath(key, `/api/v1/backstage/catalog/${operation}/`, observed ?? curationAction(operation, ref_),
-        { ref: ref_, [operation === "reorder-items" ? "ordered_skus" : "ordered_refs"]: ordered });
+      await intentions.executePath(
+        key,
+        `/api/v1/backstage/catalog/${operation}/`,
+        observed ?? curationAction(operation, ref_),
+        {
+          ref: ref_,
+          [operation === "reorder-items" ? "ordered_skus" : "ordered_refs"]:
+            ordered,
+        },
+      );
       await refreshAfterCommit();
       return true;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Falha ao reordenar.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        error instanceof Error ? error.message : "Falha ao reordenar.",
+      );
       useSonner.error(errorMsg.value);
-      try { await refresh(); } catch { errorMsg.value += " A leitura atualizada também falhou."; }
+      try {
+        await refresh();
+      } catch {
+        errorMsg.value += " A leitura atualizada também falhou.";
+      }
       return false;
     } finally {
-      const next = new Set(busy.value); next.delete(key); busy.value = next;
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
     }
   }
-  async function verifyOrder(operation: string, ref_: string): Promise<boolean> {
+  async function verifyOrder(
+    operation: string,
+    ref_: string,
+  ): Promise<boolean> {
     try {
-      const result = await intentions.checkPath(`curation:${operation}:${ref_}`, `/api/v1/backstage/catalog/${operation}/`);
-      if (result.outcome !== "applied") { errorMsg.value = "Resultado ainda desconhecido. O arraste foi mantido; consulte novamente."; return false; }
+      const result = await intentions.checkPath(
+        `curation:${operation}:${ref_}`,
+        `/api/v1/backstage/catalog/${operation}/`,
+      );
+      if (result.outcome !== "applied") {
+        errorMsg.value =
+          "Resultado ainda desconhecido. O arraste foi mantido; consulte novamente.";
+        return false;
+      }
       await refreshAfterCommit();
       return true;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, error instanceof Error ? error.message : "Falha ao consultar a ordenação.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        error instanceof Error
+          ? error.message
+          : "Falha ao consultar a ordenação.",
+      );
       return false;
     }
   }
-  const reorderCollections = (ordered: string[], action?: Action) => reorder("reorder-collections", "", ordered, action);
-  const reorderItems = (ref_: string, ordered: string[], action?: Action) => reorder("reorder-items", ref_, ordered, action);
+  const reorderCollections = (ordered: string[], action?: Action) =>
+    reorder("reorder-collections", "", ordered, action);
+  const reorderItems = (ref_: string, ordered: string[], action?: Action) =>
+    reorder("reorder-items", ref_, ordered, action);
 
-  return { readMetadata,
+  return {
+    readMetadata,
     realtime,
-    matrix, pending, error, refresh, isBusy, cellKey, productKey, socialKey, detailKey, errorMsg, clearError,
-    setCell, setProduct, bulkSet, previewBulkSet, bulkPrice, previewBulkPrice, resync, saveSocial, fetchProductDetail, saveProductDetail, setPurchasable,
-    reorderCollections, reorderItems, curationAction, verifyOrder, bulkBusy, aiAssist, aiAssistKey, productConflict, acknowledgeProductConflict,
+    matrix,
+    pending,
+    error,
+    refresh,
+    isBusy,
+    cellKey,
+    productKey,
+    socialKey,
+    detailKey,
+    errorMsg,
+    clearError,
+    setCell,
+    setProduct,
+    bulkSet,
+    previewBulkSet,
+    bulkPrice,
+    previewBulkPrice,
+    resync,
+    saveSocial,
+    fetchProductDetail,
+    saveProductDetail,
+    setPurchasable,
+    reorderCollections,
+    reorderItems,
+    curationAction,
+    verifyOrder,
+    bulkBusy,
+    aiAssist,
+    aiAssistKey,
+    productConflict,
+    acknowledgeProductConflict,
   };
 }

@@ -6,6 +6,11 @@ export const kitchenSinkNavigation = [
     badge: 3,
   },
   {
+    label: "Leitura",
+    icon: "i-lucide-gauge",
+    to: "#reading-pieces",
+  },
+  {
     label: "Laboratório",
     icon: "i-lucide-flask-conical",
     to: "#visual-exercises",

@@ -34,17 +34,12 @@ export const PRODUCTION_STAGES: readonly OperatorSection[] = [
   { key: "quality", label: "Qualidade", icon: "lucide:badge-check", to: "/quality", shortcut: "Alt+5" },
 ];
 
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
-}
-
 export function stageSections({ qualityPending }: ProductionSectionsInput = {}): OperatorSection[] {
   return PRODUCTION_STAGES.map((stage) => {
     if (stage.key !== "quality" || !qualityPending) return { ...stage };
     return {
       ...stage,
       badge: String(qualityPending),
-      badgeLabel: plural(qualityPending, "lote para confirmar", "lotes para confirmar"),
     };
   });
 }
@@ -55,7 +50,7 @@ export function timersSection({ timersActive = 0, timersRinging = 0 }: Productio
     label: "Timers",
     icon: "lucide:alarm-clock",
     to: "/timers",
-    ...(timersActive ? { badge: String(timersActive), badgeLabel: plural(timersActive, "timer ativo", "timers ativos") } : {}),
+    ...(timersActive ? { badge: String(timersActive) } : {}),
     ...(timersRinging ? { attention: `${timersRinging} tocando` } : {}),
   };
 }

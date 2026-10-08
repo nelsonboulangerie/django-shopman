@@ -3,6 +3,7 @@
 // dela, nunca de uma lista paralela. Erro de gramática vira mensagem, não
 // tela quebrada.
 import type { BIExploreReport } from "~/generated/biContract";
+import type { BIReading } from "~/types/bi";
 
 export interface ExploreConfig {
   metric: string;
@@ -18,7 +19,7 @@ export function useBiExplore() {
     by2: "",
   }));
 
-  const { data, pending, error, refresh } = useFetch<{ bi: BIExploreReport }>(
+  const { data, pending, error, refresh } = useFetch<BIReading<BIExploreReport>>(
     "/api/v1/backstage/bi/explore/",
     {
       key: "bi-explore",
@@ -29,6 +30,7 @@ export function useBiExplore() {
   );
 
   const report = computed(() => data.value?.bi ?? null);
+  const freshness = computed(() => ({ generated_at: data.value?.generated_at ?? null }));
   const errorDetail = computed(() => {
     const raw = error.value ? httpError(error.value).data : null;
     return (raw as { detail?: string } | null)?.detail ?? "";
@@ -47,5 +49,5 @@ export function useBiExplore() {
     config.value = merged;
   }
 
-  return { config, report, pending, error, errorDetail, refresh, apply };
+  return { config, report, freshness, pending, error, errorDetail, refresh, apply };
 }

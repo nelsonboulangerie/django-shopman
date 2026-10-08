@@ -34,10 +34,6 @@ export function kdsSections(input: KdsSectionsInput): OperatorSection[] {
       icon: "lucide:package-check",
       to: input.exitUrl,
       badge: input.exitCount > 0 ? String(input.exitCount) : undefined,
-      badgeLabel:
-        input.exitCount > 0
-          ? plural(input.exitCount, "pedido pronto para sair", "pedidos prontos para sair")
-          : undefined,
     });
   }
   if (input.place === "bar") sections.push(stations);
@@ -55,11 +51,5 @@ function prepSection(input: KdsSectionsInput): OperatorSection {
     icon: "lucide:flame",
     to: `/${input.stationRef}`,
     badge: input.prepCount > 0 ? String(input.prepCount) : undefined,
-    badgeLabel:
-      input.prepCount > 0 ? plural(input.prepCount, "pedido nesta estação", "pedidos nesta estação") : undefined,
   };
-}
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
 }

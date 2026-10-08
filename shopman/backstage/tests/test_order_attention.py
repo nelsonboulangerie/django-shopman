@@ -216,3 +216,48 @@ def test_product_detail_says_where_it_can_be_bought_now(shop):
     assert rows["ifood"]["since"]
     assert rows["ifood"]["automatic"] is True
     assert rows["web"]["automatic"] is False
+
+
+def _ifood_dispute_order(ref: str, *, expires_in: timedelta, status=Order.Status.COMPLETED) -> Order:
+    now = timezone.now()
+    raw = {
+        "id": "dispute-1", "action": "CANCELLATION", "handshakeType": "AFTER_DELIVERY",
+        "expiresAt": (now + expires_in).isoformat(), "timeoutAction": "ACCEPT_CANCELLATION",
+        "acceptCancellationReasons": ["CUSTOMER_SATISFACTION"],
+    }
+    order = Order.objects.create(
+        ref=ref, channel_ref="ifood", session_key=f"sk-{ref}", status=status, total_q=1500,
+        data={
+            "customer": {"name": "Ana"}, "fulfillment_type": "pickup", "payment": {"method": "external"},
+            "ifood": {"handshake_pending": True, "handshakes": {"dispute-1": {
+                "state": "open", "settlements": {}, "raw": raw,
+                "received_at": (now - timedelta(minutes=2)).isoformat(),
+            }}},
+        },
+    )
+    OrderItem.objects.create(order=order, line_id="1", sku="PAO", name="Pão", qty=1, unit_price_q=1500, line_total_q=1500)
+    return order
+
+
+def test_open_ifood_negotiation_is_what_the_order_waits_even_after_delivery(operator):
+    """Decisão do dono (07/10/2026): a negociação entra no "Precisa de você", na mesma
+    régua dos outros pedidos: o tempo conta da chegada, a meta é o prazo do iFood."""
+    order = _ifood_dispute_order("ATT-NEG", expires_in=timedelta(minutes=8))
+    queue = build_two_zone_queue(user=operator)
+    card = next(card for card in queue.ifood_negotiation_orders if card.ref == order.ref)
+    assert card.attention == "negotiation"
+    assert card.goal_minutes == 10  # recebida há 2 min, vence em 8
+    expires = timezone.localtime(timezone.now() + timedelta(minutes=8))
+    assert card.goal_label == f"responder até {expires:%H:%M}"
+    assert card.attention_since_iso
+
+
+def test_answered_ifood_negotiation_waits_nobody(operator):
+    order = _ifood_dispute_order("ATT-NEG-OK", expires_in=timedelta(minutes=8))
+    data = order.data
+    data["ifood"]["handshakes"]["dispute-1"]["state"] = "queued"
+    order.data = data
+    order.save(update_fields=["data"])
+    queue = build_two_zone_queue(user=operator)
+    card = next(card for card in queue.ifood_negotiation_orders if card.ref == order.ref)
+    assert card.attention != "negotiation"

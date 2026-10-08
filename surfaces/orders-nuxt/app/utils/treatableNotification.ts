@@ -42,11 +42,14 @@ export async function showTreatableOrderNotification(
       runtime.registrationWaitMs ?? DEFAULT_REGISTRATION_WAIT_MS,
     );
     if (!registration) return false;
-    await registration.showNotification(`Pedido para tratar${ref_ ? ` ${ref_}` : ""}`, {
-      body: "Há um pedido que já pode ser tratado no quadro.",
-      tag: "gestor-treatable-order",
-      data: { action_url: runtime.actionUrl || "/" },
-    });
+    await registration.showNotification(
+      `Pedido para tratar${ref_ ? ` ${ref_}` : ""}`,
+      {
+        body: "Há um pedido que já pode ser tratado no quadro.",
+        tag: "gestor-treatable-order",
+        data: { action_url: runtime.actionUrl || "/" },
+      },
+    );
     return true;
   } catch {
     // Notificação local é enhancement: SSE, som e título continuam canônicos.

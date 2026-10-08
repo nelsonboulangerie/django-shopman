@@ -271,8 +271,8 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
             v-if="railHidden"
             type="button"
             class="hidden size-control shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground rail:grid"
-            aria-label="Mostrar a barra"
-            title="Mostrar a barra"
+            aria-label="Mostrar a barra lateral"
+            title="Mostrar a barra lateral"
             data-hub-show-rail
             @click="setRail('compact')"
           >

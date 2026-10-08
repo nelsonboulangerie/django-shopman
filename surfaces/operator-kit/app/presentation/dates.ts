@@ -525,6 +525,30 @@ export function periodLabel(selection: PeriodSelection, range: PeriodRange, toda
   return `${name} · ${shortDayMonth(range.date_from)} a ${shortDayMonth(range.date_to)}`;
 }
 
+/**
+ * O gatilho curto (`compact`, no celular): a mesma janela, em menos letras. Dia
+ * perto de hoje diz só "Hoje", "Ontem" ou "Amanhã" (as setas e "Voltar para hoje"
+ * dizem o resto); longe, "Ter 29/09". O resto troca o nome por extenso pelo chip
+ * ("28D · 04/09 a 01/10"): as datas ao lado dizem se é para trás ou para a frente,
+ * que era o que o chip sozinho não dizia. O nome inteiro segue no nome acessível.
+ */
+export function periodShortLabel(selection: PeriodSelection, range: PeriodRange, today: string): string {
+  const dayShort = (iso: string) => {
+    const offset = daysBetween(today, iso);
+    if (offset === 0) return "Hoje";
+    if (offset === 1) return "Amanhã";
+    if (offset === -1) return "Ontem";
+    return weekdayAndDate(iso);
+  };
+  if (selection.preset === "day") return parseIsoDate(range.date_from) ? dayShort(range.date_from) : "";
+  const span =
+    range.date_from === range.date_to
+      ? dayShort(range.date_from)
+      : `${shortDayMonth(range.date_from)} a ${shortDayMonth(range.date_to)}`;
+  if (selection.preset === CUSTOM_PERIOD) return span;
+  return `${findPreset(selection.preset)?.label ?? "Período"} · ${span}`;
+}
+
 /** Nome acessível das setas, na unidade do período. */
 export function periodStepLabels(preset: string): { prev: string; next: string } {
   if (preset === "day") return { prev: "Dia anterior", next: "Próximo dia" };

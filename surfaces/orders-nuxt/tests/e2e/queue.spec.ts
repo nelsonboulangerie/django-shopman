@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 // A Fila "Precisa de você" (V4-G4): o desktop abre nela; só o fato humano é botão, o
-// resto vira número e a Supervisão (as três colunas) segue a um toque e na tecla T.
+// resto vira número e a Lista (a tabela) segue a um toque e na tecla L.
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test("o desktop abre na Fila, por urgência, com a coluna de consciência", async ({ page }) => {
@@ -23,17 +23,15 @@ test("o desktop abre na Fila, por urgência, com a coluna de consciência", asyn
   await expect(queue.locator("[data-queue-menu]")).toContainText("iFood");
 });
 
-test("Ver todos e T abrem a Supervisão; F volta para a Fila", async ({ page }) => {
+test("L abre a Lista e G volta para a Grade", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("[data-queue-view]")).toBeVisible();
-  await page.locator("[data-queue-rest]").click();
-  await expect(page.locator("[data-board-columns]")).toBeVisible();
-  await page.keyboard.press("f");
+  await page.keyboard.press("l");
+  await expect(page.locator("[data-supervision-table]")).toBeVisible();
+  await page.keyboard.press("g");
   await expect(page.locator("[data-queue-view]")).toBeVisible();
-  await page.keyboard.press("t");
-  await expect(page.locator("[data-board-columns]")).toBeVisible();
-  await page.getByRole("button", { name: "Fila: o que precisa de você" }).click();
-  await expect(page.locator("[data-queue-view]")).toBeVisible();
+  await page.getByRole("tab", { name: "Lista" }).click();
+  await expect(page.locator("[data-supervision-table]")).toBeVisible();
 });
 
 test("tablet em pé segue com as colunas (a Fila é do desktop)", async ({ page }) => {

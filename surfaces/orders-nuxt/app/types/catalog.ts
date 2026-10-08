@@ -9,7 +9,13 @@ export type SurfaceKind = "channel" | "display" | "feed";
 
 // Estado de sync por CÉLULA (produto × plataforma) — CatalogSyncState (Arc C).
 // "" = nunca sincronizado / superfície que não projeta (feed de pull).
-export type CellSyncStatus = "synced" | "pending" | "error" | "retracted" | "skipped" | "";
+export type CellSyncStatus =
+  | "synced"
+  | "pending"
+  | "error"
+  | "retracted"
+  | "skipped"
+  | "";
 
 // Atributos PIM sociais da linha (Arc A) — Product.metadata['social'].
 export interface ProductSocial {

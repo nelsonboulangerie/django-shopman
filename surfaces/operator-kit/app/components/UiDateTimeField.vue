@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Data e hora são dois gestos no dispositivo, mas um único valor no contrato.
 // Separá-los evita o campo `datetime-local` estreito e variável entre sistemas.
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 
 const props = withDefaults(
   defineProps<{
@@ -31,6 +31,21 @@ watch(
     if (nextDate !== date.value) date.value = nextDate;
     if (nextTime !== time.value) time.value = nextTime;
   },
+);
+
+// O limite é um instante (`YYYY-MM-DDTHH:mm`). A data recebe só o dia; a hora
+// recebe o limite apenas no dia-limite, porque nos outros dias toda hora vale.
+// Sem isso, no dia de `min` a hora ficava livre e o campo aceitava um instante
+// anterior ao limite.
+const timeMin = computed(() =>
+  props.min && date.value && date.value === props.min.slice(0, 10)
+    ? props.min.slice(11, 16) || undefined
+    : undefined,
+);
+const timeMax = computed(() =>
+  props.max && date.value && date.value === props.max.slice(0, 10)
+    ? props.max.slice(11, 16) || undefined
+    : undefined,
 );
 
 watch([date, time], ([nextDate, nextTime]) => {
@@ -66,6 +81,8 @@ watch([date, time], ([nextDate, nextTime]) => {
       v-model="time"
       :label="`${label}, hora`"
       :minute-step="minuteStep"
+      :min="timeMin"
+      :max="timeMax"
       :disabled="disabled"
       :readonly="readonly"
       :required="required"
