@@ -52,6 +52,7 @@ const weeklySeries = computed(() =>
     <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
       <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
       <template v-if="report">
+        <!-- `xl:grid-cols-[1.4fr_1fr...]`: a resposta (uma frase) pede mais largura que cada número. -->
         <div class="grid grid-cols-2 gap-3 xl:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
           <BiAnswer :text="customersAnswer(report)" class="col-span-2 xl:col-span-1" />
           <StatTile label="Clientes" :value="formatInt(report.customers_total)" />
