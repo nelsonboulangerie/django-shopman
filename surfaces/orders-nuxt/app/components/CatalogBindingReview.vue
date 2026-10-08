@@ -189,14 +189,14 @@ function acceptCurrent(item: CatalogReviewItem) {
           <NuxtFormField label="Produto local para vincular">
             <NuxtSelect
               class="w-full"
-              :model-value="drafts[item.item_id]?.sku || ''"
-              :items="[
-                { label: 'Selecione um produto', value: '' },
-                ...board.products.map((product) => ({
+              :model-value="drafts[item.item_id]?.sku || undefined"
+              placeholder="Selecione um produto"
+              :items="
+                board.products.map((product) => ({
                   label: `${product.name} (${product.sku})`,
                   value: product.sku,
-                })),
-              ]"
+                }))
+              "
               :disabled="busy || stale || !item.can_bind"
               @update:model-value="choose(item, $event)"
             />

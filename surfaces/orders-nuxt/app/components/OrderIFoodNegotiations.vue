@@ -262,18 +262,18 @@ watch(
               <NuxtFormField label="Decisão">
                 <NuxtSelect
                   class="w-full"
-                  :model-value="draft(item.id).decision"
-                  :items="[
-                    { label: 'Selecione uma decisão', value: '' },
-                    ...item.actions.map((action) => ({
+                  :model-value="draft(item.id).decision || undefined"
+                  placeholder="Selecione uma decisão"
+                  :items="
+                    item.actions.map((action) => ({
                       label:
                         action.ref === 'accept'
                           ? 'Aceitar solicitação'
                           : 'Recusar solicitação',
                       value: action.ref,
                       disabled: !action.enabled,
-                    })),
-                  ]"
+                    }))
+                  "
                   @update:model-value="choose(item, String($event))"
                 />
               </NuxtFormField>
@@ -282,16 +282,19 @@ watch(
                 label="Motivo informado pelo iFood"
               >
                 <NuxtSelect
-                  v-model="draft(item.id).reason"
+                  :model-value="draft(item.id).reason || undefined"
                   class="w-full"
-                  :items="[
-                    { label: 'Selecione um motivo', value: '' },
-                    ...reasons(item).map((reason) => ({
+                  placeholder="Selecione um motivo"
+                  :items="
+                    reasons(item).map((reason) => ({
                       label: reasonLabel(reason),
                       value: reason,
-                    })),
-                  ]"
-                  @update:model-value="draft(item.id).confirmed = false"
+                    }))
+                  "
+                  @update:model-value="
+                    draft(item.id).reason = String($event ?? '');
+                    draft(item.id).confirmed = false;
+                  "
                 />
               </NuxtFormField>
               <NuxtFormField
