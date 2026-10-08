@@ -21,6 +21,7 @@ import {
   drawnSeries,
   nextReadingIndex,
   readingLegend,
+  readingAxisFormat,
   readingPointSummary,
   readingTableRows,
   type ReadingChartKind,
@@ -40,8 +41,14 @@ const props = withDefaults(
     axisLabel: string;
     series: ReadingChartSeries[];
     points: ReadingChartPoint[];
-    /** Como cada valor é escrito (moeda, unidade). Default: número em pt-BR. */
+    /** Como cada valor é escrito na frase do ponto e na tabela (moeda, unidade). Default: número em pt-BR. */
     format?: ReadingFormat;
+    /**
+     * Como o eixo vertical escreve a régua. O eixo é estreito no celular: dinheiro
+     * cheio ("R$ 15.000,00") quebrava em duas linhas. Default: com `readingMoneyFormat`,
+     * o compacto `readingMoneyAxisFormat` ("R$ 15 mil"); com outro formato, o mesmo.
+     */
+    axisFormat?: ReadingFormat;
     /** Obrigatório no divergente: o nome de cada lado. */
     diverging?: ReadingDivergingLabels;
     height?: number;
@@ -56,6 +63,7 @@ const props = withDefaults(
   {
     kind: "bars",
     format: defaultReadingFormat,
+    axisFormat: undefined,
     diverging: undefined,
     height: 208,
     maxTicks: 6,
@@ -80,6 +88,7 @@ const readout = computed(() =>
     ? readingPointSummary(activePoint.value, props.kind, props.series, props.format, props.diverging)
     : "",
 );
+const axis = computed(() => readingAxisFormat(props.format, props.axisFormat));
 const legend = computed(() => readingLegend(props.kind, props.series, props.diverging));
 const tableRows = computed(() =>
   readingTableRows(props.kind, props.series, props.points, props.format, props.diverging),
@@ -148,7 +157,7 @@ function onBlur() {
             :kind="kind"
             :series="series"
             :points="points"
-            :format="format"
+            :axis-format="axis"
             :diverging="diverging"
             :height="height"
             :forced-index="source === 'keyboard' ? active : null"

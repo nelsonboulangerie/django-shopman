@@ -8,7 +8,7 @@
 //   no tooltip e no nome acessível; compacto, o chip vai no canto do ícone; aberto, o
 //   mesmo chip vai na ponta direita da linha.
 import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "reka-ui";
 import { defineComponent, h, nextTick, type VueWrapper } from "vue";
 
@@ -101,6 +101,18 @@ function railState(wrapper: Awaited<ReturnType<typeof mountShell>>) {
 function railLinks(wrapper: Awaited<ReturnType<typeof mountShell>>) {
   return wrapper.findAll("[data-suite-rail-navigation] [data-section]");
 }
+
+// A primeira montagem paga a compilação da árvore inteira do shell (rail, barra
+// inferior, cabeçalho, menus do Nuxt UI): 0,3 s com a máquina livre, 1,3 s com a
+// suíte toda em paralelo, e passava dos 5 s do teste com a máquina carregada. Ela sai
+// do primeiro teste e vem para cá, uma vez, com prazo de gancho próprio (30 s); cada
+// teste mede só o próprio comportamento.
+beforeAll(async () => {
+  vi.stubGlobal("useColorMode", () => ({ value: "light", preference: "light" }));
+  const warm = await mountShell();
+  warm.unmount();
+  vi.unstubAllGlobals();
+}, 30_000);
 
 describe("OperatorSuiteShell: os três estados", () => {
   it("o botão da barra percorre aberto → compacto → oculto → aberto e diz o próximo", async () => {

@@ -56,6 +56,37 @@ export type ReadingFormat = (value: number) => string;
 const NUMBER = new Intl.NumberFormat("pt-BR");
 export const defaultReadingFormat: ReadingFormat = (value) => NUMBER.format(value);
 
+const MONEY = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const MONEY_AXIS = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+/**
+ * Dinheiro por extenso, em reais: "R$ 15.000,00". É o que a frase do ponto e a tabela
+ * dizem. O gráfico recebe reais; quem tem centavos (`_q`) divide por 100 ao montar os
+ * pontos.
+ */
+export const readingMoneyFormat: ReadingFormat = (value) => MONEY.format(value);
+
+/**
+ * Dinheiro no eixo, compacto: "R$ 15 mil", "R$ 1,2 mi". O eixo é régua, não leitura:
+ * o valor exato está na frase do ponto e na tabela. Cheio, o rótulo quebrava no
+ * celular ("R$ 15." numa linha, "000,00" na outra).
+ */
+export const readingMoneyAxisFormat: ReadingFormat = (value) => MONEY_AXIS.format(value);
+
+/**
+ * O formato do eixo quando a tela não diz um (`axis-format`): dinheiro do kit vira o
+ * compacto; qualquer outro formato vale para o eixo também.
+ */
+export function readingAxisFormat(format: ReadingFormat, axisFormat?: ReadingFormat): ReadingFormat {
+  if (axisFormat) return axisFormat;
+  return format === readingMoneyFormat ? readingMoneyAxisFormat : format;
+}
+
 export const MISSING_VALUE = "sem dado";
 const DEFAULT_ZERO = "Sem diferença";
 
@@ -219,36 +250,108 @@ export interface ReadingCsv {
   rows: ReadingCsvCell[][];
 }
 
+export interface ReadingChartCsvOptions {
+  /**
+   * Os valores são dinheiro, em reais: a célula sai com duas casas ("1500,50") e o
+   * cabeçalho ganha a unidade ("Faturamento (R$)"). Sem o símbolo na célula, para a
+   * planilha somar.
+   */
+  money?: boolean;
+}
+
+const CSV_NUMBER = new Intl.NumberFormat("pt-BR", { useGrouping: false, maximumFractionDigits: 20 });
+const CSV_MONEY = new Intl.NumberFormat("pt-BR", {
+  useGrouping: false,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 /**
- * O CSV de um gráfico: o rótulo do eixo e os números crus de cada série. Número
- * cru, e não a frase formatada, porque quem abre o CSV vai fazer conta com ele.
+ * Número para a planilha em português: vírgula decimal e nenhum separador de milhar
+ * ("1234,5"). O ponto ("1.2") a planilha em português lê como milhar ou como texto.
+ */
+export function readingCsvNumber(value: number): string {
+  return CSV_NUMBER.format(value);
+}
+
+/** Reais para a planilha: duas casas, vírgula decimal, sem milhar e sem "R$" ("1500,50"). */
+export function readingCsvMoney(value: number): string {
+  return CSV_MONEY.format(value);
+}
+
+/**
+ * O CSV de um gráfico: o rótulo do eixo e os números de cada série. O número, e não
+ * a frase formatada, porque quem abre o CSV vai fazer conta com ele; escrito como a
+ * planilha em português o lê (vírgula decimal, sem milhar).
  */
 export function readingChartCsv(
   axisLabel: string,
   series: ReadingChartSeries[],
   points: ReadingChartPoint[],
+  options: ReadingChartCsvOptions = {},
 ): ReadingCsv {
+  const unit = options.money ? " (R$)" : "";
   return {
-    header: [axisLabel, ...series.map((item) => item.label)],
+    header: [axisLabel, ...series.map((item) => `${item.label}${unit}`)],
     rows: points.map((point) => [
       point.label,
-      ...series.map((item) => pointValue(point, item.key) ?? ""),
+      ...series.map((item) => {
+        const value = pointValue(point, item.key);
+        if (value === null) return "";
+        return options.money ? readingCsvMoney(value) : value;
+      }),
     ]),
   };
 }
 
 function csvCell(value: ReadingCsvCell): string {
-  const text = String(value);
+  const text = typeof value === "number" ? readingCsvNumber(value) : value;
   return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 /**
  * O texto do arquivo. Ponto e vírgula, porque a planilha em português lê a vírgula
- * como decimal; a marca de ordem de bytes abre o UTF-8 com acento certo.
+ * como decimal (e é com vírgula que os números saem); a marca de ordem de bytes abre
+ * o UTF-8 com acento certo.
  */
 export function readingCsvText(csv: ReadingCsv): string {
   const lines = [csv.header, ...csv.rows].map((row) => row.map(csvCell).join(";"));
   return `\uFEFF${lines.join("\n")}`;
+}
+
+/** Um trecho contínuo de uma série: do índice `start` ao `end`, todos com valor. */
+export interface ReadingRun {
+  start: number;
+  end: number;
+}
+
+/**
+ * Os trechos com dado de uma série, na ordem. A linha quebra no buraco sozinha; a
+ * área não (o Unovis lê o ponto ausente como zero e desce até a base). Por isso a
+ * área é desenhada trecho a trecho, e um ponto isolado não vira área.
+ */
+export function readingRuns(points: ReadingChartPoint[], key: string): ReadingRun[] {
+  const runs: ReadingRun[] = [];
+  let start: number | null = null;
+  points.forEach((point, index) => {
+    const present = pointValue(point, key) !== null;
+    if (present && start === null) start = index;
+    if (!present && start !== null) {
+      runs.push({ start, end: index - 1 });
+      start = null;
+    }
+  });
+  if (start !== null) runs.push({ start, end: points.length - 1 });
+  return runs.filter((run) => run.end > run.start);
+}
+
+/**
+ * Onde um índice cai num trecho: dentro, ele mesmo; fora, a ponta mais perto. A área
+ * de um trecho leva todos os pontos (o Unovis dá o mesmo `data` a todo componente),
+ * e os de fora repetem a ponta: ponto coincidente não desenha nada.
+ */
+export function readingRunIndex(run: ReadingRun, index: number): number {
+  return Math.min(run.end, Math.max(run.start, index));
 }
 
 /**

@@ -5,7 +5,12 @@ import { defineComponent, h, nextTick } from "vue";
 import OperatorReadingCard from "../../app/components/OperatorReadingCard.vue";
 import OperatorReadingChart from "../../app/components/OperatorReadingChart.vue";
 import OperatorReadingPageMenu from "../../app/components/OperatorReadingPageMenu.vue";
-import type { ReadingChartPoint, ReadingChartSeries } from "../../app/presentation/readingChart";
+import {
+  readingMoneyAxisFormat,
+  readingMoneyFormat,
+  type ReadingChartPoint,
+  type ReadingChartSeries,
+} from "../../app/presentation/readingChart";
 
 // O desenho (Unovis) não roda no happy-dom: mede SVG que não existe. O dublê guarda as
 // props que recebeu e deixa o teste disparar o que o Crosshair do Unovis dispararia.
@@ -16,7 +21,7 @@ const PlotStub = defineComponent({
     kind: { type: String, default: undefined },
     series: { type: Array, default: undefined },
     points: { type: Array, default: undefined },
-    format: { type: Function, default: undefined },
+    axisFormat: { type: Function, default: undefined },
     diverging: { type: Object, default: undefined },
     height: { type: Number, default: undefined },
     forcedIndex: { type: Number, default: null },
@@ -251,5 +256,36 @@ describe("OperatorReadingPageMenu: o ⋯ da página de leitura", () => {
     expect(document.querySelector("[data-operator-reading-page-menu]")!.getAttribute("aria-label")).toBe(
       "Mais: copiar link e como é calculado",
     );
+  });
+});
+
+describe("OperatorReadingChart: o eixo e a frase têm formatos próprios", () => {
+  const nbsp = (text: string) => text.replace(/\u00a0/g, " ");
+  const revenue: ReadingChartPoint[] = [
+    { label: "Seg", values: { orders: 15000 } },
+    { label: "Ter", values: { orders: 12500.5 } },
+  ];
+
+  it("dinheiro do kit: eixo compacto, frase e tabela por extenso", async () => {
+    await mountChart({ points: revenue, format: readingMoneyFormat });
+    expect(plotProps.at(-1)!.axisFormat).toBe(readingMoneyAxisFormat);
+    await press("Home");
+    expect(nbsp(readout())).toBe("Seg: Pedidos confirmados R$ 15.000,00");
+    const table = document.querySelector("[data-operator-reading-table]")!.textContent!;
+    expect(nbsp(table)).toContain("R$ 12.500,50");
+  });
+
+  it("axis-format da tela vale só para o eixo", async () => {
+    const axisFormat = (value: number) => `${value / 1000} mil`;
+    await mountChart({ points: revenue, format: readingMoneyFormat, axisFormat });
+    expect(plotProps.at(-1)!.axisFormat).toBe(axisFormat);
+    await press("End");
+    expect(nbsp(readout())).toBe("Ter: Pedidos confirmados R$ 12.500,50");
+  });
+
+  it("sem dinheiro e sem axis-format, o eixo usa o formato da frase", async () => {
+    const percent = (value: number) => `${value}%`;
+    await mountChart({ format: percent });
+    expect(plotProps.at(-1)!.axisFormat).toBe(percent);
   });
 });

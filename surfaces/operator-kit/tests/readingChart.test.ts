@@ -3,9 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   divergingText,
   nextReadingIndex,
+  readingAxisFormat,
   readingChartCsv,
   readingCsvFileName,
+  readingCsvMoney,
+  readingCsvNumber,
   readingCsvText,
+  readingMoneyAxisFormat,
+  readingMoneyFormat,
+  readingRunIndex,
+  readingRuns,
   readingLegend,
   readingPointSummary,
   readingTableRows,
@@ -122,7 +129,7 @@ describe("tabela equivalente e CSV", () => {
     ]);
   });
 
-  it("o CSV leva número cru, e o ponto sem dado vira célula vazia", () => {
+  it("o CSV leva o número, e o ponto sem dado vira célula vazia", () => {
     expect(readingChartCsv("Dia", revenue, days)).toEqual({
       header: ["Dia", "Esta semana", "Semana anterior"],
       rows: [
@@ -138,9 +145,74 @@ describe("tabela equivalente e CSV", () => {
     expect(text.slice(1).split("\n")).toEqual(["Produto;Qtd", '"Pão ""da casa""; grande";2']);
   });
 
+  it("número em pt-BR: vírgula decimal, sem separador de milhar", () => {
+    expect(readingCsvNumber(1.2)).toBe("1,2");
+    expect(readingCsvNumber(1234567.891)).toBe("1234567,891");
+    expect(readingCsvNumber(-0.5)).toBe("-0,5");
+    expect(readingCsvNumber(3180)).toBe("3180");
+    const text = readingCsvText({ header: ["Hora", "Média"], rows: [["12h", 1.2], ["13h", 12345.75]] });
+    expect(text.slice(1).split("\n")).toEqual(["Hora;Média", "12h;1,2", "13h;12345,75"]);
+  });
+
+  it("dinheiro em reais: duas casas com vírgula, sem R$ na célula, unidade no cabeçalho", () => {
+    expect(readingCsvMoney(1500.5)).toBe("1500,50");
+    expect(readingCsvMoney(15000)).toBe("15000,00");
+    const priced: ReadingChartPoint[] = [
+      { label: "Seg 05/10", values: { current: 15000.5, previous: 1234.567 } },
+      { label: "Qua 07/10", values: { current: 3310, previous: null } },
+    ];
+    const csv = readingChartCsv("Dia", revenue, priced, { money: true });
+    expect(csv).toEqual({
+      header: ["Dia", "Esta semana (R$)", "Semana anterior (R$)"],
+      rows: [
+        ["Seg 05/10", "15000,50", "1234,57"],
+        ["Qua 07/10", "3310,00", ""],
+      ],
+    });
+    expect(readingCsvText(csv).slice(1).split("\n")[1]).toBe("Seg 05/10;15000,50;1234,57");
+  });
+
   it("o nome do arquivo sai do título, sem acento", () => {
     expect(readingCsvFileName("Faturamento por dia")).toBe("faturamento-por-dia.csv");
     expect(readingCsvFileName("Pão & Café: Sábado")).toBe("pao-cafe-sabado.csv");
     expect(readingCsvFileName("!!!")).toBe("quadro.csv");
+  });
+});
+
+describe("o formato do eixo", () => {
+  it("dinheiro no eixo é compacto, sem quebrar em duas linhas", () => {
+    // O espaço do Intl é o inseparável (U+00A0); a régua lê o texto, não o byte.
+    const plain = (text: string) => text.replace(/\u00a0/g, " ");
+    expect(plain(readingMoneyAxisFormat(15000))).toBe("R$ 15 mil");
+    expect(plain(readingMoneyAxisFormat(1234567))).toBe("R$ 1,2 mi");
+    expect(plain(readingMoneyAxisFormat(500))).toBe("R$ 500");
+    expect(plain(readingMoneyFormat(15000))).toBe("R$ 15.000,00");
+  });
+
+  it("sem axis-format, o dinheiro do kit vira o compacto e o resto vale para os dois", () => {
+    const percent = (value: number) => `${value}%`;
+    const axisMoney = (value: number) => `eixo ${value}`;
+    expect(readingAxisFormat(readingMoneyFormat)).toBe(readingMoneyAxisFormat);
+    expect(readingAxisFormat(percent)).toBe(percent);
+    expect(readingAxisFormat(readingMoneyFormat, axisMoney)).toBe(axisMoney);
+  });
+});
+
+describe("a área com buraco", () => {
+  const gaps = (values: Array<number | null>): ReadingChartPoint[] =>
+    values.map((value, index) => ({ label: `${index}`, values: { v: value } }));
+
+  it("um trecho por sequência com dado; ponto isolado não vira área", () => {
+    expect(readingRuns(gaps([1, 2, null, 4, 5, 6, null, 8]), "v")).toEqual([
+      { start: 0, end: 1 },
+      { start: 3, end: 5 },
+    ]);
+    expect(readingRuns(gaps([1, 2, 3]), "v")).toEqual([{ start: 0, end: 2 }]);
+    expect(readingRuns(gaps([null, null]), "v")).toEqual([]);
+  });
+
+  it("fora do trecho, o índice repete a ponta mais perto (ponto coincidente, sem corcova)", () => {
+    const run = { start: 3, end: 5 };
+    expect([0, 2, 3, 4, 5, 6, 9].map((index) => readingRunIndex(run, index))).toEqual([3, 3, 3, 4, 5, 5, 5]);
   });
 });
