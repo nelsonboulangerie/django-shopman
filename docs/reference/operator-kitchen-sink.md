@@ -117,6 +117,7 @@ componentes, tokens e receitas continuam em `surfaces/operator-kit`.
 | `OperatorOperationalShell` | chrome estável e barra de ação                                  | PDV, Cozinha, Produção                   | dashboard administrativo            |
 | `OperatorPage`             | container, header, body, links e aside                          | página com fluxo de leitura              | substituir pane de operação         |
 | `OperatorPageHeader`       | título, posto, busca, status, filtros e ações                   | dentro de shell operacional              | inventar cabeçalho local            |
+| `OperatorToolbar`          | barra de trabalho sobre o DashboardToolbar oficial, sem pele    | `#left`, `#right` ou o slot padrão; `as` | montar `NuxtDashboardToolbar` no app |
 | `OperatorSuiteRail`        | navegação da suíte por seções                                   | um modelo de seção por app               | navegação de página                 |
 | `OperatorSectionBar`       | alternativa responsiva ao rail                                  | celular e tablet em pé                   | segunda fonte de navegação          |
 | `OperatorSplitter`         | panes redimensionáveis, teclado e persistência                  | lista/detalhe e editor/prévia no desktop | duas colunas comprimidas no celular |
