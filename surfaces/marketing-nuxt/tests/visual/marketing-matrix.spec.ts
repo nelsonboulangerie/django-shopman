@@ -181,7 +181,9 @@ test.describe("gate global", () => {
     await page.getByLabel("Usuário").fill("operadora-visual");
     await page.getByLabel("Senha").fill("senha-incorreta");
     await page.getByRole("button", { name: "Entrar" }).click();
-    await expect(page.getByRole("alert")).toContainText(
+    // O erro do login do kit é o NuxtAlert oficial numa região viva assertiva
+    // (OperatorLoginForm), sem papel ARIA recriado sobre ele.
+    await expect(page.locator("[data-operator-login-error]")).toContainText(
       "Usuário ou senha incorretos",
     );
     await expectStableScreenshot(page, "login__anonymous-invalid", V320);
@@ -226,7 +228,9 @@ test.describe("gate global", () => {
     await page.getByLabel("Usuário").fill("operadora-visual");
     await page.getByLabel("Senha").fill("senha-incorreta");
     await page.getByRole("button", { name: "Entrar" }).click();
-    await expect(page.getByRole("alert")).toContainText("Aguarde um minuto");
+    await expect(page.locator("[data-operator-login-error]")).toContainText(
+      "Aguarde um minuto",
+    );
     await expectStableScreenshot(page, "login__rate-limited", V390);
   });
 
@@ -244,7 +248,10 @@ test.describe("gate global", () => {
     await expect(
       page.getByRole("heading", { name: "Sua sessão terminou" }),
     ).toBeVisible();
-    await expect(page.getByText(/rascunho.*preservados/i)).toBeVisible();
+    // A frase é a descrição do diálogo (DialogDescription) e também o texto visível.
+    await expect(
+      page.getByRole("dialog", { name: "Sua sessão terminou" }),
+    ).toHaveAccessibleDescription(/rascunho.*preservados/i);
     await expectStableScreenshot(page, "login__expired-with-draft", V1280);
   });
 });
@@ -627,16 +634,17 @@ test.describe("listas operacionais", () => {
       "/campaigns?state=inactive&platform=facebook&q=artesanal",
       V390,
     );
-    await page.getByRole("button", { name: "Buscar" }).click();
-    await expect(
-      page.getByRole("combobox", { name: "Buscar campanha" }),
-    ).toHaveValue("artesanal");
+    // Os recortes da tela primeiro: no celular a lupa abre a busca da suíte em tela
+    // cheia (modal), e o que fica atrás dela sai da árvore de acessibilidade.
     await expect(
       page.getByRole("button", { name: /Desligadas 9/ }),
     ).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByLabel("Plataforma")).toHaveValue("facebook");
+    await page.getByRole("button", { name: "Buscar" }).click();
+    const search = page.getByRole("dialog", { name: "Buscar campanha" });
+    await expect(search.getByRole("textbox")).toHaveValue("artesanal");
     await expect(
-      page.getByText(
+      search.getByText(
         "A busca da suíte não respondeu. O filtro desta tela continua valendo.",
       ),
     ).toBeVisible();
