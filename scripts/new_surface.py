@@ -477,6 +477,7 @@ def register_everywhere(repo: Repo, s: dict, sibling: dict, domain_by_spec: dict
                 "direct_reka_import_files": 0,
                 "manual_overlay_files": 0,
                 "native_control_occurrences": 0,
+                "ui_native_select_occurrences": 0,
             },
             "surfaces": [
                 {

@@ -131,7 +131,6 @@ const { request: openSearch } = useSuiteSearchRequest();
       <NuxtBadge
         v-if="eyebrowText"
         color="neutral"
-        variant="subtle"
         data-page-header-eyebrow
         >{{ eyebrowText }}</NuxtBadge
       >

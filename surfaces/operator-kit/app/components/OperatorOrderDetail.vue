@@ -134,7 +134,6 @@ const itemColumns = [
             <NuxtBadge
               v-if="showStatus"
               :color="nuxtTone(statusTone(order.status))"
-              variant="subtle"
               :label="order.status_label"
               data-order-status
             />
@@ -250,7 +249,6 @@ const itemColumns = [
               <NuxtBadge
                 v-if="order.gift_hide_values"
                 color="warning"
-                variant="subtle"
                 icon="i-lucide-eye-off"
                 label="Não mostrar valores"
                 data-gift-hide-values
@@ -288,7 +286,6 @@ const itemColumns = [
             <NuxtBadge
               v-if="profile.segment_tone"
               :color="nuxtTone(profile.segment_tone)"
-              variant="subtle"
               :label="profile.segment_label"
               data-customer-segment
             />
@@ -504,7 +501,6 @@ const itemColumns = [
               <NuxtBadge
                 v-if="order.gift_hide_values"
                 color="warning"
-                variant="subtle"
                 icon="i-lucide-eye-off"
                 label="Não mostrar valores"
                 data-gift-hide-values
@@ -590,7 +586,6 @@ const itemColumns = [
               <NuxtBadge
                 v-if="profile?.segment_tone"
                 :color="nuxtTone(profile.segment_tone)"
-                variant="subtle"
                 :label="profile.segment_label"
                 data-customer-segment
               />

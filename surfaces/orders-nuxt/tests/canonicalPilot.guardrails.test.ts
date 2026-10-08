@@ -308,9 +308,15 @@ describe("Gestor canônico em Nuxt UI", () => {
         .filter(({ tag }) => /\bsize=/.test(tag))
         .map(({ file }) => file),
     ).toEqual([]);
+    // Selo: o tema dá `soft` (conjunto mínimo, dono 08/10/2026). Selo sem `variant`
+    // é o certo; os `soft`/`subtle` escritos que restam são teto na trava do kit
+    // (`operator-kit/tests/guardrails.minimalSet.test.ts`) e só caem.
     expect(
       componentTags("Badge")
-        .filter(({ tag }) => !/\bvariant="(?:soft|subtle)"/.test(tag))
+        .filter(
+          ({ tag }) =>
+            /\bvariant=/.test(tag) && !/\bvariant="(?:soft|subtle)"/.test(tag),
+        )
         .map(({ file }) => file),
     ).toEqual([]);
     expect(offenders(/<kbd\b/i)).toEqual([]);
@@ -362,9 +368,10 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(appConfig).toMatch(/\balert:\s*\{/);
+    // `secondary` saiu das cores geradas (conjunto mínimo, dono 08/10/2026).
+    expect(appConfig).not.toMatch(/color: ["']secondary["']/);
     for (const color of [
       "primary",
-      "secondary",
       "success",
       "info",
       "warning",

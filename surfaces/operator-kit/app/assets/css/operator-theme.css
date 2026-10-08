@@ -122,7 +122,6 @@
      estados oficiais; apenas a linguagem visual (marca, superfícies, texto e
      bordas) muda. Estes nomes são a API semântica oficial do Nuxt UI 4. */
   --ui-primary: var(--primary);
-  --ui-secondary: var(--secondary-foreground);
   --ui-success: var(--success);
   --ui-info: var(--info);
   --ui-warning: var(--warning);

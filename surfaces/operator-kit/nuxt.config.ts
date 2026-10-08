@@ -34,6 +34,10 @@ export default defineNuxtConfig({
         fonts: false,
         colorMode: false,
         theme: {
+          // Só as cores do conjunto mínimo (dono, 08/10/2026, PR #1539): cor que não
+          // é gerada não pode ser usada, e o tipo de `color` dos componentes encolhe
+          // junto. O `neutral` o Nuxt UI sempre gera. `secondary` saiu: zero usos.
+          colors: ["primary", "info", "success", "warning", "error"],
           unstyled: false,
           transitions: true,
         },
