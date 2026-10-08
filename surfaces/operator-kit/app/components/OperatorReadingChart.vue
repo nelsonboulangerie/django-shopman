@@ -192,7 +192,15 @@ function onBlur() {
       </ul>
       <p class="sr-only" role="status" data-operator-reading-announcement>{{ announcement }}</p>
       <div :class="tableVisible ? undefined : 'sr-only'" data-operator-reading-table>
-        <NuxtTable :data="tableRows" :columns="columns" :caption="caption" />
+        <!-- Só para o leitor de tela, a tabela não rola: dentro do recorte de 1px do
+             sr-only o contêiner `overflow-auto` do NuxtTable vira região rolável sem
+             parada de teclado (axe: scrollable-region-focusable). -->
+        <NuxtTable
+          :data="tableRows"
+          :columns="columns"
+          :caption="caption"
+          :class="tableVisible ? undefined : 'overflow-visible'"
+        />
       </div>
     </template>
   </div>

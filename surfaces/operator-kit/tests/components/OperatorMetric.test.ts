@@ -34,7 +34,8 @@ describe("OperatorMetric", () => {
     expect(line.get(".sr-only").text()).toBe(drop.text);
     expect(line.text()).toContain("23%");
     expect(line.text()).toContain("vs período anterior (3.384)");
-    expect(line.html()).toContain("text-error");
+    // O tom é a cor do selo; a variante (soft) é do tema, não da peça.
+    expect(line.html()).toMatch(/\b(?:bg|text)-error\b/);
     expect(wrapper.get("[data-metric-value]").text()).toBe("2.606 pedidos");
   });
 

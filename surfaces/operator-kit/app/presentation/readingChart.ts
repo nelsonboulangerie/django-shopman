@@ -61,6 +61,9 @@ const MONEY_AXIS = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
   notation: "compact",
+  // Sem o mínimo explícito, o ICU do Node 22 (o da CI) herda os 2 decimais da moeda e
+  // escreve "R$ 15,0 mil"; o do Node 26 escreve "R$ 15 mil". Zero fixa o mesmo texto.
+  minimumFractionDigits: 0,
   maximumFractionDigits: 1,
 });
 

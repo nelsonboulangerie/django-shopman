@@ -140,6 +140,10 @@ describe("OperatorReadingChart: tabela, legenda e vazio", () => {
     await mountChart();
     const table = document.querySelector("[data-operator-reading-table]")!;
     expect(table.classList.contains("sr-only")).toBe(true);
+    // Dentro do recorte do sr-only a tabela não rola (axe: scrollable-region-focusable).
+    const root = table.querySelector('[data-slot="root"]')!;
+    expect(root.classList.contains("overflow-visible")).toBe(true);
+    expect(root.classList.contains("overflow-auto")).toBe(false);
     expect(table.querySelector("caption")?.textContent).toContain("Pedidos confirmados por hora, em tabela");
     const headers = [...table.querySelectorAll("th")].map((cell) => cell.textContent?.trim());
     expect(headers).toEqual(["Hora", "Pedidos confirmados"]);
@@ -150,6 +154,7 @@ describe("OperatorReadingChart: tabela, legenda e vazio", () => {
     await mountChart({ tableVisible: true, tableCaption: "Dados do gráfico de pedidos" });
     const table = document.querySelector("[data-operator-reading-table]")!;
     expect(table.classList.contains("sr-only")).toBe(false);
+    expect(table.querySelector('[data-slot="root"]')!.classList.contains("overflow-visible")).toBe(false);
     expect(table.querySelector("caption")?.textContent).toContain("Dados do gráfico de pedidos");
   });
 
