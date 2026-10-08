@@ -98,6 +98,13 @@ export default defineAppConfig({
         },
       ],
     },
+    accordion: {
+      // O rótulo do item é item flex sem `min-w-0` no Nuxt UI: um texto longo no
+      // slot default empurra a seta para fora e `truncate` nunca corta. Com
+      // `min-w-0 flex-1` o rótulo cede espaço e a seta fica na borda (Em andamento
+      // do Gestor, dono, 08/10/2026: a linha da situação trunca).
+      slots: { label: "min-w-0 flex-1" },
+    },
     card: {
       // Densidade operacional única. O UCard oficial sobe para 24 px no body em
       // `sm`; no Gestor isso desperdiça uma linha útil em cada unidade da fila.

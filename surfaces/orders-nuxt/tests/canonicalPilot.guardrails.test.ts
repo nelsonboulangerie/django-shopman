@@ -833,6 +833,10 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(queue).toContain("data-queue-working-row");
     expect(queue).toMatch(/class="truncate op-micro[^"]*"\s+:title="item.summary"/);
     expect(queue).toContain("ms-auto flex shrink-0 items-center gap-2 self-end");
+    // Sem isto no tema o truncate não corta: o rótulo do Accordion cresce com o texto.
+    expect(
+      readFileSync(new URL("../../operator-kit/app/app.config.ts", import.meta.url), "utf8"),
+    ).toContain('slots: { label: "min-w-0 flex-1" }');
     const appConfig = readFileSync(
       new URL("../../operator-kit/app/app.config.ts", import.meta.url),
       "utf8",
