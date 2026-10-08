@@ -67,10 +67,12 @@ const emit = defineEmits<{
     />
 
     <!-- p-px: o contorno do Card é um ring 1 px para fora; sem o respiro, a área que
-         rola o cortava no topo e na lateral. -->
+         rola o cortava no topo e na lateral. items-start: cada cartão com a altura do
+         que tem; esticado até o mais alto da linha, o curto ganhava uma faixa vazia
+         acima do rodapé (dono, 08/10/2026). -->
     <template v-else-if="wide">
       <div
-        class="grid min-h-0 flex-1 auto-rows-max gap-3 overflow-y-auto p-px pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
+        class="grid min-h-0 flex-1 auto-rows-max items-start gap-3 overflow-y-auto p-px pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
         data-zone-cards
       >
         <OrderCard

@@ -147,7 +147,11 @@ describe("catálogo vivo", () => {
     );
     expect(cardConfig).toContain('footer: "p-4 sm:p-4"');
     expect(cardConfig).toContain('container: "p-4 sm:p-4"');
-    expect(cardConfig).not.toMatch(/shadow-|rounded-|ring-/);
+    // Exceção única (dono, 08/10/2026): o destaque do item da vez, o mesmo traço
+    // do PageCard highlight, ligado por `data-highlight`. Nenhum outro ring.
+    const highlight = 'root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary"';
+    expect(cardConfig).toContain(highlight);
+    expect(cardConfig.replace(highlight, "")).not.toMatch(/shadow-|rounded-|ring-/);
   });
 
   it("expõe os estados operacionais pedidos como cenários determinísticos", () => {

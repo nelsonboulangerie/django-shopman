@@ -192,7 +192,11 @@ export default defineAppConfig({
       // O `[data-state]` separa o item do Accordion do item do Timeline, que tem a
       // mesma anatomia (root > item) e precisa do padding: sem ele a Linha do tempo
       // do detalhe encostava no cabeçalho e na base do card (dono, 08/10/2026).
+      // Destaque semântico do item da vez num Card (dono, 08/10/2026): o mesmo traço
+      // do `PageCard highlight` (anel de 2 px na primária). O Card oficial não tem a prop;
+      // quem usa marca `data-highlight` e o tema desenha, uma vez só para os 9 apps.
       slots: {
+        root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary",
         header: "p-4 sm:p-4",
         body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0 has-[>[data-slot=root]:only-child>[data-slot=item][data-state]]:py-0",
         footer: "p-4 sm:p-4",

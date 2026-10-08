@@ -732,8 +732,10 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(card).toMatch(/<NuxtCard\s+as="article"/);
     expect(card).toContain(
       // 1fr, não minmax(0,1fr): numa grade que rola, o corpo não pode encolher
-      // abaixo do conteúdo (o rodapé subia por cima dele na Saída).
-      'class="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto]"',
+      // abaixo do conteúdo (o rodapé subia por cima dele na Saída). Sem h-full
+      // (dono, 08/10/2026): esticado até o mais alto da linha, o cartão curto da
+      // Saída larga ganhava uma faixa vazia acima do rodapé.
+      'class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto]"',
     );
     expect(card).toContain(":variant=\"selected ? 'subtle' : 'outline'\"");
     expect(card).toContain("<template #header>");

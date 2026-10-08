@@ -349,9 +349,10 @@ function nuxtIcon(icon: string): string {
 <template>
   <NuxtCard
     as="article"
-    class="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto]"
+    class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto]"
     :variant="selected ? 'subtle' : 'outline'"
     :data-card-state="handoff ? 'handoff' : seal.tone"
+    :data-highlight="next ? 'true' : undefined"
     :aria-selected="selecting ? selected : undefined"
     @pointerdown="pressStart"
     @pointerup="pressEnd"
@@ -837,7 +838,7 @@ function nuxtIcon(icon: string): string {
             primary && secondary.length === 1
               ? '@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
               : secondary.length > 1
-                ? 'grid-cols-2'
+                ? 'grid-cols-1 @[20rem]:grid-cols-2'
                 : 'grid-cols-1'
           "
         >
@@ -862,7 +863,7 @@ function nuxtIcon(icon: string): string {
             v-if="primary"
             block
             class="min-w-0"
-            :class="secondary.length > 1 ? 'col-span-2' : undefined"
+            :class="secondary.length > 1 ? '@[20rem]:col-span-2' : undefined"
             :disabled="busy || primary.disabled"
             :loading="busy"
             :title="
