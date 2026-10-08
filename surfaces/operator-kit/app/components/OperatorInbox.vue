@@ -132,6 +132,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
         variant="ghost"
         icon="i-lucide-bell"
         square
+        class="suite-page:size-control suite-page:justify-center"
         :aria-label="label"
         data-operator-inbox-trigger
         :data-placement="props.placement"

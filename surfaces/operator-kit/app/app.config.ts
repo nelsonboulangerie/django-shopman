@@ -155,8 +155,15 @@ export default defineAppConfig({
     // suíte (os sete apps não migrados) e no catálogo, campo, select e item de lista
     // voltam aos 44 px do `main` (`suite-page:`, que alcança o portal da lista). O
     // Gestor não veste o marcador e fica no compacto.
+    // `lg`/`xl` são os campos do login (o `largeFields` do PDV é o `xl`, o degrau de ação).
     input: {
-      variants: { size: { md: { base: "suite-page:h-control" } } },
+      variants: {
+        size: {
+          md: { base: "suite-page:h-control" },
+          lg: { base: "suite-page:h-control" },
+          xl: { base: "suite-page:h-action" },
+        },
+      },
     },
     select: {
       slots: { content: "bg-popover" },

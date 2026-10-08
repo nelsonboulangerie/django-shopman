@@ -57,11 +57,21 @@ async function install() {
 </script>
 
 <template>
+  <!-- Convite não é etapa (dono, 17/09/2026): o cartão fica no pé da tela e não bloqueia
+       o resto. `modal=false` sem overlay deixa a página operável e legível para leitor
+       de tela (o modal tornava tudo `aria-hidden` e escondia o login atrás de si), e o
+       foco continua onde a tela o pôs (o campo Usuário do login, por exemplo). Sem
+       animação: o cartão chega pronto, como o `aside` que ele substituiu. -->
   <NuxtModal
     :open="visible"
+    :modal="false"
+    :overlay="false"
+    :transition="false"
     :dismissible="false"
     :close="false"
     :title="title"
+    :content="{ onOpenAutoFocus: (event: Event) => event.preventDefault() }"
+    class="top-auto bottom-3 z-50 translate-y-0"
     data-operator-pwa-install
   >
     <template #body>
@@ -80,12 +90,14 @@ async function install() {
           color="neutral"
           variant="outline"
           label="Agora não"
+          class="suite-page:min-h-control"
           @click="pwa.dismiss()"
         />
         <NuxtButton
           v-if="plan.kind === 'prompt'"
           block
           label="Instalar"
+          class="suite-page:min-h-control"
           @click="install"
         />
         <!-- Ninguém sabe daqui se ela seguiu os passos; quem sabe é ela. Dizer "já
@@ -94,6 +106,7 @@ async function install() {
           v-else
           block
           label="Já instalei"
+          class="suite-page:min-h-control"
           @click="pwa.dismissAsDone()"
         />
       </div>
