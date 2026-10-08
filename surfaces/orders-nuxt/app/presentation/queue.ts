@@ -422,7 +422,7 @@ export function workingOrders(
         ageLabel: minutesLabel(seconds),
         summary: stations.length
           ? `${done} de ${stations.length} ${stations.length === 1 ? "pronta" : "prontas"}`
-          : "sem estação",
+          : "Sem estação",
       };
     })
     .sort((a, b) => b.seconds - a.seconds);
@@ -436,7 +436,7 @@ export function workingOrders(
         seconds,
         ageLabel: minutesLabel(seconds),
         summary:
-          card.courier_status_label || card.equipment_label || "a caminho",
+          card.courier_status_label || card.equipment_label || "A caminho",
       };
     })
     .sort((a, b) => b.seconds - a.seconds);

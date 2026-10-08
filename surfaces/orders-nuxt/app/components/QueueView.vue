@@ -631,19 +631,24 @@ function switchHint(row: {
               :data-queue-working-list="group.key"
             >
               <NuxtAccordion type="multiple" :items="group.items">
+                <!-- Duas linhas (dono, 08/10/2026): "B03 · Maria Santos" em cima; a
+                     situação embaixo, truncada se precisar, com o tempo e a seta na
+                     mesma linha dela. Numa linha só o nome era espremido a 340 px. -->
                 <template #default="{ item }">
-                  <span class="flex min-w-0 flex-1 items-baseline gap-2">
-                    <span class="font-semibold tnum">{{ item.code }}</span>
-                    <span class="min-w-0 break-words text-muted-foreground">{{
-                      item.who
-                    }}</span>
+                  <span class="flex min-w-0 flex-1 flex-col" data-queue-working-row>
+                    <span class="break-words">
+                      <span class="font-semibold tnum">{{ item.code }}</span>
+                      <span class="text-muted-foreground"> · {{ item.who }}</span>
+                    </span>
+                    <span
+                      class="truncate op-micro text-muted-foreground"
+                      :title="item.summary"
+                      >{{ item.summary }}</span
+                    >
                   </span>
                 </template>
                 <template #trailing="{ item }">
-                  <span class="flex shrink-0 items-center gap-2">
-                    <span class="op-micro text-muted-foreground">{{
-                      item.summary
-                    }}</span>
+                  <span class="ms-auto flex shrink-0 items-center gap-2 self-end">
                     <NuxtBadge
                       color="neutral"
                       :label="item.age"

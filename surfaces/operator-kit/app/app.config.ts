@@ -168,6 +168,13 @@ export default defineAppConfig({
         },
       ],
     },
+    accordion: {
+      // O rótulo do item é item flex sem `min-w-0` no Nuxt UI: um texto longo no
+      // slot default empurra a seta para fora e `truncate` nunca corta. Com
+      // `min-w-0 flex-1` o rótulo cede espaço e a seta fica na borda (Em andamento
+      // do Gestor, dono, 08/10/2026: a linha da situação trunca).
+      slots: { label: "min-w-0 flex-1" },
+    },
     // Cartão: o de topo é `outline` (default); cartão dentro de outro cartão é
     // `soft` (só fundo, sem borda dupla), escrito na chamada (dono, 08/10/2026).
     // `subtle` não entra. Não há regra de CSS que force o aninhado: é a chamada que
