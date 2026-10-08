@@ -308,9 +308,15 @@ describe("Gestor canônico em Nuxt UI", () => {
         .filter(({ tag }) => /\bsize=/.test(tag))
         .map(({ file }) => file),
     ).toEqual([]);
+    // Selo: o tema dá `soft` (conjunto mínimo, dono 08/10/2026). Selo sem `variant`
+    // é o certo; os `soft`/`subtle` escritos que restam são teto na trava do kit
+    // (`operator-kit/tests/guardrails.minimalSet.test.ts`) e só caem.
     expect(
       componentTags("Badge")
-        .filter(({ tag }) => !/\bvariant="(?:soft|subtle)"/.test(tag))
+        .filter(
+          ({ tag }) =>
+            /\bvariant=/.test(tag) && !/\bvariant="(?:soft|subtle)"/.test(tag),
+        )
         .map(({ file }) => file),
     ).toEqual([]);
     expect(offenders(/<kbd\b/i)).toEqual([]);
@@ -362,9 +368,10 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(appConfig).toMatch(/\balert:\s*\{/);
+    // `secondary` saiu das cores geradas (conjunto mínimo, dono 08/10/2026).
+    expect(appConfig).not.toMatch(/color: ["']secondary["']/);
     for (const color of [
       "primary",
-      "secondary",
       "success",
       "info",
       "warning",
@@ -398,8 +405,12 @@ describe("Gestor canônico em Nuxt UI", () => {
     // número é o indicativo (2xl); o On/Off é xl. A única expressão aceita é o
     // tamanho amarrado ao próprio texto: `:size="X ? '4xl' : '2xl'"` com `:text="X"`.
     const chipSizeOk = ({ file, tag }: { file: string; tag: string }) => {
-      if (file.endsWith("OperatorLiveStatus.vue"))
-        return /\bsize="xl"/.test(tag);
+      if (file.endsWith("OperatorLiveStatus.vue")) return /\bsize="xl"/.test(tag);
+      // O sinal do rail da suíte (PR-K4, dono 08/10/2026): o tamanho sai de
+      // `railSignalChip` (número 4xl; ponto no tamanho padrão do NavigationMenu),
+      // com teste próprio em `operator-kit/tests/suiteChrome.test.ts`.
+      if (file.endsWith("OperatorSuiteShell.vue"))
+        return /v-bind="trailingChip\(/.test(tag);
       const bound = tag.match(/:size="([\w.]+) \? '4xl' : '2xl'"/);
       if (bound) return tag.includes(`:text="${bound[1]}"`);
       const hasText = /(?:^|\s):?text=/.test(tag);
@@ -712,9 +723,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(card).toContain("<template #header>");
     expect(card).toContain("<template #footer>");
     // 1/3 + 2/3 quando o rodapé tem largura para isso; abaixo, empilha legível.
-    expect(card).toContain(
-      "'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'",
-    );
+    expect(card).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
     expect(card).toContain('class="@container flex items-end gap-2"');
     expect(feeds.match(/<template #header>/g)?.length).toBeGreaterThanOrEqual(
       2,
@@ -764,12 +773,16 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(shell).toContain("data-suite-rail-footer");
     expect(shell).toContain("flex-col items-center");
     expect(shell).toContain("data-suite-rail-navigation");
-    // Seções e pé do rail: a mesma peça do sino (Chip inset + Button quadrado) e o
-    // mesmo espaçamento, em vez de um NavigationMenu recolhido com outra geometria.
-    expect(shell).toContain(
-      'class="flex w-full min-w-0 flex-col items-center gap-1.5"\n        :aria-label="label"\n        data-suite-rail-navigation',
+    // Rail em três estados (PR-K4, dono 08/10/2026): só peças oficiais. Seções no
+    // NavigationMenu vertical recolhível, com tooltip e popover; sidebar recolhível e
+    // redimensionável de 12 a 20 rem; nenhum `:ui` por instância.
+    expect(shell).toMatch(
+      /<NuxtNavigationMenu\s+:collapsed="isCollapsed"[\s\S]*?orientation="vertical"\s+tooltip\s+popover[\s\S]*?data-suite-rail-navigation/,
     );
-    expect(shell).not.toMatch(/<NuxtNavigationMenu[^>]*\bcollapsed\b/);
+    expect(shell).toMatch(
+      /<NuxtDashboardSidebar[\s\S]*?collapsible\s+resizable\s+:collapsed-size="4"[\s\S]*?:min-size="12"\s+:max-size="20"/,
+    );
+    expect(shell).not.toMatch(/\s:ui="/);
     expect(shell).not.toContain('class="w-fit self-center"');
     expect(shell).toContain('<OperatorInbox placement="rail" />');
     expect(queue).toContain("sm:grid-cols-[80px_minmax(0,1fr)]");
@@ -834,9 +847,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(catalog).not.toContain("border-l border-l-border");
     // O selo "Oculto" já diz; riscar o nome repetia, e o Switch neutral pintava escuro.
     expect(catalog).not.toContain("line-through decoration-1");
-    expect(catalog).not.toContain(
-      "rowStatuses[row.sku]?.off ? 'neutral' : 'success'",
-    );
+    expect(catalog).not.toContain("rowStatuses[row.sku]?.off ? 'neutral' : 'success'");
   });
 
   it("Em andamento agrupa cada grupo numa lista emoldurada", () => {

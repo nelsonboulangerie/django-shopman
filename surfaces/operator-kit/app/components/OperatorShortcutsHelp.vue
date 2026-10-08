@@ -24,15 +24,17 @@ const props = withDefaults(
     sections: readonly OperatorSection[];
     /** "Gestor", "PDV": o título do grupo comum ("Em todo o Gestor"). */
     appLabel?: string;
+    /** O app tem o rail de três estados (`OperatorSuiteShell`): a tecla C entra na lista. */
+    rail?: boolean;
   }>(),
-  { appLabel: "" },
+  { appLabel: "", rail: false },
 );
 
 const { open, groups, description } = useOperatorShortcuts();
 
 const allGroups = computed(() =>
   mergeShortcutGroups(
-    suiteShortcutGroup(props.sections, { appLabel: props.appLabel }),
+    suiteShortcutGroup(props.sections, { appLabel: props.appLabel, rail: props.rail }),
     groups.value,
   ),
 );

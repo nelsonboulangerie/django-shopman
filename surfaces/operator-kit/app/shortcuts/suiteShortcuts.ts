@@ -48,3 +48,13 @@ export const SUITE_SECTION_SHORTCUTS = defineOperatorShortcutMap(
     alternative: "Item nomeado no rail ou na barra de seções",
   })) satisfies readonly OperatorShortcutCommand[],
 );
+
+export const SUITE_RAIL_SHORTCUT = defineOperatorShortcutMap([
+  {
+    ...shared,
+    id: "suite.rail.cycle",
+    label: "Rail: aberto, compacto ou oculto",
+    combinations: [{ code: "KeyC" }],
+    alternative: "Botão do rail na barra do topo",
+  },
+] satisfies readonly OperatorShortcutCommand[]);

@@ -252,7 +252,6 @@ function clearAll() {
                     <NuxtBadge
                       class="ms-auto tabular-nums"
                       color="neutral"
-                      variant="soft"
                       :label="String(option.count)"
                     />
                   </template>

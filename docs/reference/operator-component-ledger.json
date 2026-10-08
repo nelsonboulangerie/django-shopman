@@ -176,7 +176,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 24
+        "native_control_occurrences": 24,
+        "ui_native_select_occurrences": 8
       },
       "surfaces": [
         {
@@ -396,7 +397,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 3
+        "native_control_occurrences": 3,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -438,7 +440,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 24
+        "native_control_occurrences": 24,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -526,7 +529,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 0
+        "native_control_occurrences": 0,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -782,7 +786,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 31
+        "native_control_occurrences": 31,
+        "ui_native_select_occurrences": 4
       },
       "surfaces": [
         {
@@ -1034,7 +1039,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 232
+        "native_control_occurrences": 232,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -1366,7 +1372,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 157
+        "native_control_occurrences": 157,
+        "ui_native_select_occurrences": 4
       },
       "surfaces": [
         {
@@ -1684,7 +1691,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 96
+        "native_control_occurrences": 96,
+        "ui_native_select_occurrences": 18
       },
       "surfaces": [
         {
@@ -2050,7 +2058,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 132
+        "native_control_occurrences": 132,
+        "ui_native_select_occurrences": 9
       },
       "surfaces": [
         {

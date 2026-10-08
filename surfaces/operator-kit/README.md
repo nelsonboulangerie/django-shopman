@@ -441,6 +441,99 @@ script. Alvos ≥ 44px em tudo (as prévias tinham chips de
 `data-suite`. Contrato em `tests/components/SuiteChrome.test.ts`;
 `tests/guardrails.appBar.test.ts` lista quem migrou.
 
+## Conjunto mínimo da suíte (dono, 08/10/2026)
+
+Aprovado no PR #1539, sobre o laudo `docs/plans/WP-BI-CANON-LAUDO.md` (seção F). A
+referência viva é a página `/proposal` do Kitchen Sink. O tema do kit (`app/app.config.ts`
+e o módulo em `nuxt.config.ts`) fixa o default de cada peça, e a trava
+`tests/guardrails.minimalSet.test.ts` conta o que ainda foge do conjunto: o número só
+cai. Uso novo fora do conjunto reprova; migrar um uso antigo baixa o teto.
+
+| peça | conjunto | como se escreve |
+|---|---|---|
+| Botão | tamanho `md` (todo lugar) e `xl` (toque crítico: PDV, Cozinha, quiosque, teclado numérico); variante `solid` (o gesto principal, um por região), `outline` (secundário) e `ghost` (terciário, ícone, menu); cor `primary`, `neutral` e `error` | estado ativo por `active` + `active-variant`/`active-color`, nunca `:variant="ativo ? … : …"`. Botão só de ícone é `square`. Aviso, informação e sucesso moram no selo ou no aviso, não na cor do botão. O default continua o do Nuxt UI (`primary` `solid` `md`): trocá-lo repintaria em silêncio todo botão sem cor escrita |
+| Selo (Badge) | uma variante, `soft` (sem borda), nas 6 cores `neutral`, `primary`, `info`, `success`, `warning`, `error` | o tema dá `soft` (`badge.defaultVariants`); ninguém escreve `variant` num selo. O `primary` usa a tinta `--primary-ink` (AA) |
+| Cartão (Card) | `outline` no topo; `soft` para cartão dentro de outro cartão (só fundo, sem borda dupla) | `outline` é o default; o aninhado escreve `variant="soft"` na chamada. `subtle` e `solid` não entram. Destaque navegável é `NuxtPageCard` |
+| Aviso (Alert) | `subtle` × `info`, `success`, `warning`, `error` | fundo opaco pré-composto no tema (compoundVariants). `primary` e `neutral` ainda têm uso e morrem com a migração deles; `secondary` saiu |
+| Cores geradas | `primary`, `info`, `success`, `warning`, `error` (e o `neutral`, que o Nuxt UI sempre gera) | `theme.colors` no módulo: cor que não é gerada não existe no tipo do `color` |
+| Escolha numa lista | `NuxtSelect` (lista curta e fixa) e `NuxtSelectMenu` (longa, buscável ou que cresce) | ver abaixo. `UiNativeSelect` está aposentado |
+| Texto | 5 tamanhos: `text-xs` 12 (rótulo e meta), `text-sm` 14 (texto corrido e controles), `text-base` 16 (título de cartão), `text-xl` (título de tela), `text-2xl` (figura); 2 pesos: `font-medium` e `font-semibold` | nenhum tamanho arbitrário novo (`text-[13px]`, `text-[0.625rem]`); a trava conta os que existem. Os papéis `op-*` de `operator-suite.css` ainda não foram reduzidos a esses cinco |
+| Chip | ponto (estado) e número (contagem) com anel de 2 px (`chip.slots.base: 'ring-2'`, o traço dos ícones Lucide), na cor do fundo onde o chip está (`ring-bg`) | exceção declarada: o tamanho `4xl` numerado (16 px, texto 12 px), porque o `3xl` oficial não lê dois dígitos. Número acima de 99 escreve "99+" |
+| Rail | dourado pelo tema: `ui.dashboardSidebar.slots` (`root` e `content`) redefine os tokens do Nuxt UI só dentro do rail (`--ui-text*`, `--ui-primary`, `--primary-ink`, `--ui-bg` = `--rail`, `--ui-border`) | nenhuma tela passa `:ui` ao rail. Três estados e sinais no `OperatorSuiteShell` (PR-K4): ver "Rail da suíte em três estados" abaixo |
+| Raio | ainda o do kit (`--radius` e `--radius-sm/md/lg/xl` em `operator-base.css`) | `--ui-radius` não entrou: nenhum valor único reproduz os raios de hoje (ver o PR-K3) |
+
+### Rail da suíte em três estados (`OperatorSuiteShell`)
+
+Aprovado pelo dono em 08/10/2026 (PR #1539; referência viva em
+`kitchensink-nuxt/app/pages/proposal/rail.vue` do branch da proposta). Montado só com
+peças oficiais: `NuxtDashboardGroup` (`unit="rem"`), `NuxtDashboardSidebar`
+(`collapsible`, `resizable`, 12 a 20 rem aberto, `collapsed-size` 4) e
+`NuxtNavigationMenu` vertical com `tooltip` e `popover`. Nenhum `:ui` por instância; o
+dourado mora no `ui.dashboardSidebar` deste `app.config`.
+
+| Estado | O que é | Onde mora |
+| --- | --- | --- |
+| aberto | ícone e nome; a borda redimensiona de 12 a 20 rem | cookie do DashboardGroup (`<storage-key>-sidebar-suite`: `{ size, collapsed }`) |
+| compacto | só ícone; o nome (com o sinal) vira tooltip | o mesmo cookie |
+| oculto | o sidebar não é montado (só desktop) | cookie do kit `<storage-key>-rail-hidden` |
+
+- **Um botão só** na barra do topo (`OperatorPageHeader`, `data-rail-cycle`, a partir de
+  `lg`) percorre aberto → compacto → oculto → aberto; o ícone e o `aria-label` dizem o
+  PRÓXIMO estado ("Compactar o rail", "Ocultar o rail", "Mostrar o rail"). A tecla
+  **C** faz o mesmo (`SUITE_RAIL_SHORTCUT`, listada na ajuda de atalhos). O shell
+  entrega o controle à barra por `provideSuiteRail`/`useSuiteRail`; fora do shell a
+  barra segue como era.
+- Ao voltar do oculto, o sidebar remonta e relê o cookie (compacto): o shell reafirma
+  o aberto depois da montagem.
+- Arrastar alterna aberto e compacto (canônico); ocultar não é por arrasto. Abaixo de
+  `lg`, o comportamento oficial: o rail abre como slideover pelo toggle da barra, e a
+  barra de seções do polegar continua embaixo.
+- Sem o rail na tela (oculto ou abaixo de `lg`), Avisos sobe para a barra do topo.
+- **Sinais** (`sectionRailSignal`, `railSignalChip`, `railSignalLabel` em
+  `presentation/suiteChrome.ts`): `badge` numérico maior que zero vira número (`4xl`
+  do kit, `inset: false`, "99+" acima de 99); `attention` vira ponto (tamanho padrão do
+  NavigationMenu). A cor é `tone` da seção (`success`, `warning` padrão, `error`).
+  Compacto: chip no canto do ícone (`chip` do item). Aberto: o MESMO chip na ponta
+  direita da linha (slot `item-trailing`, `standalone`). Tooltip e `aria-label`:
+  "Seção · estado" ou "Seção · N pendências" ("1 pendência").
+- O pé: seções do pé do app, Atalhos (só ponteiro fino), Bloquear, Avisos e o menu do
+  operador (o "Ocultar a barra" do menu leva ao estado oculto).
+
+Contrato em `tests/components/OperatorSuiteShell.test.ts` e `tests/suiteChrome.test.ts`.
+
+### Escolha numa lista: `NuxtSelect` e `NuxtSelectMenu`
+
+`UiNativeSelect` **está aposentado** (dono, 08/10/2026): nada de lista do sistema, em
+nenhum dispositivo. Os usos de hoje (43, nos apps ainda não migrados) são teto no ledger
+(`ui_native_select_occurrences` em `docs/reference/operator-component-ledger.json`,
+conferido por `scripts/check_operator_component_ledger.py`): o número só cai, e nenhum
+uso novo passa. Escolha nova nasce em Nuxt UI:
+
+- **Lista curta e fixa:** `NuxtSelect`.
+- **Lista longa ou que cresce:** `NuxtSelectMenu` com busca. A busca recebe o foco ao
+  abrir só onde há teclado físico; no toque, o teclado virtual sobe quando a pessoa toca
+  na busca:
+
+```vue
+<script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
+const touch = useMediaQuery("(pointer: coarse)");
+</script>
+
+<template>
+  <NuxtSelectMenu v-model="product" :items="products" :search-input="{ autofocus: !touch }" />
+</template>
+```
+
+O `UiSelect` também fica fora do conjunto: escolha nova não nasce nele.
+
+### Cartão dentro de cartão
+
+O cartão de topo é `outline` (borda e fundo do cartão). Um cartão dentro dele (o lote
+dentro do plano, o item dentro do pedido) é `variant="soft"`: só o fundo, sem a segunda
+borda. A regra mora na chamada, não no CSS: um seletor que adivinhasse o aninhamento
+pintaria errado o cartão que só está dentro de uma coluna.
+
 ## Busca da suíte (`OperatorSuiteSearch`)
 
 Uma busca, uma tecla (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gestor-busca`,
@@ -806,8 +899,9 @@ Do `UiSelect`, três coisas que valem a leitura:
   `<span id>` e passe `labelledBy`. Isto é memória de um defeito pago no recebimento do
   Compras; o teste que a prende vive em `tests/components/UiChoicePrimitives.test.ts`.
 
-O `UiNativeSelect` ao lado **continua sendo a peça certa** para lista curta e fixa: no
-celular ele abre a roda do sistema, que é ótima. O `UiSelect` é para lista longa.
+O `UiNativeSelect` **está aposentado** e o `UiSelect` saiu do conjunto (dono,
+08/10/2026): escolha nova é `NuxtSelect` ou `NuxtSelectMenu`. Ver "Conjunto mínimo da
+suíte", acima.
 
 ### `UiToggleChip` — escolha múltipla desenhada como pílula
 

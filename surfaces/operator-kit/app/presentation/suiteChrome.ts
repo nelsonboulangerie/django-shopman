@@ -19,6 +19,72 @@ export const SUITE_RAIL_MEDIA = "(min-width: 768px) and (orientation: landscape)
 /** Quantas seções cabem na barra do polegar antes do "Mais" (navegação v3, nível 1). */
 export const PHONE_BAR_SECTIONS = 4;
 
+/**
+ * Os três estados do rail da suíte no desktop (`OperatorSuiteShell`, dono 08/10/2026,
+ * PR #1539): aberto (ícone e nome), compacto (só ícone) e oculto (o sidebar não é
+ * montado). Um botão só na barra e a tecla C percorrem nesta ordem, em anel.
+ */
+export type SuiteRailState = "open" | "compact" | "hidden";
+
+export const SUITE_RAIL_CYCLE: readonly SuiteRailState[] = ["open", "compact", "hidden"];
+
+export function nextSuiteRailState(state: SuiteRailState): SuiteRailState {
+  return SUITE_RAIL_CYCLE[(SUITE_RAIL_CYCLE.indexOf(state) + 1) % SUITE_RAIL_CYCLE.length]!;
+}
+
+/** O botão da barra diz o PRÓXIMO estado: o ícone e o nome são do gesto, não do agora. */
+export const SUITE_RAIL_NEXT: Readonly<Record<SuiteRailState, { label: string; icon: string }>> = {
+  open: { label: "Compactar o rail", icon: "i-lucide-panel-left-dashed" },
+  compact: { label: "Ocultar o rail", icon: "i-lucide-panel-left-close" },
+  hidden: { label: "Mostrar o rail", icon: "i-lucide-panel-left-open" },
+};
+
+export type RailSignalColor = "success" | "warning" | "error";
+
+/** O sinal de um item do rail: um ponto de estado ou um número. */
+export interface RailSignal {
+  color: RailSignalColor;
+  /** Contagem (chip numérico). Ausente = ponto de estado. */
+  count?: number;
+  /** O estado por extenso, para tooltip e leitor de tela ("1 desligado"). */
+  state?: string;
+}
+
+/**
+ * O sinal da seção: com `badge` numérico e maior que zero, o número; senão, com
+ * `attention`, o ponto. Zero não é sinal. A cor é `tone` (padrão `warning`).
+ */
+export function sectionRailSignal(section: OperatorSection): RailSignal | undefined {
+  const color = section.tone ?? "warning";
+  const count = Number.parseInt(section.badge ?? "", 10);
+  if (Number.isFinite(count) && count > 0) return { color, count, state: section.attention || undefined };
+  if (section.attention) return { color, state: section.attention };
+  return undefined;
+}
+
+/**
+ * As props do Chip: o ponto no tamanho padrão do NavigationMenu; o número no `4xl` do
+ * kit (o `3xl` não lê dois dígitos), `inset: false` (centrado no canto, sem cobrir o
+ * ícone) e "99+" acima de 99.
+ */
+export function railSignalChip(signal: RailSignal): { color: RailSignalColor; text?: string; size?: "4xl"; inset?: boolean } {
+  if (signal.count === undefined) return { color: signal.color };
+  return { color: signal.color, text: signal.count > 99 ? "99+" : String(signal.count), size: "4xl", inset: false };
+}
+
+/**
+ * Tooltip e nome acessível do item: "Canais · 1 desligado" ou "Pedidos · 3 pendências"
+ * ("1 pendência"). Contagem tem UMA palavra na suíte: o item diz o que é, o número diz
+ * quanto.
+ */
+export function railSignalLabel(label: string, signal?: RailSignal): string {
+  if (!signal) return label;
+  const parts = [label];
+  if (signal.count !== undefined) parts.push(`${signal.count} ${signal.count === 1 ? "pendência" : "pendências"}`);
+  if (signal.state) parts.push(signal.state);
+  return parts.join(" · ");
+}
+
 /** Teclas de seção: Alt 1…9, pela ordem do rail. A décima seção em diante não tem tecla. */
 export function sectionShortcut(index: number): string {
   return index >= 0 && index < 9 ? `Alt+${index + 1}` : "";
@@ -115,7 +181,7 @@ export interface ShortcutGroup {
  * O grupo que todo app tem: as seções (Alt 1…9), a busca e a própria ajuda. O app
  * acrescenta os grupos da tela dele depois deste.
  */
-export function suiteShortcutGroup(sections: readonly OperatorSection[], options: { appLabel?: string; search?: boolean } = {}): ShortcutGroup {
+export function suiteShortcutGroup(sections: readonly OperatorSection[], options: { appLabel?: string; search?: boolean; rail?: boolean } = {}): ShortcutGroup {
   const items: ShortcutItem[] = [];
   sections.forEach((section, index) => {
     const alt = sectionShortcut(index);
@@ -124,6 +190,7 @@ export function suiteShortcutGroup(sections: readonly OperatorSection[], options
     items.push({ keys, label: section.label });
   });
   if (options.search) items.push({ keys: ["/"], label: "Buscar nesta tela" });
+  if (options.rail) items.push({ keys: ["C"], label: "Rail: aberto, compacto ou oculto" });
   items.push({ keys: ["?"], label: "Abrir esta ajuda" });
   return { title: options.appLabel ? `Em todo o ${options.appLabel}` : "Em todo o app", items };
 }
