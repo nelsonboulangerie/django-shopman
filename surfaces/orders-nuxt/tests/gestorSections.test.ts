@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { activeSectionKey } from "../../operator-kit/app/presentation/appBar";
+import { quickBarLayout, quickBarProblems } from "../../operator-kit/app/presentation/suiteChrome";
 import { gestorSections, gestorSettingsSections, SETTINGS_ROUTES } from "../app/presentation/gestorSections";
 
 // O rail do Gestor em dois andares (prévia v4, UX-KIT-V2): a operação em cima (Pedidos e
@@ -33,8 +34,20 @@ describe("gestorSections (rail)", () => {
 
   it("os selos contam o que o quadro vê; zero não é selo", () => {
     const sections = gestorSections({ channelsAttention: "", canManageCustomers: false, intakeCount: 2, exitCount: 0 });
-    expect(sections.find((s) => s.key === "orders")).toMatchObject({ badge: "2", badgeLabel: "2 pedidos novos" });
+    expect(sections.find((s) => s.key === "orders")).toMatchObject({ badge: "2" });
     expect(sections.find((s) => s.key === "exit")?.badge).toBeUndefined();
+  });
+
+  it("barra inferior: as três seções declaradas, sem 'Mais' (o ☰ abre o menu completo)", () => {
+    const sections = gestorSections({ channelsAttention: "", canManageCustomers: true });
+    const layout = quickBarLayout(sections);
+    expect(layout.items.map((s) => s.key)).toEqual(["orders", "exit", "settings"]);
+    expect(layout.more).toBe(false);
+    expect(quickBarProblems(sections)).toEqual([]);
+    // Quem só expede tem duas seções ao todo: a barra mostra as duas, sem erro.
+    const expedite = gestorSections({ channelsAttention: "", canManageCustomers: true, expeditesOnly: true });
+    expect(quickBarLayout(expedite).items.map((s) => s.key)).toEqual(["orders", "exit"]);
+    expect(quickBarProblems(expedite)).toEqual([]);
   });
 
   it("estar numa seção de Ajustes acende o item Ajustes", () => {

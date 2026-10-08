@@ -32,11 +32,15 @@ export function nextSuiteRailState(state: SuiteRailState): SuiteRailState {
   return SUITE_RAIL_CYCLE[(SUITE_RAIL_CYCLE.indexOf(state) + 1) % SUITE_RAIL_CYCLE.length]!;
 }
 
-/** O botão da barra diz o PRÓXIMO estado: o ícone e o nome são do gesto, não do agora. */
+/**
+ * O botão da barra diz o PRÓXIMO estado: o ícone e o nome são do gesto, não do agora.
+ * Na tela a peça se chama "barra lateral" (dono, 08/10/2026, PR #1544); `rail` é só o
+ * nome no código.
+ */
 export const SUITE_RAIL_NEXT: Readonly<Record<SuiteRailState, { label: string; icon: string }>> = {
-  open: { label: "Compactar o rail", icon: "i-lucide-panel-left-dashed" },
-  compact: { label: "Ocultar o rail", icon: "i-lucide-panel-left-close" },
-  hidden: { label: "Mostrar o rail", icon: "i-lucide-panel-left-open" },
+  open: { label: "Compactar a barra lateral", icon: "i-lucide-panel-left-dashed" },
+  compact: { label: "Ocultar a barra lateral", icon: "i-lucide-panel-left-close" },
+  hidden: { label: "Mostrar a barra lateral", icon: "i-lucide-panel-left-open" },
 };
 
 export type RailSignalColor = "success" | "warning" | "error";
@@ -75,7 +79,7 @@ export function railSignalChip(signal: RailSignal): { color: RailSignalColor; te
 /**
  * Tooltip e nome acessível do item: "Canais · 1 desligado" ou "Pedidos · 3 pendências"
  * ("1 pendência"). Contagem tem UMA palavra na suíte: o item diz o que é, o número diz
- * quanto.
+ * quanto. Quem monta o item usa `sectionDescription`, a fonte única.
  */
 export function railSignalLabel(label: string, signal?: RailSignal): string {
   if (!signal) return label;
@@ -83,6 +87,17 @@ export function railSignalLabel(label: string, signal?: RailSignal): string {
   if (signal.count !== undefined) parts.push(`${signal.count} ${signal.count === 1 ? "pendência" : "pendências"}`);
   if (signal.state) parts.push(signal.state);
   return parts.join(" · ");
+}
+
+/**
+ * A descrição de uma seção, a MESMA na barra lateral, na gaveta e na barra inferior
+ * (dono, 08/10/2026, PR #1544): "Seção · N pendências" ("1 pendência") ou
+ * "Seção · estado". É o tooltip e o nome acessível do item. Antes cada app contava
+ * com um substantivo próprio, e o mesmo número era lido de dois jeitos na mesma tela
+ * ("Saída, 2 pedidos na Saída" embaixo, "Saída · 2 pendências" ao lado).
+ */
+export function sectionDescription(section: OperatorSection): string {
+  return railSignalLabel(section.label, sectionRailSignal(section));
 }
 
 /** Teclas de seção: Alt 1…9, pela ordem do rail. A décima seção em diante não tem tecla. */
@@ -142,6 +157,61 @@ export function phoneBarLayout(sections: readonly OperatorSection[], max = PHONE
   return { visible: sections.slice(0, max), overflow: sections.slice(max) };
 }
 
+/**
+ * A barra inferior do celular no shell da suíte (dono, 08/10/2026, PR #1544). Uma
+ * regra só para todo app:
+ *
+ * - a gaveta (☰, a barra lateral) é o menu COMPLETO; a barra inferior é o menu
+ *   RÁPIDO, de 3 a 5 vagas;
+ * - o app declara o que vai para a barra (`quick: true` na seção, na ordem da lista);
+ *   o kit corta em 5;
+ * - com menos de 5 declaradas e alguma seção de fora, uma vaga vira "Mais", que abre a
+ *   gaveta; com 5, não há "Mais" (o ☰ já leva ao completo); sem seção de fora, também
+ *   não;
+ * - app que não declara: as primeiras seções, até 4, e "Mais" quando sobra;
+ * - menos de 3 vagas é erro de configuração (`quickBarProblems`), salvo o app que tem
+ *   menos de 3 seções ao todo, ou a exceção declarada com motivo.
+ */
+export const QUICK_BAR_MIN = 3;
+export const QUICK_BAR_MAX = 5;
+export const QUICK_BAR_DEFAULT = 4;
+
+export interface QuickBarLayout {
+  /** As seções da barra, na ordem da lista. */
+  items: OperatorSection[];
+  /** Uma vaga para "Mais" (abre a gaveta). */
+  more: boolean;
+  /** As seções que ficaram só na gaveta. */
+  overflow: OperatorSection[];
+}
+
+export function quickBarLayout(sections: readonly OperatorSection[]): QuickBarLayout {
+  const declared = sections.filter((section) => section.quick);
+  const items = (declared.length ? declared : sections.slice(0, QUICK_BAR_DEFAULT)).slice(0, QUICK_BAR_MAX);
+  const overflow = sections.filter((section) => !items.includes(section));
+  return { items, more: items.length < QUICK_BAR_MAX && overflow.length > 0, overflow };
+}
+
+/**
+ * O que está fora da regra, por extenso (vazio = dentro). O teste das seções de cada
+ * app a chama. `exception` é o motivo de uma exceção declarada pelo app: ela dispensa o
+ * mínimo, nunca o máximo.
+ */
+export function quickBarProblems(sections: readonly OperatorSection[], exception = ""): string[] {
+  const problems: string[] = [];
+  const declared = sections.filter((section) => section.quick).length;
+  if (declared > QUICK_BAR_MAX) {
+    problems.push(`${declared} seções declaradas para a barra inferior; o máximo é ${QUICK_BAR_MAX}`);
+  }
+  const layout = quickBarLayout(sections);
+  const slots = layout.items.length + (layout.more ? 1 : 0);
+  const min = Math.min(QUICK_BAR_MIN, sections.length);
+  if (slots < min && !exception.trim()) {
+    problems.push(`${slots} vagas na barra inferior; o mínimo é ${min}`);
+  }
+  return problems;
+}
+
 /** O selo do item: acima de 9 vira "9+" (o número exato não muda decisão). */
 export function inboxBadge(total: number): string {
   if (total <= 0) return "";
@@ -190,7 +260,7 @@ export function suiteShortcutGroup(sections: readonly OperatorSection[], options
     items.push({ keys, label: section.label });
   });
   if (options.search) items.push({ keys: ["/"], label: "Buscar nesta tela" });
-  if (options.rail) items.push({ keys: ["C"], label: "Rail: aberto, compacto ou oculto" });
+  if (options.rail) items.push({ keys: ["C"], label: "Barra lateral: aberta, compacta ou oculta" });
   items.push({ keys: ["?"], label: "Abrir esta ajuda" });
   return { title: options.appLabel ? `Em todo o ${options.appLabel}` : "Em todo o app", items };
 }

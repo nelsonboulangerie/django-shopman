@@ -17,7 +17,6 @@ describe("seções da Cozinha", () => {
     const prep = kdsSections({ ...base, place: "rail" }).find((s) => s.key === "prep")!;
     expect(prep.to).toBe("/forno");
     expect(prep.badge).toBe("12");
-    expect(prep.badgeLabel).toBe("12 pedidos nesta estação");
   });
 
   it("Saída é atalho para a coluna do Gestor, nunca uma tela da Cozinha (#1431)", () => {

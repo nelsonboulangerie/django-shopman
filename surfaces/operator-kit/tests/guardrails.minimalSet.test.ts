@@ -43,8 +43,11 @@ const CEILING: Record<string, Partial<Record<Rule, number>>> = {
     badgeVariant: 12,
     cardVariant: 1,
     alertOutsideSet: 19,
-    // Inclui a exceção declarada do chip `4xl` (`text-[12px]/none` no app.config).
-    arbitraryTextSize: 11,
+    // Inclui duas exceções declaradas: o chip `4xl` (`text-[12px]/none` no
+    // app.config) e o rótulo da barra inferior (`text-[10px]/3` no `OperatorQuickBar`),
+    // que é o valor do exemplo oficial "With bottom tab bar" do NavigationMenu (dono,
+    // 08/10/2026, PR #1544).
+    arbitraryTextSize: 12,
   },
   "orders-nuxt": {
     buttonSize: 12,

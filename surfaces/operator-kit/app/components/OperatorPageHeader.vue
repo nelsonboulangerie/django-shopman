@@ -137,8 +137,8 @@ const { request: openSearch } = useSuiteSearchRequest();
         color="neutral"
         variant="ghost"
         square
-        aria-label="Mostrar a barra"
-        title="Mostrar a barra"
+        aria-label="Mostrar a barra lateral"
+        title="Mostrar a barra lateral"
         data-page-header-show-rail
         @click="setRail('compact')"
       />

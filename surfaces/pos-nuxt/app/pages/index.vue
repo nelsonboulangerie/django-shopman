@@ -1116,8 +1116,8 @@ onBeforeUnmount(() => {
           v-if="railCollapsed"
           type="button"
           class="hidden size-10 shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground rail:grid"
-          aria-label="Mostrar a barra"
-          title="Mostrar a barra"
+          aria-label="Mostrar a barra lateral"
+          title="Mostrar a barra lateral"
           data-page-header-show-rail
           @click="setRail('compact')"
         >

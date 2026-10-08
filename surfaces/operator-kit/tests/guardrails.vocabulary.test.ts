@@ -316,3 +316,38 @@ describe("a unidade do modo de fazer de uma receita chama-se etapa", () => {
     expect(STEP_SOURCES.length).toBeGreaterThan(40);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Guardrail de VOCABULÁRIO, quarta regra: na tela, a navegação lateral se chama
+// **barra lateral** (dono, 08/10/2026, PR #1544). "Rail" é jargão de quem desenha:
+// o botão dizia "Compactar o rail" e o menu do operador dizia "Ocultar a barra" para a
+// mesma peça. No código, `rail` continua sendo o nome (`SUITE_RAIL_*`,
+// `data-suite-rail`, a variante `rail:` do CSS), por isso a trava não recusa a
+// palavra solta: recusa a palavra como texto (depois de artigo, preposição ou verbo
+// de gesto, ou abrindo um literal com maiúscula). Comentário é descontado; teste
+// também, porque nome de teste não chega ao operador.
+const BANNED_RAIL =
+  /(["'`>]\s*Rail\b|\b(?:o|do|no|ao|pelo|um|Mostrar|Ocultar|Compactar|Expandir|Recolher) rail\b)/;
+
+const APP_SOURCES = SOURCES.filter((file) => /^[^/]+\/app\//.test(relative(surfacesDir, file)));
+
+describe("na tela, a navegação lateral se chama barra lateral", () => {
+  it("nenhum texto de operador diz 'rail'", () => {
+    const leaks = APP_SOURCES.flatMap((file) => offenders(file, BANNED_RAIL, stripComments));
+
+    expect(
+      leaks,
+      "Na tela é 'barra lateral' (decisão do dono, 08/10/2026): 'Compactar a barra\n" +
+        "lateral', 'Ocultar a barra lateral', 'Mostrar a barra lateral'. O nome no\n" +
+        "código pode continuar `rail`.\n" +
+        `Onde:\n  ${leaks.join("\n  ")}`,
+    ).toEqual([]);
+  }, 30_000);
+
+  it("a varredura enxerga o kit e os apps", () => {
+    const paths = APP_SOURCES.map((file) => relative(surfacesDir, file));
+    expect(paths).toContain("operator-kit/app/presentation/suiteChrome.ts");
+    expect(paths).toContain("operator-kit/app/components/OperatorMenuItems.vue");
+    expect(APP_SOURCES.length).toBeGreaterThan(400);
+  });
+});

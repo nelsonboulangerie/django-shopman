@@ -459,10 +459,14 @@ cai. Uso novo fora do conjunto reprova; migrar um uso antigo baixa o teto.
 | Escolha numa lista | `NuxtSelect` (lista curta e fixa) e `NuxtSelectMenu` (longa, buscável ou que cresce) | ver abaixo. `UiNativeSelect` está aposentado |
 | Texto | 5 tamanhos: `text-xs` 12 (rótulo e meta), `text-sm` 14 (texto corrido e controles), `text-base` 16 (título de cartão), `text-xl` (título de tela), `text-2xl` (figura); 2 pesos: `font-medium` e `font-semibold` | nenhum tamanho arbitrário novo (`text-[13px]`, `text-[0.625rem]`); a trava conta os que existem. Os papéis `op-*` de `operator-suite.css` ainda não foram reduzidos a esses cinco |
 | Chip | ponto (estado) e número (contagem) com anel de 2 px (`chip.slots.base: 'ring-2'`, o traço dos ícones Lucide), na cor do fundo onde o chip está (`ring-bg`) | exceção declarada: o tamanho `4xl` numerado (16 px, texto 12 px), porque o `3xl` oficial não lê dois dígitos. Número acima de 99 escreve "99+" |
-| Rail | dourado pelo tema: `ui.dashboardSidebar.slots` (`root` e `content`) redefine os tokens do Nuxt UI só dentro do rail (`--ui-text*`, `--ui-primary`, `--primary-ink`, `--ui-bg` = `--rail`, `--ui-border`) | nenhuma tela passa `:ui` ao rail. Três estados e sinais no `OperatorSuiteShell` (PR-K4): ver "Rail da suíte em três estados" abaixo |
+| Rail | dourado pelo tema: `ui.dashboardSidebar.slots` (`root` e `content`) redefine os tokens do Nuxt UI só dentro do rail (`--ui-text*`, `--ui-primary`, `--primary-ink`, `--ui-bg` = `--rail`, `--ui-border`) | nenhuma tela passa `:ui` ao rail. Três estados e sinais no `OperatorSuiteShell` (PR-K4): ver "Barra lateral em três estados" abaixo |
 | Raio | ainda o do kit (`--radius` e `--radius-sm/md/lg/xl` em `operator-base.css`) | `--ui-radius` não entrou: nenhum valor único reproduz os raios de hoje (ver o PR-K3) |
 
-### Rail da suíte em três estados (`OperatorSuiteShell`)
+### Barra lateral em três estados (`OperatorSuiteShell`)
+
+Na tela, a peça se chama **barra lateral** (dono, 08/10/2026, PR #1544): nenhum texto
+visível nem `aria-label` diz "rail". No código, `rail` continua sendo o nome
+(`SUITE_RAIL_*`, `data-suite-rail`, `useSuiteRail`).
 
 Aprovado pelo dono em 08/10/2026 (PR #1539; referência viva em
 `kitchensink-nuxt/app/pages/proposal/rail.vue` do branch da proposta). Montado só com
@@ -479,15 +483,17 @@ dourado mora no `ui.dashboardSidebar` deste `app.config`.
 
 - **Um botão só** na barra do topo (`OperatorPageHeader`, `data-rail-cycle`, a partir de
   `lg`) percorre aberto → compacto → oculto → aberto; o ícone e o `aria-label` dizem o
-  PRÓXIMO estado ("Compactar o rail", "Ocultar o rail", "Mostrar o rail"). A tecla
+  PRÓXIMO estado ("Compactar a barra lateral", "Ocultar a barra lateral", "Mostrar a
+  barra lateral"). A tecla
   **C** faz o mesmo (`SUITE_RAIL_SHORTCUT`, listada na ajuda de atalhos). O shell
   entrega o controle à barra por `provideSuiteRail`/`useSuiteRail`; fora do shell a
   barra segue como era.
 - Ao voltar do oculto, o sidebar remonta e relê o cookie (compacto): o shell reafirma
   o aberto depois da montagem.
 - Arrastar alterna aberto e compacto (canônico); ocultar não é por arrasto. Abaixo de
-  `lg`, o comportamento oficial: o rail abre como slideover pelo toggle da barra, e a
-  barra de seções do polegar continua embaixo.
+  `lg`, o comportamento oficial: a barra lateral abre como slideover (a gaveta) pelo ☰
+  da barra do topo, e a barra inferior fica embaixo (ver "Barra lateral e barra
+  inferior").
 - Sem o rail na tela (oculto ou abaixo de `lg`), Avisos sobe para a barra do topo.
 - **Sinais** (`sectionRailSignal`, `railSignalChip`, `railSignalLabel` em
   `presentation/suiteChrome.ts`): `badge` numérico maior que zero vira número (`4xl`
@@ -495,11 +501,61 @@ dourado mora no `ui.dashboardSidebar` deste `app.config`.
   NavigationMenu). A cor é `tone` da seção (`success`, `warning` padrão, `error`).
   Compacto: chip no canto do ícone (`chip` do item). Aberto: o MESMO chip na ponta
   direita da linha (slot `item-trailing`, `standalone`). Tooltip e `aria-label`:
-  "Seção · estado" ou "Seção · N pendências" ("1 pendência").
+  `sectionDescription(section)`, "Seção · estado" ou "Seção · N pendências"
+  ("1 pendência").
 - O pé: seções do pé do app, Atalhos (só ponteiro fino), Bloquear, Avisos e o menu do
-  operador (o "Ocultar a barra" do menu leva ao estado oculto).
+  operador (o "Ocultar a barra lateral" do menu leva ao estado oculto).
 
 Contrato em `tests/components/OperatorSuiteShell.test.ts` e `tests/suiteChrome.test.ts`.
+
+### Barra lateral e barra inferior
+
+Regra única para todo app do shell, inclusive app novo (dono, 08/10/2026, PR #1544):
+
+- **Gaveta** (a barra lateral pelo ☰, abaixo de `lg`) = o menu **completo** do app.
+  Sempre disponível.
+- **Barra inferior** (`OperatorQuickBar`, só abaixo de `lg`) = o menu **rápido**, de
+  **3 a 5 vagas**, escolhidas por importância de uso.
+
+O contrato (`quickBarLayout` e `quickBarProblems` em `presentation/suiteChrome.ts`):
+
+| O app declara | A barra mostra |
+| --- | --- |
+| nada | as primeiras seções, até 4, e "Mais" quando sobra seção |
+| `quick: true` em 1 a 4 seções | essas, na ordem da lista, e "Mais" se alguma ficou de fora |
+| `quick: true` em 5 seções | as cinco, **sem** "Mais" (o ☰ já leva ao completo) |
+| `quick: true` em mais de 5 | o kit corta em 5, e `quickBarProblems` acusa |
+
+- "Mais" abre a gaveta; só existe quando sobra seção.
+- Menos de 3 vagas (seções + "Mais") é erro de configuração, que o teste das seções do
+  app acusa com `expect(quickBarProblems(sections)).toEqual([])`. App com menos de 3
+  seções ao todo mostra todas, sem erro.
+- **Exceção** só declarada com motivo: `quickBarProblems(sections, "motivo")` dispensa o
+  mínimo (nunca o máximo). Hoje não há nenhuma.
+- Seção com `where: "rail"` não entra na barra inferior.
+- **Desenho**: o exemplo oficial "With bottom tab bar" do `NavigationMenu`
+  (<https://ui.nuxt.com/docs/components/navigation-menu#with-bottom-tab-bar>):
+  horizontal, `class="w-full"`, ícone em cima e rótulo embaixo, ativo pelo `active` do
+  item. O `:ui` do exemplo mora UMA vez no `OperatorQuickBar`, nunca nas telas; o
+  `text-[10px]/3` do rótulo é o valor da documentação, exceção declarada no teto da
+  trava do conjunto mínimo. O kit soma a fixação embaixo, a área segura
+  (`pb-[env(safe-area-inset-bottom)]`) e o alvo de toque (`min-h-control` no link).
+- **Sinal**: o mesmo chip da barra lateral (`chip` do item: ponto, ou número `4xl` com
+  `inset: false`), e a mesma descrição.
+
+**Descrição de contagem única.** Barra lateral, gaveta e barra inferior dizem a mesma
+coisa da mesma seção, por `sectionDescription`: "Seção · N pendências" ("1 pendência")
+ou "Seção · estado". A seção não traz contagem por extenso própria (o antigo
+`badgeLabel` saiu: a Saída era "2 pedidos na Saída" embaixo e "2 pendências" ao lado).
+A barra lateral e a barra do polegar dos apps ainda fora do shell
+(`OperatorSuiteRail`, `OperatorSectionBar`) usam a mesma descrição.
+
+Os apps ainda fora do shell seguem com a barra do polegar antiga (`OperatorSectionBar`:
+até 4 + "Mais", com o "Mais" guardando também o menu do operador, porque lá não há
+gaveta) até a onda de cada um.
+
+Contrato em `tests/suiteChrome.test.ts` (máximo 5, mínimo 3, "Mais" só quando sobra) e
+`tests/components/OperatorSuiteShell.test.ts`.
 
 ### Escolha numa lista: `NuxtSelect` e `NuxtSelectMenu`
 

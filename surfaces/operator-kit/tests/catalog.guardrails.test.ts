@@ -86,7 +86,8 @@ describe("catálogo vivo", () => {
     expect(officeShell).toContain('<NuxtDashboardPanel v-if="navbar"');
     expect(officeShell).toContain("<NuxtDashboardPanel v-else");
     expect(suiteShell).not.toContain('class="min-h-0 flex-1 overflow-y-auto"');
-    expect(suiteShell).toContain("border-t border-default border-b-0");
+    // A barra inferior é o `OperatorQuickBar` (o exemplo oficial "With bottom tab bar").
+    expect(suiteShell).toContain("<OperatorQuickBar");
     expect(suiteShell).toContain("data-suite-rail-footer");
     expect(suiteShell).toContain("flex-col items-center");
   });
