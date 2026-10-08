@@ -85,17 +85,14 @@ const occasionTitle = (occasion: ForecastOccasion) =>
       <template v-if="report">
       <!-- Um dia: a pergunta da fornada -->
       <template v-if="single">
-        <section
-          v-if="single.closed"
-          class="rounded-lg border border-border bg-card px-4 py-3"
-        >
+        <NuxtCard v-if="single.closed" as="section">
           <h2 class="op-title text-foreground">
             {{ single.weekday_label }}, {{ shortDate(single.date) }}
           </h2>
           <p class="mt-1 op-label text-muted-foreground">
             A casa não abre neste dia{{ single.closed_reason ? ` (${single.closed_reason})` : "" }}.
           </p>
-        </section>
+        </NuxtCard>
 
         <!--
           Quando o dia TEM ocasião, ela lidera (decisão do dono).
@@ -104,7 +101,7 @@ const occasionTitle = (occasion: ForecastOccasion) =>
           médio. O número genérico continua logo abaixo, porque é o contraponto
           que dá escala à ocasião: sem ele, "3,2× um dia normal" não diz nada.
         -->
-        <section v-else-if="single.occasion" class="rounded-lg border border-border bg-card px-4 py-3">
+        <NuxtCard v-else-if="single.occasion" as="section">
           <h2 class="op-title text-foreground">
             {{ occasionTitle(single.occasion) }}
           </h2>
@@ -155,9 +152,9 @@ const occasionTitle = (occasion: ForecastOccasion) =>
           <p v-else class="mt-2 op-label text-muted-foreground">
             {{ missingLabel(single.missing_reason) }}
           </p>
-        </section>
+        </NuxtCard>
 
-        <section v-else class="rounded-lg border border-border bg-card px-4 py-3">
+        <NuxtCard v-else as="section">
           <h2 class="op-title text-foreground">
             {{ single.weekday_label }}, {{ shortDate(single.date) }}
           </h2>
@@ -185,34 +182,32 @@ const occasionTitle = (occasion: ForecastOccasion) =>
           <p v-else class="mt-2 op-label text-muted-foreground">
             {{ missingLabel(single.missing_reason) }}
           </p>
-        </section>
+        </NuxtCard>
 
-        <section
-          v-if="single.branches.length"
-          class="rounded-lg border border-border bg-card px-4 py-3"
-        >
+        <NuxtCard v-if="single.branches.length" as="section">
           <h2 class="op-title text-foreground">E se o dia for diferente?</h2>
           <p class="mb-3 op-micro text-muted-foreground">
             Os mesmos dias parecidos, separados pelo que o tempo fez. Olhe pela janela e escolha o
             lado.
           </p>
           <div class="grid gap-3 sm:grid-cols-2">
-            <div
+            <NuxtCard
               v-for="branch in single.branches"
               :key="branch.key"
-              class="rounded-md border border-border p-3"
+              variant="subtle"
+              :data-bi-forecast-branch="branch.key"
             >
               <p class="op-label font-medium text-foreground">{{ branch.label }}</p>
-              <p class="mt-1 text-xl font-semibold tnum text-foreground">
+              <p class="mt-1 op-figure text-foreground">
                 {{ formatMoneyCompact(Math.round(branch.revenue_q.expected)) }}
               </p>
               <p class="op-micro text-muted-foreground">
                 {{ formatInt(Math.round(branch.orders.expected)) }} pedidos ·
                 {{ formatInt(branch.sample_size) }} dias
               </p>
-            </div>
+            </NuxtCard>
           </div>
-        </section>
+        </NuxtCard>
 
         <!--
           Troco: irmã da projeção, e no mesmo lugar de propósito. Quem abre esta
@@ -220,10 +215,7 @@ const occasionTitle = (occasion: ForecastOccasion) =>
           sentada; o troco numa aba própria seria uma conta que existe e ninguém
           olha, e a falta continuaria aparecendo no meio da fila.
         -->
-        <section
-          v-if="singleChange && !singleChange.closed"
-          class="rounded-lg border border-border bg-card px-4 py-3"
-        >
+        <NuxtCard v-if="singleChange && !singleChange.closed" as="section">
           <h2 class="op-title text-foreground">Troco para separar</h2>
           <p class="mb-3 op-micro text-muted-foreground">
             Para abastecer na véspera, no seu tempo, em vez de resolver no meio do movimento.
@@ -265,7 +257,7 @@ const occasionTitle = (occasion: ForecastOccasion) =>
           <p v-else class="op-label text-muted-foreground">
             {{ missingLabel(singleChange.missing_reason) }}
           </p>
-        </section>
+        </NuxtCard>
       </template>
 
       <!-- Semana ou mês: a soma dos dias, cada um com a sua amostra -->
@@ -298,16 +290,16 @@ const occasionTitle = (occasion: ForecastOccasion) =>
           />
         </div>
 
-        <p
+        <NuxtAlert
           v-if="report.total_missing_days.length"
-          class="rounded-lg border border-border bg-card px-4 py-3 op-label text-muted-foreground"
-        >
-          Sem total do período: não temos base para
-          {{ report.total_missing_days.map(shortDate).join(", ") }}. Somar só os outros dias daria um
-          número plausível e errado.
-        </p>
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-info"
+          :title="`Sem total do período: não temos base para ${report.total_missing_days.map(shortDate).join(', ')}. Somar só os outros dias daria um número plausível e errado.`"
+          data-bi-forecast-missing
+        />
 
-        <section class="rounded-lg border border-border bg-card px-4 py-3">
+        <NuxtCard as="section">
           <h2 class="op-title text-foreground">Dia a dia</h2>
           <p class="mb-3 op-micro text-muted-foreground">
             Faturamento provável de cada dia; o tooltip traz a faixa e os pedidos
@@ -316,7 +308,7 @@ const occasionTitle = (occasion: ForecastOccasion) =>
             :points="periodSeries(report.days)"
             :format="(v) => formatMoneyCompact(v)"
           />
-        </section>
+        </NuxtCard>
       </template>
       </template>
       <BiSwipeHint />

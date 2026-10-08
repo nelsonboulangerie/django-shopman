@@ -13,8 +13,16 @@ watch(page, (value) => {
   if (value && openId.value === null && value.reports.length) openId.value = value.reports[0]!.id;
 });
 
-function toggle(report: BIScenarioReportView) {
-  openId.value = openId.value === report.id ? null : report.id;
+// As rodadas são um NuxtAccordion de abertura única: a mais nova abre sozinha, e
+// tocar de novo na aberta fecha (o `collapsible` do componente). O valor do item é o
+// id da rodada em texto, que é o que o Accordion guarda.
+const rounds = computed(() =>
+  (page.value?.reports ?? []).map((report: BIScenarioReportView) => ({ value: String(report.id), report })),
+);
+const openValue = computed(() => (openId.value === null ? undefined : String(openId.value)));
+function pickRound(value: string | string[] | undefined) {
+  const picked = Array.isArray(value) ? value[0] : value;
+  openId.value = picked ? Number(picked) : null;
 }
 
 async function run() {
@@ -49,67 +57,56 @@ async function run() {
             <UiNativeSelect id="scenario-focus" v-model="focus">
               <option v-for="item in page.focuses" :key="item.key" :value="item.key">{{ item.label }}</option>
             </UiNativeSelect>
-            <button
-              type="button"
-              class="inline-flex min-h-control items-center gap-2 rounded-md bg-primary px-4 op-label font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            <NuxtButton
+              icon="i-lucide-sparkles"
+              :label="generating ? 'Gerando… (leva alguns segundos)' : 'Gerar cenários'"
+              :loading="generating"
               :disabled="generating"
+              data-bi-generate
               @click="run"
-            >
-              <Icon name="lucide:sparkles" class="size-4" aria-hidden="true" />
-              {{ generating ? "Gerando… (leva alguns segundos)" : "Gerar cenários" }}
-            </button>
+            />
           </div>
           <p v-else class="op-body text-muted-foreground">
             Geração desligada neste ambiente: falta a credencial da IA (AI_ASSIST_API_KEY). Os relatórios já gerados seguem abaixo.
           </p>
         </BiSection>
 
-        <section v-if="page.reports.length" class="overflow-hidden rounded-lg border border-border bg-card" aria-label="Rodadas registradas">
-          <article
-            v-for="report in page.reports"
-            :key="report.id"
-            class="border-b border-border last:border-0"
-          >
-            <button
-              type="button"
-              class="flex min-h-control w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition hover:bg-accent"
-              :class="openId === report.id ? 'bg-primary/5' : ''"
-              :aria-expanded="openId === report.id"
-              @click="toggle(report)"
-            >
-              <span class="min-w-0">
-                <span class="block op-body font-medium text-foreground">{{ scenarioReportHeadline(report) }}</span>
-                <span class="block op-micro text-muted-foreground">
-                  {{ scenarioStatusLabel(report) }}
-                  <template v-if="report.requested_by"> · pedido por {{ report.requested_by }}</template>
+        <NuxtCard v-if="rounds.length" as="section" aria-label="Rodadas registradas" data-bi-scenario-rounds>
+          <NuxtAccordion :model-value="openValue" :items="rounds" @update:model-value="pickRound">
+            <template #default="{ item }">
+              <span class="min-w-0 text-left">
+                <span class="block op-body font-medium text-foreground">{{ scenarioReportHeadline(item.report) }}</span>
+                <span class="block op-micro font-normal text-muted-foreground">
+                  {{ scenarioStatusLabel(item.report) }}
+                  <template v-if="item.report.requested_by"> · pedido por {{ item.report.requested_by }}</template>
                 </span>
               </span>
-              <span class="inline-flex shrink-0 items-center gap-1.5 op-label">
-                {{ openId === report.id ? "Fechar" : "Abrir" }}
-                <Icon :name="openId === report.id ? 'lucide:chevron-up' : 'lucide:chevron-down'" class="size-4" aria-hidden="true" />
+            </template>
+            <template #trailing="{ open }">
+              <span class="ms-auto inline-flex shrink-0 items-center gap-1.5 op-label">
+                {{ open ? "Fechar" : "Abrir" }}
+                <Icon :name="open ? 'lucide:chevron-up' : 'lucide:chevron-down'" class="size-4" aria-hidden="true" />
               </span>
-            </button>
-            <div v-if="openId === report.id" class="flex flex-col gap-3 bg-primary/5 px-4 pb-3">
-              <p v-if="report.status === 'failed'" class="op-body text-muted-foreground">{{ report.error }}</p>
-              <div
-                v-for="(scenario, index) in report.scenarios"
-                :key="index"
-                class="rounded-lg border border-border bg-card px-4 py-3"
-              >
-                <h3 class="op-title text-foreground">{{ scenario.title }}</h3>
-                <p class="mt-1 op-body text-foreground">{{ scenario.proposal }}</p>
-                <p v-if="scenario.basis.length" class="mt-2 op-eyebrow text-muted-foreground">O que sustenta</p>
-                <ul v-if="scenario.basis.length" class="list-disc pl-5 op-label text-muted-foreground">
-                  <li v-for="(line, i) in scenario.basis" :key="i">{{ line }}</li>
-                </ul>
-                <p v-if="scenario.unknowns.length" class="mt-2 op-eyebrow text-muted-foreground">O que os dados não dizem</p>
-                <ul v-if="scenario.unknowns.length" class="list-disc pl-5 op-label text-muted-foreground">
-                  <li v-for="(line, i) in scenario.unknowns" :key="i">{{ line }}</li>
-                </ul>
+            </template>
+            <template #body="{ item }">
+              <div class="flex flex-col gap-3" :data-bi-scenario-round="item.report.id">
+                <p v-if="item.report.status === 'failed'" class="op-body text-muted-foreground">{{ item.report.error }}</p>
+                <NuxtCard v-for="(scenario, index) in item.report.scenarios" :key="index" variant="subtle">
+                  <h3 class="op-title text-foreground">{{ scenario.title }}</h3>
+                  <p class="mt-1 op-body text-foreground">{{ scenario.proposal }}</p>
+                  <p v-if="scenario.basis.length" class="mt-2 op-eyebrow text-muted-foreground">O que sustenta</p>
+                  <ul v-if="scenario.basis.length" class="list-disc pl-5 op-label text-muted-foreground">
+                    <li v-for="(line, i) in scenario.basis" :key="i">{{ line }}</li>
+                  </ul>
+                  <p v-if="scenario.unknowns.length" class="mt-2 op-eyebrow text-muted-foreground">O que os dados não dizem</p>
+                  <ul v-if="scenario.unknowns.length" class="list-disc pl-5 op-label text-muted-foreground">
+                    <li v-for="(line, i) in scenario.unknowns" :key="i">{{ line }}</li>
+                  </ul>
+                </NuxtCard>
               </div>
-            </div>
-          </article>
-        </section>
+            </template>
+          </NuxtAccordion>
+        </NuxtCard>
         <p v-else class="op-body text-muted-foreground">Nenhum cenário gerado ainda.</p>
       </template>
       <BiSwipeHint />
