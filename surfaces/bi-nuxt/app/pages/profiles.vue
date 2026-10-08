@@ -77,8 +77,106 @@ const strikeByWeekday = computed(() =>
   Object.fromEntries((report.value?.beverage.by_weekday ?? []).map((c) => [c.weekday, c])),
 );
 
-const thClass = "whitespace-nowrap pb-2 pl-2 text-right op-eyebrow text-muted-foreground";
-const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
+// As quatro tabelas são NuxtTable. Coluna numérica alinha à direita, sem quebra; a
+// porcentagem miúda vai na mesma célula, atrás do número.
+const NUM = { th: "whitespace-nowrap text-right", td: "whitespace-nowrap text-right tnum text-foreground" } as const;
+const withShare = (value: string, share: string) =>
+  h("span", [value, " ", h("span", { class: "op-micro text-muted-foreground" }, share)]);
+
+const readingColumns = [
+  { accessorKey: "label", header: "Perfil", meta: { class: { td: "font-medium" } } },
+  { id: "orders", header: "Pedidos", meta: { class: NUM } },
+  { id: "revenue", header: "Receita", meta: { class: NUM } },
+  { id: "ticket", header: "Ticket", meta: { class: NUM } },
+  {
+    id: "items",
+    header: () => h("span", { title: "unidades · produtos distintos por pedido" }, "Itens"),
+    meta: { class: NUM },
+  },
+];
+/** Linha "sem etiqueta" recua: é o resto, não um perfil. */
+const readingMeta = {
+  class: {
+    tr: (row: { original: BIProfileRow }) => (row.original.profile === "unclassified" ? "text-muted-foreground" : ""),
+  },
+};
+
+// Matriz faixa × perfil: as colunas de perfil vêm da leitura (A, B, C, sem etiqueta).
+type MatrixRow = (typeof matrixRows.value)[number];
+type MatrixCell = { row: { original: MatrixRow } };
+const matrixColumns = computed(() => [
+  {
+    id: "band",
+    header: "Faixa",
+    meta: { class: { td: "font-medium text-foreground" } },
+    cell: ({ row }: MatrixCell) => row.original.band.title,
+  },
+  { id: "total", header: "Pedidos", meta: { class: NUM }, cell: ({ row }: MatrixCell) => formatInt(row.original.total) },
+  ...currentRows.value.map((profile, index) => ({
+    id: `profile-${profile.profile}`,
+    header: profile.profile === "unclassified" ? "Sem etiqueta" : profile.profile,
+    meta: { class: NUM },
+    cell: ({ row }: MatrixCell) => {
+      const cell = row.original.cells[index];
+      return cell ? withShare(formatInt(cell.orders), `(${formatPercent(cell.share)})`) : "";
+    },
+  })),
+]);
+
+// Bebida no pedido: dia da semana × faixa; o rodapé é a linha "Faixa" (o total por faixa).
+type StrikeRow = (typeof strike.value)[number];
+type StrikeCell = { row: { original: StrikeRow } };
+const strikeColumns = computed(() => [
+  {
+    id: "weekday",
+    header: "",
+    meta: { class: { td: "font-medium text-foreground" } },
+    cell: ({ row }: StrikeCell) => row.original.label,
+    footer: () => h("span", { class: "op-eyebrow text-muted-foreground" }, "Faixa"),
+  },
+  ...bandOptions.value.map((band, index) => ({
+    id: `band-${band.key}`,
+    header: band.label,
+    meta: { class: NUM },
+    cell: ({ row }: StrikeCell) => {
+      const cell = row.original.cells[index];
+      return h(
+        "span",
+        {
+          class: cell && cell.orders ? "" : "text-muted-foreground",
+          title: cell ? `${formatInt(cell.with_beverage)} de ${formatInt(cell.orders)}` : "",
+        },
+        cell && cell.orders ? formatPercent(cell.rate) : "sem pedido",
+      );
+    },
+    footer: () =>
+      h(
+        "span",
+        { class: "block text-right tnum" },
+        strikeByBand.value[band.key]?.orders ? formatPercent(strikeByBand.value[band.key]!.rate) : "sem pedido",
+      ),
+  })),
+  {
+    id: "day",
+    header: "Dia",
+    meta: { class: NUM },
+    cell: ({ row }: StrikeCell) => {
+      const day = strikeByWeekday.value[row.original.weekday];
+      return day?.orders ? formatPercent(day.rate) : "sem pedido";
+    },
+  },
+]);
+
+const revpashColumns = [
+  { accessorKey: "title", header: "Faixa", meta: { class: { td: "font-medium text-foreground" } } },
+  { id: "revenue", header: "Receita local", meta: { class: NUM } },
+  {
+    id: "denominator",
+    header: "Denominador",
+    meta: { class: { th: "text-right", td: "text-right op-micro tnum text-muted-foreground" } },
+  },
+  { id: "revpash", header: "Receita por assento-hora", meta: { class: NUM } },
+];
 </script>
 
 <template>
@@ -151,57 +249,47 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
         />
       </div>
 
-      <section class="rounded-lg border border-border bg-card px-4 py-3">
-        <h2 class="op-title text-foreground">Os três perfis, em três leituras</h2>
-        <p class="mb-3 op-micro text-muted-foreground">
-          Piso lê o ambíguo como levar; teto, como consumo local; vigente é a regra do explorador. % sobre os
-          pedidos e a receita de balcão do recorte.
-        </p>
+      <!-- As três leituras lado a lado: um cartão por leitura, cada um com a tabela
+           integrada (a tabela é o corpo inteiro do cartão). -->
+      <section class="flex flex-col gap-3" aria-labelledby="bi-readings-heading" data-bi-readings>
+        <div>
+          <h2 id="bi-readings-heading" class="op-title text-foreground">Os três perfis, em três leituras</h2>
+          <p class="op-micro text-muted-foreground">
+            Piso lê o ambíguo como levar; teto, como consumo local; vigente é a regra do explorador. % sobre os
+            pedidos e a receita de balcão do recorte.
+          </p>
+        </div>
         <div class="grid gap-3 xl:grid-cols-3">
-          <div v-for="reading in report.readings" :key="reading.key" class="min-w-0 overflow-x-auto">
-            <h3 class="mb-1 op-label font-semibold text-foreground">{{ reading.label }}</h3>
-            <table class="w-full op-label">
-              <thead>
-                <tr class="border-b border-border">
-                  <th class="pb-2 text-left op-eyebrow text-muted-foreground">Perfil</th>
-                  <th :class="thClass">Pedidos</th>
-                  <th :class="thClass">Receita</th>
-                  <th :class="thClass">Ticket</th>
-                  <th :class="thClass" title="unidades · produtos distintos por pedido">Itens</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="row in readingRows(reading.key)"
-                  :key="row.profile"
-                  class="border-b border-border last:border-0"
-                  :class="row.profile === 'unclassified' ? 'text-muted-foreground' : ''"
-                >
-                  <td class="py-1.5 pr-2 font-medium">{{ row.label }}</td>
-                  <td :class="tdClass">
-                    {{ formatInt(row.orders) }}
-                    <span class="op-micro text-muted-foreground">{{ formatPercent(row.orders_share) }}</span>
-                  </td>
-                  <td :class="tdClass">
-                    {{ formatMoneyCompact(row.revenue_q) }}
-                    <span class="op-micro text-muted-foreground">{{ formatPercent(row.revenue_share) }}</span>
-                  </td>
-                  <td :class="tdClass">{{ formatMoney(row.average_ticket_q) }}</td>
-                  <td :class="tdClass">{{ formatQty(row.units_per_order) }} · {{ formatQty(row.distinct_per_order) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <NuxtCard v-for="reading in report.readings" :key="reading.key" class="min-w-0" :data-bi-reading="reading.key">
+            <template #header>
+              <h3 class="op-label font-semibold text-foreground">{{ reading.label }}</h3>
+            </template>
+            <NuxtTable
+              :data="readingRows(reading.key)"
+              :columns="readingColumns"
+              :meta="readingMeta"
+              :get-row-id="(row) => row.profile"
+              :caption="`Perfis na leitura ${reading.label}`"
+            >
+              <template #orders-cell="{ row }">
+                {{ formatInt(row.original.orders) }}
+                <span class="op-micro text-muted-foreground">{{ formatPercent(row.original.orders_share) }}</span>
+              </template>
+              <template #revenue-cell="{ row }">
+                {{ formatMoneyCompact(row.original.revenue_q) }}
+                <span class="op-micro text-muted-foreground">{{ formatPercent(row.original.revenue_share) }}</span>
+              </template>
+              <template #ticket-cell="{ row }">{{ formatMoney(row.original.average_ticket_q) }}</template>
+              <template #items-cell="{ row }">{{ formatQty(row.original.units_per_order) }} · {{ formatQty(row.original.distinct_per_order) }}</template>
+            </NuxtTable>
+          </NuxtCard>
         </div>
       </section>
 
-      <section class="rounded-lg border border-border bg-card px-4 py-3">
-        <h2 class="op-title text-foreground">Estimativa ponderada: quantos comeram aqui</h2>
-        <p class="mb-3 op-micro text-muted-foreground">
-          A vocação em graus: cada produto tem um peso (% de chance de ser consumido aqui, editável em
-          Configurações › Como vendemos, por papel e por produto) e a cesta vale o seu maior peso. É esperança
-          sob os pesos vigentes, não medida; a faixa entre piso e teto abaixo continua sendo o que o dado garante.
-        </p>
+      <BiSection
+        title="Estimativa ponderada: quantos comeram aqui"
+        caption="A vocação em graus: cada produto tem um peso (% de chance de ser consumido aqui, editável em Configurações › Como vendemos, por papel e por produto) e a cesta vale o seu maior peso. É esperança sob os pesos vigentes, não medida; a faixa entre piso e teto abaixo continua sendo o que o dado garante."
+      >
         <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatTile
             label="Alguém comeu aqui"
@@ -219,7 +307,7 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
             :value="formatInt(report.estimate.weighted_orders)"
             :hint="report.estimate.unweighted_orders ? `${formatInt(report.estimate.unweighted_orders)} sem peso ficam fora desta conta` : 'todos os pedidos de balcão entraram'"
           />
-          <div class="rounded-lg border border-border bg-card px-4 py-3">
+          <NuxtCard data-bi-seated-by-band>
             <p class="op-eyebrow text-muted-foreground">Por faixa · % que comeu aqui</p>
             <ul class="mt-1 flex flex-col gap-0.5 op-label">
               <li v-for="(band, index) in bandOptions" :key="band.key" class="flex justify-between tnum">
@@ -227,16 +315,15 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
                 <span class="text-foreground">{{ report.estimate.orders_by_band[index] ? formatPercent(Math.round((report.estimate.seated_by_band[index]! * 1000) / report.estimate.orders_by_band[index]!) / 10) : 'sem pedido' }}</span>
               </li>
             </ul>
-          </div>
+          </NuxtCard>
         </div>
-      </section>
+      </BiSection>
 
       <div class="grid gap-3 lg:grid-cols-2">
-        <section class="rounded-lg border border-border bg-card px-4 py-3">
-          <h2 class="op-title text-foreground">A faixa honesta</h2>
-          <p class="mb-3 op-micro text-muted-foreground">
-            {{ sensitivityHeadline(report.sensitivity.orders_changed, report.sensitivity.share_changed, report.counter_orders) }}
-          </p>
+        <BiSection
+          title="A faixa honesta"
+          :caption="sensitivityHeadline(report.sensitivity.orders_changed, report.sensitivity.share_changed, report.counter_orders)"
+        >
           <ul class="flex flex-col gap-2 op-label">
             <li v-for="range in report.sensitivity.ranges" :key="range.profile" class="flex flex-col">
               <span class="font-medium text-foreground">{{ range.label }}</span>
@@ -248,13 +335,12 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
               </span>
             </li>
           </ul>
-        </section>
+        </BiSection>
 
-        <section class="rounded-lg border border-border bg-card px-4 py-3">
-          <h2 class="op-title text-foreground">Conciliação</h2>
-          <p class="mb-3 op-micro text-muted-foreground">
-            A + B + C + sem etiqueta + entrega = faturamento do recorte. Sem filtros, é o mesmo número da aba Vendas.
-          </p>
+        <BiSection
+          title="Conciliação"
+          caption="A + B + C + sem etiqueta + entrega = faturamento do recorte. Sem filtros, é o mesmo número da aba Vendas."
+        >
           <dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 op-label">
             <dt class="text-muted-foreground">Balcão · {{ formatInt(report.counter_orders) }} pedidos</dt>
             <dd class="text-right tnum text-foreground">{{ formatMoney(report.counter_revenue_q) }}</dd>
@@ -263,54 +349,35 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
             <dt class="border-t border-border pt-1 font-medium text-foreground">Faturamento do recorte</dt>
             <dd class="border-t border-border pt-1 text-right font-medium tnum text-foreground">{{ formatMoney(report.revenue_total_q) }}</dd>
           </dl>
-        </section>
+        </BiSection>
       </div>
 
-      <section class="rounded-lg border border-border bg-card px-4 py-3">
-        <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 class="op-title text-foreground">Perfil por faixa de hora</h2>
-            <p class="op-micro text-muted-foreground">
-              Pedidos por faixa e % dentro da faixa. Quem almoça às 13h e paga às 14h05 cai em "Tarde".
-            </p>
-          </div>
-          <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
+      <BiSection title="Perfil por faixa de hora" data-bi-profile-matrix>
+        <template #caption>
+          Pedidos por faixa e % dentro da faixa. Quem almoça às 13h e paga às 14h05 cai em "Tarde".
+        </template>
+        <template #aside>
+          <label class="inline-flex items-center gap-2 op-label text-muted-foreground">
             Leitura
             <UiNativeSelect v-model="matrixReading">
               <option v-for="reading in report.readings" :key="reading.key" :value="reading.key">{{ reading.label }}</option>
             </UiNativeSelect>
           </label>
-        </div>
-        <div class="overflow-x-auto">
-          <table class="w-full op-label">
-            <thead>
-              <tr class="border-b border-border">
-                <th class="pb-2 text-left op-eyebrow text-muted-foreground">Faixa</th>
-                <th :class="thClass">Pedidos</th>
-                <th v-for="row in currentRows" :key="row.profile" :class="thClass">{{ row.profile === 'unclassified' ? 'Sem etiqueta' : row.profile }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in matrixRows" :key="row.band.key" class="border-b border-border last:border-0">
-                <td class="py-1.5 pr-2 font-medium text-foreground">{{ row.band.title }}</td>
-                <td :class="tdClass">{{ formatInt(row.total) }}</td>
-                <td v-for="cell in row.cells" :key="cell.profile" :class="tdClass">
-                  {{ formatInt(cell.orders) }}
-                  <span class="op-micro text-muted-foreground">({{ formatPercent(cell.share) }})</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+        </template>
+        <NuxtTable
+          :data="matrixRows"
+          :columns="matrixColumns"
+          :get-row-id="(row) => row.band.key"
+          caption="Pedidos por faixa de hora e perfil"
+        />
+      </BiSection>
 
       <div class="grid gap-3 lg:grid-cols-2">
-        <section class="rounded-lg border border-border bg-card px-4 py-3">
-          <h2 class="op-title text-foreground">Receita por categoria</h2>
-          <p class="mb-3 op-micro text-muted-foreground">
+        <BiSection title="Receita por categoria">
+          <template #caption>
             Soma das linhas de balcão (histórico: categoria do Yooga; nativo: coleção do catálogo).
             Difere do faturamento por {{ formatMoney(report.category_header_gap_q) }} de desconto/acréscimo de venda.
-          </p>
+          </template>
           <div class="mb-3 rounded-md bg-muted p-2 op-label">
             <span class="font-medium text-foreground">Bebida pronta industrializada:</span>
             <span class="tnum text-foreground"> {{ formatMoney(report.beverage.ready_revenue_q) }}</span>
@@ -318,13 +385,12 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
           </div>
           <ChartHBarList v-if="categoryRows.length" :rows="categoryRows" />
           <p v-else class="op-label text-muted-foreground">Sem vendas no recorte.</p>
-        </section>
+        </BiSection>
 
-        <section class="rounded-lg border border-border bg-card px-4 py-3">
-          <h2 class="op-title text-foreground">Bebida no pedido</h2>
-          <p class="mb-3 op-micro text-muted-foreground">
-            A bebida indica o perfil, mas não decide: há C sem bebida (doce na mesa) e o café pra levar aumenta B e C.
-          </p>
+        <BiSection
+          title="Bebida no pedido"
+          caption="A bebida indica o perfil, mas não decide: há C sem bebida (doce na mesa) e o café pra levar aumenta B e C."
+        >
           <div class="mb-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
             <StatTile label="Com bebida" :value="formatPercent(report.beverage.strike_rate)" :hint="`${formatInt(report.beverage.orders_with_beverage)} pedidos`" />
             <StatTile label="Com café/chá preparado" :value="formatPercent(report.beverage.prepared_rate)" />
@@ -336,61 +402,27 @@ const tdClass = "whitespace-nowrap py-1.5 pl-2 text-right tnum text-foreground";
             />
           </div>
           <p class="mb-1 op-eyebrow text-muted-foreground">% de pedidos com bebida · dia da semana × faixa (período inteiro)</p>
-          <div class="overflow-x-auto">
-            <table class="w-full op-label">
-              <thead>
-                <tr class="border-b border-border">
-                  <th class="pb-2 text-left op-eyebrow text-muted-foreground"></th>
-                  <th v-for="band in bandOptions" :key="band.key" :class="thClass">{{ band.label }}</th>
-                  <th :class="thClass">Dia</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in strike" :key="row.weekday" class="border-b border-border last:border-0">
-                  <td class="py-1 pr-2 font-medium text-foreground">{{ row.label }}</td>
-                  <td v-for="(cell, index) in row.cells" :key="index" :class="tdClass" :title="cell ? `${formatInt(cell.with_beverage)} de ${formatInt(cell.orders)}` : ''">
-                    <span :class="cell && cell.orders ? '' : 'text-muted-foreground'">{{ cell && cell.orders ? formatPercent(cell.rate) : 'sem pedido' }}</span>
-                  </td>
-                  <td :class="tdClass">{{ strikeByWeekday[row.weekday]?.orders ? formatPercent(strikeByWeekday[row.weekday]!.rate) : 'sem pedido' }}</td>
-                </tr>
-                <tr>
-                  <td class="py-1 pr-2 op-eyebrow text-muted-foreground">Faixa</td>
-                  <td v-for="band in bandOptions" :key="band.key" :class="tdClass">{{ strikeByBand[band.key]?.orders ? formatPercent(strikeByBand[band.key]!.rate) : 'sem pedido' }}</td>
-                  <td :class="tdClass"></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+          <NuxtTable
+            :data="strike"
+            :columns="strikeColumns"
+            :get-row-id="(row) => String(row.weekday)"
+            caption="Pedidos com bebida por dia da semana e faixa"
+            data-bi-beverage-strike
+          />
+        </BiSection>
       </div>
 
-      <section class="rounded-lg border border-border bg-card px-4 py-3">
-        <h2 class="op-title text-foreground">Receita por assento por hora</h2>
-        <p class="mb-3 op-micro text-muted-foreground">
+      <BiSection title="Receita por assento por hora" data-bi-revpash>
+        <template #caption>
           Receita dos pedidos com item local ÷ (assentos × horas da faixa × dias com venda). Assentos:
           {{ formatInt(report.seats) }} ({{ report.seats_source }}). Todas as faixas do recorte de dia da semana.
-        </p>
-        <div class="overflow-x-auto">
-          <table class="w-full op-label">
-            <thead>
-              <tr class="border-b border-border">
-                <th class="pb-2 text-left op-eyebrow text-muted-foreground">Faixa</th>
-                <th :class="thClass">Receita local</th>
-                <th :class="thClass">Denominador</th>
-                <th :class="thClass">Receita por assento-hora</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in report.revpash" :key="row.band" class="border-b border-border last:border-0">
-                <td class="py-1.5 pr-2 font-medium text-foreground">{{ row.title }}</td>
-                <td :class="tdClass">{{ formatMoney(row.revenue_local_q) }}</td>
-                <td class="py-1.5 text-right op-micro tnum text-muted-foreground">{{ revpashHint(row.seats, row.hours, row.days) }}</td>
-                <td :class="tdClass">{{ formatMoney(row.revpash_q) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+        </template>
+        <NuxtTable :data="report.revpash" :columns="revpashColumns" :get-row-id="(row) => row.band" caption="Receita por assento-hora por faixa">
+          <template #revenue-cell="{ row }">{{ formatMoney(row.original.revenue_local_q) }}</template>
+          <template #denominator-cell="{ row }">{{ revpashHint(row.original.seats, row.original.hours, row.original.days) }}</template>
+          <template #revpash-cell="{ row }">{{ formatMoney(row.original.revpash_q) }}</template>
+        </NuxtTable>
+      </BiSection>
       </template>
       <BiSwipeHint />
     </main>

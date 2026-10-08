@@ -82,11 +82,25 @@ async function saveScenario() {
   }
 }
 
+// Apagar pede confirmação (expansão desta migração): um cenário salvo apagado não
+// volta, e antes o "Apagar" do menu agia no primeiro toque. A pergunta é a caixa da
+// casa (`useConfirm` do kit), no tom de perda.
+const confirmDelete = useConfirm();
+const deleteLabel = computed(() => (loadedView.value ? `Apagar "${loadedView.value.name}"` : ""));
+
 async function removeLoaded() {
-  if (!loadedView.value) return;
-  await remove(loadedView.value);
-  selectedScenario.value = "";
+  const view = loadedView.value;
+  if (!view) return;
   menuOpen.value = false;
+  const confirmed = await confirmDelete({
+    title: `Apagar o cenário "${view.name}"?`,
+    description: "O corte salvo some da lista de cenários e não volta. O que ele mostra continua no B.I.: dá para montar de novo e salvar.",
+    confirmLabel: "Apagar cenário",
+    cancelLabel: "Manter o cenário",
+  });
+  if (!confirmed) return;
+  await remove(view);
+  selectedScenario.value = "";
 }
 
 // ── Resultado: série, ranking ou tabela conforme o corte ────────────────────
@@ -102,6 +116,20 @@ const timeSeries = computed(() => {
     value: aggregateBucket(bucket.rows.map((r) => r.value), aggregation),
   }));
 });
+
+const resultTitle = computed(() => {
+  if (!report.value) return "";
+  const base = `${report.value.metric_label} por ${report.value.dimension_label.toLowerCase()}`;
+  return report.value.dimension2 ? `${base} × ${report.value.dimension2_label.toLowerCase()}` : base;
+});
+
+// Cruzamento de duas dimensões: NuxtTable, o corpo inteiro do quadro (integrada ao
+// cartão pelo tema do kit). Os cabeçalhos são os nomes que o servidor manda.
+const crossColumns = computed(() => [
+  { accessorKey: "label", header: report.value?.dimension_label ?? "", meta: { class: { td: "font-medium text-foreground" } } },
+  { accessorKey: "label2", header: report.value?.dimension2_label ?? "", meta: { class: { td: "text-foreground" } } },
+  { id: "value", header: report.value?.metric_label ?? "", meta: { class: { th: "text-right", td: "text-right tnum text-foreground" } } },
+]);
 
 const rankingRows = computed(() => {
   if (!report.value || report.value.dimension === "time" || report.value.dimension2) return [];
@@ -130,128 +158,131 @@ const rankingRows = computed(() => {
     </OperatorPageHeader>
   <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
     <!-- O construtor: Cenário · Métrica · Dimensão · Cruzamento · ⋯ -->
-    <section class="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card px-4 py-3">
-      <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
-        Cenário
-        <UiNativeSelect
-          :value="selectedScenario"
-          class="min-w-44"
-          @change="onScenarioChange(($event.target as HTMLSelectElement).value)"
-        >
-          <option value="">Nenhum (livre)</option>
-          <optgroup v-if="views.length" label="Meus cenários">
-            <option v-for="view in views" :key="view.id" :value="`view:${view.id}`">
-              {{ view.is_favorite ? "★ " : "" }}{{ view.name }}
+    <NuxtCard as="section" aria-label="Construtor do cruzamento" data-bi-explore-builder>
+      <div class="flex flex-wrap items-end gap-3">
+        <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
+          Cenário
+          <UiNativeSelect
+            :value="selectedScenario"
+            class="min-w-44"
+            @change="onScenarioChange(($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">Nenhum (livre)</option>
+            <optgroup v-if="views.length" label="Meus cenários">
+              <option v-for="view in views" :key="view.id" :value="`view:${view.id}`">
+                {{ view.is_favorite ? "★ " : "" }}{{ view.name }}
+              </option>
+            </optgroup>
+            <optgroup label="Exemplos">
+              <option v-for="example in examples" :key="example.name" :value="`example:${example.name}`">
+                {{ example.name }}
+              </option>
+            </optgroup>
+          </UiNativeSelect>
+        </label>
+        <NuxtSeparator orientation="vertical" class="h-10 self-end" />
+        <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
+          Métrica
+          <UiNativeSelect
+            :value="config.metric"
+            @change="applyFree({ metric: ($event.target as HTMLSelectElement).value })"
+          >
+            <option v-for="m in report?.metrics ?? []" :key="m.key" :value="m.key">{{ m.label }}</option>
+          </UiNativeSelect>
+        </label>
+        <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
+          Dimensão
+          <UiNativeSelect
+            :value="config.by"
+            @change="applyFree({ by: ($event.target as HTMLSelectElement).value })"
+          >
+            <option v-for="d in currentSpec?.dimensions ?? []" :key="d" :value="d">
+              {{ EXPLORE_DIMENSION_LABELS[d] ?? d }}
             </option>
-          </optgroup>
-          <optgroup label="Exemplos">
-            <option v-for="example in examples" :key="example.name" :value="`example:${example.name}`">
-              {{ example.name }}
+          </UiNativeSelect>
+        </label>
+        <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
+          Cruzamento
+          <UiNativeSelect
+            :value="config.by2"
+            @change="applyFree({ by2: ($event.target as HTMLSelectElement).value })"
+          >
+            <option value="">Sem cruzamento</option>
+            <option v-for="d in by2Options" :key="d" :value="d">
+              {{ EXPLORE_DIMENSION_LABELS[d] ?? d }}
             </option>
-          </optgroup>
-        </UiNativeSelect>
-      </label>
-      <div class="h-10 w-px self-end bg-border"></div>
-      <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
-        Métrica
-        <UiNativeSelect
-          :value="config.metric"
-          @change="applyFree({ metric: ($event.target as HTMLSelectElement).value })"
-        >
-          <option v-for="m in report?.metrics ?? []" :key="m.key" :value="m.key">{{ m.label }}</option>
-        </UiNativeSelect>
-      </label>
-      <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
-        Dimensão
-        <UiNativeSelect
-          :value="config.by"
-          @change="applyFree({ by: ($event.target as HTMLSelectElement).value })"
-        >
-          <option v-for="d in currentSpec?.dimensions ?? []" :key="d" :value="d">
-            {{ EXPLORE_DIMENSION_LABELS[d] ?? d }}
-          </option>
-        </UiNativeSelect>
-      </label>
-      <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
-        Cruzamento
-        <UiNativeSelect
-          :value="config.by2"
-          @change="applyFree({ by2: ($event.target as HTMLSelectElement).value })"
-        >
-          <option value="">Sem cruzamento</option>
-          <option v-for="d in by2Options" :key="d" :value="d">
-            {{ EXPLORE_DIMENSION_LABELS[d] ?? d }}
-          </option>
-        </UiNativeSelect>
-      </label>
+          </UiNativeSelect>
+        </label>
 
-      <div class="relative ml-auto self-end">
-        <button
-          type="button"
-          class="inline-flex size-control items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground"
-          aria-label="Ações do cenário"
-          :aria-expanded="menuOpen"
-          @click="menuOpen = !menuOpen"
-        >
-          <Icon name="lucide:ellipsis" class="size-4" />
-        </button>
-        <div
-          v-if="menuOpen"
-          class="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-border bg-card px-4 py-3 shadow-md"
-        >
-          <p class="mb-2 op-eyebrow text-muted-foreground">Salvar corte atual como cenário</p>
-          <div class="flex items-center gap-2">
-            <input
-              v-model="saveName"
-              type="text"
-              placeholder="Nome do cenário"
-              maxlength="80"
-              class="min-h-control min-w-0 flex-1 rounded-md border border-border bg-background px-2 op-label text-foreground"
-              @keydown.enter="saveScenario"
-            />
-            <button
-              type="button"
-              class="inline-flex min-h-control shrink-0 items-center rounded-md bg-primary px-3 op-label font-medium text-primary-foreground disabled:opacity-50"
-              :disabled="!saveName.trim()"
-              @click="saveScenario"
-            >
-              Salvar
-            </button>
-          </div>
-          <template v-if="loadedView">
-            <div class="my-3 border-t border-border"></div>
-            <button
-              type="button"
-              class="flex min-h-control w-full items-center gap-2 rounded-md px-2 op-label text-foreground hover:bg-muted"
-              @click="toggleFavorite(loadedView)"
-            >
-              <Icon :name="loadedView.is_favorite ? 'lucide:star-off' : 'lucide:star'" class="size-4" />
-              {{ loadedView.is_favorite ? "Tirar dos favoritos" : "Favoritar" }}
-            </button>
-            <button
-              type="button"
-              class="flex min-h-control w-full items-center gap-2 rounded-md px-2 op-label text-destructive hover:bg-muted"
-              @click="removeLoaded"
-            >
-              <Icon name="lucide:trash-2" class="size-4" />
-              Apagar "{{ loadedView.name }}"
-            </button>
+        <!-- O ⋯ do cenário: NuxtPopover (e não DropdownMenu) porque leva um campo de
+             texto, o nome do cenário a salvar. Esc e clique fora fecham, do componente. -->
+        <NuxtPopover v-model:open="menuOpen" :content="{ align: 'end', sideOffset: 8, collisionPadding: 8 }">
+          <NuxtButton
+            icon="i-lucide-ellipsis"
+            color="neutral"
+            variant="outline"
+            square
+            class="ml-auto self-end"
+            aria-label="Ações do cenário"
+            data-bi-scenario-menu
+          />
+          <template #content>
+            <div class="grid w-72 gap-2 p-3" data-bi-scenario-panel>
+              <p class="op-eyebrow text-muted-foreground">Salvar corte atual como cenário</p>
+              <div class="flex items-center gap-2">
+                <NuxtInput
+                  v-model="saveName"
+                  placeholder="Nome do cenário"
+                  :maxlength="80"
+                  class="min-w-0 flex-1"
+                  aria-label="Nome do cenário"
+                  @keydown.enter="saveScenario"
+                />
+                <NuxtButton label="Salvar" :disabled="!saveName.trim()" @click="saveScenario" />
+              </div>
+              <template v-if="loadedView">
+                <NuxtSeparator class="my-1" />
+                <NuxtButton
+                  color="neutral"
+                  variant="ghost"
+                  block
+                  class="justify-start"
+                  :icon="loadedView.is_favorite ? 'i-lucide-star-off' : 'i-lucide-star'"
+                  :label="loadedView.is_favorite ? 'Tirar dos favoritos' : 'Favoritar'"
+                  @click="toggleFavorite(loadedView)"
+                />
+                <NuxtButton
+                  color="error"
+                  variant="ghost"
+                  block
+                  class="justify-start"
+                  icon="i-lucide-trash-2"
+                  :label="deleteLabel"
+                  @click="removeLoaded"
+                />
+              </template>
+            </div>
           </template>
-        </div>
+        </NuxtPopover>
       </div>
-    </section>
+    </NuxtCard>
 
-    <p v-if="pending" class="op-label text-muted-foreground">Carregando…</p>
-    <p v-else-if="errorDetail" class="op-label text-destructive">{{ errorDetail }}</p>
-    <template v-else-if="report">
-      <section class="rounded-lg border border-border bg-card px-4 py-3">
-        <h2 class="op-title text-foreground">
-          {{ report.metric_label }} por {{ report.dimension_label.toLowerCase() }}<template v-if="report.dimension2"> × {{ report.dimension2_label.toLowerCase() }}</template>
-        </h2>
-        <p class="mb-3 op-micro text-muted-foreground">
+    <BiPageState :pending="pending" />
+    <NuxtAlert
+      v-if="!pending && errorDetail"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-circle-alert"
+      :title="errorDetail"
+      role="alert"
+      data-bi-explore-error
+    />
+    <template v-else-if="!pending && report">
+      <BiSection :title="resultTitle" data-bi-explore-result>
+        <template #caption>
           {{ shortDate(report.date_from) }} a {{ shortDate(report.date_to) }}
           <template v-if="report.truncated"> · Mostrando as {{ report.rows.length }} maiores; {{ report.truncated }} linhas ficaram fora</template>
-        </p>
+        </template>
 
         <ChartBarSeries
           v-if="report.dimension === 'time' && !report.dimension2"
@@ -259,30 +290,17 @@ const rankingRows = computed(() => {
           :format="(v) => formatExploreValue(report!.unit, v)"
         />
         <ChartHBarList v-else-if="rankingRows.length" :rows="rankingRows" />
-        <table v-else-if="report.rows.length" class="w-full op-label">
-          <thead>
-            <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
-              <th class="pb-2 font-medium">{{ report.dimension_label }}</th>
-              <th class="pb-2 font-medium">{{ report.dimension2_label }}</th>
-              <th class="pb-2 text-right font-medium">{{ report.metric_label }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in report.rows"
-              :key="`${row.key}|${row.key2}`"
-              class="border-b border-border last:border-0"
-            >
-              <td class="py-2 pr-2 font-medium text-foreground">{{ row.label }}</td>
-              <td class="py-2 pr-2 text-foreground">{{ row.label2 }}</td>
-              <td class="py-2 text-right tnum text-foreground">
-                {{ formatExploreValue(report.unit, row.value) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <NuxtTable
+          v-else-if="report.rows.length"
+          :data="report.rows"
+          :columns="crossColumns"
+          :get-row-id="(row) => `${row.key}|${row.key2}`"
+          caption="Resultado do cruzamento"
+        >
+          <template #value-cell="{ row }">{{ formatExploreValue(report.unit, row.original.value) }}</template>
+        </NuxtTable>
         <p v-else class="op-label text-muted-foreground">Nada no período para esse cruzamento.</p>
-      </section>
+      </BiSection>
     </template>
     <BiSwipeHint />
   </main>
