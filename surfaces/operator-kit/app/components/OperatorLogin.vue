@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAttrs } from "vue";
+
 type LoginMode = "overlay" | "page";
 
 const props = withDefaults(
@@ -25,6 +27,17 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{ success: [] }>();
+
+// Marco da página (WP-OPERADOR-NUXTUI-ONDAS, onda 0, 08/10/2026). O app que dá ao
+// login um papel de marco (`role="main"`, o Marketing) espera achá-lo na árvore de
+// acessibilidade: no `main` ele envolvia o diálogo. Com o Modal canônico, o atributo
+// caía no componente e sumia, e o Modal no portal escondia todo o resto do leitor de
+// tela. Opt-in pelo próprio atributo: com ele, o Modal nasce DENTRO do marco (sem
+// portal), e o `hideOthers` do reka preserva os ancestrais do conteúdo. Sem ele (os
+// outros apps e o Gestor), nada muda.
+defineOptions({ inheritAttrs: false });
+const attrs = useAttrs();
+const landmark = computed(() => Boolean(attrs.role));
 const identity = (
   useRuntimeConfig().public?.operatorPwa as
     { identity?: { icon: string; iconSrc: string } } | undefined
@@ -52,8 +65,44 @@ const displayDescription = computed(
 <template>
   <!-- Foco, aria e bloqueio de fundo pertencem ao Modal canônico, não a uma
        imitação feita com div fixa, Card e focus trap manual. -->
+  <!-- O marco ocupa a tela que o diálogo cobre (um marco vazio, de 0 px, não é
+       "visível" para ninguém). -->
+  <div
+    v-if="mode === 'overlay' && landmark"
+    v-bind="attrs"
+    class="min-h-dvh w-full flex-1"
+    data-operator-login-landmark
+  >
+    <NuxtModal
+      :open="true"
+      :portal="false"
+      :dismissible="false"
+      :close="false"
+      :title="displayTitle"
+      :description="displayDescription"
+      data-operator-login
+    >
+      <template #content>
+        <div class="p-6">
+          <OperatorLoginForm
+            heading
+            :title="displayTitle"
+            :description="displayDescription"
+            :icon="icon"
+            :icon-src="iconSrc"
+            :login-url="loginUrl"
+            :large-fields="largeFields"
+            :reload-on-success="reloadOnSuccess"
+            @success="emit('success')"
+          />
+        </div>
+      </template>
+    </NuxtModal>
+  </div>
+
   <NuxtModal
-    v-if="mode === 'overlay'"
+    v-else-if="mode === 'overlay'"
+    v-bind="attrs"
     :open="true"
     :dismissible="false"
     :close="false"
@@ -82,7 +131,7 @@ const displayDescription = computed(
     </template>
   </NuxtModal>
 
-  <div v-else class="grid min-h-dvh place-items-center p-4">
+  <div v-else v-bind="attrs" class="grid min-h-dvh place-items-center p-4">
     <NuxtCard class="w-full max-w-sm text-center" data-operator-login>
       <OperatorLoginForm
         heading
