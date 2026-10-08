@@ -294,17 +294,32 @@ function clearAll() {
                   data-filter-input="text"
                 />
               </NuxtFormField>
+              <!-- Data é o campo canônico (UiDateField), nunca o nativo: um por
+                   linha, porque três segmentos e o calendário não cabem em meia
+                   largura do painel. -->
+              <div v-else-if="step.type === 'date-range'" class="grid gap-2">
+                <NuxtFormField label="De">
+                  <UiDateField
+                    v-model="draft[0]"
+                    :label="`${step.label}, de`"
+                    data-filter-input="from"
+                  />
+                </NuxtFormField>
+                <NuxtFormField label="Até">
+                  <UiDateField
+                    v-model="draft[1]"
+                    :label="`${step.label}, até`"
+                    data-filter-input="to"
+                  />
+                </NuxtFormField>
+              </div>
               <div v-else-if="isRangeType(step)" class="grid grid-cols-2 gap-2">
                 <NuxtFormField label="De">
                   <NuxtInput
                     v-model="draft[0]"
                     class="w-full"
-                    :type="step.type === 'date-range' ? 'date' : 'number'"
-                    :placeholder="
-                      step.type === 'number-range'
-                        ? step.placeholder
-                        : undefined
-                    "
+                    type="number"
+                    :placeholder="step.placeholder"
                     data-filter-input="from"
                   />
                 </NuxtFormField>
@@ -312,7 +327,7 @@ function clearAll() {
                   <NuxtInput
                     v-model="draft[1]"
                     class="w-full"
-                    :type="step.type === 'date-range' ? 'date' : 'number'"
+                    type="number"
                     data-filter-input="to"
                   />
                 </NuxtFormField>

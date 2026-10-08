@@ -901,10 +901,10 @@ Passo de wizard e campo de formulário (PDV agendar e reagendar; Compras recebim
   motivo curto no próprio botão (`fechado`, `fora do prazo`, `indisponível`).
 - `availableDates` é a lista de dias em que a casa abre. Dia dentro da lista que não
   está nela é fechado; depois da última data, quem decide é o servidor.
-- **Outra data** abre o seletor nativo (com `min`/`max`) e deixa o campo à vista logo
-  abaixo: há navegador que recusa `showPicker()`, e o toque não pode ser inerte. Dia
-  fechado escolhido ali é recusado com a frase do motivo. A data escolhida por lá vira
-  a legenda do botão.
+- **Outra data** mostra logo abaixo o campo canônico de data (`UiDateField`, com
+  `min`/`max`): os segmentos dia/mês/ano e o calendário do Nuxt UI no gatilho do
+  campo. Nunca o seletor nativo. Dia fechado escolhido ali é recusado com a frase do
+  motivo. A data escolhida por lá vira a legenda do botão.
 - `today` é o hoje da LOJA (vem do servidor), não o do dispositivo.
 - ARIA: `role="radiogroup"` + `role="radio"`/`aria-checked`, uma parada de tabulação,
   setas andam entre as opções.
@@ -923,6 +923,20 @@ que fazem sentido para ele.
 | Próximos | 7D, 14D, 28D (`next7d`, `next14d`, `next28d`) | os N dias começando hoje (quem trabalha com o que está por vir) |
 | Últimos | 7D, 28D, 3M, 6M, 1A, 5A, Máx (`7d` … `max`) | os N dias terminando hoje |
 | Personalizado | De/Até (`custom`) | o intervalo escolhido; `max-span-days` recusa o que passa do teto do servidor |
+
+**Os campos de data do popover são os canônicos** (decisão do dono, não se reabre):
+De e Até são dois `UiDateField`, um por linha, com o `min`/`max` do consumidor; sem
+personalizado, "Ir para o dia" é um `UiDateField`. Nunca `type="date"`, nem pelo
+`NuxtInput`: a trava `kitOwnership.guardrails.test.ts` varre o kit e os apps atrás de
+`input`, `NuxtInput`, `UInput` e `UiInput` com tipo temporal, literal ou no `:type`.
+Por que dois `UiDateField` e não o `UiDateRangeField`: o intervalo oferece "Sem início"
+e "Sem fim", e o período precisa das duas pontas; o motivo de recusa (`max-span-days`,
+fora de `min`/`max`) aparece num `NuxtAlert` sob os campos depois que as duas datas
+existem. Os chips são `NuxtTabs` com `activation-mode="manual"`: o popover põe o foco
+no primeiro chip ao abrir, e no modo automático esse foco escolhia "Dia" e fechava o
+popover de quem estava em 28D. O nome por extenso do chip ("Próximos 7 dias") vai
+escrito para o leitor de tela no conteúdo do gatilho, porque o `NuxtTabs` não repassa
+atributo do item.
 
 ```html
 <!-- B.I.: todo o passado, personalizado, calendário até hoje -->
@@ -951,8 +965,19 @@ que fazem sentido para ele.
   (Abertura, Fechamento, Qualidade, TV, Encomendas) usa a ponte `periodOfDay(preset, dia, hoje)` /
   `periodAnchor(seleção, hoje)` num `computed` com setter.
 - **Consumidores hoje**: B.I. (barra e Projeção), Encomendas (Dia a Mês, Próximos, 7D e 28D, personalizado), Produção
-  (grade, Fechamento, Qualidade, quadro da TV, Preparação, Relatórios). KDS e Gestor não têm seletor
-  de dia.
+  (grade, Fechamento, Qualidade, quadro da TV, Preparação, Relatórios) e Gestor (Histórico). O KDS não
+  tem seletor de dia.
+
+### Campos de data e hora (`UiDateField`, `UiDateRangeField`, `UiTimeField`, `UiTimeRangeField`, `UiDateTimeField`)
+
+Camadas finas sobre `NuxtInputDate`, `NuxtInputTime` e `NuxtCalendar`, com valor ISO no
+contrato (`YYYY-MM-DD`, `HH:mm`, `YYYY-MM-DDTHH:mm`). São a única forma de pedir data ou
+hora nos apps de operador. Consumidores: os dois tipos acima, B.I. (`UiDateField`) e
+Marketing (`UiDateRangeField`, `UiTimeField`, `UiTimeRangeField`, `UiDateTimeField`).
+
+- `UiDateTimeField` divide o instante em data e hora. `min`/`max` são instantes: a data
+  recebe o dia, e a hora recebe o limite **só no dia-limite** (no dia de `min`, a hora
+  mínima; no de `max`, a máxima; nos outros dias, toda hora vale).
 - **‹ › andam um período igual**: dia → dia anterior; semana (segunda a domingo) → semana
   anterior; mês → mês anterior; janela de N dias (7D, 28D, personalizado) → os N dias
   antes; próximos N dias → os N dias depois, e ‹ para em hoje. "Máx" não anda. A seta

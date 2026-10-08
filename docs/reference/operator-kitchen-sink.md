@@ -439,10 +439,15 @@ _verificado_, _pendente_ e _exceção justificada_ está separado abaixo.
   (`OperatorSuiteRail`, `OperatorPageHeader`). O catálogo demonstra o alvo, mas a
   adoção app a app, sem regressão, segue aberta.
 - Wrappers sem consumidor de produção permanecem no kit e ainda precisam de
-  decisão (adotar ou apagar): `UiSearchInput`, `UiDateField`, `UiDateRangeField`,
-  `UiDateTimeField`, `UiTimeField`, `UiTimeRangeField`, `UiStepper`. A receita do
-  catálogo usa o componente Nuxt UI direto; o wrapper só entra se um app real o
-  consumir.
+  decisão (adotar ou apagar): `UiSearchInput`, `UiStepper`. A receita do catálogo
+  usa o componente Nuxt UI direto; o wrapper só entra se um app real o consumir.
+- Data, hora e período **não** estão nessa lista: `UiDateField`, `UiDateRangeField`,
+  `UiTimeField`, `UiTimeRangeField` e `UiDateTimeField` são o cânone decidido pelo
+  dono (nunca `type="date|time"`) e têm consumidor: B.I. (`UiDateField`), Marketing
+  (`UiDateRangeField`, `UiTimeField`, `UiTimeRangeField`, `UiDateTimeField`) e o
+  próprio kit (`OperatorDayPicker`, `OperatorPeriodPicker`, `FilterBar` no tipo
+  `date-range`). A trava `kitOwnership.guardrails.test.ts` reprova o nativo no kit e
+  nos apps.
 - Evidência visual pixel a pixel **não é gate**: não há baseline versionada
   comparada na CI. O que existe é captura por matriz, scanner de geometria e
   auditoria de acessibilidade; regenerar baseline exige o Chromium do

@@ -105,12 +105,19 @@ const upcomingPresets = computed(() =>
 const windowCount = computed(
   () => rollingPresets.value.length + upcomingPresets.value.length,
 );
+// As abas escolhem no toque (`activation-mode="manual"`), nunca no foco: o
+// popover põe o foco no primeiro gatilho ao abrir e, no modo automático, isso
+// já escolhia "Dia" e fechava o popover de quem estava em 28D (o B.I.).
+//
+// O NuxtTabs (4.11.3) não repassa ao gatilho chave extra do item: um
+// "aria-label" no item morria antes do DOM. O nome por extenso ("Próximos 7
+// dias") vai, então, no conteúdo do gatilho (slot padrão), escrito para o leitor
+// de tela, e o chip curto ("7D") fica só para o olho.
 const presetItems = (presets: typeof allowed.value) =>
   presets.map((preset) => ({
     value: preset.key,
     label: preset.label,
-    "aria-label": preset.title || preset.label,
-    "data-period-preset": preset.key,
+    title: preset.title,
   }));
 
 const open = ref(false);
@@ -210,9 +217,20 @@ function backToToday() {
                 :items="presetItems(calendarPresets)"
                 :content="false"
                 variant="pill"
+                activation-mode="manual"
                 aria-label="Período do calendário"
                 @update:model-value="pick(String($event))"
-              />
+              >
+                <template #default="{ item }">
+                  <span :data-period-preset="item.value">
+                    <template v-if="item.title && item.title !== item.label">
+                      <span aria-hidden="true">{{ item.label }}</span>
+                      <span class="sr-only">{{ item.title }}</span>
+                    </template>
+                    <template v-else>{{ item.label }}</template>
+                  </span>
+                </template>
+              </NuxtTabs>
             </template>
             <template v-if="upcomingPresets.length">
               <p class="mt-3 mb-2 text-sm font-medium">Próximos</p>
@@ -221,9 +239,20 @@ function backToToday() {
                 :items="presetItems(upcomingPresets)"
                 :content="false"
                 variant="pill"
+                activation-mode="manual"
                 aria-label="Próximos dias"
                 @update:model-value="pick(String($event))"
-              />
+              >
+                <template #default="{ item }">
+                  <span :data-period-preset="item.value">
+                    <template v-if="item.title && item.title !== item.label">
+                      <span aria-hidden="true">{{ item.label }}</span>
+                      <span class="sr-only">{{ item.title }}</span>
+                    </template>
+                    <template v-else>{{ item.label }}</template>
+                  </span>
+                </template>
+              </NuxtTabs>
             </template>
             <template v-if="rollingPresets.length">
               <p class="mt-3 mb-2 text-sm font-medium">Últimos</p>
@@ -232,34 +261,44 @@ function backToToday() {
                 :items="presetItems(rollingPresets)"
                 :content="false"
                 variant="pill"
+                activation-mode="manual"
                 aria-label="Janelas móveis"
                 @update:model-value="pick(String($event))"
-              />
+              >
+                <template #default="{ item }">
+                  <span :data-period-preset="item.value">
+                    <template v-if="item.title && item.title !== item.label">
+                      <span aria-hidden="true">{{ item.label }}</span>
+                      <span class="sr-only">{{ item.title }}</span>
+                    </template>
+                    <template v-else>{{ item.label }}</template>
+                  </span>
+                </template>
+              </NuxtTabs>
             </template>
 
             <NuxtSeparator v-if="allowed.length && custom" class="my-3" />
             <template v-if="custom">
               <p class="mb-2 text-sm font-medium">Personalizado</p>
-              <div class="grid grid-cols-2 gap-2">
+              <!-- Um campo por linha: o popover tem 20rem, e o campo canônico de
+                   data (três segmentos e o gatilho do calendário, tamanho xl) não
+                   cabe em meia largura. -->
+              <div class="grid gap-2">
                 <NuxtFormField label="De">
-                  <NuxtInput
+                  <UiDateField
                     v-model="customFrom"
-                    class="w-full"
-                    type="date"
                     :min="min"
                     :max="max"
-                    aria-label="Início do período personalizado"
+                    label="Início do período personalizado"
                     data-period-custom-from
                   />
                 </NuxtFormField>
                 <NuxtFormField label="Até">
-                  <NuxtInput
+                  <UiDateField
                     v-model="customTo"
-                    class="w-full"
-                    type="date"
                     :min="min"
                     :max="max"
-                    aria-label="Fim do período personalizado"
+                    label="Fim do período personalizado"
                     data-period-custom-to
                   />
                 </NuxtFormField>
@@ -288,13 +327,11 @@ function backToToday() {
                 class="my-3"
               />
               <NuxtFormField label="Ir para o dia">
-                <NuxtInput
+                <UiDateField
                   v-model="jumpTo"
-                  class="w-full"
-                  type="date"
                   :min="min"
                   :max="max"
-                  aria-label="Data para mostrar"
+                  label="Data para mostrar"
                   data-period-jump
                 />
               </NuxtFormField>
