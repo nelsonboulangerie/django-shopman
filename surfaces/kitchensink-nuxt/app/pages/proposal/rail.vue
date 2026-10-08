@@ -98,21 +98,27 @@ const nextLabel: Record<RailState, { label: string; icon: string }> = {
 const next = computed(() => nextLabel[state.value]);
 defineShortcuts({ c: cycle });
 
-const badgeCount = "3";
+// Dois chips no ícone, iguais aberto e compacto:
+//   ponto  = estado (cor semântica, sem texto), no tamanho padrão do NavigationMenu;
+//   número = contagem, chip maior com `text`. Para comparar, Cozinha usa o 3xl
+//            oficial do Nuxt UI e Gestor usa o 4xl que o kit inventou para o Gestor.
 const suite = computed(() => [
   [
-    { label: "Central", icon: "i-lucide-layout-grid" },
-    { label: "PDV", icon: "i-lucide-shopping-cart" },
+    { label: "Central", icon: "i-lucide-layout-grid", chip: { color: "success" as const }, tooltip: { text: "Central, tudo em ordem" } },
+    { label: "PDV", icon: "i-lucide-shopping-cart", chip: { color: "error" as const }, tooltip: { text: "PDV, sem conexão" } },
     {
       label: "Cozinha",
       icon: "i-lucide-chef-hat",
-      // Aberto: o selo ao lado do nome. Compacto: o NavigationMenu esconde o selo,
-      // então o ponto (Chip) no ícone avisa e o tooltip diz o número.
-      badge: { label: badgeCount, color: "neutral" as const, variant: "solid" as const },
-      chip: collapsed.value ? { color: "warning" as const } : undefined,
-      tooltip: { text: `Cozinha, ${badgeCount} pedidos esperando` },
+      chip: { text: "12", size: "3xl" as const, color: "error" as const },
+      tooltip: { text: "Cozinha, 12 pedidos esperando" },
     },
-    { label: "Gestor", icon: "i-lucide-clipboard-list", active: true },
+    {
+      label: "Gestor",
+      icon: "i-lucide-clipboard-list",
+      active: true,
+      chip: { text: "12", size: "4xl" as const, color: "error" as const },
+      tooltip: { text: "Gestor, 12 pedidos para revisar" },
+    },
     { label: "Produção", icon: "i-lucide-croissant" },
     { label: "Marketing", icon: "i-lucide-megaphone" },
     { label: "Compras", icon: "i-lucide-truck" },

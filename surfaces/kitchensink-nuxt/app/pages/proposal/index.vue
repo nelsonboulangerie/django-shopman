@@ -41,31 +41,6 @@ const badgeLabel: Record<(typeof badgeColors)[number], string> = {
   error: "Recusado",
 };
 
-// Comparação pedida pelo dono (08/10): selo aprovado × todos soft × todos soft
-// ajustados. A versão "ajustada" é o que iria para o app.config do kit
-// (compoundVariants de badge soft); aqui entra por classe SÓ nesta comparação.
-type BadgeColor = (typeof badgeColors)[number];
-const softTuned: Record<BadgeColor, string> = {
-  neutral: "bg-[var(--border)] text-(--foreground)",
-  primary: "bg-[color-mix(in_srgb,var(--ui-primary)_18%,transparent)] text-[color-mix(in_srgb,var(--ui-primary)_70%,var(--foreground))]",
-  info: "bg-[color-mix(in_srgb,var(--ui-info)_18%,transparent)] text-[color-mix(in_srgb,var(--ui-info)_70%,var(--foreground))]",
-  success: "bg-[color-mix(in_srgb,var(--ui-success)_18%,transparent)] text-[color-mix(in_srgb,var(--ui-success)_70%,var(--foreground))]",
-  warning: "bg-[color-mix(in_srgb,var(--ui-warning)_18%,transparent)] text-[color-mix(in_srgb,var(--ui-warning)_70%,var(--foreground))]",
-  error: "bg-[color-mix(in_srgb,var(--ui-error)_18%,transparent)] text-[color-mix(in_srgb,var(--ui-error)_70%,var(--foreground))]",
-};
-const badgeOptions = [
-  { key: "approved", title: "A. Aprovado", description: "Neutro sem borda; as outras cinco com borda." },
-  { key: "soft", title: "B. Todos soft, como o tema está", description: "Sem borda; fundo com 10% da cor." },
-  { key: "tuned", title: "C. Todos soft, ajustados", description: "Sem borda; fundo com 18% da cor e letra mais escura; neutro um tom acima do cartão interno." },
-] as const;
-function badgeVariant(option: (typeof badgeOptions)[number]["key"], color: BadgeColor) {
-  if (option === "approved") return color === "neutral" ? "soft" : "subtle";
-  return "soft";
-}
-function badgeClass(option: (typeof badgeOptions)[number]["key"], color: BadgeColor) {
-  return option === "tuned" ? softTuned[color] : undefined;
-}
-
 const alertColors = [
   { color: "info", title: "Cardápio atualizado", icon: "i-lucide-info" },
   { color: "success", title: "Pedido entregue", icon: "i-lucide-circle-check" },
@@ -317,38 +292,9 @@ const productMenu = ref("Croissant");
               </div>
             </div>
           </NuxtCard>
-          <NuxtCard title="Proposta" description="6 cores. O neutro vai sem borda (soft); as outras cinco com borda (subtle), a primária no dourado.">
+          <NuxtCard title="Proposta" description="Uma variante só, soft (sem borda), × 6 cores. Selo sem borda não se confunde com botão de contorno.">
             <div class="flex flex-wrap gap-2">
-              <NuxtBadge v-for="color in badgeColors" :key="color" :color="color" :variant="color === 'neutral' ? 'soft' : 'subtle'" :label="badgeLabel[color]" />
-            </div>
-          </NuxtCard>
-        </div>
-
-        <h3 id="selo-comparar" class="text-base font-semibold">Selo: comparar A, B e C</h3>
-        <div class="grid gap-4 lg:grid-cols-3" data-proposal-badge-compare>
-          <NuxtCard v-for="option in badgeOptions" :key="option.key" :title="option.title" :description="option.description" :data-badge-option="option.key">
-            <div class="space-y-4">
-              <div class="space-y-2">
-                <p class="text-xs text-muted">No cartão</p>
-                <div class="flex flex-wrap gap-2">
-                  <NuxtBadge v-for="color in badgeColors" :key="color" :color="color" :variant="badgeVariant(option.key, color)" :class="badgeClass(option.key, color)" :label="badgeLabel[color]" />
-                </div>
-              </div>
-              <NuxtCard variant="soft">
-                <p class="text-xs text-muted">Dentro do cartão interno</p>
-                <div class="mt-2 flex flex-wrap gap-2">
-                  <NuxtBadge v-for="color in badgeColors" :key="color" :color="color" :variant="badgeVariant(option.key, color)" :class="badgeClass(option.key, color)" :label="badgeLabel[color]" />
-                </div>
-              </NuxtCard>
-              <div class="space-y-2">
-                <p class="text-xs text-muted">Ao lado de botões (qual se clica?)</p>
-                <div class="flex flex-wrap items-center gap-2">
-                  <NuxtBadge color="neutral" :variant="badgeVariant(option.key, 'neutral')" :class="badgeClass(option.key, 'neutral')" label="Retirada" />
-                  <NuxtButton label="Retirada" color="neutral" variant="outline" />
-                  <NuxtBadge color="primary" :variant="badgeVariant(option.key, 'primary')" :class="badgeClass(option.key, 'primary')" label="Encomenda" />
-                  <NuxtButton label="Encomenda" color="primary" variant="outline" />
-                </div>
-              </div>
+              <NuxtBadge v-for="color in badgeColors" :key="color" :color="color" variant="soft" :label="badgeLabel[color]" />
             </div>
           </NuxtCard>
         </div>
@@ -421,7 +367,7 @@ const productMenu = ref("Croissant");
                       <p class="text-base font-semibold">NB-1048 · Maria Santos</p>
                       <p class="text-sm text-muted">Retirada às 10:30, loja online</p>
                     </div>
-                    <NuxtBadge color="warning" variant="subtle" label="Atrasado" />
+                    <NuxtBadge color="warning" variant="soft" label="Atrasado" />
                   </div>
                   <p class="mt-3 text-sm">2× Croissant, 1× Pain au chocolat, 1× Café coado</p>
                   <div class="mt-3 flex items-end justify-between gap-3">
@@ -559,7 +505,7 @@ const productMenu = ref("Croissant");
               >
                 <div class="flex min-w-0 flex-wrap items-center gap-2">
                   <p class="text-xl font-semibold">{{ state.title }}</p>
-                  <NuxtBadge :color="state.color" :variant="state.color === 'neutral' ? 'soft' : 'subtle'" :label="state.label" role="status" :aria-label="state.aria" :title="state.aria">
+                  <NuxtBadge :color="state.color" variant="soft" :label="state.label" role="status" :aria-label="state.aria" :title="state.aria">
                     <template v-if="state.dot" #leading>
                       <NuxtChip as="span" :color="state.color" size="md" inset standalone />
                     </template>
