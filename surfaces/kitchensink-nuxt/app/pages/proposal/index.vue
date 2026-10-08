@@ -510,6 +510,19 @@ const productMenu = ref("Croissant");
           </NuxtCard>
         </div>
       </section>
+
+      <!-- 5. Rail -->
+      <section id="rail" data-proposal-section="5-rail" aria-labelledby="rail-title" class="space-y-4">
+        <h2 id="rail-title" class="text-xl font-semibold">5. Rail</h2>
+        <div class="grid gap-4 lg:grid-cols-2">
+          <NuxtCard title="Hoje" description="Dois rails: o do Gestor (DashboardSidebar fixo em 72 px, Chip numérico 4xl inventado) e o dos outros sete apps (OperatorSuiteRail, montado à mão em bg-rail).">
+            <p class="text-sm text-muted">Um estado só no desktop (fixo) e nenhum no celular (barra de baixo).</p>
+          </NuxtCard>
+          <NuxtCard title="Proposta" description="DashboardGroup, DashboardSidebar, NavigationMenu e DashboardSidebarCollapse. Aberto, compacto e oculto; dourado pelo tema, sem :ui.">
+            <NuxtButton to="/proposal/rail" label="Abrir o rail proposto" icon="i-lucide-panel-left" color="neutral" variant="outline" external />
+          </NuxtCard>
+        </div>
+      </section>
     </OperatorPage>
   </div>
 </template>

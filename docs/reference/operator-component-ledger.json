@@ -770,10 +770,12 @@
         {
           "id": "proposal",
           "source_files": [
-            "app/pages/proposal.vue"
+            "app/pages/proposal/index.vue",
+            "app/pages/proposal/rail.vue"
           ],
           "routes": [
-            "/proposal"
+            "/proposal",
+            "/proposal/rail"
           ],
           "variants": [
             "normal"
