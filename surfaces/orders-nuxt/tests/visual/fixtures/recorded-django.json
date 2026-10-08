@@ -49432,14 +49432,14 @@
      "event_type": "status_change",
      "timestamp_display": "06/10 às 15:04",
      "actor": "",
-     "detail": "- -> Novo"
+     "detail": ""
     },
     {
      "label": "Aceito",
      "event_type": "status_change",
      "timestamp_display": "06/10 às 15:04",
      "actor": "",
-     "detail": "- -> Aceito"
+     "detail": ""
     }
    ],
    "kitchen_note": "",
@@ -49734,7 +49734,7 @@
      "event_type": "status_change",
      "timestamp_display": "06/10 às 15:04",
      "actor": "",
-     "detail": "- -> Aceito"
+     "detail": ""
     }
    ],
    "kitchen_note": "",

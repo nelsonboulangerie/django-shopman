@@ -826,13 +826,16 @@ const outside = useOutsideStore(
         layout="split"
         @comment="submitComment"
       >
-        <!-- iFood: o resumo do pagamento/operação e as negociações abertas. -->
+        <!-- iFood: o resumo do pagamento/operação; as negociações abertas vêm num
+             card próprio logo abaixo do pedido (#after-summary). -->
         <template #summary>
           <OrderIFoodSummary
             :cancellation-notice="order.ifood_cancellation_notice"
             :payment-summary="order.ifood_payment_summary"
             :operation-summary="order.ifood_operation_summary"
           />
+        </template>
+        <template #after-summary>
           <OrderIFoodNegotiations
             v-if="order.ifood_negotiations?.length"
             :order-ref="order.ref"

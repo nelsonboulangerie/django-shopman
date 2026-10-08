@@ -11,11 +11,14 @@ defineProps<{
     v-if="
       cancellationNotice || paymentSummary?.length || operationSummary?.length
     "
-    class="space-y-1 text-xs"
+    class="contents"
     data-ifood-summary
   >
+    <!-- Mesmo desenho das outras linhas do resumo (ícone + texto muted, text-sm do
+         grid pai); o Alert ganha respiro para não colar nas linhas (dono, 08/10/2026). -->
     <NuxtAlert
       v-if="cancellationNotice"
+      class="my-2"
       color="warning"
       variant="subtle"
       icon="i-lucide-triangle-alert"
@@ -25,17 +28,19 @@ defineProps<{
     <p
       v-for="(line, index) in paymentSummary"
       :key="index"
-      class="text-muted-foreground"
+      class="flex items-center gap-2 text-muted-foreground"
       data-ifood-payment
     >
+      <Icon name="lucide:credit-card" class="size-4 shrink-0" />
       {{ line }}
     </p>
     <p
       v-for="(line, index) in operationSummary"
       :key="`operation-${index}`"
-      class="text-muted-foreground"
+      class="flex items-center gap-2 text-muted-foreground"
       data-ifood-operation
     >
+      <Icon name="lucide:bike" class="size-4 shrink-0" />
       {{ line }}
     </p>
   </div>

@@ -643,8 +643,15 @@ describe("Gestor canônico em Nuxt UI", () => {
       new URL("../app/components/ChannelHealthChecklist.vue", import.meta.url),
       "utf8",
     );
-    expect(negotiations).not.toContain("<NuxtCard");
+    // A negociação é UM card de primeiro nível, abaixo do card do pedido
+    // (#after-summary, dono, 08/10/2026); dentro dele, cada solicitação se separa
+    // por Separator, nunca por outro card.
+    expect(negotiations.match(/<NuxtCard\b/g)).toHaveLength(1);
     expect(negotiations).toContain("<NuxtSeparator");
+    const page = readFileSync(new URL("../app/pages/[ref].vue", import.meta.url), "utf8");
+    const afterSummary = page.slice(page.indexOf("<template #after-summary>"));
+    expect(afterSummary.indexOf("<OrderIFoodNegotiations")).toBeGreaterThan(0);
+    expect(page.slice(page.indexOf("<template #summary>"), page.indexOf("<template #after-summary>"))).not.toContain("<OrderIFoodNegotiations");
     expect(feeds).toMatch(/<NuxtAlert[\s\S]*?data-automatic-row/);
     expect(feeds).not.toMatch(/<NuxtCard[^>]*data-automatic-row/);
     expect(unavailable).toContain("<NuxtEmpty");
