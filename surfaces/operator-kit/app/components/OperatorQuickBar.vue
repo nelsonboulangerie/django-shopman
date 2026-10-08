@@ -34,7 +34,9 @@ const emit = defineEmits<{ select: [key: string]; more: [] }>();
  * centro, longe do polegar).
  */
 const QUICK_BAR_UI = {
-  root: "justify-around border-t border-default py-2",
+  // O Reka põe um <div> entre o root e a lista; ele precisa crescer para a lista
+  // ocupar a largura (o root do Nuxt UI já mira esse filho com `[&>div]:min-w-0`).
+  root: "justify-around border-t border-default py-2 [&>div]:flex-1",
   list: "w-full",
   item: "py-0 flex-1",
   link: "w-full flex-col gap-1 px-3 min-h-control justify-center",
