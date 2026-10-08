@@ -248,7 +248,6 @@ async function confirm() {
             >
               <NuxtBadge
                 :color="index === 0 ? 'neutral' : 'primary'"
-                variant="subtle"
                 :label="index === 0 ? 'Deixa de existir' : 'Fica'"
               />
               <p class="mt-1 font-medium">{{ side.name }}</p>
@@ -282,7 +281,7 @@ async function confirm() {
 
           <NuxtAlert
             v-if="loadingPreview"
-            color="neutral"
+            color="info"
             variant="subtle"
             icon="i-line-md-loading-loop"
             description="Calculando o que muda…"
@@ -298,7 +297,7 @@ async function confirm() {
           />
           <NuxtAlert
             v-else-if="preview"
-            color="neutral"
+            color="info"
             variant="subtle"
             aria-live="polite"
           >

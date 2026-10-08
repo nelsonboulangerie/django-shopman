@@ -46,7 +46,7 @@ useHead({ title: "Ajustes" });
           :data-settings-section="item['data-settings-section']"
         >
           <template v-if="item.badge" #footer>
-            <NuxtBadge color="warning" variant="subtle" :label="item.badge" />
+            <NuxtBadge color="warning" :label="item.badge" />
           </template>
         </NuxtPageCard>
       </NuxtPageGrid>

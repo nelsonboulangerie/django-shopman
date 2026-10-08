@@ -264,7 +264,6 @@ function switchHint(row: {
             </p>
             <NuxtBadge
               :color="toneColor(item.tone)"
-              variant="subtle"
               :label="item.timeLabel"
               :data-queue-tone="item.tone"
               data-queue-time
@@ -318,7 +317,6 @@ function switchHint(row: {
               >
                 <NuxtBadge
                   color="neutral"
-                  variant="soft"
                   icon="i-lucide-sparkles"
                   :label="undoLine(item.card, nowMs)!.label"
                   data-queue-auto
@@ -327,7 +325,7 @@ function switchHint(row: {
                   v-if="undoLine(item.card, nowMs)!.canUndo"
                   label="Desfazer"
                   color="neutral"
-                  variant="link"
+                  variant="ghost"
                   :disabled="isBusy(item.card.ref)"
                   @click="emit('action', item.card.ref, 'undo_ready')"
                 />
@@ -340,7 +338,6 @@ function switchHint(row: {
               <template v-else-if="item.kind === 'negotiation'">
                 <NuxtBadge
                   color="error"
-                  variant="subtle"
                   icon="i-lucide-message-square-warning"
                   label="Negociação iFood"
                   data-queue-negotiation
@@ -350,7 +347,7 @@ function switchHint(row: {
                 >
               </template>
               <template v-else-if="item.kind === 'confirm'">
-                <NuxtBadge color="primary" variant="subtle" label="Novo" />
+                <NuxtBadge color="primary" label="Novo" />
                 <span
                   v-if="
                     item.card.confirmation_deadline_iso &&
@@ -378,7 +375,6 @@ function switchHint(row: {
               <template v-else-if="item.kind === 'blocked'">
                 <NuxtBadge
                   color="error"
-                  variant="subtle"
                   icon="i-lucide-lock"
                   :label="blockLabel(item.card)"
                   data-queue-block
@@ -394,7 +390,6 @@ function switchHint(row: {
               >
                 <NuxtBadge
                   color="neutral"
-                  variant="soft"
                   icon="i-lucide-printer"
                   :label="`${readyStation(item.card)!.station_name} no papel`"
                 />
@@ -405,7 +400,6 @@ function switchHint(row: {
               <template v-else-if="!item.kind">
                 <NuxtBadge
                   color="neutral"
-                  variant="subtle"
                   :label="item.card.status_label"
                   data-queue-moving
                 />
@@ -417,7 +411,7 @@ function switchHint(row: {
             <NuxtAlert
               v-if="actionError(item.card.ref)"
               color="error"
-              variant="soft"
+              variant="subtle"
               icon="i-lucide-triangle-alert"
               :title="actionError(item.card.ref)"
               close
@@ -606,7 +600,6 @@ function switchHint(row: {
             <h2 class="op-title">Em andamento</h2>
             <NuxtBadge
               color="neutral"
-              variant="subtle"
               :label="`${workingCount} ${workingCount === 1 ? 'pedido' : 'pedidos'}`"
             />
           </div>
@@ -653,7 +646,6 @@ function switchHint(row: {
                     }}</span>
                     <NuxtBadge
                       color="neutral"
-                      variant="subtle"
                       :label="item.age"
                     />
                     <Icon
@@ -675,7 +667,6 @@ function switchHint(row: {
                         }}</span>
                         <NuxtBadge
                           :color="station.tone"
-                          variant="subtle"
                           :label="station.label"
                         />
                       </p>
@@ -699,8 +690,7 @@ function switchHint(row: {
                       label="Abrir o pedido"
                       icon="i-lucide-file-text"
                       color="neutral"
-                      variant="link"
-                      size="xs"
+                      variant="ghost"
                     />
                   </div>
                 </template>
@@ -719,7 +709,6 @@ function switchHint(row: {
             <h2 class="op-title">O sistema fez</h2>
             <NuxtBadge
               color="neutral"
-              variant="subtle"
               :label="`${awareness?.system_window_minutes ?? 15} min`"
             />
           </div>
@@ -773,7 +762,6 @@ function switchHint(row: {
             <NuxtBadge
               v-if="awareness?.menu_outages_more"
               color="warning"
-              variant="subtle"
               :label="`+${awareness.menu_outages_more} fora do ar`"
             />
           </div>

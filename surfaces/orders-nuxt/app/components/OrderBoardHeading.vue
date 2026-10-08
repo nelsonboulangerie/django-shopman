@@ -18,7 +18,7 @@ const emit = defineEmits<{
   <div class="flex w-full min-w-max items-center gap-2" data-board-heading>
     <Icon :name="zone.icon" class="size-4 text-muted-foreground" />
     <h2 class="op-eyebrow">{{ zone.title }}</h2>
-    <NuxtBadge color="neutral" variant="subtle" :label="String(cards.length)" />
+    <NuxtBadge color="neutral" :label="String(cards.length)" />
     <span
       class="hidden truncate op-micro text-muted-foreground sm:block"
       :title="zone.subtitle"

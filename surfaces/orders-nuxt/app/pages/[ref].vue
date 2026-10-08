@@ -651,7 +651,6 @@ const outside = useOutsideStore(
         <NuxtBadge
           v-if="order?.status_label"
           :color="statusColor(order.status)"
-          variant="subtle"
           :label="order.status_label"
           data-detail-status
         />
@@ -738,7 +737,7 @@ const outside = useOutsideStore(
         <ActionList :items="detailMenuItems" aria-label="Ações do pedido" />
         <NuxtAlert
           v-if="!order?.can_cancel && order?.cancel_block_label"
-          color="neutral"
+          color="info"
           variant="subtle"
           :title="order.cancel_block_label"
           data-cancel-block
@@ -867,7 +866,6 @@ const outside = useOutsideStore(
               <NuxtBadge
                 v-if="order.payment_method_label"
                 color="neutral"
-                variant="soft"
                 :label="
                   order.payment_status_label
                     ? `${order.payment_method_label} · ${order.payment_status_label}`

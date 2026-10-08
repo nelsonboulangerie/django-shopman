@@ -636,10 +636,10 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(queue).toMatch(
-      /data-queue-progress[\s\S]*?color="neutral"[\s\S]*?variant="subtle"[\s\S]*?:label="`\$\{workingCount\} /,
+      /data-queue-progress[\s\S]*?color="neutral"[\s\S]*?:label="`\$\{workingCount\} /,
     );
     expect(queue).toMatch(
-      /data-queue-system[\s\S]*?color="neutral"[\s\S]*?variant="subtle"[\s\S]*?:label="`\$\{awareness\?\.system_window_minutes \?\? 15\} min`"/,
+      /data-queue-system[\s\S]*?color="neutral"[\s\S]*?:label="`\$\{awareness\?\.system_window_minutes \?\? 15\} min`"/,
     );
     expect(queue).toContain("'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
     // O item da vez: destaque semântico oficial (PageCard highlight), dono 07/10.

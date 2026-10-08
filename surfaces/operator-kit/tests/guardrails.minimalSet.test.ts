@@ -46,13 +46,15 @@ const CEILING: Record<string, Partial<Record<Rule, number>>> = {
     // Inclui a exceção declarada do chip `4xl` (`text-[12px]/none` no app.config).
     arbitraryTextSize: 11,
   },
+  // Gestor na passada de conformidade (08/10/2026). Sobram dois, de propósito:
+  // - a pílula de aviso do cartão (`OrderCard`, `xs` `soft` na cor do aviso): é o
+  //   sinal de estado a um toque do Popover; neutra, apagaria a cor lida de longe;
+  // - "Copiar endereço" (`ChannelHealthChecklist`, `info`): ação de um Alert info, e a
+  //   trava do Gestor manda a ação repetir a cor do aviso (`canonicalPilot`).
   "orders-nuxt": {
-    buttonSize: 12,
-    buttonVariant: 13,
-    buttonColor: 5,
-    badgeVariant: 54,
-    cardVariant: 2,
-    alertOutsideSet: 15,
+    buttonSize: 1,
+    buttonVariant: 1,
+    buttonColor: 1,
   },
   "marketing-nuxt": { arbitraryTextSize: 63 },
   "pos-nuxt": { arbitraryTextSize: 7 },

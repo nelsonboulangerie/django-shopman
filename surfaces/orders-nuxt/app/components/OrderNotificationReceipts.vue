@@ -27,7 +27,6 @@ const toneColor = (
         <h2 class="op-title">Avisos ao cliente</h2>
         <NuxtBadge
           color="neutral"
-          variant="soft"
           :label="String(receipts.length)"
         />
       </div>
@@ -44,13 +43,11 @@ const toneColor = (
           <NuxtBadge
             v-if="receipt.critical"
             color="error"
-            variant="subtle"
             label="crítico"
             data-receipt-critical
           />
           <NuxtBadge
             :color="toneColor(receipt.tone)"
-            variant="subtle"
             :label="receipt.state_label"
             data-receipt-label
           />

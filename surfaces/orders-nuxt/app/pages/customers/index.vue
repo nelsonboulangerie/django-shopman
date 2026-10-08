@@ -187,13 +187,11 @@ const customerColumns = [
                 <NuxtBadge
                   v-if="row.original.source_label"
                   color="neutral"
-                  variant="subtle"
                   :label="row.original.source_label"
                 />
                 <NuxtBadge
                   v-if="row.original.duplicate_hint"
                   color="warning"
-                  variant="subtle"
                   :label="row.original.duplicate_hint"
                 />
               </span>

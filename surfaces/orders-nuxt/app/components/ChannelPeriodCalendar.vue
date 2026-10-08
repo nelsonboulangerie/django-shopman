@@ -42,7 +42,7 @@ const line = computed(() => rangeLine(draft.value));
     </div>
     <NuxtAlert
       v-if="line"
-      color="neutral"
+      color="info"
       variant="subtle"
       icon="i-lucide-calendar-range"
       :title="line"

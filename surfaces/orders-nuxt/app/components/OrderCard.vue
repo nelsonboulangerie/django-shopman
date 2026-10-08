@@ -177,7 +177,7 @@ function segmentValue(state: string): number {
 /** Um aviso do pedido, compacto: a pílula no cartão e o Alert inteiro no Popover. */
 interface CardNotice {
   key: string;
-  color: "error" | "warning" | "info" | "neutral";
+  color: "error" | "warning" | "info";
   icon: string;
   /** Rótulo curto da pílula. */
   label: string;
@@ -208,7 +208,7 @@ const notices = computed<CardNotice[]>(() => {
   if (card.advance_block_reason)
     out.push({
       key: "block",
-      color: seal.value.tone === "error" ? "error" : "neutral",
+      color: seal.value.tone === "error" ? "error" : "info",
       icon: "i-lucide-lock",
       label: "Por que espera",
       title: card.advance_block_reason,
@@ -217,7 +217,7 @@ const notices = computed<CardNotice[]>(() => {
   for (const chip of attentionStations.value)
     out.push({
       key: `station-${chip.ref}`,
-      color: chip.tone === "alert" ? "error" : "neutral",
+      color: chip.tone === "alert" ? "error" : "info",
       icon: nuxtIcon(chip.icon),
       label: chip.station,
       title: chip.station,
@@ -417,7 +417,6 @@ function nuxtIcon(icon: string): string {
                           ? 'primary'
                           : 'neutral'
               "
-              variant="subtle"
               :label="seal.label"
               data-card-seal
             />
@@ -430,7 +429,6 @@ function nuxtIcon(icon: string): string {
                     ? 'warning'
                     : 'neutral'
               "
-              variant="subtle"
               :title="
                 card.confirmation_action === 'cancel'
                   ? 'Cancelado automaticamente se vencer'
@@ -449,7 +447,6 @@ function nuxtIcon(icon: string): string {
                     ? 'warning'
                     : 'neutral'
               "
-              variant="subtle"
               :label="`${seal.label !== card.status_label && !card.ready_at_iso && !card.dispatched_at_iso ? `${card.status_label} · ` : ''}${clock.text}`"
               data-card-clock
             />
@@ -479,7 +476,6 @@ function nuxtIcon(icon: string): string {
         <NuxtBadge
           class="self-start"
           color="success"
-          variant="subtle"
           icon="i-lucide-check"
           :label="handoff.label"
           :data-undo="handoff.kind"
@@ -503,7 +499,6 @@ function nuxtIcon(icon: string): string {
         <div class="flex flex-wrap gap-2" data-card-tags>
           <NuxtBadge
             color="neutral"
-            variant="soft"
             :icon="
               card.fulfillment_type === 'delivery'
                 ? 'i-lucide-bike'
@@ -516,7 +511,6 @@ function nuxtIcon(icon: string): string {
           <NuxtBadge
             v-if="pack"
             color="neutral"
-            variant="soft"
             icon="i-lucide-package"
             :label="pack"
             :data-card-pack="card.volumes ? 'volumes' : 'items'"
@@ -524,7 +518,6 @@ function nuxtIcon(icon: string): string {
           <NuxtBadge
             v-if="card.is_preorder"
             color="neutral"
-            variant="soft"
             icon="i-lucide-calendar-clock"
             :label="`Agendado${card.commitment_date_display ? ` · ${card.commitment_date_display}` : ''}`"
             data-preorder-badge
@@ -535,7 +528,6 @@ function nuxtIcon(icon: string): string {
             :color="
               card.waitlist_state === 'confirming' ? 'primary' : 'neutral'
             "
-            variant="subtle"
             icon="i-lucide-hourglass"
             :label="card.waitlist_label"
             data-waitlist-badge
@@ -543,7 +535,6 @@ function nuxtIcon(icon: string): string {
           <NuxtBadge
             v-if="card.is_gift"
             color="neutral"
-            variant="soft"
             icon="i-lucide-gift"
             role="img"
             :aria-label="
@@ -556,7 +547,6 @@ function nuxtIcon(icon: string): string {
           <NuxtBadge
             v-if="card.has_customer_note"
             color="neutral"
-            variant="soft"
             icon="i-lucide-message-square"
             role="img"
             aria-label="Tem observação do cliente"
@@ -565,7 +555,6 @@ function nuxtIcon(icon: string): string {
           <NuxtBadge
             v-if="card.assigned_operator"
             color="primary"
-            variant="soft"
             icon="i-lucide-user-check"
             :label="card.assigned_operator"
             data-card-assigned
@@ -662,7 +651,6 @@ function nuxtIcon(icon: string): string {
         >
           <NuxtBadge
             color="neutral"
-            variant="soft"
             icon="i-lucide-sparkles"
             :label="undo.label"
           />
@@ -670,7 +658,7 @@ function nuxtIcon(icon: string): string {
             v-if="undo.canUndo"
             label="Desfazer"
             color="neutral"
-            variant="link"
+            variant="ghost"
             :disabled="busy"
             data-undo-button
             @click="emit('action', undo.action)"
@@ -709,7 +697,6 @@ function nuxtIcon(icon: string): string {
             "
             color="neutral"
             variant="outline"
-            size="xs"
             class="shrink-0"
             :disabled="danfePrinting || danfe.sending"
             data-danfe-print
@@ -762,7 +749,6 @@ function nuxtIcon(icon: string): string {
         v-if="card.ifood_pickup_code"
         class="self-start"
         color="neutral"
-        variant="subtle"
         icon="i-lucide-key-round"
         :label="`Código de retirada · ${card.ifood_pickup_code}`"
         data-ifood-pickup-code
@@ -817,7 +803,6 @@ function nuxtIcon(icon: string): string {
         <NuxtBadge
           v-if="card.payment_method_label"
           :color="paymentColor"
-          variant="subtle"
           :icon="paymentIcon.replace('lucide:', 'i-lucide-')"
           :label="card.payment_method_label"
           data-card-payment
@@ -836,7 +821,7 @@ function nuxtIcon(icon: string): string {
           v-if="handoff && handoff.canUndo"
           block
           class="min-w-0 flex-1"
-          color="success"
+          color="neutral"
           variant="outline"
           icon="i-lucide-undo-2"
           :label="`Desfazer ${handoff.countdown}`"
@@ -897,8 +882,8 @@ function nuxtIcon(icon: string): string {
           <NuxtAlert
             v-else-if="waitingFor"
             class="min-w-0"
-            color="neutral"
-            variant="soft"
+            color="info"
+            variant="subtle"
             icon="i-lucide-chef-hat"
             :title="`Aguardando ${waitingFor}`"
             data-card-waiting

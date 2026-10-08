@@ -109,8 +109,9 @@ export default defineAppConfig({
     // ser pré-composta com a superfície do tema para continuar sutil, mas opaca.
     // A anatomia, o padding, a borda e as variantes continuam sendo do Nuxt UI.
     // Conjunto mínimo (dono, 08/10/2026): `subtle` × info/success/warning/error.
-    // `primary` e `neutral` estão fora do conjunto, mas ainda têm uso (1 e 17,
-    // contados em 08/10); ficam até a migração desses avisos e morrem com ela.
+    // `primary` e `neutral` estão fora do conjunto, mas ainda têm uso no próprio kit
+    // (1 e 6 escritos, mais os ligados do OperatorInbox, contados em 08/10 depois de o
+    // Gestor zerar os seus); ficam até a migração desses avisos e morrem com ela.
     alert: {
       compoundVariants: [
         {

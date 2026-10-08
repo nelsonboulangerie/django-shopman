@@ -23,7 +23,7 @@ const emit = defineEmits<{ (e: "confirm" | "different" | "close"): void }>();
   >
     <template #body>
       <NuxtAlert
-        color="neutral"
+        color="info"
         variant="subtle"
         icon="i-lucide-list-checks"
         title="Conferir no retorno"

@@ -223,7 +223,7 @@ watch(
               target="_blank"
               rel="noopener noreferrer"
               color="neutral"
-              variant="link"
+              variant="ghost"
               :label="`Evidência ${index + 1}`"
               trailing-icon="i-lucide-external-link"
             />

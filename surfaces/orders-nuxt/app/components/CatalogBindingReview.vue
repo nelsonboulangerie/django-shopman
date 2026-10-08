@@ -108,7 +108,6 @@ function acceptCurrent(item: CatalogReviewItem) {
           </div>
           <NuxtBadge
             color="neutral"
-            variant="subtle"
             :label="statusLabel(item.status)"
           />
         </div>

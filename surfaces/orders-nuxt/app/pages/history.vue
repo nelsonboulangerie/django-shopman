@@ -123,7 +123,9 @@ const historyColumns = [
           :label="`Produto: ${history?.sku_name || historyQuery.sku}`"
           trailing-icon="i-lucide-x"
           color="primary"
-          variant="soft"
+          variant="ghost"
+          active
+          active-variant="soft"
           :aria-label="`Tirar o recorte do produto ${history?.sku_name || historyQuery.sku}`"
           data-history-sku
           @click="
@@ -237,7 +239,6 @@ const historyColumns = [
                         ? 'warning'
                         : 'neutral'
                 "
-                variant="subtle"
                 :label="row.original.status_label"
               />
             </span>

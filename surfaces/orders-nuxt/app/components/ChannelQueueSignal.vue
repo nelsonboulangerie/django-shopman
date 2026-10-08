@@ -41,8 +41,8 @@ const canOpen = computed(() =>
           :to="canOpen ? item.focus_path : undefined"
           :label="item.line"
           :trailing-icon="canOpen ? 'i-lucide-chevron-right' : undefined"
-          color="warning"
-          variant="link"
+          color="neutral"
+          variant="ghost"
           :data-channel-signal-item="item.ref"
           :data-channel-signal-link="canOpen ? '' : undefined"
         />
