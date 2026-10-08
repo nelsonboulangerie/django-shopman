@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ReadMetadata } from "~/types/readMetadata";
+import ActionList from "~/components/ActionList.vue";
 import {
   SORT_OPTIONS,
   type SortKey,
@@ -167,11 +168,6 @@ const items = computed(() => {
   ];
 });
 
-const navigationItems = computed(() =>
-  items.value
-    .flat()
-    .filter((item) => !("type" in item) || item.type !== "label"),
-);
 </script>
 
 <template>
@@ -195,6 +191,6 @@ const navigationItems = computed(() =>
 
   <div v-else data-board-menu>
     <ReadFreshness :metadata="metadata" :failed="failed" />
-    <NuxtNavigationMenu orientation="vertical" :items="navigationItems" />
+    <ActionList :items="items" aria-label="Ações da fila" />
   </div>
 </template>
