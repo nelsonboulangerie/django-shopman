@@ -230,11 +230,18 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await expect(page.locator("html")).toHaveClass(/dark/);
   // A classe troca antes de o navegador terminar de recalcular a cor herdada da
   // barra. O axe não pode medir o primeiro frame escuro ainda com o token claro.
+  // DECISÃO MUDOU (08/10/2026, conjunto mínimo aprovado pelo dono): o "Mais" é o
+  // Button canônico do Nuxt UI, neutral + ghost, cuja tinta é `--ui-text` (o
+  // `text-default` oficial), não mais o `--muted-foreground` da peça antiga. O que a
+  // trava garante continua: o "Mais" é o botão canônico, já pintado com o token do
+  // tema escuro, e o axe logo abaixo mede o contraste AA sobre ele.
+  const more = page.locator('[data-operator-phone-menu][data-variant="bar"]');
+  await expect(more).toHaveClass(/\btext-default\b/);
   await expect
     .poll(() =>
-      page.locator("[data-operator-phone-menu]").evaluate((element) => {
+      more.evaluate((element) => {
         const probe = document.createElement("span");
-        probe.style.color = "var(--muted-foreground)";
+        probe.style.color = "var(--ui-text)";
         element.append(probe);
         const settled = getComputedStyle(element).color === getComputedStyle(probe).color;
         probe.remove();
