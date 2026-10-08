@@ -13,20 +13,9 @@ import {
 } from "../../../operator-kit/app/presentation/readingChart";
 import { customersAnswer, formatInt, formatMoney, shortDate } from "~/presentation/bi";
 
-const { report, pending, error, refresh } = useBiReport<BICustomersReport>("customers");
+const { report, freshness, pending, error, refresh } = useBiReport<BICustomersReport>("customers");
 const { selection, bounds, presets } = useBiWindow();
-
-// Frescor: o relatório não traz `generated_at`; o carimbo é o da chegada da leitura
-// a este dispositivo (na montagem, e a cada leitura nova). O carimbo do servidor
-// entra quando a projeção o mandar.
-const readAt = ref<string | null>(null);
-onMounted(() => {
-  if (report.value) readAt.value = new Date().toISOString();
-});
-watch(report, (value) => {
-  if (value) readAt.value = new Date().toISOString();
-});
-const freshness = computed(() => ({ generated_at: readAt.value }));
+const shareItems = useBiShareMenuItems();
 
 const errorActions = computed(() => [
   { label: "Tentar de novo", icon: "i-lucide-refresh-cw", color: "error" as const, variant: "outline" as const, onClick: () => refresh() },
@@ -65,39 +54,27 @@ const formatCount = (value: number) => formatInt(value);
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Os clientes estão voltando?">
       <template #actions>
-        <!-- No celular o período desce para a linha de recortes: na barra de 56 px ele
-             cobria o título da tela. -->
-        <OperatorPeriodPicker
-          v-model="selection"
-          class="max-md:hidden"
-          :presets="presets"
-          custom
-          :today="bounds.today"
-          :max="bounds.max"
-          :epoch="bounds.epoch"
-          align="end"
-          label="Período de análise"
-        />
-        <OperatorReadingPageMenu />
+        <OperatorReadingPageMenu :items="shareItems" />
       </template>
       <template #filters>
         <OperatorPeriodPicker
           v-model="selection"
-          class="md:hidden"
-          compact
           :presets="presets"
           custom
+          compact
           :today="bounds.today"
           :max="bounds.max"
           :epoch="bounds.epoch"
           align="start"
           label="Período de análise"
         />
-        <ReadFreshness inline :metadata="freshness" :failed="Boolean(error)" />
+        <ClientOnly>
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
+        </ClientOnly>
       </template>
     </OperatorPageHeader>
 
-    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
+    <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
       <NuxtEmpty
         v-if="pending && !report"
         loading

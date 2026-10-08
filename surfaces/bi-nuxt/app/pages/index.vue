@@ -12,7 +12,7 @@
 // O dia continua na URL (`?day=`, `useBiOverShort`): o "Copiar link desta leitura"
 // do ⋯ leva a mesma leitura. O endereço não aparece mais escrito na tela (F14).
 import type { DropdownMenuItem, TableColumn } from "#ui/types";
-import type { BIOverShortRow } from "~/types/bi";
+import type { BIOverShortRow, BIProductionReport, BIReading } from "~/types/bi";
 import { formatInt, formatQty } from "~/presentation/bi";
 import {
   VERDICTS,
@@ -49,6 +49,7 @@ import {
 
 const {
   report: day,
+  freshness: dayFreshness,
   pending: dayPending,
   error: dayError,
   refresh: dayRefresh,
@@ -62,6 +63,12 @@ const router = useRouter();
 const today = todayIso();
 const view = computed(() => productionView(route.query.view));
 const { selection: lotsWindow, bounds, presets } = useBiWindow();
+// O frescor da aba aberta: o dia (over-short) ou os lotes (a leitura de produção, que
+// o `ProductionLots` busca; aqui só se lê o que ele já trouxe, pela mesma chave).
+const { data: lotsReading } = useNuxtData<BIReading<BIProductionReport>>("bi-production");
+const freshness = computed(() =>
+  view.value === "lots" ? { generated_at: lotsReading.value?.generated_at ?? null } : dayFreshness.value,
+);
 const yesterday = computed(() => {
   const [y, m, d] = today.split("-").map(Number);
   return new Date(Date.UTC(y!, (m ?? 1) - 1, (d ?? 1) - 1)).toISOString().slice(0, 10);
@@ -183,9 +190,9 @@ const { run: carryToPlan, pending: carrying } = usePendingAction(async () => {
 });
 const explainOpen = ref(false);
 // "Como é calculado" é um item do ⋯ da página (o menu do kit recebe os itens por prop).
-const { shareItem } = useShareReading();
+const shareItems = useBiShareMenuItems();
 const pageMenuItems = computed<DropdownMenuItem[]>(() => [
-  shareItem,
+  ...shareItems.value,
   ...(view.value === "lots" ? [] : [{
     label: explainOpen.value ? "Esconder como é calculado" : "Como é calculado",
     icon: "i-lucide-circle-help",
@@ -245,64 +252,38 @@ const csv = computed(() => overShortCsv(filtered.value));
         <OperatorSuiteSearch ref="search" v-model="query" screen-label="filtrando a tabela" placeholder="Buscar produto ou SKU" aria-label="Buscar produto ou SKU" />
       </template>
       <template #actions>
-        <!-- O dia mora na linha do título do desktop largo; abaixo, a linha do título
-             não comporta o título, o dia e o "Voltar" juntos, e o dia desce para a
-             frente da linha de recortes (mesmo controle, mesma URL). -->
-        <div v-if="view === 'day' && day" class="max-lg:hidden">
-          <OperatorPeriodPicker
-            v-model="readingDay"
-            compact
-            :today="today"
-            :max="yesterday"
-            :prev-day="day.previous_day || ''"
-            :next-day="day.next_day || ''"
-            label="Dia da leitura"
-            data-bi-reading-day
-          />
-        </div>
-        <div v-if="view === 'lots'" class="max-lg:hidden">
-          <OperatorPeriodPicker
-            v-model="lotsWindow"
-            :presets="presets"
-            custom
-            compact
-            :today="bounds.today"
-            :max="bounds.max"
-            :epoch="bounds.epoch"
-            label="Período de análise"
-            data-bi-window
-          />
-        </div>
         <OperatorReadingPageMenu :items="pageMenuItems" />
       </template>
+      <!-- Um tempo por aba, no mesmo lugar das outras telas: o primeiro da linha de
+           recortes. A aba "Sobrou ou faltou" lê um dia; "Lotes no período", a janela. -->
       <template #filters>
+        <OperatorPeriodPicker
+          v-if="view === 'lots'"
+          v-model="lotsWindow"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+          data-bi-window
+        />
+        <OperatorPeriodPicker
+          v-else-if="day"
+          v-model="readingDay"
+          compact
+          :today="today"
+          :max="yesterday"
+          :prev-day="day.previous_day || ''"
+          :next-day="day.next_day || ''"
+          align="start"
+          label="Dia da leitura"
+          data-bi-reading-day
+        />
         <ProductionViewNav />
-        <div v-if="view === 'lots'" class="lg:hidden">
-          <OperatorPeriodPicker
-            v-model="lotsWindow"
-            :presets="presets"
-            custom
-            compact
-            :today="bounds.today"
-            :max="bounds.max"
-            :epoch="bounds.epoch"
-            label="Período de análise"
-            data-bi-window-below
-          />
-        </div>
-        <template v-else-if="day">
-          <div class="lg:hidden">
-            <OperatorPeriodPicker
-              v-model="readingDay"
-              compact
-              :today="today"
-              :max="yesterday"
-              :prev-day="day.previous_day || ''"
-              :next-day="day.next_day || ''"
-              label="Dia da leitura"
-              data-bi-reading-day-below
-            />
-          </div>
+        <template v-if="view === 'day' && day">
           <NuxtFormField label="Comparar com" orientation="horizontal" :hint="isPhone ? undefined : compareCaption(day.day, day.compare_days)" data-bi-compare>
             <NuxtSelect :model-value="compare" :items="compareItems" @update:model-value="setCompare(String($event))" />
           </NuxtFormField>
@@ -327,12 +308,13 @@ const csv = computed(() => overShortCsv(filtered.value));
             <NuxtSelectMenu v-model="collection" :items="collectionItems" value-key="value" :search-input="{ autofocus: !touch, placeholder: 'Buscar coleção' }" />
           </NuxtFormField>
         </template>
+        <ClientOnly>
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="view === 'day' && Boolean(dayError)" />
+        </ClientOnly>
       </template>
     </OperatorPageHeader>
 
-    <!-- `[&>*]:shrink-0`: o cartão do Nuxt UI tem `overflow-hidden`, e numa coluna
-         flex que rola ele encolhia abaixo do conteúdo (gráfico e tabela cortados). -->
-    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4 [&>*]:shrink-0">
+    <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
       <template v-if="view === 'day'">
         <BiPageState :error="dayError" what="a leitura do dia" @retry="dayRefresh()" />
 

@@ -62,22 +62,8 @@ function setQuery(key: "channel" | "compare", value: string, empty: string) {
   void router.replace({ query: value && value !== empty ? { ...rest, [key]: value } : rest });
 }
 
-const { report, pending, error, refresh } = useBiReport<BISalesReport>("sales", extra);
-
-// A hora da leitura. A projeção de vendas não traz `generated_at`; a hora é a da
-// resposta que chegou a este dispositivo, e só existe no cliente (no SSR o
-// `ReadFreshness` não aparece, em vez de dizer "indisponível" e trocar em seguida).
-const readAt = ref("");
-function stamp() {
-  readAt.value = new Date().toISOString();
-}
-onMounted(() => {
-  if (report.value) stamp();
-});
-watch(pending, (now, before) => {
-  if (before && !now && !error.value) stamp();
-});
-const readMetadata = computed(() => (readAt.value ? { generated_at: readAt.value } : null));
+const { report, freshness, pending, error, refresh } = useBiReport<BISalesReport>("sales", extra);
+const shareItems = useBiShareMenuItems();
 
 const compareItems = [
   { label: "período anterior", value: "previous" },
@@ -188,39 +174,21 @@ const retryActions = computed(() => [
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader :title="isPhone ? 'Vendas' : 'Quanto vendemos?'">
-      <template #phone-actions>
-        <BiShareButton class="md:hidden" />
-      </template>
-      <!-- O período mora no `#actions` do tablet para cima; no celular a barra de 56px
-           não o comporta ao lado do título, e ele abre a linha de recortes. -->
       <template #actions>
-        <div class="flex items-center gap-2 max-md:hidden">
-          <OperatorPeriodPicker
-            v-model="selection"
-            :presets="presets"
-            custom
-            :today="bounds.today"
-            :max="bounds.max"
-            :epoch="bounds.epoch"
-            label="Período de análise"
-          />
-          <OperatorReadingPageMenu />
-        </div>
+        <OperatorReadingPageMenu :items="shareItems" />
       </template>
       <template #filters>
-        <div class="w-full md:hidden">
-          <OperatorPeriodPicker
-            v-model="selection"
-            :presets="presets"
-            custom
-            compact
-            :today="bounds.today"
-            :max="bounds.max"
-            :epoch="bounds.epoch"
-            align="start"
-            label="Período de análise"
-          />
-        </div>
+        <OperatorPeriodPicker
+          v-model="selection"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
         <NuxtFormField v-if="report" label="Comparar com" :help="compareCaption" orientation="horizontal" data-bi-sales-compare>
           <NuxtSelect :model-value="compare" :items="compareItems" class="min-w-48" @update:model-value="pickCompare" />
         </NuxtFormField>
@@ -241,12 +209,12 @@ const retryActions = computed(() => [
           @update:model-value="pickChannel"
         />
         <ClientOnly>
-          <ReadFreshness v-if="report" inline class="ms-auto" :metadata="readMetadata" :failed="Boolean(error)" />
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
         </ClientOnly>
       </template>
     </OperatorPageHeader>
 
-    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
+    <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
       <NuxtAlert
         v-if="error"
         color="error"

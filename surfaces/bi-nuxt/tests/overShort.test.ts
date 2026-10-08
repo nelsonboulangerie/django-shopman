@@ -17,7 +17,6 @@ import {
   unavailableText,
   collectionsOf,
   compareCaption,
-  dayCaption,
   dayName,
   filterRows,
   hiddenRowsSummary,
@@ -128,9 +127,8 @@ describe("o dia e a comparação", () => {
     expect(overShortTitle("2026-09-26", "2026-10-04")).toBe("Sobrou ou faltou no sábado 26/09?");
   });
 
-  it("o controle do dia diz o nome e a data curta", () => {
+  it("o dia diz o nome", () => {
     expect(dayName("2026-10-03", "2026-10-04")).toBe("Ontem");
-    expect(dayCaption("2026-10-03")).toBe("sáb 03/10");
     expect(dayName("2026-09-30", "2026-10-04")).toBe("Quarta");
   });
 

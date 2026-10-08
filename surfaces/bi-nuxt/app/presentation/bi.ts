@@ -108,20 +108,6 @@ export function rangeCaption(dateFrom: string, dateTo: string): string {
 /** 0 = segunda (convenção da projection). */
 export const WEEKDAY_LABELS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"] as const;
 
-export function hourLabel(hour: number): string {
-  return `${hour}h`;
-}
-
-/**
- * Um item dos menus ⋯ do B.I. (o da página e o de cada quadro). É a forma mínima que
- * o NuxtDropdownMenu lê: rótulo, ícone e o gesto ao escolher.
- */
-export interface BiMenuItem {
-  label: string;
-  icon?: string;
-  onSelect: () => void;
-}
-
 export type DeltaTone = "positive" | "negative" | "neutral";
 
 export interface DeltaBadge {

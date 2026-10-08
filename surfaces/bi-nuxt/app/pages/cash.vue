@@ -31,23 +31,9 @@ import {
 } from "~/presentation/cash";
 import { readingChartCsv } from "../../../operator-kit/app/presentation/readingChart";
 
-const { report, pending, error, refresh } = useBiReport<BICashReport>("cash");
-
-// O relatório do caixa não traz `generated_at`: a hora da leitura é a de quando ela
-// chegou a este dispositivo. Por isso a frase só existe no cliente (`ClientOnly`):
-// no SSR o servidor não sabe quando a página vai hidratar. Cada leitura nova, de
-// período trocado ou de "Tentar de novo", carimba de novo.
-const readAt = ref("");
-onMounted(() => {
-  watch(
-    report,
-    (value) => {
-      if (value) readAt.value = new Date().toISOString();
-    },
-    { immediate: true },
-  );
-});
-const freshness = computed(() => ({ generated_at: readAt.value || null }));
+const { report, freshness, pending, error, refresh } = useBiReport<BICashReport>("cash");
+const { selection, bounds, presets } = useBiWindow();
+const shareItems = useBiShareMenuItems();
 
 const days = computed(() => report.value?.days ?? []);
 const differencePoints = computed(() => cashDifferencePoints(days.value));
@@ -117,19 +103,26 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="O caixa fechou certo?" eyebrow="Auditoria do Dono">
       <template #actions>
-        <OperatorReadingPageMenu />
+        <OperatorReadingPageMenu :items="shareItems" />
       </template>
-      <!-- A linha de recortes, como no Histórico do Gestor: o período e, no fim, o
-           frescor da leitura. No celular a barra de cima não comporta o período. -->
       <template #filters>
-        <BiWindowPicker compact align="start" />
-        <ClientOnly><ReadFreshness inline :metadata="freshness" :failed="Boolean(error)" /></ClientOnly>
+        <OperatorPeriodPicker
+          v-model="selection"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
+        <ClientOnly>
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
+        </ClientOnly>
       </template>
     </OperatorPageHeader>
 
-    <!-- Bloco, não coluna flex: o cartão do Nuxt UI corta o que passa (overflow), e
-         numa coluna flex que rola ele encolhia até sumir (o gráfico e as contas da
-         casa viravam uma linha). Cada quadro tem a altura do próprio conteúdo. -->
     <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
       <NuxtEmpty
         v-if="pending && !report"

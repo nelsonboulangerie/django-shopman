@@ -29,7 +29,7 @@ import {
   scenarioMenuItems,
 } from "~/presentation/explore";
 
-const { config, report, pending, error, errorDetail, refresh, apply } = useBiExplore();
+const { config, report, freshness, pending, error, errorDetail, refresh, apply } = useBiExplore();
 const { views, save, toggleFavorite, remove } = useBiViews();
 const { selection, bounds, presets, savedWindow, setPreset, applyCustom } = useBiWindow();
 
@@ -39,15 +39,6 @@ const touch = useMediaQuery("(pointer: coarse)");
 const shareItems = useBiShareMenuItems();
 // No celular o eixo do gráfico mostra menos datas, para os rótulos não se encostarem.
 const wide = useMediaQuery("(min-width: 640px)");
-
-// Frescor da leitura. O relatório do Explorar não traz `generated_at`: o carimbo é a
-// hora em que a última leitura chegou. `useState` leva o carimbo do servidor ao
-// cliente, para a hidratação não discordar do texto.
-const readAt = useState("bi-explore-read-at", () => new Date().toISOString());
-watch(pending, (now, before) => {
-  if (before && !now && !error.value) readAt.value = new Date().toISOString();
-});
-const readMetadata = computed(() => ({ generated_at: readAt.value }));
 
 const currentSpec = computed(() => report.value?.metrics.find((m) => m.key === config.value.metric));
 const metricItems = computed(() => (report.value?.metrics ?? []).map((m) => ({ label: m.label, value: m.key })));
@@ -215,8 +206,6 @@ const errorActions = computed(() => [
       <template #actions>
         <OperatorReadingPageMenu :items="shareItems" />
       </template>
-      <!-- A linha de recortes: o período (a janela vive na URL, `useBiWindow`) e, no
-           fim, o frescor da leitura. Como no Histórico do Gestor. -->
       <template #filters>
         <OperatorPeriodPicker
           v-model="selection"
@@ -229,11 +218,13 @@ const errorActions = computed(() => [
           align="start"
           label="Período de análise"
         />
-        <ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" />
+        <ClientOnly>
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
+        </ClientOnly>
       </template>
     </OperatorPageHeader>
 
-    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
+    <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
       <!-- O construtor: Cenário (com o ⋯ das ações dele) · Métrica · Dimensão · Cruzamento -->
       <NuxtCard as="section" aria-label="Construtor do cruzamento" data-bi-explore-builder>
         <div class="flex flex-wrap items-end gap-3">

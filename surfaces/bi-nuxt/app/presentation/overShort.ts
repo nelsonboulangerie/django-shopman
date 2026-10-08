@@ -34,7 +34,6 @@ const num = (value: string) => Number(value || 0);
 
 // ── O dia e a comparação ─────────────────────────────────────────────────────
 
-const WEEKDAY_SHORT = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"] as const;
 
 /** "2026-10-03" → dia da semana 0 = segunda (a convenção da projeção). */
 function weekdayIndex(iso: string): number {
@@ -55,11 +54,6 @@ export function dayName(day: string, today: string): string {
   if (day === addDays(today, -1)) return "Ontem";
   const label = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"][weekdayIndex(day)]!;
   return label;
-}
-
-/** "sáb 03/10". */
-export function dayCaption(day: string): string {
-  return `${WEEKDAY_SHORT[weekdayIndex(day)]} ${shortDate(day)}`;
 }
 
 /** O título da tela: a pergunta, com o dia ("Sobrou ou faltou ontem?"). */

@@ -31,20 +31,9 @@ import {
   strikeMatrix,
 } from "~/presentation/bi";
 
-const { filters, report, pending, error, refresh, apply } = useBiProfiles();
+const { filters, report, freshness, pending, error, refresh, apply } = useBiProfiles();
 const { selection, bounds, presets } = useBiWindow();
-
-// Frescor: o relatório não traz `generated_at`; o carimbo é o da chegada da leitura
-// a este dispositivo (na montagem, e a cada leitura nova). O carimbo do servidor
-// entra quando a projeção o mandar.
-const readAt = ref<string | null>(null);
-onMounted(() => {
-  if (report.value) readAt.value = new Date().toISOString();
-});
-watch(report, (value) => {
-  if (value) readAt.value = new Date().toISOString();
-});
-const freshness = computed(() => ({ generated_at: readAt.value }));
+const shareItems = useBiShareMenuItems();
 
 const errorActions = computed(() => [
   { label: "Tentar de novo", icon: "i-lucide-refresh-cw", color: "error" as const, variant: "outline" as const, onClick: () => refresh() },
@@ -326,28 +315,14 @@ const revpashCsv = computed<ReadingCsv>(() => ({
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Quem compra no balcão?">
       <template #actions>
-        <!-- No celular o período desce para a linha de recortes: na barra de 56 px ele
-             cobria o título da tela. -->
-        <OperatorPeriodPicker
-          v-model="selection"
-          class="max-md:hidden"
-          :presets="presets"
-          custom
-          :today="bounds.today"
-          :max="bounds.max"
-          :epoch="bounds.epoch"
-          align="end"
-          label="Período de análise"
-        />
-        <OperatorReadingPageMenu />
+        <OperatorReadingPageMenu :items="shareItems" />
       </template>
       <template #filters>
         <OperatorPeriodPicker
           v-model="selection"
-          class="md:hidden"
-          compact
           :presets="presets"
           custom
+          compact
           :today="bounds.today"
           :max="bounds.max"
           :epoch="bounds.epoch"
@@ -360,13 +335,13 @@ const revpashCsv = computed<ReadingCsv>(() => ({
         <NuxtFormField label="Faixa de hora" orientation="horizontal">
           <NuxtSelect v-model="hourBand" :items="bandItems" class="w-44" data-bi-profiles-band />
         </NuxtFormField>
-        <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
+        <ClientOnly>
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
+        </ClientOnly>
       </template>
     </OperatorPageHeader>
 
-    <!-- O conteúdo não mora direto no `main` flexível: lá o aviso (que esconde o que
-         transborda) encolhia até sobrar só o título. -->
-    <main class="min-h-0 flex-1 overflow-y-auto px-4 pt-3 pb-4">
+    <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
       <div class="flex flex-col gap-6">
       <NuxtAlert
         color="info"

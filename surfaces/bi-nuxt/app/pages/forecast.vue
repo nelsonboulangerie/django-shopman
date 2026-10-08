@@ -38,7 +38,8 @@ import {
   ordinaryWeekdayLabel,
 } from "~/presentation/forecast";
 
-const { report, pending, error, refresh, target, horizon, period, presets } = useBiForecast();
+const { report, freshness, pending, error, refresh, target, horizon, period, presets } = useBiForecast();
+const shareItems = useBiShareMenuItems();
 
 // O troco é a mesma decisão de véspera: quem planeja o sábado quer abastecer a
 // gaveta no mesmo momento em que decide a fornada. Separá-lo em outra aba faria
@@ -58,21 +59,6 @@ const dayTitle = (day: DayForecast) => `${day.weekday_label}, ${shortDate(day.da
 
 const headline = (day: DayForecast) =>
   day.basis ? basisHeadline(day.basis, day.weekday_label) : "";
-
-// A leitura não traz carimbo do servidor: a projeção é calculada a cada pedido,
-// então a hora em que a resposta chegou é a hora da leitura. Carimbado só no
-// navegador (o SSR não sabe quando a página vai abrir).
-const readAt = ref("");
-function stamp() {
-  if (!error.value) readAt.value = new Date().toISOString();
-}
-onMounted(() => {
-  if (!pending.value) stamp();
-});
-watch(pending, (now, before) => {
-  if (before && !now) stamp();
-});
-const readMetadata = computed(() => (readAt.value ? { generated_at: readAt.value } : null));
 
 const retryActions = computed(() => [
   {
@@ -114,19 +100,19 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
     -->
     <OperatorPageHeader title="O que esperar?">
       <template #actions>
-        <OperatorReadingPageMenu />
-      </template>
-      <template #phone-actions>
-        <BiShareButton />
+        <OperatorReadingPageMenu :items="shareItems" />
       </template>
       <template #filters>
         <OperatorPeriodPicker
           v-model="period"
           :presets="presets"
           compact
+          align="start"
           label="Período que você está planejando"
         />
-        <ReadFreshness v-if="readMetadata" inline :metadata="readMetadata" :failed="Boolean(error)" />
+        <ClientOnly>
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
+        </ClientOnly>
       </template>
     </OperatorPageHeader>
 

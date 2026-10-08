@@ -1,5 +1,5 @@
 import type { Ref } from "vue";
-import type { BIChangeReport } from "~/types/bi";
+import type { BIChangeReport, BIReading } from "~/types/bi";
 import type { ForecastHorizon } from "./useBiForecast";
 
 /**
@@ -11,7 +11,7 @@ import type { ForecastHorizon } from "./useBiForecast";
 export function useBiChange(target: Ref<string>, horizon: Ref<ForecastHorizon>) {
   const query = computed(() => ({ target: target.value, horizon: horizon.value }));
 
-  const { data, pending, error, refresh } = useFetch<{ bi: BIChangeReport }>(
+  const { data, pending, error, refresh } = useFetch<BIReading<BIChangeReport>>(
     "/api/v1/backstage/bi/change/",
     {
       key: "bi-change",

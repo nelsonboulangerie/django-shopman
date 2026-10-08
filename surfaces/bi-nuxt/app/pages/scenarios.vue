@@ -10,7 +10,7 @@
 import type { BIScenarioReportView } from "~/types/bi";
 import { scenarioReportHeadline, scenarioStatusLabel } from "~/presentation/bi";
 
-const { page, pending, error, refresh, generate, generating } = useBiScenarios();
+const { page, freshness, pending, error, refresh, generate, generating } = useBiScenarios();
 const shareItems = useBiShareMenuItems();
 const focus = ref("sales");
 const openId = ref<number | null>(null);
@@ -18,15 +18,6 @@ const openId = ref<number | null>(null);
 watch(page, (value) => {
   if (value && openId.value === null && value.reports.length) openId.value = value.reports[0]!.id;
 });
-
-// Frescor da leitura. A página não traz `generated_at` próprio: o carimbo é a hora em
-// que a última leitura chegou. `useState` leva o carimbo do servidor ao cliente, para
-// a hidratação não discordar do texto.
-const readAt = useState("bi-scenarios-read-at", () => new Date().toISOString());
-watch(pending, (now, before) => {
-  if (before && !now && !error.value) readAt.value = new Date().toISOString();
-});
-const readMetadata = computed(() => ({ generated_at: readAt.value }));
 
 const focusItems = computed(() => (page.value?.focuses ?? []).map((item) => ({ label: item.label, value: item.key })));
 
@@ -64,9 +55,16 @@ const errorActions = computed(() => [
       <template #actions>
         <OperatorReadingPageMenu :items="shareItems" />
       </template>
+      <!-- Sem período (a IA lê os agregados de sempre): a linha de recortes leva só o
+           frescor, no mesmo lugar das outras telas. -->
+      <template #filters>
+        <ClientOnly>
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
+        </ClientOnly>
+      </template>
     </OperatorPageHeader>
 
-    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
+    <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
       <NuxtEmpty
         v-if="pending && !page"
         loading
@@ -113,7 +111,6 @@ const errorActions = computed(() => [
               description="Falta a credencial da IA (AI_ASSIST_API_KEY). Os relatórios já gerados seguem abaixo."
               data-bi-generate-off
             />
-            <ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" class="self-center" />
           </div>
         </OperatorReadingCard>
 

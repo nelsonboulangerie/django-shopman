@@ -1,4 +1,4 @@
-import type { BIForecastReport } from "~/types/bi";
+import type { BIForecastReport, BIReading } from "~/types/bi";
 import { forecastFromQuery, forecastToQuery, type ForecastHorizon } from "~/presentation/forecast";
 import { addDays, todayIso, type PeriodSelection } from "../../../operator-kit/app/presentation/dates";
 
@@ -44,7 +44,7 @@ export function useBiForecast() {
 
   const query = computed(() => ({ target: target.value, horizon: horizon.value }));
 
-  const { data, pending, error, refresh } = useFetch<{ bi: BIForecastReport }>(
+  const { data, pending, error, refresh } = useFetch<BIReading<BIForecastReport>>(
     "/api/v1/backstage/bi/forecast/",
     {
       key: "bi-forecast",
@@ -55,6 +55,7 @@ export function useBiForecast() {
   );
 
   const report = computed(() => data.value?.bi ?? null);
+  const freshness = computed(() => ({ generated_at: data.value?.generated_at ?? null }));
 
-  return { report, pending, error, refresh, target, horizon, period, presets: FORECAST_PRESETS };
+  return { report, freshness, pending, error, refresh, target, horizon, period, presets: FORECAST_PRESETS };
 }

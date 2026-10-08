@@ -54,6 +54,19 @@ def _query_date(request, param: str) -> date | None:
         return None  # janela inválida cai no default — a projection normaliza
 
 
+def _bi_reading(report, *, status: int = 200) -> Response:
+    """A resposta de toda leitura do B.I.: o relatório e a hora em que o servidor o gerou.
+
+    ``generated_at`` (ISO, no fuso do projeto) é o que o ``ReadFreshness`` das telas
+    mostra: a hora é a do SERVIDOR, não a de quando a resposta chegou ao dispositivo,
+    então um relógio errado no dispositivo não envelhece nem rejuvenesce a leitura.
+    """
+    return Response(
+        {"bi": projection_data(report), "generated_at": timezone.localtime().replace(microsecond=0).isoformat()},
+        status=status,
+    )
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
@@ -67,7 +80,7 @@ class BIProductionView(_BIBase):
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -85,7 +98,7 @@ class BIOverShortView(_BIBase):
             day=_query_date(request, "day"),
             compare=(request.GET.get("compare") or "").strip(),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -138,7 +151,7 @@ class BISalesView(_BIBase):
             channel=(request.GET.get("channel") or "").strip(),
             compare=(request.GET.get("compare") or "").strip(),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -160,7 +173,7 @@ class BICashView(_BIBase):
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -176,7 +189,7 @@ class BICustomersView(_BIBase):
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -216,7 +229,7 @@ class BIExploreView(_BIBase):
                 report,
                 metrics=tuple(m for m in report.metrics if metric_family(m.key) not in AUDIT_ONLY_FAMILIES),
             )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 def _permission_subject(request):
@@ -248,7 +261,7 @@ class BIConsumptionProfilesView(_BIBase):
             weekday=weekday,
             hour_band=str(request.GET.get("hour_band") or "").strip(),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -274,7 +287,7 @@ class BIForecastView(_BIBase):
             )
         except ForecastError as exc:
             return Response({"detail": str(exc)}, status=400)
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -300,7 +313,7 @@ class BIChangeView(_BIBase):
             )
         except ForecastError as exc:
             return Response({"detail": str(exc)}, status=400)
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 # ── Cenários salvos (F9) — config validada pela gramática, zero código ───────
@@ -420,7 +433,7 @@ class BIScenariosView(_BIBase):
     """
 
     def get(self, request):
-        return Response({"bi": projection_data(build_bi_scenarios())})
+        return _bi_reading(build_bi_scenarios())
 
     def post(self, request):
         from shopman.backstage.bi.scenarios import ScenariosNotConfigured, generate
@@ -438,4 +451,4 @@ class BIScenariosView(_BIBase):
             )
         except ScenariosNotConfigured as exc:
             return Response({"detail": str(exc)}, status=409)
-        return Response({"bi": projection_data(report_view(report))}, status=201)
+        return _bi_reading(report_view(report), status=201)

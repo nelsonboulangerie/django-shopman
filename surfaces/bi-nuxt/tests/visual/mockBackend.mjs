@@ -62,7 +62,10 @@ createServer((req, res) => {
   }
   const body = recordedFor(url);
   if (body) {
-    send(res, 200, isBi && scenario === "empty" && !url.pathname.endsWith("/bi/scenarios/") ? emptied(body) : body);
+    const reading = isBi && scenario === "empty" && !url.pathname.endsWith("/bi/scenarios/") ? emptied(body) : body;
+    // Toda leitura do B.I. diz quando o servidor a gerou (`generated_at`, ao lado de
+    // `bi`). A gravação é anterior a essa chave: o mock carimba a hora da resposta.
+    send(res, 200, isBi && reading && "bi" in reading ? { ...reading, generated_at: reading.generated_at ?? new Date().toISOString() } : reading);
     return;
   }
   send(res, 200, {});
