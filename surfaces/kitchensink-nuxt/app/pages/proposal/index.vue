@@ -3,7 +3,13 @@
 // ao lado do conjunto mínimo proposto, com os componentes reais e o tema do kit.
 // A página não muda o kit nem o tema: só passa props explícitas para mostrar o
 // conjunto proposto. Nada aqui é contrato; é material de decisão.
+import { useMediaQuery } from "@vueuse/core";
 import { onMounted, ref } from "vue";
+
+// Busca com foco ao abrir onde há teclado físico; no toque, o foco fica na lista
+// (o teclado virtual só sobe quando a pessoa toca na busca). API oficial:
+// `search-input.autofocus` do SelectMenu.
+const touch = useMediaQuery("(pointer: coarse)");
 
 useHead({ title: "Proposta: conjunto mínimo" });
 
@@ -435,13 +441,13 @@ const productMenu = ref("Croissant");
               </NuxtFormField>
             </div>
           </NuxtCard>
-          <NuxtCard title="Proposta: NuxtSelectMenu" description="Lista longa ou buscável, sem teclado automático.">
+          <NuxtCard title="Proposta: NuxtSelectMenu" description="Lista longa ou buscável. No PC a busca já abre com foco; no toque, o teclado só sobe quando se toca na busca.">
             <div class="space-y-4" data-proposal-select="select-menu">
               <NuxtFormField label="Estação" name="station-menu">
                 <NuxtSelectMenu
                   v-model="stationMenu"
                   :items="stations"
-                  :search-input="{ autofocus: false, placeholder: 'Buscar estação' }"
+                  :search-input="{ autofocus: !touch, placeholder: 'Buscar estação' }"
                   class="w-full"
                   data-proposal-open="menu-station"
                 />
@@ -450,7 +456,7 @@ const productMenu = ref("Croissant");
                 <NuxtSelectMenu
                   v-model="productMenu"
                   :items="products"
-                  :search-input="{ autofocus: false, placeholder: 'Buscar produto' }"
+                  :search-input="{ autofocus: !touch, placeholder: 'Buscar produto' }"
                   class="w-full"
                   data-proposal-open="menu-product"
                 />
