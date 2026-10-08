@@ -270,11 +270,13 @@ describe("OperatorSuiteShell: a barra inferior (o menu rápido)", () => {
     expect(wrapper.find("[data-operator-quick-bar]").exists()).toBe(true);
     expect(bar.props("ui")).toMatchObject({
       root: "justify-around border-t border-default py-2",
-      item: "py-0",
       linkLeadingIcon: "size-5",
       linkLabel: "text-[10px]/3 font-normal",
     });
     expect(bar.props("ui").link).toContain("flex-col gap-1 px-3");
+    // Itens espalhados por igual na largura (decisão do dono, 08/10).
+    expect(bar.props("ui").list).toContain("w-full");
+    expect(bar.props("ui").item).toContain("flex-1");
   });
 
   it("sem declaração: as primeiras 4 seções e 'Mais', que abre a gaveta", async () => {

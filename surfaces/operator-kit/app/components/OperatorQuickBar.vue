@@ -28,11 +28,16 @@ const props = defineProps<{
 
 const emit = defineEmits<{ select: [key: string]; more: [] }>();
 
-/** O exemplo oficial, mais o alvo de toque do kit no link. */
+/**
+ * O exemplo oficial, mais o alvo de toque do kit no link e os itens espalhados por
+ * igual na largura (decisão do dono, 08/10: no exemplo literal eles se juntam no
+ * centro, longe do polegar).
+ */
 const QUICK_BAR_UI = {
   root: "justify-around border-t border-default py-2",
-  item: "py-0",
-  link: "flex-col gap-1 px-3 min-h-control justify-center",
+  list: "w-full",
+  item: "py-0 flex-1",
+  link: "w-full flex-col gap-1 px-3 min-h-control justify-center",
   linkLeadingIcon: "size-5",
   linkLabel: "text-[10px]/3 font-normal",
 };
