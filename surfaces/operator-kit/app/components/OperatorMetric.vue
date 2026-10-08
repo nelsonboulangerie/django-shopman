@@ -83,7 +83,6 @@ withDefaults(
       <NuxtBadge
         v-if="delta.percent"
         :color="METRIC_DELTA_COLOR[delta.tone]"
-        variant="soft"
         :icon="METRIC_DELTA_ICON[delta.direction]"
         :label="delta.percent"
         aria-hidden="true"
