@@ -83,6 +83,9 @@ O layer contribui, via auto-import do Nuxt:
 | `app/components/OperatorNumpad.vue` | `<OperatorNumpad>` | numpad de quantidade (inteiro): POS e quiosque de QC |
 | `app/components/OperatorDayPicker.vue` | `<OperatorDayPicker>` | Tipo 1 de data, "Escolha rápida de dia": Hoje, Amanhã, próxima data, Outra data (ver "Datas") |
 | `app/components/OperatorPeriodPicker.vue` | `<OperatorPeriodPicker>` | Tipo 2 de data, "Período": botão que diz a janela, chips no popover, ‹ › (ver "Datas") |
+| `app/components/OperatorMetric.vue` | `<OperatorMetric>` | métrica: `NuxtCard` com `title`/`description`, a figura e o delta pronto da presentation (`MetricDelta` em `presentation/metric.ts`) num `NuxtBadge`; `size="statement"` diz a resposta em uma frase (ver "Peças de leitura") |
+| `app/components/ReadFreshness.vue` | `<ReadFreshness>` | frescor da leitura: "Última leitura útil: 15:36:22 · há 1 s", pelo relógio do servidor (`useNowTick`); `inline` para a linha de recortes (ver "Peças de leitura") |
+| `app/composables/useNowTick.ts` | `useNowTick` | o relógio do servidor: um timer só para a tela, ancorado no `server_now_iso`/`generated_at` da projeção |
 | `app/components/UiToolbar.vue` | `<UiToolbar>` | barra de trabalho sob o nav: slot padrão à esquerda, slot `end` à direita (com `flex-wrap`) |
 | `app/components/UiSearchInput.vue` | `<UiSearchInput>` | busca da barra: ícone, limpar, expand-on-focus, `focus()` exposto para o atalho `/` |
 | `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem e slot de ícone — alvo de toque de 44 px (`min-h-control`) |
@@ -968,6 +971,22 @@ atributo do item.
   (grade, Fechamento, Qualidade, quadro da TV, Preparação, Relatórios) e Gestor (Histórico). O KDS não
   tem seletor de dia.
 
+### Celular e leitura de um dia (`compact`, `prev-day`/`next-day`)
+
+- **`compact`**: abaixo de `sm`, o botão diz a forma curta da janela (`periodShortLabel`:
+  "Ontem", "Ter 29/09", "28D · 04/09 a 01/10"); do `sm` para cima, a frase inteira. O nome
+  acessível é sempre a frase inteira. Para a barra do celular, onde a frase longa empurra
+  as setas para a segunda linha.
+- **Um dia com ‹ ›**: `presets` só com `day` (o padrão). As setas andam um dia de calendário;
+  quem sabe que nem todo dia existe na leitura (dia fechado não tem venda) passa
+  `prev-day`/`next-day` com o dia aberto anterior/seguinte que o servidor informou, e
+  `""` desliga a seta. É o que substitui o `BiDayStepper` do B.I.
+
+```html
+<OperatorPeriodPicker v-model="day" compact :max="yesterday"
+                      :prev-day="reading.previous" :next-day="reading.next" label="Dia da leitura" />
+```
+
 ### Campos de data e hora (`UiDateField`, `UiDateRangeField`, `UiTimeField`, `UiTimeRangeField`, `UiDateTimeField`)
 
 Camadas finas sobre `NuxtInputDate`, `NuxtInputTime` e `NuxtCalendar`, com valor ISO no
@@ -990,6 +1009,28 @@ Marketing (`UiDateRangeField`, `UiTimeField`, `UiTimeRangeField`, `UiDateTimeFie
   `Ter 29/09`); o resto diz o nome por extenso e o intervalo (`Semana · 28/09 a 04/10`,
   `Últimos 28 dias · 04/09 a 01/10`, `Próximos 7 dias · 01/10 a 07/10`). O chip diz `7D`
   porque o grupo diz para que lado; o botão não tem grupo. Sem travessão.
+
+## Peças de leitura (`OperatorMetric`, `ReadFreshness`)
+
+Subiram no PR-K2 do WP-BI-CANON-LAUDO, para o B.I., a Central, o Marketing e o Compras
+não reescreverem número-herói nem selo de atualização. O Kitchen Sink mostra as duas
+(seção "Peças de leitura") junto do período compacto.
+
+- **`OperatorMetric`** é a receita do Kitchen Sink virada peça: `NuxtCard` com `title` e
+  `description` (a anatomia do Card, nunca rótulo escrito à mão em `<p>`), a figura
+  (`op-figure`; `hero` maior; `statement` para uma frase), a unidade na mesma linha, o
+  veredito em `tone` (`error`/`warning`/`success`) e a comparação. **A peça não calcula**:
+  o delta chega pronto da presentation como `MetricDelta` (`text` inteiro para o leitor
+  de tela, `tone` por melhorou/piorou e não por sinal, `percent` da pílula, `direction`
+  da seta, `caption` com o "contra o quê"). Sem base de comparação, `percent` vazio: a
+  pílula some e a frase fica.
+- **`ReadFreshness`** diz quando o servidor gerou o que está na tela e há quanto tempo,
+  pelo relógio do servidor (o dispositivo com hora errada não muda a idade). É a frase
+  das leituras sem tempo real, onde um selo "ao vivo" seria rótulo que mente; `failed`
+  acrescenta "atualização falhou"; `realtime-label` diz o estado do transporte com o
+  vocabulário do app ("Conexão: Ao vivo"), porque conexão e leitura são estados distintos.
+  `inline` é a mesma frase sem faixa própria, no fim da linha de recortes. Nasceu no
+  Gestor e subiu sem mudar de comportamento.
 
 ## Colunas de fila ajustáveis e recolhíveis (`QueueColumnStrip`, `QueueColumnResizeHandle`)
 

@@ -1,19 +1,25 @@
-// @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
+import { defineComponent, h, nextTick, ref } from "vue";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-for (const [key, value] of Object.entries({ computed, ref, watch, onMounted, onBeforeUnmount })) vi.stubGlobal(key, value);
-afterEach(() => { vi.useRealTimers(); });
+import { useNowTick } from "../../app/composables/useNowTick";
 
-describe("server clock", () => {
-  it.each([-300000, 300000])("ignores browser drift %s and reanchors after resume", async (drift) => {
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("useNowTick: o relógio do servidor", () => {
+  it.each([-300000, 300000])("ignora o desvio do dispositivo %s e reancora ao retomar", async (drift) => {
     vi.useFakeTimers({ toFake: ["Date", "performance", "setInterval", "clearInterval"] });
     const server = Date.parse("2026-09-10T12:00:00Z");
     vi.setSystemTime(server + drift);
     const source = ref(new Date(server).toISOString());
-    const { useNowTick } = await import("../../app/composables/useNowTick");
-    const component = defineComponent({ setup() { return { now: useNowTick(() => source.value) }; }, template: "<span>{{ now }}</span>" });
+    const component = defineComponent({
+      setup() {
+        const now = useNowTick(() => source.value);
+        return () => h("span", String(now.value));
+      },
+    });
     const wrapper = mount(component);
     expect(Number(wrapper.text())).toBe(server);
     vi.advanceTimersByTime(5000);

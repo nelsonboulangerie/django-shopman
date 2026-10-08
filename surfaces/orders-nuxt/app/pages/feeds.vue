@@ -10,6 +10,7 @@ import type {
   CollectionOptionProjection,
   FeedProjection,
 } from "~/types/feeds";
+import { realtimeIndicator } from "~/presentation/board";
 import { IFOOD_CHANNEL_REF } from "~/presentation/ifoodStore";
 
 const {
@@ -319,7 +320,7 @@ useHead({ title: "Canais" });
           inline
           :metadata="readMetadata"
           :failed="Boolean(error)"
-          :realtime="realtime"
+          :realtime-label="realtimeIndicator(realtime).label"
         />
       </template>
     </OperatorPageHeader>

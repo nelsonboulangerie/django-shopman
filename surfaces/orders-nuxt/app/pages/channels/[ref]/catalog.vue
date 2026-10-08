@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { realtimeIndicator } from "~/presentation/board";
+
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
 const channel = String(route.params.ref);
@@ -134,7 +136,7 @@ useHead({ title: "Revisão de vínculos" });
           inline
           :metadata="readMetadata"
           :failed="Boolean(error)"
-          :realtime="realtime"
+          :realtime-label="realtimeIndicator(realtime).label"
         />
       </template>
     </OperatorPageHeader>
