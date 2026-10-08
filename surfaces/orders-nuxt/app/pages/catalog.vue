@@ -1813,7 +1813,7 @@ useHead({ title: "Catálogo" });
     </section>
 
     <!-- A seleção em lote é chrome contextual do painel, não um Card flutuante. -->
-    <NuxtDashboardToolbar v-if="selected.size" as="footer" data-catalog-bulk>
+    <OperatorToolbar v-if="selected.size" as="footer" data-catalog-bulk>
       <div class="flex min-w-max items-center gap-2">
         <span class="flex items-center gap-1.5 px-1 text-sm font-medium">
           <Icon v-if="bulkBusy" name="line-md:loading-loop" class="size-4" />
@@ -1978,7 +1978,7 @@ useHead({ title: "Catálogo" });
           @click="clearSelection"
         />
       </div>
-    </NuxtDashboardToolbar>
+    </OperatorToolbar>
 
     <!-- painel de produto (edição completa, incluindo dados sociais e fiscais) —
          slide-over à direita -->
