@@ -116,9 +116,16 @@ describe("catálogo vivo", () => {
     expect(offlineBanner).not.toContain("<NuxtAlert");
   });
 
+  // DECISÃO MUDOU (WP-OPERADOR-NUXTUI-ONDAS, onda 0, 08/10/2026): esta trava proibia
+  // qualquer `h-control` no tema, e consagrou a perda dos 44 px de campo, select e item
+  // de lista nos sete apps não migrados e no catálogo. O kit muda por opt-in: a altura
+  // de toque volta SÓ sob `suite-page:` (página que veste a suíte, ou o catálogo). O
+  // que a trava protege continua: nada infla controle globalmente, e o Gestor, que não
+  // veste o marcador, fica na geometria oficial.
   it("mantém a geometria oficial do Nuxt UI sem inflar controles globalmente", () => {
-    expect(appConfig).not.toMatch(/\bbutton:\s*\{[\s\S]*?min-h-control/);
-    expect(appConfig).not.toMatch(/\binput:\s*\{[\s\S]*?h-control/);
+    // Classe que começa em `h-control`/`min-h-control` sem variante na frente.
+    expect(appConfig).not.toMatch(/(?<![\w:-])(?:min-)?h-control\b/);
+    expect(appConfig).toMatch(/suite-page:h-control/);
     expect(operatorBase).not.toMatch(/@media\s*\(pointer:\s*coarse\)/);
     expect(operatorBase).not.toContain(
       "min-block-size: var(--spacing-control)",

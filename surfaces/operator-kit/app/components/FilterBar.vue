@@ -17,7 +17,7 @@
 // `useRouteFilters` (ou `filtersToQuery`/`filtersFromQuery`).
 //
 // `touch`: a mesma barra no tamanho `md` oficial do Nuxt UI. Nos apps que vestem a
-// suíte (`data-suite="v3"`), também o envelope de toque do balcão (`min-h-control`,
+// suíte (ver `useSuiteMarker`), também o envelope de toque do balcão (`min-h-control`,
 // 44 px; 48 px em tablet touch) no gatilho, nos chips, no X e nos itens do painel; sem
 // `touch`, ali, só os itens do painel ganham o envelope no celular. Sem `touch`, a barra
 // usa `xs`, compacta para mouse. Nenhuma regra CSS global infla os controles.
@@ -51,19 +51,14 @@ const props = withDefaults(
 const controlSize = computed(() =>
   props.touch ? ("md" as const) : ("xs" as const),
 );
-// Alvo de toque, OPT-IN pelo marcador da suíte (`data-suite="v3"`, que os sete apps
-// não migrados vestem e o Gestor não): ali `touch` volta a dar o `min-h-control` do
-// `main` (44 px; 48 em tablet touch), e no celular os itens do painel são sempre de
-// toque. O Gestor passa `touch` contando com o `md` canônico (32 px) e fica como está.
-// A linha usa a variante `suite:` (CSS puro). O painel mora num portal, fora do
-// marcador, então lê o marcador da própria barra ao montar.
+// Alvo de toque, OPT-IN pelo marcador da suíte (`useSuiteMarker`): nos sete apps não
+// migrados `touch` volta a dar o `min-h-control` do `main` (44 px; 48 em tablet
+// touch), e no celular os itens do painel são sempre de toque. O Gestor passa `touch`
+// contando com o `md` canônico (32 px) e fica como está.
 const root = ref<HTMLElement | null>(null);
-const suiteMarked = ref(false);
-onMounted(() => {
-  suiteMarked.value = Boolean(root.value?.closest('[data-suite="v3"]'));
-});
+const suiteMarked = useSuiteMarker(root);
 const touchTarget = computed(() =>
-  props.touch ? "suite:min-h-control" : undefined,
+  props.touch && suiteMarked.value ? "min-h-control" : undefined,
 );
 const itemTarget = computed(() => {
   if (!suiteMarked.value) return undefined;

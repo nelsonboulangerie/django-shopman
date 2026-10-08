@@ -31,11 +31,12 @@
    e no desktop com mouse também. Decisão por capacidade do dispositivo. A pilha do
    Gestor tinha tirado esta regra; os sete apps não migrados (PDV, Cozinha, Produção…)
    ainda a usam no balcão, e o kit só muda por opt-in (WP-OPERADOR-NUXTUI-ONDAS): vale
-   onde a página veste a suíte (`data-suite="v3"`, os sete), não no Gestor. Pelo `:root`
+   onde a página veste a suíte (`data-suite="v3"`, os sete) e no catálogo do kit (que
+   documenta o envelope até a onda dele), não no Gestor. Pelo `:root`
    o token chega também aos overlays em portal. Não infla nada sozinha: vale só onde o
    componente pede `min-h-control`. */
 @media (pointer: coarse) and (min-width: 600px) {
-  :root:has([data-suite="v3"]) {
+  :root:has([data-suite="v3"], [data-operator-catalog]) {
     --spacing-control: 3rem;
   }
 }

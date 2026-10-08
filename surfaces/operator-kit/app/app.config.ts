@@ -170,11 +170,28 @@ export default defineAppConfig({
     // Altura de controle: padrões compactos oficiais do Nuxt UI. Fluxos que
     // realmente precisam de alvo maior fazem opt-in no próprio componente; uma
     // regra global desalinharia tabs, toolbars, menus, paginação e rail.
+    // Exceção opt-in (WP-OPERADOR-NUXTUI-ONDAS, onda 0): nas páginas que vestem a
+    // suíte (os sete apps não migrados) e no catálogo, campo, select e item de lista
+    // voltam aos 44 px do `main` (`suite-page:`, que alcança o portal da lista). O
+    // Gestor não veste o marcador e fica no compacto.
+    input: {
+      variants: { size: { md: { base: "suite-page:h-control" } } },
+    },
     select: {
       slots: { content: "bg-popover" },
+      variants: {
+        size: {
+          md: { base: "suite-page:h-control", item: "suite-page:min-h-control suite-page:items-center" },
+        },
+      },
     },
     selectMenu: {
       slots: { content: "bg-popover" },
+      variants: {
+        size: {
+          md: { base: "suite-page:h-control", item: "suite-page:min-h-control suite-page:items-center" },
+        },
+      },
     },
   },
 });

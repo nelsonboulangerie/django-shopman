@@ -329,8 +329,9 @@ describe("operator-kit: os primitivos respeitam o token de alvo de toque", () =>
     const theme = readFileSync(resolve(surfacesDir, "operator-kit/app/assets/css/operator-theme.css"), "utf8");
     const coarseBlocks = [...theme.matchAll(/@media\s*\(pointer:\s*coarse\)[^{]*\{([\s\S]*?)\n\}/g)].map((m) => m[1]!);
     expect(coarseBlocks).toHaveLength(1);
-    // Só sob o marcador da suíte (os sete apps não migrados); o Gestor não o veste.
-    expect(coarseBlocks[0]).toMatch(/^\s*:root:has\(\[data-suite="v3"\]\)\s*\{\s*--spacing-control:\s*3rem;\s*\}\s*$/);
+    // Só sob o marcador da suíte (os sete apps não migrados) e no catálogo do kit; o
+    // Gestor não veste nenhum dos dois.
+    expect(coarseBlocks[0]).toMatch(/^\s*:root:has\(\[data-suite="v3"\], \[data-operator-catalog\]\)\s*\{\s*--spacing-control:\s*3rem;\s*\}\s*$/);
     expect(theme).not.toMatch(/@media\s*\(pointer:\s*coarse\)[^{]*\{[^}]*\b(?:button|input|select|textarea)\b/);
   });
 });
