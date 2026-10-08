@@ -406,6 +406,11 @@ describe("Gestor canônico em Nuxt UI", () => {
     // tamanho amarrado ao próprio texto: `:size="X ? '4xl' : '2xl'"` com `:text="X"`.
     const chipSizeOk = ({ file, tag }: { file: string; tag: string }) => {
       if (file.endsWith("OperatorLiveStatus.vue")) return /\bsize="xl"/.test(tag);
+      // O sinal do rail da suíte (PR-K4, dono 08/10/2026): o tamanho sai de
+      // `railSignalChip` (número 4xl; ponto no tamanho padrão do NavigationMenu),
+      // com teste próprio em `operator-kit/tests/suiteChrome.test.ts`.
+      if (file.endsWith("OperatorSuiteShell.vue"))
+        return /v-bind="trailingChip\(/.test(tag);
       const bound = tag.match(/:size="([\w.]+) \? '4xl' : '2xl'"/);
       if (bound) return tag.includes(`:text="${bound[1]}"`);
       const hasText = /(?:^|\s):?text=/.test(tag);
@@ -768,12 +773,16 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(shell).toContain("data-suite-rail-footer");
     expect(shell).toContain("flex-col items-center");
     expect(shell).toContain("data-suite-rail-navigation");
-    // Seções e pé do rail: a mesma peça do sino (Chip inset + Button quadrado) e o
-    // mesmo espaçamento, em vez de um NavigationMenu recolhido com outra geometria.
-    expect(shell).toContain(
-      'class="flex w-full min-w-0 flex-col items-center gap-1.5"\n        :aria-label="label"\n        data-suite-rail-navigation',
+    // Rail em três estados (PR-K4, dono 08/10/2026): só peças oficiais. Seções no
+    // NavigationMenu vertical recolhível, com tooltip e popover; sidebar recolhível e
+    // redimensionável de 12 a 20 rem; nenhum `:ui` por instância.
+    expect(shell).toMatch(
+      /<NuxtNavigationMenu\s+:collapsed="isCollapsed"[\s\S]*?orientation="vertical"\s+tooltip\s+popover[\s\S]*?data-suite-rail-navigation/,
     );
-    expect(shell).not.toMatch(/<NuxtNavigationMenu[^>]*\bcollapsed\b/);
+    expect(shell).toMatch(
+      /<NuxtDashboardSidebar[\s\S]*?collapsible\s+resizable\s+:collapsed-size="4"[\s\S]*?:min-size="12"\s+:max-size="20"/,
+    );
+    expect(shell).not.toMatch(/\s:ui="/);
     expect(shell).not.toContain('class="w-fit self-center"');
     expect(shell).toContain('<OperatorInbox placement="rail" />');
     expect(queue).toContain("sm:grid-cols-[80px_minmax(0,1fr)]");

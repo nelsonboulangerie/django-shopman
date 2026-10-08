@@ -5,7 +5,13 @@ import { describe, expect, it } from "vitest";
 
 import type { OperatorSection } from "../app/presentation/appBar";
 import {
+  SUITE_RAIL_CYCLE,
   SUITE_RAIL_MEDIA,
+  SUITE_RAIL_NEXT,
+  nextSuiteRailState,
+  railSignalChip,
+  railSignalLabel,
+  sectionRailSignal,
   inboxAriaLabel,
   inboxBadge,
   inboxTotal,
@@ -195,5 +201,45 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     expect(respondInLabel(at(150), NOW)).toBe("Responda em 2 h");
     expect(respondInLabel(at(3 * 24 * 60), NOW)).toBe("Responda em 3 dias");
     expect(respondInLabel(at(-3), NOW)).toBe("Passou do prazo há 3 min");
+  });
+});
+
+describe("rail da suíte em três estados (PR-K4)", () => {
+  it("o anel é aberto → compacto → oculto → aberto, e o botão diz o próximo", () => {
+    expect(SUITE_RAIL_CYCLE).toEqual(["open", "compact", "hidden"]);
+    expect(nextSuiteRailState("open")).toBe("compact");
+    expect(nextSuiteRailState("compact")).toBe("hidden");
+    expect(nextSuiteRailState("hidden")).toBe("open");
+    expect(SUITE_RAIL_NEXT.open.label).toBe("Compactar o rail");
+    expect(SUITE_RAIL_NEXT.compact.label).toBe("Ocultar o rail");
+    expect(SUITE_RAIL_NEXT.hidden.label).toBe("Mostrar o rail");
+  });
+
+  it("o sinal: número com badge maior que zero, ponto com atenção, nada sem os dois", () => {
+    const base = { key: "a", label: "Pedidos", icon: "i-lucide-list" };
+    expect(sectionRailSignal(base)).toBeUndefined();
+    expect(sectionRailSignal({ ...base, badge: "0" })).toBeUndefined();
+    expect(sectionRailSignal({ ...base, badge: "4" })).toEqual({ color: "warning", count: 4, state: undefined });
+    expect(sectionRailSignal({ ...base, attention: "1 desligado", tone: "error" })).toEqual({ color: "error", state: "1 desligado" });
+  });
+
+  it("o chip: ponto no tamanho padrão; número 4xl, sem inset, e 99+ acima de 99", () => {
+    expect(railSignalChip({ color: "success" })).toEqual({ color: "success" });
+    expect(railSignalChip({ color: "error", count: 12 })).toEqual({ color: "error", text: "12", size: "4xl", inset: false });
+    expect(railSignalChip({ color: "error", count: 99 }).text).toBe("99");
+    expect(railSignalChip({ color: "error", count: 100 }).text).toBe("99+");
+  });
+
+  it("a descrição: 'App · estado' ou 'App · N pendências' (1 pendência)", () => {
+    expect(railSignalLabel("Catálogo")).toBe("Catálogo");
+    expect(railSignalLabel("PDV", { color: "error", state: "sem conexão" })).toBe("PDV · sem conexão");
+    expect(railSignalLabel("Cozinha", { color: "error", count: 1 })).toBe("Cozinha · 1 pendência");
+    expect(railSignalLabel("Gestor", { color: "error", count: 12 })).toBe("Gestor · 12 pendências");
+  });
+
+  it("a ajuda de atalhos ensina a tecla C só onde o rail tem três estados", () => {
+    const sections = [{ key: "a", label: "Pedidos", icon: "i-lucide-list" }];
+    expect(suiteShortcutGroup(sections).items.some((item) => item.keys[0] === "C")).toBe(false);
+    expect(suiteShortcutGroup(sections, { rail: true }).items).toContainEqual({ keys: ["C"], label: "Rail: aberto, compacto ou oculto" });
   });
 });

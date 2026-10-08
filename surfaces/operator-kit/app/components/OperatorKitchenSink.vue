@@ -145,7 +145,7 @@ const componentLexicon = [
   ],
   [
     "OperatorSuiteShell",
-    "Rail desktop e barra inferior móvel sobre o Dashboard canônico",
+    "Rail em três estados (aberto, compacto, oculto: um botão na barra e a tecla C), sinal por seção (ponto ou número) e barra inferior móvel, sobre o Dashboard canônico",
     "App de escritório com seções persistentes",
   ],
   [

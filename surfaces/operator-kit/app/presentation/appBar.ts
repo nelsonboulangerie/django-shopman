@@ -44,6 +44,12 @@ export interface OperatorSection {
   match?: string[];
   /** Aviso curto ao lado do rótulo ("1 desligado"). Ausente = estado normal, sem ruído. */
   attention?: string;
+  /**
+   * A cor do sinal no rail da suíte (ponto ou número): `success`, `warning` (padrão) ou
+   * `error`. A cor nunca fala sozinha: o que ela quer dizer está em `attention` ou no
+   * número.
+   */
+  tone?: "success" | "warning" | "error";
   /** Tecla que leva a esta seção. Ensinada na própria aba, onde a mão está. */
   shortcut?: string;
   /**

@@ -70,7 +70,14 @@ const config = useRuntimeConfig().public as { operatorHubUrl?: string };
 const hubUrl = config.operatorHubUrl || "";
 
 const { isCollapsed, set: setRail } = useRailState();
-const railShown = useSuiteRailShown();
+const suiteRailMedia = useSuiteRailShown();
+// Dentro do `OperatorSuiteShell`, o rail é o de três estados: o botão da barra o
+// percorre (aberto, compacto, oculto) e Avisos sobe para a barra sempre que ele não
+// está na tela. Fora do shell, a régua do `OperatorSuiteRail`.
+const suiteRail = useSuiteRail();
+const railShown = computed(() =>
+  suiteRail ? suiteRail.visible.value : suiteRailMedia.value,
+);
 
 // Os controles (`#actions`) descem para uma linha própria no celular, como diz o
 // contrato acima e como era no `main`. OPT-IN pela página que veste a suíte (os sete
@@ -105,14 +112,26 @@ const { request: openSearch } = useSuiteSearchRequest();
 <template>
   <NuxtDashboardNavbar
     as="header"
-    :toggle="false"
+    :toggle="Boolean(suiteRail)"
     class="print:hidden"
     data-operator-page-header
   >
     <template #leading>
       <OperatorAppSeal v-if="hubUrl && !$slots.lead" />
       <NuxtButton
-        v-if="isCollapsed"
+        v-if="suiteRail"
+        class="hidden lg:inline-flex"
+        :icon="suiteRail.next.value.icon"
+        color="neutral"
+        variant="ghost"
+        square
+        :aria-label="suiteRail.next.value.label"
+        :title="suiteRail.next.value.label"
+        data-rail-cycle
+        @click="suiteRail.cycle()"
+      />
+      <NuxtButton
+        v-else-if="isCollapsed"
         class="hidden rail:inline-flex"
         icon="i-lucide-panel-left-open"
         color="neutral"
