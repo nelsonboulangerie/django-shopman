@@ -49,7 +49,9 @@ const railTheme = {
   },
 };
 
-if (palette === "gold") updateAppConfig({ ui: { dashboardSidebar: railTheme } });
+// Anel do chip com a espessura do traço dos ícones Lucide (2 px): vai para o
+// `ui.chip.slots.base` do kit; aqui só nesta rota, como o tema do rail.
+if (palette === "gold") updateAppConfig({ ui: { dashboardSidebar: railTheme, chip: { slots: { base: "ring-2" } } } });
 
 const isDesktop = useMediaQuery("(min-width: 1024px)", { ssrWidth: 1440 });
 
@@ -101,32 +103,42 @@ const nextLabel: Record<RailState, { label: string; icon: string }> = {
 const next = computed(() => nextLabel[state.value]);
 defineShortcuts({ c: cycle });
 
-// Dois chips no ícone, iguais aberto e compacto:
-//   ponto  = estado (cor semântica, sem texto), no tamanho padrão do NavigationMenu;
-//   número = contagem, chip maior com `text`. Para comparar, Cozinha usa o 3xl
-//            oficial do Nuxt UI e Gestor usa o 4xl que o kit inventou para o Gestor.
+// Sinal de cada app, em dois tipos:
+//   ponto  = estado (cor semântica, sem texto);
+//   número = contagem (chip 4xl do kit, o único tamanho em que dois dígitos se leem).
+// Compacto: o chip vai no canto do ícone; o número fica centrado no canto (inset
+// false) para não cobrir o ícone. Aberto: o MESMO chip vai no fim do nome, pelo
+// slot oficial `item-trailing`. O tooltip segue um padrão só: "App · o que é".
+type Signal = { color: "success" | "error" | "warning"; count?: number; noun?: string; state?: string };
+const apps: { label: string; icon: string; active?: boolean; signal?: Signal }[] = [
+  { label: "Central", icon: "i-lucide-layout-grid", signal: { color: "success", state: "tudo em ordem" } },
+  { label: "PDV", icon: "i-lucide-shopping-cart", signal: { color: "error", state: "sem conexão" } },
+  { label: "Cozinha", icon: "i-lucide-chef-hat", signal: { color: "error", count: 3, noun: "pedidos esperando" } },
+  { label: "Gestor", icon: "i-lucide-clipboard-list", active: true, signal: { color: "error", count: 12, noun: "pedidos para revisar" } },
+  { label: "Produção", icon: "i-lucide-croissant" },
+  { label: "Marketing", icon: "i-lucide-megaphone" },
+  { label: "Compras", icon: "i-lucide-truck" },
+  { label: "B.I.", icon: "i-lucide-chart-line" },
+];
+function chipOf(signal: Signal) {
+  return signal.count === undefined
+    ? { color: signal.color }
+    : { color: signal.color, text: signal.count > 99 ? "99+" : String(signal.count), size: "4xl" as const, inset: false };
+}
+function describe(label: string, signal?: Signal) {
+  if (!signal) return label;
+  return signal.count === undefined ? `${label} · ${signal.state}` : `${label} · ${signal.count} ${signal.noun}`;
+}
 const suite = computed(() => [
-  [
-    { label: "Central", icon: "i-lucide-layout-grid", chip: { color: "success" as const }, tooltip: { text: "Central, tudo em ordem" } },
-    { label: "PDV", icon: "i-lucide-shopping-cart", chip: { color: "error" as const }, tooltip: { text: "PDV, sem conexão" } },
-    {
-      label: "Cozinha",
-      icon: "i-lucide-chef-hat",
-      chip: { text: "12", size: "3xl" as const, color: "error" as const },
-      tooltip: { text: "Cozinha, 12 pedidos esperando" },
-    },
-    {
-      label: "Gestor",
-      icon: "i-lucide-clipboard-list",
-      active: true,
-      chip: { text: "12", size: "4xl" as const, color: "error" as const },
-      tooltip: { text: "Gestor, 12 pedidos para revisar" },
-    },
-    { label: "Produção", icon: "i-lucide-croissant" },
-    { label: "Marketing", icon: "i-lucide-megaphone" },
-    { label: "Compras", icon: "i-lucide-truck" },
-    { label: "B.I.", icon: "i-lucide-chart-line" },
-  ],
+  apps.map((app) => ({
+    label: app.label,
+    icon: app.icon,
+    active: app.active,
+    signal: app.signal,
+    chip: collapsed.value && app.signal ? chipOf(app.signal) : undefined,
+    tooltip: { text: describe(app.label, app.signal) },
+    "aria-label": describe(app.label, app.signal),
+  })),
 ]);
 const foot = [
   { label: "Atalhos", icon: "i-lucide-keyboard" },
@@ -167,7 +179,11 @@ const foot = [
           tooltip
           popover
           data-rail-menu
-        />
+        >
+          <template #item-trailing="{ item }">
+            <NuxtChip v-if="!isCollapsed && item.signal" v-bind="chipOf(item.signal)" :inset="undefined" standalone />
+          </template>
+        </NuxtNavigationMenu>
         <NuxtNavigationMenu
           :collapsed="isCollapsed"
           :items="foot"
