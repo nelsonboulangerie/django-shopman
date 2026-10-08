@@ -6,6 +6,7 @@
 // a tela sugere, o gestor decide — e (3) ler o que muda e confirmar. A prévia é
 // a unificação de verdade, feita e desfeita no servidor (`MergeService.preview`):
 // o que ela diz é o que o "Unificar" faz.
+import ActionList from "~/components/ActionList.vue";
 import type {
   CustomerDetailProjection,
   CustomerRowProjection,
@@ -227,9 +228,8 @@ async function confirm() {
             icon="i-lucide-user-search"
             title="Nenhum outro cadastro com essa busca"
           />
-          <NuxtNavigationMenu
+          <ActionList
             v-if="results.length"
-            orientation="vertical"
             :items="resultItems"
             aria-label="Cadastros encontrados"
           />

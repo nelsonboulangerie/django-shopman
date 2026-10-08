@@ -1480,7 +1480,7 @@ function printQueue() {
     </NuxtDrawer>
 
     <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. -->
-    <NuxtDashboardToolbar
+    <OperatorToolbar
       v-if="boardAsTabs && view === 'board' && zones.length"
       class="py-2"
     >
@@ -1492,10 +1492,10 @@ function printQueue() {
         data-board-zone-tabs
         @update:model-value="pickPhoneZone"
       />
-    </NuxtDashboardToolbar>
+    </OperatorToolbar>
 
     <!-- barra da seleção em lote (o modo ligado) -->
-    <NuxtDashboardToolbar v-if="selecting" data-bulk-bar>
+    <OperatorToolbar v-if="selecting" data-bulk-bar>
       <template #left>
         <NuxtBadge
           color="primary"
@@ -1555,7 +1555,7 @@ function printQueue() {
           />
         </div>
       </template>
-    </NuxtDashboardToolbar>
+    </OperatorToolbar>
 
     <section
       ref="queueViewport"
