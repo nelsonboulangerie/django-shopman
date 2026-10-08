@@ -1234,7 +1234,7 @@ useHead({ title: "Catálogo" });
                 v-if="canReviewOrder"
                 type="button"
                 label="Aplicar meu arraste à ordem atual"
-                color="neutral"
+                color="warning"
                 variant="outline"
                 @click="saveOrderDraft(true)"
               />

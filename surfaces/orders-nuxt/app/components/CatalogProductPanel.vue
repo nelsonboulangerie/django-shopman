@@ -1460,7 +1460,7 @@ const sectionClass =
                         v-else
                         type="button"
                         label="Manter sem GTIN na nota"
-                        color="neutral"
+                        color="warning"
                         variant="outline"
                         :disabled="!canKeepWithoutGtin"
                         data-gtin-keep-without

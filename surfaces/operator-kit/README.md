@@ -451,7 +451,7 @@ cai. Uso novo fora do conjunto reprova; migrar um uso antigo baixa o teto.
 
 | peça | conjunto | como se escreve |
 |---|---|---|
-| Botão | tamanho `md` (todo lugar) e `xl` (toque crítico: PDV, Cozinha, quiosque, teclado numérico); variante `solid` (o gesto principal, um por região), `outline` (secundário) e `ghost` (terciário, ícone, menu); cor `primary`, `neutral` e `error` | estado ativo por `active` + `active-variant`/`active-color`, nunca `:variant="ativo ? … : …"`. Botão só de ícone é `square`. Aviso, informação e sucesso moram no selo ou no aviso, não na cor do botão. O default continua o do Nuxt UI (`primary` `solid` `md`): trocá-lo repintaria em silêncio todo botão sem cor escrita |
+| Botão | tamanho `md` (todo lugar) e `xl` (toque crítico: PDV, Cozinha, quiosque, teclado numérico); variante `solid` (o gesto principal, um por região), `outline` (secundário) e `ghost` (terciário, ícone, menu); cor `primary`, `neutral` e `error` | estado ativo por `active` + `active-variant`/`active-color`, nunca `:variant="ativo ? … : …"`. Botão só de ícone é `square`. Aviso, informação e sucesso moram no selo ou no aviso, não na cor do botão; a exceção é a ação de aviso (abaixo). O default continua o do Nuxt UI (`primary` `solid` `md`): trocá-lo repintaria em silêncio todo botão sem cor escrita |
 | Selo (Badge) | uma variante, `soft` (sem borda), nas 6 cores `neutral`, `primary`, `info`, `success`, `warning`, `error` | o tema dá `soft` (`badge.defaultVariants`); ninguém escreve `variant` num selo. O `primary` usa a tinta `--primary-ink` (AA) |
 | Cartão (Card) | `outline` no topo; `soft` para cartão dentro de outro cartão (só fundo, sem borda dupla) | `outline` é o default; o aninhado escreve `variant="soft"` na chamada. `subtle` e `solid` não entram. Destaque navegável é `NuxtPageCard` |
 | Aviso (Alert) | `subtle` × `info`, `success`, `warning`, `error` | fundo opaco pré-composto no tema (compoundVariants). `primary` e `neutral` ainda têm uso e morrem com a migração deles; `secondary` saiu |
@@ -461,6 +461,14 @@ cai. Uso novo fora do conjunto reprova; migrar um uso antigo baixa o teto.
 | Chip | ponto (estado) e número (contagem) com anel de 2 px (`chip.slots.base: 'ring-2'`, o traço dos ícones Lucide), na cor do fundo onde o chip está (`ring-bg`) | exceção declarada: o tamanho `4xl` numerado (16 px, texto 12 px), porque o `3xl` oficial não lê dois dígitos. Número acima de 99 escreve "99+" |
 | Rail | dourado pelo tema: `ui.dashboardSidebar.slots` (`root` e `content`) redefine os tokens do Nuxt UI só dentro do rail (`--ui-text*`, `--ui-primary`, `--primary-ink`, `--ui-bg` = `--rail`, `--ui-border`) | nenhuma tela passa `:ui` ao rail. Três estados e sinais no `OperatorSuiteShell` (PR-K4): ver "Rail da suíte em três estados" abaixo |
 | Raio | ainda o do kit (`--radius` e `--radius-sm/md/lg/xl` em `operator-base.css`) | `--ui-radius` não entrou: nenhum valor único reproduz os raios de hoje (ver o PR-K3) |
+
+**Exceção declarada: a ação de aviso repete a cor do aviso** (dono, 08/10/2026, PR #1545).
+O botão de ação dentro de um `NuxtAlert` (no slot `#actions`, no `#description`, ou
+declarado em objeto no prop `actions`) usa a cor do próprio aviso: `warning`, `info`,
+`success` ou `error`. É a saída daquele aviso; neutro, ele se descola do estado que o
+chamou. Fora de um aviso, a cor do botão continua `primary`, `neutral` ou `error`. A
+trava `guardrails.minimalSet` não conta em `buttonColor` o botão dentro de um aviso cuja
+cor é a do aviso (com a cor do aviso ligada, qualquer cor de aviso passa).
 
 ### Rail da suíte em três estados (`OperatorSuiteShell`)
 
