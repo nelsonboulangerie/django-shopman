@@ -245,7 +245,11 @@ describe("Gestor canônico em Nuxt UI", () => {
         /<Ui(?!(?:DateField|DateRangeField|TimeField|TimeRangeField|DateTimeField)\b)[A-Z]|\b:ui=|\bui="/,
       ),
     ).toEqual([]);
-    expect(runtimeOffenders(/from ["']reka-ui["']/)).toEqual([]);
+    // Import de TIPO do reka-ui não desenha nada (os campos de data tipam o range com
+    // ele); o que a trava proíbe é montar primitiva do reka por fora do Nuxt UI.
+    expect(
+      runtimeOffenders(/^import\s+(?!type\b)[^;]*from ["']reka-ui["']/m),
+    ).toEqual([]);
     expect(offenders(/role="button"/)).toEqual([]);
     expect(
       offenders(/<(?:div|span|img|p|li)\b[^>]*@(?:click|keydown)=/s),
