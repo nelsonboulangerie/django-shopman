@@ -36,6 +36,9 @@ const goldScope = [
   "[--primary:var(--rail-foreground)]",
   "[--ui-primary:var(--rail-foreground)]",
   "[--ui-bg-elevated:rgb(0_0_0/0.4)]",
+  // O anel do Chip é `ring-bg`: com o fundo do rail, o chip se descola do ícone
+  // sem o anel branco.
+  "[--ui-bg:var(--rail)]",
   "[--ui-border:color-mix(in_srgb,var(--rail-foreground)_25%,transparent)]",
 ].join(" ");
 
