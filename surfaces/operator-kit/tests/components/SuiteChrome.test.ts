@@ -516,6 +516,13 @@ describe("OperatorPageHeader", () => {
     expect(wrapper.get("h1").text()).toBe("Pedidos");
   });
 
+  it("desenha o slot #below (abas de Ajustes do PDV, prazo do Marketing)", async () => {
+    const wrapper = await mountHeader({
+      below: '<nav data-test-below>Terminal · Impressoras</nav>',
+    });
+    expect(wrapper.find("[data-test-below]").exists()).toBe(true);
+  });
+
   it("a busca aparece uma vez; no celular a lupa pede a busca da suíte em tela cheia", async () => {
     const wrapper = await mountHeader({
       search: "<input aria-label='Buscar pedido' />",

@@ -182,6 +182,11 @@ const { request: openSearch } = useSuiteSearchRequest();
     </div>
   </NuxtDashboardToolbar>
 
+  <!-- Navegação secundária da tela (as abas de Ajustes do PDV, o prazo do anúncio no
+       Marketing, a seção do Compras no celular). Vue descarta slot não declarado sem
+       aviso: sem esta linha, as abas de Ajustes do PDV somem. -->
+  <slot name="below" />
+
   <!-- Feedback contextual não é controle de toolbar. Ações, filtros, contagens e
        freshness pertencem ao slot #filters e, portanto, à DashboardToolbar oficial. -->
   <div
