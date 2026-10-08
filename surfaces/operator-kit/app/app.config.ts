@@ -108,9 +108,12 @@ export default defineAppConfig({
       // ponta a ponta. Com mais coisas no corpo (o resumo do pedido), o padding fica.
       // Accordion como conteúdo inteiro é uma lista emoldurada: sem padding vertical,
       // o gatilho de cada item já dá o respiro (Em andamento, dono, 07/10/2026).
+      // O `[data-state]` separa o item do Accordion do item do Timeline, que tem a
+      // mesma anatomia (root > item) e precisa do padding: sem ele a Linha do tempo
+      // do detalhe encostava no cabeçalho e na base do card (dono, 08/10/2026).
       slots: {
         header: "p-4 sm:p-4",
-        body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0 has-[>[data-slot=root]:only-child>[data-slot=item]]:py-0",
+        body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0 has-[>[data-slot=root]:only-child>[data-slot=item][data-state]]:py-0",
         footer: "p-4 sm:p-4",
       },
       variants: {

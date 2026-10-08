@@ -135,7 +135,7 @@ describe("catálogo vivo", () => {
     // 16 px; zero quando a tabela é o conteúdo inteiro (integrada ao card), e sem
     // o vertical quando o conteúdo inteiro é um Accordion (lista emoldurada).
     expect(cardConfig).toContain(
-      'body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0 has-[>[data-slot=root]:only-child>[data-slot=item]]:py-0"',
+      'body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0 has-[>[data-slot=root]:only-child>[data-slot=item][data-state]]:py-0"',
     );
     expect(cardConfig).toContain('footer: "p-4 sm:p-4"');
     expect(cardConfig).toContain('container: "p-4 sm:p-4"');
