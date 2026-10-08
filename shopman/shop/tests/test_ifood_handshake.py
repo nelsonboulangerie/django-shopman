@@ -290,9 +290,7 @@ def test_open_dispute_raises_one_alert_with_ifood_deadline(order, django_capture
     expires = timezone.datetime.fromisoformat(evt["metadata"]["expiresAt"])
     assert alert.respond_by == expires
     # Num relance (dono, 08/10/2026): quem e o quê, depois a consequência.
-    first, second = alert.message.split("\n")
-    assert first == f"{order.ref.rsplit('-', 1)[-1]} · cliente pediu cancelamento no iFood"
-    assert second.startswith("Sem resposta até ") and second.endswith(", o iFood cancela.")
+    assert alert.message == f"Pedido {order.ref.rsplit('-', 1)[-1]} · sem resposta, o iFood cancela."
     assert record(order)["received_at"]
 
 

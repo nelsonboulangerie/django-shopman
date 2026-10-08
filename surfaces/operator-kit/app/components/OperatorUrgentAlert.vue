@@ -1,8 +1,12 @@
 <script setup lang="ts">
-// O aviso que não espera (decisão do dono, 07/10/2026): quando a causa decide sozinha
-// num prazo (a negociação do iFood, por exemplo), a tela para até alguém ver. "Resolver
-// agora" leva ao lugar exato; "Visto" registra a ciência e libera a tela, mas o aviso
-// volta a lembrar a cada URGENT_REMINDER_MINUTES até a causa acabar ou o prazo vencer.
+// O aviso que não espera (decisão do dono, 07/10/2026): quando a causa tem prazo, a tela
+// para até alguém ver. "Resolver" leva ao lugar exato; "Visto" registra a ciência e
+// libera a tela, e o aviso volta num ritmo proporcional ao que falta
+// (`reminderIntervalMs`, dono, 08/10/2026) até a causa acabar.
+//
+// Lê num relance, sempre na mesma ordem (dono, 08/10/2026): de onde vem, o assunto,
+// quanto falta, o detalhe e o que fazer. Origem e assunto vêm do servidor por tipo
+// (`alert_specs`); o detalhe é a mensagem de cada aviso.
 //
 // Lê a mesma fonte da caixa de Avisos (`provideOperatorInboxAlerts`): o app só precisa
 // mandar `respondByIso` no item. Sem prazo, nada aqui acontece.
@@ -11,7 +15,7 @@ import { computed, onBeforeUnmount, onMounted } from "vue";
 
 import { useOperatorInboxAlerts } from "../composables/useSuiteChrome";
 import {
-  URGENT_REMINDER_MINUTES,
+  reminderIntervalMs,
   respondInLabel,
   urgentAlerts,
 } from "../presentation/suiteChrome";
@@ -26,6 +30,11 @@ const view = computed(() =>
 const blocking = computed(() => view.value.blocking);
 const pending = computed(() =>
   blocking.value ? Boolean(source.value?.isPending?.(blocking.value.key)) : false,
+);
+const overdue = computed(() =>
+  blocking.value
+    ? Date.parse(blocking.value.respondByIso!) <= now.value.getTime()
+    : false,
 );
 
 function clock(iso: string): string {
@@ -42,13 +51,10 @@ async function seen() {
 async function resolveNow() {
   const alert = blocking.value;
   if (!alert) return;
-  // Ir resolver também é ter visto: sem o Visto, o modal voltaria por cima do
-  // lugar onde a pessoa foi resolver.
   await source.value?.ack?.(alert.key);
   if (alert.href) await navigateTo(alert.href);
 }
 
-// Lembrete dos já vistos: o primeiro sai um intervalo depois do Visto, e assim por diante.
 const nextReminder = new Map<string | number, number>();
 let timer: ReturnType<typeof setInterval> | null = null;
 function remind() {
@@ -58,16 +64,17 @@ function remind() {
   for (const key of [...nextReminder.keys()])
     if (!live.has(key)) nextReminder.delete(key);
   for (const alert of reminders) {
+    const left = Date.parse(alert.respondByIso!) - nowMs;
     const due = nextReminder.get(alert.key);
     if (due === undefined) {
-      nextReminder.set(alert.key, nowMs + URGENT_REMINDER_MINUTES * 60_000);
+      nextReminder.set(alert.key, nowMs + reminderIntervalMs(left));
       continue;
     }
     if (nowMs < due) continue;
-    nextReminder.set(alert.key, nowMs + URGENT_REMINDER_MINUTES * 60_000);
+    nextReminder.set(alert.key, nowMs + reminderIntervalMs(left));
     toast.add({
-      title: `Ainda sem resposta: responder até ${clock(alert.respondByIso!)}`,
-      description: alert.message,
+      title: [alert.origin, alert.subject].filter(Boolean).join(" · ") || "Aviso com prazo",
+      description: `${respondInLabel(alert.respondByIso!, nowMs)} · até ${clock(alert.respondByIso!)}`,
       color: "error",
       icon: "i-lucide-alarm-clock",
       duration: 15_000,
@@ -97,31 +104,51 @@ onBeforeUnmount(() => {
     :open="Boolean(blocking)"
     :dismissible="false"
     :close="false"
-    :title="blocking ? respondInLabel(blocking.respondByIso!, now.getTime()) : ''"
+    :title="blocking?.subject || blocking?.eyebrow || 'Aviso com prazo'"
     data-operator-urgent-alert
   >
-    <!-- Num relance (dono, 08/10/2026): o título é o prazo, contado ao vivo; o corpo
-         diz quem e o quê numa linha e a consequência na outra. Sem a linha "agora ·
-         pedido…" e sem a caixa do prazo, que repetiam o que o título e a frase dizem. -->
-    <template #title>
-      <span
-        v-if="blocking"
-        class="flex items-center gap-2 text-error"
-        role="timer"
-        aria-live="off"
-        data-operator-urgent-left
-      >
-        <Icon name="i-lucide-alarm-clock" class="size-5 shrink-0" />
-        {{ respondInLabel(blocking.respondByIso!, now.getTime()) }}
-      </span>
+    <!-- 1 origem · 2 assunto: o que é, antes de quanto falta. -->
+    <template #header>
+      <div v-if="blocking" class="flex min-w-0 flex-col gap-1">
+        <p
+          v-if="blocking.origin"
+          class="flex items-center gap-1.5 op-label text-muted-foreground"
+          data-operator-urgent-origin
+        >
+          <Icon
+            v-if="blocking.originIcon"
+            :name="blocking.originIcon"
+            class="size-4 shrink-0"
+          />
+          {{ blocking.origin }}
+        </p>
+        <h2 class="text-lg font-semibold text-highlighted" data-operator-urgent-subject>
+          {{ blocking.subject || blocking.eyebrow }}
+        </h2>
+      </div>
     </template>
+    <!-- 3 prazo, contado ao vivo · 4 o detalhe. -->
     <template #body>
-      <p
-        v-if="blocking"
-        class="op-body whitespace-pre-line"
-        data-operator-urgent-message
-      >{{ blocking.message }}</p>
+      <div v-if="blocking" class="flex flex-col gap-2">
+        <p
+          class="flex items-center gap-2 font-semibold text-error"
+          role="timer"
+          aria-live="off"
+          data-operator-urgent-left
+          :data-overdue="overdue || undefined"
+        >
+          <Icon name="i-lucide-alarm-clock" class="size-5 shrink-0" />
+          {{ respondInLabel(blocking.respondByIso!, now.getTime()) }}
+          <span class="font-normal text-muted-foreground"
+            >· até {{ clock(blocking.respondByIso!) }}</span
+          >
+        </p>
+        <p class="op-body whitespace-pre-line" data-operator-urgent-message>
+          {{ blocking.message }}
+        </p>
+      </div>
     </template>
+    <!-- 5 o que fazer. -->
     <template #footer>
       <div class="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
         <NuxtButton

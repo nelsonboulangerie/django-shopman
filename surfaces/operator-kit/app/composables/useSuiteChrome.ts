@@ -40,6 +40,12 @@ export interface OperatorInboxAlert {
   /** Prazo em que a causa decide sozinha (ISO). Com prazo e sem Visto, o
    *  `OperatorUrgentAlert` interrompe a tela; depois do Visto, lembra. */
   respondByIso?: string;
+  /** `external`: vencido, sai (o mundo lá fora decidiu); `house`: vencido, fica. */
+  deadlineKind?: "external" | "house";
+  /** De onde vem ("iFood") e do que se trata ("Cliente pediu cancelamento"). */
+  origin?: string;
+  originIcon?: string;
+  subject?: string;
 }
 
 export interface OperatorInboxAlertSource {

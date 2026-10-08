@@ -59,14 +59,14 @@ _TIMEOUT_LABELS = {
 
 
 def _alert_text(order, raw, expires):
-    # Lida num relance (dono, 08/10/2026): quem e o quê numa linha, a consequência
-    # na outra. O "quanto falta" é do título do modal, que conta ao vivo.
+    # O detalhe da janela (dono, 08/10/2026): a origem ("iFood") e o assunto
+    # ("Cliente pediu cancelamento") vêm de ``alert_specs``; o prazo e o horário, da
+    # linha que conta ao vivo. Aqui só o pedido, o que muda (parcial) e a consequência.
     from shopman.shop.services.operator_orders import short_ref
 
-    action = _ACTION_LABELS.get(raw.get("action"), "uma mudança")
-    when = timezone.localtime(expires).strftime("%H:%M")
     outcome = _TIMEOUT_LABELS.get(raw.get("timeoutAction"), "o iFood decide sozinho")
-    return f"{short_ref(order.ref)} · cliente pediu {action} no iFood\nSem resposta até {when}, {outcome}."
+    partial = " · cancelamento parcial" if raw.get("action") == "PARTIAL_CANCELLATION" else ""
+    return f"Pedido {short_ref(order.ref)}{partial} · sem resposta, {outcome}."
 
 
 def sync_alert(order_ref):

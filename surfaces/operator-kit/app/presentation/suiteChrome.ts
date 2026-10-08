@@ -160,6 +160,12 @@ export interface OperatorAlertLike {
   created_at_display: string;
   /** Prazo em que a causa decide sozinha (ISO); vazio sem prazo. */
   respond_by_iso?: string;
+  /** `external` (o mundo lá fora decide no fim) ou `house` (régua da casa). */
+  deadline_kind?: string;
+  /** De onde vem e do que se trata, para ler num relance. */
+  origin_label?: string;
+  origin_icon?: string;
+  subject?: string;
   actions?: ReadonlyArray<{ kind: string; enabled: boolean; label: string; href?: string | null }>;
 }
 
@@ -174,6 +180,10 @@ export interface InboxAlertView {
   href?: string;
   hrefLabel?: string;
   respondByIso?: string;
+  deadlineKind?: "external" | "house";
+  origin?: string;
+  originIcon?: string;
+  subject?: string;
 }
 
 /**
@@ -195,11 +205,28 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
     canAck,
     ...(context ? { href: context.href ?? undefined, hrefLabel: context.label } : {}),
     ...(alert.respond_by_iso ? { respondByIso: alert.respond_by_iso } : {}),
+    ...(alert.deadline_kind === "external" || alert.deadline_kind === "house"
+      ? { deadlineKind: alert.deadline_kind }
+      : {}),
+    ...(alert.origin_label ? { origin: alert.origin_label } : {}),
+    ...(alert.origin_icon ? { originIcon: alert.origin_icon } : {}),
+    ...(alert.subject ? { subject: alert.subject } : {}),
   };
 }
 
-/** De quanto em quanto tempo o aviso com prazo, já visto, volta a lembrar: 1 min (dono, 07/10). */
-export const URGENT_REMINDER_MINUTES = 1;
+/**
+ * Depois do Visto, o aviso volta num ritmo proporcional ao que falta (dono, 08/10/2026):
+ * mais ou menos a cada quarto do tempo restante, nunca menos de 1 min nem mais de 1 dia.
+ * Perto do prazo aperta sozinho. Vencido pela régua da casa, a causa continua: lembra a
+ * cada 5 min até alguém resolver.
+ */
+export const REMINDER_MIN_MS = 60_000;
+export const REMINDER_MAX_MS = 24 * 60 * 60_000;
+export const OVERDUE_REMINDER_MS = 5 * 60_000;
+export function reminderIntervalMs(leftMs: number): number {
+  if (leftMs <= 0) return OVERDUE_REMINDER_MS;
+  return Math.min(REMINDER_MAX_MS, Math.max(REMINDER_MIN_MS, Math.floor(leftMs / 4)));
+}
 
 export interface UrgentAlertsView<T> {
   /** O aviso que interrompe a tela agora: com prazo correndo e ainda sem Visto. */
@@ -208,18 +235,21 @@ export interface UrgentAlertsView<T> {
   reminders: T[];
 }
 
+type Urgent = { respondByIso?: string; seen?: boolean; deadlineKind?: string };
+
 /**
- * Quais avisos interrompem a tela. Só os que têm prazo (`respondByIso`) entram: sem
- * prazo, a caixa de Avisos basta. Prazo vencido não interrompe nem lembra mais (a
- * decisão já saiu sem a loja). Entre os não vistos, o de prazo mais curto primeiro.
+ * Quais avisos interrompem a tela: os que têm prazo. Vencido o prazo do mundo lá fora
+ * (`external`, ex.: o iFood), a decisão já saiu e o aviso sai da tela; vencida a régua
+ * da casa (`house`), a causa continua e o aviso fica, atrasado. Entre os não vistos,
+ * o de prazo mais curto primeiro.
  */
-export function urgentAlerts<T extends { respondByIso?: string; seen?: boolean }>(
-  items: readonly T[],
-  nowMs: number,
-): UrgentAlertsView<T> {
+export function urgentAlerts<T extends Urgent>(items: readonly T[], nowMs: number): UrgentAlertsView<T> {
   const running = items
     .map((item) => ({ item, deadline: Date.parse(item.respondByIso ?? "") }))
-    .filter(({ deadline }) => Number.isFinite(deadline) && deadline > nowMs)
+    .filter(
+      ({ item, deadline }) =>
+        Number.isFinite(deadline) && (deadline > nowMs || item.deadlineKind === "house"),
+    )
     .sort((a, b) => a.deadline - b.deadline);
   return {
     blocking: running.find(({ item }) => !item.seen)?.item ?? null,
@@ -227,12 +257,22 @@ export function urgentAlerts<T extends { respondByIso?: string; seen?: boolean }
   };
 }
 
-/** Título do aviso com prazo: "Responda em 6 min" · "Responda em menos de 1 min". */
+/** "6 min" · "menos de 1 min" · "2 h" · "3 dias": quanto, num relance. */
+export function spanLabel(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return "menos de 1 min";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "1 dia" : `${days} dias`;
+}
+
+/** Título do prazo: "Responda em 6 min" · "Responda em 2 h" · "Passou do prazo há 3 min". */
 export function respondInLabel(respondByIso: string, nowMs: number): string {
   const left = Date.parse(respondByIso) - nowMs;
-  if (!Number.isFinite(left) || left <= 0) return "Prazo vencido";
-  const minutes = Math.floor(left / 60_000);
-  return minutes < 1 ? "Responda em menos de 1 min" : `Responda em ${minutes} min`;
+  if (!Number.isFinite(left)) return "";
+  return left > 0 ? `Responda em ${spanLabel(left)}` : `Passou do prazo há ${spanLabel(-left)}`;
 }
 
 /** "faltam 6 min" · "falta 1 min" · "menos de 1 min" */

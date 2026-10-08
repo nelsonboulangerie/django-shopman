@@ -62,9 +62,9 @@ function urgentAlert() {
   return {
     pk, rev: 0, type: "ifood_negotiation_open", type_label: "iFood: negociação esperando resposta",
     severity: "error", severity_label: "Erro", audience: "orders",
-    message: "I15 · cliente pediu cancelamento no iFood\nSem resposta até "
-      + new Date(respondBy).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })
-      + ", o iFood cancela.",
+    message: "Pedido I15 · sem resposta, o iFood cancela.",
+    deadline_kind: "external", origin_label: "iFood", origin_icon: "i-lucide-bike",
+    subject: "Cliente pediu cancelamento",
     order_ref: "WEB-261007-I15", created_at_display: "agora", respond_by_iso: respondBy, actions,
   };
 }

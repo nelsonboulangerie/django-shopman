@@ -9,6 +9,7 @@ from urllib.parse import quote, urlencode
 
 from django.utils import timezone
 
+from shopman.backstage.alert_specs import deadline_for, deadline_kind, spec_for
 from shopman.backstage.projections.production import (
     ProductionActionConfirmationProjection,
     ProductionActionIdempotencyProjection,
@@ -38,6 +39,13 @@ class OperatorAlertProjection:
     #: Prazo em que a causa decide sozinha (ISO). Com prazo e sem Visto, a
     #: superfície interrompe a tela; vazio para aviso sem prazo.
     respond_by_iso: str = ""
+    #: ``external`` (o iFood decide no fim: vencido, sai) ou ``house`` (régua da
+    #: casa: vencido, fica e diz há quanto passou). Vazio sem prazo.
+    deadline_kind: str = ""
+    #: De onde vem e do que se trata, para ler num relance (``alert_specs``).
+    origin_label: str = ""
+    origin_icon: str = ""
+    subject: str = ""
 
 
 @dataclass(frozen=True)
@@ -60,6 +68,16 @@ _DEDUPE_SUFFIX = re.compile(r"\s*\n\s*\nDedupe: [^\n]*\s*$")
 def readable_message(message: str) -> str:
     """A mensagem como o operador lê: sem o marcador técnico de dedupe."""
     return _DEDUPE_SUFFIX.sub("", str(message or "")).strip()
+
+
+def _deadline_iso(alert) -> str:
+    deadline = deadline_for(alert)
+    return deadline.isoformat() if deadline else ""
+
+
+def _spec_value(alert, field: str) -> str:
+    spec = spec_for(alert.type)
+    return getattr(spec, field) if spec else ""
 
 
 def build_operator_alerts_projection(*, alerts, counts, surface: str = "") -> OperatorAlertsProjection:
@@ -88,7 +106,11 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "") -> Op
             message=readable_message(alert.message),
             order_ref=alert.order_ref,
             created_at_display=timezone.localtime(alert.created_at).strftime("%d/%m às %H:%M"),
-            respond_by_iso=alert.respond_by.isoformat() if alert.respond_by else "",
+            respond_by_iso=_deadline_iso(alert),
+            deadline_kind=deadline_kind(alert),
+            origin_label=_spec_value(alert, "origin"),
+            origin_icon=_spec_value(alert, "origin_icon"),
+            subject=_spec_value(alert, "subject") or alert.get_type_display(),
             actions=_alert_actions(
                 alert,
                 target_date=target_dates.get(alert.order_ref, ""),

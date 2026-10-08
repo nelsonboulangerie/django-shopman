@@ -322,18 +322,24 @@ class OperatorAlert(models.Model):
         "stock_discrepancy",
         "stock_low",
     }
+    #: Financeiro PANORÂMICO: só o dono vê (público ``finance``, permissão de
+    #: auditar o caixa). Diferença de contagem, total do dia, livro contra gateway:
+    #: mostrar o esperado ao gerente quebra a contagem cega (dono, 08/10/2026).
+    #: O financeiro de UM pedido (pagamento falhou, abaixo do total, contestação,
+    #: pago depois de cancelar) é do gerente e mora em ``ORDER_TYPES``.
     FINANCE_TYPES = {
-        "payment_failed",
-        "payment_insufficient",
         "payment_reconciliation_failed",
-        "payment_disputed",
-        "payment_after_cancel",
+        "payment_ledger_drift",
         "cash_shift_open_at_closing",
         "cash_sale_after_shift_close",
         "cash_out_of_tolerance",
         "bi_cash_variance",
     }
     ORDER_TYPES = {
+        "payment_failed",
+        "payment_insufficient",
+        "payment_disputed",
+        "payment_after_cancel",
         "marketplace_rejected_unavailable",
         "marketplace_rejected_oos",
         "pos_rejected_unavailable",

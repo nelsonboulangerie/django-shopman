@@ -15,7 +15,7 @@ import {
   urgentAlerts,
   deadlineLeftLabel,
   respondInLabel,
-  URGENT_REMINDER_MINUTES,
+  reminderIntervalMs,
   phoneBarLayout,
   sectionIndexFromKey,
   sectionShortcut,
@@ -150,13 +150,39 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     expect(view.reminders.map((item) => item.key)).toEqual([3]);
   });
 
-  it("prazo vencido não interrompe nem lembra: a decisão já saiu", () => {
-    const view = urgentAlerts([{ key: 1, respondByIso: at(-1), seen: false }], NOW);
+  it("prazo do mundo lá fora vencido sai da tela: a decisão já saiu", () => {
+    const view = urgentAlerts(
+      [{ key: 1, respondByIso: at(-1), seen: false, deadlineKind: "external" }],
+      NOW,
+    );
     expect(view).toEqual({ blocking: null, reminders: [] });
   });
 
-  it("o lembrete é de 5 minutos e o tempo restante se diz em minutos", () => {
-    expect(URGENT_REMINDER_MINUTES).toBe(1);
+  it("régua da casa vencida fica: a causa continua (o cliente ainda espera)", () => {
+    const view = urgentAlerts(
+      [
+        { key: 1, respondByIso: at(-3), seen: false, deadlineKind: "house" },
+        { key: 2, respondByIso: at(-9), seen: true, deadlineKind: "house" },
+      ],
+      NOW,
+    );
+    expect(view.blocking?.key).toBe(1);
+    expect(view.reminders.map((item) => item.key)).toEqual([2]);
+  });
+
+  it("o lembrete acompanha o prazo: um quarto do que falta, de 1 min a 1 dia", () => {
+    const min = 60_000;
+    expect(reminderIntervalMs(4 * min)).toBe(min);
+    expect(reminderIntervalMs(6 * min)).toBe(1.5 * min);
+    expect(reminderIntervalMs(2 * min)).toBe(min);
+    expect(reminderIntervalMs(60 * min)).toBe(15 * min);
+    expect(reminderIntervalMs(8 * 60 * min)).toBe(2 * 60 * min);
+    expect(reminderIntervalMs(3 * 24 * 60 * min)).toBe(18 * 60 * min);
+    expect(reminderIntervalMs(5 * 24 * 60 * min)).toBe(24 * 60 * min);
+    expect(reminderIntervalMs(-1)).toBe(5 * min);
+  });
+
+  it("o tempo restante se diz em minutos", () => {
     expect(deadlineLeftLabel(at(6.5), NOW)).toBe("faltam 6 min");
     expect(deadlineLeftLabel(at(1.2), NOW)).toBe("falta 1 min");
     expect(deadlineLeftLabel(at(0.5), NOW)).toBe("menos de 1 min");
@@ -166,6 +192,8 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
   it("o título do aviso é o prazo, num relance", () => {
     expect(respondInLabel(at(6.5), NOW)).toBe("Responda em 6 min");
     expect(respondInLabel(at(0.5), NOW)).toBe("Responda em menos de 1 min");
-    expect(respondInLabel(at(-1), NOW)).toBe("Prazo vencido");
+    expect(respondInLabel(at(150), NOW)).toBe("Responda em 2 h");
+    expect(respondInLabel(at(3 * 24 * 60), NOW)).toBe("Responda em 3 dias");
+    expect(respondInLabel(at(-3), NOW)).toBe("Passou do prazo há 3 min");
   });
 });

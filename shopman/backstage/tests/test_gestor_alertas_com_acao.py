@@ -76,7 +76,9 @@ def _changed(order: Order, status: str) -> None:
 # ── O que chega ao sino ───────────────────────────────────────────────────
 
 
-def test_o_sino_do_gestor_so_mostra_o_que_e_de_pedido(client, gestor):
+def test_o_sino_do_gestor_e_o_painel_do_gerente_sem_os_avisos_do_sistema(client, gestor):
+    """Quem recebe é quem está logado (dono, 08/10/2026): o Gestor mostra o que as
+    permissões da pessoa cobrem, Marketing incluso; os avisos do sistema são da TI."""
     _alert("stale_new_order", order_ref="WEB-1")
     _alert("fiscal_emit_failed", order_ref="WEB-2")
     _alert("directive_backlog")
@@ -92,9 +94,10 @@ def test_o_sino_do_gestor_so_mostra_o_que_e_de_pedido(client, gestor):
     assert {a["type"] for a in pedidos["alerts"]} == {
         "stale_new_order",
         "fiscal_emit_failed",
+        "marketing_outbox_stuck",
         "ifood_store_closed_while_open",
     }
-    assert pedidos["counts"]["active"] == 3
+    assert pedidos["counts"]["active"] == 4
 
 
 def test_a_mensagem_chega_sem_o_marcador_de_dedupe_que_segue_no_banco(client, gestor):

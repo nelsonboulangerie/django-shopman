@@ -200,14 +200,22 @@ A contagem de uma seção (Pedidos 2, Saída 5) mora no `chip` do item do
 a largura do rótulo. O "Mais" da barra do celular ocupa a largura do próprio
 conteúdo (`shrink-0`), não metade da barra.
 
-Aviso com prazo (`respondByIso` no item da caixa de Avisos, `respond_by` no
-`OperatorAlert`) interrompe a tela: `OperatorUrgentAlert` abre um `NuxtModal` que não
-fecha sozinho, com a mensagem, a contagem regressiva num `NuxtAlert` e dois gestos em
-1/3 + 2/3 ("Visto" e o lugar exato). Depois do Visto, o mesmo aviso volta como toast
-a cada `URGENT_REMINDER_MINUTES` (5) até a causa acabar ou o prazo vencer. Aviso sem
-prazo nunca interrompe: a caixa de Avisos basta. O critério é o prazo, não a
-severidade (`critical` também manda e-mail para a TI). Primeiro caso: a negociação do
-iFood (`ifood_negotiation_open`), decisão do dono de 07/10/2026.
+Aviso com prazo (`respondByIso` no item da caixa de Avisos) interrompe a tela:
+`OperatorUrgentAlert` abre um `NuxtModal` que não fecha sozinho e lê sempre na mesma
+ordem (dono, 08/10/2026): **origem** (ícone e nome, "iFood"), **assunto** ("Cliente
+pediu cancelamento"), **prazo** contado ao vivo ("Responda em 6 min · até 06:53"),
+**detalhe** (a mensagem do aviso, sem repetir o prazo) e **ações** em 1/3 + 2/3
+("Visto" e o lugar exato). Origem, assunto e régua da casa são do tipo, num registro
+só no servidor (`shopman/backstage/alert_specs.py`); o prazo é o do mundo lá fora
+quando existe (`OperatorAlert.respond_by`, ex.: o iFood), senão a régua da casa
+(WhatsApp: 5 min). Vencido o prazo de fora, a decisão já saiu e o aviso sai da tela;
+vencida a régua da casa, a causa continua e ele fica ("Passou do prazo há 3 min").
+Depois do Visto, o aviso volta como toast num ritmo proporcional ao que falta
+(`reminderIntervalMs`: um quarto do tempo restante, de 1 min a 1 dia; vencido, a cada
+5 min). Quem recebe é a pessoa logada, pelas permissões; no Gestor, o painel do
+gerente, só o financeiro panorâmico (contagem, total do dia, livro contra gateway)
+fica de fora, para o dono. Tipo fora do registro não interrompe: a caixa de Avisos
+basta.
 
 Visão de registros: dois segmentos genéricos, **Grade** (cartões) e **Lista** (a
 tabela), com as teclas G e L. Servem a qualquer tela com muitos registros. O item da
