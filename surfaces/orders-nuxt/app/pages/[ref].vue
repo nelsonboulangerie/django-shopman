@@ -1025,7 +1025,7 @@ const outside = useOutsideStore(
 
     <!-- No celular, a ação pertence ao chrome do painel. Como irmã do scroller ela
          permanece visível sem cobrir a barra de seções da suíte. -->
-    <NuxtDashboardToolbar
+    <OperatorToolbar
       v-if="isPhone && order && (primary || rejectAction)"
       as="footer"
       data-detail-thumb
@@ -1053,7 +1053,7 @@ const outside = useOutsideStore(
           />
         </div>
       </div>
-    </NuxtDashboardToolbar>
+    </OperatorToolbar>
 
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons or
          store presets + free text) -->

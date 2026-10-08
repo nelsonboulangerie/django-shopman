@@ -497,7 +497,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(board).not.toContain('v-if="exitPostView && desktopZones[0]"');
     expect(board).toContain(':heading="!exitPostView"');
     expect(board).toMatch(
-      /<NuxtDashboardToolbar[\s\S]*?v-if="boardAsTabs && view === 'board' && zones\.length"[\s\S]*?class="py-2"/,
+      /<OperatorToolbar[\s\S]*?v-if="boardAsTabs && view === 'board' && zones\.length"[\s\S]*?class="py-2"/,
     );
     const header = board.slice(
       board.indexOf("<OperatorPageHeader"),
