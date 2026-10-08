@@ -51,65 +51,56 @@ const description = computed(
     "Abra este aplicativo direto da tela inicial, sem procurar o endereço no navegador.",
 );
 
+// O prompt nativo demora a voltar: o botão diz que está esperando (clique nunca inerte).
+const installing = ref(false);
 async function install() {
-  if (await pwa.install()) pwa.dismissAsDone();
+  if (installing.value) return;
+  installing.value = true;
+  try {
+    if (await pwa.install()) pwa.dismissAsDone();
+  } finally {
+    installing.value = false;
+  }
 }
+
+// Alvo de toque do `main` só nas páginas que vestem a suíte (ver `suite-page:`).
+const TOUCH = "suite-page:min-h-control";
+const actions = computed(() => [
+  {
+    label: "Agora não",
+    color: "neutral" as const,
+    variant: "outline" as const,
+    class: TOUCH,
+    onClick: () => pwa.dismiss(),
+  },
+  // Ninguém sabe daqui se ela seguiu os passos; quem sabe é ela. Dizer "já instalei"
+  // encerra o convite de vez em vez de repeti-lo na semana seguinte.
+  plan.value.kind === "prompt"
+    ? { label: "Instalar", class: TOUCH, loading: installing.value, onClick: install }
+    : { label: "Já instalei", class: TOUCH, onClick: () => pwa.dismissAsDone() },
+]);
 </script>
 
 <template>
-  <!-- Convite não é etapa (dono, 17/09/2026): o cartão fica no pé da tela e não bloqueia
-       o resto. `modal=false` sem overlay deixa a página operável e legível para leitor
-       de tela (o modal tornava tudo `aria-hidden` e escondia o login atrás de si), e o
-       foco continua onde a tela o pôs (o campo Usuário do login, por exemplo). Sem
-       animação: o cartão chega pronto, como o `aside` que ele substituiu. -->
-  <NuxtModal
-    :open="visible"
-    :modal="false"
-    :overlay="false"
-    :transition="false"
-    :dismissible="false"
-    :close="false"
+  <!-- Convite não é etapa (dono, 17/09/2026): é um aviso no pé da tela, na mesma pilha
+       do aviso de versão e do convite de avisos (`OperatorPwaRuntime`), e não bloqueia
+       nada. Como Modal (mesmo sem `modal`), ele escondia o login do leitor de tela no
+       WebKit, roubava o foco e, sendo um diálogo aberto, calava os atalhos do app
+       enquanto não fosse respondido. -->
+  <NuxtAlert
+    v-if="visible"
+    color="info"
+    variant="subtle"
+    icon="i-lucide-monitor-down"
     :title="title"
-    :content="{ onOpenAutoFocus: (event: Event) => event.preventDefault() }"
-    class="top-auto bottom-3 z-50 translate-y-0"
+    :actions="actions"
     data-operator-pwa-install
   >
-    <template #body>
-      <div class="flex flex-col gap-4">
-        <p class="text-sm text-muted-foreground">
-          {{ description }}
-        </p>
+    <template #description>
+      <div class="flex flex-col gap-3">
+        <p>{{ description }}</p>
         <OperatorInstallSteps v-if="plan.kind === 'steps'" :plan="plan" />
       </div>
     </template>
-
-    <template #footer>
-      <div class="grid w-full grid-cols-2 gap-2">
-        <NuxtButton
-          block
-          color="neutral"
-          variant="outline"
-          label="Agora não"
-          class="suite-page:min-h-control"
-          @click="pwa.dismiss()"
-        />
-        <NuxtButton
-          v-if="plan.kind === 'prompt'"
-          block
-          label="Instalar"
-          class="suite-page:min-h-control"
-          @click="install"
-        />
-        <!-- Ninguém sabe daqui se ela seguiu os passos; quem sabe é ela. Dizer "já
-             instalei" encerra o convite de vez em vez de repeti-lo na semana seguinte. -->
-        <NuxtButton
-          v-else
-          block
-          label="Já instalei"
-          class="suite-page:min-h-control"
-          @click="pwa.dismissAsDone()"
-        />
-      </div>
-    </template>
-  </NuxtModal>
+  </NuxtAlert>
 </template>
