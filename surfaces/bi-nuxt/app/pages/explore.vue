@@ -1,41 +1,72 @@
 <script setup lang="ts">
-// Explorar (F8/F9) — o gestor escolhe a pergunta: Métrica × Dimensão ×
-// Cruzamento, e guarda o corte como cenário. Os selects nascem da gramática
-// que viaja no relatório; combinação inválida nem chega ao servidor.
+// Explorar (F8/F9): o gestor escolhe a pergunta (Métrica × Dimensão × Cruzamento) e
+// guarda o corte como cenário. As listas nascem da gramática que viaja no relatório;
+// combinação inválida nem chega ao servidor.
 //
-// Cenários são um select com grupos (Meus cenários / Exemplos) — escolher é
-// um gesto só; as ações (salvar/favoritar/apagar) recuam para o menu ⋯.
+// Cânon do kit (PR-B6 do WP-BI-CANON-LAUDO): cada escolha é um `NuxtFormField` com
+// rótulo. Cenário (exemplos fixos mais os salvos, uma lista que cresce) e Métrica (a
+// gramática inteira, duas dezenas) são `NuxtSelectMenu` com busca; Dimensão e
+// Cruzamento (as poucas dimensões da métrica escolhida) são `NuxtSelect`. O resultado é
+// o quadro do kit (`OperatorReadingCard`, com "Exportar CSV deste quadro"): a série no
+// tempo é o `OperatorReadingChart`; ranking e cruzamento são `NuxtTable`.
+import { useMediaQuery } from "@vueuse/core";
+
 import {
-  EXPLORE_DIMENSION_LABELS,
   aggregateBucket,
   availableExamples,
   bucketLabel,
   bucketRows,
   formatExploreValue,
-  shortDate,
 } from "~/presentation/bi";
+import {
+  FREE_SCENARIO,
+  NO_CROSS,
+  crossItems,
+  dimensionItems,
+  exploreAxisLabel,
+  exploreCsv,
+  exploreResultDescription,
+  scenarioMenuItems,
+} from "~/presentation/explore";
 
-const { config, report, pending, errorDetail, apply } = useBiExplore();
+const { config, report, pending, error, errorDetail, refresh, apply } = useBiExplore();
 const { views, save, toggleFavorite, remove } = useBiViews();
-const { savedWindow, setPreset, applyCustom } = useBiWindow();
+const { selection, bounds, presets, savedWindow, setPreset, applyCustom } = useBiWindow();
 
-const currentSpec = computed(() =>
-  report.value?.metrics.find((m) => m.key === config.value.metric),
-);
-const by2Options = computed(() =>
-  (currentSpec.value?.dimensions ?? []).filter((d) => d !== "time" && d !== config.value.by),
+// A busca da lista recebe o foco ao abrir só onde há teclado físico; no toque, o
+// teclado virtual sobe quando a pessoa toca na busca (README do kit, "Escolha numa lista").
+const touch = useMediaQuery("(pointer: coarse)");
+const shareItems = useBiShareMenuItems();
+// No celular o eixo do gráfico mostra menos datas, para os rótulos não se encostarem.
+const wide = useMediaQuery("(min-width: 640px)");
+
+// Frescor da leitura. O relatório do Explorar não traz `generated_at`: o carimbo é a
+// hora em que a última leitura chegou. `useState` leva o carimbo do servidor ao
+// cliente, para a hidratação não discordar do texto.
+const readAt = useState("bi-explore-read-at", () => new Date().toISOString());
+watch(pending, (now, before) => {
+  if (before && !now && !error.value) readAt.value = new Date().toISOString();
+});
+const readMetadata = computed(() => ({ generated_at: readAt.value }));
+
+const currentSpec = computed(() => report.value?.metrics.find((m) => m.key === config.value.metric));
+const metricItems = computed(() => (report.value?.metrics ?? []).map((m) => ({ label: m.label, value: m.key })));
+const byItems = computed(() => dimensionItems(currentSpec.value?.dimensions ?? []));
+const by2Items = computed(() =>
+  crossItems((currentSpec.value?.dimensions ?? []).filter((d) => d !== "time" && d !== config.value.by)),
 );
 
-// Exemplos = os fixos + os de contexto que a gramática do servidor declara
-// suportar agora (feriado/clima só existem depois de injetados). Chip que
-// abriria vazio não aparece.
+// Exemplos = os fixos + os de contexto que a gramática do servidor declara suportar
+// agora (feriado/clima só existem depois de injetados). Exemplo que abriria vazio não
+// aparece.
 const supportedDimensions = computed(() => [
   ...new Set((report.value?.metrics ?? []).flatMap((m) => m.dimensions)),
 ]);
 const examples = computed(() => availableExamples(supportedDimensions.value));
+const scenarioItems = computed(() => scenarioMenuItems(views.value, examples.value));
 
-// ── Cenários: seleção num select; "" = corte livre (—) ───────────────────────
-const selectedScenario = ref("");
+// ── Cenários: escolher é um gesto só; as ações recuam para o ⋯ ao lado ────────
+const selectedScenario = ref(FREE_SCENARIO);
 
 function applyScenario(next: { metric: string; by: string; by2: string; window?: Record<string, string> }) {
   apply({ metric: next.metric, by: next.by, by2: next.by2 ?? "" });
@@ -44,7 +75,8 @@ function applyScenario(next: { metric: string; by: string; by2: string; window?:
   else if (window.preset) setPreset(window.preset);
 }
 
-function onScenarioChange(value: string) {
+function onScenarioChange(value: string | undefined) {
+  if (!value) return;
   selectedScenario.value = value;
   if (value.startsWith("view:")) {
     const view = views.value.find((v) => String(v.id) === value.slice(5));
@@ -55,10 +87,15 @@ function onScenarioChange(value: string) {
   }
 }
 
-// Mexer no corte à mão descola do cenário selecionado: virou corte livre.
+// Mexer no corte à mão descola do cenário escolhido: virou corte livre.
 function applyFree(next: Parameters<typeof apply>[0]) {
-  selectedScenario.value = "";
+  selectedScenario.value = FREE_SCENARIO;
   apply(next);
+}
+
+const crossValue = computed(() => config.value.by2 || NO_CROSS);
+function onCrossChange(value: string) {
+  applyFree({ by2: value === NO_CROSS ? "" : value });
 }
 
 const loadedView = computed(() =>
@@ -67,7 +104,7 @@ const loadedView = computed(() =>
     : undefined,
 );
 
-// ── Menu ⋯: salvar / favoritar / apagar ──────────────────────────────────────
+// ── O ⋯ do cenário: salvar / favoritar / apagar ───────────────────────────────
 const menuOpen = ref(false);
 const saveName = ref("");
 
@@ -82,8 +119,7 @@ async function saveScenario() {
   }
 }
 
-// Apagar pede confirmação (expansão desta migração): um cenário salvo apagado não
-// volta, e antes o "Apagar" do menu agia no primeiro toque. A pergunta é a caixa da
+// Apagar pede confirmação: um cenário salvo apagado não volta. A pergunta é a caixa da
 // casa (`useConfirm` do kit), no tom de perda.
 const confirmDelete = useConfirm();
 const deleteLabel = computed(() => (loadedView.value ? `Apagar "${loadedView.value.name}"` : ""));
@@ -100,208 +136,288 @@ async function removeLoaded() {
   });
   if (!confirmed) return;
   await remove(view);
-  selectedScenario.value = "";
+  selectedScenario.value = FREE_SCENARIO;
 }
 
-// ── Resultado: série, ranking ou tabela conforme o corte ────────────────────
-const timeSeries = computed(() => {
-  if (!report.value || report.value.dimension !== "time") return [];
-  const rows = report.value.rows.map((row) => ({ date: row.key, value: row.value }));
-  // `report.aggregation` e não uma soma incondicional: ticket médio, aproveitamento,
-  // share e giro não se somam, e pico de salão se pega pelo maior — quem declara
-  // é o servidor, no spec da métrica.
-  const aggregation = report.value.aggregation;
-  return bucketRows(rows).map((bucket) => ({
-    label: bucketLabel(bucket.date, bucket.span),
-    value: aggregateBucket(bucket.rows.map((r) => r.value), aggregation),
-  }));
+// ── Resultado: série, ranking ou cruzamento conforme o corte ─────────────────
+const isTimeSeries = computed(() => report.value?.dimension === "time" && !report.value.dimension2);
+
+const timeBuckets = computed(() => {
+  if (!report.value || !isTimeSeries.value) return [];
+  return bucketRows(report.value.rows.map((row) => ({ date: row.key, value: row.value })));
 });
+
+// `report.aggregation` e não uma soma incondicional: ticket médio, aproveitamento,
+// share e giro não se somam, e pico de salão se pega pelo maior. Quem declara é o
+// servidor, no spec da métrica.
+const timePoints = computed(() =>
+  timeBuckets.value.map((bucket) => ({
+    label: bucketLabel(bucket.date, bucket.span),
+    values: { value: aggregateBucket(bucket.rows.map((r) => r.value), report.value?.aggregation ?? "sum") },
+  })),
+);
+const timeAxisLabel = computed(() => exploreAxisLabel(timeBuckets.value[0]?.span ?? "day"));
+const timeSeriesDef = computed(() => [{ key: "value", label: report.value?.metric_label ?? "" }]);
+
+function formatValue(value: number): string {
+  return formatExploreValue(report.value?.unit ?? "", value);
+}
 
 const resultTitle = computed(() => {
   if (!report.value) return "";
   const base = `${report.value.metric_label} por ${report.value.dimension_label.toLowerCase()}`;
   return report.value.dimension2 ? `${base} × ${report.value.dimension2_label.toLowerCase()}` : base;
 });
+const resultDescription = computed(() => (report.value ? exploreResultDescription(report.value) : ""));
+const resultCsv = computed(() => {
+  if (!report.value) return undefined;
+  return exploreCsv(
+    report.value,
+    isTimeSeries.value ? { axisLabel: timeAxisLabel.value, points: timePoints.value } : undefined,
+  );
+});
 
-// Cruzamento de duas dimensões: NuxtTable, o corpo inteiro do quadro (integrada ao
-// cartão pelo tema do kit). Os cabeçalhos são os nomes que o servidor manda.
-const crossColumns = computed(() => [
-  { accessorKey: "label", header: report.value?.dimension_label ?? "", meta: { class: { td: "font-medium text-foreground" } } },
-  { accessorKey: "label2", header: report.value?.dimension2_label ?? "", meta: { class: { td: "text-foreground" } } },
-  { id: "value", header: report.value?.metric_label ?? "", meta: { class: { th: "text-right", td: "text-right tnum text-foreground" } } },
+// Ranking (uma dimensão que não é o tempo): a tabela com a barra do tamanho de cada
+// linha (`NuxtProgress`) e o valor escrito ao lado; a barra sozinha não basta.
+const rankingRows = computed(() => {
+  if (!report.value || isTimeSeries.value || report.value.dimension2) return [];
+  return report.value.rows.map((row) => ({ key: row.key, label: row.label, value: row.value }));
+});
+const rankingMax = computed(() => Math.max(...rankingRows.value.map((row) => Math.abs(row.value)), 1));
+const rankingColumns = computed(() => [
+  { accessorKey: "label", header: report.value?.dimension_label ?? "" },
+  { id: "bar", header: "", meta: { class: { th: "w-2/5 max-sm:hidden", td: "w-2/5 max-sm:hidden" } } },
+  { id: "value", header: report.value?.metric_label ?? "", meta: { class: { th: "text-right", td: "text-right tnum" } } },
 ]);
 
-const rankingRows = computed(() => {
-  if (!report.value || report.value.dimension === "time" || report.value.dimension2) return [];
-  return report.value.rows.map((row) => ({
-    label: row.label,
-    value: Math.abs(row.value),
-    display: formatExploreValue(report.value!.unit, row.value),
-  }));
-});
+// Cruzamento de duas dimensões: os cabeçalhos são os nomes que o servidor manda.
+const crossColumns = computed(() => [
+  { accessorKey: "label", header: report.value?.dimension_label ?? "", meta: { class: { td: "font-medium" } } },
+  { accessorKey: "label2", header: report.value?.dimension2_label ?? "" },
+  { id: "value", header: report.value?.metric_label ?? "", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+]);
+
+const emptyDescription = "Troque o período, a métrica ou a dimensão.";
+const errorActions = computed(() => [
+  {
+    label: "Tentar de novo",
+    icon: "i-lucide-refresh-cw",
+    color: "error" as const,
+    variant: "outline" as const,
+    onClick: () => void refresh(),
+  },
+]);
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="O que você quer cruzar?">
-      <template #status>
-        <BiLiveStatus :pending="pending" :error="errorDetail" />
-      </template>
       <template #actions>
-        <BiWindowPicker class="max-md:hidden" />
-        <BiPageMenu />
+        <OperatorReadingPageMenu :items="shareItems" />
       </template>
-      <template #phone-actions>
-        <BiPeriodChip />
-        <BiShareButton />
+      <!-- A linha de recortes: o período (a janela vive na URL, `useBiWindow`) e, no
+           fim, o frescor da leitura. Como no Histórico do Gestor. -->
+      <template #filters>
+        <OperatorPeriodPicker
+          v-model="selection"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
+        <ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" />
       </template>
     </OperatorPageHeader>
-  <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
-    <!-- O construtor: Cenário · Métrica · Dimensão · Cruzamento · ⋯ -->
-    <NuxtCard as="section" aria-label="Construtor do cruzamento" data-bi-explore-builder>
-      <div class="flex flex-wrap items-end gap-3">
-        <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
-          Cenário
-          <UiNativeSelect
-            :value="selectedScenario"
-            class="min-w-44"
-            @change="onScenarioChange(($event.target as HTMLSelectElement).value)"
-          >
-            <option value="">Nenhum (livre)</option>
-            <optgroup v-if="views.length" label="Meus cenários">
-              <option v-for="view in views" :key="view.id" :value="`view:${view.id}`">
-                {{ view.is_favorite ? "★ " : "" }}{{ view.name }}
-              </option>
-            </optgroup>
-            <optgroup label="Exemplos">
-              <option v-for="example in examples" :key="example.name" :value="`example:${example.name}`">
-                {{ example.name }}
-              </option>
-            </optgroup>
-          </UiNativeSelect>
-        </label>
-        <NuxtSeparator orientation="vertical" class="h-10 self-end" />
-        <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
-          Métrica
-          <UiNativeSelect
-            :value="config.metric"
-            @change="applyFree({ metric: ($event.target as HTMLSelectElement).value })"
-          >
-            <option v-for="m in report?.metrics ?? []" :key="m.key" :value="m.key">{{ m.label }}</option>
-          </UiNativeSelect>
-        </label>
-        <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
-          Dimensão
-          <UiNativeSelect
-            :value="config.by"
-            @change="applyFree({ by: ($event.target as HTMLSelectElement).value })"
-          >
-            <option v-for="d in currentSpec?.dimensions ?? []" :key="d" :value="d">
-              {{ EXPLORE_DIMENSION_LABELS[d] ?? d }}
-            </option>
-          </UiNativeSelect>
-        </label>
-        <label class="flex flex-col gap-1 op-eyebrow text-muted-foreground">
-          Cruzamento
-          <UiNativeSelect
-            :value="config.by2"
-            @change="applyFree({ by2: ($event.target as HTMLSelectElement).value })"
-          >
-            <option value="">Sem cruzamento</option>
-            <option v-for="d in by2Options" :key="d" :value="d">
-              {{ EXPLORE_DIMENSION_LABELS[d] ?? d }}
-            </option>
-          </UiNativeSelect>
-        </label>
 
-        <!-- O ⋯ do cenário: NuxtPopover (e não DropdownMenu) porque leva um campo de
-             texto, o nome do cenário a salvar. Esc e clique fora fecham, do componente. -->
-        <NuxtPopover v-model:open="menuOpen" :content="{ align: 'end', sideOffset: 8, collisionPadding: 8 }">
-          <NuxtButton
-            icon="i-lucide-ellipsis"
-            color="neutral"
-            variant="outline"
-            square
-            class="ml-auto self-end"
-            aria-label="Ações do cenário"
-            data-bi-scenario-menu
-          />
-          <template #content>
-            <div class="grid w-72 gap-2 p-3" data-bi-scenario-panel>
-              <p class="op-eyebrow text-muted-foreground">Salvar corte atual como cenário</p>
-              <div class="flex items-center gap-2">
-                <NuxtInput
-                  v-model="saveName"
-                  placeholder="Nome do cenário"
-                  :maxlength="80"
-                  class="min-w-0 flex-1"
-                  aria-label="Nome do cenário"
-                  @keydown.enter="saveScenario"
-                />
-                <NuxtButton label="Salvar" :disabled="!saveName.trim()" @click="saveScenario" />
-              </div>
-              <template v-if="loadedView">
-                <NuxtSeparator class="my-1" />
+    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
+      <!-- O construtor: Cenário (com o ⋯ das ações dele) · Métrica · Dimensão · Cruzamento -->
+      <NuxtCard as="section" aria-label="Construtor do cruzamento" data-bi-explore-builder>
+        <div class="flex flex-wrap items-end gap-3">
+          <NuxtFormField label="Cenário" class="min-w-56 flex-1">
+            <div class="flex items-center gap-2">
+              <NuxtSelectMenu
+                :model-value="selectedScenario"
+                :items="scenarioItems"
+                value-key="value"
+                :search-input="{ autofocus: !touch, placeholder: 'Buscar cenário' }"
+                class="min-w-0 flex-1"
+                data-bi-scenario-select
+                @update:model-value="onScenarioChange"
+              />
+              <!-- NuxtPopover (e não DropdownMenu) porque leva um campo de texto, o
+                   nome do cenário a salvar. Esc e clique fora fecham, do componente. -->
+              <NuxtPopover v-model:open="menuOpen" :content="{ align: 'end', sideOffset: 8, collisionPadding: 8 }">
                 <NuxtButton
+                  icon="i-lucide-ellipsis"
                   color="neutral"
-                  variant="ghost"
-                  block
-                  class="justify-start"
-                  :icon="loadedView.is_favorite ? 'i-lucide-star-off' : 'i-lucide-star'"
-                  :label="loadedView.is_favorite ? 'Tirar dos favoritos' : 'Favoritar'"
-                  @click="toggleFavorite(loadedView)"
+                  variant="outline"
+                  square
+                  aria-label="Ações do cenário"
+                  data-bi-scenario-menu
                 />
-                <NuxtButton
-                  color="error"
-                  variant="ghost"
-                  block
-                  class="justify-start"
-                  icon="i-lucide-trash-2"
-                  :label="deleteLabel"
-                  @click="removeLoaded"
-                />
-              </template>
+                <template #content>
+                  <div class="grid w-72 gap-2 p-3" data-bi-scenario-panel>
+                    <NuxtFormField label="Salvar o corte atual como cenário">
+                      <div class="flex items-center gap-2">
+                        <NuxtInput
+                          v-model="saveName"
+                          placeholder="Nome do cenário"
+                          :maxlength="80"
+                          class="min-w-0 flex-1"
+                          @keydown.enter="saveScenario"
+                        />
+                        <NuxtButton label="Salvar" :disabled="!saveName.trim()" @click="saveScenario" />
+                      </div>
+                    </NuxtFormField>
+                    <template v-if="loadedView">
+                      <NuxtSeparator class="my-1" />
+                      <NuxtButton
+                        color="neutral"
+                        variant="ghost"
+                        block
+                        class="justify-start"
+                        :icon="loadedView.is_favorite ? 'i-lucide-star-off' : 'i-lucide-star'"
+                        :label="loadedView.is_favorite ? 'Tirar dos favoritos' : 'Favoritar'"
+                        @click="toggleFavorite(loadedView)"
+                      />
+                      <NuxtButton
+                        color="error"
+                        variant="ghost"
+                        block
+                        class="justify-start"
+                        icon="i-lucide-trash-2"
+                        :label="deleteLabel"
+                        @click="removeLoaded"
+                      />
+                    </template>
+                  </div>
+                </template>
+              </NuxtPopover>
             </div>
-          </template>
-        </NuxtPopover>
-      </div>
-    </NuxtCard>
+          </NuxtFormField>
+          <NuxtFormField label="Métrica" class="min-w-48 flex-1">
+            <NuxtSelectMenu
+              :model-value="metricItems.length ? config.metric : undefined"
+              :items="metricItems"
+              :disabled="!metricItems.length"
+              placeholder="Sem opções nesta leitura"
+              value-key="value"
+              :search-input="{ autofocus: !touch, placeholder: 'Buscar métrica' }"
+              class="w-full"
+              data-bi-metric-select
+              @update:model-value="(value?: string) => value && applyFree({ metric: value })"
+            />
+          </NuxtFormField>
+          <NuxtFormField label="Dimensão" class="min-w-40 flex-1">
+            <NuxtSelect
+              :model-value="byItems.length ? config.by : undefined"
+              :items="byItems"
+              :disabled="!byItems.length"
+              placeholder="Sem opções nesta leitura"
+              class="w-full"
+              data-bi-dimension-select
+              @update:model-value="(value: string) => applyFree({ by: value })"
+            />
+          </NuxtFormField>
+          <NuxtFormField label="Cruzamento" class="min-w-40 flex-1">
+            <NuxtSelect
+              :model-value="crossValue"
+              :items="by2Items"
+              :disabled="!byItems.length"
+              class="w-full"
+              data-bi-cross-select
+              @update:model-value="onCrossChange"
+            />
+          </NuxtFormField>
+        </div>
+      </NuxtCard>
 
-    <BiPageState :pending="pending" />
-    <NuxtAlert
-      v-if="!pending && errorDetail"
-      color="error"
-      variant="subtle"
-      icon="i-lucide-circle-alert"
-      :title="errorDetail"
-      role="alert"
-      data-bi-explore-error
-    />
-    <template v-else-if="!pending && report">
-      <BiSection :title="resultTitle" data-bi-explore-result>
-        <template #caption>
-          {{ shortDate(report.date_from) }} a {{ shortDate(report.date_to) }}
-          <template v-if="report.truncated"> · Mostrando as {{ report.rows.length }} maiores; {{ report.truncated }} linhas ficaram fora</template>
-        </template>
-
-        <ChartBarSeries
-          v-if="report.dimension === 'time' && !report.dimension2"
-          :points="timeSeries"
-          :format="(v) => formatExploreValue(report!.unit, v)"
+      <NuxtAlert
+        v-if="!pending && error"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        :title="errorDetail || 'Não deu para carregar o cruzamento.'"
+        :actions="errorActions"
+        orientation="horizontal"
+        role="alert"
+        data-bi-explore-error
+      />
+      <NuxtEmpty
+        v-else-if="!report"
+        loading
+        icon="i-lucide-chart-no-axes-column"
+        title="Carregando o cruzamento"
+        data-bi-explore-loading
+      />
+      <OperatorReadingCard
+        v-else
+        :title="resultTitle"
+        :description="resultDescription"
+        :csv="resultCsv"
+        data-bi-explore-result
+      >
+        <NuxtEmpty v-if="pending" loading variant="naked" title="Carregando o cruzamento" />
+        <OperatorReadingChart
+          v-else-if="isTimeSeries"
+          :title="resultTitle"
+          kind="bars"
+          :axis-label="timeAxisLabel"
+          :series="timeSeriesDef"
+          :points="timePoints"
+          :format="formatValue"
+          :max-ticks="wide ? 6 : 4"
+          empty-title="Nada no período para esse corte"
+          :empty-description="emptyDescription"
         />
-        <ChartHBarList v-else-if="rankingRows.length" :rows="rankingRows" />
         <NuxtTable
-          v-else-if="report.rows.length"
+          v-else-if="!report.dimension2"
+          :data="rankingRows"
+          :columns="rankingColumns"
+          :get-row-id="(row) => row.key"
+          :caption="resultTitle"
+          data-bi-explore-ranking
+        >
+          <template #bar-cell="{ row }">
+            <NuxtProgress
+              :model-value="Math.abs(row.original.value)"
+              :max="rankingMax"
+              aria-hidden="true"
+            />
+          </template>
+          <template #value-cell="{ row }">{{ formatValue(row.original.value) }}</template>
+          <template #empty>
+            <NuxtEmpty
+              variant="naked"
+              icon="i-lucide-chart-no-axes-column"
+              title="Nada no período para esse corte"
+              :description="emptyDescription"
+            />
+          </template>
+        </NuxtTable>
+        <NuxtTable
+          v-else
           :data="report.rows"
           :columns="crossColumns"
           :get-row-id="(row) => `${row.key}|${row.key2}`"
-          caption="Resultado do cruzamento"
+          :caption="resultTitle"
+          data-bi-explore-cross
         >
-          <template #value-cell="{ row }">{{ formatExploreValue(report.unit, row.original.value) }}</template>
+          <template #value-cell="{ row }">{{ formatValue(row.original.value) }}</template>
+          <template #empty>
+            <NuxtEmpty
+              variant="naked"
+              icon="i-lucide-chart-no-axes-column"
+              title="Nada no período para esse cruzamento"
+              :description="emptyDescription"
+            />
+          </template>
         </NuxtTable>
-        <p v-else class="op-label text-muted-foreground">Nada no período para esse cruzamento.</p>
-      </BiSection>
-    </template>
-  </main>
+      </OperatorReadingCard>
+    </main>
   </div>
 </template>
