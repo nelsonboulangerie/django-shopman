@@ -1059,6 +1059,47 @@ zero avisos. `tests/guardrails.test.ts` resolve o caminho declarado e exige que 
 ainda alcance esses componentes; o mesmo arquivo recusa que qualquer app volte a
 copiar o núcleo.
 
+## Gráfico e quadro de leitura (`OperatorReadingChart`, `OperatorReadingCard`, `OperatorReadingPageMenu`)
+
+PR-K1 do `docs/plans/WP-BI-CANON-LAUDO.md` (itens C1 e C2). Servem B.I., Gestor, Compras,
+Marketing e Central. A parte pura (frase do ponto, legenda, tabela, CSV, teclado, eixo,
+domínio) mora em `app/presentation/readingChart.ts`, testada em `tests/readingChart.test.ts`;
+os componentes em `tests/components/OperatorReadingChart.test.ts`.
+
+```html
+<OperatorReadingPageMenu />  <!-- no cabeçalho da página: "Copiar link desta leitura" -->
+
+<OperatorReadingCard title="Faturamento por dia" description="Esta semana contra a anterior"
+                     :csv="readingChartCsv('Dia', series, points)" :heading-level="3">
+  <OperatorReadingChart title="Faturamento por dia" kind="comparison" axis-label="Dia"
+                        :series="series" :points="points" :format="formatMoney" />
+</OperatorReadingCard>
+```
+
+- **Quatro formas, e só quatro** (`kind`): `bars` (séries lado a lado), `comparison` (barras
+  da primeira série e o traço tracejado da segunda, o período de comparação), `diverging`
+  (uma série com sinal; `diverging` dá o nome de cada lado, "Sobrou" e "Faltou", e do zero)
+  e `line` (linha com área). O desenho é Unovis (o Nuxt UI não tem Chart; o template
+  oficial de dashboard usa Unovis), dentro de `<ClientOnly>` com `NuxtSkeleton` da mesma
+  altura. Cores só do tema (`READING_TONE_COLOR`), nunca hexadecimal.
+- **O ponto em leitura é um só** para mouse, toque e teclado: a frase dele fica acima do
+  gráfico e o traço vertical marca onde ele está. A área do gráfico é uma parada de
+  tabulação (`role="group"`, nome = `title`); setas andam, Home e End vão às pontas,
+  Escape solta, e o leitor de tela ouve a frase a cada seta (`role="status"`, que o passar
+  do mouse não aciona). O teclado força o traço (`forceShowAt`); o ponteiro não, porque
+  forçar travava o traço no primeiro ponto tocado.
+- **A tabela equivalente sai no SSR** (`NuxtTable` com `caption`), com os mesmos números já
+  formatados; ponto sem dado diz "sem dado", nunca zero. Ela existe sempre para o leitor de
+  tela; `table-visible` a mostra também a quem enxerga.
+- **Sem pontos**, o gráfico é o `NuxtEmpty` (`empty-title`, `empty-description`).
+- **O quadro** é o `NuxtCard` com `title`/`description` (Nuxt UI 4.7+). O título vira
+  cabeçalho (`heading-level`, padrão 2) e nomeia a região. Com `csv`, o ⋯ oferece
+  "Exportar CSV deste quadro" (ponto e vírgula, número cru, UTF-8 com marca de ordem de
+  bytes, nome do arquivo saído do título); `items` acrescenta ações ao mesmo ⋯.
+- ⚠️ O `VisCrosshair` do `@unovis/vue` 1.7 não declara props e repassa os atributos como
+  vieram: atributo hifenizado não vira config. No `OperatorReadingChartPlot.client.vue` ele
+  é escrito em camelCase, com o `eslint-disable` da hifenização só em volta dele.
+
 ## O que ainda NÃO vive aqui (roadmap — ver docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)
 
 - **Lock do POS** — o POS mantém deliberadamente a própria variante

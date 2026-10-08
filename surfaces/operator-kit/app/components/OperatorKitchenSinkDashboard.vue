@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import {
+  dashboardOverShort,
+  dashboardOverShortLabels,
+  dashboardOverShortSeries,
+  dashboardRevenue,
+  dashboardRevenueSeries,
   dashboardSegments,
   dashboardTabs,
   dashboardTeam,
   dashboardTrend,
+  dashboardTrendSeries,
 } from "../fixtures/operatorDashboard";
+import { readingChartCsv } from "../presentation/readingChart";
 import { kitchenSinkQueue } from "../fixtures/operatorKitchenSink";
 
 const tab = ref("overview");
@@ -14,10 +21,15 @@ const detailOpen = ref(false);
 const selectedTask = ref<(typeof kitchenSinkQueue)[number]>(
   kitchenSinkQueue[0]!,
 );
-const chartColumns = [
-  { accessorKey: "label", header: "Hora" },
-  { accessorKey: "orders", header: "Pedidos confirmados" },
-];
+const trendCsv = readingChartCsv("Hora", dashboardTrendSeries, dashboardTrend);
+const revenueCsv = readingChartCsv("Dia", dashboardRevenueSeries, dashboardRevenue);
+const overShortCsv = readingChartCsv("Produto", dashboardOverShortSeries, dashboardOverShort);
+const money = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  maximumFractionDigits: 0,
+});
+const formatMoney = (value: number) => money.format(value);
 </script>
 
 <template>
@@ -27,10 +39,13 @@ const chartColumns = [
     aria-labelledby="dashboard-exercises-title"
     data-operator-audit-id="catalog-dashboard"
   >
-    <div>
+    <div class="flex items-start justify-between gap-2">
       <h2 id="dashboard-exercises-title" class="op-title">
         Dashboard de turno
       </h2>
+      <OperatorReadingPageMenu />
+    </div>
+    <div>
       <p class="op-body text-muted">
         Central, B.I., Compras e Produção: contexto, comparação e próxima ação.
         Turno de fixture, 6 de outubro.
@@ -67,9 +82,11 @@ const chartColumns = [
     >
       <template #overview>
         <div class="grid items-start gap-3 lg:grid-cols-2">
-          <NuxtCard
+          <OperatorReadingCard
+            :heading-level="3"
             title="Pedidos confirmados por hora"
             description="125 pedidos entre 09h e 14h. Pico às 12h, com 31 pedidos."
+            :csv="trendCsv"
           >
             <div class="mb-3 flex flex-wrap items-center gap-2">
               <NuxtSwitch v-model="bars" label="Mostrar em barras" /><NuxtBadge
@@ -78,21 +95,16 @@ const chartColumns = [
                 >Dados fixos</NuxtBadge
               >
             </div>
-            <ClientOnly
-              ><OperatorKitchenSinkChart :bars="bars" /><template #fallback
-                ><NuxtSkeleton class="h-48" /></template
-            ></ClientOnly>
-            <p class="op-micro my-3">
-              Unovis, como no template oficial de dashboard. Nuxt UI não oferece
-              Chart. A tabela abaixo é a mesma série e permanece disponível no
-              SSR.
-            </p>
-            <NuxtTable
-              :data="dashboardTrend"
-              :columns="chartColumns"
-              caption="Dados do gráfico de pedidos"
+            <OperatorReadingChart
+              title="Pedidos confirmados por hora"
+              :kind="bars ? 'bars' : 'line'"
+              axis-label="Hora"
+              :series="dashboardTrendSeries"
+              :points="dashboardTrend"
+              table-visible
+              table-caption="Dados do gráfico de pedidos"
             />
-          </NuxtCard>
+          </OperatorReadingCard>
           <div class="space-y-3">
             <NuxtCard
               title="Distribuição da fila"
@@ -155,6 +167,38 @@ const chartColumns = [
               </dl>
             </NuxtCard>
           </div>
+        </div>
+        <div class="mt-3 grid items-start gap-3 lg:grid-cols-2">
+          <OperatorReadingCard
+            :heading-level="3"
+            title="Faturamento por dia"
+            description="Esta semana em barras; a semana anterior no traço tracejado."
+            :csv="revenueCsv"
+          >
+            <OperatorReadingChart
+              title="Faturamento por dia, esta semana e a anterior"
+              kind="comparison"
+              axis-label="Dia"
+              :series="dashboardRevenueSeries"
+              :points="dashboardRevenue"
+              :format="formatMoney"
+            />
+          </OperatorReadingCard>
+          <OperatorReadingCard
+            :heading-level="3"
+            title="Sobrou ou faltou"
+            description="Unidades por produto no fim do dia: acima da linha sobrou, abaixo faltou."
+            :csv="overShortCsv"
+          >
+            <OperatorReadingChart
+              title="Sobrou ou faltou por produto"
+              kind="diverging"
+              axis-label="Produto"
+              :series="dashboardOverShortSeries"
+              :points="dashboardOverShort"
+              :diverging="dashboardOverShortLabels"
+            />
+          </OperatorReadingCard>
         </div>
       </template>
       <template #queue>
