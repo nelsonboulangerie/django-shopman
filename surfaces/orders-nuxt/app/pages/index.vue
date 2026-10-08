@@ -16,6 +16,7 @@ import {
   changeBackSuggestionQ,
   channelOptions,
   elapsedLabel,
+  EXIT_SELECTION_LABEL,
   flattenZones,
   fulfillmentCounts,
   lucideIcon,
@@ -1547,7 +1548,7 @@ function printQueue() {
             @click="clearSelection"
           />
           <NuxtButton
-            label="Concluir"
+            :label="EXIT_SELECTION_LABEL"
             color="neutral"
             variant="outline"
             data-bulk-done

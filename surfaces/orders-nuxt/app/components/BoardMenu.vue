@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ReadMetadata } from "~/types/readMetadata";
 import {
+  EXIT_SELECTION_LABEL,
   SORT_OPTIONS,
   type SortKey,
   type ViewMode,
@@ -102,7 +103,7 @@ const items = computed(() => {
         ]
       : []),
     {
-      label: props.selecting ? "Sair da seleção" : "Selecionar pedidos",
+      label: props.selecting ? EXIT_SELECTION_LABEL : "Selecionar pedidos",
       icon: "i-lucide-list-checks",
       onSelect: () => emit("select"),
     },
