@@ -133,7 +133,7 @@ const foot = [
     >
       <template #header="{ collapsed: isCollapsed }">
         <Icon name="lucide:croissant" class="size-6 shrink-0" :class="isCollapsed ? 'mx-auto' : ''" aria-hidden="true" />
-        <span v-if="!isCollapsed" class="truncate font-semibold">Nelson Boulangerie</span>
+        <span v-if="!isCollapsed" class="font-semibold">Nelson Boulangerie</span>
       </template>
 
       <template #default="{ collapsed: isCollapsed }">
