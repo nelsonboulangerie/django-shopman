@@ -409,7 +409,7 @@ useHead({ title: "Canais" });
 
             <NuxtAlert
               v-if="sc.automatic"
-              color="neutral"
+              color="info"
               variant="subtle"
               :icon="
                 sc.automatic.is_sleeping
@@ -448,7 +448,6 @@ useHead({ title: "Canais" });
                 v-for="c in sc.collections"
                 :key="c.ref"
                 :color="c.exists ? 'neutral' : 'error'"
-                variant="subtle"
                 :icon="c.exists ? undefined : 'i-lucide-triangle-alert'"
                 :label="c.name"
               />

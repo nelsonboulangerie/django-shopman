@@ -165,7 +165,6 @@ async function confirmUndo() {
           <NuxtBadge
             v-else
             color="neutral"
-            variant="subtle"
             :label="row.original.status_label"
           />
         </template>

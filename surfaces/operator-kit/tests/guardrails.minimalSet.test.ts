@@ -18,6 +18,14 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 //   aviso   `subtle` × info|success|warning|error
 //   texto   nenhum tamanho arbitrário (`text-[13px]`, `text-[0.625rem]`)
 //
+// Exceção declarada (dono, 08/10/2026, PR #1545): a AÇÃO DE AVISO repete a cor do
+// aviso. Botão dentro de um `NuxtAlert` (slot `#actions`, `#description`…) com cor
+// info|success|warning|error não conta em `buttonColor`, desde que seja a cor do
+// próprio aviso (se a cor do aviso é ligada, qualquer cor de aviso passa). Motivo: o
+// botão é a saída daquele aviso, e neutro ele se descola do estado que o chamou. As
+// ações declaradas em objeto no prop `actions` do aviso nem chegam a esta conta (não
+// são tag `NuxtButton`), e seguem a mesma regra.
+//
 // Prop ligada (`:variant="…"`) não é julgada aqui, exceto no selo, onde qualquer
 // `variant` é desvio. A contagem é por regex sobre a tag de abertura: piso, não censo.
 
@@ -39,7 +47,8 @@ const CEILING: Record<string, Partial<Record<Rule, number>>> = {
   "operator-kit": {
     buttonSize: 9,
     buttonVariant: 14,
-    buttonColor: 2,
+    // `buttonColor` caiu para zero com a exceção da ação de aviso: os dois `warning`
+    // que sobravam são as ações do aviso de descarte do `OperatorReasonDialog`.
     badgeVariant: 12,
     cardVariant: 1,
     alertOutsideSet: 19,
@@ -49,13 +58,14 @@ const CEILING: Record<string, Partial<Record<Rule, number>>> = {
     // 08/10/2026, PR #1544).
     arbitraryTextSize: 12,
   },
+  // Gestor na passada de conformidade (08/10/2026). Sobra um, de propósito: a pílula
+  // de aviso do cartão (`OrderCard`, `xs` `soft` na cor do aviso), sinal de estado a
+  // um toque do Popover; neutra, apagaria a cor lida de longe. As ações de aviso
+  // ("Copiar endereço", "Manter sem GTIN na nota", "Aplicar meu arraste…") são a
+  // exceção declarada acima e não contam.
   "orders-nuxt": {
-    buttonSize: 12,
-    buttonVariant: 13,
-    buttonColor: 5,
-    badgeVariant: 54,
-    cardVariant: 2,
-    alertOutsideSet: 15,
+    buttonSize: 1,
+    buttonVariant: 1,
   },
   "marketing-nuxt": { arbitraryTextSize: 63 },
   "pos-nuxt": { arbitraryTextSize: 7 },
@@ -88,8 +98,51 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
 
 /** Atributos das tags de abertura `<Tag …>`. */
 function openingTags(source: string, tag: string): string[] {
+  return openingTagsAt(source, tag).map((tagAt) => tagAt.attrs);
+}
+
+/** Atributos e posição das tags de abertura `<Tag …>`. */
+function openingTagsAt(source: string, tag: string): { attrs: string; at: number }[] {
   const pattern = new RegExp(`<${tag}(?![\\w-])([^>]*?)/?>`, "gs");
-  return [...source.matchAll(pattern)].map((match) => match[1] ?? "");
+  return [...source.matchAll(pattern)].map((match) => ({
+    attrs: match[1] ?? "",
+    at: match.index ?? 0,
+  }));
+}
+
+/**
+ * Trechos `<NuxtAlert …>…</NuxtAlert>` com as cores que a ação pode repetir: a cor
+ * literal do aviso, ou todas as de aviso quando a cor é ligada.
+ */
+function alertBodies(source: string): { from: number; to: number; colors: Set<string> }[] {
+  const bodies: { from: number; to: number; colors: Set<string> }[] = [];
+  for (const match of source.matchAll(/<NuxtAlert(?![\w-])/g)) {
+    // Fim da tag de abertura fora de aspas: `:actions="[{ onClick: () => … }]"` tem `>`.
+    let end = (match.index ?? 0) + match[0].length;
+    let quote = "";
+    for (; end < source.length; end += 1) {
+      const char = source[end];
+      if (quote) {
+        if (char === quote) quote = "";
+      } else if (char === '"' || char === "'") quote = char;
+      else if (char === ">") break;
+    }
+    const attrs = source.slice((match.index ?? 0) + match[0].length, end);
+    if (attrs.trimEnd().endsWith("/")) continue;
+    const to = source.indexOf("</NuxtAlert>", end);
+    if (to < 0) continue;
+    const color = prop(attrs, "color");
+    const colors = color?.literal !== undefined ? new Set([color.literal]) : ALERT_COLORS;
+    bodies.push({ from: end, to, colors });
+  }
+  return bodies;
+}
+
+/** A ação de aviso que repete a cor do aviso (exceção declarada no topo). */
+function alertAction(bodies: ReturnType<typeof alertBodies>, at: number, attrs: string): boolean {
+  const color = prop(attrs, "color")?.literal;
+  if (color === undefined || !ALERT_COLORS.has(color)) return false;
+  return bodies.some((body) => at > body.from && at < body.to && body.colors.has(color));
 }
 
 /** `literal` para `prop="x"`, `bound` para `:prop="…"`, `null` se ausente. */
@@ -118,10 +171,13 @@ function count(dir: string): Record<Rule, number> {
     const source = readFileSync(file, "utf8");
     totals.arbitraryTextSize += (source.match(ARBITRARY_TEXT) ?? []).length;
     if (!file.endsWith(".vue")) continue;
-    for (const attrs of openingTags(source, "NuxtButton")) {
+    const alerts = alertBodies(source);
+    for (const { attrs, at } of openingTagsAt(source, "NuxtButton")) {
       if (outside(attrs, "size", BUTTON_SIZES)) totals.buttonSize += 1;
       if (outside(attrs, "variant", BUTTON_VARIANTS)) totals.buttonVariant += 1;
-      if (outside(attrs, "color", BUTTON_COLORS)) totals.buttonColor += 1;
+      if (outside(attrs, "color", BUTTON_COLORS) && !alertAction(alerts, at, attrs)) {
+        totals.buttonColor += 1;
+      }
     }
     for (const attrs of openingTags(source, "NuxtBadge")) {
       if (prop(attrs, "variant")) totals.badgeVariant += 1;

@@ -71,7 +71,6 @@ onBeforeUnmount(() => {
         :label="busy ? 'Sugerindo…' : 'Sugerir'"
         color="neutral"
         variant="ghost"
-        size="xs"
         :loading="busy"
         :disabled="busy"
         :aria-label="`Sugerir ${label} com IA`"
@@ -85,7 +84,7 @@ onBeforeUnmount(() => {
          operador ver o que perde antes de aceitar -->
     <NuxtAlert
       v-if="suggestion"
-      color="primary"
+      color="info"
       variant="subtle"
       icon="i-lucide-sparkles"
       title="Sugestão"
@@ -97,13 +96,13 @@ onBeforeUnmount(() => {
       :actions="[
         {
           label: 'Aceitar',
-          color: 'primary',
+          color: 'info',
           variant: 'outline',
           onClick: () => onAccept(),
         },
         {
           label: 'Descartar',
-          color: 'primary',
+          color: 'info',
           variant: 'outline',
           onClick: () => {
             suggestion = '';

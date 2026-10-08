@@ -134,7 +134,6 @@ function run(action: HealthAction) {
             :label="actionOf(item.key)!.label"
             color="neutral"
             variant="outline"
-            size="xs"
             data-health-action
           />
           <NuxtButton
@@ -145,7 +144,6 @@ function run(action: HealthAction) {
             trailing-icon="i-lucide-external-link"
             color="neutral"
             variant="outline"
-            size="xs"
             data-health-action
           />
           <NuxtButton
@@ -154,7 +152,6 @@ function run(action: HealthAction) {
             :label="actionOf(item.key)!.label"
             color="neutral"
             variant="outline"
-            size="xs"
             data-health-action
             @click="run(actionOf(item.key)!)"
           />
@@ -204,7 +201,6 @@ function run(action: HealthAction) {
           :label="copied ? 'Endereço copiado' : 'Copiar endereço'"
           color="info"
           variant="outline"
-          size="xs"
           @click="copyAddress"
         />
       </template>
@@ -219,8 +215,7 @@ function run(action: HealthAction) {
         icon="i-lucide-eye"
         :label="link.label"
         color="neutral"
-        variant="link"
-        size="xs"
+        variant="ghost"
         data-health-preview
       />
     </div>

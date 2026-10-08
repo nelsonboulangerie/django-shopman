@@ -1169,7 +1169,7 @@ useHead({ title: "Catálogo" });
           type="button"
           label="Classificar"
           color="neutral"
-          variant="link"
+          variant="ghost"
           @click="classifyVocation"
         />
       </p>
@@ -1251,7 +1251,6 @@ useHead({ title: "Catálogo" });
 
       <NuxtCard
         v-if="publicationDraft"
-        variant="subtle"
         aria-label="Prévia de publicação"
       >
         <template #header
@@ -1400,8 +1399,7 @@ useHead({ title: "Catálogo" });
                   target="_blank"
                   icon="i-lucide-external-link"
                   color="neutral"
-                  variant="link"
-                  size="xs"
+                  variant="ghost"
                   square
                   :aria-label="`Abrir ${surface.name}`"
                   :title="`Abrir ${surface.name}`"
@@ -1411,7 +1409,6 @@ useHead({ title: "Catálogo" });
               <NuxtBadge
                 v-if="syncBadge(surface.sync_status)"
                 :color="syncColor(surface.sync_status)"
-                variant="subtle"
                 :label="syncBadge(surface.sync_status)!.label"
                 :title="syncBadge(surface.sync_status)!.title"
               />
@@ -1504,7 +1501,6 @@ useHead({ title: "Catálogo" });
                               ? 'warning'
                               : 'neutral'
                         "
-                        variant="subtle"
                         :label="rowStatuses[row.sku]?.label"
                         :title="rowStatuses[row.sku]?.hint || undefined"
                       />
@@ -1518,7 +1514,6 @@ useHead({ title: "Catálogo" });
                       <NuxtBadge
                         v-else-if="!rowStatuses[row.sku]?.off && row.low_stock"
                         color="warning"
-                        variant="subtle"
                         :label="`Resta ${row.stock_qty}`"
                       />
                       <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->
@@ -1528,8 +1523,7 @@ useHead({ title: "Catálogo" });
                         icon="i-lucide-triangle-alert"
                         :label="String(rowSyncErrors(row))"
                         color="error"
-                        variant="soft"
-                        size="xs"
+                        variant="ghost"
                         :disabled="
                           isBusy(productKey(row.sku)) ||
                           !row.resync_action?.enabled
@@ -1645,7 +1639,6 @@ useHead({ title: "Catálogo" });
                         type="button"
                         color="neutral"
                         variant="ghost"
-                        size="xs"
                         :disabled="
                           isBusy(cellKey(row.sku, cell.surface_ref)) ||
                           !cell.action?.enabled
@@ -1813,7 +1806,7 @@ useHead({ title: "Catálogo" });
     </section>
 
     <!-- A seleção em lote é chrome contextual do painel, não um Card flutuante. -->
-    <NuxtDashboardToolbar v-if="selected.size" as="footer" data-catalog-bulk>
+    <OperatorToolbar v-if="selected.size" as="footer" data-catalog-bulk>
       <div class="flex min-w-max items-center gap-2">
         <span class="flex items-center gap-1.5 px-1 text-sm font-medium">
           <Icon v-if="bulkBusy" name="line-md:loading-loop" class="size-4" />
@@ -1978,7 +1971,7 @@ useHead({ title: "Catálogo" });
           @click="clearSelection"
         />
       </div>
-    </NuxtDashboardToolbar>
+    </OperatorToolbar>
 
     <!-- painel de produto (edição completa, incluindo dados sociais e fiscais) —
          slide-over à direita -->

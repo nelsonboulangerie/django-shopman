@@ -77,7 +77,6 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
                     ? 'primary'
                     : 'neutral'
           "
-          variant="subtle"
           :label="courier.status_label"
         />
         <span
@@ -121,7 +120,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       <!-- entregador -->
       <NuxtAlert
         v-if="courier.driver?.name"
-        color="neutral"
+        color="info"
         variant="subtle"
         icon="i-lucide-user"
         :title="courier.driver.name"
@@ -133,7 +132,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
               :to="telHref(courier.driver.phone)"
               icon="i-lucide-phone"
               :label="courier.driver.phone"
-              variant="link"
+              variant="ghost"
             />
             <p
               v-if="
@@ -164,7 +163,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
           icon="i-lucide-map-pin"
           trailing-icon="i-lucide-external-link"
           label="Acompanhar corrida"
-          variant="link"
+          variant="ghost"
         />
         <span
           v-if="courier.confirmation_code"

@@ -529,7 +529,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(board).not.toContain('v-if="exitPostView && desktopZones[0]"');
     expect(board).toContain(':heading="!exitPostView"');
     expect(board).toMatch(
-      /<NuxtDashboardToolbar[\s\S]*?v-if="boardAsTabs && view === 'board' && zones\.length"[\s\S]*?class="py-2"/,
+      /<OperatorToolbar[\s\S]*?v-if="boardAsTabs && view === 'board' && zones\.length"[\s\S]*?class="py-2"/,
     );
     const header = board.slice(
       board.indexOf("<OperatorPageHeader"),
@@ -645,10 +645,10 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(queue).toMatch(
-      /data-queue-progress[\s\S]*?color="neutral"[\s\S]*?variant="subtle"[\s\S]*?:label="`\$\{workingCount\} /,
+      /data-queue-progress[\s\S]*?color="neutral"[\s\S]*?:label="`\$\{workingCount\} /,
     );
     expect(queue).toMatch(
-      /data-queue-system[\s\S]*?color="neutral"[\s\S]*?variant="subtle"[\s\S]*?:label="`\$\{awareness\?\.system_window_minutes \?\? 15\} min`"/,
+      /data-queue-system[\s\S]*?color="neutral"[\s\S]*?:label="`\$\{awareness\?\.system_window_minutes \?\? 15\} min`"/,
     );
     expect(queue).toContain("'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
     // O item da vez: destaque semântico oficial (PageCard highlight), dono 07/10.
@@ -874,5 +874,26 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(appConfig).toContain(
       "has-[>[data-slot=root]:only-child>[data-slot=item]]:py-0",
     );
+  });
+
+  it("menu de ação é DropdownMenu ou ActionList; NavigationMenu é do kit (ledger)", () => {
+    const offenders = readdirSync(new URL("../app", import.meta.url), {
+      recursive: true,
+    })
+      .map(String)
+      .filter((path) => path.endsWith(".vue"))
+      .filter((path) =>
+        readFileSync(
+          new URL(`../app/${path}`, import.meta.url),
+          "utf8",
+        ).includes("<NuxtNavigationMenu"),
+      );
+    expect(offenders).toEqual([]);
+    const cardMenu = readFileSync(
+      new URL("../app/components/OrderCardMenu.vue", import.meta.url),
+      "utf8",
+    );
+    expect(cardMenu).toContain("<NuxtDropdownMenu");
+    expect(cardMenu).toContain("<NuxtModal");
   });
 });

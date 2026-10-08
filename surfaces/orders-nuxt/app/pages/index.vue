@@ -1480,7 +1480,7 @@ function printQueue() {
     </NuxtDrawer>
 
     <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. -->
-    <NuxtDashboardToolbar
+    <OperatorToolbar
       v-if="boardAsTabs && view === 'board' && zones.length"
       class="py-2"
     >
@@ -1492,14 +1492,13 @@ function printQueue() {
         data-board-zone-tabs
         @update:model-value="pickPhoneZone"
       />
-    </NuxtDashboardToolbar>
+    </OperatorToolbar>
 
     <!-- barra da seleção em lote (o modo ligado) -->
-    <NuxtDashboardToolbar v-if="selecting" data-bulk-bar>
+    <OperatorToolbar v-if="selecting" data-bulk-bar>
       <template #left>
         <NuxtBadge
           color="primary"
-          variant="subtle"
           icon="i-lucide-list-checks"
           :label="
             selected.size
@@ -1555,7 +1554,7 @@ function printQueue() {
           />
         </div>
       </template>
-    </NuxtDashboardToolbar>
+    </OperatorToolbar>
 
     <section
       ref="queueViewport"
@@ -1807,7 +1806,6 @@ function printQueue() {
                         ? 'warning'
                         : 'neutral'
                 "
-                variant="subtle"
                 :label="row.original.card.status_label"
               />
             </template>
@@ -1832,7 +1830,6 @@ function printQueue() {
                       ? 'warning'
                       : 'neutral'
                 "
-                variant="subtle"
                 :label="elapsedLabel(row.original.card.elapsed_seconds)"
               />
             </template>
@@ -1998,7 +1995,6 @@ function printQueue() {
             <h2 class="text-sm font-bold uppercase tracking-wide">Agendados</h2>
             <NuxtBadge
               color="neutral"
-              variant="subtle"
               :label="String(preordersCount)"
             />
             <span

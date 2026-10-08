@@ -817,7 +817,7 @@ const sectionClass =
               <NuxtCard
                 v-if="availability.length"
                 as="section"
-                variant="subtle"
+                variant="soft"
                 data-panel-availability
               >
                 <template #header>
@@ -829,13 +829,11 @@ const sectionClass =
                       <NuxtBadge
                         v-if="unavailableCount"
                         color="error"
-                        variant="subtle"
                         :label="availabilityHeadline"
                       />
                       <NuxtBadge
                         v-else
                         color="success"
-                        variant="subtle"
                         label="À venda em todos"
                       />
                       <span class="ms-auto op-micro text-muted-foreground"
@@ -905,7 +903,6 @@ const sectionClass =
                         <NuxtBadge
                           v-if="row.automatic && row.state !== 'available'"
                           color="neutral"
-                          variant="subtle"
                           icon="i-lucide-sparkles"
                           label="automático"
                         />
@@ -1137,7 +1134,6 @@ const sectionClass =
                       v-for="badge in roleBadges"
                       :key="badge"
                       color="neutral"
-                      variant="soft"
                       :label="badge"
                     />
                   </div>
@@ -1247,7 +1243,7 @@ const sectionClass =
                       detail?.dietary_from_recipe &&
                       (detail.allergens.length || detail.dietary_info.length)
                     "
-                    color="neutral"
+                    color="info"
                     variant="subtle"
                     description="Alérgenos e restrições vieram da receita. Ao editar aqui, o produto passa a ignorar a receita e você fica responsável por manter estes campos."
                   />
@@ -1302,7 +1298,7 @@ const sectionClass =
                   <p :class="sectionClass">Tabela nutricional</p>
                   <NuxtAlert
                     v-if="detail?.nutrition_auto_filled"
-                    color="neutral"
+                    color="info"
                     variant="subtle"
                     description="Estes valores foram calculados a partir da receita. Ao editar, o cálculo automático para de valer para este produto."
                   />
@@ -1373,7 +1369,7 @@ const sectionClass =
             <!-- Redes sociais (PIM) -->
             <div v-show="tab === 'social'" class="space-y-4">
               <NuxtAlert
-                color="neutral"
+                color="info"
                 variant="subtle"
                 description="Atributos comerciais compartilhados pelos canais. As exigências variam por destino."
               />
@@ -1409,7 +1405,7 @@ const sectionClass =
 
               <NuxtAlert
                 v-if="gtinRejected"
-                :color="gtinRejected.confirmed ? 'neutral' : 'warning'"
+                :color="gtinRejected.confirmed ? 'info' : 'warning'"
                 variant="subtle"
                 icon="i-lucide-scan-barcode"
                 :title="
@@ -1538,7 +1534,7 @@ const sectionClass =
             <!-- Fiscal (NFC-e) -->
             <div v-show="tab === 'fiscal'" class="space-y-4">
               <NuxtAlert
-                color="neutral"
+                color="info"
                 variant="subtle"
                 description="Usado na emissão da NFC-e. CFOP, CSOSN e PIS/COFINS vêm do perfil; aqui fica só o que muda de produto para produto."
               />

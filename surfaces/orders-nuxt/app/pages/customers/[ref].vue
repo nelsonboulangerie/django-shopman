@@ -167,7 +167,7 @@ const notFound = computed(() => httpError(error.value).status === 404);
           <template #header>
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0">
-                <h2 class="text-lg font-semibold">{{ customer.name }}</h2>
+                <h2 class="text-xl font-semibold">{{ customer.name }}</h2>
                 <p
                   class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
                 >
@@ -175,7 +175,6 @@ const notFound = computed(() => httpError(error.value).status === 404);
                   <NuxtBadge
                     v-if="customer.source_label"
                     color="neutral"
-                    variant="subtle"
                     :label="customer.source_label"
                   />
                   <span v-if="customer.created_display"
@@ -214,7 +213,7 @@ const notFound = computed(() => httpError(error.value).status === 404);
             </dl>
             <NuxtAlert
               v-if="customer.notes"
-              color="neutral"
+              color="info"
               variant="subtle"
               title="Observação"
               :description="customer.notes"
@@ -256,7 +255,6 @@ const notFound = computed(() => httpError(error.value).status === 404);
                 <p class="text-xs text-muted-foreground">
                   <NuxtBadge
                     color="warning"
-                    variant="subtle"
                     :label="candidate.reason_label"
                   />
                   · {{ candidate.phone_display || "sem telefone" }}
