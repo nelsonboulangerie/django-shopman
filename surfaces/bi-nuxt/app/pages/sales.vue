@@ -106,10 +106,12 @@ const topChannel = computed(() => channelRows.value[0] ?? null);
 // Top produtos: NuxtTable (a tabela é o corpo inteiro do quadro e o tema do kit a
 // integra ao cartão, sem padding). A parte é um NuxtProgress contra o maior.
 const topColumns = [
-  { accessorKey: "name", header: "Produto", meta: { class: { td: "font-medium text-foreground" } } },
+  // No celular o nome quebra linha e a barra da parte sai (a tabela inteira caber na
+  // tela vale mais que a barra; a parte segue no CSV e no leitor de tela da linha).
+  { accessorKey: "name", header: "Produto", meta: { class: { td: "whitespace-normal font-medium text-foreground" } } },
   { id: "qty", header: "Qtd", meta: { class: { th: "text-right", td: "text-right tnum" } } },
   { id: "revenue", header: "Faturamento", meta: { class: { th: "text-right", td: "text-right tnum" } } },
-  { id: "share", header: "Parte", meta: { class: { th: "w-28", td: "w-28" } } },
+  { id: "share", header: "Parte", meta: { class: { th: "w-28 max-sm:hidden", td: "w-28 max-sm:hidden" } } },
 ];
 const topMax = computed(() => Math.max(1, ...(report.value?.top_skus ?? []).map((row) => row.revenue_q)));
 const topTotal = computed(() => report.value?.revenue_total_q ?? 0);
@@ -177,7 +179,7 @@ function pickChannel(value: string | number) {
           </UiNativeSelect>
           <span class="hidden op-micro tnum sm:inline">{{ compareCaption }}</span>
         </label>
-        <NuxtSeparator orientation="vertical" class="h-6" />
+        <NuxtSeparator orientation="vertical" class="h-6 max-sm:hidden" />
         <NuxtTabs
           :model-value="report.channel || 'all'"
           :items="channelTabs"

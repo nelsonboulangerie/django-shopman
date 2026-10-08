@@ -296,7 +296,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
           </UiNativeSelect>
           <span class="hidden op-micro tnum sm:inline">{{ compareCaption(day.day, day.compare_days) }}</span>
         </label>
-        <NuxtSeparator orientation="vertical" class="h-6" />
+        <NuxtSeparator orientation="vertical" class="h-6 max-sm:hidden" />
         <NuxtTabs
           :model-value="verdict || 'all'"
           :items="verdictTabs"
@@ -310,7 +310,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
             <span v-if="item.value !== 'all'" class="size-2 rounded-full" :class="CHIP_DOT[item.value as keyof typeof CHIP_DOT]" aria-hidden="true" />
           </template>
         </NuxtTabs>
-        <NuxtSeparator v-if="collections.length" orientation="vertical" class="h-6" />
+        <NuxtSeparator v-if="collections.length" orientation="vertical" class="h-6 max-sm:hidden" />
         <label v-if="collections.length" class="inline-flex items-center gap-2 op-label text-muted-foreground">
           Coleção
           <UiNativeSelect v-model="collection">
