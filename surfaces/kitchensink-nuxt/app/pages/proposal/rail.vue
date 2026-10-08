@@ -138,10 +138,11 @@ const foot = [
       id="suite"
       v-model:collapsed="collapsed"
       collapsible
+      resizable
       :collapsed-size="4"
       :default-size="14"
-      :min-size="14"
-      :max-size="14"
+      :min-size="12"
+      :max-size="20"
       aria-label="Apps da suíte"
     >
       <template #header="{ collapsed: isCollapsed }">
@@ -191,7 +192,9 @@ const foot = [
             <div class="space-y-3 text-sm">
               <p>
                 Aberto e compacto são o <code>collapsed</code> do DashboardSidebar. Um botão só na barra
-                percorre os três estados; o ícone e o nome dizem o próximo. Oculto não existe no Nuxt UI para o desktop: aqui é
+                percorre os três estados; o ícone e o nome dizem o próximo. Aberto, o rail é
+                redimensionável pela borda (prop <code>resizable</code>, entre 12 e 20 rem), e a
+                largura fica gravada. Oculto não existe no Nuxt UI para o desktop: aqui é
                 o sidebar não montado, guardado num cookie do kit. No celular o rail sempre começa
                 oculto e abre como slideover pelo botão de menu da barra.
               </p>

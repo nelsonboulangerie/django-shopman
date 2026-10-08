@@ -499,7 +499,7 @@ const productMenu = ref("Croissant");
               >
                 <div class="flex min-w-0 flex-wrap items-center gap-2">
                   <p class="text-xl font-semibold">{{ state.title }}</p>
-                  <NuxtBadge :color="state.color" variant="subtle" :label="state.label" role="status" :aria-label="state.aria" :title="state.aria">
+                  <NuxtBadge :color="state.color" :variant="state.color === 'neutral' ? 'soft' : 'subtle'" :label="state.label" role="status" :aria-label="state.aria" :title="state.aria">
                     <template v-if="state.dot" #leading>
                       <NuxtChip as="span" :color="state.color" size="md" inset standalone />
                     </template>
