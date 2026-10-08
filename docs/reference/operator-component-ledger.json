@@ -766,6 +766,27 @@
           "runner": {
             "config": "playwright.visual.config.ts"
           }
+        },
+        {
+          "id": "proposal",
+          "source_files": [
+            "app/pages/proposal/index.vue",
+            "app/pages/proposal/rail.vue"
+          ],
+          "routes": [
+            "/proposal",
+            "/proposal/rail"
+          ],
+          "variants": [
+            "normal"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
         }
       ]
     },

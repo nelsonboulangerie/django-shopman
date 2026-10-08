@@ -47,6 +47,14 @@ class Counts:
     manual_overlay_files: int
     native_control_occurrences: int
 
+# Exceção declarada: página de DECISÃO do dono no catálogo (PR draft #1539). O rail
+# proposto precisa de um DashboardGroup de verdade para mostrar aberto, compacto e
+# oculto; se aprovado, a estrutura migra para o operator-kit (onda 0.10) e esta
+# exceção morre junto com a página.
+STRUCTURE_EXCEPTIONS = {
+    "surfaces/kitchensink-nuxt/app/pages/proposal/rail.vue",
+}
+
 
 def vue_and_ts(root: Path) -> list[Path]:
     return sorted((*root.rglob("*.vue"), *root.rglob("*.ts")))
@@ -299,6 +307,7 @@ def check(
             path
             for path in vue_and_ts(app_root / "app")
             if CANONICAL_STRUCTURE.search(path.read_text(encoding="utf-8"))
+            and path.relative_to(ROOT).as_posix() not in STRUCTURE_EXCEPTIONS
         ]
         if direct_structures:
             errors.append(
