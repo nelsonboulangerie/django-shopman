@@ -53,19 +53,20 @@ def _save(order, records):
 ALERT_TYPE = "ifood_negotiation_open"
 _ACTION_LABELS = {"CANCELLATION": "cancelamento", "PARTIAL_CANCELLATION": "cancelamento parcial"}
 _TIMEOUT_LABELS = {
-    "ACCEPT_CANCELLATION": "o iFood aceita o cancelamento",
-    "REJECT_CANCELLATION": "o iFood recusa o pedido do cliente",
+    "ACCEPT_CANCELLATION": "o iFood cancela",
+    "REJECT_CANCELLATION": "o pedido segue",
 }
 
 
 def _alert_text(order, raw, expires):
+    # Lida num relance (dono, 08/10/2026): quem e o quê numa linha, a consequência
+    # na outra. O "quanto falta" é do título do modal, que conta ao vivo.
+    from shopman.shop.services.operator_orders import short_ref
+
     action = _ACTION_LABELS.get(raw.get("action"), "uma mudança")
     when = timezone.localtime(expires).strftime("%H:%M")
     outcome = _TIMEOUT_LABELS.get(raw.get("timeoutAction"), "o iFood decide sozinho")
-    return (
-        f"O cliente do pedido {order.ref} pediu {action} no iFood. "
-        f"Responda até {when}; sem resposta, {outcome}."
-    )
+    return f"{short_ref(order.ref)} · cliente pediu {action} no iFood\nSem resposta até {when}, {outcome}."
 
 
 def sync_alert(order_ref):

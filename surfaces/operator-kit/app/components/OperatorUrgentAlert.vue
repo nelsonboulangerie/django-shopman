@@ -12,7 +12,7 @@ import { computed, onBeforeUnmount, onMounted } from "vue";
 import { useOperatorInboxAlerts } from "../composables/useSuiteChrome";
 import {
   URGENT_REMINDER_MINUTES,
-  deadlineLeftLabel,
+  respondInLabel,
   urgentAlerts,
 } from "../presentation/suiteChrome";
 
@@ -97,23 +97,30 @@ onBeforeUnmount(() => {
     :open="Boolean(blocking)"
     :dismissible="false"
     :close="false"
-    title="Precisa de resposta"
-    :description="blocking?.meta"
+    :title="blocking ? respondInLabel(blocking.respondByIso!, now.getTime()) : ''"
     data-operator-urgent-alert
   >
+    <!-- Num relance (dono, 08/10/2026): o título é o prazo, contado ao vivo; o corpo
+         diz quem e o quê numa linha e a consequência na outra. Sem a linha "agora ·
+         pedido…" e sem a caixa do prazo, que repetiam o que o título e a frase dizem. -->
+    <template #title>
+      <span
+        v-if="blocking"
+        class="flex items-center gap-2 text-error"
+        role="timer"
+        aria-live="off"
+        data-operator-urgent-left
+      >
+        <Icon name="i-lucide-alarm-clock" class="size-5 shrink-0" />
+        {{ respondInLabel(blocking.respondByIso!, now.getTime()) }}
+      </span>
+    </template>
     <template #body>
-      <div v-if="blocking" class="flex flex-col gap-3">
-        <p class="op-body">{{ blocking.message }}</p>
-        <NuxtAlert
-          color="error"
-          variant="subtle"
-          icon="i-lucide-alarm-clock"
-          :title="deadlineLeftLabel(blocking.respondByIso!, now.getTime())"
-          role="timer"
-          aria-live="off"
-          data-operator-urgent-left
-        />
-      </div>
+      <p
+        v-if="blocking"
+        class="op-body whitespace-pre-line"
+        data-operator-urgent-message
+      >{{ blocking.message }}</p>
     </template>
     <template #footer>
       <div class="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">

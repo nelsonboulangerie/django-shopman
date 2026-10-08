@@ -227,6 +227,14 @@ export function urgentAlerts<T extends { respondByIso?: string; seen?: boolean }
   };
 }
 
+/** Título do aviso com prazo: "Responda em 6 min" · "Responda em menos de 1 min". */
+export function respondInLabel(respondByIso: string, nowMs: number): string {
+  const left = Date.parse(respondByIso) - nowMs;
+  if (!Number.isFinite(left) || left <= 0) return "Prazo vencido";
+  const minutes = Math.floor(left / 60_000);
+  return minutes < 1 ? "Responda em menos de 1 min" : `Responda em ${minutes} min`;
+}
+
 /** "faltam 6 min" · "falta 1 min" · "menos de 1 min" */
 export function deadlineLeftLabel(respondByIso: string, nowMs: number): string {
   const left = Date.parse(respondByIso) - nowMs;

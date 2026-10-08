@@ -131,7 +131,7 @@ _ORDER_CONTEXT_PATHS = {
 _ORDERS_SURFACE_LABELS = {
     "danfe_print_failed": "Imprimir a DANFE no card",
     "order_production_quality_risk": "Abrir o pedido no quadro",
-    "ifood_negotiation_open": "Responder no pedido",
+    "ifood_negotiation_open": "Responder",
 }
 
 #: Onde, dentro do pedido, mora o gesto do aviso (âncora do detalhe).

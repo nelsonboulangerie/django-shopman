@@ -14,6 +14,7 @@ import {
   operatorAlertToInbox,
   urgentAlerts,
   deadlineLeftLabel,
+  respondInLabel,
   URGENT_REMINDER_MINUTES,
   phoneBarLayout,
   sectionIndexFromKey,
@@ -160,5 +161,11 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     expect(deadlineLeftLabel(at(1.2), NOW)).toBe("falta 1 min");
     expect(deadlineLeftLabel(at(0.5), NOW)).toBe("menos de 1 min");
     expect(deadlineLeftLabel(at(-1), NOW)).toBe("prazo vencido");
+  });
+
+  it("o título do aviso é o prazo, num relance", () => {
+    expect(respondInLabel(at(6.5), NOW)).toBe("Responda em 6 min");
+    expect(respondInLabel(at(0.5), NOW)).toBe("Responda em menos de 1 min");
+    expect(respondInLabel(at(-1), NOW)).toBe("Prazo vencido");
   });
 });

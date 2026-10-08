@@ -300,7 +300,7 @@ def test_negociacao_ifood_traz_o_prazo_e_leva_direto_a_resposta(client, gestor):
     alerta = client.get(reverse("api-backstage-alerts"), {"scope": "orders"}).json()["alerts"][0]
     assert alerta["respond_by_iso"] == prazo.isoformat()
     abrir = next(a for a in alerta["actions"] if a["kind"] == "open_alert_context")
-    assert (abrir["label"], abrir["href"]) == ("Responder no pedido", "/IFOOD-9#ifood-negotiations")
+    assert (abrir["label"], abrir["href"]) == ("Responder", "/IFOOD-9#ifood-negotiations")
 
 
 def test_aviso_sem_prazo_nao_traz_prazo(client, gestor):

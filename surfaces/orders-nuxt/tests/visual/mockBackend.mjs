@@ -45,7 +45,7 @@ function urgentAlert() {
   const pk = 900;
   const respondBy = new Date(Date.now() + 7 * 60_000).toISOString();
   const actions = [{
-    ref: `open-context:${pk}`, kind: "open_alert_context", label: "Responder no pedido", priority: 10,
+    ref: `open-context:${pk}`, kind: "open_alert_context", label: "Responder", priority: 10,
     enabled: true, reason: "", method: "GET", href: "/WEB-261007-I15#ifood-negotiations",
     payload_schema: "", expected_rev: null, idempotency: { required: false, key_scope: "" },
     confirmation: { required: false, reason_required: false, title: "", confirm_label: "Abrir" },
@@ -62,9 +62,9 @@ function urgentAlert() {
   return {
     pk, rev: 0, type: "ifood_negotiation_open", type_label: "iFood: negociação esperando resposta",
     severity: "error", severity_label: "Erro", audience: "orders",
-    message: "O cliente do pedido WEB-261007-I15 pediu cancelamento no iFood. Responda até "
+    message: "I15 · cliente pediu cancelamento no iFood\nSem resposta até "
       + new Date(respondBy).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })
-      + "; sem resposta, o iFood aceita o cancelamento.",
+      + ", o iFood cancela.",
     order_ref: "WEB-261007-I15", created_at_display: "agora", respond_by_iso: respondBy, actions,
   };
 }
