@@ -67,7 +67,6 @@ const menuItems = computed<DropdownMenuItem[]>(() => [
             icon="i-lucide-ellipsis"
             color="neutral"
             variant="ghost"
-            size="sm"
             square
             class="-my-1"
             :aria-label="`Mais sobre ${title}`"
