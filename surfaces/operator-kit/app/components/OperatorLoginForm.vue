@@ -72,7 +72,8 @@ async function submit() {
              escreve `aria-invalid`/`aria-describedby` no input (sobrescreve o que se
              passa à mão), então o erro entra por ele: `error` booleano marca o campo e
              o slot `#error` dá ao leitor de tela o texto que o descreve. O texto visível
-             e anunciado é um só, o Alert abaixo (`role="alert"`). -->
+             e anunciado é um só, o Alert abaixo (região viva assertiva, o mesmo anúncio de
+             um papel de alerta, sem recriar papel ARIA sobre o componente oficial). -->
         <NuxtFormField label="Usuário" :error="Boolean(error)">
           <NuxtInput
             id="operator-login-username"
@@ -109,7 +110,8 @@ async function submit() {
         <NuxtAlert
           v-if="error"
           id="operator-login-error"
-          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
           color="error"
           variant="subtle"
           :title="error"

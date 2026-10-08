@@ -245,8 +245,7 @@ function clearAll() {
                     <NuxtBadge
                       class="ms-auto tabular-nums"
                       color="neutral"
-                      variant="outline"
-                      size="sm"
+                      variant="soft"
                       :label="String(option.count)"
                     />
                   </template>

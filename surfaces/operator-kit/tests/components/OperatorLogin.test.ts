@@ -224,7 +224,7 @@ describe("OperatorLogin", () => {
     await flushPromises();
 
     const alert = form.get("#operator-login-error");
-    expect(alert.attributes("role")).toBe("alert");
+    expect(alert.attributes("aria-live")).toBe("assertive");
     const message = alert.text();
     expect(message).toBe("Não foi possível entrar. Confira usuário e senha.");
 
