@@ -16,11 +16,11 @@
 // volta os filtros ativos; interpretar o valor é dele. Para guardar na URL, use
 // `useRouteFilters` (ou `filtersToQuery`/`filtersFromQuery`).
 //
-// `touch`: a mesma barra no tamanho `md` oficial do Nuxt UI, com o envelope de toque
-// do balcão (`min-h-control`, 44 px; 48 px em tablet touch) no gatilho, nos chips, no
-// X e nos itens do painel. Sem ele, a barra usa `xs`, compacta para mouse, e só os
-// itens do painel ganham o envelope no celular. O envelope é opt-in por esta prop:
-// nenhuma regra CSS global infla os controles.
+// `touch`: a mesma barra no tamanho `md` oficial do Nuxt UI. Nos apps que vestem a
+// suíte (`data-suite="v3"`), também o envelope de toque do balcão (`min-h-control`,
+// 44 px; 48 px em tablet touch) no gatilho, nos chips, no X e nos itens do painel; sem
+// `touch`, ali, só os itens do painel ganham o envelope no celular. Sem `touch`, a barra
+// usa `xs`, compacta para mouse. Nenhuma regra CSS global infla os controles.
 import {
   activeDimensions,
   chipLabel,
@@ -51,13 +51,24 @@ const props = withDefaults(
 const controlSize = computed(() =>
   props.touch ? ("md" as const) : ("xs" as const),
 );
-// Alvo de toque (main: `min-h-control` no `touch`; no celular os itens do painel são
-// sempre de toque). A pilha do Gestor tinha deixado só o `md` (32 px): o PDV perdia
-// o alvo de 44 px nas Encomendas.
-const touchTarget = computed(() => (props.touch ? "min-h-control" : undefined));
-const itemTarget = computed(() =>
-  props.touch ? "min-h-control" : "max-sm:min-h-control",
+// Alvo de toque, OPT-IN pelo marcador da suíte (`data-suite="v3"`, que os sete apps
+// não migrados vestem e o Gestor não): ali `touch` volta a dar o `min-h-control` do
+// `main` (44 px; 48 em tablet touch), e no celular os itens do painel são sempre de
+// toque. O Gestor passa `touch` contando com o `md` canônico (32 px) e fica como está.
+// A linha usa a variante `suite:` (CSS puro). O painel mora num portal, fora do
+// marcador, então lê o marcador da própria barra ao montar.
+const root = ref<HTMLElement | null>(null);
+const suiteMarked = ref(false);
+onMounted(() => {
+  suiteMarked.value = Boolean(root.value?.closest('[data-suite="v3"]'));
+});
+const touchTarget = computed(() =>
+  props.touch ? "suite:min-h-control" : undefined,
 );
+const itemTarget = computed(() => {
+  if (!suiteMarked.value) return undefined;
+  return props.touch ? "min-h-control" : "max-sm:min-h-control";
+});
 
 const emit = defineEmits<{ "update:modelValue": [ActiveFilters] }>();
 
@@ -127,6 +138,7 @@ function clearAll() {
 
 <template>
   <div
+    ref="root"
     class="flex items-center gap-1.5 max-sm:no-scrollbar max-sm:flex-nowrap max-sm:overflow-x-auto sm:flex-wrap"
   >
     <!-- chips do recorte ativo: "campo: valores" (toque edita) + X -->
