@@ -542,6 +542,10 @@ export interface SortOption {
   label: string;
 }
 
+// Um gesto, um nome: sair do modo de seleção chama-se assim no ⋯ e na barra de lote.
+// "Concluir" ali mentia: no mesmo app é o rótulo de concluir o pedido entregue.
+export const EXIT_SELECTION_LABEL = "Sair da seleção";
+
 export const SORT_OPTIONS: SortOption[] = [
   { key: "arrival", label: "Chegada" },
   { key: "urgency", label: "Urgência" },
