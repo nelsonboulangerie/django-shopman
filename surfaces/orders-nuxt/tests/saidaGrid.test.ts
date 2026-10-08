@@ -14,4 +14,11 @@ describe("Saída larga", () => {
     const root = card.slice(card.indexOf("<NuxtCard"), card.indexOf(">", card.indexOf("<NuxtCard")));
     expect(root).not.toMatch(/\bh-full\b/);
   });
+
+  it("o cartão da vez tem o destaque semântico, pelo tema do kit", () => {
+    const card = readFileSync(new URL("../app/components/OrderCard.vue", import.meta.url), "utf8");
+    expect(card).toContain(`:data-highlight="next ? 'true' : undefined"`);
+    const theme = readFileSync(new URL("../../operator-kit/app/app.config.ts", import.meta.url), "utf8");
+    expect(theme).toContain('root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary"');
+  });
 });

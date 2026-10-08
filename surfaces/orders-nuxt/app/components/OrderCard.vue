@@ -352,6 +352,7 @@ function nuxtIcon(icon: string): string {
     class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr_auto]"
     :variant="selected ? 'subtle' : 'outline'"
     :data-card-state="handoff ? 'handoff' : seal.tone"
+    :data-highlight="next ? 'true' : undefined"
     :aria-selected="selecting ? selected : undefined"
     @pointerdown="pressStart"
     @pointerup="pressEnd"
