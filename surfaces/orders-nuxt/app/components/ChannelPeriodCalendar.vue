@@ -8,18 +8,34 @@ const line = computed(() => rangeLine(draft.value));
 
 <template>
   <div class="grid gap-4" data-period-calendar>
+    <!-- Período em dois campos, não quatro: as datas num intervalo só e o horário
+         noutro, com os componentes de data e hora da suíte (brief #1529). O seletor
+         nativo do sistema (`type="date|time"`) não é canônico. -->
     <div class="grid gap-4 sm:grid-cols-2">
-      <NuxtFormField label="Data de início">
-        <NuxtInput v-model="draft.startDate" class="w-full" type="date" />
+      <NuxtFormField label="Datas">
+        <UiDateRangeField
+          :model-value="{ start: draft.startDate, end: draft.endDate }"
+          label="Datas do período"
+          @update:model-value="
+            (range) => {
+              draft.startDate = range.start;
+              draft.endDate = range.end;
+            }
+          "
+        />
       </NuxtFormField>
-      <NuxtFormField label="Hora de início">
-        <NuxtInput v-model="draft.startTime" class="w-full" type="time" :step="900" />
-      </NuxtFormField>
-      <NuxtFormField label="Data de término">
-        <NuxtInput v-model="draft.endDate" class="w-full" type="date" />
-      </NuxtFormField>
-      <NuxtFormField label="Hora de término">
-        <NuxtInput v-model="draft.endTime" class="w-full" type="time" :step="900" />
+      <NuxtFormField label="Horário">
+        <UiTimeRangeField
+          :model-value="{ start: draft.startTime, end: draft.endTime }"
+          label="Horário de início e de término"
+          :minute-step="15"
+          @update:model-value="
+            (range) => {
+              draft.startTime = range.start;
+              draft.endTime = range.end;
+            }
+          "
+        />
       </NuxtFormField>
     </div>
     <NuxtAlert
