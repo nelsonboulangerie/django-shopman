@@ -212,14 +212,19 @@ async function submitForcedChange(payload: {
 
                aqui         → você ASSUME o balcão (a sessão troca)
                autorização  → você CONTINUA quem era (o gerente só assina) -->
+        <!-- O título é o cabeçalho da tela de bloqueio (h2, como no `main`): o Alert
+             desenha, o leitor de tela navega por ele. -->
         <NuxtAlert
           class="mb-4"
           color="neutral"
           variant="subtle"
           icon="i-lucide-lock"
-          title="Identifique-se para operar"
           description="Você assume o balcão."
-        />
+        >
+          <template #title>
+            <h2>Identifique-se para operar</h2>
+          </template>
+        </NuxtAlert>
 
         <NuxtEmpty
           v-if="!eligible.length"

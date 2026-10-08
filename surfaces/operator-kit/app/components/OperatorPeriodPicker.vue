@@ -186,6 +186,7 @@ function backToToday() {
         variant="outline"
         icon="i-lucide-chevron-left"
         square
+        class="suite-page:size-control suite-page:justify-center"
         :aria-label="steps.prev"
         :title="steps.prev"
         :disabled="!prev"
@@ -199,6 +200,7 @@ function backToToday() {
           icon="i-lucide-calendar-range"
           trailing-icon="i-lucide-chevron-down"
           :label="buttonLabel"
+          class="suite-page:min-h-control"
           :aria-label="`${label}: ${buttonLabel}`"
           data-period-button
           data-period-label
@@ -353,6 +355,7 @@ function backToToday() {
         variant="outline"
         icon="i-lucide-chevron-right"
         square
+        class="suite-page:size-control suite-page:justify-center"
         :aria-label="steps.next"
         :title="steps.next"
         :disabled="!next"

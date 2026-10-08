@@ -22,8 +22,10 @@
 // cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
 // o alcance "Esta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
-import { computed } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useMediaQuery } from "@vueuse/core";
 
+import { SUITE_MARKER_SELECTOR } from "../composables/useSuiteMarker";
 import type { OperatorSession } from "../types/operator";
 
 const props = withDefaults(
@@ -69,6 +71,19 @@ const hubUrl = config.operatorHubUrl || "";
 
 const { isCollapsed, set: setRail } = useRailState();
 const railShown = useSuiteRailShown();
+
+// Os controles (`#actions`) descem para uma linha própria no celular, como diz o
+// contrato acima e como era no `main`. OPT-IN pela página que veste a suíte (os sete
+// apps não migrados; ver `useSuiteMarker`): o Gestor decide no próprio app o que passa
+// em `#actions` no celular e não muda (WP-OPERADOR-NUXTUI-ONDAS, onda 0). Sem isto, o
+// período da Produção espremia a barra de 56px: a lupa cobria o selo do app (axe
+// target-size) e a página rolava na horizontal.
+const phone = useMediaQuery("(max-width: 767.98px)", { ssrWidth: 1280 });
+const suitePage = ref(false);
+onMounted(() => {
+  suitePage.value = Boolean(document.querySelector(SUITE_MARKER_SELECTOR));
+});
+const actionsBelow = computed(() => suitePage.value && phone.value);
 
 const { data: operatorSession } =
   useNuxtData<OperatorSession>("operator-session");
@@ -138,7 +153,7 @@ const { request: openSearch } = useSuiteSearchRequest();
     <template #right>
       <NuxtButton
         v-if="$slots.search || search"
-        class="lg:hidden"
+        class="lg:hidden suite-page:size-control suite-page:justify-center"
         color="neutral"
         variant="ghost"
         icon="i-lucide-search"
@@ -150,7 +165,7 @@ const { request: openSearch } = useSuiteSearchRequest();
       />
       <slot name="phone-actions" />
       <div
-        v-if="$slots.actions"
+        v-if="$slots.actions && !actionsBelow"
         class="flex items-center gap-2"
         data-page-header-actions
       >
@@ -167,6 +182,15 @@ const { request: openSearch } = useSuiteSearchRequest();
       </ClientOnly>
     </template>
   </NuxtDashboardNavbar>
+
+  <NuxtDashboardToolbar v-if="$slots.actions && actionsBelow" class="py-2">
+    <div
+      class="flex w-full items-center gap-2 flex-nowrap overflow-x-auto no-scrollbar [&>*]:shrink-0"
+      data-page-header-actions
+    >
+      <slot name="actions" />
+    </div>
+  </NuxtDashboardToolbar>
 
   <NuxtDashboardToolbar v-if="$slots.filters" class="py-2">
     <div
