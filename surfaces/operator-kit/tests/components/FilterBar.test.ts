@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { nextTick, type VueWrapper } from "vue";
 
 import FilterBar from "../../app/components/FilterBar.vue";
+import UiDateField from "../../app/components/UiDateField.vue";
 import type { ActiveFilters, FilterDimension } from "../../app/types/filters";
 
 // O filtro universal no DOM: "+ Filtro" → campo → valores; chip que reabre a edição
@@ -119,7 +120,17 @@ describe("FilterBar universal", () => {
 
     await wrapper.get("[data-filter-trigger]").trigger("click");
     await click('[data-filter-dimension="closed"]');
-    await dom('[data-filter-input="from"]').setValue("2026-10-01");
+    // Data é o campo canônico, não o nativo. O InputDate do Nuxt UI guarda o valor
+    // num <input type="date"> escondido (aria-hidden, só para o formulário); o que
+    // não pode haver é um nativo que o operador veja e toque.
+    expect(document.querySelector("[data-filter-panel]")).not.toBeNull();
+    expect(
+      document.querySelector('[data-filter-panel] input[type="date"]:not([aria-hidden="true"])'),
+    ).toBeNull();
+    const dates = wrapper.findAllComponents(UiDateField);
+    expect(dates).toHaveLength(2);
+    dates[0]!.vm.$emit("update:modelValue", "2026-10-01");
+    await nextTick();
     await dom("[data-filter-form]").trigger("submit");
     await flushPromises();
     expect(updates.at(-1)).toEqual({

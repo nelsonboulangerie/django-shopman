@@ -14,14 +14,23 @@ const TODAY = "2026-10-01";
 const mounted: VueWrapper[] = [];
 const dom = (selector: string) => new DOMWrapper(document.querySelector(selector) as Element);
 const periodTabs = () => dom("[data-period-popover]").findAll('[role="tab"]');
+const presetKeys = () =>
+  dom("[data-period-popover]")
+    .findAll("[data-period-preset]")
+    .map((chip) => chip.attributes("data-period-preset"));
+const presetTab = (key: string) =>
+  new DOMWrapper(
+    document.querySelector(`[data-period-preset="${key}"]`)!.closest('[role="tab"]')!,
+  );
+// O nome que o leitor de tela lê: o texto do gatilho sem o que é aria-hidden.
+function accessibleName(node: DOMWrapper<Element>) {
+  const clone = node.element.cloneNode(true) as Element;
+  for (const hidden of clone.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+  return clone.textContent?.trim() ?? "";
+}
 async function activate(node: DOMWrapper<Element>) {
   node.element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
   (node.element as HTMLElement).click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-}
-async function inputOnly(node: DOMWrapper<Element>, value: string) {
-  (node.element as HTMLInputElement).value = value;
-  node.element.dispatchEvent(new Event("input", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 async function mount(component: Parameters<typeof mountSuspended>[0], options: Parameters<typeof mountSuspended>[1] = {}) {
@@ -125,8 +134,12 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
       props: { modelValue: { preset: "day", from: "", to: "" }, today: TODAY, presets: ["day", "week"] },
     });
     await wrapper.get("[data-period-button]").trigger("click");
+    expect(presetKeys()).toEqual(["day", "week"]);
     expect(periodTabs().map((tab) => tab.text())).toEqual(["Dia", "Semana"]);
     expect(document.querySelector("[data-period-custom-from]")).toBeNull();
+    // Sem personalizado, "Ir para o dia" é o campo canônico de data, com os limites.
+    const jump = wrapper.getComponent(UiDateField);
+    expect(jump.props("label")).toBe("Data para mostrar");
 
     await activate(periodTabs()[1]!);
     expect(wrapper.emitted("update:modelValue")![0]).toEqual([{ preset: "week", from: "", to: "" }]);
@@ -143,12 +156,28 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
       },
     });
     await wrapper.get("[data-period-button]").trigger("click");
-    const apply = dom("[data-period-custom-apply]");
-    await inputOnly(dom("[data-period-popover]").findAll('input[type="date"]')[0]!, "2026-09-10");
+    // De e Até são o campo canônico de data (decisão do dono: nunca o nativo).
+    // A pilha do Gestor trocou por <NuxtInput type="date"> e este teste passou a
+    // exigir o nativo; volta a conferir o componente, com os limites repassados.
+    const fields = wrapper.findAllComponents(UiDateField);
+    expect(fields).toHaveLength(2);
+    expect(fields.map((field) => field.props("label"))).toEqual([
+      "Início do período personalizado",
+      "Fim do período personalizado",
+    ]);
+    expect(fields[0]!.props("max")).toBe(TODAY);
+    expect(fields[1]!.props("max")).toBe(TODAY);
+    expect(
+      dom("[data-period-popover]").findAll('input[type="date"]:not([aria-hidden="true"])'),
+    ).toHaveLength(0);
+    fields[0]!.vm.$emit("update:modelValue", "2026-09-10");
     await wrapper.vm.$nextTick();
-    (apply.element as HTMLElement).click();
+    (dom("[data-period-custom-apply]").element as HTMLElement).click();
     await wrapper.vm.$nextTick();
-    expect(wrapper.emitted("update:modelValue")!.at(-1)).toEqual([{ preset: "custom", from: "2026-09-10", to: TODAY }]);
+    // Exato, e não `.at(-1)`: abrir o popover em 28D não pode escolher nada sozinho.
+    // A versão anterior olhava só o último evento e escondia um "Dia" emitido pelo
+    // foco que o popover põe no primeiro gatilho ao abrir.
+    expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "custom", from: "2026-09-10", to: TODAY }]]);
   });
 
   it("os quatro grupos na ordem da casa: Período, Próximos, Últimos, Personalizado", async () => {
@@ -164,7 +193,13 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
     const popover = dom("[data-period-popover]");
     const headings = popover.findAll("p").map((p) => p.text());
     expect(headings).toEqual(["Período", "Próximos", "Últimos", "Personalizado"]);
-    expect(periodTabs().map((tab) => tab.text())).toEqual(["Dia", "Semana", "7D", "14D", "7D"]);
+    expect(presetKeys()).toEqual(["day", "week", "next7d", "next14d", "7d"]);
+    // O chip diz "7D" dentro do grupo; o nome acessível diz para que lado. O
+    // NuxtTabs não repassa "aria-label" do item ao gatilho (a pilha o pôs lá e ele
+    // morria antes do DOM), então o nome vai no conteúdo do gatilho.
+    expect(accessibleName(presetTab("next7d"))).toBe("Próximos 7 dias");
+    expect(accessibleName(presetTab("7d"))).toBe("Últimos 7 dias");
+    expect(accessibleName(presetTab("week"))).toBe("Semana");
 
     await activate(periodTabs()[2]!);
     expect(wrapper.emitted("update:modelValue")![0]).toEqual([{ preset: "next7d", from: "", to: "" }]);
@@ -191,16 +226,17 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
       },
     });
     await wrapper.get("[data-period-button]").trigger("click");
-    const fields = dom("[data-period-popover]").findAll('input[type="date"]');
-    await inputOnly(fields[0]!, "2026-10-01");
-    await inputOnly(fields[1]!, "2026-12-31");
+    // O campo canônico, não o nativo (ver "personalizado aplica o intervalo").
+    const fields = wrapper.findAllComponents(UiDateField);
+    fields[0]!.vm.$emit("update:modelValue", "2026-10-01");
+    fields[1]!.vm.$emit("update:modelValue", "2026-12-31");
     await wrapper.vm.$nextTick();
     expect(dom("[data-period-custom-error]").text()).toContain("No máximo 62 dias por vez.");
     expect(dom("[data-period-custom-apply]").attributes("disabled")).toBeDefined();
     await dom("[data-period-custom-apply]").trigger("click");
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
 
-    await inputOnly(fields[1]!, "2026-11-30");
+    fields[1]!.vm.$emit("update:modelValue", "2026-11-30");
     await wrapper.vm.$nextTick();
     expect(document.querySelector("[data-period-custom-error]")).toBeNull();
     await dom("[data-period-custom-apply]").trigger("click");

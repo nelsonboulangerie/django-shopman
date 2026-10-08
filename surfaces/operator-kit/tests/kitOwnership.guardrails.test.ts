@@ -80,6 +80,46 @@ const KIT_OWNED_FEEDBACK_PRIMITIVES = ["Skeleton"] as const;
 /** Nomes próprios que a promoção do `UiSelect` aposentou. */
 const RETIRED_COMPONENTS = ["MaterialPicker"] as const;
 
+/**
+ * Data, hora e período são `UiDateField`, `UiDateRangeField`, `UiTimeField`,
+ * `UiTimeRangeField` e `UiDateTimeField` (decisão do dono), nunca o seletor nativo.
+ *
+ * A trava antiga casava só `<input type="date">` e só nos apps, e a pilha do Gestor
+ * passou por baixo dela duas vezes: trocou o `UiDateField` do `OperatorPeriodPicker`
+ * por `<NuxtInput type="date">` (outro nome de tag) DENTRO do kit (pasta que a
+ * trava não varria), e o período dos 5 apps que o montam virou nativo sem nenhum
+ * teste reprovar. Agora casa as quatro portas para o nativo (`input`, `NuxtInput`,
+ * `UInput`, `UiInput`), o `type` literal e o `:type` dinâmico que pode dar data,
+ * e varre o kit também.
+ */
+const TEMPORAL_TYPE = "(?:date|time|datetime-local|month|week)";
+const TEXT_INPUT_TAG =
+  /<(?:input|NuxtInput|UInput|UiInput)\b(?:[^>"']|"[^"]*"|'[^']*')*>/g;
+const NATIVE_TEMPORAL_TYPE = new RegExp(
+  `\\s(?:type=["']${TEMPORAL_TYPE}["']|(?::|v-bind:)type="[^"]*'${TEMPORAL_TYPE}'[^"]*")`,
+);
+
+/**
+ * Débito conhecido, com dono e prazo, que a trava nova encontrou no primeiro dia.
+ * É teto: a lista só encolhe. Um arquivo daqui que deixar de usar o nativo
+ * reprova o teste até sair da lista, para a exceção não sobreviver ao motivo.
+ */
+const KNOWN_NATIVE_TEMPORAL: Readonly<Record<string, string>> = {
+  "orders-nuxt/app/components/ChannelPeriodCalendar.vue":
+    "Gestor: a pilha canônica trocou por NuxtInput type=date/time (de/até com hora). " +
+    "O Gestor tem dono; a troca por UiDateTimeField é dele, na migração do app (onda 0, PR 0.3).",
+};
+
+function nativeTemporalOffenders(dir: string): string[] {
+  return sourceFiles(dir)
+    .filter((file) =>
+      [...sourceWithoutComments(file).matchAll(TEXT_INPUT_TAG)].some(([tag]) =>
+        NATIVE_TEMPORAL_TYPE.test(tag),
+      ),
+    )
+    .map((file) => file.slice(surfacesDir.length + 1));
+}
+
 function sourceFiles(dir: string, found: string[] = []): string[] {
   if (!existsSync(dir)) return found;
   for (const entry of readdirSync(dir)) {
@@ -248,13 +288,16 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
     });
 
     it(`${app} não devolve data ou hora ao seletor nativo do sistema`, () => {
-      const offenders: string[] = [];
-      for (const file of sourceFiles(resolve(surfacesDir, app, "app"))) {
-        const source = sourceWithoutComments(file);
-        if (/<input(?=[^>]*\btype=["'](?:date|time|datetime-local|month|week)["'])[^>]*>/i.test(source)) {
-          offenders.push(file.slice(surfacesDir.length + 1));
-        }
-      }
+      const found = nativeTemporalOffenders(resolve(surfacesDir, app, "app"));
+      const offenders = found.filter((file) => !(file in KNOWN_NATIVE_TEMPORAL));
+      const cured = Object.keys(KNOWN_NATIVE_TEMPORAL).filter(
+        (file) => file.startsWith(`${app}/`) && !found.includes(file),
+      );
+      expect(
+        cured,
+        `Exceção sem motivo: o arquivo já não usa o nativo; tire-o de KNOWN_NATIVE_TEMPORAL:\n  ` +
+          cured.join("\n  "),
+      ).toEqual([]);
       expect(
         offenders,
         `Campo temporal nativo encontrado (use <UiDateField>, <UiTimeField> ou <UiDateTimeField>):\n  ` +
@@ -281,6 +324,33 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
       ).toBe(false);
     });
   }
+
+  it("o kit não devolve data ou hora ao seletor nativo do sistema", () => {
+    // O kit é o dono dos campos de data: se ele usa o nativo, os nove herdam.
+    const offenders = nativeTemporalOffenders(resolve(surfacesDir, "operator-kit/app"));
+    expect(
+      offenders,
+      `Campo temporal nativo no kit (use <UiDateField>, <UiDateRangeField>, <UiTimeField> ou <UiDateTimeField>):\n  ` +
+        offenders.join("\n  "),
+    ).toEqual([]);
+  });
+
+  it("a trava de campo temporal nativo pega as quatro portas e o :type dinâmico", () => {
+    const catches = (tag: string) =>
+      [...tag.matchAll(TEXT_INPUT_TAG)].some(([match]) => NATIVE_TEMPORAL_TYPE.test(match));
+    expect(catches('<input type="date">')).toBe(true);
+    expect(catches('<NuxtInput v-model="from" type="date" :min="min" />')).toBe(true);
+    expect(catches('<UInput type="time" />')).toBe(true);
+    expect(catches('<UiInput type="datetime-local" />')).toBe(true);
+    expect(catches('<NuxtInput type="month" />')).toBe(true);
+    expect(catches('<input type="week">')).toBe(true);
+    expect(catches(`<NuxtInput :type="step.type === 'date-range' ? 'date' : 'number'" />`)).toBe(true);
+    expect(catches(`<NuxtInput :items="rows.map((r) => r.v)" type="date" />`)).toBe(true);
+    expect(catches('<NuxtInput type="number" />')).toBe(false);
+    expect(catches('<NuxtInput type="search" />')).toBe(false);
+    expect(catches('<UiDateField v-model="day" />')).toBe(false);
+    expect(catches('<NuxtInputDate v-model="day" />')).toBe(false);
+  });
 
   it("o kit é quem serve /api/v1/** das oito superfícies", () => {
     expect(existsSync(resolve(surfacesDir, "operator-kit/server/api/v1/[...path].ts"))).toBe(true);
