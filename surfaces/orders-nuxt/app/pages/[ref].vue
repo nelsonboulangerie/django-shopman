@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import OrderIFoodNegotiations from "~/components/OrderIFoodNegotiations.vue";
+import ActionList from "~/components/ActionList.vue";
 import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
 import OrderNotificationReceipts from "~/components/OrderNotificationReceipts.vue";
 // Detalhe do pedido no GESTOR. As seções (resumo, cliente, nota fiscal, itens,
@@ -734,7 +735,7 @@ const outside = useOutsideStore(
     >
       <template #body>
         <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
-        <NuxtNavigationMenu orientation="vertical" :items="detailMenuItems" />
+        <ActionList :items="detailMenuItems" aria-label="Ações do pedido" />
         <NuxtAlert
           v-if="!order?.can_cancel && order?.cancel_block_label"
           color="neutral"
