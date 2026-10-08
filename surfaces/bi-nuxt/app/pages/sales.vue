@@ -103,6 +103,14 @@ const channelRows = computed(() => {
 const channelMax = computed(() => Math.max(1, ...channelRows.value.map((row) => row.revenue_q)));
 const topChannel = computed(() => channelRows.value[0] ?? null);
 
+// Top produtos: NuxtTable (a tabela é o corpo inteiro do quadro e o tema do kit a
+// integra ao cartão, sem padding). A parte é um NuxtProgress contra o maior.
+const topColumns = [
+  { accessorKey: "name", header: "Produto", meta: { class: { td: "font-medium text-foreground" } } },
+  { id: "qty", header: "Qtd", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  { id: "revenue", header: "Faturamento", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  { id: "share", header: "Parte", meta: { class: { th: "w-28", td: "w-28" } } },
+];
 const topMax = computed(() => Math.max(1, ...(report.value?.top_skus ?? []).map((row) => row.revenue_q)));
 const topTotal = computed(() => report.value?.revenue_total_q ?? 0);
 
@@ -118,8 +126,28 @@ const topCsv = computed(() =>
   (report.value?.top_skus ?? []).map((row) => [row.name, formatQty(row.qty), formatMoney(row.revenue_q), sharePercent(row.revenue_q, topTotal.value)]),
 );
 
+// "Maior canal" leva ao quadro Por canal pelo próximo foco da suíte (linha de foco sob
+// o chrome fixo e foco de teclado no quadro), não por um scrollIntoView da tela.
+const { reveal } = useNextFocus();
 function scrollToChannels() {
-  document.querySelector("[data-bi-by-channel]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  reveal("by-channel");
+}
+
+// Recorte por canal: NuxtTabs em pílula, como os recortes do Gestor. Cabe nas Tabs
+// porque é escolha de UM canal e o "Todos os canais" está na fileira: o recorte se
+// desliga tocando "Todos os canais" (antes, tocar de novo o chip aceso também
+// desligava; o "Todos" continua a um toque). `all` é o valor do "Todos": as Tabs não
+// aceitam valor vazio, e a URL continua sem `?channel=` nesse caso.
+const channelTabs = computed(() => [
+  { value: "all", label: "Todos os canais" },
+  ...(report.value?.channels ?? []).map((option) => ({
+    value: option.ref,
+    label: option.name,
+    icon: channelIcon(option.kind),
+  })),
+]);
+function pickChannel(value: string | number) {
+  setQuery("channel", value === "all" ? "" : String(value), "");
 }
 </script>
 
@@ -138,41 +166,27 @@ function scrollToChannels() {
         <BiShareButton />
       </template>
       <template v-if="report" #filters>
-        <label
-          class="relative inline-flex min-h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition focus-within:ring-2 focus-within:ring-ring/40 hover:bg-accent"
-          data-bi-sales-compare
-        >
-          <Icon name="lucide:git-compare-arrows" class="size-4 text-muted-foreground" aria-hidden="true" />
-          <span class="font-normal text-muted-foreground">Comparar com:</span>
-          <span class="font-semibold">{{ against }}</span>
-          <span class="hidden tnum font-normal text-muted-foreground sm:inline">({{ compareCaption }})</span>
-          <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-          <select
-            :value="compare"
-            class="absolute inset-0 cursor-pointer opacity-0"
-            aria-label="Comparar com"
-            @change="setQuery('compare', ($event.target as HTMLSelectElement).value, 'previous')"
-          >
+        <!-- Lista curta: UiNativeSelect visível, a peça do kit por decisão do dono
+             (operator-kit/README.md, "lista curta"). Antes era um seletor nativo
+             invisível sobre um rótulo; as datas da comparação seguem ao lado. -->
+        <label class="inline-flex items-center gap-2 op-label text-muted-foreground" data-bi-sales-compare>
+          Comparar com
+          <UiNativeSelect :value="compare" @change="setQuery('compare', ($event.target as HTMLSelectElement).value, 'previous')">
             <option value="previous">período anterior</option>
             <option value="year">mesmo período do ano passado</option>
-          </select>
+          </UiNativeSelect>
+          <span class="hidden op-micro tnum sm:inline">{{ compareCaption }}</span>
         </label>
-        <span class="mx-1 h-6 w-px bg-border" aria-hidden="true" />
-        <UiFilterChip :active="!report.channel" :aria-pressed="!report.channel" data-bi-channel-chip="" @click="setQuery('channel', '', '')">
-          <template #icon><Icon v-if="!report.channel" name="lucide:check" class="size-4 text-primary" aria-hidden="true" /></template>
-          Todos os canais
-        </UiFilterChip>
-        <UiFilterChip
-          v-for="option in report.channels"
-          :key="option.ref"
-          :active="report.channel === option.ref"
-          :aria-pressed="report.channel === option.ref"
-          :data-bi-channel-chip="option.ref"
-          @click="setQuery('channel', report.channel === option.ref ? '' : option.ref, '')"
-        >
-          <template #icon><Icon :name="channelIcon(option.kind)" class="size-4" aria-hidden="true" /></template>
-          {{ option.name }}
-        </UiFilterChip>
+        <NuxtSeparator orientation="vertical" class="h-6" />
+        <NuxtTabs
+          :model-value="report.channel || 'all'"
+          :items="channelTabs"
+          :content="false"
+          variant="pill"
+          aria-label="Recorte por canal"
+          data-bi-channel-tabs
+          @update:model-value="pickChannel"
+        />
       </template>
     </OperatorPageHeader>
 
@@ -204,19 +218,22 @@ function scrollToChannels() {
           <BiSection title="Faturamento por dia" :caption="report.closed_weekdays.includes(6) ? 'domingo fechado' : ''">
             <ChartBarSeries :points="revenueSeries" :format="formatMoneyCompact" height="compact" />
           </BiSection>
-          <button
+          <NuxtButton
             v-if="topChannel"
-            type="button"
-            class="flex min-h-12 items-center gap-2 rounded-lg border border-border bg-card px-4 text-left op-label"
+            color="neutral"
+            variant="outline"
+            trailing-icon="i-lucide-chevron-right"
+            block
+            class="min-h-12 justify-between text-left"
             data-bi-top-channel
             @click="scrollToChannels"
           >
-            <span class="min-w-0 flex-1">Maior canal: <b>{{ topChannel.name }}</b>, {{ topChannel.share }} do faturamento</span>
-            <Icon name="lucide:chevron-right" class="size-5 text-muted-foreground" aria-hidden="true" />
-          </button>
+            <span class="min-w-0 flex-1 op-label">Maior canal: <b>{{ topChannel.name }}</b>, {{ topChannel.share }} do faturamento</span>
+          </NuxtButton>
         </div>
 
         <!-- Tablet e desktop (v3): a resposta e os quatro números, cada um com a pílula. -->
+        <!-- `xl:grid-cols-[1.4fr_1fr...]`: a resposta (uma frase) pede mais largura que cada número. -->
         <div class="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]" data-bi-sales-tiles>
           <BiAnswer :text="salesAnswer(report)" class="md:col-span-2 xl:col-span-1" />
           <StatTile
@@ -277,7 +294,7 @@ function scrollToChannels() {
         </div>
 
         <div class="grid gap-3 lg:grid-cols-2">
-          <BiSection title="Por canal" caption="Faturamento do período" data-bi-by-channel>
+          <BiSection title="Por canal" caption="Faturamento do período" data-bi-by-channel data-focus-target="by-channel">
             <template #aside>
               <BiChartMenu title="Por canal" :header="['Canal', 'Pedidos', 'Faturamento', 'Parte']" :rows="channelCsv" />
             </template>
@@ -290,9 +307,13 @@ function scrollToChannels() {
                   <span class="ml-auto font-semibold tnum">{{ formatMoney(row.revenue_q) }}</span>
                   <span class="w-12 text-right op-micro tnum text-muted-foreground">{{ row.share }}</span>
                 </div>
-                <div class="mt-1 h-2 rounded-full bg-muted">
-                  <div class="h-2 rounded-full bg-primary" :style="{ width: `${(row.revenue_q / channelMax) * 100}%` }" />
-                </div>
+                <NuxtProgress
+                  class="mt-1"
+                  :model-value="row.revenue_q"
+                  :max="channelMax"
+                  size="sm"
+                  :aria-label="`${row.name}: ${row.share} do faturamento`"
+                />
               </li>
             </ul>
             <p v-else class="op-body text-muted-foreground">Sem vendas no período.</p>
@@ -301,28 +322,25 @@ function scrollToChannels() {
             <template #aside>
               <BiChartMenu title="Top produtos" :header="['Produto', 'Quantidade', 'Faturamento', 'Parte']" :rows="topCsv" />
             </template>
-            <table v-if="report.top_skus.length" class="w-full op-label">
-              <thead>
-                <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
-                  <th class="pb-2 font-semibold">Produto</th>
-                  <th class="pb-2 text-right font-semibold">Qtd</th>
-                  <th class="pb-2 text-right font-semibold">Faturamento</th>
-                  <th class="w-24 pb-2 pl-3 font-semibold">Parte</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in report.top_skus" :key="row.sku" class="border-b border-border last:border-0">
-                  <td class="py-2 pr-2 font-medium text-foreground">{{ row.name }}</td>
-                  <td class="py-2 text-right tnum text-foreground">{{ formatQty(row.qty) }}</td>
-                  <td class="py-2 text-right tnum text-foreground">{{ formatMoney(row.revenue_q) }}</td>
-                  <td class="py-2 pl-3">
-                    <div class="h-1.5 rounded-full bg-muted" role="img" :aria-label="`${sharePercent(row.revenue_q, topTotal)} do faturamento`">
-                      <div class="h-1.5 rounded-full bg-primary" :style="{ width: `${(row.revenue_q / topMax) * 100}%` }" />
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <NuxtTable
+              v-if="report.top_skus.length"
+              :data="report.top_skus"
+              :columns="topColumns"
+              :get-row-id="(row) => row.sku"
+              caption="Top produtos por faturamento"
+              data-bi-top-products
+            >
+              <template #qty-cell="{ row }">{{ formatQty(row.original.qty) }}</template>
+              <template #revenue-cell="{ row }">{{ formatMoney(row.original.revenue_q) }}</template>
+              <template #share-cell="{ row }">
+                <NuxtProgress
+                  :model-value="row.original.revenue_q"
+                  :max="topMax"
+                  size="xs"
+                  :aria-label="`${sharePercent(row.original.revenue_q, topTotal)} do faturamento`"
+                />
+              </template>
+            </NuxtTable>
             <p v-else class="op-body text-muted-foreground">Sem vendas no período.</p>
           </BiSection>
         </div>

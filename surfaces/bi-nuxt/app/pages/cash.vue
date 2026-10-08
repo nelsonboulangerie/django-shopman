@@ -82,6 +82,32 @@ function formatDuration(seconds: number): string {
 // Por isso esta seção mostra ausência tanto quanto presença.
 const drawerRows = computed(() => report.value?.drawer_by_operator ?? []);
 const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
+
+// As duas tabelas do caixa são NuxtTable: cada uma é o corpo inteiro do quadro, e o
+// tema do kit a integra ao cartão (sem padding, linhas de ponta a ponta). A coluna
+// numérica alinha à direita; o tom de cada célula sai do valor (abaixo).
+const NUM = { th: "text-right", td: "text-right tnum" } as const;
+const operatorColumns = [
+  { accessorKey: "operator", header: "Operador", meta: { class: { td: "font-medium text-foreground" } } },
+  { id: "shifts", header: "Turnos", meta: { class: NUM } },
+  { id: "difference", header: "Quebra", meta: { class: NUM } },
+  { id: "drawer_openings", header: "Gaveta", meta: { class: NUM } },
+  { id: "drawer_unlocks", header: "Destraves", meta: { class: NUM } },
+  { id: "change_requests", header: "Troco", meta: { class: NUM } },
+];
+const drawerColumns = [
+  { accessorKey: "operator", header: "Operador", meta: { class: { td: "font-medium text-foreground" } } },
+  { id: "blocks", header: "Travou", meta: { class: NUM } },
+  { id: "open_seconds", header: "Aberta (total)", meta: { class: NUM } },
+  { id: "longest_open_seconds", header: "Pior episódio", meta: { class: NUM } },
+  { id: "dismissals", header: "Desistiu", meta: { class: NUM } },
+  { id: "overrides", header: "Destraves", meta: { class: NUM } },
+  { id: "unlock_attempts", header: "Buscou o PIN", meta: { class: NUM } },
+  { id: "sensor_blind", header: "Sensor mudo", meta: { class: NUM } },
+  { id: "left_open", header: "Esquecida", meta: { class: NUM } },
+];
+/** Exceção acima de zero se lê: em negrito; zero recua. */
+const exceptionTone = (value: number) => (value ? "font-semibold text-foreground" : "text-muted-foreground");
 </script>
 
 <template>
@@ -103,6 +129,7 @@ const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
     <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
       <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
       <template v-if="report">
+        <!-- `xl:grid-cols-[1.4fr_1fr...]`: a resposta (uma frase) pede mais largura que cada número. -->
         <div class="grid grid-cols-2 gap-3 xl:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
           <BiAnswer :text="cashAnswer(report)" class="col-span-2 xl:col-span-1" />
           <StatTile
@@ -167,98 +194,74 @@ const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
             title="Por operador"
             caption="Quebra acumulada, aberturas de gaveta sem venda, destraves por gerente e pedidos de troco no período"
           >
-            <div class="overflow-x-auto">
-              <table v-if="report.by_operator.length" class="w-full op-label">
-                <thead>
-                  <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
-                    <th class="pb-2 font-semibold">Operador</th>
-                    <th class="pb-2 text-right font-semibold">Turnos</th>
-                    <th class="pb-2 text-right font-semibold">Quebra</th>
-                    <th class="pb-2 text-right font-semibold">Gaveta</th>
-                    <th class="pb-2 text-right font-semibold">Destraves</th>
-                    <th class="pb-2 text-right font-semibold">Troco</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in report.by_operator" :key="row.operator" class="border-b border-border last:border-0">
-                    <td class="py-2 pr-2 font-medium text-foreground">{{ row.operator }}</td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.shifts) }}</td>
-                    <td
-                      class="py-2 text-right tnum"
-                      :class="row.difference_q < 0 ? 'font-semibold text-destructive' : 'text-foreground'"
-                    >
-                      {{ formatMoney(row.difference_q) }}
-                    </td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.drawer_openings) }}</td>
-                    <td
-                      class="py-2 text-right tnum"
-                      :class="row.drawer_unlocks ? 'font-semibold text-foreground' : 'text-muted-foreground'"
-                    >
-                      {{ formatInt(row.drawer_unlocks) }}
-                    </td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.change_requests) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p v-else class="op-body text-muted-foreground">Nenhum turno fechado nem evento de caixa no período.</p>
-            </div>
+            <NuxtTable
+              v-if="report.by_operator.length"
+              :data="report.by_operator"
+              :columns="operatorColumns"
+              :get-row-id="(row) => row.operator"
+              caption="Caixa por operador"
+              data-bi-cash-by-operator
+            >
+              <template #shifts-cell="{ row }">{{ formatInt(row.original.shifts) }}</template>
+              <template #difference-cell="{ row }">
+                <span :class="row.original.difference_q < 0 ? 'font-semibold text-destructive' : 'text-foreground'">{{ formatMoney(row.original.difference_q) }}</span>
+              </template>
+              <template #drawer_openings-cell="{ row }">{{ formatInt(row.original.drawer_openings) }}</template>
+              <template #drawer_unlocks-cell="{ row }">
+                <span :class="exceptionTone(row.original.drawer_unlocks)">{{ formatInt(row.original.drawer_unlocks) }}</span>
+              </template>
+              <template #change_requests-cell="{ row }">{{ formatInt(row.original.change_requests) }}</template>
+            </NuxtTable>
+            <p v-else class="op-body text-muted-foreground">Nenhum turno fechado nem evento de caixa no período.</p>
           </BiSection>
           <!-- O que a trava da gaveta revelou. Aqui a AUSÊNCIA é dado: um turno com
                dinheiro andando e zero bloqueio não é um balcão caprichoso, é um
                sensor que não estava falando com o PDV. -->
-          <section v-if="anomalies.length" class="rounded-lg border border-warning/40 bg-warning/5 px-4 py-3">
-            <h2 class="op-title text-foreground">Gaveta · o que pede explicação</h2>
-            <p class="mb-3 op-micro text-muted-foreground">
-              Não é acusação: é onde olhar. Cada linha aponta um turno e diz o que não fecha.
-            </p>
-            <ul class="flex flex-col gap-2">
-              <li v-for="(item, i) in anomalies" :key="`${item.code}-${item.shift_key}-${i}`" class="flex gap-2 op-label">
-                <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-                <span class="text-foreground">
+          <NuxtAlert
+            v-if="anomalies.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            title="Gaveta · o que pede explicação"
+            data-bi-drawer-anomalies
+          >
+            <template #description>
+              <p class="mb-2">Não é acusação: é onde olhar. Cada linha aponta um turno e diz o que não fecha.</p>
+              <ul class="flex flex-col gap-1.5">
+                <li v-for="(item, i) in anomalies" :key="`${item.code}-${item.shift_key}-${i}`" class="text-foreground">
                   <span class="font-semibold">{{ item.operator }}</span>
                   <span class="text-muted-foreground"> · turno {{ item.shift_key }} · </span>{{ item.detail }}
-                </span>
-              </li>
-            </ul>
-          </section>
+                </li>
+              </ul>
+            </template>
+          </NuxtAlert>
 
           <BiSection
             title="Gaveta por operador"
             caption="Quantas vezes a trava agiu, quanto tempo a gaveta ficou aberta somada, e o pior episódio, que a média esconde. Desistir da venda em vez de fechar a gaveta, destrave e tentativa de PIN são exceção: qualquer número acima de zero se lê."
           >
-            <div class="overflow-x-auto">
-              <table v-if="drawerRows.length" class="w-full min-w-160 op-label">
-                <thead>
-                  <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
-                    <th class="pb-2 font-semibold">Operador</th>
-                    <th class="pb-2 text-right font-semibold">Travou</th>
-                    <th class="pb-2 text-right font-semibold">Aberta (total)</th>
-                    <th class="pb-2 text-right font-semibold">Pior episódio</th>
-                    <th class="pb-2 text-right font-semibold">Desistiu</th>
-                    <th class="pb-2 text-right font-semibold">Destraves</th>
-                    <th class="pb-2 text-right font-semibold">Buscou o PIN</th>
-                    <th class="pb-2 text-right font-semibold">Sensor mudo</th>
-                    <th class="pb-2 text-right font-semibold">Esquecida</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in drawerRows" :key="row.operator" class="border-b border-border last:border-0">
-                    <td class="py-2 pr-2 font-medium text-foreground">{{ row.operator }}</td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.blocks) }}</td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatDuration(row.open_seconds) }}</td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatDuration(row.longest_open_seconds) }}</td>
-                    <td class="py-2 text-right tnum" :class="row.dismissals ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.dismissals) }}</td>
-                    <td class="py-2 text-right tnum" :class="row.overrides ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.overrides) }}</td>
-                    <td class="py-2 text-right tnum" :class="row.unlock_attempts ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.unlock_attempts) }}</td>
-                    <td class="py-2 text-right tnum" :class="row.sensor_blind ? 'font-semibold text-destructive' : 'text-muted-foreground'">{{ formatInt(row.sensor_blind) }}</td>
-                    <td class="py-2 text-right tnum" :class="row.left_open ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.left_open) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p v-else class="op-body text-muted-foreground">
-                Nenhum episódio de gaveta no período. Num balcão com sensor armado e movimento, isso merece conferência.
-              </p>
-            </div>
+            <NuxtTable
+              v-if="drawerRows.length"
+              :data="drawerRows"
+              :columns="drawerColumns"
+              :get-row-id="(row) => row.operator"
+              caption="Gaveta por operador"
+              data-bi-drawer-by-operator
+            >
+              <template #blocks-cell="{ row }">{{ formatInt(row.original.blocks) }}</template>
+              <template #open_seconds-cell="{ row }">{{ formatDuration(row.original.open_seconds) }}</template>
+              <template #longest_open_seconds-cell="{ row }">{{ formatDuration(row.original.longest_open_seconds) }}</template>
+              <template #dismissals-cell="{ row }"><span :class="exceptionTone(row.original.dismissals)">{{ formatInt(row.original.dismissals) }}</span></template>
+              <template #overrides-cell="{ row }"><span :class="exceptionTone(row.original.overrides)">{{ formatInt(row.original.overrides) }}</span></template>
+              <template #unlock_attempts-cell="{ row }"><span :class="exceptionTone(row.original.unlock_attempts)">{{ formatInt(row.original.unlock_attempts) }}</span></template>
+              <template #sensor_blind-cell="{ row }">
+                <span :class="row.original.sensor_blind ? 'font-semibold text-destructive' : 'text-muted-foreground'">{{ formatInt(row.original.sensor_blind) }}</span>
+              </template>
+              <template #left_open-cell="{ row }"><span :class="exceptionTone(row.original.left_open)">{{ formatInt(row.original.left_open) }}</span></template>
+            </NuxtTable>
+            <p v-else class="op-body text-muted-foreground">
+              Nenhum episódio de gaveta no período. Num balcão com sensor armado e movimento, isso merece conferência.
+            </p>
           </BiSection>
 
           <BiSection title="Meios de pagamento" caption="Consolidado dos fechamentos do período">
