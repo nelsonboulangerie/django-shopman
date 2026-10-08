@@ -989,7 +989,14 @@ onMounted(() => {
             aria-label="Navegação operacional"
         /></template>
         <template #header>
-          <NuxtDashboardNavbar as="header" title="Shell operacional" />
+          <!-- Título longo de propósito (PR-K5): a 390 px ele quebra em duas linhas,
+               sem reticências, e o botão da direita fica no lugar. -->
+          <NuxtDashboardNavbar
+            as="header"
+            title="Shell operacional: o título longo quebra em linhas e não se corta"
+          >
+            <template #right><NuxtColorModeButton /></template>
+          </NuxtDashboardNavbar>
         </template>
         <div>
           <NuxtCard

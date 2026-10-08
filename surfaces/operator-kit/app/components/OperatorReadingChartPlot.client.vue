@@ -17,6 +17,8 @@ import {
   READING_TONE_COLOR,
   drawnSeries,
   pointValue,
+  readingRunIndex,
+  readingRuns,
   readingTickIndices,
   readingYDomain,
   seriesTone,
@@ -25,13 +27,15 @@ import {
   type ReadingChartSeries,
   type ReadingDivergingLabels,
   type ReadingFormat,
+  type ReadingRun,
 } from "../presentation/readingChart";
 
 const props = defineProps<{
   kind: ReadingChartKind;
   series: ReadingChartSeries[];
   points: ReadingChartPoint[];
-  format: ReadingFormat;
+  /** O formato do eixo vertical (compacto no dinheiro); a frase do ponto usa o cheio. */
+  axisFormat: ReadingFormat;
   diverging?: ReadingDivergingLabels;
   height: number;
   /** O ponto que o teclado escolheu. O do ponteiro o Crosshair já segue sozinho; forçá-lo
@@ -60,7 +64,10 @@ const ticks = computed(() => readingTickIndices(props.points.length, props.maxTi
 const x = (row: Row) => row.index;
 const accessor = (key: string) => (row: Row) => pointValue(row.point, key) ?? undefined;
 const tickLabel = (tick: number | Date) => props.points[Number(tick)]?.label ?? "";
-const yTick = (tick: number | Date) => props.format(Number(tick));
+const yTick = (tick: number | Date) => props.axisFormat(Number(tick));
+// O eixo vertical ganha largura para o rótulo caber numa linha ("R$ 15 mil"); o
+// Unovis reserva só um quinto do gráfico e quebrava o rótulo no celular.
+const Y_TICK_WIDTH = 96;
 
 // Barras: as séries lado a lado (bars) ou só a primeira (comparison, diverging).
 const barSeries = computed(() =>
@@ -85,6 +92,11 @@ const lineSeries = computed(() => {
   return [];
 });
 const areaSeries = computed(() => (props.kind === "line" ? drawn.value[0] : undefined));
+// A área sai trecho a trecho: num buraco da série, a linha quebra e a área também.
+const areaRuns = computed(() => (areaSeries.value ? readingRuns(props.points, areaSeries.value.key) : []));
+const runX = (run: ReadingRun) => (row: Row) => readingRunIndex(run, row.index);
+const runY = (run: ReadingRun, key: string) => (row: Row) =>
+  pointValue(props.points[readingRunIndex(run, row.index)]!, key) ?? undefined;
 const DASH = [6, 4];
 
 // O traço vertical do ponto em leitura. Círculos só onde há linha; nas barras o
@@ -108,13 +120,17 @@ function onCrosshairMove(_x?: number | Date, _datum?: Row, datumIndex?: number) 
   <div aria-hidden="true" data-operator-reading-plot class="min-w-0">
     <VisXYContainer :data="rows" :height="height" :y-domain="yDomain">
       <VisGroupedBar v-if="barSeries.length" :x="x" :y="barY" :color="barColor" />
-      <VisArea
-        v-if="areaSeries"
-        :x="x"
-        :y="accessor(areaSeries.key)"
-        :color="READING_TONE_COLOR[seriesTone(areaSeries, 0)]"
-        :opacity="0.1"
-      />
+      <template v-if="areaSeries">
+        <VisArea
+          v-for="run in areaRuns"
+          :key="`${run.start}-${run.end}`"
+          :x="runX(run)"
+          :y="runY(run, areaSeries.key)"
+          :color="READING_TONE_COLOR[seriesTone(areaSeries, 0)]"
+          :opacity="0.1"
+          exclude-from-domain-calculation
+        />
+      </template>
       <VisLine
         v-for="entry in lineSeries"
         :key="entry.item.key"
@@ -131,7 +147,7 @@ function onCrosshairMove(_x?: number | Date, _datum?: Row, datumIndex?: number) 
         :tick-format="tickLabel"
         :grid-line="false"
       />
-      <VisAxis type="y" :num-ticks="3" :tick-format="yTick" />
+      <VisAxis type="y" :num-ticks="3" :tick-format="yTick" :tick-text-width="Y_TICK_WIDTH" />
       <!-- O VisCrosshair do @unovis/vue 1.7 não declara props: repassa os atributos
            como vieram, e atributo hifenizado não vira config. Por isso o camelCase. -->
       <!-- eslint-disable vue/attribute-hyphenation -->
