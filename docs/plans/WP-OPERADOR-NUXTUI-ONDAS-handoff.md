@@ -5,6 +5,7 @@ O plano é o [WP-OPERADOR-NUXTUI-ONDAS.md](WP-OPERADOR-NUXTUI-ONDAS.md). O estad
 ## Em voo
 - **Pilha linear:** #1528 + #1521 → #1531 (0.1) → #1532 (0.1b) → #1534 (0.3) → #1535 (B.I. mock, rascunho) → #1536 (B.I. conteúdo, rascunho). O #1533, da sessão do Gestor, vai sobre o #1534.
 - **Combinado com a sessão do Gestor:** mudança de kit é serial e passa por quem coordena a onda 0. A `ActionList` (`orders-nuxt/app/components/ActionList.vue`) sobe ao kit depois do 0.3. Tudo em `orders-nuxt` é dela.
+- **Piloto B.I. em revisão, reprovado em tela pelo dono** ("ainda está bem cru"). O #1535 e o #1536 continuam em rascunho e NÃO estão prontos. A crítica e a correção vão para uma sessão nova, que começa olhando as telas, não o código.
 - **Nada sai do rascunho sem o dono.** A pilha só entra no `main` depois do #1518 a #1528.
 
 ## Próxima peça de kit: 0.2 (guard de slot + marcador de opt-in)

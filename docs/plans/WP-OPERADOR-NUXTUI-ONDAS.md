@@ -158,8 +158,8 @@ Em 08/10/2026, ao fechar a sessão que escreveu este plano. A pilha é linear, c
 | 0.1b `OperatorToolbar` | #1532 | aberto, sobre o #1531 | o Gestor já troca os 5 usos no #1533 |
 | 0.3 Período e data | #1534 | aberto, sobre o #1532 | o período aberto no PDV e na Produção não foi visto em tela |
 | Gestor: toolbar + `ChannelPeriodCalendar` | #1533 | da sessão do Gestor, sobre o #1534 | ledger sem erro no orders (dito pela sessão do Gestor) |
-| Piloto B.I. P.1, mock | #1535 | rascunho, sobre o #1534 | rodar o `bi.spec.ts` |
-| Piloto B.I. P.2, conteúdo | #1536 | rascunho, sobre o #1535 | ver o PR: gestos não exercidos e pedidos ao kit |
+| Piloto B.I. P.1, mock | #1535 | rascunho (WIP), sobre o #1534 | rodar o `bi.spec.ts` |
+| Piloto B.I. P.2, conteúdo | #1536 | **piloto B.I. em revisão, reprovado em tela pelo dono** ("ainda está bem cru"); rascunho (WIP), sobre o #1535 | a crítica e a correção vão para uma sessão nova; o piloto NÃO está pronto |
 | 0.2, 0.4 a 0.13 | nenhum | a fazer | a próxima peça é a **0.2**; ver o handoff |
 | Ondas 2 a 6 | nenhum | a fazer | prompts em `WP-OPERADOR-NUXTUI-ONDAS-prompts.md` |
 | `ActionList` do Gestor para o kit | nenhum | combinado com a sessão do Gestor, na fila depois do 0.3 | entra como PR de kit serial |

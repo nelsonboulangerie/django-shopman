@@ -81,7 +81,7 @@ WP-OPERADOR-NUXTUI-ONDAS · PR 0.<N> do kit. Use a linha 0.<N> da tabela "Onda 0
 
 ```
 WP-OPERADOR-NUXTUI-ONDAS · Onda 1, B.I. (surfaces/bi-nuxt), continuação do piloto.
-Estado: veja a seção 9 do plano. O mock (tests/visual, fixtures gravadas do seed) e a migração do conteúdo estão no PR do piloto. Falta o que depende do kit: o período (0.3), o cabeçalho (0.7, com dois seletores de período no desktop: o BiPeriodChip vai em #phone-actions sem md:hidden), o Live Status (0.5) e o shell (0.10: BiNav sai, entra o OperatorSuiteShell).
+Estado: o piloto (#1535 mock, #1536 conteúdo) foi REPROVADO em tela pelo dono ("ainda está bem cru"). Comece criticando as 8 telas na prévia com Django (ver o handoff), com captura e arquivo:linha por achado, antes de mexer em código. Falta o que depende do kit: o período (0.3), o cabeçalho (0.7, com dois seletores de período no desktop: o BiPeriodChip vai em #phone-actions sem md:hidden), o Live Status (0.5) e o shell (0.10: BiNav sai, entra o OperatorSuiteShell).
 Inventário condensado (anexo inventario-purchase-bi.md, seção 2):
 - 8 rotas: / (Sobrou ou faltou + lotes), /sales, /cash, /customers, /profiles, /explore, /forecast, /scenarios. Leitura pura; 1 POST de negócio (levar ao plano, index.vue:119-137) e CRUD de cenários salvos (explore). Sem SSE e sem poll.
 - Atalhos: [ e ] mudam o dia; / leva à busca (index.vue:146-158). Deslizar entre seções no celular (BiSwipeHint).
