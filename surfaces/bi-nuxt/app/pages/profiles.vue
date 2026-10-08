@@ -221,7 +221,7 @@ const revpashColumns = [
       </template>
     </OperatorPageHeader>
 
-    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
       <p class="op-micro text-muted-foreground">
         Perfil <strong>presumido</strong> pela cesta: cada produto tem uma vocação (consome aqui · leva ·
         híbrido) editável em Configurações › Como vendemos. Entrega e iFood ficam fora da pergunta e dentro
@@ -428,7 +428,6 @@ const revpashColumns = [
         </NuxtTable>
       </BiSection>
       </template>
-      <BiSwipeHint />
     </main>
   </div>
 </template>

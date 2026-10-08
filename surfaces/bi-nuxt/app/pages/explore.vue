@@ -156,7 +156,7 @@ const rankingRows = computed(() => {
         <BiShareButton />
       </template>
     </OperatorPageHeader>
-  <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+  <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
     <!-- O construtor: Cenário · Métrica · Dimensão · Cruzamento · ⋯ -->
     <NuxtCard as="section" aria-label="Construtor do cruzamento" data-bi-explore-builder>
       <div class="flex flex-wrap items-end gap-3">
@@ -302,7 +302,6 @@ const rankingRows = computed(() => {
         <p v-else class="op-label text-muted-foreground">Nada no período para esse cruzamento.</p>
       </BiSection>
     </template>
-    <BiSwipeHint />
   </main>
   </div>
 </template>

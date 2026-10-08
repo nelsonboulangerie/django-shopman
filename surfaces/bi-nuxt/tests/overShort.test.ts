@@ -2,7 +2,7 @@
 // mostra saem daqui, e cada uma é a da prévia com o dado real.
 import { describe, expect, it } from "vitest";
 import type { BIOverShortReport, BIOverShortRow } from "~/types/bi";
-import { BI_SECTIONS, biSections, swipeNeighbours } from "~/presentation/biSections";
+import { BI_SECTIONS, biSections } from "~/presentation/biSections";
 import { cashAnswer, customersAnswer, salesAnswer } from "~/presentation/bi";
 import {
   barGeometry,
@@ -344,12 +344,19 @@ describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu de
     expect(carryLabel("2026-10-05")).toBe("Levar ao plano da próxima segunda");
   });
 
-  it("o deslizar do celular segue a ordem do rail e não dá a volta", () => {
+  it("as oito leituras seguem na casca da suíte, na mesma ordem e com a janela na query", () => {
     const sections = biSections("period=28d");
-    expect(swipeNeighbours(sections, "/sales").previous?.key).toBe("production");
-    expect(swipeNeighbours(sections, "/sales").next?.key).toBe("cash");
-    expect(swipeNeighbours(sections, "/").previous).toBeNull();
-    expect(swipeNeighbours(sections, "/scenarios").next).toBeNull();
-    expect(swipeNeighbours(BI_SECTIONS, "/nada").index).toBe(-1);
+    expect(sections.map((section) => section.label)).toEqual([
+      "Produção",
+      "Vendas",
+      "Caixa",
+      "Clientes",
+      "Perfis",
+      "Explorar",
+      "Projeção",
+      "Cenários",
+    ]);
+    expect(sections.find((section) => section.key === "sales")?.to).toBe("/sales?period=28d");
+    expect(biSections("")).toEqual([...BI_SECTIONS]);
   });
 });

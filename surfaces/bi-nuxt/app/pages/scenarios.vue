@@ -45,7 +45,7 @@ async function run() {
       </template>
     </OperatorPageHeader>
 
-    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
       <BiPageState :pending="pending && !page" :error="error" what="os cenários" @retry="refresh()" />
       <template v-if="page">
         <BiSection
@@ -109,7 +109,6 @@ async function run() {
         </NuxtCard>
         <p v-else class="op-body text-muted-foreground">Nenhum cenário gerado ainda.</p>
       </template>
-      <BiSwipeHint />
     </main>
   </div>
 </template>

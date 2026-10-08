@@ -325,7 +325,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
       </template>
     </OperatorPageHeader>
 
-    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
       <BiPageState :pending="dayPending && !day" :error="dayError" what="a leitura do dia" @retry="dayRefresh()" />
 
       <template v-if="day">
@@ -467,7 +467,6 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
           </div>
         </template>
       </section>
-      <BiSwipeHint />
       <MoreBelow />
     </main>
   </div>

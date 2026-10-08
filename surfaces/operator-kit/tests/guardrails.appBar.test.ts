@@ -90,7 +90,6 @@ describe("guardrail do cabeçalho de seções", () => {
       "pos-nuxt/app/components/PosFunctionRail.vue",
       // V4-PROD: o ciclo do lote no rail (Alt1 a Alt5 impressos) e na barra do polegar.
       "production-nuxt/app/components/ProductionNav.vue",
-      "bi-nuxt/app/components/BiNav.vue",
       // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
       // `current` e devolvem `select`.
       "purchase-nuxt/app/components/PurchaseNav.vue",
@@ -113,6 +112,14 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(orders).toContain(':sections="sections"');
     expect(orders).toContain(':current="current"');
     expect(orders).not.toContain("<GestorNav");
+
+    // PR-B1 (WP-BI-CANON-LAUDO): o B.I. segue o Gestor. Sem adaptador de navegação,
+    // sem a pele legada `data-suite`, e sem gesto próprio de troca de seção.
+    const bi = readFileSync(join(SURFACES, "bi-nuxt/app/app.vue"), "utf8");
+    expect(bi).toContain("<OperatorSuiteShell");
+    expect(bi).toContain(':sections="sections"');
+    expect(bi).not.toContain("<BiNav");
+    expect(bi).not.toMatch(/data-suite=/);
   });
 });
 
@@ -123,7 +130,6 @@ const NAVS = [
   "marketing-nuxt/app/components/MarketingNav.vue",
   "pos-nuxt/app/components/PosFunctionRail.vue",
   "production-nuxt/app/components/ProductionNav.vue",
-  "bi-nuxt/app/components/BiNav.vue",
   "purchase-nuxt/app/components/PurchaseNav.vue",
 ];
 const KIT = (name: string) =>

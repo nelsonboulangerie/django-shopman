@@ -74,7 +74,7 @@ const occasionTitle = (occasion: ForecastOccasion) =>
       </template>
     </OperatorPageHeader>
 
-    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
       <p class="op-micro text-muted-foreground">
         A projeção compara com dias parecidos do passado. O período do cabeçalho, aqui, é o que você está
         planejando; as outras telas do B.I. olham o que já aconteceu.
@@ -311,7 +311,6 @@ const occasionTitle = (occasion: ForecastOccasion) =>
         </NuxtCard>
       </template>
       </template>
-      <BiSwipeHint />
     </main>
   </div>
 </template>

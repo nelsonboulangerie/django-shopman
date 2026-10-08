@@ -126,7 +126,7 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-foreground
       </template>
     </OperatorPageHeader>
 
-    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
       <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
       <template v-if="report">
         <!-- `xl:grid-cols-[1.4fr_1fr...]`: a resposta (uma frase) pede mais largura que cada número. -->
@@ -275,7 +275,6 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-foreground
           <p v-else class="op-body text-muted-foreground">Nenhuma abertura de gaveta sem venda no período.</p>
         </BiSection>
       </template>
-      <BiSwipeHint />
     </main>
   </div>
 </template>

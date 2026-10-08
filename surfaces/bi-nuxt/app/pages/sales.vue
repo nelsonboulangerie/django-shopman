@@ -192,7 +192,7 @@ function pickChannel(value: string | number) {
       </template>
     </OperatorPageHeader>
 
-    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
+    <main class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
       <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
       <template v-if="report">
         <!-- Celular (v3 b): o Faturamento sozinho e grande, com o "antes"; Pedidos e
@@ -347,7 +347,6 @@ function pickChannel(value: string | number) {
           </BiSection>
         </div>
       </template>
-      <BiSwipeHint />
     </main>
   </div>
 </template>
