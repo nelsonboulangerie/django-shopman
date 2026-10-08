@@ -236,7 +236,15 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(
       runtimeOffenders(/<(?:button|input|select|textarea|form|table)\b/i),
     ).toEqual([]);
-    expect(runtimeOffenders(/<Ui[A-Z]|\b:ui=|\bui="/)).toEqual([]);
+    // Os cinco campos de data e hora da suíte são o cânone por decisão do dono (brief
+    // do WP-OPERADOR-NUXTUI-ONDAS, #1529): camadas finas sobre InputDate, InputTime e
+    // Calendar, com o locale, o passo e os limites da casa. Admitidos PELO NOME, sem
+    // curinga: qualquer outro <Ui…> continua reprovando.
+    expect(
+      runtimeOffenders(
+        /<Ui(?!(?:DateField|DateRangeField|TimeField|TimeRangeField|DateTimeField)\b)[A-Z]|\b:ui=|\bui="/,
+      ),
+    ).toEqual([]);
     expect(runtimeOffenders(/from ["']reka-ui["']/)).toEqual([]);
     expect(offenders(/role="button"/)).toEqual([]);
     expect(
