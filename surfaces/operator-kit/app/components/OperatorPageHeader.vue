@@ -163,7 +163,15 @@ const { request: openSearch } = useSuiteSearchRequest();
         data-page-header-search-toggle
         @click="openSearch"
       />
-      <slot name="phone-actions" />
+      <!-- As ações de polegar são do celular (o comentário do topo): do `md` para cima o
+           `#actions` já está na linha, e as duas juntas desenham o mesmo gesto duas vezes. -->
+      <div
+        v-if="$slots['phone-actions']"
+        class="flex items-center md:hidden"
+        data-page-header-phone-actions
+      >
+        <slot name="phone-actions" />
+      </div>
       <div
         v-if="$slots.actions && !actionsBelow"
         class="flex items-center gap-2"
