@@ -10,12 +10,14 @@ const line = computed(() => rangeLine(draft.value));
   <div class="grid gap-4" data-period-calendar>
     <!-- Período em dois campos, não quatro: as datas num intervalo só e o horário
          noutro, com os componentes de data e hora da suíte (brief #1529). O seletor
-         nativo do sistema (`type="date|time"`) não é canônico. -->
-    <div class="grid gap-4 sm:grid-cols-2">
+         nativo do sistema (`type="date|time"`) não é canônico. Um por linha: lado a
+         lado, o intervalo de datas cortava. Sem ponta aberta: "Sem prazo" já é opção. -->
+    <div class="grid gap-4">
       <NuxtFormField label="Datas">
         <UiDateRangeField
           :model-value="{ start: draft.startDate, end: draft.endDate }"
           label="Datas do período"
+          :allow-open-ended="false"
           @update:model-value="
             (range) => {
               draft.startDate = range.start;
