@@ -542,7 +542,7 @@ describe("Gestor canônico em Nuxt UI", () => {
       expect(source).toContain("<template #freshness>");
     }
     const freshness = readFileSync(
-      new URL("../app/components/ReadFreshness.vue", import.meta.url),
+      new URL("../../operator-kit/app/components/ReadFreshness.vue", import.meta.url),
       "utf8",
     );
     expect(freshness).toContain("font-normal");

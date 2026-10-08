@@ -77,6 +77,18 @@ const KIT_OWNED_TEMPORAL_PRIMITIVES = [
 /** Feedback visual de carregamento permanece no Nuxt UI em toda a suíte. */
 const KIT_OWNED_FEEDBACK_PRIMITIVES = ["Skeleton"] as const;
 
+/**
+ * Peças de LEITURA que subiram ao kit no PR-K2 (WP-BI-CANON-LAUDO): o frescor da
+ * leitura e o relógio do servidor que ele usa saíram do Gestor; a métrica nasceu da
+ * receita do Kitchen Sink. Um app que recriar qualquer uma tem duas frases de
+ * frescor ou dois cartões de número na suíte, e a segunda envelhece sozinha.
+ */
+const KIT_OWNED_READING_PIECES = [
+  "components/ReadFreshness.vue",
+  "components/OperatorMetric.vue",
+  "composables/useNowTick.ts",
+] as const;
+
 /** Nomes próprios que a promoção do `UiSelect` aposentou. */
 const RETIRED_COMPONENTS = ["MaterialPicker"] as const;
 
@@ -215,6 +227,17 @@ describe("operator-kit: o que é do kit não renasce copiado no app", () => {
         offenders,
         `Campo temporal copiado no app: ${offenders.join(", ")}. ` +
           `O canônico é <Ui${offenders[0] ?? "…"}> do operator-kit.`,
+      ).toEqual([]);
+    });
+
+    it(`${app} não tem cópia própria das peças de leitura`, () => {
+      const offenders = KIT_OWNED_READING_PIECES.filter((path) =>
+        existsSync(resolve(surfacesDir, app, "app", path)),
+      );
+      expect(
+        offenders,
+        `Peça de leitura copiada no app: ${offenders.join(", ")}. ` +
+          `A canônica mora no operator-kit.`,
       ).toEqual([]);
     });
 

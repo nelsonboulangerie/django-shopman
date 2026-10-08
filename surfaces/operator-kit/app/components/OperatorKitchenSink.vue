@@ -306,6 +306,7 @@ onMounted(() => {
           description="Fixtures herméticas, composição real e um vocabulário visual deliberadamente curto."
         >
           <OperatorKitchenSinkDashboard />
+          <OperatorKitchenSinkReading />
           <OperatorKitchenSinkExercises />
           <section
             id="foundations"

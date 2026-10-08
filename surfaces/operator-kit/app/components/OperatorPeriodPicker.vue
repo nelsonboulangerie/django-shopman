@@ -19,6 +19,16 @@
 // em vez de o servidor cortar em silêncio.
 //
 // O estado é do consumidor (`v-model`): quem guarda na URL guarda na URL.
+//
+// Duas opções para a tela estreita e para a leitura de UM dia (PR-K2 do
+// WP-BI-CANON-LAUDO):
+// - `compact`: no celular (abaixo de `sm`), o botão diz a forma curta da janela
+//   ("Ontem", "28D · 04/09 a 01/10"); do `sm` para cima, a frase inteira. O nome
+//   acessível é sempre a frase inteira.
+// - "um dia com ‹ ›" (`presets` só com "day", que é o padrão): as setas andam um
+//   dia de calendário. Quem sabe que nem todo dia existe na leitura (dia fechado
+//   não tem venda) diz para onde cada seta vai com `prev-day`/`next-day`, e a seta
+//   sem destino (`""`) fica desligada. É o que substitui o `BiDayStepper`.
 import { computed, ref } from "vue";
 
 import {
@@ -30,10 +40,12 @@ import {
   goToDate,
   isCurrentPeriod,
   periodLabel,
+  periodShortLabel,
   periodStepLabels,
   resolvePeriod,
   stepPeriod,
   todayIso,
+  weekdayAndDate,
   withPreset,
   type PeriodBounds,
   type PeriodSelection,
@@ -58,6 +70,14 @@ const props = withDefaults(
     label?: string;
     /** Lado em que o popover se alinha ao botão. */
     align?: "start" | "end";
+    /** No celular, o botão diz a forma curta da janela. */
+    compact?: boolean;
+    /**
+     * Só no Dia: para onde ‹ e › andam, quando o dia anterior/seguinte com dado
+     * não é o de calendário. Omitido, anda um dia; `""`, a seta fica desligada.
+     */
+    prevDay?: string;
+    nextDay?: string;
   }>(),
   {
     presets: () => ["day"],
@@ -69,6 +89,9 @@ const props = withDefaults(
     maxSpanDays: undefined,
     label: "Período",
     align: "end",
+    compact: false,
+    prevDay: undefined,
+    nextDay: undefined,
   },
 );
 
@@ -85,9 +108,26 @@ const range = computed(() => resolvePeriod(props.modelValue, bounds.value));
 const buttonLabel = computed(() =>
   periodLabel(props.modelValue, range.value, bounds.value.today),
 );
-const steps = computed(() => periodStepLabels(props.modelValue.preset));
-const prev = computed(() => stepPeriod(props.modelValue, -1, bounds.value));
-const next = computed(() => stepPeriod(props.modelValue, 1, bounds.value));
+const shortLabel = computed(() =>
+  periodShortLabel(props.modelValue, range.value, bounds.value.today),
+);
+const isDay = computed(() => props.modelValue.preset === "day");
+// O passo de um dia: o destino que o consumidor declarou, ou o dia de calendário.
+function dayStep(target: string | undefined, direction: 1 | -1) {
+  if (!isDay.value || target === undefined)
+    return stepPeriod(props.modelValue, direction, bounds.value);
+  return target ? goToDate(props.modelValue, target, bounds.value) : null;
+}
+const prev = computed(() => dayStep(props.prevDay, -1));
+const next = computed(() => dayStep(props.nextDay, 1));
+const steps = computed(() => {
+  const labels = periodStepLabels(props.modelValue.preset);
+  if (!isDay.value) return labels;
+  return {
+    prev: props.prevDay ? `${labels.prev}: ${weekdayAndDate(props.prevDay)}` : labels.prev,
+    next: props.nextDay ? `${labels.next}: ${weekdayAndDate(props.nextDay)}` : labels.next,
+  };
+});
 const current = computed(() => isCurrentPeriod(props.modelValue));
 
 const allowed = computed(() =>
@@ -199,12 +239,21 @@ function backToToday() {
           variant="outline"
           icon="i-lucide-calendar-range"
           trailing-icon="i-lucide-chevron-down"
-          :label="buttonLabel"
+          :label="compact ? undefined : buttonLabel"
           class="suite-page:min-h-control"
           :aria-label="`${label}: ${buttonLabel}`"
           data-period-button
           data-period-label
-        />
+        >
+          <template v-if="compact">
+            <span class="max-sm:hidden" data-period-label-full>{{
+              buttonLabel
+            }}</span>
+            <span class="sm:hidden" data-period-label-short>{{
+              shortLabel
+            }}</span>
+          </template>
+        </NuxtButton>
         <template #content>
           <div class="w-80 max-w-[calc(100vw-2rem)] p-3" data-period-popover>
             <template

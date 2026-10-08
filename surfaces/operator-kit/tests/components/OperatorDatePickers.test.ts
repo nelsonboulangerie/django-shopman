@@ -242,4 +242,55 @@ describe("OperatorPeriodPicker (Tipo 2)", () => {
     await dom("[data-period-custom-apply]").trigger("click");
     expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "custom", from: "2026-10-01", to: "2026-11-30" }]]);
   });
+
+  it("compact: no celular o botão diz a forma curta; o nome acessível segue inteiro", async () => {
+    const wrapper = await mount(OperatorPeriodPicker, {
+      props: {
+        modelValue: { preset: "28d", from: "", to: "" },
+        today: TODAY,
+        max: TODAY,
+        presets: ["day", "28d"],
+        compact: true,
+      },
+    });
+    const button = wrapper.get("[data-period-button]");
+    expect(button.get("[data-period-label-full]").text()).toBe("Últimos 28 dias · 04/09 a 01/10");
+    expect(button.get("[data-period-label-full]").classes()).toContain("max-sm:hidden");
+    expect(button.get("[data-period-label-short]").text()).toBe("28D · 04/09 a 01/10");
+    expect(button.get("[data-period-label-short]").classes()).toContain("sm:hidden");
+    expect(button.attributes("aria-label")).toBe("Período: Últimos 28 dias · 04/09 a 01/10");
+  });
+
+  it("sem compact, o botão segue com uma frase só", async () => {
+    const wrapper = await mount(OperatorPeriodPicker, {
+      props: { modelValue: { preset: "day", from: "", to: "" }, today: TODAY },
+    });
+    expect(wrapper.find("[data-period-label-short]").exists()).toBe(false);
+  });
+
+  it("um dia com ‹ ›: as setas vão aos dias que a leitura tem, e a sem destino desliga", async () => {
+    const wrapper = await mount(OperatorPeriodPicker, {
+      props: {
+        modelValue: { preset: "day", from: "2026-09-29", to: "" },
+        today: TODAY,
+        max: "2026-09-30",
+        prevDay: "2026-09-27",
+        nextDay: "",
+        compact: true,
+      },
+    });
+    expect(wrapper.get("[data-period-label-short]").text()).toBe("Ter 29/09");
+    const prev = wrapper.get("[data-period-prev]");
+    expect(prev.attributes("aria-label")).toBe("Dia anterior: Dom 27/09");
+    const next = wrapper.get("[data-period-next]");
+    expect(next.attributes("disabled")).toBeDefined();
+    expect(next.attributes("aria-label")).toBe("Próximo dia");
+    await prev.trigger("click");
+    expect(wrapper.emitted("update:modelValue")).toEqual([[{ preset: "day", from: "2026-09-27", to: "" }]]);
+
+    await wrapper.setProps({ nextDay: "2026-09-30" });
+    expect(wrapper.get("[data-period-next]").attributes("aria-label")).toBe("Próximo dia: Qua 30/09");
+    await wrapper.get("[data-period-next]").trigger("click");
+    expect(wrapper.emitted("update:modelValue")![1]).toEqual([{ preset: "day", from: "2026-09-30", to: "" }]);
+  });
 });
