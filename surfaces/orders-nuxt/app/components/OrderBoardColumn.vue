@@ -50,7 +50,7 @@ const emit = defineEmits<{
     :class="phone ? 'min-h-full flex-1' : 'h-full min-h-0 w-full'"
     :data-zone="zone.key"
   >
-    <NuxtDashboardToolbar v-if="!phone && heading" as="header">
+    <OperatorToolbar v-if="!phone && heading" as="header">
       <OrderBoardHeading
         :zone="zone"
         :cards="cards"
@@ -58,7 +58,7 @@ const emit = defineEmits<{
         :shortcut="shortcut"
         @collapse="emit('collapse')"
       />
-    </NuxtDashboardToolbar>
+    </OperatorToolbar>
 
     <NuxtEmpty
       v-if="!cards.length"
