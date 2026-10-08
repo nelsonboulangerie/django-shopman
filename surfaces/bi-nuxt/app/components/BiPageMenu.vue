@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // O ⋯ do cabeçalho (prévia `bi-sobra4.html`: "Mais: Exportar, Copiar link, Como é
 // calculado"). O que se usa a cada leitura fica à vista; o resto mora aqui, a um toque.
-// "Copiar link" é de toda tela: a leitura inteira (período, dia, recortes) vive na URL.
-// Itens próprios da tela entram pelo slot (ex.: "Como é calculado").
-const open = ref(false);
-const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent";
+// NuxtDropdownMenu canônico. "Copiar link" é de toda tela: a leitura inteira (período,
+// dia, recortes) vive na URL. Itens próprios da tela entram por `items`.
+import type { BiMenuItem } from "~/presentation/bi";
 
-const { run: copyLink, pending: copying } = usePendingAction(async () => {
-  open.value = false;
+const props = withDefaults(defineProps<{ items?: BiMenuItem[] }>(), { items: () => [] });
+
+const { run: copyLink } = usePendingAction(async () => {
   try {
     await navigator.clipboard.writeText(window.location.href);
     useSonner.success("Link copiado: quem abrir vê esta mesma leitura.");
@@ -16,30 +16,29 @@ const { run: copyLink, pending: copying } = usePendingAction(async () => {
   }
 });
 
-function close() {
-  open.value = false;
-}
+const menuItems = computed<BiMenuItem[]>(() => [
+  { label: "Copiar link desta leitura", icon: "i-lucide-link", onSelect: () => void copyLink() },
+  ...props.items,
+]);
+
+// O rótulo diz o que o menu tem. Antes ele dizia "e como é calculado" em todas as
+// telas, e só a de Produção tinha esse item (omotenashi-copy: rótulo que mente).
+const triggerLabel = computed(() =>
+  props.items.length
+    ? `Mais: copiar link e ${props.items.map((item) => item.label.toLowerCase()).join(", ")}`
+    : "Mais: copiar link desta leitura",
+);
 </script>
 
 <template>
-  <UiPopover v-model:open="open">
-    <UiPopoverTrigger as-child>
-      <UiIconButton icon="lucide:ellipsis" label="Mais: copiar link e como é calculado" :active="open" data-bi-page-menu />
-    </UiPopoverTrigger>
-    <UiPopoverContent
-      align="end"
-      :side-offset="6"
-      :collision-padding="8"
-      class="w-72 rounded-lg p-1.5 shadow-lg"
-      data-bi-page-menu-panel
-    >
-      <div role="menu" class="flex flex-col">
-        <button type="button" role="menuitem" :class="ITEM" :disabled="copying" @click="copyLink">
-          <Icon name="lucide:link" class="size-4 text-muted-foreground" aria-hidden="true" />
-          Copiar link desta leitura
-        </button>
-        <slot :item-class="ITEM" :close="close" />
-      </div>
-    </UiPopoverContent>
-  </UiPopover>
+  <NuxtDropdownMenu :items="menuItems" :content="{ align: 'end' }">
+    <NuxtButton
+      icon="i-lucide-ellipsis"
+      color="neutral"
+      variant="ghost"
+      square
+      :aria-label="triggerLabel"
+      data-bi-page-menu
+    />
+  </NuxtDropdownMenu>
 </template>

@@ -1,15 +1,15 @@
 <script setup lang="ts">
 // O ⋯ de cada gráfico (prévia `depois-bi-vendas`, pino 7): os números daquele quadro
 // num CSV, sem sair da leitura. O CSV sai dos mesmos pontos que o gráfico desenha.
+// NuxtDropdownMenu canônico, com o ⋯ horizontal da suíte.
+import type { BiMenuItem } from "~/presentation/bi";
+
 const props = defineProps<{
   title: string;
   /** Cabeçalho e linhas do CSV (o que o quadro mostra). */
   header: string[];
   rows: (string | number)[][];
 }>();
-
-const open = ref(false);
-const ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent";
 
 function csvCell(value: string | number): string {
   const text = String(value);
@@ -26,7 +26,6 @@ function fileName(title: string): string {
 }
 
 function exportCsv() {
-  open.value = false;
   const lines = [props.header, ...props.rows].map((row) => row.map(csvCell).join(";"));
   // A marca de ordem de bytes faz a planilha abrir o UTF-8 com acento certo.
   const blob = new Blob(["﻿", lines.join("\n")], { type: "text/csv;charset=utf-8" });
@@ -37,20 +36,21 @@ function exportCsv() {
   link.click();
   URL.revokeObjectURL(url);
 }
+
+const items = computed<BiMenuItem[]>(() => [
+  { label: "Exportar CSV deste quadro", icon: "i-lucide-download", onSelect: exportCsv },
+]);
 </script>
 
 <template>
-  <UiPopover v-model:open="open">
-    <UiPopoverTrigger as-child>
-      <UiIconButton icon="lucide:ellipsis-vertical" :label="`Mais sobre ${title}`" :active="open" class="-mt-1 -mr-2" data-bi-chart-menu />
-    </UiPopoverTrigger>
-    <UiPopoverContent align="end" :side-offset="6" :collision-padding="8" class="w-64 rounded-lg p-1.5 shadow-lg">
-      <div role="menu" class="flex flex-col">
-        <button type="button" role="menuitem" :class="ITEM" @click="exportCsv">
-          <Icon name="lucide:download" class="size-4 text-muted-foreground" aria-hidden="true" />
-          Exportar CSV deste quadro
-        </button>
-      </div>
-    </UiPopoverContent>
-  </UiPopover>
+  <NuxtDropdownMenu :items="items" :content="{ align: 'end' }">
+    <NuxtButton
+      icon="i-lucide-ellipsis"
+      color="neutral"
+      variant="ghost"
+      square
+      :aria-label="`Mais sobre ${title}`"
+      data-bi-chart-menu
+    />
+  </NuxtDropdownMenu>
 </template>

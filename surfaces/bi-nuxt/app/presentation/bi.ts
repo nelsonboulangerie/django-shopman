@@ -112,6 +112,16 @@ export function hourLabel(hour: number): string {
   return `${hour}h`;
 }
 
+/**
+ * Um item dos menus ⋯ do B.I. (o da página e o de cada quadro). É a forma mínima que
+ * o NuxtDropdownMenu lê: rótulo, ícone e o gesto ao escolher.
+ */
+export interface BiMenuItem {
+  label: string;
+  icon?: string;
+  onSelect: () => void;
+}
+
 export type DeltaTone = "positive" | "negative" | "neutral";
 
 export interface DeltaBadge {

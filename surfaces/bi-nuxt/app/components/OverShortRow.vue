@@ -3,7 +3,9 @@
 // etiqueta do veredito, a barra fez × vendeu com o desfecho, a hora em que acabou, o
 // histórico nos mesmos dias da semana, a comparação com o típico e o "Ver lotes e
 // vendas". Do desktop largo para cima é uma linha da grade de sete colunas; abaixo,
-// um bloco de três linhas com as mesmas informações (nada fica só no desktop).
+// um bloco de três linhas com as mesmas informações (nada fica só no desktop). A
+// linha mora no corpo do NuxtCard (o respiro lateral é o do cartão); a linha aberta
+// se diz pelo botão aceso e pelo detalhe tingido logo abaixo.
 import type { BIOverShortRow } from "~/types/bi";
 import { formatQty } from "~/presentation/bi";
 import {
@@ -18,20 +20,19 @@ const props = defineProps<{ row: BIOverShortRow; scale: number; open: boolean; c
 const emit = defineEmits<{ toggle: [] }>();
 
 const meta = computed(() => verdictMeta(props.row.verdict));
-const PILL = {
-  destructive: "pill-destructive",
-  warning: "pill-warning",
-  success: "pill-success",
-} as const;
-const DOT = { destructive: "bg-destructive", warning: "bg-warning", success: "bg-success" } as const;
+// O veredito é um NuxtBadge na cor do tema (o tom carrega o sentido; o rótulo também).
+const BADGE = { destructive: "error", warning: "warning", success: "success" } as const;
 const OUTCOME = { destructive: "text-destructive", warning: "text-warning", success: "text-success" } as const;
 const detailId = computed(() => `over-short-detail-${props.row.sku}`);
 </script>
 
 <template>
+  <!-- `lg:min-h-[50px]`: a linha da grade de sete colunas tem a altura da barra fez ×
+       vendeu com a legenda embaixo; sem o piso, as linhas sem legenda encolhem e a
+       grade perde o ritmo. -->
   <div
-    class="grid items-center gap-x-3 gap-y-1.5 border-b border-border px-4 py-2.5 lg:min-h-[50px] lg:py-1.5"
-    :class="[columns, open ? 'bg-primary/5' : '']"
+    class="grid items-center gap-x-3 gap-y-1.5 border-b border-border py-2.5 lg:min-h-[50px] lg:py-1.5"
+    :class="columns"
     data-over-short-row
     :data-verdict="row.verdict"
   >
@@ -43,9 +44,7 @@ const detailId = computed(() => `over-short-detail-${props.row.sku}`);
     </div>
     <!-- veredito -->
     <div class="justify-self-end lg:justify-self-start">
-      <span class="inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold" :class="PILL[meta.tone]">
-        <span class="size-1.5 rounded-full" :class="DOT[meta.tone]" aria-hidden="true" />{{ meta.label }}
-      </span>
+      <NuxtBadge :color="BADGE[meta.tone]" variant="soft" :label="meta.label" data-over-short-verdict />
     </div>
     <!-- fez × vendeu -->
     <div class="col-span-2 flex flex-col gap-1 lg:col-span-1">
@@ -67,18 +66,17 @@ const detailId = computed(() => `over-short-detail-${props.row.sku}`);
     <div class="col-span-2 self-center op-micro text-muted-foreground md:col-span-1">{{ versusTypicalText(row) }}</div>
     <!-- aprofundar -->
     <div class="col-span-2 flex md:col-span-1 md:justify-end">
-      <button
-        type="button"
-        class="inline-flex min-h-control w-full items-center justify-center gap-1.5 rounded-md border border-border px-2.5 op-label transition hover:bg-accent md:w-auto lg:border-transparent"
-        :class="open ? 'bg-secondary font-semibold' : ''"
+      <NuxtButton
+        :color="open ? 'primary' : 'neutral'"
+        :variant="open ? 'soft' : 'ghost'"
+        :trailing-icon="open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+        label="Ver lotes e vendas"
+        class="w-full justify-center md:w-auto"
         :aria-expanded="open"
         :aria-controls="detailId"
         data-over-short-toggle
         @click="emit('toggle')"
-      >
-        Ver lotes e vendas
-        <Icon :name="open ? 'lucide:chevron-up' : 'lucide:chevron-down'" class="size-4" aria-hidden="true" />
-      </button>
+      />
     </div>
   </div>
   <div v-if="open" :id="detailId">

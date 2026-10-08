@@ -4,7 +4,8 @@
 // Produção daquele dia, e o lote que o plano tinha e não fechou), as vendas por hora
 // (cheio = vendido; tracejado = a estimativa depois que acabou) e o que aconteceu
 // depois: quando os canais tiraram o produto do ar, quantos pediram "Me avise", e os
-// caminhos ao registro (os pedidos do dia no Gestor, os dias da comparação).
+// caminhos ao registro (os pedidos do dia no Gestor, os dias da comparação). Links e
+// ações são NuxtButton (`to` para ir, `variant="link"` para o caminho em texto).
 import type { BIOverShortRow } from "~/types/bi";
 import { formatQty, shortDate } from "~/presentation/bi";
 import {
@@ -55,24 +56,29 @@ const historyEntries = computed(() =>
 </script>
 
 <template>
-  <div class="grid gap-5 border-b border-border bg-primary/5 px-4 py-3 lg:grid-cols-[1.1fr_1fr_1.25fr]" data-over-short-detail>
+  <!-- `lg:grid-cols-[1.1fr_1fr_1.25fr]`: lotes, vendas por hora e o texto do que
+       aconteceu depois, que é o mais longo dos três. -->
+  <div class="my-2 grid gap-5 rounded-md bg-primary/5 px-4 py-3 lg:grid-cols-[1.1fr_1fr_1.25fr]" data-over-short-detail>
     <div>
       <p class="mb-1.5 op-eyebrow text-muted-foreground">Lotes do dia</p>
-      <a
-        v-for="(lot, index) in row.lots"
+      <NuxtButton
+        v-for="lot in row.lots"
         :key="lot.ref"
-        :href="closeUrl"
+        :to="closeUrl || undefined"
         :target="closeLink.target"
         :rel="closeLink.rel"
-        class="flex min-h-control items-center gap-2 op-label"
-        :class="index ? 'border-t border-border' : ''"
+        color="neutral"
+        variant="ghost"
+        trailing-icon="i-lucide-arrow-up-right"
+        block
+        class="justify-start"
         :aria-label="`Lote ${lot.ref}, ${formatQty(lot.qty)} unidades: abrir o Fechamento da Produção`"
+        data-over-short-lot
       >
-        <span class="font-mono text-primary underline underline-offset-2">{{ lot.ref }}</span>
+        <span class="font-mono text-primary">{{ lot.ref }}</span>
         <span v-if="lot.finished_at" class="tnum text-muted-foreground">saiu {{ lot.finished_at }}</span>
         <span class="ml-auto tnum font-semibold">{{ formatQty(lot.qty) }} un.</span>
-        <Icon name="lucide:arrow-up-right" class="size-3.5 text-muted-foreground" aria-hidden="true" />
-      </a>
+      </NuxtButton>
       <p class="mt-1 op-micro" :class="missingLot ? 'font-medium text-foreground' : 'text-muted-foreground'" data-over-short-lots-line>
         {{ lotsLine(row) }}
       </p>
@@ -80,6 +86,7 @@ const historyEntries = computed(() =>
 
     <div>
       <p class="mb-1.5 op-eyebrow text-muted-foreground">Vendas por hora</p>
+      <!-- `h-[86px]`: as barras vão até 64 px (`barHeight`) mais a linha da hora. -->
       <div v-if="row.sales_by_hour.length" class="flex h-[86px] items-end gap-1.5 overflow-x-auto no-scrollbar" role="img" :aria-label="`Vendas por hora de ${row.name}`">
         <div v-for="hour in row.sales_by_hour" :key="hour.hour" class="flex shrink-0 flex-col items-center gap-1">
           <div class="flex w-6 flex-col justify-end">
@@ -139,32 +146,34 @@ const historyEntries = computed(() =>
         {{ capitalize(inTypical(day, compare)) }} vende ~{{ formatQty(row.typical_sold) }}; {{ historyText(row) }}.
       </p>
       <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <a
+        <NuxtButton
           v-if="ordersHref"
-          :href="ordersHref"
+          :to="ordersHref"
           :target="ordersLink.target"
           :rel="ordersLink.rel"
-          class="inline-flex min-h-control items-center op-label font-semibold text-primary underline underline-offset-2"
+          variant="link"
+          :label="ordersLinkLabel(row.orders)"
           data-over-short-orders
-        >{{ ordersLinkLabel(row.orders) }}</a>
-        <button
+        />
+        <NuxtButton
           v-if="historyEntries.length"
-          type="button"
-          class="inline-flex min-h-control items-center op-label font-semibold text-primary underline underline-offset-2"
+          variant="link"
+          :label="historyDaysLabel(day, historyEntries.length)"
           :aria-expanded="showHistory"
           data-over-short-history
           @click="showHistory = !showHistory"
-        >{{ historyDaysLabel(day, historyEntries.length) }}</button>
+        />
       </div>
       <ul v-if="showHistory" class="mt-1 flex flex-wrap gap-1.5" data-over-short-history-days>
         <li v-for="entry in historyEntries" :key="entry.iso">
-          <NuxtLink
+          <NuxtButton
             :to="{ query: { ...route.query, day: entry.iso } }"
-            class="inline-flex min-h-control items-center gap-1.5 rounded-full border border-border bg-card px-3 op-label hover:bg-accent"
+            color="neutral"
+            variant="outline"
           >
             <span class="tnum">{{ shortDate(entry.iso) }}</span>
             <span class="op-micro text-muted-foreground">{{ verdictMeta(entry.verdict).lower }}</span>
-          </NuxtLink>
+          </NuxtButton>
         </li>
       </ul>
     </div>

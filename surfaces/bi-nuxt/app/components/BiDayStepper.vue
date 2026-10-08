@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // O dia da leitura no cabeçalho (prévia `bi-sobra4.html`, pino 2): ‹ · "Ontem sáb 03/10" · ›
-// num controle só. As setas andam para o dia aberto anterior/seguinte que o servidor
-// informa (dia fechado não existe na leitura); a seta para frente some no último dia
-// que já terminou, porque o dia em curso ainda não tem resposta. O meio abre o
-// calendário canônico da suíte, igual no desktop, tablet e celular.
+// num controle só (NuxtFieldGroup). As setas andam para o dia aberto anterior/seguinte
+// que o servidor informa (dia fechado não existe na leitura); a seta para frente fica
+// desligada no último dia que já terminou, porque o dia em curso ainda não tem
+// resposta. O meio é o campo de data canônico da suíte (UiDateField: segmentos e
+// calendário), igual no desktop, no tablet e no celular.
 import { dayCaption, dayName } from "~/presentation/overShort";
 
 const props = defineProps<{
@@ -20,49 +21,47 @@ function onPick(value: string) {
   if (value && value !== props.day) emit("change", value);
 }
 
-const SEG = "grid size-control shrink-0 place-items-center transition hover:bg-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:text-muted-foreground/40";
+const previousLabel = computed(() =>
+  props.previous ? `Dia anterior: ${dayCaption(props.previous)}` : "Sem dia anterior com loja aberta",
+);
+const nextLabel = computed(() =>
+  props.next ? `Dia seguinte: ${dayCaption(props.next)}` : "O dia seguinte ainda não terminou",
+);
 </script>
 
 <template>
-  <div class="flex items-center gap-2" data-bi-day-stepper>
-    <div class="flex h-control shrink-0 items-center overflow-hidden rounded-md border border-border bg-card" role="group" aria-label="Dia da leitura">
-      <button
-        type="button"
-        :class="[SEG, 'border-r border-border']"
-        :disabled="!previous"
-        :aria-label="previous ? `Dia anterior: ${dayCaption(previous)}` : 'Sem dia anterior com loja aberta'"
-        :title="previous ? `Dia anterior: ${dayCaption(previous)}` : 'Sem dia anterior com loja aberta'"
-        data-day-prev
-        @click="emit('change', previous)"
-      >
-        <Icon name="lucide:chevron-left" class="size-4" aria-hidden="true" />
-      </button>
-      <UiDateField :model-value="day" :max="max" label="Dia da leitura" @update:model-value="onPick">
-        <template #trigger>
-          <button
-            type="button"
-            class="inline-flex h-full items-center gap-2 px-3 op-label transition hover:bg-accent"
-            :aria-label="`Dia da leitura: ${dayName(day, today)}, ${dayCaption(day)}. Escolher outro dia`"
-            data-day-open
-          >
-            <Icon name="lucide:calendar" class="size-4 text-muted-foreground" aria-hidden="true" />
-            <span class="font-semibold">{{ dayName(day, today) }}</span>
-            <span class="tnum text-muted-foreground">{{ dayCaption(day) }}</span>
-            <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-          </button>
-        </template>
-      </UiDateField>
-      <button
-        type="button"
-        :class="[SEG, 'border-l border-border']"
-        :disabled="!next"
-        :aria-label="next ? `Dia seguinte: ${dayCaption(next)}` : 'O dia seguinte ainda não terminou'"
-        :title="next ? `Dia seguinte: ${dayCaption(next)}` : 'O dia seguinte ainda não terminou'"
-        data-day-next
-        @click="emit('change', next)"
-      >
-        <Icon name="lucide:chevron-right" class="size-4" aria-hidden="true" />
-      </button>
-    </div>
-  </div>
+  <NuxtFieldGroup aria-label="Dia da leitura" data-bi-day-stepper>
+    <NuxtButton
+      icon="i-lucide-chevron-left"
+      color="neutral"
+      variant="outline"
+      square
+      :disabled="!previous"
+      :aria-label="previousLabel"
+      :title="previousLabel"
+      data-day-prev
+      @click="emit('change', previous)"
+    />
+    <!-- O UiDateField do kit NÃO tem slot #trigger: o botão "Ontem sáb 03/10" que
+         este componente passava era descartado em silêncio desde aaed185cf (a mesma
+         classe do #below). O campo canônico fica como é, com o nome do dia no rótulo. -->
+    <UiDateField
+      :model-value="day"
+      :max="max"
+      :label="`Dia da leitura: ${dayName(day, today)}`"
+      data-day-open
+      @update:model-value="onPick"
+    />
+    <NuxtButton
+      icon="i-lucide-chevron-right"
+      color="neutral"
+      variant="outline"
+      square
+      :disabled="!next"
+      :aria-label="nextLabel"
+      :title="nextLabel"
+      data-day-next
+      @click="emit('change', next)"
+    />
+  </NuxtFieldGroup>
 </template>
