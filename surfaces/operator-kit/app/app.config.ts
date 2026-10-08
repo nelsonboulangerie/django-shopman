@@ -139,6 +139,12 @@ export default defineAppConfig({
     // a 75%: a tabela ficava creme por cima do card, e o que rola por baixo da coluna
     // fixada vazava por ela. Mesmo fundo do card, opaco; o resto é o oficial.
     table: {
+      // Tabela integrada ao card (sem padding): o contêiner rolável, quando focável
+      // pelo teclado, desenha o anel PARA DENTRO. Para fora, o recorte do card o
+      // cortava (a varredura de geometria do Kitchen Sink reprovava o foco).
+      slots: {
+        root: "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary",
+      },
       variants: {
         pinned: {
           true: { th: "sticky bg-card z-1", td: "sticky bg-card z-1" },
