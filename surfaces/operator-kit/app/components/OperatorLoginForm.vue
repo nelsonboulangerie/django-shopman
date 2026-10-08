@@ -59,14 +59,21 @@ async function submit() {
 <template>
   <NuxtForm :state="{ username, password }" @submit="submit">
     <div class="flex flex-col gap-4">
-      <NuxtAvatar class="mx-auto" size="3xl" :src="iconSrc" :icon="icon" />
+      <!-- Decorativo: o título do diálogo já diz o app. `alt=""` tira a imagem da
+           árvore de acessibilidade (axe `image-alt` reprova img sem alt). -->
+      <NuxtAvatar class="mx-auto" size="3xl" :src="iconSrc" :icon="icon" alt="" />
       <div v-if="heading" class="grid gap-1.5 text-center">
         <h1 class="text-lg font-semibold">{{ title }}</h1>
         <p class="text-sm text-muted-foreground">{{ description }}</p>
       </div>
 
       <div class="grid gap-3 text-left">
-        <NuxtFormField label="Usuário">
+        <!-- O erro é dos DOIS campos (não se sabe qual errou). O FormField é quem
+             escreve `aria-invalid`/`aria-describedby` no input (sobrescreve o que se
+             passa à mão), então o erro entra por ele: `error` booleano marca o campo e
+             o slot `#error` dá ao leitor de tela o texto que o descreve. O texto visível
+             e anunciado é um só, o Alert abaixo (`role="alert"`). -->
+        <NuxtFormField label="Usuário" :error="Boolean(error)">
           <NuxtInput
             id="operator-login-username"
             ref="usernameInput"
@@ -77,12 +84,14 @@ async function submit() {
             autocapitalize="none"
             autocorrect="off"
             placeholder="Usuário"
-            :aria-invalid="error ? 'true' : undefined"
             :disabled="pending"
             :size="largeFields ? 'xl' : 'lg'"
           />
+          <template #error>
+            <span class="sr-only">{{ error }}</span>
+          </template>
         </NuxtFormField>
-        <NuxtFormField label="Senha">
+        <NuxtFormField label="Senha" :error="Boolean(error)">
           <NuxtInput
             id="operator-login-password"
             v-model="password"
@@ -90,13 +99,17 @@ async function submit() {
             type="password"
             autocomplete="current-password"
             placeholder="Senha"
-            :aria-invalid="error ? 'true' : undefined"
             :disabled="pending"
             :size="largeFields ? 'xl' : 'lg'"
           />
+          <template #error>
+            <span class="sr-only">{{ error }}</span>
+          </template>
         </NuxtFormField>
         <NuxtAlert
           v-if="error"
+          id="operator-login-error"
+          role="alert"
           color="error"
           variant="subtle"
           :title="error"

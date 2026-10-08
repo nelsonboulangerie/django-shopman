@@ -34,6 +34,19 @@ export default defineAppConfig({
     kbd: {
       defaultVariants: { variant: "soft" },
     },
+    // Texto latão sobre latão a 10% (`soft`) precisa do tom de tinta do tema para
+    // passar o AA (4,5:1); ver `--primary-ink` em operator-theme.css. Só a cor do
+    // texto muda; anatomia e variantes continuam as do Nuxt UI.
+    button: {
+      compoundVariants: [
+        { color: "primary", variant: "soft", class: "text-(--primary-ink)" },
+      ],
+    },
+    badge: {
+      compoundVariants: [
+        { color: "primary", variant: "soft", class: "text-(--primary-ink)" },
+      ],
+    },
     popover: { slots: { content: "bg-popover" } },
     slideover: { slots: { content: "bg-card" } },
     modal: { slots: { content: "bg-card" } },

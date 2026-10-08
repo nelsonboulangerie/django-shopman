@@ -318,9 +318,18 @@ describe("operator-kit: os primitivos respeitam o token de alvo de toque", () =>
     expect(theme).toMatch(/--spacing-control:\s*2\.75rem;/);
   });
 
-  it("não muda globalmente a escala dos controles por tipo de ponteiro", () => {
+  // DECISÃO MUDOU (WP-OPERADOR-NUXTUI-ONDAS, onda 0, 08/10/2026): esta trava proibia
+  // qualquer `@media (pointer: coarse)` no tema, e com isso consagrou a remoção, no
+  // snapshot WIP do Gestor, do degrau de 48 px que o PDV, a Cozinha e a Produção usam
+  // em tablet touch. O brief da migração manda o kit mudar só por opt-in até cada app
+  // migrar. O que a trava protege continua protegido: o tema NÃO infla controle por
+  // seletor de elemento. Ele só escala o token opt-in (`--spacing-control`), que vale
+  // apenas onde o componente pede `min-h-control`.
+  it("no ponteiro touch, o tema só escala o token opt-in; nunca infla controle por seletor", () => {
     const theme = readFileSync(resolve(surfacesDir, "operator-kit/app/assets/css/operator-theme.css"), "utf8");
-    expect(theme).not.toMatch(/@media\s*\(pointer:\s*coarse\)/);
-    expect(theme).not.toMatch(/--spacing-control:\s*3rem;/);
+    const coarseBlocks = [...theme.matchAll(/@media\s*\(pointer:\s*coarse\)[^{]*\{([\s\S]*?)\n\}/g)].map((m) => m[1]!);
+    expect(coarseBlocks).toHaveLength(1);
+    expect(coarseBlocks[0]).toMatch(/^\s*:root\s*\{\s*--spacing-control:\s*3rem;\s*\}\s*$/);
+    expect(theme).not.toMatch(/@media\s*\(pointer:\s*coarse\)[^{]*\{[^}]*\b(?:button|input|select|textarea)\b/);
   });
 });

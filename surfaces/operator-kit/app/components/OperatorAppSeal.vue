@@ -49,6 +49,7 @@ const iconName = computed(() => {
     <NuxtAvatar
       :src="identity?.iconSrc && !broken ? identity.iconSrc : undefined"
       :icon="iconName"
+      alt=""
       :style="{ background: appColor }"
       :class="hubUrl ? 'group-hover:hidden group-focus-visible:hidden' : undefined"
       @error="broken = true"

@@ -1030,3 +1030,32 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style>
+/* O catálogo mostra cada peça como ela é tocada no balcão: com ponteiro touch, todo
+   controle do catálogo ganha o envelope operacional de 44/48 px que a varredura de
+   geometria do Kitchen Sink exige. Estava no `main` e saiu no snapshot WIP do Gestor
+   (7e6bb83de) sem decisão escrita; volta até a decisão de alvo de toque ser tomada
+   para os nove apps (WP-OPERADOR-NUXTUI-ONDAS, onda 0). */
+@media (pointer: coarse) {
+  [data-operator-catalog]
+    :where(
+      button,
+      a[href],
+      input:not([type="hidden"]),
+      select,
+      textarea,
+      [role="button"],
+      [role="link"],
+      [role="tab"],
+      /* Segmentos de data/hora (reka) são divs `spinbutton` de ~20 px de altura;
+         no toque eles precisam do mesmo envelope de 44/48 px dos outros controles. */
+      [role="spinbutton"]
+    ):not([role="separator"]):not([role="checkbox"]):not([role="radio"]):not(
+      [role="switch"]
+    ) {
+    min-block-size: var(--spacing-control);
+    min-inline-size: var(--spacing-control);
+  }
+}
+</style>

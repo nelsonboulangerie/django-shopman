@@ -81,6 +81,11 @@ watch(
   },
 );
 
+// A prop oficial `content` do Modal repassa ao DialogContent do reka; o tipo dela só
+// lista as props do reka, não atributos `data-*`, que chegam ao elemento como attrs
+// (o PDV prova: `sessionIndex.layout.test.ts`, "o PIN do gerente sobe POR CIMA").
+const dialogContent = { "data-drawer-manager-auth": "" } as Record<string, string>;
+
 function onPin(payload: { username: string; pin: string }) {
   if (props.busy || !payload.username || !payload.pin) return;
   emit("authorize", payload.username, payload.pin);
@@ -93,14 +98,23 @@ function onBadge(token: string) {
 </script>
 
 <template>
+  <!-- `data-drawer-manager-auth` mora no DialogContent (prop oficial `content`),
+       onde está o `data-state`: a trava da gaveta do PDV (`PosDrawerLockDialog`)
+       procura `[data-drawer-manager-auth][data-state="open"]` para não roubar o Esc
+       desta tela. Numa div interna o seletor nunca casava.
+       Camada 3, cromática: a borda de aviso (`class` oficial do Modal, que vai para o
+       conteúdo) é a mais fraca das três e nunca anda sozinha. Quem carrega o sentido
+       é o texto (camada 1) e o modal com a venda visível atrás (camada 2). -->
   <NuxtModal
     :open="open"
     :title="title"
     :description="reason"
+    :content="dialogContent"
+    class="border border-warning/50"
     @update:open="(value: boolean) => emit('update:open', value)"
   >
     <template #body>
-      <div class="grid gap-4" data-drawer-manager-auth>
+      <div class="grid gap-4">
         <NuxtAlert
           v-if="operatorName"
           color="warning"

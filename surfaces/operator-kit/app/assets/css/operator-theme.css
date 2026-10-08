@@ -26,6 +26,18 @@
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
+/* Tablet de operação não é desktop estreito. Com ponteiro touch e largura de tablet,
+   o alvo de quem FAZ opt-in (`min-h-control`) sobe para 48 px; no celular fica 44 px
+   e no desktop com mouse também. Decisão por capacidade do dispositivo. A pilha do
+   Gestor tinha tirado esta regra; os sete apps não migrados (PDV, Cozinha, Produção…)
+   ainda a usam no balcão, e o kit só muda por opt-in (WP-OPERADOR-NUXTUI-ONDAS). Ela
+   não infla nada sozinha: vale só onde o componente pede `min-h-control`. */
+@media (pointer: coarse) and (min-width: 600px) {
+  :root {
+    --spacing-control: 3rem;
+  }
+}
+
 @theme inline {
   /* Rail de operador (OperatorRail/RailItem) tem cor PRÓPRIA, desacoplada da ação:
      no escuro a ação é dourada-pop, mas o rail precisa recuar (chrome, não ação). */
@@ -61,6 +73,10 @@
 
   --primary: #8b6b2e; /* Brass-700 — latão = ação do operador */
   --primary-foreground: #ffffff;
+  /* Latão como TEXTO sobre o próprio latão a 10% (Button/Badge `soft`): o puro dá
+     4,35:1 e reprova o AA (matriz da Produção, o "Mais" ativo da barra). 85% latão +
+     15% do texto dá 5,05:1 e continua lido como latão. */
+  --primary-ink: color-mix(in srgb, var(--primary) 85%, var(--foreground));
   --secondary: #f5e7dd; /* Faubourg-200 — superfície neutra 2ª */
   --secondary-foreground: #3b2a1e;
   --muted: #f5e7dd;
@@ -147,6 +163,9 @@
 
   --primary: #d4a53f; /* Brass claro — ação dourada pop no escuro */
   --primary-foreground: #221610;
+  /* No escuro o latão claro já passa sobre a tinta a 10%; misturar com o creme o
+     apagaria. */
+  --primary-ink: var(--primary);
   --secondary: #3a2a20;
   --secondary-foreground: #f0e6d2;
   --muted: #332419;

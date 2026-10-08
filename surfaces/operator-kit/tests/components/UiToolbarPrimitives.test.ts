@@ -25,7 +25,11 @@ afterEach(() => {
 });
 
 describe("UiFilterChip", () => {
-  it("preserva o tamanho compacto canônico, com rótulo, ícone e contagem", async () => {
+  // DECISÃO MUDOU (WP-OPERADOR-NUXTUI-ONDAS, onda 0, 08/10/2026): esta trava exigia
+  // o tamanho compacto (sem `min-h-control`) e consagrou a perda do alvo de 44 px da
+  // pílula no balcão do PDV (Encomendas), que nenhum app pediu. O Gestor não usa a
+  // pílula (usa NuxtTabs). A pílula volta ao alvo de toque da casa até cada app migrar.
+  it("tem o alvo de toque da casa (44/48 px), com rótulo, ícone e contagem tabular", async () => {
     const wrapper = await mount(UiFilterChip, {
       props: { active: true, count: 12 },
       slots: { default: () => "Balcão", icon: () => h("i", { class: "glyph" }) },
@@ -33,8 +37,9 @@ describe("UiFilterChip", () => {
 
     const button = wrapper.get("button");
     expect(button.attributes("type")).toBe("button");
-    expect(button.classes()).not.toContain("min-h-control");
+    expect(button.classes()).toContain("min-h-control");
     expect(button.classes()).toContain("py-1.5");
+    expect(wrapper.get(".tabular-nums").text()).toBe("12");
     expect(button.classes()).toContain("bg-primary/10");
     expect(wrapper.get(".glyph").exists()).toBe(true);
     expect(wrapper.text()).toContain("Balcão");

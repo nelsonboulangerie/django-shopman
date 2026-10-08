@@ -144,7 +144,9 @@ describe("OperatorLogin", () => {
     });
     const img = wrapper.getComponent(OperatorLoginForm).get("img");
     expect(img.attributes("src")).toBe("/pwa/pwa-64x64.png?v=3");
-    expect(img.attributes("alt") ?? "").toBe("");
+    // Decorativa: `alt=""` explícito (sem `alt` o axe reprova `image-alt`, como a
+    // matriz AA da Produção reprovou o selo da barra).
+    expect(img.attributes("alt")).toBe("");
     wrapper.unmount();
     const fallback = await mountLogin({
       icon: "lucide:layout-grid",
@@ -156,5 +158,86 @@ describe("OperatorLogin", () => {
         .findAll(".iconify")
         .some((node) => node.classes().includes("i-lucide:layout-grid")),
     ).toBe(true);
+  });
+
+  // Os três casos abaixo moravam em marketing-nuxt/tests/components/OperatorLogin.test.ts,
+  // montando o SFC do kit SEM o runtime Nuxt: quando o login virou NuxtModal, o harness
+  // de lá ficou com um <nuxtmodal> inerte e os três caíram. O componente é do kit; o teste
+  // mora aqui, contra o Nuxt UI real (WP-OPERADOR-NUXTUI-ONDAS, onda 0).
+  it("mantém o foco do teclado dentro do diálogo (Tab e Shift+Tab dão a volta)", async () => {
+    const wrapper = await mountLogin();
+    const form = wrapper.getComponent(OperatorLoginForm);
+    const username = form.get<HTMLInputElement>("#operator-login-username");
+    const password = form.get<HTMLInputElement>("#operator-login-password");
+    expect(document.activeElement).toBe(username.element);
+    await username.setValue("gestora");
+    await password.setValue("segredo");
+
+    const submit = form.get<HTMLButtonElement>('button[type="submit"]');
+    expect(submit.attributes("disabled")).toBeUndefined();
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog).not.toBeNull();
+    expect(dialog.contains(username.element)).toBe(true);
+    expect(dialog.contains(submit.element)).toBe(true);
+    // A volta do Tab é do FocusScope do Modal (loop): do último focável ao primeiro e
+    // de volta. O primeiro focável do diálogo é o campo Usuário (o X está desligado).
+    submit.element.focus();
+    await submit.trigger("keydown", { key: "Tab" });
+    expect(document.activeElement).toBe(username.element);
+    username.element.focus();
+    await username.trigger("keydown", { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(submit.element);
+  });
+
+  it("sessão expirada: explica, promete o rascunho e reconcilia antes de destravar", async () => {
+    fetchMock.mockResolvedValue({ ok: true });
+    const wrapper = await mountLogin({ expired: true });
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("Sua sessão terminou");
+    expect(dialog.textContent).toContain("rascunho");
+
+    const form = wrapper.getComponent(OperatorLoginForm);
+    await form.get('input[type="text"]').setValue("gestora");
+    await form.get('input[type="password"]').setValue("segredo");
+    await form.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/backstage/operator/login/", {
+      method: "POST",
+      credentials: "same-origin",
+      body: { username: "gestora", password: "segredo" },
+    });
+    expect(refreshSession).toHaveBeenCalledWith("operator-session");
+    expect(resetSession).toHaveBeenCalledOnce();
+    expect(refreshSession.mock.invocationCallOrder[0]).toBeLessThan(
+      resetSession.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("login recusado: o erro é anunciado e descreve OS DOIS campos, sem perder o que foi digitado", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("unauthorized"));
+    const wrapper = await mountLogin();
+    const form = wrapper.getComponent(OperatorLoginForm);
+    await form.get("#operator-login-username").setValue("gestora");
+    await form.get("#operator-login-password").setValue("incorreta");
+    await form.get("form").trigger("submit");
+    await flushPromises();
+
+    const alert = form.get("#operator-login-error");
+    expect(alert.attributes("role")).toBe("alert");
+    const message = alert.text();
+    expect(message).toBe("Não foi possível entrar. Confira usuário e senha.");
+
+    for (const id of ["operator-login-username", "operator-login-password"]) {
+      const input = form.get<HTMLInputElement>(`#${id}`);
+      expect(input.attributes("aria-invalid")).toBe("true");
+      const describedBy = (input.attributes("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
+      expect(describedBy.length).toBeGreaterThan(0);
+      const description = describedBy
+        .map((ref) => document.getElementById(ref)?.textContent?.trim() ?? "")
+        .join(" ");
+      expect(description).toContain(message);
+    }
+    expect(form.get<HTMLInputElement>("#operator-login-username").element.value).toBe("gestora");
   });
 });

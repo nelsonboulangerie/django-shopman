@@ -16,8 +16,11 @@
 // volta os filtros ativos; interpretar o valor é dele. Para guardar na URL, use
 // `useRouteFilters` (ou `filtersToQuery`/`filtersFromQuery`).
 //
-// `touch`: a mesma barra no tamanho `md` oficial do Nuxt UI. Sem ele, a barra usa
-// `xs`, compacta para mouse. Nenhuma regra CSS paralela infla todos os controles.
+// `touch`: a mesma barra no tamanho `md` oficial do Nuxt UI, com o envelope de toque
+// do balcão (`min-h-control`, 44 px; 48 px em tablet touch) no gatilho, nos chips, no
+// X e nos itens do painel. Sem ele, a barra usa `xs`, compacta para mouse, e só os
+// itens do painel ganham o envelope no celular. O envelope é opt-in por esta prop:
+// nenhuma regra CSS global infla os controles.
 import {
   activeDimensions,
   chipLabel,
@@ -47,6 +50,13 @@ const props = withDefaults(
 
 const controlSize = computed(() =>
   props.touch ? ("md" as const) : ("xs" as const),
+);
+// Alvo de toque (main: `min-h-control` no `touch`; no celular os itens do painel são
+// sempre de toque). A pilha do Gestor tinha deixado só o `md` (32 px): o PDV perdia
+// o alvo de 44 px nas Encomendas.
+const touchTarget = computed(() => (props.touch ? "min-h-control" : undefined));
+const itemTarget = computed(() =>
+  props.touch ? "min-h-control" : "max-sm:min-h-control",
 );
 
 const emit = defineEmits<{ "update:modelValue": [ActiveFilters] }>();
@@ -130,6 +140,7 @@ function clearAll() {
         color="neutral"
         variant="soft"
         :size="controlSize"
+        :class="touchTarget"
         :label="chipLabel(dimension, modelValue)"
         :aria-label="`Editar filtro ${chipLabel(dimension, modelValue)}`"
         data-filter-edit
@@ -139,6 +150,7 @@ function clearAll() {
         color="neutral"
         variant="soft"
         :size="controlSize"
+        :class="touchTarget"
         icon="i-lucide-x"
         square
         :aria-label="`Remover filtro ${dimension.label}`"
@@ -151,6 +163,7 @@ function clearAll() {
     <NuxtPopover :open="open" @update:open="onOpen">
       <NuxtButton
         class="shrink-0"
+        :class="touchTarget"
         color="neutral"
         variant="outline"
         :size="controlSize"
@@ -173,6 +186,7 @@ function clearAll() {
               color="neutral"
               variant="ghost"
               trailing-icon="i-lucide-chevron-right"
+              :class="itemTarget"
               :label="dimension.label"
               :data-filter-dimension="dimension.id"
               @click="pickDimension(dimension)"
@@ -185,6 +199,7 @@ function clearAll() {
               color="neutral"
               variant="ghost"
               icon="i-lucide-chevron-left"
+              :class="itemTarget"
               :label="step.label"
               data-filter-back
               @click="step = null"
@@ -218,15 +233,24 @@ function clearAll() {
                       ? 'i-lucide-check'
                       : undefined
                   "
-                  :label="
-                    option.count === undefined
-                      ? option.label
-                      : `${option.label} · ${option.count}`
-                  "
+                  :class="itemTarget"
+                  :label="option.label"
                   :aria-pressed="isSelected(modelValue, step, option.value)"
                   :data-filter-option="`${step.id}:${option.value}`"
                   @click="pick(step, option.value)"
-                />
+                >
+                  <!-- A contagem é outra grandeza: fica à parte do rótulo, como no
+                       `main`, e não costurada nele ("Pagas · 1"). -->
+                  <template v-if="option.count !== undefined" #trailing>
+                    <NuxtBadge
+                      class="ms-auto tabular-nums"
+                      color="neutral"
+                      variant="outline"
+                      size="sm"
+                      :label="String(option.count)"
+                    />
+                  </template>
+                </NuxtButton>
                 <NuxtEmpty
                   v-if="!visibleOptions.length"
                   icon="i-lucide-search-x"
@@ -305,6 +329,7 @@ function clearAll() {
       color="neutral"
       variant="link"
       :size="controlSize"
+      :class="touchTarget"
       label="Limpar filtros"
       data-filter-clear
       @click="clearAll"
