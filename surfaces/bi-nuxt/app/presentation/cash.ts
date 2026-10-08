@@ -11,13 +11,14 @@ import type {
   BICashMethodRow,
   BICashOperatorRow,
 } from "~/generated/biContract";
-import type {
-  ReadingChartPoint,
-  ReadingChartSeries,
-  ReadingCsv,
-  ReadingDivergingLabels,
+import {
+  readingCsvMoney,
+  type ReadingChartPoint,
+  type ReadingChartSeries,
+  type ReadingCsv,
+  type ReadingDivergingLabels,
 } from "../../../operator-kit/app/presentation/readingChart";
-import { BUCKET_SPAN_LABELS, bucketLabel, bucketRows } from "./bi";
+import { BUCKET_SPAN_LABELS, bucketLabel, bucketRows, csvMoney, reais } from "./bi";
 
 /** Segundos em linguagem de balcão: ninguém lê "184 s". */
 export function formatDuration(seconds: number): string {
@@ -54,20 +55,40 @@ export function cashDifferenceAxis(days: readonly BICashDay[]): string {
   return span === "day" ? "Dia" : span === "week" ? "Semana" : "Mês";
 }
 
-/** Um ponto por balde. Os valores em R$ ficam em centavos: o `format` do quadro escreve. */
+/** Um ponto por balde. Dinheiro em reais: o gráfico do kit recebe reais (`readingMoneyFormat`). */
 export function cashDifferencePoints(days: readonly BICashDay[]): ReadingChartPoint[] {
   return bucketRows(days).map((bucket) => {
     const sum = (pick: (day: BICashDay) => number) => bucket.rows.reduce((total, day) => total + pick(day), 0);
     return {
       label: [bucketLabel(bucket.date, bucket.span), BUCKET_SPAN_LABELS[bucket.span]].filter(Boolean).join(" "),
       values: {
-        difference: sum((day) => day.difference_q),
+        difference: reais(sum((day) => day.difference_q)),
         shifts: sum((day) => day.shifts),
-        sangria: sum((day) => day.sangria_q),
-        suprimento: sum((day) => day.suprimento_q),
+        sangria: reais(sum((day) => day.sangria_q)),
+        suprimento: reais(sum((day) => day.suprimento_q)),
       },
     };
   });
+}
+
+/**
+ * O CSV do quadro da quebra. Não é o `readingChartCsv(..., { money: true })` porque o
+ * quadro mistura dinheiro (quebra, sangrias, suprimentos) e contagem (turnos): o
+ * dinheiro sai como o do kit ("1500,50"), a contagem como número.
+ */
+export function cashDifferenceCsv(axisLabel: string, points: readonly ReadingChartPoint[]): ReadingCsv {
+  const money = new Set(["difference", "sangria", "suprimento"]);
+  return {
+    header: [axisLabel, ...CASH_DIFFERENCE_SERIES.map((item) => item.label)],
+    rows: points.map((point) => [
+      point.label,
+      ...CASH_DIFFERENCE_SERIES.map((item) => {
+        const value = point.values[item.key];
+        if (typeof value !== "number") return "";
+        return money.has(item.key) ? readingCsvMoney(value) : value;
+      }),
+    ]),
+  };
 }
 
 // ── Gaveta por hora ────────────────────────────────────────────────────────
@@ -123,11 +144,11 @@ export function cashMethodRows(rows: readonly BICashMethodRow[]): CashMethodRow[
 
 export function operatorCsv(rows: readonly BICashOperatorRow[]): ReadingCsv {
   return {
-    header: ["Operador", "Turnos", "Quebra (centavos)", "Gaveta sem venda", "Destraves", "Pedidos de troco"],
+    header: ["Operador", "Turnos", "Quebra (R$)", "Gaveta sem venda", "Destraves", "Pedidos de troco"],
     rows: rows.map((row) => [
       row.operator,
       row.shifts,
-      row.difference_q,
+      csvMoney(row.difference_q),
       row.drawer_openings,
       row.drawer_unlocks,
       row.change_requests,
@@ -164,14 +185,14 @@ export function drawerCsv(rows: readonly BICashDrawerRow[]): ReadingCsv {
 
 export function methodsCsv(rows: readonly CashMethodRow[]): ReadingCsv {
   return {
-    header: ["Meio de pagamento", "Valor (centavos)", "Fatia (%)"],
-    rows: rows.map((row) => [row.method, row.amount_q, row.share]),
+    header: ["Meio de pagamento", "Valor (R$)", "Fatia (%)"],
+    rows: rows.map((row) => [row.method, csvMoney(row.amount_q), row.share]),
   };
 }
 
 export function openAccountsCsv(rows: readonly BICashAccountRow[]): ReadingCsv {
   return {
-    header: ["Cliente", "Em aberto (centavos)"],
-    rows: rows.map((row) => [row.customer_name, row.balance_q]),
+    header: ["Cliente", "Em aberto (R$)"],
+    rows: rows.map((row) => [row.customer_name, csvMoney(row.balance_q)]),
   };
 }

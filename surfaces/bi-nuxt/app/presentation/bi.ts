@@ -1,6 +1,7 @@
 // Presentation pura do B.I. — copy pt-BR e formatação; a projection manda os
 // dados crus (centavos `_q`, quantidades string, datas ISO) e AQUI eles viram
 // texto. Números em gráfico usam tokens de texto, nunca a cor da série.
+import { readingCsvMoney } from "../../../operator-kit/app/presentation/readingChart";
 
 const moneyFmt = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const intFmt = new Intl.NumberFormat("pt-BR");
@@ -17,6 +18,21 @@ export function formatMoneyCompact(cents: number): string {
     return `R$ ${intFmt.format(Math.round(value / 100) / 10)} mil`;
   }
   return moneyFmt.format(value);
+}
+
+/**
+ * Centavos → reais para a planilha ("1500,50"): duas casas, vírgula decimal, sem "R$"
+ * (o cabeçalho da coluna diz "(R$)"), como o `readingChartCsv(..., { money: true })`.
+ */
+export function csvMoney(cents: number | null | undefined): string {
+  return typeof cents === "number" && Number.isFinite(cents) ? readingCsvMoney(cents / 100) : "";
+}
+
+/** Centavos → reais para o gráfico do kit, que recebe reais (`readingMoneyFormat`). */
+export function reais(cents: number): number;
+export function reais(cents: number | null | undefined): number | null;
+export function reais(cents: number | null | undefined): number | null {
+  return typeof cents === "number" && Number.isFinite(cents) ? cents / 100 : null;
 }
 
 export function formatInt(value: number): string {

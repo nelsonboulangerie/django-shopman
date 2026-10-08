@@ -12,6 +12,7 @@
 // compacto e o ⋯ da página (`OperatorReadingPageMenu`). Tabela é `NuxtTable`;
 // vazio e carregando, `NuxtEmpty`.
 import type { DayForecast } from "~/types/bi";
+import { readingMoneyFormat } from "../../../operator-kit/app/presentation/readingChart";
 import {
   basisHeadline,
   basisNotes,
@@ -368,7 +369,7 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
               axis-label="Dia"
               :series="FORECAST_SERIES"
               :points="chartPoints"
-              :format="formatMoneyCompact"
+              :format="readingMoneyFormat"
               empty-title="Sem dias para projetar"
             />
             <NuxtTable

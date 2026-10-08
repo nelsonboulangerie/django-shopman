@@ -29,6 +29,7 @@ import {
   revpashHint,
   sensitivityHeadline,
   strikeMatrix,
+  csvMoney,
 } from "~/presentation/bi";
 
 const { filters, report, freshness, pending, error, refresh, apply } = useBiProfiles();
@@ -96,9 +97,9 @@ const readingCsv = (reading: string): ReadingCsv => ({
     row.label,
     row.orders,
     row.orders_share,
-    row.revenue_q / 100,
+    csvMoney(row.revenue_q),
     row.revenue_share,
-    row.average_ticket_q / 100,
+    csvMoney(row.average_ticket_q),
     row.units_per_order,
     row.distinct_per_order,
   ]),
@@ -185,8 +186,8 @@ const reconciliationColumns = computed(() => [
 const reconciliationCsv = computed<ReadingCsv>(() => ({
   header: ["Origem", "Pedidos", "Receita (R$)"],
   rows: [
-    ...reconciliationRows.value.map((row) => [row.label, row.orders, row.revenue_q / 100]),
-    ["Faturamento do recorte", totalOrders.value, (report.value?.revenue_total_q ?? 0) / 100],
+    ...reconciliationRows.value.map((row) => [row.label, row.orders, csvMoney(row.revenue_q)]),
+    ["Faturamento do recorte", totalOrders.value, csvMoney(report.value?.revenue_total_q ?? 0)],
   ],
 }));
 
@@ -250,7 +251,7 @@ const categoryColumns = [
 ];
 const categoryCsv = computed<ReadingCsv>(() => ({
   header: ["Categoria", "Receita (R$)", "% da receita", "Bebida pronta industrializada (R$)"],
-  rows: categoryRows.value.map((row) => [row.category, row.revenue_q / 100, row.share, row.ready_beverage_q / 100]),
+  rows: categoryRows.value.map((row) => [row.category, csvMoney(row.revenue_q), row.share, csvMoney(row.ready_beverage_q)]),
 }));
 
 // ── Bebida no pedido: dia da semana × faixa; o rodapé é o total por faixa ───
@@ -307,7 +308,7 @@ const revpashColumns = [
 ];
 const revpashCsv = computed<ReadingCsv>(() => ({
   header: ["Faixa", "Receita local (R$)", "Assentos", "Horas", "Dias", "Receita por assento-hora (R$)"],
-  rows: (report.value?.revpash ?? []).map((row) => [row.title, row.revenue_local_q / 100, row.seats, row.hours, row.days, row.revpash_q / 100]),
+  rows: (report.value?.revpash ?? []).map((row) => [row.title, csvMoney(row.revenue_local_q), row.seats, row.hours, row.days, csvMoney(row.revpash_q)]),
 }));
 </script>
 

@@ -10,6 +10,7 @@ import {
   bucketSalesDays,
   channelIcon,
   sharePercent,
+  reais,
 } from "./bi";
 
 /** "período anterior" vira "Período anterior": o nome da série de comparação. */
@@ -44,7 +45,8 @@ export function revenueReading(report: Pick<BISalesReport, "days" | "previous">)
     span: span === "day" ? "dia" : (BUCKET_SPAN_LABELS[span] as "semana" | "mês"),
     points: buckets.map((bucket) => ({
       label: bucketLabel(bucket.date, bucket.span),
-      values: { revenue: bucket.revenue_q, previous: bucket.prev_revenue_q },
+      // Em reais: o gráfico do kit recebe reais (`readingMoneyFormat`).
+      values: { revenue: reais(bucket.revenue_q), previous: reais(bucket.prev_revenue_q) },
     })),
   };
 }

@@ -92,13 +92,12 @@ const readingDay = computed<PeriodSelection>({
   },
 });
 
-// No celular a barra de 56px não comporta a pergunta com o dia: o dia já está no
-// controle ao lado, então o título fica só com a pergunta (nunca cortado). `ssrWidth`:
-// o servidor e a primeira pintura concordam (sem erro de hidratação).
+// O título é o mesmo em toda largura: no celular a barra do kit quebra a linha em vez
+// de cortar. `ssrWidth` (do `isPhone` da dica do "Comparar com"): o servidor e a
+// primeira pintura concordam (sem erro de hidratação).
 const isPhone = useMediaQuery("(max-width: 767.98px)", { ssrWidth: 1280 });
 const title = computed(() => {
-  if (view.value === "lots") return isPhone.value ? "Lotes no período" : "Como foram os lotes no período?";
-  if (isPhone.value) return "Sobrou ou faltou?";
+  if (view.value === "lots") return "Como foram os lotes no período?";
   return day.value ? overShortTitle(day.value.day, today) : "Sobrou ou faltou ontem?";
 });
 

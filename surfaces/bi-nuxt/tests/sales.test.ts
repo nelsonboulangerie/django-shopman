@@ -25,15 +25,15 @@ const previous = (revenue_by_day: number[]) => ({
 });
 
 describe("revenueReading", () => {
-  it("põe o faturamento e o mesmo dia da comparação em cada ponto, por dia", () => {
+  it("põe o faturamento e o mesmo dia da comparação em cada ponto, por dia, em reais", () => {
     const out = revenueReading({
       days: [day("2026-09-01", 1000), day("2026-09-02", 2000)],
       previous: previous([500, 0]),
     });
     expect(out.span).toBe("dia");
     expect(out.points).toEqual([
-      { label: "01/09", values: { revenue: 1000, previous: 500 } },
-      { label: "02/09", values: { revenue: 2000, previous: 0 } },
+      { label: "01/09", values: { revenue: 10, previous: 5 } },
+      { label: "02/09", values: { revenue: 20, previous: 0 } },
     ]);
   });
 

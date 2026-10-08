@@ -20,6 +20,7 @@ import {
   DRAWER_HOUR_CSV_SERIES,
   DRAWER_HOUR_SERIES,
   cashDifferenceAxis,
+  cashDifferenceCsv,
   cashDifferencePoints,
   cashMethodRows,
   drawerCsv,
@@ -29,7 +30,7 @@ import {
   openAccountsCsv,
   operatorCsv,
 } from "~/presentation/cash";
-import { readingChartCsv } from "../../../operator-kit/app/presentation/readingChart";
+import { readingChartCsv, readingMoneyFormat } from "../../../operator-kit/app/presentation/readingChart";
 
 const { report, freshness, pending, error, refresh } = useBiReport<BICashReport>("cash");
 const { selection, bounds, presets } = useBiWindow();
@@ -38,9 +39,7 @@ const shareItems = useBiShareMenuItems();
 const days = computed(() => report.value?.days ?? []);
 const differencePoints = computed(() => cashDifferencePoints(days.value));
 const differenceAxis = computed(() => cashDifferenceAxis(days.value));
-const differenceCsv = computed(() =>
-  readingChartCsv(differenceAxis.value, CASH_DIFFERENCE_SERIES, differencePoints.value),
-);
+const differenceCsv = computed(() => cashDifferenceCsv(differenceAxis.value, differencePoints.value));
 
 const sangriaTotal = computed(() => days.value.reduce((sum, day) => sum + day.sangria_q, 0));
 
@@ -175,7 +174,7 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
             :series="CASH_DIFFERENCE_SERIES"
             :points="differencePoints"
             :diverging="CASH_DIFFERENCE_SIDES"
-            :format="formatMoney"
+            :format="readingMoneyFormat"
             empty-title="Nenhum turno fechado no período"
             empty-description="Sem fechamento não há quebra para medir."
           />

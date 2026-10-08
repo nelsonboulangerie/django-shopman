@@ -11,11 +11,12 @@
 // Recortes: "Comparar com" diz contra o quê os deltas são medidos, e as abas de canal
 // recortam TODOS os quadros. Os dois moram na URL (`?compare=`, `?channel=`), junto da
 // janela: o link colado abre o mesmo recorte.
-import { readingChartCsv } from "../../../operator-kit/app/presentation/readingChart";
+import { readingChartCsv, readingMoneyFormat } from "../../../operator-kit/app/presentation/readingChart";
 import type { BISalesReport } from "~/types/bi";
 import {
   SALES_COMPARE_LABELS,
   channelIcon,
+  csvMoney,
   delta,
   formatInt,
   formatMoney,
@@ -40,7 +41,7 @@ const route = useRoute();
 const router = useRouter();
 
 // O celular só é lido depois de montar: o servidor não sabe a largura, e decidir no
-// SSR fazia o título trocar na hidratação ("Quanto vendemos?" → "Vendas").
+// SSR fazia o tamanho do Faturamento e a altura dos gráficos trocarem na hidratação.
 const phoneQuery = useMediaQuery("(max-width: 767.98px)");
 const mounted = ref(false);
 onMounted(() => {
@@ -93,11 +94,7 @@ const revenueDescription = computed(() =>
     .join(". ")
     .concat("."),
 );
-// O CSV leva reais, não centavos: quem abre a planilha faz conta com o número.
-const revenueCsv = computed(() => {
-  const csv = readingChartCsv("Período", revenueSeries.value, revenue.value.points);
-  return { ...csv, rows: csv.rows.map(([label, ...cells]) => [label!, ...cells.map((cell) => (typeof cell === "number" ? cell / 100 : cell))]) };
-});
+const revenueCsv = computed(() => readingChartCsv("Período", revenueSeries.value, revenue.value.points, { money: true }));
 
 const hourPoints = computed(() => toHourPoints(report.value?.orders_by_hour ?? []));
 const hourCsv = computed(() => readingChartCsv("Hora", ORDERS_SERIES, hourPoints.value));
@@ -121,8 +118,8 @@ const channelColumns = [
   { accessorKey: "share", header: "Parte", meta: { class: { th: "text-right sm:w-32", td: "sm:w-32" } } },
 ];
 const channelCsv = computed(() => ({
-  header: ["Canal", "Pedidos", "Faturamento", "Parte"],
-  rows: channelRows.value.map((row) => [row.name, row.orders, row.revenue_q / 100, row.share]),
+  header: ["Canal", "Pedidos", "Faturamento (R$)", "Parte"],
+  rows: channelRows.value.map((row) => [row.name, row.orders, csvMoney(row.revenue_q), row.share]),
 }));
 
 // Top produtos: a parte é um NuxtProgress contra o maior. No celular a coluna da barra
@@ -136,11 +133,11 @@ const topColumns = [
 const topMax = computed(() => Math.max(1, ...(report.value?.top_skus ?? []).map((row) => row.revenue_q)));
 const topTotal = computed(() => report.value?.revenue_total_q ?? 0);
 const topCsv = computed(() => ({
-  header: ["Produto", "Quantidade", "Faturamento", "Parte"],
+  header: ["Produto", "Quantidade", "Faturamento (R$)", "Parte"],
   rows: (report.value?.top_skus ?? []).map((row) => [
     row.name,
     row.qty,
-    row.revenue_q / 100,
+    csvMoney(row.revenue_q),
     sharePercent(row.revenue_q, topTotal.value),
   ]),
 }));
@@ -173,7 +170,7 @@ const retryActions = computed(() => [
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader :title="isPhone ? 'Vendas' : 'Quanto vendemos?'">
+    <OperatorPageHeader title="Quanto vendemos?">
       <template #actions>
         <OperatorReadingPageMenu :items="shareItems" />
       </template>
@@ -298,7 +295,7 @@ const retryActions = computed(() => [
             axis-label="Período"
             :series="revenueSeries"
             :points="revenue.points"
-            :format="formatMoneyCompact"
+            :format="readingMoneyFormat"
             :height="isPhone ? 160 : 208"
             :max-ticks="isPhone ? 4 : 6"
             empty-title="Sem vendas no período"

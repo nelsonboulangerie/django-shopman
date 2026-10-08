@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CASH_DIFFERENCE_SERIES,
   cashDifferenceAxis,
+  cashDifferenceCsv,
   cashDifferencePoints,
   cashMethodRows,
   drawerCsv,
@@ -12,7 +12,6 @@ import {
   openAccountsCsv,
   operatorCsv,
 } from "~/presentation/cash";
-import { readingChartCsv } from "../../operator-kit/app/presentation/readingChart";
 
 const day = (date: string, difference_q: number, extra: Partial<{ shifts: number; sangria_q: number; suprimento_q: number }> = {}) => ({
   date,
@@ -23,11 +22,11 @@ const day = (date: string, difference_q: number, extra: Partial<{ shifts: number
 });
 
 describe("caixa: quebra por dia", () => {
-  it("um ponto por dia, com a quebra e o que o CSV leva junto", () => {
+  it("um ponto por dia, em reais, com a quebra e o que o CSV leva junto", () => {
     const points = cashDifferencePoints([day("2026-10-06", -300, { sangria_q: 10000 }), day("2026-10-07", 150)]);
     expect(points).toEqual([
-      { label: "06/10", values: { difference: -300, shifts: 1, sangria: 10000, suprimento: 0 } },
-      { label: "07/10", values: { difference: 150, shifts: 1, sangria: 0, suprimento: 0 } },
+      { label: "06/10", values: { difference: -3, shifts: 1, sangria: 100, suprimento: 0 } },
+      { label: "07/10", values: { difference: 1.5, shifts: 1, sangria: 0, suprimento: 0 } },
     ]);
     expect(cashDifferenceAxis([day("2026-10-06", 0)])).toBe("Dia");
   });
@@ -42,13 +41,13 @@ describe("caixa: quebra por dia", () => {
     expect(points[0]!.label).toMatch(/semana$/);
     expect(cashDifferenceAxis(days)).toBe("Semana");
     const total = points.reduce((sum, point) => sum + (point.values.difference ?? 0), 0);
-    expect(total).toBe(-15000);
+    expect(total).toBe(-150);
   });
 
-  it("o CSV do quadro traz as quatro colunas, número cru", () => {
-    const csv = readingChartCsv("Dia", CASH_DIFFERENCE_SERIES, cashDifferencePoints([day("2026-10-06", -300)]));
+  it("o CSV do quadro traz as quatro colunas: dinheiro em reais com vírgula, turnos como número", () => {
+    const csv = cashDifferenceCsv("Dia", cashDifferencePoints([day("2026-10-06", -300, { sangria_q: 1050 })]));
     expect(csv.header).toEqual(["Dia", "Quebra (R$)", "Turnos fechados", "Sangrias (R$)", "Suprimentos (R$)"]);
-    expect(csv.rows).toEqual([["06/10", -300, 1, 0, 0]]);
+    expect(csv.rows).toEqual([["06/10", "-3,00", 1, "10,50", "0,00"]]);
   });
 });
 
@@ -69,7 +68,8 @@ describe("caixa: gaveta e meios", () => {
       [25, "25%"],
     ]);
     expect(cashMethodRows([{ method: "PIX", amount_q: 0 }])[0]!.share).toBe(0);
-    expect(methodsCsv(rows).rows[0]).toEqual(["Dinheiro", 3000, 75]);
+    expect(methodsCsv(rows).header).toEqual(["Meio de pagamento", "Valor (R$)", "Fatia (%)"]);
+    expect(methodsCsv(rows).rows[0]).toEqual(["Dinheiro", "30,00", 75]);
   });
 
   it("duração em linguagem de balcão", () => {
@@ -84,7 +84,7 @@ describe("caixa: gaveta e meios", () => {
       operatorCsv([
         { operator: "Ana", shifts: 2, difference_q: -300, drawer_openings: 4, drawer_unlocks: 1, change_requests: 0, account_settled_q: 0 },
       ]).rows,
-    ).toEqual([["Ana", 2, -300, 4, 1, 0]]);
+    ).toEqual([["Ana", 2, "-3,00", 4, 1, 0]]);
     expect(
       drawerCsv([
         {
@@ -100,6 +100,6 @@ describe("caixa: gaveta e meios", () => {
         },
       ]).header,
     ).toHaveLength(9);
-    expect(openAccountsCsv([{ customer_name: "Café Parisiense", balance_q: 15600 }]).rows).toEqual([["Café Parisiense", 15600]]);
+    expect(openAccountsCsv([{ customer_name: "Café Parisiense", balance_q: 15600 }]).rows).toEqual([["Café Parisiense", "156,00"]]);
   });
 });

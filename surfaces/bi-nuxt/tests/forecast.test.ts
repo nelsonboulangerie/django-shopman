@@ -68,10 +68,10 @@ describe("ocorrências anteriores", () => {
     ]);
   });
 
-  it("CSV em reais inteiros, número cru", () => {
+  it("CSV em reais com duas casas e vírgula, como o do kit", () => {
     expect(occasionYearsCsv(years)).toEqual({
       header: ["Ocorrência", "Faturamento (R$)", "Contra um dia normal"],
-      rows: [["09/10/2025", 8390, 1.2]],
+      rows: [["09/10/2025", "8389,71", 1.2]],
     });
   });
 });
@@ -83,11 +83,11 @@ describe("o período dia a dia", () => {
     day({ date: "2026-10-12", weekday_label: "segunda-feira", revenue_q: null, orders: null, missing_reason: "x" }),
   ];
 
-  it("dia fechado ou sem base não vira zero no gráfico", () => {
+  it("o gráfico recebe reais; dia fechado ou sem base não vira zero", () => {
     const points = forecastChartPoints(days);
     expect(points[0]).toEqual({
       label: "Sex 09/10",
-      values: { expected: 1103323.8, low: 938204.8, high: 1322464.2 },
+      values: { expected: 1103323.8 / 100, low: 938204.8 / 100, high: 1322464.2 / 100 },
     });
     expect(points[1]!.values).toEqual({ expected: null, low: null, high: null });
     expect(points[2]!.values).toEqual({ expected: null, low: null, high: null });
@@ -102,10 +102,10 @@ describe("o período dia a dia", () => {
     expect(rows[2]!.note).not.toBe("");
   });
 
-  it("CSV com os mesmos dias, em reais inteiros", () => {
+  it("CSV com os mesmos dias, em reais com duas casas e vírgula", () => {
     const csv = forecastDaysCsv(days);
     expect(csv.header[0]).toBe("Dia");
-    expect(csv.rows[0]).toEqual(["sexta-feira", "09/10/2026", 11033, 9382, 13225, 140, ""]);
+    expect(csv.rows[0]).toEqual(["sexta-feira", "09/10/2026", "11033,24", "9382,05", "13224,64", 140, ""]);
     expect(csv.rows[1]).toEqual(["domingo", "11/10/2026", "", "", "", "", "Fechado (feriado)"]);
   });
 });

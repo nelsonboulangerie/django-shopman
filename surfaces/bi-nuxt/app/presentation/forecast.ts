@@ -2,7 +2,7 @@
 // período, a tabela dia a dia e o CSV dos mesmos números. Puro e testado em
 // tests/forecast.test.ts; a página só compõe.
 import type { ReadingChartPoint, ReadingChartSeries, ReadingCsv } from "../../../operator-kit/app/presentation/readingChart";
-import { formatInt, formatMoney, missingLabel, rangeLabel, shortDate, shortDateWithYear } from "./bi";
+import { csvMoney, formatInt, formatMoney, missingLabel, rangeLabel, reais, shortDate, shortDateWithYear } from "./bi";
 import type { DayForecast, ForecastOccasion, OccasionYear } from "~/types/bi";
 
 export type ForecastHorizon = "day" | "week" | "month";
@@ -51,15 +51,10 @@ export function occasionYearRows(years: OccasionYear[]): OccasionYearRow[] {
   }));
 }
 
-/** Reais inteiros para o CSV: a projeção é estimativa, o centavo não ajuda a planejar. */
-function reais(cents: number | null | undefined): number | "" {
-  return typeof cents === "number" && Number.isFinite(cents) ? Math.round(cents / 100) : "";
-}
-
 export function occasionYearsCsv(years: OccasionYear[]): ReadingCsv {
   return {
     header: ["Ocorrência", "Faturamento (R$)", "Contra um dia normal"],
-    rows: years.map((year) => [shortDateWithYear(year.date), reais(year.revenue_q), Number(year.ratio.toFixed(2))]),
+    rows: years.map((year) => [shortDateWithYear(year.date), csvMoney(year.revenue_q), Number(year.ratio.toFixed(2))]),
   };
 }
 
@@ -77,9 +72,9 @@ export function forecastChartPoints(days: DayForecast[]): ReadingChartPoint[] {
   return days.map((day) => ({
     label: forecastDayLabel(day),
     values: {
-      expected: day.closed ? null : (day.revenue_q?.expected ?? null),
-      low: day.closed ? null : (day.revenue_q?.low ?? null),
-      high: day.closed ? null : (day.revenue_q?.high ?? null),
+      expected: day.closed ? null : reais(day.revenue_q?.expected),
+      low: day.closed ? null : reais(day.revenue_q?.low),
+      high: day.closed ? null : reais(day.revenue_q?.high),
     },
   }));
 }
@@ -132,9 +127,9 @@ export function forecastDaysCsv(days: DayForecast[]): ReadingCsv {
       return [
         day.weekday_label,
         shortDateWithYear(day.date),
-        open ? reais(day.revenue_q?.expected) : "",
-        open ? reais(day.revenue_q?.low) : "",
-        open ? reais(day.revenue_q?.high) : "",
+        open ? csvMoney(day.revenue_q?.expected) : "",
+        open ? csvMoney(day.revenue_q?.low) : "",
+        open ? csvMoney(day.revenue_q?.high) : "",
         open && day.orders ? Math.round(day.orders.expected) : "",
         forecastDayNote(day),
       ];

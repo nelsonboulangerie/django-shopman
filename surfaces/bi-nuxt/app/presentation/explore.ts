@@ -5,7 +5,7 @@ import type {
   ReadingCsv,
   ReadingChartPoint,
 } from "../../../operator-kit/app/presentation/readingChart";
-import { EXPLORE_DIMENSION_LABELS, shortDate, type BucketSpan } from "./bi";
+import { EXPLORE_DIMENSION_LABELS, csvMoney, shortDate, type BucketSpan } from "./bi";
 
 /**
  * O valor de "nenhum" nas listas. O item de um Select do Nuxt UI (reka-ui) não aceita
@@ -97,11 +97,12 @@ export function exploreAxisLabel(span: BucketSpan): string {
 }
 
 /**
- * Número cru do CSV. Dinheiro chega em centavos (`_q`) e sai em reais, porque quem abre
- * o CSV faz conta com ele e não sabe da convenção dos centavos.
+ * O valor no CSV. Dinheiro chega em centavos (`_q`) e sai em reais com duas casas
+ * ("1500,50", como o `readingChartCsv(..., { money: true })` do kit), porque quem abre o
+ * CSV faz conta com ele e não sabe da convenção dos centavos.
  */
-export function exploreCsvValue(unit: string, value: number): number {
-  return unit === "q" ? Math.round(value) / 100 : value;
+export function exploreCsvValue(unit: string, value: number): number | string {
+  return unit === "q" ? csvMoney(Math.round(value)) : value;
 }
 
 /** O cabeçalho da coluna do valor: a métrica e, no dinheiro, a moeda. */

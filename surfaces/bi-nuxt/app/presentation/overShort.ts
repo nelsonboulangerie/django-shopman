@@ -8,7 +8,7 @@ import type {
   BIOverShortRow,
   BIOverShortUnavailable,
 } from "~/types/bi";
-import { formatInt, formatQty, shortDate } from "./bi";
+import { csvMoney, formatInt, formatQty, shortDate } from "./bi";
 
 /** Custo da sobra em reais inteiros ("R$ 158"), como na prévia: centavo não decide produção. */
 export function formatCostWhole(cents: number): string {
@@ -472,7 +472,7 @@ export function overShortCsv(rows: readonly BIOverShortRow[]): { header: string[
       num(row.leftover),
       row.soldout_at || "",
       row.typical_sold ? num(row.typical_sold) : "",
-      row.leftover_cost_q ? (row.leftover_cost_q / 100).toFixed(2).replace(".", ",") : "",
+      row.leftover_cost_q ? csvMoney(row.leftover_cost_q) : "",
     ]),
   };
 }

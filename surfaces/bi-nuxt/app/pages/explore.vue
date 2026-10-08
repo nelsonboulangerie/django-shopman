@@ -10,6 +10,7 @@
 // o quadro do kit (`OperatorReadingCard`, com "Exportar CSV deste quadro"): a série no
 // tempo é o `OperatorReadingChart`; ranking e cruzamento são `NuxtTable`.
 import { useMediaQuery } from "@vueuse/core";
+import { readingMoneyFormat } from "../../../operator-kit/app/presentation/readingChart";
 
 import {
   aggregateBucket,
@@ -153,6 +154,20 @@ const timeSeriesDef = computed(() => [{ key: "value", label: report.value?.metri
 function formatValue(value: number): string {
   return formatExploreValue(report.value?.unit ?? "", value);
 }
+
+// O gráfico do kit recebe reais: dinheiro (`q`, centavos) é dividido ao montar os
+// pontos e escrito pelo `readingMoneyFormat` (o eixo vira "R$ 15 mil" sozinho). O CSV
+// segue dos pontos em centavos (`exploreCsv` converte).
+const isMoney = computed(() => report.value?.unit === "q");
+const chartPoints = computed(() =>
+  isMoney.value
+    ? timePoints.value.map((point) => ({
+        ...point,
+        values: { value: typeof point.values.value === "number" ? point.values.value / 100 : point.values.value },
+      }))
+    : timePoints.value,
+);
+const chartFormat = computed(() => (isMoney.value ? readingMoneyFormat : formatValue));
 
 const resultTitle = computed(() => {
   if (!report.value) return "";
@@ -359,8 +374,8 @@ const errorActions = computed(() => [
           kind="bars"
           :axis-label="timeAxisLabel"
           :series="timeSeriesDef"
-          :points="timePoints"
-          :format="formatValue"
+          :points="chartPoints"
+          :format="chartFormat"
           :max-ticks="wide ? 6 : 4"
           empty-title="Nada no período para esse corte"
           :empty-description="emptyDescription"

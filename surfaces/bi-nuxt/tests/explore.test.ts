@@ -102,8 +102,8 @@ describe("legenda do resultado", () => {
 });
 
 describe("CSV do quadro", () => {
-  it("dinheiro sai em reais, com a moeda no cabeçalho", () => {
-    expect(exploreCsvValue("q", 123456)).toBe(1234.56);
+  it("dinheiro sai em reais com duas casas e vírgula, com a moeda no cabeçalho", () => {
+    expect(exploreCsvValue("q", 123456)).toBe("1234,56");
     expect(exploreCsvValue("qty", 12.5)).toBe(12.5);
     expect(exploreValueHeader(report)).toBe("Faturamento (R$)");
     expect(exploreValueHeader({ unit: "qty", metric_label: "Quantidade vendida" })).toBe("Quantidade vendida");
@@ -113,8 +113,8 @@ describe("CSV do quadro", () => {
     expect(exploreCsv(report)).toEqual({
       header: ["Canal", "Faturamento (R$)"],
       rows: [
-        ["Balcão", 1234.56],
-        ["iFood", 78.9],
+        ["Balcão", "1234,56"],
+        ["iFood", "78,90"],
       ],
     });
   });
@@ -148,7 +148,7 @@ describe("CSV do quadro", () => {
     expect(csv).toEqual({
       header: ["Semana", "Faturamento (R$)"],
       rows: [
-        ["15/09", 1000.5],
+        ["15/09", "1000,50"],
         ["22/09", ""],
       ],
     });
