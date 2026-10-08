@@ -145,7 +145,7 @@ const componentLexicon = [
   ],
   [
     "OperatorSuiteShell",
-    "Rail em três estados (aberto, compacto, oculto: um botão na barra e a tecla C), sinal por seção (ponto ou número) e barra inferior móvel, sobre o Dashboard canônico",
+    "Barra lateral em três estados (aberta, compacta, oculta: um botão na barra do topo e a tecla C), sinal por seção (ponto ou número) e barra inferior de 3 a 5 vagas no celular, sobre o Dashboard canônico",
     "App de escritório com seções persistentes",
   ],
   [

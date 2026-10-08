@@ -6,6 +6,11 @@
 // **Ajustes**, que abre a página com Histórico, Catálogo, Clientes, Canais e Postos.
 // Ajustes não divide barra com a operação; o ponto avisa pendência (canal desligado)
 // sem pesar na fila. Toda seção continua a um toque de Ajustes.
+//
+// Barra inferior do celular (regra única do kit, `quickBarLayout`): as três seções
+// declaram `quick`, e é o que a barra já mostrava. Sem seção de fora, não há "Mais": o
+// ☰ abre a gaveta com o menu completo. Quem só expede tem duas seções ao todo, e a
+// barra mostra as duas (o mínimo de 3 vale para app com 3 seções ou mais).
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 export interface GestorSectionsInput {
@@ -41,12 +46,8 @@ export const SETTINGS_ROUTES = [
   "/workstations",
 ];
 
-function badge(count: number | undefined, noun: [string, string]) {
-  if (!count) return {};
-  return {
-    badge: String(count),
-    badgeLabel: `${count} ${count === 1 ? noun[0] : noun[1]}`,
-  };
+function badge(count: number | undefined) {
+  return count ? { badge: String(count) } : {};
 }
 
 export function gestorSections({
@@ -62,7 +63,8 @@ export function gestorSections({
       icon: "lucide:clipboard-list",
       to: ORDERS_ALL_COLUMNS,
       group: "Operação",
-      ...badge(intakeCount, ["pedido novo", "pedidos novos"]),
+      quick: true,
+      ...badge(intakeCount),
     },
     // O posto do passe: o mesmo quadro com Entrada e Preparo recolhidas (SUITE-UX §16).
     {
@@ -71,7 +73,8 @@ export function gestorSections({
       icon: "lucide:package-check",
       to: ORDERS_EXIT_POST,
       group: "Operação",
-      ...badge(exitCount, ["pedido na Saída", "pedidos na Saída"]),
+      quick: true,
+      ...badge(exitCount),
     },
   ];
   if (expeditesOnly) return operation;
@@ -85,6 +88,7 @@ export function gestorSections({
       match: SETTINGS_ROUTES,
       attention: channelsAttention || undefined,
       foot: true,
+      quick: true,
     },
   ];
 }

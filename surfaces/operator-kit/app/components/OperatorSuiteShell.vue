@@ -13,24 +13,25 @@
 // UM botão na barra do topo (`OperatorPageHeader`, via `useSuiteRail`) e a tecla C
 // percorrem aberto → compacto → oculto → aberto; o ícone e o nome dizem o PRÓXIMO
 // estado. Arrastar alterna aberto e compacto (canônico); ocultar não é por arrasto.
-// Abaixo de `lg`, o comportamento oficial: o rail abre como slideover pelo toggle da
-// barra, e a barra de seções do polegar continua embaixo.
+// Abaixo de `lg`, o comportamento oficial: a barra lateral abre como slideover (a
+// gaveta, o menu COMPLETO) pelo ☰ da barra do topo, e a barra inferior
+// (`OperatorQuickBar`) é o menu RÁPIDO, de 3 a 5 vagas, com "Mais" só quando sobra
+// seção (dono, 08/10/2026, PR #1544).
 //
 // Sinais: o ponto de estado ou o número de cada seção (`sectionRailSignal`). Compacto,
 // o chip vai no canto do ícone (`chip` do item); aberto, o MESMO chip vai na ponta
 // direita da linha (slot `item-trailing`). Tooltip e nome acessível: "Seção · estado"
-// ou "Seção · N pendências".
+// ou "Seção · N pendências" (`sectionDescription`, a mesma da barra inferior). Na tela
+// a peça se chama "barra lateral"; `rail` é só o nome no código.
 import type { ChipProps } from "@nuxt/ui";
 import { useMediaQuery } from "@vueuse/core";
 
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
 import {
-  PHONE_BAR_SECTIONS,
   SUITE_RAIL_NEXT,
   nextSuiteRailState,
-  phoneBarLayout,
   railSignalChip,
-  railSignalLabel,
+  sectionDescription,
   sectionRailSignal,
   withSectionShortcuts,
   type RailSignal,
@@ -50,7 +51,6 @@ const props = defineProps<{
   label: string;
   current?: string;
   operatorName?: string;
-  mobileMax?: number;
 }>();
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
@@ -68,12 +68,14 @@ const topSections = computed(() =>
 const footSections = computed(() =>
   props.sections.filter((section) => section.where !== "bar" && section.foot),
 );
-const phoneSections = computed(() =>
+// A barra inferior do celular: a regra única do kit (`quickBarLayout`), sobre as
+// seções que não são só da barra lateral.
+const quickSections = computed(() =>
   props.sections.filter((section) => section.where !== "rail"),
 );
-const phoneLayout = computed(() =>
-  phoneBarLayout(phoneSections.value, props.mobileMax ?? PHONE_BAR_SECTIONS),
-);
+// A gaveta (abaixo de lg, o DashboardSidebar abre como slideover): o ☰ da barra do
+// topo e o "Mais" da barra inferior a abrem.
+const drawerOpen = ref(false);
 const shortcuts = useOperatorShortcuts();
 const appLabel = (
   useRuntimeConfig().public?.operatorPwa as
@@ -148,34 +150,11 @@ useOperatorShortcutMap(
   computed<ReadonlySet<string>>(() => new Set(["ready"])),
 );
 
-function itemFor(section: OperatorSection) {
-  return {
-    label: section.label,
-    icon: section.icon,
-    to: section.to,
-    active: active.value === section.key,
-    // Barra do celular: a contagem mora no Chip do ícone, não num Badge ao lado do
-    // rótulo (o Badge tirava a largura do rótulo). Chip numérico 4xl; sem número, o
-    // indicativo 2xl. `inset: false`: o NavigationMenu liga inset por padrão e ele
-    // cobriria o desenho do ícone de 20 px.
-    chip: section.badge
-      ? { color: "warning" as const, text: section.badge, size: "4xl" as const, inset: false }
-      : section.attention
-        ? { color: "warning" as const, size: "2xl" as const, inset: false }
-        : undefined,
-    "aria-label": [section.label, section.badgeLabel, section.attention]
-      .filter(Boolean)
-      .join(", "),
-    tooltip: { text: section.label },
-    onSelect: section.to ? undefined : () => emit("select", section.key),
-  };
-}
-
 /** Uma seção no rail: item do NavigationMenu com o sinal dela. Compacto, o chip vai no
  *  canto do ícone; aberto, o slot `item-trailing` desenha o mesmo chip no fim da linha. */
 function railItemFor(section: OperatorSection, isCollapsed: boolean) {
   const signal = sectionRailSignal(section);
-  const description = railSignalLabel(section.label, signal);
+  const description = sectionDescription(section);
   return {
     label: section.label,
     icon: section.icon,
@@ -235,7 +214,6 @@ function trailingChip(item: unknown, menuChipSize: string) {
   return { ...chip, size: (chip.size ?? menuChipSize) as ChipProps["size"] };
 }
 
-const tabItems = computed(() => phoneLayout.value.visible.map(itemFor));
 </script>
 
 <template>
@@ -251,6 +229,7 @@ const tabItems = computed(() => phoneLayout.value.visible.map(itemFor));
       v-if="!(hidden && isDesktop)"
       id="suite"
       v-model:collapsed="collapsed"
+      v-model:open="drawerOpen"
       collapsible
       resizable
       :collapsed-size="4"
@@ -356,25 +335,13 @@ const tabItems = computed(() => phoneLayout.value.visible.map(itemFor));
           <slot />
         </div>
 
-        <NuxtDashboardToolbar
-          as="nav"
-          class="border-t border-default border-b-0 lg:hidden print:hidden pb-[env(safe-area-inset-bottom)]"
-          :aria-label="label"
-          data-operator-suite-tabs
-          data-focus-obstruction
-        >
-          <NuxtNavigationMenu class="min-w-0 flex-1" :items="tabItems" />
-          <OperatorPhoneMenu
-            variant="bar"
-            :operator-name="operatorName"
-            :overflow="phoneLayout.overflow"
-            :current="active"
-            @lock="emit('lock')"
-            @select="emit('select', $event)"
-          >
-            <template v-if="$slots.more" #extra><slot name="more" /></template>
-          </OperatorPhoneMenu>
-        </NuxtDashboardToolbar>
+        <OperatorQuickBar
+          :sections="quickSections"
+          :current="active"
+          :label="label"
+          @select="emit('select', $event)"
+          @more="drawerOpen = true"
+        />
       </div>
     </NuxtDashboardPanel>
   </NuxtDashboardGroup>

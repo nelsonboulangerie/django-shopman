@@ -56,9 +56,6 @@ const sections = computed<OperatorSection[]>(() => [
     label: "Receber",
     icon: "lucide:package-check",
     badge: receivePending.value ? String(receivePending.value) : undefined,
-    badgeLabel: receivePending.value ?
-      `${receivePending.value} ${receivePending.value === 1 ? "pendência" : "pendências"} na entrada aberta`
-    : undefined,
   },
   { key: "base", label: "Base", icon: "lucide:database" },
 ]);

@@ -19,7 +19,7 @@ import OperatorSuiteShell from "../../app/components/OperatorSuiteShell.vue";
 import type { OperatorSection } from "../../app/presentation/appBar";
 
 const SECTIONS: OperatorSection[] = [
-  { key: "orders", label: "Pedidos", icon: "i-lucide-clipboard-list", to: "/", badge: "1", badgeLabel: "1 pedido novo" },
+  { key: "orders", label: "Pedidos", icon: "i-lucide-clipboard-list", to: "/", badge: "1" },
   { key: "exit", label: "Saída", icon: "i-lucide-package-check", to: "/exit", badge: "3", tone: "error" },
   { key: "history", label: "Histórico", icon: "i-lucide-history", to: "/history", badge: "120" },
   { key: "feeds", label: "Canais", icon: "i-lucide-monitor-play", to: "/feeds", attention: "1 desligado" },
@@ -108,19 +108,19 @@ describe("OperatorSuiteShell: os três estados", () => {
     const cycle = () => wrapper.get("[data-rail-cycle]");
 
     expect(railState(wrapper)).toBe("open");
-    expect(cycle().attributes("aria-label")).toBe("Compactar o rail");
+    expect(cycle().attributes("aria-label")).toBe("Compactar a barra lateral");
     expect(wrapper.get("[data-suite-rail]").attributes("data-collapsed")).toBe("false");
 
     await cycle().trigger("click");
     await settle();
     expect(railState(wrapper)).toBe("compact");
-    expect(cycle().attributes("aria-label")).toBe("Ocultar o rail");
+    expect(cycle().attributes("aria-label")).toBe("Ocultar a barra lateral");
     expect(wrapper.get("[data-suite-rail]").attributes("data-collapsed")).toBe("true");
 
     await cycle().trigger("click");
     await settle();
     expect(railState(wrapper)).toBe("hidden");
-    expect(cycle().attributes("aria-label")).toBe("Mostrar o rail");
+    expect(cycle().attributes("aria-label")).toBe("Mostrar a barra lateral");
     // Oculto é o sidebar não montado.
     expect(wrapper.find("[data-suite-rail]").exists()).toBe(false);
     // Sem o rail na tela, Avisos sobe para a barra do topo.
@@ -128,7 +128,7 @@ describe("OperatorSuiteShell: os três estados", () => {
 
     await cycle().trigger("click");
     await settle();
-    expect(cycle().attributes("aria-label")).toBe("Compactar o rail");
+    expect(cycle().attributes("aria-label")).toBe("Compactar a barra lateral");
     expect(railState(wrapper)).toBe("open");
   });
 
@@ -249,9 +249,63 @@ describe("OperatorSuiteShell: o que o shell já fazia", () => {
     useOperatorShortcuts().open.value = false;
   });
 
-  it("a barra de seções do polegar continua embaixo, abaixo de lg", async () => {
+});
+
+describe("OperatorSuiteShell: a barra inferior (o menu rápido)", () => {
+  function quickLinks(wrapper: Awaited<ReturnType<typeof mountShell>>) {
+    return wrapper.findAll("[data-operator-quick-bar] [data-section]");
+  }
+
+  it("embaixo, abaixo de lg, com a área segura do iPhone", async () => {
     const wrapper = await mountShell();
     const tabs = wrapper.get("[data-operator-suite-tabs]");
-    expect(tabs.classes()).toContain("lg:hidden");
+    expect(tabs.classes()).toEqual(expect.arrayContaining(["lg:hidden", "pb-[env(safe-area-inset-bottom)]"]));
+  });
+
+  it("o desenho do exemplo oficial 'With bottom tab bar', num componente do kit", async () => {
+    const wrapper = await mountShell();
+    const menus = wrapper.findAllComponents(NavigationMenu);
+    // A barra lateral usa o menu vertical; o horizontal é o da barra inferior.
+    const bar = menus.find((menu) => menu.props("orientation") === "horizontal")!;
+    expect(wrapper.find("[data-operator-quick-bar]").exists()).toBe(true);
+    expect(bar.props("ui")).toMatchObject({
+      root: "justify-around border-t border-default py-2",
+      linkLeadingIcon: "size-5",
+      linkLabel: "text-[10px]/3 font-normal",
+    });
+    expect(bar.props("ui").link).toContain("flex-col gap-1 px-3");
+    // Itens espalhados por igual na largura (decisão do dono, 08/10).
+    expect(bar.props("ui").list).toContain("w-full");
+    expect(bar.props("ui").item).toContain("flex-1");
+  });
+
+  it("sem declaração: as primeiras 4 seções e 'Mais', que abre a gaveta", async () => {
+    const wrapper = await mountShell();
+    expect(quickLinks(wrapper).map((link) => link.attributes("data-section"))).toEqual(["orders", "exit", "history", "feeds"]);
+    const more = wrapper.get("[data-operator-quick-bar] [data-quick-bar-more]");
+    expect(more.text()).toBe("Mais");
+    expect(wrapper.findComponent(DashboardSidebar).props("open")).toBe(false);
+    await more.trigger("click");
+    await settle();
+    expect(wrapper.findComponent(DashboardSidebar).props("open")).toBe(true);
+  });
+
+  it("a mesma descrição e o mesmo chip da barra lateral", async () => {
+    const wrapper = await mountShell();
+    expect(quickLinks(wrapper).map((link) => link.attributes("aria-label"))).toEqual([
+      "Pedidos · 1 pendência",
+      "Saída · 3 pendências",
+      "Histórico · 120 pendências",
+      "Canais · 1 desligado",
+    ]);
+    const chips = wrapper.findAll('[data-operator-quick-bar] [data-slot="linkLeadingChip"]');
+    expect(chips.map((chip) => chip.text())).toEqual(["1", "3", "99+", ""]);
+  });
+
+  it("5 declaradas: as cinco, sem 'Mais'", async () => {
+    const sections = SECTIONS.map((section) => ({ ...section, quick: section.key !== "catalog" }));
+    const wrapper = await mountShell({ sections });
+    expect(quickLinks(wrapper).map((link) => link.attributes("data-section"))).toEqual(["orders", "exit", "history", "feeds", "settings"]);
+    expect(wrapper.find("[data-quick-bar-more]").exists()).toBe(false);
   });
 });

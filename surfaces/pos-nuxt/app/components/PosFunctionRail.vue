@@ -56,7 +56,6 @@ if (preorders) {
       preorders: {
         allowed: preorders.allowed.value,
         badge: preorders.badge.value,
-        ariaLabel: preorders.ariaLabel.value,
       },
     });
     shared.value = { sections, current: posCurrentSection(props.view) };

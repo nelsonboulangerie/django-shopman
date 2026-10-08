@@ -16,7 +16,7 @@
 import { computed } from "vue";
 
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
-import { PHONE_BAR_SECTIONS, phoneBarLayout } from "../presentation/suiteChrome";
+import { PHONE_BAR_SECTIONS, phoneBarLayout, sectionDescription } from "../presentation/suiteChrome";
 
 const props = withDefaults(defineProps<{
   sections: readonly OperatorSection[];
@@ -43,7 +43,7 @@ const visibleItems = computed(() => layout.value.visible.map((section) => ({
   to: section.to,
   active: active.value === section.key,
   badge: section.badge || (section.attention ? "!" : undefined),
-  "aria-label": [section.label, section.badgeLabel, section.attention].filter(Boolean).join(", "),
+  "aria-label": sectionDescription(section),
   "data-section": section.key,
   onSelect: () => {
     if (!section.to) emit("select", section.key);

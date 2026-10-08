@@ -26,7 +26,6 @@ const SECTIONS: OperatorSection[] = [
     icon: "lucide:clipboard-list",
     to: "/",
     badge: "10",
-    badgeLabel: "10 pedidos na fila",
   },
   {
     key: "catalog",
@@ -95,7 +94,7 @@ describe("OperatorSuiteRail", () => {
     const wrapper = await mountRail({ current: "catalog" });
     const items = wrapper.findAll("nav [data-rail-section]");
     expect(
-      items.map((item) => item.attributes("aria-label")?.split(/[,:]/, 1)[0]),
+      items.map((item) => item.attributes("aria-label")?.split(" · ", 1)[0]),
     ).toEqual(["Pedidos", "Catálogo", "Canais"]);
     expect(items[1]!.attributes("aria-current")).toBe("page");
     expect(items[1]!.classes()).toContain("w-[68px]");
@@ -145,24 +144,24 @@ describe("OperatorSuiteRail", () => {
       foot.get("[data-section='settings']").attributes("aria-current"),
     ).toBe("page");
     expect(foot.get("[data-section='settings']").attributes("aria-label")).toBe(
-      "Ajustes: 1 desligado",
+      "Ajustes · 1 desligado",
     );
   });
 
-  it("o selo é visual; o que ele conta vai por extenso no nome acessível", async () => {
+  it("o selo é visual; o nome acessível é a descrição única da seção", async () => {
     const wrapper = await mountRail();
     const orders = wrapper.get("nav [data-section='orders']");
     expect(orders.get("[data-rail-badge]").attributes("aria-hidden")).toBe(
       "true",
     );
-    expect(orders.attributes("aria-label")).toBe("Pedidos, 10 pedidos na fila");
+    expect(orders.attributes("aria-label")).toBe("Pedidos · 10 pendências");
   });
 
   it("a atenção vira um ponto no ícone e entra no nome acessível", async () => {
     const wrapper = await mountRail();
     const feeds = wrapper.get("nav [data-section='feeds']");
     expect(feeds.find("[data-rail-attention]").exists()).toBe(true);
-    expect(feeds.attributes("aria-label")).toBe("Canais: 1 desligado");
+    expect(feeds.attributes("aria-label")).toBe("Canais · 1 desligado");
   });
 
   it("Bloquear emite lock, com o nome de quem sai", async () => {

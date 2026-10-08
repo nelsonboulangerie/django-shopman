@@ -242,7 +242,16 @@ describe("Gestor canônico em Nuxt UI", () => {
     // curinga: qualquer outro <Ui…> continua reprovando.
     expect(
       runtimeOffenders(
-        /<Ui(?!(?:DateField|DateRangeField|TimeField|TimeRangeField|DateTimeField)\b)[A-Z]|\b:ui=|\bui="/,
+        /<Ui(?!(?:DateField|DateRangeField|TimeField|TimeRangeField|DateTimeField)\b)[A-Z]/,
+      ),
+    ).toEqual([]);
+    // `:ui` por instância: nenhum, com UMA exceção nominal. A barra inferior do
+    // celular é o exemplo oficial "With bottom tab bar" do NavigationMenu, cujo
+    // desenho É um `:ui` (dono, 08/10/2026, PR #1544); ele mora uma vez no
+    // `OperatorQuickBar`, nunca no shell nem nas telas.
+    expect(
+      runtimeOffenders(/\b:ui=|\bui="/).filter(
+        (file) => file !== "operator-kit/OperatorQuickBar.vue",
       ),
     ).toEqual([]);
     // Import de TIPO do reka-ui não desenha nada (os campos de data tipam o range com
@@ -769,7 +778,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(shell).not.toContain('class="min-h-0 flex-1 overflow-y-auto"');
-    expect(shell).toContain("border-t border-default border-b-0");
+    // A barra inferior é o componente do kit (o exemplo oficial "With bottom tab bar");
+    // o `:ui` dela mora no `OperatorQuickBar`, nunca no shell nem nas telas.
+    expect(shell).toContain("<OperatorQuickBar");
     expect(shell).toContain("data-suite-rail-footer");
     expect(shell).toContain("flex-col items-center");
     expect(shell).toContain("data-suite-rail-navigation");
