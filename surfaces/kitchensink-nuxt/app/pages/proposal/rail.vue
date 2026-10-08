@@ -108,13 +108,13 @@ defineShortcuts({ c: cycle });
 //   número = contagem (chip 4xl do kit, o único tamanho em que dois dígitos se leem).
 // Compacto: o chip vai no canto do ícone; o número fica centrado no canto (inset
 // false) para não cobrir o ícone. Aberto: o MESMO chip vai no fim do nome, pelo
-// slot oficial `item-trailing`. O tooltip segue um padrão só: "App · o que é".
-type Signal = { color: "success" | "error" | "warning"; count?: number; noun?: string; state?: string };
+// slot oficial `item-trailing`. O tooltip segue um padrão só: "App · estado" ou "App · N pendências".
+type Signal = { color: "success" | "error" | "warning"; count?: number; state?: string };
 const apps: { label: string; icon: string; active?: boolean; signal?: Signal }[] = [
   { label: "Central", icon: "i-lucide-layout-grid", signal: { color: "success", state: "tudo em ordem" } },
   { label: "PDV", icon: "i-lucide-shopping-cart", signal: { color: "error", state: "sem conexão" } },
-  { label: "Cozinha", icon: "i-lucide-chef-hat", signal: { color: "error", count: 3, noun: "pedidos esperando" } },
-  { label: "Gestor", icon: "i-lucide-clipboard-list", active: true, signal: { color: "error", count: 12, noun: "pedidos para revisar" } },
+  { label: "Cozinha", icon: "i-lucide-chef-hat", signal: { color: "error", count: 3 } },
+  { label: "Gestor", icon: "i-lucide-clipboard-list", active: true, signal: { color: "error", count: 12 } },
   { label: "Produção", icon: "i-lucide-croissant" },
   { label: "Marketing", icon: "i-lucide-megaphone" },
   { label: "Compras", icon: "i-lucide-truck" },
@@ -127,7 +127,9 @@ function chipOf(signal: Signal) {
 }
 function describe(label: string, signal?: Signal) {
   if (!signal) return label;
-  return signal.count === undefined ? `${label} · ${signal.state}` : `${label} · ${signal.count} ${signal.noun}`;
+  // Contagem tem UMA palavra na suíte inteira: o app diz o que é, o número diz quanto.
+  if (signal.count === undefined) return `${label} · ${signal.state}`;
+  return `${label} · ${signal.count} ${signal.count === 1 ? "pendência" : "pendências"}`;
 }
 const suite = computed(() => [
   apps.map((app) => ({
