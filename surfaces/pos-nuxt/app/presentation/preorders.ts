@@ -590,12 +590,6 @@ export function railBadge(list: Pick<PreorderListResponse, "days"> | null | unde
   return count > 0 ? String(count) : undefined;
 }
 
-/** O nome acessível do item da barra, com o selo por extenso. */
-export function railAriaLabel(badge: string | undefined): string {
-  if (!badge) return "Encomendas";
-  return badge === "1" ? "Encomendas: 1 para entregar hoje" : `Encomendas: ${badge} para entregar hoje`;
-}
-
 // ── Os recortes de um toque (decisão do dono, P1 de 02/10) ──────────────────
 //
 // Os recortes de todo dia do balcão saem de trás do menu de dois passos e viram

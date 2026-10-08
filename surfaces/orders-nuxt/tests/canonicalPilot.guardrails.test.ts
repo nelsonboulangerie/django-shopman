@@ -242,7 +242,16 @@ describe("Gestor canônico em Nuxt UI", () => {
     // curinga: qualquer outro <Ui…> continua reprovando.
     expect(
       runtimeOffenders(
-        /<Ui(?!(?:DateField|DateRangeField|TimeField|TimeRangeField|DateTimeField)\b)[A-Z]|\b:ui=|\bui="/,
+        /<Ui(?!(?:DateField|DateRangeField|TimeField|TimeRangeField|DateTimeField)\b)[A-Z]/,
+      ),
+    ).toEqual([]);
+    // `:ui` por instância: nenhum, com UMA exceção nominal. A barra inferior do
+    // celular é o exemplo oficial "With bottom tab bar" do NavigationMenu, cujo
+    // desenho É um `:ui` (dono, 08/10/2026, PR #1544); ele mora uma vez no
+    // `OperatorQuickBar`, nunca no shell nem nas telas.
+    expect(
+      runtimeOffenders(/\b:ui=|\bui="/).filter(
+        (file) => file !== "operator-kit/OperatorQuickBar.vue",
       ),
     ).toEqual([]);
     // Import de TIPO do reka-ui não desenha nada (os campos de data tipam o range com
@@ -308,9 +317,15 @@ describe("Gestor canônico em Nuxt UI", () => {
         .filter(({ tag }) => /\bsize=/.test(tag))
         .map(({ file }) => file),
     ).toEqual([]);
+    // Selo: o tema dá `soft` (conjunto mínimo, dono 08/10/2026). Selo sem `variant`
+    // é o certo; os `soft`/`subtle` escritos que restam são teto na trava do kit
+    // (`operator-kit/tests/guardrails.minimalSet.test.ts`) e só caem.
     expect(
       componentTags("Badge")
-        .filter(({ tag }) => !/\bvariant="(?:soft|subtle)"/.test(tag))
+        .filter(
+          ({ tag }) =>
+            /\bvariant=/.test(tag) && !/\bvariant="(?:soft|subtle)"/.test(tag),
+        )
         .map(({ file }) => file),
     ).toEqual([]);
     expect(offenders(/<kbd\b/i)).toEqual([]);
@@ -362,9 +377,10 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(appConfig).toMatch(/\balert:\s*\{/);
+    // `secondary` saiu das cores geradas (conjunto mínimo, dono 08/10/2026).
+    expect(appConfig).not.toMatch(/color: ["']secondary["']/);
     for (const color of [
       "primary",
-      "secondary",
       "success",
       "info",
       "warning",
@@ -399,6 +415,11 @@ describe("Gestor canônico em Nuxt UI", () => {
     // tamanho amarrado ao próprio texto: `:size="X ? '4xl' : '2xl'"` com `:text="X"`.
     const chipSizeOk = ({ file, tag }: { file: string; tag: string }) => {
       if (file.endsWith("OperatorLiveStatus.vue")) return /\bsize="xl"/.test(tag);
+      // O sinal do rail da suíte (PR-K4, dono 08/10/2026): o tamanho sai de
+      // `railSignalChip` (número 4xl; ponto no tamanho padrão do NavigationMenu),
+      // com teste próprio em `operator-kit/tests/suiteChrome.test.ts`.
+      if (file.endsWith("OperatorSuiteShell.vue"))
+        return /v-bind="trailingChip\(/.test(tag);
       const bound = tag.match(/:size="([\w.]+) \? '4xl' : '2xl'"/);
       if (bound) return tag.includes(`:text="${bound[1]}"`);
       const hasText = /(?:^|\s):?text=/.test(tag);
@@ -757,16 +778,22 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(shell).not.toContain('class="min-h-0 flex-1 overflow-y-auto"');
-    expect(shell).toContain("border-t border-default border-b-0");
+    // A barra inferior é o componente do kit (o exemplo oficial "With bottom tab bar");
+    // o `:ui` dela mora no `OperatorQuickBar`, nunca no shell nem nas telas.
+    expect(shell).toContain("<OperatorQuickBar");
     expect(shell).toContain("data-suite-rail-footer");
     expect(shell).toContain("flex-col items-center");
     expect(shell).toContain("data-suite-rail-navigation");
-    // Seções e pé do rail: a mesma peça do sino (Chip inset + Button quadrado) e o
-    // mesmo espaçamento, em vez de um NavigationMenu recolhido com outra geometria.
-    expect(shell).toContain(
-      'class="flex w-full min-w-0 flex-col items-center gap-1.5"\n        :aria-label="label"\n        data-suite-rail-navigation',
+    // Rail em três estados (PR-K4, dono 08/10/2026): só peças oficiais. Seções no
+    // NavigationMenu vertical recolhível, com tooltip e popover; sidebar recolhível e
+    // redimensionável de 12 a 20 rem; nenhum `:ui` por instância.
+    expect(shell).toMatch(
+      /<NuxtNavigationMenu\s+:collapsed="isCollapsed"[\s\S]*?orientation="vertical"\s+tooltip\s+popover[\s\S]*?data-suite-rail-navigation/,
     );
-    expect(shell).not.toMatch(/<NuxtNavigationMenu[^>]*\bcollapsed\b/);
+    expect(shell).toMatch(
+      /<NuxtDashboardSidebar[\s\S]*?collapsible\s+resizable\s+:collapsed-size="4"[\s\S]*?:min-size="12"\s+:max-size="20"/,
+    );
+    expect(shell).not.toMatch(/\s:ui="/);
     expect(shell).not.toContain('class="w-fit self-center"');
     expect(shell).toContain('<OperatorInbox placement="rail" />');
     expect(queue).toContain("sm:grid-cols-[80px_minmax(0,1fr)]");

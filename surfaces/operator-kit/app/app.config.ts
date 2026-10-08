@@ -1,3 +1,19 @@
+// Tokens do Nuxt UI redefinidos dentro do rail (ver `ui.dashboardSidebar`).
+const RAIL_SCOPE = [
+  "bg-rail text-rail-foreground",
+  "[--ui-text:var(--rail-foreground)]",
+  "[--ui-text-muted:var(--rail-foreground)]",
+  "[--ui-text-dimmed:var(--rail-foreground)]",
+  "[--ui-text-toned:var(--rail-foreground)]",
+  "[--ui-text-highlighted:var(--rail-foreground)]",
+  "[--primary:var(--rail-foreground)]",
+  "[--ui-primary:var(--rail-foreground)]",
+  "[--primary-ink:var(--rail-foreground)]",
+  "[--ui-bg-elevated:rgb(0_0_0/0.4)]",
+  "[--ui-bg:var(--rail)]",
+  "[--ui-border:color-mix(in_srgb,var(--rail-foreground)_25%,transparent)]",
+].join(" ");
+
 export default defineAppConfig({
   ui: {
     dashboardNavbar: { slots: { root: "bg-card" } },
@@ -22,7 +38,12 @@ export default defineAppConfig({
     // O maior tamanho oficial (3xl) basta para presença, mas não para contagens
     // como “6” e “9+”. Só o Chip numérico recebe um degrau extra. Mantemos o
     // círculo de 16 px aprovado, com texto de 12 px para manter a leitura compacta.
+    // Anel de 2 px, a espessura do traço dos ícones Lucide (dono, 08/10/2026,
+    // PR #1539). O anel é `ring-bg` do Nuxt UI: tem a cor do fundo onde o chip
+    // está e o descola do ícone (no rail dourado, o `--ui-bg` do escopo do rail).
+    // O `4xl` numerado é exceção declarada: o `3xl` oficial não lê dois dígitos.
     chip: {
+      slots: { base: "ring-2" },
       variants: {
         size: {
           "4xl": "h-4 min-w-4 px-1 text-[12px]/none",
@@ -34,18 +55,47 @@ export default defineAppConfig({
     kbd: {
       defaultVariants: { variant: "soft" },
     },
+    // Botão: o conjunto mínimo (dono, 08/10/2026, PR #1539) é tamanho `md` ou
+    // `xl`, variante `solid`/`outline`/`ghost` e cor `primary`/`neutral`/`error`;
+    // estado ativo por `active` + `active-variant`/`active-color`, nunca por ternário
+    // no `variant`. A trava é `tests/guardrails.minimalSet.test.ts`. O default do
+    // tema continua o oficial (`primary` `solid` `md`): trocá-lo repintaria em
+    // silêncio cada `<NuxtButton>` sem cor escrita, que hoje é o gesto principal.
+    //
     // Texto latão sobre latão a 10% (`soft`) precisa do tom de tinta do tema para
     // passar o AA (4,5:1); ver `--primary-ink` em operator-theme.css. Só a cor do
-    // texto muda; anatomia e variantes continuam as do Nuxt UI.
+    // texto muda; anatomia e variantes continuam as do Nuxt UI. Fica para o estado
+    // ativo do rail (`active-variant="soft"`).
     button: {
       compoundVariants: [
         { color: "primary", variant: "soft", class: "text-(--primary-ink)" },
       ],
     },
+    // Selo: uma variante só, `soft` (sem borda), nas 6 cores neutral, primary,
+    // info, success, warning e error (dono, 08/10/2026, PR #1539). Ninguém escreve
+    // `variant` num selo; a trava é `tests/guardrails.minimalSet.test.ts`. AA medido
+    // na proposta: mínimo 4,59:1; o primary usa a tinta `--primary-ink`.
     badge: {
+      defaultVariants: { variant: "soft" },
       compoundVariants: [
         { color: "primary", variant: "soft", class: "text-(--primary-ink)" },
       ],
+    },
+    // Rail dourado (dono, 08/10/2026, PR #1539): todo DashboardSidebar da suíte
+    // redefine os tokens do Nuxt UI SÓ dentro dele, e as peças canônicas que moram
+    // ali (Button, NavigationMenu, Chip, Tooltip de gatilho) leem o dourado sem
+    // classe nova nem `:ui` por instância. `--ui-bg` = o rail, para o anel do Chip
+    // (`ring-bg`) ter a cor do fundo; `--primary-ink` também, porque o estado ativo
+    // (`primary` `soft`) usa essa tinta e ela é resolvida no `:root` (latão sobre
+    // latão). `content` é o mesmo rail aberto como slideover abaixo de `lg`.
+    dashboardSidebar: {
+      slots: {
+        root: RAIL_SCOPE,
+        content: RAIL_SCOPE,
+      },
+      variants: {
+        side: { left: { root: "border-e-0" } },
+      },
     },
     popover: { slots: { content: "bg-popover" } },
     slideover: { slots: { content: "bg-card" } },
@@ -58,6 +108,9 @@ export default defineAppConfig({
     // operador os Alerts também aparecem sobre conteúdo rolável; a tinta precisa
     // ser pré-composta com a superfície do tema para continuar sutil, mas opaca.
     // A anatomia, o padding, a borda e as variantes continuam sendo do Nuxt UI.
+    // Conjunto mínimo (dono, 08/10/2026): `subtle` × info/success/warning/error.
+    // `primary` e `neutral` estão fora do conjunto, mas ainda têm uso (1 e 17,
+    // contados em 08/10); ficam até a migração desses avisos e morrem com ela.
     alert: {
       compoundVariants: [
         {
@@ -65,13 +118,6 @@ export default defineAppConfig({
           variant: "subtle",
           class: {
             root: "bg-[color-mix(in_srgb,var(--primary)_10%,var(--card))]",
-          },
-        },
-        {
-          color: "secondary",
-          variant: "subtle",
-          class: {
-            root: "bg-[color-mix(in_srgb,var(--secondary-foreground)_10%,var(--card))]",
           },
         },
         {
@@ -111,6 +157,10 @@ export default defineAppConfig({
         },
       ],
     },
+    // Cartão: o de topo é `outline` (default); cartão dentro de outro cartão é
+    // `soft` (só fundo, sem borda dupla), escrito na chamada (dono, 08/10/2026).
+    // `subtle` não entra. Não há regra de CSS que force o aninhado: é a chamada que
+    // diz, e a trava proíbe `subtle`/`solid` novos.
     card: {
       // Densidade operacional única. O UCard oficial sobe para 24 px no body em
       // `sm`; no Gestor isso desperdiça uma linha útil em cada unidade da fila.

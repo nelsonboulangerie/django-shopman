@@ -50,7 +50,6 @@ describe("seções da Produção no rail", () => {
       (s) => s.key === "timers",
     )!;
     expect(busy.badge).toBe("3");
-    expect(busy.badgeLabel).toBe("3 timers ativos");
     expect(busy.attention).toBe("1 tocando");
   });
 
@@ -63,7 +62,6 @@ describe("seções da Produção no rail", () => {
       (s) => s.key === "quality",
     )!;
     expect(quality.badge).toBe("8");
-    expect(quality.badgeLabel).toBe("8 lotes para confirmar");
   });
 
   it("a rota acende a seção certa; Receitas acende Ajustes, onde ela mora", () => {

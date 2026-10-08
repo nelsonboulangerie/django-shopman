@@ -26,7 +26,7 @@ import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka
 
 import { operatorAppNamed } from "../../appIdentity";
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
-import { withSectionShortcuts } from "../presentation/suiteChrome";
+import { sectionDescription, withSectionShortcuts } from "../presentation/suiteChrome";
 import { SUITE_HELP_SHORTCUT, SUITE_SECTION_SHORTCUTS } from "../shortcuts/suiteShortcuts";
 
 defineOptions({ inheritAttrs: false });
@@ -189,7 +189,7 @@ useOperatorShortcutMap(
           :to="section.to"
           :active="active === section.key"
           :badge="section.badge"
-          :aria-label="section.badgeLabel ? `${section.label}, ${section.badgeLabel}` : undefined"
+          :aria-label="sectionDescription(section)"
           :attention="section.attention"
           :shortcut="section.shortcut"
           :print-shortcut="printShortcuts"
@@ -221,7 +221,7 @@ useOperatorShortcutMap(
           :to="section.to"
           :active="active === section.key"
           :badge="section.badge"
-          :aria-label="section.badgeLabel ? `${section.label}, ${section.badgeLabel}` : undefined"
+          :aria-label="sectionDescription(section)"
           :attention="section.attention"
           :shortcut="section.shortcut"
           :print-shortcut="printShortcuts"

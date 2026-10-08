@@ -35,7 +35,7 @@ export const SUITE_HELP_SHORTCUT = defineOperatorShortcutMap([
     id: "suite.shortcuts-help",
     label: "Abrir ajuda de atalhos",
     combinations: [{ code: "Slash", shift: true }],
-    alternative: "Item Atalhos no rail ou no menu",
+    alternative: "Item Atalhos na barra lateral ou no menu",
   },
 ] satisfies readonly OperatorShortcutCommand[]);
 
@@ -45,6 +45,16 @@ export const SUITE_SECTION_SHORTCUTS = defineOperatorShortcutMap(
     id: `suite.section.${index + 1}`,
     label: `Abrir seção ${index + 1}`,
     combinations: [{ code: `Digit${index + 1}`, alt: true }],
-    alternative: "Item nomeado no rail ou na barra de seções",
+    alternative: "Item nomeado na barra lateral ou na barra inferior",
   })) satisfies readonly OperatorShortcutCommand[],
 );
+
+export const SUITE_RAIL_SHORTCUT = defineOperatorShortcutMap([
+  {
+    ...shared,
+    id: "suite.rail.cycle",
+    label: "Barra lateral: aberta, compacta ou oculta",
+    combinations: [{ code: "KeyC" }],
+    alternative: "Botão da barra lateral na barra do topo",
+  },
+] satisfies readonly OperatorShortcutCommand[]);

@@ -22,7 +22,7 @@ import type { OperatorSession } from "../types/operator";
 
 const props = withDefaults(defineProps<{
   operatorName?: string;
-  /** `rail`: com "Ocultar a barra". `phone`: com Bloquear. */
+  /** `rail`: com "Ocultar a barra lateral". `phone`: com Bloquear. */
   mode: "rail" | "phone";
 }>(), { operatorName: undefined });
 
@@ -102,7 +102,7 @@ const { run: toggleOrientation, pending: orientationPending } = usePendingAction
       color="neutral"
       variant="ghost"
       icon="i-lucide-panel-left-close"
-      label="Ocultar a barra"
+      label="Ocultar a barra lateral"
       data-suite-rail-hide
       @click="emit('hide')"
     />

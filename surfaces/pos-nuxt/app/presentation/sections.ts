@@ -21,7 +21,7 @@ export const POS_SETTINGS_ROUTES = ["/settings"];
 export interface PosSectionsInput {
   tabs: readonly Pick<POSTabProjection, "state">[];
   hasOpenCashSession: boolean;
-  preorders: { allowed: boolean; badge?: string; ariaLabel?: string };
+  preorders: { allowed: boolean; badge?: string };
 }
 
 /** Comandas em uso: o número que o selo das Comandas conta. */
@@ -38,7 +38,6 @@ export function posSections(input: PosSectionsInput): OperatorSection[] {
       icon: "lucide:receipt",
       shortcut: "F2",
       badge: inUse > 0 ? String(inUse) : undefined,
-      badgeLabel: inUse > 0 ? (inUse === 1 ? "1 comanda em uso" : `${inUse} comandas em uso`) : undefined,
     },
   ];
   // Encomendas: só para quem lê pedidos; o selo conta as de hoje por entregar.
@@ -49,7 +48,6 @@ export function posSections(input: PosSectionsInput): OperatorSection[] {
       icon: "lucide:calendar-clock",
       to: "/preorders",
       badge: input.preorders.badge,
-      badgeLabel: input.preorders.badge ? input.preorders.ariaLabel?.replace(/^Encomendas: /, "") : undefined,
     });
   }
   sections.push(

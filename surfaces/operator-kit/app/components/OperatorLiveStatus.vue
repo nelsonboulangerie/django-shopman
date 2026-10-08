@@ -47,7 +47,6 @@ const display = computed(() =>
 <template>
   <NuxtBadge
     :color="badgeColor"
-    variant="soft"
     :label="display"
     role="status"
     :aria-label="accessible"

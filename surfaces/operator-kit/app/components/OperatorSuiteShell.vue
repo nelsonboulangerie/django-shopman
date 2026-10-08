@@ -1,14 +1,49 @@
 <script setup lang="ts">
+// O shell da suíte (Gestor): o rail dourado em três estados, montado SÓ com peças do
+// Nuxt UI (dono, 08/10/2026, PR #1539; referência `pages/proposal/rail.vue` do Kitchen
+// Sink): `NuxtDashboardGroup`, `NuxtDashboardSidebar` e `NuxtNavigationMenu`
+// vertical. Nenhum `:ui` por instância: o dourado mora no `ui.dashboardSidebar` do
+// `app.config` do kit.
+//
+// Os três estados no desktop:
+//   aberto   = `collapsed=false` (ícone e nome; redimensionável de 12 a 20 rem, a
+//              largura gravada pelo DashboardGroup);
+//   compacto = `collapsed=true` (só ícone; o nome vira tooltip);
+//   oculto   = o sidebar não é montado (um cookie do kit, `<storage-key>-rail-hidden`).
+// UM botão na barra do topo (`OperatorPageHeader`, via `useSuiteRail`) e a tecla C
+// percorrem aberto → compacto → oculto → aberto; o ícone e o nome dizem o PRÓXIMO
+// estado. Arrastar alterna aberto e compacto (canônico); ocultar não é por arrasto.
+// Abaixo de `lg`, o comportamento oficial: a barra lateral abre como slideover (a
+// gaveta, o menu COMPLETO) pelo ☰ da barra do topo, e a barra inferior
+// (`OperatorQuickBar`) é o menu RÁPIDO, de 3 a 5 vagas, com "Mais" só quando sobra
+// seção (dono, 08/10/2026, PR #1544).
+//
+// Sinais: o ponto de estado ou o número de cada seção (`sectionRailSignal`). Compacto,
+// o chip vai no canto do ícone (`chip` do item); aberto, o MESMO chip vai na ponta
+// direita da linha (slot `item-trailing`). Tooltip e nome acessível: "Seção · estado"
+// ou "Seção · N pendências" (`sectionDescription`, a mesma da barra inferior). Na tela
+// a peça se chama "barra lateral"; `rail` é só o nome no código.
+import type { ChipProps } from "@nuxt/ui";
+import { useMediaQuery } from "@vueuse/core";
+
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
 import {
-  PHONE_BAR_SECTIONS,
-  phoneBarLayout,
+  SUITE_RAIL_NEXT,
+  nextSuiteRailState,
+  railSignalChip,
+  sectionDescription,
+  sectionRailSignal,
   withSectionShortcuts,
+  type RailSignal,
+  type SuiteRailState,
 } from "../presentation/suiteChrome";
 import {
   SUITE_HELP_SHORTCUT,
+  SUITE_RAIL_SHORTCUT,
   SUITE_SECTION_SHORTCUTS,
 } from "../shortcuts/suiteShortcuts";
+
+interface SuiteShellIdentity { label?: string }
 
 const props = defineProps<{
   storageKey: string;
@@ -16,7 +51,6 @@ const props = defineProps<{
   label: string;
   current?: string;
   operatorName?: string;
-  mobileMax?: number;
 }>();
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
@@ -34,13 +68,55 @@ const topSections = computed(() =>
 const footSections = computed(() =>
   props.sections.filter((section) => section.where !== "bar" && section.foot),
 );
-const phoneSections = computed(() =>
+// A barra inferior do celular: a regra única do kit (`quickBarLayout`), sobre as
+// seções que não são só da barra lateral.
+const quickSections = computed(() =>
   props.sections.filter((section) => section.where !== "rail"),
 );
-const phoneLayout = computed(() =>
-  phoneBarLayout(phoneSections.value, props.mobileMax ?? PHONE_BAR_SECTIONS),
-);
+// A gaveta (abaixo de lg, o DashboardSidebar abre como slideover): o ☰ da barra do
+// topo e o "Mais" da barra inferior a abrem.
+const drawerOpen = ref(false);
 const shortcuts = useOperatorShortcuts();
+const appLabel = (
+  useRuntimeConfig().public?.operatorPwa as
+    | { identity?: SuiteShellIdentity }
+    | undefined
+)?.identity?.label;
+
+// O rail de três estados. Aberto e compacto são do DashboardSidebar (cookie do
+// DashboardGroup, `{ size, collapsed }`); oculto não existe no Nuxt UI para o desktop:
+// é o sidebar não montado, guardado num cookie do kit.
+const isDesktop = useMediaQuery("(min-width: 1024px)", { ssrWidth: 1440 });
+const collapsed = ref(false);
+const hidden = useCookie<boolean>(`${props.storageKey}-rail-hidden`, {
+  default: () => false,
+  sameSite: "lax",
+  maxAge: 60 * 60 * 24 * 365,
+  path: "/",
+});
+const railState = computed<SuiteRailState>(() =>
+  hidden.value ? "hidden" : collapsed.value ? "compact" : "open",
+);
+function setRail(target: SuiteRailState) {
+  hidden.value = target === "hidden";
+  if (target !== "hidden") collapsed.value = target === "compact";
+}
+async function cycleRail() {
+  const target = nextSuiteRailState(railState.value);
+  setRail(target);
+  // Ao voltar do oculto, o DashboardSidebar remonta e relê o cookie (compacto): o
+  // aberto é reafirmado depois da montagem.
+  if (target === "open") {
+    await nextTick();
+    collapsed.value = false;
+  }
+}
+provideSuiteRail({
+  state: railState,
+  visible: computed(() => isDesktop.value && !hidden.value),
+  next: computed(() => SUITE_RAIL_NEXT[railState.value]),
+  cycle: cycleRail,
+});
 
 function go(section: OperatorSection) {
   if (section.to) void navigateTo(section.to);
@@ -48,7 +124,7 @@ function go(section: OperatorSection) {
 }
 
 useOperatorShortcutMap(
-  [...SUITE_SECTION_SHORTCUTS, ...SUITE_HELP_SHORTCUT],
+  [...SUITE_SECTION_SHORTCUTS, ...SUITE_HELP_SHORTCUT, ...SUITE_RAIL_SHORTCUT],
   Object.fromEntries([
     ...SUITE_SECTION_SHORTCUTS.map((command, index) => [
       command.id,
@@ -63,217 +139,217 @@ useOperatorShortcutMap(
         shortcuts.open.value = true;
       },
     ],
+    [
+      "suite.rail.cycle",
+      () => {
+        // Os três estados são do desktop; abaixo de lg o rail é o slideover oficial.
+        if (isDesktop.value) void cycleRail();
+      },
+    ],
   ]),
   computed<ReadonlySet<string>>(() => new Set(["ready"])),
 );
 
-function itemFor(section: OperatorSection) {
+/** Uma seção no rail: item do NavigationMenu com o sinal dela. Compacto, o chip vai no
+ *  canto do ícone; aberto, o slot `item-trailing` desenha o mesmo chip no fim da linha. */
+function railItemFor(section: OperatorSection, isCollapsed: boolean) {
+  const signal = sectionRailSignal(section);
+  const description = sectionDescription(section);
   return {
     label: section.label,
     icon: section.icon,
     to: section.to,
     active: active.value === section.key,
-    // Barra do celular: a contagem mora no Chip do ícone, não num Badge ao lado do
-    // rótulo (o Badge tirava a largura do rótulo). Chip numérico 4xl; sem número, o
-    // indicativo 2xl. `inset: false`: o NavigationMenu liga inset por padrão e ele
-    // cobriria o desenho do ícone de 20 px.
-    chip: section.badge
-      ? { color: "warning" as const, text: section.badge, size: "4xl" as const, inset: false }
-      : section.attention
-        ? { color: "warning" as const, size: "2xl" as const, inset: false }
-        : undefined,
-    "aria-label": [section.label, section.badgeLabel, section.attention]
-      .filter(Boolean)
-      .join(", "),
-    tooltip: { text: section.label },
+    signal,
+    chip: isCollapsed && signal ? railSignalChip(signal) : undefined,
+    tooltip: { text: description },
+    "aria-label": description,
+    "data-section": section.key,
     onSelect: section.to ? undefined : () => emit("select", section.key),
   };
 }
 
-/** Uma seção no rail: a mesma peça do sino (Chip inset em volta de um Button
- *  quadrado), para que contagem, espaçamento e estado ativo sejam iguais em toda a
- *  coluna. O NavigationMenu recolhido punha o Chip em volta do ícone de 20 px e
- *  empilhava os itens sem o espaço do pé do rail. */
-function railButtonFor(section: OperatorSection) {
-  return {
-    key: section.key,
-    label: section.label,
-    icon: section.icon,
-    to: section.to,
-    active: active.value === section.key,
-    // Com número, Chip numérico (4xl); sem número, o indicativo de atenção (2xl).
-    chip: {
-      show: Boolean(section.badge || section.attention),
-      text: section.badge ? String(section.badge) : undefined,
-    },
-    ariaLabel: [section.label, section.badgeLabel, section.attention]
-      .filter(Boolean)
-      .join(", "),
-    onClick: section.to ? undefined : () => emit("select", section.key),
-  };
+function railItems(isCollapsed: boolean) {
+  return topSections.value.map((section) => railItemFor(section, isCollapsed));
 }
 
-const railItems = computed(() => topSections.value.map(railButtonFor));
-const footItems = computed(() => footSections.value.map(railButtonFor));
-const tabItems = computed(() => phoneLayout.value.visible.map(itemFor));
+/** O pé: as seções do pé do app, Atalhos (só com ponteiro fino) e Bloquear. */
+function footItems(isCollapsed: boolean) {
+  return [
+    ...footSections.value.map((section) => railItemFor(section, isCollapsed)),
+    {
+      label: "Atalhos",
+      icon: "i-lucide-keyboard",
+      class: "hidden pointer-fine:flex",
+      tooltip: { text: "Atalhos do teclado" },
+      "aria-label": "Atalhos do teclado",
+      "data-rail-shortcuts": "",
+      onSelect: () => {
+        shortcuts.open.value = true;
+      },
+    },
+    ...(props.operatorName
+      ? [
+          {
+            label: "Bloquear",
+            icon: "i-lucide-lock",
+            tooltip: { text: "Bloquear ou trocar de operador" },
+            "aria-label": "Bloquear ou trocar de operador",
+            "data-rail-lock": "",
+            onSelect: () => emit("lock"),
+          },
+        ]
+      : []),
+  ];
+}
+
+function signalOf(item: unknown): RailSignal | undefined {
+  return (item as { signal?: RailSignal }).signal;
+}
+
+/** O chip da ponta direita (rail aberto): o mesmo do canto do ícone; o ponto leva o
+ *  tamanho do chip do NavigationMenu (`linkLeadingChipSize` do tema). */
+function trailingChip(item: unknown, menuChipSize: string) {
+  const chip = railSignalChip(signalOf(item)!);
+  return { ...chip, size: (chip.size ?? menuChipSize) as ChipProps["size"] };
+}
+
 </script>
 
 <template>
-  <OperatorOfficeShell :storage-key="storageKey" rail :navbar="false">
-    <template #sidebar-header>
-      <div class="flex w-full justify-center">
-        <OperatorAppSeal placement="rail" />
-      </div>
-    </template>
-
-    <template #sidebar>
-      <!-- As seções usam a mesma peça e o mesmo espaçamento (gap-1.5) do pé do rail:
-           Chip inset em volta de um Button quadrado com link, tooltip ao lado. -->
-      <nav
-        class="flex w-full min-w-0 flex-col items-center gap-1.5"
-        :aria-label="label"
-        data-suite-rail-navigation
-      >
-        <NuxtTooltip
-          v-for="item in railItems"
-          :key="item.key"
-          :text="item.label"
-          :content="{ side: 'right' }"
+  <NuxtDashboardGroup
+    :storage-key="storageKey"
+    unit="rem"
+    class="min-h-dvh"
+    data-operator-office-shell
+    data-operator-suite-shell
+    :data-rail-state="railState"
+  >
+    <NuxtDashboardSidebar
+      v-if="!(hidden && isDesktop)"
+      id="suite"
+      v-model:collapsed="collapsed"
+      v-model:open="drawerOpen"
+      collapsible
+      resizable
+      :collapsed-size="4"
+      :default-size="14"
+      :min-size="12"
+      :max-size="20"
+      role="complementary"
+      aria-label="Navegação do aplicativo"
+      data-suite-rail
+    >
+      <template #header="{ collapsed: isCollapsed }">
+        <div
+          class="flex w-full items-center gap-2"
+          :class="isCollapsed ? 'justify-center' : ''"
         >
-          <NuxtChip
-            :show="item.chip.show"
-            color="warning"
-            :text="item.chip.text"
-            :size="item.chip.text ? '4xl' : '2xl'"
-            inset
-          >
-            <NuxtButton
-              :to="item.to"
-              :icon="item.icon"
-              color="neutral"
-              variant="ghost"
-              active-color="primary"
-              active-variant="soft"
-              :active="item.active"
-              square
-              :aria-label="item.ariaLabel"
-              :aria-current="item.active ? 'page' : undefined"
-              :data-section="item.key"
-              @click="item.onClick?.()"
-            />
-          </NuxtChip>
-        </NuxtTooltip>
-      </nav>
-    </template>
+          <OperatorAppSeal placement="rail" />
+          <span v-if="!isCollapsed && appLabel" class="font-semibold">{{
+            appLabel
+          }}</span>
+        </div>
+      </template>
 
-    <template #sidebar-footer>
-      <!-- DashboardSidebar compõe o footer como uma linha. O rail compacto precisa
-           oferecer a ele UM filho, que organiza seus controles no eixo vertical;
-           irmãos soltos aqui vazam horizontalmente para dentro da página. -->
-      <div
-        class="flex w-full min-w-0 flex-col items-center gap-1.5"
-        data-suite-rail-footer
-      >
-        <NuxtTooltip
-          v-for="item in footItems"
-          :key="item.key"
-          :text="item.label"
-          :content="{ side: 'right' }"
+      <template #default="{ collapsed: isCollapsed }">
+        <NuxtNavigationMenu
+          :collapsed="isCollapsed"
+          :items="railItems(isCollapsed)"
+          orientation="vertical"
+          tooltip
+          popover
+          :aria-label="label"
+          data-suite-rail-navigation
         >
-          <NuxtChip
-            :show="item.chip.show"
-            color="warning"
-            :text="item.chip.text"
-            :size="item.chip.text ? '4xl' : '2xl'"
-            inset
-          >
-            <NuxtButton
-              :to="item.to"
-              :icon="item.icon"
-              color="neutral"
-              variant="ghost"
-              active-color="primary"
-              active-variant="soft"
-              :active="item.active"
-              square
-              :aria-label="item.ariaLabel"
-              :aria-current="item.active ? 'page' : undefined"
-              :data-section="item.key"
-              @click="item.onClick?.()"
-            />
-          </NuxtChip>
-        </NuxtTooltip>
-        <ClientOnly><OperatorInbox placement="rail" /></ClientOnly>
-        <NuxtButton
-          class="hidden pointer-fine:inline-flex"
-          icon="i-lucide-keyboard"
-          color="neutral"
-          variant="ghost"
-          square
-          aria-label="Atalhos do teclado"
-          @click="shortcuts.open.value = true"
-        />
-        <NuxtButton
-          v-if="operatorName"
-          icon="i-lucide-lock"
-          color="neutral"
-          variant="ghost"
-          square
-          aria-label="Bloquear ou trocar de operador"
-          @click="emit('lock')"
-        />
-        <NuxtPopover v-if="operatorName">
-          <NuxtButton
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-user"
-            square
-            aria-label="Menu do operador"
-          />
-          <template #content>
-            <OperatorMenuItems
-              mode="rail"
-              :operator-name="operatorName"
-              @lock="emit('lock')"
+          <!-- Aberto: o mesmo chip na ponta direita da linha. `standalone` + `inset`:
+               no fluxo da linha, sem o deslocamento de meio chip do canto. O ponto
+               tem o tamanho do chip do NavigationMenu. -->
+          <template #item-trailing="{ item, ui }">
+            <NuxtChip
+              v-if="!isCollapsed && signalOf(item)"
+              v-bind="trailingChip(item, ui.linkLeadingChipSize())"
+              inset
+              standalone
             />
           </template>
-        </NuxtPopover>
-      </div>
-    </template>
+        </NuxtNavigationMenu>
+      </template>
 
-    <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <!-- Each routed page exposes a fixed header and an explicitly scrollable
-           content region. Keeping another scroller here made the canonical
-           DashboardNavbar and DashboardToolbar move with the page. -->
+      <template #footer="{ collapsed: isCollapsed }">
+        <!-- DashboardSidebar compõe o footer como uma linha: UM filho, que organiza o
+             pé no eixo vertical; irmãos soltos aqui vazam para dentro da página. -->
+        <div class="flex w-full min-w-0 flex-col gap-1.5" data-suite-rail-footer>
+          <NuxtNavigationMenu
+            :collapsed="isCollapsed"
+            :items="footItems(isCollapsed)"
+            orientation="vertical"
+            tooltip
+            :aria-label="`${label}: pé`"
+          >
+            <template #item-trailing="{ item, ui }">
+              <NuxtChip
+                v-if="!isCollapsed && signalOf(item)"
+                v-bind="trailingChip(item, ui.linkLeadingChipSize())"
+                inset
+                standalone
+              />
+            </template>
+          </NuxtNavigationMenu>
+          <div
+            class="flex gap-1.5"
+            :class="isCollapsed ? 'flex-col items-center' : 'flex-row items-center'"
+          >
+            <ClientOnly><OperatorInbox placement="rail" /></ClientOnly>
+            <NuxtPopover v-if="operatorName" :content="{ side: 'right', align: 'end' }">
+              <NuxtButton
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-user"
+                :label="isCollapsed ? undefined : operatorName"
+                :square="isCollapsed"
+                aria-label="Menu do operador"
+                data-suite-rail-menu
+              />
+              <template #content>
+                <OperatorMenuItems
+                  mode="rail"
+                  :operator-name="operatorName"
+                  @lock="emit('lock')"
+                  @hide="setRail('hidden')"
+                />
+              </template>
+            </NuxtPopover>
+          </div>
+        </div>
+      </template>
+    </NuxtDashboardSidebar>
+
+    <!-- The DashboardPanel default slot intentionally replaces its padded,
+         scrollable body. Each routed page exposes a fixed header and an explicitly
+         scrollable content region; another scroller here made the canonical
+         DashboardNavbar and DashboardToolbar move with the page. -->
+    <NuxtDashboardPanel :id="`${storageKey}-content`">
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <slot />
-      </div>
+        <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <slot />
+        </div>
 
-      <NuxtDashboardToolbar
-        as="nav"
-        class="border-t border-default border-b-0 lg:hidden print:hidden pb-[env(safe-area-inset-bottom)]"
-        :aria-label="label"
-        data-operator-suite-tabs
-        data-focus-obstruction
-      >
-        <NuxtNavigationMenu class="min-w-0 flex-1" :items="tabItems" />
-        <OperatorPhoneMenu
-          variant="bar"
-          :operator-name="operatorName"
-          :overflow="phoneLayout.overflow"
+        <OperatorQuickBar
+          :sections="quickSections"
           :current="active"
-          @lock="emit('lock')"
+          :label="label"
           @select="emit('select', $event)"
-        >
-          <template v-if="$slots.more" #extra><slot name="more" /></template>
-        </OperatorPhoneMenu>
-      </NuxtDashboardToolbar>
-    </div>
-  </OperatorOfficeShell>
+          @more="drawerOpen = true"
+        />
+      </div>
+    </NuxtDashboardPanel>
+  </NuxtDashboardGroup>
   <!-- Aviso com prazo correndo: interrompe a tela até alguém ver (dono, 07/10). -->
   <ClientOnly><OperatorUrgentAlert /></ClientOnly>
   <OperatorShortcutsHelp
     :sections="topSections"
     :app-label="label.replace(/^Seções d[oa] /, '')"
+    rail
   />
 </template>

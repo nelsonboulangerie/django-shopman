@@ -44,16 +44,20 @@ export interface OperatorSection {
   match?: string[];
   /** Aviso curto ao lado do rótulo ("1 desligado"). Ausente = estado normal, sem ruído. */
   attention?: string;
+  /**
+   * A cor do sinal no rail da suíte (ponto ou número): `success`, `warning` (padrão) ou
+   * `error`. A cor nunca fala sozinha: o que ela quer dizer está em `attention` ou no
+   * número.
+   */
+  tone?: "success" | "warning" | "error";
   /** Tecla que leva a esta seção. Ensinada na própria aba, onde a mão está. */
   shortcut?: string;
   /**
-   * Contagem curta no selo do item (rail da suíte e barra do polegar), ex.: pedidos
-   * na fila. Ausente ou vazia = sem selo; zero não é selo. O número é visual: quem
-   * monta a seção diz o que ele conta em `badgeLabel`.
+   * Contagem curta no selo do item (barra lateral e barra inferior), ex.: pedidos na
+   * fila. Ausente ou vazia = sem selo; zero não é selo. O nome acessível sai de
+   * `sectionDescription` ("Pedidos · 3 pendências"), a mesma descrição em todo lugar.
    */
   badge?: string;
-  /** O que o selo conta, por extenso, para leitor de tela ("10 pedidos na fila"). */
-  badgeLabel?: string;
   /**
    * Rótulo do grupo (rail da suíte, prévia v4: "Operação"). Sai uma vez, acima da
    * primeira seção do grupo. A barra do polegar ignora.
@@ -70,6 +74,12 @@ export interface OperatorSection {
    * bolso). `bar`: só na barra de baixo (ex.: o Fim do dia do PDV no tablet em pé).
    */
   where?: "rail" | "bar";
+  /**
+   * Vai para a barra inferior do celular no shell da suíte (o menu rápido; a gaveta tem
+   * todas). Regra única em `quickBarLayout` (`suiteChrome.ts`): no máximo 5, "Mais"
+   * só quando sobra seção. Nenhuma seção declarada = as primeiras, até 4.
+   */
+  quick?: boolean;
   /** Um traço acima desta seção no rail (v4 `salao-mesas4.html`: Caixa · traço · Ajustes). */
   divider?: boolean;
 }

@@ -26,11 +26,6 @@ export const MARKETING_SETTINGS_SECTIONS: ReadonlyArray<{
   { key: "platforms", label: "Plataformas", icon: "lucide:radio-tower", to: "/platforms" },
 ];
 
-/** "3 esperando você": o que o selo de Decisões conta, por extenso. */
-export function decisionBadgeLabel(count: number): string {
-  return count === 1 ? "1 esperando você" : `${count} esperando você`;
-}
-
 export function useMarketingSections() {
   const route = useRoute();
   const { decisionCount } = useMarketingDecisions();
@@ -59,7 +54,6 @@ export function useMarketingSections() {
       to: "/",
       group: "Operação",
       badge: decisionCount.value ? String(decisionCount.value) : undefined,
-      badgeLabel: decisionCount.value ? decisionBadgeLabel(decisionCount.value) : undefined,
     },
     {
       key: "scheduled",

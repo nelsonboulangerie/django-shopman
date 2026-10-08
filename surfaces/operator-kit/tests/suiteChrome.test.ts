@@ -5,7 +5,13 @@ import { describe, expect, it } from "vitest";
 
 import type { OperatorSection } from "../app/presentation/appBar";
 import {
+  SUITE_RAIL_CYCLE,
   SUITE_RAIL_MEDIA,
+  SUITE_RAIL_NEXT,
+  nextSuiteRailState,
+  railSignalChip,
+  railSignalLabel,
+  sectionRailSignal,
   inboxAriaLabel,
   inboxBadge,
   inboxTotal,
@@ -17,6 +23,10 @@ import {
   respondInLabel,
   reminderIntervalMs,
   phoneBarLayout,
+  QUICK_BAR_MAX,
+  quickBarLayout,
+  quickBarProblems,
+  sectionDescription,
   sectionIndexFromKey,
   sectionShortcut,
   suiteShortcutGroup,
@@ -83,6 +93,68 @@ describe("a barra do polegar: até 4 + Mais", () => {
     const layout = phoneBarLayout(SECTIONS);
     expect(layout.visible.map((s) => s.key)).toEqual(["a", "b", "c", "d"]);
     expect(layout.overflow.map((s) => s.key)).toEqual(["e", "f"]);
+  });
+});
+
+describe("barra inferior do shell: regra única de 3 a 5 vagas (dono, 08/10/2026)", () => {
+  const quick = (keys: string[]) => SECTIONS.map((section) => ({ ...section, quick: keys.includes(section.key) }));
+  const keys = (list: OperatorSection[]) => list.map((section) => section.key);
+
+  it("sem declaração: as primeiras até 4, e 'Mais' quando sobra", () => {
+    const layout = quickBarLayout(SECTIONS);
+    expect(keys(layout.items)).toEqual(["a", "b", "c", "d"]);
+    expect(layout.more).toBe(true);
+    expect(keys(layout.overflow)).toEqual(["e", "f"]);
+    const fits = quickBarLayout(SECTIONS.slice(0, 3));
+    expect(keys(fits.items)).toEqual(["a", "b", "c"]);
+    expect(fits.more).toBe(false);
+  });
+
+  it("o app declara o que vai para a barra, na ordem da lista", () => {
+    const layout = quickBarLayout(quick(["b", "d", "f"]));
+    expect(keys(layout.items)).toEqual(["b", "d", "f"]);
+    expect(layout.more).toBe(true);
+    expect(keys(layout.overflow)).toEqual(["a", "c", "e"]);
+  });
+
+  it("5 declaradas: sem 'Mais' (o ☰ já leva ao menu completo)", () => {
+    const layout = quickBarLayout(quick(["a", "b", "c", "d", "e"]));
+    expect(layout.items).toHaveLength(QUICK_BAR_MAX);
+    expect(layout.more).toBe(false);
+    expect(keys(layout.overflow)).toEqual(["f"]);
+    expect(quickBarProblems(quick(["a", "b", "c", "d", "e"]))).toEqual([]);
+  });
+
+  it("'Mais' só quando sobra seção", () => {
+    const all = SECTIONS.slice(0, 4).map((section) => ({ ...section, quick: true }));
+    expect(quickBarLayout(all).more).toBe(false);
+  });
+
+  it("no máximo 5: o kit corta, e o teste acusa", () => {
+    const six = quick(["a", "b", "c", "d", "e", "f"]);
+    expect(quickBarLayout(six).items).toHaveLength(5);
+    expect(quickBarProblems(six)).toEqual(["6 seções declaradas para a barra inferior; o máximo é 5"]);
+  });
+
+  it("menos de 3 vagas é erro de configuração, salvo exceção com motivo", () => {
+    const one = quick(["a"]);
+    // 1 seção + "Mais" = 2 vagas.
+    expect(quickBarProblems(one)).toEqual(["2 vagas na barra inferior; o mínimo é 3"]);
+    expect(quickBarProblems(one, "a tela é um quiosque de uma seção só")).toEqual([]);
+    expect(quickBarProblems(quick(["a", "b"]))).toEqual([]);
+  });
+
+  it("app com menos de 3 seções mostra todas, sem erro", () => {
+    expect(quickBarProblems(SECTIONS.slice(0, 2))).toEqual([]);
+  });
+});
+
+describe("a descrição única da seção (barra lateral, gaveta e barra inferior)", () => {
+  it("'Seção · N pendências', '1 pendência', 'Seção · estado'", () => {
+    expect(sectionDescription({ key: "x", label: "Saída", icon: "i", badge: "2" })).toBe("Saída · 2 pendências");
+    expect(sectionDescription({ key: "x", label: "Pedidos", icon: "i", badge: "1" })).toBe("Pedidos · 1 pendência");
+    expect(sectionDescription({ key: "x", label: "Canais", icon: "i", attention: "1 desligado" })).toBe("Canais · 1 desligado");
+    expect(sectionDescription({ key: "x", label: "Catálogo", icon: "i" })).toBe("Catálogo");
   });
 });
 
@@ -195,5 +267,45 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     expect(respondInLabel(at(150), NOW)).toBe("Responda em 2 h");
     expect(respondInLabel(at(3 * 24 * 60), NOW)).toBe("Responda em 3 dias");
     expect(respondInLabel(at(-3), NOW)).toBe("Passou do prazo há 3 min");
+  });
+});
+
+describe("rail da suíte em três estados (PR-K4)", () => {
+  it("o anel é aberto → compacto → oculto → aberto, e o botão diz o próximo", () => {
+    expect(SUITE_RAIL_CYCLE).toEqual(["open", "compact", "hidden"]);
+    expect(nextSuiteRailState("open")).toBe("compact");
+    expect(nextSuiteRailState("compact")).toBe("hidden");
+    expect(nextSuiteRailState("hidden")).toBe("open");
+    expect(SUITE_RAIL_NEXT.open.label).toBe("Compactar a barra lateral");
+    expect(SUITE_RAIL_NEXT.compact.label).toBe("Ocultar a barra lateral");
+    expect(SUITE_RAIL_NEXT.hidden.label).toBe("Mostrar a barra lateral");
+  });
+
+  it("o sinal: número com badge maior que zero, ponto com atenção, nada sem os dois", () => {
+    const base = { key: "a", label: "Pedidos", icon: "i-lucide-list" };
+    expect(sectionRailSignal(base)).toBeUndefined();
+    expect(sectionRailSignal({ ...base, badge: "0" })).toBeUndefined();
+    expect(sectionRailSignal({ ...base, badge: "4" })).toEqual({ color: "warning", count: 4, state: undefined });
+    expect(sectionRailSignal({ ...base, attention: "1 desligado", tone: "error" })).toEqual({ color: "error", state: "1 desligado" });
+  });
+
+  it("o chip: ponto no tamanho padrão; número 4xl, sem inset, e 99+ acima de 99", () => {
+    expect(railSignalChip({ color: "success" })).toEqual({ color: "success" });
+    expect(railSignalChip({ color: "error", count: 12 })).toEqual({ color: "error", text: "12", size: "4xl", inset: false });
+    expect(railSignalChip({ color: "error", count: 99 }).text).toBe("99");
+    expect(railSignalChip({ color: "error", count: 100 }).text).toBe("99+");
+  });
+
+  it("a descrição: 'App · estado' ou 'App · N pendências' (1 pendência)", () => {
+    expect(railSignalLabel("Catálogo")).toBe("Catálogo");
+    expect(railSignalLabel("PDV", { color: "error", state: "sem conexão" })).toBe("PDV · sem conexão");
+    expect(railSignalLabel("Cozinha", { color: "error", count: 1 })).toBe("Cozinha · 1 pendência");
+    expect(railSignalLabel("Gestor", { color: "error", count: 12 })).toBe("Gestor · 12 pendências");
+  });
+
+  it("a ajuda de atalhos ensina a tecla C só onde o rail tem três estados", () => {
+    const sections = [{ key: "a", label: "Pedidos", icon: "i-lucide-list" }];
+    expect(suiteShortcutGroup(sections).items.some((item) => item.keys[0] === "C")).toBe(false);
+    expect(suiteShortcutGroup(sections, { rail: true }).items).toContainEqual({ keys: ["C"], label: "Barra lateral: aberta, compacta ou oculta" });
   });
 });
