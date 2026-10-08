@@ -828,6 +828,11 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(queue).toContain(':data-queue-working-list="group.key"');
+    // Duas linhas (dono, 08/10): código · nome em cima; a situação embaixo, truncada,
+    // com o tempo e a seta na linha dela.
+    expect(queue).toContain("data-queue-working-row");
+    expect(queue).toMatch(/class="truncate op-micro[^"]*"\s+:title="item.summary"/);
+    expect(queue).toContain("ms-auto flex shrink-0 items-center gap-2 self-end");
     const appConfig = readFileSync(
       new URL("../../operator-kit/app/app.config.ts", import.meta.url),
       "utf8",

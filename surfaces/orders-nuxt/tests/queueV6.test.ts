@@ -53,7 +53,11 @@ describe("G03: o tempo nunca é vermelho", () => {
 describe("G05: a cópia da Fila não se corta", () => {
   it("nenhuma reticência de CSS na Fila; a linha quebra", () => {
     const queueView = readFileSync(new URL("../app/components/QueueView.vue", import.meta.url), "utf8");
-    expect(queueView).not.toMatch(/\btruncate\b|line-clamp/);
+    // Exceção única (dono, 08/10/2026): a linha da situação no "Em andamento" pode
+    // truncar; o texto inteiro fica no title e no pedido aberto. O resto da Fila quebra.
+    const allowed = /class="truncate op-micro text-muted-foreground"\s+:title="item.summary"/;
+    expect(queueView).toMatch(allowed);
+    expect(queueView.replace(allowed, "")).not.toMatch(/\btruncate\b|line-clamp/);
   });
 });
 
@@ -160,7 +164,7 @@ describe("Em andamento: o que está de fato na cozinha (dono, 07/10/2026)", () =
       ["Cafés", "pronto", "success", ["2x Café"]],
       ["Lanches", "papel não saiu", "error", ["1x Misto"]],
     ]);
-    expect(kitchen[1]!.summary).toBe("sem estação");
+    expect(kitchen[1]!.summary).toBe("Sem estação");
     expect(onRoad.map((w) => [w.card.ref, w.summary])).toEqual([["W-ROAD", "a 5 min do cliente"]]);
   });
 });
