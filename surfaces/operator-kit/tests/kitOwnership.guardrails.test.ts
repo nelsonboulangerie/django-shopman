@@ -104,11 +104,7 @@ const NATIVE_TEMPORAL_TYPE = new RegExp(
  * É teto: a lista só encolhe. Um arquivo daqui que deixar de usar o nativo
  * reprova o teste até sair da lista, para a exceção não sobreviver ao motivo.
  */
-const KNOWN_NATIVE_TEMPORAL: Readonly<Record<string, string>> = {
-  "orders-nuxt/app/components/ChannelPeriodCalendar.vue":
-    "Gestor: a pilha canônica trocou por NuxtInput type=date/time (de/até com hora). " +
-    "O Gestor tem dono; a troca por UiDateTimeField é dele, na migração do app (onda 0, PR 0.3).",
-};
+const KNOWN_NATIVE_TEMPORAL: Readonly<Record<string, string>> = {};
 
 function nativeTemporalOffenders(dir: string): string[] {
   return sourceFiles(dir)
