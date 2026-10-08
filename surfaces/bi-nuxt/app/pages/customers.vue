@@ -65,7 +65,7 @@ const weeklySeries = computed(() =>
           <StatTile label="Ticket médio por cliente" :value="formatMoney(report.average_ticket_q)" />
         </div>
 
-        <div class="grid gap-3 lg:grid-cols-2">
+        <div class="grid items-start gap-3 lg:grid-cols-2">
           <BiSection title="Segmentos de cliente" caption="Recência, frequência e valor, calculados pelo CRM">
             <ChartHBarList v-if="segmentRows.length" :rows="segmentRows" />
             <p v-else class="op-body text-muted-foreground">Nenhum cliente com perfil calculado ainda.</p>

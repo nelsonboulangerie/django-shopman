@@ -189,7 +189,7 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-foreground
           </ul>
         </BiSection>
 
-        <div class="grid gap-3 lg:grid-cols-2">
+        <div class="grid items-start gap-3 lg:grid-cols-2">
           <BiSection
             title="Por operador"
             caption="Quebra acumulada, aberturas de gaveta sem venda, destraves por gerente e pedidos de troco no período"

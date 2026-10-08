@@ -4,7 +4,9 @@
 // NuxtPopover (as janelas móveis, os períodos atuais e o personalizado). A janela é a
 // mesma da URL (`useBiWindow`): trocar aqui troca em todas as seções.
 // ⚠️ É um segundo seletor de período paralelo ao OperatorPeriodPicker do kit; morre
-// quando o kit ganhar a variante de gatilho compacto (onda 0, PR 0.3/0.7).
+// quando o kit ganhar a variante de gatilho compacto (onda 0, PR 0.3/0.7). Do tablet
+// para cima o gatilho some: lá o período é o BiWindowPicker do cabeçalho, e antes os
+// dois seletores apareciam juntos (laudo, Anexo D).
 import {
   PERIOD_PRESETS_CALENDAR,
   PERIOD_PRESETS_ROLLING,
@@ -48,7 +50,7 @@ function submitCustom() {
       color="primary"
       variant="soft"
       trailing-icon="i-lucide-chevron-down"
-      class="tnum"
+      class="tnum md:hidden"
       :label="chipLabel"
       :aria-label="`Período de análise: ${chipLabel}`"
       data-bi-period-chip

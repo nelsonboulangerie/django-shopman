@@ -80,8 +80,10 @@ const strikeByWeekday = computed(() =>
 // As quatro tabelas são NuxtTable. Coluna numérica alinha à direita, sem quebra; a
 // porcentagem miúda vai na mesma célula, atrás do número.
 const NUM = { th: "whitespace-nowrap text-right", td: "whitespace-nowrap text-right tnum text-foreground" } as const;
+// O número e o espaço vão num texto só: dois textos vizinhos no `h()` viram um nó no
+// HTML do servidor e dois no cliente, e a hidratação acusa diferença.
 const withShare = (value: string, share: string) =>
-  h("span", [value, " ", h("span", { class: "op-micro text-muted-foreground" }, share)]);
+  h("span", [`${value} `, h("span", { class: "op-micro text-muted-foreground" }, share)]);
 
 const readingColumns = [
   { accessorKey: "label", header: "Perfil", meta: { class: { td: "font-medium" } } },
@@ -129,7 +131,9 @@ type StrikeCell = { row: { original: StrikeRow } };
 const strikeColumns = computed(() => [
   {
     id: "weekday",
-    header: "",
+    // Cabeçalho vazio vira um texto vazio no cliente e nada no servidor (a hidratação
+    // acusa diferença); o nome da coluna fica só para o leitor de tela.
+    header: () => h("span", { class: "sr-only" }, "Dia da semana"),
     meta: { class: { td: "font-medium text-foreground" } },
     cell: ({ row }: StrikeCell) => row.original.label,
     footer: () => h("span", { class: "op-eyebrow text-muted-foreground" }, "Faixa"),
@@ -319,7 +323,7 @@ const revpashColumns = [
         </div>
       </BiSection>
 
-      <div class="grid gap-3 lg:grid-cols-2">
+      <div class="grid items-start gap-3 lg:grid-cols-2">
         <BiSection
           title="A faixa honesta"
           :caption="sensitivityHeadline(report.sensitivity.orders_changed, report.sensitivity.share_changed, report.counter_orders)"
@@ -372,7 +376,7 @@ const revpashColumns = [
         />
       </BiSection>
 
-      <div class="grid gap-3 lg:grid-cols-2">
+      <div class="grid items-start gap-3 lg:grid-cols-2">
         <BiSection title="Receita por categoria">
           <template #caption>
             Soma das linhas de balcão (histórico: categoria do Yooga; nativo: coleção do catálogo).

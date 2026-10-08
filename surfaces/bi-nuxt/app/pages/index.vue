@@ -452,7 +452,7 @@ const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
             <ChartBarSeries :points="yieldSeries" :format="(v) => `${v}%`" />
           </BiSection>
 
-          <div class="grid gap-3 lg:grid-cols-2">
+          <div class="grid items-start gap-3 lg:grid-cols-2">
             <BiSection title="Tempo de forno por receita">
               <template #caption>
                 Média medida (armar → Concluir) · {{ coverageLabel(report.batches_measured, report.batches_finished) }}

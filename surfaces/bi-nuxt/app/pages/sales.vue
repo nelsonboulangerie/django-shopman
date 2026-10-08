@@ -278,7 +278,7 @@ function pickChannel(value: string | number) {
           </p>
         </BiSection>
 
-        <div class="grid gap-3 lg:grid-cols-2">
+        <div class="grid items-start gap-3 lg:grid-cols-2">
           <BiSection title="Pedidos por hora" :caption="`Soma do período, hora local${sourcesNote}`">
             <template #aside>
               <BiChartMenu title="Pedidos por hora" :header="['Hora', 'Pedidos']" :rows="hourCsv" />
@@ -293,7 +293,7 @@ function pickChannel(value: string | number) {
           </BiSection>
         </div>
 
-        <div class="grid gap-3 lg:grid-cols-2">
+        <div class="grid items-start gap-3 lg:grid-cols-2">
           <BiSection title="Por canal" caption="Faturamento do período" data-bi-by-channel data-focus-target="by-channel">
             <template #aside>
               <BiChartMenu title="Por canal" :header="['Canal', 'Pedidos', 'Faturamento', 'Parte']" :rows="channelCsv" />
