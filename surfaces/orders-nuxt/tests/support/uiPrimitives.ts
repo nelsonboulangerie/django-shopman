@@ -597,12 +597,16 @@ const NuxtTextarea = defineComponent({
   },
 });
 
+// Fiel ao Nuxt UI/reka-ui em duas coisas que já esconderam defeito: item com
+// `value: ""` lança (o SelectItem real lança e derruba a página) e o convite é a
+// prop `placeholder`, sem item próprio.
 const NuxtSelect = defineComponent({
   name: "NuxtSelect",
   inheritAttrs: false,
   props: {
     modelValue: { type: [String, Number, Boolean], default: "" },
     items: { type: Array as () => Array<unknown>, default: () => [] },
+    placeholder: { type: String, default: "" },
     disabled: Boolean,
     valueKey: { type: String, default: "value" },
     labelKey: { type: String, default: "label" },
@@ -619,7 +623,7 @@ const NuxtSelect = defineComponent({
         {
           ...attrs,
           "aria-label": attrs["aria-label"] ?? fieldLabel?.label,
-          value: props.modelValue,
+          value: props.modelValue ?? "",
           disabled: props.disabled,
           onChange: (event: Event) =>
             emit(
@@ -627,19 +631,28 @@ const NuxtSelect = defineComponent({
               (event.target as HTMLSelectElement).value,
             ),
         },
-        props.items.map((entry) => {
-          const item =
-            typeof entry === "object" && entry !== null
-              ? (entry as Record<string, unknown>)
-              : null;
-          const value = item ? item[props.valueKey] : entry;
-          const label = item ? item[props.labelKey] : entry;
-          return h(
-            "option",
-            { value, disabled: Boolean(item?.disabled) },
-            String(label ?? ""),
-          );
-        }),
+        [
+          ...(props.placeholder
+            ? [h("option", { value: "", disabled: true, hidden: true }, props.placeholder)]
+            : []),
+          ...props.items.map((entry) => {
+            const item =
+              typeof entry === "object" && entry !== null
+                ? (entry as Record<string, unknown>)
+                : null;
+            const value = item ? item[props.valueKey] : entry;
+            const label = item ? item[props.labelKey] : entry;
+            if (value === "")
+              throw new Error(
+                "A <SelectItem /> must have a value prop that is not an empty string.",
+              );
+            return h(
+              "option",
+              { value, disabled: Boolean(item?.disabled) },
+              String(label ?? ""),
+            );
+          }),
+        ],
       );
   },
 });

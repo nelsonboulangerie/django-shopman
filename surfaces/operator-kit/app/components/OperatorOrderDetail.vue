@@ -267,6 +267,10 @@ const itemColumns = [
         </template>
       </NuxtCard>
 
+      <!-- Bloco do app logo abaixo do pedido (no Gestor, a negociação do iFood
+           num card próprio; dono, 08/10/2026). -->
+      <slot name="after-summary" />
+
       <!-- A barra de ações do contexto: a única parte que muda de uma tela para
            a outra. O servidor decide cada gesto; a página só liga os diálogos. -->
       <slot name="actions" />
@@ -508,6 +512,15 @@ const itemColumns = [
             </template>
           </NuxtAlert>
         </NuxtCard>
+
+        <!-- Bloco do app logo abaixo do pedido (no Gestor, a negociação do iFood
+             num card próprio; dono, 08/10/2026). -->
+        <div
+          v-if="$slots['after-summary']"
+          class="order-3 min-w-0 empty:hidden lg:order-none"
+        >
+          <slot name="after-summary" />
+        </div>
 
         <div
           v-if="$slots.actions"

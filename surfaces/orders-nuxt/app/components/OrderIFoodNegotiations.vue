@@ -121,9 +121,11 @@ function requestLabel(value: string) {
 }
 function dateLabel(value: string) {
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime())
-    ? "Prazo não informado"
-    : parsed.toLocaleString("pt-BR");
+  if (Number.isNaN(parsed.getTime())) return "Prazo não informado";
+  // "08/10 às 07:49": o ano e os segundos não ajudam a decidir (dono, 08/10/2026).
+  const day = parsed.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const time = parsed.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `${day} às ${time}`;
 }
 function timeoutLabel(value: string) {
   return (
@@ -193,13 +195,18 @@ watch(
 </script>
 
 <template>
-  <section
+  <!-- Card próprio, logo abaixo do card do pedido (dono, 08/10/2026): dentro do
+       resumo, o título colava nas linhas. O id e o data-* são o alvo dos links da
+       Fila, do aviso com prazo e do e2e. -->
+  <NuxtCard
     v-if="negotiations?.length"
     id="ifood-negotiations"
-    class="grid gap-4"
     data-ifood-negotiations
   >
-    <h2 class="font-semibold text-highlighted">Negociações iFood</h2>
+    <template #header>
+      <h2 class="op-title">Negociações iFood</h2>
+    </template>
+    <div class="grid gap-4">
     <template v-for="(item, negotiationIndex) in negotiations" :key="item.id">
       <NuxtSeparator v-if="negotiationIndex > 0" />
       <div :data-dispute-id="item.id">
@@ -262,18 +269,18 @@ watch(
               <NuxtFormField label="Decisão">
                 <NuxtSelect
                   class="w-full"
-                  :model-value="draft(item.id).decision"
-                  :items="[
-                    { label: 'Selecione uma decisão', value: '' },
-                    ...item.actions.map((action) => ({
+                  :model-value="draft(item.id).decision || undefined"
+                  placeholder="Selecione uma decisão"
+                  :items="
+                    item.actions.map((action) => ({
                       label:
                         action.ref === 'accept'
                           ? 'Aceitar solicitação'
                           : 'Recusar solicitação',
                       value: action.ref,
                       disabled: !action.enabled,
-                    })),
-                  ]"
+                    }))
+                  "
                   @update:model-value="choose(item, String($event))"
                 />
               </NuxtFormField>
@@ -282,16 +289,19 @@ watch(
                 label="Motivo informado pelo iFood"
               >
                 <NuxtSelect
-                  v-model="draft(item.id).reason"
+                  :model-value="draft(item.id).reason || undefined"
                   class="w-full"
-                  :items="[
-                    { label: 'Selecione um motivo', value: '' },
-                    ...reasons(item).map((reason) => ({
+                  placeholder="Selecione um motivo"
+                  :items="
+                    reasons(item).map((reason) => ({
                       label: reasonLabel(reason),
                       value: reason,
-                    })),
-                  ]"
-                  @update:model-value="draft(item.id).confirmed = false"
+                    }))
+                  "
+                  @update:model-value="
+                    draft(item.id).reason = String($event ?? '');
+                    draft(item.id).confirmed = false;
+                  "
                 />
               </NuxtFormField>
               <NuxtFormField
@@ -355,5 +365,6 @@ watch(
         </div>
       </div>
     </template>
-  </section>
+  </div>
+  </NuxtCard>
 </template>
