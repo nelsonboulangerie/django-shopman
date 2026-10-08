@@ -6,7 +6,11 @@ import type {
 } from "../types/operatorShortcut";
 
 const EDITABLE_SELECTOR = "input, textarea, select, [contenteditable='true'], [role='textbox'], [role='combobox']";
-const OVERLAY_SELECTOR = "[role='dialog'][data-state='open'], [role='alertdialog'], [aria-modal='true']";
+// A trava do terminal (`OperatorLock`) cobre a tela sem ser um diálogo, e a tela de
+// baixo continua montada: atalho global nenhum opera o que ela esconde (o Alt+N do
+// rail trocava de etapa por baixo do bloqueio da Produção).
+const OVERLAY_SELECTOR =
+  "[role='dialog'][data-state='open'], [role='alertdialog'], [aria-modal='true'], [data-operator-lock]";
 
 export function operatorPlatform(
   navigatorLike: Pick<Navigator, "platform" | "userAgent"> | undefined =

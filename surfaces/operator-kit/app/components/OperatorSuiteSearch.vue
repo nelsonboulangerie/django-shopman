@@ -279,7 +279,7 @@ defineExpose({ focus: openSearch, open: openSearch });
   >
     <NuxtDashboardSearchButton
       v-if="variant !== 'hotkey'"
-      class="w-full"
+      class="w-full suite-page:min-h-control"
       :size="variant === 'hero' ? 'xl' : 'md'"
       :label="text || placeholder"
       :aria-label="label"
