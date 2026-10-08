@@ -25,10 +25,11 @@ const colorLabel: Record<ButtonColor, string> = {
   error: "Perigo",
 };
 
-const badgeColors = ["neutral", "primary", "success", "warning", "error"] as const;
+const badgeColors = ["neutral", "primary", "info", "success", "warning", "error"] as const;
 const badgeLabel: Record<(typeof badgeColors)[number], string> = {
   neutral: "Retirada",
   primary: "Encomenda",
+  info: "Agendado",
   success: "Pronto",
   warning: "Atrasado",
   error: "Recusado",
@@ -285,9 +286,9 @@ const productMenu = ref("Croissant");
               </div>
             </div>
           </NuxtCard>
-          <NuxtCard title="Proposta" description="Uma variante (subtle, com borda) × 5 cores. info vira neutral.">
+          <NuxtCard title="Proposta" description="6 cores. O neutro vai sem borda (soft); as outras cinco com borda (subtle), a primária no dourado.">
             <div class="flex flex-wrap gap-2">
-              <NuxtBadge v-for="color in badgeColors" :key="color" :color="color" variant="subtle" :label="badgeLabel[color]" />
+              <NuxtBadge v-for="color in badgeColors" :key="color" :color="color" :variant="color === 'neutral' ? 'soft' : 'subtle'" :label="badgeLabel[color]" />
             </div>
           </NuxtCard>
         </div>
@@ -301,9 +302,9 @@ const productMenu = ref("Croissant");
               <NuxtCard variant="subtle"><p class="text-sm font-medium">subtle</p><p class="text-xs text-muted">3 usos</p></NuxtCard>
             </div>
           </NuxtCard>
-          <NuxtCard title="Proposta" description="Só outline. Destaque navegável é o PageCard com highlight.">
+          <NuxtCard title="Proposta" description="Cartão de topo em outline; cartão dentro de outro em soft (só fundo, sem borda dupla). Destaque navegável é o PageCard com highlight.">
             <div class="grid gap-3 sm:grid-cols-2">
-              <NuxtCard variant="outline"><p class="text-sm font-medium">Lote das 7h</p><p class="text-xs text-muted">48 croissants, forno 1</p></NuxtCard>
+              <NuxtCard variant="soft"><p class="text-sm font-medium">Lote das 7h</p><p class="text-xs text-muted">48 croissants, forno 1</p></NuxtCard>
               <NuxtPageCard
                 title="Dois pedidos para revisar"
                 description="Abra a fila para decidir"
@@ -490,7 +491,7 @@ const productMenu = ref("Croissant");
                   { key: 'live', title: 'Fila de pedidos', color: 'success', label: '10:12', dot: true, aria: 'Ao vivo, última leitura 10:12' },
                   { key: 'calm', title: 'Quanto vendemos?', color: 'neutral', label: 'Atualiza a cada 60 s', dot: false, aria: 'Atualiza a cada 60 s, última leitura 10:12' },
                   { key: 'late', title: 'Cozinha', color: 'warning', label: 'Última leitura às 10:04', dot: true, aria: 'Atrasado, última leitura 10:04' },
-                  { key: 'off', title: 'Saída', color: 'error', label: 'Sem conexão', dot: false, aria: 'Sem conexão' },
+                  { key: 'off', title: 'Saída', color: 'error', label: 'Sem conexão', dot: true, aria: 'Sem conexão' },
                 ] as const"
                 :key="state.key"
                 class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-default bg-default px-3 py-2"
@@ -518,7 +519,7 @@ const productMenu = ref("Croissant");
           <NuxtCard title="Hoje" description="Dois rails: o do Gestor (DashboardSidebar fixo em 72 px, Chip numérico 4xl inventado) e o dos outros sete apps (OperatorSuiteRail, montado à mão em bg-rail).">
             <p class="text-sm text-muted">Um estado só no desktop (fixo) e nenhum no celular (barra de baixo).</p>
           </NuxtCard>
-          <NuxtCard title="Proposta" description="DashboardGroup, DashboardSidebar, NavigationMenu e DashboardSidebarCollapse. Aberto, compacto e oculto; dourado pelo tema, sem :ui.">
+          <NuxtCard title="Proposta" description="DashboardGroup, DashboardSidebar e NavigationMenu. Um botão só percorre aberto, compacto e oculto; dourado pelo tema, sem :ui.">
             <NuxtButton to="/proposal/rail" label="Abrir o rail proposto" icon="i-lucide-panel-left" color="neutral" variant="outline" external />
           </NuxtCard>
         </div>

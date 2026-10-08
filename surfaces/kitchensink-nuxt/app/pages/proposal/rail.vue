@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Proposta 5 (rail da suíte): o rail montado SÓ com peças do Nuxt UI
-// (DashboardGroup, DashboardSidebar, NavigationMenu, DashboardSidebarCollapse,
+// (DashboardGroup, DashboardSidebar, NavigationMenu,
 // DashboardSidebarToggle), sem :ui por instância, para o dono decidir.
 //
 // Os três estados:
@@ -78,12 +78,25 @@ const stateItems = [
 
 // Atalho: a doc do DashboardSidebar mostra `defineShortcuts` com a tecla C para
 // recolher. Aqui o mesmo gesto percorre os três estados.
+// Um botão só na barra faz o mesmo percurso; o ícone e o nome dizem o PRÓXIMO estado.
 const order: RailState[] = ["open", "compact", "hidden"];
-defineShortcuts({
-  c: () => {
-    state.value = order[(order.indexOf(state.value) + 1) % order.length]!;
-  },
-});
+async function cycle() {
+  const target = order[(order.indexOf(state.value) + 1) % order.length]!;
+  state.value = target;
+  // Ao voltar do oculto, o DashboardSidebar remonta e relê o cookie (compacto);
+  // o aberto é reafirmado depois da montagem.
+  if (target === "open") {
+    await nextTick();
+    collapsed.value = false;
+  }
+}
+const nextLabel: Record<RailState, { label: string; icon: string }> = {
+  open: { label: "Compactar o rail", icon: "i-lucide-panel-left-dashed" },
+  compact: { label: "Ocultar o rail", icon: "i-lucide-panel-left-close" },
+  hidden: { label: "Mostrar o rail", icon: "i-lucide-panel-left-open" },
+};
+const next = computed(() => nextLabel[state.value]);
+defineShortcuts({ c: cycle });
 
 const badgeCount = "3";
 const suite = computed(() => [
@@ -159,28 +172,15 @@ const foot = [
       <template #header>
         <NuxtDashboardNavbar title="5. Rail da suíte">
           <template #leading>
-            <NuxtDashboardSidebarCollapse v-if="!hidden" />
             <NuxtButton
-              v-else
               class="hidden lg:inline-flex"
-              icon="i-lucide-panel-left-open"
+              :icon="next.icon"
               color="neutral"
               variant="ghost"
-              aria-label="Mostrar o rail"
-              data-rail-show
-              @click="state = 'compact'"
-            />
-          </template>
-          <template #right>
-            <NuxtButton
-              v-if="!hidden"
-              class="hidden lg:inline-flex"
-              icon="i-lucide-panel-left-close"
-              color="neutral"
-              variant="ghost"
-              aria-label="Ocultar o rail"
-              data-rail-hide
-              @click="state = 'hidden'"
+              :aria-label="next.label"
+              :title="next.label"
+              data-rail-cycle
+              @click="cycle"
             />
           </template>
         </NuxtDashboardNavbar>
@@ -190,8 +190,8 @@ const foot = [
           <NuxtCard title="Três estados, peças oficiais">
             <div class="space-y-3 text-sm">
               <p>
-                Aberto e compacto são o <code>collapsed</code> do DashboardSidebar (o botão da barra
-                é o DashboardSidebarCollapse). Oculto não existe no Nuxt UI para o desktop: aqui é
+                Aberto e compacto são o <code>collapsed</code> do DashboardSidebar. Um botão só na barra
+                percorre os três estados; o ícone e o nome dizem o próximo. Oculto não existe no Nuxt UI para o desktop: aqui é
                 o sidebar não montado, guardado num cookie do kit. No celular o rail sempre começa
                 oculto e abre como slideover pelo botão de menu da barra.
               </p>
