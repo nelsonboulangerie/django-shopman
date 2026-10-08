@@ -430,6 +430,17 @@ Como um app migra:
 | `OperatorMenuItems` | o conteúdo do menu do operador (posto, Bloquear no celular, tema, giro, capacidade do serviço escrita) | menu de `_rail3bottom.html` |
 | `OperatorAppSeal` | o selo do app na barra de 56px dos cabeçalhos próprios (PDV, Central) | `_rail3top.html` |
 
+**O título da barra do topo não se corta** (PR-K5, achado do B.I. a 390 px: "Quem compra
+no balc…"). O `NuxtDashboardNavbar` oficial leva `truncate` no título; o tema do kit
+(`dashboardNavbar` em `app/app.config.ts`) o troca por quebra de linha (`text-clip
+whitespace-normal`, sem `line-clamp`) e a barra passa de `h-(--ui-header-height)` a
+`min-h-(--ui-header-height)`: com título de uma linha ela segue com 56 px; com título
+longo, cresce e mostra o título inteiro. A coluna da direita é `shrink-0` no oficial: o
+título quebra antes de empurrar a lupa, as ações e Avisos para fora. Vale para toda barra
+do topo (o `OperatorPageHeader`, o `OperatorOfficeShell`, a do Kitchen Sink operacional,
+em `?mode=operational`). Não há `short-title`: o título é o mesmo `h1` para quem enxerga
+e para o leitor de tela, e uma tela que precise de título curto o escolhe curto.
+
 Opções do rail e da barra (todas opcionais): `print-shortcuts` (padrão ligado) imprime
 a tecla de cada seção sob o nome ("Alt1"), só com ponteiro fino; `dense-labels` usa
 rótulos de 10px para nomes longos ("Planejamento"); `OperatorSection.shortLabel` encurta
@@ -1261,9 +1272,9 @@ os componentes em `tests/components/OperatorReadingChart.test.ts`.
 <OperatorReadingPageMenu />  <!-- no cabeçalho da página: "Copiar link desta leitura" -->
 
 <OperatorReadingCard title="Faturamento por dia" description="Esta semana contra a anterior"
-                     :csv="readingChartCsv('Dia', series, points)" :heading-level="3">
+                     :csv="readingChartCsv('Dia', series, points, { money: true })" :heading-level="3">
   <OperatorReadingChart title="Faturamento por dia" kind="comparison" axis-label="Dia"
-                        :series="series" :points="points" :format="formatMoney" />
+                        :series="series" :points="points" :format="readingMoneyFormat" />
 </OperatorReadingCard>
 ```
 
@@ -1282,11 +1293,25 @@ os componentes em `tests/components/OperatorReadingChart.test.ts`.
 - **A tabela equivalente sai no SSR** (`NuxtTable` com `caption`), com os mesmos números já
   formatados; ponto sem dado diz "sem dado", nunca zero. Ela existe sempre para o leitor de
   tela; `table-visible` a mostra também a quem enxerga.
+- **O eixo tem formato próprio** (`axis-format`, PR-K5). O eixo vertical é régua e é
+  estreito no celular: o dinheiro por extenso quebrava ("R$ 15." numa linha, "000,00" na
+  outra). `format` vale para a frase do ponto e para a tabela; `axis-format`, só para o
+  eixo. Sem `axis-format`, o eixo usa `format`, com uma exceção: com `readingMoneyFormat`
+  (reais por extenso, "R$ 15.000,00"), o eixo vira `readingMoneyAxisFormat` ("R$ 15 mil",
+  "R$ 1,2 mi"). O gráfico recebe reais; quem tem centavos (`_q`) divide por 100 ao montar
+  os pontos. O rótulo do eixo tem 96 px antes de quebrar.
+- **Buraco na série** (`null`): a linha quebra, e na forma `line` a área quebra junto. O
+  Unovis lê o ponto ausente como zero, e a área descia até a base no buraco; ela agora sai
+  trecho a trecho (`readingRuns`), e ponto isolado não vira área.
 - **Sem pontos**, o gráfico é o `NuxtEmpty` (`empty-title`, `empty-description`).
 - **O quadro** é o `NuxtCard` com `title`/`description` (Nuxt UI 4.7+). O título vira
   cabeçalho (`heading-level`, padrão 2) e nomeia a região. Com `csv`, o ⋯ oferece
-  "Exportar CSV deste quadro" (ponto e vírgula, número cru, UTF-8 com marca de ordem de
-  bytes, nome do arquivo saído do título); `items` acrescenta ações ao mesmo ⋯.
+  "Exportar CSV deste quadro" (ponto e vírgula, UTF-8 com marca de ordem de bytes, nome do
+  arquivo saído do título); `items` acrescenta ações ao mesmo ⋯. O número sai como a
+  planilha em português o lê: vírgula decimal e nenhum separador de milhar ("1234,5";
+  `readingCsvNumber`), porque "1.2" ela lia como milhar ou texto. Com `{ money: true }` no
+  `readingChartCsv`, os valores (em reais) saem com duas casas e sem "R$" ("1500,50";
+  `readingCsvMoney`), e o cabeçalho ganha a unidade ("Esta semana (R$)").
 - ⚠️ O `VisCrosshair` do `@unovis/vue` 1.7 não declara props e repassa os atributos como
   vieram: atributo hifenizado não vira config. No `OperatorReadingChartPlot.client.vue` ele
   é escrito em camelCase, com o `eslint-disable` da hifenização só em volta dele.

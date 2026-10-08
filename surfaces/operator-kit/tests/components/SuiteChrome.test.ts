@@ -515,6 +515,19 @@ describe("OperatorPageHeader", () => {
     expect(wrapper.get("h1").text()).toBe("Pedidos");
   });
 
+  it("o título não se corta: quebra em linhas e a barra cresce só quando precisa (PR-K5)", async () => {
+    const wrapper = await mountHeader();
+    const title = wrapper.get("h1").classes();
+    expect(title).not.toContain("truncate");
+    expect(title).not.toEqual(expect.arrayContaining([expect.stringMatching(/^line-clamp/)]));
+    expect(title).toEqual(expect.arrayContaining(["whitespace-normal", "min-w-0"]));
+    const root = wrapper.get("[data-operator-page-header]").classes();
+    expect(root).toEqual(expect.arrayContaining(["h-auto", "min-h-(--ui-header-height)"]));
+    expect(root).not.toContain("h-(--ui-header-height)");
+    // Os botões da direita não encolhem: o título quebra antes de empurrá-los.
+    expect(wrapper.get('[data-slot="right"]').classes()).toContain("shrink-0");
+  });
+
   it("desenha o slot #below (abas de Ajustes do PDV, prazo do Marketing)", async () => {
     const wrapper = await mountHeader({
       below: '<nav data-test-below>Terminal · Impressoras</nav>',

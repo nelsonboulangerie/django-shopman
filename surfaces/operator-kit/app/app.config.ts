@@ -16,7 +16,17 @@ const RAIL_SCOPE = [
 
 export default defineAppConfig({
   ui: {
-    dashboardNavbar: { slots: { root: "bg-card" } },
+    // O título da barra do topo não se corta ("cópia não se corta"; achado do B.I.,
+    // PR-K5): o oficial leva `truncate`, e a 390 px saía "Quem compra no balc…". Aqui
+    // ele quebra em linhas (`text-clip` tira o `truncate` no merge, `whitespace-normal`
+    // deixa quebrar) e a barra cresce além dos 56 px só quando precisa (`min-h`). A
+    // coluna da direita é `shrink-0` no oficial: o título nunca empurra os botões.
+    dashboardNavbar: {
+      slots: {
+        root: "bg-card h-auto min-h-(--ui-header-height) py-1",
+        title: "text-clip whitespace-normal text-pretty min-w-0",
+      },
+    },
     dashboardToolbar: { slots: { root: "bg-card" } },
     checkbox: {
       slots: {

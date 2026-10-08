@@ -11,7 +11,7 @@ import {
   dashboardTrend,
   dashboardTrendSeries,
 } from "../fixtures/operatorDashboard";
-import { readingChartCsv } from "../presentation/readingChart";
+import { readingChartCsv, readingMoneyFormat } from "../presentation/readingChart";
 import { kitchenSinkQueue } from "../fixtures/operatorKitchenSink";
 
 const tab = ref("overview");
@@ -22,14 +22,8 @@ const selectedTask = ref<(typeof kitchenSinkQueue)[number]>(
   kitchenSinkQueue[0]!,
 );
 const trendCsv = readingChartCsv("Hora", dashboardTrendSeries, dashboardTrend);
-const revenueCsv = readingChartCsv("Dia", dashboardRevenueSeries, dashboardRevenue);
+const revenueCsv = readingChartCsv("Dia", dashboardRevenueSeries, dashboardRevenue, { money: true });
 const overShortCsv = readingChartCsv("Produto", dashboardOverShortSeries, dashboardOverShort);
-const money = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-  maximumFractionDigits: 0,
-});
-const formatMoney = (value: number) => money.format(value);
 </script>
 
 <template>
@@ -181,7 +175,7 @@ const formatMoney = (value: number) => money.format(value);
               axis-label="Dia"
               :series="dashboardRevenueSeries"
               :points="dashboardRevenue"
-              :format="formatMoney"
+              :format="readingMoneyFormat"
             />
           </OperatorReadingCard>
           <OperatorReadingCard
