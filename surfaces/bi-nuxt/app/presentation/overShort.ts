@@ -432,3 +432,53 @@ export function planLabel(planDay: string): string {
   const name = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"][weekdayIndex(planDay)]!;
   return `Abrir o plano de ${name} ${shortDate(planDay)}`;
 }
+
+// ── A tabela produto a produto (NuxtTable) ──────────────────────────────────
+
+/** A cor do selo do veredito (o tom carrega o sentido; o rótulo também). */
+export const VERDICT_COLOR = { short: "error", over: "warning", right: "success" } as const satisfies Record<
+  Verdict,
+  "error" | "warning" | "success"
+>;
+
+export function verdictColor(verdict: string): "error" | "warning" | "success" {
+  return VERDICT_COLOR[(verdict as Verdict) in VERDICT_COLOR ? (verdict as Verdict) : "right"];
+}
+
+/** O botão que abre o resto da tabela: "Ver os outros 3 produtos". */
+export function showHiddenLabel(count: number): string {
+  return count === 1 ? "Ver o outro produto" : `Ver os outros ${count} produtos`;
+}
+
+/**
+ * O CSV do quadro "Produto a produto": as colunas da tabela com número cru (quem abre
+ * o arquivo faz conta com ele).
+ */
+export function overShortCsv(rows: readonly BIOverShortRow[]): { header: string[]; rows: (string | number)[][] } {
+  return {
+    header: [
+      "Produto",
+      "SKU",
+      "Veredito",
+      "Fez",
+      "Vendeu",
+      "Vendas perdidas (estimativa)",
+      "Sobrou",
+      "Acabou às",
+      "Típico vendido",
+      "Custo da sobra (R$)",
+    ],
+    rows: rows.map((row) => [
+      row.name,
+      row.sku,
+      verdictMeta(row.verdict).label,
+      num(row.made),
+      num(row.sold),
+      num(row.lost_estimate),
+      num(row.leftover),
+      row.soldout_at || "",
+      row.typical_sold ? num(row.typical_sold) : "",
+      row.leftover_cost_q ? (row.leftover_cost_q / 100).toFixed(2).replace(".", ",") : "",
+    ]),
+  };
+}

@@ -5,8 +5,12 @@
 // (cheio = vendido; tracejado = a estimativa depois que acabou) e o que aconteceu
 // depois: quando os canais tiraram o produto do ar, quantos pediram "Me avise", e os
 // caminhos ao registro (os pedidos do dia no Gestor, os dias da comparação). Links e
-// ações são NuxtButton (`to` para ir, `variant="link"` para o caminho em texto).
+// ações são NuxtButton (`to` para ir; `ghost` primário para o caminho em texto).
 import type { BIOverShortRow } from "~/types/bi";
+import type {
+  ReadingChartPoint,
+  ReadingChartSeries,
+} from "../../../operator-kit/app/presentation/readingChart";
 import { formatQty, shortDate } from "~/presentation/bi";
 import {
   clientCount,
@@ -41,13 +45,19 @@ const ordersHref = computed(() =>
 const ordersLink = computed(() => attrsFor(ordersHref.value));
 const showHistory = ref(false);
 
-const hourMax = computed(() =>
-  Math.max(1, ...props.row.sales_by_hour.map((hour) => Number(hour.sold) + Number(hour.estimated_lost))),
+const hasEstimate = computed(() => props.row.sales_by_hour.some((hour) => Number(hour.estimated_lost) > 0));
+const hourSeries = computed<ReadingChartSeries[]>(() => [
+  { key: "sold", label: "Vendidas" },
+  ...(hasEstimate.value ? [{ key: "lost", label: "Perdidas (estimativa)", tone: "error" as const }] : []),
+]);
+const hourPoints = computed<ReadingChartPoint[]>(() =>
+  props.row.sales_by_hour.map((hour) => ({
+    label: `${String(hour.hour).padStart(2, "0")}h`,
+    values: { sold: Number(hour.sold), lost: Number(hour.estimated_lost) },
+  })),
 );
-const barHeight = (value: number) => `${Math.max(value > 0 ? 6 : 0, (value / hourMax.value) * 64)}px`;
 
 const capitalize = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
-const hasEstimate = computed(() => props.row.sales_by_hour.some((hour) => Number(hour.estimated_lost) > 0));
 const demandEstimate = computed(() => Number(props.row.sold) + Number(props.row.lost_estimate || 0));
 const missingLot = computed(() => props.row.planned_lots > props.row.lots.length);
 const historyEntries = computed(() =>
@@ -56,11 +66,11 @@ const historyEntries = computed(() =>
 </script>
 
 <template>
-  <!-- `lg:grid-cols-[1.1fr_1fr_1.25fr]`: lotes, vendas por hora e o texto do que
-       aconteceu depois, que é o mais longo dos três. -->
-  <div class="my-2 grid gap-5 rounded-md bg-primary/5 px-4 py-3 lg:grid-cols-[1.1fr_1fr_1.25fr]" data-over-short-detail>
+  <!-- Lotes, vendas por hora e o que aconteceu depois, em três colunas iguais do
+       desktop largo para cima; abaixo, empilhados. -->
+  <div class="grid gap-5 whitespace-normal rounded-md bg-primary/5 px-4 py-3 lg:grid-cols-3" data-over-short-detail>
     <div>
-      <p class="mb-1.5 op-eyebrow text-muted-foreground">Lotes do dia</p>
+      <h3 class="mb-1.5 text-sm font-medium text-highlighted">Lotes do dia</h3>
       <NuxtButton
         v-for="lot in row.lots"
         :key="lot.ref"
@@ -84,37 +94,28 @@ const historyEntries = computed(() =>
       </p>
     </div>
 
-    <div>
-      <p class="mb-1.5 op-eyebrow text-muted-foreground">Vendas por hora</p>
-      <!-- `h-[86px]`: as barras vão até 64 px (`barHeight`) mais a linha da hora. -->
-      <div v-if="row.sales_by_hour.length" class="flex h-[86px] items-end gap-1.5 overflow-x-auto no-scrollbar" role="img" :aria-label="`Vendas por hora de ${row.name}`">
-        <div v-for="hour in row.sales_by_hour" :key="hour.hour" class="flex shrink-0 flex-col items-center gap-1">
-          <div class="flex w-6 flex-col justify-end">
-            <div
-              v-if="Number(hour.estimated_lost) > 0"
-              class="w-6 rounded-t-sm border border-dashed border-destructive/60 bg-destructive/10"
-              :style="{ height: barHeight(Number(hour.estimated_lost)) }"
-              :title="`${hour.hour}h: ~${formatQty(hour.estimated_lost)} perdidas (est.)`"
-            />
-            <div
-              v-if="Number(hour.sold) > 0"
-              class="w-6 bg-primary"
-              :class="Number(hour.estimated_lost) > 0 ? '' : 'rounded-t-sm'"
-              :style="{ height: barHeight(Number(hour.sold)) }"
-              :title="`${hour.hour}h: ${formatQty(hour.sold)} vendidas`"
-            />
-          </div>
-          <span class="op-micro tnum text-muted-foreground">{{ String(hour.hour).padStart(2, "0") }}h</span>
-        </div>
-      </div>
-      <p v-else class="op-micro text-muted-foreground">Nenhuma venda registrada neste dia.</p>
-      <p v-if="row.soldout_at" class="mt-0.5 op-micro" :class="row.verdict === 'short' ? 'text-destructive' : 'text-muted-foreground'">
-        acabou {{ row.soldout_at }}<template v-if="hasEstimate"> · tracejado = estimativa</template>
+    <div class="min-w-0">
+      <h3 class="mb-1.5 text-sm font-medium text-highlighted">Vendas por hora</h3>
+      <!-- O gráfico de leitura do kit (laudo F03): cheio = vendido; a segunda série,
+           a estimativa do que se perdeu depois que acabou. Toque, mouse e setas leem
+           cada hora; a tabela equivalente sai no SSR. -->
+      <OperatorReadingChart
+        :title="`Vendas por hora de ${row.name}`"
+        axis-label="Hora"
+        :series="hourSeries"
+        :points="hourPoints"
+        :format="(value) => formatQty(String(value))"
+        :height="140"
+        :max-ticks="8"
+        empty-title="Nenhuma venda registrada neste dia"
+      />
+      <p v-if="row.soldout_at" class="mt-0.5 text-xs" :class="row.verdict === 'short' ? 'text-error' : 'text-muted'">
+        acabou {{ row.soldout_at }}
       </p>
     </div>
 
     <div>
-      <p class="mb-1.5 op-eyebrow text-muted-foreground">{{ row.soldout_at ? "Depois que acabou" : "O que ficou" }}</p>
+      <h3 class="mb-1.5 text-sm font-medium text-highlighted">{{ row.soldout_at ? "Depois que acabou" : "O que ficou" }}</h3>
       <ul v-if="row.unavailable.length || row.alert_requests" class="mb-1 flex flex-col gap-0.5 op-label leading-6" data-over-short-after>
         <li v-for="item in row.unavailable" :key="item.at" data-over-short-unavailable>
           {{ unavailableText(item) }}<span v-if="item.automatic" class="op-micro text-muted-foreground"> (automático)</span>
@@ -151,13 +152,15 @@ const historyEntries = computed(() =>
           :to="ordersHref"
           :target="ordersLink.target"
           :rel="ordersLink.rel"
-          variant="link"
+          color="primary"
+          variant="ghost"
           :label="ordersLinkLabel(row.orders)"
           data-over-short-orders
         />
         <NuxtButton
           v-if="historyEntries.length"
-          variant="link"
+          color="primary"
+          variant="ghost"
           :label="historyDaysLabel(day, historyEntries.length)"
           :aria-expanded="showHistory"
           data-over-short-history

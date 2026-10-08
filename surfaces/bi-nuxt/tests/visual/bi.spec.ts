@@ -7,7 +7,7 @@ import { expect, test } from "@playwright/test";
 
 const BACKEND = "http://127.0.0.1:" + (process.env.BI_VISUAL_BACKEND_PORT || "38794");
 
-const ROUTES = ["/", "/sales", "/cash", "/customers", "/profiles", "/explore", "/forecast", "/scenarios"];
+const ROUTES = ["/", "/?view=lots", "/sales", "/cash", "/customers", "/profiles", "/explore", "/forecast", "/scenarios"];
 
 test.beforeAll(async ({ request }) => {
   await request.get(BACKEND + "/__visual/scenario?set=normal");
