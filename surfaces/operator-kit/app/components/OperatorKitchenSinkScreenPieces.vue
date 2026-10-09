@@ -191,5 +191,27 @@ const rows = [
         </div>
       </div>
     </NuxtCard>
+
+    <NuxtCard
+      title="Estado da tela"
+      description="OperatorScreenState: carregando, vazio, erro e sem conexão, uma frase por estado. O erro traz Tentar de novo na cor do aviso. O aviso que vale para a tela inteira mora no cabeçalho (alerts do OperatorPageHeader): um inteiro, o resto em e mais N."
+      data-catalog-screen-state
+    >
+      <div class="grid gap-4 md:grid-cols-2">
+        <NuxtCard variant="soft">
+          <OperatorScreenState state="loading" what="a fila" in-card />
+        </NuxtCard>
+        <NuxtCard variant="soft">
+          <OperatorScreenState
+            state="empty"
+            icon="i-lucide-inbox"
+            title="Nenhum pedido precisa de você agora."
+            in-card
+          />
+        </NuxtCard>
+        <OperatorScreenState state="error" what="a fila" @retry="said('Tentar de novo')" />
+        <OperatorScreenState state="offline" since="10:42" />
+      </div>
+    </NuxtCard>
   </section>
 </template>

@@ -62,16 +62,6 @@ const dayTitle = (day: DayForecast) => `${day.weekday_label}, ${shortDate(day.da
 const headline = (day: DayForecast) =>
   day.basis ? basisHeadline(day.basis, day.weekday_label) : "";
 
-const retryActions = computed(() => [
-  {
-    label: "Tentar de novo",
-    icon: "i-lucide-refresh-cw",
-    color: "error" as const,
-    variant: "outline" as const,
-    onClick: () => void refresh(),
-  },
-]);
-
 const yearColumns = [
   { accessorKey: "label", header: "Ocorrência" },
   { accessorKey: "revenue", header: "Faturamento", meta: { class: { th: "text-right", td: "text-right tnum" } } },
@@ -130,16 +120,11 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
         description="Procurando os dias parecidos no histórico."
         data-bi-loading
       />
-      <NuxtAlert
+      <OperatorScreenState
         v-else-if="error"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        title="Não deu para carregar a projeção."
-        :actions="retryActions"
-        orientation="horizontal"
-        role="alert"
-        data-bi-error
+        state="error"
+        what="a projeção"
+        @retry="refresh()"
       />
 
       <template v-if="report">

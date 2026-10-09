@@ -359,7 +359,7 @@ const csv = computed(() => overShortCsv(filtered.value));
 
     <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
       <template v-if="view === 'day'">
-        <BiPageState :error="dayError" what="a leitura do dia" @retry="dayRefresh()" />
+        <OperatorScreenState v-if="dayError" state="error" what="a leitura do dia" @retry="dayRefresh()" />
 
         <NuxtCard v-if="day && explainOpen" title="Como é calculado" class="text-sm leading-6" data-bi-explain>
           <p><b>Fez</b>: o realizado dos lotes fechados do dia. <b>Vendeu</b>: as vendas do dia, de todos os canais.</p>

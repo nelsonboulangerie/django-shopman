@@ -8,6 +8,7 @@ import { computed, ref } from "vue";
 import { periodOfDay, todayIso } from "../app/presentation/dates";
 import type { OperatorSection } from "../app/presentation/appBar";
 import type { OperatorHeaderAction } from "../app/presentation/pageHeader";
+import type { OperatorScreenAlert } from "../app/presentation/screenState";
 
 const ROUTE = "/__operator_kit_catalog/phone-header";
 const sections: OperatorSection[] = [
@@ -26,6 +27,19 @@ const actions: OperatorHeaderAction[] = [
   { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => did("exportar") },
   { label: "Imprimir", icon: "i-lucide-printer", onSelect: () => did("imprimir") },
   { label: "Trocar o tema", icon: "i-lucide-sun-moon", onSelect: () => did("tema") },
+];
+
+// O aviso da tela (README "Aviso da tela"): um inteiro, o resto em "e mais N".
+const alerts: OperatorScreenAlert[] = [
+  {
+    id: "late",
+    color: "warning",
+    title: "2 pedidos passaram do horário",
+    description: "O 1049 e o 1053 já deveriam ter saído.",
+    action: { label: "Ver os atrasados", onSelect: () => did("atrasados") },
+  },
+  { id: "printer", color: "info", title: "A impressora da Saída está sem papel" },
+  { id: "pix", color: "error", title: "O Pix não respondeu na última hora" },
 ];
 
 const today = todayIso();
@@ -62,6 +76,7 @@ const activeFilters = computed(() =>
           eyebrow="Auditoria do Dono"
           :actions="actions"
           :active-filters="activeFilters"
+          :alerts="alerts"
         >
           <template #status>
             <OperatorLiveStatus tone="live" time="10:00" label="Ao vivo" />

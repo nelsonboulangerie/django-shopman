@@ -18,10 +18,6 @@ const { selection, bounds, presets } = useBiWindow();
 const shareItems = useBiShareMenuItems();
 const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
-const errorActions = computed(() => [
-  { label: "Tentar de novo", icon: "i-lucide-refresh-cw", color: "error" as const, variant: "outline" as const, onClick: () => refresh() },
-]);
-
 // Rótulos pt-BR dos segmentos (espelham guestman RFM_SEGMENTS).
 const SEGMENT_LABELS: Record<string, string> = {
   champion: "Campeões",
@@ -84,17 +80,12 @@ const formatCount = (value: number) => formatInt(value);
         description="Segmentos e clientes novos do período escolhido."
         data-bi-loading
       />
-      <NuxtAlert
+      <OperatorScreenState
         v-if="error"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        title="Não deu para carregar os clientes."
+        state="error"
+        what="os clientes"
         :description="report ? 'Os números na tela são os da leitura anterior.' : undefined"
-        :actions="errorActions"
-        orientation="horizontal"
-        role="alert"
-        data-bi-error
+        @retry="refresh()"
       />
       <template v-if="report">
         <!-- `xl:grid-cols-[1.4fr_1fr...]`: a resposta (uma frase) pede mais largura que cada número. -->

@@ -132,7 +132,7 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
         description="Turnos, quebra, gaveta e meios de pagamento."
         data-bi-loading
       />
-      <BiPageState v-else :error="error" what="o caixa" @retry="refresh()" />
+      <OperatorScreenState v-else-if="error" state="error" what="o caixa" @retry="refresh()" />
 
       <template v-if="report">
         <div class="grid grid-cols-2 gap-3 xl:grid-cols-5">

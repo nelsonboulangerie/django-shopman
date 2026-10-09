@@ -853,6 +853,73 @@ Contrato em `tests/components/OperatorActionBar.test.ts`. Primeiro uso: o pedido
 Gestor no celular (`orders-nuxt/app/pages/[ref].vue`: a ação primária, "Recusar" como
 segunda, o motivo do bloqueio escrito).
 
+### Estado da tela (`OperatorScreenState`)
+
+Carregando, vazio, erro e sem conexão, com UMA frase por estado
+(`presentation/screenState.ts`). A tela diz o que mostra, com artigo, e a peça escreve:
+
+| estado | peça | frase |
+| --- | --- | --- |
+| `loading` | `NuxtEmpty loading` | "Carregando a fila" |
+| `empty` | `NuxtEmpty` com ícone | o título da tela, no presente e sobre a pessoa ("Nenhum pedido precisa de você agora."); sem título, "Nada para mostrar agora." |
+| `error` | `NuxtAlert subtle error` + "Tentar de novo" | "Não foi possível carregar a fila" (o tom é do dono, 09/10/2026) |
+| `offline` | `NuxtAlert subtle warning` | "Sem conexão." + "O que está na tela é de 10:42." |
+
+```vue
+<OperatorScreenState v-if="error" state="error" what="os lotes do período" @retry="refresh()" />
+<OperatorScreenState v-else-if="pending && !report" state="loading" what="os lotes do período" in-card />
+```
+
+- **"Tentar de novo" na cor do aviso** (a exceção declarada do conjunto mínimo), `outline`,
+  tamanho `md` como o resto da suíte: o `xs` que o `NuxtAlert` dá por padrão às ações
+  fica fora do conjunto. Vale para toda ação dentro de aviso montada pelo kit.
+- **`in-card`**: dentro de um cartão o vazio e o carregando perdem a moldura própria
+  (`naked`); no corpo da página, ficam com ela. Uma regra, em vez de cada tela escolher.
+- `description` acrescenta a segunda linha (no B.I., "Os números na tela são os da
+  leitura anterior."); `#actions` dá a saída do vazio.
+- Substituiu o `BiPageState` (3 usos) e os cinco avisos de erro escritos à mão no B.I.
+
+### Aviso da tela (`alerts` do `OperatorPageHeader`)
+
+O que a tela precisa que a pessoa saiba agora tem **um lugar só**: as `alerts` do
+cabeçalho, logo abaixo da toolbar.
+
+```vue
+<OperatorPageHeader
+  title="Pedidos"
+  :alerts="[{ id: 'late', color: 'warning', title: '2 pedidos passaram do horário',
+              description: 'O 1049 e o 1053 já deveriam ter saído.',
+              action: { label: 'Ver os atrasados', onSelect: showLate } }]"
+/>
+```
+
+- `NuxtAlert subtle` nas 4 cores do conjunto (`info`, `success`, `warning`, `error`); o
+  ícone vem da cor se a tela não escolher. A saída (`action`) repete a cor do aviso, `md`.
+- **Um aviso inteiro**; os outros ficam atrás de "e mais N avisos", que abre todos. A
+  ordem é a da tela: o mais importante primeiro.
+- O aviso fica fixo com o cabeçalho (não rola com o conteúdo): o "um inteiro, o resto em
+  e mais N" é o que impede que ele coma a tela do celular.
+
+**Onde cada aviso mora** (a regra; nenhuma tela monta faixa própria):
+
+| o que é | onde mora |
+| --- | --- |
+| aviso de uma tela ("33 produtos sem vocação", "2 pedidos atrasados") | `alerts` do `OperatorPageHeader` |
+| o conteúdo não veio (erro ao carregar, vazio, carregando) | `OperatorScreenState`, no lugar do conteúdo |
+| sem rede no app inteiro | `OfflineBanner` (do app) |
+| prazo correndo que interrompe ("o pedido cancela em 2 min") | `OperatorUrgentAlert` (modal) |
+| resultado de uma ação ("Pedido aceito", "Não deu para aceitar") | toast (`useSonner`/`useToast`), ou o erro escrito junto do controle |
+| alerta da operação que fica (capacidade, canal parado) | caixa de Avisos (`provideOperatorInboxAlerts`) |
+
+O `#feedback` do cabeçalho segue para sinal que não é aviso (o `ChannelQueueSignal` do
+Gestor).
+
+Trava: `tests/components/OperatorScreenState.test.ts` (as frases, sem travessão; a saída
+do erro; um aviso inteiro e "e mais N") e `tests/catalog/phone-header.spec.ts` (no
+navegador, a 320, 390 e 1440 px: um aviso visível, "e mais 2 avisos" abre os três, a saída
+do aviso no tamanho da suíte e sem rolagem lateral). Primeiro uso do estado: o B.I. (oito
+erros de leitura, em sete telas); do aviso: a bancada do catálogo.
+
 ## Busca da suíte (`OperatorSuiteSearch`)
 
 Uma busca, uma tecla (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gestor-busca`,

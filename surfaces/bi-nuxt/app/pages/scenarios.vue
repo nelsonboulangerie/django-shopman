@@ -39,15 +39,6 @@ async function run() {
   if (report) openId.value = report.id;
 }
 
-const errorActions = computed(() => [
-  {
-    label: "Tentar de novo",
-    icon: "i-lucide-refresh-cw",
-    color: "error" as const,
-    variant: "outline" as const,
-    onClick: () => void refresh(),
-  },
-]);
 </script>
 
 <template>
@@ -70,16 +61,11 @@ const errorActions = computed(() => [
         title="Carregando os cenários"
         data-bi-loading
       />
-      <NuxtAlert
+      <OperatorScreenState
         v-else-if="error && !page"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        title="Não deu para carregar os cenários."
-        :actions="errorActions"
-        orientation="horizontal"
-        role="alert"
-        data-bi-error
+        state="error"
+        what="os cenários"
+        @retry="refresh()"
       />
       <template v-if="page">
         <OperatorReadingCard

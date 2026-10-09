@@ -89,7 +89,7 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
 
 <template>
   <div class="flex flex-col gap-3 [&>*]:shrink-0" data-bi-lots>
-    <BiPageState :error="error" what="os lotes do período" @retry="refresh()" />
+    <OperatorScreenState v-if="error" state="error" what="os lotes do período" @retry="refresh()" />
     <NuxtEmpty v-if="pending && !report" loading title="Carregando os lotes do período" data-bi-loading />
 
     <template v-if="report">

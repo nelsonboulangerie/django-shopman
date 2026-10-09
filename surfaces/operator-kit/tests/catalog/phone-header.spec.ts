@@ -120,3 +120,34 @@ test("celular: a barra do topo e a toolbar seguem a regra única do kit", async 
   await chip.click();
   await expect(page.locator("[data-page-header-active-filters]")).toHaveCount(0);
 });
+
+test("aviso da tela: um inteiro, o resto em \"e mais N\", com a saída na cor do aviso", async ({ page }, testInfo) => {
+  const viewport = testInfo.project.metadata.operatorViewport as OperatorVisualViewport | undefined;
+  test.skip(
+    !viewport || !["mobile-standard", "mobile-narrow", "desktop-common"].includes(viewport.id),
+    "Celular e mesa comum bastam: o aviso é o mesmo em toda largura.",
+  );
+  await page.setViewportSize({ width: viewport!.width, height: viewport!.height });
+  await page.goto(ROUTE);
+  await expect(page.locator("[data-phone-header-bench]")).toBeVisible();
+  // O botão do aviso só age depois da hidratação.
+  await page.waitForFunction(() => Boolean((document.querySelector("#__nuxt") as { __vue_app__?: unknown } | null)?.__vue_app__));
+  await page.waitForLoadState("networkidle");
+
+  const alerts = page.locator("[data-page-header-alert]");
+  await expect(alerts).toHaveCount(1);
+  await expect(alerts.first()).toContainText("2 pedidos passaram do horário");
+  // A saída do aviso: botão do tamanho da suíte, não o xs do default.
+  const exit = alerts.first().getByRole("button", { name: "Ver os atrasados" });
+  expect((await exit.boundingBox())!.height).toBeGreaterThanOrEqual(30);
+  await exit.click();
+  await expect(page.locator("[data-phone-header-bench]")).toHaveAttribute("data-chosen", /atrasados/);
+
+  const more = page.locator("[data-page-header-alerts-more]");
+  await expect(more).toHaveText("e mais 2 avisos");
+  await more.click();
+  await expect(alerts).toHaveCount(3);
+  await expect(more).toHaveCount(0);
+  // O aviso não empurra nada para fora da largura.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+});
