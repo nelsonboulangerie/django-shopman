@@ -172,23 +172,16 @@ const items = computed(() => {
 </script>
 
 <template>
-  <NuxtDropdownMenu
+  <OperatorMoreMenu
     v-if="mode === 'dropdown'"
     :items="items"
-    :content="{ align: 'end' }"
+    label="Mais ações da fila"
+    data-board-more
   >
-    <NuxtButton
-      icon="i-lucide-ellipsis"
-      color="neutral"
-      variant="outline"
-      square
-      aria-label="Mais ações da fila"
-      data-board-more
-    />
     <template #freshness>
       <ReadFreshness inline :metadata="metadata" :failed="failed" />
     </template>
-  </NuxtDropdownMenu>
+  </OperatorMoreMenu>
 
   <div v-else data-board-menu>
     <ReadFreshness :metadata="metadata" :failed="failed" />

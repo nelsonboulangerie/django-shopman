@@ -62,17 +62,13 @@ const menuItems = computed<DropdownMenuItem[]>(() => [
     <template #title>
       <div class="flex items-start justify-between gap-2">
         <component :is="heading" :id="headingId">{{ title }}</component>
-        <NuxtDropdownMenu v-if="menuItems.length" :items="menuItems" :content="{ align: 'end' }">
-          <NuxtButton
-            icon="i-lucide-ellipsis"
-            color="neutral"
-            variant="ghost"
-            square
-            class="-my-1"
-            :aria-label="`Mais sobre ${title}`"
-            data-operator-reading-card-menu
-          />
-        </NuxtDropdownMenu>
+        <OperatorMoreMenu
+          v-if="menuItems.length"
+          :items="menuItems"
+          class="-my-1"
+          :label="`Mais sobre ${title}`"
+          data-operator-reading-card-menu
+        />
       </div>
     </template>
     <slot />

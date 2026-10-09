@@ -17,6 +17,9 @@ import OperatorOrderDetail from "../../../operator-kit/app/components/OperatorOr
 // motivo: o contrato cobrado é `role="radio"`/`aria-checked` do kit.
 import UiRadio from "../../../operator-kit/app/components/UiRadio.vue";
 import UiRadioGroup from "../../../operator-kit/app/components/UiRadioGroup.vue";
+// O ⋯ único entra de verdade: o contrato (o nome do botão, os grupos, o motivo de uma
+// ação que não pode) é do kit, e o menu por baixo é o `NuxtDropdownMenu` deste harness.
+import OperatorMoreMenu from "../../../operator-kit/app/components/OperatorMoreMenu.vue";
 import UiTabs from "../../../operator-kit/app/components/Ui/Tabs/Tabs.vue";
 import UiTabsList from "../../../operator-kit/app/components/Ui/Tabs/List.vue";
 import UiTabsTrigger from "../../../operator-kit/app/components/Ui/Tabs/Trigger.vue";
@@ -955,6 +958,7 @@ config.global.components = {
   NuxtSkeleton: textPrimitive("NuxtSkeleton"),
   NuxtTimeline: textPrimitive("NuxtTimeline"),
   OperatorOrderDetail,
+  OperatorMoreMenu,
   UiRadio,
   UiRadioGroup,
   UiTabs,

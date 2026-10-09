@@ -697,20 +697,12 @@ const sectionClass =
     @update:open="requestClose"
   >
     <template #actions>
-      <NuxtDropdownMenu
+      <OperatorMoreMenu
         v-model:open="headerMenuOpen"
         :items="panelMenuItems"
-        :content="{ align: 'end' }"
-      >
-        <NuxtButton
-          icon="i-lucide-ellipsis"
-          color="neutral"
-          variant="ghost"
-          square
-          aria-label="Mais ações do produto"
-          data-panel-more
-        />
-      </NuxtDropdownMenu>
+        label="Mais ações do produto"
+        data-panel-more
+      />
     </template>
     <template #body>
       <div class="flex flex-col gap-4">
