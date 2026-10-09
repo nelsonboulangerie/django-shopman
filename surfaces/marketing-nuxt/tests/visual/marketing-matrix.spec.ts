@@ -752,6 +752,11 @@ test.describe("listas operacionais", () => {
     const group = dialog.getByRole("group", { name: "Disparado via" });
     await expect(group).toBeVisible();
     await group.getByRole("checkbox", { name: /Instagram/ }).click();
+    // ⚠️ O aviso do rascunho entra depois do nome digitado e empurra o grupo; sem
+    // esperá-lo o retrato saía com e sem ele (CI 37979530461).
+    await expect(
+      dialog.getByText("Rascunho salvo neste dispositivo às 10:30."),
+    ).toBeVisible();
     await group.evaluate((element) => element.scrollIntoView({ block: "start" }));
     await expectStableScreenshot(
       page,
