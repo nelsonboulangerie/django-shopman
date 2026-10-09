@@ -194,7 +194,9 @@ class UndoProjection:
     gesto. ``action_ref`` é a ação de ``actions`` que desfaz. ``held_effect``
     diz o que espera a janela, na voz do card; ``already_out`` diz o que NÃO
     espera e já saiu (o ``readyToPickup`` do iFood: ver ``order_undo``), para o
-    operador saber que desfazer não alcança aquilo.
+    operador saber que desfazer não alcança aquilo. ``undo_since_iso`` é o
+    começo da janela: com ``undo_until_iso``, dá o tamanho dela, para o botão
+    Desfazer mostrar quanto ainda resta mesmo montado no meio da janela.
     """
 
     kind: str
@@ -204,6 +206,7 @@ class UndoProjection:
     action_ref: str
     held_effect: str = ""
     already_out: str = ""
+    undo_since_iso: str = ""
 
 
 def _undo_projection(order: Order) -> UndoProjection | None:
@@ -220,6 +223,7 @@ def _undo_projection(order: Order) -> UndoProjection | None:
             undo_until_iso=str(pending.get("commit_at") or "") if window_open else "",
             action_ref="undo-handoff",
             held_effect="Aviso ao cliente e fim do pedido" if pending.get("to_status") != Order.Status.DISPATCHED else "Aviso ao cliente e saída do pedido",
+            undo_since_iso=str(pending.get("requested_at") or "") if window_open else "",
         )
     record = order_undo.auto_ready_record(order)
     if record and order.status == Order.Status.READY:
@@ -233,6 +237,7 @@ def _undo_projection(order: Order) -> UndoProjection | None:
             action_ref="undo-ready",
             held_effect="Aviso de pronto ao cliente" if hold else "",
             already_out="iFood já avisado" if order.channel_ref == "ifood" else "",
+            undo_since_iso=str(record.get("at") or "") if hold else "",
         )
     return None
 

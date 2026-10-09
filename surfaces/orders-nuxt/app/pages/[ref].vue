@@ -986,13 +986,10 @@ const outside = useOutsideStore(
                 [undo.detail, undo.alreadyOut].filter(Boolean).join(' · ')
               "
               :actions="
-                undo.canUndo
+                undo.canUndo && undo.kind !== 'handoff'
                   ? [
                       {
-                        label:
-                          undo.kind === 'handoff'
-                            ? `Desfazer ${undo.countdown}`
-                            : 'Desfazer',
+                        label: 'Desfazer',
                         color: 'success',
                         variant: 'outline',
                         disabled: busy,
@@ -1002,7 +999,24 @@ const outside = useOutsideStore(
                   : []
               "
               :data-undo="undo.kind"
-            />
+            >
+              <!-- A saída tocada: o tempo mora no próprio Desfazer (o fundo esvazia
+                   até a janela fechar), como no cartão. -->
+              <template v-if="undo.canUndo && undo.kind === 'handoff'" #actions>
+                <OperatorTimedButton
+                  :until="undo.untilIso"
+                  :since="undo.sinceIso || undefined"
+                  label="Desfazer"
+                  icon="i-lucide-undo-2"
+                  color="success"
+                  variant="outline"
+                  :disabled="busy"
+                  :loading="busy"
+                  data-undo-button
+                  @click="onUndo()"
+                />
+              </template>
+            </NuxtAlert>
             <NuxtAlert
               v-if="
                 advanceAction &&

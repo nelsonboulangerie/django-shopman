@@ -108,6 +108,27 @@ const blockedAction = {
   reason: "O Pix ainda não caiu. O pedido libera sozinho quando cair.",
 };
 
+// Ação com prazo: o Desfazer com o tempo dentro do botão. "Recomeçar" abre janelas
+// novas de 5 s em todos os exemplos de uma vez.
+const timedUntil = ref(0);
+const timedDone = ref<string[]>([]);
+const timedExpired = ref<string[]>([]);
+function restartTimed() {
+  timedDone.value = [];
+  timedExpired.value = [];
+  timedUntil.value = Date.now() + 5000;
+}
+onMounted(restartTimed);
+function timedUndo(id: string) {
+  timedDone.value = [...timedDone.value, id];
+  said("Desfeito");
+}
+const timedRows = [
+  { id: "outline", title: "Contornado", variant: "outline" as const, color: "neutral" as const, reduced: false },
+  { id: "solid", title: "Sólido", variant: "solid" as const, color: "primary" as const, reduced: false },
+  { id: "reduced", title: "Sem movimento", variant: "outline" as const, color: "neutral" as const, reduced: true },
+];
+
 const rows = [
   { sku: "PAO-FRANCES", name: "Pão francês" },
   { sku: "CROISSANT-MANTEIGA", name: "Croissant de manteiga com fermentação natural de 36 horas" },
@@ -248,6 +269,48 @@ const rows = [
             context-value="R$ 93,20"
           />
         </div>
+      </div>
+    </NuxtCard>
+
+    <NuxtCard
+      title="Ação com prazo"
+      description="OperatorTimedButton: a ação que só vale até um prazo, com o tempo dentro do botão. O fundo esvazia até a janela fechar; ao fim, o botão some ou fica desabilitado. Com movimento reduzido no dispositivo, nada anima e o botão mostra só os segundos. O leitor de tela ouve o rótulo, e o prazo numa descrição fixa (Disponível até 10:42:15), anunciada só ao abrir e ao fechar."
+      data-catalog-timed-button
+    >
+      <div class="space-y-3">
+        <div class="flex flex-col divide-y divide-default">
+          <div
+            v-for="row in timedRows"
+            :key="row.id"
+            class="flex flex-wrap items-center gap-3 py-3"
+          >
+            <p class="w-32 text-sm font-medium">{{ row.title }}</p>
+            <div v-for="size in ['md', 'xl'] as const" :key="size" class="min-w-36">
+              <OperatorTimedButton
+                v-if="timedUntil && !timedDone.includes(`${row.id}-${size}`) && !timedExpired.includes(`${row.id}-${size}`)"
+                :until="timedUntil"
+                :duration="5000"
+                label="Desfazer"
+                icon="i-lucide-undo-2"
+                :size="size"
+                :variant="row.variant"
+                :color="row.color"
+                :reduced-motion="row.reduced"
+                @click="timedUndo(`${row.id}-${size}`)"
+                @expire="timedExpired = [...timedExpired, `${row.id}-${size}`]"
+              />
+              <p v-else-if="timedDone.includes(`${row.id}-${size}`)" class="text-sm text-muted">Desfeito.</p>
+              <p v-else class="text-sm text-muted">O prazo acabou.</p>
+            </div>
+          </div>
+        </div>
+        <NuxtButton
+          icon="i-lucide-rotate-ccw"
+          color="neutral"
+          variant="outline"
+          label="Recomeçar"
+          @click="restartTimed"
+        />
       </div>
     </NuxtCard>
 

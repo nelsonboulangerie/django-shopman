@@ -1,7 +1,7 @@
 // UX-G2 (SUITE-UX §5.1): "Pronto · automático · desfazer" e a saída com
 // desfazer de 5 s no card do Gestor. O servidor decide o fato e a janela
 // (`undo` + ações projetadas); o card só conta o tempo e emite o gesto.
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
 import { mount } from "@vue/test-utils";
 
@@ -104,6 +104,13 @@ describe("cardAffordances", () => {
 });
 
 describe("OrderCard — o sistema fez · desfazer", () => {
+  // O Desfazer da saída é o botão com prazo do kit, que lê o relógio do dispositivo.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
   it("pronto automático: selo, aviso que espera e Desfazer que emite undo_ready", async () => {
     nowMs.value = NOW;
     const w = mountCard(card({ undo: autoReady(inSeconds(24)), actions: [action("advance", "Marcar como retirado"), action("undo-ready", "Desfazer", { priority: "secondary" })] }));
@@ -126,26 +133,38 @@ describe("OrderCard — o sistema fez · desfazer", () => {
     expect(w.find("[data-undo-button]").exists()).toBe(false);
   });
 
-  it('saída: "Entregue às 15:00 · Desfazer 5 s", e só esse gesto', async () => {
+  it('saída: "Entregue às 15:00" e o Desfazer com o tempo dentro, e só esse gesto', async () => {
     nowMs.value = NOW;
-    const w = mountCard(card({ undo: handoff(inSeconds(5)), actions: [action("undo-handoff", "Desfazer")] }));
-    // O cartão fica no lugar (v4): o fato com o anel do tempo e o Desfazer largo.
+    const w = mountCard(
+      card({
+        undo: { ...handoff(inSeconds(3)), undo_since_iso: inSeconds(-2) },
+        actions: [action("undo-handoff", "Desfazer")],
+      }),
+    );
+    await w.vm.$nextTick(); // o relógio do botão só começa montado, no cliente
+    // O cartão fica no lugar (v4): o fato e o Desfazer largo, com o fundo que esvazia.
     const row = w.find('[data-undo="handoff"]');
     expect(row.text()).toContain("Entregue às 15:00");
     expect(w.get("[data-card-state]").attributes("data-card-state")).toBe("handoff");
-    expect(w.get("[data-undo-button]").text()).toContain("Desfazer 5 s");
+    const undo = w.get("[data-undo-button]");
+    expect(undo.text()).toBe("Desfazer");
+    expect(undo.attributes("aria-describedby")).toBeTruthy();
+    // A janela é de 5 s e já correram 2: o fundo continua de onde ela está.
+    const fill = w.get("[data-timed-fill]").attributes("style");
+    expect(fill).toContain("animation-duration: 5000ms");
+    expect(fill).toContain("animation-delay: -2000ms");
     expect(w.text()).not.toContain("Marcar como retirado");
     expect(w.find("[data-card-primary]").exists()).toBe(false);
     await w.get("[data-undo-button]").trigger("click");
     expect(w.emitted("action")?.[0]).toEqual(["undo_handoff"]);
   });
 
-  it("o relógio corre: 2 s depois, Desfazer 3 s; no fim, o gesto some", async () => {
+  it("o relógio corre: o rótulo não muda; no fim, o gesto some", async () => {
     nowMs.value = NOW;
     const w = mountCard(card({ undo: handoff(inSeconds(5)), actions: [action("undo-handoff", "Desfazer")] }));
     nowMs.value = NOW + 2000;
     await w.vm.$nextTick();
-    expect(w.find("[data-undo-button]").text()).toContain("Desfazer 3 s");
+    expect(w.find("[data-undo-button]").text()).toBe("Desfazer");
     nowMs.value = NOW + 6000;
     await w.vm.$nextTick();
     expect(w.find("[data-undo-button]").exists()).toBe(false);
