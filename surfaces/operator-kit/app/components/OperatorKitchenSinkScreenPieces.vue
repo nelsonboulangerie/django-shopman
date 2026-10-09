@@ -184,7 +184,7 @@ const rows = [
           <p class="flex-1 p-3 text-sm text-muted">Itens e cliente do pedido 1049.</p>
           <OperatorActionBar
             :action="blockedAction"
-            :secondary="{ label: 'Recusar', color: 'error', onSelect: () => said('Recusar') }"
+            :secondary="{ label: 'Recusar', onSelect: () => said('Recusar') }"
             context-label="Pedido 1049 · Pix"
             context-value="R$ 93,20"
           />

@@ -587,7 +587,6 @@ const rejectThumb = computed(() =>
   rejectAction.value
     ? {
         label: "Recusar",
-        color: "error" as const,
         disabled: busy.value || !rejectAction.value.enabled,
         onSelect: () => openDialog("reject"),
       }

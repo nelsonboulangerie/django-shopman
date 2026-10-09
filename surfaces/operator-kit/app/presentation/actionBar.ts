@@ -8,8 +8,6 @@ export interface OperatorActionBarAction {
   /** Verbo e alvo: "Iniciar preparo", "Conferir o próximo". */
   label: string;
   icon?: string;
-  /** `error` só para a ação destrutiva ("Recusar"). */
-  color?: "primary" | "neutral" | "error";
   to?: string;
   loading?: boolean;
   disabled?: boolean;
