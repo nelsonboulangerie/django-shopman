@@ -263,6 +263,23 @@ describe("OperatorSuiteShell: o que o shell já fazia", () => {
 
 });
 
+describe("OperatorSuiteShell: a variante início (a Central)", () => {
+  it("fora da Central, o selo do topo da barra lateral leva de volta a ela", async () => {
+    const wrapper = await mountShell();
+    const seal = wrapper.get("[data-suite-rail] [data-page-header-app]");
+    expect(seal.attributes("aria-label")).toMatch(/voltar/);
+    expect(seal.find("[data-page-header-app-back]").exists()).toBe(true);
+  });
+
+  it("na Central (`home`), o selo é só identidade: sem voltar, sem link para si mesma", async () => {
+    const wrapper = await mountShell({ home: true });
+    const seal = wrapper.get("[data-suite-rail] [data-page-header-app]");
+    expect(seal.attributes("aria-label") ?? "").not.toMatch(/voltar/);
+    expect(seal.attributes("href")).toBeUndefined();
+    expect(seal.find("[data-page-header-app-back]").exists()).toBe(false);
+  });
+});
+
 describe("OperatorSuiteShell: a barra inferior (o menu rápido)", () => {
   function quickLinks(wrapper: Awaited<ReturnType<typeof mountShell>>) {
     return wrapper.findAll("[data-operator-quick-bar] [data-section]");
@@ -314,6 +331,14 @@ describe("OperatorSuiteShell: a barra inferior (o menu rápido)", () => {
     ]);
     const chips = wrapper.findAll('[data-operator-quick-bar] [data-slot="linkLeadingChip"]');
     expect(chips.map((chip) => chip.text())).toEqual(["1", "3", "99+", ""]);
+  });
+
+  it("uma seção só: a barra inferior não aparece (o ☰ já dá o menu completo)", async () => {
+    const wrapper = await mountShell({ sections: SECTIONS.slice(0, 1) });
+    expect(wrapper.find("[data-operator-suite-tabs]").exists()).toBe(false);
+    expect(wrapper.find("[data-operator-quick-bar]").exists()).toBe(false);
+    const two = await mountShell({ sections: SECTIONS.slice(0, 2) });
+    expect(two.findAll("[data-operator-quick-bar] [data-section]")).toHaveLength(2);
   });
 
   it("5 declaradas: as cinco, sem 'Mais'", async () => {
