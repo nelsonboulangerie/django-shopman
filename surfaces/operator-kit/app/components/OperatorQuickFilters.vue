@@ -55,7 +55,7 @@ const props = withDefaults(
   { multiple: false, surface: "", screen: "", query: undefined, phoneMax: QUICK_FILTERS_PHONE_MAX },
 );
 
-const model = defineModel<string | string[]>({ default: undefined });
+const model = defineModel<string | string[]>();
 const emit = defineEmits<{ apply: [query: FilterPanelQuery] }>();
 
 const route = useRoute();
