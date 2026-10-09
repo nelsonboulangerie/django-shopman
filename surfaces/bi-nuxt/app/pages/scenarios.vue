@@ -92,7 +92,7 @@ async function run() {
               variant="subtle"
               icon="i-lucide-info"
               title="Geração desligada neste ambiente"
-              description="Falta a credencial da IA (AI_ASSIST_API_KEY). Os relatórios já gerados seguem abaixo."
+              description="A IA ainda não foi ligada nesta loja. Quem liga é a TI. Os relatórios já gerados seguem abaixo."
               data-bi-generate-off
             />
           </div>
