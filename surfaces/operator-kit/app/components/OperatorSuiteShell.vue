@@ -24,7 +24,7 @@
 // ou "Seção · N pendências" (`sectionDescription`, a mesma da barra inferior). Na tela
 // a peça se chama "barra lateral"; `rail` é só o nome no código.
 import type { ChipProps } from "@nuxt/ui";
-import { useMediaQuery } from "@vueuse/core";
+import { useScreen } from "../composables/useScreen";
 
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
 import {
@@ -86,7 +86,9 @@ const appLabel = (
 // O rail de três estados. Aberto e compacto são do DashboardSidebar (cookie do
 // DashboardGroup, `{ size, collapsed }`); oculto não existe no Nuxt UI para o desktop:
 // é o sidebar não montado, guardado num cookie do kit.
-const isDesktop = useMediaQuery("(min-width: 1024px)", { ssrWidth: 1440 });
+// A régua da suíte (`useScreen`): mesa até a hidratação terminar, a largura real depois.
+const screen = useScreen();
+const isDesktop = computed(() => !screen.belowLg.value);
 const collapsed = ref(false);
 const hidden = useCookie<boolean>(`${props.storageKey}-rail-hidden`, {
   default: () => false,

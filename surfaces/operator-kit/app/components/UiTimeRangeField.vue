@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A variante `range` oficial do UInputTime, mantendo strings `HH:mm` na borda.
 import { parseTime, type Time } from "@internationalized/date";
-import { useMediaQuery } from "@vueuse/core";
+import { useScreen } from "../composables/useScreen";
 import type { TimeRangeFieldRootProps } from "reka-ui";
 import { computed } from "vue";
 import { vLocalizedSegments } from "../utils/localizedSegments";
@@ -38,7 +38,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   "update:modelValue": [value: { start: string; end: string }];
 }>();
-const desktop = useMediaQuery("(min-width: 640px)");
+const screen = useScreen();
+const desktop = computed(() => !screen.belowSm.value);
 
 function asTime(value?: string): Time | undefined {
   if (!value) return undefined;

@@ -292,6 +292,16 @@ jobs:
       - name: Structural PWA gate
         run: node tools/pwa-gate/check.mjs --app=${{ matrix.app }}
 
+      # Carga direta com SSR no build de produção (o mesmo `.output` acima), a 390 e a
+      # 1440 px: nenhum mismatch de hidratação, nenhum erro de página. A matriz visual
+      # do Gestor é client-only e não via a Fila presa no esqueleto (09/10/2026).
+      - name: Orders SSR direct load (celular e mesa)
+        if: matrix.app == 'orders'
+        working-directory: surfaces/orders-nuxt
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:ssr
+
       - name: Storefront PWA browser smoke
         if: matrix.app == 'storefront'
         working-directory: surfaces/storefront-nuxt

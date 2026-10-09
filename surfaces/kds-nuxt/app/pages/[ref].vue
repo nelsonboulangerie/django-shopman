@@ -50,7 +50,10 @@ const {
 } = useKdsBoard(stationRef.value);
 
 const notHere = computed(() => stationMissing.value);
-const isPhone = useMediaQuery("(max-width: 767.98px)");
+// A régua da suíte (`useScreen` do kit): o servidor e a hidratação desenham o tablet;
+// a largura real entra depois. Com `useMediaQuery` cru o celular hidratava outra árvore
+// (e a `class` divergente só é avisada, não corrigida, em produção).
+const { belowMd: isPhone } = useScreen();
 
 // O shell (rail, Ajustes) sabe da estação: o selo do Preparo, a densidade e o som da
 // estação e a estação deste dispositivo (o item "Preparo" do rail volta para cá).

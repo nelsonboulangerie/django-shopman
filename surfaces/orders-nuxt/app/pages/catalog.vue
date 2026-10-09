@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useMediaQuery } from "@vueuse/core";
 // Catalog matrix — produto × canal. The catalog side of the Gestor hub.
 // Design: a glanceable availability heatmap (tinted cells) with one-click pause and
 // inline reprice per cell; the collection axis (chips) scopes the view; selection +
@@ -389,7 +388,7 @@ const orderedCollections = computed(() =>
 // numa lista (são mais de quatro e as pílulas rolavam para fora); os recortes e as
 // colunas moram no painel "Filtros", com os ativos como chips removíveis. O
 // `NuxtSelect` não aceita valor vazio: "Todas" é `ALL_COLLECTIONS` só aqui.
-const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const { belowSm: isNarrow } = useScreen();
 const ALL_COLLECTIONS = "all";
 const collectionSelectItems = computed(() =>
   collectionTabs.value.map((tab) => ({
@@ -1119,14 +1118,17 @@ useHead({ title: "Catálogo" });
           v-model="hiddenColumns"
           :columns="columnOptions"
         />
+        <!-- No celular a coleção é o primário da linha (o `NuxtSelect` abaixo); aqui,
+             só do `sm` para cima, pelo CSS. -->
         <span
-          v-if="collections.length && !isNarrow"
-          class="me-1 shrink-0 op-eyebrow text-muted-foreground"
+          v-if="collections.length"
+          class="me-1 shrink-0 op-eyebrow text-muted-foreground max-sm:hidden"
           >Coleção</span
         >
         <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
         <NuxtTabs
-          v-if="collections.length && !isNarrow"
+          v-if="collections.length"
+          class="max-sm:hidden"
           :model-value="collectionRef"
           :items="collectionTabs"
           :content="false"
@@ -1589,6 +1591,13 @@ useHead({ title: "Catálogo" });
                 </div>
               </div>
             </template>
+          </template>
+
+          <!-- O cabeçalho da coluna do ⋯ é só para o leitor de tela. Um `header: ""`
+               virava um texto vazio que o servidor não manda, e a hidratação acusava
+               mismatch na carga direta. -->
+          <template #actions-header>
+            <span class="sr-only">Ações</span>
           </template>
 
           <!-- ⋯ da linha: as ações menos corriqueiras (editar, pausar tudo, publicar) -->

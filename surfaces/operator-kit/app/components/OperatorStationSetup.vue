@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useMediaQuery } from "@vueuse/core";
+import { useScreen } from "../composables/useScreen";
 // VINCULAR ESTE DISPOSITIVO A UM POSTO DE TRABALHO: uma vez por máquina, em qualquer app.
 //
 // Aparece para quem gere operadores, logado, num dispositivo que ainda não é posto.
@@ -73,7 +73,7 @@ async function confirmar() {
 }
 // No celular as ações vão para baixo do texto (orientação oficial do Alert); ao lado,
 // elas espremiam a frase numa coluna estreita.
-const phone = useMediaQuery("(max-width: 767.98px)");
+const { belowMd: phone } = useScreen();
 </script>
 
 <template>
