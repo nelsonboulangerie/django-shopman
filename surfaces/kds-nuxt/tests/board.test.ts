@@ -27,11 +27,11 @@ import {
   ticketPill,
   focusSlice,
   focusGrid,
-  isTallTicket,
+  queuePositionLabel,
   restSummary,
   boardFilterCounts,
   matchesBoardFilter,
-  cancelledSummary,
+  cancelledAlert,
   queueLine,
 } from "../app/presentation/board";
 import type { KDSBoardProjection, KDSTicketProjection } from "../app/types/kds";
@@ -230,7 +230,9 @@ describe("kds board presentation", () => {
 
   it("a pílula do card diz o estado num estilo só", () => {
     const late = ticket({ timer_class: "timer-late", status: "pending" });
-    expect(ticketPill(late, { next: true })).toEqual({ label: "Próximo · atrasado", tone: "destructive" });
+    expect(ticketPill(late, { next: true })).toEqual({ label: "Atrasado", tone: "destructive" });
+    // O de agora no prazo diz o estado, nunca "Próximo" (a posição está no rótulo "Agora").
+    expect(ticketPill(ticket({ status: "pending" }), { next: true })).toEqual({ label: "Novo", tone: "info" });
     expect(ticketPill(ticket({ status: "pending" }), {})).toEqual({ label: "Novo", tone: "info" });
     expect(ticketPill(ticket({ status: "in_progress" }), {})).toEqual({ label: "Em preparo", tone: "primary" });
     expect(ticketPill(ticket({ status: "in_progress" }), { blocked: true })?.label).toBe("Bloqueado");
@@ -357,7 +359,7 @@ describe("o botão do card", () => {
     const blocked = { armed: true, blocked: true };
     const stuck = ticketAction(ticket({ status: "in_progress" }), blocked);
     expect(stuck.kind).toBe("blocked");
-    expect(stuck.label).toContain("cartão vermelho");
+    expect(stuck.label).toContain("aviso no topo");
     expect(ticketAction(ticket({ status: "pending" }), blocked).kind).toBe("start");
   });
 
@@ -429,33 +431,38 @@ describe("a fila do cozinheiro (v4: 4 a 6 em foco, o resto vira +N)", () => {
   const short = (pk: number) => ticket({ pk, items: items(2) });
   const tall = (pk: number) => ticket({ pk, items: items(7) });
 
-  it("3×2 com um ticket longo: cinco em foco, o longo em duas alturas, o resto no +N", () => {
+  it("3×2: seis em foco na ordem de leitura, o resto no +N na mesma ordem", () => {
     const cards = [short(1), tall(2), short(3), short(4), short(5), short(6), short(7)];
     const slice = focusSlice(cards, { columns: 3, rows: 2 });
-    expect(slice.visible.map((c) => c.pk)).toEqual([1, 2, 3, 4, 5]);
-    expect(slice.rest.map((c) => c.pk)).toEqual([6, 7]);
-    expect(slice.placements.get(2)).toEqual({ pk: 2, column: 1, row: 0, span: 2 });
-    expect(slice.placements.get(4)).toMatchObject({ column: 0, row: 1 });
-    expect(slice.placements.get(5)).toMatchObject({ column: 2, row: 1 });
+    expect(slice.visible.map((c) => c.pk)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(slice.rest.map((c) => c.pk)).toEqual([7]);
+    expect(slice.placements.get(2)).toEqual({ pk: 2, column: 1, row: 0 });
+    expect(slice.placements.get(4)).toEqual({ pk: 4, column: 0, row: 1 });
   });
 
-  it("nunca pula um mais urgente para mostrar um menos urgente", () => {
-    // O longo não cabe na última linha: ele e todos depois dele vão para o +N.
-    const cards = [short(1), short(2), short(3), tall(4), short(5)];
-    const slice = focusSlice(cards, { columns: 3, rows: 2 });
-    expect(slice.visible.map((c) => c.pk)).toEqual([1, 2, 3]);
-    expect(slice.rest.map((c) => c.pk)).toEqual([4, 5]);
+  it("a ordem visual é a ordem da fila: esquerda para a direita, linha a linha, sem buraco", () => {
+    // Dono, 09/10/2026: mosaico (ticket longo em duas alturas, vizinhos encaixados em
+    // buracos) deixava o cozinheiro em dúvida sobre o próximo.
+    const cards = [tall(1), short(2), tall(3), short(4), tall(5), short(6), short(7)];
+    for (const columns of [1, 2, 3, 4, 5]) {
+      const slice = focusSlice(cards, { columns, rows: 2 });
+      const reading = [...slice.placements.values()]
+        .sort((a, b) => a.row - b.row || a.column - b.column)
+        .map((place) => place.pk);
+      expect(reading).toEqual(slice.visible.map((c) => c.pk));
+      expect(reading).toEqual(cards.slice(0, reading.length).map((c) => c.pk));
+      slice.visible.forEach((card, index) => {
+        expect(slice.placements.get(card.pk)).toEqual({
+          pk: card.pk,
+          column: index % columns,
+          row: Math.floor(index / columns),
+        });
+      });
+    }
   });
 
-  it("em uma coluna ninguém ocupa duas alturas", () => {
-    const slice = focusSlice([tall(1), short(2)], { columns: 1, rows: 3 });
-    expect(slice.placements.get(1)?.span).toBe(1);
-    expect(slice.visible).toHaveLength(2);
-  });
-
-  it("o ticket longo conta as observações como linha", () => {
-    expect(isTallTicket(ticket({ items: items(5) }))).toBe(false);
-    expect(isTallTicket(ticket({ items: items(5), kitchen_note: "Bem assado" }))).toBe(true);
+  it("a posição na fila tem nome, o mesmo em toda largura", () => {
+    expect([0, 1, 2, 5].map(queuePositionLabel)).toEqual(["Agora", "Próximo", "Depois", "Depois"]);
   });
 
   it("colunas pela densidade, linhas pela altura (2 sem medida)", () => {
@@ -482,12 +489,16 @@ describe("a fila do cozinheiro (v4: 4 a 6 em foco, o resto vira +N)", () => {
   });
 
   it("cancelamento: item que saiu de pedido que continua x pedido inteiro", () => {
-    const cancelled = ticket({ order_ref: "F22", cancelled_at_display: "22:01" });
-    expect(cancelledSummary(cancelled, new Set(["F22"]))).toEqual({
-      label: "Item cancelado 22:01",
-      rest: "o resto continua",
+    const cancelled = ticket({
+      order_ref: "F22",
+      cancelled_at_display: "22:01",
+      items: [{ sku: "A", name: "Croque", qty: 1, notes: "", stock_warning: "" }],
     });
-    expect(cancelledSummary(cancelled, new Set())).toEqual({ label: "Cancelado 22:01", rest: "" });
+    expect(cancelledAlert(cancelled, new Set(["F22"]))).toEqual({
+      title: "Pedido F22: item cancelado às 22:01. O resto continua.",
+      description: "Não preparar: 1× Croque.",
+    });
+    expect(cancelledAlert(cancelled, new Set()).title).toBe("Pedido F22 cancelado às 22:01.");
   });
 
   it("a linha compacta do celular: o primeiro item e quantos mais", () => {

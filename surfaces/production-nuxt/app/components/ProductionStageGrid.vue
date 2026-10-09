@@ -18,7 +18,6 @@
 // (estudo de notação de pâtonnage pendente). Nomenclatura interna do sistema
 // intacta (planned/started/finished) — as lentes são linguagem de UI.
 import { nextTick, onMounted } from "vue";
-import { useMediaQuery } from "@vueuse/core";
 
 import {
   boardDisplay,
@@ -681,12 +680,15 @@ function voidableOrders(row: ProductionMatrixRowProjection): WorkOrderCardProjec
 // direita, sem cobrir a lista (v3 `depois-producao-dia-tablet`).
 // Só depois de montar: o SSR não conhece a tela, e a hidratação não corrige
 // classe divergente (o botão nasceria cheio e ficaria cheio).
-const dockedQuery = useMediaQuery("(pointer: coarse) and (min-width: 1024px)");
+const touchPointer = useTouchPointer();
+const screen = useScreen();
 const gridMounted = ref(false);
 onMounted(() => {
   gridMounted.value = true;
 });
-const docked = computed(() => gridMounted.value && dockedQuery.value);
+const docked = computed(
+  () => gridMounted.value && touchPointer.value && !screen.belowLg.value,
+);
 // Com o painel encaixado a lista estreita: colunas de número compactas (v3 tablet).
 const openCols = computed(() =>
   docked.value
@@ -930,6 +932,32 @@ const baseLabel = computed(
     baseOptions.value.find((base) => base.output_sku === baseFilter.value)
       ?.name ?? "todas",
 );
+// Os recortes ativos: número no "Filtros" e chips removíveis no celular.
+const activeFilters = computed(() => {
+  const list: { key: string; label: string; remove: () => void }[] = [];
+  const quick =
+    props.stage === "plan"
+      ? PLAN_FILTERS.find((f) => f.key === planFilter.value && f.key !== "all")
+      : OPEN_FILTERS.find((f) => f.key === openFilter.value && f.key !== "all");
+  if (quick)
+    list.push({
+      key: "state",
+      label: quick.label,
+      remove: () => {
+        planFilter.value = "all";
+        openFilter.value = "all";
+      },
+    });
+  if (baseFilter.value)
+    list.push({
+      key: "base",
+      label: `Base: ${baseLabel.value}`,
+      remove: () => {
+        baseFilter.value = "";
+      },
+    });
+  return list;
+});
 function plannedStateLabel(row: ProductionMatrixRowProjection): string {
   if (row.planned_qty !== "0") return "Planejado";
   return row.started_qty !== "0" ? "Aberto" : "Fechado";
@@ -981,11 +1009,13 @@ function fromPlannedMenu(action: () => void) {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <!-- Cabeçalho de UMA linha (prévia v4 `plano-porque4.html`): título, ao vivo, busca,
-         "4 de 28 planejados" com a barra, o dia e o ⋯. Os recortes na segunda linha. -->
+    <!-- Cabeçalho do kit: título, ao vivo, busca e o ⋯ na barra; na toolbar, o dia,
+         os recortes e, no fim, "4 de 28 planejados" com a barra. -->
     <ProductionHeader
       v-model:query="query"
       :title="title"
+      :active-filters="activeFilters"
+      search-label="filtrando os produtos"
       :count="headerCount.count"
       :total="headerCount.total"
       :count-label="headerCount.label"
@@ -997,9 +1027,10 @@ function fromPlannedMenu(action: () => void) {
         kds.refresh();
       "
     >
-      <template #actions>
+      <template #primary>
         <OperatorPeriodPicker
           v-model="period"
+          compact
           class="[&_[data-period-today]]:hidden"
           :presets="['day']"
           :today="todayISO"

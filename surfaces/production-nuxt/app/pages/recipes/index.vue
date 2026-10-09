@@ -57,19 +57,9 @@ function clearFilters() {
       searchable
       search-label="Buscar receita por nome, ref ou SKU"
       :pending="pending"
+      :primary="canEdit ? { label: 'Nova receita', icon: 'i-lucide-plus', to: '/recipes/new' } : undefined"
       @refresh="refresh()"
-    >
-      <template #actions>
-        <NuxtLink
-          v-if="canEdit"
-          to="/recipes/new"
-          class="inline-flex h-9 items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
-        >
-          <Icon name="lucide:plus" class="size-4" />
-          <span class="hidden sm:inline">Nova receita</span>
-        </NuxtLink>
-      </template>
-    </RecipeHeader>
+    />
 
     <!-- Sem a permissão de leitura: explica com calma, sem beco. -->
     <section v-if="forbidden" class="grid flex-1 place-items-center p-6 text-center">

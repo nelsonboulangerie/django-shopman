@@ -12,8 +12,8 @@
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 /** Quantas seções a barra inferior mostra antes do "Mais" (regra da suíte: 3 a 5 vagas
- *  ao todo; aqui 4 seções + "Mais"). O "Mais" existe sempre: leva o resto e o menu do
- *  operador (Bloquear, trocar de operador). */
+ *  ao todo; aqui 4 seções + "Mais"). O "Mais" existe sempre (Ajustes nunca cabe nas
+ *  quatro): abre a gaveta, com o resto e o menu do operador (Bloquear, trocar). */
 export const KDS_BAR_SECTIONS = 4;
 
 export interface KdsStationNav {
@@ -91,5 +91,30 @@ export function kdsSections(input: KdsSectionsInput): OperatorSection[] {
     ...(exit ? [exit] : []),
     ...ordered.slice(stationSlots).map(stationSection),
     settings,
+  ];
+}
+
+/**
+ * As seções que o shell da suíte (`OperatorSuiteShell`) recebe: UMA lista, com as duas
+ * ordens dentro. A barra lateral (e a gaveta) lê as de `where: "rail"` na ordem do
+ * cadastro; a barra inferior lê as de `where: "bar"`, com a estação aberta à frente e as
+ * quatro primeiras declaradas `quick`. Ajustes mora no pé e, na barra inferior, só cabe
+ * no "Mais". As chaves se repetem de propósito: a seção é a mesma nas duas barras, e o
+ * item atual (`current`) acende nas duas.
+ */
+export function kdsShellSections(input: Omit<KdsSectionsInput, "place">): OperatorSection[] {
+  const rail = kdsSections({ ...input, place: "rail" }).filter((section) => !section.foot);
+  const bar = kdsSections({ ...input, place: "bar" });
+  const settings = bar.find((section) => section.foot);
+  return [
+    ...rail.map((section) => ({ ...section, where: "rail" as const })),
+    ...bar
+      .filter((section) => !section.foot)
+      .map((section, index) => ({
+        ...section,
+        where: "bar" as const,
+        quick: index < KDS_BAR_SECTIONS || undefined,
+      })),
+    ...(settings ? [settings] : []),
   ];
 }

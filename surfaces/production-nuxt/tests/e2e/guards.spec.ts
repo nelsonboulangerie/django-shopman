@@ -25,7 +25,7 @@ test.describe("Produção — gate de operador", () => {
     await expect(page.getByRole("button", { name: "Entrar" })).toBeVisible();
   });
 
-  test("sessão autenticada → grade + rail canônico (kit), sem login", async ({
+  test("sessão autenticada → grade + shell da suíte (kit), sem login", async ({
     page,
     context,
   }) => {
@@ -35,25 +35,24 @@ test.describe("Produção — gate de operador", () => {
     await expect(
       page.getByRole("heading", { name: "Entre para operar" }),
     ).toHaveCount(0);
-    // Tela de operador embrulhada pelo rail da suíte (kit, V4-PROD): o ciclo do lote
-    // no rail e o menu do operador no pé (tablet deitado e desktop). No celular e no
-    // tablet em pé (V6-KIT) as etapas vão para a barra de baixo: quatro e o "Mais",
-    // que guarda Qualidade, Timers, Ajustes e o menu do operador.
-    const rail = page.locator('aside[aria-label="Barra do app Produção"]');
-    const thumbBar = page.locator('nav[data-operator-section-bar]');
+    // Tela de operador no shell da suíte (kit, fase 2): barra lateral do `lg` para
+    // cima; abaixo dele, a barra inferior (as quatro primeiras etapas e o "Mais", que
+    // abre a gaveta com o menu completo).
     const size = page.viewportSize() ?? { width: 1024, height: 768 };
-    const railShown = (size.width >= 768 && size.width > size.height) || size.width >= 1024;
-    if (railShown) {
+    await expect(page.locator("[data-operator-suite-shell]")).toBeVisible();
+    if (size.width >= 1024) {
+      const rail = page.locator("[data-suite-rail-navigation]").first();
       await expect(rail).toBeVisible();
       await expect(rail.locator('[data-section="plan"]')).toBeVisible();
       await expect(rail.locator('[data-section="quality"]')).toBeVisible();
       await expect(page.locator("[data-suite-rail-menu]")).toBeVisible();
     } else {
-      await expect(thumbBar).toBeVisible();
-      await expect(thumbBar.locator('[data-section="plan"]')).toBeVisible();
-      await thumbBar.locator("[data-operator-phone-menu]").click();
+      const quickBar = page.locator("[data-operator-quick-bar]");
+      await expect(quickBar).toBeVisible();
+      await expect(quickBar.locator('[data-section="plan"]')).toBeVisible();
+      await quickBar.locator("[data-quick-bar-more]").click();
       await expect(
-        page.locator('[data-operator-phone-menu-panel] [data-section="quality"]'),
+        page.getByRole("dialog").locator('[data-section="quality"]'),
       ).toBeVisible();
     }
   });

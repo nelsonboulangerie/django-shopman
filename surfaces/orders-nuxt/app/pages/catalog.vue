@@ -30,6 +30,7 @@ import type {
   CatalogPublicationPreview,
 } from "~/generated/ordersContract";
 import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
+import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
 import { filterBarActiveFilters } from "../../../operator-kit/app/presentation/filterBar";
 import type {
   AssistableField,
@@ -572,6 +573,39 @@ function publicationState(value: Record<string, boolean>) {
 
 // ── reprecificação em lote (popover) ───────────────────────────────────────────
 const priceOpen = ref(false);
+// A barra de seleção (OperatorBulkBar): "N selecionados | Canal | Pausar/Ativar |
+// Ocultar/Exibir | Preço | ×" (dono, 09/10/2026). Os pares opostos são um grupo só,
+// com o mesmo peso. Feed só pausa e reativa (não transaciona): sem Ocultar/Exibir nem
+// Preço. A barra existe em dois lugares (toolbar na mesa, base abaixo do `lg`); o
+// painel do preço abre só no da largura da vez, senão abririam os dois.
+const { belowLg: bulkAtBase } = useScreen();
+const [DefineBulkPrice, ReuseBulkPrice] = createReusableTemplate();
+const bulkScope = computed(() => activeCollection.value?.name ?? "");
+function bulkItems(placement: "toolbar" | "base"): OperatorBulkItem[] {
+  const busy = bulkBusy.value;
+  return [
+    [
+      { label: "Pausar", icon: "i-lucide-pause", disabled: busy, onSelect: () => bulk({ is_sellable: false }) },
+      { label: "Ativar", icon: "i-lucide-play", disabled: busy, onSelect: () => bulk({ is_sellable: true }) },
+    ],
+    ...(bulkSurfaceIsFeed.value
+      ? []
+      : [
+          [
+            { label: "Ocultar", icon: "i-lucide-eye-off", disabled: busy, onSelect: () => bulk({ is_published: false }) },
+            { label: "Exibir", icon: "i-lucide-eye", disabled: busy, onSelect: () => bulk({ is_published: true }) },
+          ],
+          {
+            label: "Preço…",
+            icon: "i-lucide-tag",
+            disabled: busy,
+            panel: "price",
+            open: priceOpen.value && (placement === "base") === bulkAtBase.value,
+            onUpdateOpen: (open: boolean) => (priceOpen.value = open),
+          },
+        ]),
+  ];
+}
 const priceOp = ref<"set" | "pct" | "delta">("pct");
 const priceOps = [
   { k: "set", l: "Definir" },
@@ -1028,9 +1062,105 @@ useHead({ title: "Catálogo" });
   <main class="flex min-h-0 flex-1 flex-col">
     <!-- Cabeçalho de uma linha (UX-KIT-V1, prévia v3 `orders-catalog3.html`): título +
          ao vivo + busca e filtro + colunas; as coleções na segunda linha. -->
+    <!-- O painel do preço em lote, escrito uma vez e usado pelas duas barras. -->
+    <DefineBulkPrice>
+      <div class="w-72 space-y-3 p-4">
+        <p class="text-sm font-medium">
+          <span class="tabular-nums">{{ selected.size }}</span>
+          selecionado{{ selected.size === 1 ? "" : "s" }} em
+          {{ surfaceLabel(bulkSurface) }}
+        </p>
+        <NuxtTabs
+          v-model="priceOp"
+          :items="
+            priceOps.map((option) => ({
+              label: option.l,
+              value: option.k,
+            }))
+          "
+          :content="false"
+        />
+        <div class="flex items-center gap-1.5">
+          <span
+            class="w-5 shrink-0 text-center text-sm text-muted-foreground"
+            >{{ priceOp === "pct" ? "%" : "R$" }}</span
+          >
+          <NuxtInput
+            v-model="priceInputBulk"
+            type="text"
+            inputmode="decimal"
+            autofocus
+            :placeholder="
+              priceOp === 'set'
+                ? '15,00'
+                : priceOp === 'pct'
+                  ? '+10 ou -20'
+                  : '+1,00 ou -0,50'
+            "
+            @keyup.enter="applyBulkPrice"
+          />
+        </div>
+        <p class="mt-1.5 text-xs leading-tight text-muted-foreground">
+          {{
+            priceOp === "set"
+              ? "Define o preço de todos os selecionados."
+              : priceOp === "pct"
+                ? "Aumenta (+) ou reduz (−) por porcentagem."
+                : "Soma (+) ou subtrai (−) do preço atual."
+          }}
+          A mudança é permanente. Para promoção, use as regras.
+        </p>
+        <NuxtCard v-if="pricePreview" variant="soft" aria-live="polite">
+          <template #header
+            ><p class="text-xs font-semibold">
+              Revise {{ pricePreview.cells.length }} células antes de
+              confirmar
+            </p></template
+          >
+          <ul class="space-y-1 text-xs">
+            <li v-for="cell in pricePreview.cells" :key="cell.id">
+              {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }} ·
+              mínimo {{ cell.tier }}:
+              {{
+                (cell.before_q / 100).toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
+              }}
+              →
+              {{
+                (cell.after_q / 100).toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
+              }}
+            </li>
+          </ul>
+        </NuxtCard>
+        <div class="mt-2.5 flex justify-end gap-1.5">
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            label="Cancelar"
+            @click="priceOpen = false"
+          />
+          <NuxtButton
+            :label="
+              pricePreview
+                ? 'Confirmar alterações'
+                : 'Revisar alterações'
+            "
+            :disabled="!priceValid || bulkBusy"
+            @click="applyBulkPrice"
+          />
+        </div>
+      </div>
+    </DefineBulkPrice>
+
     <OperatorPageHeader
       title="Catálogo"
       :filters-wrap="false"
+      desk-only-filters
       :active-filters="activeFilters"
     >
       <template #status>
@@ -1075,10 +1205,18 @@ useHead({ title: "Catálogo" });
           </template>
         </OperatorMoreMenu>
       </template>
+      <!-- O painel de filtros único (favoritos e recortes): no celular, o ícone com o
+           número na ponta da linha; na mesa, o botão e os chips. -->
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="filters"
+          :dimensions="dimensions"
+          surface="orders"
+          screen="catalog"
+        />
+      </template>
+      <!-- Na mesa: Exibir e as coleções. No celular a coleção é o primário da linha. -->
       <template #filters>
-        <!-- Recortes e escolha de colunas pertencem à DashboardToolbar, não à
-             faixa de identidade da DashboardNavbar. -->
-        <FilterBar v-model="filters" :dimensions="dimensions" touch />
         <OperatorTableView v-if="surfaces.length" table-key="orders-catalog" />
         <!-- No celular a coleção é o primário da linha (o `NuxtSelect` abaixo); aqui,
              só do `sm` para cima, pelo CSS. -->
@@ -1143,6 +1281,26 @@ useHead({ title: "Catálogo" });
             )
           "
         />
+      </template>
+      <template v-if="selected.size" #selection>
+        <OperatorBulkBar
+          :count="selected.size"
+          :scope="bulkScope"
+          :items="bulkItems('toolbar')"
+          data-catalog-bulk
+          @clear="clearSelection"
+        >
+          <template #lead="{ size, block }">
+            <NuxtSelect
+              v-model="bulkSurface"
+              :items="bulkSurfaceItems"
+              :size="size"
+              :class="block ? 'w-full' : 'min-w-56'"
+              aria-label="Aplicar seleção em"
+            />
+          </template>
+          <template #price><ReuseBulkPrice /></template>
+        </OperatorBulkBar>
       </template>
     </OperatorPageHeader>
 
@@ -1738,173 +1896,28 @@ useHead({ title: "Catálogo" });
       </OperatorTable>
     </section>
 
-    <!-- A seleção em lote é chrome contextual do painel, não um Card flutuante. -->
-    <OperatorToolbar v-if="selected.size" as="footer" data-catalog-bulk>
-      <div class="flex min-w-max items-center gap-2">
-        <span class="flex items-center gap-1.5 px-1 text-sm font-medium">
-          <Icon v-if="bulkBusy" name="line-md:loading-loop" class="size-4" />
-          <span class="tabular-nums">{{ selected.size }}</span> selecionado{{
-            selected.size === 1 ? "" : "s"
-          }}
-        </span>
+    <!-- A barra de seleção da suíte: abaixo do `lg`, na base (a do topo mora no
+         `#selection` do cabeçalho e toma o lugar da toolbar). -->
+    <OperatorBulkBar
+      v-if="selected.size"
+      placement="base"
+      :count="selected.size"
+      :scope="bulkScope"
+      :items="bulkItems('base')"
+      data-catalog-bulk
+      @clear="clearSelection"
+    >
+      <template #lead="{ size, block }">
         <NuxtSelect
           v-model="bulkSurface"
           :items="bulkSurfaceItems"
+          :size="size"
+          :class="block ? 'w-full' : 'min-w-56'"
           aria-label="Aplicar seleção em"
         />
-        <NuxtSeparator orientation="vertical" class="h-5" />
-        <NuxtButton
-          :disabled="bulkBusy"
-          icon="i-lucide-pause"
-          label="Pausar"
-          color="neutral"
-          variant="outline"
-          @click="bulk({ is_sellable: false })"
-        />
-        <NuxtButton
-          :disabled="bulkBusy"
-          icon="i-lucide-play"
-          label="Ativar"
-          color="neutral"
-          variant="outline"
-          @click="bulk({ is_sellable: true })"
-        />
-
-        <!-- Preço e publicação só para canais (transacionam). Feed só pausa/reativa. -->
-        <template v-if="!bulkSurfaceIsFeed">
-          <!-- reprecificação em lote: popover ancorado (superfície normal, legível sobre a barra invertida) -->
-          <NuxtPopover
-            :open="priceOpen"
-            :content="{ align: 'center' }"
-            @update:open="(v) => (priceOpen = v)"
-          >
-            <NuxtButton
-              :disabled="bulkBusy"
-              icon="i-lucide-tag"
-              label="Preço…"
-              color="neutral"
-              variant="outline"
-            />
-            <template #content>
-              <div class="w-72 space-y-3 p-4">
-                <p class="text-sm font-medium">
-                  <span class="tabular-nums">{{ selected.size }}</span>
-                  selecionado{{ selected.size === 1 ? "" : "s" }} em
-                  {{ surfaceLabel(bulkSurface) }}
-                </p>
-                <NuxtTabs
-                  v-model="priceOp"
-                  :items="
-                    priceOps.map((option) => ({
-                      label: option.l,
-                      value: option.k,
-                    }))
-                  "
-                  :content="false"
-                />
-                <div class="flex items-center gap-1.5">
-                  <span
-                    class="w-5 shrink-0 text-center text-sm text-muted-foreground"
-                    >{{ priceOp === "pct" ? "%" : "R$" }}</span
-                  >
-                  <NuxtInput
-                    v-model="priceInputBulk"
-                    type="text"
-                    inputmode="decimal"
-                    autofocus
-                    :placeholder="
-                      priceOp === 'set'
-                        ? '15,00'
-                        : priceOp === 'pct'
-                          ? '+10 ou -20'
-                          : '+1,00 ou -0,50'
-                    "
-                    @keyup.enter="applyBulkPrice"
-                  />
-                </div>
-                <p class="mt-1.5 text-xs leading-tight text-muted-foreground">
-                  {{
-                    priceOp === "set"
-                      ? "Define o preço de todos os selecionados."
-                      : priceOp === "pct"
-                        ? "Aumenta (+) ou reduz (−) por porcentagem."
-                        : "Soma (+) ou subtrai (−) do preço atual."
-                  }}
-                  A mudança é permanente. Para promoção, use as regras.
-                </p>
-                <NuxtCard v-if="pricePreview" variant="soft" aria-live="polite">
-                  <template #header
-                    ><p class="text-xs font-semibold">
-                      Revise {{ pricePreview.cells.length }} células antes de
-                      confirmar
-                    </p></template
-                  >
-                  <ul class="space-y-1 text-xs">
-                    <li v-for="cell in pricePreview.cells" :key="cell.id">
-                      {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }} ·
-                      mínimo {{ cell.tier }}:
-                      {{
-                        (cell.before_q / 100).toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })
-                      }}
-                      →
-                      {{
-                        (cell.after_q / 100).toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })
-                      }}
-                    </li>
-                  </ul>
-                </NuxtCard>
-                <div class="mt-2.5 flex justify-end gap-1.5">
-                  <NuxtButton
-                    color="neutral"
-                    variant="ghost"
-                    label="Cancelar"
-                    @click="priceOpen = false"
-                  />
-                  <NuxtButton
-                    :label="
-                      pricePreview
-                        ? 'Confirmar alterações'
-                        : 'Revisar alterações'
-                    "
-                    :disabled="!priceValid || bulkBusy"
-                    @click="applyBulkPrice"
-                  />
-                </div>
-              </div>
-            </template>
-          </NuxtPopover>
-
-          <NuxtButton
-            :disabled="bulkBusy"
-            label="Ocultar"
-            color="neutral"
-            variant="ghost"
-            @click="bulk({ is_published: false })"
-          />
-          <NuxtButton
-            :disabled="bulkBusy"
-            label="Exibir"
-            color="neutral"
-            variant="ghost"
-            @click="bulk({ is_published: true })"
-          />
-        </template>
-        <NuxtButton
-          icon="i-lucide-x"
-          color="neutral"
-          variant="ghost"
-          square
-          aria-label="Limpar seleção"
-          @click="clearSelection"
-        />
-      </div>
-    </OperatorToolbar>
+      </template>
+      <template #price><ReuseBulkPrice /></template>
+    </OperatorBulkBar>
 
     <!-- painel de produto (edição completa, incluindo dados sociais e fiscais) —
          slide-over à direita -->

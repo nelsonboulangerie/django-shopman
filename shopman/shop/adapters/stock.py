@@ -893,6 +893,36 @@ def get_availability(
     )
 
 
+def get_availability_for_skus(
+    skus: list[str],
+    *,
+    target_date: date | None = None,
+    safety_margin: int = 0,
+    allowed_positions: list[str] | None = None,
+    excluded_positions: list[str] | None = None,
+    expiry_margin_days: int = 0,
+    include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, dict]:
+    """``get_availability`` de vários SKUs numa leitura só: ``{sku: info}``.
+
+    Delega para ``availability_for_skus`` do Stockman, a versão em lote de
+    ``availability_for_sku`` (mesmo recorte, consultas constantes em N).
+    """
+    from shopman.stockman.services.availability import availability_for_skus
+
+    return availability_for_skus(
+        list(skus),
+        safety_margin,
+        target_date=target_date,
+        allowed_positions=allowed_positions,
+        excluded_positions=excluded_positions,
+        expiry_margin_days=expiry_margin_days,
+        include_nonconforming=include_nonconforming,
+        allowed_quality_grade_refs=allowed_quality_grade_refs,
+    )
+
+
 def get_channel_scope(channel_ref: str | None) -> dict:
     """Return stock scope for a channel.
 

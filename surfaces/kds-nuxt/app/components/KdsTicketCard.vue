@@ -7,11 +7,11 @@
 //   nota 6: sem canal, telefone nem cliente; só a encomenda diz o cliente, com quem a
 //   hora foi combinada); "iniciado por Rafael às 21:56 · retira às 22:30" logo abaixo
 //   quando houver (nota 7); à direita o relógio (o tempo contra a meta num número só, a cor diz se
-//   está no prazo) e a pílula do estado ("Próximo · atrasado", "Novo", "Em preparo",
+//   está no prazo) e a pílula do estado ("Atrasado", "Novo", "Em preparo",
 //   "Bloqueado").
 // - TAREFA (meio): os itens, inteiros. Nome e observação quebram linha, e o card
-//   cresce o quanto precisar; ticket longo ocupa duas alturas na grade em vez de
-//   cortar a lista (quem decide é a página, por `isTallTicket`).
+//   cresce o quanto precisar; ticket longo deixa a linha da grade mais alta em vez de
+//   cortar a lista (a ordem da fila não muda por isso, `focusSlice`).
 // - AÇÃO (base): UM botão, com o ato escrito: "Iniciar preparo" → "Pronto W07"
 //   (o mesmo nome no polegar do celular, `thumbActionLabel`). Quando o servidor
 //   recusaria o Pronto (pagamento não confirmado), o
@@ -64,8 +64,9 @@ const props = withDefaults(
     finishUntil?: number;
     /** Rótulo fino acima do código (celular: "Agora"). */
     eyebrow?: string;
-    /** Seletor para onde o botão vai (celular: a barra do polegar). Vazio = no card. */
-    actionTarget?: string;
+    /** Celular: o ato do ticket em foco mora na ação na base (`OperatorActionBar`, na
+     *  página). O card só mostra o Desfazer, que fica onde o card está. */
+    actionInBar?: boolean;
   }>(),
   {
     density: "cozy",
@@ -75,7 +76,7 @@ const props = withDefaults(
     finishing: false,
     finishUntil: undefined,
     eyebrow: "",
-    actionTarget: "",
+    actionInBar: false,
   },
 );
 const emit = defineEmits<{ start: []; finish: []; blocked: []; locked: []; undo: []; open: []; hold: [] }>();
@@ -137,7 +138,7 @@ const actionAria = computed(() => {
   if (kind === "finish") return `Marcar o pedido ${code.value} como pronto`;
   if (kind === "undo") return `Desfazer o Pronto do pedido ${code.value}`;
   if (kind === "blocked")
-    return `Pedido ${code.value}: toque em Recebi o cancelamento, no cartão vermelho, para poder marcar Pronto`;
+    return `Pedido ${code.value}: toque em Recebi o cancelamento, no aviso vermelho do topo, para poder marcar Pronto`;
   if (kind === "locked")
     return `Pedido ${code.value}: ${props.ticket.finish_block_label}. ${props.ticket.finish_block_reason}`;
   return "";
@@ -167,10 +168,10 @@ const surface = computed(() => {
   return "border border-border bg-card";
 });
 const timerChip = computed(() => toneTimerChip(tone.value));
-// O Pronto leva o código em todo tamanho ("Pronto W07"); no polegar do celular os
-// outros atos também levam, porque o card em foco fica longe do dedo.
+// O Pronto leva o código em todo tamanho ("Pronto W07"); no celular o Desfazer também
+// leva ("Desfazer W07"), porque o ato do momento está na base, longe do card.
 const actionLabel = computed(() =>
-  props.actionTarget ? thumbActionLabel(action.value, code.value) : cardActionLabel(action.value, code.value),
+  props.actionInBar ? thumbActionLabel(action.value, code.value) : cardActionLabel(action.value, code.value),
 );
 // O prazo do Desfazer: o do quadro, ou, sem ele, o instante em que o card o viu abrir.
 const undoUntil = ref(0);
@@ -210,10 +211,11 @@ const d = computed(() => ({
     <!-- ÁREA DE LEITURA: identidade + itens. Um toque aqui abre o detalhe — o gesto
          seguro fica com a área grande, o gesto que sai da cozinha fica no botão. -->
     <div class="relative flex flex-1 flex-col" v-bind="longPress" data-kds-hold>
-      <button
+      <NuxtButton
         v-if="!finishing"
-        type="button"
-        class="absolute inset-0 z-0 rounded-t-xl transition hover:bg-accent/20 active:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        color="neutral"
+        variant="ghost"
+        class="absolute inset-0 z-0 rounded-b-none"
         :aria-label="`Ver o detalhe do pedido ${code}`"
         data-kds-open
         @click="emit('open')"
@@ -360,10 +362,10 @@ const d = computed(() => ({
       </div>
     </div>
 
-    <!-- AÇÃO: um botão, o ato escrito nele, na base do card, dentro da moldura (no
-         celular, o card em foco leva o botão para a barra do polegar). -->
-    <Teleport defer :to="actionTarget || 'body'" :disabled="!actionTarget">
-      <div v-if="finishing" :class="actionTarget ? '' : d.inset" data-kds-undo>
+    <!-- AÇÃO: um botão, o ato escrito nele, na base do card, dentro da moldura. No
+         celular o ato do card em foco está na ação na base da página; o Desfazer fica
+         aqui, com o fundo que esvazia. -->
+    <div v-if="finishing" :class="d.inset" data-kds-undo>
         <OperatorTimedButton
           :until="undoUntil"
           :duration="KDS_UNDO_WINDOW_MS"
@@ -379,8 +381,8 @@ const d = computed(() => ({
           data-kds-action
           @click="onAction"
         />
-      </div>
-      <div v-else :class="actionTarget ? '' : d.inset">
+    </div>
+    <div v-else-if="!actionInBar" :class="d.inset">
         <KdsCardButton
           :tone="actionTone"
           :icon="action.icon"
@@ -392,7 +394,6 @@ const d = computed(() => ({
           data-kds-action
           @click="onAction"
         />
-      </div>
-    </Teleport>
+    </div>
   </article>
 </template>

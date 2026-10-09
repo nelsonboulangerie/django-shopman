@@ -251,13 +251,14 @@ function filterLine() {
   return (
     drawerMode.value &&
     phoneVariant.value &&
-    (phoneFilterSlot() || Boolean(slots["filters-primary"] || slots["filters-end"]))
+    (phoneFilterSlot() ||
+      Boolean(slots["filters-primary"] || slots["filters-end"] || slots["filter-panel"]))
   );
 }
 function deskToolbar() {
   return (
     (!drawerMode.value || deskVariant.value) &&
-    Boolean(slots.filters || slots["filters-primary"] || slots["filters-end"])
+    Boolean(slots.filters || slots["filters-primary"] || slots["filters-end"] || slots["filter-panel"])
   );
 }
 const filtersOpen = ref(false);
@@ -455,7 +456,11 @@ function clearAll() {
   <!-- Toolbar no celular (abaixo de `sm`, no shell): UMA linha de altura fixa, com os
        primários da tela e "Filtros"; o resto mora no painel de baixo. -->
   <template v-if="filterLine()">
-    <NuxtDashboardToolbar class="py-2 sm:hidden" data-page-header-filter-line>
+    <NuxtDashboardToolbar
+      class="py-2 sm:hidden"
+      :class="$slots.selection ? 'lg:hidden' : ''"
+      data-page-header-filter-line
+    >
       <div class="flex w-full min-w-0 flex-nowrap items-center gap-2">
         <div
           v-if="$slots['filters-primary']"
@@ -471,6 +476,15 @@ function clearAll() {
           data-page-header-filters-end
         >
           <slot name="filters-end" />
+        </div>
+        <!-- O painel de filtros único (fase 2, K4): no celular, só o ícone com o
+             número, fixo à direita da linha (o último a sair). -->
+        <div
+          v-if="$slots['filter-panel']"
+          class="ms-auto shrink-0"
+          data-page-header-filter-panel
+        >
+          <slot name="filter-panel" />
         </div>
         <NuxtButton
           v-if="phoneFilterSlot()"
@@ -572,7 +586,7 @@ function clearAll() {
   <NuxtDashboardToolbar
     v-if="deskToolbar()"
     class="py-2"
-    :class="drawerMode ? 'max-sm:hidden' : ''"
+    :class="[drawerMode ? 'max-sm:hidden' : '', $slots.selection ? 'lg:hidden' : '']"
   >
     <div
       class="flex w-full items-center gap-2"
@@ -584,9 +598,22 @@ function clearAll() {
       data-page-header-filters
     >
       <slot name="filters-primary" />
+      <slot name="filter-panel" />
       <slot name="filters" />
       <slot name="filters-end" />
     </div>
+  </NuxtDashboardToolbar>
+
+  <!-- A barra de seleção (fase 2, K2): do `lg` para cima ela OCUPA O LUGAR da toolbar
+       enquanto houver marcados (dono, 09/10/2026); abaixo, a tela a põe na base
+       (`OperatorBulkBar placement="base"`) e a toolbar fica. Por CSS: o servidor e o
+       cliente desenham a mesma árvore. -->
+  <NuxtDashboardToolbar
+    v-if="$slots.selection"
+    class="py-2 max-lg:hidden"
+    data-page-header-selection
+  >
+    <slot name="selection" />
   </NuxtDashboardToolbar>
 
   <!-- Navegação secundária da tela (as abas de Ajustes do PDV, o prazo do anúncio no

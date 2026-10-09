@@ -1,18 +1,19 @@
 <script setup lang="ts">
-// Cabeçalho das telas da Produção na camada visual da suíte (V4-PROD, prévias v4
-// `plano-porque4.html` e `producao-qualidade4.html`): UMA linha com o título, o ponto
-// ao vivo com a hora da última leitura, a busca, o progresso do dia ("4 de 28
-// planejados" com a barra), os controles da tela (`#actions`, ex.: o dia) e o ⋯
-// (Atualizar, Timers, Atalhos). Os recortes descem para a segunda linha (`#filters`).
-// As etapas do lote (Planejamento a Qualidade) moram no rail da suíte e, no celular, na
-// barra do polegar (`ProductionNav`); este cabeçalho segura as TECLAS delas (Alt+1 a
-// Alt+5), que valem em toda tela da Produção, mais "/", R e "?".
-//
-// No celular e no tablet em pé (`OperatorPageHeader`, V6-KIT): barra de 56px com o selo
-// do app, o título, o ponto, a lupa e Avisos (do kit), como a v4; Timers, Qualidade e as
-// ferramentas moram no "Mais" da barra do polegar, e também no ⋯ desta tela.
-import { createReusableTemplate, useMediaQuery } from "@vueuse/core";
-import { useSlots } from "vue";
+// Cabeçalho das telas da Produção: o `OperatorPageHeader` do kit, com os papéis das
+// barras da fase 2 (WP-FASE2-UX-OPERADOR §5):
+//   · barra primária: título, selo ao vivo com a hora da última leitura, a busca
+//     (nível "Esta tela" declarado: filtra a lista da tela) e o ⋯ "Mais ações" (as
+//     ações como DADOS: as da tela e Atualizar, tecla R). Avisos e o ciclo da barra
+//     lateral são do kit;
+//   · toolbar: o dia ou a vista (`#primary`, no começo da linha, também no celular), os recortes
+//     (`#filters`, que no celular vão para o painel "Filtros") e, no fim, o progresso
+//     do dia ("4 de 28 planejados" com a barra);
+//   · aviso da tela: `alerts`, logo abaixo da toolbar.
+// As etapas do lote (Alt+1 a Alt+5), "/" (busca) e "?" (ajuda) são do shell e da busca
+// da suíte. Este cabeçalho só segura o R, e entrega à ajuda do kit os grupos de teclas
+// da Produção.
+import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import {
   isEditableKeyboardTarget,
   PRODUCTION_SHORTCUT_GROUPS,
@@ -33,15 +34,20 @@ const props = withDefaults(
     pending?: boolean;
     /** A última leitura falhou e a tela mostra dado velho: o ao vivo fala por extenso. */
     stale?: boolean;
-    /** Linha fina sobre o título. */
+    /** Selo ao lado do título (ex.: o dia que a tela mostra). */
     eyebrow?: string;
-    /** Linha fina SOB o título, em todo tamanho, com o ponto ao vivo e a hora
-     *  (v4 Qualidade: "22:03 · sáb 03/10 · lotes fechados hoje"). Sem ela, só o
-     *  celular ganha a linha, com a contagem ("06:12 · 6 para finalizar"). */
+    /** O que a tela diz em uma frase, ao lado do selo ao vivo ("lotes fechados hoje"). */
     subtitle?: string;
     searchPlaceholder?: string;
-    /** Telas sem busca própria (ex.: Timers) escondem o campo. */
+    /** O que a busca filtra nesta tela ("filtrando os lotes"). */
+    searchLabel?: string;
+    /** Telas sem lista própria (Ajustes, Relatórios) usam a busca da suíte, sem nível de tela. */
     searchable?: boolean;
+    /** Ações da tela, antes de Atualizar, no ⋯ "Mais ações". */
+    actions?: OperatorHeaderAction[];
+    /** Recortes ativos (viram número no "Filtros" e chips no celular). */
+    activeFilters?: { key: string; label: string; remove: () => void }[];
+    alerts?: OperatorScreenAlert[];
   }>(),
   {
     count: undefined,
@@ -53,38 +59,19 @@ const props = withDefaults(
     eyebrow: "",
     subtitle: "",
     searchPlaceholder: "Buscar produto ou SKU",
+    searchLabel: "filtrando a lista",
     searchable: true,
+    actions: () => [],
+    activeFilters: () => [],
+    alerts: () => [],
   },
 );
 const emit = defineEmits<{ refresh: [] }>();
-const slots = useSlots();
-const [DefineMenu, ReuseMenu] = createReusableTemplate();
-// Celular sem controles da tela (ex.: Timers): o ⋯ vai para a barra de 56 px.
-const isPhoneQuery = useMediaQuery("(max-width: 767px)");
-const isPhone = computed(() => hydrated.value && isPhoneQuery.value);
-const menuInPhoneBar = computed(() => isPhone.value && !slots.actions);
 const query = defineModel<string>("query", { default: "" });
 
-const searchInput = ref<{ focus: () => void } | null>(null);
-// A ajuda de atalhos é a do kit (aberta pelo "Atalhos" do rail, por "?" e pelo ⋯); a
-// Produção entrega os grupos da tela dela.
-const { open: shortcutsHelpOpen } = useOperatorShortcuts();
 provideOperatorShortcuts(PRODUCTION_SHORTCUT_GROUPS, PRODUCTION_SHORTCUTS_DESCRIPTION);
-const menuOpen = ref(false);
 
-// Timers da bancada: o contador vem do localStorage — o servidor não o conhece —,
-// então o primeiro render do cliente precisa BATER com o SSR (0) e só depois de
-// montar mostrar o real.
-const floorTimers = useFloorTimers();
-const hydrated = ref(false);
-const timersCount = computed(() =>
-  hydrated.value ? floorTimers.activeCount.value : 0,
-);
-
-// Receitas e Relatórios (só com o acesso) e o Letreiro: no celular, que não tem rail.
-const { tools } = useProductionSections();
-
-// A hora da última leitura útil: o ponto ao vivo mostra quando a tela leu pela última
+// A hora da última leitura útil: o selo ao vivo mostra quando a tela leu pela última
 // vez. Nasce no cliente (o SSR não sabe a hora local de quem lê).
 const readClock = ref("");
 function stamp() {
@@ -99,280 +86,87 @@ watch(
     if (before && !now && !props.stale) stamp();
   },
 );
-const liveTone = computed(() => (props.stale ? "late" : "live"));
-const liveLabel = computed(() =>
-  props.stale ? "Sem atualizar" : "Ao vivo",
-);
 
-const SHORTCUT_ROUTES = {
-  plan: "/plan",
-  "mise-en-place": "/mise-en-place",
-  open: "/",
-  close: "/close",
-  quality: "/quality",
-} as const;
+const headerActions = computed<OperatorHeaderAction[]>(() => [
+  ...props.actions,
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    kbds: ["R"],
+    onSelect: () => emit("refresh"),
+  },
+]);
 
 function onGlobalKeydown(event: KeyboardEvent) {
-  if (event.repeat || event.isComposing || productionGlobalKeysBlocked())
-    return;
-  const shortcut = resolveProductionGlobalShortcut(event);
-  if (!shortcut) return;
-  const editing = isEditableKeyboardTarget(event.target);
-  if (editing && ["focus-search", "refresh", "help"].includes(shortcut)) return;
-
+  if (event.repeat || event.isComposing || productionGlobalKeysBlocked()) return;
+  if (resolveProductionGlobalShortcut(event) !== "refresh") return;
+  if (isEditableKeyboardTarget(event.target)) return;
   event.preventDefault();
-  if (shortcut === "focus-search") {
-    searchInput.value?.focus();
-    return;
-  }
-  if (shortcut === "refresh") {
-    emit("refresh");
-    return;
-  }
-  if (shortcut === "help") {
-    shortcutsHelpOpen.value = true;
-    return;
-  }
-  navigateTo(SHORTCUT_ROUTES[shortcut]);
+  emit("refresh");
 }
 
 onMounted(() => {
-  hydrated.value = true;
   stamp();
   window.addEventListener("keydown", onGlobalKeydown);
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
-
-function refreshFromMenu() {
-  // O ⋯ fica aberto: a hora ao lado do título mostra na hora se a leitura entrou.
-  emit("refresh");
-}
-
-function openHelp() {
-  menuOpen.value = false;
-  shortcutsHelpOpen.value = true;
-}
 
 const counterText = computed(() => {
   if (props.count == null) return "";
   if (props.total != null) return `de ${props.total} ${props.countLabel}`.trim();
   return props.countLabel || "ativos";
 });
-
-// A linha sob o título: a hora da leitura e o que a tela diz em uma frase. No
-// celular o título não cabe ao lado do ao vivo ("Fechame..."): o ao vivo desce
-// para esta linha, com a contagem (v3 celular: "06:12 · 6 para finalizar").
-const subtitleText = computed(() => {
-  const what =
-    props.subtitle ||
-    (props.count != null ? `${props.count} ${counterText.value}` : "");
-  const when = props.stale ? "Sem atualizar" : readClock.value;
-  return [when, what].filter(Boolean).join(" · ");
-});
-
-// Tablet no toque (deitado ou em pé): a busca vira lupa de 48 px que abre o campo
-// (v3 `depois-producao-dia-tablet` pino 3), e o cabeçalho cabe numa linha só.
-const touchTabletQuery = useMediaQuery("(pointer: coarse) and (min-width: 768px)");
-const touchTablet = computed(() => hydrated.value && touchTabletQuery.value);
-const tabletSearchOpen = ref(false);
-function openTabletSearch() {
-  tabletSearchOpen.value = true;
-  void nextTick(() => searchInput.value?.focus());
-}
-function closeTabletSearchIfEmpty() {
-  if (!query.value.trim()) tabletSearchOpen.value = false;
-}
-
-const ITEM =
-  "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent";
 </script>
 
 <template>
-  <!-- O ⋯ é um só; mora na linha dos controles ou, no celular sem controles
-       (Timers), na barra de 56 px, sem uma faixa só para ele (R16). -->
-  <DefineMenu>
-      <UiPopover v-model:open="menuOpen">
-        <UiPopoverTrigger as-child>
-          <button
-            type="button"
-            class="grid size-control shrink-0 place-items-center rounded-md border border-border bg-card text-foreground transition hover:bg-accent"
-            aria-label="Mais: atualizar, timers e atalhos"
-            title="Mais"
-            data-header-menu
-          >
-            <Icon name="lucide:ellipsis" class="size-5" />
-          </button>
-        </UiPopoverTrigger>
-        <UiPopoverContent
-          align="end"
-          :side-offset="6"
-          :collision-padding="8"
-          class="w-64 p-1.5"
-        >
-          <div role="menu" data-header-menu-panel>
-            <!-- Tablet em pé e celular: o progresso do dia sai da linha e mora aqui. -->
-            <p
-              v-if="count != null"
-              class="px-2.5 pt-1 pb-2 op-label md:hidden"
-              data-header-menu-progress
-            >
-              <span class="op-title tnum">{{ count }}</span>
-              <span class="text-muted-foreground">{{ ` ${counterText}` }}</span>
-            </p>
-            <button
-              type="button"
-              role="menuitem"
-              :class="ITEM"
-              aria-label="Atualizar"
-              aria-keyshortcuts="R"
-              data-header-refresh
-              @click="refreshFromMenu"
-            >
-              <Icon
-                name="lucide:refresh-cw"
-                class="size-4 text-muted-foreground"
-                :class="pending ? 'motion-safe:animate-spin' : ''"
-              />
-              <span class="flex-1">Atualizar</span>
-              <kbd
-                class="hidden font-mono op-micro text-muted-foreground pointer-fine:inline"
-                aria-hidden="true"
-                >R</kbd
-              >
-            </button>
-            <NuxtLink
-              to="/timers"
-              role="menuitem"
-              :class="ITEM"
-              @click="menuOpen = false"
-            >
-              <Icon name="lucide:alarm-clock" class="size-4 text-muted-foreground" />
-              <span class="flex-1">Abrir timers</span>
-              <span v-if="timersCount" class="op-micro tnum text-muted-foreground">{{
-                timersCount
-              }}</span>
-            </NuxtLink>
-            <slot name="menu" :close="() => (menuOpen = false)" />
-            <div class="md:hidden">
-              <NuxtLink
-                v-for="tool in tools"
-                :key="tool.key"
-                :to="tool.to!"
-                role="menuitem"
-                :class="ITEM"
-                @click="menuOpen = false"
-              >
-                <Icon :name="tool.icon" class="size-4 text-muted-foreground" />
-                {{ tool.label }}
-              </NuxtLink>
-            </div>
-            <div class="mt-1.5 border-t border-border pt-1.5">
-              <button
-                type="button"
-                role="menuitem"
-                :class="ITEM"
-                aria-label="Ver atalhos do teclado"
-                aria-keyshortcuts="?"
-                @click="openHelp"
-              >
-                <Icon name="lucide:keyboard" class="size-4 text-muted-foreground" />
-                <span class="flex-1">Atalhos desta tela</span>
-                <kbd
-                  class="hidden font-mono op-micro text-muted-foreground pointer-fine:inline"
-                  aria-hidden="true"
-                  >?</kbd
-                >
-              </button>
-            </div>
-          </div>
-        </UiPopoverContent>
-      </UiPopover>
-  </DefineMenu>
-  <OperatorPageHeader :title="title" :eyebrow="eyebrow">
+  <OperatorPageHeader
+    :title="title"
+    :eyebrow="eyebrow"
+    :actions="headerActions"
+    actions-label="Mais ações da tela"
+    :active-filters="activeFilters"
+    :alerts="alerts"
+  >
     <template v-if="$slots.lead" #lead><slot name="lead" /></template>
-    <template #subtitle>
-      <p
-        v-if="subtitleText"
-        class="mt-1 flex min-w-0 items-center gap-1.5 op-micro tnum text-muted-foreground"
-        :class="subtitle ? '' : 'md:hidden'"
-        data-header-subtitle
-      >
-        <span
-          class="size-2 shrink-0 rounded-full"
-          :class="stale ? 'bg-warning' : 'bg-success'"
-          aria-hidden="true"
-        />
-        <span class="truncate">{{ subtitleText }}</span>
-      </p>
-    </template>
     <template #status>
-      <span :class="subtitle ? 'hidden' : 'contents max-md:hidden'">
-        <OperatorLiveStatus
-          :tone="liveTone"
-          :time="readClock"
-          :label="liveLabel"
-          :detail="stale ? 'A última leitura falhou: a tela mostra o que tinha.' : ''"
-        />
-      </span>
+      <OperatorLiveStatus
+        :tone="stale ? 'late' : 'live'"
+        :time="readClock"
+        :label="stale ? 'Sem atualizar' : 'Ao vivo'"
+        :detail="stale ? 'A última leitura falhou: a tela mostra o que tinha.' : ''"
+      />
+      <span
+        v-if="subtitle"
+        class="min-w-0 text-xs text-muted-foreground"
+        data-header-subtitle
+      >{{ subtitle }}</span>
     </template>
     <template v-if="searchable" #search>
-      <button
-        v-if="touchTablet && !tabletSearchOpen && !query"
-        type="button"
-        class="grid size-12 place-items-center rounded-md border border-border bg-card text-foreground transition hover:bg-accent"
-        aria-label="Buscar produto ou SKU"
-        data-header-search-lupa
-        @click="openTabletSearch"
-      >
-        <Icon name="lucide:search" class="size-5" />
-      </button>
       <OperatorSuiteSearch
-        v-else
-        ref="searchInput"
         v-model="query"
-        class="suite:md:w-[18rem]!"
-        screen-label="filtrando a lista"
+        :screen-label="searchLabel"
         :placeholder="searchPlaceholder"
         aria-label="Buscar por código, SKU ou receita"
-        @focusout="closeTabletSearchIfEmpty"
       />
     </template>
-    <template v-if="menuInPhoneBar" #phone-actions>
-      <ReuseMenu />
-    </template>
-    <template v-if="!menuInPhoneBar" #actions>
-      <!-- O percentual mora COM o número que ele resume — nunca longe dele. -->
-      <!-- Do tablet em pé para cima o progresso fica na linha do título (R15); no
-           tablet em pé a barra desce para baixo do número, como na v3. -->
-      <div
-        v-if="count != null"
-        class="flex items-center gap-3 pr-1 max-md:hidden max-lg:flex-col max-lg:items-end max-lg:gap-1"
-        data-header-progress
-      >
-        <p class="op-label whitespace-nowrap">
-          <span class="op-title tnum">{{ count }}</span>
+    <template v-if="$slots.primary" #filters-primary><slot name="primary" /></template>
+    <template v-if="$slots.filters" #filters><slot name="filters" /></template>
+    <template v-if="count != null" #filters-end>
+      <!-- O percentual mora COM o número que ele resume, nunca longe dele. -->
+      <div class="flex items-center gap-3" data-header-progress>
+        <p class="whitespace-nowrap text-sm">
+          <span class="font-semibold tabular-nums">{{ count }}</span>
           <span class="text-muted-foreground">{{ ` ${counterText}` }}</span>
         </p>
-        <div
+        <NuxtProgress
           v-if="progress != null"
-          class="h-2 w-24 overflow-hidden rounded-full bg-muted max-lg:h-1.5 max-lg:w-full"
-          role="progressbar"
-          :aria-valuenow="progress"
-          aria-valuemin="0"
-          aria-valuemax="100"
+          :model-value="progress"
+          class="w-24 max-sm:hidden"
+          size="sm"
           :aria-label="`Progresso do dia: ${progress}%`"
-        >
-          <div
-            class="h-full rounded-full bg-primary transition-all"
-            :style="{ width: `${progress}%` }"
-          />
-        </div>
+        />
       </div>
-      <slot name="actions" />
-      <ReuseMenu v-if="!menuInPhoneBar" />
     </template>
-    <template v-if="$slots.filters" #filters><slot name="filters" /></template>
     <template v-if="$slots.below" #below><slot name="below" /></template>
   </OperatorPageHeader>
-
 </template>
