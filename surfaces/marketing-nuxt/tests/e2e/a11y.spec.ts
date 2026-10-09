@@ -44,7 +44,7 @@ async function expectTouchTargets(page: Page, context: string) {
     .locator(
       'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="switch"]',
     )
-    .evaluateAll((elements) =>
+    .evaluateAll((elements, minTarget) =>
       elements.flatMap((element) => {
         const node = element as HTMLElement;
         const style = getComputedStyle(node);
@@ -61,7 +61,7 @@ async function expectTouchTargets(page: Page, context: string) {
           const target = node.closest('[data-slot="switch"]');
           if (target) {
             const targetRect = target.getBoundingClientRect();
-            if (targetRect.width >= MIN_TARGET && targetRect.height >= MIN_TARGET) return [];
+            if (targetRect.width >= minTarget && targetRect.height >= minTarget) return [];
           }
         }
         if (["checkbox", "radio"].includes(input.type)) {
@@ -70,10 +70,10 @@ async function expectTouchTargets(page: Page, context: string) {
             document.querySelector(`label[for="${node.id}"]`);
           if (label) {
             const labelRect = label.getBoundingClientRect();
-            if (labelRect.width >= MIN_TARGET && labelRect.height >= MIN_TARGET) return [];
+            if (labelRect.width >= minTarget && labelRect.height >= minTarget) return [];
           }
         }
-        return rect.width >= MIN_TARGET && rect.height >= MIN_TARGET
+        return rect.width >= minTarget && rect.height >= minTarget
           ? []
           : [
               {
@@ -87,6 +87,7 @@ async function expectTouchTargets(page: Page, context: string) {
               },
             ];
       }),
+    MIN_TARGET,
     );
   expect(failures, `${context}: ${JSON.stringify(failures, null, 2)}`).toEqual(
     [],
