@@ -8,30 +8,12 @@ import {
   distanceMeters,
   outsideConsent,
 } from "../app/presentation/outsideStore";
-import {
-  PULL_COMMIT_PX,
-  pullLabel,
-  revealSettles,
-  SWIPE_REVEAL_PX,
-  swipeOffset,
-} from "../app/presentation/swipe";
+import { PULL_COMMIT_PX, pullLabel } from "../app/presentation/swipe";
 
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
 
 describe("G16/G17: deslizar e puxar", () => {
-  it("o cartão só anda na direção do gesto, com resistência depois do limite", () => {
-    expect(swipeOffset(40, "left")).toBe(0);
-    expect(swipeOffset(-80, "left")).toBe(-80);
-    expect(swipeOffset(-(SWIPE_REVEAL_PX + 40), "left")).toBe(
-      -(SWIPE_REVEAL_PX + 10),
-    );
-    expect(swipeOffset(120, "right")).toBe(120);
-  });
-  it("a gaveta fica aberta só depois da metade", () => {
-    expect(revealSettles(-(SWIPE_REVEAL_PX / 2))).toBe(true);
-    expect(revealSettles(-(SWIPE_REVEAL_PX / 2 - 1))).toBe(false);
-  });
   it("puxe para atualizar diz o que vai acontecer", () => {
     expect(pullLabel(10, false)).toBe("Puxe para atualizar");
     expect(pullLabel(PULL_COMMIT_PX, false)).toBe("Solte para atualizar");
@@ -41,9 +23,32 @@ describe("G16/G17: deslizar e puxar", () => {
     const page = read("../app/pages/index.vue");
     const column = read("../app/components/OrderBoardColumn.vue");
     expect(page).toContain('"Prontos para sair"');
-    expect(column).toContain("<SwipeReveal");
     expect(column).toContain("<OrderCard");
     expect(column).not.toContain("<PhoneExitList");
+  });
+  it("F7: deslizar para entregar e o polegar voltam, pela peça do kit", () => {
+    const column = read("../app/components/OrderBoardColumn.vue");
+    // o gesto é do kit: nada de deslize escrito à mão no Gestor
+    expect(column).toContain("<OperatorSwipeRow");
+    expect(column).toContain(':commit="swipeCommit(card)"');
+    expect(column).toContain('@commit="commitExit(card)"');
+    expect(column).toContain("<OperatorThumbAction");
+    expect(column).toContain("data-exit-thumb");
+    expect(column).not.toMatch(/@pointer(down|move|up)/);
+    // o mesmo ato do botão largo: emite `action`, não decide estado aqui
+    expect(column).toContain('emit("action", card.ref, gesture.action)');
+  });
+  it("o celular hidrata com a régua de mesa: media query sem ssrWidth derrubava a página", () => {
+    // Sem `ssrWidth`, o cliente lia a largura real já na hidratação, o cabeçalho
+    // divergia do HTML do servidor e o Vue caía ("emitsOptions" de null): a 390 a
+    // fila ficava no esqueleto para sempre (medido em 09/10/2026).
+    const page = read("../app/pages/index.vue");
+    const queries = page
+      .split("useMediaQuery(")
+      .slice(1)
+      .map((rest) => rest.slice(0, rest.indexOf(");")));
+    expect(queries.length).toBeGreaterThan(0);
+    expect(queries.filter((q) => !q.includes("ssrWidth"))).toEqual([]);
   });
 });
 

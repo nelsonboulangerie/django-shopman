@@ -33,7 +33,7 @@ import {
   triageCards,
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
-import type { SwipeAction } from "~/components/SwipeReveal.vue";
+import type { OperatorSwipeAction } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 import {
   BOARD_COLUMNS_QUERY,
@@ -416,17 +416,21 @@ function menuDo(fn: () => void, close = true) {
   if (close) moreOpen.value = false;
   fn();
 }
-// Celular (abaixo de md): as colunas viram abas.
-const isPhone = useMediaQuery("(max-width: 767.98px)");
+// Celular (abaixo de md): as colunas viram abas. Toda media query desta página lê a
+// largura de mesa (`ssrWidth: 1280`, a régua do kit) até montar: sem isso o cliente já
+// hidratava como celular, o cabeçalho divergia do HTML do servidor e o Vue caía
+// ("emitsOptions" de null), com a fila presa no esqueleto a 390 px (F7, 09/10/2026).
+const isPhone = useMediaQuery("(max-width: 767.98px)", { ssrWidth: 1280 });
 // A régua do kit para a barra do topo e a toolbar (abaixo de `sm`, README "Barra do
 // topo no celular" e "Toolbar no celular"): ali as ações da fila vão para o ⋯ da barra
 // e os recortes, a ordem e a visão para o painel "Filtros" do kit. Entre `sm` e `md`
 // segue o painel próprio da fila ("Filtros e ações da fila").
-const kitPhone = useMediaQuery("(max-width: 639.98px)");
+const kitPhone = useMediaQuery("(max-width: 639.98px)", { ssrWidth: 1280 });
 // Tablet em pé: três colunas de ~240 px cortavam selo e prazo do cartão. Abaixo do
 // lg, com mais de uma coluna aberta, o quadro usa as abas do celular.
 const isNarrowTablet = useMediaQuery(
   "(min-width: 768px) and (max-width: 1023.98px)",
+  { ssrWidth: 1280 },
 );
 // Celular (prévia v3 `orders-phone3.html`): Entrada, Preparo e Saída viram abas, uma
 // coluna por vez, com a contagem na aba. Abre na que tem pedido novo; sem pedido novo,
@@ -485,8 +489,8 @@ const {
   label: pullText,
 } = usePullToRefresh(queueViewport, () => refresh(), isPhone);
 // Deslizar o cartão para a esquerda (G17): Atender (quem gerencia) e Recusar (pedido novo).
-function swipeActions(card: OrderCardProjection): SwipeAction[] {
-  const actions: SwipeAction[] = [];
+function swipeActions(card: OrderCardProjection): OperatorSwipeAction[] {
+  const actions: OperatorSwipeAction[] = [];
   if (canManageOrders.value) {
     actions.push({
       key: "assign",
@@ -586,7 +590,7 @@ watch(
 // A Fila "Precisa de você" (V4-G4) é a casa do desktop e do tablet deitado. O celular e
 // o tablet em pé seguem com as colunas em abas, e o posto Saída com a Saída larga: lá a
 // escolha "Grade" vira a Lista. Antes de montar (SSR), vale a escolha guardada.
-const isWide = useMediaQuery("(min-width: 1024px)");
+const isWide = useMediaQuery("(min-width: 1024px)", { ssrWidth: 1280 });
 const queueAvailable = computed(
   () => !boardLayout.exitPost.value && (!mountedView.value || isWide.value),
 );
@@ -614,7 +618,7 @@ const exitPostView = computed(
 // não é corrigida pelo Vue (o campo ficaria com a largura do servidor).
 // Abaixo do xl, título, busca e todos os controles não cabem numa linha (a 1024 px o
 // título "Pedidos" virava "Pe…"): ordenar e a visão vão para o ⋯.
-const isNarrow = useMediaQuery("(max-width: 1279.98px)");
+const isNarrow = useMediaQuery("(max-width: 1279.98px)", { ssrWidth: 1280 });
 const mounted = ref(false);
 onMounted(() => {
   mounted.value = true;
