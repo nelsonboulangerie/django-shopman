@@ -63,9 +63,7 @@ useOperatorWindowTitle();
 
 <template>
   <OperatorAppRoot>
-    <!-- `data-suite="v3"` segue até a onda dos formulários da Produção: os primitivos
-         antigos ainda vestem o visual da suíte por ele (`suite:`). -->
-    <div class="flex min-h-dvh bg-background text-foreground" data-suite="v3" data-production-app>
+    <div class="flex min-h-dvh bg-background text-foreground" data-production-app>
       <NuxtRouteAnnouncer />
       <!-- Aviso calmo e global de conexão (kit), só aparece offline. -->
       <OfflineBanner />

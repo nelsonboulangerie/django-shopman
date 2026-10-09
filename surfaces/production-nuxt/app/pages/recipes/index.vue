@@ -55,6 +55,25 @@ const kindChoice = computed({
     kind.value = value === ALL_KINDS ? "" : value;
   },
 });
+
+// A trilha da lista (`OperatorRecordNav` na receita): grava a ordem que a pessoa vê,
+// com o recorte e a busca dela, para a receita oferecer anterior e próxima.
+const { remember: rememberTrail } = useRecordTrail("production-recipes");
+const trailLabel = computed(
+  () => kinds.value.find((option) => option.value === kind.value)?.label ?? (onlyFavorites.value ? "Favoritas" : "Receitas"),
+);
+const trailFrom = computed(() => {
+  const params = new URLSearchParams();
+  if (query.value.trim()) params.set("q", query.value.trim());
+  if (kind.value) params.set("kind", kind.value);
+  const search = params.toString();
+  return search ? `/recipes?${search}` : "/recipes";
+});
+watch(
+  () => [visible.value.map((entry) => entry.ref).join("\n"), trailFrom.value, trailLabel.value] as const,
+  ([refs, from, label]) => rememberTrail(refs ? refs.split("\n") : [], { from, label }),
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -97,22 +116,24 @@ const kindChoice = computed({
         />
 
         <div class="ml-auto flex flex-wrap items-center gap-3">
-          <UiCheckbox v-model="onlyFavorites" label="Favoritas" class="text-muted-foreground" />
-          <UiCheckbox v-model="onlyWithoutSku" label="Sem SKU" class="text-muted-foreground" />
-          <UiCheckbox v-model="onlyWithDraft" label="Com rascunho" class="text-muted-foreground" />
-          <UiCheckbox v-model="archived" label="Arquivadas" class="text-muted-foreground" />
+          <NuxtCheckbox v-model="onlyFavorites" label="Favoritas" />
+          <NuxtCheckbox v-model="onlyWithoutSku" label="Sem SKU" />
+          <NuxtCheckbox v-model="onlyWithDraft" label="Com rascunho" />
+          <NuxtCheckbox v-model="archived" label="Arquivadas" />
         </div>
       </div>
 
-      <div
+      <NuxtAlert
         v-if="stale"
+        class="mb-3"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-wifi-off"
+        title="Sem atualizar. Mostrando a última lista carregada."
+        :actions="[{ label: 'Tentar de novo', color: 'warning', variant: 'outline', onClick: () => refresh() }]"
         role="status"
         aria-live="polite"
-        class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
-      >
-        <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
-        <span>Sem atualizar. Mostrando a última lista carregada.</span>
-      </div>
+      />
 
       <p v-if="pending && !entries.length" class="text-sm text-muted-foreground">Carregando…</p>
 
@@ -122,15 +143,14 @@ const kindChoice = computed({
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
         <p class="text-base font-medium text-foreground">Não foi possível carregar as receitas.</p>
-        <UiButton
-          type="button"
+        <NuxtButton
           class="mt-1"
+          color="neutral"
           variant="outline"
-          size="sm"
+          icon="i-lucide-refresh-cw"
+          label="Tentar de novo"
           @click="refresh()"
-        >
-          <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </UiButton>
+        />
       </div>
 
       <div
@@ -151,9 +171,7 @@ const kindChoice = computed({
       >
         <Icon name="lucide:search" class="size-8" />
         <p class="text-base font-medium">Nenhuma receita com esses filtros.</p>
-        <UiButton type="button" variant="link" size="sm" class="p-0" @click="clearFilters">
-          Limpar filtros
-        </UiButton>
+        <NuxtButton color="primary" variant="ghost" label="Limpar filtros" @click="clearFilters" />
       </div>
 
       <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -169,7 +187,7 @@ const kindChoice = computed({
                 <p class="truncate font-bold">{{ entry.name }}</p>
                 <p class="truncate font-mono text-xs text-muted-foreground">{{ entry.ref }}</p>
               </div>
-              <UiBadge variant="outline" class="shrink-0 px-1.5 py-0 text-xs">{{ entry.kind_label }}</UiBadge>
+              <NuxtBadge color="neutral" class="shrink-0" :label="entry.kind_label" />
             </div>
 
             <p class="flex items-center gap-1.5 text-sm">
@@ -199,23 +217,27 @@ const kindChoice = computed({
               >
                 Nota <b class="text-foreground">{{ entry.rating_display }}</b> de 5
               </span>
-              <UiBadge v-if="entry.draft_count > 0" variant="warning" class="px-1.5 py-0 text-xs">
-                {{ entry.draft_count === 1 ? "Rascunho" : `${entry.draft_count} rascunhos` }}
-              </UiBadge>
-              <UiBadge v-if="entry.is_archived" variant="outline" class="px-1.5 py-0 text-xs">Arquivada</UiBadge>
-              <UiBadge v-if="!entry.has_ficha && entry.output_sku" variant="outline" class="px-1.5 py-0 text-xs"
-                >Sem ficha</UiBadge
-              >
+              <NuxtBadge
+                v-if="entry.draft_count > 0"
+                color="warning"
+                :label="entry.draft_count === 1 ? 'Rascunho' : `${entry.draft_count} rascunhos`"
+              />
+              <NuxtBadge v-if="entry.is_archived" color="neutral" label="Arquivada" />
+              <NuxtBadge v-if="!entry.has_ficha && entry.output_sku" color="neutral" label="Sem ficha" />
             </div>
 
             <p v-if="entry.updated_at_display" class="text-xs text-muted-foreground">
               Atualizada {{ entry.updated_at_display }}
             </p>
           </NuxtLink>
-          <button
-            type="button"
-            class="absolute right-1 top-1 inline-flex size-11 items-center justify-center rounded-md outline-none transition hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
-            :class="entry.is_favorite ? 'text-primary' : 'text-muted-foreground'"
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            square
+            :active="entry.is_favorite"
+            active-color="primary"
+            active-variant="ghost"
+            class="absolute right-1 top-1 pointer-coarse:size-control pointer-coarse:justify-center"
             :aria-pressed="entry.is_favorite"
             :aria-label="favoriteToggleLabel(entry.name)"
             :title="favoriteActionHint(entry.is_favorite)"
@@ -223,7 +245,7 @@ const kindChoice = computed({
             @click="toggleFavorite(entry.ref, !entry.is_favorite)"
           >
             <Icon name="lucide:star" class="size-5" :class="entry.is_favorite ? 'fill-current' : ''" />
-          </button>
+          </NuxtButton>
         </div>
       </div>
     </section>

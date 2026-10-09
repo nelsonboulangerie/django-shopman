@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, defineComponent, h, reactive, ref, watch, type PropType } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 
 import PlanReasonCard from "../../app/components/PlanReasonCard.vue";
@@ -10,11 +10,7 @@ import type {
   ProductionSuggestionProjection,
   WorkOrderCardProjection,
 } from "../../app/types/production";
-import {
-  UiButtonStub,
-  UiNativeSelectStub,
-  UiTextareaStub,
-} from "../support/nativeUiStubs";
+import { nuxtUiStubs } from "../support/nuxtUiStubs";
 
 // ProductionStageGrid é dirigido por composables (useProductionBoard/useProductionKds).
 // Sem runtime Nuxt: reatividade Vue real como globais + os composables stubados com refs
@@ -98,6 +94,7 @@ const startSpy = vi.fn().mockResolvedValue({ ok: true });
 const planSpy = vi.fn().mockResolvedValue({ ok: true });
 const boardRefresh = vi.fn();
 const boardInitialDateSpy = vi.fn();
+const recipeBookCanView = ref(true);
 
 function installGlobals() {
   vi.stubGlobal("computed", computed);
@@ -112,6 +109,7 @@ function installGlobals() {
     attrsFor: () => ({ target: "_self" }),
   }));
   vi.stubGlobal("useRoute", () => ({ query: {} }));
+  vi.stubGlobal("useRecipeBookAccess", () => ({ canView: recipeBookCanView }));
   vi.stubGlobal("useProductionBoard", (initialDate: string) => {
     boardInitialDateSpy(initialDate);
     return {
@@ -153,40 +151,67 @@ function installGlobals() {
   }));
 }
 
-const passthrough = { template: "<div><slot /></div>" };
+type MenuItem = { label?: string; type?: string; disabled?: boolean; onSelect?: () => void };
+
+/** O ⋯ do kit: o botão (com os atributos da tela) e os itens como botões de menu. */
+const OperatorMoreMenuStub = defineComponent({
+  name: "OperatorMoreMenu",
+  inheritAttrs: false,
+  props: {
+    items: { type: Array as PropType<MenuItem[] | MenuItem[][]>, default: () => [] },
+    label: { type: String, default: "Mais ações" },
+  },
+  setup(props, { attrs }) {
+    return () => {
+      const flat = (props.items as unknown[]).flat() as MenuItem[];
+      return h("div", { "data-more-menu": "" }, [
+        h("button", { ...attrs, type: "button", "aria-label": props.label }),
+        h(
+          "div",
+          { role: "menu" },
+          flat
+            .filter((item) => item.type !== "label" && item.type !== "separator")
+            .map((item) =>
+              h(
+                "button",
+                {
+                  type: "button",
+                  role: "menuitem",
+                  disabled: Boolean(item.disabled),
+                  onClick: () => item.onSelect?.(),
+                },
+                String(item.label ?? ""),
+              ),
+            ),
+        ),
+      ]);
+    };
+  },
+});
+
 const stubs = {
+  ...nuxtUiStubs,
   // O cabeçalho é dele mesmo (testado à parte); aqui ele só repassa os recortes
   // e os controles que a grade põe nele.
   ProductionHeader: {
     template: '<div><slot name="actions" /><slot name="filters" /></div>',
   },
   OperatorPeriodPicker: true,
-  UiFilterChip: {
-    props: ["active", "count"],
+  OperatorMoreMenu: OperatorMoreMenuStub,
+  OperatorScreenState: {
+    props: ["state", "title", "what"],
     template:
-      '<button type="button" :data-active="active || undefined"><slot name="icon" /><slot /> {{ count }}</button>',
+      '<div :data-screen-state="state">{{ title }}<slot name="actions" /></div>',
   },
-  UiPopoverTrigger: passthrough,
+  NuxtSelect: {
+    props: ["modelValue", "items"],
+    emits: ["update:modelValue"],
+    template:
+      '<div data-select :data-value="modelValue"><span v-for="item in items" :key="item.value">{{ item.label }}</span></div>',
+  },
   ShortageDialog: true,
   Icon: true,
-  NuxtLink: { template: "<a><slot /></a>" },
-  // UiDialog renderiza o conteúdo inline quando aberto (sem teleport) → fácil de consultar.
-  UiDialog: { props: ["open"], template: "<div v-if='open'><slot /></div>" },
-  UiDialogContent: passthrough,
-  UiDialogHeader: passthrough,
-  UiDialogTitle: passthrough,
-  UiDialogDescription: passthrough,
-  UiDialogFooter: passthrough,
-  UiBadge: passthrough,
-  // O popover do "Por quê": o conteúdo só existe com a linha aberta (o v-if é
-  // da grade), então o stub só precisa repassar o slot.
-  UiPopover: { props: ["open"], template: "<div><slot /></div>" },
-  UiPopoverAnchor: passthrough,
-  UiPopoverContent: passthrough,
   OperatorKbd: { template: "<kbd><slot /></kbd>" },
-  UiButton: UiButtonStub,
-  UiNativeSelect: UiNativeSelectStub,
-  UiTextarea: UiTextareaStub,
 };
 
 function mountGrid(stage: "plan" | "open" = "open") {
@@ -247,6 +272,12 @@ const suggestion: ProductionSuggestionProjection = {
 const byText = (w: ReturnType<typeof mountGrid>, sel: string, txt: string) =>
   w.findAll(sel).find((el) => el.text().includes(txt));
 
+/** Uma ação do menu de um produto planejado (o `NuxtDropdownMenu` do item). */
+const plannedAction = (w: ReturnType<typeof mountGrid>, label: string) =>
+  w
+    .findAll('[data-planned-item] [role="menuitem"]')
+    .find((el) => el.text().trim() === label);
+
 function pendingResult<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -263,6 +294,7 @@ beforeEach(() => {
   planSpy.mockClear().mockResolvedValue({ ok: true });
   boardRefresh.mockClear();
   boardInitialDateSpy.mockClear();
+  recipeBookCanView.value = true;
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -421,7 +453,7 @@ describe("ProductionStageGrid — planning authority", () => {
     expect(planned.text()).toContain("Planejado");
     expect(w.find("[data-planned-row]").text()).toContain("Pão 20");
 
-    await w.find("[data-planned-correct]").trigger("click");
+    await plannedAction(w, "Corrigir quantidade")!.trigger("click");
     const input = w.find('input[aria-label="Quantidade planejada"]');
     expect((input.element as HTMLInputElement).value).toBe("20");
     await input.setValue("24");
@@ -450,8 +482,8 @@ describe("ProductionStageGrid — planning authority", () => {
 
     // O estado (aberto/fechado) mora no menu do item, não na linha (v4 pino 8).
     expect(w.find("[data-planned-row]").text()).not.toContain("(aberto)");
-    expect(w.find("[data-planned-correct]").text()).toBe("Planejar novo lote");
-    await w.find("[data-planned-correct]").trigger("click");
+    expect(plannedAction(w, "Corrigir quantidade")).toBeUndefined();
+    await plannedAction(w, "Planejar novo lote")!.trigger("click");
     expect(w.text()).toContain("Soma ao dia");
     const input = w.find('input[aria-label="Quantidade planejada"]');
     expect((input.element as HTMLInputElement).value).toBe("0");
@@ -578,17 +610,23 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
     boardRows.value = [flagged, ...cleanRows, planned];
     const w = mountGrid("plan");
 
-    const chip = (key: string) => w.find(`[data-plan-filter="${key}"]`);
-    expect(chip("all").text()).toContain("7");
-    expect(chip("todo").text()).toContain("6");
-    expect(chip("flagged").text()).toContain("1");
-    expect(chip("done").text()).toContain("1");
+    // Os recortes são abas em pílula com a contagem (como no Gestor).
+    const chip = (label: string) =>
+      w
+        .findAll('[data-plan-filters] [role="tab"]')
+        .find((tab) => tab.text().startsWith(label))!;
+    expect(chip("Todos").text()).toBe("Todos 7");
+    expect(chip("A planejar").text()).toBe("A planejar 6");
+    expect(chip("Com ressalva").text()).toBe("Com ressalva 1");
+    expect(chip("Planejados").text()).toBe("Planejados 1");
+    expect(chip("Todos").attributes("aria-selected")).toBe("true");
 
-    await chip("flagged").trigger("click");
+    await chip("Com ressalva").trigger("click");
+    expect(chip("Com ressalva").attributes("aria-selected")).toBe("true");
     expect(skus(w, "[data-plan-row]")).toEqual(["CRO"]);
     expect(w.find("[data-planned-row]").exists()).toBe(false);
 
-    await chip("done").trigger("click");
+    await chip("Planejados").trigger("click");
     expect(w.find("[data-plan-row]").exists()).toBe(false);
     expect(skus(w, "[data-planned-row]")).toEqual(["BRI"]);
   });
@@ -1058,5 +1096,119 @@ describe("ProductionStageGrid — previsto abaixo das encomendas", () => {
     expect(w.find('input[aria-label="Quantidade prevista"]').exists()).toBe(
       false,
     );
+  });
+});
+
+describe("ProductionStageGrid — Planejamento vazio leva ao livro de receitas", () => {
+  it("sem receita ativa, o aviso diz o que falta e abre as receitas", () => {
+    boardRows.value = [];
+    const w = mountGrid("plan");
+
+    const empty = w.find("[data-plan-empty]");
+    expect(empty.attributes("data-color")).toBe("warning");
+    expect(empty.text()).toContain("Nenhuma receita ativa.");
+    expect(empty.text()).toContain("Ative ou crie uma no livro de receitas.");
+    expect(empty.text()).not.toContain("—");
+    // A ação leva aonde se resolve, na cor do aviso.
+    const action = w.find("[data-plan-empty-action]");
+    expect(action.attributes("href")).toBe("/recipes");
+    expect(action.attributes("data-color")).toBe("warning");
+    expect(action.text()).toBe("Abrir as receitas");
+  });
+
+  it("quem não vê as receitas sabe a quem pedir, sem um botão que não abre", () => {
+    recipeBookCanView.value = false;
+    boardRows.value = [];
+    const w = mountGrid("plan");
+
+    const empty = w.find("[data-plan-empty]");
+    expect(empty.text()).toContain(
+      "Peça a quem gerencia a produção para ativar ou criar uma receita.",
+    );
+    expect(w.find("[data-plan-empty-action]").exists()).toBe(false);
+    expect(empty.find("a").exists()).toBe(false);
+  });
+
+  it("busca sem resultado não vira aviso de receita", () => {
+    vi.stubGlobal("useRoute", () => ({ query: { q: "nada" } }));
+    boardRows.value = [row({ suggestion })];
+    const w = mountGrid("plan");
+
+    expect(w.find("[data-plan-empty]").exists()).toBe(false);
+    expect(w.text()).toContain("Nenhum resultado para");
+  });
+});
+
+describe("ProductionStageGrid — menu da linha da Abertura", () => {
+  // O ⋯ (OperatorMoreMenu) e o menu de contexto da linha (NuxtContextMenu, que abre
+  // ao segurar a linha no toque ou no clique direito) desenham a MESMA lista.
+  function openRows() {
+    return [
+      row({
+        planned_qty: "20",
+        started_qty: "30",
+        planned_orders: [wo({ pk: 9, status: "planned", planned_qty: "20" })],
+        started_orders: [
+          wo({
+            pk: 7,
+            ref: "WO-007",
+            started_qty: "30",
+            can_void: true,
+          }),
+        ],
+      }),
+    ];
+  }
+
+  it("o ⋯ e o menu de contexto têm os mesmos itens, na mesma ordem", () => {
+    boardRows.value = openRows();
+    const w = mountGrid();
+
+    const more = w.find("[data-open-row-menu]").element.parentElement!;
+    const moreItems = Array.from(more.querySelectorAll('[role="menuitem"]')).map(
+      (el) => el.textContent?.trim(),
+    );
+    // O menu de contexto envolve a linha (o ⋯ dela também está ali dentro): os itens
+    // dele são os do menu próprio, irmão da linha.
+    const context = w.find('[data-open-row-context="PAO-001"]');
+    const contextItems = Array.from(
+      context.element.querySelectorAll(':scope > [role="menu"] [role="menuitem"]'),
+    ).map((el) => el.textContent?.trim());
+
+    expect(moreItems[0]).toBe("Ver lançamento");
+    expect(moreItems).toContain("Confirmar previsto");
+    expect(moreItems.at(-1)).toBe("Cancelar lote…");
+    expect(contextItems).toEqual(moreItems);
+  });
+
+  it("Cancelar lote… pelo menu de contexto abre o lote já na confirmação", async () => {
+    boardRows.value = openRows();
+    const w = mountGrid();
+
+    const context = w.find('[data-open-row-context="PAO-001"]');
+    const items = context.element.querySelectorAll(
+      ':scope > [role="menu"] [role="menuitem"]',
+    );
+    (items[items.length - 1] as HTMLElement).click();
+    await flushPromises();
+
+    expect(w.find('textarea[aria-label="Motivo do cancelamento"]').exists()).toBe(
+      true,
+    );
+    expect(byText(w, "button", "Confirmar cancelamento")).toBeDefined();
+  });
+
+  it("Confirmar previsto pelo ⋯ abre a confirmação da linha", async () => {
+    boardRows.value = openRows();
+    const w = mountGrid();
+
+    const more = w.find("[data-open-row-menu]").element.parentElement!;
+    const confirm = Array.from(more.querySelectorAll('[role="menuitem"]')).find(
+      (el) => el.textContent?.trim() === "Confirmar previsto",
+    ) as HTMLElement;
+    confirm.click();
+    await flushPromises();
+
+    expect(w.find('input[aria-label="Quantidade prevista"]').exists()).toBe(true);
   });
 });

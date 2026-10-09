@@ -187,16 +187,96 @@ function goClose() {
 }
 
 // ── Correção da partição de um lote fechado ─────────────────────────────────
+// O lote em correção mora na URL (`?lot=<pk>`, com o dia e a busca), como no
+// Fechamento: o voltar do navegador volta ao portão, e o anterior e o próximo
+// andam entre os lotes que o portão mostra com Corrigir.
+const QUALITY_LOTS_TRAIL = "production-quality-lots";
 const correcting = ref<QCOrderCardProjection | null>(null);
+const routeLot = computed(() =>
+  typeof route.query.lot === "string" ? route.query.lot : "",
+);
+
+function qualityQuery(lot = ""): Record<string, string> {
+  const next: Record<string, string> = {};
+  if (selectedDate.value) next.date = selectedDate.value;
+  const search = query.value.trim();
+  if (search) next.q = search;
+  if (lot) next.lot = lot;
+  return next;
+}
+function lotLocation(lot: string) {
+  return { path: "/quality", query: qualityQuery(lot) };
+}
 
 function openCorrection(order: QCOrderCardProjection) {
   if (!correctionAvailable(order)) return;
-  correcting.value = order;
+  void navigateTo(lotLocation(String(order.pk)));
 }
 
+// Sair da correção substitui a entrada dela no histórico.
 function backToGate() {
   correcting.value = null;
+  if (routeLot.value) void navigateTo(lotLocation(""), { replace: true });
 }
+
+// O lote da URL vira a correção. Guardado ao entrar (a revisão vista é a que a
+// correção confirma); lote sem correção possível volta ao portão.
+watch(
+  [routeLot, () => kiosk.value, pending],
+  ([lot]) => {
+    if (!lot) {
+      correcting.value = null;
+      return;
+    }
+    if (!kiosk.value) return;
+    if (correcting.value && String(correcting.value.pk) === lot) return;
+    const order = kiosk.value.orders.find((item) => String(item.pk) === lot);
+    if (!order && pending.value) return;
+    if (!order || !correctionAvailable(order)) {
+      backToGate();
+      return;
+    }
+    correcting.value = order;
+  },
+  { immediate: true },
+);
+
+// A trilha: os lotes que o portão mostra com Corrigir, na vista e com a busca da
+// pessoa. Gravada só com o portão na tela.
+function matchesQuery(order: QCOrderCardProjection): boolean {
+  const q = query.value.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    order.recipe_name.toLowerCase().includes(q) ||
+    order.output_sku.toLowerCase().includes(q) ||
+    order.ref.toLowerCase().includes(q)
+  );
+}
+const { remember: rememberLots } = useRecordTrail(QUALITY_LOTS_TRAIL);
+const trailFrom = computed(() => {
+  const search = new URLSearchParams(qualityQuery()).toString();
+  return search ? `/quality?${search}` : "/quality";
+});
+watch(
+  () => {
+    const gate = qualityGate(qualityOrders.value);
+    const shown = view.value === "pending" ? gate.exceptions : gate.reviewed;
+    return [
+      shown
+        .filter((order) => matchesQuery(order) && correctionAvailable(order))
+        .map((order) => String(order.pk))
+        .join("\n"),
+      trailFrom.value,
+      view.value === "pending" ? "Exceções para olhar" : "Confirmados",
+      routeLot.value,
+    ] as const;
+  },
+  ([ids, from, label, lot]) => {
+    if (lot) return;
+    rememberLots(ids ? ids.split("\n") : [], { from, label });
+  },
+  { immediate: true },
+);
 
 interface QcCorrectionPayload {
   partition: QcPartitionGroup[];
@@ -248,6 +328,18 @@ const screenStarted = computed(() => {
       :actions="dayActions"
       @refresh="refresh"
     >
+      <!-- Anterior e próximo DENTRO do portão de onde a pessoa veio. Aberto por
+           link, sem trilha: o par não aparece. -->
+      <template v-if="correcting" #status>
+        <OperatorRecordNav
+          class="ms-auto"
+          :trail="QUALITY_LOTS_TRAIL"
+          :current="String(correcting.pk)"
+          :to="lotLocation"
+          previous-label="Lote anterior"
+          next-label="Próximo lote"
+        />
+      </template>
       <template v-if="!correcting && kiosk && kiosk.orders.length" #primary>
         <NuxtTabs
           v-model="view"

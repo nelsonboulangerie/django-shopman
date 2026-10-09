@@ -14,7 +14,7 @@ import {
   comparePath,
   favoriteActionHint,
   formulaFromServed,
-  statusBadgeVariant,
+  statusBadgeColor,
   stepsForPayload,
   toneClass,
   unmatchedItems,
@@ -182,6 +182,28 @@ async function confirmArchive() {
     useSonner.success(entry.value.is_archived ? "Receita restaurada." : "Receita arquivada.");
   }
 }
+const archiveDescription = computed(() =>
+  entry.value?.is_archived
+    ? "Ela volta ao inventário e pode receber versões de novo."
+    : 'Ela sai do inventário (fica em "Arquivadas") e não recebe novas versões. A ficha de execução publicada não muda.',
+);
+const publishDescription = computed(() => {
+  const ficha = entry.value?.ficha_ref || entryRef;
+  return currentVersion.value && currentVersion.value.number !== selected.value?.number
+    ? `A versão ${currentVersion.value.number} passa a substituída e a ficha de execução ${ficha} é reescrita com esta fórmula.`
+    : `Esta é a primeira versão publicada: a ficha de execução ${ficha} nasce dela.`;
+});
+// Os dois motivos que seguram a publicação, cada um com a ação que o resolve.
+function skuFromPublish() {
+  publishOpen.value = false;
+  startSku();
+}
+function editorFromPublish() {
+  publishOpen.value = false;
+  editDraft();
+}
+
+// O selo do estado da versão: rascunho avisa, publicada é ok, o resto é neutro.
 const kinds: { value: string; label: string }[] = [...KIND_OPTIONS];
 const PUBLISH_NUM = { class: { th: "text-right", td: "text-right tabular-nums" } };
 const PUBLISH_DIFF_COLUMNS = [
@@ -214,7 +236,19 @@ const publishDiff = computed(() => [
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <RecipeHeader :title="entry?.name || 'Receita'" :subtitle="subtitle" back="/recipes" :pending="pending" @refresh="refresh()" />
+    <RecipeHeader :title="entry?.name || 'Receita'" :subtitle="subtitle" back="/recipes" :pending="pending" @refresh="refresh()">
+      <!-- Anterior e próxima dentro da lista de onde a pessoa veio (com o recorte dela).
+           Aberta por link, sem trilha: o par não aparece. -->
+      <template #status>
+        <OperatorRecordNav
+          trail="production-recipes"
+          :current="entryRef"
+          :to="(id) => `/recipes/${id}`"
+          previous-label="Receita anterior"
+          next-label="Próxima receita"
+        />
+      </template>
+    </RecipeHeader>
 
     <section v-if="forbidden" class="grid flex-1 place-items-center p-6 text-center">
       <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
@@ -243,32 +277,33 @@ const publishDiff = computed(() => [
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
         <p class="text-base font-medium text-foreground">Não foi possível carregar a receita.</p>
-        <UiButton
-          type="button"
+        <NuxtButton
           class="mt-1"
+          color="neutral"
           variant="outline"
-          size="sm"
+          icon="i-lucide-refresh-cw"
+          label="Tentar de novo"
           @click="refresh()"
-        >
-          <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </UiButton>
+        />
       </div>
 
       <template v-else-if="entry">
-        <div
+        <NuxtAlert
           v-if="stale"
+          class="mb-3"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-wifi-off"
+          title="Sem atualizar. Mostrando a última leitura."
+          :actions="[{ label: 'Tentar de novo', color: 'warning', variant: 'outline', onClick: () => refresh() }]"
           role="status"
           aria-live="polite"
-          class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
-        >
-          <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
-          <span>Sem atualizar. Mostrando a última leitura.</span>
-        </div>
+        />
 
         <!-- ── Cabeçalho da receita: tipo, SKU, ficha, arquivada ─────────── -->
-        <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border bg-card p-3 text-sm">
-          <UiBadge variant="outline" class="px-1.5 py-0 text-xs">{{ entry.kind_label }}</UiBadge>
-          <UiBadge v-if="entry.is_archived" variant="outline" class="px-1.5 py-0 text-xs">Arquivada</UiBadge>
+        <NuxtCard class="mb-4" :ui="{ body: 'flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-sm sm:p-3' }">
+          <NuxtBadge color="neutral" :label="entry.kind_label" />
+          <NuxtBadge v-if="entry.is_archived" color="neutral" label="Arquivada" />
 
           <div class="flex min-w-0 items-center gap-1.5">
             <Icon name="lucide:tag" class="size-4 shrink-0 text-muted-foreground" />
@@ -278,42 +313,27 @@ const publishDiff = computed(() => [
                 <span class="ml-1 font-mono text-xs text-muted-foreground">{{ entry.output_sku }}</span>
               </span>
               <span v-else class="text-warning">Sem SKU</span>
-              <UiButton
+              <NuxtButton
                 v-if="canEdit && !entry.is_archived"
-                type="button"
-                class="ml-1 h-auto p-0 text-xs"
-                variant="link"
-                size="xs"
+                color="primary"
+                variant="ghost"
+                :label="entry.output_sku ? 'Trocar' : 'Associar SKU'"
                 @click="startSku"
-              >
-                {{ entry.output_sku ? "Trocar" : "Associar SKU" }}
-              </UiButton>
+              />
             </template>
             <form v-else class="flex flex-wrap items-center gap-1.5" @submit.prevent="saveSku">
-              <UiInput
+              <NuxtInput
                 v-model="skuInput"
                 type="text"
                 autofocus
                 placeholder="SKU do produto"
-                class="w-40 font-mono uppercase"
+                class="w-40"
+                :ui="{ base: 'font-mono uppercase' }"
                 :aria-invalid="skuError ? 'true' : undefined"
                 aria-label="SKU do produto"
               />
-              <UiButton
-                type="submit"
-                size="sm"
-                :disabled="busy"
-              >
-                Salvar
-              </UiButton>
-              <UiButton
-                type="button"
-                variant="outline"
-                size="sm"
-                @click="skuEditing = false"
-              >
-                Cancelar
-              </UiButton>
+              <NuxtButton type="submit" label="Salvar" :disabled="busy" />
+              <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="skuEditing = false" />
               <span v-if="skuError" class="basis-full text-xs text-destructive">{{ skuError }}</span>
             </form>
           </div>
@@ -323,43 +343,40 @@ const publishDiff = computed(() => [
           </span>
 
           <div class="ml-auto flex flex-wrap items-center gap-1.5">
-            <UiButton
-              type="button"
+            <NuxtButton
+              color="neutral"
               variant="outline"
-              size="sm"
+              :active="entry.is_favorite"
+              active-color="primary"
+              active-variant="outline"
+              label="Favorita"
               :aria-pressed="entry.is_favorite"
               :title="favoriteActionHint(entry.is_favorite)"
               :disabled="favoriteBusy"
               @click="toggleFavorite(!entry.is_favorite)"
             >
-              <Icon
-                name="lucide:star"
-                class="size-4"
-                :class="entry.is_favorite ? 'fill-current text-primary' : ''"
-              />
-              Favorita
-            </UiButton>
-            <UiButton
+              <template #leading>
+                <Icon name="lucide:star" class="size-4" :class="entry.is_favorite ? 'fill-current' : ''" />
+              </template>
+            </NuxtButton>
+            <NuxtButton
               v-if="canEdit"
-              type="button"
+              color="neutral"
               variant="outline"
-              size="sm"
+              icon="i-lucide-pencil"
+              label="Dados"
               @click="openDetails"
-            >
-              <Icon name="lucide:pencil" class="size-4" /> Dados
-            </UiButton>
-            <UiButton
+            />
+            <NuxtButton
               v-if="canEdit"
-              type="button"
+              color="neutral"
               variant="outline"
-              size="sm"
+              :icon="entry.is_archived ? 'i-lucide-archive-restore' : 'i-lucide-archive'"
+              :label="entry.is_archived ? 'Restaurar' : 'Arquivar'"
               @click="archiveOpen = true"
-            >
-              <Icon :name="entry.is_archived ? 'lucide:archive-restore' : 'lucide:archive'" class="size-4" />
-              {{ entry.is_archived ? "Restaurar" : "Arquivar" }}
-            </UiButton>
+            />
           </div>
-        </div>
+        </NuxtCard>
 
         <p v-if="entry.notes" class="mb-4 max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{{ entry.notes }}</p>
 
@@ -376,64 +393,58 @@ const publishDiff = computed(() => [
             <template v-else>
               <div class="mb-3 flex flex-wrap items-center gap-2">
                 <h2 class="text-lg font-semibold">Versão {{ selected.number }}</h2>
-                <UiBadge :variant="statusBadgeVariant(selected.status)" class="px-1.5 py-0 text-xs">{{ selected.status_label }}</UiBadge>
-                <UiBadge v-if="isCurrent" variant="outline" class="px-1.5 py-0 text-xs">Atual</UiBadge>
+                <NuxtBadge :color="statusBadgeColor(selected.status)" :label="selected.status_label" />
+                <NuxtBadge v-if="isCurrent" color="neutral" label="Atual" />
                 <span v-if="selected.label" class="text-sm text-muted-foreground">{{ selected.label }}</span>
                 <span v-if="selected.yield_display" class="text-sm tabular-nums text-muted-foreground">
                   Rende {{ selected.yield_display }}
                 </span>
 
                 <div v-if="canEdit && !entry.is_archived" class="ml-auto flex flex-wrap items-center gap-1.5">
-                  <UiButton
+                  <NuxtButton
                     v-if="selected.status === 'draft'"
-                    type="button"
+                    color="neutral"
                     variant="outline"
-                    size="sm"
+                    icon="i-lucide-pencil-line"
+                    label="Editar rascunho"
                     @click="editDraft"
-                  >
-                    <Icon name="lucide:pencil-line" class="size-4" /> Editar rascunho
-                  </UiButton>
-                  <UiButton
+                  />
+                  <NuxtButton
                     v-if="selected.status === 'draft'"
-                    type="button"
-                    size="sm"
+                    icon="i-lucide-check"
+                    label="Publicar"
                     @click="openPublish"
-                  >
-                    <Icon name="lucide:check" class="size-4" /> Publicar
-                  </UiButton>
-                  <UiButton
-                    type="button"
+                  />
+                  <NuxtButton
+                    color="neutral"
                     variant="outline"
-                    size="sm"
+                    icon="i-lucide-copy-plus"
+                    label="Nova versão"
                     :disabled="busy"
                     @click="newVersion"
-                  >
-                    <Icon name="lucide:copy-plus" class="size-4" /> Nova versão
-                  </UiButton>
-                  <UiButton
-                    type="button"
+                  />
+                  <NuxtButton
+                    color="neutral"
                     variant="outline"
-                    size="sm"
+                    icon="i-lucide-git-compare"
+                    label="Comparar com…"
                     @click="compareWith"
-                  >
-                    <Icon name="lucide:git-compare" class="size-4" /> Comparar com…
-                  </UiButton>
+                  />
                 </div>
-                <UiButton
+                <NuxtButton
                   v-else
-                  type="button"
                   class="ml-auto"
+                  color="neutral"
                   variant="outline"
-                  size="sm"
+                  icon="i-lucide-git-compare"
+                  label="Comparar com…"
                   @click="compareWith"
-                >
-                  <Icon name="lucide:git-compare" class="size-4" /> Comparar com…
-                </UiButton>
+                />
               </div>
 
               <FormulaLens :lens="selected.lens" />
 
-              <div v-if="selected.steps.length" class="mt-4 rounded-md border bg-card p-4">
+              <NuxtCard v-if="selected.steps.length" class="mt-4">
                 <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Etapas</p>
                 <ol class="list-decimal space-y-1 pl-5 text-sm">
                   <li v-for="(step, index) in selected.steps" :key="index">
@@ -444,7 +455,7 @@ const publishDiff = computed(() => [
                     <p v-if="step.note" class="whitespace-pre-line text-xs text-muted-foreground">{{ step.note }}</p>
                   </li>
                 </ol>
-              </div>
+              </NuxtCard>
               <p v-if="selected.notes" class="mt-3 whitespace-pre-line text-sm text-muted-foreground">{{ selected.notes }}</p>
             </template>
           </div>
@@ -454,31 +465,31 @@ const publishDiff = computed(() => [
             <p class="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Versões</p>
             <ol v-if="versions.length" class="grid gap-1.5">
               <li v-for="version in versions" :key="version.id">
-                <!-- Tile selecionável leva metadados em três linhas; não é um UiButton de ação. -->
-                <button
-                  type="button"
-                  class="grid w-full gap-0.5 rounded-md border p-2.5 text-left text-sm transition"
-                  :class="
-                    selected?.number === version.number
-                      ? 'border-primary/50 bg-primary/5'
-                      : 'bg-card hover:bg-accent/40'
-                  "
+                <!-- A versão é uma linha inteira que se escolhe (três linhas de metadados). -->
+                <NuxtButton
+                  color="neutral"
+                  variant="outline"
+                  block
+                  :active="selected?.number === version.number"
+                  active-color="primary"
+                  active-variant="outline"
+                  :ui="{ base: 'grid h-auto justify-start gap-0.5 whitespace-normal p-2.5 text-left' }"
                   :aria-pressed="selected?.number === version.number"
                   @click="selectVersion(version)"
                 >
                   <span class="flex items-center gap-2">
                     <b class="tabular-nums">Versão {{ version.number }}</b>
-                    <UiBadge :variant="statusBadgeVariant(version.status)" class="px-1.5 py-0 text-xs">{{ version.status_label }}</UiBadge>
-                    <UiBadge v-if="version.number === entry.current_version_number" variant="outline" class="px-1.5 py-0 text-xs">Atual</UiBadge>
+                    <NuxtBadge :color="statusBadgeColor(version.status)" :label="version.status_label" />
+                    <NuxtBadge v-if="version.number === entry.current_version_number" color="neutral" label="Atual" />
                   </span>
-                  <span v-if="version.label" class="truncate text-muted-foreground">{{ version.label }}</span>
-                  <span class="text-xs text-muted-foreground">
+                  <span v-if="version.label" class="truncate font-normal text-muted-foreground">{{ version.label }}</span>
+                  <span class="text-xs font-normal text-muted-foreground">
                     {{ version.source_label }}
                     <template v-if="version.published_at_display"> · publicada {{ version.published_at_display }}</template>
                     <template v-else-if="version.created_at_display"> · criada {{ version.created_at_display }}</template>
                     <template v-if="version.created_by"> · {{ version.created_by }}</template>
                   </span>
-                </button>
+                </NuxtButton>
               </li>
             </ol>
             <p v-else class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">Nenhuma versão ainda.</p>
@@ -504,141 +515,115 @@ const publishDiff = computed(() => [
     </section>
 
     <!-- ── Publicar: confirmação com o que muda ──────────────────────────── -->
-    <UiDialog :open="publishOpen" @update:open="(v) => (publishOpen = v)">
-      <UiDialogContent class="sm:max-w-lg">
-        <UiDialogHeader>
-          <UiDialogTitle>Publicar a versão {{ selected?.number }}</UiDialogTitle>
-          <UiDialogDescription>
-            <template v-if="currentVersion && currentVersion.number !== selected?.number">
-              A versão {{ currentVersion.number }} passa a substituída e a ficha de execução
-              <span class="font-mono">{{ entry?.ficha_ref || entryRef }}</span> é reescrita com esta fórmula.
-            </template>
-            <template v-else>
-              Esta é a primeira versão publicada: a ficha de execução
-              <span class="font-mono">{{ entry?.ficha_ref || entryRef }}</span> nasce dela.
-            </template>
-          </UiDialogDescription>
-        </UiDialogHeader>
+    <NuxtModal
+      v-model:open="publishOpen"
+      :title="`Publicar a versão ${selected?.number ?? ''}`"
+      :description="publishDescription"
+      :ui="{ content: 'sm:max-w-lg' }"
+    >
+      <template #body>
+        <div class="grid gap-3">
+          <NuxtAlert
+            v-if="!entry?.output_sku"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-tag"
+            title="Associe um SKU antes de publicar."
+            :actions="[{ label: 'Associar SKU', color: 'warning', variant: 'outline', onClick: skuFromPublish }]"
+          />
+          <NuxtAlert
+            v-if="unmatched.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-unlink"
+            :title="unmatched.length === 1 ? '1 ingrediente ainda sem insumo' : `${unmatched.length} ingredientes ainda sem insumo`"
+            :description="`${unmatched.map((item) => item.name).join(', ')}. Case todos no editor.`"
+            :actions="[{ label: 'Abrir o editor', color: 'warning', variant: 'outline', onClick: editorFromPublish }]"
+          />
 
-        <div v-if="publishBlocked" class="grid gap-1 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-          <p v-if="!entry?.output_sku" class="text-warning">Associe um SKU antes de publicar.</p>
-          <p v-if="unmatched.length" class="text-warning">
-            {{ unmatched.length === 1 ? "1 ingrediente ainda sem insumo" : `${unmatched.length} ingredientes ainda sem insumo` }}:
-            {{ unmatched.map((item) => item.name).join(", ") }}. Case todos no editor.
-          </p>
+          <template v-if="publishCompare.ready.value">
+            <p v-if="publishCompare.pending.value" class="text-sm text-muted-foreground">Comparando…</p>
+            <p v-else-if="publishCompare.error.value" class="text-sm text-muted-foreground">Não foi possível comparar com a versão atual.</p>
+            <p v-else-if="!changedRows.length && !changedMetrics.length" class="text-sm text-muted-foreground">
+              Nenhuma diferença de ingrediente ou métrica contra a versão atual.
+            </p>
+            <!-- O que muda contra a versão atual: ingredientes e, por último, métricas. -->
+            <div v-else class="max-h-64 overflow-auto">
+              <OperatorTable
+                :data="publishDiff"
+                :columns="PUBLISH_DIFF_COLUMNS"
+                :row-key="(row) => row.key"
+                caption="Diferenças contra a versão atual"
+              >
+                <template #name-cell="{ row }">
+                  <span :class="row.original.metric ? 'font-medium' : ''">{{ row.original.name }}</span>
+                </template>
+                <template #a-cell="{ row }">
+                  <span class="text-muted-foreground">{{ row.original.a_display }}</span>
+                </template>
+                <template #delta-cell="{ row }">
+                  <span :class="toneClass(row.original.tone)">{{ row.original.delta_display }}</span>
+                </template>
+              </OperatorTable>
+            </div>
+          </template>
         </div>
-
-        <template v-if="publishCompare.ready.value">
-          <p v-if="publishCompare.pending.value" class="text-sm text-muted-foreground">Comparando…</p>
-          <p v-else-if="publishCompare.error.value" class="text-sm text-muted-foreground">Não foi possível comparar com a versão atual.</p>
-          <p v-else-if="!changedRows.length && !changedMetrics.length" class="text-sm text-muted-foreground">
-            Nenhuma diferença de ingrediente ou métrica contra a versão atual.
-          </p>
-          <!-- O que muda contra a versão atual: ingredientes e, por último, métricas. -->
-          <div v-else class="max-h-64 overflow-auto">
-            <OperatorTable
-              :data="publishDiff"
-              :columns="PUBLISH_DIFF_COLUMNS"
-              :row-key="(row) => row.key"
-              caption="Diferenças contra a versão atual"
-            >
-              <template #name-cell="{ row }">
-                <span :class="row.original.metric ? 'font-medium' : ''">{{ row.original.name }}</span>
-              </template>
-              <template #a-cell="{ row }">
-                <span class="text-muted-foreground">{{ row.original.a_display }}</span>
-              </template>
-              <template #delta-cell="{ row }">
-                <span :class="toneClass(row.original.tone)">{{ row.original.delta_display }}</span>
-              </template>
-            </OperatorTable>
-          </div>
-        </template>
-
-        <UiDialogFooter>
-          <UiButton type="button" variant="outline" @click="publishOpen = false">
-            Cancelar
-          </UiButton>
-          <UiButton
-            type="button"
-            :disabled="publishBlocked || busy"
-            @click="confirmPublish"
-          >
-            Publicar
-          </UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="publishOpen = false" />
+          <NuxtButton label="Publicar" :disabled="publishBlocked || busy" @click="confirmPublish" />
+        </div>
+      </template>
+    </NuxtModal>
 
     <!-- ── Dados da receita ──────────────────────────────────────────────── -->
-    <UiDialog :open="detailsOpen" @update:open="(v) => (detailsOpen = v)">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Dados da receita</UiDialogTitle>
-          <UiDialogDescription>Nome, tipo (define as referências) e notas gerais.</UiDialogDescription>
-        </UiDialogHeader>
+    <NuxtModal
+      v-model:open="detailsOpen"
+      title="Dados da receita"
+      description="Nome, tipo (define as referências) e notas gerais."
+      :ui="{ content: 'sm:max-w-md' }"
+    >
+      <template #body>
         <div class="grid gap-3">
-          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-            Nome
-            <UiInput v-model="detailsName" type="text" />
-          </label>
-          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-            Tipo
+          <NuxtFormField label="Nome">
+            <NuxtInput v-model="detailsName" type="text" class="w-full" />
+          </NuxtFormField>
+          <NuxtFormField label="Tipo">
             <NuxtSelect v-model="detailsKind" :items="kinds" value-key="value" class="w-full" aria-label="Tipo" />
-          </label>
-          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-            Notas
-            <UiTextarea v-model="detailsNotes" :rows="3" />
-          </label>
+          </NuxtFormField>
+          <NuxtFormField label="Notas">
+            <NuxtTextarea v-model="detailsNotes" :rows="3" class="w-full" />
+          </NuxtFormField>
           <p v-if="detailsError" class="text-sm text-destructive">{{ detailsError }}</p>
         </div>
-        <UiDialogFooter>
-          <UiButton type="button" variant="outline" @click="detailsOpen = false">
-            Cancelar
-          </UiButton>
-          <UiButton
-            type="button"
-            :disabled="busy"
-            @click="saveDetails"
-          >
-            Salvar
-          </UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="detailsOpen = false" />
+          <NuxtButton label="Salvar" :disabled="busy" @click="saveDetails" />
+        </div>
+      </template>
+    </NuxtModal>
 
     <!-- ── Arquivar / restaurar ──────────────────────────────────────────── -->
-    <UiDialog :open="archiveOpen" @update:open="(v) => (archiveOpen = v)">
-      <UiDialogContent class="sm:max-w-sm">
-        <UiDialogHeader>
-          <UiDialogTitle>{{ entry?.is_archived ? "Restaurar a receita" : "Arquivar a receita" }}</UiDialogTitle>
-          <UiDialogDescription>
-            <template v-if="entry?.is_archived">Ela volta ao inventário e pode receber versões de novo.</template>
-            <template v-else>
-              Ela sai do inventário (fica em "Arquivadas") e não recebe novas versões. A ficha de execução publicada
-              não muda.
-            </template>
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <UiDialogFooter>
-          <UiButton type="button" variant="outline" @click="archiveOpen = false">
-            Cancelar
-          </UiButton>
-          <UiButton
-            type="button"
-            class="border-transparent"
-            :class="
-              entry?.is_archived
-                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                : 'bg-warning text-warning-foreground hover:bg-warning/90'
-            "
+    <NuxtModal
+      v-model:open="archiveOpen"
+      :title="entry?.is_archived ? 'Restaurar a receita' : 'Arquivar a receita'"
+      :description="archiveDescription"
+      :ui="{ content: 'sm:max-w-sm' }"
+    >
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="archiveOpen = false" />
+          <NuxtButton
+            :color="entry?.is_archived ? 'primary' : 'error'"
+            :label="entry?.is_archived ? 'Restaurar' : 'Arquivar'"
             :disabled="busy"
             @click="confirmArchive"
-          >
-            {{ entry?.is_archived ? "Restaurar" : "Arquivar" }}
-          </UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+          />
+        </div>
+      </template>
+    </NuxtModal>
   </main>
 </template>

@@ -17,6 +17,7 @@ import {
   periodOfDay,
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import {
   hasOpenDialogOutside,
   isEditableKeyboardTarget,
@@ -24,6 +25,9 @@ import {
   productionContextKeysBlocked,
   resolveQuantityKeyboardShortcut,
 } from "~/presentation/keyboard";
+
+// A trilha da lista de lotes abertos (`OperatorRecordNav` no lote).
+const CLOSE_LOTS_TRAIL = "production-close-lots";
 
 const route = useRoute();
 const routeDate = typeof route.query.date === "string" ? route.query.date : "";
@@ -75,9 +79,28 @@ const period = computed<PeriodSelection>({
 // O lote avulso (a exceção) mora no ⋯ do cabeçalho, fora de evidência.
 
 // ── Navegação interna (painel ⇄ fechamento) ─────────────────────────────────
+// O lote aberto mora na URL (`?lot=<pk>`, com o dia e a busca): o voltar do
+// navegador volta ao painel, e o anterior e o próximo do lote são links de
+// verdade. O lote avulso (receita sem previsto) não é registro: fica na tela.
 const selectedOrder = ref<QCOrderCardProjection | null>(null);
 const selectedRecipe = ref<RecipeOptionProjection | null>(null);
 const recipePickerOpen = ref(false);
+
+const routeLot = computed(() =>
+  typeof route.query.lot === "string" ? route.query.lot : "",
+);
+
+function closeQuery(lot = ""): Record<string, string> {
+  const next: Record<string, string> = {};
+  if (selectedDate.value) next.date = selectedDate.value;
+  const search = query.value.trim();
+  if (search) next.q = search;
+  if (lot) next.lot = lot;
+  return next;
+}
+function lotLocation(lot: string) {
+  return { path: "/close", query: closeQuery(lot) };
+}
 
 const matches = (order: QCOrderCardProjection) => {
   const q = query.value.trim().toLowerCase();
@@ -113,24 +136,37 @@ function ovenFactAvailable(order: QCOrderCardProjection): boolean {
   );
 }
 
+// A trilha: os lotes que o painel mostra e que se fecham daqui, na ordem dele e
+// com a busca da pessoa. Gravada só com o painel na tela (no lote, ela é a lista
+// de onde a pessoa veio).
+const { remember: rememberLots } = useRecordTrail(CLOSE_LOTS_TRAIL);
+const trailFrom = computed(() => {
+  const search = new URLSearchParams(closeQuery()).toString();
+  return search ? `/close?${search}` : "/close";
+});
+watch(
+  () =>
+    [
+      openOrders.value
+        .filter(finishAvailable)
+        .map((order) => String(order.pk))
+        .join("\n"),
+      trailFrom.value,
+      routeLot.value,
+    ] as const,
+  ([ids, from, lot]) => {
+    if (lot) return;
+    rememberLots(ids ? ids.split("\n") : [], { from, label: "Lotes para finalizar" });
+  },
+  { immediate: true },
+);
+
 // O forno do lote aparece sempre, pelo nome (v3 celular a: "Forno 2 · …"): é
 // por ele que o forneiro acha a assadeira.
 
-async function openOrder(order: QCOrderCardProjection) {
+function openOrder(order: QCOrderCardProjection) {
   if (!finishAvailable(order) || ovenFacts.isPending(order.pk)) return;
-  // O timer apenas lembra. O fato físico "retirou do forno" pertence à ação
-  // produtiva de finalizar a fornada, nunca ao Visto do alarme.
-  if (projectedAction(`oven_conclude:${order.pk}`)?.enabled === true) {
-    const recorded = await ovenFacts.concluded(
-      order.pk,
-      ovenFacts.currentRev(order.pk, order.rev),
-    );
-    if (!recorded) return;
-  }
-  oven.clear(ovenKey(order));
-  ovenOrder.value = null;
-  selectedOrder.value = order;
-  selectedRecipe.value = null;
+  void navigateTo(lotLocation(String(order.pk)));
 }
 
 function openOffPlan(recipe: RecipeOptionProjection) {
@@ -149,7 +185,7 @@ function onLotCode(code: string) {
     return;
   }
   scannerOpen.value = false;
-  void openOrder(order);
+  openOrder(order);
 }
 function seenAtLabel(order: QCOrderCardProjection): string {
   const seenAt = oven.get(ovenKey(order))?.seenAt;
@@ -157,11 +193,18 @@ function seenAtLabel(order: QCOrderCardProjection): string {
   return new Date(seenAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+// Sair do lote substitui a entrada dele no histórico: o voltar do navegador não
+// reabre um lote que a pessoa já deixou (ou fechou).
+function leaveLot() {
+  void navigateTo(lotLocation(""), { replace: true });
+}
+
 function backToBoard() {
   selectedOrder.value = null;
   selectedRecipe.value = null;
   shortage.value = null;
   lastPayload.value = null;
+  if (routeLot.value) leaveLot();
 }
 
 // ── Fechamento (com retry de force no shortage, como no restante do app) ────
@@ -257,6 +300,34 @@ function cardAnchor(order: QCOrderCardProjection): string {
   return order.started_qty || order.planned_qty;
 }
 
+// Fornada esquecida não depende de memória: o aviso da tela leva ao dia
+// pendente mais recente.
+function shortDate(iso: string): string {
+  const match = /^\d{4}-(\d{2})-(\d{2})$/.exec(iso);
+  return match ? `${match[2]}/${match[1]}` : "";
+}
+const closeAlerts = computed<OperatorScreenAlert[]>(() => {
+  const current = kiosk.value;
+  if (!current || current.previous_open_count <= 0) return [];
+  if (selectedOrder.value || selectedRecipe.value) return [];
+  const count = current.previous_open_count;
+  const day = shortDate(current.previous_open_date);
+  return [
+    {
+      id: "previous-open",
+      color: "warning",
+      icon: "i-lucide-history",
+      title: `${count} ${count === 1 ? "lote aberto" : "lotes abertos"} de dias anteriores`,
+      action: {
+        label: day ? `Ver os lotes de ${day}` : "Ver os lotes",
+        onSelect: () => {
+          selectedDate.value = current.previous_open_date;
+        },
+      },
+    },
+  ];
+});
+
 // ── Timer do forno: lembrete armado por fornada, com som ────────────────────
 // A ferramenta ATIVA do forneiro para conferir/retirar — a ação de toda hora
 // no rush: arma na enfornada, estende e marca Visto quando toca. Não confundir
@@ -301,6 +372,64 @@ onMounted(() => {
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onTimerKeydown));
 
+// ── O lote da URL vira a tela de fechamento ─────────────────────────────────
+// Entrar no lote é o gesto produtivo: se o forno ainda está declarado, abrir o
+// fechamento declara "retirou" (o timer apenas lembra; o fato físico pertence à
+// ação de finalizar a fornada, nunca ao Visto do alarme). Vale para o toque no
+// painel, para o leitor de etiqueta, para o link e para o anterior/próximo. Só
+// depois de montar: o SSR desenha o painel, e o cliente abre o lote.
+let enteringLot = "";
+async function syncLotFromRoute() {
+  const lot = routeLot.value;
+  if (!lot) {
+    if (selectedOrder.value) {
+      selectedOrder.value = null;
+      shortage.value = null;
+      lastPayload.value = null;
+    }
+    return;
+  }
+  if (!hydrated.value || !kiosk.value) return;
+  if (selectedOrder.value && String(selectedOrder.value.pk) === lot) return;
+  if (enteringLot === lot) return;
+  const order = kiosk.value.orders.find(
+    (item) => String(item.pk) === lot && !item.closed,
+  );
+  if (!order && pending.value) return;
+  if (!order || !finishAvailable(order)) {
+    // Lote fechado, de outro dia ou sem permissão: volta ao painel.
+    selectedOrder.value = null;
+    leaveLot();
+    return;
+  }
+  enteringLot = lot;
+  try {
+    if (projectedAction(`oven_conclude:${order.pk}`)?.enabled === true) {
+      const recorded = await ovenFacts.concluded(
+        order.pk,
+        ovenFacts.currentRev(order.pk, order.rev),
+      );
+      if (!recorded) {
+        if (routeLot.value === lot) leaveLot();
+        return;
+      }
+    }
+    if (routeLot.value !== lot) return;
+    oven.clear(ovenKey(order));
+    ovenOrder.value = null;
+    selectedRecipe.value = null;
+    shortage.value = null;
+    lastPayload.value = null;
+    selectedOrder.value = order;
+  } finally {
+    if (enteringLot === lot) enteringLot = "";
+  }
+}
+watch(
+  [routeLot, () => kiosk.value, pending, hydrated],
+  () => void syncLotFromRoute(),
+);
+
 type OvenMode = "idle" | "running" | "ringing" | "seen";
 function ovenMode(order: QCOrderCardProjection): OvenMode {
   if (!hydrated.value) return "idle";
@@ -318,6 +447,17 @@ const ovenFactPending = computed(() =>
 const ovenFactError = computed(() =>
   ovenOrder.value ? ovenFacts.errorFor(ovenOrder.value.pk) : "",
 );
+// O diálogo (o elemento `role="dialog"`) carrega a marca da exclusão mútua com o
+// timer avulso (`FloorTimerCreateDialog`); o `content` do NuxtModal é o que chega nele.
+const TIMER_DIALOG_CONTENT: Record<string, unknown> = {
+  "data-production-timer-dialog": "",
+};
+// As três linhas do teclado do timer: os dígitos e o +N ao lado de 3, 6 e 9.
+const OVEN_PAD_ROWS = [
+  { digits: [1, 2, 3], add: 1 },
+  { digits: [4, 5, 6], add: 5 },
+  { digits: [7, 8, 9], add: 10 },
+] as const;
 
 function openOven(order: QCOrderCardProjection) {
   if (!ovenFactAvailable(order)) return;
@@ -433,8 +573,21 @@ function onTimerKeydown(event: KeyboardEvent) {
       :stale="stale"
       search-label="filtrando os lotes"
       :actions="closeActions"
+      :alerts="closeAlerts"
       @refresh="refresh"
     >
+      <!-- Anterior e próximo DENTRO do painel de onde a pessoa veio. Aberto por
+           link, sem trilha: o par não aparece. -->
+      <template v-if="selectedOrder" #status>
+        <OperatorRecordNav
+          class="ms-auto"
+          :trail="CLOSE_LOTS_TRAIL"
+          :current="String(selectedOrder.pk)"
+          :to="lotLocation"
+          previous-label="Lote anterior"
+          next-label="Próximo lote"
+        />
+      </template>
       <template v-if="!(selectedOrder || selectedRecipe)" #primary>
         <OperatorPeriodPicker
           v-model="period"
@@ -479,26 +632,6 @@ function onTimerKeydown(event: KeyboardEvent) {
         <span>Sem atualizar. Mostrando o último painel carregado.</span>
       </div>
 
-      <!-- Fornada esquecida não depende de memória: o painel avisa e o toque
-           vai direto ao dia pendente mais recente. -->
-      <!-- Aviso inteiro é acionável para levar ao dia pendente; não é um CTA isolado. -->
-      <button
-        v-if="kiosk && kiosk.previous_open_count > 0"
-        type="button"
-        class="flex min-h-12 items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-4 py-3 text-left op-label font-semibold text-warning transition hover:bg-warning/20"
-        @click="selectedDate = kiosk.previous_open_date"
-      >
-        <Icon name="lucide:history" class="size-4 shrink-0" />
-        <span class="flex-1">
-          <b class="tabular-nums">{{ kiosk.previous_open_count }}</b>
-          {{
-            kiosk.previous_open_count === 1 ? "lote aberto" : "lotes abertos"
-          }}
-          de dias anteriores. Toque para ver.
-        </span>
-        <Icon name="lucide:chevron-right" class="size-4 shrink-0" />
-      </button>
-
       <p
         v-if="pending && !kiosk"
         class="py-10 text-center text-muted-foreground"
@@ -530,122 +663,114 @@ function onTimerKeydown(event: KeyboardEvent) {
           :key="order.pk"
           class="flex items-stretch justify-between gap-3 rounded-xl border border-border bg-card p-4 text-left transition"
           :class="[
-            ovenFactAvailable(order) ? 'cursor-pointer hover:bg-accent' : '',
+            ovenFactAvailable(order) ? 'hover:bg-accent' : '',
             ovenMode(order) === 'ringing'
               ? 'qc-ringing border-destructive/60'
               : {
                   'border-2 border-primary': order.pk === nextPk,
                 },
           ]"
+          data-close-card
         >
-          <component
-            :is="ovenFactAvailable(order) ? 'button' : 'div'"
-            class="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            v-bind="
-              ovenFactAvailable(order)
-                ? {
-                    type: 'button',
-                    'aria-label': `Timer do forno de ${order.recipe_name}`,
-                  }
-                : {}
-            "
-            @click="ovenFactAvailable(order) && openOven(order)"
-          >
-            <p class="truncate op-title">
-              {{ order.recipe_name }}
-              <span class="font-mono op-micro font-normal text-muted-foreground">{{
-                order.output_sku
-              }}</span>
-            </p>
-            <!-- "Forno 2 · aberto às 05:10 · 6 comprometidas" (R17/R18): o forno pelo
-                 nome, sem o código do lote quebrando a linha (ele fica no ⋯ do
-                 Finalizar e no leitor). -->
-            <p class="op-label text-muted-foreground" data-close-card-line>
-              <template v-if="order.position_name || order.position_ref"
-                >{{ order.position_name || order.position_ref }} ·
-              </template>
-              <template v-if="order.started_at_display"
-                >aberto às {{ order.started_at_display }}</template
-              >
-              <template v-else>ainda não aberto</template>
-              <template
-                v-if="order.committed_qty && order.committed_qty !== '0'"
-              >
-                ·
-                <span class="text-primary"
-                  >{{ order.committed_qty }} comprometidas</span
-                >
-              </template>
-            </p>
-            <p
+          <div class="relative min-w-0 flex-1">
+            <!-- O botão do timer cobre o lado do texto; o texto fica por cima,
+                 sem capturar o toque. -->
+            <NuxtButton
               v-if="ovenFactAvailable(order)"
-              class="mt-2 inline-flex min-h-12 items-center gap-2 rounded-lg border border-dashed border-border px-3"
-              :class="
-                ovenMode(order) === 'ringing'
-                  ? 'op-figure text-destructive'
-                  : ovenMode(order) === 'idle'
-                    ? 'op-title text-muted-foreground'
-                    : ovenMode(order) === 'seen'
-                      ? 'op-title border-solid border-success/40 bg-success/10 text-success'
-                      : 'op-figure text-foreground'
-              "
-            >
-              <Icon
-                :name="ovenMode(order) === 'seen' ? 'lucide:alarm-clock-check' : 'lucide:alarm-clock'"
-                class="size-5"
-              />
-              <template v-if="ovenMode(order) === 'ringing'"
-                >Tempo esgotado</template
+              color="neutral"
+              variant="ghost"
+              class="absolute inset-0 z-0 h-auto w-full p-0 hover:bg-transparent"
+              :aria-label="`Timer do forno de ${order.recipe_name}`"
+              data-close-oven
+              @click="openOven(order)"
+            />
+            <div class="pointer-events-none relative z-10">
+              <p class="truncate op-title">
+                {{ order.recipe_name }}
+                <span class="font-mono op-micro font-normal text-muted-foreground">{{
+                  order.output_sku
+                }}</span>
+              </p>
+              <!-- "Forno 2 · aberto às 05:10 · 6 comprometidas" (R17/R18): o forno pelo
+                   nome, sem o código do lote quebrando a linha (ele fica no ⋯ do
+                   Finalizar e no leitor). -->
+              <p class="op-label text-muted-foreground" data-close-card-line>
+                <template v-if="order.position_name || order.position_ref"
+                  >{{ order.position_name || order.position_ref }} ·
+                </template>
+                <template v-if="order.started_at_display"
+                  >aberto às {{ order.started_at_display }}</template
+                >
+                <template v-else>ainda não aberto</template>
+                <template
+                  v-if="order.committed_qty && order.committed_qty !== '0'"
+                >
+                  ·
+                  <span class="text-primary"
+                    >{{ order.committed_qty }} comprometidas</span
+                  >
+                </template>
+              </p>
+              <p
+                v-if="ovenFactAvailable(order)"
+                class="mt-2 inline-flex min-h-12 items-center gap-2 rounded-lg border border-dashed border-border px-3"
+                :class="
+                  ovenMode(order) === 'ringing'
+                    ? 'op-figure text-destructive'
+                    : ovenMode(order) === 'idle'
+                      ? 'op-title text-muted-foreground'
+                      : ovenMode(order) === 'seen'
+                        ? 'op-title border-solid border-success/40 bg-success/10 text-success'
+                        : 'op-figure text-foreground'
+                "
               >
-              <template v-else-if="ovenMode(order) === 'seen'"
-                >Visto<span
-                  v-if="seenAtLabel(order)"
-                  class="ml-2 op-micro font-normal text-muted-foreground"
-                  >às {{ seenAtLabel(order) }}</span
-                ></template
-              >
-              <template v-else-if="ovenMode(order) === 'running'"
-                ><span class="tnum">{{ oven.remainingLabel(ovenKey(order)) }}</span
-                ><span class="ml-1 op-micro font-normal text-muted-foreground"
-                  >restante</span
-                ></template
-              >
-              <template v-else>Iniciar timer</template>
-            </p>
-          </component>
-          <!-- Hover invertido: contraste garantido mesmo com o card em accent. -->
-          <!-- Tile de 80px mostra quantidade e encerra a fornada com mão ocupada. -->
-          <!-- O próximo lote tem o Finalizar cheio (a primária da tela); os outros,
+                <Icon
+                  :name="ovenMode(order) === 'seen' ? 'lucide:alarm-clock-check' : 'lucide:alarm-clock'"
+                  class="size-5"
+                />
+                <template v-if="ovenMode(order) === 'ringing'"
+                  >Tempo esgotado</template
+                >
+                <template v-else-if="ovenMode(order) === 'seen'"
+                  >Visto<span
+                    v-if="seenAtLabel(order)"
+                    class="ml-2 op-micro font-normal text-muted-foreground"
+                    >às {{ seenAtLabel(order) }}</span
+                  ></template
+                >
+                <template v-else-if="ovenMode(order) === 'running'"
+                  ><span class="tnum">{{ oven.remainingLabel(ovenKey(order)) }}</span
+                  ><span class="ml-1 op-micro font-normal text-muted-foreground"
+                    >restante</span
+                  ></template
+                >
+                <template v-else>Iniciar timer</template>
+              </p>
+            </div>
+          </div>
+          <!-- Tile de 80px mostra quantidade e encerra a fornada com mão ocupada.
+               O próximo lote tem o Finalizar cheio (a primária da tela); os outros,
                contornado (v3 celular a). -->
-          <button
-            type="button"
-            class="group flex h-20 w-28 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-lg border transition active:translate-y-px"
-            :class="[
-              order.pk === nextPk
-                ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
-                : 'border-primary/40 bg-primary/10 hover:border-primary hover:bg-primary hover:text-primary-foreground',
-              {
-                'cursor-not-allowed opacity-50 hover:border-border hover:bg-background hover:text-foreground':
-                  !finishAvailable(order) || ovenFacts.isPending(order.pk),
-              },
-            ]"
+          <NuxtButton
+            size="xl"
+            variant="outline"
+            :active="order.pk === nextPk"
+            active-variant="solid"
+            class="h-20 w-28 shrink-0 flex-col justify-center gap-1 self-center"
             :data-close-finish-next="order.pk === nextPk ? '' : undefined"
             :disabled="!finishAvailable(order) || ovenFacts.isPending(order.pk)"
             :aria-busy="ovenFacts.isPending(order.pk)"
             :aria-label="`Finalizar o lote de ${order.recipe_name}`"
-            @click.stop="openOrder(order)"
+            data-close-finish
+            @click="openOrder(order)"
           >
             <span class="op-figure leading-none"
               >{{ cardAnchor(order) }} un.</span
             >
-            <span
-              class="op-eyebrow group-hover:text-primary-foreground"
-              :class="order.pk === nextPk ? 'text-primary-foreground' : 'text-foreground'"
-              >{{
-                ovenFacts.isPending(order.pk) ? "Abrindo…" : "Finalizar"
-              }}</span
-            >
-          </button>
+            <span class="op-eyebrow">{{
+              ovenFacts.isPending(order.pk) ? "Abrindo…" : "Finalizar"
+            }}</span>
+          </NuxtButton>
         </div>
       </div>
     </div>
@@ -656,41 +781,38 @@ function onTimerKeydown(event: KeyboardEvent) {
       v-if="!(selectedOrder || selectedRecipe) && openOrders.length"
       class="mx-auto w-full max-w-4xl px-3 pb-4 md:px-4"
     >
-      <button
-        type="button"
-        class="flex min-h-14 w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-card op-title transition hover:bg-accent"
+      <NuxtButton
+        color="neutral"
+        variant="outline"
+        size="xl"
+        block
+        icon="i-lucide-scan-qr-code"
+        label="Ler etiqueta do lote"
         data-close-scan-label
         @click="scannerOpen = true"
-      >
-        <Icon name="lucide:scan-qr-code" class="size-5" />
-        Ler etiqueta do lote
-      </button>
+      />
     </div>
     <LotLabelScanner v-model:open="scannerOpen" @code="onLotCode" />
 
     <!-- Lote avulso: lista de receitas, nasce sem previsto. -->
-    <UiSheet
-      :open="recipePickerOpen"
-      @update:open="(v: boolean) => (recipePickerOpen = v)"
-    >
-      <UiSheetContent side="bottom" title="Lote avulso">
-        <template #content>
-          <div class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
-            <!-- Receitas são tiles de escolha para criar o lote avulso, não CTAs repetidos. -->
-            <button
-              v-for="recipe in kiosk?.recipes ?? []"
-              :key="recipe.pk"
-              type="button"
-              class="rounded-md border bg-card px-3 py-2.5 text-left font-medium transition hover:bg-accent"
-              :disabled="!quickRecipeAvailable(recipe)"
-              @click="openOffPlan(recipe)"
-            >
-              {{ recipe.name }}
-            </button>
-          </div>
-        </template>
-      </UiSheetContent>
-    </UiSheet>
+    <NuxtDrawer v-model:open="recipePickerOpen" title="Lote avulso">
+      <template #body>
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3" data-close-recipes>
+          <NuxtButton
+            v-for="recipe in kiosk?.recipes ?? []"
+            :key="recipe.pk"
+            color="neutral"
+            variant="outline"
+            size="xl"
+            block
+            class="h-auto justify-start whitespace-normal text-left"
+            :label="recipe.name"
+            :disabled="!quickRecipeAvailable(recipe)"
+            @click="openOffPlan(recipe)"
+          />
+        </div>
+      </template>
+    </NuxtDrawer>
 
     <ShortageDialog
       :shortage="shortage"
@@ -702,183 +824,173 @@ function onTimerKeydown(event: KeyboardEvent) {
       @confirm="retryWithForce"
     />
 
-    <!-- timer do forno (lembrete por fornada, com som) -->
-    <UiDialog
+    <!-- timer do forno (lembrete por fornada, com som); o X maior, pensando em
+         touch: é a única saída sem ação. -->
+    <NuxtModal
       :open="ovenOrder != null"
+      :title="`Timer do forno · ${ovenOrder?.recipe_name ?? ''}`"
+      description="Toca neste dispositivo."
+      :close="{ size: 'xl' }"
+      :content="TIMER_DIALOG_CONTENT"
+      :ui="{ content: 'sm:max-w-sm' }"
       @update:open="
         (v: boolean) => {
           if (!v) ovenOrder = null;
         }
       "
     >
-      <UiDialogContent
-        class="sm:max-w-sm"
-        data-production-timer-dialog
-        hide-close
-      >
-        <!-- X maior, pensando em touch: é a única saída sem ação. -->
-        <template #close>
-          <UiDialogClose
-            class="absolute right-2 top-2 grid size-11 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
-            aria-label="Fechar"
-          >
-            <Icon name="lucide:x" class="size-6" />
-          </UiDialogClose>
-        </template>
-        <UiDialogHeader>
-          <UiDialogTitle
-            >Timer do forno · {{ ovenOrder?.recipe_name }}</UiDialogTitle
-          >
-          <UiDialogDescription>Toca neste dispositivo.</UiDialogDescription>
-        </UiDialogHeader>
-
-        <p
-          v-if="ovenFactError"
-          role="alert"
-          class="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm text-destructive"
-        >
-          {{ ovenFactError }} O timer local não foi alterado.
-        </p>
-
-        <!-- O processo físico não pausa. O mostrador informa; as únicas
-             intervenções do timer são estender e marcar Visto. -->
-        <div
-          v-if="dialogMode === 'running'"
-          class="flex h-20 w-full items-center justify-center gap-3 rounded-md border bg-background transition hover:bg-accent active:translate-y-px"
-          role="timer"
-          aria-label="Tempo restante"
-        >
-          <Icon name="lucide:alarm-clock" class="size-8 shrink-0" />
-          <span class="text-4xl font-bold tabular-nums">
-            {{ ovenOrder ? oven.remainingLabel(ovenKey(ovenOrder)) : "" }}
-          </span>
-        </div>
-        <div
-          v-else
-          class="grid h-20 place-items-center rounded-md border text-center"
-          :class="
-            dialogMode === 'ringing'
-              ? 'border-destructive/50 bg-destructive/10'
-              : 'bg-background'
-          "
-        >
+      <template #body>
+        <div class="grid gap-3">
           <p
-            v-if="dialogMode === 'ringing'"
-            class="animate-pulse text-3xl font-bold text-destructive motion-reduce:animate-none"
+            v-if="ovenFactError"
+            role="alert"
+            class="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm text-destructive"
           >
-            Tempo esgotado
+            {{ ovenFactError }} O timer local não foi alterado.
           </p>
-          <p v-else-if="dialogMode === 'seen'" class="text-3xl font-bold">
-            Visto
-          </p>
-          <p v-else class="text-4xl font-bold tabular-nums">
-            {{ ovenMinutes
-            }}<span class="ml-1 text-base font-medium text-muted-foreground"
-              >min</span
-            >
-          </p>
-        </div>
 
-        <!-- Armando: numpad de 4 colunas — os +N moram ao lado de 3/6/9 (eles
-             já substituem presets: 10 = C, +10) e o Iniciar fecha a grade. -->
-        <div
-          v-if="dialogMode === 'idle'"
-          class="grid grid-cols-4 gap-1.5"
-          role="group"
-          aria-label="Minutos do timer"
-        >
-          <!-- Teclado de forno mantém a matriz e o feedback tátil; é intencionalmente customizado. -->
-          <template
-            v-for="row in [
-              [1, 2, 3],
-              [4, 5, 6],
-              [7, 8, 9],
-            ]"
-            :key="row[0]"
+          <!-- O processo físico não pausa. O mostrador informa; as únicas
+               intervenções do timer são estender e marcar Visto. -->
+          <div
+            v-if="dialogMode === 'running'"
+            class="flex h-20 w-full items-center justify-center gap-3 rounded-md border bg-background"
+            role="timer"
+            aria-label="Tempo restante"
           >
-            <button
-              v-for="digit in row"
-              :key="digit"
-              type="button"
-              class="rounded-md border bg-card py-2.5 text-lg font-semibold tabular-nums transition hover:bg-accent active:translate-y-px"
-              :aria-label="`Dígito ${digit}`"
-              @click="ovenDigit(String(digit))"
+            <Icon name="lucide:alarm-clock" class="size-8 shrink-0" />
+            <span class="text-4xl font-bold tabular-nums">
+              {{ ovenOrder ? oven.remainingLabel(ovenKey(ovenOrder)) : "" }}
+            </span>
+          </div>
+          <div
+            v-else
+            class="grid h-20 place-items-center rounded-md border text-center"
+            :class="
+              dialogMode === 'ringing'
+                ? 'border-destructive/50 bg-destructive/10'
+                : 'bg-background'
+            "
+          >
+            <p
+              v-if="dialogMode === 'ringing'"
+              class="animate-pulse text-3xl font-bold text-destructive motion-reduce:animate-none"
             >
-              {{ digit }}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border border-dashed bg-card py-2.5 text-base font-semibold tabular-nums text-muted-foreground transition hover:bg-accent hover:text-foreground active:translate-y-px"
-              :aria-label="`Somar ${row[2] === 3 ? 1 : row[2] === 6 ? 5 : 10} minutos`"
-              @click="ovenAdd(row[2] === 3 ? 1 : row[2] === 6 ? 5 : 10)"
-            >
-              +{{ row[2] === 3 ? 1 : row[2] === 6 ? 5 : 10 }}
-            </button>
-          </template>
-          <button
-            type="button"
-            class="rounded-md border bg-card py-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            aria-label="Limpar minutos"
-            aria-keyshortcuts="C Delete"
-            @click="clearOvenMinutes()"
-          >
-            C
-          </button>
-          <button
-            type="button"
-            class="rounded-md border bg-card py-2.5 text-lg font-semibold tabular-nums transition hover:bg-accent active:translate-y-px"
-            aria-label="Dígito 0"
-            @click="ovenDigit('0')"
-          >
-            0
-          </button>
-          <button
-            type="button"
-            class="grid place-items-center rounded-md border bg-card py-2.5 transition hover:bg-accent active:translate-y-px"
-            aria-label="Apagar último dígito"
-            @click="ovenBackspace()"
-          >
-            <Icon name="lucide:delete" class="size-5" />
-          </button>
-          <button
-            type="button"
-            :disabled="ovenFactPending || !(parseInt(ovenMinutes, 10) >= 1)"
-            aria-keyshortcuts="Enter"
-            class="rounded-md border border-transparent bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px disabled:opacity-50"
-            @click="startOven()"
-          >
-            {{ ovenFactPending ? "Confirmando…" : "Iniciar" }}
-          </button>
-        </div>
+              Tempo esgotado
+            </p>
+            <p v-else-if="dialogMode === 'seen'" class="text-3xl font-bold">
+              Visto
+            </p>
+            <p v-else class="text-4xl font-bold tabular-nums">
+              {{ ovenMinutes
+              }}<span class="ml-1 text-base font-medium text-muted-foreground"
+                >min</span
+              >
+            </p>
+          </div>
 
-        <!-- Correndo/alarmando/visto: +N ao vivo; Visto só silencia. -->
-        <div
-          v-else
-          class="grid gap-1.5"
-          :class="dialogMode === 'ringing' ? 'grid-cols-4' : 'grid-cols-3'"
-        >
-          <!-- Extensões do timer repetem a geometria do teclado acima. -->
-          <button
-            v-for="extra in [1, 5, 10]"
-            :key="`add-${extra}`"
-            type="button"
-            class="rounded-md border bg-card py-2.5 text-base font-semibold tabular-nums transition hover:bg-accent active:translate-y-px"
-            @click="ovenAdd(extra)"
+          <!-- Armando: teclado de 4 colunas, os +N ao lado de 3/6/9 (eles já
+               substituem presets: 10 = C, +10) e o Iniciar fecha a grade. -->
+          <div
+            v-if="dialogMode === 'idle'"
+            class="grid grid-cols-4 gap-1.5"
+            role="group"
+            aria-label="Minutos do timer"
+            data-oven-pad
           >
-            +{{ extra }}
-          </button>
-          <button
-            v-if="dialogMode === 'ringing'"
-            type="button"
-            class="rounded-md border border-transparent bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px"
-            aria-keyshortcuts="Enter"
-            @click="markOvenSeen()"
+            <template v-for="row in OVEN_PAD_ROWS" :key="row.add">
+              <NuxtButton
+                v-for="digit in row.digits"
+                :key="digit"
+                color="neutral"
+                variant="outline"
+                size="xl"
+                block
+                class="tabular-nums"
+                :label="String(digit)"
+                :aria-label="`Dígito ${digit}`"
+                @click="ovenDigit(String(digit))"
+              />
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                size="xl"
+                block
+                class="tabular-nums"
+                :label="`+${row.add}`"
+                :aria-label="`Somar ${row.add} minutos`"
+                @click="ovenAdd(row.add)"
+              />
+            </template>
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              size="xl"
+              block
+              label="C"
+              aria-label="Limpar minutos"
+              aria-keyshortcuts="C Delete"
+              @click="clearOvenMinutes()"
+            />
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              size="xl"
+              block
+              class="tabular-nums"
+              label="0"
+              aria-label="Dígito 0"
+              @click="ovenDigit('0')"
+            />
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              size="xl"
+              block
+              square
+              icon="i-lucide-delete"
+              aria-label="Apagar último dígito"
+              @click="ovenBackspace()"
+            />
+            <NuxtButton
+              size="xl"
+              block
+              :label="ovenFactPending ? 'Confirmando…' : 'Iniciar'"
+              :disabled="ovenFactPending || !(parseInt(ovenMinutes, 10) >= 1)"
+              aria-keyshortcuts="Enter"
+              @click="startOven()"
+            />
+          </div>
+
+          <!-- Correndo/alarmando/visto: +N ao vivo; Visto só silencia. -->
+          <div
+            v-else
+            class="grid gap-1.5"
+            :class="dialogMode === 'ringing' ? 'grid-cols-4' : 'grid-cols-3'"
           >
-            Visto
-          </button>
+            <NuxtButton
+              v-for="extra in [1, 5, 10]"
+              :key="`add-${extra}`"
+              color="neutral"
+              variant="outline"
+              size="xl"
+              block
+              class="tabular-nums"
+              :label="`+${extra}`"
+              :aria-label="`Somar ${extra} minutos`"
+              @click="ovenAdd(extra)"
+            />
+            <NuxtButton
+              v-if="dialogMode === 'ringing'"
+              size="xl"
+              block
+              label="Visto"
+              aria-keyshortcuts="Enter"
+              @click="markOvenSeen()"
+            />
+          </div>
         </div>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+    </NuxtModal>
   </main>
 </template>
 

@@ -1,13 +1,54 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, ref } from "vue";
+import { computed, defineComponent, h, ref } from "vue";
 import { mount } from "@vue/test-utils";
-import { OperatorTableStub } from "../support/nativeUiStubs";
+import { nuxtUiStubs } from "../support/nuxtUiStubs";
 
 import FormulaLens from "../../app/components/FormulaLens.vue";
 import type { FormulaItemProjection, FormulaLensProjection } from "../../app/types/recipeBook";
 
 // FormulaLens é puro sobre a projection (já formatada pelo servidor). Sem runtime
-// Nuxt: reatividade Vue real como globais; Icon/UiBadge viram stubs.
+// Nuxt: reatividade Vue real como globais; Icon e as peças Nuxt UI viram stubs, e a
+// tabela do kit (`OperatorTable`) vira uma `<table>` que chama os slots de célula.
+
+type StubColumn = { id?: string; accessorKey?: string; header?: string };
+const OperatorTableStub = defineComponent({
+  name: "OperatorTable",
+  inheritAttrs: false,
+  props: {
+    data: { type: Array, default: () => [] },
+    columns: { type: Array, default: () => [] },
+    rowKey: { type: Function, required: true },
+    emptyTitle: { type: String, default: "" },
+    caption: { type: String, default: "" },
+  },
+  setup(props, { attrs, slots }) {
+    return () => {
+      const columns = props.columns as StubColumn[];
+      const rows = props.data as Record<string, unknown>[];
+      if (!rows.length) return h("div", { ...attrs, "data-operator-table-empty": "" }, props.emptyTitle);
+      return h("table", attrs, [
+        h("caption", props.caption),
+        h("thead", h("tr", columns.map((column) => h("th", column.header ?? "")))),
+        h(
+          "tbody",
+          rows.map((original) => {
+            const key = String((props.rowKey as (row: unknown) => string)(original));
+            const row = { original, id: key };
+            return h(
+              "tr",
+              { "data-row": key },
+              columns.map((column) => {
+                const id = column.id ?? column.accessorKey ?? "";
+                const slot = slots[`${id}-cell`];
+                return h("td", slot ? slot({ row }) : String(original[column.accessorKey ?? ""] ?? ""));
+              }),
+            );
+          }),
+        ),
+      ]);
+    };
+  },
+});
 
 function item(over: Partial<FormulaItemProjection> = {}): FormulaItemProjection {
   return {
@@ -54,9 +95,8 @@ function lens(over: Partial<FormulaLensProjection> = {}): FormulaLensProjection 
 }
 
 const stubs = {
+  ...nuxtUiStubs,
   Icon: true,
-  UiBadge: { template: "<span><slot /></span>" },
-  NuxtBadge: { props: ["label"], template: "<span>{{ label }}<slot /></span>" },
   OperatorTable: OperatorTableStub,
 };
 

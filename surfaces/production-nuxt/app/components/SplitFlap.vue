@@ -179,10 +179,9 @@ if (!import.meta.client) {
   background: linear-gradient(180deg, #2b1d16 0%, #22170f 48%, #180f0a 52%, #20150e 100%);
 }
 @media (prefers-reduced-motion: reduce) {
-  /* \`!important\`: a camada da suíte (\`data-suite\`) reduz toda transição a 0,01 ms;
-     a palheta não gira nada, nem por 0,01 ms. */
+  /* Com movimento reduzido a palheta não gira nada: a troca é seca, sem transição. */
   .flap-cell {
-    transition: none !important;
+    transition: none;
   }
 }
 </style>

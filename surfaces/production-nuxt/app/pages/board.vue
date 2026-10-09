@@ -133,35 +133,32 @@ const STATUS_CHARS = 10; // CONFIRMADO
           align="start"
         />
         <div class="ml-auto flex items-center gap-2.5">
-          <!-- Controles de som/tela cheia são teclas do kiosk, não botões do shell operador. -->
-          <button
-            type="button"
+          <!-- Teclas do kiosk (som e tela cheia): o botão canônico vestido com a pele do
+               letreiro (`.board-key`), sem o desenho do shell operador. -->
+          <NuxtButton
+            size="xl"
+            color="neutral"
+            variant="ghost"
+            square
             class="board-key"
+            :icon="sound.enabled.value ? 'i-lucide-volume-2' : 'i-lucide-volume-x'"
             :aria-label="
               sound.enabled.value
                 ? 'Silenciar palhetas'
                 : 'Ativar som das palhetas'
             "
             @click="sound.toggle()"
-          >
-            <Icon
-              :name="
-                sound.enabled.value ? 'lucide:volume-2' : 'lucide:volume-x'
-              "
-              class="size-4"
-            />
-          </button>
-          <button
-            type="button"
+          />
+          <NuxtButton
+            size="xl"
+            color="neutral"
+            variant="ghost"
+            square
             class="board-key"
+            :icon="isFullscreen ? 'i-lucide-minimize' : 'i-lucide-maximize'"
             :aria-label="isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'"
             @click="toggleFullscreen()"
-          >
-            <Icon
-              :name="isFullscreen ? 'lucide:minimize' : 'lucide:maximize'"
-              class="size-4"
-            />
-          </button>
+          />
         </div>
       </div>
 
@@ -247,11 +244,14 @@ const STATUS_CHARS = 10; // CONFIRMADO
           role="group"
           aria-label="Páginas do painel"
         >
-          <!-- Pontos de paginação são navegação espacial do letreiro, deliberadamente não UiButton. -->
-          <button
+          <!-- Pontos de paginação: navegação espacial do letreiro. O botão canônico,
+               com a pele do ponto (`.board-pagedot`) no lugar do desenho do shell. -->
+          <NuxtButton
             v-for="p in pages.pageCount.value"
             :key="p"
-            type="button"
+            color="neutral"
+            variant="ghost"
+            square
             class="board-pagedot"
             :class="{ 'board-pagedot--active': pages.page.value === p - 1 }"
             :aria-label="`Página ${p}`"
@@ -339,6 +339,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
   place-items: center;
   width: 2.75rem;
   height: 2.75rem;
+  padding: 0;
   border-radius: 0.5rem;
   border: 1px solid var(--board-line);
   background: var(--board-panel);
@@ -350,18 +351,30 @@ const STATUS_CHARS = 10; // CONFIRMADO
 .board-key:hover {
   color: var(--board-text);
   border-color: var(--board-dim);
+  background: var(--board-panel);
+}
+.board-key :deep(.iconify),
+.board-key :deep(svg) {
+  width: 1rem;
+  height: 1rem;
 }
 
 .board-pagedot {
   width: 0.45rem;
   height: 0.45rem;
+  min-width: 0;
+  padding: 0;
   border-radius: 9999px;
   background: var(--board-line);
   transition:
     background 200ms,
     transform 200ms;
 }
-.board-pagedot--active {
+.board-pagedot:hover {
+  background: var(--board-line);
+}
+.board-pagedot--active,
+.board-pagedot--active:hover {
   background: var(--board-text);
   transform: scale(1.25);
 }

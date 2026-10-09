@@ -4,6 +4,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 
 import ProductionLabelPrintDialog from "../../app/components/ProductionLabelPrintDialog.vue";
 import WeighingLabels from "../../app/components/WeighingLabels.vue";
+import { nuxtUiStubs } from "../support/nuxtUiStubs";
 import type {
   ProductionLabelPrintDocument,
   ProductionPrintJobProjection,
@@ -102,26 +103,7 @@ const printing = {
 };
 
 const stubs = {
-  UiDialog: {
-    props: ["open"],
-    template: '<div v-if="open"><slot /></div>',
-  },
-  UiDialogContent: { template: "<div><slot /></div>" },
-  UiDialogHeader: { template: "<header><slot /></header>" },
-  UiDialogTitle: { template: "<h2><slot /></h2>" },
-  UiDialogDescription: { template: "<p><slot /></p>" },
-  UiDialogFooter: { template: "<footer><slot /></footer>" },
-  UiBadge: { template: "<span><slot /></span>" },
-  UiAlert: {
-    props: ["description"],
-    template: '<div role="note">{{ description }}</div>',
-  },
-  UiButton: {
-    props: ["disabled", "loading"],
-    emits: ["click"],
-    template:
-      '<button :disabled="disabled || loading" @click="$emit(\'click\')"><slot /></button>',
-  },
+  ...nuxtUiStubs,
   Icon: true,
 };
 

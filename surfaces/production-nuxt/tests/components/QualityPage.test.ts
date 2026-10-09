@@ -3,6 +3,7 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  reactive,
   ref,
   watch,
 } from "vue";
@@ -54,7 +55,19 @@ function order(
   };
 }
 
-const navigate = vi.fn();
+// A rota é reativa como a do Nuxt; o `navigateTo` do teste a troca (só na /quality).
+const route = reactive<{ path: string; query: Record<string, string>; hash: string }>({
+  path: "/quality",
+  query: {},
+  hash: "",
+});
+const navigate = vi.fn(
+  async (location: { path?: string; query?: Record<string, string> }, _options?: { replace?: boolean }) => {
+    if (location.path === "/quality") route.query = { ...(location.query ?? {}) };
+  },
+);
+const remember = vi.fn();
+const correctQuality = vi.fn(async () => ({ ok: true }));
 
 function installGlobals(hash = "") {
   vi.stubGlobal("computed", computed);
@@ -65,7 +78,13 @@ function installGlobals(hash = "") {
   vi.stubGlobal("useHead", () => {});
   vi.stubGlobal("useProductionRail", () => productionRail);
   vi.stubGlobal("navigateTo", navigate);
-  vi.stubGlobal("useRoute", () => ({ query: {}, hash }));
+  route.hash = hash;
+  vi.stubGlobal("useRoute", () => route);
+  vi.stubGlobal("useRecordTrail", () => ({
+    remember,
+    trail: computed(() => null),
+    load: vi.fn(),
+  }));
   vi.stubGlobal("useSonner", { success, error: vi.fn() });
   vi.stubGlobal("useQcKiosk", () => ({
     kiosk: computed(() => ({
@@ -88,6 +107,13 @@ function installGlobals(hash = "") {
             kind: "review_qc",
             enabled: true,
           })),
+        ...orders.value
+          .filter((item) => item.closed && item.can_correct)
+          .map((item) => ({
+            ref: `correct_qc:${item.pk}`,
+            kind: "correct_qc",
+            enabled: true,
+          })),
         { ref: "review_qc_batch:abc", kind: "review_qc_batch", enabled: true },
       ],
     })),
@@ -100,7 +126,7 @@ function installGlobals(hash = "") {
     quickFinish: vi.fn(),
     reviewQuality,
     reviewQualityBatch,
-    correctQuality: vi.fn(),
+    correctQuality,
   }));
   vi.stubGlobal("useFloorTimers", () => ({
     lastMinutes: ref<number | null>(null),
@@ -141,10 +167,19 @@ beforeEach(() => {
       full_price_qty: "8",
     }),
   ];
+  route.query = {};
+  navigate.mockClear();
+  remember.mockClear();
+  correctQuality.mockClear();
   installGlobals();
 });
 
-afterEach(() => vi.unstubAllGlobals());
+// Cada tela montada escuta a mesma rota: desmontar entre os testes.
+const mounted: Array<{ unmount: () => void }> = [];
+afterEach(() => {
+  mounted.splice(0).forEach((wrapper) => wrapper.unmount());
+  vi.unstubAllGlobals();
+});
 
 // O portão é componente auto-importado pelo Nuxt; aqui, um stub com nome e props.
 const QualityGatePanelStub = {
@@ -159,17 +194,34 @@ const productionRail = ref({ qualityPending: 0 });
 const ProductionHeaderStub = {
   name: "ProductionHeader",
   props: ["title", "count", "countLabel", "progress", "pending", "query", "eyebrow", "stale", "searchable"],
-  template: "<header />",
+  template: "<header><slot name='status' /></header>",
 };
-const mountPage = () =>
-  shallowMount(QualityPage, {
+const OperatorRecordNavStub = {
+  name: "OperatorRecordNav",
+  props: ["trail", "current", "to", "previousLabel", "nextLabel"],
+  template: "<nav data-record-nav />",
+};
+const QcCloseScreenStub = {
+  name: "QcCloseScreen",
+  props: ["title", "subtitle", "planned", "started", "grades", "defects", "submitting", "mode", "initialPartition"],
+  emits: ["back", "confirm"],
+  template: "<section data-qc-screen />",
+};
+const mountPage = () => {
+  const wrapper = shallowMount(QualityPage, {
     global: {
       stubs: {
         QualityGatePanel: QualityGatePanelStub,
         ProductionHeader: ProductionHeaderStub,
+        OperatorRecordNav: OperatorRecordNavStub,
+        QcCloseScreen: QcCloseScreenStub,
+        NuxtTabs: true,
       },
     },
   });
+  mounted.push(wrapper);
+  return wrapper;
+};
 
 describe("Qualidade — aba própria", () => {
   const panel = (wrapper: ReturnType<typeof shallowMount>) =>
@@ -224,5 +276,67 @@ describe("Qualidade — aba própria", () => {
     await nextTick();
 
     expect(navigate).toHaveBeenCalledWith({ path: "/close", query: {} });
+  });
+});
+
+describe("Qualidade — a correção do lote mora na URL", () => {
+  const panel = (wrapper: ReturnType<typeof shallowMount>) =>
+    wrapper.findComponent({ name: "QualityGatePanel" });
+
+  it("o portão grava a trilha dos lotes que ele mostra com Corrigir", () => {
+    orders.value = orders.value.map((item) =>
+      item.pk === 2 ? { ...item, quality_exception: true, loss_qty: "2" } : item,
+    );
+    mountPage();
+
+    // Na vista "Para confirmar", as exceções (o lote limpo não tem Corrigir na tela).
+    expect(remember).toHaveBeenLastCalledWith(["2"], {
+      from: "/quality",
+      label: "Exceções para olhar",
+    });
+  });
+
+  it("Corrigir leva ao lote pela URL; aberto, mostra a correção e o anterior/próximo", async () => {
+    const wrapper = mountPage();
+    panel(wrapper).vm.$emit("correct", orders.value[1]);
+    await flushPromises();
+
+    expect(navigate).toHaveBeenCalledWith({ path: "/quality", query: { lot: "2" } });
+    const screen = wrapper.findComponent({ name: "QcCloseScreen" });
+    expect(screen.exists()).toBe(true);
+    expect(screen.props("mode")).toBe("correct");
+    expect(screen.props("title")).toBe("Croissant aguardando QC");
+    const nav = wrapper.findComponent({ name: "OperatorRecordNav" });
+    expect(nav.props()).toMatchObject({
+      trail: "production-quality-lots",
+      current: "2",
+      previousLabel: "Lote anterior",
+      nextLabel: "Próximo lote",
+    });
+    expect(nav.props("to")("3")).toEqual({ path: "/quality", query: { lot: "3" } });
+  });
+
+  it("salvar a correção volta ao portão substituindo a entrada do lote", async () => {
+    route.query = { lot: "2" };
+    const wrapper = mountPage();
+    await flushPromises();
+
+    wrapper
+      .findComponent({ name: "QcCloseScreen" })
+      .vm.$emit("confirm", { partition: [], reason: "Contagem errada no fechamento" });
+    await flushPromises();
+
+    expect(correctQuality).toHaveBeenCalledWith(2, 1, [], "Contagem errada no fechamento");
+    expect(navigate).toHaveBeenLastCalledWith({ path: "/quality", query: {} }, { replace: true });
+    expect(wrapper.findComponent({ name: "QcCloseScreen" }).exists()).toBe(false);
+  });
+
+  it("lote sem correção possível, aberto por link, volta ao portão", async () => {
+    route.query = { lot: "1" };
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(navigate).toHaveBeenCalledWith({ path: "/quality", query: {} }, { replace: true });
+    expect(wrapper.findComponent({ name: "QcCloseScreen" }).exists()).toBe(false);
   });
 });
