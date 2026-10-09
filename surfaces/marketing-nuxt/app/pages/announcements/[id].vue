@@ -559,7 +559,7 @@ useHead({ title: "Anúncio" });
       <NuxtLink
         v-else
         to="/"
-        class="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-muted"
+        class="mt-3 inline-flex min-h-8 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-muted"
       >
         Ver as decisões
       </NuxtLink>

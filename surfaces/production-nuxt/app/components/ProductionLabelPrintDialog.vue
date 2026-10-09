@@ -583,7 +583,7 @@ function close() {
               v-if="printing.errorCode.value === 'stale_projection'"
               type="button"
               variant="outline"
-              class="mt-3 min-h-11"
+              class="mt-3 min-h-8"
               @click="printing.refreshSource()"
             >
               Atualizar etiquetas
@@ -592,7 +592,7 @@ function close() {
               v-else-if="printing.createUncertain.value"
               type="button"
               variant="outline"
-              class="mt-3 min-h-11"
+              class="mt-3 min-h-8"
               :loading="actionBusy"
               @click="reconcileCreate"
             >
@@ -627,7 +627,7 @@ function close() {
             <div class="grid gap-2">
               <UiButton
                 type="button"
-                class="min-h-11"
+                class="min-h-8"
                 :loading="printing.operation.value === 'confirm'"
                 :disabled="!printing.isOnline.value"
                 @click="printing.confirm(true)"
@@ -637,7 +637,7 @@ function close() {
               <UiButton
                 type="button"
                 variant="outline"
-                class="min-h-11 whitespace-normal"
+                class="min-h-8 whitespace-normal"
                 :disabled="actionBusy || !printing.isOnline.value"
                 @click="printing.confirm(false)"
               >
@@ -652,7 +652,7 @@ function close() {
           >
             <UiButton
               type="button"
-              class="min-h-11 whitespace-normal"
+              class="min-h-8 whitespace-normal"
               :loading="
                 printing.operation.value === 'create' &&
                 activeTransport === 'relay'
@@ -669,7 +669,7 @@ function close() {
               v-if="localAgentAvailable || !relayUnavailableReason"
               type="button"
               variant="outline"
-              class="min-h-11 whitespace-normal"
+              class="min-h-8 whitespace-normal"
               :loading="browserBusy"
               :disabled="!!preflightBlockReason || printing.busy.value"
               @click="createBrowserPrint"
@@ -681,7 +681,7 @@ function close() {
           <UiButton
             v-if="showRetry"
             type="button"
-            class="min-h-11"
+            class="min-h-8"
             :loading="printing.operation.value === 'retry' || browserBusy"
             :disabled="!printing.isOnline.value"
             @click="retry"
@@ -692,7 +692,7 @@ function close() {
             v-if="showReprint"
             type="button"
             variant="outline"
-            class="min-h-11"
+            class="min-h-8"
             :loading="printing.operation.value === 'reprint' || browserBusy"
             :disabled="!printing.isOnline.value"
             @click="reprint"
@@ -704,7 +704,7 @@ function close() {
       </div>
 
       <UiDialogFooter>
-        <UiButton type="button" variant="ghost" class="min-h-11" @click="close">
+        <UiButton type="button" variant="ghost" class="min-h-8" @click="close">
           Fechar
         </UiButton>
       </UiDialogFooter>

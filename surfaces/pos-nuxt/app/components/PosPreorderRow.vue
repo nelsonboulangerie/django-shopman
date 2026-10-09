@@ -72,7 +72,7 @@ const pills = computed(() => phoneCardPills(props.card));
   >
     <NuxtLink
       :to="preorderDetailPath(card.ref, back)"
-      class="flex min-h-11 min-w-0 flex-1 items-start gap-3 p-3 text-left transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      class="flex min-h-8 min-w-0 flex-1 items-start gap-3 p-3 text-left transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       :class="slots.aside ? 'rounded-l-md' : 'rounded-md'"
       :draggable="movable ? 'false' : undefined"
       :data-preorder="card.ref"

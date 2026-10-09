@@ -14,7 +14,7 @@ const route = useRoute();
       v-for="tab in POS_SETTINGS_TABS"
       :key="tab.to"
       :to="tab.to"
-      class="inline-flex h-11 shrink-0 items-center rounded-t-md px-3 op-label whitespace-nowrap transition"
+      class="inline-flex h-8 shrink-0 items-center rounded-t-md px-3 op-label whitespace-nowrap transition"
       :class="route.path === tab.to
         ? 'bg-secondary font-semibold shadow-[inset_0_-2px_0_var(--primary)]'
         : 'text-muted-foreground hover:bg-accent hover:text-foreground'"

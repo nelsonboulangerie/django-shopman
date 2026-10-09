@@ -35,7 +35,7 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     const button = document.body.querySelector<HTMLButtonElement>("button")!;
     expect(button).not.toBeNull();
     expect(button.disabled).toBe(true);
-    expect(button.className).toContain("h-11");
+    expect(button.className).toContain("h-8");
     expect(button.className).toContain("bg-primary");
     expect(button.className).toContain("disabled:opacity-75");
     expect(button.className).not.toContain("disabled:opacity-50");

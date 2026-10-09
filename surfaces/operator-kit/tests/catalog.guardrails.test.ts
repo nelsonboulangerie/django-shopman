@@ -38,6 +38,10 @@ describe("catálogo vivo", () => {
     new URL("../app/assets/css/operator-base.css", import.meta.url),
     "utf8",
   );
+  const operatorTheme = readFileSync(
+    new URL("../app/assets/css/operator-theme.css", import.meta.url),
+    "utf8",
+  );
   const config = readFileSync(
     new URL("../nuxt.config.ts", import.meta.url),
     "utf8",
@@ -117,16 +121,15 @@ describe("catálogo vivo", () => {
     expect(offlineBanner).not.toContain("<NuxtAlert");
   });
 
-  // DECISÃO MUDOU (WP-OPERADOR-NUXTUI-ONDAS, onda 0, 08/10/2026): esta trava proibia
-  // qualquer `h-control` no tema, e consagrou a perda dos 44 px de campo, select e item
-  // de lista nos sete apps não migrados e no catálogo. O kit muda por opt-in: a altura
-  // de toque volta SÓ sob `suite-page:` (página que veste a suíte, ou o catálogo). O
-  // que a trava protege continua: nada infla controle globalmente, e o Gestor, que não
-  // veste o marcador, fica na geometria oficial.
-  it("mantém a geometria oficial do Nuxt UI sem inflar controles globalmente", () => {
-    // Classe que começa em `h-control`/`min-h-control` sem variante na frente.
-    expect(appConfig).not.toMatch(/(?<![\w:-])(?:min-)?h-control\b/);
-    expect(appConfig).toMatch(/suite-page:h-control/);
+  // DECISÃO MUDOU DE NOVO (dono, 09/10/2026, opção 1): campos e botões na altura `md`
+  // (32 px) em TODOS os apps, inclusive PDV e Cozinha. O opt-in de toque de 44 px
+  // (`suite-page:h-control`, onda 0 de 08/10) saiu do tema, e o token `control` mede
+  // 32 px sem degrau de tablet. A trava agora recusa a volta de qualquer um dos dois.
+  it("mantém campos e botões na altura md em todos os apps, sem opt-in de toque", () => {
+    expect(appConfig).not.toMatch(/(?:min-)?h-control\b/);
+    expect(appConfig).not.toContain("suite-page:");
+    expect(operatorTheme).toMatch(/--spacing-control:\s*2rem;/);
+    expect(operatorTheme).not.toMatch(/@media\s*\(pointer:\s*coarse\)/);
     expect(operatorBase).not.toMatch(/@media\s*\(pointer:\s*coarse\)/);
     expect(operatorBase).not.toContain(
       "min-block-size: var(--spacing-control)",

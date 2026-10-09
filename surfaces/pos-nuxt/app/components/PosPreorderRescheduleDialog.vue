@@ -132,7 +132,7 @@ function confirm() {
 
         <label class="grid gap-1.5">
           <span class="text-sm font-medium">Motivo (opcional)</span>
-          <UiInput v-model="reason" autocomplete="off" class="h-11 text-base" :maxlength="500" data-preorder-reschedule-reason />
+          <UiInput v-model="reason" autocomplete="off" class="h-8 text-base" :maxlength="500" data-preorder-reschedule-reason />
         </label>
 
         <UiDialogFooter>

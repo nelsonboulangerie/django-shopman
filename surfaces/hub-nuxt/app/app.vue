@@ -384,7 +384,7 @@ function itemLinkAttrs(item: HubQueueItemProjection) {
                   <button
                     v-if="phoneQueueHidden"
                     type="button"
-                    class="mt-1 min-h-11 w-full rounded-lg op-label font-semibold text-muted-foreground transition hover:bg-accent md:hidden"
+                    class="mt-1 min-h-8 w-full rounded-lg op-label font-semibold text-muted-foreground transition hover:bg-accent md:hidden"
                     data-hub-queue-phone-more
                     @click="phoneQueueOpen = true"
                   >

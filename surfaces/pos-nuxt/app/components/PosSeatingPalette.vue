@@ -137,7 +137,7 @@ function glyphClass(shape: SpotShape) {
         :key="area.name"
         type="button"
         class="flex items-center gap-2 rounded-md px-2.5 text-left transition hover:bg-accent"
-        :class="[isStrip ? 'h-control' : 'h-11', activeArea === area.name ? 'bg-secondary' : '']"
+        :class="[isStrip ? 'h-control' : 'h-8', activeArea === area.name ? 'bg-secondary' : '']"
         :aria-pressed="activeArea === area.name"
         :aria-label="areaAria(area)"
         data-seating-area-row

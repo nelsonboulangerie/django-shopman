@@ -128,7 +128,7 @@ function onRowPointerdown(pk: number, event: PointerEvent) {
     <button
       v-if="rest.length"
       type="button"
-      class="min-h-11 w-full rounded-lg text-center op-label text-muted-foreground transition hover:bg-accent"
+      class="min-h-8 w-full rounded-lg text-center op-label text-muted-foreground transition hover:bg-accent"
       :aria-label="`Ver a fila inteira: mais ${rest.length} pedidos`"
       data-kds-queue-rest
       @click="showAll = true"

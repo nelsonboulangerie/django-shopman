@@ -517,7 +517,7 @@ useHead(() => ({
           </div>
           <NuxtLink
             :to="`/announcements/${announcement.pk}`"
-            class="inline-flex min-h-11 shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            class="inline-flex min-h-8 shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground underline underline-offset-2 hover:text-foreground"
           >
             Ver resultado
             <Icon name="lucide:arrow-right" class="size-3.5" />
