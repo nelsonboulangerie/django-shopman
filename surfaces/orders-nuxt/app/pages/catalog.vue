@@ -375,7 +375,7 @@ const orderedCollections = computed(() =>
 const ALL_COLLECTIONS = "all";
 const collectionSelectItems = computed(() =>
   collectionTabs.value.map((tab) => ({
-    label: `${tab.label} (${tab.badge})`,
+    label: `${tab.label} (${tab.count})`,
     value: tab.value || ALL_COLLECTIONS,
   })),
 );
@@ -388,13 +388,13 @@ const collectionTabs = computed(() => [
   {
     label: "Todas",
     value: "",
-    badge: String(matrix.value?.rows?.length ?? rows.value.length),
+    count: matrix.value?.rows?.length ?? rows.value.length,
   },
   ...orderedCollections.value.map((collection) => ({
     label: collection.name,
     value: collection.ref,
     icon: collection.is_smart ? "i-lucide-sparkles" : undefined,
-    badge: String(collection.product_count),
+    count: collection.product_count,
   })),
 ]);
 const {
@@ -1258,6 +1258,7 @@ useHead({ title: "Catálogo" });
               >{{ item.label }}</span
             >
           </template>
+          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
         </NuxtTabs>
         <!-- "23 de 131 produtos · 4 canais · 4 feeds" no fim da linha das coleções (v3),
              inteiro: a frase não se corta na borda. -->

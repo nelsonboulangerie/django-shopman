@@ -5,7 +5,9 @@
 // ⚠️ `min-h-control` (44 px; 48 px em tablet touch) é alvo de toque, não estética:
 // a pílula vive no balcão do PDV (Encomendas), no KDS e na Produção. A pilha do
 // Gestor tinha deixado o `md` oficial (32 px) e o PDV perdeu o alvo sem pedir.
-// A contagem é outra grandeza: à parte do rótulo, em algarismos tabulares.
+// A contagem é outra grandeza: à parte do rótulo, no chip de contagem da suíte
+// (`OperatorCountChip`: círculo âmbar na ponta direita, no centro vertical; zero não
+// aparece).
 defineProps<{
   active?: boolean;
   count?: number | null;
@@ -21,13 +23,6 @@ defineProps<{
   >
     <slot name="icon" />
     <slot />
-    <NuxtBadge
-      v-if="count != null"
-      class="tabular-nums"
-      color="neutral"
-      variant="outline"
-      size="sm"
-      :label="String(count)"
-    />
+    <OperatorCountChip :count="count" />
   </NuxtButton>
 </template>
