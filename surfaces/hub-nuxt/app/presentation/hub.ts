@@ -257,8 +257,9 @@ export function queueMoreLabel(more: number): string {
   return more === 1 ? "Mais 1 esperando nos apps abaixo." : `Mais ${more} esperando nos apps abaixo.`;
 }
 
-/** Fila vazia: a frase calma que diz que nada espera, sem comemorar. */
-export const QUEUE_EMPTY_COPY = "Nada esperando por você agora.";
+/** Fila vazia: a frase calma que diz que nada espera, sem comemorar (a voz aprovada do
+ *  vazio do Gestor, "Nenhum pedido precisa de você agora.", dita para todos os apps). */
+export const QUEUE_EMPTY_COPY = "Nada precisa de você agora.";
 
 /** O subtítulo da seção: de onde vem a fila e quando um item sai dela. */
 export const QUEUE_HINT_COPY = "A soma das filas dos seus papéis, o mais urgente primeiro. Some quando resolvido.";
@@ -301,11 +302,45 @@ export function tileStatus(
 /** A cada quantos ms a Central relê a fila. Sem canal SSE próprio, o poll é calmo (ADR-016). */
 export const QUEUE_POLL_MS = 30_000;
 
+/** O selo do cabeçalho: a cadência por extenso (a voz aprovada, "Atualiza sozinho a cada 30 s"). */
+export const HUB_REFRESH_LABEL = `Atualiza sozinho a cada ${QUEUE_POLL_MS / 1000} s`;
+
+/** "10:42": a hora de uma leitura, no fuso do dispositivo (o da loja). */
+export function readClockLabel(ms: number, timeZone?: string): string {
+  if (!Number.isFinite(ms)) return "";
+  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(new Date(ms));
+}
+
+/**
+ * O aviso da tela quando a releitura falha com a fila já na tela: a tela não some (o
+ * que está nela continua valendo como leitura antiga), e o aviso diz de quando ela é e
+ * leva ao gesto que resolve. A fila inteira só vira tela de erro quando nunca chegou.
+ */
+export function staleQueueAlert(readClock: string): { title: string; description: string } {
+  return {
+    title: "A fila não foi atualizada.",
+    description: readClock ? `O que está na tela é de ${readClock}.` : "O que está na tela pode estar desatualizado.",
+  };
+}
+
+/**
+ * O nome acessível do bloco do app: o nome, para que serve e a linha de estado inteira.
+ * O link do cartão cobre o cartão todo; sem isto o leitor de tela ouviria só "PDV".
+ */
+export function tileAriaLabel(
+  tile: Pick<HubTileProjection, "label" | "description" | "kind" | "status_attention" | "status_summary"> &
+    Partial<Pick<HubTileProjection, "status_positive">>,
+): string {
+  const status = tileStatus(tile).parts.map((part) => part.text).join(", ");
+  const opens = tile.kind === "external" ? "Abre em outra janela" : "";
+  return [`${tile.label}: ${tile.description}`, status, opens].filter(Boolean).join(". ");
+}
+
 // ── Camada visual da suíte (prévia v4, `hub4.html`) ─────────────────────────
 
 /**
- * A única seção da Central no rail da suíte: "Início". O selo troca de app; Avisos e o
- * menu do operador moram no pé (prévia v4, nota 1).
+ * A única seção da Central na barra lateral do shell da suíte: "Início". Avisos e o menu
+ * do operador moram no pé dela (no celular, na gaveta do ☰).
  */
 export const HUB_SECTIONS = [{ key: "home", label: "Início", icon: "lucide:house", to: "/" }];
 

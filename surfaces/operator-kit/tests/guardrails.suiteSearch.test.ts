@@ -64,11 +64,14 @@ describe("busca da suíte (V6-BUSCA)", () => {
     expect(missing).toEqual([]);
   });
 
-  it("a Central tem a barra grande da busca no cabeçalho (v4 `hub.jpg`, v3 `depois-hub-celular`)", () => {
+  it("a Central tem a busca da suíte na barra do topo do shell, como os outros apps (fase 2)", () => {
     const hub = appSources("hub-nuxt")
       .map(({ source }) => source)
       .join("\n");
-    expect(hub).toMatch(/<OperatorSuiteSearch\b[^>]*variant="hero"/);
+    // A barra grande (`hero`) da v4 saiu com a fase 2: a Central veste o shell e a busca
+    // é a do `OperatorPageHeader`, campo na mesa e lupa no celular.
+    expect(hub).toMatch(/<OperatorPageHeader\b[^>]*search-placeholder=/s);
+    expect(hub).not.toMatch(/variant="hero"/);
   });
 
   it("o cabeçalho nasce com a busca da suíte (só se desliga por escrito)", () => {

@@ -228,9 +228,12 @@ describe("guardrail do chrome da suíte (V6-KIT)", () => {
       expect(bar, file).toContain(":operator-name=");
       expect(bar, file).toContain("@lock=\"emit('lock')\"");
     }
+    // A Central está no shell da suíte (fase 2): o menu do operador é o da gaveta do
+    // shell, alimentado pelo nome do operador.
     const hub = readFileSync(join(SURFACES, "hub-nuxt/app/app.vue"), "utf8");
-    expect(hub).toContain("<OperatorPhoneMenu");
-    expect(hub).toContain("<OperatorSuiteRail");
+    const shell = hub.slice(hub.indexOf("<OperatorSuiteShell"));
+    expect(shell).toContain(":operator-name=");
+    expect(shell).toContain('@lock="lockDevice"');
   });
 
   // K08/T-09: no tablet em pé a navegação é a barra de baixo. A régua é uma só (a

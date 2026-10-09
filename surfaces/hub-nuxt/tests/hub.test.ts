@@ -14,6 +14,10 @@ import {
   hubFailureCopy,
   hubGreeting,
   hubIsEmpty,
+  HUB_REFRESH_LABEL,
+  readClockLabel,
+  staleQueueAlert,
+  tileAriaLabel,
   tileIcon,
   tileIconUrl,
   tileLinkAttrs,
@@ -235,5 +239,56 @@ describe("um app, um nome", () => {
     // rede caída, sem bundle para importar nada. Por isso o teste vem buscá-lo aqui.
     const offline = readFileSync(resolve(APP_DIR, "..", "public", "offline.html"), "utf8");
     expect(offline).toContain(name);
+  });
+});
+
+// Fase 2 (WP-FASE2-UX-OPERADOR, onda da Central): a Central no shell da suíte, com as
+// peças do kit no lugar delas e o conjunto mínimo.
+describe("a Central no shell da suíte (fase 2)", () => {
+  const app = readFileSync(resolve(APP_DIR, "app.vue"), "utf8");
+  const template = app.slice(app.indexOf("<template>"));
+
+  it("veste o shell e o cabeçalho do kit, com aviso e ⋯ nos lugares declarados", () => {
+    expect(template).toContain("<OperatorSuiteShell");
+    expect(template).toContain(':sections="HUB_SECTIONS"');
+    expect(template).toContain("<OperatorPageHeader");
+    expect(template).toContain(':alerts="alerts"');
+    expect(template).toContain(':actions="headerActions"');
+    // A variante "início": o selo é identidade, sem caminho de volta.
+    expect(template).toMatch(/<OperatorAppSeal\s+home\b/);
+  });
+
+  it("estado da tela pelo OperatorScreenState: vazio da fila, sem app e falha", () => {
+    expect(template.match(/<OperatorScreenState\b/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+  });
+
+  it("conjunto mínimo: nada cru, nada nativo, nenhuma régua de largura no script", () => {
+    expect(template).not.toMatch(/<button\b|<table\b|UiNativeSelect|<select\b/);
+    expect(app).not.toMatch(/useMediaQuery|useSuiteRailShown|data-suite=/);
+  });
+});
+
+describe("selo, aviso e nome acessível do bloco", () => {
+  it("o selo diz a cadência pela voz aprovada", () => {
+    expect(HUB_REFRESH_LABEL).toBe("Atualiza sozinho a cada 30 s");
+  });
+
+  it("a releitura que falha diz de quando é a tela, e nunca usa travessão", () => {
+    expect(staleQueueAlert("10:42")).toEqual({
+      title: "A fila não foi atualizada.",
+      description: "O que está na tela é de 10:42.",
+    });
+    expect(staleQueueAlert("").description).toBe("O que está na tela pode estar desatualizado.");
+    expect(readClockLabel(Date.parse("2026-10-03T13:42:00Z"), "America/Sao_Paulo")).toBe("10:42");
+    expect(readClockLabel(Number.NaN)).toBe("");
+  });
+
+  it("o nome acessível do bloco leva o estado inteiro, e avisa quando abre fora", () => {
+    expect(tileAriaLabel(tile({ status_positive: "Caixa aberto", status_summary: "2 encomendas" }))).toBe(
+      "PDV: Vender no balcão. Caixa aberto, 2 encomendas",
+    );
+    expect(tileAriaLabel(tile({ label: "Loja online", description: "Abrir a loja", kind: "external" }))).toBe(
+      "Loja online: Abrir a loja. Abre em outra janela",
+    );
   });
 });
