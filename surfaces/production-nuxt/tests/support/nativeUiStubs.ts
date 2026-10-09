@@ -85,3 +85,49 @@ export const UiNativeSelectStub = defineComponent({
       );
   },
 });
+
+// A tabela da suíte (`OperatorTable`, kit) sem o Nuxt UI: uma `<table>` com o cabeçalho
+// das colunas e cada célula pelo slot `#<id>-cell` (o mesmo contrato da `NuxtTable`) ou
+// pelo `accessorKey`. O vazio mostra o `empty-title`; o `#expanded` aparece para a linha
+// marcada em `expanded`.
+type StubColumn = { id?: string; accessorKey?: string; header?: string };
+export const OperatorTableStub = defineComponent({
+  name: "OperatorTableStub",
+  inheritAttrs: false,
+  props: {
+    data: { type: Array, default: () => [] },
+    columns: { type: Array, default: () => [] },
+    rowKey: { type: Function, required: true },
+    emptyTitle: { type: String, default: "" },
+    caption: { type: String, default: "" },
+    expanded: { type: Object, default: () => ({}) },
+  },
+  setup(props, { attrs, slots }) {
+    return () => {
+      const columns = props.columns as StubColumn[];
+      const rows = props.data as Record<string, unknown>[];
+      if (!rows.length) return h("div", { ...attrs, "data-operator-table-empty": "" }, props.emptyTitle);
+      return h("table", attrs, [
+        h("caption", props.caption),
+        h("thead", h("tr", columns.map((column) => h("th", column.header ?? "")))),
+        h(
+          "tbody",
+          rows.flatMap((original) => {
+            const key = String((props.rowKey as (row: unknown) => string)(original));
+            const row = { original, id: key };
+            const cells = columns.map((column) => {
+              const id = column.id ?? column.accessorKey ?? "";
+              const slot = slots[`${id}-cell`];
+              return h("td", slot ? slot({ row }) : String(original[column.accessorKey ?? ""] ?? ""));
+            });
+            const out = [h("tr", { "data-row": key }, cells)];
+            if (slots.expanded && (props.expanded as Record<string, boolean>)[key])
+              out.push(h("tr", h("td", { colspan: columns.length }, slots.expanded({ row }))));
+            return out;
+          }),
+        ),
+        slots.footer ? h("tfoot", h("tr", h("td", slots.footer()))) : null,
+      ]);
+    };
+  },
+});
