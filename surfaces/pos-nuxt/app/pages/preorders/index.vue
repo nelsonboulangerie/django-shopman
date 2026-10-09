@@ -436,10 +436,12 @@ function refreshAll() {
         data-preorders-quick
         @apply="applyFavorite"
       />
+      <!-- No celular o Período vem primeiro (que dia é a tela) e os recortes rolam
+           depois dele; na mesa, recortes à esquerda e o Período depois. -->
       <OperatorPeriodPicker
         v-if="!searching"
         v-model="periodSelection"
-        class="min-w-0"
+        class="min-w-0 max-sm:order-first"
         compact
         :presets="PREORDERS_PERIOD_PRESETS"
         custom
