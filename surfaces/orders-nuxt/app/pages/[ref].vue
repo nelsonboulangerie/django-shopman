@@ -21,6 +21,7 @@ import {
   undoLine,
 } from "~/presentation/board";
 import { onMounted, onBeforeUnmount } from "vue";
+import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import type { CancellationReason } from "~/types/orders";
 
 definePageMeta({ key: (route) => route.path });
@@ -38,6 +39,18 @@ const backLocation = computed(
   () => (fromHistory.value && historyLocation.value) || queueLocation.value,
 );
 const orderRef = computed(() => String(route.params.ref || ""));
+// A trilha da lista de origem (`OperatorRecordNav`): a fila e o histórico gravam a
+// ordem que mostram; o pedido anda dentro da que trouxe a pessoa, e o próximo pedido
+// mantém o caminho de volta (`from=history`).
+const recordTrailKey = computed(() =>
+  fromHistory.value ? ORDERS_HISTORY_TRAIL : ORDERS_QUEUE_TRAIL,
+);
+function recordLocation(ref_: string) {
+  return {
+    path: `/${encodeURIComponent(ref_)}`,
+    query: fromHistory.value ? { from: "history" } : {},
+  };
+}
 
 const {
   readMetadata,
@@ -686,6 +699,18 @@ const outside = useOutsideStore(
             :detail="liveDetail"
           />
         </span>
+        <!-- Anterior e próximo DENTRO da lista de onde a pessoa veio (fase 2, K5):
+             a fila ou o histórico, com o recorte. Quem chegou por outro app (bilhete de
+             volta) não veio de lista nenhuma: sem par. -->
+        <OperatorRecordNav
+          v-if="!returnTicket"
+          class="ms-auto"
+          :trail="recordTrailKey"
+          :current="orderRef"
+          :to="recordLocation"
+          previous-label="Pedido anterior"
+          next-label="Próximo pedido"
+        />
       </template>
       <template v-if="isPhone" #phone-actions>
         <NuxtButton

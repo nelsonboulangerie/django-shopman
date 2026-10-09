@@ -67,6 +67,7 @@ export function shortcutEventAllowed(
   if (event.repeat && !command.allowRepeat) return false;
   const target = event.target instanceof Element ? event.target : null;
   if (!command.allowInEditable && target?.closest(EDITABLE_SELECTOR)) return false;
+  if (command.ignoreWithin && target?.closest(command.ignoreWithin)) return false;
   if (!command.allowInOverlay && typeof document !== "undefined" && document.querySelector(OVERLAY_SELECTOR)) return false;
   if (command.forbiddenContexts.some((context) => activeContexts.has(context))) return false;
   return command.enabledContexts.length === 0 || command.enabledContexts.some((context) => activeContexts.has(context));

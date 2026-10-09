@@ -18,6 +18,7 @@ import {
   historyQueryFromRoute,
   routeQueryFromHistory,
 } from "~/presentation/history";
+import { ORDERS_HISTORY_TRAIL } from "~/presentation/orderTrails";
 
 useHead({ title: "Histórico" });
 
@@ -119,6 +120,18 @@ function goToPage(page: number) {
 }
 
 const items = computed(() => history.value?.items ?? []);
+// A trilha do anterior/próximo do pedido (fase 2, `OperatorRecordNav`): a página que a
+// tela mostra, com o recorte. O detalhe aberto daqui anda dentro destes.
+const { remember: rememberTrail } = useRecordTrail(ORDERS_HISTORY_TRAIL);
+watch(
+  () => items.value.map((item) => item.ref).join("\n"),
+  (refs) =>
+    rememberTrail(refs ? refs.split("\n") : [], {
+      from: route.fullPath,
+      label: "Histórico",
+    }),
+  { immediate: true },
+);
 const loading = computed(() => pending.value && !history.value);
 const historyColumns = [
   { id: "order", header: "Pedido" },

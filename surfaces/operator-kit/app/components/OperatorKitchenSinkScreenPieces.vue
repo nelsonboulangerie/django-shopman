@@ -1,6 +1,9 @@
 <script setup lang="ts">
 // As peças de tela da fase 2 (WP-FASE2-UX-OPERADOR), com dados fixos: a vitrine de
 // quem vai migrar um app. Cada peça entra aqui no mesmo PR em que nasce no kit.
+import { computed, onMounted } from "vue";
+
+import { useRecordTrail } from "../composables/useRecordTrail";
 import type { OperatorMoreMenuItems } from "../presentation/moreMenu";
 
 const toast = useToast();
@@ -35,6 +38,30 @@ const rowMenu: OperatorMoreMenuItems = [
   { label: "Editar o produto", icon: "i-lucide-pencil", onSelect: () => said("Editar o produto") },
   { label: "Pausar em todos os canais", icon: "i-lucide-pause", onSelect: () => said("Pausar") },
 ];
+
+// Anterior e próximo: a lista (aqui, quatro pedidos com o recorte "Retirada") grava a
+// ordem que mostra; o "detalhe" lê a trilha. O registro aberto mora na URL (`?record=`).
+const route = useRoute();
+const trailOrders = [
+  { ref: "1046", customer: "Bruno Lima" },
+  { ref: "1048", customer: "Ana Souza" },
+  { ref: "1051", customer: "Carla Dias" },
+  { ref: "1053", customer: "Davi Rocha" },
+];
+const { remember } = useRecordTrail("kitchen-sink-orders");
+onMounted(() =>
+  remember(
+    trailOrders.map((order) => order.ref),
+    { from: route.fullPath, label: "Pedidos para retirar" },
+  ),
+);
+const openRecord = computed(() =>
+  typeof route.query.record === "string" ? route.query.record : "1048",
+);
+const openOrder = computed(() => trailOrders.find((order) => order.ref === openRecord.value));
+function recordLocation(id: string) {
+  return { path: route.path, query: { ...route.query, record: id } };
+}
 
 const rows = [
   { sku: "PAO-FRANCES", name: "Pão francês" },
@@ -87,6 +114,33 @@ const rows = [
             </li>
           </ul>
         </NuxtCard>
+      </div>
+    </NuxtCard>
+
+    <NuxtCard
+      title="Anterior e próximo"
+      description="OperatorRecordNav: ‹ 3 de 18 › dentro da lista de onde a pessoa veio, com o recorte dela. Teclas J e K, ou as setas. Aberto por link, sem a lista, o par não aparece."
+      data-catalog-record-nav
+    >
+      <div class="space-y-3">
+        <NuxtCard variant="soft">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p class="text-base font-semibold">Pedido {{ openRecord }}</p>
+            <NuxtBadge color="info" label="Retirada" />
+            <OperatorRecordNav
+              class="ms-auto"
+              trail="kitchen-sink-orders"
+              :current="openRecord"
+              :to="recordLocation"
+              previous-label="Pedido anterior"
+              next-label="Próximo pedido"
+            />
+          </div>
+          <p class="text-sm text-muted">{{ openOrder?.customer }} · Retirada às 10:30</p>
+        </NuxtCard>
+        <p class="op-micro text-muted">
+          A lista de origem: {{ trailOrders.map((order) => order.ref).join(", ") }}.
+        </p>
       </div>
     </NuxtCard>
   </section>
