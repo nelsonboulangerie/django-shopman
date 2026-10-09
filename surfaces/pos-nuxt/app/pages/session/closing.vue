@@ -233,42 +233,49 @@ async function confirmSubmit() {
     <!-- FIM DO DIA (v4, `fim-do-dia.jpg`): um corredor só, de quem fecha. Cabeçalho com
          o título, o ao vivo e o terminal; os três passos no topo; a CONFERÊNCIA cega no
          meio; o gesto de cada passo preso ao pé. -->
-    <header class="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-2.5">
-      <span class="grid size-10 shrink-0 place-items-center rounded-lg text-white" :style="{ background: appColor }" aria-hidden="true">
-        <Icon name="lucide:shopping-basket" class="size-5" />
-      </span>
-      <div class="min-w-0">
-        <h1 class="op-heading">Fim do dia</h1>
-        <p class="mt-1 flex items-center gap-2 op-micro text-muted-foreground">
-          <OperatorLiveStatus
-            :tone="liveStatus.view.value.tone"
-            :time="liveStatus.time.value"
-            :label="liveStatus.view.value.label"
-            :detail="liveStatus.view.value.detail"
-          />
-          <span v-if="pos">{{ pos.terminal_label }}</span>
-          <span v-if="closing">· {{ closing.today_display }}</span>
-        </p>
-      </div>
-      <div class="flex-1" />
-      <span
-        v-if="closing?.operator_display"
-        class="inline-flex h-8 items-center gap-1.5 rounded-full bg-secondary px-4 op-label font-semibold"
-        data-closing-operator
-      >
-        <Icon name="lucide:user-round" class="size-4" aria-hidden="true" />{{ closing.operator_display }}
-      </span>
-      <button
-        type="button"
-        class="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
-        aria-label="Voltar à sessão de caixa"
-        title="Sair: o que já foi contado fica na tela até você voltar"
-        @click="goToCashSession"
-      >
-        <Icon name="lucide:x" class="size-4" />
-        Sair
-      </button>
-    </header>
+    <!-- O cabeçalho da suíte (o mesmo `OperatorPageHeader` das outras telas), no papel
+         de corredor: sem campo de busca, sem Avisos, sem navegação; a saída é o "Sair". -->
+    <OperatorPageHeader title="Fim do dia" :inbox="false">
+      <!-- A busca da suíte só no Ctrl K (e na lupa do celular): no corredor não há campo
+           de busca na tela, e o "/" não tira a pessoa da contagem. -->
+      <template #search>
+        <OperatorSuiteSearch variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
+      </template>
+      <template #lead>
+        <span class="grid size-8 shrink-0 place-items-center rounded-md text-white" :style="{ background: appColor }" aria-hidden="true">
+          <Icon name="lucide:shopping-basket" class="size-4" />
+        </span>
+      </template>
+      <template #status>
+        <OperatorLiveStatus
+          :tone="liveStatus.view.value.tone"
+          :time="liveStatus.time.value"
+          :label="liveStatus.view.value.label"
+          :detail="liveStatus.view.value.detail"
+        />
+        <span v-if="pos" class="text-xs text-muted-foreground">{{ pos.terminal_label }}<template v-if="closing"> · {{ closing.today_display }}</template></span>
+      </template>
+      <template #actions>
+        <NuxtBadge
+          v-if="closing?.operator_display"
+          color="neutral"
+          icon="i-lucide-user-round"
+          :label="closing.operator_display"
+          class="max-sm:hidden"
+          data-closing-operator
+        />
+        <NuxtButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-x"
+          label="Sair"
+          aria-label="Sair do fim do dia e voltar à sessão de caixa"
+          title="Sair: o que já foi contado fica na tela até você voltar"
+          data-closing-exit
+          @click="goToCashSession"
+        />
+      </template>
+    </OperatorPageHeader>
 
     <!-- Os três passos: cada um diz a hora e o estado, nunca valor. -->
     <ol

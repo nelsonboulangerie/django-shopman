@@ -13,11 +13,11 @@ import {
   moveQuestion,
   moveTargets,
   parseLayout,
-  shortcutBlocks,
   NO_FILTERS,
+  QUICK_FILTERS,
+  fromPanelFilters,
   NO_WINDOW_LABEL,
   balanceStandsOut,
-  barDimensions,
   canSearch,
   checkCount,
   checkPaymentNotice,
@@ -28,7 +28,6 @@ import {
   filterDays,
   filterDimensions,
   fromActiveFilters,
-  fromBarFilters,
   filterEmptyMessage,
   flattenDays,
   groupByWindow,
@@ -59,15 +58,12 @@ import {
   searchLimitNote,
   searchOpenEmptyMessage,
   searchOpenHeading,
-  shortcutChips,
   singleResult,
   situationTone,
-  toBarFilters,
   toReceiveLine,
   todayFacts,
   todayOf,
   todayPendingCount,
-  toggleShortcut,
   viewPath,
   viewOfPeriod,
   viewQuery,
@@ -496,56 +492,35 @@ describe("o selo da barra lateral", () => {
   });
 });
 
-// ── Os recortes de um toque (P1 do dono, 02/10) ─────────────────────────────
+// ── O painel de filtros da suíte (fase 2) ───────────────────────────────────
 
-describe("os recortes de todo dia viram botões de um toque", () => {
-  const cards = [
-    card({ ref: "A" }),
-    card({ ref: "B", fulfillment_type: "delivery", payment_state: "paid", balance_q: 0, ticket_printed: true }),
-    card({ ref: "C", payment_state: "on_account", balance_q: 0 }),
-  ];
-
-  it("A receber, Sem Via Pedido, Retiradas, Entregas, com a contagem do que cada um mostraria", () => {
-    expect(shortcutChips(cards, NO_FILTERS).map((c) => [c.label, c.count, c.pressed])).toEqual([
-      ["A receber", 1, false],
-      ["Sem Via Pedido", 2, false],
-      ["Retiradas", 2, false],
-      ["Entregas", 1, false],
+describe("os recortes de todo dia são os filtros rápidos do painel da suíte", () => {
+  it("A receber, Sem Via Pedido, Retiradas e Entregas, cada um numa dimensão da tela", () => {
+    expect(QUICK_FILTERS.map((quick) => [quick.dimension, quick.value, quick.label])).toEqual([
+      ["pay", "to_receive", "A receber"],
+      ["print", "pending", "Sem Via Pedido"],
+      ["fulfillment", "pickup", "Retiradas"],
+      ["fulfillment", "delivery", "Entregas"],
     ]);
   });
 
-  it("botão que não mostraria nada some (zero não é código), a menos que esteja apertado", () => {
-    const deliveries = { ...NO_FILTERS, fulfillment: "delivery" as const };
-    const chips = shortcutChips(cards, deliveries);
-    // Entre as entregas, nenhuma a receber e nenhuma sem Via: os dois botões somem.
-    expect(chips.map((c) => [c.label, c.pressed])).toEqual([["Retiradas", false], ["Entregas", true]]);
-  });
-
-  it("apertar liga o recorte; apertar de novo volta a 'Todas' naquela dimensão", () => {
-    const on = toggleShortcut(NO_FILTERS, { dimension: "pay", value: "to_receive" });
-    expect(on).toEqual({ ...NO_FILTERS, pay: "to_receive" });
-    expect(toggleShortcut(on, { dimension: "pay", value: "to_receive" })).toEqual(NO_FILTERS);
-    // Retiradas e Entregas são a mesma dimensão: uma troca a outra.
-    const pickup = toggleShortcut(NO_FILTERS, { dimension: "fulfillment", value: "pickup" });
-    expect(toggleShortcut(pickup, { dimension: "fulfillment", value: "delivery" }).fulfillment).toBe("delivery");
-  });
-
-  it("o 'Filtrar' fica para o resto: nem opção nem chip do que já tem botão", () => {
-    const dims = barDimensions(cards, NO_FILTERS);
-    expect(dims.map((d) => [d.id, d.options.map((o) => o.value)])).toEqual([["pay", ["paid", "on_account"]]]);
-    expect(toBarFilters({ fulfillment: "delivery", pay: "to_receive", print: "pending" })).toEqual({});
-    expect(toBarFilters({ ...NO_FILTERS, pay: "paid" })).toEqual({ pay: ["paid"] });
-  });
-
-  it("o que a barra devolve não apaga o botão apertado de outra dimensão", () => {
+  it("o filtro rápido SOMA no painel; na tela cada dimensão tem um valor só, e o novo vence", () => {
+    const pickup = { ...NO_FILTERS, fulfillment: "pickup" as const };
+    // Retiradas apertado, toca Entregas: o painel devolve as duas, a tela fica com Entregas.
+    expect(fromPanelFilters(pickup, { fulfillment: ["pickup", "delivery"] }).fulfillment).toBe("delivery");
+    // Tocar de novo no que está ligado desliga (a dimensão volta a "Todas").
+    expect(fromPanelFilters(pickup, {})).toEqual(NO_FILTERS);
+    // O resto não muda: o X de um chip só tira a dimensão dele.
     const current = { fulfillment: "delivery" as const, pay: "paid" as const, print: "pending" as const };
-    // X do chip "Pagamento: Pagas": só o Pagamento volta a "Todas".
-    expect(fromBarFilters(current, {})).toEqual({ fulfillment: "delivery", pay: "all", print: "pending" });
-    // Escolher "Na conta da casa" no Filtrar troca o Pagamento, e o resto fica.
-    expect(fromBarFilters(current, { pay: ["on_account"] })).toEqual({ fulfillment: "delivery", pay: "on_account", print: "pending" });
-    // Com "A receber" apertado, escolher "Pagas" no Filtrar troca o recorte (mesma dimensão).
-    expect(fromBarFilters({ ...NO_FILTERS, pay: "to_receive" }, { pay: ["paid"] }).pay).toBe("paid");
-    expect(fromBarFilters({ ...NO_FILTERS, pay: "to_receive" }, {}).pay).toBe("to_receive");
+    expect(fromPanelFilters(current, { fulfillment: ["delivery"], print: ["pending"] }))
+      .toEqual({ fulfillment: "delivery", pay: "all", print: "pending" });
+    // Valor desconhecido cai em "Todas", nunca em erro.
+    expect(fromPanelFilters(NO_FILTERS, { pay: ["inventado"] }).pay).toBe("all");
+  });
+
+  it("o estado da tela vira o do painel, e só o que não é 'Todas' conta como recorte", () => {
+    expect(toActiveFilters({ fulfillment: "delivery", pay: "to_receive", print: "all" }))
+      .toEqual({ fulfillment: ["delivery"], pay: ["to_receive"] });
   });
 });
 
@@ -646,19 +621,6 @@ describe("OBS0310-D: grade ou lista, e mudar de dia", () => {
     expect(parseLayout(null)).toBe("grid");
     expect(parseLayout("tabela")).toBe("grid");
     expect(LAYOUT_OPTIONS.map((option) => option.label)).toEqual(["Ver em grade", "Ver em lista"]);
-  });
-
-  it("os recortes de um toque em blocos, um por pergunta, na ordem dos botões", () => {
-    const cards = [
-      { fulfillment_type: "pickup", payment_state: "to_receive" as const, ticket_printed: false },
-      { fulfillment_type: "delivery", payment_state: "paid" as const, ticket_printed: true },
-    ];
-    const blocks = shortcutBlocks(shortcutChips(cards, NO_FILTERS));
-    expect(blocks.map((block) => [block.label, block.chips.map((chip) => chip.label)])).toEqual([
-      ["Pagamento", ["A receber"]],
-      ["Via Pedido", ["Sem Via Pedido"]],
-      ["Recebimento", ["Retiradas", "Entregas"]],
-    ]);
   });
 
   it("pega-se o que ainda pode mudar de data; o pronto, o que saiu e o entregue não", () => {

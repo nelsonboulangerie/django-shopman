@@ -1,12 +1,13 @@
-// Busca da suíte (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gestor-busca`,
-// `depois-hub-celular` e v4 `hub.jpg`): um campo, uma tecla (`/` ou Ctrl K), três alcances.
+// Busca da suíte (SUITE-UX-V2 §2.2, FUNCTION §7; fase 2, K6: "busca em níveis no
+// canônico", dono 09/10/2026): um botão, uma tecla (`/` ou Ctrl K), três níveis, que são
+// os GRUPOS do `NuxtDashboardSearch` em ordem fixa:
 //
-//   - Esta tela: o filtro que a própria tela já fazia (o quadro do Gestor, a matriz da
-//     Produção…), aplicado enquanto se digita. Só existe onde a tela filtra.
-//   - App: o resultado da suíte recortado pelo app atual.
-//   - Toda a suíte: pedidos, encomendas, clientes, produtos, insumos, fornecedores, lotes,
-//     receitas, campanhas e telas de TODOS os apps que o operador abre
-//     (`GET /api/v1/backstage/search/`, já recortado por permissão no Django).
+//   - Nesta tela: "Filtrar o quadro por “maria”" vira o recorte da tela. Só existe onde a
+//     tela filtra a própria lista.
+//   - No app: o que a suíte achou no app atual.
+//   - Na suíte: o que achou nos outros apps (pedidos, encomendas, clientes, produtos,
+//     insumos, fornecedores, lotes, receitas, campanhas e telas que o operador abre;
+//     `GET /api/v1/backstage/search/`, já recortado por permissão no Django).
 //
 // Aqui fica só o que é puro (tipos, recorte por alcance, contagens, realce, cópia), para
 // ser testado sem montar componente; a peça é `OperatorSuiteSearch.vue`.
@@ -55,11 +56,9 @@ export const SUITE_SEARCH_MIN_LENGTH = 2;
 export const SUITE_SEARCH_DEBOUNCE_MS = 220;
 
 export const SUITE_SEARCH_COPY = {
-  suiteScope: "Toda a suíte",
-  screenScope: "Esta tela",
   screenSection: "Nesta tela",
+  appSection: "No app",
   suiteSection: "Na suíte",
-  tabHint: "Tab troca o alcance",
   typeMore: "Digite pelo menos 2 letras para buscar na suíte.",
   searching: "Buscando na suíte…",
   failed: "A busca da suíte não respondeu. O filtro desta tela continua valendo.",
@@ -98,36 +97,38 @@ export function suiteQueryReady(raw: string): boolean {
   return normalizeSuiteQuery(raw).length >= SUITE_SEARCH_MIN_LENGTH;
 }
 
-/** Os alcances desta tela, na ordem do controle (Tab anda por eles). */
-export function suiteScopes(options: { hasScreen: boolean; appRef: string }): SuiteSearchScope[] {
-  const scopes: SuiteSearchScope[] = [];
-  if (options.hasScreen) scopes.push("screen");
-  if (options.appRef) scopes.push("app");
-  scopes.push("suite");
-  return scopes;
-}
-
-/** Tab avança, Shift+Tab volta; o último dá a volta. */
-export function nextSuiteScope(scopes: SuiteSearchScope[], current: SuiteSearchScope, back = false): SuiteSearchScope {
-  const index = Math.max(0, scopes.indexOf(current));
-  const step = back ? -1 : 1;
-  return scopes[(index + step + scopes.length) % scopes.length]!;
+/** Um resultado com o nome do tipo dele ("Pedidos"), para o nível que o mostra. */
+export interface SuiteLevelResult {
+  result: SuiteSearchResult;
+  typeLabel: string;
 }
 
 /**
- * Os grupos que o alcance mostra. "Esta tela" mostra a suíte inteira logo abaixo do filtro
- * (a prévia v3: "Resultados desta tela primeiro; logo abaixo, a suíte").
+ * Os resultados da suíte nos dois níveis de baixo: "No app" (o app atual) e "Na suíte"
+ * (os outros). Cada resultado mora em um nível só, na ordem dos grupos do servidor.
+ * Sem app (a Central), tudo é "Na suíte".
  */
-export function groupsForScope(groups: SuiteSearchGroup[], scope: SuiteSearchScope, appRef: string): SuiteSearchGroup[] {
-  if (scope !== "app") return groups;
-  return groups
-    .map((group) => ({ ...group, results: group.results.filter((result) => result.app === appRef) }))
-    .filter((group) => group.results.length > 0);
+export function suiteLevels(
+  groups: SuiteSearchGroup[],
+  appRef: string,
+): { app: SuiteLevelResult[]; suite: SuiteLevelResult[] } {
+  const app: SuiteLevelResult[] = [];
+  const suite: SuiteLevelResult[] = [];
+  for (const group of groups) {
+    for (const result of group.results) {
+      (appRef && result.app === appRef ? app : suite).push({ result, typeLabel: group.label });
+    }
+  }
+  return { app, suite };
 }
 
-/** Recorte por tipo (os chips do celular: "Pedidos 2", "Clientes 2"). Vazio = todos. */
-export function groupsForType(groups: SuiteSearchGroup[], type: string): SuiteSearchGroup[] {
-  return type ? groups.filter((group) => group.type === type) : groups;
+/**
+ * O alvo da frase "Filtrar … por “x”", a partir do `screen-label` da tela ("filtrando
+ * o quadro" → "o quadro"). Sem rótulo, "esta tela".
+ */
+export function suiteScreenTarget(screenLabel: string): string {
+  const target = screenLabel.trim().replace(/^filtrando\s+/i, "").trim();
+  return target || "esta tela";
 }
 
 export function flattenGroups(groups: SuiteSearchGroup[]): SuiteSearchResult[] {

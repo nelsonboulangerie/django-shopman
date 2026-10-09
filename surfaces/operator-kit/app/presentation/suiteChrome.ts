@@ -7,6 +7,7 @@
 // e no desktop, barra de seções embaixo no tablet em pé e no celular (até 4 + Mais),
 // Alt 1…9 em todo app, impresso no desktop.
 import type { OperatorSection } from "./appBar";
+import { countChipDotProps, countChipProps, type CountChipColor } from "./countChip";
 
 /**
  * Onde o rail existe: tablet DEITADO (a partir de 768px) e qualquer tela de 1024px para
@@ -43,7 +44,7 @@ export const SUITE_RAIL_NEXT: Readonly<Record<SuiteRailState, { label: string; i
   hidden: { label: "Mostrar a barra lateral", icon: "i-lucide-panel-left-open" },
 };
 
-export type RailSignalColor = "success" | "warning" | "error";
+export type RailSignalColor = CountChipColor;
 
 /** O sinal de um item do rail: um ponto de estado ou um número. */
 export interface RailSignal {
@@ -67,13 +68,14 @@ export function sectionRailSignal(section: OperatorSection): RailSignal | undefi
 }
 
 /**
- * As props do Chip: o ponto no tamanho padrão do NavigationMenu; o número no `4xl` do
- * kit (o `3xl` não lê dois dígitos), `inset: false` (centrado no canto, sem cobrir o
- * ícone) e "99+" acima de 99.
+ * As props do Chip no CANTO do ícone (barra compactada, barra inferior): o ponto no
+ * tamanho padrão do NavigationMenu; o número é o chip de contagem da suíte
+ * (`countChipProps`: `4xl`, `inset: false`, "99+" acima de 99). Na barra aberta, o
+ * mesmo chip vai no fluxo, por `OperatorCountChip`.
  */
-export function railSignalChip(signal: RailSignal): { color: RailSignalColor; text?: string; size?: "4xl"; inset?: boolean } {
-  if (signal.count === undefined) return { color: signal.color };
-  return { color: signal.color, text: signal.count > 99 ? "99+" : String(signal.count), size: "4xl", inset: false };
+export function railSignalChip(signal: RailSignal): { color: RailSignalColor; text?: string; size?: "4xl"; inset?: boolean; ui: { base: string } } {
+  if (signal.count === undefined) return countChipDotProps(signal.color);
+  return countChipProps(signal.count, signal.color);
 }
 
 /**

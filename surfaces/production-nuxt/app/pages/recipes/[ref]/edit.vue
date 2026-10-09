@@ -110,11 +110,11 @@ function onItemQuantity(index: number, event: Event) {
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
   formula.value = updateItem(formula.value, index, { quantity: Number(raw) || 0 });
 }
-function onItemUnit(index: number, event: Event) {
-  formula.value = updateItem(formula.value, index, { unit: (event.target as HTMLSelectElement).value as FormulaUnit });
+function onItemUnit(index: number, unit: string) {
+  formula.value = updateItem(formula.value, index, { unit: unit as FormulaUnit });
 }
-function onItemRole(index: number, event: Event) {
-  formula.value = updateItem(formula.value, index, { role: (event.target as HTMLSelectElement).value as IngredientRole });
+function onItemRole(index: number, role: string) {
+  formula.value = updateItem(formula.value, index, { role: role as IngredientRole });
 }
 function onItemGramsPerUnit(index: number, event: Event) {
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
@@ -149,22 +149,32 @@ function move(index: number, delta: number) {
 }
 
 // ── Âncora ──────────────────────────────────────────────────────────────────
-function onAnchorKind(event: Event) {
-  const next = (event.target as HTMLSelectElement).value as AnchorKind;
+function onAnchorKind(kind: string) {
+  const next = kind as AnchorKind;
   const firstSku = formula.value.items.find((item) => item.sku)?.sku ?? "";
   formula.value = setAnchor(formula.value, next, next === "ingredient" ? firstSku : "");
 }
-function onAnchorSku(event: Event) {
-  formula.value = setAnchor(formula.value, "ingredient", (event.target as HTMLSelectElement).value);
+function onAnchorSku(sku: string) {
+  formula.value = setAnchor(formula.value, "ingredient", sku);
 }
-const anchorCandidates = computed(() => formula.value.items.filter((item) => item.sku));
+const anchorCandidates = computed(() =>
+  formula.value.items
+    .filter((item) => item.sku)
+    .map((item) => ({ value: item.sku, label: item.name || item.sku })),
+);
+// Listas curtas e fixas da ficha: `NuxtSelect` (o `[...]` tira o readonly do tipo).
+const yieldUnits = [...YIELD_UNIT_OPTIONS];
+const units = [...UNIT_OPTIONS];
+const roles = [...ROLE_OPTIONS];
+const anchors = [...ANCHOR_OPTIONS];
+const partKinds = [...PART_KIND_OPTIONS];
 
 // ── Partes ──────────────────────────────────────────────────────────────────
 function addNewPart() {
   formula.value = addPart(formula.value, emptyPart("preferment"));
 }
-function onPartKind(index: number, event: Event) {
-  const next = (event.target as HTMLSelectElement).value as PartKind;
+function onPartKind(index: number, kind: string) {
+  const next = kind as PartKind;
   formula.value = updatePart(formula.value, index, next === "old_dough" ? { kind: next, cap_pct: 20 } : { kind: next, cap_pct: null });
 }
 function onPartSku(index: number, sku: string) {
@@ -177,8 +187,8 @@ function onPartNumber(index: number, field: "flour_pct" | "quantity" | "cap_pct"
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
   formula.value = updatePart(formula.value, index, { [field]: raw ? Number(raw) || null : null });
 }
-function onPartUnit(index: number, event: Event) {
-  formula.value = updatePart(formula.value, index, { unit: (event.target as HTMLSelectElement).value as FormulaUnit });
+function onPartUnit(index: number, unit: string) {
+  formula.value = updatePart(formula.value, index, { unit: unit as FormulaUnit });
 }
 function dropPart(index: number) {
   formula.value = removePart(formula.value, index);
@@ -275,6 +285,7 @@ async function startDraft() {
   if (result.ok && result.version) await navigateTo(`/recipes/${entryRef}/edit?v=${result.version.number}`, { replace: true });
 }
 
+const touch = useTouchPointer();
 </script>
 
 <template>
@@ -380,27 +391,31 @@ async function startDraft() {
               Rendimento
               <span class="flex items-center gap-1">
                 <UiInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-20" />
-                <UiNativeSelect v-model="yieldUnit" class="w-auto">
-                  <option v-for="unit in YIELD_UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                </UiNativeSelect>
+                <NuxtSelect v-model="yieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" />
               </span>
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Âncora (100%)
               <span class="flex items-center gap-1">
-                <UiNativeSelect :value="formula.anchor.kind" class="w-auto" @change="onAnchorKind">
-                  <option v-for="option in ANCHOR_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-                </UiNativeSelect>
-                <UiNativeSelect
+                <NuxtSelect
+                  :model-value="formula.anchor.kind"
+                  :items="anchors"
+                  value-key="value"
+                  class="w-44"
+                  aria-label="Âncora (100%)"
+                  @update:model-value="onAnchorKind"
+                />
+                <NuxtSelectMenu
                   v-if="formula.anchor.kind === 'ingredient'"
-                  :value="formula.anchor.sku ?? ''"
-                  class="w-auto"
+                  :model-value="formula.anchor.sku || undefined"
+                  :items="anchorCandidates"
+                  value-key="value"
+                  placeholder="Escolha o ingrediente"
+                  class="w-48"
+                  :search-input="{ autofocus: !touch, placeholder: 'Buscar ingrediente' }"
                   aria-label="Ingrediente-âncora"
-                  @change="onAnchorSku"
-                >
-                  <option value="">Escolha…</option>
-                  <option v-for="item in anchorCandidates" :key="item.sku" :value="item.sku">{{ item.name || item.sku }}</option>
-                </UiNativeSelect>
+                  @update:model-value="onAnchorSku"
+                />
               </span>
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
@@ -461,30 +476,33 @@ async function startDraft() {
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Un
-                  <UiNativeSelect :value="item.unit" class="w-auto" @change="onItemUnit(index, $event)">
-                    <option v-for="unit in UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                  </UiNativeSelect>
+                  <NuxtSelect
+                    :model-value="item.unit"
+                    :items="units"
+                    class="w-24"
+                    :aria-label="`Unidade de ${item.name || 'ingrediente'}`"
+                    @update:model-value="(unit: string) => onItemUnit(index, unit)"
+                  />
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Papel
-                  <UiNativeSelect :value="item.role" class="w-auto" @change="onItemRole(index, $event)">
-                    <option v-for="role in ROLE_OPTIONS" :key="role.value" :value="role.value">{{ role.label }}</option>
-                  </UiNativeSelect>
+                  <NuxtSelect
+                    :model-value="item.role"
+                    :items="roles"
+                    value-key="value"
+                    class="w-36"
+                    :aria-label="`Papel de ${item.name || 'ingrediente'}`"
+                    @update:model-value="(role: string) => onItemRole(index, role)"
+                  />
                 </label>
                 <div class="flex items-end gap-1">
                   <span class="mb-2 w-12 text-right text-sm tabular-nums text-muted-foreground" :title="'Percentual sobre a âncora (prévia local)'">
                     {{ pctOf(item, localAnchorTotal) ? `${pctOf(item, localAnchorTotal)}%` : "" }}
                   </span>
-                  <!-- Ícones de 36px formam a microbarra de ordenação da linha; não são CTAs UiButton. -->
-                  <button type="button" class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent disabled:opacity-40" aria-label="Subir" :disabled="index === 0" @click="move(index, -1)">
-                    <Icon name="lucide:chevron-up" class="size-4" />
-                  </button>
-                  <button type="button" class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent disabled:opacity-40" aria-label="Descer" :disabled="index === formula.items.length - 1" @click="move(index, 1)">
-                    <Icon name="lucide:chevron-down" class="size-4" />
-                  </button>
-                  <button type="button" class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive" aria-label="Remover ingrediente" @click="remove(index)">
-                    <Icon name="lucide:trash-2" class="size-4" />
-                  </button>
+                  <!-- A microbarra da linha: ordenar e remover, ícones `ghost`. -->
+                  <NuxtButton icon="i-lucide-chevron-up" color="neutral" variant="ghost" square aria-label="Subir" :disabled="index === 0" @click="move(index, -1)" />
+                  <NuxtButton icon="i-lucide-chevron-down" color="neutral" variant="ghost" square aria-label="Descer" :disabled="index === formula.items.length - 1" @click="move(index, 1)" />
+                  <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover ingrediente" @click="remove(index)" />
                 </div>
                 <label v-if="item.unit === 'un'" class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-6">
                   Gramas por unidade (sem isso a contagem fica fora da conta)
@@ -520,9 +538,14 @@ async function startDraft() {
               <li v-for="(part, index) in formula.parts" :key="index" class="grid gap-2 p-3 sm:grid-cols-[auto_minmax(0,1.4fr)_auto_auto_auto]">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Tipo
-                  <UiNativeSelect :value="part.kind" class="w-auto" @change="onPartKind(index, $event)">
-                    <option v-for="option in PART_KIND_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-                  </UiNativeSelect>
+                  <NuxtSelect
+                    :model-value="part.kind"
+                    :items="partKinds"
+                    value-key="value"
+                    class="w-44"
+                    aria-label="Tipo da parte"
+                    @update:model-value="(kind: string) => onPartKind(index, kind)"
+                  />
                 </label>
                 <template v-if="part.kind === 'old_dough'">
                   <p class="self-end pb-2 text-sm text-muted-foreground sm:col-span-2">A própria base da véspera; declara só o teto.</p>
@@ -550,18 +573,20 @@ async function startDraft() {
                     Quantidade
                     <span class="flex items-center gap-1">
                       <UiInput :model-value="part.quantity ?? ''" type="text" inputmode="decimal" class="w-20 text-right" @input="onPartNumber(index, 'quantity', $event)" />
-                      <UiNativeSelect :value="part.unit ?? 'g'" class="w-auto" @change="onPartUnit(index, $event)">
-                        <option v-for="unit in UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                      </UiNativeSelect>
+                      <NuxtSelect
+                        :model-value="part.unit ?? 'g'"
+                        :items="units"
+                        class="w-24"
+                        aria-label="Unidade da parte"
+                        @update:model-value="(unit: string) => onPartUnit(index, unit)"
+                      />
                     </span>
                   </label>
                   <span v-if="anchorIsFlour" class="hidden sm:block" />
                 </template>
                 <div class="flex items-end">
                   <!-- Remoção compacta pertence à linha editável; mantém o alinhamento da grade. -->
-                  <button type="button" class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive" aria-label="Remover parte" @click="dropPart(index)">
-                    <Icon name="lucide:trash-2" class="size-4" />
-                  </button>
+                  <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover parte" @click="dropPart(index)" />
                 </div>
               </li>
             </ol>

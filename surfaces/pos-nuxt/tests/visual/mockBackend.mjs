@@ -129,6 +129,99 @@ const pos = {
   auto_lock_seconds: 0,
 };
 
+// Cenário da prévia (`MOCK_SCENARIO=sale`): o balcão com comandas em uso, produtos e
+// uma comanda que abre com itens, para ver a venda inteira (barra da venda, comanda,
+// folha de baixo no celular) sem backend. Sem a variável, o mock é o de sempre e as
+// fotos das Encomendas não mudam.
+const SALE = process.env.MOCK_SCENARIO === "sale";
+const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
+const PRODUCTS = [
+  ["PAO-FRANCES", "Pão francês", 90, "paes"],
+  ["CROISSANT", "Croissant", 1150, "viennoiserie"],
+  ["PAIN-CHOC", "Pain au chocolat", 1290, "viennoiserie"],
+  ["BRIOCHE", "Brioche de manteiga", 1490, "viennoiserie"],
+  ["BAGUETE", "Baguete tradicional", 1390, "paes"],
+  ["CAFE-COADO", "Café coado", 690, "bebidas"],
+  ["CAPPUCCINO", "Cappuccino", 1290, "bebidas"],
+  ["SUCO-LARANJA", "Suco de laranja", 1190, "bebidas"],
+].map(([sku, name, price_q, collection_ref]) => ({
+  sku, name, price_q, price_display: brl(price_q), collection_ref,
+  collection_color: "", collection_icon: "", image_url: "", kitchen_station: "",
+}));
+if (SALE) {
+  Object.assign(pos, {
+    products: PRODUCTS,
+    collections: [
+      { ref: "paes", name: "Pães" },
+      { ref: "viennoiserie", name: "Viennoiserie" },
+      { ref: "bebidas", name: "Bebidas" },
+    ],
+    payment_methods: [
+      { ref: "cash", label: "Dinheiro" },
+      { ref: "pix", label: "Pix" },
+      { ref: "card", label: "Cartão" },
+    ],
+    fulfillment_options: [
+      { ref: "pickup", label: "Retirada", description: "", requires_address: false },
+      { ref: "delivery", label: "Entrega", description: "", requires_address: true },
+    ],
+    actions: [],
+  });
+}
+const SALE_ITEMS = [
+  { line_id: "L-aaaa0001", sku: "CROISSANT", name: "Croissant", price_q: 1150, qty: 2, notes: "" },
+  { line_id: "L-aaaa0002", sku: "PAIN-CHOC", name: "Pain au chocolat", price_q: 1290, qty: 1, notes: "" },
+  { line_id: "L-aaaa0003", sku: "CAFE-COADO", name: "Café coado", price_q: 690, qty: 2, notes: "" },
+];
+const tab = (ref, overrides = {}) => ({
+  ref, display_ref: ref, session_key: `S-${ref}`, state: "empty", status_label: "Livre",
+  status_class: "", customer_name: "", customer_phone: "", item_count: 0, line_count: 0,
+  total_display: "", last_touched_display: "", items_preview: "", ...overrides,
+});
+const TABS = SALE
+  ? [
+      tab("12", {
+        state: "in_use", status_label: "Em uso", customer_name: "Ana Souza", item_count: 5, line_count: 3,
+        total_display: brl(5960), last_touched_display: "há 2 min", items_preview: "2 Croissant · 1 Pain au chocolat · 2 Café coado",
+        opened_at_display: "09:41",
+      }),
+      tab("14", { state: "in_use", status_label: "Em uso", item_count: 1, line_count: 1, total_display: brl(1290), items_preview: "1 Cappuccino", opened_at_display: "10:02" }),
+      tab("15"), tab("16"), tab("17"), tab("18"),
+    ]
+  : [];
+function tabPayload(ref) {
+  const inUse = ref === "12";
+  return {
+    revision: "rev-1", sales_mode: "counter", session_key: `S-${ref}`, tab_session_key: `S-${ref}`,
+    tab_ref: ref, tab_display: ref, tab_number: ref, opened_at_display: "09:41", seating_spot_ref: "", edit_of: "",
+    items: inUse ? SALE_ITEMS : [], customer_phone: "", customer_name: inUse ? "Ana Souza" : "", customer_ref: "",
+    customer_tax_id: "", customer_email: "", fulfillment_type: "", delivery_address: "",
+    delivery_address_structured: {}, delivery_date: "", delivery_time_slot: "", delivery_fee_override_q: null,
+  };
+}
+function review(body) {
+  const items = Array.isArray(body?.items) ? body.items : [];
+  const subtotal = items.reduce((sum, item) => sum + Number(item.unit_price_q || 0) * Number(item.qty || 0), 0);
+  return {
+    intent_version: "1", tab_ref: body?.tab_ref || "", subtotal_q: subtotal, subtotal_display: brl(subtotal),
+    discount_q: 0, discount_display: brl(0), line_discount_q: 0, line_discount_display: brl(0),
+    order_discount_q: 0, order_discount_display: brl(0), delivery_fee_q: 0, delivery_fee_display: brl(0),
+    total_q: subtotal, total_display: brl(subtotal), payment_method: "", payment_collection: "",
+    tender_total_q: 0, tender_total_display: brl(0), tender_count: 0, tendered_q: 0, tendered_amount_display: brl(0),
+    change_q: 0, change_display: brl(0), requires_manager_approval: false, manager_approval_threshold_q: 0,
+    approval_reasons: [], lines: [],
+  };
+}
+function readBody(req) {
+  return new Promise((resolve) => {
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      try { resolve(JSON.parse(raw || "{}")); } catch { resolve({}); }
+    });
+  });
+}
+
 function send(res, status, payload) {
   const body = JSON.stringify(payload);
   res.statusCode = status;
@@ -190,8 +283,23 @@ createServer((req, res) => {
     return;
   }
   if (path === "/api/v1/backstage/pos/") {
-    send(res, 200, { pos, shift: null, tabs: [], operator: { id: 7, name: "Ana" } });
+    send(res, 200, { pos, shift: null, tabs: TABS, operator: { id: 7, name: "Ana" } });
     return;
+  }
+  if (SALE) {
+    const open = path.match(/^\/api\/v1\/backstage\/pos\/tabs\/([^/]+)\/open\/$/);
+    if (open) {
+      send(res, 200, tabPayload(decodeURIComponent(open[1])));
+      return;
+    }
+    if (path === "/api/v1/backstage/pos/tabs/save/") {
+      void readBody(req).then((body) => send(res, 200, { ...tabPayload(body?.tab_ref || "12"), items: body?.items || [] }));
+      return;
+    }
+    if (path === "/api/v1/backstage/pos/sale/review/") {
+      void readBody(req).then((body) => send(res, 200, { ok: true, review: review(body) }));
+      return;
+    }
   }
   if (path === "/api/v1/backstage/pos/preorders/search/") {
     send(res, 200, {
