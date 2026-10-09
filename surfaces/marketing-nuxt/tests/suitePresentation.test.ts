@@ -21,7 +21,7 @@ describe("ao vivo do cabeçalho", () => {
   it("sem o aviso imediato, diz por extenso que a tela confere sozinha", () => {
     expect(marketingLiveStatus({ ...base, realtime: "polling", failed: false })).toMatchObject({
       tone: "calm",
-      label: "Atualiza sozinho a cada 1 min",
+      label: "Atualiza a cada 1 min",
     });
   });
 

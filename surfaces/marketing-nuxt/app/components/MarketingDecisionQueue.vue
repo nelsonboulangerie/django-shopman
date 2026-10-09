@@ -140,7 +140,7 @@ const scheduledLine = computed(() =>
       <template #status>
         <!-- No celular o kit desce o estado para a segunda linha da barra (README "Barra
              do topo no celular"): ele não disputa mais a largura com o título, e o rótulo
-             por extenso ("Atualiza sozinho a cada 1 min") aparece inteiro. -->
+             por extenso ("Atualiza a cada 1 min") aparece inteiro. -->
         <span class="flex min-w-0" data-marketing-live>
           <OperatorLiveStatus
             :tone="live.tone"
