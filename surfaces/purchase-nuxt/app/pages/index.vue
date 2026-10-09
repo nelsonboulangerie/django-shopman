@@ -1363,7 +1363,7 @@ function onPackageCode(code: string) {
       >
         <span v-if="pending && !backendReady" class="inline-flex items-center gap-2 text-muted-foreground">
           <Icon name="lucide:loader-circle" class="size-4 animate-spin" />
-          Conectando ao Core de compras
+          Carregando as compras…
         </span>
         <span v-else-if="readonlyFallback" class="inline-flex items-center gap-2 text-warning">
           <Icon name="lucide:wifi-off" class="size-4" />
@@ -1691,7 +1691,7 @@ function onPackageCode(code: string) {
                   {{ receiptConference.ready }} de {{ receiptConference.total }} {{ receiptConference.total === 1 ? "conferido" : "conferidos" }}<template v-if="receiptTotalPending"> · {{ receiptTotalPending }} {{ receiptTotalPending === 1 ? "pendência" : "pendências" }}</template>
                 </p>
               </div>
-              <button type="button" class="inline-flex h-11 shrink-0 items-center rounded-full bg-primary px-4 op-label font-semibold text-primary-foreground" data-receipt-continue @click="receiptParked = false">
+              <button type="button" class="inline-flex h-8 shrink-0 items-center rounded-full bg-primary px-4 op-label font-semibold text-primary-foreground" data-receipt-continue @click="receiptParked = false">
                 Continuar
               </button>
             </section>
@@ -2113,7 +2113,7 @@ function onPackageCode(code: string) {
                     <p class="op-title tnum">{{ formatStockOnHand(material) }}</p>
                   </div>
                   <label
-                    class="inline-flex h-11 w-32 shrink-0 items-center gap-1.5 rounded-md bg-card px-2.5"
+                    class="inline-flex h-8 w-32 shrink-0 items-center gap-1.5 rounded-md bg-card px-2.5"
                     :class="minStockLineErrors[material.sku] ? 'border-2 border-destructive' : minStockInputs[material.sku] ? 'border-2 border-primary' : 'border border-input'"
                   >
                     <input

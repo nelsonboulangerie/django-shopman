@@ -114,7 +114,7 @@ useHead({ title: presentation.value.title });
       <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-center">
         <NuxtLink
           to="/"
-          class="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
+          class="inline-flex min-h-8 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
           @click="clearError({ redirect: '/' })"
         >
           Voltar às decisões

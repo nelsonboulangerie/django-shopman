@@ -169,7 +169,7 @@ onBeforeUnmount(() => {
       <UiInput
         ref="inputRef"
         v-model="query"
-        class="h-11 pl-10 text-base"
+        class="h-8 pl-10 text-base"
         placeholder="Buscar por nome, telefone, CPF ou e-mail"
         role="combobox"
         aria-expanded="true"
@@ -232,7 +232,7 @@ onBeforeUnmount(() => {
         v-if="emptyStateLabel"
         type="button"
         variant="outline"
-        class="h-11 w-full justify-center gap-2 whitespace-normal text-sm"
+        class="h-8 w-full justify-center gap-2 whitespace-normal text-sm"
         @click="run(pendingAction)"
       >
         <Icon name="lucide:user-round-plus" class="size-4 shrink-0" />

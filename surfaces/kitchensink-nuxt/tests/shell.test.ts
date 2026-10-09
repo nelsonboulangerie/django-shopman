@@ -50,3 +50,32 @@ describe("casca do kitchensink", () => {
     expect(shell).not.toContain("<OperatorRail");
   });
 });
+
+// A página do shell de referência (`/suite`): o shell da suíte e cada peça da fase 2 que
+// já mora no kit, compostas do kit (nenhuma cópia local de peça).
+describe("página do shell de referência", () => {
+  const suite = readFileSync(new URL("../app/pages/suite.vue", import.meta.url), "utf8");
+
+  it("veste o shell da suíte com o cabeçalho, o aviso da tela e o ⋯ único", () => {
+    expect(suite).toContain("<OperatorSuiteShell");
+    expect(suite).toContain("<OperatorPageHeader");
+    expect(suite).toContain(':alerts="alerts"');
+    expect(suite).toContain(':actions="headerActions"');
+  });
+
+  it("mostra todas as peças da fase 2 que existem no kit", () => {
+    for (const piece of [
+      "<OperatorKitchenSinkScreenPieces", // Mais ações, Anterior e próximo, Ação na base, Estado da tela
+      "<OperatorActionBar",
+      "<OperatorSwipeRow",
+      "<OperatorMoreMenu",
+      'kind="stacked"',
+    ]) {
+      expect(suite).toContain(piece);
+    }
+  });
+
+  it("conjunto mínimo: nada cru, nada nativo", () => {
+    expect(suite).not.toMatch(/<button\b|<table\b|UiNativeSelect|<select\b/);
+  });
+});

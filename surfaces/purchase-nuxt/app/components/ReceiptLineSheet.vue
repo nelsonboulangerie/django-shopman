@@ -275,7 +275,7 @@ function onCheck(checked: boolean) {
               />
               <button
                 type="button"
-                class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-semibold hover:bg-accent"
+                class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-semibold hover:bg-accent"
                 aria-label="Ler o EAN do item pela câmera"
                 data-sheet-scan-ean
                 @click="emit('scan-ean')"
@@ -293,7 +293,7 @@ function onCheck(checked: boolean) {
             <p v-else class="mt-2 text-xs text-muted-foreground">
               Parece <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span> ({{ preview.suggestion.scorePercent }}% parecido)
             </p>
-            <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground sm:w-auto" @click="emit('acceptSuggestion')">
+            <button type="button" class="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground sm:w-auto" @click="emit('acceptSuggestion')">
               <Icon name="lucide:check" class="size-3.5" />
               É este
             </button>
@@ -406,11 +406,11 @@ function onCheck(checked: boolean) {
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="block text-xs font-medium text-muted-foreground">
                 Lote do fornecedor
-                <input v-model="invoiceLot" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" placeholder="Opcional" />
+                <input v-model="invoiceLot" class="mt-1 h-8 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" placeholder="Opcional" />
               </label>
               <label class="block text-xs font-medium text-muted-foreground">
                 Ocorrência
-                <input v-model="lineNote" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" placeholder="Avaria, falta, ressalva" />
+                <input v-model="lineNote" class="mt-1 h-8 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" placeholder="Avaria, falta, ressalva" />
               </label>
             </div>
           </div>
@@ -477,7 +477,7 @@ function onCheck(checked: boolean) {
         <div class="grid grid-cols-2 gap-2">
           <button
             type="button"
-            class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
+            class="inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent"
             @click="emit('update:open', false)"
           >
             {{ preview.line.checked ? "Fechar" : "Fechar sem conferir" }}
@@ -485,7 +485,7 @@ function onCheck(checked: boolean) {
           <button
             v-if="hasDifference"
             type="button"
-            class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-destructive hover:bg-destructive/10"
+            class="inline-flex h-8 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-destructive hover:bg-destructive/10"
             data-sheet-reject-line
             @click="emit('reject-line')"
           >
@@ -495,7 +495,7 @@ function onCheck(checked: boolean) {
           <button
             v-else
             type="button"
-            class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-medium text-destructive hover:bg-destructive/10"
+            class="inline-flex h-8 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-medium text-destructive hover:bg-destructive/10"
             :aria-label="`Remover ${label}`"
             @click="emit('remove')"
           >

@@ -20,6 +20,9 @@ import UiRadioGroup from "../../../operator-kit/app/components/UiRadioGroup.vue"
 // O ⋯ único entra de verdade: o contrato (o nome do botão, os grupos, o motivo de uma
 // ação que não pode) é do kit, e o menu por baixo é o `NuxtDropdownMenu` deste harness.
 import OperatorMoreMenu from "../../../operator-kit/app/components/OperatorMoreMenu.vue";
+// O botão com prazo entra de verdade: o Desfazer da saída (cartão e detalhe) é ele, e o
+// contrato cobrado (rótulo fixo, prazo absoluto, some no fim) é do kit.
+import OperatorTimedButton from "../../../operator-kit/app/components/OperatorTimedButton.vue";
 import UiTabs from "../../../operator-kit/app/components/Ui/Tabs/Tabs.vue";
 import UiTabsList from "../../../operator-kit/app/components/Ui/Tabs/List.vue";
 import UiTabsTrigger from "../../../operator-kit/app/components/Ui/Tabs/Trigger.vue";
@@ -959,6 +962,7 @@ config.global.components = {
   NuxtTimeline: textPrimitive("NuxtTimeline"),
   OperatorOrderDetail,
   OperatorMoreMenu,
+  OperatorTimedButton,
   UiRadio,
   UiRadioGroup,
   UiTabs,

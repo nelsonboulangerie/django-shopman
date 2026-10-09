@@ -140,7 +140,7 @@ const scheduledLine = computed(() =>
       <template #status>
         <!-- No celular o kit desce o estado para a segunda linha da barra (README "Barra
              do topo no celular"): ele não disputa mais a largura com o título, e o rótulo
-             por extenso ("Atualiza a cada 1 min") aparece inteiro. -->
+             por extenso ("Atualiza sozinho a cada 1 min") aparece inteiro. -->
         <span class="flex min-w-0" data-marketing-live>
           <OperatorLiveStatus
             :tone="live.tone"
@@ -292,7 +292,7 @@ const scheduledLine = computed(() =>
           <NuxtLink
             :to="check.href"
             :data-automatic-check="check.state"
-            class="flex min-h-11 items-start gap-2.5 rounded-xl px-1 py-1.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            class="flex min-h-8 items-start gap-2.5 rounded-xl px-1 py-1.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span
               class="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"

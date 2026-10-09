@@ -102,7 +102,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         <UiInput
           ref="inputRef"
           :model-value="modelValue"
-          class="h-11 pr-12 text-base"
+          class="h-8 pr-12 text-base"
           :maxlength="maxLength"
           :placeholder="placeholder"
           autofocus
@@ -110,7 +110,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         />
         <OperatorKbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-md:hidden" aria-hidden="true">F2</OperatorKbd>
       </div>
-      <UiButton type="submit" size="lg" class="h-11 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1" :disabled="busy || !modelValue.trim()">
+      <UiButton type="submit" size="lg" class="h-8 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1" :disabled="busy || !modelValue.trim()">
         <Icon name="lucide:plus" class="size-5" />
         Abrir comanda
       </UiButton>
@@ -118,7 +118,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         type="button"
         size="lg"
         variant="outline"
-        class="h-11 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1"
+        class="h-8 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1"
         :disabled="busy"
         :title="`Abrir a comanda ${nextFreeDisplay}`"
         @click="openNextFree"

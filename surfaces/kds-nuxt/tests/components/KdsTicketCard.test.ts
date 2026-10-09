@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
 
 import KdsTicketCard from "../../app/components/KdsTicketCard.vue";
@@ -65,7 +65,29 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
   };
 }
 
-const stubs = { Icon: true };
+// O botão com prazo é do kit (testado lá, `operator-kit/tests/components/
+// OperatorTimedButton.test.ts`); aqui basta o contrato: rótulo, prazo e o toque.
+const OperatorTimedButton = defineComponent({
+  name: "OperatorTimedButton",
+  inheritAttrs: false,
+  props: { label: String, until: Number, duration: Number },
+  emits: ["click"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h(
+        "button",
+        {
+          ...attrs,
+          type: "button",
+          "data-until": props.until,
+          "data-duration": props.duration,
+          onClick: (event: MouseEvent) => emit("click", event),
+        },
+        props.label,
+      );
+  },
+});
+const stubs = { Icon: true, OperatorTimedButton };
 const mountCard = (props: Record<string, unknown>) =>
   mount(KdsTicketCard, { props, global: { stubs } });
 
@@ -223,12 +245,21 @@ describe("KdsTicketCard — o Desfazer mora no card", () => {
     // O pedido continua legível — é o mesmo card, não um aviso no topo da tela.
     expect(w.text()).toContain("0007");
     expect(w.text()).toContain("Pão na Chapa");
-    expect(w.get("[data-kds-undo]").text()).toContain("Pronto. Sai em");
+    // O tempo mora no próprio botão: nada de frase "Sai em" nem barrinha acima dele.
+    expect(w.get("[data-kds-undo]").text()).not.toContain("Sai em");
     const action = w.get("button[data-kds-action]");
+    expect(Number(action.attributes("data-duration"))).toBe(5000);
+    expect(Number(action.attributes("data-until"))).toBeGreaterThan(Date.now());
     expect(action.text()).toContain("Desfazer");
     await action.trigger("click");
     expect(w.emitted("undo")).toHaveLength(1);
     expect(w.emitted("finish")).toBeUndefined();
+  });
+
+  it("o prazo vem do quadro: montar o card de novo não reinicia a janela", () => {
+    const until = Date.now() + 2100;
+    const w = mountCard({ ticket: ticket({ status: "in_progress" }), finishing: true, finishUntil: until });
+    expect(Number(w.get("button[data-kds-action]").attributes("data-until"))).toBe(until);
   });
 
   it("durante a janela a área de leitura não aceita toque: o único gesto é desfazer", () => {

@@ -500,7 +500,7 @@ const newCustomerNote = computed(() => {
                 <UiButton
                   type="button"
                   :disabled="customerReleaseBusy"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="$emit('decisionRelease', confirmingRelease); confirmingRelease = null"
                 >
                   <Icon
@@ -513,7 +513,7 @@ const newCustomerNote = computed(() => {
                 <UiButton
                   type="button"
                   variant="outline"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="confirmingRelease = null"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
@@ -532,7 +532,7 @@ const newCustomerNote = computed(() => {
               <div class="grid gap-2 sm:grid-cols-2">
                 <UiButton
                   type="button"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="confirmingAttend = false; $emit('decisionConfirm')"
                 >
                   <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
@@ -541,7 +541,7 @@ const newCustomerNote = computed(() => {
                 <UiButton
                   type="button"
                   variant="outline"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="confirmingAttend = false"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
@@ -636,7 +636,7 @@ const newCustomerNote = computed(() => {
               v-if="decisionCopy.release && customerDecision.kind !== 'candidate_list' && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerReleaseBusy"
-              class="h-11 w-full justify-center gap-2"
+              class="h-8 w-full justify-center gap-2"
               @click="askRelease(decisionReleaseValue)"
             >
               <Icon
@@ -664,7 +664,7 @@ const newCustomerNote = computed(() => {
               v-if="decisionCopy.merge && !decisionCopy.confirmLabel && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerMergeBusy"
-              class="h-11 w-full justify-center gap-2"
+              class="h-8 w-full justify-center gap-2"
               @click="$emit('decisionMerge')"
             >
               <Icon
@@ -685,7 +685,7 @@ const newCustomerNote = computed(() => {
                 ref="receiptActionRef"
                 type="button"
                 :disabled="lookupBusy"
-                class="h-11 justify-center gap-2"
+                class="h-8 justify-center gap-2"
                 @click="cancelDecision"
               >
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
@@ -696,13 +696,13 @@ const newCustomerNote = computed(() => {
                 type="button"
                 :disabled="lookupBusy"
                 :variant="isReceiptDecision ? 'outline' : 'default'"
-                class="h-11 justify-center gap-2"
+                class="h-8 justify-center gap-2"
                 @click="askConfirm()"
               >
                 <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
               </UiButton>
-              <UiButton v-if="!isReceiptDecision" type="button" variant="outline" class="h-11 justify-center gap-2" @click="cancelDecision">
+              <UiButton v-if="!isReceiptDecision" type="button" variant="outline" class="h-8 justify-center gap-2" @click="cancelDecision">
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
               </UiButton>
@@ -716,7 +716,7 @@ const newCustomerNote = computed(() => {
               type="button"
               variant="ghost"
               :disabled="customerMergeBusy"
-              class="h-11 w-full justify-center gap-2"
+              class="h-8 w-full justify-center gap-2"
               @click="$emit('decisionMerge')"
             >
               <Icon

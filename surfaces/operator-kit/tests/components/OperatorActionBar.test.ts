@@ -75,7 +75,7 @@ describe("OperatorActionBar, a ação do momento na base do celular", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("a principal é o dourado com contorno; a segunda é contorno, não ghost", async () => {
+  it("a principal é o dourado sem anel (solid canônico); a segunda é contorno, não ghost", async () => {
     mounted = await mountSuspended(OperatorActionBar, {
       attachTo: document.body,
       props: { action: { label: "Aceitar" }, secondary: { label: "Limpar" } },
@@ -83,7 +83,7 @@ describe("OperatorActionBar, a ação do momento na base do celular", () => {
     const action = document.querySelector<HTMLElement>("[data-operator-action-bar-action]")!;
     const secondary = document.querySelector<HTMLElement>("[data-operator-action-bar-secondary]")!;
     expect(action.className).toContain("bg-primary");
-    expect(action.className).toContain("ring-(--ui-text-inverted)");
+    expect(action.className).not.toMatch(/(?:^|\s)ring-/);
     expect(secondary.className).toContain("ring-(--ui-text-inverted)");
     expect(secondary.className).toContain("text-inverted");
     expect(secondary.className).not.toMatch(/(?:^|\s)bg-default(?:\s|$)/);

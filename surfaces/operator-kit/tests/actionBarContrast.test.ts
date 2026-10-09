@@ -8,8 +8,13 @@ import { describe, expect, it } from "vitest";
 // O que a peça desenha:
 //   - superfície: `bg-inverted` = `--foreground` (escura no claro, creme no escuro);
 //   - texto da superfície e da segunda ação: `text-inverted` = `--primary-foreground`;
-//   - ação principal: `bg-primary` (`--primary`) com rótulo `text-inverted`;
-//   - contorno das duas: `--ui-text-inverted` (= `--primary-foreground`).
+//   - ação principal: `bg-primary` (`--primary`) com rótulo `text-inverted`, `solid`
+//     canônico, SEM anel (dono, 09/10/2026);
+//   - contorno da segunda (`outline`): `--ui-text-inverted` (= `--primary-foreground`).
+//
+// O que NÃO se trava: o dourado contra a superfície (2,8:1 no claro, 1,8:1 no escuro).
+// O 3:1 de componente (WCAG 1.4.11) vale para a informação que identifica o botão; o
+// principal se identifica pelo rótulo e pelo ícone, e esses têm AA dentro dele.
 
 const theme = readFileSync(new URL("../app/assets/css/operator-theme.css", import.meta.url), "utf8");
 
@@ -44,7 +49,7 @@ describe("ação na base: AA sobre a superfície invertida", () => {
     const inverted = token(css, "primary-foreground");
     const primary = token(css, "primary");
 
-    it(`tema ${name}: rótulo da principal sobre o dourado, AA (4,5:1)`, () => {
+    it(`tema ${name}: rótulo e ícone da principal dentro do dourado, AA (4,5:1)`, () => {
       expect(contrast(inverted, primary)).toBeGreaterThanOrEqual(4.5);
     });
 
@@ -52,7 +57,7 @@ describe("ação na base: AA sobre a superfície invertida", () => {
       expect(contrast(inverted, surface)).toBeGreaterThanOrEqual(4.5);
     });
 
-    it(`tema ${name}: o contorno dos dois botões separa da superfície (3:1)`, () => {
+    it(`tema ${name}: o contorno da secundária (outline) separa da superfície (3:1)`, () => {
       expect(contrast(inverted, surface)).toBeGreaterThanOrEqual(3);
     });
 

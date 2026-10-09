@@ -137,12 +137,15 @@ const itemCountLabel = computed(() => {
       <div class="grid w-full max-w-4xl gap-8 text-center">
         <div class="grid gap-2">
           <p class="text-3xl text-muted-foreground">Total a pagar</p>
+          <p v-if="snapshot?.totalPending" class="text-5xl font-semibold text-muted-foreground md:text-6xl" data-display-total-pending>
+            Calculando…
+          </p>
           <!-- O valor ANTES do desconto, riscado, acima do total e no mesmo peso
                da linha "Descontos" logo abaixo: o desconto JÁ está aplicado. -->
           <p v-if="snapshot?.grossTotalDisplay" class="text-xl text-muted-foreground tabular-nums line-through">
             <span class="sr-only">Valor sem desconto: </span>{{ snapshot.grossTotalDisplay }}
           </p>
-          <p class="text-7xl font-semibold tabular-nums tracking-tight md:text-8xl">{{ snapshot?.totalDisplay }}</p>
+          <p v-if="!snapshot?.totalPending" class="text-7xl font-semibold tabular-nums tracking-tight md:text-8xl">{{ snapshot?.totalDisplay }}</p>
           <p v-if="snapshot?.discountDisplay" class="text-xl text-primary tabular-nums">
             Descontos −{{ snapshot.discountDisplay }}
           </p>

@@ -55,6 +55,12 @@ const props = withDefaults(
   defineProps<{
     title: string;
     /**
+     * O título mais curto do celular (abaixo de `sm`), escolhido pelo CSS: o servidor
+     * desenha os dois e cada largura mostra o seu (o pedido: "Pedido W01" na mesa, "W01"
+     * no celular).
+     */
+    phoneTitle?: string;
+    /**
      * Linha fina acima do título. Omitida num dispositivo que é posto, ela diz o posto
      * ("Posto Saída · este dispositivo"), como na v4: o posto mora no cabeçalho, não num
      * ícone no rail.
@@ -82,6 +88,20 @@ const props = withDefaults(
      * `#actions` escondido no celular: o que importa no polegar está aqui.
      */
     actions?: OperatorHeaderAction[];
+    /**
+     * As ações só do celular (abaixo de `sm`): a vaga de ícone e o ⋯ "Mais ações", como
+     * `actions`, mas do `sm` para cima não há ⋯ delas (lá o `#actions` e a toolbar já as
+     * mostram). É o que o Gestor passava como `isNarrow ? [...] : undefined`: declarado
+     * sempre, o servidor já desenha a barra do celular no primeiro desenho.
+     */
+    phoneActions?: OperatorHeaderAction[];
+    /**
+     * A partir de que largura o `#actions` aparece, decidido pelo CSS (nunca por `v-if`
+     * com a régua do JS, que responde "mesa" até montar). Padrão: `sm` quando a tela
+     * declara `actions`/`phone-actions`, senão sempre. `md`: a tela que tem o seu
+     * celular até o `md` (`#phone-actions`, o painel próprio da fila do Gestor).
+     */
+    actionsFrom?: "sm" | "md";
     /** O nome do ⋯ (o que ele guarda). */
     actionsLabel?: string;
     /** Recortes ativos: o número no "Filtros" e os chips removíveis abaixo da linha. */
@@ -101,18 +121,28 @@ const props = withDefaults(
      * a onda de cada um).
      */
     phoneFilters?: "drawer" | "row";
+    /**
+     * `#filters` só do `sm` para cima (no shell): no celular não há "Filtros" nem painel,
+     * porque o que a tela põe ali são ações, e elas já estão nas `phone-actions`.
+     * `#filters-primary` e `#filters-end` seguem na linha do celular.
+     */
+    deskOnlyFilters?: boolean;
   }>(),
   {
     eyebrow: "",
+    phoneTitle: "",
     filtersWrap: true,
     inbox: true,
     search: true,
     searchPlaceholder: "Buscar pedido, cliente, produto ou tela",
     actions: undefined,
+    phoneActions: undefined,
+    actionsFrom: undefined,
     actionsLabel: "Mais ações",
     activeFilters: () => [],
     clearFilters: undefined,
     phoneFilters: undefined,
+    deskOnlyFilters: false,
     alerts: () => [],
   },
 );
@@ -150,8 +180,14 @@ onMounted(() => {
 const actionsBelow = computed(() => suitePage.value && phone.value);
 
 // A régua do celular da barra do topo e da toolbar: abaixo de `sm`. A do kit
-// (`useScreen`): o servidor e a hidratação desenham a mesa; a largura real vem depois.
+// (`useScreen`) responde "mesa" até a hidratação terminar; por isso a barra e a toolbar
+// NÃO decidem por ela o primeiro desenho. Antes de hidratar, as duas variantes (celular
+// e mesa) vão no HTML e o CSS mostra a certa (`sm:hidden` / `max-sm:hidden`): o celular
+// já nasce no layout do celular, sem o flash da mesa e sem mismatch. Depois de
+// hidratar, a variante que não serve sai da árvore (DOM enxuto, sem seletor em dobro).
 const narrow = screen.belowSm;
+const phoneVariant = computed(() => !screen.ready.value || narrow.value);
+const deskVariant = computed(() => !screen.ready.value || !narrow.value);
 
 const { data: operatorSession } =
   useNuxtData<OperatorSession>("operator-session");
@@ -173,25 +209,29 @@ const { request: openSearch } = useSuiteSearchRequest();
 // tela (abaixo de `sm` ela nunca está).
 const slots = useSlots();
 const declaredActions = computed(() => props.actions ?? []);
+const phoneDeclared = computed(() => props.phoneActions ?? declaredActions.value);
 const phoneLayout = computed(() =>
   phoneHeaderLayout({
     search: props.search || Boolean(slots.search),
     inbox: props.inbox,
-    actions: declaredActions.value,
+    actions: phoneDeclared.value,
   }),
 );
 function menuItem(action: OperatorHeaderAction & { search?: true }) {
   // `priority` e `search` são do kit: o `OperatorMoreMenu` os tira do item.
   return action.search ? { ...action, onSelect: () => openSearch() } : action;
 }
-const menuItems = computed(() =>
-  (narrow.value ? phoneLayout.value.overflow : declaredActions.value).map(menuItem),
+// Dois ⋯, um por variante, escolhidos pelo CSS: o do celular com o que não ganhou vaga,
+// o da mesa com as `actions` declaradas.
+const phoneMenuItems = computed(() => phoneLayout.value.overflow.map(menuItem));
+const deskMenuItems = computed(() => declaredActions.value.map(menuItem));
+const optedIn = computed(
+  () => props.actions !== undefined || props.phoneActions !== undefined,
 );
-const moreClass = computed(() => [
-  phoneLayout.value.overflow.length ? "" : "max-sm:hidden",
-  declaredActions.value.length ? "" : "sm:hidden",
-]);
-const optedIn = computed(() => props.actions !== undefined);
+const actionsClass = computed(() => {
+  const from = props.actionsFrom ?? (optedIn.value ? "sm" : undefined);
+  return from === "md" ? "max-md:hidden" : from === "sm" ? "max-sm:hidden" : "";
+});
 
 // No shell, o selo do app sai da barra do celular: a gaveta (☰) o mostra no topo.
 const sealClass = computed(() => (suiteRail ? "max-sm:hidden" : ""));
@@ -200,7 +240,26 @@ const sealClass = computed(() => (suiteRail ? "max-sm:hidden" : ""));
 const filtersMode = computed(
   () => props.phoneFilters ?? (suiteRail ? "drawer" : "row"),
 );
-const filterLine = computed(() => narrow.value && filtersMode.value === "drawer");
+const drawerMode = computed(() => filtersMode.value === "drawer");
+// A linha do celular (no shell) e a toolbar da mesa: as duas antes de hidratar, cada
+// uma com a sua classe de tela; depois, só a que serve. Funções lidas no render, não
+// `computed`: `useSlots()` não é reativo (ver a busca, acima).
+function phoneFilterSlot() {
+  return Boolean(slots.filters) && !props.deskOnlyFilters;
+}
+function filterLine() {
+  return (
+    drawerMode.value &&
+    phoneVariant.value &&
+    (phoneFilterSlot() || Boolean(slots["filters-primary"] || slots["filters-end"]))
+  );
+}
+function deskToolbar() {
+  return (
+    (!drawerMode.value || deskVariant.value) &&
+    Boolean(slots.filters || slots["filters-primary"] || slots["filters-end"])
+  );
+}
 const filtersOpen = ref(false);
 const activeCount = computed(() => props.activeFilters.length);
 // Avisos da tela: um inteiro, o resto em "e mais N".
@@ -267,7 +326,10 @@ function clearAll() {
     </template>
 
     <template #title>
-      <span>{{ title }}</span>
+      <span :class="phoneTitle ? 'max-sm:hidden' : ''">{{ title }}</span>
+      <span v-if="phoneTitle" class="sm:hidden" data-page-header-phone-title>{{
+        phoneTitle
+      }}</span>
       <NuxtBadge
         v-if="eyebrowText"
         color="neutral"
@@ -331,7 +393,7 @@ function clearAll() {
       <div
         v-if="$slots.actions && !actionsBelow"
         class="flex items-center gap-2"
-        :class="optedIn ? 'max-sm:hidden' : ''"
+        :class="actionsClass"
         data-page-header-actions
       >
         <slot name="actions" />
@@ -356,10 +418,17 @@ function clearAll() {
       <!-- O ⋯ "Mais ações": no celular, o que não ganhou vaga; do `sm` para cima, as
            ações declaradas (ao lado do `#actions`). -->
       <OperatorMoreMenu
-        v-if="declaredActions.length || phoneLayout.overflow.length"
-        :items="menuItems"
+        v-if="phoneVariant && phoneLayout.overflow.length"
+        :items="phoneMenuItems"
         :label="actionsLabel"
-        :class="moreClass"
+        class="sm:hidden"
+        data-page-header-more
+      />
+      <OperatorMoreMenu
+        v-if="deskVariant && declaredActions.length"
+        :items="deskMenuItems"
+        :label="actionsLabel"
+        class="max-sm:hidden"
         data-page-header-more
       />
       <ClientOnly v-if="inbox">
@@ -385,14 +454,9 @@ function clearAll() {
 
   <!-- Toolbar no celular (abaixo de `sm`, no shell): UMA linha de altura fixa, com os
        primários da tela e "Filtros"; o resto mora no painel de baixo. -->
-  <template
-    v-if="
-      filterLine &&
-      ($slots.filters || $slots['filters-primary'] || $slots['filters-end'])
-    "
-  >
+  <template v-if="filterLine()">
     <NuxtDashboardToolbar
-      class="py-2"
+      class="py-2 sm:hidden"
       :class="$slots.selection ? 'lg:hidden' : ''"
       data-page-header-filter-line
     >
@@ -413,7 +477,7 @@ function clearAll() {
           <slot name="filters-end" />
         </div>
         <NuxtButton
-          v-if="$slots.filters"
+          v-if="phoneFilterSlot()"
           class="ms-auto shrink-0"
           icon="i-lucide-sliders-horizontal"
           color="neutral"
@@ -441,7 +505,7 @@ function clearAll() {
     </NuxtDashboardToolbar>
     <NuxtDashboardToolbar
       v-if="activeFilters.length"
-      class="py-2"
+      class="py-2 sm:hidden"
       data-page-header-active-filters
     >
       <div
@@ -467,13 +531,13 @@ function clearAll() {
          período, ela se cortava ("Últim…"). -->
     <div
       v-if="$slots['filters-primary'] && $slots['filters-end']"
-      class="border-b border-default bg-card px-4 py-1 sm:px-6 [&_[data-read-freshness]]:max-w-none"
+      class="border-b border-default bg-card px-4 py-1 sm:hidden [&_[data-read-freshness]]:max-w-none"
       data-page-header-filters-end
     >
       <slot name="filters-end" />
     </div>
     <NuxtDrawer
-      v-if="$slots.filters"
+      v-if="phoneFilterSlot()"
       v-model:open="filtersOpen"
       title="Filtros"
       description="Recortes e controles desta tela."
@@ -510,11 +574,9 @@ function clearAll() {
   </template>
 
   <NuxtDashboardToolbar
-    v-else-if="
-      $slots.filters || $slots['filters-primary'] || $slots['filters-end']
-    "
+    v-if="deskToolbar()"
     class="py-2"
-    :class="$slots.selection ? 'lg:hidden' : ''"
+    :class="[drawerMode ? 'max-sm:hidden' : '', $slots.selection ? 'lg:hidden' : '']"
   >
     <div
       class="flex w-full items-center gap-2"

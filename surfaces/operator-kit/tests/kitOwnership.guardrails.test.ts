@@ -414,25 +414,16 @@ describe("operator-kit: os primitivos respeitam o token de alvo de toque", () =>
     });
   }
 
-  it("o alvo de toque canônico continua em 44 px no tema central", () => {
+  // DECISÃO MUDOU DE NOVO (dono, 09/10/2026, opção 1): campos e botões na altura `md`
+  // (32 px) em todos os apps, também PDV e Cozinha. O token `control` mede 32 px e não
+  // há mais degrau de tablet touch: nenhuma regra de ponteiro no tema.
+  it("o token de controle mede a altura md (32 px) no tema central", () => {
     const theme = readFileSync(resolve(surfacesDir, "operator-kit/app/assets/css/operator-theme.css"), "utf8");
-    expect(theme).toMatch(/--spacing-control:\s*2\.75rem;/);
+    expect(theme).toMatch(/--spacing-control:\s*2rem;/);
   });
 
-  // DECISÃO MUDOU (WP-OPERADOR-NUXTUI-ONDAS, onda 0, 08/10/2026): esta trava proibia
-  // qualquer `@media (pointer: coarse)` no tema, e com isso consagrou a remoção, no
-  // snapshot WIP do Gestor, do degrau de 48 px que o PDV, a Cozinha e a Produção usam
-  // em tablet touch. O brief da migração manda o kit mudar só por opt-in até cada app
-  // migrar. O que a trava protege continua protegido: o tema NÃO infla controle por
-  // seletor de elemento. Ele só escala o token opt-in (`--spacing-control`), que vale
-  // apenas onde o componente pede `min-h-control`.
-  it("no ponteiro touch, o tema só escala o token opt-in; nunca infla controle por seletor", () => {
+  it("no ponteiro touch, o tema não escala nem infla controle", () => {
     const theme = readFileSync(resolve(surfacesDir, "operator-kit/app/assets/css/operator-theme.css"), "utf8");
-    const coarseBlocks = [...theme.matchAll(/@media\s*\(pointer:\s*coarse\)[^{]*\{([\s\S]*?)\n\}/g)].map((m) => m[1]!);
-    expect(coarseBlocks).toHaveLength(1);
-    // Só sob o marcador da suíte (os sete apps não migrados) e no catálogo do kit; o
-    // Gestor não veste nenhum dos dois.
-    expect(coarseBlocks[0]).toMatch(/^\s*:root:has\(\[data-suite="v3"\], \[data-operator-catalog\]\)\s*\{\s*--spacing-control:\s*3rem;\s*\}\s*$/);
-    expect(theme).not.toMatch(/@media\s*\(pointer:\s*coarse\)[^{]*\{[^}]*\b(?:button|input|select|textarea)\b/);
+    expect(theme).not.toMatch(/@media\s*\(pointer:\s*coarse\)/);
   });
 });

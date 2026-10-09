@@ -1115,7 +1115,7 @@ function fromPlannedMenu(action: () => void) {
         <p class="op-body">Estamos tentando reconectar sozinhos.</p>
         <UiButton
           type="button"
-          class="mt-1 min-h-11"
+          class="mt-1 min-h-8"
           variant="outline"
           size="sm"
           @click="refresh()"
@@ -1145,7 +1145,7 @@ function fromPlannedMenu(action: () => void) {
           <NuxtLink
             v-if="emptyCopy.to"
             :to="emptyCopy.to"
-            class="inline-flex min-h-11 items-center op-label font-semibold text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-8 items-center op-label font-semibold text-primary underline-offset-2 hover:underline"
           >
             {{ emptyCopy.cta }}
           </NuxtLink>
@@ -1261,7 +1261,7 @@ function fromPlannedMenu(action: () => void) {
                         :ref="(el) => rememberReasonTrigger(row.output_sku, el)"
                         type="button"
                         data-plan-reason-trigger
-                        class="ml-auto inline-flex min-h-11 shrink-0 items-center gap-[5px] rounded-md px-2 op-label font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                        class="ml-auto inline-flex min-h-8 shrink-0 items-center gap-[5px] rounded-md px-2 op-label font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground"
                         :class="
                           reasonSku === row.output_sku
                             ? 'bg-primary/12 text-primary shadow-[inset_0_0_0_1.5px_var(--primary)]'
@@ -1413,7 +1413,7 @@ function fromPlannedMenu(action: () => void) {
             </div>
             <button
               type="button"
-              class="inline-flex h-11 items-center gap-2 rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
+              class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
               data-plan-clean-expand
               @click="expandClean = true"
             >
@@ -1422,7 +1422,7 @@ function fromPlannedMenu(action: () => void) {
             </button>
             <button
               type="button"
-              class="inline-flex h-11 items-center gap-2 rounded-md border border-primary px-4 op-label font-semibold text-primary transition hover:bg-primary/10 disabled:opacity-50"
+              class="inline-flex h-8 items-center gap-2 rounded-md border border-primary px-4 op-label font-semibold text-primary transition hover:bg-primary/10 disabled:opacity-50"
               :disabled="
                 !canPlanCleanSet || bulkSubmitting || inlineSubmitting != null
               "
@@ -1467,7 +1467,7 @@ function fromPlannedMenu(action: () => void) {
             </div>
             <button
               type="button"
-              class="inline-flex h-11 items-center gap-2 rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
+              class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
               data-plan-manual-expand
               @click="expandManual = true"
             >
@@ -1516,7 +1516,7 @@ function fromPlannedMenu(action: () => void) {
                   <UiPopoverTrigger as-child>
                     <button
                       type="button"
-                      class="inline-flex min-h-11 items-center gap-1.5 rounded-md px-1.5 op-label transition hover:bg-accent"
+                      class="inline-flex min-h-8 items-center gap-1.5 rounded-md px-1.5 op-label transition hover:bg-accent"
                       :aria-label="`${rowLabel(row)}, ${plannedStateLabel(row).toLowerCase()} ${plannedQtyLabel(row)}: corrigir, novo lote, encomendas`"
                       data-planned-row
                       :data-sku="row.output_sku"
@@ -1751,7 +1751,7 @@ function fromPlannedMenu(action: () => void) {
                   <!-- No celular e no tablet em pé o previsto vem junto da ação. -->
                   <span
                     v-if="row.started_qty !== '0' && lens.action.visible"
-                    class="inline-flex h-11 items-center gap-1.5 px-1 text-base font-semibold tabular-nums lg:hidden"
+                    class="inline-flex h-8 items-center gap-1.5 px-1 text-base font-semibold tabular-nums lg:hidden"
                     data-open-started-compact
                     >{{ formatQty(row.started_qty, row.output_unit) }}
                     <Icon name="lucide:circle-check" class="size-4 text-success"
@@ -1774,7 +1774,7 @@ function fromPlannedMenu(action: () => void) {
                     :class="
                       docked
                         ? 'h-12 border border-primary text-primary hover:bg-primary/10'
-                        : 'h-11 bg-primary text-primary-foreground hover:bg-primary/90'
+                        : 'h-8 bg-primary text-primary-foreground hover:bg-primary/90'
                     "
                     :disabled="isBusy(row.output_sku)"
                     :aria-label="`Confirmar ${rowLabel(row)}`"
@@ -1789,7 +1789,7 @@ function fromPlannedMenu(action: () => void) {
                     v-else-if="row.started_orders.length"
                     type="button"
                     class="hidden items-center justify-center whitespace-nowrap rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent sm:inline-flex"
-                    :class="docked ? 'h-12' : 'h-11'"
+                    :class="docked ? 'h-12' : 'h-8'"
                     :aria-label="`Ver lançamento de ${rowLabel(row)}`"
                     data-open-view-launch
                     @click="openStarted(row)"
@@ -2063,7 +2063,7 @@ function fromPlannedMenu(action: () => void) {
             v-for="workOrder in planRow.planned_orders"
             :key="workOrder.pk"
             type="button"
-            class="flex min-h-11 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
+            class="flex min-h-8 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
             @click="selectPlannedWorkOrder(workOrder)"
           >
             <span class="font-medium">#{{ workOrder.ref }}</span>
@@ -2195,7 +2195,7 @@ function fromPlannedMenu(action: () => void) {
             v-for="workOrder in startRow.planned_orders"
             :key="workOrder.pk"
             type="button"
-            class="flex min-h-11 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
+            class="flex min-h-8 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
             @click="selectStartWorkOrder(workOrder)"
           >
             <span class="font-medium">#{{ workOrder.ref }}</span>
@@ -2311,7 +2311,7 @@ function fromPlannedMenu(action: () => void) {
             v-for="workOrder in startedDialogOrders"
             :key="workOrder.pk"
             type="button"
-            class="flex min-h-11 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
+            class="flex min-h-8 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
             @click="selectedStartedPk = workOrder.pk"
           >
             <span class="font-medium">#{{ workOrder.ref }}</span>

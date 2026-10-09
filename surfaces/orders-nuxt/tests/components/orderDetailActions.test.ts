@@ -541,7 +541,7 @@ describe("nota da cozinha — atualização concorrente", () => {
     detalhe.value = order({ kitchen_note: "Outra pessoa", revisions: { kitchen_note: "v2" } });
     await w.vm.$nextTick();
     expect((w.get("#order-notes").element as HTMLTextAreaElement).value).toBe("Meu rascunho");
-    expect(w.text()).toContain("No servidor: Outra pessoa");
+    expect(w.text()).toContain("A nota gravada é: Outra pessoa");
     const save = w.findAll("button").find((button) => button.text() === "Salvar nota")!;
     expect(save.attributes("disabled")).toBeDefined();
     await w.findAll("button").find((button) => button.text() === "Manter meu texto")!.trigger("click");

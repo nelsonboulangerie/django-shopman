@@ -204,7 +204,7 @@ useHead({ title: "Ofertas e cupons" });
           <NuxtLink
             v-if="offer.available_for_campaign"
             :to="{ path: '/campaigns', query: { new: '1', offer: offer.ref } }"
-            class="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline"
+            class="mt-4 inline-flex min-h-8 items-center text-sm font-semibold text-primary hover:underline"
           >
             Criar campanha com esta oferta
           </NuxtLink>

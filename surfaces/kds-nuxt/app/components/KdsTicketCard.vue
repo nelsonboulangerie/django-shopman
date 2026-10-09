@@ -21,7 +21,8 @@
 // sai da cozinha exige o botão rotulado.
 //
 // Pronto não some com o card: por 5 s ele fica no lugar, apagado, com
-// "Desfazer" exatamente onde o dedo acabou de tocar.
+// "Desfazer" exatamente onde o dedo acabou de tocar. O tempo mora no próprio botão
+// (`OperatorTimedButton` do kit: o fundo esvazia até a janela fechar).
 //
 // O preparo é estado do TICKET, guardado no servidor: todos os tablets veem quem
 // já pegou o pedido.
@@ -58,6 +59,9 @@ const props = withDefaults(
     addition?: boolean;
     /** Marcado Pronto com a janela de "Desfazer" ainda aberta. */
     finishing?: boolean;
+    /** Fim da janela do "Desfazer" (epoch ms), guardado pelo quadro: o card pode
+     *  montar de novo sem reiniciar a janela. Sem ele, conta do momento em que abriu. */
+    finishUntil?: number;
     /** Rótulo fino acima do código (celular: "Agora"). */
     eyebrow?: string;
     /** Seletor para onde o botão vai (celular: a barra do polegar). Vazio = no card. */
@@ -69,6 +73,7 @@ const props = withDefaults(
     blocked: false,
     addition: false,
     finishing: false,
+    finishUntil: undefined,
     eyebrow: "",
     actionTarget: "",
   },
@@ -167,7 +172,15 @@ const timerChip = computed(() => toneTimerChip(tone.value));
 const actionLabel = computed(() =>
   props.actionTarget ? thumbActionLabel(action.value, code.value) : cardActionLabel(action.value, code.value),
 );
-const undoWindowSeconds = Math.round(KDS_UNDO_WINDOW_MS / 1000);
+// O prazo do Desfazer: o do quadro, ou, sem ele, o instante em que o card o viu abrir.
+const undoUntil = ref(0);
+watch(
+  () => [props.finishing, props.finishUntil] as const,
+  ([finishing, until]) => {
+    undoUntil.value = finishing ? (until ?? (undoUntil.value || Date.now() + KDS_UNDO_WINDOW_MS)) : 0;
+  },
+  { immediate: true },
+);
 // Observação curta mora na linha do item ("Pão de Hambúrguer · sem gergelim"); a longa
 // ganha a caixa "Obs.:" embaixo dele, inteira. As duas em âmbar (v4).
 function isShortNote(notes: string): boolean {
@@ -350,21 +363,18 @@ const d = computed(() => ({
     <!-- AÇÃO: um botão, o ato escrito nele, na base do card, dentro da moldura (no
          celular, o card em foco leva o botão para a barra do polegar). -->
     <Teleport defer :to="actionTarget || 'body'" :disabled="!actionTarget">
-      <div v-if="finishing" class="flex flex-col gap-2" :class="actionTarget ? '' : d.inset" data-kds-undo>
-        <p
-          class="flex items-center justify-center gap-1.5 text-sm font-semibold text-muted-foreground"
-        >
-          <Icon name="lucide:check-check" class="size-4 shrink-0" />
-          Pronto. Sai em {{ undoWindowSeconds }}s
-        </p>
-        <div class="h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
-          <div class="kds-undo-drain h-full bg-foreground/50" />
-        </div>
-        <KdsCardButton
-          tone="outline"
-          :icon="action.icon"
+      <div v-if="finishing" :class="actionTarget ? '' : d.inset" data-kds-undo>
+        <OperatorTimedButton
+          :until="undoUntil"
+          :duration="KDS_UNDO_WINDOW_MS"
           :label="actionLabel"
-          :size-class="d.action"
+          icon="i-lucide-undo-2"
+          size="xl"
+          variant="outline"
+          color="neutral"
+          block
+          class="justify-center"
+          :class="d.action"
           :aria-label="actionAria"
           data-kds-action
           @click="onAction"
@@ -386,25 +396,3 @@ const d = computed(() => ({
     </Teleport>
   </article>
 </template>
-
-<style scoped>
-/* A barra escoa no mesmo tempo da janela de "Desfazer": a pressa fica visível sem
-   um número piscando na cozinha. */
-.kds-undo-drain {
-  animation: kds-undo-drain 5s linear forwards;
-}
-@keyframes kds-undo-drain {
-  from {
-    width: 100%;
-  }
-  to {
-    width: 0%;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .kds-undo-drain {
-    animation: none;
-    width: 100%;
-  }
-}
-</style>
