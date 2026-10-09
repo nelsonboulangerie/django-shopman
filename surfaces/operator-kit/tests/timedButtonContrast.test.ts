@@ -1,13 +1,15 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-// Contraste AA do rótulo do botão com prazo (`OperatorTimedButton`) sobre o fundo que
-// esvazia, nos dois temas (dono, 09/10/2026: "a camada translúcida da própria cor,
-// legível"). Lê os tokens do tema de verdade (`operator-theme.css`).
+// O esvaziamento do botão com prazo (`OperatorTimedButton`) se vê de relance, e o rótulo
+// é AA, nos dois temas (dono, 09/10/2026: a primeira versão era "muito sutil, não
+// consegui perceber"). Lê os tokens do tema (`operator-theme.css`) e as camadas do
+// `<style>` da peça.
 //
 // O que a peça desenha atrás do rótulo:
-//   - sólido (primary, error): a superfície invertida (`--foreground`) a 30% sobre a cor
-//     do botão; o rótulo é `text-inverted` (`--primary-foreground`);
+//   - sólido de cor (primary, o verde do Pronto): duas partes, o que RESTA e o que
+//     ESVAZIOU, com 3:1 entre si (WCAG 1.4.11) e o rótulo (`--primary-foreground`) AA
+//     sobre as duas;
 //   - contornado: a cor do rótulo a 10% sobre a superfície onde o botão mora (o cartão
 //     e o fundo da página).
 //
@@ -52,21 +54,39 @@ function contrast(a: string, b: string): number {
 }
 
 const THEMES = { claro: block(":root"), escuro: block(".dark") };
-const SOLID_ALPHA = 0.3;
 const OUTLINE_ALPHA = 0.1;
 
-describe("botão com prazo: o rótulo é AA sobre o fundo que esvazia", () => {
+// As duas camadas do sólido, lidas do `<style>` da peça (o que vale na tela é o que a
+// trava mede): `--timed-remaining` (o que resta) e `--timed-spent` (o que esvaziou),
+// `rgb(R G B / alfa)`, no claro e sob `.dark`.
+const sfc = readFileSync(new URL("../app/components/OperatorTimedButton.vue", import.meta.url), "utf8");
+const style = sfc.slice(sfc.indexOf("<style scoped>"));
+function layer(name: string, dark: boolean): { hex: string; alpha: number } {
+  const re = new RegExp(`${dark ? ":global\\(\\.dark\\) " : "^"}\\.timed-${name} \\{\\s*--timed-${name}: rgb\\((\\d+) (\\d+) (\\d+) / ([\\d.]+)\\)`, "m");
+  const match = style.match(re);
+  expect(match, `--timed-${name} ${dark ? "escuro" : "claro"} no <style> da peça`).not.toBeNull();
+  const hex = `#${[1, 2, 3].map((i) => Number(match![i]).toString(16).padStart(2, "0")).join("")}`;
+  return { hex, alpha: Number(match![4]) };
+}
+
+describe("botão com prazo: o esvaziamento se vê de relance, e o rótulo é AA", () => {
   for (const [name, css] of Object.entries(THEMES)) {
     const label = token(css, "primary-foreground");
-    const wash = token(css, "foreground");
+    const dark = name === "escuro";
+    const remainingLayer = layer("remaining", dark);
+    const spentLayer = layer("spent", dark);
 
-    for (const color of ["primary", "destructive"]) {
-      it(`tema ${name}: sólido ${color}, o tom mais fundo da própria cor`, () => {
+    // O verde do Pronto da Cozinha (`fill-tint="inverted"`) e o primary sólido do Gestor
+    // e da ação na base. O erro sólido não é origem de Desfazer; fica fora, com motivo
+    // (no escuro o rótulo sobre a parte esvaziada daria 4,1:1).
+    for (const color of ["primary", "success"]) {
+      it(`tema ${name}: sólido ${color}, resta × esvaziou ≥ 3:1 e rótulo AA nas duas`, () => {
         const base = token(css, color);
-        const deeper = over(wash, SOLID_ALPHA, base);
-        expect(contrast(label, deeper)).toBeGreaterThanOrEqual(4.5);
-        // O tom mais fundo nunca derruba o contraste do botão de origem.
-        expect(contrast(label, deeper)).toBeGreaterThanOrEqual(contrast(label, base));
+        const spent = over(spentLayer.hex, spentLayer.alpha, base);
+        const remaining = over(remainingLayer.hex, remainingLayer.alpha, spent);
+        expect(contrast(remaining, spent), "resta × esvaziou").toBeGreaterThanOrEqual(3);
+        expect(contrast(label, remaining), "rótulo sobre o que resta").toBeGreaterThanOrEqual(4.5);
+        expect(contrast(label, spent), "rótulo sobre o que esvaziou").toBeGreaterThanOrEqual(4.5);
       });
     }
 

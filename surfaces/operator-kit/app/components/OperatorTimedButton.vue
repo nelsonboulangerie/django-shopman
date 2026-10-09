@@ -219,15 +219,24 @@ function toKey(value: Instant | undefined): string {
   return value === undefined ? "" : String(value);
 }
 
-// A camada que esvazia: a própria cor do botão, translúcida. Sólido: um tom mais fundo
-// da cor (a superfície invertida a 30% por cima: escurece o latão sob o rótulo branco
-// no claro, clareia o dourado sob o rótulo escuro no escuro), e o contraste só sobe.
-// O neutro sólido JÁ é a superfície invertida, então o tom vem do fundo da página.
-// Contornado: a cor do rótulo (`currentColor`) a 10%.
+// A camada que esvazia, NÍTIDA de relance (dono, 09/10/2026: "muito sutil, não consegui
+// perceber"). No sólido de cor (primary, error, o verde do Pronto com `fill-tint="inverted"`)
+// são DUAS partes com 3:1 entre si (WCAG 1.4.11) e o rótulo AA sobre as duas:
+//   - claro (rótulo branco): o que RESTA é a cor quase preta (preto a 85% por cima); o
+//     que já esvaziou é a cor do botão, como ele volta a ser no fim;
+//   - escuro (rótulo escuro): o que resta é a cor quase branca (branco a 90%); o que
+//     esvaziou é a cor um pouco mais funda (preto a 20%), para o 3:1 caber.
+// Os valores moram no `<style>` (`--timed-remaining`, `--timed-spent`); a trava lê de
+// lá: `tests/timedButtonContrast.test.ts`. O neutro sólido (`fill-tint="page"`) e o
+// contornado não comportam as duas partes com o rótulo AA: ficam com o tom leve.
+const solidStrong = computed(
+  () =>
+    props.variant === "solid" &&
+    (props.fillTint ?? (props.color === "neutral" ? "page" : "inverted")) === "inverted",
+);
 const fillClass = computed(() => {
-  if (props.variant === "outline") return "bg-current/10";
-  const tint = props.fillTint ?? (props.color === "neutral" ? "page" : "inverted");
-  return tint === "page" ? "bg-(--ui-bg)/30" : "bg-(--ui-bg-inverted)/30";
+  if (solidStrong.value) return "timed-remaining";
+  return props.variant === "outline" ? "bg-current/10" : "bg-(--ui-bg)/30";
 });
 </script>
 
@@ -253,6 +262,12 @@ const fillClass = computed(() => {
       @click="onClick"
     >
       <span
+        v-if="showFill && solidStrong"
+        aria-hidden="true"
+        class="timed-spent pointer-events-none absolute inset-0 -z-20"
+        data-timed-spent
+      />
+      <span
         v-if="showFill"
         :key="armKey"
         aria-hidden="true"
@@ -270,6 +285,22 @@ const fillClass = computed(() => {
 </template>
 
 <style scoped>
+/* As duas partes do sólido (claro): o que resta quase preto, o que esvaziou na cor. */
+.timed-remaining {
+  --timed-remaining: rgb(0 0 0 / 0.85);
+  background-color: var(--timed-remaining);
+}
+.timed-spent {
+  --timed-spent: rgb(0 0 0 / 0);
+  background-color: var(--timed-spent);
+}
+/* Escuro: o que resta quase branco, o que esvaziou um pouco mais fundo. */
+:global(.dark) .timed-remaining {
+  --timed-remaining: rgb(255 255 255 / 0.9);
+}
+:global(.dark) .timed-spent {
+  --timed-spent: rgb(0 0 0 / 0.2);
+}
 .timed-fill {
   animation-name: timed-fill-drain;
   animation-timing-function: linear;

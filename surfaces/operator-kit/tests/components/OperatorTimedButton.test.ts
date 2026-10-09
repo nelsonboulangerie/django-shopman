@@ -168,9 +168,15 @@ describe("OperatorTimedButton", () => {
     }
   }
 
-  it("o fundo que esvazia é a própria cor, translúcida, nunca outra", async () => {
+  it("sólido de cor: duas partes nítidas, o que resta e o que esvaziou", async () => {
     const solid = await mountTimed({ variant: "solid", color: "primary" });
-    expect(solid.get("[data-timed-fill]").classes()).toContain("bg-(--ui-bg-inverted)/30");
+    expect(solid.get("[data-timed-fill]").classes()).toContain("timed-remaining");
+    expect(solid.get("[data-timed-spent]").classes()).toContain("timed-spent");
+    // O verde do Pronto (neutro sólido pintado) pede as mesmas duas partes.
+    const painted = await mountTimed({ variant: "solid", color: "neutral", fillTint: "inverted" });
+    expect(painted.find("[data-timed-spent]").exists()).toBe(true);
+    const neutral = await mountTimed({ variant: "solid", color: "neutral" });
+    expect(neutral.find("[data-timed-spent]").exists()).toBe(false);
     const outline = await mountTimed({ variant: "outline", color: "error" });
     expect(outline.get("[data-timed-fill]").classes()).toContain("bg-current/10");
     // As duas esvaziam na mesma direção: a janela que sobra encolhe para a esquerda.

@@ -957,12 +957,17 @@ desfazer a saída no Gestor.
   só o texto muda ("Pronto 0131" vira "Desfazer 0131") e o fundo esvazia atrás dele.
   Nada de trocar para contornado ou neutro, nada de mudar altura ou largura. Trava: o
   teste compara, classe por classe, com o `NuxtButton` de mesma cor, variante e tamanho.
-- **O fundo que esvazia é a própria cor, translúcida.** Sólido: a cor um tom mais funda
-  (a superfície invertida a 30% por cima), que só aumenta o contraste do rótulo; no
-  neutro sólido, o tom vem do fundo da página. Contornado: a cor do rótulo a 10%. As
-  duas esvaziam para a esquerda e, no fim, o botão está idêntico ao de origem. AA do
-  rótulo nos dois temas: `tests/timedButtonContrast.test.ts`. Conjunto mínimo: `md`/`xl`
-  × `outline`/`solid` × `primary`/`neutral`/`error`; as cores de aviso (`info`,
+- **O esvaziamento se vê de relance** (dono, 09/10/2026: a primeira versão era "muito
+  sutil"). No sólido de cor (`primary`, e o verde do Pronto da Cozinha com
+  `fill-tint="inverted"`) são duas partes com 3:1 entre si (WCAG 1.4.11) e o rótulo AA
+  sobre as duas: no claro, o que RESTA é a cor quase preta e o que esvaziou é a cor do
+  botão; no escuro, o que resta é a cor quase branca e o que esvaziou fica um pouco mais
+  fundo. A borda entre elas é seca, sem degradê. Os valores moram no `<style>` da peça
+  (`--timed-remaining`, `--timed-spent`) e a trava `tests/timedButtonContrast.test.ts`
+  lê de lá. O neutro sólido (`fill-tint="page"`) e o contornado não comportam duas
+  partes com o rótulo AA e ficam com o tom leve (contornado: a cor do rótulo a 10%).
+  Conjunto mínimo: `md`/`xl` × `outline`/`solid` × `primary`/`neutral`/`error`; as
+  cores de aviso (`info`,
   `success`, `warning`) só como ação de um `NuxtAlert` daquela cor (a exceção declarada).
 - **Movimento reduzido** (`prefers-reduced-motion: reduce`): nada anima; o botão mostra
   o número de segundos ("4 s"), que muda uma vez por segundo.
