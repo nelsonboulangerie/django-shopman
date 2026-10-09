@@ -28,6 +28,8 @@ function item(overrides: Partial<POSCartItem> & { sku: string; name: string }): 
 function props(overrides: Record<string, unknown> = {}) {
   return {
     items: [item({ sku: "PAO", name: "Pão" }), item({ sku: "CAFE", name: "Café", price_q: 300, qty: 2 })],
+    // O total é o da revisão do servidor (`saleTotalView`); aqui, já confirmado.
+    total: { status: "confirmed", display: formatBRL(1100) },
     requiresTab: false,
     hasOpenTab: true,
     loading: false,

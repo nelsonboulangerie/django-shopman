@@ -51,7 +51,7 @@ export function toneTimerChip(tone: KDSTone): string {
 
 export type KDSPillTone = "destructive" | "warning" | "info" | "primary" | "muted";
 
-/** A pílula do card (v4: "Próximo · atrasado", "Novo", "Em preparo", "Bloqueado").
+/** A pílula do card ("Atrasado", "Novo", "Em preparo", "Bloqueado"; a posição na fila mora no rótulo acima do código).
  *  Um estilo só, a cor diz a natureza: vermelho trava ou atrasa, azul é novo, latão
  *  está em preparo. */
 export function ticketPill(
@@ -60,10 +60,11 @@ export function ticketPill(
 ): { label: string; tone: KDSPillTone } | null {
   if (state.blocked) return { label: "Bloqueado", tone: "destructive" };
   const tone = ticketTone(ticket.timer_class as KDSTimerClass);
+  // O de agora já diz a posição no rótulo acima do código ("Agora"); a pílula diz só o
+  // prazo, para "Próximo" não nomear dois tickets na mesma tela.
   if (state.next) {
-    if (tone === "late") return { label: "Próximo · atrasado", tone: "destructive" };
-    if (tone === "warning") return { label: "Próximo · perto da meta", tone: "warning" };
-    return { label: "Próximo", tone: "primary" };
+    if (tone === "late") return { label: "Atrasado", tone: "destructive" };
+    if (tone === "warning") return { label: "Perto da meta", tone: "warning" };
   }
   if (ticket.status === "pending") return { label: "Novo", tone: "info" };
   if (ticket.status === "in_progress") return { label: "Em preparo", tone: "primary" };
@@ -180,7 +181,7 @@ export function ticketAction(
   if (state.blocked)
     return {
       kind: "blocked",
-      label: "Item cancelado: veja o cartão vermelho",
+      label: "Item cancelado: veja o aviso no topo",
       icon: "lucide:ban",
       enabled: true,
     };
@@ -478,7 +479,7 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
 // ── A fila do cozinheiro (prévia v4, SUITE-UX §10.3) ────────────────────────
 // 4 a 6 tickets em foco (3×2 no tablet deitado); o resto vira "+N na fila" e entra
 // no "A fazer". A profundidade vira agregado, nunca card minúsculo. Ticket longo
-// ocupa duas alturas em vez de cortar a lista.
+// deixa a linha mais alta em vez de cortar a lista; a ordem de leitura não muda.
 
 export type KDSBoardFilter = "all" | "delivery" | "late";
 
@@ -506,23 +507,10 @@ export function boardFilterCounts(cards: PrepCard[]): Record<KDSBoardFilter, num
   };
 }
 
-/** Ticket que ocupa duas alturas: lista longa (com as observações contando como
- *  linha). A v4 mostra a encomenda de 7 itens assim, "em vez de cortar a lista". */
-export function isTallTicket(card: PrepCard): boolean {
-  const notes =
-    card.items.filter((item) => item.notes || item.stock_warning).length +
-    (card.kitchen_note ? 1 : 0) +
-    (card.customer_note ? 1 : 0) +
-    (card.finish_block_label ? 1 : 0) +
-    (card.test_order_label ? 1 : 0);
-  return card.items.length + notes >= 6;
-}
-
 export interface KDSFocusPlacement {
   pk: number;
   column: number;
   row: number;
-  span: 1 | 2;
 }
 
 export interface KDSFocusSlice<T extends { pk: number }> {
@@ -531,42 +519,33 @@ export interface KDSFocusSlice<T extends { pk: number }> {
   placements: Map<number, KDSFocusPlacement>;
 }
 
-/** Quantos tickets cabem em foco e onde cada um mora, na ORDEM de urgência: o
- *  primeiro que não couber leva a fila inteira para o "+N" (nunca se pula um mais
- *  urgente para mostrar um menos urgente). Mesma regra do posicionamento automático
- *  do CSS Grid (o cursor só anda para a frente), com o limite de linhas que a tela
- *  tem. Em uma coluna ninguém ocupa duas alturas. */
+/** Quantos tickets cabem em foco e onde cada um mora, na ORDEM de ataque (dono,
+ *  09/10/2026): a ordem é UMA e se lê como texto, da esquerda para a direita, linha a
+ *  linha. Cada ticket ocupa uma célula; o ticket longo deixa a SUA linha mais alta
+ *  (as linhas seguem alinhadas pelo topo) em vez de ocupar duas alturas e empurrar os
+ *  vizinhos para buracos. Nada de mosaico: o cozinheiro nunca precisa adivinhar qual
+ *  vem depois. O que não cabe vai inteiro para o "+N", na mesma ordem. */
 export function focusSlice<T extends PrepCard>(
   cards: T[],
   layout: { columns: number; rows: number },
 ): KDSFocusSlice<T> {
   const columns = Math.max(1, Math.floor(layout.columns));
   const rows = Math.max(1, Math.floor(layout.rows));
-  const taken = new Set<string>();
-  const placements = new Map<number, KDSFocusPlacement>();
-  const visible: T[] = [];
-  let cursor = 0;
-  let index = 0;
-  for (; index < cards.length; index++) {
-    const card = cards[index]!;
-    const span: 1 | 2 = columns > 1 && rows > 1 && isTallTicket(card) ? 2 : 1;
-    let placed: KDSFocusPlacement | null = null;
-    for (let cell = cursor; cell < columns * rows; cell++) {
-      const row = Math.floor(cell / columns);
-      const column = cell % columns;
-      if (row + span > rows) continue;
-      if (taken.has(`${row}:${column}`) || (span === 2 && taken.has(`${row + 1}:${column}`))) continue;
-      placed = { pk: card.pk, column, row, span };
-      cursor = cell + 1;
-      break;
-    }
-    if (!placed) break;
-    taken.add(`${placed.row}:${placed.column}`);
-    if (span === 2) taken.add(`${placed.row + 1}:${placed.column}`);
-    placements.set(card.pk, placed);
-    visible.push(card);
-  }
-  return { visible, rest: cards.slice(index), placements };
+  const visible = cards.slice(0, columns * rows);
+  const placements = new Map<number, KDSFocusPlacement>(
+    visible.map((card, index) => [
+      card.pk,
+      { pk: card.pk, column: index % columns, row: Math.floor(index / columns) },
+    ]),
+  );
+  return { visible, rest: cards.slice(visible.length), placements };
+}
+
+/** A posição na fila, escrita no ticket, a mesma em toda largura: o primeiro é o de
+ *  "Agora", o segundo o "Próximo", os outros "Depois". */
+export function queuePositionLabel(index: number): string {
+  if (index === 0) return "Agora";
+  return index === 1 ? "Próximo" : "Depois";
 }
 
 /** Quantas colunas e linhas de tickets cabem na área da grade. A largura mínima é a
@@ -602,14 +581,18 @@ export function queueLine(card: PrepCard): string {
   return others.length ? `${head} +${others.length}` : head;
 }
 
-/** O cancelamento na faixa de avisos: se o pedido continua na estação, foi um ITEM
- *  que saiu ("Item cancelado 22:01", "o resto continua"); senão, o pedido inteiro. */
-export function cancelledSummary(
-  cancelled: Pick<KDSTicketProjection, "order_ref" | "cancelled_at_display">,
+/** O cancelamento como aviso da tela (`alerts` do cabeçalho). Se o pedido continua na
+ *  estação, foi um ITEM que saiu ("Pedido F22: item cancelado às 22:01. O resto
+ *  continua."); senão, o pedido inteiro. A descrição diz o que NÃO preparar. */
+export function cancelledAlert(
+  cancelled: Pick<KDSTicketProjection, "order_ref" | "cancelled_at_display" | "items">,
   activeRefs: ReadonlySet<string>,
-): { label: string; rest: string } {
-  const time = cancelled.cancelled_at_display ? ` ${cancelled.cancelled_at_display}` : "";
-  return activeRefs.has(cancelled.order_ref)
-    ? { label: `Item cancelado${time}`, rest: "o resto continua" }
-    : { label: `Cancelado${time}`, rest: "" };
+): { title: string; description: string } {
+  const code = splitRef(cancelled.order_ref).code;
+  const time = cancelled.cancelled_at_display ? ` às ${cancelled.cancelled_at_display}` : "";
+  const items = cancelled.items.map((item) => `${item.qty}× ${item.name}`).join(", ");
+  const title = activeRefs.has(cancelled.order_ref)
+    ? `Pedido ${code}: item cancelado${time}. O resto continua.`
+    : `Pedido ${code} cancelado${time}.`;
+  return { title, description: items ? `Não preparar: ${items}.` : "" };
 }

@@ -18,7 +18,6 @@
 // (estudo de notação de pâtonnage pendente). Nomenclatura interna do sistema
 // intacta (planned/started/finished) — as lentes são linguagem de UI.
 import { nextTick, onMounted } from "vue";
-import { useMediaQuery } from "@vueuse/core";
 
 import {
   boardDisplay,
@@ -681,12 +680,15 @@ function voidableOrders(row: ProductionMatrixRowProjection): WorkOrderCardProjec
 // direita, sem cobrir a lista (v3 `depois-producao-dia-tablet`).
 // Só depois de montar: o SSR não conhece a tela, e a hidratação não corrige
 // classe divergente (o botão nasceria cheio e ficaria cheio).
-const dockedQuery = useMediaQuery("(pointer: coarse) and (min-width: 1024px)");
+const touchPointer = useTouchPointer();
+const screen = useScreen();
 const gridMounted = ref(false);
 onMounted(() => {
   gridMounted.value = true;
 });
-const docked = computed(() => gridMounted.value && dockedQuery.value);
+const docked = computed(
+  () => gridMounted.value && touchPointer.value && !screen.belowLg.value,
+);
 // Com o painel encaixado a lista estreita: colunas de número compactas (v3 tablet).
 const openCols = computed(() =>
   docked.value

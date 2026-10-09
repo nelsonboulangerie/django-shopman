@@ -218,35 +218,35 @@ def test_aproveitamento_by_recipe_is_realizado_over_previsto(recipe):
     assert [(row.label, row.value) for row in loss.rows] == [(recipe.name, 1.0)]
 
 
-# ── Cenários salvos (F9) ─────────────────────────────────────────────────────
+# ── Cenários salvos (F9): leituras salvas de ``bi``/``explore`` ──────────────
 
 
 @pytest.mark.django_db
 def test_saved_views_crud_validated_by_grammar(client, bi_viewer):
     client.force_login(bi_viewer)
-    url = reverse("api-backstage-bi-views")
+    url = reverse("api-backstage-saved-views")
+    screen = {"surface": "bi", "screen": "explore"}
 
     # Config fora da gramática não salva.
-    bad = client.post(url, {"name": "Ruim", "config": {"metric": "nope"}}, content_type="application/json")
+    bad = client.post(url, {**screen, "name": "Ruim", "query": {"metric": "nope"}}, content_type="application/json")
     assert bad.status_code == 400
-    weird = client.post(url, {"name": "Ruim", "config": {"metric": "loss", "hack": 1}}, content_type="application/json")
+    weird = client.post(
+        url, {**screen, "name": "Ruim", "query": {"metric": "loss", "hack": 1}}, content_type="application/json"
+    )
     assert weird.status_code == 400 and "Chaves desconhecidas" in weird.json()["detail"]
 
     config = {"metric": "loss", "by": "defect", "by2": "recipe", "window": {"preset": "28d"}}
-    ok = client.post(url, {"name": "Perda por defeito", "config": config}, content_type="application/json")
+    ok = client.post(url, {**screen, "name": "Perda por defeito", "query": config}, content_type="application/json")
     assert ok.status_code == 200
     view_id = ok.json()["view"]["id"]
 
     # Mesmo nome = atualiza, não duplica.
-    client.post(url, {"name": "Perda por defeito", "config": config}, content_type="application/json")
-    listed = client.get(url).json()["views"]
-    assert len(listed) == 1 and listed[0]["config"]["by2"] == "recipe"
+    client.post(url, {**screen, "name": "Perda por defeito", "query": config}, content_type="application/json")
+    listed = client.get(url, screen).json()["views"]
+    assert len(listed) == 1 and listed[0]["query"]["by2"] == "recipe"
 
-    detail = reverse("api-backstage-bi-view", kwargs={"pk": view_id})
-    assert (
-        client.patch(detail, {"is_favorite": True}, content_type="application/json").json()["view"]["is_favorite"]
-        is True
-    )
+    detail = reverse("api-backstage-saved-view", kwargs={"pk": view_id})
+    assert client.patch(detail, {"pinned": True}, content_type="application/json").json()["view"]["pinned"] is True
 
     # Outro usuário não enxerga nem apaga o cenário alheio.
     other = User.objects.create_user("bi-outro", password="pw", is_staff=True)
@@ -254,12 +254,12 @@ def test_saved_views_crud_validated_by_grammar(client, bi_viewer):
         Permission.objects.get(content_type=ContentType.objects.get_for_model(DayClosing), codename="view_bi")
     )
     client.force_login(other)
-    assert client.get(url).json()["views"] == []
+    assert client.get(url, screen).json()["views"] == []
     assert client.delete(detail).status_code == 404
 
     client.force_login(bi_viewer)
     assert client.delete(detail).status_code == 200
-    assert client.get(url).json()["views"] == []
+    assert client.get(url, screen).json()["views"] == []
 
 
 @pytest.mark.django_db

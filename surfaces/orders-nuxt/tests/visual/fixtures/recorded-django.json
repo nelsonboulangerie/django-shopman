@@ -49902,5 +49902,71 @@
   },
   "generated_at": "2026-10-07T18:36:57.129197+00:00",
   "contract_version": 1
+ },
+ "/api/v1/backstage/saved-views/?surface=orders&screen=history": {
+  "views": [
+   {
+    "id": 10,
+    "surface": "orders",
+    "screen": "history",
+    "name": "Cancelados da semana",
+    "query": {
+     "filters": {
+      "status": [
+       "cancelled"
+      ]
+     },
+     "period": {
+      "preset": "7d",
+      "from": "",
+      "to": ""
+     }
+    },
+    "pinned": true
+   },
+   {
+    "id": 11,
+    "surface": "orders",
+    "screen": "history",
+    "name": "Pix do mês",
+    "query": {
+     "filters": {
+      "payment": [
+       "pix"
+      ]
+     },
+     "period": {
+      "preset": "month",
+      "from": "",
+      "to": ""
+     }
+    },
+    "pinned": false
+   }
+  ]
+ },
+ "/api/v1/backstage/saved-views/?surface=orders&screen=catalog": {
+  "views": [
+   {
+    "id": 20,
+    "surface": "orders",
+    "screen": "catalog",
+    "name": "Ocultos no site",
+    "query": {
+     "filters": {
+      "published": [
+       "false"
+      ]
+     }
+    },
+    "pinned": false
+   }
+  ]
+ },
+ "/api/v1/backstage/saved-views/?surface=orders&screen=queue": {
+  "views": []
+ },
+ "/api/v1/backstage/saved-views/?surface=orders&screen=customers": {
+  "views": []
  }
 }

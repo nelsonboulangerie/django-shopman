@@ -43,7 +43,6 @@ const CEILING: Record<string, { max: number; reason: string; arriving?: string }
     max: 1,
     reason: "o aviso de versão nova do app instalado, acima da barra inferior",
   },
-  "kds-nuxt/app/pages/[ref].vue": { max: 1, reason: "dívida: \"Pronto\" da Cozinha, onda da Cozinha" },
   "pos-nuxt/app/pages/session/closing.vue": { max: 3, reason: "dívida: Fim do dia, onda do PDV" },
   "pos-nuxt/app/pages/preorders/index.vue": { max: 1, reason: "dívida: Encomendas, onda do PDV" },
   "pos-nuxt/app/pages/index.vue": { max: 2, reason: "dívida: comanda e barra de funções da venda, onda do PDV" },

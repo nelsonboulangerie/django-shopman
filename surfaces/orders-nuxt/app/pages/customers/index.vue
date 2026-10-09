@@ -5,6 +5,8 @@
 // 19/09/2026, nascia um por pedido. A busca e os filtros daqui são o caminho para
 // achá-lo; a ficha (`/customers/<ref>`) é onde se compara e unifica. A URL guarda a
 // busca, então voltar da ficha devolve a mesma lista.
+import type { ActiveFilters, FilterDimension } from "../../../../operator-kit/app/types/filters";
+import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 import {
   listQueryFromRoute,
   routeQueryFromList,
@@ -55,6 +57,29 @@ const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
 
 const items = computed(() => list.value?.items ?? []);
 type CustomerRow = (typeof items.value)[number];
+// O painel de filtros único (fase 2, K4): os recortes da lista como um campo de
+// escolha única, e os favoritos da pessoa. As abas continuam como os filtros rápidos à
+// vista; o painel e as abas mexem no mesmo `?filter=`.
+const panelDimensions = computed<FilterDimension[]>(() => [
+  {
+    id: "filter",
+    label: "Recorte",
+    type: "single-select",
+    options: (list.value?.filters ?? [])
+      .filter((option) => option.ref !== "all")
+      .map((option) => ({ value: option.ref, label: option.label })),
+  },
+]);
+const panelFilters = computed<ActiveFilters>({
+  get: (): ActiveFilters =>
+    listQuery.value.filter === "all" ? {} : { filter: [String(listQuery.value.filter)] },
+  set: (next: ActiveFilters) => setFilter(next.filter?.[0] ?? "all"),
+});
+const activeFilters = computed(() =>
+  filterBarActiveFilters(panelDimensions.value, panelFilters.value, (next) => {
+    panelFilters.value = next;
+  }),
+);
 const filterItems = computed(() =>
   (list.value?.filters ?? []).map((option) => ({
     value: option.ref,
@@ -86,6 +111,7 @@ const phoneHeaderActions = computed(() => [
       :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       desk-only-filters
+      :active-filters="activeFilters"
     >
       <template #status>
         <span class="hidden op-micro text-muted-foreground lg:inline"
@@ -108,6 +134,15 @@ const phoneHeaderActions = computed(() => [
           variant="pill"
           aria-label="Filtrar clientes"
           @update:model-value="setFilter(String($event))"
+        />
+      </template>
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          surface="orders"
+          screen="customers"
+          :chips="false"
         />
       </template>
       <template #filters>

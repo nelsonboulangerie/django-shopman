@@ -80,7 +80,9 @@ async function expectTouchTargets(page: Page, context: string) {
           rect.height === 0
         )
           return [];
-        return rect.width >= minTarget && rect.height >= minTarget
+        // Arredonda o subpixel: o campo `md` do Nuxt UI mede 31,98 px (texto 20 px +
+        // 12 px de respiro, com a fonte em fração de pixel) e é o mesmo 32 do botão.
+        return Math.round(rect.width) >= minTarget && Math.round(rect.height) >= minTarget
           ? []
           : [
               {

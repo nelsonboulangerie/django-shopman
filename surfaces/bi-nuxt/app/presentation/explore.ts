@@ -18,7 +18,7 @@ export const NO_CROSS = "none";
 export interface ScenarioViewLike {
   id: number;
   name: string;
-  is_favorite: boolean;
+  pinned: boolean;
 }
 
 export interface ScenarioExampleLike {
@@ -47,7 +47,7 @@ export function scenarioMenuItems(
       ...views.map((view) => ({
         label: view.name,
         value: `view:${view.id}`,
-        ...(view.is_favorite ? { icon: "i-lucide-star" } : {}),
+        ...(view.pinned ? { icon: "i-lucide-star" } : {}),
       })),
     ]);
   }

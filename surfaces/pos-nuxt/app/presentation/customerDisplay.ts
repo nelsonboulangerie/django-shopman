@@ -19,9 +19,8 @@ import type {
   PosDisplayResult,
 } from "~/types/customerDisplay";
 import { lineDiscountBadge, lineTotalQ, unitChargedQ } from "~/presentation/lineDiscounts";
-import { cartNetTotalQ } from "~/presentation/receipt";
 import { formatBRL } from "~/utils/posIntent";
-import { isWeighedLine, lineAmountQ, lineQtyLabel, lineUnits } from "~/presentation/weighed";
+import { isWeighedLine, lineQtyLabel, lineUnits } from "~/presentation/weighed";
 
 export interface CustomerDisplayInputs {
   shopName: string;
@@ -80,17 +79,6 @@ export function displayPhase(inputs: {
   return inputs.checkoutMode ? "payment" : "sale";
 }
 
-/**
- * Total do carrinho ANTES do desconto manual, em centavos: o preço de
- * RESTAURAÇÃO da linha (`price_q`, que já é pós-desconto automático e
- * pré-desconto manual — ver `lineTotalQ`) × a quantidade da tela. É a mesma
- * régua do review do orquestrador, onde `total_q + discount_q` é o total antes
- * do desconto manual — as duas fontes riscam o MESMO número na parede.
- */
-export function cartGrossTotalQ(items: POSCartItem[]): number {
-  return items.reduce((sum, item) => sum + lineAmountQ(item.price_q, item), 0);
-}
-
 /** Os três números do rodapé da venda: total, desconto e o total riscado. */
 export interface SaleTotalsView {
   totalDisplay: string;
@@ -100,27 +88,13 @@ export interface SaleTotalsView {
   grossTotalDisplay: string;
 }
 
-/**
- * O review do orquestrador, quando existe, prevalece (é a autoridade final e
- * já vem formatado). Sem ele, a MESMA estimativa da tela de venda
- * (`cartNetTotalQ`), com o desconto medido pela mesma régua — assim o rodapé
- * não muda de história quando o review chega no "Cobrar".
- */
-export function saleTotalsView(items: POSCartItem[], review: POSSaleReviewProjection | null): SaleTotalsView {
-  const view: SaleTotalsView = { totalDisplay: "", discountDisplay: "", grossTotalDisplay: "" };
-  view.totalDisplay = review?.total_display || formatBRL(cartNetTotalQ(items));
-  if (review) {
-    if (review.discount_q > 0) {
-      view.discountDisplay = review.discount_display;
-      view.grossTotalDisplay = formatBRL(review.total_q + review.discount_q);
-    }
-    return view;
-  }
-  const netQ = cartNetTotalQ(items);
-  const grossQ = cartGrossTotalQ(items);
-  if (grossQ > netQ) {
-    view.discountDisplay = formatBRL(grossQ - netQ);
-    view.grossTotalDisplay = formatBRL(grossQ);
+/** Os números da parede, todos da revisão do servidor (já formatados). Com
+ *  desconto, o total ANTES dele, para ser riscado. */
+export function saleTotalsView(review: POSSaleReviewProjection): SaleTotalsView {
+  const view: SaleTotalsView = { totalDisplay: review.total_display, discountDisplay: "", grossTotalDisplay: "" };
+  if (review.discount_q > 0) {
+    view.discountDisplay = review.discount_display;
+    view.grossTotalDisplay = formatBRL(review.total_q + review.discount_q);
   }
   return view;
 }
@@ -150,17 +124,18 @@ export function buildCustomerDisplaySnapshot(
   if (phase === "sale" || (phase === "payment" && !inputs.result)) {
     snapshot.items = inputs.items.map((item) => displayItemView(item, inputs.discountReasons));
     snapshot.itemCount = inputs.items.reduce((sum, item) => sum + lineUnits(item), 0);
-    // A MESMA soma da tela de venda (`cartNetTotalQ`). O review, quando existe,
-    // prevalece. Com desconto, o total ANTES dele viaja junto, para ser riscado.
-    // NO PAGAMENTO, o total é o do servidor ou nenhum. Sem a revisão (o
-    // operador acabou de mexer no desconto ou na entrega), a parede diz que o
-    // total está sendo calculado: mostrar a estimativa do carrinho ali seria
-    // anunciar ao cliente um valor que vai mudar na frente dele.
-    if (phase === "payment" && !inputs.review) {
+    // O total é o do servidor ou nenhum, na venda E no pagamento (regra do
+    // dono, 09/10). Na venda a fonte é a revisão silenciosa da tela de venda;
+    // no pagamento, a do checkout. Sem ela (o operador acabou de lançar um
+    // item, mexer no desconto ou na entrega), a parede diz que o total está
+    // sendo calculado: mostrar a soma do carrinho ali seria anunciar ao
+    // cliente um valor que pode mudar na frente dele. Com desconto, o total
+    // ANTES dele viaja junto, para ser riscado.
+    if (!inputs.review) {
       snapshot.totalPending = true;
       return snapshot;
     }
-    Object.assign(snapshot, saleTotalsView(inputs.items, inputs.review));
+    Object.assign(snapshot, saleTotalsView(inputs.review));
     return snapshot;
   }
 

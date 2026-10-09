@@ -34,7 +34,7 @@ function goTo(path: string) {
 }
 
 function bar() {
-  const { sections, current } = useKdsSections("bar");
+  const { bar: sections, current } = useKdsSections();
   return {
     links: () => sections.value.filter((s) => s.to).map((s) => [s.key, s.to]),
     current: () => current.value,
@@ -57,7 +57,7 @@ beforeEach(() => {
 describe("itens da Cozinha: as estações reais", () => {
   it("cada estação pelo nome, levando à sua bancada; Saída leva ao Gestor; sem Preparo", () => {
     goTo("/cafes");
-    const { sections } = useKdsSections("rail");
+    const { rail: sections } = useKdsSections();
     expect(sections.value.filter((s) => s.to).map((s) => [s.label, s.to])).toEqual([
       ["Cafés", "/cafes"],
       ["Bancada", "/bancada"],
@@ -70,7 +70,7 @@ describe("itens da Cozinha: as estações reais", () => {
 
   it("a estação de Saída do cadastro não vira bancada: é o item Saída, com o selo dela", () => {
     goTo("/cafes");
-    const { sections } = useKdsSections("rail");
+    const { rail: sections } = useKdsSections();
     expect(sections.value.some((s) => s.to === "/saida")).toBe(false);
     expect(sections.value.find((s) => s.key === "exit")?.badge).toBe("3");
   });
@@ -78,14 +78,14 @@ describe("itens da Cozinha: as estações reais", () => {
   it("sem a URL do Gestor, a estação de Saída segue acessível como bancada", () => {
     env.runtimeConfig.public = { djangoBaseUrl: "", ordersUrl: "" };
     goTo("/cafes");
-    const { sections } = useKdsSections("rail");
+    const { rail: sections } = useKdsSections();
     expect(sections.value.some((s) => s.key === "exit")).toBe(false);
     expect(sections.value.find((s) => s.to === "/saida")?.label).toBe("Saída");
   });
 
   it("a estação aberta é o item atual; a descrição é \"Estação · N pendências\"", () => {
     goTo("/bancada");
-    const { sections, current } = useKdsSections("rail");
+    const { rail: sections, current } = useKdsSections();
     const open = sections.value.find((s) => s.key === current.value)!;
     expect(open.to).toBe("/bancada");
     expect(sectionDescription(open)).toBe("Bancada · 7 pendências");
@@ -145,7 +145,7 @@ describe("barra da Cozinha na carga direta do quadro", () => {
     goTo("/bancada");
     const board = useKdsBoardState();
     board.value = { ...board.value, onBoard: true, total: 3, stationRef: "cafes" };
-    const { sections } = useKdsSections("bar");
+    const { bar: sections } = useKdsSections();
     expect(sections.value.find((s) => s.key === "station:bancada")?.badge).toBe("7");
     expect(sections.value.find((s) => s.key === "station:cafes")?.badge).toBe("2");
   });
