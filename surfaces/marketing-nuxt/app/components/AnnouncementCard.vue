@@ -697,7 +697,7 @@ defineExpose({
     <!-- O texto: editável no lugar, com o limite da plataforma mais curta escolhida. -->
     <NuxtFormField
       label="Texto"
-      :error="bodyError"
+      :error="bodyError || undefined"
     >
       <template #hint>
         <span
