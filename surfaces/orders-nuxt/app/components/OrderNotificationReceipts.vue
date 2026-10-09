@@ -25,10 +25,7 @@ const toneColor = (
     <template #header>
       <div class="flex items-center justify-between gap-3">
         <h2 class="op-title">Avisos ao cliente</h2>
-        <NuxtBadge
-          color="neutral"
-          :label="String(receipts.length)"
-        />
+        <OperatorCountChip :count="receipts.length" />
       </div>
     </template>
     <ol class="flex flex-col gap-3">
