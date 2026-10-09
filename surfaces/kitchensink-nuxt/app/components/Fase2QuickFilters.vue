@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // Protótipo do `OperatorQuickFilters` (K4): o filtro rápido É a navegação secundária
 // (dono, 09/10). Abas com contagem na toolbar esquerda; os favoritos fixados entram no
-// fim, com a estrela. Até 4 opções rolam no celular sem cortar rótulo; com mais, a
-// peça vira `NuxtSelect` (regra da toolbar do kit).
+// fim, com a estrela. No celular a faixa rola; acima de `selectAbove` opções ela vira
+// `NuxtSelect`. Rodada 2, medido a 390 com o ícone de filtros ao lado: cabem 2 abas e
+// meia com contagem. Sub-seção (navegação) com mais de 3 vira lista; recorte rola.
 import type { QuickFilter } from "../types/fase2";
 import { computed } from "vue";
 

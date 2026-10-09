@@ -240,9 +240,13 @@ e dos vizinhos, e diz o que não foi visto. A ordem dos apps segue a do WP-OPERA
 (risco, uso no balcão, dependência do kit), com o Gestor primeiro porque já está no shell e
 é onde a dor da tabela e da seleção foi medida.
 
-## 9. Perguntas ao dono
+## 9. Perguntas ao dono (respondidas em 09/10)
 
-Só as que mudam o desenho. Cada uma tem a proposta visível em `/proposal/fase2`.
+Respostas do dono à rodada 1: **(1) densidade: a compacta é o padrão**, Confortável fica
+como alternância guardada por dispositivo, e a linha expandida aberta não compacta;
+**(2) favoritos: opção 2** (por pessoa, e o gerente publica para a equipe), podendo nascer
+pela 1; **(3) barra de seleção: opção 1**. O texto original das perguntas segue abaixo
+como registro; a rodada 2 (seção 10) já desenha as respostas.
 
 1. **Densidade da tabela.** (1) Um botão "Compacta / Confortável" na tabela, guardado por
    dispositivo; (2) compacta sozinha do `lg` para cima, sem botão. Recomendo **1**: a mesma
@@ -253,7 +257,127 @@ Só as que mudam o desenho. Cada uma tem a proposta visível em `/proposal/fase2
 3. **Barra de seleção na mesa.** (1) Ocupa o lugar da toolbar enquanto houver marcados (o
    olho já está ali); (2) fica na base, como no celular. Recomendo **1**.
 
-## 10. O que não foi verificado
+## 10. Rodada 2: o que mudou e por quê
+
+O dono viu a rodada 1 (09/10), respondeu as perguntas, fez onze observações e pediu para
+**estressar as peças juntas**. A página `/proposal/fase2` passou a mostrar as mudanças peça
+a peça e leva a quatro telas compostas em `/proposal/fase2/<tela>` (`fila`, `historico`,
+`compras`, `pdv`), em tela cheia, com o shell real da suíte (`OperatorSuiteShell`: barra
+lateral na mesa, gaveta e barra inferior abaixo de `lg`). A mesma rota é o celular e a
+mesa: o arranjo muda por CSS, como pede a régua única (K0). `?estado=` escolhe a situação
+(`livre`, `filtros`, `busca`, `selecao`, `detalhe`, `vazio`, `erro`, `comanda`).
+
+| # | observação do dono | o que mudou | peça |
+|---|---|---|---|
+| 1 | "Ao vivo · 10:42" no celular é SELO | `NuxtBadge` ao lado do título (verde ao vivo, âmbar reconectando, vermelho sem conexão); sem espaço, desce para a linha de baixo antes de espremer o título | K6 |
+| 2 | botão de filtro só com ícone, com contagem | no celular, só o ícone, com o número no canto (`NuxtChip` `4xl`, o chip numerado do tema); na mesa, ícone + "Filtros" + o mesmo número | K4 |
+| 3 | busca em níveis no canônico | `NuxtDashboardSearchButton` + `NuxtDashboardSearch` oficiais; os níveis são os GRUPOS da paleta em ordem fixa (`preserve-group-order`): Nesta tela, No app, Na suíte. "Filtrar a fila por …" vira um recorte (chip). Sem `NuxtTabs` nem `NuxtModal` próprios: o `OperatorSuiteSearch` passa a ser uma camada fina sobre o `DashboardSearch` | K6 |
+| 4 | filtro repensado, igual no celular e na mesa, favoritos primeiro (Odoo) | UM painel sobre `NuxtCommandPalette`: **Favoritos** (os seus, depois os da equipe com o sufixo "Equipe") → **Filtros rápidos** (somam: OU) → **Data** → **Agrupar por** (só onde a tela agrupa) → **Filtros completos** (cada campo abre a lista dele, `children`; entre grupos, E) e no pé **Salvar como favorito**. Digitar oferece "Cliente contém …" (o "Search Customer for" do Odoo). Contêiner: `NuxtDrawer` de baixo no celular (pé: Limpar + "Ver 7 pedidos"), `NuxtPopover` na mesa (pé: Limpar + Salvar). O diálogo de salvar mora FORA do contêiner e já traz "Mostrar nos filtros rápidos da tela" e "Publicar para a equipe" (só gerente; pode nascer depois) | K4 |
+| 5 | tabela compacta por padrão; a linha aberta não compacta | compacta é o padrão (`px-2 py-1`); Confortável e as colunas moram num botão só, **Exibir** (ícone), guardado no dispositivo (`localStorage`, lido depois de montar); o conteúdo aberto ganha o respiro da confortável (`px-4 py-3` no total) | K1 |
+| 6 | campo de busca da tabela menor, com padding | o campo saiu da borda da tabela para a toolbar da tela (13 rem, com folga), com o rótulo "Filtrar estes pedidos"; a tabela entra no cartão sem barra própria | K1 |
+| 7 | barra de seleção no lugar da barra de filtros | na mesa ela troca a toolbar inteira e diz em que recorte a seleção foi feita ("em iFood atrasados · R$ 171,50"); no celular ela é a ação flutuante | K2 |
+| 8 | copy de estado | "Nenhum pedido precisa de você agora." · "Não foi possível carregar a fila" · "Sem conexão. O que está na tela é de 10:42." · "Nenhum pedido neste recorte." · "Carregando a fila." | K7 |
+| 9 | ação na base com mais contraste, flutuante, escura | flutua 12 px acima da barra inferior, superfície invertida (a tinta do texto: escura no tema claro, creme no escuro), botão claro (`neutral` `solid` com os tokens redefinidos SÓ dentro da barra, o recurso do rail dourado); o conteúdo reserva a altura MEDIDA da barra | K3 |
+| 10 | cartões sem destaque de cabeçalho e rodapé | cartão de pedido em bloco único, 12 px de respiro; cabeçalho e rodapé só onde separam algo de fato (a comanda do PDV tem título porque é uma coluna própria) | regra do kit |
+| 11 | altura de campo = altura de botão | campo, lista de escolha e botão na altura `md` (32 px na mesa); o degrau `xl` (48 px) vale para os dois juntos, no toque crítico. A página da proposta deixou de vestir o marcador do catálogo (`data-operator-catalog`), que sobe campo e lista para 44 px: no kit, o `suite-page:h-control` do `input`/`select`/`selectMenu` `md` sai junto com a migração de cada app | tema do kit |
+
+Duas mudanças que as telas compostas forçaram, além das observações:
+
+- **O detalhe na mesa DIVIDE a tela, não cobre.** Na rodada 1 o anterior/próximo vivia
+  num cartão; na tela composta, o primeiro desenho (um `Slideover` não modal) cobria as
+  colunas da direita e os botões da barra de seleção. Agora o detalhe é uma coluna de
+  24 rem ao lado da tabela, e a tabela solta Canal e Pagamento enquanto ele está aberto.
+  Abaixo de `lg`, o detalhe é a tela inteira (`Slideover`).
+- **Período nas listas mora no painel.** No Histórico a 1440 com a barra lateral aberta,
+  campo + quatro abas + seletor de período + Filtros + Exibir + contagem não couberam numa
+  linha (o último controle saía cortado). O seletor de período com setas fica para as
+  telas de leitura por período (B.I., Fechamento); nas listas, a data é um grupo do
+  painel e aparece como chip quando sai do padrão. A contagem de tabela foi para o pé
+  da tabela.
+
+## 11. Regras de precedência
+
+O que as quatro telas compostas revelaram quando as peças disputam o mesmo espaço. Medido a
+390×844 e 1440×900 (capturas `fase2-r2-*` no scratchpad da sessão, não versionadas).
+
+**O que NUNCA fica coberto nem some**
+
+1. O **título** da tela: quebra em linhas, nunca corta, nunca cede lugar a selo ou ícone.
+2. O **fim do conteúdo**: a ação flutuante reserva a própria altura medida + 24 px; o
+   último item fica visível acima dela (medido: 20 px livres na Fila e no Histórico, 40 no
+   PDV).
+3. O botão **Filtros** com o número de recortes: é o último a sair da toolbar, nunca sai.
+4. O **recorte ativo**: se os chips não cabem, eles descem para uma faixa própria (celular
+   e mesa estreita); a barra de seleção, quando toma a toolbar, escreve o recorte por
+   extenso ("em …"); o detalhe do registro também ("em iFood atrasados", acima do "3 de 24").
+5. A **barra inferior** do celular: nada flutua sobre ela; a ação flutua 12 px acima.
+6. Na mesa, as **ações da seleção**: nenhum painel lateral as cobre (por isso o detalhe
+   divide a tela).
+
+**Quem cobre o quê (a pilha, de cima para baixo)**
+
+1. Aviso com prazo (`OperatorUrgentAlert`, modal): o único que cobre tudo.
+2. Diálogos e folhas pedidos pela pessoa (busca, painel de filtros, salvar favorito,
+   comanda): cobrem a tela, e só enquanto abertos.
+3. Ação flutuante: cobre o conteúdo que rola por baixo, nunca as barras e nunca o fim
+   (regra 2 acima). Some com o teclado aberto e não existe do `lg` para cima.
+4. Cabeçalho de grupo grudado (lista agrupada): gruda sob a toolbar, acima dos itens.
+
+**Quem cede, em ordem, quando falta largura**
+
+- *Barra superior primária, celular:* ☰ + título + selo + 2 ícones + ⋯. Cedem nesta ordem:
+  o selo desce para a 2ª linha; a ação primária da tela vai para o ⋯ (entra no topo dele);
+  a busca vira só a lupa; Avisos fica (é um dos 2 ícones). Nada mais entra na barra.
+- *Barra superior primária, mesa:* título + selo, busca (14 rem, `/`), ação primária, ⋯.
+  Avisos mora na barra lateral.
+- *Toolbar, celular:* UMA linha: a faixa esquerda (recortes ou sub-seções) e o ícone de
+  Filtros, fixo à direita. Os chips dos recortes ativos descem para uma faixa rolável
+  logo abaixo. A contagem sai (o painel diz "Ver 7 pedidos"). Sub-seção (navegação) com
+  mais de 3 opções vira `NuxtSelect` (medido: a 390 cabem 2 abas e meia com contagem ao
+  lado do ícone); recorte rola. Favorito fixado não vira aba no celular quando já não
+  cabem as abas: ele está no topo do painel.
+- *Toolbar, mesa:* [campo "Filtrar estes …" só em tela de tabela] [abas] [chips] … [Filtros]
+  [Exibir, só ícone] [contagem, só em tela sem tabela]. Cedem nesta ordem: a contagem (vai
+  para o pé da tabela); os chips (descem para a faixa própria abaixo de `xl`); o rótulo de
+  Exibir (já é só ícone); por fim a linha QUEBRA (`flex-wrap`), nunca corta e nunca vira
+  segunda toolbar.
+- *Tabela, celular:* ficam a seleção, a coluna-chave (Pedido), o texto da casa (Cliente,
+  quebrando) e o valor; as colunas de apoio somem por CSS (`max-sm:hidden` no
+  `meta.class` da coluna) e a seta de abrir dá lugar ao toque na linha.
+- *Tabela, mesa com detalhe aberto:* a tabela encolhe e solta as colunas de apoio (Canal,
+  Pagamento) antes de rolar na horizontal.
+
+**Quem vai para o ⋯ e quem vai para o painel**
+
+- ⋯ "Mais ações": tudo que AGE sobre a tela inteira e não é a ação primária: Atualizar (R),
+  Exportar, Imprimir, a ação primária no celular, a busca da suíte no PDV.
+- Painel de filtros: tudo que RECORTA: favoritos, filtros rápidos que não cabem como aba,
+  data (nas listas), agrupar por, filtros completos, salvar favorito.
+- Botão Exibir: o que muda a FORMA da tabela (densidade, colunas). Nunca no painel de
+  filtros, porque não muda o que aparece, só como.
+
+**Quem troca de lugar com quem (nunca os dois juntos)**
+
+- Seleção ⇄ toolbar (mesa): com marcados, a barra de seleção ocupa a toolbar. Enquanto
+  houver marcados o recorte não muda: mudar o recorte com marcados fora da vista seria agir
+  no que não se vê. Limpar a seleção devolve a toolbar.
+- Seleção ⇄ ação do momento (celular): a ação flutuante mostra a seleção quando há
+  marcados ("Aceitar 3"); sem marcados, a ação do momento ("Aceitar o 1051").
+- Aba de favorito fixado ⇄ chip do favorito: com a aba ativa, o chip não se repete.
+- Aviso da tela: UM `NuxtAlert`; o 2º em diante vira "Mais N avisos" na própria ação do
+  aviso (o resto mora na caixa de Avisos).
+
+**Carta branca do PDV, confirmada na tela composta**
+
+- A barra da venda (cliente, recebimento F6, quando F7, desconto F8) toma a toolbar
+  enquanto há comanda; o campo de produto (`/`) ocupa uma 2ª linha da toolbar. É a única
+  toolbar de duas linhas da suíte: no balcão a busca de produto é o gesto principal.
+- Na mesa a comanda é uma coluna fixa à direita com "Receber R$ 49,70" `xl` e F2; a ação
+  não sobe para a barra do topo.
+- No celular a comanda é a ação flutuante (total + Receber) e abre como folha de baixo
+  ("Ver comanda"). A busca da suíte vai para o ⋯.
+
+## 12. O que não foi verificado
 
 - O build de produção (os laudos mediram `nuxt dev`); D1 e D2 pedem confirmação lá.
 - A venda do PDV cheia e o fechamento com dados (o mock devolve `tabs: []`).

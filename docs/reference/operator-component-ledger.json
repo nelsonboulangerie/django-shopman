@@ -789,6 +789,30 @@
             "feedback"
           ],
           "status": "pending"
+        },
+        {
+          "id": "proposal-fase2-telas",
+          "source_files": [
+            "app/pages/proposal/fase2/[tela].vue"
+          ],
+          "routes": [
+            "/proposal/fase2/:tela"
+          ],
+          "variants": [
+            "normal",
+            "empty",
+            "error",
+            "modal"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
         }
       ]
     },
