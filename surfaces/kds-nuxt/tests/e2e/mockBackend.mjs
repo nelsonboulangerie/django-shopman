@@ -27,6 +27,7 @@ const SESSION_AUTHED = {
 const INDEX = {
   instances: [
     { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: 0 },
+    { ref: "saida", name: "Saída", type: "expedition", type_display: "Saída", active_count: 0 },
   ],
 };
 

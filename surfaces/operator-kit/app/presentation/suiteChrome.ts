@@ -148,8 +148,8 @@ export interface PhoneBarLayout {
 }
 
 /**
- * Até 4 seções na barra e o resto no "Mais" (`cozinha-celular4.html`: Saída · Preparo ·
- * Estações · Mais). O "Mais" existe sempre que há operador: é ele que guarda Bloquear,
+ * Até 4 seções na barra e o resto no "Mais" (a Cozinha: Cafés · Lanches · Encomendas ·
+ * Saída · Mais). O "Mais" existe sempre que há operador: é ele que guarda Bloquear,
  * trocar de operador e o tema no celular.
  */
 export function phoneBarLayout(sections: readonly OperatorSection[], max = PHONE_BAR_SECTIONS): PhoneBarLayout {

@@ -32,8 +32,7 @@ const props = withDefaults(defineProps<{
   /** Operador ativo: o "Mais" mostra o nome dele e o Bloquear. */
   operatorName?: string;
   /**
-   * Quantas seções antes do "Mais". Padrão 4 (navegação v3, "até 4 + Mais"); a Cozinha
-   * usa 3, como a v4 do celular (Preparo · Saída · Estações · Mais).
+   * Quantas seções antes do "Mais". Padrão 4 (navegação v3, "até 4 + Mais").
    */
   max?: number;
 }>(), { current: undefined, operatorName: undefined, max: PHONE_BAR_SECTIONS });

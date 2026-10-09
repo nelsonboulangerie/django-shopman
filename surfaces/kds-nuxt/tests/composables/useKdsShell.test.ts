@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { reactive } from "vue";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
+import { sectionDescription } from "../../../operator-kit/app/presentation/suiteChrome";
 import { useKdsBoardState, useKdsSections, useKdsStation } from "~/composables/useKdsShell";
 
-// A barra do polegar na CARGA DIRETA do quadro (`/bancada` aberto pela barra de endereço,
-// não por navegação interna). O servidor desenha a barra antes de o quadro ter dados e
+// A navegação da Cozinha são as estações da casa, pelo nome (dono, 09/10/2026): cada uma
+// leva à sua bancada, a Saída leva ao Gestor, e não existe item "Preparo".
+//
+// E a barra inferior na CARGA DIRETA do quadro (`/bancada` aberto pela barra de endereço,
+// não por navegação interna): o servidor desenha a barra antes de o quadro ter dados e
 // sem o localStorage; a hidratação do cliente tem de ver a MESMA barra, porque o Vue
-// corrige o texto que difere mas não os atributos. Quando a barra dependia da memória da
-// estação, o servidor mandava "Saída · Estações" e o cliente montava "Preparo · Saída":
-// o "Preparo" ficava com o `href` da Saída e a "Saída" com o `/` marcado como atual.
+// corrige o texto que difere mas não os atributos (#1563).
 
 const env = installNuxtGlobals();
 const route = reactive<{ path: string; name: string; params: Record<string, string> }>({
@@ -43,20 +45,70 @@ beforeEach(() => {
   env.reset();
   env.runtimeConfig.public = { djangoBaseUrl: "", ordersUrl: "https://gestor.example/" };
   env.fetchData.value = {
-    instances: [{ ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: 7 }],
+    instances: [
+      { ref: "cafes", name: "Cafés", type: "prep", type_display: "Preparo", active_count: 2 },
+      { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: 7 },
+      { ref: "encomendas", name: "Encomendas", type: "picking", type_display: "Separação", active_count: 0 },
+      { ref: "saida", name: "Saída", type: "expedition", type_display: "Saída", active_count: 3 },
+    ],
   };
 });
 
+describe("itens da Cozinha: as estações reais", () => {
+  it("cada estação pelo nome, levando à sua bancada; Saída leva ao Gestor; sem Preparo", () => {
+    goTo("/cafes");
+    const { sections } = useKdsSections("rail");
+    expect(sections.value.filter((s) => s.to).map((s) => [s.label, s.to])).toEqual([
+      ["Cafés", "/cafes"],
+      ["Bancada", "/bancada"],
+      ["Encomendas", "/encomendas"],
+      ["Saída", EXIT],
+      ["Painel de retirada", "/pickup"],
+    ]);
+    expect(sections.value.some((s) => s.label === "Preparo")).toBe(false);
+  });
+
+  it("a estação de Saída do cadastro não vira bancada: é o item Saída, com o selo dela", () => {
+    goTo("/cafes");
+    const { sections } = useKdsSections("rail");
+    expect(sections.value.some((s) => s.to === "/saida")).toBe(false);
+    expect(sections.value.find((s) => s.key === "exit")?.badge).toBe("3");
+  });
+
+  it("sem a URL do Gestor, a estação de Saída segue acessível como bancada", () => {
+    env.runtimeConfig.public = { djangoBaseUrl: "", ordersUrl: "" };
+    goTo("/cafes");
+    const { sections } = useKdsSections("rail");
+    expect(sections.value.some((s) => s.key === "exit")).toBe(false);
+    expect(sections.value.find((s) => s.to === "/saida")?.label).toBe("Saída");
+  });
+
+  it("a estação aberta é o item atual; a descrição é \"Estação · N pendências\"", () => {
+    goTo("/bancada");
+    const { sections, current } = useKdsSections("rail");
+    const open = sections.value.find((s) => s.key === current.value)!;
+    expect(open.to).toBe("/bancada");
+    expect(sectionDescription(open)).toBe("Bancada · 7 pendências");
+  });
+
+  it("na tela de escolher a estação, nenhum item é o atual", () => {
+    goTo("/");
+    const nav = bar();
+    expect(nav.current()).toBe("");
+  });
+});
+
 describe("barra da Cozinha na carga direta do quadro", () => {
-  it("o servidor (memória vazia) já desenha Preparo na estação da rota, marcado como atual", () => {
+  it("o servidor (memória vazia) já desenha a estação da rota à frente, marcada como atual", () => {
     goTo("/bancada");
     const nav = bar();
     expect(nav.links()).toEqual([
-      ["prep", "/bancada"],
+      ["station:bancada", "/bancada"],
+      ["station:cafes", "/cafes"],
+      ["station:encomendas", "/encomendas"],
       ["exit", EXIT],
-      ["stations", "/"],
     ]);
-    expect(nav.current()).toBe("prep");
+    expect(nav.current()).toBe("station:bancada");
   });
 
   it("o que o quadro grava depois de montar não muda nenhum href nem o item atual", () => {
@@ -73,31 +125,28 @@ describe("barra da Cozinha na carga direta do quadro", () => {
     expect(nav.current()).toBe(served.current);
   });
 
-  it("a memória de OUTRA estação (localStorage) não desvia o Preparo do quadro aberto", () => {
-    useKdsStation().remember("forno", "Forno");
+  it("a memória de OUTRA estação (localStorage) não desvia a barra do quadro aberto", () => {
+    useKdsStation().remember("encomendas", "Encomendas");
     goTo("/bancada");
     const nav = bar();
-    expect(nav.links()[0]).toEqual(["prep", "/bancada"]);
-    expect(nav.current()).toBe("prep");
+    expect(nav.links()[0]).toEqual(["station:bancada", "/bancada"]);
+    expect(nav.current()).toBe("station:bancada");
   });
 
-  it("fora do quadro, o Preparo é a última estação aberta e o atual é Estações", () => {
-    useKdsStation().remember("forno", "Forno");
+  it("fora do quadro, a estação deste dispositivo vai à frente (depois de montar)", () => {
+    useKdsStation().remember("encomendas", "Encomendas");
     goTo("/");
     const nav = bar();
-    expect(nav.links()).toEqual([
-      ["prep", "/forno"],
-      ["exit", EXIT],
-      ["stations", "/"],
-    ]);
-    expect(nav.current()).toBe("stations");
+    expect(nav.links()[0]).toEqual(["station:encomendas", "/encomendas"]);
+    expect(nav.current()).toBe("");
   });
 
-  it("o selo do Preparo é o do quadro só quando o quadro é o da rota", () => {
+  it("o selo da estação é o do quadro só quando o quadro é o da rota", () => {
     goTo("/bancada");
     const board = useKdsBoardState();
-    board.value = { ...board.value, onBoard: true, total: 3, stationRef: "forno" };
+    board.value = { ...board.value, onBoard: true, total: 3, stationRef: "cafes" };
     const { sections } = useKdsSections("bar");
-    expect(sections.value.find((s) => s.key === "prep")?.badge).toBe("7");
+    expect(sections.value.find((s) => s.key === "station:bancada")?.badge).toBe("7");
+    expect(sections.value.find((s) => s.key === "station:cafes")?.badge).toBe("2");
   });
 });
