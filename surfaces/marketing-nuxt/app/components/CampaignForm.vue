@@ -913,6 +913,7 @@ function submit() {
             :items="templateOptions"
             placeholder="Escolha o modelo"
             :search-input="{ placeholder: 'Buscar modelo' }"
+            :filter-fields="['label', 'keywords']"
             class="w-full"
             @update:model-value="chooseTemplate"
           />
@@ -1110,9 +1111,9 @@ function submit() {
       <NuxtCheckboxGroup
         v-model="platforms"
         :items="platformChoiceItems"
-        legend="Disparado via"
         variant="table"
       >
+        <template #legend>Disparado via</template>
         <template #label="{ item }">
           <span>{{ item.label }}</span>
           <span
@@ -1235,9 +1236,10 @@ function submit() {
           v-if="priceTiers?.length"
           v-model="selectedPriceTiers"
           :items="priceTiers"
-          legend="Faixa de preço"
           orientation="horizontal"
-        />
+        >
+          <template #legend>Faixa de preço</template>
+        </NuxtCheckboxGroup>
 
         <NuxtCheckboxGroup
           v-if="rfmSegments?.length"

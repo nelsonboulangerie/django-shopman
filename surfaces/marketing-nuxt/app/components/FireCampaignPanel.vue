@@ -466,9 +466,10 @@ watch(
           v-if="priceTiers.length"
           v-model="tiers"
           :items="priceTiers"
-          legend="Faixa de preço"
           orientation="horizontal"
-        />
+        >
+          <template #legend>Faixa de preço</template>
+        </NuxtCheckboxGroup>
 
         <NuxtCheckboxGroup
           v-if="rfmSegments.length"
