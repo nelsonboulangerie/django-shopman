@@ -43,6 +43,7 @@ const {
   start,
   finish,
   undoFinish,
+  finishUntil,
   recall,
   acknowledge,
   declareVolumes,
@@ -553,6 +554,7 @@ function warnLocked(pk: number) {
             :blocked-refs="view.blockedRefs"
             :addition-pks="view.additionPks"
             :finishing-pks="view.finishingPks"
+            :finish-until="finishUntil"
             :all-day="view.allDay"
             :density="density"
             @open="(pk) => (openTicketPk = pk)"
@@ -581,6 +583,7 @@ function warnLocked(pk: number) {
                     :blocked="view.blockedRefs.has(card.order_ref)"
                     :addition="view.additionPks.has(card.pk)"
                     :finishing="view.finishingPks.has(card.pk)"
+                    :finish-until="finishUntil.get(card.pk)"
                     @open="openTicketPk = card.pk"
                     @start="start(card.pk)"
                     @finish="finish(card.pk)"

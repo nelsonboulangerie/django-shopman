@@ -431,6 +431,7 @@ Como um app migra:
 | `OperatorAppSeal` | o selo do app na barra de 56px dos cabeçalhos próprios (PDV, Central) | `_rail3top.html` |
 | `OperatorSwipeRow` | deslizar uma linha no toque (F7, 09/10/2026): à esquerda revela `actions` (gaveta que fica aberta depois da metade); à direita faz `commit` depois do ponto de compromisso, com o verbo e o alvo atrás da linha. Mouse não desliza; o eixo se decide no começo (rolar nunca vira deslize); `motion-safe:` na volta. Nunca a única porta: o mesmo ato existe num botão visível, e a camada de trás é `aria-hidden` | `cozinha-celular` (a), v4 |
 | `OperatorThumbAction` | o polegar do celular: o gesto principal da tela num botão `xl` largo, preso na base da área que rola (`data-focus-obstruction`), com o verbo e o alvo ("Entregar U13 a Ana"). Um por tela, só abaixo de `md` | `cozinha-celular` (a), v4 |
+| `OperatorTimedButton` | a ação que só vale até um prazo, com o tempo dentro do botão: o fundo esvazia até a janela fechar; prazo absoluto (`until`), movimento reduzido só com os segundos, rótulo fixo e "Disponível até HH:MM:SS" na descrição; ao fim some ou desabilita. Ver "Ação com prazo" | proposta #1575, aprovada 09/10/2026 |
 
 **O título da barra do topo não se corta** (PR-K5, achado do B.I. a 390 px: "Quem compra
 no balc…"). O `NuxtDashboardNavbar` oficial leva `truncate` no título; o tema do kit
@@ -885,6 +886,60 @@ reprova, e o teto das barras feitas à mão (Cozinha, Marketing, PDV, Compras) s
 Contrato em `tests/components/OperatorActionBar.test.ts`. Primeiro uso: o pedido do
 Gestor no celular (`orders-nuxt/app/pages/[ref].vue`: a ação primária, "Recusar" como
 segunda, o motivo do bloqueio escrito).
+
+### Ação com prazo (`OperatorTimedButton`)
+
+A ação que só vale até um prazo, com o tempo **dentro do botão**: o fundo esvazia até a
+janela fechar (dono, 09/10/2026, sobre a proposta #1575: "é exatamente assim: fundo
+esvazia! ótimo! poderia canonizar isso para outros casos de uso"). Serve a todo gesto
+que o sistema segura por alguns segundos antes de valer: desfazer o Pronto na Cozinha,
+desfazer a saída no Gestor.
+
+```vue
+<OperatorTimedButton
+  :until="handoff.untilIso"
+  :since="handoff.sinceIso"
+  :server-now="card.server_now_iso"
+  label="Desfazer"
+  icon="i-lucide-undo-2"
+  block
+  @click="undo()"
+  @expire="closed()"
+/>
+```
+
+- **Prazo absoluto.** O fim é `until`, não "5 s a partir de agora": montar de novo
+  (teleporte para o polegar, foco que muda, recarga da lista) ou a aba dormir em segundo
+  plano não reinicia a janela. Na volta da aba, a janela que passou fecha na hora. O
+  prazo do servidor vem com `server-now`, e o desvio do relógio do dispositivo sai da
+  conta. `since` (ou `duration`) dá o tamanho da janela, para o fundo começar na
+  proporção certa; sem nenhum dos dois, conta do primeiro instante em que a peça viu o
+  prazo. Quem guarda o prazo é o dono do estado (o quadro, a projeção), nunca a peça.
+- **Uma animação só**, em CSS, do tamanho da janela, com atraso negativo para começar
+  onde a janela já está. Nada redesenha a cada quadro.
+- **Conjunto mínimo**: o `NuxtButton` de sempre, `md`/`xl` × `outline`/`solid` ×
+  `primary`/`neutral`/`error`. No contornado, a cor da casa esvazia por trás do rótulo;
+  no sólido, a cor do botão é o que esvazia, e o que passou fica mais claro. As cores de
+  aviso (`info`, `success`, `warning`) só como ação de um `NuxtAlert` daquela cor (a
+  exceção declarada do conjunto).
+- **Movimento reduzido** (`prefers-reduced-motion: reduce`): nada anima; o botão mostra
+  o número de segundos ("4 s"), que muda uma vez por segundo.
+- **Leitor de tela**: o nome do botão é o rótulo, fixo (ou o `aria-label` de quem chama:
+  "Desfazer o Pronto do pedido W07"). O tempo vai numa descrição fixa, "Disponível até
+  10:42:15", que não muda a cada segundo; uma região educada fala duas vezes, ao abrir
+  ("Desfazer: disponível até 10:42:15.") e ao fechar ("Desfazer: o prazo acabou."). O
+  número visível e a camada do fundo são `aria-hidden`.
+- **Ao fim**, `expire` sai uma vez, e o botão some (`when-expired="hide"`, o padrão) ou
+  fica no lugar desabilitado (`"disable"`). O toque que chega depois do prazo não sai.
+- `class`, `data-*` e `aria-*` chegam ao botão. SFC puro (imports explícitos): os
+  harnesses sem runtime Nuxt dos apps montam a peça de verdade.
+
+Onde mora: o Desfazer do Pronto na Cozinha (`KdsTicketCard`, prazo guardado pelo
+`useKdsBoard`) e o Desfazer da saída no Gestor (`OrderCard` e o detalhe do pedido,
+prazo e começo da janela vindos da projeção: `undo_until_iso`/`undo_since_iso`). A conta
+é pura em `presentation/timedAction.ts`. Trava: `tests/timedAction.test.ts` e
+`tests/components/OperatorTimedButton.test.ts`. Vitrine: "Ação com prazo", nas peças de
+tela do catálogo.
 
 ### Estado da tela (`OperatorScreenState`)
 

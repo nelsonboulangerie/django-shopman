@@ -121,6 +121,10 @@ export interface UndoLine {
   action: AffordanceRef;
   /** O que não esperou a janela e já saiu ("iFood já avisado"); vazio se nada. */
   alreadyOut: string;
+  /** Fim e começo da janela (ISO do servidor): o botão com prazo conta até o fim, e o
+   *  começo diz quanto do fundo ainda está cheio. Vazios sem janela. */
+  untilIso: string;
+  sinceIso: string;
 }
 
 type UndoSource = Pick<OrderCardProjection, "undo" | "actions">;
@@ -158,6 +162,8 @@ export function undoLine(source: UndoSource, nowMs: number): UndoLine | null {
     canUndo,
     action: kind === "handoff" ? "undo_handoff" : "undo_ready",
     alreadyOut: undo.already_out ?? "",
+    untilIso: secondsLeft > 0 ? undo.undo_until_iso : "",
+    sinceIso: secondsLeft > 0 ? (undo.undo_since_iso ?? "") : "",
   };
 }
 
