@@ -14,12 +14,17 @@
 // cor de um fundo fixo (`ring-bg`) aparecia como aro onde o pai tem outro fundo. No canto
 // do ícone o anel continua `ring-bg`, porque lá ele separa o chip do ícone.
 //
+// Sobre pai preenchido de cor próxima (aba ativa dourada, barra lateral clara), o chip
+// inverte: círculo na cor do texto do pai, número na cor do fundo do pai
+// (`COUNT_CHIP_INVERTED_ON` em `presentation/countChip.ts`).
+//
 // Sem `count` maior que zero, nada aparece; `dot` desenha o ponto de estado (sem número)
 // no tamanho padrão do ponto (`dotSize`, o do NavigationMenu quando vem dele).
 import type { ChipProps } from "@nuxt/ui";
 import { computed, useAttrs } from "vue";
 import {
   COUNT_CHIP_COLOR,
+  COUNT_CHIP_INVERT_CLASSES,
   COUNT_CHIP_SIZE,
   countChipText,
   hasCount,
@@ -48,6 +53,8 @@ const props = withDefaults(
 const shown = computed(() => props.dot || hasCount(props.count));
 const numbered = computed(() => !props.dot && hasCount(props.count));
 const size = computed<ChipProps["size"]>(() => (numbered.value ? COUNT_CHIP_SIZE : props.dotSize));
+// Anel transparente (no fluxo) e a inversão sobre pai preenchido de cor próxima.
+const chipUi = { base: `ring-transparent ${COUNT_CHIP_INVERT_CLASSES}` };
 const text = computed(() => (numbered.value ? countChipText(props.count as number) : ""));
 </script>
 
@@ -60,7 +67,7 @@ const text = computed(() => (numbered.value ? countChipText(props.count as numbe
     :size="size"
     inset
     standalone
-    :ui="{ base: 'ring-transparent' }"
+    :ui="chipUi"
   >
     <template #content>
       <span v-bind="passThrough" class="tabular-nums" data-count-chip>{{ text }}</span>

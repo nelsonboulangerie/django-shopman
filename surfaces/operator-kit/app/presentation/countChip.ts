@@ -38,10 +38,51 @@ export function hasCount(count: number | null | undefined): count is number {
   return typeof count === "number" && Number.isFinite(count) && count > 0;
 }
 
+/**
+ * O chip contrasta com o pai (coordenação, 09/10/2026): círculo × fundo do pai ≥ 3:1 e
+ * número × círculo AA (4,5:1), nos dois temas. O âmbar serve sobre a página, o cartão,
+ * o recorte `soft` e a barra lateral escura. Sobre pai PREENCHIDO de cor próxima, o
+ * chip INVERTE: o círculo toma a cor do texto do pai e o número a cor do fundo do pai,
+ * mesmo tamanho e forma (o anel continua na cor do fundo do pai). Os pais que invertem
+ * são estes, e o teste de contraste (`tests/countChipContrast.test.ts`) mede cada um:
+ *
+ *   tabActive  aba ativa preenchida (`NuxtTabs` `pill`: o dourado/latão do `primary`)
+ *              nos dois temas: o âmbar some no dourado.
+ *   rail       barra lateral clara (latão), linha comum e linha ativa. No escuro a
+ *              barra é bronze escuro e o âmbar contrasta: não inverte.
+ *
+ * A inversão é derivada do pai pelo próprio CSS (o pai ativo é o ancestral, não uma
+ * prop da tela): `data-slot=trigger` + `data-state=active` é a aba ativa do Nuxt UI;
+ * `.bg-rail` é o escopo da barra lateral (o `RAIL_SCOPE` do app.config), aberta,
+ * compactada ou em gaveta. Vale para o chip no fluxo e para o do canto do ícone.
+ */
+export const COUNT_CHIP_INVERTED_ON = {
+  tabActive: { themes: ["light", "dark"], parentBg: "primary", parentText: "primary-foreground" },
+  rail: { themes: ["light"], parentBg: "rail", parentText: "rail-foreground" },
+  railActive: { themes: ["light"], parentBg: "rail", parentText: "rail-foreground" },
+} as const;
+
+/**
+ * As classes da inversão, no `base` do Chip (uma vez no kit, nunca por tela). Escritas
+ * por extenso: o Tailwind lê o texto do arquivo, e classe montada por interpolação não
+ * gera CSS.
+ */
+export const COUNT_CHIP_INVERT_CLASSES = [
+  "in-[[data-slot=trigger][data-state=active]]:bg-(--ui-text-inverted)",
+  "in-[[data-slot=trigger][data-state=active]]:text-(--ui-primary)",
+  "[:root:not(.dark)_.bg-rail_&]:bg-(--ui-text)",
+  "[:root:not(.dark)_.bg-rail_&]:text-(--ui-bg)",
+].join(" ");
+
 /** As props do Chip no CANTO do ícone (barra compactada, barra inferior). */
 export function countChipProps(
   count: number,
   color: CountChipColor = COUNT_CHIP_COLOR,
-): { color: CountChipColor; text: string; size: typeof COUNT_CHIP_SIZE; inset: false } {
-  return { color, text: countChipText(count), size: COUNT_CHIP_SIZE, inset: false };
+): { color: CountChipColor; text: string; size: typeof COUNT_CHIP_SIZE; inset: false; ui: { base: string } } {
+  return { color, text: countChipText(count), size: COUNT_CHIP_SIZE, inset: false, ui: { base: COUNT_CHIP_INVERT_CLASSES } };
+}
+
+/** O ponto de estado no canto do ícone: a mesma inversão do número. */
+export function countChipDotProps(color: CountChipColor = COUNT_CHIP_COLOR): { color: CountChipColor; ui: { base: string } } {
+  return { color, ui: { base: COUNT_CHIP_INVERT_CLASSES } };
 }

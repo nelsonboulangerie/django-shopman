@@ -32,7 +32,7 @@ describe("countChip (puro)", () => {
   });
 
   it("no canto do ícone: o mesmo chip, inset false, e a barra lateral usa este", () => {
-    expect(countChipProps(7)).toEqual({ color: "warning", text: "7", size: "4xl", inset: false });
+    expect(countChipProps(7)).toMatchObject({ color: "warning", text: "7", size: "4xl", inset: false });
     expect(railSignalChip({ color: "error", count: 120 })).toEqual(countChipProps(120, "error"));
   });
 });

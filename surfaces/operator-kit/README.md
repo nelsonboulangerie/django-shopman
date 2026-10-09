@@ -510,6 +510,14 @@ os botões, abas e recortes usavam ("Todos 7", "Entrega 3", "Atrasados").
   cobre nada e o anel é `ring-transparent` (o `:ui` único do componente), que é exatamente o fundo do pai em qualquer
   pai: o dourado do botão ativo, o `soft` translúcido do recorte, a linha ativa da barra
   lateral, o hover.
+- **Contraste com o pai** (coordenação, 09/10/2026): círculo × fundo do pai ≥ 3:1 e
+  número × círculo AA, nos dois temas. Sobre pai PREENCHIDO de cor próxima o chip
+  **inverte**: círculo na cor do texto do pai, número na cor do fundo do pai, mesmo
+  tamanho e forma. Inverte na aba ativa preenchida (`NuxtTabs` `pill`, nos dois temas)
+  e na barra lateral clara (latão); nos demais pais fica o âmbar. A inversão sai do
+  próprio pai pelo CSS (`COUNT_CHIP_INVERT_CLASSES`, aba ativa do Nuxt UI e escopo
+  `.bg-rail`), sem prop nem `:ui` por tela; a tabela `COUNT_CHIP_INVERTED_ON` é medida
+  por `tests/countChipContrast.test.ts` contra os tokens do tema.
 - **Zero não aparece.** Um círculo âmbar com "0" aponta para o nada. Sem contagem maior
   que zero, o chip não é desenhado; `dot` desenha o ponto de estado (sem número) no
   tamanho padrão do ponto.
