@@ -312,7 +312,14 @@ jobs:
       # postinstall do consumer só falhe depois do merge, ao publicar no DOCR.
       - name: Build operator deployment image
         if: matrix.app != 'storefront'
-        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=${{ matrix.surface }} .
+        # Base e frontend vêm de espelho público da MESMA imagem oficial (o pull
+        # anônimo do Docker Hub cai com 429/504). O deploy segue no default do ARG.
+        run: >-
+          docker build --file surfaces/Dockerfile.surface
+          --build-arg SURFACE=${{ matrix.surface }}
+          --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:22-alpine
+          --build-arg BUILDKIT_SYNTAX=mirror.gcr.io/docker/dockerfile:1
+          .
 
   marketing-complete:
     name: Marketing — cadeia completa
