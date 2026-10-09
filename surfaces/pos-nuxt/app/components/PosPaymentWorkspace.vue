@@ -1647,14 +1647,14 @@ defineExpose({
           <template v-if="!review">
             <p
               v-if="reviewFailed"
-              class="mt-1 text-2xl font-semibold text-destructive xl:text-4xl"
+              class="mt-1 text-3xl font-semibold text-destructive xl:text-4xl"
               data-pos-total-failed
             >
               Total não calculado
             </p>
             <p
               v-else
-              class="mt-1 flex items-center gap-3 text-2xl font-semibold text-muted-foreground xl:text-4xl"
+              class="mt-1 flex items-center gap-3 text-3xl font-semibold text-muted-foreground xl:text-4xl"
               data-pos-total-calculating
             >
               <Icon name="lucide:loader-circle" class="size-7 shrink-0 animate-spin motion-reduce:animate-none xl:size-9" aria-hidden="true" />
