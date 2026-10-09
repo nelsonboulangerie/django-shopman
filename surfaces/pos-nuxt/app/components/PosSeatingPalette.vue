@@ -25,12 +25,10 @@ const emit = defineEmits<{
 
 const adding = ref(false);
 const newArea = ref("");
-const areaInput = ref<HTMLInputElement | null>(null);
 
 function startAdding() {
   adding.value = true;
   newArea.value = "";
-  void nextTick(() => areaInput.value?.focus());
 }
 function confirmArea() {
   const name = newArea.value.trim();
@@ -68,12 +66,13 @@ function glyphClass(shape: SpotShape) {
   >
     <p class="op-eyebrow text-muted-foreground">Adicionar</p>
     <div :class="isStrip ? 'flex items-center gap-2' : 'grid grid-cols-2 gap-2'">
-      <button
+      <NuxtButton
         v-for="shape in SHAPES"
         :key="shape.value"
-        type="button"
-        class="flex touch-none items-center justify-center rounded-lg border border-border bg-background op-micro font-semibold transition select-none hover:border-primary/60 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        :class="isStrip ? 'h-control gap-2 px-3' : 'h-[72px] flex-col gap-1.5'"
+        color="neutral"
+        variant="outline"
+        class="touch-none justify-center select-none"
+        :class="isStrip ? 'gap-2' : 'h-[72px] flex-col gap-1.5'"
         :aria-label="`Pôr mesa ${shape.label.toLowerCase()} na planta`"
         :data-seating-add="shape.value"
         @pointerdown="emit('grab', shape.value, $event)"
@@ -84,22 +83,20 @@ function glyphClass(shape: SpotShape) {
           aria-hidden="true"
         />
         {{ shape.label }}
-      </button>
+      </NuxtButton>
     </div>
-    <div :class="isStrip ? 'flex items-center gap-2' : 'grid grid-cols-2 gap-2'" data-seating-fixtures>
-      <button
-        v-for="fixture in [{ kind: 'showcase', label: 'Vitrine e caixa', icon: 'lucide:store' }, { kind: 'entrance', label: 'Entrada', icon: 'lucide:door-open' }] as const"
+    <div :class="isStrip ? 'flex items-center gap-2' : 'grid gap-1'" data-seating-fixtures>
+      <NuxtButton
+        v-for="fixture in [{ kind: 'showcase', label: 'Vitrine e caixa', icon: 'i-lucide-store' }, { kind: 'entrance', label: 'Entrada', icon: 'i-lucide-door-open' }] as const"
         :key="fixture.kind"
-        type="button"
-        class="flex items-center justify-center rounded-lg border border-dashed border-border bg-background op-micro font-semibold transition hover:border-primary/60 hover:bg-accent"
-        :class="isStrip ? 'h-control gap-2 px-3' : 'h-12 gap-1.5 px-2'"
+        color="neutral"
+        variant="ghost"
+        :icon="fixture.icon"
+        :label="fixture.label"
         :aria-label="`Pôr ${fixture.label.toLowerCase()} na planta`"
         :data-seating-add-fixture="fixture.kind"
         @click="emit('addFixture', fixture.kind)"
-      >
-        <Icon :name="fixture.icon" class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span class="truncate">{{ fixture.label }}</span>
-      </button>
+      />
     </div>
     <p v-if="!isStrip" class="op-micro leading-4 text-muted-foreground">
       Arraste para a planta ou toque para pôr no meio. No tablet: arrastar com o dedo, pinça para zoom.
@@ -109,51 +106,53 @@ function glyphClass(shape: SpotShape) {
 
     <div class="flex items-center gap-2">
       <p class="op-eyebrow text-muted-foreground" :class="isStrip ? '' : 'flex-1'">Áreas</p>
-      <button
+      <NuxtButton
         v-if="!adding && !isStrip"
-        type="button"
-        class="inline-flex min-h-8 items-center gap-1 op-micro font-semibold text-primary"
+        icon="i-lucide-plus"
+        label="Área"
+        variant="ghost"
+        aria-label="Nova área"
         data-seating-add-area
         @click="startAdding"
-      >
-        <Icon name="lucide:plus" class="size-3.5" aria-hidden="true" />Área
-      </button>
+      />
     </div>
     <form v-if="adding" class="flex items-center gap-1.5" @submit.prevent="confirmArea">
-      <input
-        ref="areaInput"
+      <NuxtInput
         v-model="newArea"
-        class="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 op-label"
-        maxlength="40"
+        class="min-w-0 flex-1"
+        :maxlength="40"
         placeholder="Nome da área"
         aria-label="Nome da área nova"
+        autofocus
         @keydown.esc.stop="adding = false"
         @blur="confirmArea"
-      >
+      />
     </form>
     <div :class="isStrip ? 'flex items-center gap-1' : 'flex flex-col gap-1'">
-      <button
+      <NuxtButton
         v-for="area in areas"
         :key="area.name"
-        type="button"
-        class="flex items-center gap-2 rounded-md px-2.5 text-left transition hover:bg-accent"
-        :class="[isStrip ? 'h-control' : 'h-8', activeArea === area.name ? 'bg-secondary' : '']"
+        color="neutral"
+        variant="ghost"
+        active-color="primary" active-variant="soft"
+        :active="activeArea === area.name"
+        class="gap-2 text-left"
         :aria-pressed="activeArea === area.name"
         :aria-label="areaAria(area)"
         data-seating-area-row
         @click="emit('selectArea', area.name)"
       >
-        <span class="op-label" :class="[activeArea === area.name ? 'font-semibold' : '', isStrip ? '' : 'flex-1']">{{ area.name }}</span>
-        <span class="op-micro text-muted-foreground tabular-nums">{{ areaCount(area) }}</span>
-      </button>
-      <button
+        <span class="op-label" :class="[activeArea === area.name ? 'font-semibold' : 'font-normal', isStrip ? '' : 'flex-1']">{{ area.name }}</span>
+        <span class="op-micro font-normal text-muted-foreground tabular-nums">{{ areaCount(area) }}</span>
+      </NuxtButton>
+      <NuxtButton
         v-if="isStrip && !adding"
-        type="button"
-        class="inline-flex h-control items-center gap-1 px-2 op-micro font-semibold text-primary"
+        icon="i-lucide-plus"
+        label="Área"
+        variant="ghost"
+        aria-label="Nova área"
         @click="startAdding"
-      >
-        <Icon name="lucide:plus" class="size-3.5" aria-hidden="true" />Área
-      </button>
+      />
     </div>
 
     <template v-if="!isStrip">

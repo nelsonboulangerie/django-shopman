@@ -32,7 +32,7 @@ const KIT_ALLOWED = new Set(["app/composables/useScreen.ts", "app/composables/us
 const CEILING: Record<string, number> = {
   "bi-nuxt": 7,
   "marketing-nuxt": 1,
-  "pos-nuxt": 7,
+  "pos-nuxt": 4,
   "production-nuxt": 1,
   "purchase-nuxt": 3,
 };

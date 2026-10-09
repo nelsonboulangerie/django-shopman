@@ -34,6 +34,8 @@ const status = computed(() => {
 const isStool = computed(() => props.spot.shape === "stool");
 
 const NEW_AREA = "__nova__";
+// O `NuxtSelect` (Reka) não aceita valor vazio num item: "Sem área" tem o seu.
+const NO_AREA_VALUE = "__sem_area__";
 const newAreaOpen = ref(false);
 const newAreaName = ref("");
 const areaChoices = computed(() => {
@@ -41,13 +43,19 @@ const areaChoices = computed(() => {
   if (props.spot.area && !names.includes(props.spot.area)) names.unshift(props.spot.area);
   return names;
 });
+const areaItems = computed(() => [
+  ...areaChoices.value.map((name) => ({ label: name, value: name })),
+  { label: "Sem área", value: NO_AREA_VALUE },
+  { label: "Nova área…", value: NEW_AREA },
+]);
+const areaValue = computed(() => props.spot.area || NO_AREA_VALUE);
 function onArea(value: unknown) {
   if (value === NEW_AREA) {
     newAreaOpen.value = true;
     newAreaName.value = "";
     return;
   }
-  emit("update", { area: String(value ?? "") });
+  emit("update", { area: value === NO_AREA_VALUE ? "" : String(value ?? "") });
 }
 function confirmNewArea() {
   const name = newAreaName.value.trim();
@@ -74,13 +82,12 @@ function commitNames() {
   else label.value = props.spot.label;
 }
 
-const menuOpen = ref(false);
-function menu(action: "rotate" | "duplicate" | "remove") {
-  menuOpen.value = false;
-  if (action === "rotate") emit("rotate");
-  else if (action === "duplicate") emit("duplicate");
-  else emit("remove");
-}
+// O ⋯ da mesa (o mesmo de toda a suíte).
+const menuItems = computed(() => [
+  { label: "Duplicar", icon: "i-lucide-copy", onSelect: () => emit("duplicate") },
+  { label: "Girar 90°", icon: "i-lucide-rotate-cw", onSelect: () => emit("rotate") },
+  { label: "Tirar do salão", icon: "i-lucide-trash-2", color: "error" as const, onSelect: () => emit("remove") },
+]);
 // "Mesa 4 tem comanda aberta agora. Mover mesas não mexe em comanda." (v4 pino 6):
 // com o vínculo, a nota fala DESTA mesa; sem ele, do salão.
 const tabsNote = computed(() => {
@@ -102,58 +109,40 @@ const tabsNote = computed(() => {
         <h2 class="truncate op-title">{{ spot.label }}</h2>
         <p class="truncate op-micro text-muted-foreground">{{ status }}</p>
       </div>
-      <UiPopover v-model:open="menuOpen">
-        <UiPopoverTrigger as-child>
-          <button
-            type="button"
-            class="grid size-control shrink-0 place-items-center rounded-md border border-border transition hover:bg-accent"
-            aria-label="Mais: duplicar, girar 90°, tirar do salão"
-            title="Mais: duplicar, girar 90°, tirar do salão"
-          >
-            <Icon name="lucide:ellipsis" class="size-5" aria-hidden="true" />
-          </button>
-        </UiPopoverTrigger>
-        <UiPopoverContent align="end" class="w-56 p-1.5">
-          <button type="button" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body hover:bg-accent" @click="menu('duplicate')">
-            <Icon name="lucide:copy" class="size-4 text-muted-foreground" aria-hidden="true" />Duplicar
-          </button>
-          <button type="button" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body hover:bg-accent" @click="menu('rotate')">
-            <Icon name="lucide:rotate-cw" class="size-4 text-muted-foreground" aria-hidden="true" />Girar 90°
-          </button>
-          <button type="button" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body text-destructive hover:bg-destructive/10" @click="menu('remove')">
-            <Icon name="lucide:trash-2" class="size-4" aria-hidden="true" />Tirar do salão
-          </button>
-        </UiPopoverContent>
-      </UiPopover>
+      <OperatorMoreMenu :items="menuItems" :label="`Mais ações de ${spot.label}`" class="shrink-0" data-seating-spot-menu />
     </div>
 
     <div class="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-3">
       <div class="flex flex-col gap-1.5">
         <span id="seating-seats-label" class="op-label text-muted-foreground">Lugares</span>
         <div class="flex items-center gap-2">
-          <div class="inline-flex h-12 items-center rounded-md border border-input" role="group" aria-labelledby="seating-seats-label">
-            <button
-              type="button"
-              class="grid h-full w-12 place-items-center border-r border-input transition hover:bg-accent disabled:opacity-40"
+          <NuxtFieldGroup size="xl" role="group" aria-labelledby="seating-seats-label">
+            <NuxtButton
+              icon="i-lucide-minus"
+              color="neutral"
+              variant="outline"
+              square
               :disabled="isStool || spot.seats <= 1"
               aria-label="Um lugar a menos"
               data-seating-seats-minus
               @click="seats(-1)"
-            >
-              <Icon name="lucide:minus" class="size-4" aria-hidden="true" />
-            </button>
-            <span class="w-14 text-center op-figure tabular-nums" aria-live="polite" data-seating-seats>{{ spot.seats }}</span>
-            <button
-              type="button"
-              class="grid h-full w-12 place-items-center border-l border-input transition hover:bg-accent disabled:opacity-40"
+            />
+            <span
+              class="inline-flex w-14 items-center justify-center border-y border-default op-figure tabular-nums"
+              aria-live="polite"
+              data-seating-seats
+            >{{ spot.seats }}</span>
+            <NuxtButton
+              icon="i-lucide-plus"
+              color="neutral"
+              variant="outline"
+              square
               :disabled="isStool || spot.seats >= maxSeats"
               aria-label="Um lugar a mais"
               data-seating-seats-plus
               @click="seats(1)"
-            >
-              <Icon name="lucide:plus" class="size-4" aria-hidden="true" />
-            </button>
-          </div>
+            />
+          </NuxtFieldGroup>
           <span class="op-micro leading-4 text-muted-foreground">
             <template v-if="isStool">banqueta é um<br>lugar só</template>
             <template v-else>cadeiras aparecem<br>em volta da mesa</template>
@@ -163,47 +152,47 @@ const tabsNote = computed(() => {
 
       <div class="flex flex-col gap-1.5">
         <span id="seating-shape-label" class="op-label text-muted-foreground">Forma</span>
-        <div class="grid h-12 grid-cols-4 rounded-lg bg-secondary p-1" role="radiogroup" aria-labelledby="seating-shape-label">
-          <button
+        <NuxtFieldGroup class="grid w-full grid-cols-4" role="radiogroup" aria-labelledby="seating-shape-label">
+          <NuxtButton
             v-for="shape in SHAPES"
             :key="shape.value"
-            type="button"
             role="radio"
-            class="rounded-md px-0.5 op-label"
-            :class="spot.shape === shape.value ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
+            color="neutral"
+            variant="outline"
+            active-color="primary"
+            active-variant="solid"
+            :active="spot.shape === shape.value"
             :aria-checked="spot.shape === shape.value"
+            class="justify-center px-1"
+            :label="shape.label"
             :data-seating-shape="shape.value"
             @click="emit('update', { shape: shape.value })"
-          >{{ shape.label }}</button>
-        </div>
+          />
+        </NuxtFieldGroup>
       </div>
 
       <div class="flex flex-col gap-1.5">
         <label for="seating-area" class="op-label text-muted-foreground">Área</label>
         <form v-if="newAreaOpen" class="flex items-center gap-2" @submit.prevent="confirmNewArea">
-          <input
+          <NuxtInput
             v-model="newAreaName"
-            class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 op-body"
-            maxlength="40"
+            class="min-w-0 flex-1"
+            :maxlength="40"
             placeholder="Nome da área nova"
             aria-label="Nome da área nova"
             autofocus
-          >
-          <UiButton type="submit" size="sm">Usar</UiButton>
+          />
+          <NuxtButton type="submit" label="Usar" />
         </form>
-        <UiNativeSelect
+        <NuxtSelect
           v-else
           id="seating-area"
-          :model-value="spot.area"
-          class="h-8"
+          :model-value="areaValue"
+          :items="areaItems"
+          class="w-full"
           data-seating-area-select
           @update:model-value="onArea"
-        >
-          <!-- `selected` em cada opção: o valor do <select> chega antes das opções. -->
-          <option v-for="name in areaChoices" :key="name" :value="name" :selected="name === spot.area">{{ name }}</option>
-          <option value="" :selected="!spot.area">Sem área</option>
-          <option :value="NEW_AREA">Nova área…</option>
-        </UiNativeSelect>
+        />
       </div>
 
       <div class="flex flex-col gap-1.5 rounded-lg border border-border p-3">
@@ -236,41 +225,41 @@ const tabsNote = computed(() => {
       <div class="grid grid-cols-[1fr_5.5rem] gap-2">
         <label class="flex flex-col gap-1.5">
           <span class="op-label text-muted-foreground">Nome</span>
-          <input
+          <NuxtInput
             v-model="label"
-            class="h-8 w-full min-w-0 rounded-md border border-input bg-background px-3 op-body"
-            maxlength="80"
+            class="w-full min-w-0"
+            :maxlength="80"
             data-seating-label
             @change="commitNames"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
-          >
+          />
         </label>
         <label class="flex flex-col gap-1.5">
           <span class="op-label text-muted-foreground">Sigla</span>
-          <input
+          <NuxtInput
             v-model="shortLabel"
-            class="h-8 w-full min-w-0 rounded-md border border-input bg-background px-3 op-body uppercase"
-            maxlength="8"
+            class="w-full min-w-0"
+            :ui="{ base: 'uppercase' }"
+            :maxlength="8"
             :placeholder="shortLabelOf({ short_label: '', label: spot.label })"
             data-seating-short-label
             @change="commitNames"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
-          >
+          />
         </label>
       </div>
 
     </div>
 
     <div class="border-t border-border px-4 py-3">
-      <button
-        type="button"
-        class="inline-flex h-10 items-center gap-2 px-2 op-label text-destructive"
+      <NuxtButton
+        icon="i-lucide-trash-2"
+        color="error"
+        variant="ghost"
+        :label="original ? 'Tirar do salão a partir de hoje' : 'Tirar esta mesa nova'"
         data-seating-remove
         @click="emit('remove')"
-      >
-        <Icon name="lucide:trash-2" class="size-4" aria-hidden="true" />
-        {{ original ? "Tirar do salão a partir de hoje" : "Tirar esta mesa nova" }}
-      </button>
+      />
     </div>
   </section>
 </template>

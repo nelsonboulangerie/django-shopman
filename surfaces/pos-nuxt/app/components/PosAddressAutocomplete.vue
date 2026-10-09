@@ -248,9 +248,10 @@ onBeforeUnmount(() => {
         aria-label="Sugestões de endereço"
       >
         <li v-for="(suggestion, idx) in suggestions" :key="suggestion.id" role="option" :aria-selected="idx === highlighted">
-          <button
-            type="button"
-            class="flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left text-sm transition"
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            class="flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left text-sm transition font-normal"
             :class="idx === highlighted ? 'bg-accent' : 'hover:bg-accent/60'"
             @pointerdown.prevent
             @click="accept(suggestion)"
@@ -258,7 +259,7 @@ onBeforeUnmount(() => {
           >
             <span class="font-medium">{{ suggestion.main }}</span>
             <span v-if="suggestion.secondary" class="text-xs text-muted-foreground">{{ suggestion.secondary }}</span>
-          </button>
+          </NuxtButton>
         </li>
       </ul>
     </div>

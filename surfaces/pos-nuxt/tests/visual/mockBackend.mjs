@@ -268,6 +268,78 @@ const preorderDetail = {
   cancellation_presets: [],
 };
 
+// PDV › Ajustes (`/api/v1/backstage/pos/settings/`): as quatro abas leem a mesma
+// resposta. Sem ela o mock devolvia `{}` e Impressoras caía em erro de página.
+const settings = {
+  terminal_ref: "CAIXA-1",
+  terminal_label: "Caixa 1",
+  printers: [
+    { terminal_ref: "CAIXA-1", label: "Caixa 1", location: "Balcão", roll_width_mm: 80, cut_mode: "partial", stations: ["Bebidas"] },
+    { terminal_ref: "CAIXA-2", label: "Caixa 2", location: "Salão", roll_width_mm: 58, cut_mode: "full", stations: [] },
+  ],
+  roll_widths: [58, 80],
+  cut_modes: [
+    { value: "partial", label: "Parcial" },
+    { value: "full", label: "Total" },
+    { value: "none", label: "Sem corte" },
+  ],
+  card_machines: [
+    { ref: "MAQ-1", label: "Maquininha 1", identification: "SN 0041", active: true, with_order: "" },
+    { ref: "MAQ-2", label: "Maquininha 2", identification: "SN 0042", active: true, with_order: "1043" },
+    { ref: "MAQ-3", label: "Maquininha 3", identification: "SN 0043", active: false, with_order: "" },
+  ],
+  kitchen_stations: [
+    { ref: "forno", name: "Forno", type: "prep", type_label: "Preparo", collections: ["Salgados"], print_terminal: "", auto_fire: true },
+    { ref: "bebidas", name: "Bebidas", type: "prep", type_label: "Preparo", collections: ["Cafés", "Sucos"], print_terminal: "Caixa 1", auto_fire: false },
+  ],
+  shortcuts: {
+    favorite_collection_refs: ["cafes", "paes"],
+    collections: [
+      { ref: "cafes", name: "Cafés" },
+      { ref: "paes", name: "Pães" },
+      { ref: "doces", name: "Doces" },
+      { ref: "salgados", name: "Salgados" },
+      { ref: "sucos", name: "Sucos" },
+    ],
+  },
+};
+
+// PDV › Ajustes › Salão (`/api/v1/backstage/pos/seating/`): duas áreas, uma mesa extra.
+const seatingSpot = (ref, label, area, shape, seats, x, y, counts = true) => ({
+  ref, label, short_label: "", area, kind: "table", shape, seats, counts_in_capacity: counts,
+  plan_x: x, plan_y: y, rotation: 0, since: null, since_label: "sempre", born_today: false,
+});
+const seating = {
+  today: "2026-09-29",
+  today_label: "29/09",
+  revision: "rev-salao-1",
+  spots: [
+    seatingSpot("M1", "Mesa 1", "Salão", "round", 2, 80, 80),
+    seatingSpot("M2", "Mesa 2", "Salão", "square", 4, 220, 80),
+    seatingSpot("M3", "Mesa 3", "Salão", "long", 6, 380, 80),
+    seatingSpot("M4", "Mesa 4", "Varanda", "square", 4, 80, 260),
+    seatingSpot("M5", "Mesa 5", "Varanda", "round", 2, 220, 260, false),
+    seatingSpot("B1", "Banqueta 1", "Balcão", "stool", 1, 380, 260),
+  ],
+  totals: { capacity_seats: 17, capacity_spots: 5, extra_seats: 2 },
+  shapes: [
+    { value: "round", label: "Redonda" },
+    { value: "square", label: "Quadrada" },
+    { value: "long", label: "Comprida" },
+    { value: "stool", label: "Banqueta" },
+  ],
+  max_seats: 12,
+  history: [
+    { id: 1, at: "2026-09-28T10:00:00Z", at_label: "28/09 10:00", who: "Ana", ref: "M5", action: "update", summary: "Mesa 5 virou extra de dia cheio", before: null, after: null },
+  ],
+  open_tabs: { M2: { session_key: "s-12", tab_ref: "12", tab_display: "Comanda 12" } },
+  fixtures: [],
+  fixture_kinds: [
+    { value: "showcase", label: "Vitrine e caixa" },
+    { value: "entrance", label: "Entrada" },
+  ],
+};
+
 createServer((req, res) => {
   const url = new URL(req.url || "/", `http://127.0.0.1:${port}`);
   const path = url.pathname;
@@ -322,6 +394,14 @@ createServer((req, res) => {
   }
   if (path === "/api/v1/backstage/pos/preorders/") {
     send(res, 200, preorderList);
+    return;
+  }
+  if (path === "/api/v1/backstage/pos/settings/") {
+    send(res, 200, settings);
+    return;
+  }
+  if (path === "/api/v1/backstage/pos/seating/") {
+    send(res, 200, seating);
     return;
   }
   if (path.includes("/events/")) {

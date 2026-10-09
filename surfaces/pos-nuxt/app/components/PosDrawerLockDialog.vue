@@ -95,16 +95,17 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydownCapture, 
            grande (44px) mesmo com o desenho minúsculo: discrição é do desenho,
            nunca da área clicável, senão vira gerente cutucando o vidro na
            frente da fila. -->
-        <button
-          type="button"
-          class="absolute -bottom-3 -left-4 grid size-11 place-items-center rounded-md text-muted-foreground/25 transition hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          class="absolute -bottom-3 -left-4 grid size-11 place-items-center rounded-md text-muted-foreground/25 transition hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring justify-center"
           aria-label="Mais opções"
           :disabled="busy"
           data-drawer-lock-escape-hatch
           @click="emit('manager')"
         >
           <Icon name="lucide:ellipsis" class="size-4" />
-        </button>
+        </NuxtButton>
       </div>
     </UiDialogContent>
   </UiDialog>

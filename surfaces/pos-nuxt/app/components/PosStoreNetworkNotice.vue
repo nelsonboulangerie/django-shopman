@@ -17,16 +17,17 @@ const ITEMS = [
 
 <template>
   <section v-if="network === 'cellular'" class="grid gap-2" data-pos-store-network>
-    <button
-      type="button"
-      class="flex min-h-12 items-center gap-2.5 rounded-lg bg-secondary px-3 text-left op-label"
+    <NuxtButton
+      color="neutral"
+      variant="ghost"
+      class="flex min-h-12 items-center gap-2.5 rounded-lg bg-secondary px-3 text-left op-label font-normal"
       :aria-expanded="open"
       @click="open = !open"
     >
       <Icon name="lucide:wifi-off" class="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span class="min-w-0 flex-1"><b class="font-semibold">Sem rede da loja</b> · vendendo pelo 4G deste dispositivo</span>
       <Icon :name="open ? 'lucide:chevron-up' : 'lucide:chevron-down'" class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-    </button>
+    </NuxtButton>
     <div v-if="open" class="grid gap-2 rounded-lg border border-border bg-card p-3" data-pos-store-network-detail>
       <p class="op-label font-semibold">O que funciona agora</p>
       <ul class="grid gap-2">

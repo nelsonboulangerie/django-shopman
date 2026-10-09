@@ -20,16 +20,19 @@ function toggle(station: PosKitchenStationSetting) {
 
 <template>
   <PosSettingsShell title="Envio à cozinha" subtitle="estações e envio automático">
-    <div v-if="settings.error.value && !settings.data.value" class="flex flex-wrap items-center gap-3 rounded-xl border border-dashed p-4">
-      <p class="min-w-0 flex-1 op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler as estações. Confira a conexão e tente de novo.") }}</p>
-      <UiButton variant="outline" @click="settings.refresh()">Tentar de novo</UiButton>
-    </div>
-    <p v-else-if="!settings.data.value" class="op-body text-muted-foreground">Lendo as estações…</p>
+    <OperatorScreenState v-if="settings.error.value && !settings.data.value" state="error" what="as estações" @retry="settings.refresh()" />
+    <OperatorScreenState v-else-if="!settings.data.value" state="loading" what="as estações" />
     <template v-else>
       <p class="op-body text-muted-foreground">
         Com o envio automático ligado, a linha nova da estação vai sozinha quando você sai da comanda ou ela fica um minuto e meio parada. Desligado, só vai no "Enviar à cozinha".
       </p>
-      <p v-if="!settings.data.value.kitchen_stations.length" class="rounded-xl border border-dashed p-6 text-center op-body text-muted-foreground">Nenhuma estação ativa. Cadastre as estações no Admin.</p>
+      <OperatorScreenState
+        v-if="!settings.data.value.kitchen_stations.length"
+        state="empty"
+        icon="i-lucide-chef-hat"
+        title="Nenhuma estação ativa."
+        description="Cadastre as estações no Admin."
+      />
       <ul v-else class="divide-y divide-border rounded-xl border border-border bg-card">
         <li
           v-for="station in settings.data.value.kitchen_stations"
