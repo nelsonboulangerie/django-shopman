@@ -128,37 +128,71 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "") -> Op
     )
 
 
-_PRODUCTION_CONTEXT_PATHS = {
-    "production_late": "/",
-    "production_low_yield": "/quality",
-    "production_stock_short": "/close",
-    "production_stock_shortfall": "/plan",
-    "production_forgotten": "/plan",
-    "production_unfinished": "/close",
-    "production_batch_traceability": "/close",
-    "production_quality_communication": "/quality",
-    "production_quality_hold_risk": "/quality",
-    "stock_discrepancy": "/plan",
-    "stock_low": "/plan",
+#: Onde cada aviso se resolve: o app (id de ``surfaces/registry.json``), o caminho
+#: dentro dele e o rótulo do botão, que diz aonde leva (dono, 09/10/2026: "aviso que
+#: descreve algo a fazer leva a quem pode fazê-lo"). O registro vai no filtro: o lote
+#: (``?q=<lote>&date=``) na Produção, o pedido (``/<ref>``) no Gestor.
+#:
+#: Quem NÃO está aqui não tem tela de operador onde se resolve, e o motivo é um destes:
+#: avisos de sistema (TI, pelo e-mail crítico e pelo Admin: ``SYSTEM_TYPES``), ajustes de
+#: cadastro que só existem no Admin (horário da loja, parâmetro de lei, certificado,
+#: cupom, exclusão de conta, de-para e importação do B.I.), e o que se resolve fora do
+#: sistema (exclusão manual no ManyChat, conversa da "outra mesa" do WhatsApp).
+_ALERT_HOMES: dict[str, tuple[str, str, str]] = {
+    # Produção: o lote, filtrado, na tela do gesto.
+    "production_late": ("production", "/", "Abrir o lote"),
+    "production_low_yield": ("production", "/quality", "Revisar a qualidade do lote"),
+    "production_stock_short": ("production", "/close", "Fechar o lote"),
+    "production_stock_shortfall": ("production", "/plan", "Conferir o lote no plano"),
+    "production_forgotten": ("production", "/plan", "Abrir o lote no plano"),
+    "production_unfinished": ("production", "/close", "Fechar o lote"),
+    "production_batch_traceability": ("production", "/close", "Fechar o lote de novo"),
+    "production_quality_communication": ("production", "/quality", "Revisar a qualidade do lote"),
+    "production_quality_hold_risk": ("production", "/quality", "Revisar a qualidade do lote"),
+    "stock_discrepancy": ("production", "/plan", "Abrir o plano"),
+    "stock_low": ("production", "/plan", "Abrir o plano"),
+    # Gestor: o card filtrado no quadro, quando o gesto mora no card.
+    "order_production_quality_risk": ("orders", "/", "Abrir o pedido no quadro"),
+    "danfe_print_failed": ("orders", "/", "Imprimir a DANFE no card"),
+    # Gestor: a loja no iFood (o interruptor do canal mora na Fila).
+    "ifood_store_closed_while_open": ("orders", "/", "Conferir o iFood na Fila"),
+    "ifood_store_open_while_closed": ("orders", "/", "Conferir o iFood na Fila"),
+    "ifood_store_sync_failed": ("orders", "/", "Conferir o iFood na Fila"),
+    # Gestor: produto que sumiu do cardápio por coleção desativada.
+    "catalog_hidden_by_inactive_collection": ("orders", "/catalog", "Abrir o Catálogo"),
+    # Compras: a NF-e que diverge do cadastro fiscal.
+    "purchase_invoice_fiscal_divergence": ("purchase", "/", "Abrir o Compras"),
+    # PDV: a gaveta e o caixa.
+    "pos_drawer_sensor_blind": ("pos", "/", "Abrir o PDV"),
+    "pos_drawer_left_open": ("pos", "/", "Abrir o PDV"),
+    "cash_change_requested": ("pos", "/", "Abrir o PDV"),
+    "cash_shift_open_at_closing": ("pos", "/session", "Fechar o caixa"),
+    "cash_sale_after_shift_close": ("pos", "/session/report", "Conferir o relatório do caixa"),
+    # B.I.: o número que passou da régua.
+    "cash_out_of_tolerance": ("bi", "/cash", "Ver o caixa no B.I."),
+    "bi_cash_variance": ("bi", "/cash", "Ver o caixa no B.I."),
+    "bi_below_baseline": ("bi", "/sales", "Ver as vendas no B.I."),
+    # Marketing: a fila de decisões é onde o disparo se resolve.
+    "marketing_outbox_stuck": ("marketing", "/", "Abrir a fila de decisões"),
+    "marketing_partial_without_action": ("marketing", "/", "Abrir a fila de decisões"),
+    "marketing_consent_violation": ("marketing", "/", "Abrir a fila de decisões"),
+    "marketing_duplicate_confirmed": ("marketing", "/history", "Abrir o histórico"),
+    "marketing_reconciliation_mismatch": ("marketing", "/history", "Abrir o histórico"),
+    "marketing_unknown_stale": ("marketing", "/history", "Abrir o histórico"),
+    "marketing_readiness_stale": ("marketing", "/platforms", "Conferir as plataformas"),
 }
 
-_ORDER_CONTEXT_PATHS = {
-    "order_production_quality_risk": "/",
-    "customer_cancellation_requested": "/",
-    # O card do pedido, filtrado no quadro: é lá que está "Imprimir DANFE".
-    "danfe_print_failed": "/",
-}
-
-#: O rótulo do botão, no Gestor de pedidos: diz aonde leva, não "resolver".
-_ORDERS_SURFACE_LABELS = {
-    "danfe_print_failed": "Imprimir a DANFE no card",
-    "order_production_quality_risk": "Abrir o pedido no quadro",
-    "ifood_negotiation_open": "Responder",
-}
+#: O id do app no registro de URLs das superfícies (o Gestor é ``gestor`` ali).
+_SURFACE_URL_KEYS = {"orders": "gestor"}
 
 #: Onde, dentro do pedido, mora o gesto do aviso (âncora do detalhe).
 _ORDER_DETAIL_ANCHORS = {
     "ifood_negotiation_open": "ifood-negotiations",
+}
+
+#: O rótulo do botão quando o aviso leva ao pedido: diz aonde leva, não "resolver".
+_ORDER_LABELS = {
+    "ifood_negotiation_open": "Responder",
 }
 
 
@@ -172,34 +206,55 @@ def _catalog_product_href(alert) -> str:
     return f"/catalog?{urlencode({'sku': sku, 'tab': 'social'})}" if sku else ""
 
 
+def _home_for(alert, *, target_date: str) -> tuple[str, str, str] | None:
+    """(app, caminho com o filtro do registro, rótulo) de onde o aviso se resolve."""
+    catalog_href = _catalog_product_href(alert)
+    if catalog_href:
+        return ("orders", catalog_href, "Conferir o GTIN no Catálogo")
+    home = _ALERT_HOMES.get(alert.type)
+    if home is not None:
+        surface, path, label = home
+        params = {}
+        if alert.order_ref and path in {"/", "/plan", "/close", "/quality"}:
+            params["q"] = alert.order_ref
+        if target_date and surface == "production":
+            params["date"] = target_date
+        return (surface, f"{path}?{urlencode(params)}" if params else path, label)
+    if alert.order_ref:
+        # Todo aviso preso a um pedido leva ao pedido: é lá que estão o contato do
+        # cliente, a nota, a corrida, o pagamento e o cancelamento.
+        path = f"/{quote(alert.order_ref, safe='')}"
+        anchor = _ORDER_DETAIL_ANCHORS.get(alert.type)
+        if anchor:
+            path = f"{path}#{anchor}"
+        return ("orders", path, _ORDER_LABELS.get(alert.type, "Abrir o pedido"))
+    return None
+
+
+def alert_context_href(alert, *, surface: str, target_date: str = "") -> tuple[str, str]:
+    """(href, rótulo) do botão do aviso, visto do app ``surface``.
+
+    No mesmo app, o caminho relativo; noutro, o endereço absoluto do app que resolve
+    (``hub.surface_link``). Sem URL configurada para o outro app, nada: um caminho
+    relativo levaria a uma tela que não existe no app de onde foi tocado.
+    ``surface`` vazio é o leitor sem app (Admin, testes de contrato): caminho relativo.
+    """
+    home = _home_for(alert, target_date=target_date)
+    if home is None:
+        return ("", "")
+    home_surface, path, label = home
+    if not surface or surface == home_surface:
+        return (path, label)
+    from shopman.backstage.projections.hub import surface_link
+
+    href = surface_link(_SURFACE_URL_KEYS.get(home_surface, home_surface), path)
+    return (href, label) if href else ("", "")
+
+
 def _alert_actions(alert, *, target_date: str = "", surface: str = "") -> tuple[ProductionActionProjection, ...]:
     actions = []
-    path = _PRODUCTION_CONTEXT_PATHS.get(alert.type) or _ORDER_CONTEXT_PATHS.get(alert.type)
-    label = "Resolver no contexto"
-    exact_order_path = alert.type == "customer_cancellation_requested" and bool(alert.order_ref)
-    catalog_href = _catalog_product_href(alert) if surface == "orders" else ""
-    if catalog_href:
-        actions.append(_open_context_action(alert, label="Conferir o GTIN no Catálogo", href=catalog_href))
-    elif surface == "orders" and alert.order_ref and alert.type not in _PRODUCTION_CONTEXT_PATHS:
-        # No Gestor de pedidos, todo alerta de pedido leva ao pedido: é lá que
-        # estão o contato do cliente, a nota, a corrida e o cancelamento.
-        label = _ORDERS_SURFACE_LABELS.get(alert.type, "Abrir o pedido")
-        if path is None:
-            path = "/"
-            exact_order_path = True
-    if path is not None and not catalog_href:
-        if exact_order_path:
-            path = f"/{quote(alert.order_ref, safe='')}"
-        query_params = {}
-        if alert.order_ref and not exact_order_path:
-            query_params["q"] = alert.order_ref
-        if target_date:
-            query_params["date"] = target_date
-        query = urlencode(query_params)
-        href = f"{path}?{query}" if query else path
-        anchor = _ORDER_DETAIL_ANCHORS.get(alert.type) if exact_order_path else None
-        if anchor:
-            href = f"{href}#{anchor}"
+    href, label = alert_context_href(alert, surface=surface, target_date=target_date)
+    if href:
         actions.append(_open_context_action(alert, label=label, href=href))
     if not alert.acknowledged:
         actions.append(

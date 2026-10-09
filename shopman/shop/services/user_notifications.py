@@ -811,6 +811,33 @@ def _resource_id(source_ref: str, prefix: str) -> int | None:
     return value if value > 0 else None
 
 
+#: Em que app cada condição se resolve, e o rótulo do botão que leva até lá. O
+#: caminho é relativo ao app (``_known_deep_link``); quem serve a caixa pessoal
+#: (``backstage/api/notifications.py``) troca pelo endereço absoluto do app, porque
+#: a caixa aparece em todos os apps e o lote só existe na Produção.
+CONDITION_DESTINATIONS: dict[str, tuple[str, str]] = {
+    ANNOUNCEMENT_REVIEW: ("marketing", "Revisar o anúncio"),
+    PRODUCTION_QUALITY_REVIEW: ("production", "Revisar a qualidade do lote"),
+    MARKETING_SECOND_CONTROL: ("marketing", "Conferir o disparo"),
+    **{condition: ("kds", "Abrir a estação") for condition in kds_alerts.CONDITIONS},
+}
+
+
+def _quality_review_path(work_order_id: int) -> str:
+    """A Qualidade filtrada no lote (``?q=<lote>&date=<dia>``), como a busca da suíte."""
+    from urllib.parse import urlencode
+
+    from shopman.craftsman.models import WorkOrder
+
+    row = WorkOrder.objects.filter(pk=work_order_id).values("ref", "target_date").first()
+    if row is None:
+        return "/quality"
+    params = {"q": row["ref"]}
+    if row["target_date"]:
+        params["date"] = row["target_date"].isoformat()
+    return f"/quality?{urlencode(params)}"
+
+
 def _known_deep_link(source_condition: str, source_ref: str) -> str:
     if source_condition == ANNOUNCEMENT_REVIEW:
         resource_id = _resource_id(source_ref, "announcement")
@@ -819,11 +846,9 @@ def _known_deep_link(source_condition: str, source_ref: str) -> str:
     if source_condition == PRODUCTION_QUALITY_REVIEW:
         resource_id = _resource_id(source_ref, "work_order")
         if resource_id is not None:
-            return "/quality"
-    if source_condition == STOCK_ALERT_DELIVERY_INCIDENT:
-        resource_id = _resource_id(source_ref, "stock_alert_delivery")
-        if resource_id is not None:
-            return "/"
+            return _quality_review_path(resource_id)
+    # STOCK_ALERT_DELIVERY_INCIDENT fica sem destino: a conferência é no ManyChat,
+    # fora do sistema, e o Gestor não tem tela onde ela se faça.
     if source_condition == MARKETING_SECOND_CONTROL:
         head, separator, raw = str(source_ref or "").partition(":")
         if head == "marketing_confirmation" and separator and raw:

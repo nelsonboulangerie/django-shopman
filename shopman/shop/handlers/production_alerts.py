@@ -105,7 +105,7 @@ def notify_quality_reviewers(work_order) -> int:
             category=NotificationCategory.PRODUCTION,
             title="Lote aguardando revisão de qualidade",
             message=(
-                f"{label} foi finalizado e entrou na fila de Qualidade (QC). "
+                f"{label} foi finalizado e entrou na fila da Qualidade. "
                 "Confirme a revisão para liberar os avisos autorizados pelos clientes."
             ),
             source_condition=PRODUCTION_QUALITY_REVIEW,

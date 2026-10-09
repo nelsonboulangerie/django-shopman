@@ -215,6 +215,36 @@ describe("OperatorInbox", () => {
     expect(panel()!.textContent).toContain("Nada por aqui");
   });
 
+  it("aviso pessoal que pede um gesto leva aonde ele se faz (dono, 09/10/2026)", async () => {
+    items.value = [
+      {
+        ...ROTINA,
+        pk: 7,
+        category: "production" as const,
+        title: "Lote aguardando revisão de qualidade",
+        message: "Pão de forma foi finalizado e entrou na fila da Qualidade.",
+        action_url: "https://prod.example.test/quality?q=WO-7&date=2026-10-09",
+        action_label: "Revisar a qualidade do lote",
+        action_data: {},
+      },
+    ];
+    unread.value = 1;
+    await mount();
+    await openPanel();
+    const abrir = document.querySelector<HTMLAnchorElement>("[data-notification-open]");
+    expect(abrir?.textContent).toContain("Revisar a qualidade do lote");
+    expect(abrir?.getAttribute("href")).toBe("https://prod.example.test/quality?q=WO-7&date=2026-10-09");
+    abrir!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(markRead).toHaveBeenCalledWith(7);
+  });
+
+  it("sem destino declarado pelo servidor, o aviso pessoal não ganha botão", async () => {
+    items.value = [ROTINA];
+    await mount();
+    await openPanel();
+    expect(document.querySelector("[data-notification-open]")).toBeNull();
+  });
+
   it("marcar como lida não navega para lugar nenhum", async () => {
     items.value = [ROTINA];
     await mount();

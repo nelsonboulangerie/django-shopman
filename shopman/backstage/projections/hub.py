@@ -147,6 +147,19 @@ def _surface_urls() -> dict[str, str]:
     return {**base, **override}
 
 
+def surface_link(ref: str, path: str) -> str:
+    """O endereço absoluto de ``path`` no app ``ref`` (``gestor``, ``production``…).
+
+    É o que leva um aviso de um app para o outro (o lote na Qualidade, o pedido no
+    Gestor). Vazio quando o app não tem URL configurada: aí o aviso fica sem o botão,
+    em vez de levar a um caminho que não existe no app de onde foi tocado.
+    """
+    base = _surface_urls().get(ref, "")
+    if not base:
+        return ""
+    return base.rstrip("/") + "/" + path.lstrip("/")
+
+
 def accessible_surfaces(user) -> dict[str, tuple[str, str]]:
     """Os apps de operador que ``user`` abre, na ordem do launcher: ``ref → (nome curto, URL)``.
 
