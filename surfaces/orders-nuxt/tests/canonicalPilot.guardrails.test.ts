@@ -257,6 +257,8 @@ describe("Gestor canônico em Nuxt UI", () => {
       "operator-kit/OperatorMoreMenu.vue",
       "operator-kit/OperatorActionBar.vue",
       "operator-kit/OperatorTable.vue",
+      // A busca da suíte troca o corte do item do painel pela quebra de linha.
+      "operator-kit/OperatorSuiteSearch.vue",
       // O chip de contagem (dono, 09/10/2026): no fluxo o anel é transparente, a cor
       // do fundo do pai em qualquer pai; no canto do ícone continua o `ring-bg` do tema.
       "operator-kit/OperatorCountChip.vue",
