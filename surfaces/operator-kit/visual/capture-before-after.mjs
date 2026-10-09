@@ -49,7 +49,7 @@ const CONFIG = {
   },
   "orders-nuxt": {
     mock: "tests/visual/mockBackend.mjs",
-    scenarios: [{ id: "board", route: "/" }, { id: "history", route: "/history" }],
+    scenarios: [{ id: "board", route: "/" }, { id: "history", route: "/history" }, { id: "catalog", route: "/catalog" }],
   },
   "marketing-nuxt": {
     mock: "tests/visual/mock_backend.py",
