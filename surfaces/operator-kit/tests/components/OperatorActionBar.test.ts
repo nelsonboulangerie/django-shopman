@@ -27,6 +27,10 @@ describe("OperatorActionBar, a ação do momento na base do celular", () => {
     expect(root.className).toContain("in-data-[keyboard=open]:hidden");
     // Em fluxo: nunca grudada à mão.
     expect(root.className).not.toMatch(/(?:^|\s)(?:fixed|sticky)(?:\s|$)/);
+    // O cartão flutua em superfície invertida (tema escuro só dentro dele).
+    const surface = root.querySelector<HTMLElement>("[data-operator-action-bar-surface]")!;
+    expect(surface.classList.contains("dark")).toBe(true);
+    expect(surface.className).toContain("shadow-lg");
   });
 
   it("linha de contexto, uma ação larga xl que age", async () => {

@@ -249,11 +249,12 @@ describe("Gestor canônico em Nuxt UI", () => {
     // do kit, nunca no shell nem nas telas. A barra inferior do celular é o exemplo
     // oficial "With bottom tab bar" do NavigationMenu, cujo desenho É um `:ui` (dono,
     // 08/10/2026, PR #1544), no `OperatorQuickBar`. O ⋯ único (`OperatorMoreMenu`,
-    // fase 2) troca o corte do rótulo do item pela quebra de linha: texto da casa
-    // não se corta.
+    // fase 2) e a ação na base (`OperatorActionBar`) trocam o corte do rótulo pela
+    // quebra de linha: texto da casa não se corta.
     const kitPieceUi = new Set([
       "operator-kit/OperatorQuickBar.vue",
       "operator-kit/OperatorMoreMenu.vue",
+      "operator-kit/OperatorActionBar.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),

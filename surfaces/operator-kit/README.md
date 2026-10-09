@@ -804,7 +804,10 @@ fila (`pages/index.vue`) e a do histórico (`pages/history.vue`).
 
 A ação do momento no celular e no tablet: a estrutura de sucesso do Storefront
 (`.shop-action-dock` da sacola) como regra, não como classe. A linha de contexto (o que a
-ação mexe), UMA ação larga e o motivo escrito quando ela não pode.
+ação mexe), UMA ação larga e o motivo escrito quando ela não pode, num cartão
+**flutuante em superfície invertida** (escura, com sombra; dono, 09/10/2026: "mais
+contraste, como no Storefront"). O cartão troca os tokens para o tema escuro só dentro
+dele (classe `dark`), então a ação e o texto seguem as cores do tema, sem pele própria.
 
 ```vue
 <OperatorActionBar
