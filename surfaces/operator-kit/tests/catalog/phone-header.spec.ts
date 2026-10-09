@@ -69,8 +69,11 @@ test("celular: a barra do topo e a toolbar seguem a regra única do kit", async 
   await page.setViewportSize({ width: viewport!.width, height: viewport!.height });
   await page.goto(ROUTE);
   await expect(page.locator("[data-phone-header-bench]")).toBeVisible();
-  // O kit lê a largura depois da montagem: espera a linha da toolbar do celular.
+  // O HTML do servidor já traz a linha do celular (e a variante da mesa, escondida pelo
+  // CSS); depois de montar, a da mesa sai da árvore: um ⋯ só, e nada da toolbar da mesa.
   await expect(page.locator("[data-page-header-filter-line]")).toBeVisible();
+  await expect(page.locator("[data-page-header-more]")).toHaveCount(1);
+  await expect(page.locator("[data-page-header-filters]")).toHaveCount(0);
 
   const geometry = await headerGeometry(page);
   expect(geometry.overlaps).toEqual([]);
