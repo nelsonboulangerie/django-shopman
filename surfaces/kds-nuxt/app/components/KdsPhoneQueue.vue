@@ -1,24 +1,30 @@
 <script setup lang="ts">
 // A estação no celular (prévia v4, `cozinha-celular4.html` (b)): UM ticket inteiro em
 // foco ("Agora"), os seguintes em linhas compactas ("Próximo", "Depois"), e o resto da
-// fila vira número e agregado ("+2 na fila · A fazer: 6× Cappuccino"). O botão do
-// ticket em foco desce para a barra do polegar (`#kds-thumb`, na página), com o código
-// no rótulo ("Pronto W07").
+// fila vira número e agregado ("+2 na fila · A fazer: 6× Cappuccino"). O ato do ticket
+// em foco está na ação na base da página (`OperatorActionBar`, "Pronto W07").
 //
-// Tocar uma linha traz aquele ticket para o foco (com o botão dele no polegar): todo
-// ato continua a um toque de distância, sem cards minúsculos. O toque LONGO (no ticket
-// em foco ou numa linha) abre o menu do pedido: desfazer, reabrir, ver o pedido (nota 7).
+// Tocar uma linha traz aquele ticket para o foco (com o ato dele na base): todo ato
+// continua a um toque de distância, sem cards minúsculos. Deslizar uma linha para a
+// direita marca Pronto (F7, `OperatorSwipeRow` do kit), e ela vem para o foco com o
+// Desfazer. O toque LONGO (no ticket em foco ou numa linha) abre o menu do pedido:
+// ver o pedido, desfazer, reabrir (nota 7).
+import type { OperatorSwipeCommit } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   elapsedLabel,
   queueLine,
+  queuePositionLabel,
   splitRef,
+  ticketAction,
   type KDSAllDayCount,
   type KDSDensity,
 } from "~/presentation/board";
 
 const props = defineProps<{
   cards: KDSTicketProjection[];
+  /** O ticket em foco (a página escolhe: o tocado, ou o primeiro da fila). */
+  focusPk: number | null;
   nextPk: number | null;
   blockedRefs: ReadonlySet<string>;
   additionPks: ReadonlySet<number>;
@@ -27,23 +33,21 @@ const props = defineProps<{
   finishUntil?: ReadonlyMap<number, number>;
   allDay: KDSAllDayCount[];
   density: KDSDensity;
+  /** O aviso no bolso está ligado: o pedido novo toca e vibra com a tela apagada. */
+  pushOn?: boolean;
 }>();
 const emit = defineEmits<{
+  choose: [pk: number];
   open: [pk: number];
-  start: [pk: number];
-  finish: [pk: number];
   undo: [pk: number];
-  blocked: [];
-  locked: [pk: number];
+  finish: [pk: number];
   hold: [pk: number];
 }>();
 
 const ROWS = 3;
-const chosenPk = ref<number | null>(null);
-const focus = computed<KDSTicketProjection | null>(() => {
-  const chosen = props.cards.find((card) => card.pk === chosenPk.value);
-  return chosen ?? props.cards[0] ?? null;
-});
+const focus = computed<KDSTicketProjection | null>(
+  () => props.cards.find((card) => card.pk === props.focusPk) ?? props.cards[0] ?? null,
+);
 const others = computed(() => props.cards.filter((card) => card.pk !== focus.value?.pk));
 // "+N na fila" abre a fila inteira em linhas (nenhum ticket fica a mais de um toque).
 const showAll = ref(false);
@@ -56,11 +60,26 @@ const allDayLine = computed(() =>
     .join(", "),
 );
 
+// A linha logo abaixo do foco é a "Próximo"; as outras, "Depois" (a mesma régua da mesa).
 function rowLabel(index: number): string {
-  return index === 0 ? "Próximo" : "Depois";
+  return queuePositionLabel(index + 1);
 }
 function rowLocked(card: KDSTicketProjection): boolean {
   return props.blockedRefs.has(card.order_ref) || Boolean(card.finish_block_label);
+}
+/** Deslizar para Pronto só quando o Pronto pode sair agora (em preparo, sem trava). */
+function rowCommit(card: KDSTicketProjection): OperatorSwipeCommit | null {
+  const action = ticketAction(card, {
+    armed: true,
+    blocked: props.blockedRefs.has(card.order_ref),
+    finishing: props.finishingPks.has(card.pk),
+  });
+  if (action.kind !== "finish") return null;
+  return { label: `Pronto ${splitRef(card.order_ref).code}`, icon: "lucide:check" };
+}
+function onCommit(pk: number) {
+  emit("finish", pk);
+  emit("choose", pk);
 }
 
 // Um manipulador de toque longo por linha (a linha guarda qual pedido segurou).
@@ -75,73 +94,85 @@ function onRowPointerdown(pk: number, event: PointerEvent) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2 pb-6" data-kds-phone-queue>
+  <div class="flex flex-col gap-2" data-kds-phone-queue>
     <KdsTicketCard
       v-if="focus"
       :key="focus.pk"
       :ticket="focus"
       :density="density"
-      eyebrow="Agora"
-      action-target="#kds-thumb"
+      :eyebrow="queuePositionLabel(0)"
+      action-in-bar
       :next="focus.pk === nextPk"
       :blocked="blockedRefs.has(focus.order_ref)"
       :addition="additionPks.has(focus.pk)"
       :finishing="finishingPks.has(focus.pk)"
       :finish-until="finishUntil?.get(focus.pk)"
       @open="emit('open', focus.pk)"
-      @start="emit('start', focus.pk)"
-      @finish="emit('finish', focus.pk)"
       @undo="emit('undo', focus.pk)"
-      @blocked="emit('blocked')"
-      @locked="emit('locked', focus.pk)"
       @hold="emit('hold', focus.pk)"
     />
 
-    <button
+    <OperatorSwipeRow
       v-for="(card, index) in rows"
       :key="card.pk"
-      type="button"
-      class="flex min-h-16 w-full touch-manipulation select-none items-center gap-3 rounded-xl border bg-card px-3.5 text-left transition hover:bg-accent active:bg-accent/70"
-      :class="rowLocked(card) ? 'border-destructive/40' : 'border-border'"
-      :aria-label="`Trazer o pedido ${splitRef(card.order_ref).code} para o foco. Toque longo: desfazer, reabrir, ver o pedido`"
-      data-kds-queue-row
-      @pointerdown="onRowPointerdown(card.pk, $event)"
-      @pointermove="rowLongPress.onPointermove"
-      @pointerup="rowLongPress.onPointerup"
-      @pointercancel="rowLongPress.onPointercancel"
-      @pointerleave="rowLongPress.onPointerleave"
-      @click.capture="rowLongPress.onClickCapture"
-      @contextmenu="rowLongPress.onContextmenu"
-      @click="chosenPk = card.pk"
+      :label="`Pedido ${splitRef(card.order_ref).code}`"
+      :commit="rowCommit(card)"
+      @commit="onCommit(card.pk)"
     >
-      <span class="w-16 shrink-0 op-micro text-muted-foreground">{{ rowLabel(index) }}</span>
-      <b class="w-12 shrink-0 text-lg tabular-nums">{{ splitRef(card.order_ref).code }}</b>
-      <span class="min-w-0 flex-1 truncate text-sm font-semibold">{{ queueLine(card) }}</span>
-      <span
-        v-if="rowLocked(card)"
-        class="inline-flex shrink-0 items-center gap-1 op-micro font-semibold text-destructive"
+      <div
+        role="button"
+        tabindex="0"
+        class="flex min-h-16 w-full touch-manipulation select-none items-center gap-3 rounded-lg border bg-default px-3.5 text-left transition hover:bg-elevated active:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
+        :class="rowLocked(card) ? 'border-error/40' : 'border-default'"
+        :aria-label="`Trazer o pedido ${splitRef(card.order_ref).code} para o foco. Toque longo: ver o pedido, desfazer, reabrir`"
+        data-kds-queue-row
+        @pointerdown="onRowPointerdown(card.pk, $event)"
+        @pointermove="rowLongPress.onPointermove"
+        @pointerup="rowLongPress.onPointerup"
+        @pointercancel="rowLongPress.onPointercancel"
+        @pointerleave="rowLongPress.onPointerleave"
+        @click.capture="rowLongPress.onClickCapture"
+        @contextmenu="rowLongPress.onContextmenu"
+        @click="emit('choose', card.pk)"
+        @keydown.enter.prevent="emit('choose', card.pk)"
+        @keydown.space.prevent="emit('choose', card.pk)"
       >
-        <Icon name="lucide:lock" class="size-3.5" />Bloqueado
-      </span>
-      <span v-else class="shrink-0 text-base font-bold tabular-nums text-muted-foreground">
-        {{ elapsedLabel(card.elapsed_seconds) }}
-      </span>
-    </button>
+        <span class="w-16 shrink-0 op-micro text-muted-foreground">{{ rowLabel(index) }}</span>
+        <b class="w-12 shrink-0 text-lg tabular-nums">{{ splitRef(card.order_ref).code }}</b>
+        <span class="min-w-0 flex-1 break-words text-sm font-semibold">{{ queueLine(card) }}</span>
+        <span
+          v-if="rowLocked(card)"
+          class="inline-flex shrink-0 items-center gap-1 op-micro font-semibold text-error"
+        >
+          <Icon name="lucide:lock" class="size-3.5" />Bloqueado
+        </span>
+        <span v-else class="shrink-0 text-base font-bold tabular-nums text-muted-foreground">
+          {{ elapsedLabel(card.elapsed_seconds) }}
+        </span>
+      </div>
+    </OperatorSwipeRow>
 
-    <button
+    <NuxtButton
       v-if="rest.length"
-      type="button"
-      class="min-h-8 w-full rounded-lg text-center op-label text-muted-foreground transition hover:bg-accent"
+      color="neutral"
+      variant="ghost"
+      block
+      class="justify-center whitespace-normal text-center"
       :aria-label="`Ver a fila inteira: mais ${rest.length} pedidos`"
       data-kds-queue-rest
       @click="showAll = true"
     >
-      <b class="tabular-nums text-foreground">+{{ rest.length }} na fila</b>
-      <template v-if="allDayLine"> · A fazer: {{ allDayLine }}</template>
-    </button>
+      <span>
+        <b class="tabular-nums text-highlighted">+{{ rest.length }} na fila</b>
+        <template v-if="allDayLine"> · A fazer: {{ allDayLine }}</template>
+      </span>
+    </NuxtButton>
     <p v-else-if="allDayLine" class="text-center op-label text-muted-foreground">A fazer: {{ allDayLine }}</p>
     <p class="text-center op-micro text-muted-foreground" data-kds-hold-hint>
-      Toque longo: desfazer, reabrir, ver o pedido
+      Deslize uma linha para a direita: Pronto. Toque longo: ver o pedido, desfazer, reabrir.
+    </p>
+    <p v-if="pushOn" class="text-center op-micro text-muted-foreground" data-kds-push-on>
+      Este celular toca e vibra com pedido novo mesmo com a tela apagada.
     </p>
   </div>
 </template>

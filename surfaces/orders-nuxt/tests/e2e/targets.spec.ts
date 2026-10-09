@@ -21,7 +21,7 @@ for (const touch of [false, true]) {
       await target(page.getByRole("menuitem", { name: "Atender este pedido", exact: true }).first(), "Atribuição");
       await page.locator("[data-card-select-mode]").first().click();
       await target(page.getByRole("button", { name: "Desmarcar pedido", exact: true }).first(), "Seleção card");
-      await page.locator("[data-bulk-done]").click();
+      await page.locator("[data-bulk-bar] [data-operator-bulk-clear]").filter({ visible: true }).first().click();
       await target(page.locator("[data-sound-toggle]"), "Som");
       await target(page.getByTitle("Alertas", { exact: true }), "Alertas");
       await target(page.getByRole("button", { name: "Avisos", exact: true }), "Avisos");

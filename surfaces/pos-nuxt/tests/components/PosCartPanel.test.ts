@@ -43,6 +43,8 @@ function props(overrides: Record<string, unknown> = {}) {
       item({ sku: "PAO", name: "Pão" }),
       item({ sku: "CAFE", name: "Café", price_q: 300, qty: 2 }),
     ],
+    // O total é o da revisão do servidor (`saleTotalView`); aqui, já confirmado.
+    total: { status: "confirmed", display: formatBRL(1100) },
     requiresTab: false,
     hasOpenTab: true,
     loading: false,
@@ -477,10 +479,13 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
     );
   });
 
-  it("o Total parcial é a soma exata das linhas", async () => {
-    // A invariante que o operador confere na frente do cliente.
+  it("o total da comanda é o que o servidor confirmou para estas linhas", async () => {
+    // A invariante que o operador confere na frente do cliente: a soma das
+    // linhas (10,20 + 5,00) é o que a revisão do servidor devolve, e é ELE que a
+    // tela mostra (regra do dono, 09/10: nada de soma local como total).
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({
+        total: { status: "confirmed", display: formatBRL(1020 + 500) },
         items: [
           item({
             sku: "TAB",
@@ -508,7 +513,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
         ],
       }),
     });
-    expect(wrapper.text()).toContain(formatBRL(1020 + 500));
+    expect(wrapper.find("[data-pos-primary-total]").text()).toContain(formatBRL(1020 + 500));
   });
 });
 

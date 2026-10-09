@@ -1717,8 +1717,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 83,
-        "ui_native_select_occurrences": 18
+        "native_control_occurrences": 81,
+        "ui_native_select_occurrences": 14
       },
       "surfaces": [
         {

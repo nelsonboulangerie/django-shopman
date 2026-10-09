@@ -220,7 +220,11 @@ describe("clique nunca inerte (layer + apps de operador)", () => {
       "utf8",
     );
     expect(board).toMatch(/usePendingAction\(\s*async \(\) => \{/);
-    expect(board).toContain(':aria-busy="bulkConfirming || undefined"');
-    expect(board).toContain(':aria-busy="bulkAdvancing || undefined"');
+    // O lote mora na barra de seleção da suíte: o estado da ação vai como dado, e a
+    // peça marca `aria-busy` no botão.
+    expect(board).toContain("loading: bulkConfirming.value");
+    expect(board).toContain("loading: bulkAdvancing.value");
+    const bar = readFileSync(join(surfacesDir, "operator-kit/app/components/OperatorBulkBar.vue"), "utf8");
+    expect(bar.match(/:aria-busy="[^"]*loading \|\| undefined"/g)?.length).toBe(3);
   });
 });

@@ -89,3 +89,23 @@ export const RECORD_NAV_SHORTCUTS = defineOperatorShortcutMap([
     ignoreWithin: RECORD_NAV_ARROW_OWNERS,
   },
 ] satisfies readonly OperatorShortcutCommand[]);
+
+// Esc limpa a seleção da barra de seleção (`OperatorBulkBar`). Cede a vez a campo de
+// texto e a diálogo, lista ou menu aberto (a regra do kit para atalho em sobreposição):
+// ali o Esc é de quem está aberto.
+export const BULK_BAR_SHORTCUTS = defineOperatorShortcutMap([
+  {
+    scope: "screen" as const,
+    owner: "OperatorBulkBar",
+    enabledContexts: [] as const,
+    forbiddenContexts: [] as const,
+    id: "bulk.clear",
+    label: "Limpar a seleção",
+    combinations: [{ code: "Escape" }],
+    alternative: "Botão × da barra de seleção",
+    // Com uma lista, um menu ou um painel aberto (o canal, o preço), o Esc é de quem
+    // está aberto: o foco está dentro dele, ou no gatilho que o abriu.
+    ignoreWithin:
+      "[role='listbox'], [role='menu'], [role='dialog'], [aria-expanded='true'], [data-reka-popper-content-wrapper]",
+  },
+] satisfies readonly OperatorShortcutCommand[]);

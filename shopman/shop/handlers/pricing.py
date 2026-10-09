@@ -43,6 +43,39 @@ class OffermanPricingBackend:
             logger.debug("pricing.get_price degraded; using fallback", exc_info=True)
             return None
 
+    def get_prices(self, skus: list[str], channel: Any, qty: int = 1) -> dict[str, int | None]:
+        """``get_price`` sem cliente para vários SKUs, com a vitrine e o preço base lidos uma vez.
+
+        Mesma cascata de ``get_price`` (vitrine do canal → preço base), mesma
+        resposta SKU a SKU. Sem as leituras em lote no adapter, cai no
+        ``get_price`` de cada um.
+        """
+        unique = list(dict.fromkeys(skus))
+        catalog = get_adapter("catalog")
+        bulk_tiers = getattr(catalog, "bulk_listing_tiers", None)
+        bulk_base = getattr(catalog, "bulk_product_base_prices", None)
+        if bulk_tiers is None or bulk_base is None:
+            return {sku: self.get_price(sku, channel, qty=qty) for sku in unique}
+
+        prices: dict[str, int | None] = {}
+        channel_listing = getattr(channel, "ref", None) if channel else None
+        if channel_listing:
+            tiers_by_sku = bulk_tiers(unique, channel_listing)
+            for sku in unique:
+                item = next((t for t in tiers_by_sku.get(sku) or [] if t["min_qty"] <= qty), None)
+                if item and item.get("is_sellable"):
+                    prices[sku] = item["price_q"]
+        missing = [sku for sku in unique if sku not in prices]
+        if missing:
+            try:
+                base = bulk_base(missing)
+            except Exception:
+                logger.debug("pricing.get_prices degraded; using fallback", exc_info=True)
+                base = {}
+            for sku in missing:
+                prices[sku] = base.get(sku)
+        return prices
+
     def _get_listing_item(self, catalog, listing_ref, sku, qty=1):
         """Find the tier with highest min_qty <= qty."""
         tiers = catalog.find_listing_tiers(sku, listing_ref)

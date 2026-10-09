@@ -81,7 +81,6 @@ describe("guardrail do cabeçalho de seções", () => {
   // (celular), as duas peças da layer. O Gestor é o piloto; quem migrar entra aqui.
   it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
     const migrados = [
-      "kds-nuxt/app/components/KdsNav.vue",
       // V4-MKT: a segunda linha de Ajustes do Marketing (Campanhas, Modelos, Ofertas e
       // cupons, Plataformas) mora em `MarketingSettingsNav.vue`, na linha de recortes
       // do `OperatorPageHeader`; ela não é barra de seções do app.
@@ -130,13 +129,21 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(purchase).toContain(':sections="sections"');
     expect(purchase).not.toContain("<PurchaseNav");
     expect(purchase).not.toMatch(/data-suite=/);
+
+    // Fase 2, onda da Cozinha: as estações pelo nome numa lista só (`where` separa a
+    // ordem da barra lateral da ordem da barra inferior), sem adaptador de navegação.
+    // A pele `data-suite` sobra só no Painel de retirada, tela do cliente fora do shell.
+    const kds = readFileSync(join(SURFACES, "kds-nuxt/app/app.vue"), "utf8");
+    expect(kds).toContain("<OperatorSuiteShell");
+    expect(kds).toContain(':sections="sections"');
+    expect(kds).not.toContain("<KdsNav");
+    expect(kds.match(/data-suite=/g) ?? []).toHaveLength(1);
   });
 });
 
 // V6-KIT (auditoria v4, 04/10/2026): o chrome da suíte é UM em todo app. Cada trava
 // abaixo nasceu de uma divergência medida que pode voltar.
 const NAVS = [
-  "kds-nuxt/app/components/KdsNav.vue",
   "marketing-nuxt/app/components/MarketingNav.vue",
   "pos-nuxt/app/components/PosFunctionRail.vue",
 ];

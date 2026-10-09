@@ -14,10 +14,10 @@ describe("sair da seleção", () => {
   });
 
   it("a barra de lote e o ⋯ do quadro usam o mesmo rótulo", () => {
-    const bulkBar = read("../app/pages/index.vue").match(
-      /<NuxtButton[^>]*?data-bulk-done[^>]*?>|<NuxtButton(?:(?!<NuxtButton)[\s\S])*?data-bulk-done/,
-    )?.[0];
-    expect(bulkBar).toContain(':label="EXIT_SELECTION_LABEL"');
+    // A barra é a `OperatorBulkBar` (mesa e base): o × dela tem o nome do gesto.
+    const bars = read("../app/pages/index.vue").match(/<OperatorBulkBar\b[\s\S]*?\/>/g) ?? [];
+    expect(bars).toHaveLength(2);
+    for (const bar of bars) expect(bar).toContain(':clear-label="EXIT_SELECTION_LABEL"');
     expect(read("../app/components/BoardMenu.vue")).toContain("EXIT_SELECTION_LABEL");
   });
 });
