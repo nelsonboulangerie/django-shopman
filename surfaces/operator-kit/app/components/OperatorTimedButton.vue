@@ -8,6 +8,15 @@
 // Regras da peça:
 //   - É o `NuxtButton` do conjunto mínimo (md/xl × solid/outline × primary/neutral/
 //     error), com uma camada atrás do rótulo. Não é botão novo.
+//   - A MENOR interferência possível (dono, 09/10/2026): o botão com prazo é o MESMO
+//     botão que ele substitui (mesma cor, mesma variante, mesmo tamanho, mesmo lugar).
+//     Quem chama passa a aparência do botão de origem; só o TEXTO muda ("Pronto 0131"
+//     vira "Desfazer 0131") e o fundo esvazia atrás dele. Nada de trocar para
+//     contornado/neutro, nada de mudar altura ou largura.
+//   - O fundo que esvazia é a PRÓPRIA cor do botão, translúcida: no sólido, a cor um
+//     tom mais funda (a superfície invertida a 30% por cima), que sempre AUMENTA o
+//     contraste do rótulo; no contornado, a cor do rótulo a 10%. Ao fim da janela o
+//     botão está idêntico ao de origem. AA nos dois temas: `tests/timedButtonContrast.test.ts`.
 //   - O prazo é ABSOLUTO (`until`, epoch ms ou ISO). Montar de novo, mudar de lugar ou
 //     a aba dormir em segundo plano não reinicia a janela: o fim é o mesmo instante.
 //     O prazo do servidor vem com `server-now` (o relógio dele), e o desvio do
@@ -64,6 +73,11 @@ const props = withDefaults(
     loading?: boolean;
     /** Força a leitura sem movimento (o catálogo mostra os dois modos lado a lado). */
     reducedMotion?: boolean;
+    /** De que superfície vem o tom da camada no SÓLIDO. O padrão decide pela cor: a
+     *  invertida nas cores (um tom mais fundo), a da página no neutro (que já é a
+     *  invertida). Quem pinta o neutro sólido com outra cor (o Pronto verde da
+     *  Cozinha, `KdsCardButton`) diz `inverted`. */
+    fillTint?: "inverted" | "page";
   }>(),
   {
     since: undefined,
@@ -71,13 +85,14 @@ const props = withDefaults(
     serverNow: undefined,
     whenExpired: "hide",
     size: "md",
-    variant: "outline",
-    color: "neutral",
+    variant: "solid",
+    color: "primary",
     icon: undefined,
     block: false,
     disabled: false,
     loading: false,
     reducedMotion: false,
+    fillTint: undefined,
   },
 );
 const emit = defineEmits<{ click: [event: MouseEvent]; expire: [] }>();
@@ -204,27 +219,30 @@ function toKey(value: Instant | undefined): string {
   return value === undefined ? "" : String(value);
 }
 
-// Cor da camada que esvazia. Contornado: a cor da casa por trás do rótulo (a leitura
-// aprovada na proposta). Sólido: a cor do botão é o que esvazia, e o que já passou
-// fica mais claro.
-const OUTLINE_FILL: Record<NonNullable<typeof props.color>, string> = {
-  primary: "bg-primary/20",
-  neutral: "bg-primary/20",
-  error: "bg-error/15",
-  info: "bg-info/15",
-  success: "bg-success/15",
-  warning: "bg-warning/15",
-};
-const fillClass = computed(() =>
-  props.variant === "solid"
-    ? "timed-fill-solid origin-right bg-default/40"
-    : `timed-fill origin-left ${OUTLINE_FILL[props.color]}`,
+// A camada que esvazia, NÍTIDA de relance (dono, 09/10/2026: "muito sutil, não consegui
+// perceber"). No sólido de cor (primary, error, o verde do Pronto com `fill-tint="inverted"`)
+// são DUAS partes com 3:1 entre si (WCAG 1.4.11) e o rótulo AA sobre as duas:
+//   - claro (rótulo branco): o que RESTA é a cor quase preta (preto a 85% por cima); o
+//     que já esvaziou é a cor do botão, como ele volta a ser no fim;
+//   - escuro (rótulo escuro): o que resta é a cor quase branca (branco a 90%); o que
+//     esvaziou é a cor um pouco mais funda (preto a 20%), para o 3:1 caber.
+// Os valores moram no `<style>` (`--timed-remaining`, `--timed-spent`); a trava lê de
+// lá: `tests/timedButtonContrast.test.ts`. O neutro sólido (`fill-tint="page"`) e o
+// contornado não comportam as duas partes com o rótulo AA: ficam com o tom leve.
+const solidStrong = computed(
+  () =>
+    props.variant === "solid" &&
+    (props.fillTint ?? (props.color === "neutral" ? "page" : "inverted")) === "inverted",
 );
+const fillClass = computed(() => {
+  if (solidStrong.value) return "timed-remaining";
+  return props.variant === "outline" ? "bg-current/10" : "bg-(--ui-bg)/30";
+});
 </script>
 
 <template>
   <span
-    :class="block ? 'flex w-full' : 'inline-flex'"
+    :class="block ? 'flex w-full min-w-0' : 'inline-flex'"
     data-timed-button
     :data-timed-expired="expired || undefined"
   >
@@ -244,10 +262,16 @@ const fillClass = computed(() =>
       @click="onClick"
     >
       <span
+        v-if="showFill && solidStrong"
+        aria-hidden="true"
+        class="timed-spent pointer-events-none absolute inset-0 -z-20"
+        data-timed-spent
+      />
+      <span
         v-if="showFill"
         :key="armKey"
         aria-hidden="true"
-        class="pointer-events-none absolute inset-0 -z-10"
+        class="timed-fill pointer-events-none absolute inset-0 -z-10 origin-left"
         :class="fillClass"
         :style="fillStyle"
         data-timed-fill
@@ -261,16 +285,26 @@ const fillClass = computed(() =>
 </template>
 
 <style scoped>
-.timed-fill,
-.timed-fill-solid {
-  animation-timing-function: linear;
-  animation-fill-mode: both;
+/* As duas partes do sólido (claro): o que resta quase preto, o que esvaziou na cor. */
+.timed-remaining {
+  --timed-remaining: rgb(0 0 0 / 0.85);
+  background-color: var(--timed-remaining);
+}
+.timed-spent {
+  --timed-spent: rgb(0 0 0 / 0);
+  background-color: var(--timed-spent);
+}
+/* Escuro: o que resta quase branco, o que esvaziou um pouco mais fundo. */
+.dark .timed-remaining {
+  --timed-remaining: rgb(255 255 255 / 0.9);
+}
+.dark .timed-spent {
+  --timed-spent: rgb(0 0 0 / 0.2);
 }
 .timed-fill {
   animation-name: timed-fill-drain;
-}
-.timed-fill-solid {
-  animation-name: timed-fill-spent;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
 }
 @keyframes timed-fill-drain {
   from {
@@ -280,17 +314,8 @@ const fillClass = computed(() =>
     transform: scaleX(0);
   }
 }
-@keyframes timed-fill-spent {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .timed-fill,
-  .timed-fill-solid {
+  .timed-fill {
     animation: none;
   }
 }

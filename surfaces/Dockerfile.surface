@@ -5,7 +5,12 @@
 # é runtimeConfig: continua vindo do spec em RUN_TIME, a imagem é agnóstica de
 # ambiente.
 
-FROM node:22-alpine AS build
+# A imagem base é ARG só para a CI trocar de REGISTRO (espelho público da mesma
+# imagem oficial, sem o limite de pull anônimo do Docker Hub). O default é o que o
+# deploy usa e não muda: deploy-images.yml e o App Platform não passam o arg.
+ARG NODE_IMAGE=node:22-alpine
+
+FROM ${NODE_IMAGE} AS build
 ARG SURFACE
 WORKDIR /repo
 # A operator-kit é a layer compartilhada (extends: ../operator-kit) — precisa
@@ -32,7 +37,7 @@ RUN if [ "${SURFACE}" = "production-nuxt" ]; then \
       npm run build; \
     fi
 
-FROM node:22-alpine
+FROM ${NODE_IMAGE}
 ARG SURFACE
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

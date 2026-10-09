@@ -1,5 +1,10 @@
 import type { Action, POSOperatorProjection, POSProjection, POSResponse, POSShiftSummaryProjection, POSTabProjection } from "~/types/pos";
 
+/** As comandas da última leitura da Projection, para o selo das Comandas no shell. */
+export function usePosTabsState() {
+  return useState<POSTabProjection[]>("pos-tabs", () => []);
+}
+
 /**
  * Read-side of the POS terminal: the single fetch of the serialized Projection
  * (`{ pos, shift, tabs, operator }`) plus the slices screens consume.

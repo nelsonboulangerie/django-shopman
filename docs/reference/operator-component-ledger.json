@@ -1415,7 +1415,7 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 157,
+        "native_control_occurrences": 138,
         "ui_native_select_occurrences": 4
       },
       "surfaces": [
@@ -1734,8 +1734,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 81,
-        "ui_native_select_occurrences": 14
+        "native_control_occurrences": 73,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
