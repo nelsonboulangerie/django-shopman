@@ -206,9 +206,11 @@ describe("R10/R11/R16: cabeçalho", () => {
     expect(quality).not.toMatch(/<OperatorPeriodPicker/);
   });
 
-  it("celular: o ao vivo desce para a linha sob o título, com a contagem", () => {
+  it("o ao vivo mora no #status do cabeçalho do kit (no celular, a 2ª linha da barra)", () => {
     const header = read("components/ProductionHeader.vue");
     expect(header).toContain("data-header-subtitle");
-    expect(header).toContain("menuInPhoneBar");
+    expect(header).toMatch(/<template #status>\s*<OperatorLiveStatus/);
+    // Sem régua própria: o kit escolhe o desenho do celular pelo CSS.
+    expect(header).not.toContain("useMediaQuery");
   });
 });

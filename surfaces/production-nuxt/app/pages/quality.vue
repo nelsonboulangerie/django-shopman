@@ -111,6 +111,27 @@ const gateCounts = computed(() => {
     reviewed: gate.reviewed.length,
   };
 });
+const viewTabs = computed(() => [
+  { value: "pending", label: `Para confirmar ${gateCounts.value.pending}` },
+  { value: "reviewed", label: `Confirmados ${gateCounts.value.reviewed}` },
+]);
+// Dias anteriores e relatórios moram no ⋯ "Mais ações" (dados, o kit desenha).
+const dayActions = computed(() => [
+  { label: "Dia anterior", icon: "i-lucide-chevron-left", onSelect: () => shiftDay(-1) },
+  ...(selectedDate.value !== ""
+    ? [
+        { label: "Dia seguinte", icon: "i-lucide-chevron-right", onSelect: () => shiftDay(1) },
+        {
+          label: "Voltar para hoje",
+          icon: "i-lucide-calendar-check",
+          onSelect: () => {
+            selectedDate.value = "";
+          },
+        },
+      ]
+    : []),
+  { label: "Relatórios de qualidade", icon: "i-lucide-chart-column", to: "/reports" },
+]);
 // O selo da Qualidade no rail: os lotes fechados esperando a revisão. Fora desta
 // tela o selo some (o número sem a leitura viva mentiria).
 const productionRail = useProductionRail();
@@ -223,79 +244,19 @@ const screenStarted = computed(() => {
       :pending="pending"
       :stale="stale"
       search-placeholder="Buscar lote ou produto"
+      search-label="filtrando os lotes"
+      :actions="dayActions"
       @refresh="refresh"
     >
-      <!-- Dias anteriores e relatórios moram no ⋯ (v4 legenda 8): o título fica
-           com a troca de vista, a lupa e o ⋯. -->
-      <template #menu="{ close }">
-        <div class="mt-1.5 border-t border-border pt-1.5" data-quality-day-menu>
-          <button
-            type="button"
-            role="menuitem"
-            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-            data-quality-previous-day
-            @click="
-              close();
-              shiftDay(-1);
-            "
-          >
-            <Icon name="lucide:chevron-left" class="size-4 text-muted-foreground" />
-            Dia anterior
-          </button>
-          <button
-            v-if="selectedDate !== ''"
-            type="button"
-            role="menuitem"
-            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-            @click="
-              close();
-              shiftDay(1);
-            "
-          >
-            <Icon name="lucide:chevron-right" class="size-4 text-muted-foreground" />
-            Dia seguinte
-          </button>
-          <button
-            v-if="selectedDate !== ''"
-            type="button"
-            role="menuitem"
-            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-            @click="
-              close();
-              selectedDate = '';
-            "
-          >
-            <Icon name="lucide:calendar-check" class="size-4 text-muted-foreground" />
-            Voltar para hoje
-          </button>
-          <NuxtLink
-            to="/reports"
-            role="menuitem"
-            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-            @click="close()"
-          >
-            <Icon name="lucide:chart-column" class="size-4 text-muted-foreground" />
-            Relatórios de qualidade
-          </NuxtLink>
-        </div>
-      </template>
-      <template #actions>
-        <UiTabs
-          v-if="!correcting && kiosk && kiosk.orders.length"
+      <template v-if="!correcting && kiosk && kiosk.orders.length" #primary>
+        <NuxtTabs
           v-model="view"
+          :items="viewTabs"
+          :content="false"
+          variant="pill"
+          aria-label="Lotes da Qualidade"
           data-quality-view
-        >
-          <UiTabsList class="grid grid-cols-2 rounded-lg border-0 bg-muted" aria-label="Lotes da Qualidade">
-            <UiTabsTrigger value="pending" class="gap-1.5 font-semibold data-[state=active]:bg-card">
-              Para confirmar
-              <span class="tnum">{{ gateCounts.pending }}</span>
-            </UiTabsTrigger>
-            <UiTabsTrigger value="reviewed" class="gap-1.5 font-semibold data-[state=active]:bg-card">
-              Confirmados
-              <span class="tnum">{{ gateCounts.reviewed }}</span>
-            </UiTabsTrigger>
-          </UiTabsList>
-        </UiTabs>
+        />
       </template>
     </ProductionHeader>
 

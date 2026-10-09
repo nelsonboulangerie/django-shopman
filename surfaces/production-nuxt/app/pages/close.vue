@@ -269,6 +269,20 @@ const quickFinishAvailable = computed(
     selectedDate.value === "" &&
     (kiosk.value?.recipes ?? []).some((recipe) => quickRecipeAvailable(recipe)),
 );
+// "Lote avulso" (a fornada fora do plano) mora no ⋯ "Mais ações" do cabeçalho.
+const closeActions = computed(() =>
+  quickFinishAvailable.value
+    ? [
+        {
+          label: "Lote avulso",
+          icon: "i-lucide-plus",
+          onSelect: () => {
+            recipePickerOpen.value = true;
+          },
+        },
+      ]
+    : [],
+);
 // O countdown é local; o FATO (enfornou/retirou) é declarado ao servidor.
 const ovenFacts = useOvenFacts(kiosk, refresh);
 const ovenOrder = ref<QCOrderCardProjection | null>(null);
@@ -417,11 +431,14 @@ function onTimerKeydown(event: KeyboardEvent) {
       "
       :pending="pending"
       :stale="stale"
+      search-label="filtrando os lotes"
+      :actions="closeActions"
       @refresh="refresh"
     >
-      <template v-if="!(selectedOrder || selectedRecipe)" #actions>
+      <template v-if="!(selectedOrder || selectedRecipe)" #primary>
         <OperatorPeriodPicker
           v-model="period"
+          compact
           class="[&_[data-period-today]]:hidden"
           :presets="['day']"
           :today="todayISO"
@@ -429,21 +446,6 @@ function onTimerKeydown(event: KeyboardEvent) {
           label="Data dos lotes"
           align="end"
         />
-      </template>
-      <template v-if="quickFinishAvailable" #menu="{ close }">
-        <button
-          type="button"
-          role="menuitem"
-          class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-          data-close-off-plan
-          @click="
-            close();
-            recipePickerOpen = true;
-          "
-        >
-          <Icon name="lucide:plus" class="size-4 text-muted-foreground" />
-          Lote avulso
-        </button>
       </template>
     </ProductionHeader>
 
