@@ -174,9 +174,10 @@ function refreshAll() {
         :pending="isPending"
         @refresh="refreshAll()"
       >
-        <template #actions>
+        <template #primary>
           <OperatorPeriodPicker
-          v-model="period"
+            v-model="period"
+            compact
             class="[&_[data-period-today]]:hidden"
             :presets="['day']"
             :today="todayISO"

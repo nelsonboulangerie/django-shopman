@@ -88,8 +88,6 @@ describe("guardrail do cabeçalho de seções", () => {
       "marketing-nuxt/app/components/MarketingNav.vue",
       // V4-PDV: o rail e a barra do polegar do PDV (`place`), como o GestorNav.
       "pos-nuxt/app/components/PosFunctionRail.vue",
-      // V4-PROD: o ciclo do lote no rail (Alt1 a Alt5 impressos) e na barra do polegar.
-      "production-nuxt/app/components/ProductionNav.vue",
       // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
       // `current` e devolvem `select`.
       "purchase-nuxt/app/components/PurchaseNav.vue",
@@ -120,6 +118,14 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(bi).toContain(':sections="sections"');
     expect(bi).not.toContain("<BiNav");
     expect(bi).not.toMatch(/data-suite=/);
+
+    // Fase 2: a Produção segue o Gestor e o B.I. (sem `ProductionNav`); o Letreiro
+    // (`/board`, TV) fica fora do shell, em casca própria sem navegação.
+    const production = readFileSync(join(SURFACES, "production-nuxt/app/app.vue"), "utf8");
+    expect(production).toContain("<OperatorSuiteShell");
+    expect(production).toContain(':sections="sections"');
+    expect(production).not.toContain("<ProductionNav");
+    expect(production).toContain("data-production-kiosk");
   });
 });
 
@@ -129,7 +135,6 @@ const NAVS = [
   "kds-nuxt/app/components/KdsNav.vue",
   "marketing-nuxt/app/components/MarketingNav.vue",
   "pos-nuxt/app/components/PosFunctionRail.vue",
-  "production-nuxt/app/components/ProductionNav.vue",
   "purchase-nuxt/app/components/PurchaseNav.vue",
 ];
 const KIT = (name: string) =>

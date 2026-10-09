@@ -19,6 +19,9 @@ const SESSION_AUTHED = {
   operator: { id: 1, username: "admin", name: "Admin" },
   locked: false,
   pin_must_change: false,
+  // A antessala responde sobre a capability da superfície (OperatorSessionView): o
+  // shell só monta as telas com `authorized`.
+  authorized: true,
 };
 
 const SESSION_LOCKED = {
@@ -26,6 +29,7 @@ const SESSION_LOCKED = {
   operator: null,
   locked: true,
   pin_must_change: false,
+  authorized: false,
 };
 
 const ACCESS = {

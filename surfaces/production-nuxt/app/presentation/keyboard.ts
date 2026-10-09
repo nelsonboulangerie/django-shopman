@@ -6,13 +6,12 @@ import type { ShortcutGroup } from "../../../operator-kit/app/presentation/suite
 
 /**
  * O que a ajuda de atalhos da suíte lista para a Produção, além de "Em todo o app" (as
- * etapas, Alt+1 a Alt+5, e o "?", que o kit monta com as seções do rail).
+ * etapas, Alt+1 a Alt+5, a busca "/" e o "?", que o kit monta com as seções do shell).
  */
 export const PRODUCTION_SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Em toda tela da Produção",
     items: [
-      { keys: ["/"], label: "Buscar por produto, SKU ou receita" },
       { keys: ["R"], label: "Atualizar os dados da tela" },
     ],
   },
@@ -40,15 +39,8 @@ export const PRODUCTION_SHORTCUT_GROUPS: ShortcutGroup[] = [
 export const PRODUCTION_SHORTCUTS_DESCRIPTION =
   "Toque e teclado executam os mesmos comandos. Os atalhos pausam sob bloqueio, confirmação ou edição de texto.";
 
-export type ProductionGlobalShortcut =
-  | "plan"
-  | "mise-en-place"
-  | "open"
-  | "close"
-  | "quality"
-  | "focus-search"
-  | "refresh"
-  | "help";
+/** O único atalho global da tela: R relê. Etapas (Alt+1 a Alt+5), "/" e "?" são do shell. */
+export type ProductionGlobalShortcut = "refresh";
 
 export type QuantityKeyboardShortcut =
   | { kind: "digit"; digit: string }
@@ -61,26 +53,11 @@ type ShortcutEvent = Pick<
   "key" | "code" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey"
 >;
 
-const STAGE_BY_ALT_CODE: Record<string, ProductionGlobalShortcut> = {
-  Digit1: "plan",
-  Digit2: "mise-en-place",
-  Digit3: "open",
-  Digit4: "close",
-  Digit5: "quality",
-};
-
 export function resolveProductionGlobalShortcut(
   event: ShortcutEvent,
 ): ProductionGlobalShortcut | null {
-  if (event.ctrlKey || event.metaKey) return null;
-
-  const altStage = event.altKey ? STAGE_BY_ALT_CODE[event.code] : null;
-  if (altStage) return altStage;
-
-  if (event.altKey) return null;
-  if (event.key === "/") return "focus-search";
+  if (event.ctrlKey || event.metaKey || event.altKey) return null;
   if (event.key === "r" || event.key === "R") return "refresh";
-  if (event.key === "?") return "help";
   return null;
 }
 

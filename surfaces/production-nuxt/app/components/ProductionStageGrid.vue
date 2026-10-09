@@ -930,6 +930,32 @@ const baseLabel = computed(
     baseOptions.value.find((base) => base.output_sku === baseFilter.value)
       ?.name ?? "todas",
 );
+// Os recortes ativos: número no "Filtros" e chips removíveis no celular.
+const activeFilters = computed(() => {
+  const list: { key: string; label: string; remove: () => void }[] = [];
+  const quick =
+    props.stage === "plan"
+      ? PLAN_FILTERS.find((f) => f.key === planFilter.value && f.key !== "all")
+      : OPEN_FILTERS.find((f) => f.key === openFilter.value && f.key !== "all");
+  if (quick)
+    list.push({
+      key: "state",
+      label: quick.label,
+      remove: () => {
+        planFilter.value = "all";
+        openFilter.value = "all";
+      },
+    });
+  if (baseFilter.value)
+    list.push({
+      key: "base",
+      label: `Base: ${baseLabel.value}`,
+      remove: () => {
+        baseFilter.value = "";
+      },
+    });
+  return list;
+});
 function plannedStateLabel(row: ProductionMatrixRowProjection): string {
   if (row.planned_qty !== "0") return "Planejado";
   return row.started_qty !== "0" ? "Aberto" : "Fechado";
@@ -981,11 +1007,13 @@ function fromPlannedMenu(action: () => void) {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <!-- Cabeçalho de UMA linha (prévia v4 `plano-porque4.html`): título, ao vivo, busca,
-         "4 de 28 planejados" com a barra, o dia e o ⋯. Os recortes na segunda linha. -->
+    <!-- Cabeçalho do kit: título, ao vivo, busca e o ⋯ na barra; na toolbar, o dia,
+         os recortes e, no fim, "4 de 28 planejados" com a barra. -->
     <ProductionHeader
       v-model:query="query"
       :title="title"
+      :active-filters="activeFilters"
+      search-label="filtrando os produtos"
       :count="headerCount.count"
       :total="headerCount.total"
       :count-label="headerCount.label"
@@ -997,9 +1025,10 @@ function fromPlannedMenu(action: () => void) {
         kds.refresh();
       "
     >
-      <template #actions>
+      <template #primary>
         <OperatorPeriodPicker
           v-model="period"
+          compact
           class="[&_[data-period-today]]:hidden"
           :presets="['day']"
           :today="todayISO"

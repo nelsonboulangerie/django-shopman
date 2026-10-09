@@ -1,12 +1,14 @@
 <script setup lang="ts">
-// Cabeçalho das telas de receitas na camada visual da suíte (V4-PROD): o mesmo
-// `OperatorPageHeader` de uma linha das outras telas da Produção, com a linha fina
-// "Receitas" acima do título, o voltar (`#lead`), a busca e os controles da tela. SEM o
-// progresso do dia nem as teclas do ciclo: o inventário de receitas não é etapa do lote,
-// é conhecimento da casa. Receitas mora no pé do rail (e no ⋯ do celular).
+// Cabeçalho das telas de receitas: o mesmo `OperatorPageHeader` do kit das outras
+// telas da Produção, com o selo "Receitas" ao lado do título, o voltar (`#lead`), a
+// busca e a ação primária da tela. Atualizar mora no ⋯ "Mais ações" (dados). SEM o
+// progresso do dia: o inventário de receitas não é etapa do lote, é conhecimento da
+// casa. Receitas mora em Ajustes.
+import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
+
 const props = defineProps<{
   title: string;
-  /** Linha pequena sob o título (kind, SKU, versão) — opcional. */
+  /** Linha pequena ao lado de "Receitas" (kind, SKU, versão) — opcional. */
   subtitle?: string;
   /** Rota de volta (seta à esquerda do título). */
   back?: string;
@@ -15,8 +17,10 @@ const props = defineProps<{
   /** Placeholder e rótulo acessível da busca. */
   searchLabel?: string;
   pending?: boolean;
-  /** Esconde o botão Atualizar (telas sem leitura própria, como o editor). */
+  /** Esconde Atualizar (telas sem leitura própria, como o editor). */
   hideRefresh?: boolean;
+  /** A ação primária da tela: botão na mesa, ícone fixo (ou topo do ⋯) no celular. */
+  primary?: OperatorHeaderAction;
 }>();
 const emit = defineEmits<{ refresh: [] }>();
 const query = defineModel<string>("query", { default: "" });
@@ -24,37 +28,56 @@ const query = defineModel<string>("query", { default: "" });
 const eyebrow = computed(() =>
   props.subtitle ? `Receitas · ${props.subtitle}` : "Receitas",
 );
+const refreshAction = computed<OperatorHeaderAction[]>(() =>
+  props.hideRefresh
+    ? []
+    : [{ label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => emit("refresh") }],
+);
+// Mesa: a primária é botão no `#actions` e o ⋯ só leva Atualizar. Celular: a primária
+// disputa a vaga de ícone (priority 1) e Atualizar vai para o ⋯.
+const deskActions = computed(() => (refreshAction.value.length ? refreshAction.value : undefined));
+const phoneActions = computed(() => {
+  const list = [...(props.primary ? [{ ...props.primary, priority: 1 }] : []), ...refreshAction.value];
+  return list.length ? list : undefined;
+});
 </script>
 
 <template>
-  <OperatorPageHeader :title="title" :eyebrow="eyebrow">
+  <OperatorPageHeader
+    :title="title"
+    :eyebrow="eyebrow"
+    :actions="deskActions"
+    :phone-actions="phoneActions"
+    actions-label="Mais ações da tela"
+  >
     <template v-if="back" #lead>
-      <NuxtLink
+      <NuxtButton
         :to="back"
-        class="grid size-control shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        icon="i-lucide-arrow-left"
+        color="neutral"
+        variant="ghost"
+        square
         aria-label="Voltar"
         title="Voltar"
-      >
-        <Icon name="lucide:arrow-left" class="size-5" />
-      </NuxtLink>
+      />
     </template>
     <template v-if="searchable" #search>
       <OperatorSuiteSearch
         v-model="query"
-        class="suite:md:w-[18rem]!"
         screen-label="filtrando as receitas"
         placeholder="Buscar receita"
         :aria-label="searchLabel || 'Buscar por nome, ref ou SKU'"
       />
     </template>
-    <template #actions>
+    <template v-if="primary || $slots.actions" #actions>
       <slot name="actions" />
-      <UiIconButton
-        v-if="!hideRefresh"
-        icon="lucide:refresh-cw"
-        label="Atualizar"
-        :spinning="pending"
-        @click="emit('refresh')"
+      <NuxtButton
+        v-if="primary"
+        :to="primary.to"
+        :icon="primary.icon"
+        :label="primary.label"
+        :disabled="primary.disabled"
+        @click="primary.onSelect?.($event)"
       />
     </template>
   </OperatorPageHeader>
