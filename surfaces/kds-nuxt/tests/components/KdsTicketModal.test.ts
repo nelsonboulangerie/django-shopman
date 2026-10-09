@@ -4,6 +4,7 @@ import { mount } from "@vue/test-utils";
 
 import KdsTicketModal from "../../app/components/KdsTicketModal.vue";
 import type { KDSTicketProjection } from "../../app/types/kds";
+import { nuxtUiStubs } from "../support/nuxtUi";
 
 // Auto-imports do Nuxt que o SFC usa como globais (sem runtime Nuxt aqui).
 vi.stubGlobal("computed", computed);
@@ -45,15 +46,8 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
   };
 }
 
-// O diálogo do kit vira uma caixa simples: o que se testa é o conteúdo.
-const passthrough = { template: "<div><slot /></div>" };
-const stubs = {
-  Icon: true,
-  UiDialog: passthrough,
-  UiDialogContent: passthrough,
-  UiDialogTitle: passthrough,
-  UiDialogDescription: passthrough,
-};
+// O diálogo do Nuxt UI vira uma caixa simples: o que se testa é o conteúdo.
+const stubs = { Icon: true, ...nuxtUiStubs };
 
 function mountModal(props: Record<string, unknown>) {
   return mount(KdsTicketModal, { props: { open: true, ...props }, global: { stubs } });
