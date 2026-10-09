@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useMediaQuery } from "@vueuse/core";
 // Postos: onde cada dispositivo fica (UX-POSTO1).
 //
 // Criar, renomear, mudar o tipo e desativar postos, e ver os dispositivos vinculados a
@@ -53,18 +52,20 @@ const kindItems = (row: WorkstationManageRow) =>
 const c = computed<Partial<WorkstationCopy>>(() => copy.value ?? {});
 
 const newLabel = ref("");
-const newKind = ref<WorkstationManageRow["kind"] | "">("");
+// O tipo do posto novo: o escolhido, ou o primeiro que se pode criar. Derivado, não
+// gravado por um `watch`: no servidor o `watch` corria antes da leitura chegar e a
+// lista saía sem escolha, enquanto o cliente hidratava já com o primeiro tipo
+// (mismatch na carga direta).
+const pickedKind = ref<WorkstationManageRow["kind"] | "">("");
+const newKind = computed<WorkstationManageRow["kind"] | "">(() =>
+  newKinds.value.some((kind) => kind.kind === pickedKind.value)
+    ? pickedKind.value
+    : (newKinds.value[0]?.kind ?? ""),
+);
 function setNewKind(value: string | number) {
   if (newKinds.value.some((kind) => kind.kind === value))
-    newKind.value = value as WorkstationManageRow["kind"];
+    pickedKind.value = value as WorkstationManageRow["kind"];
 }
-watch(
-  newKinds,
-  (list) => {
-    if (!newKind.value && list.length) newKind.value = list[0]!.kind;
-  },
-  { immediate: true },
-);
 
 async function submitNew() {
   if (!newLabel.value.trim() || !newKind.value) return;
@@ -97,7 +98,7 @@ async function toggleActive(row: WorkstationManageRow) {
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
-const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const { belowSm: isNarrow } = useScreen();
 const phoneHeaderActions = computed(() =>
   isNarrow.value
     ? [

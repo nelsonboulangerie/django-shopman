@@ -1131,6 +1131,61 @@ export function nextOutRef(cards: OrderCardProjection[]): string {
   return first?.ref ?? "";
 }
 
+/** O gesto da saída de um cartão no celular (F7, dono 09/10/2026): o mesmo ato do botão
+ *  largo, com o código, porque no deslize e no polegar o cartão não está todo à vista.
+ *  "Entregar U13 a Ana", "Entregar U13" (sem nome), "Despachar M09". Nulo quando o
+ *  cartão não tem a saída à mão (ainda não pronto, pagamento segurando, já saiu). */
+export function exitGesture(
+  card: OrderCardProjection,
+): { action: AffordanceRef; label: string } | null {
+  if (card.status !== "ready") return null;
+  const advance = cardAffordances(card).find(
+    (aff) =>
+      aff.ref === "advance" && aff.priority === "primary" && !aff.disabled,
+  );
+  if (!advance) return null;
+  const code = splitRef(card.ref).code;
+  if (card.next_status === "dispatched")
+    return { action: "advance", label: `Despachar ${code}` };
+  if (card.fulfillment_type === "pickup") {
+    const name = customerFirstName(card.customer_name);
+    return {
+      action: "advance",
+      label: name ? `Entregar ${code} a ${name}` : `Entregar ${code}`,
+    };
+  }
+  return { action: "advance", label: `${advance.label} ${code}` };
+}
+
+/** A dica dos gestos no fim da coluna do celular: só o que vale ali, com o verbo de
+ *  cada lado. "Deslize à direita para entregar, à esquerda para Atender · puxe para
+ *  atualizar". Sem gesto nenhum, só o puxar. */
+export function swipeHint(
+  zoneKey: string,
+  cards: OrderCardProjection[],
+  canManage: boolean,
+): string {
+  const verbs = [
+    ...new Set(
+      cards.flatMap((card) => {
+        const gesture = exitGesture(card);
+        return gesture ? [gesture.label.split(" ")[0]!.toLowerCase()] : [];
+      }),
+    ),
+  ];
+  const right = verbs.length ? `à direita para ${verbs.join(" ou ")}` : "";
+  const left = canManage
+    ? zoneKey === "intake"
+      ? "Atender ou Recusar"
+      : "Atender"
+    : "";
+  if (right && left)
+    return `Deslize ${right}, à esquerda para ${left} · puxe para atualizar`;
+  if (right) return `Deslize ${right} · puxe para atualizar`;
+  if (left) return `Deslize para ${left} · puxe para atualizar`;
+  return "Puxe para atualizar";
+}
+
 /** O excedente da Saída larga vira número: "prontos esperando (K44, T18)". */
 export function waitingStripText(cards: OrderCardProjection[]): string {
   if (!cards.length) return "";

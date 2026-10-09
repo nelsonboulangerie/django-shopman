@@ -441,7 +441,9 @@ async function submitDispatch(value: string | null) {
 const { denied: stationLocked } = useStationLock();
 
 // ── O cabeçalho de uma linha e o gesto do momento (G14/G15) ─────────────────
-const isPhone = useMediaQuery("(max-width: 767.98px)");
+// A régua da suíte (`useScreen` do kit): mesa no servidor e na hidratação, a largura
+// real depois. Com `useMediaQuery` cru o celular hidratava outra árvore na carga direta.
+const { belowMd: isPhone } = useScreen();
 function menuDo(fn: () => unknown) {
   menuOpen.value = false;
   void fn();

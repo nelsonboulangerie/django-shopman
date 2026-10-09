@@ -429,6 +429,8 @@ Como um app migra:
 | `OperatorPhoneMenu` | o menu do operador sem o rail: o "Mais" da barra de baixo (`variant="bar"`) ou as iniciais na barra de 56px (`variant="header"`, a Central) | menu de `_rail3bottom.html` |
 | `OperatorMenuItems` | o conteúdo do menu do operador (posto, Bloquear no celular, tema, giro, capacidade do serviço escrita) | menu de `_rail3bottom.html` |
 | `OperatorAppSeal` | o selo do app na barra de 56px dos cabeçalhos próprios (PDV, Central) | `_rail3top.html` |
+| `OperatorSwipeRow` | deslizar uma linha no toque (F7, 09/10/2026): à esquerda revela `actions` (gaveta que fica aberta depois da metade); à direita faz `commit` depois do ponto de compromisso, com o verbo e o alvo atrás da linha. Mouse não desliza; o eixo se decide no começo (rolar nunca vira deslize); `motion-safe:` na volta. Nunca a única porta: o mesmo ato existe num botão visível, e a camada de trás é `aria-hidden` | `cozinha-celular` (a), v4 |
+| `OperatorThumbAction` | o polegar do celular: o gesto principal da tela num botão `xl` largo, preso na base da área que rola (`data-focus-obstruction`), com o verbo e o alvo ("Entregar U13 a Ana"). Um por tela, só abaixo de `md` | `cozinha-celular` (a), v4 |
 
 **O título da barra do topo não se corta** (PR-K5, achado do B.I. a 390 px: "Quem compra
 no balc…"). O `NuxtDashboardNavbar` oficial leva `truncate` no título; o tema do kit
@@ -586,6 +588,33 @@ Contrato em `tests/suiteChrome.test.ts` (máximo 5, mínimo 3, "Mais" só quando
 polegar dos apps ainda fora do shell (`OperatorSectionBar`, com o "Mais" como item da
 mesma barra). Ícone em cima, nome **inteiro** embaixo: o rótulo quebra em vez de cortar
 (o oficial leva `truncate`, e a 320 px o Marketing dizia "De…", "Age…", "En…").
+
+### Régua de tela (`useScreen`)
+
+Uma régua só, a do CSS: `useScreen()` devolve `belowSm`, `belowMd`, `belowLg` e
+`belowXl`, as mesmas bordas do `max-sm:`/`max-md:`/`max-lg:`/`max-xl:` do Tailwind
+(`presentation/screen.ts`). O servidor não sabe a largura, então **até a hidratação
+terminar toda leitura responde "mesa"** (falso), no servidor e no cliente; depois, a
+largura real entra como reatividade comum. Tela montada depois da hidratação (navegação
+interna) já nasce com a largura real.
+
+- O que é **só apresentação** decide no CSS (`max-sm:hidden`, `hidden md:inline-flex`):
+  o servidor já desenha certo e nada troca.
+- O que **muda a árvore** (slot, `v-if`, prop de componente, ações da barra) lê
+  `useScreen()`. Nunca `useMediaQuery` de largura na tela, nunca `ssrWidth`: a árvore
+  hidratada tem de ser a que o servidor mandou.
+- Dado lido só no cliente (`useFetch` com `server: false`) segue a mesma regra: o
+  esqueleto aparece também antes de hidratar (`pending || !screen.ready`), senão o
+  cliente hidrata um nó que o servidor não mandou.
+
+Por quê (alpha, 09/10/2026): o Gestor tinha a régua redeclarada em dez telas (`isNarrow`
+valia 639 px em nove e 1279 px na fila) e decidia `v-if` com ela. Na carga direta no
+celular (recarregar, PWA, link) a Fila ficava no esqueleto para sempre (`Cannot read
+properties of null (reading 'emitsOptions')`) e a toolbar do Histórico, dos Clientes e do
+Catálogo sumia. Travas: `tests/guardrails.screen.test.ts` (só a régua e o rail usam
+`useMediaQuery` no kit; Gestor e Cozinha são zero; os apps não migrados têm teto que só cai) e
+`orders-nuxt/tests/ssr/directLoadPhone.spec.ts` (build de produção, 390 e 1440 px, toda
+rota aberta direto: nenhum mismatch, nenhum erro de página).
 
 ### Barra do topo no celular
 
@@ -1527,12 +1556,28 @@ os componentes em `tests/components/OperatorReadingChart.test.ts`.
 </OperatorReadingCard>
 ```
 
-- **Quatro formas, e só quatro** (`kind`): `bars` (séries lado a lado), `comparison` (barras
-  da primeira série e o traço tracejado da segunda, o período de comparação), `diverging`
-  (uma série com sinal; `diverging` dá o nome de cada lado, "Sobrou" e "Faltou", e do zero)
-  e `line` (linha com área). O desenho é Unovis (o Nuxt UI não tem Chart; o template
-  oficial de dashboard usa Unovis), dentro de `<ClientOnly>` com `NuxtSkeleton` da mesma
-  altura. Cores só do tema (`READING_TONE_COLOR`), nunca hexadecimal.
+- **Cinco formas, e só cinco** (`kind`): `bars` (séries lado a lado), `stacked` (séries
+  que são PARTES de um todo, numa barra só: "vendeu" mais "sobrou" é o que a casa fez),
+  `comparison` (barras da primeira série e o traço tracejado da segunda, o período de
+  comparação), `diverging` (uma série com sinal; `diverging` dá o nome de cada lado,
+  "Sobrou" e "Faltou", e do zero) e `line` (linha com área). O desenho é Unovis (o Nuxt
+  UI não tem Chart; o template oficial de dashboard usa Unovis), dentro de `<ClientOnly>`
+  com `NuxtSkeleton` da mesma altura. Cores só do tema (`READING_TONE_COLOR`), nunca
+  hexadecimal.
+- **Preenchimento é a segunda codificação** (`fill` da série, nas barras): `solid` (o
+  padrão), `tint` (o mesmo tom a 30%, a parte que completa o todo) e `hatch` (listrado,
+  a estimativa). Os tons do tema são quentes e vizinhos (latão, âmbar, tijolo): medidos
+  com o validador de paleta, latão × âmbar e latão × tijolo não se separam para quem não
+  distingue vermelho de verde, e âmbar × latão nem para quem distingue. Dois segmentos
+  vizinhos se diferenciam pelo preenchimento, não pela cor. A legenda desenha o mesmo
+  preenchimento.
+- **Deitado** (`horizontal`, só nas formas de barra): quando o eixo é de NOMES (produto,
+  receita), não de datas. As categorias descem pelo eixo vertical, a primeira no topo,
+  TODAS com rótulo (até 120 px, quebrando em duas linhas), e a altura cresce com elas
+  (`readingHorizontalHeight`: 40 px por faixa mais a régua; `height` não vale). Cada
+  faixa tem um trilho discreto que é a régua e o alvo do ponteiro (a barra curta não
+  encolhe o alvo); a faixa lida fica cheia e as outras esmaecem. Sem linha de grade: ela
+  cruzava as barras por cima.
 - **O ponto em leitura é um só** para mouse, toque e teclado: a frase dele fica acima do
   gráfico e o traço vertical marca onde ele está. A área do gráfico é uma parada de
   tabulação (`role="group"`, nome = `title`); setas andam, Home e End vão às pontas,

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useMediaQuery } from "@vueuse/core";
 // Catalog matrix — produto × canal. The catalog side of the Gestor hub.
 // Design: a glanceable availability heatmap (tinted cells) with one-click pause and
 // inline reprice per cell; the collection axis (chips) scopes the view; selection +
@@ -389,7 +388,7 @@ const orderedCollections = computed(() =>
 // numa lista (são mais de quatro e as pílulas rolavam para fora); os recortes e as
 // colunas moram no painel "Filtros", com os ativos como chips removíveis. O
 // `NuxtSelect` não aceita valor vazio: "Todas" é `ALL_COLLECTIONS` só aqui.
-const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const { belowSm: isNarrow } = useScreen();
 const ALL_COLLECTIONS = "all";
 const collectionSelectItems = computed(() =>
   collectionTabs.value.map((tab) => ({
@@ -988,7 +987,7 @@ watch(
   },
   { immediate: true },
 );
-// Vocação (só para o B.I.): o aviso discreto da lista conta os produtos à venda
+// Vocação (só para o B.I.): o aviso da lista conta os produtos à venda
 // sem vocação, da loja inteira. "Classificar" recorta a lista neles (todas as
 // coleções) e abre o primeiro já na aba "Preço e config", onde a vocação mora.
 const vocation = computed(() => vocationNotice(matrix.value?.vocation_pending));
@@ -1119,14 +1118,17 @@ useHead({ title: "Catálogo" });
           v-model="hiddenColumns"
           :columns="columnOptions"
         />
+        <!-- No celular a coleção é o primário da linha (o `NuxtSelect` abaixo); aqui,
+             só do `sm` para cima, pelo CSS. -->
         <span
-          v-if="collections.length && !isNarrow"
-          class="me-1 shrink-0 op-eyebrow text-muted-foreground"
+          v-if="collections.length"
+          class="me-1 shrink-0 op-eyebrow text-muted-foreground max-sm:hidden"
           >Coleção</span
         >
         <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
         <NuxtTabs
-          v-if="collections.length && !isNarrow"
+          v-if="collections.length"
+          class="max-sm:hidden"
           :model-value="collectionRef"
           :items="collectionTabs"
           :content="false"
@@ -1190,22 +1192,25 @@ useHead({ title: "Catálogo" });
         icon="i-lucide-circle-alert"
         :description="errorMsg"
       />
-      <!-- Vocação: aviso de uma linha, tom neutro. Serve só ao B.I.; não pede pressa. -->
-      <p
+      <!-- Vocação: aviso padrão do conjunto mínimo, em `info` (serve só ao B.I.;
+           não pede pressa). A ação repete a cor do aviso (PR #1545). -->
+      <NuxtAlert
         v-if="vocation"
-        class="-my-2 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground"
+        color="info"
+        variant="subtle"
+        icon="i-lucide-tags"
+        :title="vocation.headline"
+        :description="vocation.names"
+        :actions="[
+          {
+            label: 'Classificar',
+            color: 'info',
+            variant: 'outline',
+            onClick: classifyVocation,
+          },
+        ]"
         data-testid="vocation-notice"
-      >
-        <span>{{ vocation.headline }} ({{ vocation.names }})</span>
-        <span class="text-muted-foreground/50" aria-hidden="true">·</span>
-        <NuxtButton
-          type="button"
-          label="Classificar"
-          color="neutral"
-          variant="ghost"
-          @click="classifyVocation"
-        />
-      </p>
+      />
       <NuxtAlert
         v-if="error"
         color="error"
@@ -1586,6 +1591,13 @@ useHead({ title: "Catálogo" });
                 </div>
               </div>
             </template>
+          </template>
+
+          <!-- O cabeçalho da coluna do ⋯ é só para o leitor de tela. Um `header: ""`
+               virava um texto vazio que o servidor não manda, e a hidratação acusava
+               mismatch na carga direta. -->
+          <template #actions-header>
+            <span class="sr-only">Ações</span>
           </template>
 
           <!-- ⋯ da linha: as ações menos corriqueiras (editar, pausar tudo, publicar) -->

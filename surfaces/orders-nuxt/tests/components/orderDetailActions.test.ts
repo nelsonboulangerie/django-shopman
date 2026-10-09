@@ -48,7 +48,7 @@ vi.stubGlobal("useOrdersContext", () => ({ location: ref({ path: "/", query: {} 
 vi.stubGlobal("useStationLock", () => ({ denied: ref(false) }));
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
 vi.stubGlobal("useNowTick", () => ref(Date.now()));
-vi.stubGlobal("useMediaQuery", () => ref(false));
+vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), belowMd: ref(false), belowLg: ref(false), belowXl: ref(false) }));
 vi.stubGlobal("useOutsideStore", () => ({ askConsent: ref(false), away: ref(false), allow: vi.fn(), decline: vi.fn(), showAll: vi.fn() }));
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),

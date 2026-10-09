@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useMediaQuery } from "@vueuse/core";
 // Unificações — a trilha e o desfazer.
 //
 // O `MergeService` aceita desfazer por 24 horas. Esta tela é a porta dele no Gestor
@@ -32,7 +31,7 @@ async function confirmUndo() {
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
-const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const { belowSm: isNarrow } = useScreen();
 const phoneHeaderActions = computed(() =>
   isNarrow.value
     ? [

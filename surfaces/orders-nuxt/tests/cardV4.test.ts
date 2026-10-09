@@ -7,10 +7,12 @@ import {
   cardClock,
   cardSeal,
   customerFirstName,
+  exitGesture,
   nextOutRef,
   primaryVerb,
   stationProgress,
   stripSummary,
+  swipeHint,
   waitingStripText,
 } from "../app/presentation/board";
 import type { OrderCardProjection } from "../app/types/orders";
@@ -168,6 +170,65 @@ describe("primaryVerb", () => {
         disabled: false,
       }),
     ).toBe("Aceitar");
+  });
+});
+
+describe("exitGesture (F7: deslizar para entregar e o polegar)", () => {
+  it("retirada pronta: entregar o código à pessoa", () => {
+    expect(exitGesture(card())).toEqual({
+      action: "advance",
+      label: "Entregar U13 a Ana",
+    });
+    expect(exitGesture(card({ customer_name: "(43) 99444-4444" }))?.label).toBe(
+      "Entregar U13",
+    );
+  });
+  it("entrega pronta: despachar o código", () => {
+    expect(
+      exitGesture(
+        card({ fulfillment_type: "delivery", next_status: "dispatched" }),
+      )?.label,
+    ).toBe("Despachar U13");
+  });
+  it("sem a saída à mão, nenhum gesto: não pronto, travado, ou já saiu", () => {
+    expect(exitGesture(card({ status: "preparing" }))).toBeNull();
+    expect(
+      exitGesture(card({ actions: [action("advance", false)] })),
+    ).toBeNull();
+    expect(
+      exitGesture(card({ actions: [action("advance", true, "menu")] })),
+    ).toBeNull();
+    expect(
+      exitGesture(
+        card({ actions: [action("advance"), action("undo-handoff")] }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("swipeHint", () => {
+  it("diz o verbo de cada lado, e só o que vale ali", () => {
+    expect(swipeHint("expedition", [card()], true)).toBe(
+      "Deslize à direita para entregar, à esquerda para Atender · puxe para atualizar",
+    );
+    expect(
+      swipeHint(
+        "expedition",
+        [
+          card(),
+          card({ fulfillment_type: "delivery", next_status: "dispatched" }),
+        ],
+        false,
+      ),
+    ).toBe(
+      "Deslize à direita para entregar ou despachar · puxe para atualizar",
+    );
+    expect(swipeHint("intake", [card({ status: "new" })], true)).toBe(
+      "Deslize para Atender ou Recusar · puxe para atualizar",
+    );
+    expect(swipeHint("prep", [card({ status: "preparing" })], false)).toBe(
+      "Puxe para atualizar",
+    );
   });
 });
 
