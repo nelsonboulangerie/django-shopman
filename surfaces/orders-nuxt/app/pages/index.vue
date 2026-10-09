@@ -1500,7 +1500,7 @@ function printQueue() {
         <div class="ms-auto flex flex-wrap items-center gap-1.5">
           <NuxtButton
             v-if="confirmableSel.length"
-            :icon="bulkConfirming ? 'i-line-md-loading-loop' : 'i-lucide-check'"
+            icon="i-lucide-check"
             :label="`Aceitar ${confirmableSel.length}`"
             color="primary"
             :disabled="bulkConfirming"
@@ -1510,9 +1510,7 @@ function printQueue() {
           />
           <NuxtButton
             v-if="advanceableSel.length"
-            :icon="
-              bulkAdvancing ? 'i-line-md-loading-loop' : 'i-lucide-arrow-right'
-            "
+            icon="i-lucide-arrow-right"
             :label="`Avançar ${advanceableSel.length}`"
             color="neutral"
             variant="outline"
@@ -2044,7 +2042,8 @@ function printQueue() {
         <div class="grid gap-4">
           <NuxtEmpty
             v-if="rejectReasonsLoading"
-            icon="i-line-md-loading-loop"
+            loading
+            size="sm"
             title="Carregando motivos do iFood…"
           />
           <NuxtAlert

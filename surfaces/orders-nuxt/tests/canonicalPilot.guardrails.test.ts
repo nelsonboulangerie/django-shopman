@@ -395,6 +395,12 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(live).not.toMatch(/<NuxtBadge[^>]*\bvariant=/s);
   });
 
+  // P2-9 do laudo do Gestor: carregando é o `loading` do componente (NuxtButton,
+  // NuxtEmpty), com o ícone e o giro do tema; nunca um spinner trocado à mão no `icon`.
+  it("carregando usa o loading canônico, sem spinner à mão", () => {
+    expect(runtimeOffenders(/i-line-md-loading-loop/)).toEqual([]);
+  });
+
   it("escolhe variantes de Alert por uso e mantém o subtle opaco no tema", () => {
     const appConfig = readFileSync(
       new URL("../../operator-kit/app/app.config.ts", import.meta.url),

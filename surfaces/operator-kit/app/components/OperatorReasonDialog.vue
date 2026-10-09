@@ -176,11 +176,10 @@ function submit() {
   >
     <template #body>
       <div class="grid gap-3" data-reason-dialog>
-        <NuxtAlert
+        <NuxtEmpty
           v-if="loading"
-          color="neutral"
-          variant="subtle"
-          icon="i-line-md-loading-loop"
+          loading
+          size="sm"
           :title="loadingText"
         />
 
