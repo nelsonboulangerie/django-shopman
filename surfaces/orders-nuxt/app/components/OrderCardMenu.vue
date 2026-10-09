@@ -2,7 +2,7 @@
 // O ⋯ de um pedido: atender, seleção em lote, declarar volumes, voltar para a estação
 // e abrir o pedido. Uma peça só para o cartão do quadro e a linha da Grade (dono,
 // 07/10/2026: as opções sumiam da Grade), para as duas nunca divergirem.
-// É NuxtDropdownMenu, o ⋯ canônico; os volumes, que pedem um número, abrem um modal
+// É o `OperatorMoreMenu`, o ⋯ único do kit; os volumes, que pedem um número, abrem um modal
 // próprio (o editor não cabe dentro de um menu).
 import type { OrderCardProjection } from "~/types/orders";
 import { computed, ref } from "vue";
@@ -104,16 +104,11 @@ const items = computed(() => [
 </script>
 
 <template>
-  <NuxtDropdownMenu :items="items" :content="{ side: 'top', align: 'end' }">
-    <NuxtButton
-      color="neutral"
-      variant="outline"
-      square
-      icon="i-lucide-ellipsis"
-      :aria-label="`Mais ações do pedido ${code.code}`"
-      data-card-menu
-    />
-  </NuxtDropdownMenu>
+  <OperatorMoreMenu
+    :items="items"
+    :label="`Mais ações do pedido ${code.code}`"
+    data-card-menu
+  />
   <NuxtModal
     v-model:open="volumesOpen"
     :title="`Volumes do pedido ${code.code}`"

@@ -688,7 +688,7 @@ const outside = useOutsideStore(
       <template v-if="isPhone" #phone-actions>
         <NuxtButton
           type="button"
-          icon="i-lucide-ellipsis-vertical"
+          icon="i-lucide-ellipsis"
           color="neutral"
           variant="ghost"
           square

@@ -307,6 +307,7 @@ onMounted(() => {
         >
           <OperatorKitchenSinkDashboard />
           <OperatorKitchenSinkReading />
+          <OperatorKitchenSinkScreenPieces />
           <OperatorKitchenSinkExercises />
           <section
             id="foundations"

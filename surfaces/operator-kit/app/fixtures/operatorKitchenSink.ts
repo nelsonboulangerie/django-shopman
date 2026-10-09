@@ -11,6 +11,11 @@ export const kitchenSinkNavigation = [
     to: "#reading-pieces",
   },
   {
+    label: "Peças de tela",
+    icon: "i-lucide-layout-panel-top",
+    to: "#screen-pieces",
+  },
+  {
     label: "Laboratório",
     icon: "i-lucide-flask-conical",
     to: "#visual-exercises",

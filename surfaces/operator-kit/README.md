@@ -598,7 +598,8 @@ superior que estão se sobrepondo"). Abaixo de `sm`, a barra do topo
   a sobra: `dashboardNavbar.slots.left`/`title` em `app.config.ts`);
 - **até 2 ícones fixos**: Avisos (onde a barra lateral não está) e a Busca, ou a ação da
   tela de `priority` menor que a da Busca (`SEARCH_PRIORITY`);
-- **um ⋯ "Mais ações"** (`NuxtDropdownMenu`) com todo o resto, na ordem declarada. A
+- **um ⋯ "Mais ações"** (o `OperatorMoreMenu`, ver "Peças de tela") com todo o resto,
+  na ordem declarada. A
   Busca que perde a vaga vira "Buscar" no ⋯.
 
 O que **não** fica na barra: o estado (`#status`, o selo ao vivo) e o posto do
@@ -694,6 +695,67 @@ O cartão de topo é `outline` (borda e fundo do cartão). Um cartão dentro del
 dentro do plano, o item dentro do pedido) é `variant="soft"`: só o fundo, sem a segunda
 borda. A regra mora na chamada, não no CSS: um seletor que adivinhasse o aninhamento
 pintaria errado o cartão que só está dentro de uma coluna.
+
+## Peças de tela (fase 2)
+
+As atividades comuns do operador, uma peça para cada uma
+(`docs/plans/WP-FASE2-UX-OPERADOR.md`). Cada peça nasce aqui com teste, entra no
+catálogo do kit (Kitchen Sink, seção "Peças de tela",
+`OperatorKitchenSinkScreenPieces.vue`) no mesmo PR, e o `:ui` mora uma vez na peça.
+
+### Mais ações: o ⋯ único (`OperatorMoreMenu`)
+
+Um ⋯ só na suíte, o mesmo no cabeçalho, no cartão, na linha da tabela e no quadro de
+leitura, no celular e na mesa. A tela declara as ações como **dados**; a peça desenha o
+botão e o menu:
+
+```vue
+<OperatorMoreMenu
+  label="Mais ações do pedido 1048"
+  :items="[
+    [
+      { label: 'Atender este pedido', icon: 'i-lucide-user-plus', onSelect: assign },
+      {
+        label: 'Voltar para a Cozinha',
+        icon: 'i-lucide-rotate-ccw',
+        disabled: true,
+        reason: 'A Cozinha já fechou o pedido 1048.',
+      },
+    ],
+    [{ type: 'label', label: 'Leitura' }, { label: 'Atualizar', icon: 'i-lucide-refresh-cw', kbds: ['R'], onSelect: refresh }],
+    [{ label: 'Cancelar pedido', icon: 'i-lucide-x', color: 'error', onSelect: cancel }],
+  ]"
+/>
+```
+
+- **Os itens** têm o formato do `NuxtDropdownMenu` (`OperatorMoreMenuItem`,
+  `presentation/moreMenu.ts`): lista simples ou lista de grupos, o rótulo de grupo é um
+  item `type: "label"`, a destrutiva é `color: "error"`, atalho em `kbds`, link em `to`.
+  Grupo vazio, ou só com o rótulo, some.
+- **`reason`**: o motivo de uma ação desabilitada, escrito sob o rótulo (no toque não há
+  dica de ponteiro). Ação desabilitada por regra do negócio leva motivo; a desabilitada
+  só enquanto um pedido anda dispensa.
+- **`label`**: o nome do ⋯, o que ele guarda ("Mais ações do pedido 1048", "Mais ações de
+  Pão francês"). Vira `aria-label` e `title`. Padrão: "Mais ações".
+- **O botão** é sempre o mesmo: reticências deitadas, `ghost`, `neutral`, quadrado. Nada
+  de `outline`, nada de reticências de pé, nada de botão rotulado.
+- **Texto da casa não se corta**: o rótulo e o motivo quebram linha, e o menu não passa
+  da largura que sobra na tela.
+- Atributos (`class`, `data-*`) chegam ao botão; `v-model:open` controla o menu; slot de
+  item (`slot: "freshness"` → `#freshness`) passa direto.
+- **As ações da barra do topo são o mesmo formato**: o ⋯ do `OperatorPageHeader` (as
+  `actions`) é esta peça, e `OperatorHeaderAction` aceita `reason`. O quadro de leitura
+  (`OperatorReadingCard`) e o ⋯ da página de leitura (`OperatorReadingPageMenu`) também.
+
+O que **não** é este ⋯: o "Mais" da barra inferior e o menu do operador (navegação, não
+ação), e o ⋯ que abre um **painel** (o pedido do Gestor, com o pedido inteiro; o
+cenário do B.I., com campo de nome).
+
+Trava: `tests/guardrails.moreMenu.test.ts` reprova o ícone de reticências fora da peça,
+com as exceções acima listadas com motivo e teto (o número só cai), e o ⋯ de pé em
+qualquer lugar. Os apps ainda fora do shell (Marketing, Compras, Produção, PDV) desenham o
+⋯ com `UiPopover`: trocam pela peça na onda de cada um. Contrato em
+`tests/components/OperatorMoreMenu.test.ts` e `tests/moreMenu.test.ts`.
 
 ## Busca da suíte (`OperatorSuiteSearch`)
 

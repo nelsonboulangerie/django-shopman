@@ -16,7 +16,12 @@
 // Funções puras: o componente (`OperatorPageHeader`) só desenha o que elas decidem, e
 // os testes travam a regra sem montar nada.
 
-/** Uma ação da tela na barra do topo. Mesmo formato de um item de `NuxtDropdownMenu`. */
+/**
+ * Uma ação da tela na barra do topo. O mesmo formato de um item do ⋯ único
+ * (`OperatorMoreMenuItem`, `presentation/moreMenu.ts`): o que não ganha vaga de ícone
+ * vai para o `OperatorMoreMenu` sem conversão. Aqui o ícone é obrigatório (a ação pode
+ * virar ícone fixo).
+ */
 export interface OperatorHeaderAction {
   label: string;
   icon: string;
@@ -28,7 +33,10 @@ export interface OperatorHeaderAction {
   to?: string;
   target?: string;
   disabled?: boolean;
+  /** Por que a ação não pode agora (com `disabled`): escrito sob o rótulo no ⋯. */
+  reason?: string;
   color?: "primary" | "neutral" | "error";
+  kbds?: string[];
   onSelect?: (event?: Event) => void;
 }
 

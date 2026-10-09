@@ -1096,15 +1096,11 @@ useHead({ title: "Catálogo" });
       </template>
       <template #actions>
         <!-- ⋯ (v3): a última leitura útil, Atualizar e Exportar moram aqui -->
-        <NuxtDropdownMenu :items="headerMenuItems" :content="{ align: 'end' }">
-          <NuxtButton
-            icon="i-lucide-ellipsis"
-            color="neutral"
-            variant="outline"
-            square
-            aria-label="Mais ações do catálogo"
-            data-catalog-more
-          />
+        <OperatorMoreMenu
+          :items="headerMenuItems"
+          label="Mais ações do catálogo"
+          data-catalog-more
+        >
           <template #freshness>
             <ReadFreshness
               inline
@@ -1112,7 +1108,7 @@ useHead({ title: "Catálogo" });
               :failed="Boolean(error)"
             />
           </template>
-        </NuxtDropdownMenu>
+        </OperatorMoreMenu>
       </template>
       <template #filters>
         <!-- Recortes e escolha de colunas pertencem à DashboardToolbar, não à
@@ -1597,18 +1593,10 @@ useHead({ title: "Catálogo" });
 
           <!-- ⋯ da linha: as ações menos corriqueiras (editar, pausar tudo, publicar) -->
           <template #actions-cell="{ row: tableRow }">
-            <NuxtDropdownMenu
+            <OperatorMoreMenu
               :items="rowMenuItems(tableRow.original)"
-              :content="{ align: 'end' }"
-            >
-              <NuxtButton
-                icon="i-lucide-ellipsis-vertical"
-                color="neutral"
-                variant="ghost"
-                square
-                :aria-label="`Ações de ${tableRow.original.name}`"
-              />
-            </NuxtDropdownMenu>
+              :label="`Mais ações de ${tableRow.original.name}`"
+            />
           </template>
 
           <template

@@ -171,14 +171,8 @@ const phoneLayout = computed(() =>
   }),
 );
 function menuItem(action: OperatorHeaderAction & { search?: true }) {
-  // `priority` e `search` são do kit, não do item do DropdownMenu.
-  const item: Record<string, unknown> = { ...action };
-  delete item.priority;
-  delete item.search;
-  return {
-    ...item,
-    onSelect: action.search ? () => openSearch() : action.onSelect,
-  };
+  // `priority` e `search` são do kit: o `OperatorMoreMenu` os tira do item.
+  return action.search ? { ...action, onSelect: () => openSearch() } : action;
 }
 const menuItems = computed(() =>
   (narrow.value ? phoneLayout.value.overflow : declaredActions.value).map(menuItem),
@@ -330,22 +324,13 @@ function clearAll() {
       />
       <!-- O ⋯ "Mais ações": no celular, o que não ganhou vaga; do `sm` para cima, as
            ações declaradas (ao lado do `#actions`). -->
-      <NuxtDropdownMenu
+      <OperatorMoreMenu
         v-if="declaredActions.length || phoneLayout.overflow.length"
         :items="menuItems"
-        :content="{ align: 'end' }"
-      >
-        <NuxtButton
-          icon="i-lucide-ellipsis"
-          color="neutral"
-          variant="ghost"
-          square
-          :class="moreClass"
-          :aria-label="actionsLabel"
-          :title="actionsLabel"
-          data-page-header-more
-        />
-      </NuxtDropdownMenu>
+        :label="actionsLabel"
+        :class="moreClass"
+        data-page-header-more
+      />
       <ClientOnly v-if="inbox">
         <div
           v-if="!railShown"

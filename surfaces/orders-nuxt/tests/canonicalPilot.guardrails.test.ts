@@ -245,14 +245,18 @@ describe("Gestor canônico em Nuxt UI", () => {
         /<Ui(?!(?:DateField|DateRangeField|TimeField|TimeRangeField|DateTimeField)\b)[A-Z]/,
       ),
     ).toEqual([]);
-    // `:ui` por instância: nenhum, com UMA exceção nominal. A barra inferior do
-    // celular é o exemplo oficial "With bottom tab bar" do NavigationMenu, cujo
-    // desenho É um `:ui` (dono, 08/10/2026, PR #1544); ele mora uma vez no
-    // `OperatorQuickBar`, nunca no shell nem nas telas.
+    // `:ui` por instância: nenhum, com exceções nominais que moram UMA vez numa peça
+    // do kit, nunca no shell nem nas telas. A barra inferior do celular é o exemplo
+    // oficial "With bottom tab bar" do NavigationMenu, cujo desenho É um `:ui` (dono,
+    // 08/10/2026, PR #1544), no `OperatorQuickBar`. O ⋯ único (`OperatorMoreMenu`,
+    // fase 2) troca o corte do rótulo do item pela quebra de linha: texto da casa
+    // não se corta.
+    const kitPieceUi = new Set([
+      "operator-kit/OperatorQuickBar.vue",
+      "operator-kit/OperatorMoreMenu.vue",
+    ]);
     expect(
-      runtimeOffenders(/\b:ui=|\bui="/).filter(
-        (file) => file !== "operator-kit/OperatorQuickBar.vue",
-      ),
+      runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),
     ).toEqual([]);
     // Import de TIPO do reka-ui não desenha nada (os campos de data tipam o range com
     // ele); o que a trava proíbe é montar primitiva do reka por fora do Nuxt UI.
@@ -924,7 +928,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     );
   });
 
-  it("menu de ação é DropdownMenu ou ActionList; NavigationMenu é do kit (ledger)", () => {
+  it("menu de ação é o ⋯ do kit ou ActionList; NavigationMenu é do kit (ledger)", () => {
     const offenders = readdirSync(new URL("../app", import.meta.url), {
       recursive: true,
     })
@@ -941,7 +945,7 @@ describe("Gestor canônico em Nuxt UI", () => {
       new URL("../app/components/OrderCardMenu.vue", import.meta.url),
       "utf8",
     );
-    expect(cardMenu).toContain("<NuxtDropdownMenu");
+    expect(cardMenu).toContain("<OperatorMoreMenu");
     expect(cardMenu).toContain("<NuxtModal");
   });
 });

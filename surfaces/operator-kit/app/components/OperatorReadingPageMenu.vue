@@ -21,14 +21,5 @@ const menuItems = computed<DropdownMenuItem[]>(() => actions.value as DropdownMe
 </script>
 
 <template>
-  <NuxtDropdownMenu :items="menuItems" :content="{ align: 'end' }">
-    <NuxtButton
-      icon="i-lucide-ellipsis"
-      color="neutral"
-      variant="ghost"
-      square
-      :aria-label="triggerLabel"
-      data-operator-reading-page-menu
-    />
-  </NuxtDropdownMenu>
+  <OperatorMoreMenu :items="menuItems" :label="triggerLabel" data-operator-reading-page-menu />
 </template>
