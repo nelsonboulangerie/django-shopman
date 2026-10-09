@@ -18,12 +18,20 @@ function freeCartProjection() {
   });
 }
 
-/** Carrinho com dois pães (R$ 10,00) pronto para lançar pagamento. */
+/** O servidor confirmou o total do carrinho: só então uma forma de pagamento
+ *  nasce dimensionada por ele (total em cálculo não lança linha). */
+function confirmTotal(h: ReturnType<typeof makeSale>) {
+  const q = h.sale.paymentTotalQ.value;
+  h.sale.review.value = { total_q: q, total_display: `R$ ${(q / 100).toFixed(2).replace(".", ",")}` } as never;
+}
+
+/** Carrinho com dois pães (R$ 10,00), total confirmado, pronto para lançar pagamento. */
 function saleWithTotal1000() {
   const h = makeSale({ projection: freeCartProjection() });
   const pao = h.handles.posValue.value!.products[0]!;
   h.sale.addProduct(pao);
   h.sale.addProduct(pao);
+  confirmTotal(h);
   return h;
 }
 
@@ -392,6 +400,7 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     h.sale.addProduct(pao);
     h.sale.cart.fulfillmentType = "delivery";
     await nextTick();
+    confirmTotal(h);
     h.sale.addTender("cash");
     h.sale.cart.paymentTenders[0]!.amount_q = 400; // sobra para a segunda forma
     h.sale.addTender("card");
@@ -415,6 +424,7 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     await nextTick();
     h.sale.cart.paymentCollection = "on_delivery";
     await nextTick();
+    confirmTotal(h);
     h.sale.addTender("cash");
     expect(h.sale.cart.paymentTenders[0]!.collection).toBe("on_delivery");
     h.handles.dispose();
@@ -427,6 +437,7 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     await nextTick();
     h.sale.cart.paymentCollection = "on_delivery";
     await nextTick();
+    confirmTotal(h);
     h.sale.addTender("cash");
     // O operador DIGITOU com quanto o cliente vai pagar (a linha deixou de ser
     // o auto-preenchimento do sistema).
@@ -450,6 +461,7 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     await nextTick();
     h.sale.cart.paymentCollection = "on_delivery";
     await nextTick();
+    confirmTotal(h);
     h.sale.addTender("cash");
     expect(h.sale.cart.paymentTenders[0]!._virgin).toBe(true);
     await h.sale.reviewCheckout();
@@ -465,6 +477,7 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     await nextTick();
     h.sale.cart.paymentCollection = "on_delivery";
     await nextTick();
+    confirmTotal(h);
     h.sale.addTender("cash");
     h.sale.tenderAdd(2000); // a cédula de R$ 20 substitui o auto-preenchimento
     expect(h.sale.cart.paymentTenders[0]!._virgin).toBe(false);

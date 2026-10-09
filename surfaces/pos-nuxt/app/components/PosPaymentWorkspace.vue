@@ -115,7 +115,8 @@ const props = defineProps<{
   splitNote: string;
   selectedTenderIndex: number;
   selectedTenderMethod: string;
-  /** Total a cobrar (review viva → total retido → estimativa líquida local). */
+  /** Conta interna do pagamento (review viva → total retido → estimativa local).
+   *  NUNCA vai para a tela como total: sem `review`, o total está em cálculo. */
   paymentTotalQ: number;
   paymentRemainingQ: number;
   paymentChangeQ: number;
@@ -177,6 +178,8 @@ const props = defineProps<{
   /** A última revisão FALHOU (rede). Sem isto, a tela ficava com o botão
    *  desabilitado e o spinner de "Atualizando…" para sempre. */
   reviewFailed?: boolean;
+  /** Por que a revisão falhou, dito pelo servidor ou pela rede. */
+  reviewFailureReason?: string;
 }>();
 
 const emit = defineEmits<{
@@ -242,10 +245,13 @@ const emit = defineEmits<{
   pickSavedAddress: [SavedAddressProjection];
 }>();
 
-// Total interino enquanto a review não chega: o MESMO `paymentTotalQ` do
-// composable (líquido, com o último total de review retido) — nunca o bruto do
-// carrinho, que fazia o hero saltar durante o debounce da review.
-const interimTotalDisplay = computed(() => formatBRL(props.paymentTotalQ));
+// TOTAL QUE AINDA PODE MUDAR NÃO APARECE COMO TOTAL (regra do dono). Sem a
+// revisão do servidor, o herói não mostra número nenhum: nem o último total
+// (que já não vale: o desconto mudou), nem a estimativa do carrinho (que não
+// sabe o desconto da venda nem a taxa). Riscar o anterior também não serve:
+// nesta suíte, número riscado é o preço ANTES do desconto (tela do cliente), e
+// o operador leria "ficou mais barato". O que aparece é o estado: calculando,
+// ou não calculado com o motivo.
 // Nota fiscal é SECUNDÁRIA: mora na coluna "Nota e comprovante" (não é botãozão
 // no grid) e só aparece quando a loja ofereceu NFC-e no PDV E o adapter fiscal
 // está configurado.
@@ -469,7 +475,9 @@ function setReceiptChannel(ref: string, on: boolean) {
 
 // The adaptive live readout under the hero — one line that carries the state the
 // operator needs right now, so the big number stays the (stable) sale total.
-const payState = computed<"idle" | "short" | "change" | "ready">(() => {
+const payState = computed<"pending" | "idle" | "short" | "change" | "ready">(() => {
+  // Troco, restante e "coberto" são contas sobre o total: sem ele, nenhum vale.
+  if (!props.review) return "pending";
   if (props.paymentChangeQ > 0) return "change";
   if (props.paymentCovered) return "ready";
   if (props.paymentTenders.length) return "short";
@@ -510,6 +518,7 @@ const splitBadge = computed(() => (
 ));
 /** Quanto ficaria cada parte se a conta fosse dividida em `n` — preview do modal. */
 function splitShareLabel(n: number): string {
+  if (!props.review) return "calculando";
   return formatBRL(splitShareQ(props.paymentTotalQ, n, props.splitPaidCount, props.paymentRemainingQ));
 }
 
@@ -685,8 +694,8 @@ function blockedForDelivery(method: string): boolean {
 function awaitingReviewReason(): string | undefined {
   if (!needsReview.value) return undefined;
   return props.reviewFailed
-    ? "O total não atualizou. Toque em Tentar de novo."
-    : "Atualizando o total. A forma libera assim que ele chegar.";
+    ? "O total não foi calculado. Toque em Tentar de novo."
+    : "Calculando o total. A forma libera assim que ele chegar.";
 }
 
 function paymentMethodBlockedReason(ref: string): string | undefined {
@@ -720,7 +729,7 @@ const ctaLabel = computed(() => {
   // A revisão falhou: o botão deixa de fingir que está carregando e vira a
   // própria saída. Girar para sempre é a tela mentindo sobre o que está fazendo.
   if (props.reviewFailed) return "Tentar de novo";
-  if (needsReview.value) return "Atualizando…";
+  if (needsReview.value) return "Calculando o total…";
   // ⚠️ Este botão NÃO autoriza nem valida: ele abre o teclado do gerente
   // (`onCta` → `managerAuthOpen = true`). Quem conclui é o gerente digitando o
   // PIN, que é, corretamente, o último passo — e só o último passo diz o verbo
@@ -787,8 +796,8 @@ const ctaBlock = computed<{
   }
   if (props.reviewFailed) {
     return {
-      message: "Não deu para atualizar o total.",
-      hint: "Confira a conexão e tente de novo.",
+      message: "O total não foi calculado.",
+      hint: props.reviewFailureReason || "Confira a conexão e tente de novo.",
     };
   }
   if (props.loading || needsReview.value) return null;
@@ -1020,7 +1029,7 @@ const notices = computed<CheckoutNotice[]>(() => {
       tone: "warn",
       icon: "lucide:flask-conical",
       message: pixProviderTestWithinLimitMessage.value,
-      hint: `Este pedido de ${formatBRL(props.paymentTotalQ)} está dentro do limite.`,
+      ...(props.review ? { hint: `Este pedido de ${props.review.total_display} está dentro do limite.` } : {}),
     });
   }
   // A COZINHA PREPAROU MAIS DO QUE A CONTA COBRA. Fica ao lado do Validar
@@ -1625,20 +1634,49 @@ defineExpose({
         <section
           class="flex min-h-0 flex-1 flex-col items-center justify-center text-center"
           :aria-label="payState === 'change' ? 'Troco' : 'Total a cobrar'"
+          :aria-busy="payState === 'pending' && !reviewFailed ? 'true' : undefined"
           aria-live="polite"
+          data-pos-total
+          :data-pos-total-state="review ? 'confirmed' : reviewFailed ? 'failed' : 'calculating'"
         >
           <p class="text-xs font-medium uppercase tracking-wide" :class="payState === 'change' ? 'text-primary' : 'text-muted-foreground'">
             {{ payState === "change" ? "Troco" : "Total a cobrar" }}
           </p>
-          <p
-            class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl"
-            :class="payState === 'change' ? 'text-primary' : ''"
-          >
-            {{ payState === "change" ? formatBRL(paymentChangeQ) : (review ? review.total_display : interimTotalDisplay) }}
-          </p>
-          <p v-if="payState === 'change'" class="mt-2 text-sm tabular-nums text-muted-foreground">
-            Total a cobrar {{ review ? review.total_display : interimTotalDisplay }}
-          </p>
+          <!-- Sem a revisão do servidor, NENHUM número no lugar do total: o
+               que aparece é o estado (ver `needsReview`). -->
+          <template v-if="!review">
+            <p
+              v-if="reviewFailed"
+              class="mt-1 text-2xl font-semibold text-destructive xl:text-4xl"
+              data-pos-total-failed
+            >
+              Total não calculado
+            </p>
+            <p
+              v-else
+              class="mt-1 flex items-center gap-3 text-2xl font-semibold text-muted-foreground xl:text-4xl"
+              data-pos-total-calculating
+            >
+              <Icon name="lucide:loader-circle" class="size-7 shrink-0 animate-spin motion-reduce:animate-none xl:size-9" aria-hidden="true" />
+              Calculando…
+            </p>
+            <p class="mt-2 max-w-md text-sm text-muted-foreground">
+              {{ reviewFailed
+                ? (reviewFailureReason || "Confira a conexão e toque em Tentar de novo.")
+                : "A cobrança libera quando o total chegar." }}
+            </p>
+          </template>
+          <template v-else>
+            <p
+              class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl"
+              :class="payState === 'change' ? 'text-primary' : ''"
+            >
+              {{ payState === "change" ? formatBRL(paymentChangeQ) : review.total_display }}
+            </p>
+            <p v-if="payState === 'change'" class="mt-2 text-sm tabular-nums text-muted-foreground">
+              Total a cobrar {{ review.total_display }}
+            </p>
+          </template>
         </section>
 
         <!-- linhas de pagamento + troco/restante -->
@@ -1696,9 +1734,11 @@ defineExpose({
             <span class="shrink-0 text-sm font-medium uppercase tracking-wide text-muted-foreground">Restante</span>
             <strong
               class="ml-auto text-3xl font-bold tabular-nums"
-              :class="payState === 'ready' ? 'text-muted-foreground' : ''"
+              :class="payState === 'ready' || payState === 'pending' ? 'text-muted-foreground' : ''"
             >
-              {{ formatBRL(Math.max(0, paymentRemainingQ)) }}
+              <!-- O restante é o total menos o lançado: sem total, não há restante. -->
+              <template v-if="payState === 'pending'"><span class="text-base font-medium">espera o total</span></template>
+              <template v-else>{{ formatBRL(Math.max(0, paymentRemainingQ)) }}</template>
             </strong>
           </div>
         </div>
@@ -2152,7 +2192,7 @@ defineExpose({
             :class="splitCount === n ? 'border-primary bg-primary/5' : ''"
             :disabled="hasLinkTender"
             :aria-pressed="splitCount === n"
-            :aria-label="`Dividir em ${n} pessoas, ${splitShareLabel(n)} cada`"
+            :aria-label="review ? `Dividir em ${n} pessoas, ${splitShareLabel(n)} cada` : `Dividir em ${n} pessoas`"
             @click="$emit('setSplitCount', n); splitSheetOpen = false"
           >
             <span class="text-lg font-semibold leading-none">{{ n }}</span>

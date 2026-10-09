@@ -229,6 +229,7 @@ const {
   prepareCheckout,
   reviewCheckout,
   reviewFailed,
+  reviewFailureReason,
   submitSale,
   dismissResult,
   markFiscalState,
@@ -1500,6 +1501,7 @@ onBeforeUnmount(() => {
         :loading="busy"
         :lookup-busy="lookupBusy"
         :review-failed="reviewFailed"
+        :review-failure-reason="reviewFailureReason"
         @back="checkoutMode = false"
         @submit="submitSale"
         @add-tender="addTender"
