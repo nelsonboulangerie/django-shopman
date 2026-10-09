@@ -171,9 +171,6 @@ const activeFilters = computed(() => {
   return [{ key: "channel", label: `Canal: ${label}`, remove: () => pickChannel("all") }];
 });
 
-const retryActions = computed(() => [
-  { label: "Tentar de novo", icon: "i-lucide-refresh-cw", color: "error" as const, variant: "outline" as const, onClick: () => refresh() },
-]);
 </script>
 
 <template>
@@ -223,17 +220,12 @@ const retryActions = computed(() => [
     </OperatorPageHeader>
 
     <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
-      <NuxtAlert
+      <OperatorScreenState
         v-if="error"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        title="Não deu para carregar as vendas."
+        state="error"
+        what="as vendas"
         :description="report ? 'Os números na tela são os da leitura anterior.' : undefined"
-        :actions="retryActions"
-        orientation="horizontal"
-        role="alert"
-        data-bi-error
+        @retry="refresh()"
       />
       <NuxtEmpty
         v-else-if="pending && !report"

@@ -37,10 +37,6 @@ const { selection, bounds, presets } = useBiWindow();
 const shareItems = useBiShareMenuItems();
 const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
-const errorActions = computed(() => [
-  { label: "Tentar de novo", icon: "i-lucide-refresh-cw", color: "error" as const, variant: "outline" as const, onClick: () => refresh() },
-]);
-
 // ── Recortes ────────────────────────────────────────────────────────────────
 // O `NuxtSelect` não aceita valor vazio: "todos" é `ALL` na tela e "" no contrato.
 const ALL = "all";
@@ -377,17 +373,12 @@ const revpashCsv = computed<ReadingCsv>(() => ({
         description="Perfis, faixas de hora e bebida do período escolhido."
         data-bi-loading
       />
-      <NuxtAlert
+      <OperatorScreenState
         v-if="error"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        title="Não deu para carregar os perfis."
+        state="error"
+        what="os perfis"
         :description="report ? 'Os números na tela são os da leitura anterior.' : undefined"
-        :actions="errorActions"
-        orientation="horizontal"
-        role="alert"
-        data-bi-error
+        @retry="refresh()"
       />
 
       <template v-if="report">

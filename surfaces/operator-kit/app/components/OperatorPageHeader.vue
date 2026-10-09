@@ -43,6 +43,12 @@ import {
   type OperatorActiveFilter,
   type OperatorHeaderAction,
 } from "../presentation/pageHeader";
+import {
+  SCREEN_ALERTS_VISIBLE,
+  moreAlertsLabel,
+  screenAlertIcon,
+  type OperatorScreenAlert,
+} from "../presentation/screenState";
 import type { OperatorSession } from "../types/operator";
 
 const props = withDefaults(
@@ -83,6 +89,13 @@ const props = withDefaults(
     /** "Limpar" do painel de filtros. Padrão: remove cada recorte ativo. */
     clearFilters?: () => void;
     /**
+     * Os avisos da tela (o que a tela precisa que a pessoa saiba agora), abaixo da
+     * toolbar. O primeiro aparece inteiro; os outros ficam em "e mais N". Erro de rede é
+     * do `OfflineBanner`; aviso com prazo, do `OperatorUrgentAlert`; erro de carregar o
+     * conteúdo, do `OperatorScreenState`.
+     */
+    alerts?: OperatorScreenAlert[];
+    /**
      * A toolbar no celular: `drawer` (uma linha, "Filtros" abre o painel; padrão no
      * shell da suíte) ou `row` (a linha de sempre, para os apps ainda fora do shell até
      * a onda de cada um).
@@ -100,6 +113,7 @@ const props = withDefaults(
     activeFilters: () => [],
     clearFilters: undefined,
     phoneFilters: undefined,
+    alerts: () => [],
   },
 );
 
@@ -189,6 +203,27 @@ const filtersMode = computed(
 const filterLine = computed(() => narrow.value && filtersMode.value === "drawer");
 const filtersOpen = ref(false);
 const activeCount = computed(() => props.activeFilters.length);
+// Avisos da tela: um inteiro, o resto em "e mais N".
+const alertsOpen = ref(false);
+const shownAlerts = computed(() =>
+  alertsOpen.value ? props.alerts : props.alerts.slice(0, SCREEN_ALERTS_VISIBLE),
+);
+const hiddenAlerts = computed(() => Math.max(0, props.alerts.length - SCREEN_ALERTS_VISIBLE));
+function alertActions(alert: OperatorScreenAlert) {
+  if (!alert.action) return undefined;
+  // A saída do aviso repete a cor dele, no tamanho da suíte (`md`), nunca o `xs` do
+  // default do aviso.
+  return [
+    {
+      label: alert.action.label,
+      to: alert.action.to,
+      color: alert.color,
+      variant: "outline" as const,
+      size: "md" as const,
+      onClick: (event: Event) => alert.action?.onSelect?.(event),
+    },
+  ];
+}
 function clearAll() {
   if (props.clearFilters) props.clearFilters();
   else for (const filter of [...props.activeFilters]) filter.remove();
@@ -495,6 +530,39 @@ function clearAll() {
        Marketing, a seção do Compras no celular). Vue descarta slot não declarado sem
        aviso: sem esta linha, as abas de Ajustes do PDV somem. -->
   <slot name="below" />
+
+  <!-- O aviso da tela (fase 2, K6): abaixo da toolbar, um inteiro e o resto em "e mais
+       N". Lugar declarado: a tela não monta faixa de aviso própria. -->
+  <div
+    v-if="alerts.length"
+    class="flex flex-col gap-2 px-4 py-2 sm:px-6"
+    data-page-header-alerts
+  >
+    <NuxtAlert
+      v-for="alert in shownAlerts"
+      :key="alert.id ?? alert.title"
+      :color="alert.color"
+      variant="subtle"
+      :icon="alert.icon ?? screenAlertIcon(alert.color)"
+      :title="alert.title"
+      :description="alert.description"
+      :actions="alertActions(alert)"
+      orientation="horizontal"
+      :role="alert.color === 'error' ? 'alert' : 'status'"
+      data-page-header-alert
+    />
+    <NuxtButton
+      v-if="hiddenAlerts && !alertsOpen"
+      class="self-start"
+      :label="moreAlertsLabel(hiddenAlerts)"
+      color="neutral"
+      variant="ghost"
+      trailing-icon="i-lucide-chevron-down"
+      :aria-expanded="false"
+      data-page-header-alerts-more
+      @click="alertsOpen = true"
+    />
+  </div>
 
   <!-- Feedback contextual não é controle de toolbar. Ações, filtros, contagens e
        freshness pertencem ao slot #filters e, portanto, à DashboardToolbar oficial. -->
