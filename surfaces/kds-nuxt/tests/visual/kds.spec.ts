@@ -23,6 +23,32 @@ const ROUTES = [
   { id: "pickup", path: "/pickup", heading: "" },
 ] as const;
 
+/** As caixas dos tickets da grade, lidas só quando a grade parou de mexer (a entrada
+ *  e a troca de linha animam, e o aviso que chega depois empurra a grade). */
+async function settledBoxes(page: Page) {
+  const read = () =>
+    page.locator("[data-kds-grid] article").evaluateAll((nodes) =>
+      nodes.map((node, index) => {
+        const rect = node.getBoundingClientRect();
+        return {
+          index,
+          top: Math.round(rect.top),
+          left: Math.round(rect.left),
+          bottom: Math.round(rect.bottom),
+          height: Math.round(rect.height),
+        };
+      }),
+    );
+  let previous = await read();
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await page.waitForTimeout(150);
+    const current = await read();
+    if (JSON.stringify(current) === JSON.stringify(previous)) return current;
+    previous = current;
+  }
+  return previous;
+}
+
 async function watchProblems(page: Page): Promise<string[]> {
   const problems: string[] = [];
   page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
@@ -72,18 +98,33 @@ for (const viewport of VIEWPORTS) {
           await page.goto("/bancada");
           const cards = page.locator("[data-kds-grid] article");
           await expect(cards.first()).toBeVisible();
-          const boxes = await cards.evaluateAll((nodes) =>
-            nodes.map((node, index) => {
-              const rect = node.getBoundingClientRect();
-              return { index, top: Math.round(rect.top), left: Math.round(rect.left) };
-            }),
-          );
+          const boxes = await settledBoxes(page);
           const reading = [...boxes].sort((a, b) => a.top - b.top || a.left - b.left).map((box) => box.index);
           expect(reading).toEqual(boxes.map((box) => box.index));
           const grid = page.locator("[data-kds-grid]");
           expect(await grid.evaluate((node) => getComputedStyle(node).gridAutoFlow)).not.toContain("dense");
           await expect(cards.nth(0)).toContainText("Agora");
           await expect(cards.nth(1)).toContainText("Próximo");
+        });
+
+        test("bancada: cada ticket tem a altura do próprio conteúdo, e as linhas se alinham pelo topo", async ({ page }) => {
+          // Dono, 09/10/2026: o ticket não estica até o pé da linha; a linha seguinte
+          // começa abaixo do mais alto da linha de cima.
+          await page.goto("/bancada");
+          await page.getByRole("button", { name: /Ver a fila inteira/ }).click();
+          const cards = page.locator("[data-kds-grid] article");
+          await expect(cards.nth(3)).toBeVisible();
+          const boxes = await settledBoxes(page);
+          const rows = new Map<number, typeof boxes>();
+          for (const box of boxes) rows.set(box.top, [...(rows.get(box.top) ?? []), box]);
+          const ordered = [...rows.entries()].sort(([a], [b]) => a - b).map(([, row]) => row);
+          expect(ordered.length).toBeGreaterThan(1);
+          // A primeira linha tem tickets de alturas diferentes: nenhum foi esticado.
+          expect(new Set(ordered[0]!.map((box) => box.height)).size).toBeGreaterThan(1);
+          for (let index = 1; index < ordered.length; index++) {
+            const tallestAbove = Math.max(...ordered[index - 1]!.map((box) => box.bottom));
+            for (const box of ordered[index]!) expect(box.top).toBeGreaterThanOrEqual(tallestAbove);
+          }
         });
       } else {
         test("bancada: o ato do pedido em foco está na base, e a grade da mesa não aparece", async ({ page }) => {

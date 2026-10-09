@@ -231,19 +231,17 @@ const slice = computed(() =>
   }),
 );
 const rest = computed(() => restSummary(slice.value.rest));
-// A grade enche a altura (prévia v4: `grid-rows-2 flex-1`): as linhas dividem a área,
-// e o ticket estica até o pé da linha, com o botão no mesmo lugar em todos. Cada
-// ticket tem a sua célula, posta explicitamente na ordem de leitura (`focusSlice`):
-// nunca `grid-auto-flow: dense` nem colunas CSS, que reordenam a fila na tela.
-const gridStyle = computed(() => {
-  const columns = `repeat(${grid.value.columns}, minmax(0, 1fr))`;
-  if (showsEverything.value) return { gridTemplateColumns: columns, gridAutoRows: "minmax(min-content, auto)" };
-  return {
-    gridTemplateColumns: columns,
-    gridTemplateRows: `repeat(${grid.value.rows}, minmax(min-content, 1fr))`,
-    height: "100%",
-  };
-});
+// A grade em LINHAS, na ordem de leitura (dono, 09/10/2026): cada ticket tem a altura
+// do PRÓPRIO conteúdo (`self-start`, nunca esticado), e a linha seguinte começa abaixo
+// do ticket mais alto da linha de cima. Cada ticket tem a sua célula, posta
+// explicitamente na ordem da fila (`focusSlice`): nunca `grid-auto-flow: dense`,
+// masonry nem colunas CSS, que reordenam a fila na tela.
+const gridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${grid.value.columns}, minmax(0, 1fr))`,
+  gridAutoRows: "auto",
+  alignItems: "start",
+  alignContent: "start",
+}));
 // A posição de ataque escrita em cada ticket da mesa (Agora, Próximo, Depois), contada
 // sobre a fila inteira sem os que estão na janela do Desfazer. Com busca ou recorte a
 // grade mostra um pedaço da fila, e a posição sai junto com o destaque do próximo.
@@ -629,8 +627,9 @@ function clearSearchAndFilter() {
                 <div
                   v-for="card in slice.visible"
                   :key="card.pk"
-                  class="flex"
+                  class="flex self-start"
                   :style="placementStyle(card.pk)"
+                  data-kds-grid-cell
                 >
                   <KdsTicketCard
                     :ticket="card"
