@@ -922,9 +922,20 @@ test.describe("listas operacionais", () => {
     await page.locator("main ul li").first().locator("button").first().click();
     const google = page.getByTestId("composition-google_business");
     await google.locator("[data-composition-toggle]").click();
-    await google.evaluate((element) =>
-      element.scrollIntoView({ block: "start" }),
-    );
+    // ⚠️ Rolar só depois de o Collapsible abrir por inteiro: rolando no meio da
+    // abertura, o corpo do modal ainda é curto e o cartão para mais abaixo (o retrato
+    // virava cara ou coroa, CI 37978128873).
+    await expect(google.getByText("Tipo de postagem", { exact: true })).toBeVisible();
+    await expect
+      .poll(() =>
+        google.evaluate((element) => {
+          element.scrollIntoView({ block: "start" });
+          const card = element.getBoundingClientRect().top;
+          const body = element.closest('[data-slot="body"]')?.getBoundingClientRect().top ?? 0;
+          return Math.round(card - body);
+        }),
+      )
+      .toBeLessThan(40);
     await expect(
       google.getByText("Tipo de postagem", { exact: true }),
     ).toBeInViewport();
