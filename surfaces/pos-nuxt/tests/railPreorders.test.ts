@@ -4,16 +4,17 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 // Encomendas é a opção da BARRA LATERAL do PDV (decisão do dono, 26/09), no lugar em
-// que morava "Fichas de pedido". Na camada da suíte (onda V4, `pos-sale4.html`) as
-// seções saem de `presentation/sections`, na ordem da prévia: Comandas, Encomendas,
-// Caixa, Tela do cliente. A antesala (Sessão de caixa) é sobre o caixa e não carrega
-// mais a seção.
-import { posCurrentSection, posSections } from "../app/presentation/sections";
+// que morava "Fichas de pedido". No shell da suíte (fase 2) as seções saem de
+// `presentation/sections`, na ordem da prévia: Comandas, Encomendas, Caixa, Tela do
+// cliente; Ajustes depois de um traço; Terminal no pé. A antesala (Sessão de caixa) é
+// sobre o caixa e não carrega mais a seção.
+import { quickBarLayout, quickBarProblems } from "../../operator-kit/app/presentation/suiteChrome";
+import { posCorridorRoute, posCurrentSection, posSections } from "../app/presentation/sections";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = (...parts: string[]) => resolve(here, "..", "app", ...parts);
 
-const RAIL = readFileSync(app("components", "PosFunctionRail.vue"), "utf8");
+const SHELL_SECTIONS = readFileSync(app("composables", "usePosShell.ts"), "utf8");
 const SESSION = readFileSync(app("pages", "session", "index.vue"), "utf8");
 const CASH = readFileSync(app("presentation", "cash.ts"), "utf8");
 
@@ -22,11 +23,12 @@ const base = { tabs: [], hasOpenCashSession: true };
 describe("Encomendas na barra lateral do PDV", () => {
   it("a seção mora entre Comandas e Caixa, e leva à casa da seção", () => {
     const keys = posSections({ ...base, preorders: { allowed: true } }).map((s) => s.key);
-    expect(keys).toEqual(["board", "preorders", "cash", "display", "closing", "settings"]);
+    expect(keys).toEqual(["board", "preorders", "cash", "display", "closing", "settings", "terminal"]);
     const preorders = posSections({ ...base, preorders: { allowed: true } })[1]!;
     expect(preorders.label).toBe("Encomendas");
     expect(preorders.to).toBe("/preorders");
-    expect(posCurrentSection("preorders")).toBe("preorders");
+    expect(posCurrentSection("/preorders")).toBe("preorders");
+    expect(posCurrentSection("/preorders/ENC-12")).toBe("preorders");
   });
 
   it("respeita a permissão (some sem ela) e carrega o selo das de hoje", () => {
@@ -36,7 +38,7 @@ describe("Encomendas na barra lateral do PDV", () => {
       preorders: { allowed: true, badge: "4" },
     }).find((s) => s.key === "preorders")!;
     expect(withBadge.badge).toBe("4");
-    expect(RAIL).toContain("usePosPreordersRail()");
+    expect(SHELL_SECTIONS).toContain("usePosPreordersRail()");
   });
 
   it("Comandas conta as em uso; Caixa acende quando o turno está fechado", () => {
@@ -54,11 +56,40 @@ describe("Encomendas na barra lateral do PDV", () => {
     const settings = posSections({ ...base, preorders: { allowed: false } }).find((s) => s.key === "settings")!;
     expect(settings).toMatchObject({ label: "Ajustes", divider: true, to: "/settings/seating", match: ["/settings"] });
     expect(settings?.foot).toBeUndefined();
-    expect(posCurrentSection("settings")).toBe("settings");
+    expect(posCurrentSection("/settings/printers")).toBe("settings");
+  });
+
+  it("Terminal no pé leva aos Ajustes e só acende quando algo pede atenção", () => {
+    const at = (terminal?: "ready" | "warning" | "error") =>
+      posSections({ ...base, preorders: { allowed: false }, terminal }).find((s) => s.key === "terminal")!;
+    expect(at("ready")).toMatchObject({ foot: true, where: "rail", to: "/settings/terminal" });
+    expect(at("ready").attention).toBeUndefined();
+    expect(at(undefined).attention).toBeUndefined();
+    expect(at("warning")).toMatchObject({ attention: "pede atenção", tone: "warning" });
+    expect(at("error")).toMatchObject({ attention: "com erro", tone: "error" });
+  });
+
+  it("barra inferior: Comandas, Encomendas, Caixa e Fim do dia, e o Mais leva à gaveta", () => {
+    for (const allowed of [true, false]) {
+      const sections = posSections({ ...base, preorders: { allowed } });
+      expect(quickBarProblems(sections)).toEqual([]);
+      const layout = quickBarLayout(sections.filter((s) => s.where !== "rail"));
+      expect(layout.items.map((s) => s.key)).toEqual(allowed ? ["board", "preorders", "cash", "closing"] : ["board", "cash", "closing"]);
+      expect(layout.more).toBe(true);
+    }
+  });
+
+  it("a seção acesa segue a rota; Fim do dia e o Relatório são corredores sem navegação", () => {
+    expect(posCurrentSection("/")).toBe("board");
+    expect(posCurrentSection("/session")).toBe("cash");
+    expect(posCorridorRoute("/session/closing")).toBe(true);
+    expect(posCorridorRoute("/session/report")).toBe(true);
+    expect(posCorridorRoute("/session")).toBe(false);
+    expect(posCorridorRoute("/")).toBe(false);
   });
 
   it("'Fichas de pedido' não volta, e a antesala não carrega mais a seção", () => {
-    expect(RAIL).not.toContain('label="Fichas de pedido"');
+    expect(readFileSync(app("presentation", "sections.ts"), "utf8")).not.toContain("Fichas de pedido");
     expect(SESSION).not.toContain("data-preorders-section");
     expect(SESSION).not.toContain("/api/v1/backstage/pos/preorders/");
     expect(CASH).not.toContain("preorders:");

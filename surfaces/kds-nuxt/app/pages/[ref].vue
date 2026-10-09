@@ -28,6 +28,7 @@ import {
   focusGrid,
   focusSlice,
   KDS_ARM_DELAY_MS,
+  KDS_UNDO_WINDOW_MS,
   matchesBoardFilter,
   realtimeIndicator,
   queuePositionLabel,
@@ -431,7 +432,19 @@ const phoneAction = computed<OperatorActionBarAction | null>(() => {
         disabled: true,
         reason: `${card.finish_block_label}. ${card.finish_block_reason}`,
       };
-    // O Desfazer fica no card em foco, com o fundo que esvazia; a base sai da frente.
+    // O Desfazer mora no MESMO botão da base onde o Pronto foi tocado (dono,
+    // 09/10/2026): a barra não muda, só o texto, e o fundo esvazia atrás dele.
+    case "undo": {
+      const until = finishUntil.value.get(card.pk);
+      if (!until) return null;
+      return {
+        label: `Desfazer ${code}`,
+        icon: "i-lucide-undo-2",
+        ariaLabel: `Desfazer o Pronto do pedido ${code}`,
+        timed: { until, duration: KDS_UNDO_WINDOW_MS },
+        onSelect: () => void undoFinish(card.pk),
+      };
+    }
     default:
       return null;
   }

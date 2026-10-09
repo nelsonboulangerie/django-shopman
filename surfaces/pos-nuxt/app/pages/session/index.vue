@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ManagerAction } from "../../../../operator-kit/app/presentation/managerAuth";
+import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
 // ANTESALA do PDV (benchmark Odoo POS): a tela de SESSÃO antes da venda. O
 // operador abre o caixa (fundo de troco), registra sangria/suprimento e
 // fecha o turno (contagem cega) aqui — não mais num diálogo espremido dentro da
@@ -49,7 +50,7 @@ const action = usePosAction();
 const { pos, shift, actions, pending, refresh } = await usePosTerminal();
 
 const OPERATOR_PERM = "cashman.operate_pos";
-const { operator: activeOperator, lock } = useOperatorLock(OPERATOR_PERM);
+const { operator: activeOperator } = useOperatorLock(OPERATOR_PERM);
 
 const {
   busy,
@@ -257,15 +258,13 @@ async function goToDayClosing() {
   await navigateTo("/session/closing");
 }
 
-// Tela do cliente: segunda janela do MESMO navegador, para arrastar ao monitor
-// virado ao cliente. A abertura (e a sonda de versão que vai junto) mora no
-// composable; a antessala e a venda chamam a MESMA peça, pelo rail.
-const customerDisplayWindow = useCustomerDisplayWindow();
-function openCustomerDisplay() {
-  if (!customerDisplayWindow.open()) toast.error("O navegador bloqueou a Tela do Cliente.", {
-    description: "Permita pop-ups para este site e tente novamente.",
-  });
-}
+// A Tela do cliente abre pela barra lateral do shell (`usePosShell`), a mesma peça
+// em toda tela; a antessala não tem botão próprio para ela.
+
+// "Atualizar" no ⋯ da barra do topo, como em toda tela da suíte.
+const headerActions = computed<OperatorHeaderAction[]>(() => [
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", disabled: pending.value, onSelect: () => void refresh() },
+]);
 
 // Movimentos de gaveta: sangria (sai) / suprimento (entra).
 //
@@ -546,25 +545,11 @@ async function confirmClose() {
 </script>
 
 <template>
-  <main class="flex min-h-dvh flex-col bg-background text-foreground md:h-[100dvh] md:min-h-0 md:flex-row md:overflow-hidden">
-    <PosFunctionRail
-      v-if="pos"
-      :pos="pos"
-      :has-open-cash-session="pos.has_open_cash_session"
-      :operator-name="activeOperator?.name || ''"
-      :pending="pending"
-      view="session"
-      @board="goToSaleBoard"
-      @cash="() => {}"
-      @display="openCustomerDisplay"
-      @lock="lock()"
-      @refresh="refresh()"
-    />
-
-    <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
+  <main class="flex min-h-0 flex-1 flex-col" data-session-screen>
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <!-- Cabeçalho de uma linha da suíte (kit): título, ao vivo, e o terminal e quem
            opera à direita. -->
-      <OperatorPageHeader title="Sessão de caixa">
+      <OperatorPageHeader title="Sessão de caixa" :actions="headerActions" actions-label="Mais ações do caixa">
         <template #status>
           <OperatorLiveStatus
             :tone="liveStatus.view.value.tone"
@@ -581,7 +566,7 @@ async function confirmClose() {
         </template>
       </OperatorPageHeader>
 
-      <div class="flex-1 md:min-h-0 md:overflow-y-auto">
+      <div class="min-h-0 flex-1 overflow-y-auto">
         <!-- TUDO É CARD: quatro seções, cada uma uma grade de cards que abrem.
              A ordem é a do balcão — o gesto óbvio, o que pede gente, a gaveta,
              o fim do expediente — e o fim de dia EM CURSO (acabou de fechar o
@@ -672,7 +657,6 @@ async function confirmClose() {
           </section>
         </div>
       </div>
-      <PosFunctionRail place="bar" :operator-name="activeOperator?.name || ''" @board="goToSaleBoard" @display="openCustomerDisplay" @lock="lock()" />
     </div>
 
     <!-- ── Diálogos, um por card ───────────────────────────────────────────
