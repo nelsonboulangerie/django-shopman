@@ -324,6 +324,15 @@ createServer((req, res) => {
     send(res, 200, preorderList);
     return;
   }
+  // Os favoritos do balcão: na prévia (`sale`), um fixado no fim da faixa de filtros
+  // rápidos das Encomendas; sem a variável, nenhum (as fotos não mudam).
+  if (path === "/api/v1/backstage/saved-views/") {
+    const views = SALE && url.searchParams.get("screen") === "preorders"
+      ? [{ id: 1, surface: "pos", screen: "preorders", name: "Entregas a receber", query: { filters: { fulfillment: ["delivery"], pay: ["to_receive"] } }, pinned: true }]
+      : [];
+    send(res, 200, { views });
+    return;
+  }
   if (path.includes("/events/")) {
     res.statusCode = 204;
     res.end();
