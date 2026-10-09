@@ -1590,6 +1590,7 @@ function printQueue() {
       <!-- Com o modo de seleção ligado, a barra de seleção toma o lugar da toolbar. -->
       <template v-if="selecting" #selection>
         <OperatorBulkBar
+          :escape="false"
           :count="selected.size"
           :scope="bulkScope"
           empty="Toque nos pedidos para marcar"

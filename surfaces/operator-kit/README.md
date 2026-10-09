@@ -1024,8 +1024,9 @@ Uma por tela, desenhada pela mesma peça em dois lugares (dono, 09/10/2026):
   selecionados em Rústicos"): o recorte não muda com marcados fora da vista.
 - **Abaixo do `lg`**: `placement="base"`, no lugar e no desenho da `OperatorActionBar`
   (cartão flutuante, em fluxo, entre o conteúdo e a barra inferior), na superfície
-  invertida com o **tema invertido inteiro** (`.op-inverted`, em `operator-theme.css`):
-  campo, grupo de botões e lista de escolha ficam legíveis sobre ela.
+  invertida (`bg-inverted`). Campo e botões levam o próprio fundo (`outline`, nunca
+  `ghost`, nem o ×) e por isso ficam legíveis sobre ela nos dois temas. O tema do kit
+  não muda (mudar o tema repinta as baselines das consumidoras).
 
 ```vue
 <OperatorPageHeader title="Catálogo">
@@ -1054,7 +1055,7 @@ Uma por tela, desenhada pela mesma peça em dois lugares (dono, 09/10/2026):
 - **Modo de seleção** (a Fila): `empty` é a instrução com zero marcados; `clear-label`
   dá o nome do × ("Sair da seleção").
 - **Esc** limpa (uma escuta, a da mesa), salvo com lista, menu ou diálogo aberto.
-- Na tabela, a célula fixada acompanha a cor da linha marcada (tema, `table.pinned`).
+- Na tabela, a célula fixada acompanha a cor da linha marcada (na `OperatorTable`, `PINNED_SELECTED_CELL`; o tema não muda).
 - Trava: `guardrails.bulkBar.test.ts` (no Gestor, nenhuma barra de lote à mão; toda
   tela com `#selection` tem a barra nos dois lugares).
 

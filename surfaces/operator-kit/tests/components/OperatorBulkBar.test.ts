@@ -83,7 +83,7 @@ describe("OperatorBulkBar", () => {
 
   it("Esc limpa a seleção", async () => {
     mounted = await mountSuspended(OperatorBulkBar, { attachTo: document.body, props: { count: 1, items } });
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", cancelable: true }));
     expect(mounted.emitted("clear")).toHaveLength(1);
   });
 
@@ -101,11 +101,13 @@ describe("OperatorBulkBar", () => {
     expect(bar().tagName).toBe("FOOTER");
     expect(bar().className).toContain("lg:hidden");
     expect(bar().hasAttribute("data-focus-obstruction")).toBe(true);
-    expect(bar().querySelector("[data-operator-bulk-surface]")!.className).toContain("op-inverted");
+    expect(bar().querySelector("[data-operator-bulk-surface]")!.className).toContain("bg-inverted");
+    // Sobre a superfície invertida nada é `ghost`: cada controle leva o próprio fundo.
+    expect(bar().querySelector("[data-operator-bulk-clear]")!.className).not.toContain("bg-transparent");
     expect(bar().textContent).toContain("Toque nos pedidos para marcar");
     expect(bar().querySelector("[data-operator-bulk-clear]")!.getAttribute("aria-label")).toBe("Sair da seleção");
     // Uma escuta só para o Esc: a da mesa.
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", cancelable: true }));
     expect(mounted.emitted("clear")).toBeUndefined();
   });
 

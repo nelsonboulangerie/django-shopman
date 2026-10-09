@@ -887,7 +887,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     // O oficial pinta cabeçalho fixo e coluna fixada com `bg-default/75` (o bege da
     // página): a tabela ficava creme dentro do card branco (dono, 07/10/2026).
     expect(appConfig).toContain(
-      'pinned: { true: { th: "sticky bg-card z-1", td: "sticky bg-card z-1 in-data-[selected=true]:',
+      'pinned: { true: { th: "sticky bg-card z-1", td: "sticky bg-card z-1" }',
     );
     expect(appConfig).toContain(
       'header: { thead: "sticky top-0 inset-x-0 bg-card z-1" }',

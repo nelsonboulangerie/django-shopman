@@ -8,15 +8,17 @@
 //   Rústicos"): o recorte não muda com marcados fora da vista.
 // - `placement="base"` (abaixo do `lg`): a ação na base, no lugar e no desenho da
 //   `OperatorActionBar` (cartão flutuante, em fluxo, entre o conteúdo e a barra
-//   inferior), na superfície INVERTIDA com o tema invertido inteiro (`.op-inverted`),
-//   para campo e grupo de botões ficarem legíveis sobre ela.
+//   inferior), na superfície INVERTIDA (`bg-inverted`). Campo e botões levam o próprio
+//   fundo (`outline`, nunca `ghost`) e por isso ficam legíveis sobre ela nos dois temas.
 //
 // Ordem fixa (dono, 09/10/2026, Catálogo): "N selecionados | o que vem em `#lead` (o
 // canal) | as ações, na ordem dada | ×". Gestos opostos (Pausar/Ativar) são um
 // `NuxtFieldGroup`, com o MESMO peso: todos `outline`, salvo a ação principal
 // (`primary`), uma só. Campo e botão na mesma altura (`md` na mesa, `lg` no toque).
 // Esc limpa a seleção (quando não há lista ou painel aberto).
-import { computed, onBeforeUnmount, onMounted } from "vue";
+import { computed, ref } from "vue";
+
+import { useOperatorShortcutMap } from "../composables/useOperatorShortcutMap";
 
 import {
   BULK_CLEAR_LABEL,
@@ -26,6 +28,7 @@ import {
   type OperatorBulkAction,
   type OperatorBulkItem,
 } from "../presentation/bulkBar";
+import { BULK_BAR_SHORTCUTS } from "../shortcuts/suiteShortcuts";
 
 const props = withDefaults(
   defineProps<{
@@ -39,8 +42,10 @@ const props = withDefaults(
     placement?: "toolbar" | "base";
     /** O nome do ×: "Limpar seleção" ou, num modo de seleção, "Sair da seleção". */
     clearLabel?: string;
+    /** Esc limpa a seleção. Desligue quando a tela já tem o próprio Esc. */
+    escape?: boolean;
   }>(),
-  { scope: "", empty: "", items: () => [], placement: "toolbar", clearLabel: BULK_CLEAR_LABEL },
+  { scope: "", empty: "", items: () => [], placement: "toolbar", clearLabel: BULK_CLEAR_LABEL, escape: true },
 );
 
 const emit = defineEmits<{ clear: [] }>();
@@ -55,18 +60,14 @@ function run(action: OperatorBulkAction, event: Event) {
   action.onSelect?.(event);
 }
 
-// Esc limpa, mas só quando nada por cima dela está aberto (a lista do canal, o painel
-// do preço, um diálogo): ali o Esc é de quem está aberto.
-function onKey(event: KeyboardEvent) {
-  if (event.key !== "Escape" || event.defaultPrevented) return;
-  if (document.querySelector("[role=dialog], [role=listbox], [role=menu]")) return;
-  emit("clear");
-}
-// Duas instâncias (mesa e base) vivem na tela; uma escuta.
-onMounted(() => {
-  if (!base.value) window.addEventListener("keydown", onKey);
-});
-onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
+// Esc limpa (pela infraestrutura de atalhos do kit, que já cede a vez a campo e a
+// diálogo, lista ou menu aberto). Duas instâncias (mesa e base) vivem na tela; a da
+// mesa escuta. A tela que já tem o próprio Esc (a Fila) desliga com `escape: false`.
+useOperatorShortcutMap(
+  BULK_BAR_SHORTCUTS,
+  props.escape && props.placement !== "base" ? { "bulk.clear": () => emit("clear") } : {},
+  ref(new Set<string>()),
+);
 </script>
 
 <template>
@@ -85,7 +86,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
     <div
       :class="
         base
-          ? 'op-inverted flex w-full flex-col gap-2 rounded-lg bg-default p-3 text-default shadow-lg ring ring-default'
+          ? 'flex w-full flex-col gap-2 rounded-lg bg-inverted p-3 text-inverted shadow-lg'
           : 'contents'
       "
       :data-operator-bulk-surface="base ? '' : undefined"
@@ -93,8 +94,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
       <!-- Na base: a frase, o campo (o canal) e o ×, numa linha; as ações embaixo. -->
       <div :class="base ? 'flex items-center gap-2' : 'contents'">
         <p
-          class="text-sm font-medium tabular-nums text-highlighted"
-          :class="base ? 'min-w-0' : 'shrink-0 pe-1'"
+          class="text-sm font-medium tabular-nums"
+          :class="base ? 'min-w-0 text-inverted' : 'shrink-0 pe-1 text-highlighted'"
           aria-live="polite"
           data-operator-bulk-label
         >
@@ -108,7 +109,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
           class="ms-auto"
           icon="i-lucide-x"
           color="neutral"
-          variant="ghost"
+          variant="outline"
           square
           :size="size"
           :aria-label="clearLabel"
