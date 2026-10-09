@@ -871,9 +871,9 @@ Enquanto houver seleção numa lista, a barra de seleção (`OperatorBulkBar`, p
 ocupa o lugar da ação na base. **Ponto de encontro com o `OperatorThumbAction`** (o
 polegar da Saída do Gestor, #1564): é o mesmo papel (a ação do momento ao alcance do
 polegar, `xl`, `data-focus-obstruction`), hoje `sticky` dentro da área que rola e só
-abaixo de `md`. Quando os dois estiverem no `main`, o polegar vira um `OperatorActionBar`
-sem linha de contexto (ou o `OperatorActionBar` ganha o modo "dentro da lista"): uma peça
-só. A trava abaixo já declara o teto dele.
+abaixo de `md`. Próximo passo: o polegar vira um `OperatorActionBar` sem linha de
+contexto (a Saída passa a ação para o rodapé do painel), e as duas peças viram uma. A
+trava abaixo declara o teto dele (1, que só cai).
 
 Trava: `tests/guardrails.actionBar.test.ts` conta, por arquivo, o texto de classe com
 `sticky`/`fixed` e `bottom-*` nos templates dos apps de operador e do kit: uso novo

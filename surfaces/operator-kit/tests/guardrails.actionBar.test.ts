@@ -33,8 +33,7 @@ const BOTTOM = /(?:^|[\s:])bottom-\S+/;
 const CEILING: Record<string, { max: number; reason: string; arriving?: string }> = {
   "operator-kit/app/components/OperatorThumbAction.vue": {
     max: 1,
-    reason: "o polegar da Saída do Gestor (F7): mesmo papel da ação na base; unifica com o OperatorActionBar",
-    arriving: "#1564",
+    reason: "o polegar da Saída do Gestor (F7, #1564): mesmo papel da ação na base; unifica com o OperatorActionBar",
   },
   "operator-kit/app/components/OperatorSectionBar.vue": {
     max: 1,
