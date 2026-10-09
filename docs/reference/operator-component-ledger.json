@@ -770,6 +770,49 @@
           "runner": {
             "config": "playwright.visual.config.ts"
           }
+        },
+        {
+          "id": "proposal-fase2",
+          "source_files": [
+            "app/pages/proposal/fase2/index.vue"
+          ],
+          "routes": [
+            "/proposal/fase2"
+          ],
+          "variants": [
+            "normal"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "proposal-fase2-telas",
+          "source_files": [
+            "app/pages/proposal/fase2/[tela].vue"
+          ],
+          "routes": [
+            "/proposal/fase2/:tela"
+          ],
+          "variants": [
+            "normal",
+            "empty",
+            "error",
+            "modal"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
         }
       ]
     },
