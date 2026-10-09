@@ -889,6 +889,12 @@ contra ela, nos dois temas, travados em `tests/actionBarContrast.test.ts`.
   peça, não da tela.
 - **`reason`**: com `disabled`, o motivo aparece escrito sob a ação (`role="status"`, e o
   botão aponta para ele com `aria-describedby`).
+- **Ação com prazo** (`action.timed = { until, since?, duration?, serverNow?, onExpire? }`,
+  o "Desfazer"): a barra NÃO muda (dono, 09/10/2026). Mesmo cartão invertido, mesma
+  linha de contexto, mesma segunda ação; o botão tocado fica no lugar, mesma cor,
+  variante e tamanho, troca só o texto ("Pronto 0131" vira "Desfazer 0131", com
+  `ariaLabel` para o nome completo) e ganha o fundo que esvazia (`OperatorTimedButton`).
+  Ao fim do prazo o botão fica no lugar, desligado, até quem chama trocar a ação.
 - **Só abaixo de `lg`**: na mesa, a ação sobe para a barra superior primária.
 - **Some com o teclado aberto** (`data-keyboard="open"` no `<html>`, do
   `plugins/visualViewport.client.ts`): o campo que a pessoa digita fica com a tela.
@@ -945,11 +951,19 @@ desfazer a saída no Gestor.
   prazo. Quem guarda o prazo é o dono do estado (o quadro, a projeção), nunca a peça.
 - **Uma animação só**, em CSS, do tamanho da janela, com atraso negativo para começar
   onde a janela já está. Nada redesenha a cada quadro.
-- **Conjunto mínimo**: o `NuxtButton` de sempre, `md`/`xl` × `outline`/`solid` ×
-  `primary`/`neutral`/`error`. No contornado, a cor da casa esvazia por trás do rótulo;
-  no sólido, a cor do botão é o que esvazia, e o que passou fica mais claro. As cores de
-  aviso (`info`, `success`, `warning`) só como ação de um `NuxtAlert` daquela cor (a
-  exceção declarada do conjunto).
+- **A menor interferência possível** (dono, 09/10/2026): o botão com prazo é o MESMO
+  botão que ele substitui, no mesmo lugar. Quem chama passa a cor, a variante e o
+  tamanho do botão de origem (o padrão é o da ação principal, `primary` `solid` `md`);
+  só o texto muda ("Pronto 0131" vira "Desfazer 0131") e o fundo esvazia atrás dele.
+  Nada de trocar para contornado ou neutro, nada de mudar altura ou largura. Trava: o
+  teste compara, classe por classe, com o `NuxtButton` de mesma cor, variante e tamanho.
+- **O fundo que esvazia é a própria cor, translúcida.** Sólido: a cor um tom mais funda
+  (a superfície invertida a 30% por cima), que só aumenta o contraste do rótulo; no
+  neutro sólido, o tom vem do fundo da página. Contornado: a cor do rótulo a 10%. As
+  duas esvaziam para a esquerda e, no fim, o botão está idêntico ao de origem. AA do
+  rótulo nos dois temas: `tests/timedButtonContrast.test.ts`. Conjunto mínimo: `md`/`xl`
+  × `outline`/`solid` × `primary`/`neutral`/`error`; as cores de aviso (`info`,
+  `success`, `warning`) só como ação de um `NuxtAlert` daquela cor (a exceção declarada).
 - **Movimento reduzido** (`prefers-reduced-motion: reduce`): nada anima; o botão mostra
   o número de segundos ("4 s"), que muda uma vez por segundo.
 - **Leitor de tela**: o nome do botão é o rótulo, fixo (ou o `aria-label` de quem chama:

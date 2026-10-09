@@ -8,6 +8,15 @@
 // Regras da peça:
 //   - É o `NuxtButton` do conjunto mínimo (md/xl × solid/outline × primary/neutral/
 //     error), com uma camada atrás do rótulo. Não é botão novo.
+//   - A MENOR interferência possível (dono, 09/10/2026): o botão com prazo é o MESMO
+//     botão que ele substitui (mesma cor, mesma variante, mesmo tamanho, mesmo lugar).
+//     Quem chama passa a aparência do botão de origem; só o TEXTO muda ("Pronto 0131"
+//     vira "Desfazer 0131") e o fundo esvazia atrás dele. Nada de trocar para
+//     contornado/neutro, nada de mudar altura ou largura.
+//   - O fundo que esvazia é a PRÓPRIA cor do botão, translúcida: no sólido, a cor um
+//     tom mais funda (a superfície invertida a 30% por cima), que sempre AUMENTA o
+//     contraste do rótulo; no contornado, a cor do rótulo a 10%. Ao fim da janela o
+//     botão está idêntico ao de origem. AA nos dois temas: `tests/timedButtonContrast.test.ts`.
 //   - O prazo é ABSOLUTO (`until`, epoch ms ou ISO). Montar de novo, mudar de lugar ou
 //     a aba dormir em segundo plano não reinicia a janela: o fim é o mesmo instante.
 //     O prazo do servidor vem com `server-now` (o relógio dele), e o desvio do
@@ -71,8 +80,8 @@ const props = withDefaults(
     serverNow: undefined,
     whenExpired: "hide",
     size: "md",
-    variant: "outline",
-    color: "neutral",
+    variant: "solid",
+    color: "primary",
     icon: undefined,
     block: false,
     disabled: false,
@@ -204,27 +213,20 @@ function toKey(value: Instant | undefined): string {
   return value === undefined ? "" : String(value);
 }
 
-// Cor da camada que esvazia. Contornado: a cor da casa por trás do rótulo (a leitura
-// aprovada na proposta). Sólido: a cor do botão é o que esvazia, e o que já passou
-// fica mais claro.
-const OUTLINE_FILL: Record<NonNullable<typeof props.color>, string> = {
-  primary: "bg-primary/20",
-  neutral: "bg-primary/20",
-  error: "bg-error/15",
-  info: "bg-info/15",
-  success: "bg-success/15",
-  warning: "bg-warning/15",
-};
-const fillClass = computed(() =>
-  props.variant === "solid"
-    ? "timed-fill-solid origin-right bg-default/40"
-    : `timed-fill origin-left ${OUTLINE_FILL[props.color]}`,
-);
+// A camada que esvazia: a própria cor do botão, translúcida. Sólido: um tom mais fundo
+// da cor (a superfície invertida a 30% por cima: escurece o latão sob o rótulo branco
+// no claro, clareia o dourado sob o rótulo escuro no escuro), e o contraste só sobe.
+// O neutro sólido JÁ é a superfície invertida, então o tom vem do fundo da página.
+// Contornado: a cor do rótulo (`currentColor`) a 10%.
+const fillClass = computed(() => {
+  if (props.variant === "outline") return "bg-current/10";
+  return props.color === "neutral" ? "bg-(--ui-bg)/30" : "bg-(--ui-bg-inverted)/30";
+});
 </script>
 
 <template>
   <span
-    :class="block ? 'flex w-full' : 'inline-flex'"
+    :class="block ? 'flex w-full min-w-0' : 'inline-flex'"
     data-timed-button
     :data-timed-expired="expired || undefined"
   >
@@ -247,7 +249,7 @@ const fillClass = computed(() =>
         v-if="showFill"
         :key="armKey"
         aria-hidden="true"
-        class="pointer-events-none absolute inset-0 -z-10"
+        class="timed-fill pointer-events-none absolute inset-0 -z-10 origin-left"
         :class="fillClass"
         :style="fillStyle"
         data-timed-fill
@@ -261,16 +263,10 @@ const fillClass = computed(() =>
 </template>
 
 <style scoped>
-.timed-fill,
-.timed-fill-solid {
-  animation-timing-function: linear;
-  animation-fill-mode: both;
-}
 .timed-fill {
   animation-name: timed-fill-drain;
-}
-.timed-fill-solid {
-  animation-name: timed-fill-spent;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
 }
 @keyframes timed-fill-drain {
   from {
@@ -280,17 +276,8 @@ const fillClass = computed(() =>
     transform: scaleX(0);
   }
 }
-@keyframes timed-fill-spent {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .timed-fill,
-  .timed-fill-solid {
+  .timed-fill {
     animation: none;
   }
 }

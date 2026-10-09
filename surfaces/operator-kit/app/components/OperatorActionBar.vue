@@ -28,7 +28,15 @@
 //     contraste (nos dois temas) é `tests/actionBarContrast.test.ts`.
 //   - O motivo de não poder aparece escrito sob a ação (`role="status"`): no toque não
 //     há dica de ponteiro.
+//   - Ação com prazo (`action.timed`, o "Desfazer"): a barra NÃO muda (dono,
+//     09/10/2026). Mesmo cartão, mesma linha de contexto, mesma segunda ação; o botão
+//     tocado fica no lugar, na mesma cor, variante e tamanho, troca só o texto ("Pronto
+//     0131" vira "Desfazer 0131") e ganha o fundo que esvazia (`OperatorTimedButton`).
+//     Ao fim do prazo o botão fica desligado no lugar até quem chama trocar a ação: a
+//     barra nunca perde a ação no meio do gesto.
 import { computed, useId } from "vue";
+
+import OperatorTimedButton from "./OperatorTimedButton.vue";
 
 import type { OperatorActionBarAction } from "../presentation/actionBar";
 
@@ -108,7 +116,31 @@ function run(action: OperatorActionBarAction, event: Event) {
           data-operator-action-bar-secondary
           @click="run(secondary, $event)"
         />
+        <OperatorTimedButton
+          v-if="action.timed"
+          :label="action.label"
+          :until="action.timed.until"
+          :since="action.timed.since"
+          :duration="action.timed.duration"
+          :server-now="action.timed.serverNow"
+          when-expired="disable"
+          size="xl"
+          variant="solid"
+          color="primary"
+          block
+          class="min-w-0 flex-1"
+          :icon="action.icon"
+          :loading="action.loading"
+          :disabled="action.disabled"
+          :aria-label="action.ariaLabel"
+          :ui="BUTTON_UI"
+          data-operator-action-bar-action
+          data-operator-action-bar-timed
+          @click="run(action, $event)"
+          @expire="action.timed.onExpire?.()"
+        />
         <NuxtButton
+          v-else
           size="xl"
           block
           class="min-w-0 flex-1"
@@ -118,6 +150,7 @@ function run(action: OperatorActionBarAction, event: Event) {
           :to="action.to"
           :loading="action.loading"
           :disabled="action.disabled"
+          :aria-label="action.ariaLabel"
           :aria-describedby="reason ? reasonId : undefined"
           :ui="BUTTON_UI"
           data-operator-action-bar-action
