@@ -31,7 +31,7 @@
 //
 // A busca é UMA, a da suíte (`OperatorSuiteSearch`, V6-BUSCA): toda tela a tem no
 // cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
-// o alcance "Esta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
+// o nível "Nesta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
 import { computed, onMounted, ref, useSlots } from "vue";
 import { useScreen } from "../composables/useScreen";
@@ -503,12 +503,7 @@ function clearAll() {
                `title`): a 320 px ele empurrava o período para trás da rolagem. -->
           <span class="max-[359.98px]:sr-only">Filtros</span>
           <template v-if="activeCount" #trailing>
-            <NuxtBadge
-              color="primary"
-              size="sm"
-              :label="String(activeCount)"
-              data-page-header-filters-count
-            />
+            <OperatorCountChip :count="activeCount" data-page-header-filters-count />
           </template>
         </NuxtButton>
       </div>

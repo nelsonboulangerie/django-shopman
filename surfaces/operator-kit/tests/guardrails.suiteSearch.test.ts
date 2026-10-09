@@ -107,4 +107,15 @@ describe("busca da suíte (V6-BUSCA)", () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it("a busca é o canônico: NuxtDashboardSearch com os níveis como grupos (fase 2, K6)", () => {
+    const source = readFileSync(join(kitDir, "app/components/OperatorSuiteSearch.vue"), "utf8");
+    const template = source.slice(source.indexOf("<template>"));
+    expect(template).toMatch(/<NuxtDashboardSearchButton\b/);
+    expect(template).toMatch(/<NuxtDashboardSearch\b[^>]*preserve-group-order/s);
+    // Sem Modal, Tabs ou CommandPalette montados à mão em volta: o painel é o oficial.
+    expect(template).not.toMatch(/<Nuxt(?:Modal|Tabs|CommandPalette)\b/);
+    // O atalho próprio do DashboardSearch fica desligado: as teclas são do kit.
+    expect(template).toMatch(/shortcut=""/);
+  });
 });

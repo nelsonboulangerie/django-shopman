@@ -14,6 +14,7 @@
 import { computed } from "vue";
 
 import type { OperatorSection } from "../presentation/appBar";
+import { sectionDescription, sectionRailSignal } from "../presentation/suiteChrome";
 
 const props = withDefaults(
   defineProps<{
@@ -62,9 +63,10 @@ const overflowItems = computed(() =>
     label: section.label,
     icon: section.icon,
     to: section.to,
-    badge: section.badge
-      ? String(section.badge)
-      : section.attention || undefined,
+    // O sinal é o chip de contagem da suíte na ponta direita (slot `item-trailing`):
+    // número, ou o ponto de estado. O nome acessível diz "Seção · N pendências".
+    signal: sectionRailSignal(section),
+    "aria-label": sectionDescription(section),
     active: props.current === section.key,
     "data-section": section.key,
     onSelect: () => choose(section),
@@ -122,7 +124,16 @@ function choose(section: OperatorSection) {
           orientation="vertical"
           :items="overflowItems"
           aria-label="Outras seções"
-        />
+        >
+          <template #item-trailing="{ item }">
+            <OperatorCountChip
+              v-if="item.signal"
+              :count="item.signal.count"
+              :color="item.signal.color"
+              :dot="item.signal.count === undefined"
+            />
+          </template>
+        </NuxtNavigationMenu>
         <div v-if="$slots.extra" data-operator-phone-menu-extra>
           <slot name="extra" />
         </div>

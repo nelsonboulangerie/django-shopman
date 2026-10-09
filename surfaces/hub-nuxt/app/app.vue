@@ -331,7 +331,7 @@ function toneDot(tile: HubTileProjection): string {
                 <section aria-labelledby="hub-queue-title" data-hub-queue>
                   <div class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h2 id="hub-queue-title" class="text-base font-semibold">Precisa de você</h2>
-                    <NuxtBadge v-if="queueTotal" color="neutral" :label="String(queueTotal)" />
+                    <OperatorCountChip :count="queueTotal" />
                     <p class="ms-auto text-xs text-muted max-md:hidden">{{ QUEUE_HINT_COPY }}</p>
                   </div>
 
@@ -463,7 +463,7 @@ function toneDot(tile: HubTileProjection): string {
                 <section aria-labelledby="hub-apps-title">
                   <div class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h2 id="hub-apps-title" class="text-base font-semibold">Apps</h2>
-                    <NuxtBadge color="neutral" :label="String(tiles.length)" />
+                    <OperatorCountChip :count="tiles.length" />
                     <p class="ms-auto text-xs text-muted max-md:hidden">{{ APPS_HINT_COPY }}</p>
                   </div>
 

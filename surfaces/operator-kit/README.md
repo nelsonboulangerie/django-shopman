@@ -88,7 +88,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useNowTick.ts` | `useNowTick` | o relógio do servidor: um timer só para a tela, ancorado no `server_now_iso`/`generated_at` da projeção |
 | `app/components/UiToolbar.vue` | `<UiToolbar>` | barra de trabalho sob o nav: slot padrão à esquerda, slot `end` à direita (com `flex-wrap`) |
 | `app/components/UiSearchInput.vue` | `<UiSearchInput>` | busca da barra: ícone, limpar, expand-on-focus, `focus()` exposto para o atalho `/` |
-| `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem e slot de ícone — alvo de toque de 32 px (`min-h-control`) |
+| `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem (o chip de contagem) e slot de ícone — alvo de toque de 32 px (`min-h-control`) |
+| `app/components/OperatorCountChip.vue` | `<OperatorCountChip>` | o chip de contagem da suíte, no fluxo (ver "Chip de contagem") |
 | `app/components/FilterBar.vue` | `<FilterBar>` | filtro universal: "+ Filtro" → campo → valores, chip removível que reabre a edição, painel de baixo no celular (ver "Filtro universal") |
 | `app/composables/useRouteFilters.ts` | `useRouteFilters` | o recorte da `FilterBar` na URL (`filtersToQuery`/`filtersFromQuery` em `presentation/filterBar.ts`) |
 | `app/components/UiIconButton.vue` | `<UiIconButton>` | ação quadrada de ícone da barra (32 px, `size-control`), com `active` e `spinning` |
@@ -475,7 +476,7 @@ cai. Uso novo fora do conjunto reprova; migrar um uso antigo baixa o teto.
 | Cores geradas | `primary`, `info`, `success`, `warning`, `error` (e o `neutral`, que o Nuxt UI sempre gera) | `theme.colors` no módulo: cor que não é gerada não existe no tipo do `color` |
 | Escolha numa lista | `NuxtSelect` (lista curta e fixa) e `NuxtSelectMenu` (longa, buscável ou que cresce) | ver abaixo. `UiNativeSelect` está aposentado |
 | Texto | 5 tamanhos: `text-xs` 12 (rótulo e meta), `text-sm` 14 (texto corrido e controles), `text-base` 16 (título de cartão), `text-xl` (título de tela), `text-2xl` (figura); 2 pesos: `font-medium` e `font-semibold` | nenhum tamanho arbitrário novo (`text-[13px]`, `text-[0.625rem]`); a trava conta os que existem. Os papéis `op-*` de `operator-suite.css` ainda não foram reduzidos a esses cinco |
-| Chip | ponto (estado) e número (contagem) com anel de 2 px (`chip.slots.base: 'ring-2'`, o traço dos ícones Lucide), na cor do fundo onde o chip está (`ring-bg`) | exceção declarada: o tamanho `4xl` numerado (16 px, texto 12 px), porque o `3xl` oficial não lê dois dígitos. Número acima de 99 escreve "99+" |
+| Chip | ponto (estado) e número (contagem) com anel de 2 px (`chip.slots.base: 'ring-2'`, o traço dos ícones Lucide), na cor do fundo onde o chip está (`ring-bg`) | exceção declarada: o tamanho `4xl` numerado (16 px, texto 12 px), porque o `3xl` oficial não lê dois dígitos. Número acima de 99 escreve "99+". Toda contagem é o **chip de contagem** (`OperatorCountChip`, ver abaixo); selo com número não existe |
 | Rail | dourado pelo tema: `ui.dashboardSidebar.slots` (`root` e `content`) redefine os tokens do Nuxt UI só dentro do rail (`--ui-text*`, `--ui-primary`, `--primary-ink`, `--ui-bg` = `--rail`, `--ui-border`) | nenhuma tela passa `:ui` ao rail. Três estados e sinais no `OperatorSuiteShell` (PR-K4): ver "Barra lateral em três estados" abaixo |
 | Raio | ainda o do kit (`--radius` e `--radius-sm/md/lg/xl` em `operator-base.css`) | `--ui-radius` não entrou: nenhum valor único reproduz os raios de hoje (ver o PR-K3) |
 
@@ -486,6 +487,50 @@ declarado em objeto no prop `actions`) usa a cor do próprio aviso: `warning`, `
 chamou. Fora de um aviso, a cor do botão continua `primary`, `neutral` ou `error`. A
 trava `guardrails.minimalSet` não conta em `buttonColor` o botão dentro de um aviso cuja
 cor é a do aviso (com a cor do aviso ligada, qualquer cor de aviso passa).
+
+### Chip de contagem (`OperatorCountChip`)
+
+Decisão do dono, 09/10/2026, com a barra lateral aberta da Cozinha como referência
+("Bancada" com o 7 num círculo âmbar). **Toda contagem da suíte é este chip**, e ele
+substitui o contador de cantos arredondados (selo escuro ou contornado com número) que
+os botões, abas e recortes usavam ("Todos 7", "Entrega 3", "Atrasados").
+
+| Onde | Posição | Como |
+| --- | --- | --- |
+| item da barra lateral aberta, botão, aba, recorte (`UiFilterChip`), valor do `FilterBar`, "Filtros" da barra do topo, contagem ao lado de um título | no fluxo: ponta direita da linha, centro vertical | `<OperatorCountChip :count="n" />` (na aba: slot `#trailing` do `NuxtTabs`; no menu: `#item-trailing` do `NuxtNavigationMenu`) |
+| barra lateral compactada, barra inferior do celular | canto superior direito do ícone (`inset: false`) | `chip: countChipProps(n)` no item do `NuxtNavigationMenu` (a barra lateral usa `railSignalChip`, que é o mesmo) |
+
+- **Desenho**: o `NuxtChip` canônico, círculo preenchido de 16 px (`4xl` do kit), número
+  de 12 px. Vira pílula só quando o número não cabe ("99+"), com as pontas inteiramente
+  redondas. Cor da referência: `warning` (o âmbar da casa); a barra lateral passa a cor
+  da seção (`tone`). Número em `text-inverted`, AA nos dois temas: branco sobre o âmbar
+  queimado no claro, marrom quase preto sobre o âmbar claro no escuro.
+- **Anel de 2 px na cor do fundo do pai.** No canto do ícone é `ring-bg` (separa o chip
+  do ícone; na barra lateral o `--ui-bg` do escopo é a cor dela). No fluxo o chip não
+  cobre nada e o anel é `ring-transparent` (o `:ui` único do componente), que é exatamente o fundo do pai em qualquer
+  pai: o dourado do botão ativo, o `soft` translúcido do recorte, a linha ativa da barra
+  lateral, o hover.
+- **Contraste com o pai** (coordenação, 09/10/2026): círculo × fundo do pai ≥ 3:1 e
+  número × círculo AA, nos dois temas. Sobre pai PREENCHIDO de cor próxima o chip
+  **inverte**: círculo na cor do texto do pai, número na cor do fundo do pai, mesmo
+  tamanho e forma. Inverte na aba ativa preenchida (`NuxtTabs` `pill`, nos dois temas)
+  e na barra lateral clara (latão); nos demais pais fica o âmbar. A inversão sai do
+  próprio pai pelo CSS (`COUNT_CHIP_INVERT_CLASSES`, aba ativa do Nuxt UI e escopo
+  `.bg-rail`), sem prop nem `:ui` por tela; a tabela `COUNT_CHIP_INVERTED_ON` é medida
+  por `tests/countChipContrast.test.ts` contra os tokens do tema.
+- **Zero não aparece.** Um círculo âmbar com "0" aponta para o nada. Sem contagem maior
+  que zero, o chip não é desenhado; `dot` desenha o ponto de estado (sem número) no
+  tamanho padrão do ponto.
+- **Descrição acessível**: o número é parte do nome do botão ("Todos 7"). Na barra
+  lateral, na gaveta, no "Mais" e na barra inferior, o nome do item é
+  `sectionDescription`: "Seção · N pendências" ("1 pendência").
+- **Atributos** (`data-*`, `aria-*`) vão no número (o `NuxtChip` não repassa atributos
+  sem filho no slot padrão); a classe vai na raiz (`class="ms-auto"`).
+
+Trava: `tests/guardrails.countChip.test.ts` varre o kit e os apps de operador e reprova
+`NuxtBadge` com rótulo só numérico, item de aba ou menu com `badge:` numérico e número
+escrito à mão numa caixa de cantos não redondos. Contrato do componente em
+`tests/components/OperatorCountChip.test.ts`; a parte pura em `presentation/countChip.ts`.
 
 ### Rail da suíte em três estados (`OperatorSuiteShell`)
 
@@ -523,11 +568,12 @@ dourado mora no `ui.dashboardSidebar` deste `app.config`.
   inferior").
 - Sem o rail na tela (oculto ou abaixo de `lg`), Avisos sobe para a barra do topo.
 - **Sinais** (`sectionRailSignal`, `railSignalChip`, `railSignalLabel` em
-  `presentation/suiteChrome.ts`): `badge` numérico maior que zero vira número (`4xl`
-  do kit, `inset: false`, "99+" acima de 99); `attention` vira ponto (tamanho padrão do
+  `presentation/suiteChrome.ts`): `badge` numérico maior que zero vira o chip de
+  contagem (`4xl` do kit, "99+" acima de 99); `attention` vira ponto (tamanho padrão do
   NavigationMenu). A cor é `tone` da seção (`success`, `warning` padrão, `error`).
-  Compacto: chip no canto do ícone (`chip` do item). Aberto: o MESMO chip na ponta
-  direita da linha (slot `item-trailing`, `standalone`). Tooltip e `aria-label`:
+  Compacto: chip no canto do ícone (`chip` do item, `inset: false`). Aberto: o MESMO
+  chip na ponta direita da linha, no centro vertical (`OperatorCountChip` no slot
+  `item-trailing`). Tooltip e `aria-label`:
   `sectionDescription(section)`, "Seção · estado" ou "Seção · N pendências"
   ("1 pendência").
 - O pé: seções do pé do app, Atalhos (só ponteiro fino), Bloquear, Avisos e o menu do
@@ -1209,30 +1255,42 @@ Uma por tela, desenhada pela mesma peça em dois lugares (dono, 09/10/2026):
 - Trava: `guardrails.bulkBar.test.ts` (no Gestor, nenhuma barra de lote à mão; toda
   tela com `#selection` tem a barra nos dois lugares).
 
-## Busca da suíte (`OperatorSuiteSearch`)
+## Busca da suíte em níveis (`OperatorSuiteSearch`)
 
-Uma busca, uma tecla (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gestor-busca`,
-`depois-hub-celular` e o campo do cabeçalho das v4). O `OperatorPageHeader` já a traz
-(`search = true`): toda tela tem o campo de 22rem do tablet para cima e a lupa na barra de
-56px do celular, que abre a busca em tela cheia (com a câmera onde o navegador lê código).
+Uma busca, uma tecla, três níveis (fase 2, K6; dono, 09/10/2026: "busca em níveis no
+canônico"). O botão é o `NuxtDashboardSearchButton` e o painel é o `NuxtDashboardSearch`
+oficial (o `Modal` com o `CommandPalette` do Nuxt UI: teclado, grupos e tela cheia no
+celular vêm dele). O `OperatorPageHeader` já a traz (`search = true`): toda tela tem o
+botão de 22rem do tablet para cima e a lupa na barra de 56px do celular.
 
-- **Esta tela**: a tela que filtra a própria lista passa a sua no `#search`, com `v-model`
-  (e `screen-label="filtrando o quadro"`, `screen-count` se souber contar). Digitar filtra a
-  tela, como antes; Esc fecha o painel e mantém o filtro.
-- **App** e **Toda a suíte**: `GET /api/v1/backstage/search/?q=` (projeção
-  `shopman/backstage/projections/suite_search.py`): pedidos, encomendas, clientes, produtos,
-  insumos, fornecedores, lotes, receitas, campanhas e telas que o operador abre, agrupados por
-  tipo, cada um com o link profundo para o app de destino. "App" recorta pelo app atual
-  (`operatorPwa.app`; o Gestor é `orders` no kit e `gestor` no Django).
-- Teclas: `/` fora de campo e Ctrl K (⌘K) em qualquer lugar abrem; ↑↓ anda, Enter abre, Tab
-  troca o alcance. Impressas só com ponteiro fino.
+Os níveis são os GRUPOS do painel, em ordem fixa (`preserve-group-order`):
+
+1. **Nesta tela** (só onde a tela filtra a própria lista e passa o `v-model` no
+   `#search`): "Filtrar o quadro por “maria”" vira o recorte da tela; com a tela já
+   filtrada, "Tirar o filtro “maria” de o quadro". O alvo sai do `screen-label`
+   ("filtrando o quadro" → "o quadro").
+2. **No app (Gestor)**: o que a suíte achou no app atual.
+3. **Na suíte**: o que achou nos outros apps (`GET /api/v1/backstage/search/?q=`,
+   projeção `shopman/backstage/projections/suite_search.py`), cada um com o tipo ao lado
+   ("Pedidos", "Clientes") e o link profundo para o app de destino.
+
+- **Digitar não mexe na tela**: o recorte entra quando a pessoa escolhe "Filtrar … por";
+  Esc fecha sem mudar nada. Aberto com a tela filtrada, o painel já traz o termo.
+- O estado da suíte (falta letra, buscando, não respondeu com "Tentar de novo", nada
+  achado) é o último item de "Na suíte", para não sumir atrás do recorte da tela.
+- Teclas: `/` fora de campo e Ctrl K (⌘K) em qualquer lugar abrem, pela infraestrutura de
+  atalhos do kit (`SUITE_SEARCH_SHORTCUTS`); o atalho próprio do `DashboardSearch` fica
+  desligado (`shortcut=""`) para não abrir duas vezes. O clique do botão é desta busca
+  (o `toggleSearch` do grupo do Dashboard abriria todas as buscas montadas).
+- Câmera (onde o navegador lê código): no pé do painel, "Ler um código com a câmera".
 - Variantes: `header` (padrão), `hero` (a barra grande da Central, 34rem, "/" e Ctrl K) e
-  `hotkey` (sem campo na tela: a Venda e as Encomendas do PDV, onde o `/` é do campo do
-  produto e do "cliente veio buscar"; só Ctrl K e a lupa abrem a suíte).
+  `hotkey` (sem botão na tela: a Venda e as Encomendas do PDV, onde o `/` é do campo do
+  produto; só Ctrl K e a lupa abrem a suíte).
 
 Contrato em `tests/components/OperatorSuiteSearch.test.ts` e `tests/suiteSearch.test.ts`;
-`tests/guardrails.suiteSearch.test.ts` trava que os oito apps e a Central a têm e que o
-`#search` do cabeçalho é sempre ela, e uma só.
+`tests/guardrails.suiteSearch.test.ts` trava que os oito apps e a Central a têm, que o
+`#search` do cabeçalho é sempre ela, e uma só, e que ela é o `NuxtDashboardSearch` (sem
+`Modal`, `Tabs` ou `CommandPalette` montados à mão).
 
 ## Próximo foco (`useNextFocus`)
 
