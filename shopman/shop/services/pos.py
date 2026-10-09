@@ -910,7 +910,14 @@ def review_sale(
     # falta que a fornada de sexta cobre, e calava falta real da data.
     from shopman.shop.services import availability
 
+    #
+    # As linhas são decididas em LOTE (``decide_many``): a mesma resposta de
+    # ``decide`` linha a linha, com o canal, a vitrine e o estoque lidos uma vez
+    # para a sacola inteira. Linha a linha, eram ~15 consultas por item, e a
+    # review roda a cada mudança do carrinho (trava em
+    # ``tests/test_pos_review_queries.py``).
     target_date = _payload_commitment_date(payload)
+    checked = []
     for item in payload.get("items", []):
         if _is_delivery_fee_item(item):
             continue
@@ -918,9 +925,13 @@ def review_sale(
         qty = _line_qty(item)
         if not sku or qty <= 0:
             continue
-        decision = availability.decide(
-            sku, qty, channel_ref=channel.ref, target_date=target_date,
-        )
+        checked.append((item, sku, qty))
+    decisions = availability.decide_many(
+        [(sku, qty) for _item, sku, qty in checked],
+        channel_ref=channel.ref,
+        target_date=target_date,
+    )
+    for (item, sku, _qty), decision in zip(checked, decisions, strict=True):
         if decision.get("approved"):
             continue
         name = str(item.get("name") or sku)
@@ -2964,11 +2975,22 @@ def _refuse_priceless_items(payload: dict, *, channel) -> None:
     from shopman.shop.handlers.pricing import OffermanPricingBackend
 
     backend = OffermanPricingBackend()
-    for idx, item in enumerate(payload.get("items") or []):
+    items = payload.get("items") or []
+    # Uma leitura para a sacola inteira, não uma por linha (ver `review_sale`).
+    prices = backend.get_prices(
+        [
+            str(item.get("sku") or "")
+            for item in items
+            if isinstance(item, dict) and not _is_delivery_fee_item(item)
+        ],
+        channel,
+        qty=Decimal(1),
+    )
+    for idx, item in enumerate(items):
         if not isinstance(item, dict) or _is_delivery_fee_item(item):
             continue
         sku = str(item.get("sku") or "")
-        if int(backend.get_price(sku, channel, qty=Decimal(1)) or 0) > 0:
+        if int(prices.get(sku) or 0) > 0:
             continue
         name = str(item.get("name") or sku)
         raise PosIntentError(
