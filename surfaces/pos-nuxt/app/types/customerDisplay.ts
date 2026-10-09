@@ -42,7 +42,7 @@ export interface CustomerDisplaySnapshot {
    *  `grossTotalDisplay − discountDisplay = totalDisplay`. "" quando não há
    *  desconto — riscar um número igual ao cobrado é ruído. */
   grossTotalDisplay: string;
-  /** No pagamento, o total ainda está sendo calculado pelo servidor: a tela
+  /** Na venda ou no pagamento, o total ainda está sendo calculado pelo servidor: a tela
    *  mostra o estado, nunca um número que vai mudar. */
   totalPending: boolean;
   pix: CustomerDisplayPixView | null;

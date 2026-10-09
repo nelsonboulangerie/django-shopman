@@ -12,7 +12,7 @@
 import type { KDSIndexResponse, KDSStationSettingsResponse } from "~/types/kds";
 import type { KDSDensity } from "~/presentation/board";
 import { EXIT_STATION_TYPE, gestorExitUrl } from "~/presentation/exitStation";
-import { kdsSections, stationSectionKey } from "~/presentation/sections";
+import { kdsSections, kdsShellSections, stationSectionKey } from "~/presentation/sections";
 
 export interface KdsStationMemory {
   ref: string;
@@ -69,7 +69,7 @@ export function useKdsBoardState() {
   }));
 }
 
-/** Ajustes abre como painel (densidade e som da estação), do rail e da barra do polegar. */
+/** Ajustes abre como painel (densidade e som da estação), da barra lateral e do "Mais". */
 export function useKdsStationSettings() {
   const board = useKdsBoardState();
   const busy = useState<boolean>("kds-station-settings-busy", () => false);
@@ -114,28 +114,28 @@ export function useKdsStationSettings() {
   return { busy, save };
 }
 
-/** Ajustes abre como painel (densidade e som da estação), do rail e da barra do polegar. */
+/** Ajustes abre como painel (densidade e som da estação), da barra lateral e do "Mais". */
 export function useKdsSettingsOpen() {
   return useState<boolean>("kds-settings-open", () => false);
 }
 
-export function useKdsSections(place: "rail" | "bar") {
+export function useKdsSections() {
   const { station, restore } = useKdsStation();
   const board = useKdsBoardState();
   const route = useRoute();
   const exitUrl = gestorExitUrl(String(useRuntimeConfig().public.ordersUrl || ""));
 
   // O mesmo índice da tela de estações (mesma chave): a lista das estações e os selos
-  // fora do quadro. Relido a cada 30 s para o selo não envelhecer (só pelo rail, que
-  // fica montado em todos os tamanhos: um relógio só). Vem no payload do servidor, então
-  // o servidor e a hidratação desenham a MESMA lista.
+  // fora do quadro. Relido a cada 30 s para o selo não envelhecer (o shell monta este
+  // composable uma vez só: um relógio só). Vem no payload do servidor, então o servidor
+  // e a hidratação desenham a MESMA lista.
   const { data: index, refresh } = useFetch<KDSIndexResponse>("/api/v1/backstage/kds/", {
     key: "kds-index",
   });
   let timer: ReturnType<typeof setInterval> | null = null;
   onMounted(() => {
     restore();
-    if (place === "rail") timer = setInterval(() => refresh(), 30_000);
+    timer = setInterval(() => refresh(), 30_000);
   });
   onBeforeUnmount(() => {
     if (timer) clearInterval(timer);
@@ -173,17 +173,18 @@ export function useKdsSections(place: "rail" | "bar") {
       })),
   );
 
-  const sections = computed(() =>
-    kdsSections({
-      stations: stations.value,
-      priorityRef: priorityRef.value,
-      exitUrl,
-      exitCount: exitCount.value,
-      place,
-    }),
-  );
+  const input = computed(() => ({
+    stations: stations.value,
+    priorityRef: priorityRef.value,
+    exitUrl,
+    exitCount: exitCount.value,
+  }));
+  // A lista do shell (as duas ordens numa só) e, para quem lê uma barra só, cada ordem.
+  const sections = computed(() => kdsShellSections(input.value));
+  const rail = computed(() => kdsSections({ ...input.value, place: "rail" }));
+  const bar = computed(() => kdsSections({ ...input.value, place: "bar" }));
   // A estação da rota é a atual. Fora de uma bancada (a tela de escolher a estação),
   // nenhum item é o atual: "" (não `undefined`) para a barra não adivinhar pela rota.
   const current = computed(() => (routeStation.value ? stationSectionKey(routeStation.value) : ""));
-  return { sections, current };
+  return { sections, rail, bar, current };
 }
