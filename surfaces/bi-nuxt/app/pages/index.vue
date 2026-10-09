@@ -15,8 +15,8 @@ import type { TableColumn } from "#ui/types";
 import type { BIOverShortRow, BIProductionReport, BIReading } from "~/types/bi";
 import { formatInt, formatQty } from "~/presentation/bi";
 import {
+  MADE_SOLD_SERIES,
   VERDICTS,
-  barScale,
   carryLabel,
   collectionsOf,
   compareCaption,
@@ -24,6 +24,7 @@ import {
   filterRows,
   hiddenRowsSummary,
   historyHeading,
+  madeSoldPoints,
   historyText,
   outcomeText,
   overShortAnswer,
@@ -40,6 +41,7 @@ import {
   versusTypicalText,
 } from "~/presentation/overShort";
 import { productionView } from "~/presentation/production";
+import { readingChartCsv } from "../../../operator-kit/app/presentation/readingChart";
 import {
   periodAnchor,
   periodOfDay,
@@ -128,7 +130,9 @@ const filtered = computed(() => filterRows(rows.value, filters.value));
 const narrowed = computed(() => Boolean(filters.value.verdict || filters.value.collection || query.value.trim()));
 const visible = computed(() => (showAll.value || narrowed.value ? filtered.value : filtered.value.slice(0, FOCUS_ROWS)));
 const hidden = computed(() => (showAll.value || narrowed.value ? [] : filtered.value.slice(FOCUS_ROWS)));
-const scale = computed(() => barScale(rows.value));
+// O gráfico "Fez × vendeu" lê os mesmos produtos que a tabela mostra (recorte e "Ver
+// os outros" valem para os dois).
+const madeSold = computed(() => madeSoldPoints(visible.value));
 const counts = computed(() => ({
   short: day.value?.summary.short ?? 0,
   over: day.value?.summary.over ?? 0,
@@ -389,10 +393,31 @@ const csv = computed(() => overShortCsv(filtered.value));
           @click="carryToPlan()"
         />
 
+        <!-- A pergunta da tela em figura: quanto a casa fez e quanto vendeu de cada
+             produto, e onde sobrou ou faltou. Deitado, para o nome de cada produto caber;
+             empilhado, porque vendeu e sobrou são partes do que se fez. -->
+        <OperatorReadingCard
+          v-if="!dayError && day && madeSold.length"
+          title="Fez × vendeu"
+          description="Vendeu mais sobrou é o que a casa fez. As vendas perdidas são estimativa, contadas depois que o produto acabou."
+          :csv="readingChartCsv('Produto', MADE_SOLD_SERIES, madeSold)"
+          data-made-sold-chart
+        >
+          <OperatorReadingChart
+            title="Fez × vendeu, produto a produto"
+            kind="stacked"
+            horizontal
+            axis-label="Produto"
+            :series="MADE_SOLD_SERIES"
+            :points="madeSold"
+            :format="(value) => formatQty(String(value))"
+          />
+        </OperatorReadingCard>
+
         <OperatorReadingCard
           v-if="!dayError"
           title="Produto a produto"
-          description="Fez × vendeu de cada produto do dia; abra a linha para ver os lotes e as vendas por hora"
+          description="Abra a linha para ver os lotes e as vendas por hora"
           :csv="day ? csv : undefined"
           data-over-short-table
         >
@@ -410,13 +435,10 @@ const csv = computed(() => overShortCsv(filtered.value));
                   {{ row.original.name }} <span class="font-mono text-xs font-normal text-muted">{{ row.original.sku }}</span>
                 </p>
                 <NuxtBadge class="self-start md:hidden" :color="verdictColor(row.original.verdict)" :label="verdictMeta(row.original.verdict).label" />
-                <div class="flex flex-col gap-1 sm:hidden">
-                  <OverShortBar :row="row.original" :scale="scale" />
-                  <p class="text-xs tnum text-muted">
-                    fez <b class="text-default">{{ formatQty(row.original.made) }}</b> · vendeu <b class="text-default">{{ formatQty(row.original.sold) }}</b> ·
-                    {{ outcomeText(row.original) }}
-                  </p>
-                </div>
+                <p class="text-xs tnum text-muted sm:hidden">
+                  fez <b class="text-default">{{ formatQty(row.original.made) }}</b> · vendeu <b class="text-default">{{ formatQty(row.original.sold) }}</b> ·
+                  {{ outcomeText(row.original) }}
+                </p>
                 <p class="text-xs tnum text-muted lg:hidden">
                   {{ row.original.soldout_at ? `acabou às ${row.original.soldout_at}` : "não acabou" }} · {{ historyText(row.original) }} · {{ versusTypicalText(row.original) }}
                 </p>
@@ -425,20 +447,11 @@ const csv = computed(() => overShortCsv(filtered.value));
             <template #verdict-cell="{ row }">
               <NuxtBadge :color="verdictColor(row.original.verdict)" :label="verdictMeta(row.original.verdict).label" data-over-short-verdict />
             </template>
-            <template #made_sold-header>
-              <span class="inline-flex items-center gap-3">
-                Fez × vendeu
-                <span class="inline-flex items-center gap-1 text-xs font-normal"><span class="h-3 w-0.5 bg-inverted" aria-hidden="true" />típico</span>
-              </span>
-            </template>
             <template #made_sold-cell="{ row }">
-              <div class="flex min-w-48 flex-col gap-1">
-                <OverShortBar :row="row.original" :scale="scale" />
-                <p class="text-xs tnum text-muted">
-                  fez <b class="text-default">{{ formatQty(row.original.made) }}</b> · vendeu <b class="text-default">{{ formatQty(row.original.sold) }}</b> ·
-                  <span class="font-medium" :class="VERDICT_TEXT[verdictColor(row.original.verdict)]">{{ outcomeText(row.original) }}</span>
-                </p>
-              </div>
+              <p class="tnum text-muted">
+                fez <b class="text-default">{{ formatQty(row.original.made) }}</b> · vendeu <b class="text-default">{{ formatQty(row.original.sold) }}</b> ·
+                <span class="font-medium" :class="VERDICT_TEXT[verdictColor(row.original.verdict)]">{{ outcomeText(row.original) }}</span>
+              </p>
             </template>
             <template #soldout-cell="{ row }">
               <span class="tnum" :class="row.original.verdict === 'short' ? 'font-medium text-error' : ''">{{ soldoutText(row.original) }}</span>

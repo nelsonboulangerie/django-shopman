@@ -1,7 +1,9 @@
 <script setup lang="ts">
-// Gráfico de leitura (PR-K1 do WP-BI-CANON-LAUDO, item C1). Uma peça para as quatro
-// formas que os quadros da suíte usam: barras, barras com o traço tracejado da
-// comparação, divergente (sobrou ou faltou) e linha com área.
+// Gráfico de leitura (PR-K1 do WP-BI-CANON-LAUDO, item C1). Uma peça para as cinco
+// formas que os quadros da suíte usam: barras, barras empilhadas (partes de um todo),
+// barras com o traço tracejado da comparação, divergente (sobrou ou faltou) e linha
+// com área. As formas de barra também deitam (`horizontal`), quando o eixo é de NOMES
+// (produtos) e não de datas.
 //
 // - O desenho é Unovis (`OperatorReadingChartPlot.client.vue`) dentro de `<ClientOnly>`,
 //   com `NuxtSkeleton` da mesma altura no SSR: nada pula quando o gráfico chega.
@@ -18,6 +20,8 @@ import { computed, ref, useId } from "vue";
 import {
   READING_TONE_COLOR,
   defaultReadingFormat,
+  readingFillColor,
+  readingHorizontalHeight,
   drawnSeries,
   nextReadingIndex,
   readingLegend,
@@ -54,6 +58,12 @@ const props = withDefaults(
     height?: number;
     /** Quantos rótulos o eixo horizontal mostra, no máximo. */
     maxTicks?: number;
+    /**
+     * Barras deitadas (`bars`, `stacked`, `diverging`): as categorias descem pelo eixo
+     * vertical, TODAS com rótulo, e a altura cresce com elas (uma faixa por ponto;
+     * `height` não vale). Para eixo de nomes, que não cabem lado a lado num celular.
+     */
+    horizontal?: boolean;
     /** Mostra a tabela equivalente também a quem enxerga (sempre existe para o leitor de tela). */
     tableVisible?: boolean;
     tableCaption?: string;
@@ -67,6 +77,7 @@ const props = withDefaults(
     diverging: undefined,
     height: 208,
     maxTicks: 6,
+    horizontal: false,
     tableVisible: false,
     tableCaption: undefined,
     emptyTitle: "Sem dados para esta leitura",
@@ -82,6 +93,8 @@ const source = ref<"pointer" | "keyboard" | null>(null);
 const announcement = ref("");
 
 const isEmpty = computed(() => props.points.length === 0);
+const lying = computed(() => props.horizontal && ["bars", "stacked", "diverging"].includes(props.kind));
+const plotHeight = computed(() => (lying.value ? readingHorizontalHeight(props.points.length) : props.height));
 const activePoint = computed(() => (active.value === null ? undefined : props.points[active.value]));
 const readout = computed(() =>
   activePoint.value
@@ -159,14 +172,15 @@ function onBlur() {
             :points="points"
             :axis-format="axis"
             :diverging="diverging"
-            :height="height"
+            :height="plotHeight"
             :forced-index="source === 'keyboard' ? active : null"
             :max-ticks="maxTicks"
+            :horizontal="lying"
             @point="onPointer"
             @leave="onLeave"
           />
           <template #fallback>
-            <NuxtSkeleton class="w-full" :style="{ height: `${height}px` }" />
+            <NuxtSkeleton class="w-full" :style="{ height: `${plotHeight}px` }" />
           </template>
         </ClientOnly>
       </div>
@@ -185,7 +199,13 @@ function onBlur() {
           <span
             v-else
             class="inline-block size-3 rounded-sm"
-            :style="{ background: READING_TONE_COLOR[item.tone] }"
+            :data-fill="item.fill"
+            :style="{
+              background:
+                item.fill === 'hatch'
+                  ? `repeating-linear-gradient(135deg, ${READING_TONE_COLOR[item.tone]} 0 2px, transparent 2px 4px)`
+                  : readingFillColor(item.tone, item.fill),
+            }"
           />
           {{ item.label }}
         </li>

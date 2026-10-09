@@ -10,6 +10,7 @@ const query = ref<Record<string, string>>({});
 const focusSources: unknown[] = [];
 for (const [key, value] of Object.entries({ computed, ref })) vi.stubGlobal(key, value);
 vi.stubGlobal("useHead", vi.fn());
+vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), belowMd: ref(false), belowLg: ref(false), belowXl: ref(false) }));
 vi.stubGlobal("onBeforeRouteLeave", vi.fn());
 vi.stubGlobal("useConfirm", () => vi.fn(async () => false));
 vi.stubGlobal("useRoute", () => ({ get query() { return query.value; } }));

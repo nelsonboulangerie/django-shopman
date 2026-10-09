@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Busca transversal da suíte. A interação e a aparência são dos componentes
 // canônicos DashboardSearchButton, Modal, Tabs e CommandPalette do Nuxt UI.
-import { useMediaQuery } from "@vueuse/core";
+import { useScreen } from "../composables/useScreen";
 import {
   computed,
   nextTick,
@@ -62,7 +62,7 @@ watch(
   },
 );
 
-const isPhone = useMediaQuery("(max-width: 767.98px)");
+const { belowMd: isPhone } = useScreen();
 const dialogOpen = ref(false);
 const scopes = computed(() =>
   suiteScopes({ hasScreen: hasScreen.value, appRef }),

@@ -4,10 +4,16 @@
 // ponto em leitura diz, a legenda, as linhas da tabela equivalente, o CSV do quadro
 // e a navegação por teclado são funções sem Vue, testadas em `tests/readingChart.test.ts`.
 
-/** As quatro formas de leitura, e só quatro. */
+/** As cinco formas de leitura, e só cinco. */
 export type ReadingChartKind =
   /** Barras, uma ou mais séries lado a lado. */
   | "bars"
+  /**
+   * Barras empilhadas: as séries são PARTES de um todo e somam numa barra só ("vendeu"
+   * mais "sobrou" é o que a casa fez). Os segmentos se distinguem também pelo
+   * preenchimento (`fill`), não só pela cor.
+   */
+  | "stacked"
   /** Barras da primeira série e o traço tracejado da segunda (o período de comparação). */
   | "comparison"
   /** Uma série com sinal: acima de zero numa cor, abaixo noutra (sobrou ou faltou). */
@@ -27,11 +33,28 @@ export const READING_TONE_COLOR: Record<ReadingTone, string> = {
   info: "var(--ui-info)",
 };
 
+/**
+ * O preenchimento da barra, a segunda codificação além da cor: `solid` (cheio, o
+ * padrão), `tint` (a mesma cor clara, a parte que completa o todo) e `hatch` (listrado,
+ * a estimativa). Os tons do tema são quentes e próximos entre si (latão, âmbar,
+ * tijolo); a cor sozinha não separa dois segmentos vizinhos para quem não distingue
+ * vermelho de verde.
+ */
+export type ReadingFill = "solid" | "tint" | "hatch";
+
 export interface ReadingChartSeries {
   key: string;
   /** O nome da grandeza, como o leitor a diz ("Pedidos confirmados"). */
   label: string;
   tone?: ReadingTone;
+  /** Só nas barras (`bars`, `stacked`). Default: `solid`. */
+  fill?: ReadingFill;
+}
+
+/** A cor de uma série com o preenchimento dela: o `tint` é o tom a 30% sobre o fundo. */
+export function readingFillColor(tone: ReadingTone, fill: ReadingFill = "solid"): string {
+  const color = READING_TONE_COLOR[tone];
+  return fill === "tint" ? `color-mix(in srgb, ${color} 30%, transparent)` : color;
 }
 
 export interface ReadingChartPoint {
@@ -148,6 +171,8 @@ export interface ReadingLegendItem {
   tone: ReadingTone;
   /** Traço tracejado (a série de comparação), não bloco cheio. */
   dashed: boolean;
+  /** O preenchimento do bloco (`stacked` e `bars`); `solid` nas outras formas. */
+  fill: ReadingFill;
 }
 
 export function readingLegend(
@@ -158,14 +183,15 @@ export function readingLegend(
   if (kind === "diverging") {
     if (!diverging) return [];
     return [
-      { label: diverging.positive, tone: diverging.positiveTone ?? "primary", dashed: false },
-      { label: diverging.negative, tone: diverging.negativeTone ?? "error", dashed: false },
+      { label: diverging.positive, tone: diverging.positiveTone ?? "primary", dashed: false, fill: "solid" },
+      { label: diverging.negative, tone: diverging.negativeTone ?? "error", dashed: false, fill: "solid" },
     ];
   }
   return drawnSeries(kind, series).map((item, index) => ({
     label: item.label,
     tone: seriesTone(item, index),
     dashed: kind === "comparison" && index === 1,
+    fill: kind === "bars" || kind === "stacked" ? (item.fill ?? "solid") : "solid",
   }));
 }
 
@@ -358,8 +384,9 @@ export function readingRunIndex(run: ReadingRun, index: number): number {
 }
 
 /**
- * O domínio vertical: sempre contém o zero (barra que não parte do zero mente a
- * proporção), e o divergente fica com os dois lados. Sem nenhum valor, [0, 1],
+ * O domínio dos valores: sempre contém o zero (barra que não parte do zero mente a
+ * proporção), e o divergente fica com os dois lados. No empilhado, a barra é a soma
+ * dos segmentos (positivos para cima, negativos para baixo). Sem nenhum valor, [0, 1],
  * para o eixo não colapsar.
  */
 export function readingYDomain(
@@ -369,6 +396,20 @@ export function readingYDomain(
 ): [number, number] {
   let min = 0;
   let max = 0;
+  if (kind === "stacked") {
+    for (const point of points) {
+      let up = 0;
+      let down = 0;
+      for (const item of series) {
+        const value = pointValue(point, item.key) ?? 0;
+        if (value > 0) up += value;
+        else down += value;
+      }
+      max = Math.max(max, up);
+      min = Math.min(min, down);
+    }
+    return min === max ? [0, 1] : [min, max];
+  }
   for (const item of drawnSeries(kind, series)) {
     for (const point of points) {
       const value = pointValue(point, item.key);
@@ -379,6 +420,18 @@ export function readingYDomain(
   }
   if (min === max) return [0, 1];
   return [min, max];
+}
+
+/**
+ * A altura do gráfico deitado (`horizontal`): uma faixa por ponto, para cada rótulo
+ * caber inteiro (o eixo das categorias mostra TODOS, não salta como o das datas), mais
+ * a régua dos valores embaixo.
+ */
+export const READING_ROW_HEIGHT = 40;
+export const READING_AXIS_HEIGHT = 32;
+
+export function readingHorizontalHeight(count: number): number {
+  return Math.max(1, count) * READING_ROW_HEIGHT + READING_AXIS_HEIGHT;
 }
 
 /** "Faturamento por dia" vira `faturamento-por-dia.csv`. */

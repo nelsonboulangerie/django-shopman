@@ -12,11 +12,15 @@ import { computed, onScopeDispose, shallowRef, toValue, watchEffect, type MaybeR
 import { useMediaQuery } from "@vueuse/core";
 
 import { SUITE_RAIL_MEDIA, type ShortcutGroup } from "../presentation/suiteChrome";
+import { useScreenReady } from "./useScreen";
 import type { CapacityResponse } from "../types/capacity";
 
-/** O rail existe nesta tela? (a mesma régua da variante `rail:` do CSS). */
+/** O rail existe nesta tela? (a mesma régua da variante `rail:` do CSS). Como a régua
+ *  de tela (`useScreen`): mesa (rail na tela) até a hidratação terminar. */
 export function useSuiteRailShown() {
-  return useMediaQuery(SUITE_RAIL_MEDIA, { ssrWidth: 1280 });
+  const ready = useScreenReady();
+  const media = useMediaQuery(SUITE_RAIL_MEDIA);
+  return computed(() => !ready.value || media.value);
 }
 
 export type InboxAlertTone = "critical" | "warning" | "info";

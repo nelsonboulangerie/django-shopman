@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useMediaQuery } from "@vueuse/core";
 // Clientes — achar o cadastro, inclusive o que ninguém digitou.
 //
 // O caso que abriu a seção: o cadastro do iFood (`IF-…`) nasce sem telefone e, até
@@ -70,7 +69,7 @@ const customerColumns = [
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
-const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const { belowSm: isNarrow } = useScreen();
 const phoneHeaderActions = computed(() =>
   isNarrow.value
     ? [
