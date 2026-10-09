@@ -257,6 +257,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       "operator-kit/OperatorMoreMenu.vue",
       "operator-kit/OperatorActionBar.vue",
       "operator-kit/OperatorTable.vue",
+      // O chip de contagem (dono, 09/10/2026): no fluxo o anel é transparente, a cor
+      // do fundo do pai em qualquer pai; no canto do ícone continua o `ring-bg` do tema.
+      "operator-kit/OperatorCountChip.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),
@@ -454,11 +457,10 @@ describe("Gestor canônico em Nuxt UI", () => {
     // tamanho amarrado ao próprio texto: `:size="X ? '4xl' : '2xl'"` com `:text="X"`.
     const chipSizeOk = ({ file, tag }: { file: string; tag: string }) => {
       if (file.endsWith("OperatorLiveStatus.vue")) return /\bsize="xl"/.test(tag);
-      // O sinal do rail da suíte (PR-K4, dono 08/10/2026): o tamanho sai de
-      // `railSignalChip` (número 4xl; ponto no tamanho padrão do NavigationMenu),
-      // com teste próprio em `operator-kit/tests/suiteChrome.test.ts`.
-      if (file.endsWith("OperatorSuiteShell.vue"))
-        return /v-bind="trailingChip\(/.test(tag);
+      // O chip de contagem da suíte (dono, 09/10/2026): o tamanho sai de
+      // `presentation/countChip.ts` (número 4xl; ponto no tamanho padrão), com teste
+      // próprio em `operator-kit/tests/components/OperatorCountChip.test.ts`.
+      if (file.endsWith("OperatorCountChip.vue")) return /:size="size"/.test(tag);
       const bound = tag.match(/:size="([\w.]+) \? '4xl' : '2xl'"/);
       if (bound) return tag.includes(`:text="${bound[1]}"`);
       const hasText = /(?:^|\s):?text=/.test(tag);

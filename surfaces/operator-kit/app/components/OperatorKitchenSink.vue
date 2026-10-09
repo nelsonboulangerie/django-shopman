@@ -12,6 +12,8 @@ import {
   kitchenSinkSteps,
   type KitchenSinkState,
 } from "../fixtures/operatorKitchenSink";
+import { countChipProps } from "../presentation/countChip";
+import { railSignalLabel } from "../presentation/suiteChrome";
 
 const route = useRoute();
 const router = useRouter();
@@ -66,16 +68,22 @@ function selectSection(id: string, event?: Event) {
   searchOpen.value = false;
   officeShell.value?.closeNavigation();
 }
-const navigationItems = computed(() =>
-  kitchenSinkNavigation.map((item) => ({
-    label: item.label,
-    "aria-label": "badge" in item ? `${item.label}, ${item.badge} decisões pendentes` : item.label,
-    icon: item.icon,
-    badge: "badge" in item ? item.badge : undefined,
-    active: selectedSection.value === item.to.slice(1),
-    onSelect: (event: Event) => selectSection(item.to.slice(1), event),
-  })),
-);
+// A contagem da seção é o chip de contagem da suíte: no canto do ícone com a barra
+// compactada (`chip`), na ponta direita da linha com ela aberta (`item-trailing`).
+function navigationItems(collapsed: boolean) {
+  return kitchenSinkNavigation.map((item) => {
+    const count = "badge" in item ? item.badge : undefined;
+    return {
+      label: item.label,
+      "aria-label": railSignalLabel(item.label, count ? { color: "warning", count } : undefined),
+      icon: item.icon,
+      count,
+      chip: collapsed && count ? countChipProps(count) : undefined,
+      active: selectedSection.value === item.to.slice(1),
+      onSelect: (event: Event) => selectSection(item.to.slice(1), event),
+    };
+  });
+}
 const searchGroups = computed(() => [
   {
     id: "catalog",
@@ -212,11 +220,15 @@ onMounted(() => {
           :collapsed="collapsed"
         />
         <NuxtNavigationMenu
-          :items="navigationItems"
+          :items="navigationItems(collapsed)"
           orientation="vertical"
           :collapsed="collapsed"
           aria-label="Seções do catálogo"
-        />
+        >
+          <template #item-trailing="{ item }">
+            <OperatorCountChip v-if="!collapsed" :count="item.count" />
+          </template>
+        </NuxtNavigationMenu>
         <NuxtNavigationMenu
           :items="[
             {

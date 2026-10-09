@@ -249,11 +249,7 @@ function clearAll() {
                   <!-- A contagem é outra grandeza: fica à parte do rótulo, como no
                        `main`, e não costurada nele ("Pagas · 1"). -->
                   <template v-if="option.count !== undefined" #trailing>
-                    <NuxtBadge
-                      class="ms-auto tabular-nums"
-                      color="neutral"
-                      :label="String(option.count)"
-                    />
+                    <OperatorCountChip class="ms-auto" :count="option.count" />
                   </template>
                 </NuxtButton>
                 <NuxtEmpty
