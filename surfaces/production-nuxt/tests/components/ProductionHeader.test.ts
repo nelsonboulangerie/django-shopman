@@ -3,113 +3,75 @@ import {
   computed,
   defineComponent,
   h,
-  nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
   watch,
+  type PropType,
 } from "vue";
 import { mount, type VueWrapper } from "@vue/test-utils";
 
 import ProductionHeader from "../../app/components/ProductionHeader.vue";
-import { toolSections } from "../../app/presentation/productionSections";
+import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 
-// V4-PROD: o cabeçalho é o `OperatorPageHeader` da suíte (uma linha). As etapas saíram
-// daqui para o rail e a barra do polegar (`ProductionNav`, testado em
-// `ProductionNav.test.ts`); o cabeçalho continua dono das TECLAS (Alt+1 a Alt+5, "/",
-// R e "?"), do progresso do dia e do ⋯ (Atualizar, Timers, Atalhos). A ajuda de atalhos
-// e os Avisos são do kit (V6-KIT): a barra de 56px não tem Timers nem sino próprios.
+// Fase 2: o cabeçalho é o `OperatorPageHeader` do kit, dentro do shell da suíte. As
+// etapas (Alt+1 a Alt+5), a busca "/" e a ajuda "?" são do shell e da busca da suíte;
+// aqui ficam o R (Atualizar), o ⋯ como DADOS (as ações da tela e Atualizar), o dia na
+// toolbar (`#primary`) e o progresso no fim dela.
 
-const navigateSpy = vi.fn();
 let wrapper: VueWrapper | null = null;
+let headerActions: OperatorHeaderAction[] = [];
 
-// O cabeçalho da suíte é do kit (testado lá): aqui ele só precisa render os slots.
+// O cabeçalho da suíte é do kit (testado lá): aqui ele só expõe props e slots.
 const OperatorPageHeaderStub = defineComponent({
-  props: { title: String, eyebrow: String },
+  props: {
+    title: String,
+    eyebrow: String,
+    actions: { type: Array as PropType<OperatorHeaderAction[]>, default: () => [] },
+    alerts: { type: Array, default: () => [] },
+  },
   setup(props, { slots }) {
-    return () =>
-      h("header", [
+    return () => {
+      headerActions = props.actions;
+      return h("header", [
         h("h1", props.title),
-        slots.status?.(),
+        h("div", { "data-status": "" }, slots.status?.()),
         slots.search?.(),
-        h("div", { "data-phone": "" }, slots["phone-actions"]?.()),
-        h("div", { "data-actions": "" }, slots.actions?.()),
-        slots.filters?.(),
+        h("div", { "data-primary": "" }, slots["filters-primary"]?.()),
+        h("div", { "data-filters": "" }, slots.filters?.()),
+        h("div", { "data-end": "" }, slots["filters-end"]?.()),
+        h("div", { "data-alerts": props.alerts.length }),
       ]);
+    };
   },
 });
 
-// A busca do cabeçalho é a da suíte (kit, testada lá): aqui só o campo e o `focus()`.
-const SuiteSearchStub = defineComponent({
-  inheritAttrs: false,
-  props: { modelValue: { type: String, default: "" } },
-  emits: ["update:modelValue"],
-  setup(props, { attrs, emit, expose }) {
-    const input = ref<HTMLInputElement | null>(null);
-    expose({ focus: () => input.value?.focus() });
-    return () =>
-      h("input", {
-        ...attrs,
-        ref: input,
-        type: "search",
-        value: props.modelValue,
-        "aria-keyshortcuts": "/ Control+K",
-        onInput: (event: Event) =>
-          emit("update:modelValue", (event.target as HTMLInputElement).value),
-      });
-  },
-});
-
-const menuOpen = ref(false);
 const stubs = {
   OperatorPageHeader: OperatorPageHeaderStub,
   OperatorLiveStatus: {
     props: ["tone", "time", "label"],
     template: '<span data-live :data-tone="tone">{{ label }}</span>',
   },
-  OperatorSuiteSearch: SuiteSearchStub,
-  Icon: true,
-  NuxtLink: {
-    props: ["to"],
-    template: '<a :href="to"><slot /></a>',
+  OperatorSuiteSearch: {
+    props: ["modelValue", "screenLabel"],
+    template: '<input type="search" :data-screen-label="screenLabel" />',
   },
-  // O ⋯ é um popover: o conteúdo existe enquanto está aberto.
-  UiPopover: {
-    props: ["open"],
-    emits: ["update:open"],
-    template: "<div><slot /></div>",
+  NuxtProgress: {
+    props: ["modelValue"],
+    template: '<div role="progressbar" :aria-valuenow="modelValue" />',
   },
-  UiPopoverTrigger: { template: "<div><slot /></div>" },
-  UiPopoverContent: { template: "<div data-menu><slot /></div>" },
 };
 
-const shortcutsOpen = ref(false);
 const provideShortcuts = vi.fn();
-const timersActive = ref(0);
-const timersRinging = ref(0);
 
-function press(
-  key: string,
-  overrides: KeyboardEventInit = {},
-  target: HTMLElement | Window = window,
-) {
+function press(key: string, overrides: KeyboardEventInit = {}, target: HTMLElement | Window = window) {
   target.dispatchEvent(
-    new KeyboardEvent("keydown", {
-      key,
-      code: overrides.code ?? key,
-      bubbles: true,
-      cancelable: true,
-      ...overrides,
-    }),
+    new KeyboardEvent("keydown", { key, code: overrides.code ?? key, bubbles: true, cancelable: true, ...overrides }),
   );
 }
 
-function mountHeader(props: Record<string, unknown> = { title: "Planejamento" }) {
-  return mount(ProductionHeader, {
-    props,
-    global: { stubs },
-    attachTo: document.body,
-  });
+function mountHeader(props: Record<string, unknown> = { title: "Planejamento" }, slots = {}) {
+  return mount(ProductionHeader, { props, slots, global: { stubs }, attachTo: document.body });
 }
 
 beforeEach(() => {
@@ -118,24 +80,7 @@ beforeEach(() => {
   vi.stubGlobal("watch", watch);
   vi.stubGlobal("onMounted", onMounted);
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
-  vi.stubGlobal("useRoute", () => ({ path: "/plan" }));
-  vi.stubGlobal("navigateTo", navigateSpy);
-  vi.stubGlobal("useOperatorShortcuts", () => ({ open: shortcutsOpen }));
   vi.stubGlobal("provideOperatorShortcuts", provideShortcuts);
-  vi.stubGlobal("useFloorTimers", () => ({
-    activeCount: computed(() => timersActive.value),
-    ringingCount: computed(() => timersRinging.value),
-  }));
-  vi.stubGlobal("useProductionSections", () => ({
-    tools: computed(() =>
-      toolSections({ canViewRecipes: true, canViewReports: false }),
-    ),
-  }));
-  navigateSpy.mockClear();
-  timersActive.value = 0;
-  timersRinging.value = 0;
-  menuOpen.value = false;
-  shortcutsOpen.value = false;
   provideShortcuts.mockClear();
   wrapper = mountHeader();
 });
@@ -147,97 +92,62 @@ afterEach(() => {
   document.querySelector("[data-production-shortcut-scope]")?.remove();
 });
 
-describe("ProductionHeader — atalhos descobríveis", () => {
-  it("navega pelas etapas com Alt+número e preserva as teclas de função", () => {
-    press("€", { altKey: true, code: "Digit2" });
-    press("F1");
-
-    expect(navigateSpy).toHaveBeenCalledOnce();
-    expect(navigateSpy).toHaveBeenCalledWith("/mise-en-place");
-  });
-
-  it("Alt+1 a Alt+5 percorrem o ciclo do lote, de Planejamento a Qualidade", () => {
-    for (const digit of [1, 2, 3, 4, 5]) {
-      press(String(digit), { altKey: true, code: `Digit${digit}` });
-    }
-
-    expect(navigateSpy.mock.calls.map(([to]) => to)).toEqual([
-      "/plan",
-      "/mise-en-place",
-      "/",
-      "/close",
-      "/quality",
-    ]);
-  });
-
-  it("foca a busca com / e não sequestra R enquanto o campo é editado", async () => {
+describe("ProductionHeader — teclas", () => {
+  it("R relê fora de campo; dentro de um campo, R é letra", () => {
     const input = wrapper!.find('input[type="search"]');
-    press("/");
-    await nextTick();
-    expect(document.activeElement).toBe(input.element);
-
     press("r", {}, input.element as HTMLInputElement);
     expect(wrapper!.emitted("refresh")).toBeUndefined();
-
-    (input.element as HTMLInputElement).blur();
     press("r");
     expect(wrapper!.emitted("refresh")).toHaveLength(1);
   });
 
-  it("abre a ajuda por ? e anuncia os atalhos nos controles", async () => {
-    press("?");
-    await nextTick();
-
-    expect(shortcutsOpen.value).toBe(true);
-    expect(
-      wrapper!.find('input[type="search"]').attributes("aria-keyshortcuts"),
-    ).toBe("/ Control+K");
-    expect(
-      wrapper!.find("[data-header-refresh]").attributes("aria-keyshortcuts"),
-    ).toBe("R");
+  it("Alt+número é do shell: o cabeçalho não navega nem relê", () => {
+    press("€", { altKey: true, code: "Digit2" });
+    expect(wrapper!.emitted("refresh")).toBeUndefined();
   });
 
-  it("não navega por baixo de um fluxo exclusivo", () => {
+  it("não relê por baixo de um fluxo exclusivo", () => {
     const blocker = document.createElement("div");
     blocker.dataset.productionShortcutScope = "exclusive";
     document.body.append(blocker);
+    press("r");
+    expect(wrapper!.emitted("refresh")).toBeUndefined();
+  });
 
-    press("#", { altKey: true, code: "Digit3" });
-
-    expect(navigateSpy).not.toHaveBeenCalled();
+  it("entrega os grupos de teclas da Produção à ajuda do kit", () => {
+    expect(provideShortcuts).toHaveBeenCalledOnce();
+    const groups = provideShortcuts.mock.calls[0]![0] as Array<{ title: string }>;
+    expect(groups.map((group) => group.title)).toContain("QC e timer");
   });
 });
 
-describe("ProductionHeader — o ⋯ e o progresso do dia", () => {
-  it("Atualizar mora no ⋯ e pede a releitura", async () => {
-    await wrapper!.find("[data-header-refresh]").trigger("click");
-    expect(wrapper!.emitted("refresh")).toHaveLength(1);
-  });
-
-  it("Atalhos desta tela abre a ajuda pelo ⋯", async () => {
-    await wrapper!
-      .find('button[aria-label="Ver atalhos do teclado"]')
-      .trigger("click");
-    expect(shortcutsOpen.value).toBe(true);
-  });
-
-  it("no celular, o ⋯ leva às ferramentas que no tablet moram no rail", () => {
-    const links = wrapper!
-      .findAll("[data-menu] a")
-      .map((link) => link.attributes("href"));
-    expect(links).toEqual(["/timers", "/recipes", "/board"]);
-  });
-
-  it("o contador fala 'N de M' com a barra junto", () => {
+describe("ProductionHeader — o ⋯ como dados", () => {
+  it("as ações da tela vêm antes de Atualizar, que leva a tecla R", () => {
     wrapper?.unmount();
-    wrapper = mountHeader({
-      title: "Planejamento",
-      count: 4,
-      total: 28,
-      countLabel: "planejados",
-      progress: 14,
-    });
-    const progress = wrapper.find("[data-header-progress]");
+    const onSelect = vi.fn();
+    wrapper = mountHeader({ title: "Fechamento", actions: [{ label: "Lote avulso", icon: "i-lucide-plus", onSelect }] });
+    expect(headerActions.map((action) => action.label)).toEqual(["Lote avulso", "Atualizar"]);
+    expect(headerActions[1]!.kbds).toEqual(["R"]);
+    headerActions[1]!.onSelect?.();
+    expect(wrapper.emitted("refresh")).toHaveLength(1);
+  });
+
+  it("a busca declara o que filtra nesta tela", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader({ title: "Qualidade", searchLabel: "filtrando os lotes" });
+    expect(wrapper.find('input[type="search"]').attributes("data-screen-label")).toBe("filtrando os lotes");
+  });
+});
+
+describe("ProductionHeader — toolbar e estado", () => {
+  it("o dia vai para o começo da toolbar; o progresso, para o fim", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader(
+      { title: "Planejamento", count: 4, total: 28, countLabel: "planejados", progress: 14 },
+      { primary: '<span data-day>Hoje</span>' },
+    );
+    expect(wrapper.find("[data-primary] [data-day]").exists()).toBe(true);
+    const progress = wrapper.find("[data-end] [data-header-progress]");
     expect(progress.text().replace(/\s+/g, " ")).toBe("4 de 28 planejados");
     expect(progress.find('[role="progressbar"]').attributes("aria-valuenow")).toBe("14");
   });
@@ -245,23 +155,8 @@ describe("ProductionHeader — o ⋯ e o progresso do dia", () => {
   it("dado velho: o ao vivo fala por extenso", () => {
     wrapper?.unmount();
     wrapper = mountHeader({ title: "Abertura", stale: true });
-    const live = wrapper.find("[data-live]");
+    const live = wrapper.find("[data-status] [data-live]");
     expect(live.attributes("data-tone")).toBe("late");
     expect(live.text()).toBe("Sem atualizar");
-  });
-});
-
-// V6-KIT: a ajuda de atalhos é a do kit; a Produção entrega os grupos dela. A barra de
-// 56px é a da v4 (selo, título, ao vivo, lupa, Avisos): Timers mora no "Mais" e no ⋯.
-describe("ProductionHeader — peças do kit", () => {
-  it("entrega os grupos de teclas da tela à ajuda do kit", () => {
-    expect(provideShortcuts).toHaveBeenCalledOnce();
-    const groups = provideShortcuts.mock.calls[0]![0] as Array<{ title: string }>;
-    expect(groups.map((group) => group.title)).toContain("QC e timer");
-  });
-
-  it("a barra de 56px não leva Timers nem sino próprio", () => {
-    expect(wrapper!.find("[data-phone]").text()).toBe("");
-    expect(wrapper!.find('a[aria-label^="Timers"]').exists()).toBe(false);
   });
 });

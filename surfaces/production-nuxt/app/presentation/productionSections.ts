@@ -1,17 +1,15 @@
-// Presentation — as seções da Produção no rail da suíte (V4-PROD). Puro: quem decide
-// se o operador vê Receitas ou Relatórios é o servidor (as sondas de acesso); aqui só
-// se monta a lista.
+// Presentation — as seções da Produção no shell da suíte (`OperatorSuiteShell`). Puro:
+// quem decide se o operador vê Receitas ou Relatórios é o servidor (as sondas de
+// acesso); aqui só se monta a lista.
 //
-// Desenho da prévia v4 (`plano-porque4.html`, `producao-qualidade4.html`): em cima o
-// ciclo do lote, com a tecla impressa sob o nome (Alt1 a Alt5, decisão #1433:
-// Planejamento · Preparação · Abertura · Fechamento · Qualidade), e logo abaixo os
-// Timers da bancada, com a contagem de ativos no selo e o ponto quando um toca, e
-// Ajustes (V6-KIT, R02): o que não é etapa (Receitas, Relatórios, o Letreiro) mora na
-// tela de Ajustes, e o pé do rail é o da suíte. No celular a barra do polegar leva
-// as quatro primeiras etapas e o "Mais" guarda o resto (`phoneSections`).
-// Na barra do polegar, Planejamento e Preparação aparecem como "Plano" e "Preparo"
-// (as prévias v4 do celular e da Qualidade): os cinco nomes cheios não cabem em 1/5 de
-// um celular de 320px. O nome acessível continua o cheio.
+// Em cima o ciclo do lote (Alt+1 a Alt+5, decisão #1433: Planejamento · Preparação ·
+// Abertura · Fechamento · Qualidade), e logo abaixo os Timers da bancada, com a
+// contagem de ativos no selo e o ponto quando um toca, e Ajustes: o que não é etapa
+// (Receitas, Relatórios, o Letreiro) mora na tela de Ajustes, e o pé da barra lateral
+// é o da suíte. A gaveta (☰) é o menu completo; a barra inferior do celular leva as
+// quatro primeiras etapas (`quick`) e o "Mais", que abre a gaveta.
+// Na barra inferior, Planejamento e Preparação aparecem como "Plano" e "Preparo": os
+// nomes cheios não cabem em 1/5 de um celular de 320px. O nome acessível é o cheio.
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 export interface ProductionSectionsInput {
@@ -27,10 +25,10 @@ export interface ProductionSectionsInput {
 
 /** O ciclo do lote, na ordem do dia, com as teclas Alt+1 a Alt+5. */
 export const PRODUCTION_STAGES: readonly OperatorSection[] = [
-  { key: "plan", label: "Planejamento", shortLabel: "Plano", icon: "lucide:layout-grid", to: "/plan", shortcut: "Alt+1" },
-  { key: "mise-en-place", label: "Preparação", shortLabel: "Preparo", icon: "lucide:scale", to: "/mise-en-place", shortcut: "Alt+2" },
-  { key: "open", label: "Abertura", icon: "lucide:flame", to: "/", shortcut: "Alt+3" },
-  { key: "close", label: "Fechamento", icon: "lucide:package-check", to: "/close", shortcut: "Alt+4" },
+  { key: "plan", label: "Planejamento", shortLabel: "Plano", icon: "lucide:layout-grid", to: "/plan", shortcut: "Alt+1", quick: true },
+  { key: "mise-en-place", label: "Preparação", shortLabel: "Preparo", icon: "lucide:scale", to: "/mise-en-place", shortcut: "Alt+2", quick: true },
+  { key: "open", label: "Abertura", icon: "lucide:flame", to: "/", shortcut: "Alt+3", quick: true },
+  { key: "close", label: "Fechamento", icon: "lucide:package-check", to: "/close", shortcut: "Alt+4", quick: true },
   { key: "quality", label: "Qualidade", icon: "lucide:badge-check", to: "/quality", shortcut: "Alt+5" },
 ];
 
@@ -55,7 +53,7 @@ export function timersSection({ timersActive = 0, timersRinging = 0 }: Productio
   };
 }
 
-/** O que não é etapa do fluxo: na tela de Ajustes (e no ⋯ do celular). */
+/** O que não é etapa do fluxo: na tela de Ajustes. */
 export function toolSections({ canViewRecipes = false, canViewReports = false }: ProductionSectionsInput = {}): OperatorSection[] {
   const tools: OperatorSection[] = [];
   if (canViewRecipes) tools.push({ key: "recipes", label: "Receitas", icon: "lucide:book-open", to: "/recipes" });
@@ -79,18 +77,9 @@ export function settingsSection(): OperatorSection {
 }
 
 /**
- * Rail (tablet deitado e desktop): o ciclo, um traço, Timers e Ajustes. O pé é o da
- * suíte (Avisos, Atalhos, Bloquear, iniciais), V6-KIT, R02.
+ * O ciclo, um traço, Timers e Ajustes. O pé da barra lateral é o da suíte (Avisos,
+ * Atalhos, Bloquear, o operador).
  */
 export function productionSections(input: ProductionSectionsInput = {}): OperatorSection[] {
   return [...stageSections(input), { ...timersSection(input), divider: true }, settingsSection()];
-}
-
-/**
- * Barra do polegar (celular e tablet em pé): o ciclo, os Timers e as ferramentas, na
- * ordem do rail. A barra mostra as quatro primeiras etapas; o resto (Qualidade, Timers,
- * Receitas, Relatórios, Letreiro) mora no "Mais" com o menu do operador (V6-KIT, T-08).
- */
-export function phoneSections(input: ProductionSectionsInput = {}): OperatorSection[] {
-  return productionSections(input);
 }
