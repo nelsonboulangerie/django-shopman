@@ -805,7 +805,7 @@ useHead({ title: "Campanhas" });
                Botão morto sem frase é defeito; a frase vai por extenso, sob o botão. -->
           <div
             v-if="!editState(row.original).enabled || !fireState(row.original).enabled"
-            class="mt-2 max-w-64 space-y-1 text-right"
+            class="mt-3 max-w-64 space-y-1 text-right"
             data-campaign-disabled-reasons
           >
             <p
