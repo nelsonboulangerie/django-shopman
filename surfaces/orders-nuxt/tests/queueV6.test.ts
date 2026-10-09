@@ -116,9 +116,9 @@ describe("G02: densidade pela atenção", () => {
       { key: "kitchen" as const, label: "Na Cozinha", icon: "", count: 5, detail: "" },
       { key: "road" as const, label: "Na rua", icon: "", count: 2, detail: "" },
     ];
-    expect(restLine(lines, 5)).toEqual({ hidden: 5, moving: 7, text: "Mais 5 pedem você · Em andamento: 5 na cozinha, 2 na rua" });
-    expect(restLine(lines, 1).text).toBe("Mais 1 pede você · Em andamento: 5 na cozinha, 2 na rua");
-    expect(restLine(lines)).toEqual({ hidden: 0, moving: 7, text: "Em andamento: 5 na cozinha, 2 na rua" });
+    expect(restLine(lines, 5)).toEqual({ hidden: 5, moving: 7, text: "Mais 5 pedem você · Sem pedir você: 5 na cozinha, 2 na rua" });
+    expect(restLine(lines, 1).text).toBe("Mais 1 pede você · Sem pedir você: 5 na cozinha, 2 na rua");
+    expect(restLine(lines)).toEqual({ hidden: 0, moving: 7, text: "Sem pedir você: 5 na cozinha, 2 na rua" });
     expect(restLine([], 3).text).toBe("Mais 3 pedem você");
     // Nenhuma soma de grandezas diferentes: o 12 (5 + 7) não aparece.
     expect(restLine(lines, 5).text).not.toMatch(/\+?12\b/);
@@ -164,7 +164,7 @@ describe("negociação do iFood na Fila (dono, 07/10/2026)", () => {
   });
 });
 
-describe("Em andamento: o que está de fato na cozinha (dono, 07/10/2026)", () => {
+describe("Sem pedir você: o que está de fato na cozinha (dono, 07/10/2026)", () => {
   const station = (over: Record<string, unknown>) => ({
     station_ref: "cafes", station_name: "Cafés", prints: false, state: "in_progress",
     state_label: "em preparo", paper_label: "", paper_failed: false, cancelled_items: 0,

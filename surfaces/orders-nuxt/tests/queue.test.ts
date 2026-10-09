@@ -57,7 +57,7 @@ describe("Em andamento e o excedente", () => {
       expect.objectContaining({ key: "kitchen", count: 2, detail: "o mais antigo há 10 min" }),
       expect.objectContaining({ key: "road", count: 1, detail: "o mais antigo há 18 min" }),
     ]);
-    expect(restLine(lines)).toEqual({ hidden: 0, moving: 3, text: "Em andamento: 2 na cozinha, 1 na rua" });
+    expect(restLine(lines)).toEqual({ hidden: 0, moving: 3, text: "Sem pedir você: 2 na cozinha, 1 na rua" });
     expect(restLine(inProgress([card()], NOW))).toEqual({ hidden: 0, moving: 0, text: "" });
   });
 });
