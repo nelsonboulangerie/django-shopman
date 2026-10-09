@@ -139,6 +139,7 @@ export function buildCustomerDisplaySnapshot(
     totalDisplay: "",
     discountDisplay: "",
     grossTotalDisplay: "",
+    totalPending: false,
     pix: null,
     changeDisplay: "",
     customerFirstName: "",
@@ -151,6 +152,14 @@ export function buildCustomerDisplaySnapshot(
     snapshot.itemCount = inputs.items.reduce((sum, item) => sum + lineUnits(item), 0);
     // A MESMA soma da tela de venda (`cartNetTotalQ`). O review, quando existe,
     // prevalece. Com desconto, o total ANTES dele viaja junto, para ser riscado.
+    // NO PAGAMENTO, o total é o do servidor ou nenhum. Sem a revisão (o
+    // operador acabou de mexer no desconto ou na entrega), a parede diz que o
+    // total está sendo calculado: mostrar a estimativa do carrinho ali seria
+    // anunciar ao cliente um valor que vai mudar na frente dele.
+    if (phase === "payment" && !inputs.review) {
+      snapshot.totalPending = true;
+      return snapshot;
+    }
     Object.assign(snapshot, saleTotalsView(inputs.items, inputs.review));
     return snapshot;
   }
