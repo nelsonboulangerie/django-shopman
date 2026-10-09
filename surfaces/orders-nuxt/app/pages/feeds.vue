@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 // Canais — venda (loja online, WhatsApp, iFood, PDV) e exibição (📺 menuboard na
 // TV, 🛰 Google/Meta). Todo card tem a mesma estrutura: CABEÇALHO com o toggle
 // "Ativo", CORPO com o estado, RODAPÉ com as ações. O toggle é o mesmo em todos:

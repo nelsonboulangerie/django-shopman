@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 // Histórico — os pedidos que já saíram do quadro (concluídos, cancelados, devolvidos).
 //
 // Pedido do dono (03/10/2026): "acesso a um histórico dos pedidos concluídos e

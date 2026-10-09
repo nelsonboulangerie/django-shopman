@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 // Clientes — achar o cadastro, inclusive o que ninguém digitou.
 //
 // O caso que abriu a seção: o cadastro do iFood (`IF-…`) nasce sem telefone e, até

@@ -30,7 +30,6 @@ export interface OperatorHeaderAction {
   disabled?: boolean;
   color?: "primary" | "neutral" | "error";
   onSelect?: (event?: Event) => void;
-  [key: `data-${string}`]: string | undefined;
 }
 
 /** Recorte ativo, desenhado como chip removível abaixo da linha da toolbar. */

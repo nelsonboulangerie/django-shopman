@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 // Ficha do cliente — quem é, o que comprou, e quem PODE ser a mesma pessoa.
 //
 // Os candidatos vêm com o motivo escrito ("Mesmo cliente no iFood", "Mesmo CPF",

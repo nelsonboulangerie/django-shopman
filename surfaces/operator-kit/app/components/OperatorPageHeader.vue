@@ -198,9 +198,6 @@ const filtersMode = computed(
 );
 const filterLine = computed(() => narrow.value && filtersMode.value === "drawer");
 const filtersOpen = ref(false);
-// Abaixo de 360 px o rótulo "Filtros" sai da vista (fica no nome acessível e no
-// `title`): a 320 px ele empurrava o período para trás da rolagem.
-const FILTERS_BUTTON_UI = { label: "max-[359.98px]:sr-only" };
 const activeCount = computed(() => props.activeFilters.length);
 function clearAll() {
   if (props.clearFilters) props.clearFilters();
@@ -399,10 +396,8 @@ function clearAll() {
           v-if="$slots.filters"
           class="ms-auto shrink-0"
           icon="i-lucide-sliders-horizontal"
-          label="Filtros"
           color="neutral"
           variant="outline"
-          :ui="FILTERS_BUTTON_UI"
           :title="filtersButtonLabel(activeCount)"
           aria-haspopup="dialog"
           :aria-expanded="filtersOpen"
@@ -410,6 +405,9 @@ function clearAll() {
           data-page-header-filters-open
           @click="filtersOpen = true"
         >
+          <!-- Abaixo de 360 px o rótulo sai da vista (fica no nome acessível e no
+               `title`): a 320 px ele empurrava o período para trás da rolagem. -->
+          <span class="max-[359.98px]:sr-only">Filtros</span>
           <template v-if="activeCount" #trailing>
             <NuxtBadge
               color="primary"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 import { realtimeIndicator } from "~/presentation/board";
 
 definePageMeta({ key: (route) => route.path });

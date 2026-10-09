@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 // Unificações — a trilha e o desfazer.
 //
 // O `MergeService` aceita desfazer por 24 horas. Esta tela é a porta dele no Gestor

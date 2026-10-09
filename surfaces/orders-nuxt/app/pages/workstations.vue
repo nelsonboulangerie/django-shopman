@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 // Postos: onde cada dispositivo fica (UX-POSTO1).
 //
 // Criar, renomear, mudar o tipo e desativar postos, e ver os dispositivos vinculados a

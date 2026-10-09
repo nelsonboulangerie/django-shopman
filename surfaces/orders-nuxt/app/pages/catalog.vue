@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 // Catalog matrix — produto × canal. The catalog side of the Gestor hub.
 // Design: a glanceable availability heatmap (tinted cells) with one-click pause and
 // inline reprice per cell; the collection axis (chips) scopes the view; selection +
