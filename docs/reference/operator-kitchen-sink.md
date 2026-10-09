@@ -136,6 +136,19 @@ navegação do domínio; navbar contém identidade e ação principal; toolbar c
 filtros ou tabs. O corpo usa seções com títulos explícitos. `aside` explica a
 decisão sem competir com a ação.
 
+### Shell da suíte (`/suite`)
+
+`OperatorAppRoot > OperatorSuiteShell > OperatorPageHeader + conteúdo que rola +
+OperatorActionBar`: a casca que todo app de operador veste na fase 2
+(`docs/plans/WP-FASE2-UX-OPERADOR.md`). A página `/suite` do Kitchen Sink a monta como
+um app de verdade: barra lateral em três estados na mesa, ☰ e barra inferior de 3 a 5
+vagas no celular (com "Mais" quando sobra seção), o ⋯ único do cabeçalho, o aviso da
+tela (`alerts`, cenário em `?alerts=none|one|three`), e no corpo cada peça da fase 2 que
+já mora no kit, com os seus estados: as do catálogo (`OperatorKitchenSinkScreenPieces`:
+Mais ações, Anterior e próximo, Ação na base, Estado da tela), o deslizar
+(`OperatorSwipeRow`) e o gráfico empilhado do B.I. (`OperatorReadingChart kind="stacked"`).
+Contrato em `kitchensink-nuxt/tests/visual/suite-shell.spec.ts`.
+
 ### Operação
 
 `OperatorAppRoot > OperatorOperationalShell`. Navegação, `OperatorPageHeader`,

@@ -1323,7 +1323,7 @@ defineExpose({
               :disabled="!discountTypes.length"
               :title="!discountTypes.length ? 'Nenhum desconto disponível para esta loja' : undefined"
               type="button"
-              class="flex min-h-11 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :class="hasDiscount ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
               :aria-pressed="hasDiscount"
               :aria-label="hasDiscount ? `Desconto de ${discountSummary} na venda. Abrir para alterar` : 'Desconto na venda'"
@@ -1346,7 +1346,7 @@ defineExpose({
 
             <button
               type="button"
-              class="flex min-h-11 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :class="[
                 splitActive ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground',
               ]"
@@ -1432,7 +1432,7 @@ defineExpose({
               :key="method.ref"
               type="button"
               :data-payment-method="method.ref"
-              class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex h-8 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
               :disabled="!!paymentMethodBlockedReason(method.ref)"
               :title="paymentMethodBlockedReason(method.ref)"
               @click="$emit('addTender', method.ref)"
@@ -1482,7 +1482,7 @@ defineExpose({
             <div class="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
+              class="flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
               :disabled="!numpadActive || !!awaitingReviewReason()"
               aria-label="Exato: a linha assume o restante"
               :title="awaitingReviewReason() || 'A forma selecionada assume o que falta para cobrir o total (=)'"
@@ -1493,7 +1493,7 @@ defineExpose({
             </button>
             <button
               type="button"
-              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
+              class="flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
               :disabled="!numpadActive"
               aria-label="Limpar: zera o valor da linha"
               title="Zera o valor da linha inteira (o Backspace apaga um dígito)"
@@ -1614,7 +1614,7 @@ defineExpose({
                 :key="action.label"
                 size="lg"
                 variant="outline"
-                class="h-auto min-h-11 max-w-full whitespace-normal py-2 text-left"
+                class="h-auto min-h-8 max-w-full whitespace-normal py-2 text-left"
                 @click="action.run()"
               >
                 {{ action.label }}
@@ -1690,12 +1690,12 @@ defineExpose({
             <li
               v-for="(tender, idx) in tenderLines"
               :key="idx"
-              class="flex min-h-11 items-center gap-1 rounded-md border pr-1 transition"
+              class="flex min-h-8 items-center gap-1 rounded-md border pr-1 transition"
               :class="idx === selectedTenderIndex ? 'border-primary bg-primary/5' : 'hover:bg-accent/60'"
             >
               <button
                 type="button"
-                class="flex min-h-11 min-w-0 flex-1 flex-wrap items-center justify-between gap-x-2 self-stretch rounded-l-md px-3 py-1 text-left"
+                class="flex min-h-8 min-w-0 flex-1 flex-wrap items-center justify-between gap-x-2 self-stretch rounded-l-md px-3 py-1 text-left"
                 :aria-current="idx === selectedTenderIndex ? 'true' : undefined"
                 :aria-label="`Editar ${tender.label} de ${tender.amountDisplay}`"
                 @click="$emit('selectTender', idx)"
@@ -1915,7 +1915,7 @@ defineExpose({
                   <UiInput
                     :model-value="invoiceTaxIdMasked"
                     inputmode="numeric"
-                    class="h-11 tabular-nums"
+                    class="h-8 tabular-nums"
                     placeholder="000.000.000-00"
                     aria-label="CPF que sai na nota"
                     :maxlength="18"
@@ -1972,7 +1972,7 @@ defineExpose({
                   <UiInput
                     :model-value="receiptEmail"
                     type="email"
-                    class="h-11"
+                    class="h-8"
                     :placeholder="customerEmail || 'cliente@email.com'"
                     aria-label="E-mail que recebe a nota"
                     @update:model-value="$emit('update:receiptEmail', String($event || ''))"

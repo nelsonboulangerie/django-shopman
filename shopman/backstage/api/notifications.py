@@ -63,6 +63,26 @@ ACTION_NOT_ME = "not_me"
 _CAMPAIGN_ACTIONS = (ACTION_APPROVE, ACTION_REJECT)
 
 
+def _action_destination(notification: UserNotification) -> dict[str, str]:
+    """O botão do aviso: aonde leva (o endereço do app que resolve) e o que diz.
+
+    A caixa pessoal aparece em todos os apps; o caminho guardado é relativo ao app
+    da condição (``/quality?q=<lote>`` só existe na Produção). Com a URL do app
+    configurada, vira o endereço absoluto; sem ela (dev sem as portas, teste), fica
+    o caminho, que vale quando a caixa é lida do próprio app.
+    """
+    from shopman.backstage.projections.hub import surface_link
+
+    url = notification.action_url or ""
+    destination = notification_lifecycle.CONDITION_DESTINATIONS.get(notification.source_condition)
+    if not destination or not url:
+        return {"action_url": url, "action_label": ""}
+    surface, label = destination
+    if url.startswith("/"):
+        url = surface_link(surface, url) or url
+    return {"action_url": url, "action_label": label}
+
+
 def _notification_dict(
     notification: UserNotification,
     *,
@@ -73,7 +93,7 @@ def _notification_dict(
         "category": notification.category,
         "title": notification.title,
         "message": notification.message,
-        "action_url": notification.action_url,
+        **_action_destination(notification),
         "action_data": notification.action_data or {},
         "is_actionable": notification.is_actionable,
         "is_read": notification.is_read,

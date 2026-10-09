@@ -1,36 +1,35 @@
 import { expect, test } from "@playwright/test";
 
-// A grade no CELULAR: todo tile com a MESMA altura.
-//
-// ⚠️ O tile tinha `min-h-28` e o bloco de texto empurrado para baixo com `mt-auto`.
-// Nome e frase quebram em uma ou duas linhas conforme o app, então cada card parava numa
-// altura diferente e a grade de duas colunas ficava serrilhada — o olho perdia a coluna
-// e a leitura virava um ziguezague. O teto agora é duas linhas para o nome e duas para a
-// frase, o que passa disso é cortado com reticências, e a altura é fixa.
-test.describe("Central — a grade no celular", () => {
-  test.use({ viewport: { width: 375, height: 812 } });
+// Os apps no CELULAR: linhas de 62 px em que o nome e a linha de estado quebram, nunca
+// cortam (fase 2, D6: "texto da casa cortado" era defeito medido na Central). E a carga
+// direta a 390 px hidrata a mesma árvore que o servidor mandou.
+test.describe("Central — os apps no celular", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-  test("todos os tiles têm a mesma altura, e o texto para em duas linhas", async ({ page }) => {
+  test("cada linha mostra o texto inteiro, sem estourar a largura", async ({ page }) => {
+    const hydration: string[] = [];
+    page.on("console", (message) => {
+      if (/hydration/i.test(message.text())) hydration.push(message.text());
+    });
     await page.goto("/");
 
-    const tiles = page.locator("ul > li > a");
-    await expect(tiles.first()).toBeVisible();
-
-    const boxes = await tiles.evaluateAll(nodes => nodes.map((node) => {
-      const title = node.querySelector("[data-tile-title]") as HTMLElement;
-      const description = node.querySelector("[data-tile-description]") as HTMLElement;
-      return {
-        height: node.getBoundingClientRect().height,
-        // `scrollHeight > clientHeight` é o texto que o `line-clamp` cortou; o que importa
-        // é que a caixa DO CARD nunca transborde, e que todos terminem na mesma altura.
-        titleOverflow: title.scrollHeight > title.clientHeight + 1,
-        descriptionOverflow: description.scrollHeight > description.clientHeight + 1,
-        contentFits: node.scrollHeight <= node.clientHeight + 1,
-      };
-    }));
-
+    const rows = page.locator("[data-hub-app-row]");
+    await expect(rows.first()).toBeVisible();
+    const boxes = await rows.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const clipped = [...node.querySelectorAll<HTMLElement>("[data-tile-title], [data-tile-status]")].some(
+          (element) => element.scrollWidth > element.clientWidth + 1,
+        );
+        return { height: node.getBoundingClientRect().height, clipped };
+      }),
+    );
     expect(boxes.length).toBeGreaterThan(3);
-    expect(new Set(boxes.map(box => box.height)).size, "altura única para todos os tiles").toBe(1);
-    for (const box of boxes) expect(box.contentFits, "o texto não vaza da caixa do tile").toBe(true);
+    for (const box of boxes) {
+      expect(box.height).toBeGreaterThanOrEqual(62);
+      expect(box.clipped, "nenhum texto cortado na linha do app").toBe(false);
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+    expect(hydration).toEqual([]);
   });
 });

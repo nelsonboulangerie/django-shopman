@@ -66,7 +66,7 @@ function save() {
             v-for="collection in collections"
             :key="collection.ref"
             type="button"
-            class="inline-flex h-11 items-center gap-1.5 rounded-full border px-3.5 op-label transition"
+            class="inline-flex h-8 items-center gap-1.5 rounded-full border px-3.5 op-label transition"
             :class="chosen.includes(collection.ref) ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
             :aria-pressed="chosen.includes(collection.ref)"
             @click="toggle(collection.ref)"

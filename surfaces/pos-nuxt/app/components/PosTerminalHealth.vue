@@ -125,7 +125,7 @@ function meta(status: string): StatusMeta {
         v-else-if="compact"
         type="button"
         data-terminal-health-trigger
-        class="flex min-h-11 items-center rounded-md py-1 text-left text-rail-foreground/80 transition hover:bg-rail-foreground/10 hover:text-rail-foreground"
+        class="flex min-h-8 items-center rounded-md py-1 text-left text-rail-foreground/80 transition hover:bg-rail-foreground/10 hover:text-rail-foreground"
         :class="showLabels ? 'w-full gap-3 px-2.5' : 'w-11 justify-center'"
         :aria-label="`Saúde do terminal: ${overall.label}`"
         :title="showLabels ? undefined : `${pos.terminal_label}: ${overall.label}`"

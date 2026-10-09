@@ -90,7 +90,7 @@ function confirm() {
               v-model="received"
               inputmode="decimal"
               autocomplete="off"
-              class="h-11 text-base tabular-nums"
+              class="h-8 text-base tabular-nums"
               :placeholder="handOver.amount_display.replace('R$ ', '')"
               data-preorder-received
             />

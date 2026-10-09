@@ -275,7 +275,7 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  class="block min-h-11 w-full rounded-md text-sm text-muted-foreground outline-none file:mr-3 file:rounded-md file:border file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  class="block min-h-8 w-full rounded-md text-sm text-muted-foreground outline-none file:mr-3 file:rounded-md file:border file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   @change="onPhotoChange"
                 />
               </label>

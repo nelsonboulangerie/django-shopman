@@ -293,7 +293,7 @@ function refreshAll() {
             v-for="entry in REPORT_KINDS"
             :key="entry.kind"
             type="button"
-            class="min-h-11 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            class="min-h-8 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
               activeKind === entry.kind
                 ? 'bg-primary text-primary-foreground'
@@ -309,7 +309,7 @@ function refreshAll() {
           type="button"
           variant="outline"
           size="sm"
-          class="ml-auto min-h-11"
+          class="ml-auto min-h-8"
           :disabled="!canExport"
           :title="
             exportStatus === 'pending'
@@ -328,7 +328,7 @@ function refreshAll() {
           type="button"
           variant="ghost"
           size="sm"
-          class="min-h-11"
+          class="min-h-8"
           @click="cancelExport()"
         >
           Cancelar
@@ -423,7 +423,7 @@ function refreshAll() {
         <UiButton
           type="button"
           size="sm"
-          class="min-h-11"
+          class="min-h-8"
           :disabled="!!filterError"
           @click="applyFilters()"
         >
@@ -455,7 +455,7 @@ function refreshAll() {
           type="button"
           size="sm"
           variant="outline"
-          class="ml-auto min-h-11"
+          class="ml-auto min-h-8"
           @click="applyFilters()"
         >
           Reconciliar relatório
@@ -496,7 +496,7 @@ function refreshAll() {
           type="button"
           variant="outline"
           size="sm"
-          class="mt-1 min-h-11"
+          class="mt-1 min-h-8"
           @click="refresh()"
         >
           <Icon name="lucide:refresh-cw" class="size-4" />
@@ -719,7 +719,7 @@ function refreshAll() {
             type="button"
             size="sm"
             variant="outline"
-            class="min-h-11"
+            class="min-h-8"
             :disabled="!pagination.previous_cursor || pending"
             @click="openCursor(pagination.previous_cursor)"
           >
@@ -729,7 +729,7 @@ function refreshAll() {
             type="button"
             size="sm"
             variant="outline"
-            class="min-h-11"
+            class="min-h-8"
             :disabled="!pagination.next_cursor || pending"
             @click="openCursor(pagination.next_cursor)"
           >

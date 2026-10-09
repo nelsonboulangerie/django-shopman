@@ -1390,7 +1390,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           >Peça pesada: para trocar, remova e lance a outra etiqueta.</span>
           <div
             v-else
-            class="inline-flex h-11 shrink-0 items-center overflow-hidden rounded-md border border-input bg-card"
+            class="inline-flex h-8 shrink-0 items-center overflow-hidden rounded-md border border-input bg-card"
             role="group"
             :aria-label="`Quantidade de ${activeItem.name}`"
             title="Quantidade: −/+ ou digite"
@@ -1406,7 +1406,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             </button>
             <button
               type="button"
-              class="h-11 w-11 text-center op-title tnum disabled:opacity-50"
+              class="h-8 w-8 text-center op-title tnum disabled:opacity-50"
               :class="numpadMode === 'qty' && !numpadFresh ? 'bg-primary/10' : ''"
               :aria-label="`Editar quantidade de ${activeItem.name}`"
               :disabled="mutationBusy"
@@ -1429,7 +1429,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           </div>
           <button
             type="button"
-            class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md px-2.5 op-label font-semibold whitespace-nowrap text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
+            class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 op-label font-semibold whitespace-nowrap text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
             aria-label="Remover"
             title="Remover, com confirmação e desfazer"
             :disabled="mutationBusy"
@@ -1441,7 +1441,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           <div class="flex-1" />
           <button
             type="button"
-            class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md px-2 op-label whitespace-nowrap text-muted-foreground transition hover:bg-accent"
+            class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 op-label whitespace-nowrap text-muted-foreground transition hover:bg-accent"
             title="Fechar o editor"
             data-pos-line-editor-close
             @click="closeEditor"
@@ -1587,7 +1587,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           v-for="key in [1, 2, 3, 4, 5, 6, 7, 8, 9, 'decimal', 0, 'back']"
           :key="key"
           type="button"
-          class="h-11 rounded-md border bg-card op-title transition hover:bg-muted disabled:opacity-40"
+          class="h-8 rounded-md border bg-card op-title transition hover:bg-muted disabled:opacity-40"
           :class="
             key === 'back' ? 'border-destructive/30 text-destructive' : 'border-border'
           "

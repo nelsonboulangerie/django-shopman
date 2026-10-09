@@ -307,7 +307,7 @@ useHead({ title: "Enviados" });
 
                 <NuxtLink
                   :to="historyHref(announcement.ref)"
-                  class="mt-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold underline underline-offset-2"
+                  class="mt-3 inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold underline underline-offset-2"
                 >
                   {{ historyLinkLabel(actions, announcement.ref) }}
                   <Icon name="lucide:arrow-right" class="size-4" aria-hidden="true" />

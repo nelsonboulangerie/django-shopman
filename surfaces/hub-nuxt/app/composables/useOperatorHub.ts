@@ -15,24 +15,18 @@ export async function useOperatorHub() {
   const apiPath = useApiPath();
   const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
-  const { data, pending, error, refresh } = await useFetch<HubResponse>(
-    () => apiPath("/api/v1/backstage/hub/"),
-    { credentials: "include", headers: requestHeaders },
-  );
-
-  const hub = computed<OperatorHubProjection | null>(() => data.value?.hub ?? null);
-  const tiles = computed<HubTileProjection[]>(() => hub.value?.tiles ?? []);
-  const queue = computed<HubQueueProjection | null>(() => hub.value?.queue ?? null);
-  const operatorName = computed(() => hub.value?.operator_name ?? "");
-  const shopName = computed(() => hub.value?.shop_name ?? "");
-
+  // ⚠️ Os ganchos de ciclo de vida vêm ANTES do `await`: depois dele não há instância
+  // ativa, o Vue descarta o `onMounted` com um aviso, e o poll nunca começava (a tela
+  // dizia "Atualiza sozinho a cada 30 s" e não atualizava).
+  let reload: () => Promise<unknown> = async () => undefined;
+  let busy = () => false;
   let timer: ReturnType<typeof setInterval> | null = null;
   const visible = () => typeof document === "undefined" || document.visibilityState === "visible";
   const tick = () => {
-    if (visible() && !pending.value) void refresh();
+    if (visible() && !busy()) void reload();
   };
   const onVisibility = () => {
-    if (visible()) void refresh();
+    if (visible()) void reload();
   };
 
   onMounted(() => {
@@ -44,6 +38,29 @@ export async function useOperatorHub() {
     timer = null;
     document.removeEventListener("visibilitychange", onVisibility);
   });
+
+  const { data, pending, error, refresh } = await useFetch<HubResponse>(
+    () => apiPath("/api/v1/backstage/hub/"),
+    { credentials: "include", headers: requestHeaders },
+  );
+  reload = () => refresh();
+  busy = () => pending.value;
+
+  // A última leitura boa fica: a releitura que falha zera o `data` do `useFetch`, e a
+  // tela que já mostrava a fila viraria a tela de erro inteira. Com a última leitura, a
+  // fila segue na tela e o cabeçalho avisa de quando ela é.
+  const lastHub = shallowRef<OperatorHubProjection | null>(data.value?.hub ?? null);
+  watch(
+    () => data.value?.hub,
+    (value) => {
+      if (value) lastHub.value = value;
+    },
+  );
+  const hub = computed<OperatorHubProjection | null>(() => data.value?.hub ?? lastHub.value);
+  const tiles = computed<HubTileProjection[]>(() => hub.value?.tiles ?? []);
+  const queue = computed<HubQueueProjection | null>(() => hub.value?.queue ?? null);
+  const operatorName = computed(() => hub.value?.operator_name ?? "");
+  const shopName = computed(() => hub.value?.shop_name ?? "");
 
   return { data, hub, tiles, queue, operatorName, shopName, pending, error, refresh };
 }

@@ -253,14 +253,14 @@ async function confirmSubmit() {
       <div class="flex-1" />
       <span
         v-if="closing?.operator_display"
-        class="inline-flex h-11 items-center gap-1.5 rounded-full bg-secondary px-4 op-label font-semibold"
+        class="inline-flex h-8 items-center gap-1.5 rounded-full bg-secondary px-4 op-label font-semibold"
         data-closing-operator
       >
         <Icon name="lucide:user-round" class="size-4" aria-hidden="true" />{{ closing.operator_display }}
       </span>
       <button
         type="button"
-        class="inline-flex h-11 items-center gap-1.5 rounded-full border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
+        class="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
         aria-label="Voltar à sessão de caixa"
         title="Sair: o que já foi contado fica na tela até você voltar"
         @click="goToCashSession"
@@ -352,7 +352,7 @@ async function confirmSubmit() {
               <h2 class="op-heading">Quanto tem na gaveta?</h2>
               <p v-if="drawerShift" class="mt-1 op-micro text-muted-foreground">{{ drawerShift }}</p>
             </div>
-            <div class="inline-flex h-11 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Como contar">
+            <div class="inline-flex h-8 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Como contar">
               <button
                 type="button"
                 class="h-full rounded px-3 op-label transition"

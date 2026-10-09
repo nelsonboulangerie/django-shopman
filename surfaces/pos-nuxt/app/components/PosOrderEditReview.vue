@@ -101,7 +101,7 @@ function pickMethod(method: DeliveryPaymentMethod) {
           <UiInput
             :model-value="taxIdMasked"
             inputmode="numeric"
-            class="h-11 tabular-nums"
+            class="h-8 tabular-nums"
             placeholder="000.000.000-00"
             aria-label="CPF ou CNPJ que sai na nota da entrega"
             :maxlength="18"

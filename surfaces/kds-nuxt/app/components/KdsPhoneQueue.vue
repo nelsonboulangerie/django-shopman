@@ -23,6 +23,8 @@ const props = defineProps<{
   blockedRefs: ReadonlySet<string>;
   additionPks: ReadonlySet<number>;
   finishingPks: ReadonlySet<number>;
+  /** O prazo de cada Desfazer aberto (epoch ms). */
+  finishUntil?: ReadonlyMap<number, number>;
   allDay: KDSAllDayCount[];
   density: KDSDensity;
 }>();
@@ -85,6 +87,7 @@ function onRowPointerdown(pk: number, event: PointerEvent) {
       :blocked="blockedRefs.has(focus.order_ref)"
       :addition="additionPks.has(focus.pk)"
       :finishing="finishingPks.has(focus.pk)"
+      :finish-until="finishUntil?.get(focus.pk)"
       @open="emit('open', focus.pk)"
       @start="emit('start', focus.pk)"
       @finish="emit('finish', focus.pk)"
@@ -128,7 +131,7 @@ function onRowPointerdown(pk: number, event: PointerEvent) {
     <button
       v-if="rest.length"
       type="button"
-      class="min-h-11 w-full rounded-lg text-center op-label text-muted-foreground transition hover:bg-accent"
+      class="min-h-8 w-full rounded-lg text-center op-label text-muted-foreground transition hover:bg-accent"
       :aria-label="`Ver a fila inteira: mais ${rest.length} pedidos`"
       data-kds-queue-rest
       @click="showAll = true"

@@ -173,7 +173,7 @@ describe("a linha de estado do bloco do app", () => {
 });
 
 // Central no celular (v3 `depois-hub-celular`, auditoria H03): linhas finas, até 3, o
-// selo na barra de 56px, apps como linhas de 62px com chevron.
+// selo da Central só como identidade, apps como linhas de 62px com chevron.
 describe("Central no celular", () => {
   it("a linha fina diz o app e há quanto espera, numa linha", () => {
     expect(queuePhoneLine(item({ waiting_since: at(-14 * 60) }), NOW)).toBe("Gestor de pedidos · há 14 min");
@@ -188,7 +188,7 @@ describe("Central no celular", () => {
     expect(app).toContain("min-h-[62px]");
     expect(app).toContain("data-hub-seal");
     expect(app).toContain("<MoreBelow");
-    // Tablet em pé: título e detalhe da fila numa linha só (H04).
-    expect(app).toContain('class="op-body font-semibold md:truncate"');
+    // Fase 2 (D6): o texto da casa quebra, nunca corta, em nenhuma largura.
+    expect(app).not.toMatch(/\btruncate\b|line-clamp-\d|text-ellipsis/);
   });
 });

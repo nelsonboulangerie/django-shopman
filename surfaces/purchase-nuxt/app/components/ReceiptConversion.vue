@@ -104,7 +104,7 @@ function submitDeclare() {
       <button
         type="button"
         :disabled="pending"
-        class="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-auto"
+        class="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-auto"
         @click="proposal ? emit('accept') : emit('acceptAxes')"
       >
         <Icon name="lucide:check" class="size-4" />
@@ -112,7 +112,7 @@ function submitDeclare() {
       </button>
       <button
         type="button"
-        class="inline-flex h-11 w-full items-center justify-center rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-accent sm:w-auto"
+        class="inline-flex h-8 w-full items-center justify-center rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-accent sm:w-auto"
         @click="choosing = true"
       >
         Não é assim
@@ -125,11 +125,11 @@ function submitDeclare() {
         A nota não diz quanto vale cada {{ preview.line.invoiceUnit || "embalagem" }} em {{ preview.material.unit }}.
       </p>
       <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <button type="button" class="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground sm:w-auto" @click="openDeclare">
+        <button type="button" class="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground sm:w-auto" @click="openDeclare">
           <Icon name="lucide:plus" class="size-4" />
           Cadastrar embalagem
         </button>
-        <button v-if="conversions.length" type="button" class="inline-flex h-11 w-full items-center justify-center rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-accent sm:w-auto" @click="choosing = true">
+        <button v-if="conversions.length" type="button" class="inline-flex h-8 w-full items-center justify-center rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-accent sm:w-auto" @click="choosing = true">
           Escolher uma já cadastrada
         </button>
       </div>
@@ -168,7 +168,7 @@ function submitDeclare() {
         Como você chama isto
         <input
           v-model="label"
-          class="mt-1 h-11 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+          class="mt-1 h-8 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
           :placeholder="preview.line.invoiceUnit ? `${preview.line.invoiceUnit.toLowerCase()} 5 kg` : 'saco 25 kg'"
         />
       </label>
@@ -177,7 +177,7 @@ function submitDeclare() {
         <input
           v-model="factor"
           inputmode="decimal"
-          class="mt-1 h-11 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums text-foreground"
+          class="mt-1 h-8 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums text-foreground"
           placeholder="25"
         />
       </label>
@@ -192,13 +192,13 @@ function submitDeclare() {
         <button
           type="button"
           :disabled="!canSave || pending"
-          class="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-auto"
+          class="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-auto"
           @click="submitDeclare"
         >
           <Icon name="lucide:check" class="size-4" />
           Salvar
         </button>
-        <button type="button" class="inline-flex h-11 w-full items-center justify-center rounded-md border border-border px-4 text-sm font-medium hover:bg-accent sm:w-auto" @click="declaring = false">
+        <button type="button" class="inline-flex h-8 w-full items-center justify-center rounded-md border border-border px-4 text-sm font-medium hover:bg-accent sm:w-auto" @click="declaring = false">
           Cancelar
         </button>
       </div>

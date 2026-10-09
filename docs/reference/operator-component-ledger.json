@@ -770,6 +770,32 @@
           "runner": {
             "config": "playwright.visual.config.ts"
           }
+        },
+        {
+          "id": "suite",
+          "source_files": [
+            "app/pages/suite.vue"
+          ],
+          "routes": [
+            "/suite"
+          ],
+          "variants": [
+            "alerts-none",
+            "alerts-one",
+            "alerts-three",
+            "swipe",
+            "stacked-chart",
+            "action-bar"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
         }
       ]
     },

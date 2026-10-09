@@ -178,7 +178,7 @@ const segmentClass = (active: boolean) => (active ? "border-primary bg-primary/5
               type="button"
               role="radio"
               :aria-checked="kind === 'label'"
-              class="h-11 min-w-0 rounded-md border text-sm font-medium"
+              class="h-8 min-w-0 rounded-md border text-sm font-medium"
               :class="segmentClass(kind === 'label')"
               @mousedown.prevent
               @click="setKind('label')"
@@ -189,7 +189,7 @@ const segmentClass = (active: boolean) => (active ? "border-primary bg-primary/5
               type="button"
               role="radio"
               :aria-checked="kind === 'weight'"
-              class="h-11 min-w-0 rounded-md border text-sm font-medium"
+              class="h-8 min-w-0 rounded-md border text-sm font-medium"
               :class="segmentClass(kind === 'weight')"
               @mousedown.prevent
               @click="setKind('weight')"

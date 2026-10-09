@@ -105,6 +105,9 @@ export function useKdsBoard(stationRef: string) {
   // tira dos contadores e do "a fazer", então o poll e o SSE não os devolvem ao
   // trabalho enquanto a janela está aberta.
   const finishing = ref<Set<number>>(new Set());
+  // O prazo de cada janela aberta (epoch ms): o botão Desfazer conta até ele, e montar
+  // o card de novo (foco do celular, recarga da grade) não reinicia a janela.
+  const finishUntil = ref<ReadonlyMap<number, number>>(new Map());
   const view = computed<KDSBoardView | null>(() =>
     board.value ? boardView(board.value, finishing.value) : null,
   );
@@ -326,6 +329,9 @@ export function useKdsBoard(stationRef: string) {
     const next = new Set(finishing.value);
     next.delete(pk);
     finishing.value = next;
+    const deadlines = new Map(finishUntil.value);
+    deadlines.delete(pk);
+    finishUntil.value = deadlines;
   }
 
   function commitFinish(pk: number) {
@@ -362,6 +368,7 @@ export function useKdsBoard(stationRef: string) {
     const t = findTicket(pk);
     if (!t) return;
     finishing.value = new Set(finishing.value).add(pk);
+    finishUntil.value = new Map(finishUntil.value).set(pk, Date.now() + KDS_UNDO_WINDOW_MS);
     finishTimers.set(pk, setTimeout(() => commitFinish(pk), KDS_UNDO_WINDOW_MS));
   };
   // Recall: o concluído sai da lista de recentes; a reconciliação o traz de volta ao board ativo.
@@ -428,6 +435,7 @@ export function useKdsBoard(stationRef: string) {
     acknowledgeAttention,
     start,
     finish,
+    finishUntil,
     undoFinish,
     recall,
     acknowledge,
