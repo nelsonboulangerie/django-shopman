@@ -168,7 +168,7 @@ useHead({ title: "Confirmação" });
             v-else-if="control.state !== 'open'"
             color="info"
             variant="subtle"
-            :title="control.state === 'used' ? 'Este envio já saiu.' : 'O pedido venceu. Quem pediu pode chamar de novo.'"
+            :title="control.state === 'used' ? 'Este envio já foi feito.' : 'O pedido venceu. Quem pediu pode chamar de novo.'"
           />
           <template v-else-if="!control.is_requester">
             <div v-if="usingCode || !device.supported.value" class="flex flex-col gap-3">

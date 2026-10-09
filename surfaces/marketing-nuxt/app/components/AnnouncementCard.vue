@@ -43,6 +43,7 @@ import {
   googlePostTypeLabel,
 } from "~/presentation/googleBusinessPost";
 import type { GoogleBusinessOptions } from "~/presentation/googleBusinessPost";
+import { useFileDialog } from "@vueuse/core";
 
 const props = defineProps<{
   announcement: Announcement;
@@ -473,7 +474,18 @@ function clockOf(instant: string): string {
 const photoUrl = ref("");
 const photoBusy = ref(false);
 const photoError = ref("");
-const photoInput = ref<HTMLInputElement | null>(null);
+// O seletor de arquivo com `capture` é API do navegador: o `useFileDialog` o cria fora
+// da tela, e o gesto é o botão "Tirar outra" (nenhum controle cru no template).
+const camera = useFileDialog({
+  accept: "image/*",
+  capture: "environment",
+  multiple: false,
+  reset: true,
+});
+camera.onChange((files) => {
+  const file = files?.[0];
+  if (file) void uploadPhoto(file);
+});
 const shownPhoto = computed(() => photoUrl.value || outgoingImage.value);
 const photoCaption = computed(() => {
   if (photoUrl.value) return "Foto tirada agora";
@@ -481,11 +493,7 @@ const photoCaption = computed(() => {
   return props.announcement.lot_quantity ? `Foto do lote${at ? `, ${at}` : ""}` : "Foto do produto";
 });
 
-async function onPhotoPicked(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = "";
-  if (!file) return;
+async function uploadPhoto(file: File) {
   photoBusy.value = true;
   photoError.value = "";
   try {
@@ -681,21 +689,8 @@ defineExpose({
         :label="photoBusy ? 'Enviando a foto…' : shownPhoto ? 'Tirar outra' : 'Tirar foto'"
         :disabled="busy"
         data-review-retake
-        @click="photoInput?.click()"
+        @click="camera.open()"
       />
-      <!-- A câmera do dispositivo é API do navegador (o seletor de arquivo com
-           `capture`), sem peça equivalente no conjunto: fica escondida, e o gesto é o
-           botão acima. -->
-      <input
-        ref="photoInput"
-        type="file"
-        accept="image/*"
-        capture="environment"
-        class="sr-only"
-        aria-label="Tirar a foto do lote"
-        tabindex="-1"
-        @change="onPhotoPicked"
-      >
     </figure>
     <NuxtAlert v-if="photoError" class="-mt-2" color="error" variant="subtle" :title="photoError" />
 
