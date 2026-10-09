@@ -125,6 +125,9 @@ SCREENS: dict[tuple[str, str], Screen] = {
     ("orders", "history"): Screen("shop.manage_orders", screen_query),
     ("orders", "catalog"): Screen("shop.manage_catalog", screen_query),
     ("orders", "customers"): Screen("shop.manage_customers", screen_query),
+    # As Encomendas do PDV: o balcão as lê (a lista pede também `shop.manage_orders`,
+    # que o grupo Caixa tem; o favorito é do balcão).
+    ("pos", "preorders"): Screen("cashman.operate_pos", screen_query),
 }
 
 

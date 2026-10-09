@@ -71,7 +71,17 @@ function irAteOFim() {
         enter-from-class="opacity-0"
         leave-to-class="opacity-0"
       >
-        <div v-if="visible" class="pointer-events-none fixed inset-x-0 z-30" :style="{ bottom: `${offset}px` }" data-more-below>
+        <!-- NUNCA POR CIMA DE OVERLAY. Os overlays do Nuxt UI (gaveta, popover,
+             modal) não têm z-index: valem pela ordem no DOM. A dica, com z-30,
+             passava por cima do painel de filtros aberto no celular. Com qualquer
+             diálogo aberto (`role=dialog` + `data-state=open`, o par do Reka) ela
+             some, por CSS: nada a observar, e o servidor desenha igual. -->
+        <div
+          v-if="visible"
+          class="pointer-events-none fixed inset-x-0 z-30 [body:has([role=dialog][data-state=open])_&]:hidden"
+          :style="{ bottom: `${offset}px` }"
+          data-more-below
+        >
           <!-- O degradê é metade da dica: sem ele a pílula boia sobre um texto
                qualquer e vira artefato. Com ele, o conteúdo DISSOLVE para baixo,
                que é a própria mensagem. Mesmo par do bottom-sheet da loja.

@@ -145,6 +145,23 @@ def test_screen_permission_is_the_permission_of_who_reads_the_screen(client, ges
 
 
 @pytest.mark.django_db
+def test_pos_preorders_keeps_favorites_for_the_counter(client, gestor):
+    """As Encomendas do PDV guardam favorito (o painel e a faixa de filtros rápidos)."""
+    url = reverse(LIST)
+    preorders = {"surface": "pos", "screen": "preorders"}
+    caixa = _user("caixa-favoritos", "cashman.operate_pos", "shop.manage_orders")
+    client.force_login(caixa)
+    query = {"filters": {"pay": ["to_receive"], "fulfillment": ["delivery"]}}
+    saved = client.post(url, {**preorders, "name": "Entregas a receber", "query": query, "pinned": True}, content_type="application/json")
+    assert saved.status_code in (200, 201), saved.content
+    views = client.get(url, preorders).json()["views"]
+    assert [(v["name"], v["pinned"], v["query"]) for v in views] == [("Entregas a receber", True, query)]
+    # Quem não opera o balcão não guarda favorito das Encomendas.
+    client.force_login(gestor)
+    assert client.get(url, preorders).status_code == 403
+
+
+@pytest.mark.django_db
 def test_someone_elses_favorite_does_not_exist(client, gestor):
     client.force_login(gestor)
     view = client.post(reverse(LIST), {**HISTORY, "name": "Meu", "query": {}}, content_type="application/json").json()["view"]
