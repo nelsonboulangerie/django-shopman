@@ -33,7 +33,9 @@ const surface = (over: Partial<SurfaceProjection> = {}): SurfaceProjection => ({
   ...over,
 });
 
-const cell = (over: Partial<SurfaceCellProjection> = {}): SurfaceCellProjection => ({
+const cell = (
+  over: Partial<SurfaceCellProjection> = {},
+): SurfaceCellProjection => ({
   surface_ref: "web",
   in_listing: true,
   is_published: true,
@@ -60,7 +62,9 @@ const social = (over: Partial<ProductSocial> = {}): ProductSocial => ({
   ...over,
 });
 
-const row = (over: Partial<CatalogRowProjection> = {}): CatalogRowProjection => ({
+const row = (
+  over: Partial<CatalogRowProjection> = {},
+): CatalogRowProjection => ({
   sku: "PAO",
   name: "Pão",
   image_url: "",
@@ -115,7 +119,7 @@ describe("cellView", () => {
     const v = cellView(row(), cell());
     expect(v.state).toBe("available");
     expect(v.label).toBe("Disponível");
-    expect(v.toneClass).toContain("emerald");
+    expect(v.toneClass).toContain("success");
   });
 });
 
@@ -175,20 +179,35 @@ describe("rowStatus (esmaecer quando 'fora')", () => {
     over.map((o) => cell(o));
 
   it("ativo quando disponível em ao menos um canal", () => {
-    const r = row({ cells: cells([{ available: true }, { available: false }]) });
+    const r = row({
+      cells: cells([{ available: true }, { available: false }]),
+    });
     expect(availableAnywhere(r)).toBe(true);
     expect(rowStatus(r).off).toBe(false);
     expect(rowStatus(r).label).toBe("");
   });
 
   it("Oculto quando o produto está oculto no catálogo (nível-produto)", () => {
-    const r = row({ is_published: false, cells: cells([{ available: false }]) });
-    expect(rowStatus(r)).toEqual({ off: true, label: "Oculto", tone: "muted", hint: "" });
+    const r = row({
+      is_published: false,
+      cells: cells([{ available: false }]),
+    });
+    expect(rowStatus(r)).toEqual({
+      off: true,
+      label: "Oculto",
+      tone: "muted",
+      hint: "",
+    });
   });
 
   it("Pausado quando o produto está pausado (globalzinho)", () => {
     const r = row({ is_sellable: false, cells: cells([{ available: false }]) });
-    expect(rowStatus(r)).toEqual({ off: true, label: "Pausado", tone: "amber", hint: "" });
+    expect(rowStatus(r)).toEqual({
+      off: true,
+      label: "Pausado",
+      tone: "amber",
+      hint: "",
+    });
   });
 
   it("Indisponível quando cada canal foi pausado individualmente (sem pausa global)", () => {
@@ -201,7 +220,12 @@ describe("rowStatus (esmaecer quando 'fora')", () => {
       ]),
     });
     expect(availableAnywhere(r)).toBe(false);
-    expect(rowStatus(r)).toEqual({ off: true, label: "Indisponível", tone: "amber", hint: "" });
+    expect(rowStatus(r)).toEqual({
+      off: true,
+      label: "Indisponível",
+      tone: "amber",
+      hint: "",
+    });
   });
 
   it("não marca 'Indisponível' um produto sem nenhuma listing", () => {
@@ -216,11 +240,20 @@ describe("rowStatus (esmaecer quando 'fora')", () => {
       sold_out: true,
       cells: cells([{ in_listing: true, available: true }]), // switch ligado, mas sem estoque
     });
-    expect(rowStatus(r)).toEqual({ off: true, label: "Esgotado", tone: "danger", hint: "" });
+    expect(rowStatus(r)).toEqual({
+      off: true,
+      label: "Esgotado",
+      tone: "danger",
+      hint: "",
+    });
   });
 
   it("Pausado tem precedência sobre Esgotado", () => {
-    const r = row({ is_sellable: false, sold_out: true, cells: cells([{ available: false }]) });
+    const r = row({
+      is_sellable: false,
+      sold_out: true,
+      cells: cells([{ available: false }]),
+    });
     expect(rowStatus(r).label).toBe("Pausado");
   });
 
@@ -278,24 +311,38 @@ describe("cellSyncView (selo de sync por célula)", () => {
   });
 
   it("synced = verde, não acionável", () => {
-    const v = cellSyncView(ifood, cell({ surface_ref: "ifood", sync_status: "synced" }));
+    const v = cellSyncView(
+      ifood,
+      cell({ surface_ref: "ifood", sync_status: "synced" }),
+    );
     expect(v.show).toBe(true);
     expect(v.actionable).toBe(false);
-    expect(v.toneClass).toContain("emerald");
+    expect(v.color).toBe("success");
+    expect(v.icon).toContain("circle-check");
   });
 
   it("error e pending são acionáveis (oferecem reenvio)", () => {
-    expect(cellSyncView(ifood, cell({ sync_status: "error" })).actionable).toBe(true);
-    expect(cellSyncView(ifood, cell({ sync_status: "pending" })).actionable).toBe(true);
+    expect(cellSyncView(ifood, cell({ sync_status: "error" })).actionable).toBe(
+      true,
+    );
+    expect(
+      cellSyncView(ifood, cell({ sync_status: "pending" })).actionable,
+    ).toBe(true);
   });
 
   it("alvo de projeção sem registro = 'nunca', acionável quando na listing", () => {
-    const inList = cellSyncView(ifood, cell({ sync_status: "", in_listing: true }));
+    const inList = cellSyncView(
+      ifood,
+      cell({ sync_status: "", in_listing: true }),
+    );
     expect(inList.show).toBe(true);
     expect(inList.actionable).toBe(true);
     expect(inList.label).toBe("Nunca sincronizado");
     // fora da listing → nada a reenviar
-    expect(cellSyncView(ifood, cell({ sync_status: "", in_listing: false })).actionable).toBe(false);
+    expect(
+      cellSyncView(ifood, cell({ sync_status: "", in_listing: false }))
+        .actionable,
+    ).toBe(false);
   });
 
   it("superfície ausente (undefined) = sem selo", () => {
@@ -320,7 +367,12 @@ describe("syncErrorCount", () => {
     expect(syncErrorCount(r, surfaces)).toBe(2);
   });
   it("zero quando não há erro", () => {
-    expect(syncErrorCount(row({ cells: [cell({ sync_status: "synced" })] }), surfaces)).toBe(0);
+    expect(
+      syncErrorCount(
+        row({ cells: [cell({ sync_status: "synced" })] }),
+        surfaces,
+      ),
+    ).toBe(0);
   });
 });
 
@@ -328,7 +380,11 @@ describe("pimSummary", () => {
   it("completo quando tem marca e categoria", () => {
     const r = row({
       pim_complete: true,
-      social: social({ brand: "Nelson", google_product_category: "Food", gtin: "7891000100103" }),
+      social: social({
+        brand: "Nelson",
+        google_product_category: "Food",
+        gtin: "7891000100103",
+      }),
     });
     const s = pimSummary(r);
     expect(s.complete).toBe(true);
@@ -336,7 +392,9 @@ describe("pimSummary", () => {
     expect(s.filled).toBe(3);
   });
   it("lista o que falta p/ feed", () => {
-    const s = pimSummary(row({ pim_complete: false, social: social({ brand: "Nelson" }) }));
+    const s = pimSummary(
+      row({ pim_complete: false, social: social({ brand: "Nelson" }) }),
+    );
     expect(s.complete).toBe(false);
     expect(s.missing).toEqual(["categoria"]);
     expect(s.filled).toBe(1);

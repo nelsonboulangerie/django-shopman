@@ -15,7 +15,10 @@ interface RawCall {
 
 const DJANGO = "http://django.internal:8000";
 
-function makeEvent(headers: Record<string, string>): { event: H3Event; res: ServerResponse } {
+function makeEvent(headers: Record<string, string>): {
+  event: H3Event;
+  res: ServerResponse;
+} {
   const request = new IncomingMessage(new Socket());
   request.method = "GET";
   request.url = "/api/v1/backstage/marketing/v2/";
@@ -24,7 +27,11 @@ function makeEvent(headers: Record<string, string>): { event: H3Event; res: Serv
   return { event: createEvent(request, response), res: response };
 }
 
-function upstream(status: number, data: unknown, headers: Record<string, string>) {
+function upstream(
+  status: number,
+  data: unknown,
+  headers: Record<string, string>,
+) {
   return { status, _data: data, headers: new Headers(headers) };
 }
 
@@ -40,17 +47,19 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
   it("preserves 304 and only the allowlisted request/response headers", async () => {
     const raw = vi.fn((url: string, options: RawCall["options"]) => {
       calls.push({ url, options });
-      return Promise.resolve(upstream(304, undefined, {
-        "cache-control": "private, no-cache, must-revalidate",
-        etag: 'W/"marketing-v2-known"',
-        "retry-after": "11",
-        "x-api-version": "1",
-        "x-contract-version": "marketing.v2",
-        "x-request-id": "req_browser_42",
-        "x-resource-version": "18",
-        "ratelimit-remaining": "4",
-        "x-internal-secret": "must-not-pass",
-      }));
+      return Promise.resolve(
+        upstream(304, undefined, {
+          "cache-control": "private, no-cache, must-revalidate",
+          etag: 'W/"marketing-v2-known"',
+          "retry-after": "11",
+          "x-api-version": "1",
+          "x-contract-version": "marketing.v2",
+          "x-request-id": "req_browser_42",
+          "x-resource-version": "18",
+          "ratelimit-remaining": "4",
+          "x-internal-secret": "must-not-pass",
+        }),
+      );
     });
     vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
     const { event, res } = makeEvent({
@@ -76,7 +85,9 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
     expect(res.getHeader("ratelimit-remaining")).toBe("4");
     expect(res.getHeader("x-internal-secret")).toBeUndefined();
     expect(res.getHeader("cache-control")).toBe("private, no-store, max-age=0");
-    expect(res.getHeader("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(res.getHeader("content-security-policy")).toContain(
+      "frame-ancestors 'none'",
+    );
     expect(res.getHeader("x-frame-options")).toBe("DENY");
     expect(res.getHeader("x-powered-by")).toBeUndefined();
   });
@@ -84,24 +95,31 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
   it("preserva cookie e redirect seguros sem aceitar variantes injetáveis ou externas", async () => {
     const raw = vi
       .fn()
-      .mockResolvedValueOnce(upstream(302, "", {
-        location: "/admin/login/?next=%2Fcampaigns%2F",
-        "set-cookie": "sessionid=abc.def=ghi==; Path=/; Secure; HttpOnly; SameSite=Lax",
-      }))
-      .mockResolvedValueOnce(upstream(302, "", {
-        location: "//evil.example/steal",
-        "set-cookie": "sessionid=stolen; Path=/; Surprise=enabled",
-      }));
+      .mockResolvedValueOnce(
+        upstream(302, "", {
+          location: "/admin/login/?next=%2Fcampaigns%2F",
+          "set-cookie":
+            "sessionid=abc.def=ghi==; Path=/; Secure; HttpOnly; SameSite=Lax",
+        }),
+      )
+      .mockResolvedValueOnce(
+        upstream(302, "", {
+          location: "//evil.example/steal",
+          "set-cookie": "sessionid=stolen; Path=/; Surprise=enabled",
+        }),
+      );
     vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
 
-    const safe = makeEvent({});
+    const safe = makeEvent({ host: "gestor.boulangerie.com.br" });
     await proxyDjangoPath(safe.event, "/api/v1/backstage/marketing/v2");
-    expect(safe.res.getHeader("location")).toBe("/admin/login/?next=%2Fcampaigns%2F");
+    expect(safe.res.getHeader("location")).toBe(
+      "/admin/login/?next=%2Fcampaigns%2F",
+    );
     expect(safe.res.getHeader("set-cookie")).toBe(
       "shopman_operator_sessionid=abc.def=ghi==; Path=/; Secure; HttpOnly; SameSite=Lax",
     );
 
-    const unsafe = makeEvent({});
+    const unsafe = makeEvent({ host: "gestor.boulangerie.com.br" });
     await proxyDjangoPath(unsafe.event, "/api/v1/backstage/marketing/v2");
     expect(unsafe.res.getHeader("location")).toBeUndefined();
     expect(unsafe.res.getHeader("set-cookie")).toBeUndefined();
@@ -138,7 +156,9 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
       return Promise.resolve(upstream(403, {}, {}));
     });
     vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
-    const { event } = makeEvent({ cookie: "sessionid=admin-session; csrftoken=admin-csrf" });
+    const { event } = makeEvent({
+      cookie: "sessionid=admin-session; csrftoken=admin-csrf",
+    });
 
     await proxyDjangoPath(event, "/api/v1/backstage/marketing/v2");
 
@@ -146,17 +166,28 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
   });
 
   it("reescreve o delete do logout sem apagar o cookie direto do Admin", async () => {
-    const raw = vi.fn().mockResolvedValue(upstream(200, {}, {
-      "set-cookie": "sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
-    }));
+    const raw = vi.fn().mockResolvedValue(
+      upstream(
+        200,
+        {},
+        {
+          "set-cookie":
+            "sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
+        },
+      ),
+    );
     vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
     const { event, res } = makeEvent({
-      cookie: "sessionid=admin-session; shopman_operator_sessionid=operator-session",
+      host: "gestor.boulangerie.com.br",
+      cookie:
+        "sessionid=admin-session; shopman_operator_sessionid=operator-session",
     });
 
     await proxyDjangoPath(event, "/api/v1/backstage/operator/lock");
 
-    expect(raw.mock.calls[0]?.[1].headers.cookie).toBe("sessionid=operator-session");
+    expect(raw.mock.calls[0]?.[1].headers.cookie).toBe(
+      "sessionid=operator-session",
+    );
     expect(res.getHeader("set-cookie")).toBe(
       "shopman_operator_sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Domain=.boulangerie.com.br; Path=/; Secure; HttpOnly; SameSite=Lax",
     );
@@ -166,17 +197,24 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
   // saída do Nitro na trilha de acesso de TODO operador (mesma conta que gravou
   // 147.182.186.185 para clientes da loja no alpha, 17/09).
   it("apresenta o segredo do BFF ao Django junto do XFF recebido, quando configurado", async () => {
-    vi.stubGlobal("useRuntimeConfig", () => ({ djangoBaseUrl: DJANGO, djangoProxySecret: "s3cr3t" }));
+    vi.stubGlobal("useRuntimeConfig", () => ({
+      djangoBaseUrl: DJANGO,
+      djangoProxySecret: "s3cr3t",
+    }));
     const raw = vi.fn((url: string, options: RawCall["options"]) => {
       calls.push({ url, options });
       return Promise.resolve(upstream(200, {}, {}));
     });
     vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
-    const { event } = makeEvent({ "x-forwarded-for": "203.0.113.9, 10.244.0.1" });
+    const { event } = makeEvent({
+      "x-forwarded-for": "203.0.113.9, 10.244.0.1",
+    });
 
     await proxyDjangoPath(event, "/api/v1/backstage/operator/login");
 
-    expect(calls[0]?.options.headers["x-forwarded-for"]).toBe("203.0.113.9, 10.244.0.1");
+    expect(calls[0]?.options.headers["x-forwarded-for"]).toBe(
+      "203.0.113.9, 10.244.0.1",
+    );
     expect(calls[0]?.options.headers["x-shopman-proxy-secret"]).toBe("s3cr3t");
   });
 
@@ -200,7 +238,8 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
   it("declara o segredo na layer, só no servidor e desligado por padrão", async () => {
     vi.stubGlobal("defineNuxtConfig", (config: unknown) => config);
     const { default: layer } = await import("../nuxt.config");
-    const runtimeConfig = (layer as { runtimeConfig: Record<string, any> }).runtimeConfig;
+    const runtimeConfig = (layer as { runtimeConfig: Record<string, any> })
+      .runtimeConfig;
 
     expect(runtimeConfig.djangoProxySecret).toBe("");
     expect(runtimeConfig.public).not.toHaveProperty("djangoProxySecret");

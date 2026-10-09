@@ -5,7 +5,11 @@ import { useOrderIntention } from "./useOrderIntention";
 // Order detail read-side. Reads the expanded operator projection (items, timeline,
 // notes, fiscal links) and exposes the full action set. Writes go through the django
 // proxy and reconcile via refresh. Mirrors useOrdersBoard's in-flight guard.
-import type { CancellationReason, OperatorOrderProjection, OrderDetailResponse } from "~/types/orders";
+import type {
+  CancellationReason,
+  OperatorOrderProjection,
+  OrderDetailResponse,
+} from "~/types/orders";
 
 export function useOrderDetail(orderRef: string) {
   const intentions = useOrderIntention();
@@ -16,7 +20,12 @@ export function useOrderDetail(orderRef: string) {
   // calar o aviso de erro (mesmo gesto do `usePosTerminal`).
   const { flagIfStationLocked } = useStationLock();
 
-  const { data, pending, error, refresh: fetchOrder } = useFetch<OrderDetailResponse>(path, {
+  const {
+    data,
+    pending,
+    error,
+    refresh: fetchOrder,
+  } = useFetch<OrderDetailResponse>(path, {
     key: useOperatorResourceKey(`order-detail-${orderRef}`),
     server: true,
     dedupe: "defer",
@@ -25,14 +34,28 @@ export function useOrderDetail(orderRef: string) {
 
   const refresh = coalesceRefresh(() => fetchOrder());
 
-  watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
+  watch(
+    error,
+    (value) => {
+      if (value) flagIfStationLocked(value);
+    },
+    { immediate: true },
+  );
 
   const readMetadata = useReadMetadata(data, error);
-  const lastConfirmed = shallowRef<OperatorOrderProjection | null>(data.value?.order ?? null);
-  watch([data, error], ([value, failure]) => {
-    if (value?.order && !failure) lastConfirmed.value = value.order;
-  }, { flush: "sync" });
-  const order = computed<OperatorOrderProjection | null>(() => data.value?.order ?? (error.value ? lastConfirmed.value : null));
+  const lastConfirmed = shallowRef<OperatorOrderProjection | null>(
+    data.value?.order ?? null,
+  );
+  watch(
+    [data, error],
+    ([value, failure]) => {
+      if (value?.order && !failure) lastConfirmed.value = value.order;
+    },
+    { flush: "sync" },
+  );
+  const order = computed<OperatorOrderProjection | null>(
+    () => data.value?.order ?? (error.value ? lastConfirmed.value : null),
+  );
 
   const busy = ref(false);
   const mutationError = ref("");
@@ -48,7 +71,8 @@ export function useOrderDetail(orderRef: string) {
   // Guardamos a tentativa para REENVIAR o mesmo ato com a autorização, em vez de
   // pedir ao gerente que refaça o gesto (e escolha o motivo de novo).
   const managerChallenge = ref<{ code: string; message: string } | null>(null);
-  let lastAttempt: { action: string; body?: Record<string, unknown> } | null = null;
+  let lastAttempt: { action: string; body?: Record<string, unknown> } | null =
+    null;
 
   async function act(
     action: string,
@@ -57,43 +81,95 @@ export function useOrderDetail(orderRef: string) {
   ): Promise<boolean> {
     if (busy.value) return false;
     if (error.value) {
-      mutationError.value = "A leitura está desatualizada. Atualize o pedido antes de confirmar; seu rascunho foi mantido.";
+      mutationError.value =
+        "A leitura está desatualizada. Atualize o pedido antes de confirmar; seu rascunho foi mantido.";
       return false;
     }
     busy.value = true;
     mutationError.value = "";
     try {
-      if (["confirm", "advance", "reject", "cancel", "notes", "assign", "unassign", "equipment-back", "comment", "settle-delivery-cash", "requeue-fiscal", "resend-payment-link", "courier-dispatch", "courier-cancel", "courier-quote", "undo-handoff", "undo-ready"].includes(action)) {
-        await intentions.execute(orderRef, action, order.value?.actions?.find((item) => item.ref === action), body ?? {}, approval);
+      if (
+        [
+          "confirm",
+          "advance",
+          "reject",
+          "cancel",
+          "notes",
+          "assign",
+          "unassign",
+          "equipment-back",
+          "comment",
+          "settle-delivery-cash",
+          "requeue-fiscal",
+          "resend-payment-link",
+          "courier-dispatch",
+          "courier-cancel",
+          "courier-quote",
+          "undo-handoff",
+          "undo-ready",
+        ].includes(action)
+      ) {
+        await intentions.execute(
+          orderRef,
+          action,
+          order.value?.actions?.find((item) => item.ref === action),
+          body ?? {},
+          approval,
+        );
       } else {
-        await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
-          method: "POST", body: { ...(body ?? {}), ...(approval ? { manager_approval: approval } : {}) },
-        });
+        await $fetch(
+          `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`,
+          {
+            method: "POST",
+            body: {
+              ...(body ?? {}),
+              ...(approval ? { manager_approval: approval } : {}),
+            },
+          },
+        );
       }
       managerChallenge.value = null;
       lastAttempt = null;
-      try { await refresh(); }
-      catch { mutationError.value = "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação."; }
-      if (error.value) mutationError.value = "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação.";
+      try {
+        await refresh();
+      } catch {
+        mutationError.value =
+          "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação.";
+      }
+      if (error.value)
+        mutationError.value =
+          "Ação confirmada. A leitura atualizada falhou; atualize antes da próxima ação.";
       return true;
     } catch (error) {
       const code = httpErrorCode(error);
-      if (code === "manager_approval_required" || code === "manager_approval_invalid") {
+      if (
+        code === "manager_approval_required" ||
+        code === "manager_approval_invalid"
+      ) {
         // Sem toast: o desafio NÃO é falha, é um passo do fluxo. Um toast
         // vermelho aqui ensina o gerente que o sistema quebrou.
         lastAttempt = { action, body };
         managerChallenge.value = {
           code,
-          message: httpErrorMessage(error, "Esta ação precisa da autorização de um gerente."),
+          message: httpErrorMessage(
+            error,
+            "Esta ação precisa da autorização de um gerente.",
+          ),
         };
         return false;
       }
-      mutationError.value = httpErrorMessage(error, error instanceof Error ? error.message : "Não foi possível confirmar o resultado da ação.");
+      mutationError.value = httpErrorMessage(
+        error,
+        error instanceof Error
+          ? error.message
+          : "Não foi possível confirmar o resultado da ação.",
+      );
       useSonner.error(mutationError.value);
       try {
         await refresh();
       } catch {
-        mutationError.value += " A leitura atualizada também falhou. Preserve o rascunho e tente atualizar.";
+        mutationError.value +=
+          " A leitura atualizada também falhou. Preserve o rascunho e tente atualizar.";
       }
       return false;
     } finally {
@@ -125,9 +201,16 @@ export function useOrderDetail(orderRef: string) {
   const undoReady = () => act("undo-ready");
   // Marketplace (iFood) reject/cancel carry the operator-picked code so the backend
   // relays a valid reason to the provider; empty string for other channels.
-  const reject = (reason: string, cancellation_code = "") => act("reject", { reason, cancellation_code });
-  const cancel = (reason: string, cancellation_code = "") => act("cancel", { reason, cancellation_code });
-  const settleCash = (amount: string, changeBack?: string, equipmentBack?: boolean, baseRevision?: string) =>
+  const reject = (reason: string, cancellation_code = "") =>
+    act("reject", { reason, cancellation_code });
+  const cancel = (reason: string, cancellation_code = "") =>
+    act("cancel", { reason, cancellation_code });
+  const settleCash = (
+    amount: string,
+    changeBack?: string,
+    equipmentBack?: boolean,
+    baseRevision?: string,
+  ) =>
     act("settle-delivery-cash", {
       amount,
       ...(changeBack === undefined ? {} : { change_back: changeBack }),
@@ -138,7 +221,10 @@ export function useOrderDetail(orderRef: string) {
   // servidor. O resultado chega pelo SSE do pedido (autorizada ou recusada).
   async function requeueFiscal(): Promise<boolean> {
     const ok = await act("requeue-fiscal");
-    if (ok) useSonner.success("NFC-e enviada de novo. O pedido mostra quando ela for autorizada.");
+    if (ok)
+      useSonner.success(
+        "NFC-e enviada de novo. O pedido mostra quando ela for autorizada.",
+      );
     return ok;
   }
 
@@ -160,8 +246,14 @@ export function useOrderDetail(orderRef: string) {
     return res.reasons;
   }
 
-  async function saveNotes(notes: string, baseRevision?: string): Promise<boolean> {
-    const ok = await act("notes", { notes, ...(baseRevision ? { base_revision: baseRevision } : {}) });
+  async function saveNotes(
+    notes: string,
+    baseRevision?: string,
+  ): Promise<boolean> {
+    const ok = await act("notes", {
+      notes,
+      ...(baseRevision ? { base_revision: baseRevision } : {}),
+    });
     if (ok) useSonner.success("Notas salvas.");
     return ok;
   }
@@ -182,7 +274,10 @@ export function useOrderDetail(orderRef: string) {
 
   async function courierCancel(): Promise<boolean> {
     const ok = await act("courier-cancel");
-    if (ok) useSonner.success("Cancelamento da corrida pedido. Falta a central confirmar.");
+    if (ok)
+      useSonner.success(
+        "Cancelamento da corrida pedido. Falta a central confirmar.",
+      );
     return ok;
   }
 
@@ -192,5 +287,32 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  return { readMetadata, order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, undoHandoff, undoReady, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge };
+  return {
+    readMetadata,
+    order,
+    pending,
+    error,
+    refresh,
+    busy,
+    mutationError,
+    confirm,
+    advance,
+    reject,
+    cancel,
+    fetchCancellationReasons,
+    settleCash,
+    equipmentBack,
+    undoHandoff,
+    undoReady,
+    requeueFiscal,
+    resendPaymentLink,
+    saveNotes,
+    addComment,
+    courierDispatch,
+    courierCancel,
+    courierQuote,
+    managerChallenge,
+    authorize,
+    dismissManagerChallenge,
+  };
 }

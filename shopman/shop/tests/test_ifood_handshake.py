@@ -264,3 +264,64 @@ def test_send_failures_are_observable_without_exposing_provider_content(order, c
     assert "private-token" not in caplog.text
     assert "sensitive provider response" not in caplog.text
     assert record(order)["state"] == ("sent" if failure == "invalid_json" else "unknown")
+
+
+# ── O aviso do Gestor acompanha a negociação (decisão do dono, 07/10/2026) ──
+
+
+def _negotiation_alerts(order, *, active=True):
+    from shopman.backstage.models import OperatorAlert
+
+    qs = OperatorAlert.objects.filter(type=hs.ALERT_TYPE, order_ref=order.ref)
+    return qs.filter(resolved_at__isnull=True) if active else qs
+
+
+def test_open_dispute_raises_one_alert_with_ifood_deadline(order, django_capture_on_commit_callbacks):
+    evt = event()
+    with django_capture_on_commit_callbacks(execute=True):
+        ingest(evt)
+    with django_capture_on_commit_callbacks(execute=True):
+        ingest(evt)  # replay: o mesmo aviso, não outro
+    alerts = list(_negotiation_alerts(order))
+    assert len(alerts) == 1
+    alert = alerts[0]
+    assert alert.severity == "error"  # tem prazo, mas não é caso de e-mail para a TI
+    assert alert.audience == "orders"
+    expires = timezone.datetime.fromisoformat(evt["metadata"]["expiresAt"])
+    assert alert.respond_by == expires
+    # Num relance (dono, 08/10/2026): quem e o quê, depois a consequência.
+    assert alert.message == f"Pedido {order.ref.rsplit('-', 1)[-1]} · sem resposta, o iFood cancela."
+    assert record(order)["received_at"]
+
+
+def test_operator_answer_resolves_the_alert(order, django_capture_on_commit_callbacks):
+    with django_capture_on_commit_callbacks(execute=True):
+        ingest(event())
+    with django_capture_on_commit_callbacks(execute=True):
+        hs.enqueue_response(order, dispute_id="dispute-1", decision="accept", reason="CUSTOMER_SATISFACTION", actor="operator:1")
+    assert not _negotiation_alerts(order).exists()
+    resolved = _negotiation_alerts(order, active=False).get()
+    assert resolved.resolved_by == "ifood_handshake"
+
+
+def test_ifood_settlement_resolves_the_alert(order, django_capture_on_commit_callbacks):
+    with django_capture_on_commit_callbacks(execute=True):
+        ingest(event())
+    with django_capture_on_commit_callbacks(execute=True):
+        ingest(event("HSS", "evt-settlement"))
+    assert not _negotiation_alerts(order).exists()
+
+
+def test_expired_dispute_raises_no_alert(order, django_capture_on_commit_callbacks):
+    evt = event()
+    evt["metadata"]["expiresAt"] = "2020-01-01T12:00:00Z"
+    with django_capture_on_commit_callbacks(execute=True):
+        ingest(evt)
+    assert not _negotiation_alerts(order, active=False).exists()
+
+
+def test_open_deadline_is_the_shortest_open_window(order):
+    ingest(event())
+    order.refresh_from_db()
+    received, expires = hs.open_deadline(order)
+    assert received <= timezone.now() < expires

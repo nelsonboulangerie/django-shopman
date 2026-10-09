@@ -23,9 +23,13 @@ const props = defineProps<{
   identity?: OperatorInstallIdentity;
 }>();
 
-const runtimeIdentity = (useRuntimeConfig().public?.operatorPwa as { identity?: OperatorInstallIdentity } | undefined)
-  ?.identity;
-const identity = computed<OperatorInstallIdentity | null>(() => props.identity || runtimeIdentity || null);
+const runtimeIdentity = (
+  useRuntimeConfig().public?.operatorPwa as
+    { identity?: OperatorInstallIdentity } | undefined
+)?.identity;
+const identity = computed<OperatorInstallIdentity | null>(
+  () => props.identity || runtimeIdentity || null,
+);
 
 const pwa = usePwaInstall({ app: props.app });
 const plan = computed(() => pwa.plan.value);
@@ -34,53 +38,69 @@ const visible = computed(() => pwa.canInvite.value);
 // Um toque resolve, ou a pessoa vai seguir passos — o título diz qual dos dois é, antes
 // de ela decidir se tem tempo agora.
 const title = computed(() => {
-  const named = identity.value ? `${identity.value.article} ${identity.value.label}` : "este aplicativo";
-  return plan.value.kind === "prompt" ? `Instale ${named}` : `Coloque ${named} na tela inicial`;
+  const named = identity.value
+    ? `${identity.value.article} ${identity.value.label}`
+    : "este aplicativo";
+  return plan.value.kind === "prompt"
+    ? `Instale ${named}`
+    : `Coloque ${named} na tela inicial`;
 });
+const description = computed(
+  () =>
+    identity.value?.install ||
+    "Abra este aplicativo direto da tela inicial, sem procurar o endereço no navegador.",
+);
 
+// O prompt nativo demora a voltar: o botão diz que está esperando (clique nunca inerte).
+const installing = ref(false);
 async function install() {
-  if (await pwa.install()) pwa.dismissAsDone();
+  if (installing.value) return;
+  installing.value = true;
+  try {
+    if (await pwa.install()) pwa.dismissAsDone();
+  } finally {
+    installing.value = false;
+  }
 }
+
+// Alvo de toque do `main` só nas páginas que vestem a suíte (ver `suite-page:`).
+const TOUCH = "suite-page:min-h-control";
+const actions = computed(() => [
+  {
+    label: "Agora não",
+    color: "neutral" as const,
+    variant: "outline" as const,
+    class: TOUCH,
+    onClick: () => pwa.dismiss(),
+  },
+  // Ninguém sabe daqui se ela seguiu os passos; quem sabe é ela. Dizer "já instalei"
+  // encerra o convite de vez em vez de repeti-lo na semana seguinte.
+  plan.value.kind === "prompt"
+    ? { label: "Instalar", class: TOUCH, loading: installing.value, onClick: install }
+    : { label: "Já instalei", class: TOUCH, onClick: () => pwa.dismissAsDone() },
+]);
 </script>
 
 <template>
-  <aside
+  <!-- Convite não é etapa (dono, 17/09/2026): é um aviso no pé da tela, na mesma pilha
+       do aviso de versão e do convite de avisos (`OperatorPwaRuntime`), e não bloqueia
+       nada. Como Modal (mesmo sem `modal`), ele escondia o login do leitor de tela no
+       WebKit, roubava o foco e, sendo um diálogo aberto, calava os atalhos do app
+       enquanto não fosse respondido. -->
+  <NuxtAlert
     v-if="visible"
-    class="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-md rounded-md border border-border bg-card p-4 text-card-foreground shadow-xl"
-    aria-live="polite"
+    color="info"
+    variant="subtle"
+    icon="i-lucide-monitor-down"
+    :title="title"
+    :actions="actions"
     data-operator-pwa-install
   >
-    <p class="text-sm font-semibold">{{ title }}</p>
-    <p v-if="identity" class="mt-1 mb-3 text-sm text-muted-foreground">{{ identity.install }}</p>
-
-    <OperatorInstallSteps v-if="plan.kind === 'steps'" :plan="plan" />
-
-    <div class="mt-4 flex gap-2">
-      <button
-        type="button"
-        class="h-11 flex-1 rounded-md px-4 text-sm font-medium text-muted-foreground hover:bg-muted"
-        @click="pwa.dismiss()"
-      >
-        Agora não
-      </button>
-      <button
-        v-if="plan.kind === 'prompt'"
-        type="button"
-        class="h-11 flex-1 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
-        @click="install"
-      >
-        Instalar
-      </button>
-      <!-- Ninguém sabe daqui se ela seguiu os passos; quem sabe é ela. Dizer "já
-           instalei" encerra o convite de vez em vez de repeti-lo na semana seguinte. -->
-      <button
-        v-else
-        type="button"
-        class="h-11 flex-1 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
-        @click="pwa.dismissAsDone()"
-      >
-        Já instalei
-      </button>
-    </div>
-  </aside>
+    <template #description>
+      <div class="flex flex-col gap-3">
+        <p>{{ description }}</p>
+        <OperatorInstallSteps v-if="plan.kind === 'steps'" :plan="plan" />
+      </div>
+    </template>
+  </NuxtAlert>
 </template>

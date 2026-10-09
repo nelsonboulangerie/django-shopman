@@ -230,11 +230,19 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await expect(page.locator("html")).toHaveClass(/dark/);
   // A classe troca antes de o navegador terminar de recalcular a cor herdada da
   // barra. O axe não pode medir o primeiro frame escuro ainda com o token claro.
+  // DECISÃO MUDOU (09/10/2026, barra do celular do #1558): o "Mais" é um item da
+  // barra de baixo, no mesmo desenho das seções (`TAB_BAR_UI`, o "With bottom tab
+  // bar" oficial do NavigationMenu), cuja tinta inativa é `--ui-text-muted` (o
+  // `text-muted` oficial). O que a trava garante continua: o "Mais" é a peça
+  // canônica, já pintada com o token do tema escuro, e o axe logo abaixo mede o
+  // contraste AA sobre ele.
+  const more = page.locator('[data-operator-phone-menu][data-variant="bar"]');
+  await expect(more).toHaveClass(/\btext-muted\b/);
   await expect
     .poll(() =>
-      page.locator("[data-operator-phone-menu]").evaluate((element) => {
+      more.evaluate((element) => {
         const probe = document.createElement("span");
-        probe.style.color = "var(--muted-foreground)";
+        probe.style.color = "var(--ui-text-muted)";
         element.append(probe);
         const settled = getComputedStyle(element).color === getComputedStyle(probe).color;
         probe.remove();

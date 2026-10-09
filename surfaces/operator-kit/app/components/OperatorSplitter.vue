@@ -48,6 +48,7 @@ const normalizedItems = computed(() =>
   props.items.map((item, index) => ({
     ...item,
     slot: item.slot || `panel-${index}`,
+    class: ["min-w-0 overflow-hidden", item.class],
   })),
 );
 
@@ -128,12 +129,6 @@ defineExpose({ reset });
     :disabled="disabled"
     :hit-area-margins="{ coarse: 16, fine: 6 }"
     class="min-w-0"
-    :ui="{
-      root: 'min-w-0',
-      panel: 'min-w-0 overflow-hidden',
-      handle:
-        'group relative z-[var(--op-layer-resize)] bg-border focus-visible:outline-3 focus-visible:outline-offset-[-3px] focus-visible:outline-primary data-[orientation=horizontal]:w-[var(--op-splitter-handle)] data-[orientation=vertical]:h-[var(--op-splitter-handle)]',
-    }"
     data-operator-splitter
     @layout="onLayout"
     @resize="onResize"
@@ -148,9 +143,8 @@ defineExpose({ reset });
     </template>
     <template #resize-handle="{ index }">
       <span class="sr-only">{{ handleLabel }} {{ index + 1 }}</span>
-      <span
-        class="pointer-events-none absolute inset-0 m-auto h-10 w-1 rounded-full bg-muted-foreground/35 group-hover:bg-muted-foreground/60"
-        aria-hidden="true"
+      <NuxtSeparator
+        :orientation="orientation === 'horizontal' ? 'vertical' : 'horizontal'"
       />
     </template>
   </CanonicalSplitter>

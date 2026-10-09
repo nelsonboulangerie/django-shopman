@@ -20,11 +20,15 @@
 // sendo escolhido e entrega `{ reason, code }`. A autorização do gerente fica FORA
 // (`OperatorManagerAuth` sobe por cima, e o motivo digitado continua aqui embaixo).
 //
-// ⚠️ `UiDialog`, `UiButton` e `UiTextarea` são do app hospedeiro (o kit não registra
-// módulo). PDV e Gestor têm os três; é o mesmo limite do `OperatorManagerAuth`.
+// A anatomia inteira usa os componentes oficiais de Modal, Select, Textarea, Alert e
+// Button do Nuxt UI; os apps consumidores só passam conteúdo e estado.
 import { computed, nextTick, ref, watch } from "vue";
 
-import type { CodedReason, ReasonChoice, ReasonPresetGroup } from "../types/reason";
+import type {
+  CodedReason,
+  ReasonChoice,
+  ReasonPresetGroup,
+} from "../types/reason";
 
 const props = withDefaults(
   defineProps<{
@@ -93,9 +97,13 @@ watch(
   },
 );
 
-const presetGroups = computed(() => props.presets.filter((group) => group.presets.length));
+const presetGroups = computed(() =>
+  props.presets.filter((group) => group.presets.length),
+);
 
-const dirty = computed(() => props.open && Boolean(reason.value.trim() || code.value));
+const dirty = computed(
+  () => props.open && Boolean(reason.value.trim() || code.value),
+);
 watch(dirty, (value) => emit("dirty-change", value), { immediate: true });
 
 function requestOpen(open: boolean) {
@@ -140,7 +148,8 @@ function applyPreset(text: string) {
 function focusReason() {
   const target = reasonInput.value;
   const el = target instanceof HTMLElement ? target : target?.$el;
-  const field = el?.tagName === "TEXTAREA" ? el : el?.querySelector?.("textarea");
+  const field =
+    el?.tagName === "TEXTAREA" ? el : el?.querySelector?.("textarea");
   (field as HTMLTextAreaElement | null | undefined)?.focus();
 }
 
@@ -156,46 +165,63 @@ function submit() {
   if (!canConfirm.value || props.busy) return;
   emit("confirm", { reason: reason.value.trim(), code: code.value });
 }
-
-const chipClass = (pressed: boolean) =>
-  pressed ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:bg-muted";
 </script>
 
 <template>
-  <!-- `value` anotado: nos apps sem `UiDialog` o tipo do evento não resolve. -->
-  <UiDialog :open="open" @update:open="(value: boolean) => requestOpen(value)">
-    <UiDialogContent class="sm:max-w-md" data-reason-dialog>
-      <UiDialogHeader>
-        <UiDialogTitle>{{ title }}</UiDialogTitle>
-        <UiDialogDescription>{{ description }}</UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    :open="open"
+    :title="title"
+    :description="description"
+    @update:open="requestOpen"
+  >
+    <template #body>
+      <div class="grid gap-3" data-reason-dialog>
+        <NuxtEmpty
+          v-if="loading"
+          loading
+          size="sm"
+          :title="loadingText"
+        />
 
-      <div class="grid gap-3">
-        <p v-if="loading" class="text-sm text-muted-foreground">{{ loadingText }}</p>
+        <NuxtAlert
+          v-else-if="error"
+          color="error"
+          variant="subtle"
+          :title="error"
+        >
+          <template #actions
+            ><NuxtButton
+              color="error"
+              variant="outline"
+              label="Consultar novamente"
+              @click="emit('retry')"
+          /></template>
+        </NuxtAlert>
 
-        <div v-else-if="error" role="alert" class="grid justify-items-start gap-1 text-sm text-destructive">
-          <p>{{ error }}</p>
-          <UiButton type="button" variant="link" class="min-h-control px-0" @click="emit('retry')">
-            Consultar novamente
-          </UiButton>
-        </div>
+        <NuxtEmpty
+          v-else-if="coded && !codedReasons.length"
+          icon="i-lucide-list-x"
+          :title="codedEmptyText"
+        />
 
-        <p v-else-if="coded && !codedReasons.length" class="text-sm">{{ codedEmptyText }}</p>
-
-        <UiNativeSelect
+        <NuxtSelect
           v-else-if="coded"
           v-model="code"
-          class="w-full"
+          :items="codedReasons"
+          value-key="code"
+          label-key="description"
+          placeholder="Selecione o motivo…"
           :aria-label="codedLabel"
           data-reason-code
-          @change="onCodeChange"
-        >
-          <option value="" disabled>Selecione o motivo…</option>
-          <option v-for="r in codedReasons" :key="r.code" :value="r.code">{{ r.description }}</option>
-        </UiNativeSelect>
+          @update:model-value="onCodeChange"
+        />
 
         <template v-else>
-          <div v-if="presetGroups.length" class="space-y-2.5" data-testid="reason-presets">
+          <div
+            v-if="presetGroups.length"
+            class="space-y-2.5"
+            data-testid="reason-presets"
+          >
             <div
               v-for="(group, gi) in presetGroups"
               :key="gi"
@@ -203,83 +229,101 @@ const chipClass = (pressed: boolean) =>
               :aria-label="group.label || undefined"
               data-testid="reason-preset-group"
             >
-              <p v-if="group.label" class="mb-1 text-xs font-semibold text-muted-foreground">{{ group.label }}</p>
+              <p
+                v-if="group.label"
+                class="mb-1 text-xs font-semibold text-muted-foreground"
+              >
+                {{ group.label }}
+              </p>
               <div class="flex flex-wrap gap-1.5">
-                <button
+                <NuxtButton
                   v-for="(preset, i) in group.presets"
                   :key="i"
-                  type="button"
                   :aria-pressed="presetPressed(preset)"
-                  class="inline-flex min-h-control items-center rounded-full border px-3 text-sm transition-colors outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
-                  :class="chipClass(presetPressed(preset))"
+                  color="neutral"
+                  :variant="presetPressed(preset) ? 'soft' : 'outline'"
+                  :label="preset"
                   data-reason-preset
                   @click="applyPreset(preset)"
-                >
-                  {{ preset }}
-                </button>
+                />
               </div>
             </div>
             <div class="flex flex-wrap gap-1.5">
-              <button
-                type="button"
+              <NuxtButton
                 :aria-pressed="other"
+                color="neutral"
+                :variant="other ? 'soft' : 'outline'"
+                label="Outros"
                 data-testid="reason-other"
-                class="inline-flex min-h-control items-center rounded-full border px-3 text-sm transition-colors outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
-                :class="chipClass(other)"
                 @click="chooseOther"
-              >
-                Outros
-              </button>
+              />
             </div>
           </div>
 
-          <label class="grid gap-1.5">
-            <span class="text-sm font-medium">{{ reasonLabel }}</span>
-            <UiTextarea
+          <NuxtFormField :label="reasonLabel">
+            <NuxtTextarea
               ref="reasonInput"
               v-model="reason"
+              class="w-full"
               :rows="3"
               :maxlength="maxlength"
-              :placeholder="other ? 'Escreva o motivo que o cliente vai ler…' : placeholder"
-              class="text-base"
+              :placeholder="
+                other ? 'Escreva o motivo que o cliente vai ler…' : placeholder
+              "
               data-reason-input
             />
-          </label>
-          <p v-if="other && !reason.trim()" class="text-xs text-muted-foreground" data-testid="reason-other-hint">
-            Com “Outros”, escreva o motivo antes de confirmar.
-          </p>
+            <template v-if="other && !reason.trim()" #description>
+              <span data-testid="reason-other-hint"
+                >Com “Outros”, escreva o motivo antes de confirmar.</span
+              >
+            </template>
+          </NuxtFormField>
         </template>
 
-        <div
+        <NuxtAlert
           v-if="discarding"
-          role="alertdialog"
-          aria-label="Descartar o motivo digitado?"
-          class="grid gap-2 rounded-md border border-warning/50 bg-warning/10 p-3"
+          color="warning"
+          variant="subtle"
+          title="Descartar o motivo digitado?"
           data-reason-discard
         >
-          <p class="text-sm font-medium">Descartar o motivo digitado?</p>
-          <div class="flex flex-wrap justify-end gap-2">
-            <UiButton type="button" variant="outline" data-reason-keep @click="keepWriting">Continuar escrevendo</UiButton>
-            <UiButton type="button" variant="destructive" data-reason-discard-confirm @click="discard">Descartar</UiButton>
-          </div>
-        </div>
+          <template #actions>
+            <NuxtButton
+              color="warning"
+              variant="outline"
+              label="Continuar escrevendo"
+              data-reason-keep
+              @click="keepWriting"
+            />
+            <NuxtButton
+              color="warning"
+              variant="outline"
+              label="Descartar"
+              data-reason-discard-confirm
+              @click="discard"
+            />
+          </template>
+        </NuxtAlert>
 
-        <UiDialogFooter v-else>
-          <UiButton type="button" variant="outline" :disabled="busy" data-reason-back @click="requestOpen(false)">
-            Voltar
-          </UiButton>
-          <UiButton
-            type="button"
-            variant="destructive"
+        <div v-else class="flex justify-end gap-2">
+          <NuxtButton
+            color="neutral"
+            variant="outline"
+            label="Voltar"
+            :disabled="busy"
+            data-reason-back
+            @click="requestOpen(false)"
+          />
+          <NuxtButton
+            color="error"
             :disabled="busy || !canConfirm"
             :loading="busy"
+            :label="confirmLabel"
             data-reason-confirm
             @click="submit"
-          >
-            {{ confirmLabel }}
-          </UiButton>
-        </UiDialogFooter>
+          />
+        </div>
       </div>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+  </NuxtModal>
 </template>

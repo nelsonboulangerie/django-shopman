@@ -10,6 +10,8 @@ tempo real de forno, aproveitamento, perdas, qualidade), vendas, caixa e cliente
 - Gráficos: HTML/CSS no latão da suíte (`primary`), traço de comparação na cor do
   texto, cor de estado só funcional (faltou = destructive, sobrou = warning, na
   medida = success); toda métrica de forno declara cobertura.
-- Visual (V4-BI): camada da suíte (`data-suite="v3"`), rail com as oito leituras
-  (`BiNav`), cabeçalho de uma linha em toda tela com a PERGUNTA como título e, logo
-  abaixo, "A resposta" em uma frase (prévia `docs/plans/suite-ux-v2/v4/bi-sobra.jpg`).
+- Casca: a canônica do kit (`OperatorSuiteShell`, como o Gestor), sem a pele legada
+  `data-suite`: rail de ícones com as oito leituras do tablet deitado para cima, barra
+  de seções com "Mais" no celular.
+- Visual (V4-BI): cabeçalho de uma linha em toda tela com a PERGUNTA como título e,
+  logo abaixo, "A resposta" em uma frase (prévia `docs/plans/suite-ux-v2/v4/bi-sobra.jpg`).

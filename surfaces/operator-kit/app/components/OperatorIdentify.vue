@@ -66,10 +66,14 @@ const picked = ref<IdentifiablePerson | null>(null);
 const typedName = ref("");
 
 const hasList = computed(() => props.people.length > 0);
-const username = computed(() => (picked.value?.username ?? typedName.value).trim());
+const username = computed(() =>
+  (picked.value?.username ?? typedName.value).trim(),
+);
 // Sem lista o pad aparece de cara, junto do campo de nome: é o modo de emergência.
 const showPad = computed(() => !hasList.value || picked.value !== null);
-const canSubmit = computed(() => canSubmitPin(username.value || null, pin.value));
+const canSubmit = computed(() =>
+  canSubmitPin(username.value || null, pin.value),
+);
 
 // UM caminho de captura para tudo: crachá, teclado físico e botões do pad
 // alimentam o mesmo buffer, na hora — dígito nenhum se perde por cadência, e a
@@ -103,7 +107,9 @@ const { pin, pressDigit, backspace, clear } = useIdentityCapture({
 // até onde uma tecla única alcança; do décimo em diante o toque continua sendo
 // o caminho, sem número prometendo atalho que não existe.
 const MAX_NUMBERED = 9;
-const numberedCount = computed(() => Math.min(props.people.length, MAX_NUMBERED));
+const numberedCount = computed(() =>
+  Math.min(props.people.length, MAX_NUMBERED),
+);
 
 /** Escolha pelo número, SEM limpar o buffer de captura — o dígito pode ser a
  *  primeira tecla de um crachá, e o token tem de chegar inteiro ao Enter. */
@@ -117,7 +123,12 @@ function pickByNumber(digit: string) {
 
 // Recusa apaga só o PIN: quem foi escolhido continua escolhido, senão a pessoa
 // reescolheria o próprio nome a cada dedo errado no teclado.
-watch(() => props.error, (e) => { if (e) clear(); });
+watch(
+  () => props.error,
+  (e) => {
+    if (e) clear();
+  },
+);
 
 function pick(person: IdentifiablePerson) {
   picked.value = person;
@@ -131,7 +142,15 @@ function unpick() {
 
 function submit() {
   if (!canSubmit.value || props.busy) return;
-  emit("pin", { person: picked.value, username: username.value, pin: pin.value });
+  emit("pin", {
+    person: picked.value,
+    username: username.value,
+    pin: pin.value,
+  });
+}
+function replacePin(values: string[]) {
+  clear();
+  for (const value of values) if (/^[0-9]$/.test(value)) pressDigit(value);
 }
 
 /** Para o pai limpar entre aberturas sem conhecer o estado interno. */
@@ -151,62 +170,72 @@ defineExpose({ reset });
     <template v-if="hasList && !picked">
       <p class="text-center text-sm text-muted-foreground">{{ prompt }}</p>
       <div class="grid grid-cols-2 gap-2" role="group" :aria-label="prompt">
-        <button
+        <NuxtButton
           v-for="(person, index) in people"
           :key="person.username"
-          type="button"
-          class="flex touch-manipulation select-none items-center gap-2 rounded-lg border bg-background px-3 py-3 text-left text-sm font-medium transition hover:bg-accent"
-          :aria-keyshortcuts="index < numberedCount ? String(index + 1) : undefined"
+          block
+          color="neutral"
+          variant="outline"
+          :aria-keyshortcuts="
+            index < numberedCount ? String(index + 1) : undefined
+          "
           @click="pick(person)"
         >
-          <OperatorKbd
+          <NuxtKbd
             v-if="index < numberedCount"
+            :value="String(index + 1)"
             aria-hidden="true"
-          >{{ index + 1 }}</OperatorKbd>
+          />
           <span class="min-w-0 truncate">{{ person.name }}</span>
-        </button>
+        </NuxtButton>
       </div>
       <p v-if="numberedCount" class="text-center text-xs text-muted-foreground">
-        Digite o número para escolher{{ badgeEnabled !== false ? ", ou passe o crachá" : "" }}.
+        Digite o número para escolher{{
+          badgeEnabled !== false ? ", ou passe o crachá" : ""
+        }}.
       </p>
-      <p v-if="error && !showPad" class="text-center text-sm font-medium text-destructive" role="alert">
-        {{ error }}
-      </p>
+      <NuxtAlert
+        v-if="error && !showPad"
+        color="error"
+        variant="subtle"
+        :title="error"
+      />
     </template>
 
     <!-- PIN -->
     <template v-if="showPad">
       <div v-if="picked" class="grid gap-1">
-        <button
-          type="button"
-          class="inline-flex items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground"
-          @click="unpick"
-        >
-          <Icon name="lucide:chevron-left" class="size-4" />
-          {{ changeLabel }}
-        </button>
+        <div>
+          <NuxtButton
+            color="neutral"
+            variant="link"
+            icon="i-lucide-chevron-left"
+            :label="changeLabel"
+            @click="unpick"
+          />
+        </div>
         <p class="text-center text-sm font-semibold">{{ picked.name }}</p>
       </div>
-      <UiInput
+      <NuxtInput
         v-else-if="allowTypedName"
         v-model="typedName"
         :placeholder="nameLabel"
         :aria-label="nameLabel"
         autocomplete="off"
-        class="h-11 w-full text-center text-base"
+        size="xl"
       />
 
-      <p v-if="error" class="text-center text-sm font-medium text-destructive" role="alert">
-        {{ error }}
-      </p>
+      <NuxtAlert v-if="error" color="error" variant="subtle" :title="error" />
 
-      <div
-        class="flex h-10 items-center justify-center rounded-md border bg-background text-3xl tracking-[0.4em] tabular-nums"
+      <NuxtPinInput
+        :model-value="pin.split('')"
+        :length="8"
+        mask
+        size="xl"
         aria-live="polite"
         :aria-label="`${pin.length} dígitos`"
-      >
-        {{ "•".repeat(pin.length) || "—" }}
-      </div>
+        @update:model-value="replacePin"
+      />
 
       <!-- `touch-manipulation` desliga o double-tap-zoom do browser nos botões:
            sem ele, dois toques rápidos no mesmo dígito viram gesto de zoom e o
@@ -214,44 +243,45 @@ defineExpose({ reset });
            desabilita (nem durante verificação): só o CONFIRMAR trava, porque
            o que não pode duplicar é a submissão, não o dígito. -->
       <div class="grid grid-cols-3 gap-2">
-        <button
+        <NuxtButton
           v-for="d in ['1', '2', '3', '4', '5', '6', '7', '8', '9']"
           :key="d"
-          type="button"
-          class="touch-manipulation select-none rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
+          color="neutral"
+          variant="outline"
+          size="xl"
+          :label="d"
           @click="pressDigit(d)"
-        >
-          {{ d }}
-        </button>
-        <button
-          type="button"
+        />
+        <NuxtButton
+          color="neutral"
+          variant="outline"
+          size="xl"
+          icon="i-lucide-delete"
           aria-label="Apagar"
-          class="touch-manipulation select-none rounded-lg border bg-background py-3 text-sm transition hover:bg-accent"
           @click="backspace"
-        >
-          <Icon name="lucide:delete" class="mx-auto size-5" />
-        </button>
-        <button
-          type="button"
-          class="touch-manipulation select-none rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
+        />
+        <NuxtButton
+          color="neutral"
+          variant="outline"
+          size="xl"
+          label="0"
           @click="pressDigit('0')"
-        >
-          0
-        </button>
-        <button
-          type="button"
+        />
+        <NuxtButton
+          size="xl"
+          icon="i-lucide-check"
           aria-label="Confirmar"
           :disabled="!canSubmit || busy"
-          class="touch-manipulation select-none rounded-lg border border-transparent bg-primary py-3 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
           @click="submit"
-        >
-          <Icon name="lucide:check" class="mx-auto size-5" />
-        </button>
+        />
       </div>
 
       <!-- O crachá segue valendo aqui: a frase existe para o operador saber que
            não precisa terminar de digitar se estiver com ele no pescoço. -->
-      <p v-if="badgeEnabled !== false" class="text-center text-xs text-muted-foreground">
+      <p
+        v-if="badgeEnabled !== false"
+        class="text-center text-xs text-muted-foreground"
+      >
         Ou passe o crachá no leitor.
       </p>
 

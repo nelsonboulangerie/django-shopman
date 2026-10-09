@@ -6,8 +6,7 @@ import { defineComponent, h, nextTick } from "vue";
 import OperatorConfirmDialog from "../../app/components/OperatorConfirmDialog.vue";
 import { answerConfirm, useConfirm } from "../../app/composables/useConfirm";
 
-// A pergunta antes de descartar, testada na fonte: o reka-ui de verdade (sem stub),
-// porque o contrato é justamente o que o AlertDialog faz com Esc, foco e toque fora.
+// A pergunta antes de descartar, testada com o Modal canônico do Nuxt UI.
 
 let mounted: Awaited<ReturnType<typeof mountSuspended>> | null = null;
 const mount = async () => (mounted = await mountSuspended(OperatorConfirmDialog, { attachTo: document.body }));
@@ -16,7 +15,7 @@ const settle = async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await nextTick();
 };
-const box = () => document.body.querySelector<HTMLElement>("[data-operator-confirm]");
+const box = () => document.body.querySelector<HTMLElement>("[data-operator-confirm]")?.closest<HTMLElement>('[role="dialog"]') ?? null;
 
 afterEach(() => {
   answerConfirm(false);
@@ -38,7 +37,7 @@ describe("useConfirm + OperatorConfirmDialog", () => {
     expect(box()).toBeNull();
     void useConfirm()(PRICE);
     await settle();
-    expect(box()?.getAttribute("role")).toBe("alertdialog");
+    expect(box()?.getAttribute("role")).toBe("dialog");
     expect(box()?.textContent).toContain("Descartar o preço digitado?");
     expect(box()?.textContent).toContain("O produto continua com o preço atual.");
     expect(box()?.querySelector("[data-operator-confirm-keep]")?.textContent?.trim()).toBe("Continuar editando");
@@ -53,7 +52,7 @@ describe("useConfirm + OperatorConfirmDialog", () => {
     await settle();
     const act = box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-act]")!;
     expect(act.dataset.tone).toBe("danger");
-    expect(act.className).toContain("bg-destructive");
+    expect(act.className).toContain("bg-error");
     expect(act.className).not.toContain("bg-primary");
   });
 
@@ -71,7 +70,7 @@ describe("useConfirm + OperatorConfirmDialog", () => {
     const keep = box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-keep]")!;
     expect(act.dataset.tone).toBe("primary");
     expect(act.className).toContain("bg-primary");
-    expect(act.className).not.toContain("bg-destructive");
+    expect(act.className).not.toContain("bg-error");
     expect(act.textContent?.trim()).toBe("Mudar para qui, 01/10");
     expect(keep.textContent?.trim()).toBe("Manter a data");
     expect(document.activeElement).toBe(keep);

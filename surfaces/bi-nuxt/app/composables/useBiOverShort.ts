@@ -3,7 +3,7 @@
 // abre a mesma leitura, e o voltar do navegador volta o dia. Sem `day`, o servidor lê
 // o último dia aberto (o "ontem" da casa); sem `compare`, o típico de 4 semanas.
 // Leitura calma: sem poll, como o resto do B.I.
-import type { BIOverShortReport } from "~/types/bi";
+import type { BIOverShortReport, BIReading } from "~/types/bi";
 import { COMPARE_KEYS, type CompareKey } from "~/presentation/overShort";
 
 export function useBiOverShort() {
@@ -16,7 +16,7 @@ export function useBiOverShort() {
     return (COMPARE_KEYS as readonly string[]).includes(raw) ? (raw as CompareKey) : "typical";
   });
 
-  const { data, pending, error, refresh } = useFetch<{ bi: BIOverShortReport }>("/api/v1/backstage/bi/over-short/", {
+  const { data, pending, error, refresh } = useFetch<BIReading<BIOverShortReport>>("/api/v1/backstage/bi/over-short/", {
     key: "bi-over-short",
     server: true,
     query: computed(() => ({
@@ -27,6 +27,7 @@ export function useBiOverShort() {
   });
 
   const report = computed(() => data.value?.bi ?? null);
+  const freshness = computed(() => ({ generated_at: data.value?.generated_at ?? null }));
 
   function setDay(next: string) {
     if (!next) return;
@@ -39,5 +40,5 @@ export function useBiOverShort() {
     void router.replace({ query: next && next !== "typical" ? { ...rest, compare: next } : rest });
   }
 
-  return { report, pending, error, refresh, day, setDay, compare, setCompare };
+  return { report, freshness, pending, error, refresh, day, setDay, compare, setCompare };
 }

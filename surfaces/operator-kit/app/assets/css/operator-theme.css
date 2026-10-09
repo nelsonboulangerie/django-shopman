@@ -15,23 +15,28 @@
    ============================================================================ */
 
 @theme {
-  /* Alvos operacionais: frequentes 44 px, ação primária 48 px. */
+  /* Escala opt-in para fluxos de toque que a pedem explicitamente. */
   --spacing-control: 2.75rem;
   --spacing-action: 3rem;
   /* Corpo/UI = Instrument Sans, a família canônica do design system (mesma da
      vitrine). O app hospedeiro incorpora os webfonts licenciados e declara os
      pesos 400–700 no próprio CSS; o kit nunca busca fontes em runtime. */
-  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans:
+    "Instrument Sans", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
 /* Tablet de operação não é desktop estreito. Com ponteiro touch e largura de tablet,
-   o alvo frequente sobe para 48 px, como pede a v4. No celular, 44 px continua sendo
-   o mínimo seguro e preserva a barra de 56 px; no desktop com mouse, 44 px mantém a
-   densidade e a precisão do teclado/ponteiro. A decisão é por capacidade do dispositivo,
-   não só por largura de viewport. */
+   o alvo de quem FAZ opt-in (`min-h-control`) sobe para 48 px; no celular fica 44 px
+   e no desktop com mouse também. Decisão por capacidade do dispositivo. A pilha do
+   Gestor tinha tirado esta regra; os sete apps não migrados (PDV, Cozinha, Produção…)
+   ainda a usam no balcão, e o kit só muda por opt-in (WP-OPERADOR-NUXTUI-ONDAS): vale
+   onde a página veste a suíte (`data-suite="v3"`, os sete) e no catálogo do kit (que
+   documenta o envelope até a onda dele), não no Gestor. Pelo `:root`
+   o token chega também aos overlays em portal. Não infla nada sozinha: vale só onde o
+   componente pede `min-h-control`. */
 @media (pointer: coarse) and (min-width: 600px) {
-  :root {
+  :root:has([data-suite="v3"], [data-operator-catalog]) {
     --spacing-control: 3rem;
   }
 }
@@ -58,10 +63,8 @@
   --op-page-block-space: clamp(0.75rem, 1.5vh, 1rem);
   --op-region-gap: 1.5rem;
   --op-control-gap: 0.5rem;
-  --op-splitter-handle: 0.25rem;
   --op-safe-bottom: env(safe-area-inset-bottom, 0px);
   --op-layer-chrome: 30;
-  --op-layer-resize: 35;
   --op-layer-overlay: 50;
 
   --background: #fcf6f1; /* Faubourg-100 — paper quente do balcão */
@@ -73,6 +76,10 @@
 
   --primary: #8b6b2e; /* Brass-700 — latão = ação do operador */
   --primary-foreground: #ffffff;
+  /* Latão como TEXTO sobre o próprio latão a 10% (Button/Badge `soft`): o puro dá
+     4,35:1 e reprova o AA (matriz da Produção, o "Mais" ativo da barra). 85% latão +
+     15% do texto dá 5,05:1 e continua lido como latão. */
+  --primary-ink: color-mix(in srgb, var(--primary) 85%, var(--foreground));
   --secondary: #f5e7dd; /* Faubourg-200 — superfície neutra 2ª */
   --secondary-foreground: #3b2a1e;
   --muted: #f5e7dd;
@@ -115,14 +122,21 @@
      estados oficiais; apenas a linguagem visual (marca, superfícies, texto e
      bordas) muda. Estes nomes são a API semântica oficial do Nuxt UI 4. */
   --ui-primary: var(--primary);
-  --ui-secondary: var(--secondary-foreground);
   --ui-success: var(--success);
   --ui-info: var(--info);
   --ui-warning: var(--warning);
   --ui-error: var(--destructive);
-  --ui-text-dimmed: color-mix(in srgb, var(--muted-foreground) 85%, var(--foreground));
+  --ui-text-dimmed: color-mix(
+    in srgb,
+    var(--muted-foreground) 85%,
+    var(--foreground)
+  );
   --ui-text-muted: var(--muted-foreground);
-  --ui-text-toned: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));
+  --ui-text-toned: color-mix(
+    in srgb,
+    var(--foreground) 78%,
+    var(--muted-foreground)
+  );
   --ui-text: var(--foreground);
   --ui-text-highlighted: var(--foreground);
   --ui-text-inverted: var(--primary-foreground);
@@ -133,7 +147,11 @@
   --ui-bg-inverted: var(--foreground);
   --ui-border: var(--border);
   --ui-border-muted: color-mix(in srgb, var(--border) 72%, var(--background));
-  --ui-border-accented: color-mix(in srgb, var(--border) 82%, var(--foreground));
+  --ui-border-accented: color-mix(
+    in srgb,
+    var(--border) 82%,
+    var(--foreground)
+  );
   --ui-border-inverted: var(--foreground);
 }
 
@@ -147,6 +165,9 @@
 
   --primary: #d4a53f; /* Brass claro — ação dourada pop no escuro */
   --primary-foreground: #221610;
+  /* No escuro o latão claro já passa sobre a tinta a 10%; misturar com o creme o
+     apagaria. */
+  --primary-ink: var(--primary);
   --secondary: #3a2a20;
   --secondary-foreground: #f0e6d2;
   --muted: #332419;

@@ -7,272 +7,355 @@
 // grupo Dono concede. A decisão do fechamento às cegas (SUITE-UX §15: "o número só
 // existe na auditoria do Dono") é o que permite o valor aqui e em nenhum outro lugar;
 // o cabeçalho diz isso em vez de deixar o leitor adivinhar por que vê R$.
+//
+// Peças do kit (PR-B4 do WP-BI-CANON-LAUDO): os números da página são `OperatorMetric`;
+// cada quadro é um `OperatorReadingCard` (com o ⋯ "Exportar CSV deste quadro"); os
+// gráficos são `OperatorReadingChart`; listas são `NuxtTable` e vazio é `NuxtEmpty`.
+// Cartão dentro de cartão só `soft` (as três contas da casa).
 import type { BICashReport } from "~/types/bi";
+import { cashAnswer, delta, formatInt, formatMoney } from "~/presentation/bi";
 import {
-  BUCKET_SPAN_LABELS,
-  bucketLabel,
-  bucketRows,
-  cashAnswer,
-  delta,
-  formatInt,
-  formatMoney,
-} from "~/presentation/bi";
+  CASH_DIFFERENCE_SERIES,
+  CASH_DIFFERENCE_SIDES,
+  DRAWER_HOUR_CSV_SERIES,
+  DRAWER_HOUR_SERIES,
+  cashDifferenceAxis,
+  cashDifferenceCsv,
+  cashDifferencePoints,
+  cashMethodRows,
+  drawerCsv,
+  drawerHourPoints,
+  formatDuration,
+  methodsCsv,
+  openAccountsCsv,
+  operatorCsv,
+} from "~/presentation/cash";
+import { readingChartCsv, readingMoneyFormat } from "../../../operator-kit/app/presentation/readingChart";
 
-const { report, pending, error, refresh } = useBiReport<BICashReport>("cash");
+const { report, freshness, pending, error, refresh } = useBiReport<BICashReport>("cash");
+const { selection, bounds, presets } = useBiWindow();
+const shareItems = useBiShareMenuItems();
+const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
-const differenceSeries = computed(() =>
-  bucketRows(report.value?.days ?? []).map((bucket) => {
-    const shifts = bucket.rows.reduce((sum, d) => sum + d.shifts, 0);
-    const sangria = bucket.rows.reduce((sum, d) => sum + d.sangria_q, 0);
-    const suprimento = bucket.rows.reduce((sum, d) => sum + d.suprimento_q, 0);
-    return {
-      label: bucketLabel(bucket.date, bucket.span),
-      value: bucket.rows.reduce((sum, d) => sum + d.difference_q, 0),
-      detail: [
-        BUCKET_SPAN_LABELS[bucket.span],
-        `${formatInt(shifts)} turno${shifts === 1 ? "" : "s"}`,
-        `sangria ${formatMoney(sangria)}`,
-        `suprimento ${formatMoney(suprimento)}`,
-      ]
-        .filter(Boolean)
-        .join(" · "),
-    };
-  }),
-);
+const days = computed(() => report.value?.days ?? []);
+const differencePoints = computed(() => cashDifferencePoints(days.value));
+const differenceAxis = computed(() => cashDifferenceAxis(days.value));
+const differenceCsv = computed(() => cashDifferenceCsv(differenceAxis.value, differencePoints.value));
 
-const methodRows = computed(() =>
-  (report.value?.payment_methods ?? []).map((row) => ({
-    label: row.method,
-    value: row.amount_q,
-    display: formatMoney(row.amount_q),
-  })),
-);
+const sangriaTotal = computed(() => days.value.reduce((sum, day) => sum + day.sangria_q, 0));
 
-const sangriaTotal = computed(() =>
-  (report.value?.days ?? []).reduce((sum, day) => sum + day.sangria_q, 0),
-);
+const methodRows = computed(() => cashMethodRows(report.value?.payment_methods ?? []));
 
-// Gaveta por hora do dia, do log de eventos do PDV. Aberturas sem venda e
-// destraves da trava juntos na barra; o destrave vai no detalhe porque é a
-// exceção (gerente com PIN), e exceção se lê separada.
-const drawerHourRows = computed(() =>
-  (report.value?.drawer_by_hour ?? []).map((row) => ({
-    label: `${String(row.hour).padStart(2, "0")}h`,
-    value: row.drawer_openings + row.drawer_unlocks,
-    display: formatInt(row.drawer_openings + row.drawer_unlocks),
-    hint: [
-      row.drawer_unlocks ? `${formatInt(row.drawer_unlocks)} destrave${row.drawer_unlocks === 1 ? "" : "s"} por gerente` : "",
-      row.blocks ? `${formatInt(row.blocks)} vez${row.blocks === 1 ? "" : "es"} travado (${formatDuration(row.open_seconds)} de gaveta aberta)` : "",
-    ].filter(Boolean).join(" · ") || undefined,
-  })),
-);
-
-/** Segundos em linguagem de balcão: ninguém lê "184 s". */
-function formatDuration(seconds: number): string {
-  if (!seconds) return "0 s";
-  if (seconds < 60) return `${seconds} s`;
-  const min = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  if (min < 60) return rest ? `${min} min ${rest} s` : `${min} min`;
-  return `${Math.floor(min / 60)} h ${min % 60} min`;
-}
+// Gaveta por hora do dia, do log de eventos do PDV. Aberturas sem venda e destraves
+// lado a lado; o destrave em outra cor porque é a exceção (gerente com PIN).
+const hourPoints = computed(() => drawerHourPoints(report.value?.drawer_by_hour ?? []));
+const hourCsv = computed(() => readingChartCsv("Hora", DRAWER_HOUR_CSV_SERIES, hourPoints.value));
 
 // A gaveta é o único lugar do caixa em que o SILÊNCIO é a informação: turno com
 // dinheiro andando e nenhum bloqueio quer dizer que o sensor não estava falando.
 // Por isso esta seção mostra ausência tanto quanto presença.
 const drawerRows = computed(() => report.value?.drawer_by_operator ?? []);
 const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
+
+const hasAccounts = computed(() => {
+  const accounts = report.value?.accounts;
+  return Boolean(accounts && (accounts.sales_q || accounts.settled_q || accounts.open_q));
+});
+
+// As tabelas do caixa são NuxtTable: cada uma é o corpo inteiro do quadro, e o tema do
+// kit a integra ao cartão (sem padding, linhas de ponta a ponta). A coluna numérica
+// alinha à direita; o tom de cada célula sai do valor (abaixo).
+const NUM = { th: "text-right", td: "text-right tnum" } as const;
+const NAME = { td: "font-medium text-highlighted" } as const;
+const operatorColumns = [
+  { accessorKey: "operator", header: "Operador", meta: { class: NAME } },
+  { id: "shifts", header: "Turnos", meta: { class: NUM } },
+  { id: "difference", header: "Quebra", meta: { class: NUM } },
+  { id: "drawer_openings", header: "Gaveta", meta: { class: NUM } },
+  { id: "drawer_unlocks", header: "Destraves", meta: { class: NUM } },
+  { id: "change_requests", header: "Troco", meta: { class: NUM } },
+];
+const drawerColumns = [
+  { accessorKey: "operator", header: "Operador", meta: { class: NAME } },
+  { id: "blocks", header: "Travou", meta: { class: NUM } },
+  { id: "open_seconds", header: "Aberta (total)", meta: { class: NUM } },
+  { id: "longest_open_seconds", header: "Pior episódio", meta: { class: NUM } },
+  { id: "dismissals", header: "Desistiu", meta: { class: NUM } },
+  { id: "overrides", header: "Destraves", meta: { class: NUM } },
+  { id: "unlock_attempts", header: "Buscou o PIN", meta: { class: NUM } },
+  { id: "sensor_blind", header: "Sensor mudo", meta: { class: NUM } },
+  { id: "left_open", header: "Esquecida", meta: { class: NUM } },
+];
+const methodColumns = [
+  { accessorKey: "method", header: "Meio", meta: { class: NAME } },
+  { id: "amount", header: "Valor", meta: { class: NUM } },
+  { id: "share", header: "Fatia" },
+];
+const accountColumns = [
+  { accessorKey: "customer_name", header: "Cliente", meta: { class: NAME } },
+  { id: "balance", header: "Em aberto", meta: { class: NUM } },
+];
+/** Exceção acima de zero se lê: em negrito; zero recua. */
+const exceptionTone = (value: number) => (value ? "font-semibold text-highlighted" : "text-muted");
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="O caixa fechou certo?" eyebrow="Auditoria do Dono">
-      <template #status>
-        <BiLiveStatus :pending="pending" :error="error" />
+    <OperatorPageHeader title="O caixa fechou certo?" eyebrow="Auditoria do Dono" :actions="readingActions" :actions-label="readingLabel">
+      <!-- Celular: período e frescor são os dois primários; não há painel de filtros. -->
+      <template #filters-primary>
+        <OperatorPeriodPicker
+          v-model="selection"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
       </template>
-      <template #actions>
-        <BiWindowPicker class="max-md:hidden" />
-        <BiPageMenu />
-      </template>
-      <template #phone-actions>
-        <BiPeriodChip />
-        <BiShareButton />
+      <template #filters-end>
+        <ClientOnly>
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
+        </ClientOnly>
       </template>
     </OperatorPageHeader>
 
-    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
-      <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
+    <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
+      <NuxtEmpty
+        v-if="pending && !report"
+        loading
+        icon="i-lucide-wallet"
+        title="Lendo o caixa do período"
+        description="Turnos, quebra, gaveta e meios de pagamento."
+        data-bi-loading
+      />
+      <BiPageState v-else :error="error" what="o caixa" @retry="refresh()" />
+
       <template v-if="report">
-        <div class="grid grid-cols-2 gap-3 xl:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
-          <BiAnswer :text="cashAnswer(report)" class="col-span-2 xl:col-span-1" />
-          <StatTile
-            label="Turnos fechados"
+        <div class="grid grid-cols-2 gap-3 xl:grid-cols-5">
+          <OperatorMetric
+            title="A resposta"
+            :value="cashAnswer(report)"
+            size="statement"
+            class="col-span-2 xl:col-span-1"
+            data-bi-answer
+          />
+          <OperatorMetric
+            title="Turnos fechados"
             :value="formatInt(report.shifts_total)"
             :delta="delta(report.shifts_total, report.previous.shifts_total, { base: formatInt(report.previous.shifts_total) })"
           />
-          <StatTile
-            label="Quebra acumulada"
+          <OperatorMetric
+            title="Quebra acumulada"
             :value="formatMoney(report.difference_total_q)"
-            :tone="report.difference_total_q < 0 ? 'destructive' : undefined"
+            :tone="report.difference_total_q < 0 ? 'error' : undefined"
             :hint="`Contado menos esperado; negativo = faltou. Período anterior: ${formatMoney(report.previous.difference_total_q)}`"
           />
-          <StatTile
-            label="Dias sem fechamento"
+          <OperatorMetric
+            title="Dias sem fechamento"
             :value="formatInt(report.closings_missing)"
             :tone="report.closings_missing ? 'warning' : undefined"
             hint="Na janela; o mix de pagamento só cobre dias fechados"
           />
-          <StatTile label="Sangrias" :value="formatMoney(sangriaTotal)" hint="Retiradas do caixa no período" />
+          <OperatorMetric title="Sangrias" :value="formatMoney(sangriaTotal)" hint="Retiradas do caixa no período" />
         </div>
 
-        <BiSection title="Quebra de caixa por dia" caption="Acima do zero sobrou; abaixo faltou">
-          <ChartDivergingBars :points="differenceSeries" :format="formatMoney" />
-        </BiSection>
+        <OperatorReadingCard
+          title="Quebra de caixa por dia"
+          description="Acima do zero sobrou; abaixo faltou"
+          :csv="differencePoints.length ? differenceCsv : undefined"
+        >
+          <OperatorReadingChart
+            title="Quebra de caixa por dia"
+            kind="diverging"
+            :axis-label="differenceAxis"
+            :series="CASH_DIFFERENCE_SERIES"
+            :points="differencePoints"
+            :diverging="CASH_DIFFERENCE_SIDES"
+            :format="readingMoneyFormat"
+            empty-title="Nenhum turno fechado no período"
+            empty-description="Sem fechamento não há quebra para medir."
+          />
+        </OperatorReadingCard>
 
         <!-- Conta do cliente: só quando existe (dado opcional faz a tela crescer).
-             Dívida nova e acerto na janela; saldo em aberto é de HOJE, derivado. -->
-        <BiSection
-          v-if="report.accounts.sales_q || report.accounts.settled_q || report.accounts.open_q"
+             Dívida nova e acerto na janela; saldo em aberto é de HOJE, derivado.
+             As três contas são cartões `soft` dentro do quadro: um nível de borda só. -->
+        <OperatorReadingCard
+          v-if="hasAccounts"
           title="Contas na casa"
-          caption="Vendas em conta e acertos no período; saldo em aberto é o de hoje"
+          description="Vendas em conta e acertos no período; saldo em aberto é o de hoje"
+          :csv="report.accounts.top_open.length ? openAccountsCsv(report.accounts.top_open) : undefined"
           data-house-accounts
         >
           <div class="grid gap-3 sm:grid-cols-3">
-            <StatTile label="Vendido em conta" :value="formatMoney(report.accounts.sales_q)" hint="Virou dívida no período" />
-            <StatTile
-              label="Acertado"
+            <OperatorMetric
+              variant="soft"
+              title="Vendido em conta"
+              :value="formatMoney(report.accounts.sales_q)"
+              hint="Virou dívida no período"
+            />
+            <OperatorMetric
+              variant="soft"
+              title="Acertado"
               :value="formatMoney(report.accounts.settled_q)"
               :hint="`Em dinheiro ${formatMoney(report.accounts.settled_cash_q)}`"
             />
-            <StatTile
-              label="Em aberto hoje"
+            <OperatorMetric
+              variant="soft"
+              title="Em aberto hoje"
               :value="formatMoney(report.accounts.open_q)"
               :hint="`${formatInt(report.accounts.open_customers)} ${report.accounts.open_customers === 1 ? 'cliente' : 'clientes'}`"
             />
           </div>
-          <ul v-if="report.accounts.top_open.length" class="mt-3 grid gap-1 op-label">
-            <li
-              v-for="row in report.accounts.top_open"
-              :key="row.customer_name"
-              class="flex items-baseline justify-between border-b border-border py-1 last:border-0"
-            >
-              <span class="text-foreground">{{ row.customer_name }}</span>
-              <span class="tnum text-foreground">{{ formatMoney(row.balance_q) }}</span>
-            </li>
-          </ul>
-        </BiSection>
-
-        <div class="grid gap-3 lg:grid-cols-2">
-          <BiSection
-            title="Por operador"
-            caption="Quebra acumulada, aberturas de gaveta sem venda, destraves por gerente e pedidos de troco no período"
+          <NuxtTable
+            v-if="report.accounts.top_open.length"
+            :data="report.accounts.top_open"
+            :columns="accountColumns"
+            :get-row-id="(row) => row.customer_name"
+            caption="Clientes com conta em aberto"
+            class="mt-3"
+            data-bi-open-accounts
           >
-            <div class="overflow-x-auto">
-              <table v-if="report.by_operator.length" class="w-full op-label">
-                <thead>
-                  <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
-                    <th class="pb-2 font-semibold">Operador</th>
-                    <th class="pb-2 text-right font-semibold">Turnos</th>
-                    <th class="pb-2 text-right font-semibold">Quebra</th>
-                    <th class="pb-2 text-right font-semibold">Gaveta</th>
-                    <th class="pb-2 text-right font-semibold">Destraves</th>
-                    <th class="pb-2 text-right font-semibold">Troco</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in report.by_operator" :key="row.operator" class="border-b border-border last:border-0">
-                    <td class="py-2 pr-2 font-medium text-foreground">{{ row.operator }}</td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.shifts) }}</td>
-                    <td
-                      class="py-2 text-right tnum"
-                      :class="row.difference_q < 0 ? 'font-semibold text-destructive' : 'text-foreground'"
-                    >
-                      {{ formatMoney(row.difference_q) }}
-                    </td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.drawer_openings) }}</td>
-                    <td
-                      class="py-2 text-right tnum"
-                      :class="row.drawer_unlocks ? 'font-semibold text-foreground' : 'text-muted-foreground'"
-                    >
-                      {{ formatInt(row.drawer_unlocks) }}
-                    </td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.change_requests) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p v-else class="op-body text-muted-foreground">Nenhum turno fechado nem evento de caixa no período.</p>
-            </div>
-          </BiSection>
+            <template #balance-cell="{ row }">{{ formatMoney(row.original.balance_q) }}</template>
+          </NuxtTable>
+        </OperatorReadingCard>
+
+        <div class="grid items-start gap-3 lg:grid-cols-2">
+          <OperatorReadingCard
+            title="Por operador"
+            description="Quebra acumulada, aberturas de gaveta sem venda, destraves por gerente e pedidos de troco no período"
+            :csv="report.by_operator.length ? operatorCsv(report.by_operator) : undefined"
+          >
+            <NuxtTable
+              v-if="report.by_operator.length"
+              :data="report.by_operator"
+              :columns="operatorColumns"
+              :get-row-id="(row) => row.operator"
+              caption="Caixa por operador"
+              data-bi-cash-by-operator
+            >
+              <template #shifts-cell="{ row }">{{ formatInt(row.original.shifts) }}</template>
+              <template #difference-cell="{ row }">
+                <span :class="row.original.difference_q < 0 ? 'font-semibold text-error' : 'text-highlighted'">{{ formatMoney(row.original.difference_q) }}</span>
+              </template>
+              <template #drawer_openings-cell="{ row }">{{ formatInt(row.original.drawer_openings) }}</template>
+              <template #drawer_unlocks-cell="{ row }">
+                <span :class="exceptionTone(row.original.drawer_unlocks)">{{ formatInt(row.original.drawer_unlocks) }}</span>
+              </template>
+              <template #change_requests-cell="{ row }">{{ formatInt(row.original.change_requests) }}</template>
+            </NuxtTable>
+            <NuxtEmpty
+              v-else
+              variant="naked"
+              icon="i-lucide-users"
+              title="Nenhum turno fechado nem evento de caixa no período"
+            />
+          </OperatorReadingCard>
+
           <!-- O que a trava da gaveta revelou. Aqui a AUSÊNCIA é dado: um turno com
                dinheiro andando e zero bloqueio não é um balcão caprichoso, é um
                sensor que não estava falando com o PDV. -->
-          <section v-if="anomalies.length" class="rounded-lg border border-warning/40 bg-warning/5 px-4 py-3">
-            <h2 class="op-title text-foreground">Gaveta · o que pede explicação</h2>
-            <p class="mb-3 op-micro text-muted-foreground">
-              Não é acusação: é onde olhar. Cada linha aponta um turno e diz o que não fecha.
-            </p>
-            <ul class="flex flex-col gap-2">
-              <li v-for="(item, i) in anomalies" :key="`${item.code}-${item.shift_key}-${i}`" class="flex gap-2 op-label">
-                <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-                <span class="text-foreground">
-                  <span class="font-semibold">{{ item.operator }}</span>
-                  <span class="text-muted-foreground"> · turno {{ item.shift_key }} · </span>{{ item.detail }}
-                </span>
-              </li>
-            </ul>
-          </section>
-
-          <BiSection
-            title="Gaveta por operador"
-            caption="Quantas vezes a trava agiu, quanto tempo a gaveta ficou aberta somada, e o pior episódio, que a média esconde. Desistir da venda em vez de fechar a gaveta, destrave e tentativa de PIN são exceção: qualquer número acima de zero se lê."
+          <NuxtAlert
+            v-if="anomalies.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            title="Gaveta · o que pede explicação"
+            data-bi-drawer-anomalies
           >
-            <div class="overflow-x-auto">
-              <table v-if="drawerRows.length" class="w-full min-w-160 op-label">
-                <thead>
-                  <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
-                    <th class="pb-2 font-semibold">Operador</th>
-                    <th class="pb-2 text-right font-semibold">Travou</th>
-                    <th class="pb-2 text-right font-semibold">Aberta (total)</th>
-                    <th class="pb-2 text-right font-semibold">Pior episódio</th>
-                    <th class="pb-2 text-right font-semibold">Desistiu</th>
-                    <th class="pb-2 text-right font-semibold">Destraves</th>
-                    <th class="pb-2 text-right font-semibold">Buscou o PIN</th>
-                    <th class="pb-2 text-right font-semibold">Sensor mudo</th>
-                    <th class="pb-2 text-right font-semibold">Esquecida</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in drawerRows" :key="row.operator" class="border-b border-border last:border-0">
-                    <td class="py-2 pr-2 font-medium text-foreground">{{ row.operator }}</td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatInt(row.blocks) }}</td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatDuration(row.open_seconds) }}</td>
-                    <td class="py-2 text-right tnum text-foreground">{{ formatDuration(row.longest_open_seconds) }}</td>
-                    <td class="py-2 text-right tnum" :class="row.dismissals ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.dismissals) }}</td>
-                    <td class="py-2 text-right tnum" :class="row.overrides ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.overrides) }}</td>
-                    <td class="py-2 text-right tnum" :class="row.unlock_attempts ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.unlock_attempts) }}</td>
-                    <td class="py-2 text-right tnum" :class="row.sensor_blind ? 'font-semibold text-destructive' : 'text-muted-foreground'">{{ formatInt(row.sensor_blind) }}</td>
-                    <td class="py-2 text-right tnum" :class="row.left_open ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.left_open) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p v-else class="op-body text-muted-foreground">
-                Nenhum episódio de gaveta no período. Num balcão com sensor armado e movimento, isso merece conferência.
-              </p>
-            </div>
-          </BiSection>
+            <template #description>
+              <p class="mb-2">Não é acusação: é onde olhar. Cada linha aponta um turno e diz o que não fecha.</p>
+              <ul class="flex flex-col gap-1.5">
+                <li v-for="(item, i) in anomalies" :key="`${item.code}-${item.shift_key}-${i}`" class="text-highlighted">
+                  <span class="font-semibold">{{ item.operator }}</span>
+                  <span class="text-muted"> · turno {{ item.shift_key }} · </span>{{ item.detail }}
+                </li>
+              </ul>
+            </template>
+          </NuxtAlert>
 
-          <BiSection title="Meios de pagamento" caption="Consolidado dos fechamentos do período">
-            <ChartHBarList v-if="methodRows.length" :rows="methodRows" />
-            <p v-else class="op-body text-muted-foreground">Nenhum fechamento na janela ainda.</p>
-          </BiSection>
+          <OperatorReadingCard
+            title="Gaveta por operador"
+            description="Quantas vezes a trava agiu, quanto tempo a gaveta ficou aberta somada, e o pior episódio, que a média esconde. Desistir da venda em vez de fechar a gaveta, destrave e tentativa de PIN são exceção: qualquer número acima de zero se lê."
+            :csv="drawerRows.length ? drawerCsv(drawerRows) : undefined"
+          >
+            <NuxtTable
+              v-if="drawerRows.length"
+              :data="drawerRows"
+              :columns="drawerColumns"
+              :get-row-id="(row) => row.operator"
+              caption="Gaveta por operador"
+              data-bi-drawer-by-operator
+            >
+              <template #blocks-cell="{ row }">{{ formatInt(row.original.blocks) }}</template>
+              <template #open_seconds-cell="{ row }">{{ formatDuration(row.original.open_seconds) }}</template>
+              <template #longest_open_seconds-cell="{ row }">{{ formatDuration(row.original.longest_open_seconds) }}</template>
+              <template #dismissals-cell="{ row }"><span :class="exceptionTone(row.original.dismissals)">{{ formatInt(row.original.dismissals) }}</span></template>
+              <template #overrides-cell="{ row }"><span :class="exceptionTone(row.original.overrides)">{{ formatInt(row.original.overrides) }}</span></template>
+              <template #unlock_attempts-cell="{ row }"><span :class="exceptionTone(row.original.unlock_attempts)">{{ formatInt(row.original.unlock_attempts) }}</span></template>
+              <template #sensor_blind-cell="{ row }">
+                <span :class="row.original.sensor_blind ? 'font-semibold text-error' : 'text-muted'">{{ formatInt(row.original.sensor_blind) }}</span>
+              </template>
+              <template #left_open-cell="{ row }"><span :class="exceptionTone(row.original.left_open)">{{ formatInt(row.original.left_open) }}</span></template>
+            </NuxtTable>
+            <NuxtEmpty
+              v-else
+              variant="naked"
+              icon="i-lucide-archive"
+              title="Nenhum episódio de gaveta no período"
+              description="Num balcão com sensor armado e movimento, isso merece conferência."
+            />
+          </OperatorReadingCard>
+
+          <OperatorReadingCard
+            title="Meios de pagamento"
+            description="Consolidado dos fechamentos do período"
+            :csv="methodRows.length ? methodsCsv(methodRows) : undefined"
+          >
+            <NuxtTable
+              v-if="methodRows.length"
+              :data="methodRows"
+              :columns="methodColumns"
+              :get-row-id="(row) => row.method"
+              caption="Meios de pagamento no período"
+              data-bi-payment-methods
+            >
+              <template #amount-cell="{ row }">{{ formatMoney(row.original.amount_q) }}</template>
+              <template #share-cell="{ row }">
+                <span class="flex min-w-24 items-center gap-2">
+                  <NuxtProgress :model-value="row.original.share" class="flex-1" aria-hidden="true" />
+                  <span class="tnum">{{ row.original.shareLabel }}</span>
+                </span>
+              </template>
+            </NuxtTable>
+            <NuxtEmpty
+              v-else
+              variant="naked"
+              icon="i-lucide-credit-card"
+              title="Nenhum fechamento na janela ainda"
+              description="O mix de pagamento sai do fechamento do caixa."
+            />
+          </OperatorReadingCard>
         </div>
 
-        <BiSection title="Gaveta por hora do dia" caption="Aberturas sem venda e destraves da trava, do log de eventos do PDV">
-          <ChartHBarList v-if="drawerHourRows.length" :rows="drawerHourRows" />
-          <p v-else class="op-body text-muted-foreground">Nenhuma abertura de gaveta sem venda no período.</p>
-        </BiSection>
+        <OperatorReadingCard
+          title="Gaveta por hora do dia"
+          description="Aberturas sem venda e destraves da trava, do log de eventos do PDV"
+          :csv="hourPoints.length ? hourCsv : undefined"
+        >
+          <OperatorReadingChart
+            title="Gaveta por hora do dia"
+            axis-label="Hora"
+            :series="DRAWER_HOUR_SERIES"
+            :points="hourPoints"
+            empty-title="Nenhuma abertura de gaveta sem venda no período"
+          />
+        </OperatorReadingCard>
       </template>
-      <BiSwipeHint />
     </main>
   </div>
 </template>

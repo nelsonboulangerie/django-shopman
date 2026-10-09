@@ -21,8 +21,8 @@
       "baselines": "surfaces/pos-nuxt/tests/visual/baselines"
     }
   ],
-  "themeFingerprint": "sha256:be27c72b66fb73af6575478f16ee92c9c1cd290f7e5fe4b8580a148c6f4985ae",
-  "acceptedOn": "2026-10-06",
-  "owner": "WP-UX-13E (#1512)",
-  "note": "Aceite do tema já com o app.config.ts canônico do #1512 (merge 35d95104d), que regenerou as baselines de Marketing no próprio PR (commit c37a70a3b). O contrato nasce neste PR porque o gate é novo; daqui em diante, PR de tema regrava o aceite junto com as baselines."
+  "themeFingerprint": "sha256:bbc6e2123d401f9f311712985565bc41a6e71757db9d6e53f7a366e3bc2fd788",
+  "acceptedOn": "2026-10-09",
+  "owner": "Pablo Valentini",
+  "note": "Aceite do dono (Pablo Valentini, no chat em 09/10/2026: \"O tema em si está ok! Eu já tinha aprovado\") ao tema novo da suíte de operador em Nuxt UI canônico, no pouso #1555. Baselines de Marketing promovidas da CI no mesmo PR (runs 37873809401 e anteriores); as 4 do PDV não têm job visual na CI e não foram regeradas."
 }

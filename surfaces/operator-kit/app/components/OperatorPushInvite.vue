@@ -17,35 +17,55 @@ const props = defineProps<{
 
 const push = useWebPush();
 
-const runtimeIdentity = (useRuntimeConfig().public?.operatorPwa as { identity?: OperatorPushIdentity } | undefined)
-  ?.identity;
-const identity = computed<OperatorPushIdentity | null>(() => props.identity || runtimeIdentity || null);
+const runtimeIdentity = (
+  useRuntimeConfig().public?.operatorPwa as
+    { identity?: OperatorPushIdentity } | undefined
+)?.identity;
+const identity = computed<OperatorPushIdentity | null>(
+  () => props.identity || runtimeIdentity || null,
+);
 
 /** "o PDV" → "do PDV"; "a Cozinha" → "da Cozinha"; "as Compras" → "das Compras". */
-const CONTRACTION: Record<string, string> = { o: "do", a: "da", os: "dos", as: "das" };
+const CONTRACTION: Record<string, string> = {
+  o: "do",
+  a: "da",
+  os: "dos",
+  as: "das",
+};
 const scope = computed(() => {
   const value = identity.value;
   if (!value) return "deste aplicativo";
   const contraction = CONTRACTION[value.article.toLowerCase()];
-  return contraction ? `${contraction} ${value.label}` : `de ${value.article} ${value.label}`;
+  return contraction
+    ? `${contraction} ${value.label}`
+    : `de ${value.article} ${value.label}`;
 });
+
+const actions = computed(() => [
+  {
+    label: push.loading.value ? "Ativando…" : "Ativar avisos",
+    color: "info" as const,
+    variant: "outline" as const,
+    loading: push.loading.value,
+    onClick: push.activate,
+  },
+]);
 </script>
 
 <template>
-  <div
-    v-if="push.supported.value && !push.active.value && push.permission.value !== 'denied'"
+  <NuxtAlert
+    v-if="
+      push.supported.value &&
+      !push.active.value &&
+      push.permission.value !== 'denied'
+    "
     data-operator-push-invite
-    class="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 max-w-xs rounded-xl border bg-card p-3 shadow-lg"
-  >
-    <p class="text-sm font-semibold">Avisos mesmo com o app fechado</p>
-    <p class="mt-1 text-xs text-muted-foreground">Ative neste dispositivo para receber só os avisos {{ scope }}.</p>
-    <button
-      type="button"
-      class="mt-2 inline-flex h-11 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-60"
-      :disabled="push.loading.value"
-      @click="push.activate"
-    >
-      {{ push.loading.value ? 'Ativando…' : 'Ativar avisos' }}
-    </button>
-  </div>
+    color="info"
+    variant="subtle"
+    orientation="horizontal"
+    icon="i-lucide-bell-ring"
+    title="Avisos mesmo com o app fechado"
+    :description="`Ative neste dispositivo para receber só os avisos ${scope}.`"
+    :actions="actions"
+  />
 </template>

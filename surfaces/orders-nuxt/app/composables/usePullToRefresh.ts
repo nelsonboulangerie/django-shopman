@@ -16,7 +16,8 @@ export function usePullToRefresh(
   let y0: number | null = null;
 
   function start(event: TouchEvent) {
-    if (!enabled.value || refreshing.value || (el.value?.scrollTop ?? 0) > 0) return;
+    if (!enabled.value || refreshing.value || (el.value?.scrollTop ?? 0) > 0)
+      return;
     y0 = event.touches[0]?.clientY ?? null;
   }
   function move(event: TouchEvent) {
@@ -29,18 +30,26 @@ export function usePullToRefresh(
     y0 = null;
     if (pull.value >= PULL_COMMIT_PX) {
       refreshing.value = true;
-      try { await onRefresh(); } finally { refreshing.value = false; }
+      try {
+        await onRefresh();
+      } finally {
+        refreshing.value = false;
+      }
     }
     pull.value = 0;
   }
-  watch(el, (node, old) => {
-    old?.removeEventListener("touchstart", start);
-    old?.removeEventListener("touchmove", move);
-    old?.removeEventListener("touchend", end);
-    node?.addEventListener("touchstart", start, { passive: true });
-    node?.addEventListener("touchmove", move, { passive: true });
-    node?.addEventListener("touchend", end);
-  }, { immediate: true });
+  watch(
+    el,
+    (node, old) => {
+      old?.removeEventListener("touchstart", start);
+      old?.removeEventListener("touchmove", move);
+      old?.removeEventListener("touchend", end);
+      node?.addEventListener("touchstart", start, { passive: true });
+      node?.addEventListener("touchmove", move, { passive: true });
+      node?.addEventListener("touchend", end);
+    },
+    { immediate: true },
+  );
   onBeforeUnmount(() => {
     el.value?.removeEventListener("touchstart", start);
     el.value?.removeEventListener("touchmove", move);

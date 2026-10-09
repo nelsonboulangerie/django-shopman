@@ -178,10 +178,10 @@ describe("OperatorOrderDetail", () => {
         ],
       }),
     });
-    const rows = wrapper.findAll("[data-order-timeline] li");
-    expect(rows).toHaveLength(2);
-    expect(rows[1]!.text()).toContain("08:05 · Maria");
-    expect(rows[1]!.find("span").classes()).toContain("bg-primary");
+    const timeline = wrapper.get("[data-order-timeline]");
+    expect(timeline.text()).toContain("Pedido criado");
+    expect(timeline.text()).toContain("Cliente pediu sem açúcar");
+    expect(timeline.text()).toContain("08:05 · Maria");
   });
 
   it("comentar só aparece quando o servidor oferece a ação neste contexto", async () => {

@@ -1,37 +1,55 @@
 <script setup lang="ts">
-// Vendas: faturamento, ticket e mix (prévias `depois-bi-vendas` no desktop e
-// `depois-marketing-bi-celular` (b) no celular). Cancelado fica FORA do faturamento e
-// é contado à parte (número escondido é número que mente).
+// Vendas: faturamento, ticket e mix. Cancelado fica FORA do faturamento e é contado à
+// parte, em todo dispositivo (número escondido é número que mente).
 //
-// Linha 2 (pinos 5 e 6): "Comparar com" diz contra o quê os deltas são medidos, e os
-// chips de canal recortam TODOS os quadros. Os dois moram na URL (`?compare=`,
-// `?channel=`), junto da janela: o link colado abre o mesmo recorte.
+// Peças do kit (PR-B3 do WP-BI-CANON-LAUDO): os números são `OperatorMetric`, os
+// quadros são `OperatorReadingCard` (o ⋯ "Exportar CSV deste quadro"), os gráficos são
+// `OperatorReadingChart` (eixo, legenda, ponto por mouse, toque e teclado, tabela
+// equivalente no SSR) e a hora da leitura é o `ReadFreshness`. Um layout só para
+// celular e desktop: a grade muda de colunas, o conteúdo não se duplica.
+//
+// Recortes: "Comparar com" diz contra o quê os deltas são medidos, e as abas de canal
+// recortam TODOS os quadros. Os dois moram na URL (`?compare=`, `?channel=`), junto da
+// janela: o link colado abre o mesmo recorte.
+import { readingChartCsv, readingMoneyFormat } from "../../../operator-kit/app/presentation/readingChart";
 import type { BISalesReport } from "~/types/bi";
 import {
-  BUCKET_SPAN_LABELS,
   SALES_COMPARE_LABELS,
-  WEEKDAY_LABELS,
-  bucketLabel,
-  bucketSalesDays,
   channelIcon,
+  csvMoney,
   delta,
   formatInt,
   formatMoney,
   formatMoneyCompact,
   formatQty,
-  hourLabel,
   rangeCaption,
   salesAnswer,
   sharePercent,
   sourceConflictLabel,
   sourcesCaption,
 } from "~/presentation/bi";
+import {
+  ORDERS_SERIES,
+  channelRows as toChannelRows,
+  hourPoints as toHourPoints,
+  revenueReading,
+  revenueSeries as toRevenueSeries,
+  weekdayPoints as toWeekdayPoints,
+} from "~/presentation/sales";
 
 const route = useRoute();
 const router = useRouter();
-// No celular a barra de 56px leva o nome da seção (a pergunta inteira não cabe ao lado
-// do período e do compartilhar, prévia `depois-marketing-bi-celular` (b)).
-const isPhone = useMediaQuery("(max-width: 767.98px)");
+
+// O celular só é lido depois de montar: o servidor não sabe a largura, e decidir no
+// SSR fazia o tamanho do Faturamento e a altura dos gráficos trocarem na hidratação.
+const phoneQuery = useMediaQuery("(max-width: 767.98px)");
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
+const isPhone = computed(() => mounted.value && phoneQuery.value);
+
+const { selection, bounds, presets } = useBiWindow();
 
 const channel = computed(() => (typeof route.query.channel === "string" ? route.query.channel : ""));
 const compare = computed(() => (route.query.compare === "year" ? "year" : "previous"));
@@ -45,289 +63,350 @@ function setQuery(key: "channel" | "compare", value: string, empty: string) {
   void router.replace({ query: value && value !== empty ? { ...rest, [key]: value } : rest });
 }
 
-const { report, pending, error, refresh } = useBiReport<BISalesReport>("sales", extra);
+const { report, freshness, pending, error, refresh } = useBiReport<BISalesReport>("sales", extra);
+const shareItems = useBiShareMenuItems();
+const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
+
+const compareItems = [
+  { label: "período anterior", value: "previous" },
+  { label: "mesmo período do ano passado", value: "year" },
+];
+function pickCompare(value: string | undefined) {
+  setQuery("compare", value ?? "previous", "previous");
+}
 
 const against = computed(() => SALES_COMPARE_LABELS[report.value?.compare ?? "previous"] ?? "período anterior");
 const hasHistory = computed(() => (report.value?.historical_days ?? 0) > 0);
 const sourcesNote = computed(() => sourcesCaption(report.value?.sources ?? []));
 const conflicts = computed(() => (report.value?.source_conflicts ?? []).map(sourceConflictLabel));
-
-const revenueSeries = computed(() => {
-  const previous = report.value?.previous.revenue_by_day ?? [];
-  const rows = (report.value?.days ?? []).map((day, index) => ({
-    ...day,
-    prev_revenue_q: previous[index] ?? 0,
-  }));
-  return bucketSalesDays(rows).map((bucket) => ({
-    label: bucketLabel(bucket.date, bucket.span),
-    value: bucket.revenue_q,
-    previous: bucket.prev_revenue_q,
-    muted: bucket.source === "yooga",
-    detail: [
-      BUCKET_SPAN_LABELS[bucket.span],
-      `${formatInt(bucket.orders)} pedido${bucket.orders === 1 ? "" : "s"}`,
-      bucket.source === "yooga" ? "histórico Yooga" : "",
-    ]
-      .filter(Boolean)
-      .join(" · "),
-  }));
-});
-
-const hourSeries = computed(() =>
-  (report.value?.orders_by_hour ?? []).map((count, hour) => ({
-    label: hourLabel(hour),
-    value: count,
-  })),
-);
-
-const weekdaySeries = computed(() => {
-  const closed = new Set(report.value?.closed_weekdays ?? []);
-  return (report.value?.orders_by_weekday ?? []).map((count, index) => ({
-    label: WEEKDAY_LABELS[index] ?? String(index),
-    value: count,
-    closed: closed.has(index),
-  }));
-});
-
-const channelRows = computed(() => {
-  const total = report.value?.revenue_total_q ?? 0;
-  return (report.value?.by_channel ?? []).map((row) => ({
-    ref: row.channel_ref,
-    name: row.name,
-    icon: channelIcon(row.kind),
-    orders: row.orders,
-    revenue_q: row.revenue_q,
-    share: sharePercent(row.revenue_q, total),
-  }));
-});
-const channelMax = computed(() => Math.max(1, ...channelRows.value.map((row) => row.revenue_q)));
-const topChannel = computed(() => channelRows.value[0] ?? null);
-
-const topMax = computed(() => Math.max(1, ...(report.value?.top_skus ?? []).map((row) => row.revenue_q)));
-const topTotal = computed(() => report.value?.revenue_total_q ?? 0);
-
 const compareCaption = computed(() =>
   report.value ? rangeCaption(report.value.previous.date_from, report.value.previous.date_to) : "",
 );
 
-const revenueCsv = computed(() => revenueSeries.value.map((point) => [point.label, formatMoney(point.value), formatMoney(point.previous ?? 0)]));
-const hourCsv = computed(() => hourSeries.value.map((point) => [point.label, point.value]));
-const weekdayCsv = computed(() => weekdaySeries.value.map((point) => [point.label, point.value]));
-const channelCsv = computed(() => channelRows.value.map((row) => [row.name, row.orders, formatMoney(row.revenue_q), row.share]));
-const topCsv = computed(() =>
-  (report.value?.top_skus ?? []).map((row) => [row.name, formatQty(row.qty), formatMoney(row.revenue_q), sharePercent(row.revenue_q, topTotal.value)]),
+// Faturamento por balde, com o traço tracejado do período de comparação.
+const revenueSeries = computed(() => toRevenueSeries(against.value));
+const revenue = computed(() => (report.value ? revenueReading(report.value) : { points: [], span: "dia" as const }));
+const revenueDescription = computed(() =>
+  [
+    `Por ${revenue.value.span}, contra o ${against.value}`,
+    hasHistory.value ? "Antes do Shopman, os dias vêm do histórico Yooga" : "",
+  ]
+    .filter(Boolean)
+    .join(". ")
+    .concat("."),
 );
+const revenueCsv = computed(() => readingChartCsv("Período", revenueSeries.value, revenue.value.points, { money: true }));
 
+const hourPoints = computed(() => toHourPoints(report.value?.orders_by_hour ?? []));
+const hourCsv = computed(() => readingChartCsv("Hora", ORDERS_SERIES, hourPoints.value));
+const weekdayPoints = computed(() =>
+  toWeekdayPoints(report.value?.orders_by_weekday ?? [], report.value?.closed_weekdays ?? []),
+);
+const weekdayCsv = computed(() => readingChartCsv("Dia da semana", ORDERS_SERIES, weekdayPoints.value));
+const hourSeries = ORDERS_SERIES.map((item) => ({ ...item, tone: "info" as const }));
+const weekdaySeries = ORDERS_SERIES.map((item) => ({ ...item, tone: "success" as const }));
+
+// Por canal: NuxtTable, a parte do faturamento num NuxtProgress na célula.
+const channelRows = computed(() => (report.value ? toChannelRows(report.value) : []));
+const channelMax = computed(() => Math.max(1, ...channelRows.value.map((row) => row.revenue_q)));
+const topChannel = computed(() => channelRows.value[0] ?? null);
+const channelColumns = [
+  { accessorKey: "name", header: "Canal", meta: { class: { td: "whitespace-normal font-medium text-highlighted" } } },
+  // No celular os pedidos descem para baixo do nome do canal (a coluna sai).
+  { accessorKey: "orders", header: "Pedidos", meta: { class: { th: "text-right max-sm:hidden", td: "text-right tnum max-sm:hidden" } } },
+  { accessorKey: "revenue_q", header: "Faturamento", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  // No celular a barra sai e a parte fica só em número (a tabela inteira caber na tela).
+  { accessorKey: "share", header: "Parte", meta: { class: { th: "text-right sm:w-32", td: "sm:w-32" } } },
+];
+const channelCsv = computed(() => ({
+  header: ["Canal", "Pedidos", "Faturamento (R$)", "Parte"],
+  rows: channelRows.value.map((row) => [row.name, row.orders, csvMoney(row.revenue_q), row.share]),
+}));
+
+// Top produtos: a parte é um NuxtProgress contra o maior. No celular a coluna da barra
+// sai (a tabela inteira caber na tela vale mais; a parte segue no CSV e no nome da barra).
+const topColumns = [
+  { accessorKey: "name", header: "Produto", meta: { class: { td: "whitespace-normal font-medium text-highlighted" } } },
+  { id: "qty", header: "Qtd", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  { id: "revenue", header: "Faturamento", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  { id: "share", header: "Parte", meta: { class: { th: "w-28 max-sm:hidden", td: "w-28 max-sm:hidden" } } },
+];
+const topMax = computed(() => Math.max(1, ...(report.value?.top_skus ?? []).map((row) => row.revenue_q)));
+const topTotal = computed(() => report.value?.revenue_total_q ?? 0);
+const topCsv = computed(() => ({
+  header: ["Produto", "Quantidade", "Faturamento (R$)", "Parte"],
+  rows: (report.value?.top_skus ?? []).map((row) => [
+    row.name,
+    row.qty,
+    csvMoney(row.revenue_q),
+    sharePercent(row.revenue_q, topTotal.value),
+  ]),
+}));
+
+// "Maior canal" leva ao quadro Por canal pelo próximo foco da suíte (linha de foco sob
+// o chrome fixo e foco de teclado no quadro), não por um scrollIntoView da tela.
+const { reveal } = useNextFocus();
 function scrollToChannels() {
-  document.querySelector("[data-bi-by-channel]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  reveal("by-channel");
 }
+
+// Recorte por canal: NuxtTabs em pílula, como os recortes do Gestor. `all` é o valor do
+// "Todos": as Tabs não aceitam valor vazio, e a URL continua sem `?channel=`.
+const channelTabs = computed(() => [
+  { value: "all", label: "Todos os canais" },
+  ...(report.value?.channels ?? []).map((option) => ({
+    value: option.ref,
+    label: option.name,
+    icon: channelIcon(option.kind),
+  })),
+]);
+function pickChannel(value: string | number) {
+  setQuery("channel", value === "all" ? "" : String(value), "");
+}
+// O canal escolhido é o recorte ativo (o "Comparar com" é a régua, não um recorte).
+const activeFilters = computed(() => {
+  const channel = report.value?.channel;
+  if (!channel || channel === "all") return [];
+  const label = channelTabs.value.find((tab) => tab.value === channel)?.label ?? channel;
+  return [{ key: "channel", label: `Canal: ${label}`, remove: () => pickChannel("all") }];
+});
+
+const retryActions = computed(() => [
+  { label: "Tentar de novo", icon: "i-lucide-refresh-cw", color: "error" as const, variant: "outline" as const, onClick: () => refresh() },
+]);
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader :title="isPhone ? 'Vendas' : 'Quanto vendemos?'">
-      <template #status>
-        <BiLiveStatus :pending="pending" :error="error" />
+    <OperatorPageHeader title="Quanto vendemos?" :actions="readingActions" :actions-label="readingLabel" :active-filters="activeFilters">
+      <!-- Celular (regra da toolbar do kit): período e frescor na linha; comparar e canal
+           no painel "Filtros", com o canal escolhido como chip removível. -->
+      <template #filters-primary>
+        <OperatorPeriodPicker
+          v-model="selection"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
       </template>
-      <template #actions>
-        <BiWindowPicker class="max-md:hidden" />
-        <div class="max-md:hidden"><BiPageMenu /></div>
+      <template #filters>
+        <NuxtFormField v-if="report" label="Comparar com" :help="compareCaption" orientation="horizontal" data-bi-sales-compare>
+          <NuxtSelect :model-value="compare" :items="compareItems" class="min-w-48" @update:model-value="pickCompare" />
+        </NuxtFormField>
+        <!-- No celular as abas não cabem numa linha (cortavam o último canal): a mesma
+             escolha vira lista curta. Do `sm` para cima, as abas em pílula. -->
+        <NuxtFormField v-if="report" label="Canal" orientation="horizontal" class="sm:hidden">
+          <NuxtSelect :model-value="report.channel || 'all'" :items="channelTabs" class="min-w-48" @update:model-value="pickChannel" />
+        </NuxtFormField>
+        <NuxtTabs
+          v-if="report"
+          class="max-sm:hidden"
+          :model-value="report.channel || 'all'"
+          :items="channelTabs"
+          :content="false"
+          variant="pill"
+          aria-label="Recorte por canal"
+          data-bi-channel-tabs
+          @update:model-value="pickChannel"
+        />
       </template>
-      <template #phone-actions>
-        <BiPeriodChip />
-        <BiShareButton />
-      </template>
-      <template v-if="report" #filters>
-        <label
-          class="relative inline-flex min-h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition focus-within:ring-2 focus-within:ring-ring/40 hover:bg-accent"
-          data-bi-sales-compare
-        >
-          <Icon name="lucide:git-compare-arrows" class="size-4 text-muted-foreground" aria-hidden="true" />
-          <span class="font-normal text-muted-foreground">Comparar com:</span>
-          <span class="font-semibold">{{ against }}</span>
-          <span class="hidden tnum font-normal text-muted-foreground sm:inline">({{ compareCaption }})</span>
-          <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-          <select
-            :value="compare"
-            class="absolute inset-0 cursor-pointer opacity-0"
-            aria-label="Comparar com"
-            @change="setQuery('compare', ($event.target as HTMLSelectElement).value, 'previous')"
-          >
-            <option value="previous">período anterior</option>
-            <option value="year">mesmo período do ano passado</option>
-          </select>
-        </label>
-        <span class="mx-1 h-6 w-px bg-border" aria-hidden="true" />
-        <UiFilterChip :active="!report.channel" :aria-pressed="!report.channel" data-bi-channel-chip="" @click="setQuery('channel', '', '')">
-          <template #icon><Icon v-if="!report.channel" name="lucide:check" class="size-4 text-primary" aria-hidden="true" /></template>
-          Todos os canais
-        </UiFilterChip>
-        <UiFilterChip
-          v-for="option in report.channels"
-          :key="option.ref"
-          :active="report.channel === option.ref"
-          :aria-pressed="report.channel === option.ref"
-          :data-bi-channel-chip="option.ref"
-          @click="setQuery('channel', report.channel === option.ref ? '' : option.ref, '')"
-        >
-          <template #icon><Icon :name="channelIcon(option.kind)" class="size-4" aria-hidden="true" /></template>
-          {{ option.name }}
-        </UiFilterChip>
+      <template #filters-end>
+        <ClientOnly>
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
+        </ClientOnly>
       </template>
     </OperatorPageHeader>
 
-    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
-      <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
-      <template v-if="report">
-        <!-- Celular (v3 b): o Faturamento sozinho e grande, com o "antes"; Pedidos e
-             Ticket lado a lado; o gráfico compacto; o atalho "Maior canal". -->
-        <div class="flex flex-col gap-3 md:hidden" data-bi-sales-phone>
-          <StatTile
-            label="Faturamento"
-            size="hero"
-            :value="formatMoneyCompact(report.revenue_total_q)"
-            :delta="delta(report.revenue_total_q, report.previous.revenue_total_q, { against })"
-            :hint="report.previous.revenue_total_q ? `antes: ${formatMoneyCompact(report.previous.revenue_total_q)}` : ''"
-          />
-          <div class="grid grid-cols-2 gap-3">
-            <StatTile
-              label="Pedidos"
-              :value="formatInt(report.orders_total)"
-              :delta="delta(report.orders_total, report.previous.orders_total, { base: formatInt(report.previous.orders_total), against: '' })"
-            />
-            <StatTile
-              label="Ticket médio"
-              :value="formatMoney(report.average_ticket_q)"
-              :delta="delta(report.average_ticket_q, report.previous.average_ticket_q, { base: formatMoney(report.previous.average_ticket_q), against: '' })"
-            />
-          </div>
-          <BiSection title="Faturamento por dia" :caption="report.closed_weekdays.includes(6) ? 'domingo fechado' : ''">
-            <ChartBarSeries :points="revenueSeries" :format="formatMoneyCompact" height="compact" />
-          </BiSection>
-          <button
-            v-if="topChannel"
-            type="button"
-            class="flex min-h-12 items-center gap-2 rounded-lg border border-border bg-card px-4 text-left op-label"
-            data-bi-top-channel
-            @click="scrollToChannels"
-          >
-            <span class="min-w-0 flex-1">Maior canal: <b>{{ topChannel.name }}</b>, {{ topChannel.share }} do faturamento</span>
-            <Icon name="lucide:chevron-right" class="size-5 text-muted-foreground" aria-hidden="true" />
-          </button>
-        </div>
+    <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
+      <NuxtAlert
+        v-if="error"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        title="Não deu para carregar as vendas."
+        :description="report ? 'Os números na tela são os da leitura anterior.' : undefined"
+        :actions="retryActions"
+        orientation="horizontal"
+        role="alert"
+        data-bi-error
+      />
+      <NuxtEmpty
+        v-else-if="pending && !report"
+        loading
+        title="Carregando as vendas"
+        description="Faturamento, pedidos e canais do período escolhido."
+        variant="naked"
+        data-bi-loading
+      />
 
-        <!-- Tablet e desktop (v3): a resposta e os quatro números, cada um com a pílula. -->
-        <div class="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]" data-bi-sales-tiles>
-          <BiAnswer :text="salesAnswer(report)" class="md:col-span-2 xl:col-span-1" />
-          <StatTile
-            label="Pedidos"
-            icon="lucide:receipt"
+      <template v-if="report">
+        <!-- Os números: no celular o Faturamento sozinho e maior, os outros dois a dois;
+             do tablet para cima a resposta numa frase e os quatro números lado a lado. -->
+        <div class="grid grid-cols-2 gap-3 xl:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]" data-bi-sales-tiles>
+          <!-- `1.4fr`: a resposta (uma frase) pede mais largura que cada número. -->
+          <OperatorMetric
+            title="A resposta"
+            :value="salesAnswer(report)"
+            size="statement"
+            class="col-span-2 max-md:hidden xl:col-span-1"
+          />
+          <OperatorMetric
+            title="Faturamento"
+            icon="i-lucide-banknote"
+            :size="isPhone ? 'hero' : 'figure'"
+            :value="formatMoneyCompact(report.revenue_total_q)"
+            :delta="delta(report.revenue_total_q, report.previous.revenue_total_q, { base: formatMoneyCompact(report.previous.revenue_total_q), against })"
+            class="max-md:col-span-2"
+          />
+          <OperatorMetric
+            title="Pedidos"
+            icon="i-lucide-receipt"
             :value="formatInt(report.orders_total)"
             :delta="delta(report.orders_total, report.previous.orders_total, { base: formatInt(report.previous.orders_total), against })"
           />
-          <StatTile
-            label="Faturamento"
-            icon="lucide:banknote"
-            :value="formatMoneyCompact(report.revenue_total_q)"
-            :delta="delta(report.revenue_total_q, report.previous.revenue_total_q, { base: formatMoneyCompact(report.previous.revenue_total_q), against })"
-          />
-          <StatTile
-            label="Ticket médio"
-            icon="lucide:ticket"
+          <OperatorMetric
+            title="Ticket médio"
+            icon="i-lucide-ticket"
             :value="formatMoney(report.average_ticket_q)"
             :delta="delta(report.average_ticket_q, report.previous.average_ticket_q, { base: formatMoney(report.previous.average_ticket_q), against })"
           />
-          <StatTile label="Cancelados" icon="lucide:circle-x" :value="formatInt(report.cancelled_total)" hint="Fora do faturamento ao lado" />
+          <OperatorMetric
+            title="Cancelados"
+            icon="i-lucide-circle-x"
+            :value="formatInt(report.cancelled_total)"
+            hint="Fora do faturamento ao lado"
+          />
         </div>
 
-        <BiSection title="Faturamento por dia" class="hidden md:block">
-          <template #caption>
-            Janela longa agrega por semana ou mês.<template v-if="report.closed_weekdays.includes(6)"> Domingo: fechado.</template>
-          </template>
-          <template #aside>
-            <div class="flex items-center gap-3">
-              <ul class="flex flex-wrap items-center gap-x-3 gap-y-1 op-micro text-muted-foreground" aria-label="Legenda" data-bi-legend>
-                <li class="inline-flex items-center gap-1.5"><span class="size-2 rounded-full bg-primary" aria-hidden="true" />Shopman</li>
-                <li v-if="hasHistory" class="inline-flex items-center gap-1.5"><span class="size-2 rounded-full bg-primary/35" aria-hidden="true" />Histórico Yooga</li>
-                <li class="inline-flex items-center gap-1.5"><span class="h-0.5 w-3 bg-foreground/70" aria-hidden="true" />{{ against.charAt(0).toUpperCase() + against.slice(1) }}</li>
-              </ul>
-              <BiChartMenu title="Faturamento por dia" :header="['Dia', 'Faturamento', 'Comparação']" :rows="revenueCsv" />
-            </div>
-          </template>
-          <ChartBarSeries :points="revenueSeries" :format="formatMoneyCompact" />
-          <p v-if="conflicts.length" class="mt-3 op-micro text-muted-foreground">
-            Dia com pedido no Shopman lê só o Shopman, e o histórico daquele dia sai da conta.
-            <span v-for="line in conflicts" :key="line" class="block">{{ line }}.</span>
-          </p>
-        </BiSection>
+        <NuxtButton
+          v-if="topChannel"
+          color="neutral"
+          variant="outline"
+          size="xl"
+          trailing-icon="i-lucide-chevron-right"
+          block
+          class="justify-between text-left md:hidden"
+          data-bi-top-channel
+          @click="scrollToChannels"
+        >
+          <span class="min-w-0 flex-1 whitespace-normal">Maior canal: {{ topChannel.name }}, {{ topChannel.share }} do faturamento</span>
+        </NuxtButton>
 
-        <div class="grid gap-3 lg:grid-cols-2">
-          <BiSection title="Pedidos por hora" :caption="`Soma do período, hora local${sourcesNote}`">
-            <template #aside>
-              <BiChartMenu title="Pedidos por hora" :header="['Hora', 'Pedidos']" :rows="hourCsv" />
-            </template>
-            <ChartBarSeries :points="hourSeries" :format="(v) => formatInt(v)" :tick-every="4" tone="info" />
-          </BiSection>
-          <BiSection title="Pedidos por dia da semana" :caption="`Soma do período${sourcesNote}`">
-            <template #aside>
-              <BiChartMenu title="Pedidos por dia da semana" :header="['Dia', 'Pedidos']" :rows="weekdayCsv" />
-            </template>
-            <ChartBarSeries :points="weekdaySeries" :format="(v) => formatInt(v)" :tick-every="1" tone="success" />
-          </BiSection>
+        <!-- `shrink-0`: o cartão corta o que transborda (`overflow-hidden` do tema), e
+             filho direto de coluna flex que rola encolheria até zero. -->
+        <OperatorReadingCard title="Faturamento por dia" :description="revenueDescription" :csv="revenueCsv" class="shrink-0">
+          <OperatorReadingChart
+            title="Faturamento por dia"
+            kind="comparison"
+            axis-label="Período"
+            :series="revenueSeries"
+            :points="revenue.points"
+            :format="readingMoneyFormat"
+            :height="isPhone ? 160 : 208"
+            :max-ticks="isPhone ? 4 : 6"
+            empty-title="Sem vendas no período"
+          />
+          <template v-if="conflicts.length" #footer>
+            <p class="text-xs text-muted">
+              Dia com pedido no Shopman lê só o Shopman, e o histórico daquele dia sai da conta.
+              <span v-for="line in conflicts" :key="line" class="block">{{ line }}.</span>
+            </p>
+          </template>
+        </OperatorReadingCard>
+
+        <div class="grid items-start gap-3 lg:grid-cols-2">
+          <OperatorReadingCard title="Pedidos por hora" :description="`Soma do período, hora local${sourcesNote}`" :csv="hourCsv">
+            <OperatorReadingChart
+              title="Pedidos por hora"
+              axis-label="Hora"
+              :series="hourSeries"
+              :points="hourPoints"
+              :format="formatInt"
+              empty-title="Sem pedidos no período"
+            />
+          </OperatorReadingCard>
+          <OperatorReadingCard title="Pedidos por dia da semana" :description="`Soma do período${sourcesNote}`" :csv="weekdayCsv">
+            <OperatorReadingChart
+              title="Pedidos por dia da semana"
+              axis-label="Dia da semana"
+              :series="weekdaySeries"
+              :points="weekdayPoints"
+              :format="formatInt"
+              :max-ticks="7"
+              empty-title="Sem pedidos no período"
+            />
+          </OperatorReadingCard>
         </div>
 
-        <div class="grid gap-3 lg:grid-cols-2">
-          <BiSection title="Por canal" caption="Faturamento do período" data-bi-by-channel>
-            <template #aside>
-              <BiChartMenu title="Por canal" :header="['Canal', 'Pedidos', 'Faturamento', 'Parte']" :rows="channelCsv" />
-            </template>
-            <ul v-if="channelRows.length" class="flex flex-col gap-3">
-              <li v-for="row in channelRows" :key="row.ref" class="min-w-0" :data-bi-channel-row="row.ref">
-                <div class="flex items-center gap-2 op-label">
-                  <Icon :name="row.icon" class="size-4 text-muted-foreground" aria-hidden="true" />
-                  <span class="font-semibold text-foreground">{{ row.name }}</span>
-                  <span class="op-micro text-muted-foreground">{{ formatInt(row.orders) }} {{ row.orders === 1 ? "pedido" : "pedidos" }}</span>
-                  <span class="ml-auto font-semibold tnum">{{ formatMoney(row.revenue_q) }}</span>
-                  <span class="w-12 text-right op-micro tnum text-muted-foreground">{{ row.share }}</span>
-                </div>
-                <div class="mt-1 h-2 rounded-full bg-muted">
-                  <div class="h-2 rounded-full bg-primary" :style="{ width: `${(row.revenue_q / channelMax) * 100}%` }" />
-                </div>
-              </li>
-            </ul>
-            <p v-else class="op-body text-muted-foreground">Sem vendas no período.</p>
-          </BiSection>
-          <BiSection title="Top produtos" caption="Por faturamento no período">
-            <template #aside>
-              <BiChartMenu title="Top produtos" :header="['Produto', 'Quantidade', 'Faturamento', 'Parte']" :rows="topCsv" />
-            </template>
-            <table v-if="report.top_skus.length" class="w-full op-label">
-              <thead>
-                <tr class="border-b border-border text-left op-eyebrow text-muted-foreground">
-                  <th class="pb-2 font-semibold">Produto</th>
-                  <th class="pb-2 text-right font-semibold">Qtd</th>
-                  <th class="pb-2 text-right font-semibold">Faturamento</th>
-                  <th class="w-24 pb-2 pl-3 font-semibold">Parte</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in report.top_skus" :key="row.sku" class="border-b border-border last:border-0">
-                  <td class="py-2 pr-2 font-medium text-foreground">{{ row.name }}</td>
-                  <td class="py-2 text-right tnum text-foreground">{{ formatQty(row.qty) }}</td>
-                  <td class="py-2 text-right tnum text-foreground">{{ formatMoney(row.revenue_q) }}</td>
-                  <td class="py-2 pl-3">
-                    <div class="h-1.5 rounded-full bg-muted" role="img" :aria-label="`${sharePercent(row.revenue_q, topTotal)} do faturamento`">
-                      <div class="h-1.5 rounded-full bg-primary" :style="{ width: `${(row.revenue_q / topMax) * 100}%` }" />
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <p v-else class="op-body text-muted-foreground">Sem vendas no período.</p>
-          </BiSection>
+        <div class="grid items-start gap-3 lg:grid-cols-2">
+          <OperatorReadingCard
+            title="Por canal"
+            description="Faturamento do período"
+            :csv="channelCsv"
+            data-bi-by-channel
+            data-focus-target="by-channel"
+          >
+            <NuxtTable
+              v-if="channelRows.length"
+              :data="channelRows"
+              :columns="channelColumns"
+              :get-row-id="(row) => row.ref"
+              caption="Faturamento por canal"
+            >
+              <template #name-cell="{ row }">
+                <span class="inline-flex items-center gap-2" :data-bi-channel-row="row.original.ref">
+                  <NuxtIcon :name="row.original.icon" class="size-4 shrink-0 text-muted" aria-hidden="true" />{{ row.original.name }}
+                </span>
+                <span class="block text-xs font-normal tnum text-muted sm:hidden">
+                  {{ formatInt(row.original.orders) }} {{ row.original.orders === 1 ? "pedido" : "pedidos" }}
+                </span>
+              </template>
+              <template #orders-cell="{ row }">{{ formatInt(row.original.orders) }}</template>
+              <template #revenue_q-cell="{ row }">{{ formatMoney(row.original.revenue_q) }}</template>
+              <template #share-cell="{ row }">
+                <span class="flex items-center gap-2">
+                  <NuxtProgress
+                    class="flex-1 max-sm:hidden"
+                    :model-value="row.original.revenue_q"
+                    :max="channelMax"
+                    size="xs"
+                    :aria-label="`${row.original.name}: ${row.original.share} do faturamento`"
+                  />
+                  <span class="ms-auto text-right text-xs tnum text-muted">{{ row.original.share }}</span>
+                </span>
+              </template>
+            </NuxtTable>
+            <NuxtEmpty v-else icon="i-lucide-store" title="Sem vendas no período" variant="naked" />
+          </OperatorReadingCard>
+          <OperatorReadingCard title="Top produtos" description="Por faturamento no período" :csv="topCsv">
+            <NuxtTable
+              v-if="report.top_skus.length"
+              :data="report.top_skus"
+              :columns="topColumns"
+              :get-row-id="(row) => row.sku"
+              caption="Top produtos por faturamento"
+              data-bi-top-products
+            >
+              <template #qty-cell="{ row }">{{ formatQty(row.original.qty) }}</template>
+              <template #revenue-cell="{ row }">{{ formatMoney(row.original.revenue_q) }}</template>
+              <template #share-cell="{ row }">
+                <NuxtProgress
+                  :model-value="row.original.revenue_q"
+                  :max="topMax"
+                  size="xs"
+                  :aria-label="`${sharePercent(row.original.revenue_q, topTotal)} do faturamento`"
+                />
+              </template>
+            </NuxtTable>
+            <NuxtEmpty v-else icon="i-lucide-package" title="Sem vendas no período" variant="naked" />
+          </OperatorReadingCard>
         </div>
       </template>
-      <BiSwipeHint />
     </main>
   </div>
 </template>

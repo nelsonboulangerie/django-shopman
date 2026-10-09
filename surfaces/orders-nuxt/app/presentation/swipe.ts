@@ -10,7 +10,11 @@ export const SWIPE_REVEAL_PX = 176;
 export const PULL_COMMIT_PX = 72;
 
 /** O deslocamento visível: só na direção do gesto, com resistência depois do limite. */
-export function swipeOffset(dx: number, direction: "left" | "right", limit = SWIPE_REVEAL_PX): number {
+export function swipeOffset(
+  dx: number,
+  direction: "left" | "right",
+  limit = SWIPE_REVEAL_PX,
+): number {
   const signed = direction === "right" ? dx : -dx;
   if (signed <= 0) return 0;
   const eased = signed <= limit ? signed : limit + (signed - limit) * 0.25;

@@ -240,4 +240,41 @@ describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
     await nextTick();
     expect(mounted.emitted("update:modelValue")?.at(-1)).toEqual(["2026-10-07T08:15"]);
   });
+
+  it("a hora-limite vale no dia-limite, e só nele", async () => {
+    // Antes, `min`/`max` chegavam só à data (`slice(0, 10)`): no dia do limite a
+    // hora ficava livre e o campo aceitava um instante fora da janela.
+    mounted = await mountSuspended(UiDateTimeField, {
+      attachTo: document.body,
+      props: {
+        modelValue: "2026-10-05T09:00",
+        label: "Disparo",
+        min: "2026-10-05T08:30",
+        max: "2026-10-09T18:00",
+      },
+    });
+
+    const date = mounted.getComponent(UiDateField);
+    const time = mounted.getComponent(UiTimeField);
+    expect(date.props("min")).toBe("2026-10-05");
+    expect(date.props("max")).toBe("2026-10-09");
+    expect(time.props("min")).toBe("08:30");
+    expect(time.props("max")).toBeUndefined();
+
+    await mounted.setProps({ modelValue: "2026-10-07T09:00" });
+    await nextTick();
+    expect(time.props("min")).toBeUndefined();
+    expect(time.props("max")).toBeUndefined();
+
+    await mounted.setProps({ modelValue: "2026-10-09T09:00" });
+    await nextTick();
+    expect(time.props("min")).toBeUndefined();
+    expect(time.props("max")).toBe("18:00");
+
+    // O mesmo dia nos dois limites: a hora fica entre os dois.
+    await mounted.setProps({ min: "2026-10-09T07:00" });
+    await nextTick();
+    expect(time.props("min")).toBe("07:00");
+    expect(time.props("max")).toBe("18:00");
+  });
 });

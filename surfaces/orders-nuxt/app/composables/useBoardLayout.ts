@@ -18,7 +18,6 @@ import {
   openQueueColumn,
   openQueueKeys,
   queueGridTemplate,
-  queueViewLabel,
   resizeQueueColumns,
   showAllQueueColumns,
   toggleQueueColumn,
@@ -46,7 +45,7 @@ interface ResizeStart {
   rightPx: number;
 }
 
-export function useBoardLayout(titles: () => Record<string, string>) {
+export function useBoardLayout() {
   const keys = BOARD_ZONE_KEYS as readonly string[];
   const layout = ref<QueueColumnLayout>(defaultQueueLayout(keys));
   const station = ref("");
@@ -71,9 +70,18 @@ export function useBoardLayout(titles: () => Record<string, string>) {
     saveTimer = null;
     if (!station.value) return;
     try {
-      await $fetch(BOARD_LAYOUT_PATH, { method: "PUT", body: { columns: layout.value } });
+      await $fetch(BOARD_LAYOUT_PATH, {
+        method: "PUT",
+        body: { columns: layout.value },
+      });
       saveFailed.value = false;
     } catch {
+      // Uma vez por falha (não a cada gesto): a arrumação continua na tela, só não
+      // fica guardada no posto.
+      if (!saveFailed.value)
+        useSonner.error(
+          "Não deu para guardar a arrumação neste posto: ela vale até recarregar a tela.",
+        );
       saveFailed.value = true;
     }
   }
@@ -81,7 +89,9 @@ export function useBoardLayout(titles: () => Record<string, string>) {
   function scheduleSave() {
     if (!station.value) return;
     if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => { void save(); }, BOARD_LAYOUT_SAVE_DELAY_MS);
+    saveTimer = setTimeout(() => {
+      void save();
+    }, BOARD_LAYOUT_SAVE_DELAY_MS);
   }
 
   function commit(next: QueueColumnLayout) {
@@ -92,45 +102,81 @@ export function useBoardLayout(titles: () => Record<string, string>) {
   }
 
   const isOpen = (key: string) => Boolean(layout.value[key]?.open);
-  const toggle = (key: string) => commit(toggleQueueColumn(layout.value, keys, key));
+  const toggle = (key: string) =>
+    commit(toggleQueueColumn(layout.value, keys, key));
   const open = (key: string) => commit(openQueueColumn(layout.value, key));
   const showAll = () => commit(showAllQueueColumns(keys));
   /** Só a coluna pedida aberta (o posto de saída), guardada no posto como qualquer gesto. */
-  const showOnly = (key: string) => commit(onlyQueueColumn(layout.value, keys, key));
+  const showOnly = (key: string) =>
+    commit(onlyQueueColumn(layout.value, keys, key));
   /** O posto de saída: só a Saída aberta. Os alvos do cartão sobem para 48 px. */
-  const exitPost = computed(() => isOnlyQueueColumn(layout.value, keys, "expedition"));
-  const canCollapse = (key: string) => isOpen(key) && openQueueKeys(layout.value, keys).length > 1;
+  const exitPost = computed(() =>
+    isOnlyQueueColumn(layout.value, keys, "expedition"),
+  );
+  const canCollapse = (key: string) =>
+    isOpen(key) && openQueueKeys(layout.value, keys).length > 1;
   const nextOpen = (key: string) => nextOpenQueueKey(layout.value, keys, key);
 
   /** Começo do arraste da alça de `left`: o pai mede as duas colunas. */
   function startResize(left: string, leftPx: number, rightPx: number) {
     const right = nextOpen(left);
-    resize = right ? { layout: layout.value, left, right, leftPx, rightPx } : null;
+    resize = right
+      ? { layout: layout.value, left, right, leftPx, rightPx }
+      : null;
   }
   /** Prévia: a largura acompanha o dedo, sem gravar. */
   function dragResize(deltaPx: number) {
     if (!resize) return;
-    layout.value = resizeQueueColumns(resize.layout, keys, { ...resize, deltaPx, final: false });
+    layout.value = resizeQueueColumns(resize.layout, keys, {
+      ...resize,
+      deltaPx,
+      final: false,
+    });
   }
   /** Soltou: decide (inclusive recolher) e grava. */
   function endResize(deltaPx: number) {
     if (!resize) return;
     const start = resize;
     resize = null;
-    commit(resizeQueueColumns(start.layout, keys, { ...start, deltaPx, final: true }));
+    commit(
+      resizeQueueColumns(start.layout, keys, {
+        ...start,
+        deltaPx,
+        final: true,
+      }),
+    );
+  }
+
+  /** O Splitter oficial devolve percentuais apenas das colunas abertas. Convertemos
+   *  esses percentuais nos pesos já persistidos pelo posto, sem manter uma segunda
+   *  implementação visual de alça ou resize. */
+  function applySizes(sizes: number[]) {
+    const open = openQueueKeys(layout.value, keys);
+    if (sizes.length !== open.length || !sizes.length) return;
+    const scale = open.length / 100;
+    const next = { ...layout.value };
+    let changed = false;
+    open.forEach((key, index) => {
+      const size = Number(sizes[index]);
+      if (!Number.isFinite(size)) return;
+      const weight =
+        Math.round(Math.min(4, Math.max(0.25, size * scale)) * 100) / 100;
+      if (next[key]?.weight === weight) return;
+      next[key] = {
+        ...next[key]!,
+        weight,
+      };
+      changed = true;
+    });
+    if (changed) commit(next);
   }
 
   const gridTemplate = computed(() => queueGridTemplate(layout.value, keys));
   const allOpen = computed(() => allQueueColumnsOpen(layout.value, keys));
-  const viewLabel = computed(() => queueViewLabel(layout.value, keys, titles()));
-  /** De quem é a arrumação: o posto lembra, ou ela vale só até recarregar. */
-  const memoryText = computed(() => {
-    if (!station.value) return "Este dispositivo não é um posto: a arrumação vale até recarregar a tela.";
-    if (saveFailed.value) return "Não deu para guardar a arrumação neste posto: ela vale até recarregar a tela.";
-    return "Arrumação lembrada neste posto, no servidor.";
-  });
 
-  onMounted(() => { void load(); });
+  onMounted(() => {
+    void load();
+  });
   onBeforeUnmount(() => {
     if (!saveTimer) return;
     clearTimeout(saveTimer);
@@ -154,9 +200,8 @@ export function useBoardLayout(titles: () => Record<string, string>) {
     startResize,
     dragResize,
     endResize,
+    applySizes,
     gridTemplate,
     allOpen,
-    viewLabel,
-    memoryText,
   };
 }

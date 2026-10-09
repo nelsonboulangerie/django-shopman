@@ -19,6 +19,87 @@ export const SUITE_RAIL_MEDIA = "(min-width: 768px) and (orientation: landscape)
 /** Quantas seções cabem na barra do polegar antes do "Mais" (navegação v3, nível 1). */
 export const PHONE_BAR_SECTIONS = 4;
 
+/**
+ * Os três estados do rail da suíte no desktop (`OperatorSuiteShell`, dono 08/10/2026,
+ * PR #1539): aberto (ícone e nome), compacto (só ícone) e oculto (o sidebar não é
+ * montado). Um botão só na barra e a tecla C percorrem nesta ordem, em anel.
+ */
+export type SuiteRailState = "open" | "compact" | "hidden";
+
+export const SUITE_RAIL_CYCLE: readonly SuiteRailState[] = ["open", "compact", "hidden"];
+
+export function nextSuiteRailState(state: SuiteRailState): SuiteRailState {
+  return SUITE_RAIL_CYCLE[(SUITE_RAIL_CYCLE.indexOf(state) + 1) % SUITE_RAIL_CYCLE.length]!;
+}
+
+/**
+ * O botão da barra diz o PRÓXIMO estado: o ícone e o nome são do gesto, não do agora.
+ * Na tela a peça se chama "barra lateral" (dono, 08/10/2026, PR #1544); `rail` é só o
+ * nome no código.
+ */
+export const SUITE_RAIL_NEXT: Readonly<Record<SuiteRailState, { label: string; icon: string }>> = {
+  open: { label: "Compactar a barra lateral", icon: "i-lucide-panel-left-dashed" },
+  compact: { label: "Ocultar a barra lateral", icon: "i-lucide-panel-left-close" },
+  hidden: { label: "Mostrar a barra lateral", icon: "i-lucide-panel-left-open" },
+};
+
+export type RailSignalColor = "success" | "warning" | "error";
+
+/** O sinal de um item do rail: um ponto de estado ou um número. */
+export interface RailSignal {
+  color: RailSignalColor;
+  /** Contagem (chip numérico). Ausente = ponto de estado. */
+  count?: number;
+  /** O estado por extenso, para tooltip e leitor de tela ("1 desligado"). */
+  state?: string;
+}
+
+/**
+ * O sinal da seção: com `badge` numérico e maior que zero, o número; senão, com
+ * `attention`, o ponto. Zero não é sinal. A cor é `tone` (padrão `warning`).
+ */
+export function sectionRailSignal(section: OperatorSection): RailSignal | undefined {
+  const color = section.tone ?? "warning";
+  const count = Number.parseInt(section.badge ?? "", 10);
+  if (Number.isFinite(count) && count > 0) return { color, count, state: section.attention || undefined };
+  if (section.attention) return { color, state: section.attention };
+  return undefined;
+}
+
+/**
+ * As props do Chip: o ponto no tamanho padrão do NavigationMenu; o número no `4xl` do
+ * kit (o `3xl` não lê dois dígitos), `inset: false` (centrado no canto, sem cobrir o
+ * ícone) e "99+" acima de 99.
+ */
+export function railSignalChip(signal: RailSignal): { color: RailSignalColor; text?: string; size?: "4xl"; inset?: boolean } {
+  if (signal.count === undefined) return { color: signal.color };
+  return { color: signal.color, text: signal.count > 99 ? "99+" : String(signal.count), size: "4xl", inset: false };
+}
+
+/**
+ * Tooltip e nome acessível do item: "Canais · 1 desligado" ou "Pedidos · 3 pendências"
+ * ("1 pendência"). Contagem tem UMA palavra na suíte: o item diz o que é, o número diz
+ * quanto. Quem monta o item usa `sectionDescription`, a fonte única.
+ */
+export function railSignalLabel(label: string, signal?: RailSignal): string {
+  if (!signal) return label;
+  const parts = [label];
+  if (signal.count !== undefined) parts.push(`${signal.count} ${signal.count === 1 ? "pendência" : "pendências"}`);
+  if (signal.state) parts.push(signal.state);
+  return parts.join(" · ");
+}
+
+/**
+ * A descrição de uma seção, a MESMA na barra lateral, na gaveta e na barra inferior
+ * (dono, 08/10/2026, PR #1544): "Seção · N pendências" ("1 pendência") ou
+ * "Seção · estado". É o tooltip e o nome acessível do item. Antes cada app contava
+ * com um substantivo próprio, e o mesmo número era lido de dois jeitos na mesma tela
+ * ("Saída, 2 pedidos na Saída" embaixo, "Saída · 2 pendências" ao lado).
+ */
+export function sectionDescription(section: OperatorSection): string {
+  return railSignalLabel(section.label, sectionRailSignal(section));
+}
+
 /** Teclas de seção: Alt 1…9, pela ordem do rail. A décima seção em diante não tem tecla. */
 export function sectionShortcut(index: number): string {
   return index >= 0 && index < 9 ? `Alt+${index + 1}` : "";
@@ -76,6 +157,61 @@ export function phoneBarLayout(sections: readonly OperatorSection[], max = PHONE
   return { visible: sections.slice(0, max), overflow: sections.slice(max) };
 }
 
+/**
+ * A barra inferior do celular no shell da suíte (dono, 08/10/2026, PR #1544). Uma
+ * regra só para todo app:
+ *
+ * - a gaveta (☰, a barra lateral) é o menu COMPLETO; a barra inferior é o menu
+ *   RÁPIDO, de 3 a 5 vagas;
+ * - o app declara o que vai para a barra (`quick: true` na seção, na ordem da lista);
+ *   o kit corta em 5;
+ * - com menos de 5 declaradas e alguma seção de fora, uma vaga vira "Mais", que abre a
+ *   gaveta; com 5, não há "Mais" (o ☰ já leva ao completo); sem seção de fora, também
+ *   não;
+ * - app que não declara: as primeiras seções, até 4, e "Mais" quando sobra;
+ * - menos de 3 vagas é erro de configuração (`quickBarProblems`), salvo o app que tem
+ *   menos de 3 seções ao todo, ou a exceção declarada com motivo.
+ */
+export const QUICK_BAR_MIN = 3;
+export const QUICK_BAR_MAX = 5;
+export const QUICK_BAR_DEFAULT = 4;
+
+export interface QuickBarLayout {
+  /** As seções da barra, na ordem da lista. */
+  items: OperatorSection[];
+  /** Uma vaga para "Mais" (abre a gaveta). */
+  more: boolean;
+  /** As seções que ficaram só na gaveta. */
+  overflow: OperatorSection[];
+}
+
+export function quickBarLayout(sections: readonly OperatorSection[]): QuickBarLayout {
+  const declared = sections.filter((section) => section.quick);
+  const items = (declared.length ? declared : sections.slice(0, QUICK_BAR_DEFAULT)).slice(0, QUICK_BAR_MAX);
+  const overflow = sections.filter((section) => !items.includes(section));
+  return { items, more: items.length < QUICK_BAR_MAX && overflow.length > 0, overflow };
+}
+
+/**
+ * O que está fora da regra, por extenso (vazio = dentro). O teste das seções de cada
+ * app a chama. `exception` é o motivo de uma exceção declarada pelo app: ela dispensa o
+ * mínimo, nunca o máximo.
+ */
+export function quickBarProblems(sections: readonly OperatorSection[], exception = ""): string[] {
+  const problems: string[] = [];
+  const declared = sections.filter((section) => section.quick).length;
+  if (declared > QUICK_BAR_MAX) {
+    problems.push(`${declared} seções declaradas para a barra inferior; o máximo é ${QUICK_BAR_MAX}`);
+  }
+  const layout = quickBarLayout(sections);
+  const slots = layout.items.length + (layout.more ? 1 : 0);
+  const min = Math.min(QUICK_BAR_MIN, sections.length);
+  if (slots < min && !exception.trim()) {
+    problems.push(`${slots} vagas na barra inferior; o mínimo é ${min}`);
+  }
+  return problems;
+}
+
 /** O selo do item: acima de 9 vira "9+" (o número exato não muda decisão). */
 export function inboxBadge(total: number): string {
   if (total <= 0) return "";
@@ -115,7 +251,7 @@ export interface ShortcutGroup {
  * O grupo que todo app tem: as seções (Alt 1…9), a busca e a própria ajuda. O app
  * acrescenta os grupos da tela dele depois deste.
  */
-export function suiteShortcutGroup(sections: readonly OperatorSection[], options: { appLabel?: string; search?: boolean } = {}): ShortcutGroup {
+export function suiteShortcutGroup(sections: readonly OperatorSection[], options: { appLabel?: string; search?: boolean; rail?: boolean } = {}): ShortcutGroup {
   const items: ShortcutItem[] = [];
   sections.forEach((section, index) => {
     const alt = sectionShortcut(index);
@@ -124,6 +260,7 @@ export function suiteShortcutGroup(sections: readonly OperatorSection[], options
     items.push({ keys, label: section.label });
   });
   if (options.search) items.push({ keys: ["/"], label: "Buscar nesta tela" });
+  if (options.rail) items.push({ keys: ["C"], label: "Barra lateral: aberta, compacta ou oculta" });
   items.push({ keys: ["?"], label: "Abrir esta ajuda" });
   return { title: options.appLabel ? `Em todo o ${options.appLabel}` : "Em todo o app", items };
 }
@@ -158,6 +295,14 @@ export interface OperatorAlertLike {
   message: string;
   order_ref?: string | null;
   created_at_display: string;
+  /** Prazo em que a causa decide sozinha (ISO); vazio sem prazo. */
+  respond_by_iso?: string;
+  /** `external` (o mundo lá fora decide no fim) ou `house` (régua da casa). */
+  deadline_kind?: string;
+  /** De onde vem e do que se trata, para ler num relance. */
+  origin_label?: string;
+  origin_icon?: string;
+  subject?: string;
   actions?: ReadonlyArray<{ kind: string; enabled: boolean; label: string; href?: string | null }>;
 }
 
@@ -171,6 +316,11 @@ export interface InboxAlertView {
   canAck: boolean;
   href?: string;
   hrefLabel?: string;
+  respondByIso?: string;
+  deadlineKind?: "external" | "house";
+  origin?: string;
+  originIcon?: string;
+  subject?: string;
 }
 
 /**
@@ -191,5 +341,82 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
     seen: !canAck,
     canAck,
     ...(context ? { href: context.href ?? undefined, hrefLabel: context.label } : {}),
+    ...(alert.respond_by_iso ? { respondByIso: alert.respond_by_iso } : {}),
+    ...(alert.deadline_kind === "external" || alert.deadline_kind === "house"
+      ? { deadlineKind: alert.deadline_kind }
+      : {}),
+    ...(alert.origin_label ? { origin: alert.origin_label } : {}),
+    ...(alert.origin_icon ? { originIcon: alert.origin_icon } : {}),
+    ...(alert.subject ? { subject: alert.subject } : {}),
   };
+}
+
+/**
+ * Depois do Visto, o aviso volta num ritmo proporcional ao que falta (dono, 08/10/2026):
+ * mais ou menos a cada quarto do tempo restante, nunca menos de 1 min nem mais de 1 dia.
+ * Perto do prazo aperta sozinho. Vencido pela régua da casa, a causa continua: lembra a
+ * cada 5 min até alguém resolver.
+ */
+export const REMINDER_MIN_MS = 60_000;
+export const REMINDER_MAX_MS = 24 * 60 * 60_000;
+export const OVERDUE_REMINDER_MS = 5 * 60_000;
+export function reminderIntervalMs(leftMs: number): number {
+  if (leftMs <= 0) return OVERDUE_REMINDER_MS;
+  return Math.min(REMINDER_MAX_MS, Math.max(REMINDER_MIN_MS, Math.floor(leftMs / 4)));
+}
+
+export interface UrgentAlertsView<T> {
+  /** O aviso que interrompe a tela agora: com prazo correndo e ainda sem Visto. */
+  blocking: T | null;
+  /** Os já vistos cujo prazo ainda corre: lembram até a causa acabar. */
+  reminders: T[];
+}
+
+type Urgent = { respondByIso?: string; seen?: boolean; deadlineKind?: string };
+
+/**
+ * Quais avisos interrompem a tela: os que têm prazo. Vencido o prazo do mundo lá fora
+ * (`external`, ex.: o iFood), a decisão já saiu e o aviso sai da tela; vencida a régua
+ * da casa (`house`), a causa continua e o aviso fica, atrasado. Entre os não vistos,
+ * o de prazo mais curto primeiro.
+ */
+export function urgentAlerts<T extends Urgent>(items: readonly T[], nowMs: number): UrgentAlertsView<T> {
+  const running = items
+    .map((item) => ({ item, deadline: Date.parse(item.respondByIso ?? "") }))
+    .filter(
+      ({ item, deadline }) =>
+        Number.isFinite(deadline) && (deadline > nowMs || item.deadlineKind === "house"),
+    )
+    .sort((a, b) => a.deadline - b.deadline);
+  return {
+    blocking: running.find(({ item }) => !item.seen)?.item ?? null,
+    reminders: running.filter(({ item }) => item.seen).map(({ item }) => item),
+  };
+}
+
+/** "6 min" · "menos de 1 min" · "2 h" · "3 dias": quanto, num relance. */
+export function spanLabel(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return "menos de 1 min";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "1 dia" : `${days} dias`;
+}
+
+/** Título do prazo: "Responda em 6 min" · "Responda em 2 h" · "Passou do prazo há 3 min". */
+export function respondInLabel(respondByIso: string, nowMs: number): string {
+  const left = Date.parse(respondByIso) - nowMs;
+  if (!Number.isFinite(left)) return "";
+  return left > 0 ? `Responda em ${spanLabel(left)}` : `Passou do prazo há ${spanLabel(-left)}`;
+}
+
+/** "faltam 6 min" · "falta 1 min" · "menos de 1 min" */
+export function deadlineLeftLabel(respondByIso: string, nowMs: number): string {
+  const left = Date.parse(respondByIso) - nowMs;
+  if (!Number.isFinite(left) || left <= 0) return "prazo vencido";
+  const minutes = Math.floor(left / 60_000);
+  if (minutes < 1) return "menos de 1 min";
+  return minutes === 1 ? "falta 1 min" : `faltam ${minutes} min`;
 }

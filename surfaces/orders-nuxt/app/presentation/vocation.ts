@@ -13,12 +13,21 @@ export interface VocationOption {
 }
 
 /** As escolhas do controle segmentado, na ordem do catálogo de papéis. */
-export function vocationOptions(choices: readonly VocationChoice[] | undefined): VocationOption[] {
-  return (choices ?? []).map((choice) => ({ value: choice.ref, label: choice.label, hint: choice.hint }));
+export function vocationOptions(
+  choices: readonly VocationChoice[] | undefined,
+): VocationOption[] {
+  return (choices ?? []).map((choice) => ({
+    value: choice.ref,
+    label: choice.label,
+    hint: choice.hint,
+  }));
 }
 
 /** O rótulo do valor gravado, para o conflito e para leitores de tela. */
-export function vocationLabel(value: string, choices: readonly VocationChoice[] | undefined): string {
+export function vocationLabel(
+  value: string,
+  choices: readonly VocationChoice[] | undefined,
+): string {
   if (!value) return "Sem vocação";
   return choices?.find((choice) => choice.ref === value)?.label ?? value;
 }
@@ -43,11 +52,15 @@ function joinNames(names: string[]): string {
  * O aviso discreto da lista: quantos produtos à venda ainda não têm vocação, e
  * quais. Nenhum pendente = sem aviso (null), nunca "0 produtos".
  */
-export function vocationNotice(pending: readonly VocationPending[] | undefined): VocationNotice | null {
+export function vocationNotice(
+  pending: readonly VocationPending[] | undefined,
+): VocationNotice | null {
   const items = pending ?? [];
   if (!items.length) return null;
   const count = items.length;
-  const shown = items.slice(0, NAMES_SHOWN).map((item) => item.name || item.sku);
+  const shown = items
+    .slice(0, NAMES_SHOWN)
+    .map((item) => item.name || item.sku);
   const rest = count - shown.length;
   return {
     count,

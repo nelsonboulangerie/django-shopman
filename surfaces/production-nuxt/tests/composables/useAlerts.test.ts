@@ -16,6 +16,7 @@ function alertProjection(pk = 9) {
     message: "Pedido parado",
     order_ref: "ORD-9",
     created_at_display: "09/09 às 10:00",
+    respond_by_iso: "",
     actions: [
       {
         ref: `acknowledge:${pk}`,

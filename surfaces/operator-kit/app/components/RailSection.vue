@@ -48,9 +48,12 @@ const emit = defineEmits<{ activate: [] }>();
 const NuxtLink = resolveComponent("NuxtLink");
 const iconName = computed(() => (props.icon.includes(":") ? props.icon : `lucide:${props.icon}`));
 const printedShortcut = computed(() => (props.printShortcut && props.shortcut ? props.shortcut.replace(/\+/g, "") : ""));
+// Quem monta a seção passa a descrição pronta (`sectionDescription`: "Seção · N
+// pendências" ou "Seção · estado", a mesma da barra inferior); sem ela, o rótulo e o
+// estado no mesmo formato.
 const a11yLabel = computed(() => {
-  const base = props.ariaLabel || props.label;
-  return props.attention ? `${base}: ${props.attention}` : base;
+  if (props.ariaLabel) return props.ariaLabel;
+  return props.attention ? `${props.label} · ${props.attention}` : props.label;
 });
 </script>
 
@@ -62,7 +65,7 @@ const a11yLabel = computed(() => {
     :aria-current="active ? 'page' : undefined"
     :aria-label="a11yLabel"
     :aria-keyshortcuts="shortcut"
-    :title="attention ? `${label}: ${attention}` : undefined"
+    :title="attention || badge ? a11yLabel : undefined"
     :data-active="active || undefined"
     data-rail-section
     class="relative flex w-[68px] flex-col items-center gap-[3px] rounded-[10px] pt-[7px] pb-1.5 text-center leading-[13px] font-semibold whitespace-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rail-foreground"

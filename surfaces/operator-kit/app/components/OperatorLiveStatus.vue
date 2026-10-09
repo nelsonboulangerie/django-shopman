@@ -1,56 +1,80 @@
 <script setup lang="ts">
-// "Ao vivo" discreto, ao lado do título (prévias v3: um ponto com a hora). Só cresce
-// quando a leitura atrasa: aí o texto aparece por extenso ("Sem conexão", "Atualiza a
-// cada 30 s"), porque a cor nunca fala sozinha. O detalhe completo fica no `title` e no
-// nome acessível (`role="status"`).
+// O selo "ao vivo" do cabeçalho, pelo contrato do README do kit ("o ponto ao vivo com
+// a hora; fora do ao vivo o estado se escreve por extenso"), confirmado pelo dono em
+// 08/10/2026 (onda 0.M; o ponto vermelho do "Sem conexão" é do PR #1539):
 //
-// Tons:
-//   live  → ponto verde, só a hora;
-//   calm  → ponto neutro, a hora + o rótulo curto (o quadro segue atualizando sozinho);
-//   late  → ponto âmbar, rótulo por extenso;
-//   off   → ponto vermelho, rótulo por extenso.
+//   live  ponto verde e a hora da última leitura ("10:12").
+//   calm  neutro, sem ponto, a cadência por extenso ("Atualiza a cada 60 s", o rótulo
+//         que o app passa, porque a cadência é dele).
+//   late  âmbar, com ponto: "Última leitura às 10:04".
+//   off   ponto vermelho e "Sem conexão".
+//
+// A cor nunca fala sozinha: cada tom tem texto próprio. O rótulo completo do app, a
+// hora e o detalhe vão para o nome acessível e o `title`. Não existe "On"/"Off"
+// visível. Badge sem `variant`: é o `soft` do tema; o Chip leva o anel `ring-2` do
+// tema (conjunto mínimo, PR #1539).
 import { computed } from "vue";
 
-const props = withDefaults(defineProps<{
-  tone?: "live" | "calm" | "late" | "off";
-  /** A hora da última leitura útil ("22:03"). */
-  time?: string;
-  /** Rótulo curto do estado ("Ao vivo", "Atualiza a cada 30 s", "Sem conexão"). */
-  label: string;
-  /** Detalhe para o toque/hover e leitor de tela. */
-  detail?: string;
-}>(), { tone: "live", time: "", detail: "" });
+const props = withDefaults(
+  defineProps<{
+    tone?: "live" | "calm" | "late" | "off";
+    /** A hora da última leitura útil ("22:03"). */
+    time?: string;
+    /** Rótulo curto do estado ("Ao vivo", "Atualiza a cada 30 s", "Sem conexão"). */
+    label: string;
+    /** Detalhe para o toque/hover e leitor de tela. */
+    detail?: string;
+  }>(),
+  { tone: "live", time: "", detail: "" },
+);
 
-const dotClass = computed(() => {
-  switch (props.tone) {
-    case "calm": return "bg-muted-foreground shadow-[0_0_0_3px_color-mix(in_oklab,var(--muted-foreground)_18%,transparent)]";
-    case "late": return "bg-warning shadow-[0_0_0_3px_color-mix(in_oklab,var(--warning)_22%,transparent)]";
-    case "off": return "bg-destructive shadow-[0_0_0_3px_color-mix(in_oklab,var(--destructive)_22%,transparent)]";
-    default: return "";
-  }
+const OFF_LABEL = "Sem conexão";
+
+const TONE_COLOR = {
+  live: "success",
+  calm: "neutral",
+  late: "warning",
+  off: "error",
+} as const;
+
+const badgeColor = computed(() => TONE_COLOR[props.tone]);
+/** Ponto só onde o estado é uma leitura no tempo (ao vivo, atrasada) ou a falta dela. */
+const dotted = computed(() => props.tone !== "calm");
+
+const display = computed(() => {
+  if (props.tone === "live") return props.time || props.label;
+  if (props.tone === "late")
+    return props.time ? `Última leitura às ${props.time}` : props.label;
+  if (props.tone === "off") return OFF_LABEL;
+  return props.label;
 });
-const showLabel = computed(() => props.tone !== "live" || !props.time);
-const accessible = computed(() => [props.label, props.time && `última leitura ${props.time}`, props.detail].filter(Boolean).join(". "));
+
+// Desligado não anuncia "hora da última leitura" como se fosse vigente: a hora só
+// entra no nome acessível pelo detalhe que o app escreve.
+const accessible = computed(() =>
+  [
+    props.tone === "off" ? OFF_LABEL : props.label,
+    props.tone === "off" && props.label !== OFF_LABEL ? props.label : "",
+    props.tone !== "off" && props.time && `última leitura ${props.time}`,
+    props.detail,
+  ]
+    .filter(Boolean)
+    .join(". "),
+);
 </script>
 
 <template>
-  <span
-    class="inline-flex shrink-0 items-center gap-1.5 op-micro tnum text-muted-foreground"
+  <NuxtBadge
+    :color="badgeColor"
+    :label="display"
     role="status"
     :aria-label="accessible"
     :title="accessible"
     :data-live-tone="tone"
     data-operator-live-status
   >
-    <span class="live-dot" :class="dotClass" aria-hidden="true" />
-    <span v-if="time" class="max-[379px]:hidden" aria-hidden="true">{{ time }}</span>
-    <span
-      v-if="showLabel"
-      aria-hidden="true"
-      :class="[
-        tone === 'late' ? 'font-semibold text-warning' : tone === 'off' ? 'font-semibold text-destructive' : '',
-        tone === 'calm' ? 'max-[379px]:hidden' : '',
-      ]"
-    >{{ label }}</span>
-  </span>
+    <template v-if="dotted" #leading>
+      <NuxtChip as="span" :color="badgeColor" size="xl" inset standalone />
+    </template>
+  </NuxtBadge>
 </template>

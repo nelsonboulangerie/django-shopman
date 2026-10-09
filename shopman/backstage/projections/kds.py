@@ -155,6 +155,9 @@ class KDSExitStationChipProjection:
     #: devolve à cozinha ("Voltar para Lanches", ``kds/tickets/<pk>/recall/``).
     #: ``None`` quando não há o que devolver.
     recall_ticket_pk: int | None = None
+    #: O que foi para esta estação ("2x Croissant"), dos tickets vivos: é como o
+    #: Gestor confere se cada item chegou onde devia (dono, 07/10/2026).
+    items: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -593,6 +596,18 @@ def _public_comanda_code(session) -> str:
 _EXIT_STATE_LABELS = {"pending": "na fila", "in_progress": "em preparo", "done": "pronto"}
 
 
+def _station_items(tickets) -> tuple[str, ...]:
+    """Os itens dos tickets de uma estação, na régua do resumo do card ("2x Croissant")."""
+    from shopman.shop.services.order_helpers import json_quantity
+
+    return tuple(
+        f"{json_quantity(item.get('qty', 1))}x {item.get('name') or item.get('sku') or ''}".strip()
+        for ticket in tickets
+        for item in (ticket.items or [])
+        if isinstance(item, dict)
+    )
+
+
 def exit_station_chips(order: Order, tickets, *, papers) -> tuple[KDSExitStationChipProjection, ...]:
     """Em que pé cada estação está com este pedido (a Saída e o cartão do Gestor).
 
@@ -651,6 +666,7 @@ def exit_station_chips(order: Order, tickets, *, papers) -> tuple[KDSExitStation
                 cancelled_items=cancelled_items,
                 can_mark_ready=prints and bool(open_tickets),
                 recall_ticket_pk=recall_ticket_pk,
+                items=_station_items(live),
             )
         )
     # Quem ainda falta vem primeiro; a ordem entre estações é a do nome.

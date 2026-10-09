@@ -19,33 +19,31 @@
  */
 defineProps<{
   /** O que ficou inacessível, na voz do app. Ex.: "os pedidos", "o painel de Marketing". */
-  scope?: string
-}>()
+  scope?: string;
+}>();
 
-const emit = defineEmits<{ retry: [] }>()
+const emit = defineEmits<{ retry: [] }>();
 </script>
 
 <template>
-  <main class="grid min-h-screen flex-1 place-items-center p-4" data-operator-session-unavailable>
-    <div class="max-w-sm rounded-md border bg-card p-6 text-center">
-      <Icon name="lucide:wifi-off" class="mx-auto size-7 text-muted-foreground" />
-      <h1 class="mt-3 text-lg font-semibold">Não foi possível conferir seu acesso</h1>
-      <p class="mt-1 text-sm text-muted-foreground">
-        Você continua conectado{{ scope ? `, mas ${scope} não carregou` : '' }}. Isso costuma
-        ser uma instabilidade de rede ou uma atualização no ar.
-      </p>
-      <!-- `<button>` cru e não `UiButton`: os componentes do kit não têm acesso
-           à biblioteca Ui dos consumidores — cada app tem a sua. É a convenção
-           do próprio kit (ver OperatorLogin/OperatorLock). Descoberto montando:
-           `UiButton` não resolvia e virava `<uibutton>` inerte no DOM. -->
-      <button
-        type="button"
-        class="mt-4 inline-flex h-11 items-center justify-center gap-2 rounded-md border px-4 text-sm font-medium transition hover:bg-foreground/8"
-        @click="emit('retry')"
-      >
-        <Icon name="lucide:rotate-cw" class="size-4" />
-        Tentar de novo
-      </button>
-    </div>
+  <main
+    class="grid min-h-screen flex-1 place-items-center p-4"
+    data-operator-session-unavailable
+  >
+    <NuxtEmpty
+      class="max-w-sm text-center"
+      icon="i-lucide-wifi-off"
+      title="Não foi possível conferir seu acesso"
+      :description="`Você continua conectado${scope ? `, mas ${scope} não carregou` : ''}. Isso costuma ser uma instabilidade de rede ou uma atualização no ar.`"
+      :actions="[
+        {
+          label: 'Tentar de novo',
+          icon: 'i-lucide-rotate-cw',
+          color: 'neutral',
+          variant: 'outline',
+          onClick: () => emit('retry'),
+        },
+      ]"
+    />
   </main>
 </template>

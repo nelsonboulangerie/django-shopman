@@ -26,14 +26,22 @@ test("dashboard compõe contagens, gráficos, progresso, tabs e identidade", asy
   await expect(page.getByRole("banner")).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(page.getByRole("region", { name: "Atalhos do catálogo" }).locator('..')).toHaveCSS("background-color", "rgb(255, 255, 255)");
   const dashboard = page.locator("#dashboard-exercises");
-  await expect(dashboard.locator('[data-operator-trend-chart] svg').first()).toBeVisible();
+  await expect(dashboard.locator('[data-operator-reading-plot] svg').first()).toBeVisible();
   await expect(dashboard.getByRole("table", { name: "Dados do gráfico de pedidos" })).toBeVisible();
+  // O ponto em leitura pelo teclado: a área do gráfico é parada de tabulação, as setas leem.
+  const trend = dashboard.getByRole("group", { name: "Pedidos confirmados por hora" });
+  await trend.focus();
+  await page.keyboard.press("End");
+  await expect(dashboard.locator("[data-operator-reading-readout]").first()).toHaveText("14h: Pedidos confirmados 16");
+  await page.keyboard.press("Escape");
+  await expect(dashboard.getByRole("region", { name: "Sobrou ou faltou" })).toBeVisible();
+  await expect(dashboard.getByRole("button", { name: "Mais sobre Faturamento por dia" })).toBeVisible();
   const progress = dashboard.getByRole("progressbar", { name: "Pedidos separados, 18 de 24" });
   await expect(progress).toHaveAttribute("aria-valuenow", "18");
   await dashboard.getByRole("button", { name: "Separar próximo", exact: true }).click();
   await expect(dashboard.getByRole("progressbar", { name: "Pedidos separados, 19 de 24" })).toHaveAttribute("aria-valuenow", "19");
   await dashboard.getByRole("switch", { name: "Mostrar em barras" }).click();
-  await expect(dashboard.locator('[data-operator-trend-chart] svg').first()).toBeVisible();
+  await expect(dashboard.locator('[data-operator-reading-plot] svg').first()).toBeVisible();
   await dashboard.getByRole("tab", { name: /^Fila/ }).click();
   await dashboard.getByRole("button", { name: "Revisar NB-1048", exact: true }).click();
   const detail = page.getByRole("dialog", { name: "NB-1048" });

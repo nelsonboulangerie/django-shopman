@@ -26,7 +26,7 @@ import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka
 
 import { operatorAppNamed } from "../../appIdentity";
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
-import { withSectionShortcuts } from "../presentation/suiteChrome";
+import { sectionDescription, withSectionShortcuts } from "../presentation/suiteChrome";
 import { SUITE_HELP_SHORTCUT, SUITE_SECTION_SHORTCUTS } from "../shortcuts/suiteShortcuts";
 
 defineOptions({ inheritAttrs: false });
@@ -189,7 +189,7 @@ useOperatorShortcutMap(
           :to="section.to"
           :active="active === section.key"
           :badge="section.badge"
-          :aria-label="section.badgeLabel ? `${section.label}, ${section.badgeLabel}` : undefined"
+          :aria-label="sectionDescription(section)"
           :attention="section.attention"
           :shortcut="section.shortcut"
           :print-shortcut="printShortcuts"
@@ -209,7 +209,7 @@ useOperatorShortcutMap(
          e dois "Avisos" para quem procura pelo nome. -->
     <div class="flex flex-col items-center gap-1" data-rail-foot :data-foot-order="footOrder">
       <ClientOnly v-if="inbox && footOrder === 'inbox-first'">
-        <OperatorInbox v-if="railShown" placement="rail" />
+        <OperatorInbox v-if="railShown" placement="rail" labeled />
       </ClientOnly>
 
       <nav v-if="footSections.length" class="flex flex-col items-center gap-1" :aria-label="`${label}: ajustes`">
@@ -221,7 +221,7 @@ useOperatorShortcutMap(
           :to="section.to"
           :active="active === section.key"
           :badge="section.badge"
-          :aria-label="section.badgeLabel ? `${section.label}, ${section.badgeLabel}` : undefined"
+          :aria-label="sectionDescription(section)"
           :attention="section.attention"
           :shortcut="section.shortcut"
           :print-shortcut="printShortcuts"
@@ -240,7 +240,7 @@ useOperatorShortcutMap(
       />
 
       <ClientOnly v-if="inbox && footOrder === 'settings-first'">
-        <OperatorInbox v-if="railShown" placement="rail" />
+        <OperatorInbox v-if="railShown" placement="rail" labeled />
       </ClientOnly>
 
       <!-- Atalhos (?): só com ponteiro fino; no toque não há teclado. -->

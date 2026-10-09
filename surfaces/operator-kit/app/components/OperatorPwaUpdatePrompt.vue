@@ -3,7 +3,10 @@ import { markPwaUpdateApplied } from "../utils/pwaUpdateReport";
 
 const pwa = usePwaUpdate();
 const updating = ref(false);
-const config = useRuntimeConfig().public as { operatorPwa?: { app?: string }; appVersion?: string };
+const config = useRuntimeConfig().public as {
+  operatorPwa?: { app?: string };
+  appVersion?: string;
+};
 
 async function update() {
   if (updating.value) return;
@@ -18,23 +21,28 @@ async function update() {
   const accepted = await pwa.update();
   if (!accepted) updating.value = false;
 }
+
+const actions = computed(() => [
+  {
+    label: updating.value ? "Atualizando…" : "Atualizar agora",
+    color: "info" as const,
+    variant: "outline" as const,
+    loading: updating.value,
+    onClick: update,
+  },
+]);
 </script>
 
 <template>
-  <aside
+  <NuxtAlert
     v-if="pwa.needRefresh.value"
-    class="fixed bottom-3 right-3 z-[60] flex max-w-sm items-center gap-3 rounded-md border border-border bg-card p-3 text-card-foreground shadow-xl"
-    aria-live="polite"
+    color="info"
+    variant="subtle"
+    orientation="horizontal"
+    icon="i-lucide-refresh-cw"
+    title="Nova versão disponível"
+    description="A tela será recarregada para aplicar as melhorias mais recentes."
+    :actions="actions"
     data-operator-pwa-update
-  >
-    <p class="min-w-0 flex-1 text-sm font-medium">Nova versão disponível</p>
-    <button
-      type="button"
-      class="h-9 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-      :disabled="updating"
-      @click="update"
-    >
-      {{ updating ? "Atualizando…" : "Atualizar" }}
-    </button>
-  </aside>
+  />
 </template>

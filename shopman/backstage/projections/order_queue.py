@@ -269,6 +269,8 @@ class KitchenStationProjection:
     can_mark_ready: bool = False
     #: "Voltar para Lanches": o ticket concluído que volta à cozinha.
     recall_ticket_pk: int | None = None
+    #: O que foi para esta estação ("2x Croissant"): conferir se chegou onde devia.
+    items: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1933,6 +1935,7 @@ def _kitchen_progress(order: Order, chips) -> KitchenProgressProjection | None:
             cancelled_items=chip.cancelled_items,
             can_mark_ready=chip.can_mark_ready,
             recall_ticket_pk=None if leaving else chip.recall_ticket_pk,
+            items=chip.items,
         )
         for chip in chips
     )
@@ -2791,12 +2794,10 @@ def _short_date(raw) -> str:
 def _event_detail(payload: dict) -> str:
     if not payload:
         return ""
-    old_status = payload.get("old_status")
-    new_status = payload.get("new_status")
-    if old_status or new_status:
-        old_label = order_status_label(old_status, old_status or "-")
-        new_label = order_status_label(new_status, new_status or "-")
-        return f"{old_label} -> {new_label}"
+    # Mudança de status não ganha detalhe próprio: o título do evento já é o status
+    # novo e o anterior é a linha de cima. O "Aceito -> Pronto" repetia o título, e o
+    # primeiro evento saía "- -> Novo" (dono, 08/10/2026). O motivo, quando houver,
+    # continua aparecendo pelo fim da função.
     if payload.get("to_date"):
         # Reagendamento: "12/10 → 15/10", e o motivo quando houver.
         moved = f"{_short_date(payload.get('from_date'))} → {_short_date(payload.get('to_date'))}"

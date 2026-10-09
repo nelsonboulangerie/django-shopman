@@ -34,6 +34,12 @@ describe("OperatorPushInvite", () => {
   it("ambiente apto só ativa depois do toque", async () => {
     const wrapper = await mountSuspended(OperatorPushInvite);
     expect(holder.state.activate).not.toHaveBeenCalled();
+    const alert = wrapper.get("[data-operator-push-invite]");
+    expect(alert.attributes("data-orientation")).toBe("horizontal");
+    expect(alert.classes()).toContain(
+      "bg-[color-mix(in_srgb,var(--info)_10%,var(--card))]",
+    );
+    expect(alert.classes()).not.toContain("bg-info/10");
     await wrapper.get("button").trigger("click");
     expect(holder.state.activate).toHaveBeenCalledOnce();
   });
@@ -46,9 +52,14 @@ describe("OperatorPushInvite", () => {
     [{ label: "PDV", article: "o" }, "do PDV"],
     [{ label: "Cozinha", article: "a" }, "da Cozinha"],
     [{ label: "Compras", article: "as" }, "das Compras"],
-  ])("nomeia o app no lugar de 'esta área' (%o)", async (identity, expected) => {
-    const wrapper = await mountSuspended(OperatorPushInvite, { props: { identity } });
-    expect(wrapper.text()).toContain(`só os avisos ${expected}.`);
-    expect(wrapper.text()).not.toContain("esta área");
-  });
+  ])(
+    "nomeia o app no lugar de 'esta área' (%o)",
+    async (identity, expected) => {
+      const wrapper = await mountSuspended(OperatorPushInvite, {
+        props: { identity },
+      });
+      expect(wrapper.text()).toContain(`só os avisos ${expected}.`);
+      expect(wrapper.text()).not.toContain("esta área");
+    },
+  );
 });

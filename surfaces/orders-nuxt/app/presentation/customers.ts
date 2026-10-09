@@ -1,7 +1,12 @@
 // Presentation — Clientes do Gestor. Transforms puros: a query da lista na URL e a
 // decisão de quem FICA numa unificação. Sem rede e sem DOM.
 
-export const CUSTOMER_FILTERS = ["all", "possible_duplicates", "ifood", "no_phone"] as const;
+export const CUSTOMER_FILTERS = [
+  "all",
+  "possible_duplicates",
+  "ifood",
+  "no_phone",
+] as const;
 export type CustomerFilter = (typeof CUSTOMER_FILTERS)[number];
 
 export interface CustomerListQuery {
@@ -17,7 +22,9 @@ function first(value: RouteQueryValue): string {
 }
 
 /** A URL é a fonte da busca: voltar da ficha devolve a mesma lista, na mesma página. */
-export function listQueryFromRoute(query: Record<string, RouteQueryValue>): CustomerListQuery {
+export function listQueryFromRoute(
+  query: Record<string, RouteQueryValue>,
+): CustomerListQuery {
   const filter = first(query.filter) as CustomerFilter;
   const page = Number.parseInt(first(query.page), 10);
   return {
@@ -28,7 +35,9 @@ export function listQueryFromRoute(query: Record<string, RouteQueryValue>): Cust
 }
 
 /** O inverso, sem os valores padrão — a URL limpa é `/customers`. */
-export function routeQueryFromList(list: CustomerListQuery): Record<string, string> {
+export function routeQueryFromList(
+  list: CustomerListQuery,
+): Record<string, string> {
   const out: Record<string, string> = {};
   if (list.q) out.q = list.q;
   if (list.filter !== "all") out.filter = list.filter;
@@ -54,7 +63,10 @@ export type Keeper = "current" | "other";
  *    casa é o que alguém conferiu com a pessoa na frente.
  * 3. Empate: fica o cadastro que está aberto na tela.
  */
-export function suggestedKeeper(current: MergeCandidateSide, other: MergeCandidateSide): Keeper {
+export function suggestedKeeper(
+  current: MergeCandidateSide,
+  other: MergeCandidateSide,
+): Keeper {
   const currentPhone = Boolean(current.phone_display);
   const otherPhone = Boolean(other.phone_display);
   if (currentPhone !== otherPhone) return currentPhone ? "current" : "other";
@@ -65,7 +77,11 @@ export function suggestedKeeper(current: MergeCandidateSide, other: MergeCandida
 }
 
 /** O par que o servidor recebe: `source` SAI (fica desativado), `target` FICA. */
-export function mergePair(currentRef: string, otherRef: string, keeper: Keeper) {
+export function mergePair(
+  currentRef: string,
+  otherRef: string,
+  keeper: Keeper,
+) {
   return keeper === "current"
     ? { source_ref: otherRef, target_ref: currentRef }
     : { source_ref: currentRef, target_ref: otherRef };
