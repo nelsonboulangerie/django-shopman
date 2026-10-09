@@ -612,7 +612,9 @@ watch(
       Quem não deu consentimento para o WhatsApp não recebe.
     </p>
 
-    <NuxtAlert v-if="error" color="error" variant="subtle" :title="error" />
+    <!-- `role="alert"`: a falha chega depois do toque em "Revisar anúncio" e precisa
+         ser anunciada sem a pessoa procurar. -->
+    <NuxtAlert v-if="error" color="error" variant="subtle" :title="error" role="alert" />
 
     <div class="flex items-center justify-end gap-2">
       <NuxtButton

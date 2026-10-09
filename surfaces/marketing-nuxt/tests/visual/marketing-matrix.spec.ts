@@ -129,6 +129,33 @@ async function openCampaignStep(
   await target.click();
 }
 
+// NuxtSelect não é `<select>`: abre a lista e escolhe a opção pelo nome.
+async function chooseOption(
+  page: Page,
+  trigger: ReturnType<Page["getByLabel"]>,
+  option: string,
+) {
+  const target = page.getByRole("option", { name: option, exact: true });
+  // O diálogo que acabou de abrir ainda leva o foco para dentro dele; um clique nesse
+  // instante abre a lista e o foco a fecha. Repete até a lista ficar de pé.
+  await expect(async () => {
+    if ((await trigger.getAttribute("aria-expanded")) !== "true") {
+      // Pelo teclado (Enter abre a lista do Reka): a matriz roda com toque ligado, e o
+      // clique sintético nem sempre vira o `pointerdown` de mouse que abre a lista.
+      await trigger.focus();
+      await page.keyboard.press("Enter");
+    }
+    await expect(target).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000, intervals: [250, 500, 1_000] });
+  await target.click();
+}
+
+// A edição mora no ⋯ da linha (a linha inteira abre também, mas o ⋯ tem nome).
+async function openCampaignEdit(page: Page, name: string) {
+  await page.getByRole("button", { name: `Mais ações de ${name}` }).click();
+  await page.getByRole("menuitem", { name: "Editar" }).click();
+}
+
 async function prepareNewCampaignForMoment(page: Page) {
   const dialog = page.getByRole("dialog").last();
   await dialog.getByLabel("Nome da campanha").fill("Campanha visual");
@@ -197,7 +224,7 @@ test.describe("gate global", () => {
   test("acesso proibido não recomenda novo login", async ({ page }) => {
     await openScenario(page, "login-forbidden", "/", V1280);
     await expect(
-      page.getByRole("heading", { name: "Seu acesso não inclui Marketing" }),
+      page.getByRole("heading", { name: "Seu acesso não inclui o Marketing" }),
     ).toBeVisible();
     // O fato que este teste protege é que a tela NÃO manda entrar de novo, e diz a
     // quem pedir. A frase mudou no 21adc94c8 e a asserção ficou para trás; o fato, não.
@@ -408,7 +435,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
 
   test("novo cupom preserva formulário no mobile", async ({ page }) => {
     await openScenario(page, "board-normal", "/settings/offers", V390);
-    await page.getByRole("button", { name: "Mais: Ofertas e cupons" }).click();
+    await page.getByRole("button", { name: "Mais ações de Ofertas e cupons" }).click();
     await page.getByRole("menuitem", { name: "Criar cupom" }).click();
     await expect(
       page.getByRole("dialog", { name: "Novo cupom" }),
@@ -636,11 +663,20 @@ test.describe("listas operacionais", () => {
     );
     // Os recortes da tela primeiro: no celular a lupa abre a busca da suíte em tela
     // cheia (modal), e o que fica atrás dela sai da árvore de acessibilidade.
+    // Abaixo de `sm` os recortes moram no painel "Filtros" (folha de baixo do kit).
+    await page.locator("[data-page-header-filters-open]").click();
+    const filters = page.getByRole("dialog", { name: "Filtros" });
     await expect(
-      page.getByRole("button", { name: /Desligadas 9/ }),
-    ).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByLabel("Plataforma")).toHaveValue("facebook");
-    await page.getByRole("button", { name: "Buscar" }).click();
+      filters.getByRole("tab", { name: /Desligadas\s*9/ }),
+    ).toHaveAttribute("aria-selected", "true");
+    await expect(
+      filters.getByRole("combobox", { name: "Plataforma" }),
+    ).toContainText("Facebook");
+    await filters.getByRole("button", { name: "Ver resultados" }).click();
+    await expect(filters).toBeHidden();
+    // No celular a busca mora no ⋯ da barra do topo.
+    await page.getByRole("button", { name: "Mais ações de Campanhas" }).click();
+    await page.getByRole("menuitem", { name: /^Buscar/ }).click();
     const search = page.getByRole("dialog", { name: "Buscar campanha" });
     await expect(search.getByRole("textbox")).toHaveValue("artesanal");
     await expect(
@@ -672,7 +708,7 @@ test.describe("listas operacionais", () => {
     await openScenario(page, "campaigns-dense", "/settings/campaigns", V320);
     await page.getByRole("button", { name: "Nova campanha" }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Quando acontecer").selectOption("schedule");
+    await chooseOption(page, dialog.getByLabel("Quando acontecer"), "Agendado");
     await prepareNewCampaignForMoment(page);
     await expect(dialog.getByText("Nos dias")).toBeVisible();
     await dialog
@@ -728,9 +764,7 @@ test.describe("listas operacionais", () => {
 
   test("edição longa mostra schema completo", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/settings/campaigns", V390);
-    await page
-      .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
-      .click();
+    await openCampaignEdit(page, "Fornada artesanal 01");
     await openCampaignStep(page, "Público e momento");
     await expect(page.getByRole("dialog")).toContainText("Público alvo");
     // ⚠️ Sem esta espera o retrato era cara ou coroa: às vezes a prévia fiel ainda
@@ -749,7 +783,7 @@ test.describe("listas operacionais", () => {
   test("período recorrente usa o campo canônico único", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/settings/campaigns", V768);
     await page.getByRole("button", { name: "Nova campanha" }).click();
-    await page.getByLabel("Quando acontecer").selectOption("schedule");
+    await chooseOption(page, page.getByLabel("Quando acontecer"), "Agendado");
     await prepareNewCampaignForMoment(page);
     await expect(page.getByText("Período de veiculação (opcional)")).toBeVisible();
     const period = page.getByRole("group", { name: "Período de veiculação da recorrência" });
@@ -766,9 +800,7 @@ test.describe("listas operacionais", () => {
   // controles trocados e nenhum olho em cima é como a deriva de desenho volta.
   test("as escolhas de público são as peças do kit", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/settings/campaigns", V390);
-    await page
-      .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
-      .click();
+    await openCampaignEdit(page, "Fornada artesanal 01");
     await openCampaignStep(page, "Público e momento");
     // A prévia fiel chega DEPOIS e empurra o conteúdo; rolar antes dela assentar
     // retrataria o topo do diálogo, que é o que este retrato não quer.
@@ -796,9 +828,7 @@ test.describe("listas operacionais", () => {
 
   test("edição completa em desktop", async ({ page }) => {
     await openScenario(page, "campaigns-dense", "/settings/campaigns", V1280);
-    await page
-      .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
-      .click();
+    await openCampaignEdit(page, "Fornada artesanal 01");
     await waitForFaithfulPreview(page);
     await openCampaignStep(page, "Revisar");
     await expectStableScreenshot(
@@ -829,9 +859,7 @@ test.describe("listas operacionais", () => {
       name: "Minha campanha local",
     });
     await openScenario(page, "campaigns-dense", "/settings/campaigns", V1440);
-    await page
-      .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
-      .click();
+    await openCampaignEdit(page, "Fornada artesanal 01");
     await expect(
       page.getByText("Este conteúdo também mudou em outra sessão."),
     ).toBeVisible();
@@ -893,7 +921,7 @@ test.describe("listas operacionais", () => {
     await openScenario(page, "templates-list", "/settings/templates", V768);
     await page.locator("main ul li").first().locator("button").first().click();
     const google = page.getByTestId("composition-google_business");
-    await google.locator("summary").click();
+    await google.locator("[data-composition-toggle]").click();
     await google.evaluate((element) =>
       element.scrollIntoView({ block: "start" }),
     );
@@ -965,11 +993,11 @@ test.describe("listas operacionais", () => {
     await page
       .getByRole("option", { name: /Aviso de fornada — versão revisada/ })
       .click();
-    const code = page.getByRole("group", {
-      name: "Código de 6 dígitos do autenticador",
-    });
+    // O código é o NuxtPinInput: uma casa por dígito.
+    const code = page.getByRole("dialog").last().locator('input[data-slot="base"]');
+    await expect(code).toHaveCount(6);
     for (const [index, digit] of Array.from("123456").entries()) {
-      await code.getByLabel(`Dígito ${index + 1} de 6`).fill(digit);
+      await code.nth(index).fill(digit);
     }
     await page.getByRole("button", { name: "Salvar configuração" }).click();
     await expect(page.getByText(/mudou em outra sessão/)).toBeVisible();
@@ -1106,12 +1134,14 @@ test.describe("disparo manual seguro", () => {
       })
       .click();
     await expect(page.getByText("Produto desta ocorrência")).toBeVisible();
-    await page.getByRole("button", { name: "Escolha o produto" }).click();
+    // NuxtSelectMenu: o gatilho leva o nome do campo.
+    await page.getByRole("button", { name: "Produto desta ocorrência" }).click();
     // Acima de doze opções o primitivo abre a busca — é o que separa escolher de rolar.
     await expect(page.getByPlaceholder("Buscar produto")).toBeVisible();
-    // "artesanal 1" casa com o 01 e com o 10 ao 14 — seis de catorze.
+    // "artesanal 1" casa com o 10 ao 14 (a busca do NuxtSelectMenu é por trecho do
+    // nome): cinco de catorze.
     await page.getByPlaceholder("Buscar produto").fill("artesanal 1");
-    await expect(page.getByRole("option")).toHaveCount(6);
+    await expect(page.getByRole("option")).toHaveCount(5);
     await expectStableScreenshot(
       page,
       "fire-campaign__product-search",
@@ -1274,7 +1304,7 @@ test.describe("modos transversais", () => {
       reducedMotion: "reduce",
     });
     const scheduled = page
-      .getByRole("navigation", { name: "Seções do Marketing no celular" })
+      .getByRole("navigation", { name: "Seções do Marketing" })
       .getByRole("link", { name: "Agendados", exact: true });
     await scheduled.focus();
     await expect(scheduled).toBeFocused();
