@@ -4,7 +4,7 @@
 // 08/10/2026 (onda 0.M; o ponto vermelho do "Sem conexão" é do PR #1539):
 //
 //   live  ponto verde e a hora da última leitura ("10:12").
-//   calm  neutro, sem ponto, a cadência por extenso ("Atualiza a cada 60 s", o rótulo
+//   calm  neutro, sem ponto, a cadência por extenso ("Atualiza sozinho a cada 60 s", o rótulo
 //         que o app passa, porque a cadência é dele).
 //   late  âmbar, com ponto: "Última leitura às 10:04".
 //   off   ponto vermelho e "Sem conexão".
@@ -20,7 +20,7 @@ const props = withDefaults(
     tone?: "live" | "calm" | "late" | "off";
     /** A hora da última leitura útil ("22:03"). */
     time?: string;
-    /** Rótulo curto do estado ("Ao vivo", "Atualiza a cada 30 s", "Sem conexão"). */
+    /** Rótulo curto do estado ("Ao vivo", "Atualiza sozinho a cada 30 s", "Sem conexão"). */
     label: string;
     /** Detalhe para o toque/hover e leitor de tela. */
     detail?: string;

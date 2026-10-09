@@ -10,10 +10,10 @@ test.describe("Gestor — board de pedidos", () => {
     await expect(page.getByText("Ana", { exact: true })).toBeVisible();
   });
 
-  test("indicador de tempo-real: sem SSE (origem do mock) → 'Atualiza a cada 30 s'", async ({ page }) => {
+  test("indicador de tempo-real: sem SSE (origem do mock) → 'Atualiza sozinho a cada 30 s'", async ({ page }) => {
     await page.goto("/?view=board");
     // O mock é outra origem (:8796 ≠ :3004) → SSE não conecta → sinal honesto de poll.
-    await expect(page.getByText("Atualiza a cada 30 s")).toBeVisible();
+    await expect(page.getByText("Atualiza sozinho a cada 30 s")).toBeVisible();
     await expect(page.getByText("Ao vivo")).toHaveCount(0);
   });
 });

@@ -147,7 +147,7 @@ const liveTone = computed(() => {
 });
 const liveLabel = computed(() => {
   if (error.value) return "Sem conexão";
-  return realtime.value === "polling" ? "Atualiza a cada 15 s" : liveCue.value.label;
+  return realtime.value === "polling" ? "Atualiza sozinho a cada 15 s" : liveCue.value.label;
 });
 
 // Densidade da estação (Ajustes): quão estreito o ticket pode ser.

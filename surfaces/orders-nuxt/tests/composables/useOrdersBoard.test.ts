@@ -327,13 +327,21 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(env.refresh).toHaveBeenCalledTimes(1);
   });
 
-  it("falha sem motivo do servidor diz QUAL gesto não aconteceu, com o nome do botão (F8)", async () => {
+  it("falha sem motivo do servidor diz em que pé o pedido ficou e QUAL gesto não chegou (F8, frase do dono 09/10)", async () => {
     env.fetchMock.mockRejectedValueOnce({ status: 500 });
-    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-6", actions: fixtureActions({ can_confirm: true }) }] } };
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-6", status_label: "Novo", actions: fixtureActions({ can_confirm: true }) }] } };
     const board = useOrdersBoard();
     expect(await board.confirm("WEB-6")).toBe(false);
-    expect(board.actionError("WEB-6")).toBe("Não deu para concluir “Aceitar”. Tente de novo.");
+    expect(board.actionError("WEB-6")).toBe("WEB-6 continua novo: o Aceitar não chegou. Tente de novo.");
     expect(board.actionError("WEB-6")).not.toContain("Falha na ação");
+  });
+
+  it("sem a situação na projeção, a falha diz só o gesto que não chegou", async () => {
+    env.fetchMock.mockRejectedValueOnce({ status: 500 });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-7", actions: fixtureActions({ can_confirm: true }) }] } };
+    const board = useOrdersBoard();
+    expect(await board.confirm("WEB-7")).toBe(false);
+    expect(board.actionError("WEB-7")).toBe("O Aceitar não chegou. Tente de novo.");
   });
 
   it("uma nova tentativa limpa o erro anterior do ref", async () => {
@@ -381,6 +389,17 @@ describe("useOrdersBoard — bulk + reasons", () => {
     expect(env.fetchMock).toHaveBeenCalledTimes(3);
     expect(env.refresh).toHaveBeenCalledTimes(1);
     expect(board.actionError("WEB-2")).toBe("x");
+    expect(env.sonner.error).toHaveBeenCalledWith("1 pedido ficou como estava. O cartão diz por quê.");
+  });
+
+  it("actMany com várias falhas diz quantos ficaram como estavam (frase do dono, 09/10)", async () => {
+    env.fetchMock
+      .mockRejectedValueOnce({ status: 400, data: { detail: "x" } })
+      .mockRejectedValueOnce({ status: 400, data: { detail: "y" } });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: ["WEB-1", "WEB-2"].map(ref => ({ ref, actions: fixtureActions({ can_confirm: true }) })) } };
+    const board = useOrdersBoard();
+    expect(await board.confirmMany(["WEB-1", "WEB-2"])).toBe(2);
+    expect(env.sonner.error).toHaveBeenCalledWith("2 pedidos ficaram como estavam. Cada cartão diz por quê.");
   });
 
   it("fetchCancellationReasons devolve a lista, propaga indisponibilidade", async () => {

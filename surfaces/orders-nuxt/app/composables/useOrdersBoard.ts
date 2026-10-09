@@ -16,6 +16,7 @@ import type {
 } from "~/types/orders";
 import {
   preorderGroups,
+  situationAfterContinua,
   treatableOrderRefs,
   zonesView,
   type PreorderGroup,
@@ -525,8 +526,9 @@ export function useOrdersBoard() {
     next.delete(ref_);
     actionErrors.value = next;
   }
-  // A falha diz QUAL gesto não aconteceu (F8 do laudo do Gestor): o nome é o do botão
-  // que o operador tocou, vindo da projeção. "Falha na ação" não dizia qual.
+  // A falha diz em que pé o pedido ficou e QUAL gesto não chegou (F8 do laudo do
+  // Gestor; frase do dono, 09/10/2026): "WEB-6 continua novo: o Aceitar não chegou.
+  // Tente de novo." A referência, a situação e o nome do botão vêm da projeção.
   function failureMessage(ref_: string, action: string): string {
     const card = [
       ...zones.value.flatMap((zone) => zone.cards),
@@ -535,9 +537,11 @@ export function useOrdersBoard() {
     const label = card?.actions
       ?.find((item) => item.ref === action)
       ?.label?.trim();
-    return label
-      ? `Não deu para concluir “${label}”. Tente de novo.`
-      : "Não deu para concluir. Tente de novo.";
+    const situation = situationAfterContinua(card?.status_label);
+    if (!label) return "O pedido ficou como estava. Tente de novo.";
+    return card?.ref && situation
+      ? `${card.ref} continua ${situation}: o ${label} não chegou. Tente de novo.`
+      : `O ${label} não chegou. Tente de novo.`;
   }
 
   // ``send``: o gesto fala com outro endpoint que não o do pedido (o "Pronto" da
@@ -756,8 +760,8 @@ export function useOrdersBoard() {
     if (failures)
       useSonner.error(
         failures === 1
-          ? "1 pedido não foi atualizado. O motivo está no cartão."
-          : `${failures} pedidos não foram atualizados. O motivo está em cada cartão.`,
+          ? "1 pedido ficou como estava. O cartão diz por quê."
+          : `${failures} pedidos ficaram como estavam. Cada cartão diz por quê.`,
       );
     return failures;
   }

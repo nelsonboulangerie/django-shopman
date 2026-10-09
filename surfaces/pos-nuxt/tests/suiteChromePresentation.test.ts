@@ -12,7 +12,7 @@ describe("ao vivo do cabeçalho do PDV", () => {
   });
 
   it("sem o push, diz a cadência calma; sem rede, diz por extenso", () => {
-    expect(posLiveStatus({ online: true, realtime: "polling" })).toMatchObject({ tone: "calm", label: "Atualiza a cada 60 s" });
+    expect(posLiveStatus({ online: true, realtime: "polling" })).toMatchObject({ tone: "calm", label: "Atualiza sozinho a cada 60 s" });
     expect(posLiveStatus({ online: true, realtime: "connecting" }).tone).toBe("calm");
     expect(posLiveStatus({ online: false, realtime: "live" })).toMatchObject({ tone: "off", label: "Sem conexão" });
   });

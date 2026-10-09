@@ -284,8 +284,8 @@ export function kitchenDetail(
 /** O excedente da Fila, sem paginação e sem somar grandezas (P1-7 do laudo do Gestor):
  *  os que pedem você e os que andam sem pedir são duas contagens diferentes, cada uma
  *  com o seu nome; o "+12" que somava as duas não dizia de quê. "Mais 5 pedem você ·
- *  Sem pedir você: 5 na cozinha, 2 na rua"; sem fila escondida, só a segunda.
- *  "Sem pedir você" e não "em andamento": o painel Em andamento ao lado conta TODOS os
+ *  Seguem sozinhos: 5 na cozinha, 2 na rua"; sem fila escondida, só a segunda.
+ *  "Seguem sozinhos" e não "em andamento": o painel Em andamento ao lado conta TODOS os
  *  que estão na cozinha, inclusive os que pedem você, e os dois números se
  *  contradiriam. `hidden` e `moving` ficam separados para quem precisar do número. */
 export function restLine(
@@ -299,7 +299,7 @@ export function restLine(
   const ask = hidden
     ? `Mais ${hidden} ${hidden === 1 ? "pede" : "pedem"} você`
     : "";
-  const going = parts.length ? `Sem pedir você: ${parts.join(", ")}` : "";
+  const going = parts.length ? `Seguem sozinhos: ${parts.join(", ")}` : "";
   return { hidden, moving, text: [ask, going].filter(Boolean).join(" · ") };
 }
 
