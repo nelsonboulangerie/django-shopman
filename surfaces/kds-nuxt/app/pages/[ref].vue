@@ -189,22 +189,22 @@ watch(filterCounts, (counts) => {
 watch(isPhone, (phone) => {
   if (phone) filter.value = "all";
 });
-// Os recortes na toolbar (só da mesa): abas com a contagem; Entrega e Atrasados só
-// aparecem quando há o que mostrar.
+// Os recortes na toolbar (só da mesa): os filtros rápidos da suíte, um de cada vez,
+// com a contagem; Entrega e Atrasados só aparecem quando há o que mostrar.
 const filterTabs = computed(() => {
   const counts = filterCounts.value;
   return [
-    { label: "Todos", value: "all", badge: { label: String(counts.all) } },
+    { key: "all", label: "Todos", count: counts.all },
     ...(counts.delivery || filter.value === "delivery"
-      ? [{ label: "Entrega", value: "delivery", icon: "i-lucide-bike", badge: { label: String(counts.delivery) } }]
+      ? [{ key: "delivery", label: "Entrega", icon: "i-lucide-bike", count: counts.delivery }]
       : []),
     ...(counts.late || filter.value === "late"
       ? [
           {
+            key: "late",
             label: "Atrasados",
-            value: "late",
             icon: "i-lucide-timer",
-            badge: { label: String(counts.late), color: "error" as const },
+            count: counts.late,
           },
         ]
       : []),
@@ -212,8 +212,8 @@ const filterTabs = computed(() => {
 });
 const filterModel = computed({
   get: () => filter.value as string,
-  set: (value: string) => {
-    filter.value = value as KDSBoardFilter;
+  set: (value: string | string[]) => {
+    filter.value = String(value) as KDSBoardFilter;
   },
 });
 
@@ -521,13 +521,10 @@ function clearSearchAndFilter() {
       <!-- Os recortes da fila (só na mesa: o celular mostra a fila inteira, a mais
            urgente primeiro, prévia v4 b). -->
       <template v-if="tickets.length" #filters>
-        <NuxtTabs
+        <OperatorQuickFilters
           v-model="filterModel"
           :items="filterTabs"
-          :content="false"
-          variant="pill"
-          size="md"
-          aria-label="Recortes da fila"
+          label="Recortes da fila"
           data-kds-filters
         />
         <span class="text-sm text-muted-foreground">Mais urgente primeiro, da esquerda para a direita.</span>
