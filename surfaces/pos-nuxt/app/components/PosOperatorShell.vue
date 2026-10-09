@@ -3,6 +3,12 @@
 // de conexão, tela de senha (para dispositivo que ainda não é estação), overlay
 // de identificação do operador (PIN/crachá), setup de estação e o auto-lock de
 // kiosk. A venda vive em `pages/index.vue`; a sessão de caixa em `pages/session/`.
+//
+// A navegação é a da suíte (fase 2): o `OperatorSuiteShell` do kit (barra lateral em
+// três estados na mesa, gaveta pelo ☰ e barra inferior abaixo de `lg`), montado UMA
+// vez aqui, com as seções de `usePosShell`. Exceção declarada (WP-FASE2 §7): os
+// corredores (Fim do dia e o Relatório de caixa) sobem sem barra lateral e sem barra
+// inferior; a saída deles é o "Sair" (ou o voltar) da própria tela.
 // Cada página lê a Projection via usePosTerminal (useFetch deduplicado — uma
 // busca só por request).
 //
@@ -11,6 +17,8 @@
 // decisão em `app.vue`. Nada aqui deve voltar a conhecer o display: se uma regra
 // precisa de "menos na tela do cliente", o lugar dela não é este arquivo.
 //
+import { posCorridorRoute } from "~/presentation/sections";
+
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco — o tablet do
 // balcão que dormiu não fica com dados velhos. O <OfflineBanner> (auto-import do kit)
 // dá o aviso calmo enquanto offline.
@@ -28,7 +36,7 @@ const { expired: sessionExpired } = useOperatorSession();
 const OPERATOR_PERM = "cashman.operate_pos";
 // `refreshOperatorSession` e não `refresh`: `refresh` aqui já é o da Projection
 // do terminal (`usePosTerminal`, linha 17). São duas leituras diferentes.
-const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession, stationRef, mustChange, lock } =
+const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession, stationRef, mustChange, lock, operator } =
   useOperatorLock(OPERATOR_PERM);
 
 // Tempo real entre estações (ADR-016): pedido de troco, devolução pendente e
@@ -83,6 +91,10 @@ const needsLogin = computed(
   () => (!canIdentify.value && !sessionUnavailable.value) || sessionExpired.value,
 );
 
+const { sections, current, select } = usePosShell(pos);
+const route = useRoute();
+const corridor = computed(() => posCorridorRoute(route.path));
+
 </script>
 
 <template>
@@ -126,7 +138,23 @@ const needsLogin = computed(
       @unavailable="stationSetup.dismiss({ remember: false })"
     />
 
-    <NuxtPage v-else />
+    <!-- Corredor (Fim do dia, Relatório): a tela inteira, sem navegação. -->
+    <div v-else-if="corridor" class="flex min-h-dvh flex-col" data-pos-corridor>
+      <NuxtPage />
+    </div>
+
+    <OperatorSuiteShell
+      v-else
+      storage-key="pos"
+      :sections="sections"
+      :current="current"
+      label="Seções do PDV"
+      :operator-name="operator?.name"
+      @select="select"
+      @lock="lock()"
+    >
+      <NuxtPage />
+    </OperatorSuiteShell>
 
     <OperatorSonner />
   </div>

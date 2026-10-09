@@ -85,8 +85,6 @@ describe("guardrail do cabeçalho de seções", () => {
       // cupons, Plataformas) mora em `MarketingSettingsNav.vue`, na linha de recortes
       // do `OperatorPageHeader`; ela não é barra de seções do app.
       "marketing-nuxt/app/components/MarketingNav.vue",
-      // V4-PDV: o rail e a barra do polegar do PDV (`place`), como o GestorNav.
-      "pos-nuxt/app/components/PosFunctionRail.vue",
       // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
       // `current` e devolvem `select`.
       "purchase-nuxt/app/components/PurchaseNav.vue",
@@ -134,6 +132,16 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(kds).toContain(':sections="sections"');
     expect(kds).not.toContain("<KdsNav");
     expect(kds.match(/data-suite=/g) ?? []).toHaveLength(1);
+
+    // Fase 2, onda do PDV: a navegação montada UMA vez no shell de operador (sem
+    // `PosFunctionRail` remontado por página); a Tela do cliente e os corredores (Fim do
+    // dia, Relatório de caixa) ficam fora do shell, sem navegação.
+    const posShell = readFileSync(join(SURFACES, "pos-nuxt/app/components/PosOperatorShell.vue"), "utf8");
+    expect(posShell).toContain("<OperatorSuiteShell");
+    expect(posShell).toContain(':sections="sections"');
+    expect(posShell).toContain(':current="current"');
+    expect(posShell).toContain("data-pos-corridor");
+    expect(posShell).not.toContain("<PosFunctionRail");
   });
 });
 
@@ -141,7 +149,6 @@ describe("guardrail do cabeçalho de seções", () => {
 // abaixo nasceu de uma divergência medida que pode voltar.
 const NAVS = [
   "marketing-nuxt/app/components/MarketingNav.vue",
-  "pos-nuxt/app/components/PosFunctionRail.vue",
   "purchase-nuxt/app/components/PurchaseNav.vue",
 ];
 const KIT = (name: string) =>
@@ -164,8 +171,7 @@ describe("guardrail do chrome da suíte (V6-KIT)", () => {
         if (file.startsWith("operator-kit/")) continue;
         if (
           /<(NotificationBell|AlertsBell|OperatorInbox)\b/.test(source) &&
-          !file.endsWith("hub-nuxt/app/app.vue") &&
-          !file.endsWith("pos-nuxt/app/pages/index.vue")
+          !file.endsWith("hub-nuxt/app/app.vue")
         )
           proprios.push(file);
         if (/\s:?label="(Alertas|Avisos)"/.test(source)) proprios.push(file);
