@@ -54,17 +54,18 @@ function goToPage(page: number) {
 const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
 
 const items = computed(() => list.value?.items ?? []);
-const loading = computed(() => pending.value && !list.value);
+type CustomerRow = (typeof items.value)[number];
 const filterItems = computed(() =>
   (list.value?.filters ?? []).map((option) => ({
     value: option.ref,
     label: option.label,
   })),
 );
+// Cliente é a chave (fixada); Pedidos é de apoio (some no celular).
 const customerColumns = [
-  { id: "customer", header: "Cliente" },
+  { id: "customer", header: "Cliente", enableHiding: false },
   { id: "contact", header: "Contato" },
-  { id: "orders", header: "Pedidos" },
+  { id: "orders", header: "Pedidos", meta: { supporting: true } },
 ];
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
@@ -129,6 +130,7 @@ const phoneHeaderActions = computed(() => [
             variant="outline"
             title="Cadastrar ou editar cliente (abre o Admin)"
           />
+          <OperatorTableView table-key="orders-customers" />
           <NuxtButton
             icon="i-lucide-refresh-cw"
             label="Atualizar"
@@ -156,93 +158,74 @@ const phoneHeaderActions = computed(() => [
       </template>
     </OperatorPageHeader>
 
-    <section class="min-h-0 flex-1 space-y-4 overflow-auto p-4 sm:p-6">
-      <NuxtAlert
-        v-if="error"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-triangle-alert"
-        title="Não foi possível carregar os clientes"
-        :description="`${httpErrorMessage(error, 'Não foi possível carregar os clientes.')} ${list ? 'Exibindo a última lista carregada.' : ''}`"
-        :actions="[
-          {
-            label: 'Tentar de novo',
-            color: 'error',
-            variant: 'outline',
-            onClick: () => refresh(),
-          },
-        ]"
-      />
-
-      <div v-if="loading" class="space-y-2">
-        <NuxtSkeleton
-          v-for="i in 6"
-          :key="i"
-          class="h-12 w-full"
-          aria-label="Carregando clientes"
-        />
-      </div>
-
-      <!-- Tabela integrada a um card branco, sem padding (o tema tira o padding do
-           corpo quando a tabela é o conteúdo inteiro), como a Lista do Gestor. -->
-      <NuxtCard v-else-if="items.length" class="min-w-0">
-        <NuxtTable
-          :data="items"
-          :columns="customerColumns"
-          :get-row-id="(row) => row.ref"
-          :on-select="
-            (_event, row) =>
-              router.push(`/customers/${encodeURIComponent(row.original.ref)}`)
-          "
-          caption="Clientes encontrados"
-          data-customer-list
-        >
-          <template #customer-cell="{ row }">
-            <div class="min-w-52" :data-customer-row="row.original.ref">
-              <span class="flex flex-wrap items-center gap-2">
-                <NuxtLink
-                  :to="`/customers/${encodeURIComponent(row.original.ref)}`"
-                  class="font-medium hover:underline"
-                  >{{ row.original.name }}</NuxtLink
-                >
-                <NuxtBadge
-                  v-if="row.original.source_label"
-                  color="neutral"
-                  :label="row.original.source_label"
-                />
-                <NuxtBadge
-                  v-if="row.original.duplicate_hint"
-                  color="warning"
-                  :label="row.original.duplicate_hint"
-                />
-              </span>
-              <span class="block font-mono text-xs text-muted-foreground">{{
-                row.original.ref
-              }}</span>
-            </div>
-          </template>
-          <template #contact-cell="{ row }">
-            <span
-              :class="row.original.phone_display ? '' : 'text-muted-foreground'"
-              >{{ row.original.phone_display || "Sem telefone" }}</span
-            >
-            <span
-              v-if="row.original.document_display"
-              class="block text-xs text-muted-foreground"
-              >CPF {{ row.original.document_display }}</span
-            >
-          </template>
-          <template #orders-cell="{ row }">
-            <span class="text-muted-foreground">
-              {{ row.original.orders_label
-              }}<template v-if="row.original.last_order_display">
-                · último {{ row.original.last_order_display }}</template
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <OperatorTable
+        :data="items"
+        :columns="customerColumns"
+        :row-key="(row: CustomerRow) => row.ref"
+        :row-label="(row: CustomerRow) => `o cadastro de ${row.name}`"
+        :on-select="
+          (row: CustomerRow) =>
+            router.push(`/customers/${encodeURIComponent(row.ref)}`)
+        "
+        :loading="pending"
+        :error="Boolean(error)"
+        what="os clientes"
+        :error-description="list ? 'Exibindo a última lista carregada.' : ''"
+        empty-icon="i-lucide-users"
+        empty-title="Nenhum cliente neste recorte."
+        :empty-description="list ? `${list.total_label}.` : ''"
+        pinned="customer"
+        view-key="orders-customers"
+        caption="Clientes encontrados"
+        data-customer-list
+        @retry="refresh()"
+      >
+        <template #customer-cell="{ row }">
+          <div :data-customer-row="row.original.ref">
+            <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <NuxtLink
+                :to="`/customers/${encodeURIComponent(row.original.ref)}`"
+                class="font-medium hover:underline"
+                >{{ row.original.name }}</NuxtLink
               >
+              <NuxtBadge
+                v-if="row.original.source_label"
+                color="neutral"
+                :label="row.original.source_label"
+              />
+              <NuxtBadge
+                v-if="row.original.duplicate_hint"
+                color="warning"
+                :label="row.original.duplicate_hint"
+              />
             </span>
-          </template>
-        </NuxtTable>
+            <span class="block font-mono text-xs text-muted-foreground">{{
+              row.original.ref
+            }}</span>
+          </div>
+        </template>
+        <template #contact-cell="{ row }">
+          <span
+            :class="row.original.phone_display ? '' : 'text-muted-foreground'"
+            >{{ row.original.phone_display || "Sem telefone" }}</span
+          >
+          <span
+            v-if="row.original.document_display"
+            class="block text-xs text-muted-foreground"
+            >CPF {{ row.original.document_display }}</span
+          >
+        </template>
+        <template #orders-cell="{ row }">
+          <span class="text-muted-foreground">
+            {{ row.original.orders_label
+            }}<template v-if="row.original.last_order_display">
+              · último {{ row.original.last_order_display }}</template
+            >
+          </span>
+        </template>
         <template v-if="list && (list.page > 1 || list.has_next)" #footer>
-          <div class="flex items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <span class="op-micro text-muted-foreground tnum">{{
               list.total_label
             }}</span>
@@ -256,14 +239,7 @@ const phoneHeaderActions = computed(() => [
             />
           </div>
         </template>
-      </NuxtCard>
-
-      <NuxtEmpty
-        v-else-if="list"
-        icon="i-lucide-users"
-        title="Nenhum cliente neste recorte"
-        :description="`${list.total_label}.`"
-      />
+      </OperatorTable>
     </section>
   </main>
 </template>
