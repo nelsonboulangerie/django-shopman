@@ -43,6 +43,7 @@ const {
   start,
   finish,
   undoFinish,
+  finishUntil,
   recall,
   acknowledge,
   declareVolumes,
@@ -318,7 +319,7 @@ function warnLocked(pk: number) {
       <template v-if="!isPhone" #actions>
         <button
           type="button"
-          class="relative hidden h-11 items-center gap-2 rounded-md px-3 op-label transition md:inline-flex"
+          class="relative hidden h-8 items-center gap-2 rounded-md px-3 op-label transition md:inline-flex"
           :class="
             soundOn && soundBlocked
               ? 'border border-warning/50 bg-warning/10 font-semibold text-warning'
@@ -338,7 +339,7 @@ function warnLocked(pk: number) {
         <button
           v-if="view && view.recentDone.length"
           type="button"
-          class="hidden h-11 items-center gap-2 rounded-md border border-border bg-card px-3.5 op-label font-semibold transition hover:bg-accent md:inline-flex"
+          class="hidden h-8 items-center gap-2 rounded-md border border-border bg-card px-3.5 op-label font-semibold transition hover:bg-accent md:inline-flex"
           :aria-label="`Reabrir concluídos recentes: ${view.recentDone.length}`"
           title="Concluídos nos últimos 30 minutos"
           data-kds-recall
@@ -368,7 +369,7 @@ function warnLocked(pk: number) {
         <p>Esta estação não existe mais. Escolha a estação deste dispositivo na lista.</p>
         <NuxtLink
           to="/"
-          class="mt-3 inline-flex h-11 items-center gap-2 rounded-md border px-3 font-medium text-foreground transition hover:bg-accent"
+          class="mt-3 inline-flex h-8 items-center gap-2 rounded-md border px-3 font-medium text-foreground transition hover:bg-accent"
         >
           <Icon name="lucide:list" class="size-4" />
           Ver estações
@@ -482,7 +483,7 @@ function warnLocked(pk: number) {
           <button
             v-if="!soundAnnounces"
             type="button"
-            class="inline-flex h-11 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent"
+            class="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent"
             @click="handleSoundAction"
           >
             <Icon name="lucide:volume-2" class="size-4" />
@@ -493,7 +494,7 @@ function warnLocked(pk: number) {
         <template v-else>
           <!-- cabeça da grade: a ordem e os recortes (do tablet para cima; o celular não
                tem recortes, prévia v4 b) -->
-          <div v-if="!isPhone" class="flex min-h-11 shrink-0 flex-wrap items-center gap-2">
+          <div v-if="!isPhone" class="flex min-h-8 shrink-0 flex-wrap items-center gap-2">
             <Icon name="lucide:arrow-down-wide-narrow" class="size-4 text-muted-foreground" />
             <h2 class="op-eyebrow text-muted-foreground">Mais urgente primeiro</h2>
             <span class="op-micro text-muted-foreground">· o destacado é o próximo</span>
@@ -538,7 +539,7 @@ function warnLocked(pk: number) {
             </p>
             <button
               type="button"
-              class="min-h-11 px-2 op-label text-muted-foreground underline-offset-2 hover:underline"
+              class="min-h-8 px-2 op-label text-muted-foreground underline-offset-2 hover:underline"
               @click="query = ''; filter = 'all'"
             >
               Limpar busca e recorte
@@ -553,6 +554,7 @@ function warnLocked(pk: number) {
             :blocked-refs="view.blockedRefs"
             :addition-pks="view.additionPks"
             :finishing-pks="view.finishingPks"
+            :finish-until="finishUntil"
             :all-day="view.allDay"
             :density="density"
             @open="(pk) => (openTicketPk = pk)"
@@ -581,6 +583,7 @@ function warnLocked(pk: number) {
                     :blocked="view.blockedRefs.has(card.order_ref)"
                     :addition="view.additionPks.has(card.pk)"
                     :finishing="view.finishingPks.has(card.pk)"
+                    :finish-until="finishUntil.get(card.pk)"
                     @open="openTicketPk = card.pk"
                     @start="start(card.pk)"
                     @finish="finish(card.pk)"
@@ -595,7 +598,7 @@ function warnLocked(pk: number) {
             <button
               v-if="slice.rest.length"
               type="button"
-              class="flex min-h-11 shrink-0 flex-wrap items-center justify-center gap-x-2 rounded-lg border border-dashed border-border px-3 op-label text-muted-foreground transition hover:bg-accent"
+              class="flex min-h-8 shrink-0 flex-wrap items-center justify-center gap-x-2 rounded-lg border border-dashed border-border px-3 op-label text-muted-foreground transition hover:bg-accent"
               data-kds-rest
               @click="expanded = true"
             >
@@ -606,7 +609,7 @@ function warnLocked(pk: number) {
             <button
               v-else-if="expanded"
               type="button"
-              class="min-h-11 shrink-0 rounded-lg border border-dashed border-border px-3 op-label font-semibold transition hover:bg-accent"
+              class="min-h-8 shrink-0 rounded-lg border border-dashed border-border px-3 op-label font-semibold transition hover:bg-accent"
               data-kds-rest-collapse
               @click="expanded = false"
             >
@@ -674,7 +677,7 @@ function warnLocked(pk: number) {
               <button
                 v-if="t.volumes_order_ref"
                 type="button"
-                class="ml-auto inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent active:scale-[0.98]"
+                class="ml-auto inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent active:scale-[0.98]"
                 :aria-label="`Volumes do pedido ${splitRef(t.order_ref).code}`"
                 data-kds-recent-volumes
                 @click="openFromRecent(t.pk)"
@@ -684,7 +687,7 @@ function warnLocked(pk: number) {
               </button>
               <button
                 type="button"
-                class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent active:scale-[0.98]"
+                class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent active:scale-[0.98]"
                 @click="recall(t.pk)"
               >
                 <Icon name="lucide:rotate-ccw" class="size-4" />

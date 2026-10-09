@@ -132,7 +132,7 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
           v-if="!days.length"
           icon="i-lucide-calendar-search"
           title="Sem projeção para este período"
-          description="O servidor não devolveu nenhum dia. Escolha outro período no cabeçalho."
+          description="Não há dia para projetar neste período. Escolha outro no cabeçalho."
           data-bi-forecast-empty
         />
 

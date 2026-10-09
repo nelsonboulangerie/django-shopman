@@ -442,7 +442,10 @@ const { denied: stationLocked } = useStationLock();
 
 // ── O cabeçalho de uma linha e o gesto do momento (G14/G15) ─────────────────
 // A régua da suíte (`useScreen` do kit): mesa no servidor e na hidratação, a largura
-// real depois. Com `useMediaQuery` cru o celular hidratava outra árvore na carga direta.
+// real depois. Por isso a barra do topo, o estado escrito e a ação na base decidem pelo
+// CSS (`md:hidden`/`max-md:hidden`), não por ela: o celular já nasce no layout do
+// celular. Ela fica só no que é comportamento: a direção da gaveta (aberta depois de
+// montar) e a posição do dispositivo (`useOutsideStore`).
 const { belowMd: isPhone } = useScreen();
 function menuDo(fn: () => unknown) {
   menuOpen.value = false;
@@ -604,6 +607,20 @@ const thumbAction = computed(() => {
     onSelect: runPrimary,
   };
 });
+// O estado escrito que vale em toda largura (as pílulas de pagamento são só do celular).
+const stateInEveryWidth = computed(() =>
+  Boolean(
+    deadlineText.value ||
+      undo.value ||
+      (advanceAction.value &&
+        !advanceAction.value.enabled &&
+        order.value?.advance_block_reason),
+  ),
+);
+const BACK_VARIANTS = [
+  { icon: "i-lucide-arrow-left", class: "md:hidden" },
+  { icon: "i-lucide-chevron-left", class: "max-md:hidden" },
+] as const;
 const thumbReject = computed(() => (primary.value ? rejectThumb.value : undefined));
 function runPrimary() {
   const p = primary.value;
@@ -681,12 +698,18 @@ const outside = useOutsideStore(
          No celular (v3 `depois-gestor-celular` (c)): ← U68 · iFood · ⋯, e o gesto desce
          para o polegar. -->
     <OperatorPageHeader
-      :title="clockReady && isPhone ? code.code : `Pedido ${code.code}`"
+      :title="`Pedido ${code.code}`"
+      :phone-title="code.code"
+      actions-from="md"
     >
       <template #lead>
+        <!-- A seta do celular e a do desktop, escolhidas pelo CSS. -->
         <NuxtButton
+          v-for="variant in BACK_VARIANTS"
+          :key="variant.icon"
+          :class="variant.class"
           :to="backLocation"
-          :icon="isPhone ? 'i-lucide-arrow-left' : 'i-lucide-chevron-left'"
+          :icon="variant.icon"
           color="neutral"
           variant="ghost"
           square
@@ -735,7 +758,8 @@ const outside = useOutsideStore(
           next-label="Próximo pedido"
         />
       </template>
-      <template v-if="isPhone" #phone-actions>
+      <!-- O kit mostra `#phone-actions` só abaixo de `md`; o `#actions`, daqui para cima. -->
+      <template #phone-actions>
         <NuxtButton
           type="button"
           icon="i-lucide-ellipsis"
@@ -748,7 +772,7 @@ const outside = useOutsideStore(
           @click="menuOpen = !menuOpen"
         />
       </template>
-      <template v-if="!isPhone" #actions>
+      <template #actions>
         <!-- bilhete de volta: quem veio de outro app volta para onde estava -->
         <NuxtButton
           v-if="returnTicket"
@@ -921,20 +945,14 @@ const outside = useOutsideStore(
            tamanho, o "o sistema fez · desfazer" e o bloqueio do avanço com o motivo. -->
         <template #actions>
           <section
-            v-if="
-              (isPhone && order.payment_method_label) ||
-              deadlineText ||
-              undo ||
-              (advanceAction &&
-                !advanceAction.enabled &&
-                order.advance_block_reason)
-            "
+            v-if="order.payment_method_label || stateInEveryWidth"
             class="flex flex-col gap-2.5"
+            :class="stateInEveryWidth ? '' : 'md:hidden'"
             data-detail-state
           >
             <div
-              v-if="isPhone && order.payment_method_label"
-              class="flex flex-wrap items-center gap-2"
+              v-if="order.payment_method_label"
+              class="flex flex-wrap items-center gap-2 md:hidden"
               data-detail-pills
             >
               <!-- o estado já está no cabeçalho, em toda largura; aqui só o fato -->
@@ -968,13 +986,10 @@ const outside = useOutsideStore(
                 [undo.detail, undo.alreadyOut].filter(Boolean).join(' · ')
               "
               :actions="
-                undo.canUndo
+                undo.canUndo && undo.kind !== 'handoff'
                   ? [
                       {
-                        label:
-                          undo.kind === 'handoff'
-                            ? `Desfazer ${undo.countdown}`
-                            : 'Desfazer',
+                        label: 'Desfazer',
                         color: 'success',
                         variant: 'outline',
                         disabled: busy,
@@ -984,7 +999,24 @@ const outside = useOutsideStore(
                   : []
               "
               :data-undo="undo.kind"
-            />
+            >
+              <!-- A saída tocada: o tempo mora no próprio Desfazer (o fundo esvazia
+                   até a janela fechar), como no cartão. -->
+              <template v-if="undo.canUndo && undo.kind === 'handoff'" #actions>
+                <OperatorTimedButton
+                  :until="undo.untilIso"
+                  :since="undo.sinceIso || undefined"
+                  label="Desfazer"
+                  icon="i-lucide-undo-2"
+                  color="success"
+                  variant="outline"
+                  :disabled="busy"
+                  :loading="busy"
+                  data-undo-button
+                  @click="onUndo()"
+                />
+              </template>
+            </NuxtAlert>
             <NuxtAlert
               v-if="
                 advanceAction &&
@@ -1060,7 +1092,7 @@ const outside = useOutsideStore(
                 color="warning"
                 variant="subtle"
                 title="A nota mudou enquanto você escrevia"
-                :description="`Seu texto foi preservado. No servidor: ${order.kitchen_note || '(vazia)'}`"
+                :description="`Seu texto foi preservado. A nota gravada é: ${order.kitchen_note || '(vazia)'}`"
                 :actions="[
                   {
                     label: 'Manter meu texto',
@@ -1069,7 +1101,7 @@ const outside = useOutsideStore(
                     onClick: () => acceptLatestNotesBase(),
                   },
                   {
-                    label: 'Usar texto do servidor',
+                    label: 'Usar a nota gravada',
                     color: 'warning',
                     variant: 'outline',
                     onClick: () => useLatestNotes(),
@@ -1100,7 +1132,8 @@ const outside = useOutsideStore(
          fluxo, irmã do conteúdo que rola, acima da barra inferior; o motivo aparece
          escrito quando ela não pode. -->
     <OperatorActionBar
-      v-if="isPhone && order && thumbAction"
+      v-if="order && thumbAction"
+      class="md:hidden"
       :action="thumbAction"
       :secondary="thumbReject"
       label="Ação do pedido"

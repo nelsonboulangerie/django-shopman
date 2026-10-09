@@ -696,7 +696,7 @@ const fieldCard =
             <button
               v-if="mode === 'correct' && gradeNeedsReason(grade)"
               type="button"
-              class="relative z-20 mb-2 ml-3 mr-2 mt-14 flex h-11 w-[calc(100%-1.25rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-offset-1"
+              class="relative z-20 mb-2 ml-3 mr-2 mt-14 flex h-8 w-[calc(100%-1.25rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-offset-1"
               :aria-label="`Editar motivo de ${grade.label}: ${
                 defectLabel(gradeDefectRefs[grade.ref] ?? '') || 'não informado'
               }`"
@@ -757,7 +757,7 @@ const fieldCard =
           <button
             v-if="mode === 'correct' && lossQuantity > 0"
             type="button"
-            class="relative z-20 mx-2 mb-2 mt-14 flex h-11 w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-destructive/50 focus-visible:ring-offset-1"
+            class="relative z-20 mx-2 mb-2 mt-14 flex h-8 w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-destructive/50 focus-visible:ring-offset-1"
             :aria-label="`Editar motivo da perda: ${
               defectLabel(lossDefectRef) || 'não informado'
             }`"

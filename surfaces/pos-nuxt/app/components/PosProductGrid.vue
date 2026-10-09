@@ -218,7 +218,7 @@ function onSearchEscape() {
         <Icon name="lucide:scan-barcode" class="size-6" />
         <span class="max-sm:sr-only">Ler código</span>
       </button>
-      <div v-else class="inline-flex h-11 shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Densidade da grade" title="Densidade da grade">
+      <div v-else class="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Densidade da grade" title="Densidade da grade">
         <button
           v-for="opt in DENSITIES"
           :key="opt.key"

@@ -198,8 +198,10 @@ describe("OperatorFilterPanel", () => {
     input.value = "Concluídos de hoje";
     input.dispatchEvent(new Event("input"));
     await settle();
-    document.querySelector<HTMLElement>("[data-operator-filter-save-confirm]")!.click();
-    await settle();
+    const confirm = document.querySelector<HTMLButtonElement>("[data-operator-filter-save-confirm]")!;
+    expect(confirm.disabled).toBe(false);
+    confirm.click();
+    await vi.waitFor(() => expect(posted).toHaveLength(1), { timeout: 3000 });
     expect(posted).toEqual([
       {
         surface: "orders",

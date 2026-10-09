@@ -344,6 +344,22 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(board.actionError("WEB-7")).toBe("O Aceitar não chegou. Tente de novo.");
   });
 
+  it("saiu para entrega: a falha cita o estado com o nome do selo, sem apelido (dono, 09/10)", async () => {
+    env.fetchMock.mockRejectedValueOnce({ status: 500 });
+    env.fetchData.value = { queue: { ...emptyZone(), prep: [{ ref: "H58", status_label: "Saiu para entrega", actions: fixtureActions({ can_advance: true }) }] } };
+    const board = useOrdersBoard();
+    expect(await board.advance("H58")).toBe(false);
+    expect(board.actionError("H58")).toMatch(/^H58 continua em “Saiu para entrega”: o .+ não chegou\. Tente de novo\.$/);
+  });
+
+  it("sem o nome do botão na projeção, a falha usa a frase aprovada", async () => {
+    env.fetchMock.mockRejectedValueOnce({ status: 500 });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-8", status_label: "Novo" }] } };
+    const board = useOrdersBoard();
+    expect(await board.confirm("WEB-8")).toBe(false);
+    expect(board.actionError("WEB-8")).toBe("O pedido não foi atualizado. Tente de novo.");
+  });
+
   it("uma nova tentativa limpa o erro anterior do ref", async () => {
     env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "boom" } });
     env.fetchData.value = { queue: { ...emptyZone(), prep: [{ ref: "WEB-3", actions: fixtureActions({ can_advance: true }) }] } };

@@ -94,7 +94,7 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
           <button
             type="button"
             data-order-step-nav
-            class="flex min-h-11 w-full items-center justify-center gap-2 rounded-md px-2 text-xs font-medium transition sm:justify-start"
+            class="flex min-h-8 w-full items-center justify-center gap-2 rounded-md px-2 text-xs font-medium transition sm:justify-start"
             :class="step.key === current ? 'bg-background text-foreground shadow-sm' : step.ready ? 'text-success' : 'text-muted-foreground'"
             :disabled="loading || !orderSetupStepEnabled(steps, index)"
             :aria-current="step.key === current ? 'step' : undefined"

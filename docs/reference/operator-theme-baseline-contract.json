@@ -21,8 +21,8 @@
       "baselines": "surfaces/pos-nuxt/tests/visual/baselines"
     }
   ],
-  "themeFingerprint": "sha256:bbc6e2123d401f9f311712985565bc41a6e71757db9d6e53f7a366e3bc2fd788",
+  "themeFingerprint": "sha256:944fb4b8649d37b5649b68c1b43c39f39c435b6d344ae45396071a561880de98",
   "acceptedOn": "2026-10-09",
   "owner": "Pablo Valentini",
-  "note": "Aceite do dono (Pablo Valentini, no chat em 09/10/2026: \"O tema em si está ok! Eu já tinha aprovado\") ao tema novo da suíte de operador em Nuxt UI canônico, no pouso #1555. Baselines de Marketing promovidas da CI no mesmo PR (runs 37873809401 e anteriores); as 4 do PDV não têm job visual na CI e não foram regeradas."
+  "note": "Aceite do dono (Pablo Valentini, no chat em 09/10/2026: \"sim\") ao tema com campos e botões na altura md (32 px) em todos os apps de operador, no pouso #1574. Aceite anterior (#1555): \"O tema em si está ok! Eu já tinha aprovado\". Baselines de Marketing promovidas da CI no mesmo PR; as 4 do PDV não têm job visual na CI."
 }

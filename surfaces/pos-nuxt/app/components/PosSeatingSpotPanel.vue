@@ -183,7 +183,7 @@ const tabsNote = computed(() => {
         <form v-if="newAreaOpen" class="flex items-center gap-2" @submit.prevent="confirmNewArea">
           <input
             v-model="newAreaName"
-            class="h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3 op-body"
+            class="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 op-body"
             maxlength="40"
             placeholder="Nome da área nova"
             aria-label="Nome da área nova"
@@ -195,7 +195,7 @@ const tabsNote = computed(() => {
           v-else
           id="seating-area"
           :model-value="spot.area"
-          class="h-11"
+          class="h-8"
           data-seating-area-select
           @update:model-value="onArea"
         >
@@ -238,7 +238,7 @@ const tabsNote = computed(() => {
           <span class="op-label text-muted-foreground">Nome</span>
           <input
             v-model="label"
-            class="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 op-body"
+            class="h-8 w-full min-w-0 rounded-md border border-input bg-background px-3 op-body"
             maxlength="80"
             data-seating-label
             @change="commitNames"
@@ -249,7 +249,7 @@ const tabsNote = computed(() => {
           <span class="op-label text-muted-foreground">Sigla</span>
           <input
             v-model="shortLabel"
-            class="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 op-body uppercase"
+            class="h-8 w-full min-w-0 rounded-md border border-input bg-background px-3 op-body uppercase"
             maxlength="8"
             :placeholder="shortLabelOf({ short_label: '', label: spot.label })"
             data-seating-short-label

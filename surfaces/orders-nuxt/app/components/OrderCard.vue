@@ -30,7 +30,7 @@ import {
   type AffordanceRef,
   type Tone,
 } from "~/presentation/board";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount } from "vue";
 import { danfeLine } from "~/presentation/danfe";
 import { kitchenChips } from "~/presentation/kitchen";
 import OrderCardMenu from "./OrderCardMenu.vue";
@@ -134,17 +134,6 @@ const undo = computed(() => undoLine(props.card, nowMs.value));
 const handoff = computed(() =>
   undo.value?.kind === "handoff" ? undo.value : null,
 );
-// A janela de desfazer usa o progresso oficial do Nuxt UI.
-const handoffWindow = ref(0);
-watch(
-  () => handoff.value?.secondsLeft ?? 0,
-  (left) => {
-    if (left > handoffWindow.value) handoffWindow.value = left;
-    if (!left) handoffWindow.value = 0;
-  },
-  { immediate: true },
-);
-
 // Toque longo liga a seleção em lote (como no celular de qualquer lista).
 let pressTimer: ReturnType<typeof setTimeout> | null = null;
 function pressStart(event: PointerEvent) {
@@ -472,7 +461,8 @@ function nuxtIcon(icon: string): string {
     </template>
 
     <div class="flex h-full flex-col gap-3">
-      <!-- Entregue, na janela do desfazer: o cartão fica no lugar, com o anel do tempo. -->
+      <!-- Entregue, na janela do desfazer: o cartão fica no lugar; o tempo mora no
+           próprio Desfazer do rodapé (o fundo esvazia até a janela fechar). -->
       <template v-if="handoff">
         <NuxtBadge
           class="self-start"
@@ -480,12 +470,6 @@ function nuxtIcon(icon: string): string {
           icon="i-lucide-check"
           :label="handoff.label"
           :data-undo="handoff.kind"
-        />
-        <NuxtProgress
-          :model-value="handoff.secondsLeft"
-          :max="handoffWindow || 1"
-          color="success"
-          size="sm"
         />
         <p class="op-micro leading-snug text-muted-foreground" data-undo-detail>
           {{ handoff.detail
@@ -818,14 +802,17 @@ function nuxtIcon(icon: string): string {
       <!-- @container: o rodapé decide pela própria largura (card largo, coluna estreita,
            grade da Saída), não pelo breakpoint da página. -->
       <div class="@container flex items-end gap-2">
-        <NuxtButton
+        <OperatorTimedButton
           v-if="handoff && handoff.canUndo"
+          :until="handoff.untilIso"
+          :since="handoff.sinceIso || undefined"
+          :server-now="card.server_now_iso || undefined"
+          label="Desfazer"
           block
           class="min-w-0 flex-1"
           color="neutral"
           variant="outline"
           icon="i-lucide-undo-2"
-          :label="`Desfazer ${handoff.countdown}`"
           :disabled="busy"
           :loading="busy"
           data-undo-button

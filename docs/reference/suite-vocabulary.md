@@ -129,10 +129,32 @@ está na trava `surfaces/orders-nuxt/tests/vocabularioFechado.guardrails.test.ts
 
 | Situação | Fica | Saiu |
 |---|---|---|
-| Gesto que não chegou ao servidor (sem motivo do servidor) | **"WEB-6 continua novo: o Aceitar não chegou. Tente de novo."** Forma geral: `<REF> continua <situação>: o <gesto> não chegou. Tente de novo.`, com a referência, a situação (`status_label`, inicial minúscula; "Saiu para entrega" vira "na rua") e o nome do botão vindos da projeção. Sem referência ou situação: `O <gesto> não chegou. Tente de novo.` | "Não deu para concluir “Aceitar”. Tente de novo." |
+| Gesto que não chegou ao servidor (sem motivo do servidor) | **"WEB-6 continua novo: o Aceitar não chegou. Tente de novo."** Forma geral: `<REF> continua <situação>: o <gesto> não chegou. Tente de novo.`, com a referência, a situação (`status_label`, inicial minúscula; "Saiu para entrega" é verbo e entra como nome do estado: `H58 continua em “Saiu para entrega”`, nunca apelido como "na rua") e o nome do botão vindos da projeção. Sem referência ou situação: `O <gesto> não chegou. Tente de novo.` | "Não deu para concluir “Aceitar”. Tente de novo." · "H58 continua na rua" |
 | Lote em que alguns pedidos falharam | **"N pedidos ficaram como estavam. Cada cartão diz por quê."** · singular **"1 pedido ficou como estava. O cartão diz por quê."** | "N pedidos não foram atualizados. O motivo está em cada cartão." |
 | Os que andam sem precisar do operador (fim da Fila) | **"Seguem sozinhos: 1 na cozinha, 2 na rua"** | "Sem pedir você: …" |
-| Selo ao vivo sem tempo real (poll) | **"Atualiza sozinho a cada 30 s"**, e a mesma forma nos outros apps: PDV "a cada 60 s", KDS "a cada 15 s". O Marketing ("Atualiza a cada 1 min") fica para a sessão que regera as baselines visuais dele: o rótulo aparece em três retratos da matriz |  "Atualiza a cada 30 s" |
+| Selo ao vivo sem tempo real (poll) | **"Atualiza sozinho a cada 30 s"**, e a mesma forma nos outros apps: PDV "a cada 60 s", KDS "a cada 15 s", Marketing "a cada 1 min" (trava em `surfaces/marketing-nuxt/tests/operatorLanguage.test.ts`) |  "Atualiza a cada 30 s" |
+
+### 2.5 Jargão de sistema não é texto de tela (dono, 09/10/2026)
+
+O dono leu *"Conectando ao Core de compras"* no Compras e a frase de vincular o posto
+(*"Escolha uma vez. Depois ele abre direto no trabalho deste posto e pede só o PIN de
+quem for operar."*) e recusou as duas: a primeira é jargão, a segunda é prolixa.
+
+| Situação | Fica | Saiu |
+|---|---|---|
+| Compras carregando | **"Carregando as compras…"** | "Conectando ao Core de compras" |
+| Compras sem dado | **"Não foi possível carregar as compras"** · "Insumos, fornecedores e custos não carregaram. Toque em Atualizar para tentar de novo." | "Compras sem conexão operacional" · "Conecte o backend para …" |
+| Vincular o dispositivo ao posto | **"Escolha uma vez. Depois, o dispositivo abre direto no posto e só pede o PIN."** | a frase acima |
+| Postos, no Gestor | **"Onde cada dispositivo fica. Vinculado a um posto, ele abre direto ali e só pede o PIN."** | "… abre direto no trabalho do posto e pede só o PIN de quem for operar." |
+| Conflito de edição | **"Alguém mudou as coleções enquanto você editava"** (e a rotação, a configuração) · "A nota gravada é: …" / **"Usar a nota gravada"** | "… mudou no servidor" · "Usar texto do servidor" |
+| Documento de impressão que não veio | **"As vias não ficaram prontas."** · "A DANFE não ficou pronta." · "A etiqueta não carregou." | "O servidor não montou …" |
+
+A trava é `surfaces/operator-kit/tests/guardrails.jargon.test.ts`: recusa em texto de
+tela (tag, atributo, literal de ligação e literal de script com espaço) *Core, backend,
+API, endpoint, payload, projection, SSE, token, webhook, Django, Nuxt, BFF, JSON, HTTP,
+directive, servidor* e os nomes de pacote (*offerman, stockman, craftsman, orderman,
+guestman, doorman, payman, buyman, fiscalman, cashman*). "Projeção" em português fica: é
+a tela de previsão do B.I.
 
 ---
 

@@ -99,3 +99,81 @@ test.describe("carga direta no celular: a tela que o celular promete", () => {
     await expect(page.locator("[data-page-header-filter-line]")).toBeVisible();
   });
 });
+
+// O PRIMEIRO desenho (09/10/2026): a régua do kit responde "mesa" até montar, e a barra
+// do topo da Fila nascia no celular com a linha da mesa (busca, som, "Urgência",
+// "Grade | Lista") por cima do título "Pedidos", até a hidratação terminar. Em rede
+// lenta, segundos. Sem JavaScript, o que fica na tela é o HTML do servidor: ele já tem
+// de ser o layout do celular.
+test.describe("primeiro desenho no celular (HTML do servidor, sem JavaScript)", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    javaScriptEnabled: false,
+  });
+
+  for (const path of ROUTES) {
+    test(`${path} já nasce com a barra do celular`, async ({ page }) => {
+      await page.goto(path, { waitUntil: "load" });
+      const bar = await page.evaluate(() => {
+        const shown = (el: Element) =>
+          el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
+        const header = document.querySelector("[data-operator-page-header]");
+        const title = header?.querySelector("[data-slot='title']");
+        const titleBox = title?.getBoundingClientRect();
+        // Os controles da barra que se desenham sobre o título.
+        const covering = [...(header?.querySelectorAll("button, a, input") ?? [])]
+          .filter(shown)
+          .filter((el) => {
+            if (!titleBox || title?.contains(el)) return false;
+            const box = el.getBoundingClientRect();
+            return (
+              box.left < titleBox.right - 1 &&
+              box.right > titleBox.left + 1 &&
+              box.top < titleBox.bottom - 1 &&
+              box.bottom > titleBox.top + 1
+            );
+          })
+          .map((el) => el.getAttribute("aria-label") || el.textContent?.trim() || el.tagName);
+        // O que só a mesa desenha (a linha encavalada de 09/10).
+        const deskOnly = [
+          "[data-sound-group]",
+          "[data-page-header-actions] [data-view-switch]",
+          "[data-page-header-actions] [data-board-sort]",
+          "[data-action='menu']",
+          "[data-page-header-filters]",
+          "[data-queue-scopes]",
+        ].filter((selector) => [...document.querySelectorAll(selector)].some(shown));
+        return {
+          title: title && shown(title) ? title.textContent?.trim() : "",
+          titleFits: titleBox
+            ? titleBox.width > 0 && titleBox.left >= 0 && titleBox.right <= window.innerWidth
+            : false,
+          covering,
+          deskOnly,
+          overflow: document.documentElement.scrollWidth - window.innerWidth,
+        };
+      });
+      expect(bar.title, "título visível").toBeTruthy();
+      expect(bar.titleFits, "título dentro da largura").toBe(true);
+      expect(bar.covering, "nada por cima do título").toEqual([]);
+      expect(bar.deskOnly, "nenhum controle da mesa visível").toEqual([]);
+      expect(bar.overflow, "sem rolagem horizontal").toBeLessThanOrEqual(0);
+    });
+  }
+
+  test('a Fila nasce com o ⋯ do celular e a linha "Filtros"', async ({ page }) => {
+    await page.goto("/", { waitUntil: "load" });
+    await expect(page.locator("[data-page-header-more]")).toBeVisible();
+    await expect(page.locator("[data-page-header-filter-line]")).toBeVisible();
+    await expect(page.locator("[data-page-header-filters-open]")).toBeVisible();
+  });
+
+  test("o pedido nasce com o título curto, o ⋯ do polegar e a ação na base", async ({ page }) => {
+    await page.goto("/IFOOD-261006-W01", { waitUntil: "load" });
+    await expect(page.locator("[data-page-header-phone-title]")).toBeVisible();
+    await expect(page.locator("[data-action='menu-phone']")).toBeVisible();
+    await expect(page.locator("[data-detail-thumb]")).toBeVisible();
+  });
+});

@@ -368,9 +368,10 @@ const orderedCollections = computed(() =>
 );
 // Celular (abaixo de `sm`, a régua da toolbar do kit): a coleção é o primário da linha,
 // numa lista (são mais de quatro e as pílulas rolavam para fora); os recortes e as
-// colunas moram no painel "Filtros", com os ativos como chips removíveis. O
-// `NuxtSelect` não aceita valor vazio: "Todas" é `ALL_COLLECTIONS` só aqui.
-const { belowSm: isNarrow } = useScreen();
+// colunas moram no painel "Filtros", com os ativos como chips removíveis. Lista no
+// celular e pílulas na mesa decididas pelo CSS (`sm:hidden`/`max-sm:hidden`): o
+// primeiro desenho do servidor já é o certo. O `NuxtSelect` não aceita valor vazio:
+// "Todas" é `ALL_COLLECTIONS` só aqui.
 const ALL_COLLECTIONS = "all";
 const collectionSelectItems = computed(() =>
   collectionTabs.value.map((tab) => ({
@@ -1159,6 +1160,7 @@ useHead({ title: "Catálogo" });
     <OperatorPageHeader
       title="Catálogo"
       :filters-wrap="false"
+      desk-only-filters
       :active-filters="activeFilters"
     >
       <template #status>
@@ -1214,7 +1216,7 @@ useHead({ title: "Catálogo" });
         />
       </template>
       <!-- Na mesa: Exibir e as coleções. No celular a coleção é o primário da linha. -->
-      <template v-if="!isNarrow" #filters>
+      <template #filters>
         <OperatorTableView v-if="surfaces.length" table-key="orders-catalog" />
         <!-- No celular a coleção é o primário da linha (o `NuxtSelect` abaixo); aqui,
              só do `sm` para cima, pelo CSS. -->
@@ -1266,12 +1268,12 @@ useHead({ title: "Catálogo" });
           <span class="tabular-nums">{{ catalogCountLine }}</span>
         </p>
       </template>
-      <template v-if="isNarrow && collections.length" #filters-primary>
+      <template v-if="collections.length" #filters-primary>
         <NuxtSelect
           :model-value="collectionRef || ALL_COLLECTIONS"
           :items="collectionSelectItems"
           aria-label="Coleção do catálogo"
-          class="min-w-0 max-w-full"
+          class="min-w-0 max-w-full sm:hidden"
           data-collection-select
           @update:model-value="
             selectCollection(

@@ -218,7 +218,7 @@ const recoveryDialogPresentation = computed(() => {
   return {
     icon: "lucide:shield-check",
     safetyTitle: "Confira a consequência antes de autorizar",
-    safetyDetail: "O servidor revalida o escopo e a versão no momento da ação.",
+    safetyDetail: "Se o anúncio mudar antes de você confirmar, a ação é recusada e nada é disparado.",
     confirmLabel: "Confirmar ação",
   };
 });
@@ -664,7 +664,7 @@ function closeDialog(open: boolean) {
             }}
           </UiDialogTitle>
           <UiDialogDescription class="max-w-sm">
-            Confira o escopo calculado pelo servidor antes de autorizar.
+            Confira o que vai ser feito antes de autorizar.
           </UiDialogDescription>
         </UiDialogHeader>
 
@@ -766,7 +766,7 @@ function closeDialog(open: boolean) {
               :rows="1"
               autocomplete="off"
               spellcheck="false"
-              class="mt-1 min-h-11 resize-none font-mono"
+              class="mt-1 min-h-8 resize-none font-mono"
             />
           </div>
 

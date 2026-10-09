@@ -205,7 +205,7 @@ const PAD_ADD =
           type="text"
           placeholder="Nome (opcional), ex.: Croissant"
           aria-label="Nome do timer"
-          class="min-h-11"
+          class="min-h-8"
           @keydown.enter.prevent="start()"
         />
 
@@ -215,7 +215,7 @@ const PAD_ADD =
           <UiCheckbox
             v-if="!twin"
             v-model="saveAsTag"
-            class="flex min-h-11 items-start gap-2.5 text-sm font-medium"
+            class="flex min-h-8 items-start gap-2.5 text-sm font-medium"
           >
             <span>
               Guardar “{{ name.trim() }}” como etiqueta

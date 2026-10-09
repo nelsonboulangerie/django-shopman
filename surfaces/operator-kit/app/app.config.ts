@@ -230,38 +230,15 @@ export default defineAppConfig({
         },
       },
     },
-    // Altura de controle: padrões compactos oficiais do Nuxt UI. Fluxos que
-    // realmente precisam de alvo maior fazem opt-in no próprio componente; uma
-    // regra global desalinharia tabs, toolbars, menus, paginação e rail.
-    // Exceção opt-in (WP-OPERADOR-NUXTUI-ONDAS, onda 0): nas páginas que vestem a
-    // suíte (os sete apps não migrados) e no catálogo, campo, select e item de lista
-    // voltam aos 44 px do `main` (`suite-page:`, que alcança o portal da lista). O
-    // Gestor não veste o marcador e fica no compacto.
-    // `lg`/`xl` são os campos do login (o `largeFields` do PDV é o `xl`, o degrau de ação).
-    input: {
-      variants: {
-        size: {
-          md: { base: "suite-page:h-control" },
-          lg: { base: "suite-page:h-control" },
-          xl: { base: "suite-page:h-action" },
-        },
-      },
-    },
+    // Altura de controle: os tamanhos oficiais do Nuxt UI, sem exceção por app. Campo,
+    // select e item de lista ficam na altura `md` (32 px), a mesma do botão, em todos
+    // os apps, inclusive PDV e Cozinha (dono, 09/10/2026, opção 1). O opt-in de toque
+    // de 44 px dos sete apps não migrados saiu: nenhuma regra infla controle por app.
     select: {
       slots: { content: "bg-popover" },
-      variants: {
-        size: {
-          md: { base: "suite-page:h-control", item: "suite-page:min-h-control suite-page:items-center" },
-        },
-      },
     },
     selectMenu: {
       slots: { content: "bg-popover" },
-      variants: {
-        size: {
-          md: { base: "suite-page:h-control", item: "suite-page:min-h-control suite-page:items-center" },
-        },
-      },
     },
     // Tabela mora dentro do card branco (dono, 07/10/2026). O cabeçalho fixo e a
     // coluna fixada do Nuxt UI pintam `bg-default/75`, que aqui é o bege da página

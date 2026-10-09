@@ -42,7 +42,7 @@ defineExpose({ inputRef });
       ref="field"
       v-model="model"
       type="search"
-      class="h-11 bg-card pl-10 text-base focus-visible:border-2 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
+      class="h-8 bg-card pl-10 text-base focus-visible:border-2 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
       :class="trailing ? (hint ? 'lg:pr-52 pr-24' : 'pr-24') : ''"
       v-bind="$attrs"
     />

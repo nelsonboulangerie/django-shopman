@@ -108,14 +108,9 @@ useHead({ title: "Revisão de vínculos" });
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
-const { belowSm: isNarrow } = useScreen();
-const phoneHeaderActions = computed(() =>
-  isNarrow.value
-    ? [
-        { label: "Atualizar revisão", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
-      ]
-    : undefined,
-);
+const phoneHeaderActions = computed(() => [
+  { label: "Atualizar revisão", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+]);
 </script>
 
 <template>
@@ -123,7 +118,8 @@ const phoneHeaderActions = computed(() =>
     <OperatorPageHeader
       :title="`${board?.channel_name || channel} · Revisão de vínculos`"
       :filters-wrap="false"
-      :actions="phoneHeaderActions"
+      :phone-actions="phoneHeaderActions"
+      desk-only-filters
     >
       <template #lead>
         <NuxtButton
@@ -135,7 +131,7 @@ const phoneHeaderActions = computed(() =>
           aria-label="Voltar para Canais"
         />
       </template>
-      <template v-if="!isNarrow" #filters>
+      <template #filters>
         <NuxtButton
           icon="i-lucide-refresh-cw"
           label="Atualizar revisão"
@@ -208,7 +204,7 @@ const phoneHeaderActions = computed(() =>
                   arquivo será guardado no sistema; nenhum produto será alterado
                   ou vinculado automaticamente.
                 </p>
-                <NuxtFormField label="Arquivo JSON da captura">
+                <NuxtFormField label="Arquivo da captura (.json)">
                   <NuxtInput
                     class="w-full"
                     type="file"

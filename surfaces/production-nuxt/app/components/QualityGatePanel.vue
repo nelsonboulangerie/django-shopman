@@ -174,7 +174,7 @@ function closedLine(order: QCOrderCardProjection): string {
               <li
                 v-for="order in cleanChips"
                 :key="order.pk"
-                class="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-card px-3.5 op-label font-semibold"
+                class="inline-flex min-h-8 items-center gap-2 rounded-full border border-border bg-card px-3.5 op-label font-semibold"
               >
                 {{ order.recipe_name }}
                 <span class="tabular-nums text-muted-foreground">{{
@@ -183,7 +183,7 @@ function closedLine(order: QCOrderCardProjection): string {
               </li>
               <li
                 v-if="hiddenClean"
-                class="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-3.5 op-label tabular-nums text-muted-foreground"
+                class="inline-flex min-h-8 items-center rounded-full border border-border bg-card px-3.5 op-label tabular-nums text-muted-foreground"
               >
                 +{{ hiddenClean }}
               </li>

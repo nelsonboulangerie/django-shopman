@@ -96,7 +96,7 @@ export function drawerOpeningMessage(state: DrawerOpeningState, terminalLabel: s
     case "uncertain":
       return `O agente do ${label} recebeu o pedido e não confirmou. Olhe a gaveta antes de pedir de novo.`;
     case "offline":
-      return "Sem conexão com o servidor: a gaveta não abriu. Abra na chave ou tente quando a rede voltar.";
+      return "Sem conexão: a gaveta não abriu. Abra na chave ou tente quando a rede voltar.";
     case "failed":
       return `A gaveta do ${label} não abriu.`;
     default:

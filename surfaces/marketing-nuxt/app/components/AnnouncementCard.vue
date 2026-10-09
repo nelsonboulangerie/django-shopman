@@ -613,7 +613,7 @@ defineExpose({ openScheduling, askToReject });
       </span>
       <button
         type="button"
-        class="absolute right-3 bottom-3 inline-flex h-11 items-center gap-2 rounded-full bg-card/95 px-4 text-[14px] font-semibold text-foreground shadow-sm disabled:opacity-60"
+        class="absolute right-3 bottom-3 inline-flex h-8 items-center gap-2 rounded-full bg-card/95 px-4 text-[14px] font-semibold text-foreground shadow-sm disabled:opacity-60"
         :disabled="photoBusy || busy"
         data-review-retake
         @click="photoInput?.click()"
@@ -815,7 +815,7 @@ defineExpose({ openScheduling, askToReject });
     <div>
       <button
         type="button"
-        class="inline-flex min-h-11 items-center gap-1.5 text-[14px] font-semibold text-foreground"
+        class="inline-flex min-h-8 items-center gap-1.5 text-[14px] font-semibold text-foreground"
         :aria-expanded="showPreview"
         data-review-preview-toggle
         @click="showPreview = !showPreview"
