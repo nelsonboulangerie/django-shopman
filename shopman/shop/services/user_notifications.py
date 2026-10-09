@@ -819,7 +819,7 @@ CONDITION_DESTINATIONS: dict[str, tuple[str, str]] = {
     ANNOUNCEMENT_REVIEW: ("marketing", "Revisar o anúncio"),
     PRODUCTION_QUALITY_REVIEW: ("production", "Revisar a qualidade do lote"),
     MARKETING_SECOND_CONTROL: ("marketing", "Conferir o disparo"),
-    **{condition: ("kds", "Abrir a estação") for condition in kds_alerts.CONDITIONS},
+    **dict.fromkeys(kds_alerts.CONDITIONS, ("kds", "Abrir a estação")),
 }
 
 
