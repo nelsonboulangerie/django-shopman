@@ -15,7 +15,6 @@ import {
   cardAffordances,
   changeBackSuggestionQ,
   channelOptions,
-  elapsedLabel,
   EXIT_SELECTION_LABEL,
   flattenZones,
   fulfillmentCounts,
@@ -44,6 +43,7 @@ import {
 import {
   QUEUE_FOCUS,
   QUEUE_SORT_OPTIONS,
+  liveAge,
   queueGesture,
   queueItems,
   queueScopeCounts,
@@ -1811,15 +1811,15 @@ function printQueue() {
               }}</span>
             </template>
             <template #elapsed-cell="{ row }">
+              <!-- O relógio vivo do kit (useNowTick), como a Grade: P1-8. -->
               <NuxtBadge
                 :color="
-                  timerTone(row.original.card.timer_class) === 'late'
-                    ? 'warning'
-                    : timerTone(row.original.card.timer_class) === 'warning'
-                      ? 'warning'
-                      : 'neutral'
+                  liveAge(row.original.card, nowMs).tone === 'ok'
+                    ? 'neutral'
+                    : 'warning'
                 "
-                :label="elapsedLabel(row.original.card.elapsed_seconds)"
+                :label="liveAge(row.original.card, nowMs).label"
+                class="tabular-nums"
               />
             </template>
             <template #actions-cell="{ row }">

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { timerChip } from "../app/presentation/board";
 import {
   kitchenDetail,
+  liveAge,
   QUEUE_FOCUS,
   queueGesture,
   queueItems,
@@ -31,6 +32,24 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     ...over,
   } as OrderCardProjection;
 }
+
+describe("P1-8: o tempo da Lista corre com o relógio, como a Grade", () => {
+  it("anda com o nowMs, não com a foto da leitura", () => {
+    // elapsed_seconds diz 10 min (a última leitura); o relógio diz 27 e depois 29.
+    const late = card({ elapsed_seconds: 600 });
+    expect(liveAge(late, NOW)).toEqual({ label: "27 min", tone: "warning" });
+    expect(liveAge(late, NOW + 2 * 60_000).label).toBe("29 min");
+    expect(liveAge(late, NOW + 4 * 60_000).tone).toBe("late");
+    // Mesmo número e mesmo formato da Grade.
+    expect(liveAge(late, NOW).label).toBe(queueItems([late], NOW)[0]!.timeLabel);
+  });
+  it("a Lista não lê mais elapsed_seconds para o Tempo", () => {
+    const page = readFileSync(new URL("../app/pages/index.vue", import.meta.url), "utf8");
+    const cell = page.slice(page.indexOf("#elapsed-cell"), page.indexOf("#actions-cell"));
+    expect(cell).toContain("liveAge(row.original.card, nowMs)");
+    expect(cell).not.toContain("elapsed_seconds");
+  });
+});
 
 describe("G03: o tempo nunca é vermelho", () => {
   it("atraso é âmbar com intensidade; vermelho é só do bloqueio", () => {

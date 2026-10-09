@@ -103,6 +103,18 @@ function cancelSeconds(
     : null;
 }
 
+/** O tempo de um pedido na Lista, com o relógio vivo (P1-8 do laudo do Gestor): o
+ *  mesmo número, a mesma base e o mesmo formato da Grade ("7 min", da chegada ou de
+ *  quando passou a pedir você). A Lista lia `elapsed_seconds`, a foto da última
+ *  leitura, e ficava parada em "10m" para todos. */
+export function liveAge(
+  card: OrderCardProjection,
+  nowMs: number,
+): { label: string; tone: QueueTone } {
+  const item = itemFor(card, nowMs);
+  return { label: item.timeLabel, tone: item.tone };
+}
+
 function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
   if (!card.attention) {
     const seconds =
