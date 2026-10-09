@@ -21,10 +21,11 @@
 //     altura dela.
 //   - Botão `xl`: toque crítico, do conjunto mínimo. A ação PRINCIPAL é `primary`
 //     `solid` (o dourado); a segunda, se houver, é SECUNDÁRIA (`outline`), nunca
-//     discreta (`ghost`). Sobre a superfície invertida, os dois ganham contorno na cor
-//     do texto invertido: o dourado sozinho não separa da superfície (2,8:1 no claro,
-//     1,8:1 no escuro), e o contorno dá o 3:1 de componente. A trava de contraste (AA
-//     nos dois temas) é `tests/actionBarContrast.test.ts`.
+//     discreta (`ghost`). A principal é o `solid` canônico, sem anel (dono,
+//     09/10/2026): o botão se identifica pelo rótulo e pelo ícone, AA dentro dele, e o
+//     3:1 de componente (WCAG 1.4.11) vale para o que identifica, não para o preenchimento.
+//     A segunda leva o contorno da variante, na cor do texto invertido. A trava de
+//     contraste (nos dois temas) é `tests/actionBarContrast.test.ts`.
 //   - O motivo de não poder aparece escrito sob a ação (`role="status"`): no toque não
 //     há dica de ponteiro.
 import { computed, useId } from "vue";
@@ -62,7 +63,6 @@ const SECONDARY_UI = {
   ...BUTTON_UI,
   base: "bg-transparent text-inverted ring-(--ui-text-inverted) hover:bg-(--ui-text-inverted)/10 active:bg-(--ui-text-inverted)/10 disabled:bg-transparent aria-disabled:bg-transparent",
 };
-const PRIMARY_UI = { ...BUTTON_UI, base: "ring-1 ring-inset ring-(--ui-text-inverted)" };
 
 function run(action: OperatorActionBarAction, event: Event) {
   if (action.disabled || action.loading) return;
@@ -119,7 +119,7 @@ function run(action: OperatorActionBarAction, event: Event) {
           :loading="action.loading"
           :disabled="action.disabled"
           :aria-describedby="reason ? reasonId : undefined"
-          :ui="PRIMARY_UI"
+          :ui="BUTTON_UI"
           data-operator-action-bar-action
           @click="run(action, $event)"
         />

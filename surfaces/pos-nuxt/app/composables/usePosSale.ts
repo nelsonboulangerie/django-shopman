@@ -600,6 +600,21 @@ export function usePosSale(deps: PosSaleDeps) {
   // (persist + reload da comanda) para o spinner interno do diálogo.
   const movePreparing = ref(false);
   const review = ref<POSSaleReviewProjection | null>(null);
+  // O TOTAL TEM UM DONO SÓ: a revisão do servidor. Toda mudança que mexe nele
+  // invalida a revisão e avança a GERAÇÃO. Uma resposta que volta de uma geração
+  // anterior descreve um carrinho que já não existe (o desconto mudou com a
+  // revisão em voo) e é descartada. Sem isto, a resposta velha caía por cima da
+  // invalidação nova: a tela mostrava como confirmado o total SEM o desconto que
+  // o operador acabara de dar, o Validar liberava, e a maquininha era passada
+  // pelo valor errado antes de o fechamento recusar.
+  let reviewGeneration = 0;
+  let reviewedGeneration = -1;
+  function invalidateReview() {
+    reviewGeneration += 1;
+    review.value = null;
+  }
+  /** O motivo da última falha de revisão, para a tela dizer por que não há total. */
+  const reviewFailureReason = ref("");
   const customerLookup = ref<POSCustomerLookupProjection | null>(null);
   /** O cadastro como régua da oferta: falta o campo, é igual, ou diverge. */
   const offerCustomer = () =>
@@ -721,7 +736,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.salesMode = mode;
     orderSetupComplete.value = false;
     checkoutMode.value = false;
-    review.value = null;
+    invalidateReview();
     cart.fulfillmentConfirmed = mode === "counter";
     if (mode === "counter") {
       cart.fulfillmentType = "pickup";
@@ -930,9 +945,22 @@ export function usePosSale(deps: PosSaleDeps) {
       splitPaidCount.value = 0;
     }
   });
+  // ⚠️ O interino é CONTA, nunca TELA. Regra do dono: total que ainda pode mudar
+  // não aparece como se fosse o total. Ele serve à aritmética que não pode ver
+  // zero no meio do caminho (excedente em cartão, por exemplo); a tela lê
+  // `totalStatus` e só mostra número com `confirmed`.
   const paymentTotalQ = computed(
     () => review.value?.total_q ?? (lastReviewTotalQ.value || cartNetTotalQ(cart.items)),
   );
+  /** De quem é o total agora: do servidor (`confirmed`), em cálculo, ou sem
+   *  resposta (`failed`, com o motivo em `reviewFailureReason`). */
+  const totalStatus = computed<"confirmed" | "calculating" | "failed">(() => {
+    if (review.value) return "confirmed";
+    return reviewFailed.value ? "failed" : "calculating";
+  });
+  const totalPendingMessage = () => (reviewFailed.value
+    ? "O total não foi calculado. Toque em Tentar de novo."
+    : "Calculando o total. A forma libera assim que ele chegar.");
   const paymentRemainingQ = computed(() => computeRemainingQ(cart.paymentTenders, paymentTotalQ.value));
   const paymentChangeQ = computed(() => computeChangeQ(cart.paymentTenders, paymentTotalQ.value));
   const paymentCovered = computed(() => isPaymentCovered(cart.paymentTenders, paymentTotalQ.value));
@@ -988,7 +1016,8 @@ export function usePosSale(deps: PosSaleDeps) {
     splitPaidCount.value,
     paymentRemainingQ.value,
   ));
-  const splitNote = computed(() => splitHint(
+  // A parte de cada pessoa é fração do total: sem total confirmado, não há parte.
+  const splitNote = computed(() => totalStatus.value !== "confirmed" ? "" : splitHint(
     paymentTotalQ.value,
     splitCount.value,
     splitPaidCount.value,
@@ -1028,6 +1057,13 @@ export function usePosSale(deps: PosSaleDeps) {
     if (cart.paymentCollection === "on_delivery" && !["cash", "credit", "debit"].includes(method)) {
       const handoff = cart.fulfillmentType === "pickup" ? "retirada" : "entrega";
       toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
+      return;
+    }
+    // A linha nasce do tamanho do total: sem total confirmado, ela nasceria do
+    // interino e ninguém a redimensionaria depois. A tela já trava os botões;
+    // esta é a mesma porta para qualquer outro caminho (tecla, folha da mesa).
+    if (totalStatus.value !== "confirmed") {
+      toast.info(totalPendingMessage());
       return;
     }
     const amountQ = Math.max(0, splitNextShareQ.value);
@@ -1133,6 +1169,10 @@ export function usePosSale(deps: PosSaleDeps) {
   function tenderExact() {
     const tender = cart.paymentTenders[selectedTenderIndex.value];
     if (!tender) return;
+    if (totalStatus.value !== "confirmed") {
+      toast.info(totalPendingMessage());
+      return;
+    }
     const others = cart.paymentTenders.reduce(
       (sum, line, idx) => (idx === selectedTenderIndex.value ? sum : sum + line.amount_q),
       0,
@@ -1205,13 +1245,29 @@ export function usePosSale(deps: PosSaleDeps) {
   let autoReviewTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleAutoReview() {
     if (!checkoutMode.value) return;
-    review.value = null;
+    invalidateReview();
     reviewFailed.value = false;
+    reviewFailureReason.value = "";
+    queueReview(450);
+  }
+  // ⚠️ A revisão agendada NUNCA se perde. Ela já era descartada em silêncio
+  // quando o timer disparava com outra revisão em voo (`busy`): a resposta da
+  // revisão anterior chegava depois, e a tela ficava com o total velho como se
+  // fosse o novo. Agora, com algo em voo, ela espera a vez; e se a revisão já
+  // respondeu pela geração atual, não há o que pedir de novo.
+  function queueReview(delayMs: number) {
     if (autoReviewTimer) clearTimeout(autoReviewTimer);
     autoReviewTimer = setTimeout(() => {
       autoReviewTimer = null;
-      if (checkoutMode.value && cart.items.length) reviewCheckout();
-    }, 450);
+      if (!checkoutMode.value || !cart.items.length) return;
+      if (review.value && reviewedGeneration === reviewGeneration) return;
+      if (reviewFailed.value) return;
+      if (busy.value) {
+        queueReview(150);
+        return;
+      }
+      void reviewCheckout();
+    }, delayMs);
   }
   watch(() => [
     cart.salesMode,
@@ -1336,7 +1392,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
     // (PIX aguardando vira chip, nunca é descartado calado).
     dismissResult();
-    review.value = null;
+    invalidateReview();
     checkoutMode.value = false;
     // Cada peça pesada é uma linha: duas etiquetas são duas peças, com pesos
     // diferentes — somar "mais um" a uma linha de 0,312 kg não quer dizer nada.
@@ -1378,7 +1434,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
   function setQty(lineId: string, qty: number) {
     if (!canUseCart.value || orderSetupPending.value) return;
-    review.value = null;
+    invalidateReview();
     checkoutMode.value = false;
     const existing = cart.items.find((item) => item.line_id === lineId);
     if (!existing) return;
@@ -1404,14 +1460,14 @@ export function usePosSale(deps: PosSaleDeps) {
   function restoreItem(item: POSCartItem) {
     if (!canUseCart.value) return;
     if (cart.items.some((entry) => entry.line_id === item.line_id)) return;
-    review.value = null;
+    invalidateReview();
     cart.items.push({ ...item });
   }
 
   function setLineDiscount(lineId: string, value: number, reason: string, type: "percent" | "fixed" = "percent") {
     const item = cart.items.find((entry) => entry.line_id === lineId);
     if (!item) return;
-    review.value = null;
+    invalidateReview();
     if (value > 0) {
       item.discount = { value, reason, type };
       // "Maior desconto ganha, um por item": o servidor DESCARTA um manual menor
@@ -1481,7 +1537,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.clientRequestId = "";
     customerLookup.value = null;
     checkoutMode.value = false;
-    review.value = null;
+    invalidateReview();
     showTabs.value = true;
   }
 
@@ -1570,7 +1626,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // de pagamento já aberto — sair do modo aqui devolveria o operador à venda.
     if (!options.preserveCheckout) {
       checkoutMode.value = false;
-      review.value = null;
+      invalidateReview();
     }
     void nextTick(() => { tabLoading.value = false; });
   }
@@ -1655,7 +1711,7 @@ export function usePosSale(deps: PosSaleDeps) {
         }
         assignTabIdentityFromPayload(payload);
         checkoutMode.value = false;
-        review.value = null;
+        invalidateReview();
       } else {
         await setFromTabPayload(payload);
         // `salesMode`: a comanda abre já no modo pedido (a "Nova encomenda" da
@@ -1939,7 +1995,7 @@ export function usePosSale(deps: PosSaleDeps) {
     });
     if (fields.some((item) => !item.value || receiptIdentityValue(item.field) !== item.value)
       || cart.customerRef !== (failure.customer_ref || "") || cart.clientRequestId !== failure.client_request_id) {
-      review.value = null;
+      invalidateReview();
       serverError.value = "Os dados do documento mudaram. Revise a venda novamente.";
       return true;
     }
@@ -2205,7 +2261,7 @@ export function usePosSale(deps: PosSaleDeps) {
         }));
         customerDecision.value = null;
         pendingReceiptDecision.value = null;
-        review.value = null;
+        invalidateReview();
         if (checkoutMode.value) await reviewCheckout();
       } catch (error) {
         if (customerDecision.value === decision && receiptDecisionMatches()) {
@@ -2689,14 +2745,21 @@ export function usePosSale(deps: PosSaleDeps) {
     if (!cart.items.length) return null;
     const state = currentIntentState();
     cart.clientRequestId = state.clientRequestId;
+    const generation = reviewGeneration;
     try {
       const response = await action.call<POSSaleReviewResponse>(
         actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
         { body: buildPosSaleIntent(state, checkoutContract.value?.intent_version) },
       );
+      // Resposta de um carrinho que já mudou: descartada (ver `invalidateReview`).
+      if (generation !== reviewGeneration) return null;
       review.value = response.review;
+      reviewedGeneration = generation;
       return response.review;
     } catch (error) {
+      // A falha também é do carrinho velho: quem responde pelo atual é a
+      // revisão que a mudança já agendou.
+      if (generation !== reviewGeneration) return null;
       if (handleReceiptIdentityFailure(error, "review")) return null;
       throw error;
     }
@@ -2711,13 +2774,15 @@ export function usePosSale(deps: PosSaleDeps) {
     // vez de segurar o operador na tela de venda durante os round-trips de
     // persistência — era isso que fazia a tela "piscar" duas vezes no Cobrar.
     checkoutMode.value = true;
-    review.value = null;
+    invalidateReview();
     try {
       if (hasOpenTab.value) {
         await persistTab();
         await reloadCurrentTab({ preserveCheckout: true });
       }
+      const generation = reviewGeneration;
       await reviewSale();
+      if (generation !== reviewGeneration) queueReview(0);
     } catch (error) {
       if (handleReceiptIdentityFailure(error, "review")) return;
       // O checkout não abriu de verdade: volta à venda com o motivo no toast.
@@ -2732,14 +2797,27 @@ export function usePosSale(deps: PosSaleDeps) {
   const reviewFailed = ref(false);
 
   async function reviewCheckout() {
-    if (busy.value) return; // guarda de reentrância
+    // Guarda de reentrância: com algo em voo, a revisão espera a vez em vez de
+    // sumir (ver `queueReview`).
+    if (busy.value) {
+      queueReview(150);
+      return;
+    }
     if (!cart.items.length) return;
     serverError.value = "";
     dismissResult();
     busy.value = true;
+    const generation = reviewGeneration;
     try {
       await reviewSale();
+      if (generation !== reviewGeneration) {
+        // O carrinho mudou com a revisão em voo: a resposta foi descartada, e a
+        // do carrinho atual é pedida agora.
+        queueReview(0);
+        return;
+      }
       reviewFailed.value = false;
+      reviewFailureReason.value = "";
     } catch (error) {
       // ⚠️ SEM ISTO O PDV TRAVAVA PARA SEMPRE. `scheduleAutoReview` zera a
       // `review` e agenda o refetch; se ele lançasse (um piscar de Wi-Fi), o
@@ -2749,7 +2827,10 @@ export function usePosSale(deps: PosSaleDeps) {
       // justo nesse ramo — zero explicação na tela, com o cliente na frente. A
       // única saída era F4 (não documentado) ou Esc, que derruba o checkout.
       reviewFailed.value = true;
-      serverError.value = `${httpErrorMessage(error, "Não deu para recalcular o total.")} Os itens seguem na comanda e nada foi cobrado. Tente de novo.`;
+      // O motivo FICA na tela (o toast some em segundos): é o que explica por
+      // que não há total e por que o botão virou "Tentar de novo".
+      reviewFailureReason.value = httpErrorMessage(error, "Não deu para calcular o total. Tente de novo.");
+      serverError.value = `${httpErrorMessage(error, "Não deu para calcular o total.")} Os itens seguem na comanda e nada foi cobrado. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -3022,12 +3103,16 @@ export function usePosSale(deps: PosSaleDeps) {
         // do servidor diz os dois valores; a revisão é refeita para o operador
         // conferir o total novo com o cliente e finalizar de novo.
         serverError.value = httpErrorMessage(error, "O total mudou. Confira com o cliente antes de cobrar.");
-        review.value = null;
+        invalidateReview();
+        const generation = reviewGeneration;
         try {
           await reviewSale();
+          if (generation !== reviewGeneration) queueReview(0);
           reviewFailed.value = false;
-        } catch {
+          reviewFailureReason.value = "";
+        } catch (reviewError) {
           reviewFailed.value = true;
+          reviewFailureReason.value = httpErrorMessage(reviewError, "Não deu para calcular o total. Tente de novo.");
         }
         return;
       }
@@ -3367,6 +3452,8 @@ export function usePosSale(deps: PosSaleDeps) {
   onScopeDispose(() => {
     stopPixPolling();
     stopDeliveryPolling();
+    if (autoReviewTimer) clearTimeout(autoReviewTimer);
+    autoReviewTimer = null;
   });
 
   return {
@@ -3417,6 +3504,8 @@ export function usePosSale(deps: PosSaleDeps) {
     movePreparing,
     review,
     reviewFailed,
+    reviewFailureReason,
+    totalStatus,
     customerLookup,
     tabDialogOpen,
     tabDialogReason,

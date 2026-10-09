@@ -47,9 +47,9 @@ test("SSE during notes draft preserves text and offers explicit same-field resol
     headers: { "Idempotency-Key": crypto.randomUUID() }, data: { ...action.payload_schema, notes: "Outra estação" },
   });
   expect(response.status()).toBe(200);
-  await expect(page.getByText("No servidor: Outra estação")).toBeVisible();
+  await expect(page.getByText("A nota gravada é: Outra estação")).toBeVisible();
   await expect(editor).toHaveValue("Rascunho preservado");
-  for (const name of ["Salvar nota", "Manter meu texto", "Usar texto do servidor"]) {
+  for (const name of ["Salvar nota", "Manter meu texto", "Usar a nota gravada"]) {
     const box = await page.getByRole("button", { name, exact: true }).boundingBox();
     expect.soft(box?.width, `${name}: largura`).toBeGreaterThanOrEqual(44);
     expect.soft(box?.height, `${name}: altura`).toBeGreaterThanOrEqual(44);

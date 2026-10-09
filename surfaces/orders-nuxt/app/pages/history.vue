@@ -55,12 +55,9 @@ const filters = useRouteFilters(dimensions, { resetKeys: ["page"] });
 // Celular (abaixo de `sm`, a régua da barra e da toolbar do kit): "Atualizar" vai para
 // o ⋯ da barra; o período fica na linha e os recortes no painel "Filtros", com os
 // ativos como chips removíveis.
-const { belowSm: isNarrow } = useScreen();
-const phoneHeaderActions = computed(() =>
-  isNarrow.value
-    ? [{ label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() }]
-    : undefined,
-);
+const phoneHeaderActions = computed(() => [
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+]);
 function clearSku() {
   router.replace({
     query: routeQueryFromHistory({ ...historyQuery.value, sku: "", page: 1 }),
@@ -132,13 +129,18 @@ watch(
     }),
   { immediate: true },
 );
-const loading = computed(() => pending.value && !history.value);
+type HistoryRow = (typeof items.value)[number];
+// Pedido é a chave (fixada, não some); Pagamento é coluna de apoio (some no celular).
+// A ordem é a do servidor (paginada): o cabeçalho não ordena só a página da vez.
 const historyColumns = [
-  { id: "order", header: "Pedido" },
+  { id: "order", header: "Pedido", enableHiding: false },
   { id: "customer", header: "Cliente" },
-  { id: "payment", header: "Pagamento" },
+  { id: "payment", header: "Pagamento", meta: { supporting: true } },
   { id: "total", header: "Total" },
 ];
+function openOrder(ref: string) {
+  router.push({ path: `/${encodeURIComponent(ref)}`, query: { from: "history" } });
+}
 </script>
 
 <template>
@@ -146,7 +148,7 @@ const historyColumns = [
     <OperatorPageHeader
       title="Histórico"
       :filters-wrap="false"
-      :actions="phoneHeaderActions"
+      :phone-actions="phoneHeaderActions"
       :active-filters="activeFilters"
     >
       <template #status>
@@ -182,6 +184,7 @@ const historyColumns = [
           touch
           class="min-w-0 flex-1"
         />
+        <OperatorTableView table-key="orders-history" />
         <!-- No celular, "Atualizar" está no ⋯ da barra (CSS: o servidor já desenha certo). -->
         <NuxtButton
           class="max-sm:hidden"
@@ -224,51 +227,31 @@ const historyColumns = [
       </template>
     </OperatorPageHeader>
 
-    <section class="min-h-0 flex-1 space-y-4 overflow-auto p-4 sm:p-6">
-      <NuxtAlert
-        v-if="error"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-triangle-alert"
-        title="Não foi possível carregar o histórico"
-        :description="`${httpErrorMessage(error, 'Não foi possível carregar o histórico.')} ${history ? 'Exibindo a última lista carregada.' : ''}`"
-        :actions="[
-          {
-            label: 'Tentar de novo',
-            color: 'error',
-            variant: 'outline',
-            onClick: () => refresh(),
-          },
-        ]"
-      />
-
-      <div v-if="loading" class="space-y-2">
-        <NuxtSkeleton
-          v-for="i in 6"
-          :key="i"
-          class="h-12 w-full"
-          aria-label="Carregando histórico"
-        />
-      </div>
-
-      <NuxtTable
-        v-else-if="items.length"
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <!-- A tabela da suíte (`OperatorTable`): compacta, com o estado da tela e a forma
+           guardada no dispositivo ("Exibir" na toolbar). -->
+      <OperatorTable
         :data="items"
         :columns="historyColumns"
-        :get-row-id="(row) => row.ref"
-        :on-select="
-          (_event, row) =>
-            router.push({
-              path: `/${encodeURIComponent(row.original.ref)}`,
-              query: { from: 'history' },
-            })
-        "
+        :row-key="(row: HistoryRow) => row.ref"
+        :row-label="(row: HistoryRow) => `o pedido ${row.ref}`"
+        :on-select="(row: HistoryRow) => openOrder(row.ref)"
+        :loading="pending"
+        :error="Boolean(error)"
+        what="o histórico"
+        :error-description="history ? 'Exibindo a última lista carregada.' : ''"
+        empty-icon="i-lucide-history"
+        empty-title="Nenhum pedido neste recorte."
+        :empty-description="history ? `${history.total_label}.` : ''"
+        pinned="order"
+        view-key="orders-history"
         caption="Pedidos concluídos e cancelados"
         data-history-list
+        @retry="refresh()"
       >
         <template #order-cell="{ row }">
-          <div class="min-w-44" :data-history-row="row.original.ref">
-            <span class="flex flex-wrap items-center gap-2">
+          <div :data-history-row="row.original.ref">
+            <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <NuxtLink
                 :to="{
                   path: `/${encodeURIComponent(row.original.ref)}`,
@@ -298,7 +281,7 @@ const historyColumns = [
         </template>
         <template #customer-cell="{ row }">
           <span
-            class="block min-w-40 truncate"
+            class="block min-w-32"
             :class="row.original.customer_label ? '' : 'text-muted-foreground'"
             >{{
               row.original.customer_label || "Cliente não identificado"
@@ -316,30 +299,26 @@ const historyColumns = [
           }}</span>
         </template>
         <template #total-cell="{ row }">
-          <span class="font-semibold tabular-nums">{{
+          <span class="whitespace-nowrap font-semibold tabular-nums">{{
             row.original.total_display
           }}</span>
         </template>
-      </NuxtTable>
-
-      <NuxtEmpty
-        v-else-if="history"
-        icon="i-lucide-history"
-        title="Nenhum pedido neste recorte"
-        :description="`${history.total_label}.`"
-        data-history-empty
-      />
-
-      <NuxtPagination
-        v-if="history && (history.page > 1 || history.has_next)"
-        class="mt-3 justify-center"
-        :page="history.page"
-        :total="history.total"
-        :items-per-page="history.page_size"
-        :disabled="pending"
-        aria-label="Páginas"
-        @update:page="goToPage"
-      />
+        <template v-if="history && (history.page > 1 || history.has_next)" #footer>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <span class="op-micro text-muted-foreground tnum">{{
+              history.total_label
+            }}</span>
+            <NuxtPagination
+              :page="history.page"
+              :total="history.total"
+              :items-per-page="history.page_size"
+              :disabled="pending"
+              aria-label="Páginas"
+              @update:page="goToPage"
+            />
+          </div>
+        </template>
+      </OperatorTable>
     </section>
   </main>
 </template>

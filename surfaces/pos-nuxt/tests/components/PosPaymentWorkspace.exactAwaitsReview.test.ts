@@ -40,7 +40,7 @@ describe("PosPaymentWorkspace: o Exato espera a revisão", () => {
     const w = await mountSuspended(PosPaymentWorkspace, { props: janela() });
     expect(exato(w).exists()).toBe(true);
     expect(exato(w).attributes("disabled")).toBeDefined();
-    expect(exato(w).attributes("title")).toBe("Atualizando o total. A forma libera assim que ele chegar.");
+    expect(exato(w).attributes("title")).toBe("Calculando o total. A forma libera assim que ele chegar.");
     await exato(w).trigger("click");
     expect(w.emitted("tenderExact")).toBeUndefined();
   });
@@ -49,7 +49,7 @@ describe("PosPaymentWorkspace: o Exato espera a revisão", () => {
     const w = await mountSuspended(PosPaymentWorkspace, { props: janela() });
     expect(exposto(w).pressExact()).toBe(true);
     expect(w.emitted("tenderExact")).toBeUndefined();
-    expect(toast.info).toHaveBeenCalledWith("Atualizando o total. A forma libera assim que ele chegar.");
+    expect(toast.info).toHaveBeenCalledWith("Calculando o total. A forma libera assim que ele chegar.");
   });
 
   it("a revisão chega com o desconto: o Exato libera e ajusta", async () => {

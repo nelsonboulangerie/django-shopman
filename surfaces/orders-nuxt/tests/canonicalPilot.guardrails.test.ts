@@ -250,11 +250,13 @@ describe("Gestor canônico em Nuxt UI", () => {
     // oficial "With bottom tab bar" do NavigationMenu, cujo desenho É um `:ui` (dono,
     // 08/10/2026, PR #1544), no `OperatorQuickBar`. O ⋯ único (`OperatorMoreMenu`,
     // fase 2) e a ação na base (`OperatorActionBar`) trocam o corte do rótulo pela
-    // quebra de linha: texto da casa não se corta.
+    // quebra de linha: texto da casa não se corta. A tabela da suíte (`OperatorTable`)
+    // guarda ali a densidade (compacta ou confortável): o único `:ui` de tabela.
     const kitPieceUi = new Set([
       "operator-kit/OperatorQuickBar.vue",
       "operator-kit/OperatorMoreMenu.vue",
       "operator-kit/OperatorActionBar.vue",
+      "operator-kit/OperatorTable.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),
@@ -280,10 +282,12 @@ describe("Gestor canônico em Nuxt UI", () => {
   });
 
   it("não recria overlays, menus, tabs ou alerts por ARIA manual", () => {
+    // O estado da tela (`OperatorScreenState`) não recria o aviso: ele dá ao `NuxtAlert`
+    // oficial, que não declara papel nenhum, o `role="alert"` do erro de carga.
     expect(
       runtimeOffenders(
         /role="(?:alert|dialog|menu|menuitem|menuitemcheckbox|option|tab|tablist)"/,
-      ),
+      ).filter((file) => file !== "operator-kit/OperatorScreenState.vue"),
     ).toEqual([]);
   });
 
@@ -787,8 +791,9 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(courier).toContain("<template #header>");
     expect(courier).toContain("#footer");
     expect(catalog).not.toContain('<NuxtCard v-if="loading"');
-    expect(catalog).toContain(':loading="loading"');
-    expect(catalog).toContain("<template #loading>");
+    // O carregando, o vazio e o erro da matriz são o estado da tela da `OperatorTable`.
+    expect(catalog).toContain(':loading="pending"');
+    expect(catalog).toContain('what="o catálogo"');
     expect(
       customers.match(/<template #header>/g)?.length,
     ).toBeGreaterThanOrEqual(3);
@@ -893,10 +898,16 @@ describe("Gestor canônico em Nuxt UI", () => {
     );
     // Grade sem coluna declarada deixa a tabela crescer até o conteúdo e o card
     // corta a ponta direita, onde mora o ⋯ fixado.
-    expect(catalog).toContain(
-      "grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
+    // A grade mora na `OperatorTable` (`fill`); o Catálogo só pede.
+    const table = readFileSync(
+      new URL("../../operator-kit/app/components/OperatorTable.vue", import.meta.url),
+      "utf8",
     );
-    expect(catalog).toContain('right: ["actions"]');
+    expect(table).toContain(
+      "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
+    );
+    expect(catalog).toMatch(/\n\s+fill\n/);
+    expect(catalog).toContain('pinned-end="actions"');
     expect(catalog).toContain("#actions-cell");
     // Sem grade de planilha: só a divisa entre canais e feeds.
     expect(catalog).not.toContain("border-l border-l-border");

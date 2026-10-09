@@ -165,7 +165,7 @@ export function usePurchaseDesk() {
   const backendBlockTitle = computed(() => {
     if (backendErrorStatus.value === 403) return "Operador sem acesso a Compras";
     if (backendErrorStatus.value === 401) return "Sessão expirada";
-    return "Compras sem conexão operacional";
+    return "Não foi possível carregar as compras";
   });
   const backendBlockMessage = computed(() => {
     if (backendErrorStatus.value === 403) {
@@ -174,7 +174,7 @@ export function usePurchaseDesk() {
     if (backendErrorStatus.value === 401) {
       return "Entre novamente para carregar dados reais e registrar ações.";
     }
-    return "A tela não conseguiu carregar a base de insumos, fornecedores e custos. Nada é exibido enquanto não houver dado real. Toque em Atualizar para tentar de novo.";
+    return "Insumos, fornecedores e custos não carregaram. Toque em Atualizar para tentar de novo.";
   });
 
   const enrichedMaterials = computed(() =>
@@ -700,7 +700,7 @@ export function usePurchaseDesk() {
         "Este operador não tem permissão para Compras."
       : backendErrorStatus.value === 401 ?
         "Sua sessão expirou. Entre novamente para continuar."
-      : `Conecte o backend para ${action}.`;
+      : `As compras não carregaram. Toque em Atualizar e tente ${action} de novo.`;
     actionError.value = message;
     useSonner.error(message);
     return false;

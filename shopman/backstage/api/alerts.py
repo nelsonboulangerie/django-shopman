@@ -33,6 +33,9 @@ from .permissions import CanViewOperatorAlerts
 
 _DEFAULT_LIMIT = 20
 
+#: Os apps de operador que leem o sino (ids de ``surfaces/registry.json``).
+_SURFACES = frozenset({"orders", "production", "pos", "kds", "marketing", "bi", "purchase", "hub"})
+
 
 _PROJECTION_KIND = "alerts"
 _PROJECTION_SLICE = "active"
@@ -112,9 +115,14 @@ class AlertListView(APIView):
         scope = str(request.query_params.get("scope") or "").strip()
         if scope not in alert_service.ALERT_SCOPES:
             scope = ""
+        # ``?surface=production``: de qual app o sino é lido. Não filtra nada; decide se
+        # o botão do aviso é um caminho deste app ou o endereço do app que resolve.
+        surface = str(request.query_params.get("surface") or "").strip() or scope
+        if surface not in _SURFACES:
+            surface = ""
         alerts = alert_service.list_active_alerts(user=request.user, limit=limit, scope=scope)
         counts = alert_service.active_counts(user=request.user, scope=scope)
-        projection = build_operator_alerts_projection(alerts=alerts, counts=counts, surface=scope)
+        projection = build_operator_alerts_projection(alerts=alerts, counts=counts, surface=surface)
         return Response(
             projection_data(
                 projection,

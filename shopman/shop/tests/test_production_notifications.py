@@ -196,7 +196,10 @@ class TestQualityReviewManagerNotification:
         assert notification.lifecycle == NotificationLifecycle.UNSEEN
         assert notification.source_condition == "production_quality_review"
         assert notification.source_ref == f"work_order:{work_order.pk}"
-        assert notification.action_url == "/quality"
+        # Leva à Qualidade daquele lote, não à fila inteira (dono, 09/10/2026).
+        assert notification.action_url == (
+            f"/quality?q={work_order.ref}&date={work_order.target_date.isoformat()}"
+        )
         assert notification.action_data == {"work_order_id": work_order.pk, "tab": "quality"}
         assert notification.is_actionable is True
         assert not UserNotification.objects.filter(user=floor).exists()

@@ -267,16 +267,17 @@ const tableRows = computed(() =>
 // A Lista (dono, 07/10/2026): linhas integradas num card branco; a linha principal tem
 // só o gesto do momento e o ⋯; o resto (detalhes e todas as ações) abre na própria
 // linha. A coluna de seleção fica sempre: marcar uma linha liga a barra de lote.
-const supervisionColumns = computed(() => [
-  { id: "expand", header: "" },
-  { id: "select", header: "" },
-  { id: "order", header: "Pedido" },
-  { id: "stage", header: "Situação" },
-  { id: "items", header: "Itens" },
+// A seleção e a seta de abrir são da `OperatorTable`; Pedido é a chave (fixada) e
+// Situação, Itens e Tempo são de apoio (somem no celular, onde o cartão aberto diz tudo).
+const supervisionColumns = [
+  { id: "order", header: "Pedido", enableHiding: false },
+  { id: "stage", header: "Situação", meta: { supporting: true } },
+  { id: "items", header: "Itens", meta: { supporting: true } },
   { id: "total", header: "Total" },
-  { id: "elapsed", header: "Tempo" },
-  { id: "actions", header: "Próximo passo" },
-]);
+  { id: "elapsed", header: "Tempo", meta: { supporting: true } },
+  { id: "actions", header: "Próximo passo", enableHiding: false },
+];
+type SupervisionRow = (typeof tableRows.value)[number];
 // Paginação só quando passa de uma página (dono, 07/10/2026).
 const SUPERVISION_PAGE_SIZE = 25;
 const supervisionPage = ref(1);
@@ -354,9 +355,13 @@ function stopSelection() {
   selected.value = new Set();
 }
 const isSelected = (ref_: string) => selected.value.has(ref_);
-const supervisionRowSelection = computed<Record<string, boolean>>(() =>
-  Object.fromEntries([...selected.value].map((ref_) => [ref_, true])),
-);
+// A seleção da Lista é a mesma da barra de lote: a tabela marca, o Set guarda.
+const supervisionRowSelection = computed<Record<string, boolean>>({
+  get: () => Object.fromEntries([...selected.value].map((ref_) => [ref_, true])),
+  set: (next) => {
+    selected.value = new Set(Object.keys(next).filter((ref_) => next[ref_]));
+  },
+});
 function toggleSelect(ref_: string) {
   const next = new Set(selected.value);
   if (next.has(ref_)) next.delete(ref_);
@@ -420,6 +425,11 @@ function menuDo(fn: () => void, close = true) {
 // A régua da suíte (`useScreen` do kit): mesa no servidor e na hidratação, a largura
 // real depois. Decidir a árvore com `useMediaQuery` cru fazia o celular hidratar outra
 // árvore na carga direta: a Fila ficava no esqueleto para sempre.
+// Ela responde "mesa" até montar, então a barra do topo e a toolbar NÃO decidem por ela
+// (o celular desenhava a barra da mesa encavalada até hidratar): `phone-actions`,
+// `actions-from="md"` e as classes `max-lg:`/`md:` fazem isso pelo CSS. Daqui só o que
+// muda a árvore depois de montar: as colunas que viram abas, a Fila só do `lg`, o
+// conteúdo do painel "Filtros" (aberto depois de montar) e o puxar para atualizar.
 const screen = useScreen();
 // Celular (abaixo de md): as colunas viram abas.
 const isPhone = screen.belowMd;
@@ -781,8 +791,9 @@ function pickFulfillment(value: string | number) {
 }
 // As ações da fila no celular, em dados para o kit: o "Visto" (e o som bloqueado)
 // disputam a vaga de ícone com a Busca e vencem enquanto valem; o resto vai para o ⋯.
+// Declaradas sempre (`phone-actions`): o kit as mostra só abaixo de `sm`, pelo CSS, e o
+// servidor já desenha a barra do celular (sem o flash da mesa antes de montar).
 const phoneHeaderActions = computed(() => {
-  if (!kitPhone.value) return undefined;
   return [
     ...(attentionPending.value && !exitPostView.value
       ? [{ label: "Visto", icon: "i-lucide-check", priority: 1, onSelect: () => acknowledgeAttention() }]
@@ -1297,7 +1308,8 @@ function printQueue() {
     <OperatorPageHeader
       :title="exitPostView ? 'Saída' : 'Pedidos'"
       :filters-wrap="false"
-      :actions="phoneHeaderActions"
+      :phone-actions="phoneHeaderActions"
+      actions-from="md"
       actions-label="Mais ações da fila"
       :active-filters="activeFilters"
     >
@@ -1325,10 +1337,13 @@ function printQueue() {
           @update:model-value="(v) => (query = v)"
         />
       </template>
-      <template v-if="!isPhone" #actions>
+      <!-- Os controles da mesa (do `md` para cima) escolhidos pelo CSS, não pela régua
+           do JS: ela responde "mesa" até montar, e o celular desenhava esta linha
+           encavalada sobre o título até a hidratação terminar. -->
+      <template #actions>
         <!-- a visão deste posto e o caminho de volta às três colunas -->
         <template
-          v-if="view === 'board' && !boardLayout.allOpen.value && !isPhone"
+          v-if="view === 'board' && !boardLayout.allOpen.value"
         >
           <NuxtButton
             icon="i-lucide-columns-3"
@@ -1345,7 +1360,7 @@ function printQueue() {
              botão do som sozinho. No posto Saída o Visto fica no ⋯. O som tem os
              mesmos 3 estados do KDS: ligado, desligado e ligado-mas-bloqueado pelo
              autoplay (ponto âmbar até o 1º gesto). -->
-        <NuxtFieldGroup v-if="!isPhone" data-sound-group>
+        <NuxtFieldGroup data-sound-group>
           <!-- Filhos diretos do FieldGroup, sem Chip no meio: o grupo arredonda só as
                pontas e cola as bordas pelo primeiro e último filho. "Som bloqueado
                pelo navegador" é a cor do próprio botão (warning) até o 1º gesto. -->
@@ -1380,7 +1395,7 @@ function printQueue() {
           />
         </NuxtFieldGroup>
 
-        <template v-if="!compactHeader && !isPhone">
+        <template v-if="!compactHeader">
           <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
                no quadro e na tabela, a ordem deles -->
           <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'end' }">
@@ -1410,13 +1425,15 @@ function printQueue() {
             data-view-switch
             @update:model-value="pickView"
           />
+          <!-- Exibir (linhas e colunas) só existe com a Lista na tela. -->
+          <OperatorTableView v-if="view === 'table'" table-key="orders-queue" />
         </template>
 
         <!-- ⋯ da fila (do tablet para cima; no celular ele mora no fim dos recortes). O posto
              Saída (v4 `gestor-colunas`) não tem ⋯: a leitura se atualiza sozinha e o Visto
              é tocar a faixa da Entrada que pulsa. -->
         <BoardMenu
-          v-if="!isPhone && !exitPostView"
+          v-if="!exitPostView"
           mode="dropdown"
           :metadata="readMetadata"
           :failed="Boolean(error)"
@@ -1444,10 +1461,13 @@ function printQueue() {
            seletor só. O posto Saída usa a mesma faixa: o título já diz a visão. -->
       <!-- A Saída no celular (v4 `cozinha-celular` (a)) não tem a linha de recortes: a
            barra de cima, as duas abas e a lista. -->
+      <!-- Antes de montar (e enquanto a fila chega) a faixa existe: no celular o kit
+           desenha "Filtros" já no primeiro desenho, e na mesa a faixa não some e volta
+           quando os cartões chegam. -->
       <template
         v-if="
           ((exitPostView && desktopZones.length) ||
-            (allCards.length && !exitPostView) ||
+            ((allCards.length || pending || !hydrated) && !exitPostView) ||
             isPhone) &&
           !(isPhone && phoneExitMode)
         "
@@ -1529,7 +1549,10 @@ function printQueue() {
         v-if="view === 'queue' && !(isPhone && phoneExitMode)"
         #filters-primary
       >
+        <!-- A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o mesmo, e o
+             celular não desenha os escopos antes de montar. -->
         <NuxtTabs
+          class="max-lg:hidden"
           :model-value="scope"
           :items="queueScopeTabs"
           :content="false"
@@ -1823,255 +1846,222 @@ function printQueue() {
           />
         </template>
 
-        <!-- A Lista: a NuxtTable canônica dentro de um card branco (receita do Kitchen
-             Sink), com linha expansível para os detalhes e as outras ações. -->
-        <NuxtCard v-else class="min-w-0" data-supervision-card>
-          <NuxtTable
-            v-model:expanded="supervisionExpanded"
-            :data="supervisionRows"
-            :columns="supervisionColumns"
-            :get-row-id="(row) => row.card.ref"
-            :row-selection="supervisionRowSelection"
-            caption="Lista dos pedidos em andamento"
-            data-supervision-table
-          >
-            <template #expand-cell="{ row }">
-              <NuxtButton
-                :icon="
-                  row.getIsExpanded()
-                    ? 'i-lucide-chevron-up'
-                    : 'i-lucide-chevron-down'
-                "
-                color="neutral"
-                variant="ghost"
-                square
-                :aria-label="`Detalhes do pedido ${row.original.card.ref}`"
-                :aria-expanded="row.getIsExpanded()"
-                data-supervision-expand
-                @click="row.toggleExpanded()"
-              />
-            </template>
-            <template #select-header>
-              <NuxtCheckbox
-                :model-value="
-                  allVisibleSelected
-                    ? true
-                    : selected.size
-                      ? 'indeterminate'
-                      : false
-                "
-                aria-label="Selecionar todos os pedidos da lista"
-                @update:model-value="toggleSelectAll"
-              />
-            </template>
-            <template #select-cell="{ row }">
-              <NuxtCheckbox
-                :model-value="isSelected(row.original.card.ref)"
-                :aria-label="`Selecionar o pedido ${row.original.card.ref}`"
-                @update:model-value="toggleSelect(row.original.card.ref)"
-              />
-            </template>
-            <template #order-cell="{ row }">
-              <div class="flex min-w-0 flex-col">
-                <NuxtLink
-                  v-if="canManageOrders"
-                  :to="`/${row.original.card.ref}`"
-                  class="font-semibold tabular-nums hover:underline"
-                  :aria-label="`Abrir pedido ${row.original.card.ref}`"
-                  >{{ splitRef(row.original.card.ref).code }}</NuxtLink
-                >
-                <span v-else class="font-semibold tabular-nums">{{
-                  splitRef(row.original.card.ref).code
-                }}</span>
-                <span
-                  class="inline-flex max-w-48 items-center gap-1 text-xs text-muted-foreground"
-                >
-                  <Icon
-                    :name="`lucide:${lucideIcon(row.original.card.channel_icon)}`"
-                    class="size-3.5 shrink-0"
-                  />
-                  <span class="truncate">{{
-                    row.original.card.customer_name || "Sem cliente"
-                  }}</span>
-                </span>
-              </div>
-            </template>
-            <template #stage-cell="{ row }">
-              <NuxtBadge
-                :color="
-                  statusTone(row.original.card.status) === 'danger'
-                    ? 'error'
-                    : statusTone(row.original.card.status) === 'success'
-                      ? 'success'
-                      : statusTone(row.original.card.status) === 'warning'
-                        ? 'warning'
-                        : 'neutral'
-                "
-                :label="row.original.card.status_label"
-              />
-            </template>
-            <template #items-cell="{ row }">
-              <span
-                class="block max-w-40 truncate text-muted-foreground xl:max-w-64"
-                :title="row.original.card.items_summary"
-                >{{ row.original.card.items_summary }}</span
+        <!-- A Lista: a tabela da suíte (`OperatorTable`, compacta por padrão), com a
+             linha que abre os detalhes e as outras ações. -->
+        <OperatorTable
+          v-else
+          v-model:expanded="supervisionExpanded"
+          v-model:row-selection="supervisionRowSelection"
+          :data="supervisionRows"
+          :columns="supervisionColumns"
+          :row-key="(row: SupervisionRow) => row.card.ref"
+          :row-label="(row: SupervisionRow) => `o pedido ${row.card.ref}`"
+          selectable
+          pinned="order"
+          view-key="orders-queue"
+          empty-icon="i-lucide-inbox"
+          empty-title="Nenhum pedido precisa de você agora."
+          caption="Lista dos pedidos em andamento"
+          data-supervision-table
+        >
+          <template #order-cell="{ row }">
+            <div class="flex min-w-0 flex-col">
+              <NuxtLink
+                v-if="canManageOrders"
+                :to="`/${row.original.card.ref}`"
+                class="font-semibold tabular-nums hover:underline"
+                :aria-label="`Abrir pedido ${row.original.card.ref}`"
+                >{{ splitRef(row.original.card.ref).code }}</NuxtLink
               >
-            </template>
-            <template #total-cell="{ row }">
-              <span class="whitespace-nowrap font-semibold tabular-nums">{{
-                row.original.card.total_display
+              <span v-else class="font-semibold tabular-nums">{{
+                splitRef(row.original.card.ref).code
               }}</span>
-            </template>
-            <template #elapsed-cell="{ row }">
-              <!-- O relógio vivo do kit (useNowTick), como a Grade: P1-8. -->
-              <NuxtBadge
-                :color="
-                  liveAge(row.original.card, nowMs).tone === 'ok'
-                    ? 'neutral'
-                    : 'warning'
-                "
-                :label="liveAge(row.original.card, nowMs).label"
-                class="tabular-nums"
-              />
-            </template>
-            <template #actions-cell="{ row }">
-              <div class="flex min-w-max items-center justify-end gap-1.5">
-                <NuxtButton
-                  v-if="rowPrimary(row.original.card)"
-                  :icon="
-                    rowPrimary(row.original.card)!.disabled
-                      ? 'i-lucide-lock'
-                      : rowPrimary(row.original.card)!.icon.replace(
-                          'lucide:',
-                          'i-lucide-',
-                        )
-                  "
-                  :label="rowPrimary(row.original.card)!.label"
-                  :color="
-                    rowPrimary(row.original.card)!.disabled
-                      ? 'neutral'
-                      : 'primary'
-                  "
-                  :variant="
-                    rowPrimary(row.original.card)!.disabled
-                      ? 'outline'
-                      : 'solid'
-                  "
-                  :disabled="
-                    isBusy(row.original.card.ref) ||
-                    rowPrimary(row.original.card)!.disabled
-                  "
-                  :title="rowPrimary(row.original.card)!.reason || undefined"
-                  data-supervision-primary
-                  @click="
-                    onAction(
-                      row.original.card.ref,
-                      rowPrimary(row.original.card)!.ref,
-                    )
-                  "
-                />
-                <OrderCardMenu
-                  :card="row.original.card"
-                  :busy="isBusy(row.original.card.ref)"
-                  :can-open="canManageOrders"
-                  :selecting="selecting"
-                  :selected="isSelected(row.original.card.ref)"
-                  @toggle-assign="onToggleAssign(row.original.card)"
-                  @toggle-select="toggleSelect(row.original.card.ref)"
-                  @select-mode="startSelection(row.original.card.ref)"
-                  @volumes="
-                    (count) => declareVolumes(row.original.card.ref, count)
-                  "
-                  @station-recall="
-                    (pk) => recallStation(row.original.card.ref, pk)
-                  "
-                />
-              </div>
-              <NuxtAlert
-                v-if="actionError(row.original.card.ref)"
-                class="mt-2"
-                color="error"
-                variant="subtle"
-                icon="i-lucide-triangle-alert"
-                :description="actionError(row.original.card.ref)"
-                :actions="[
-                  {
-                    label: 'Dispensar',
-                    color: 'error',
-                    variant: 'outline',
-                    onClick: () => clearActionError(row.original.card.ref),
-                  },
-                ]"
-              />
-            </template>
-            <!-- a linha aberta: os detalhes do pedido e todas as outras ações -->
-            <template #expanded="{ row }">
-              <div
-                class="grid gap-4 whitespace-normal lg:grid-cols-[minmax(0,1fr)_auto]"
-                data-supervision-detail
+              <span
+                class="inline-flex items-start gap-1 text-xs text-muted-foreground"
               >
-                <dl
-                  class="grid gap-x-6 gap-y-2 op-body sm:grid-cols-[auto_minmax(0,1fr)]"
-                >
-                  <dt class="text-muted-foreground">Itens</dt>
-                  <dd>{{ row.original.card.items_summary }}</dd>
-                  <dt class="text-muted-foreground">Recebimento</dt>
+                <Icon
+                  :name="`lucide:${lucideIcon(row.original.card.channel_icon)}`"
+                  class="size-3.5 shrink-0"
+                />
+                <span>{{
+                  row.original.card.customer_name || "Sem cliente"
+                }}</span>
+              </span>
+            </div>
+          </template>
+          <template #stage-cell="{ row }">
+            <NuxtBadge
+              :color="
+                statusTone(row.original.card.status) === 'danger'
+                  ? 'error'
+                  : statusTone(row.original.card.status) === 'success'
+                    ? 'success'
+                    : statusTone(row.original.card.status) === 'warning'
+                      ? 'warning'
+                      : 'neutral'
+              "
+              :label="row.original.card.status_label"
+            />
+          </template>
+          <template #items-cell="{ row }">
+            <span class="block min-w-40 text-muted-foreground">{{
+              row.original.card.items_summary
+            }}</span>
+          </template>
+          <template #total-cell="{ row }">
+            <span class="whitespace-nowrap font-semibold tabular-nums">{{
+              row.original.card.total_display
+            }}</span>
+          </template>
+          <template #elapsed-cell="{ row }">
+            <!-- O relógio vivo do kit (useNowTick), como a Grade: P1-8. -->
+            <NuxtBadge
+              :color="
+                liveAge(row.original.card, nowMs).tone === 'ok'
+                  ? 'neutral'
+                  : 'warning'
+              "
+              :label="liveAge(row.original.card, nowMs).label"
+              class="tabular-nums"
+            />
+          </template>
+          <template #actions-cell="{ row }">
+            <div class="flex min-w-max items-center justify-end gap-1.5">
+              <NuxtButton
+                v-if="rowPrimary(row.original.card)"
+                :icon="
+                  rowPrimary(row.original.card)!.disabled
+                    ? 'i-lucide-lock'
+                    : rowPrimary(row.original.card)!.icon.replace(
+                        'lucide:',
+                        'i-lucide-',
+                      )
+                "
+                :label="rowPrimary(row.original.card)!.label"
+                :color="
+                  rowPrimary(row.original.card)!.disabled
+                    ? 'neutral'
+                    : 'primary'
+                "
+                :variant="
+                  rowPrimary(row.original.card)!.disabled
+                    ? 'outline'
+                    : 'solid'
+                "
+                :disabled="
+                  isBusy(row.original.card.ref) ||
+                  rowPrimary(row.original.card)!.disabled
+                "
+                :title="rowPrimary(row.original.card)!.reason || undefined"
+                data-supervision-primary
+                @click="
+                  onAction(
+                    row.original.card.ref,
+                    rowPrimary(row.original.card)!.ref,
+                  )
+                "
+              />
+              <OrderCardMenu
+                :card="row.original.card"
+                :busy="isBusy(row.original.card.ref)"
+                :can-open="canManageOrders"
+                :selecting="selecting"
+                :selected="isSelected(row.original.card.ref)"
+                @toggle-assign="onToggleAssign(row.original.card)"
+                @toggle-select="toggleSelect(row.original.card.ref)"
+                @select-mode="startSelection(row.original.card.ref)"
+                @volumes="
+                  (count) => declareVolumes(row.original.card.ref, count)
+                "
+                @station-recall="
+                  (pk) => recallStation(row.original.card.ref, pk)
+                "
+              />
+            </div>
+            <NuxtAlert
+              v-if="actionError(row.original.card.ref)"
+              class="mt-2"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-triangle-alert"
+              :description="actionError(row.original.card.ref)"
+              :actions="[
+                {
+                  label: 'Dispensar',
+                  color: 'error',
+                  variant: 'outline',
+                  onClick: () => clearActionError(row.original.card.ref),
+                },
+              ]"
+            />
+          </template>
+          <!-- a linha aberta: os detalhes do pedido e todas as outras ações -->
+          <template #expanded="{ row }">
+            <div
+              class="grid gap-4 whitespace-normal lg:grid-cols-[minmax(0,1fr)_auto]"
+              data-supervision-detail
+            >
+              <dl
+                class="grid gap-x-6 gap-y-2 op-body sm:grid-cols-[auto_minmax(0,1fr)]"
+              >
+                <dt class="text-muted-foreground">Itens</dt>
+                <dd>{{ row.original.card.items_summary }}</dd>
+                <dt class="text-muted-foreground">Recebimento</dt>
+                <dd>
+                  {{ row.original.card.fulfillment_label
+                  }}<template v-if="row.original.card.delivery_address">
+                    · {{ row.original.card.delivery_address }}</template
+                  >
+                </dd>
+                <template v-if="row.original.card.payment_method_label">
+                  <dt class="text-muted-foreground">Pagamento</dt>
                   <dd>
-                    {{ row.original.card.fulfillment_label
-                    }}<template v-if="row.original.card.delivery_address">
-                      · {{ row.original.card.delivery_address }}</template
+                    {{ row.original.card.payment_method_label
+                    }}<template v-if="row.original.card.change_label">
+                      · {{ row.original.card.change_label }}</template
                     >
                   </dd>
-                  <template v-if="row.original.card.payment_method_label">
-                    <dt class="text-muted-foreground">Pagamento</dt>
-                    <dd>
-                      {{ row.original.card.payment_method_label
-                      }}<template v-if="row.original.card.change_label">
-                        · {{ row.original.card.change_label }}</template
-                      >
-                    </dd>
-                  </template>
-                  <template v-if="row.original.card.equipment_label">
-                    <dt class="text-muted-foreground">Maquininha</dt>
-                    <dd>{{ row.original.card.equipment_label }}</dd>
-                  </template>
-                  <template v-if="row.original.card.assigned_operator">
-                    <dt class="text-muted-foreground">Atende</dt>
-                    <dd>{{ row.original.card.assigned_operator }}</dd>
-                  </template>
-                  <template v-if="row.original.card.advance_block_reason">
-                    <dt class="text-muted-foreground">Por que espera</dt>
-                    <dd>{{ row.original.card.advance_block_reason }}</dd>
-                  </template>
-                </dl>
-                <div
-                  class="flex flex-wrap content-start items-start justify-end gap-2"
-                >
-                  <NuxtButton
-                    v-for="aff in rowSecondary(row.original.card)"
-                    :key="aff.ref"
-                    :icon="aff.icon.replace('lucide:', 'i-lucide-')"
-                    :label="aff.label"
-                    :color="aff.priority === 'danger' ? 'error' : 'neutral'"
-                    variant="outline"
-                    :disabled="isBusy(row.original.card.ref) || aff.disabled"
-                    :title="aff.reason || undefined"
-                    @click="onAction(row.original.card.ref, aff.ref)"
-                  />
-                  <NuxtButton
-                    v-if="canManageOrders"
-                    :to="`/${row.original.card.ref}`"
-                    icon="i-lucide-file-text"
-                    label="Abrir o pedido"
-                    color="neutral"
-                    variant="outline"
-                  />
-                </div>
+                </template>
+                <template v-if="row.original.card.equipment_label">
+                  <dt class="text-muted-foreground">Maquininha</dt>
+                  <dd>{{ row.original.card.equipment_label }}</dd>
+                </template>
+                <template v-if="row.original.card.assigned_operator">
+                  <dt class="text-muted-foreground">Atende</dt>
+                  <dd>{{ row.original.card.assigned_operator }}</dd>
+                </template>
+                <template v-if="row.original.card.advance_block_reason">
+                  <dt class="text-muted-foreground">Por que espera</dt>
+                  <dd>{{ row.original.card.advance_block_reason }}</dd>
+                </template>
+              </dl>
+              <div
+                class="flex flex-wrap content-start items-start justify-end gap-2"
+              >
+                <NuxtButton
+                  v-for="aff in rowSecondary(row.original.card)"
+                  :key="aff.ref"
+                  :icon="aff.icon.replace('lucide:', 'i-lucide-')"
+                  :label="aff.label"
+                  :color="aff.priority === 'danger' ? 'error' : 'neutral'"
+                  variant="outline"
+                  :disabled="isBusy(row.original.card.ref) || aff.disabled"
+                  :title="aff.reason || undefined"
+                  @click="onAction(row.original.card.ref, aff.ref)"
+                />
+                <NuxtButton
+                  v-if="canManageOrders"
+                  :to="`/${row.original.card.ref}`"
+                  icon="i-lucide-file-text"
+                  label="Abrir o pedido"
+                  color="neutral"
+                  variant="outline"
+                />
               </div>
-            </template>
-          </NuxtTable>
+            </div>
+          </template>
           <template v-if="tableRows.length > SUPERVISION_PAGE_SIZE" #footer>
-            <div class="flex items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center justify-between gap-3">
               <span class="op-micro text-muted-foreground tnum"
                 >{{ tableRows.length }} pedidos</span
               >
@@ -2082,7 +2072,7 @@ function printQueue() {
               />
             </div>
           </template>
-        </NuxtCard>
+        </OperatorTable>
 
         <!-- Encomendas: pedidos confirmados para datas futuras, fora das colunas
              do dia. Agrupados pela data combinada; no dia, o despertador devolve

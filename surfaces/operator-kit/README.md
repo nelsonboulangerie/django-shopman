@@ -400,7 +400,7 @@ migrou não muda um pixel. O Gestor é o piloto; os outros apps entram um a um, 
 Como um app migra:
 
 1. Põe `data-suite="v3"` no elemento raiz do `app.vue`. Os primitivos do kit
-   (`UiFilterChip`, `UiSearchInput`, `UiIconButton`, `ColumnPicker`) trazem o visual novo
+   (`UiFilterChip`, `UiSearchInput`, `UiIconButton`) trazem o visual novo
    atrás da variante `suite:` e só a vestem dentro desse atributo.
 2. Troca `OperatorRail` + `<OperatorAppBar>` por `<OperatorSuiteRail>` (as mesmas
    `OperatorSection`, agora dentro do rail, do tablet para cima) e monta
@@ -600,9 +600,24 @@ interna) já nasce com a largura real.
 
 - O que é **só apresentação** decide no CSS (`max-sm:hidden`, `hidden md:inline-flex`):
   o servidor já desenha certo e nada troca.
-- O que **muda a árvore** (slot, `v-if`, prop de componente, ações da barra) lê
-  `useScreen()`. Nunca `useMediaQuery` de largura na tela, nunca `ssrWidth`: a árvore
-  hidratada tem de ser a que o servidor mandou.
+- O que **muda a árvore** (slot, `v-if`, prop de componente) lê `useScreen()`. Nunca
+  `useMediaQuery` de largura na tela, nunca `ssrWidth`: a árvore hidratada tem de ser a
+  que o servidor mandou.
+- **O primeiro desenho no celular é do celular.** Como a régua responde "mesa" até
+  montar, tudo que ela decide aparece primeiro no layout da mesa (em rede lenta,
+  segundos). Por isso a barra do topo, a toolbar e as barras de base NÃO decidem por
+  ela: declare as duas variantes e deixe o CSS escolher. O `OperatorPageHeader` desenha,
+  antes de hidratar, a linha do celular e a toolbar da mesa (`sm:hidden` /
+  `max-sm:hidden`) e os dois ⋯, e tira da árvore a que não serve depois de montar. A
+  tela passa `phone-actions` sempre (não `isNarrow ? [...] : undefined`), `actions-from`
+  para dizer de que largura o `#actions` aparece, `desk-only-filters` quando o
+  `#filters` só existe na mesa e `phone-title` para o título curto. `useScreen()` fica
+  para o que a árvore precisa mesmo mudar depois de montar (as colunas da fila que
+  viram abas, a Fila "Precisa de você" só do `lg`, a direção da gaveta, o puxar para
+  atualizar), sempre com um comentário dizendo por quê. Prova:
+  `orders-nuxt/tests/ssr/directLoadPhone.spec.ts` abre cada rota a 390 px **sem
+  JavaScript** (o HTML do servidor) e exige a barra inteira: título sem nada por cima,
+  nenhum controle da mesa visível, nenhum corte na largura.
 - Dado lido só no cliente (`useFetch` com `server: false`) segue a mesma regra: o
   esqueleto aparece também antes de hidratar (`pending || !screen.ready`), senão o
   cliente hidrata um nó que o servidor não mandou.
@@ -653,8 +668,13 @@ A tela declara as ações como **dados**, e o kit decide o que transborda
 
 - Com `actions`, o `#actions` some abaixo de `sm` (o que importa ao polegar está nos
   dados); do `sm` para cima, nada muda: o `#actions` segue como está e as ações
-  declaradas aparecem num ⋯ ao lado dele. Quem tem as mesmas ações no `#actions` passa
-  `actions` só no celular (`isNarrow ? [...] : undefined`), como o Gestor.
+  declaradas aparecem num ⋯ ao lado dele. Quem tem as mesmas ações no `#actions` (ou na
+  toolbar) passa `phone-actions`: o mesmo papel no celular, sem ⋯ delas na mesa. Sempre
+  declaradas, nunca `isNarrow ? [...] : undefined`: o servidor não sabe a largura e o
+  celular nasceria com a barra da mesa (o flash do Gestor, 09/10/2026).
+- `actions-from="md"`: o `#actions` só do `md` para cima (pelo CSS), para a tela cujo
+  celular vai até o `md` (a fila e o pedido do Gestor).
+- `phone-title`: o título curto do celular ("W01" para "Pedido W01"), escolhido pelo CSS.
 - Página de leitura: `useReadingPageActions(items)` dá "Copiar link desta leitura" mais
   as da página, e o nome do ⋯ (`actions-label`).
 - `#phone-actions` é para o ⋯ PRÓPRIO da tela, quando o menu é um painel e não uma lista
@@ -688,6 +708,11 @@ a toolbar do cabeçalho é **uma linha só, de altura fixa**:
   nunca para o painel "Filtros".
 - Os apps ainda fora do shell seguem com a linha de sempre (`row`) até a onda de cada um;
   `phone-filters="drawer"` os traz antes.
+- `desk-only-filters`: o `#filters` só existe na mesa (ali moram ações, que no celular
+  já estão nas `phone-actions`); no celular não há "Filtros" nem painel. Melhor que
+  `v-if="!isNarrow"` no slot, que só vale depois de montar.
+- A linha do celular e a toolbar da mesa vão as duas no HTML do servidor, cada uma
+  escondida pelo CSS na largura da outra; depois de montar, a que não serve sai.
 
 Trava: `tests/catalog/phone-header.spec.ts` (linha de no máximo 64 px, primário sem
 rolagem escondida, o painel abre, o recorte vira chip e sai pelo ×).
@@ -836,8 +861,8 @@ A ação do momento no celular e no tablet: a estrutura de sucesso do Storefront
 ação mexe), UMA ação larga e o motivo escrito quando ela não pode, num cartão
 **flutuante em superfície invertida** (dono, 09/10/2026): escura no tema claro, creme no
 escuro (`bg-inverted`/`text-inverted`, os tokens do tema), com sombra, como a sacola do
-Storefront. Contraste AA dos dois botões sobre ela, nos dois temas, travado em
-`tests/actionBarContrast.test.ts`.
+Storefront. Contraste AA do rótulo dentro de cada botão e o contorno da segunda ação
+contra ela, nos dois temas, travados em `tests/actionBarContrast.test.ts`.
 
 ```vue
 <OperatorActionBar
@@ -855,9 +880,12 @@ Storefront. Contraste AA dos dois botões sobre ela, nos dois temas, travado em
 - **A ação** (`OperatorActionBarAction`, `presentation/actionBar.ts`) leva verbo e alvo
   ("Pronto para retirar"), `xl`. A PRINCIPAL é `primary` `solid` (o dourado); a segunda
   (`secondary`), se houver, é SECUNDÁRIA (`outline`), nunca discreta (`ghost`) (dono,
-  09/10/2026). Sobre a superfície invertida as duas ganham contorno na cor do texto
-  invertido: o dourado sozinho não separa da superfície (2,8:1 no claro, 1,8:1 no
-  escuro). A cor de cada uma é da peça, não da tela.
+  09/10/2026). A principal é o `solid` canônico, sem anel (dono, 09/10/2026): o 3:1 de
+  componente (WCAG 1.4.11) vale para a informação que identifica o botão, e aqui são o
+  rótulo e o ícone, AA dentro dele nos dois temas; o dourado contra a superfície (2,8:1
+  no claro, 1,8:1 no escuro) não precisa separar. A segunda leva o contorno da variante,
+  na cor do texto invertido, travado em 3:1 contra a superfície. A cor de cada uma é da
+  peça, não da tela.
 - **`reason`**: com `disabled`, o motivo aparece escrito sob a ação (`role="status"`, e o
   botão aponta para ele com `aria-describedby`).
 - **Só abaixo de `lg`**: na mesa, a ação sobe para a barra superior primária.
@@ -952,6 +980,68 @@ do erro; um aviso inteiro e "e mais N") e `tests/catalog/phone-header.spec.ts` (
 navegador, a 320, 390 e 1440 px: um aviso visível, "e mais 2 avisos" abre os três, a saída
 do aviso no tamanho da suíte e sem rolagem lateral). Primeiro uso do estado: o B.I. (oito
 erros de leitura, em sete telas); do aviso: a bancada do catálogo.
+
+### Tabela (`OperatorTable` + `OperatorTableView`)
+
+A `NuxtTable` oficial dentro do cartão branco, com o que toda tabela de operador repete.
+Decisões do dono (09/10/2026): **compacta é o padrão**; Confortável é a alternância,
+guardada por dispositivo; **a linha aberta não compacta** (o conteúdo de `#expanded`
+ganha o respiro da confortável).
+
+```vue
+<!-- toolbar da tela (só na mesa; no celular as colunas já são as que cabem) -->
+<OperatorTableView table-key="orders-history" />
+
+<OperatorTable
+  :data="items"
+  :columns="[
+    { id: 'order', header: 'Pedido', enableHiding: false },
+    { accessorKey: 'customer', header: 'Cliente', enableSorting: true },
+    { id: 'payment', header: 'Pagamento', meta: { supporting: true } },
+  ]"
+  :row-key="(row) => row.ref"
+  :row-label="(row) => `o pedido ${row.ref}`"
+  :on-select="(row) => open(row.ref)"
+  :loading="pending" :error="Boolean(error)" what="o histórico" @retry="refresh()"
+  empty-title="Nenhum pedido neste recorte."
+  pinned="order" view-key="orders-history" selectable
+  v-model:row-selection="selection" v-model:expanded="expanded"
+  caption="Pedidos concluídos e cancelados"
+>
+  <template #order-cell="{ row }">…</template>
+  <template #expanded="{ row }">…</template>
+  <template #footer><NuxtPagination … /></template>
+</OperatorTable>
+```
+
+- **Exibir** (`OperatorTableView`, só o ícone): Linhas (Compacta, Confortável) e as colunas
+  visíveis, num menu só. Muda a FORMA da tabela, por isso nunca mora no painel de
+  filtros. A lista de colunas vem da própria tabela com a mesma chave; ficam de fora a
+  que diz `enableHiding: false` e as fixadas.
+- **Por dispositivo, sem piscar**: cookie `op-table-<chave>` (lido no servidor, que já
+  desenha a densidade e as colunas certas). Guarda as OCULTAS: coluna nova nasce visível.
+- **Ordenação pelo cabeçalho**: a coluna que diz `enableSorting: true` ganha o botão com
+  a seta e o nome acessível ("Ordenar por total"). Tabela paginada no servidor não liga
+  ordenação local (ordenaria só a página da vez).
+- **Seleção múltipla** (`selectable`, `v-model:row-selection`): caixa em cada linha e o
+  "todos" no cabeçalho; marcar não abre a linha.
+- **Linha expansível**: basta o slot `#expanded`; a seta entra sozinha.
+- **Coluna fixada** (`pinned`, e `pinned-end` para o ⋯ de uma matriz larga): presa ao
+  rolar de lado e, no celular, com largura máxima (o texto dela quebra).
+- **Colunas de apoio** (`meta.supporting`): somem no celular por CSS (`max-sm:hidden`),
+  nunca por media query em JS.
+- **Estado** pelo `OperatorScreenState`: carregando sem linhas, vazio (título da tela,
+  `#empty-actions` para a saída) e erro com "Tentar de novo" (as linhas da leitura
+  anterior continuam abaixo).
+- `fill`: a tabela ocupa a altura que sobra e rola por dentro, com o cabeçalho preso (a
+  matriz do Catálogo). `row-class` dá à tela a classe da linha (arrastar); `active-key`
+  marca o registro aberto ao lado.
+- **A célula quebra** (`whitespace-normal`): texto da casa nunca é cortado. Número e ação
+  que não devem quebrar dizem isso na própria célula (`whitespace-nowrap`, `min-w-max`).
+- **Sem `:ui` na tela**: a densidade é o único `:ui` da tabela e mora no componente
+  (`presentation/operatorTable.ts`).
+- Substituiu as cinco tabelas do Gestor (Lista da fila, Histórico, Clientes, Unificações e a
+  matriz do Catálogo) e aposentou o `ColumnPicker`.
 
 ## Busca da suíte (`OperatorSuiteSearch`)
 

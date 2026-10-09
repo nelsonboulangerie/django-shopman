@@ -283,15 +283,10 @@ useHead({ title: "Canais" });
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
-const { belowSm: isNarrow } = useScreen();
-const phoneHeaderActions = computed(() =>
-  isNarrow.value
-    ? [
-        { label: "Configurar canais no Admin", icon: "i-lucide-settings", to: `${adminBase}/admin/shop/channel/`, target: "_blank" },
-        { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
-      ]
-    : undefined,
-);
+const phoneHeaderActions = computed(() => [
+  { label: "Configurar canais no Admin", icon: "i-lucide-settings", to: `${adminBase}/admin/shop/channel/`, target: "_blank" },
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+]);
 </script>
 
 <template>
@@ -299,14 +294,15 @@ const phoneHeaderActions = computed(() =>
     <OperatorPageHeader
       title="Canais"
       :filters-wrap="false"
-      :actions="phoneHeaderActions"
+      :phone-actions="phoneHeaderActions"
+      desk-only-filters
     >
       <template #status>
         <span class="hidden op-micro text-muted-foreground lg:inline"
           >Venda e exibição do catálogo</span
         >
       </template>
-      <template v-if="!isNarrow" #filters>
+      <template #filters>
         <p class="hidden op-micro text-muted-foreground lg:block">
           <span class="tabular-nums">{{
             feeds.length + catalogChannels.length
@@ -509,7 +505,7 @@ const phoneHeaderActions = computed(() =>
                       v-if="collectionConflict(sc)"
                       color="warning"
                       variant="subtle"
-                      title="As coleções mudaram no servidor"
+                      title="Alguém mudou as coleções enquanto você editava"
                       :description="`Agora: ${sc.collections.map((c) => c.name).join(', ') || 'nenhuma coleção'}. Sua seleção foi preservada.`"
                       :actions="[
                         {
@@ -588,7 +584,7 @@ const phoneHeaderActions = computed(() =>
                       v-if="rotationConflict(sc)"
                       color="warning"
                       variant="subtle"
-                      title="A rotação mudou no servidor"
+                      title="Alguém mudou a rotação enquanto você editava"
                       :description="`Agora: ${sc.rotate_seconds} s e ${sc.items_per_page} itens. Seu rascunho foi preservado.`"
                       :actions="[
                         {
@@ -680,7 +676,7 @@ const phoneHeaderActions = computed(() =>
                       v-if="automaticConflict(sc)"
                       color="warning"
                       variant="subtle"
-                      title="A configuração mudou no servidor"
+                      title="Alguém mudou a configuração enquanto você editava"
                       description="Seu texto foi preservado."
                       :actions="[
                         {

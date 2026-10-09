@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref } from "vue";
 
 import { useNotifications } from "../composables/useNotifications";
+import { useOperatorAppLink } from "../composables/useOperatorAppLink";
 import { useOperatorCapacity } from "../composables/useOperatorCapacity";
 import {
   useOperatorInboxAlerts,
@@ -24,6 +25,7 @@ import {
   inboxBadge,
   inboxTotal,
 } from "../presentation/suiteChrome";
+import type { UserNotification } from "../types/notification";
 
 const props = withDefaults(
   defineProps<{
@@ -79,6 +81,13 @@ const operationCount = computed(
   () => alertCount.value + (capacityCritical.value ? 1 : 0),
 );
 const alerts = computed<OperatorInboxAlert[]>(() => source.value?.items ?? []);
+// O aviso leva aonde se resolve, às vezes noutro app (o lote na Produção, o pedido no
+// Gestor): instalado, o outro app abre na janela dele.
+const { attrsFor } = useOperatorAppLink();
+function openNotification(item: UserNotification) {
+  open.value = false;
+  if (!item.is_read) void markRead(item.pk);
+}
 
 const open = ref(false);
 const tab = ref<"operation" | "personal">("operation");
@@ -217,6 +226,9 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                 variant="outline"
                 trailing-icon="i-lucide-arrow-right"
                 :label="alert.hrefLabel || 'Abrir'"
+                :target="attrsFor(alert.href).target"
+                :rel="attrsFor(alert.href).rel"
+                data-alert-open
                 @click="open = false"
               />
               <NuxtButton
@@ -271,6 +283,18 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             :data-highlight="isHighlighted(item) ? 'true' : undefined"
           >
             <template #actions>
+              <NuxtButton
+                v-if="item.action_url && item.action_label"
+                :to="item.action_url"
+                :color="isHighlighted(item) ? 'warning' : 'neutral'"
+                variant="outline"
+                trailing-icon="i-lucide-arrow-right"
+                :label="item.action_label"
+                :target="attrsFor(item.action_url).target"
+                :rel="attrsFor(item.action_url).rel"
+                data-notification-open
+                @click="openNotification(item)"
+              />
               <NuxtButton
                 v-if="!item.is_read"
                 :color="isHighlighted(item) ? 'warning' : 'neutral'"

@@ -1,6 +1,6 @@
 // Escolha — transformações puras por trás de `UiRadioGroup` e `UiSelect`.
 //
-// Mesmo arranjo do `columnPicker` ao lado: o que a lista mostra, o que a busca
+// Mesmo arranjo das outras peças puras do kit: o que a lista mostra, o que a busca
 // acha e para onde a seta anda é testável sem montar Vue. O componente renderiza
 // o que sai daqui.
 import type { ChoiceOption, ChoiceValue } from "../types/choice";

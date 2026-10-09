@@ -24,16 +24,11 @@ import {
 } from "~/presentation/catalogFilters";
 import { vocationNotice } from "~/presentation/vocation";
 import { realtimeIndicator } from "~/presentation/board";
-import {
-  keepVisible,
-  reconcile,
-} from "../../../operator-kit/app/presentation/columnPicker";
 import type {
   Action,
   CatalogPricePreview,
   CatalogPublicationPreview,
 } from "~/generated/ordersContract";
-import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
 import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import { filterBarActiveFilters } from "../../../operator-kit/app/presentation/filterBar";
 import type {
@@ -112,50 +107,40 @@ const surfaceByRef = computed(
 const isCellTransactional = (cell: SurfaceCellProjection) =>
   surfaceByRef.value.get(cell.surface_ref)?.transactional ?? true;
 
-// ── colunas visíveis (ColumnPicker) ────────────────────────────────────────────
-// A escolha é do operador e vale por estação. Cookie (não localStorage) pelo mesmo
-// motivo do rail: a matriz é renderizada no servidor (`server: true` no useFetch),
-// então o servidor já precisa saber quais colunas desenhar — senão a tela nasce com
-// todas e pisca ao hidratar. Guardamos as OCULTAS: canal/feed novo nasce visível.
-const hiddenColumns = useCookie<HiddenColumns>("catalog-hidden-columns", {
-  default: () => [],
-  sameSite: "lax",
-  maxAge: 60 * 60 * 24 * 365,
-  path: "/",
-});
-// Só as superfícies entram no seletor — a coluna do produto não é declarada, e é por
-// isso que ela não tem como ser ocultada.
-const columnOptions = computed(() =>
-  surfaces.value.map((s) => ({ id: s.ref, label: s.name })),
-);
-// Higieniza contra superfície que sumiu do servidor (senão o registro vira lixo).
-const hidden = computed<HiddenColumns>(() =>
-  reconcile(columnOptions.value, hiddenColumns.value),
-);
+// ── colunas visíveis ("Exibir" da `OperatorTable`) ─────────────────────────────
+// A escolha é do operador e vale por dispositivo (cookie da tabela, lido também no
+// servidor: a matriz nasce com as colunas certas, sem piscar). A tabela guarda as
+// OCULTAS: canal ou feed novo nasce visível. Todas as superfícies entram como coluna
+// (para o Exibir listá-las); a tabela some com as ocultas.
+const catalogView = useOperatorTableView("orders-catalog");
+const surfaceColumnId = (ref: string) =>
+  `surface_${ref.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 const visibleSurfaces = computed(() =>
-  keepVisible(surfaces.value, hidden.value, (s) => s.ref),
+  surfaces.value.filter(
+    (s) => !catalogView.view.value.hidden.includes(surfaceColumnId(s.ref)),
+  ),
 );
 // A divisória da banda de feeds acompanha o recorte: cai no primeiro feed VISÍVEL.
 const firstFeedRef = computed(
   () => visibleSurfaces.value.find((s) => !s.transactional)?.ref ?? "",
 );
-const surfaceColumnId = (ref: string) =>
-  `surface_${ref.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 const cellFor = (row: CatalogRowProjection, surfaceRef: string) =>
   row.cells.find((cell) => cell.surface_ref === surfaceRef)!;
 const catalogColumns = computed(() => [
   {
     id: "product",
     header: "Produto",
+    enableHiding: false,
     meta: {
-      class: { th: "min-w-[260px]", td: "min-w-[260px] py-2" },
+      class: { th: "sm:min-w-[260px]", td: "sm:min-w-[260px] py-2" },
     },
   },
-  ...visibleSurfaces.value.map((surface: SurfaceProjection) => ({
+  ...surfaces.value.map((surface: SurfaceProjection) => ({
     id: surfaceColumnId(surface.ref),
     accessorFn: (row: CatalogRowProjection) => cellFor(row, surface.ref),
     header: surface.short_name,
     meta: {
+      label: surface.name,
       class: {
         th: [
           "align-top",
@@ -173,24 +158,21 @@ const catalogColumns = computed(() => [
   {
     id: "actions",
     header: "",
+    enableHiding: false,
     meta: { class: { th: "w-px", td: "w-px py-2" } },
   },
 ]);
-const catalogColumnPinning = ref({ left: ["product"], right: ["actions"] });
-const catalogTableMeta = {
-  class: {
-    tr: (row: { original: CatalogRowProjection }) =>
-      [
-        "group transition-[opacity,box-shadow]",
-        rowDragKey.value === row.original.sku ? "opacity-40" : "",
-        rowDragKey.value &&
-        rowOverKey.value === row.original.sku &&
-        rowDragKey.value !== row.original.sku
-          ? "shadow-[inset_0_2px_0_0_var(--color-primary)]"
-          : "",
-      ].join(" "),
-  },
-};
+// A linha que se arrasta (e o alvo de soltar) é estado da tela: a tabela só aplica.
+const catalogRowClass = (row: CatalogRowProjection) =>
+  [
+    "group transition-[opacity,box-shadow]",
+    rowDragKey.value === row.sku ? "opacity-40" : "",
+    rowDragKey.value &&
+    rowOverKey.value === row.sku &&
+    rowDragKey.value !== row.sku
+      ? "shadow-[inset_0_2px_0_0_var(--color-primary)]"
+      : "",
+  ].join(" ");
 const channelsCount = computed(
   () => surfaces.value.filter((s) => s.transactional).length,
 );
@@ -252,7 +234,6 @@ const hasProjectionTargets = computed(() =>
 const activeCollection = computed(
   () => collections.value.find((c) => c.ref === collectionRef.value) ?? null,
 );
-const loading = computed(() => pending.value && !matrix.value);
 
 // zoom da foto (clique na thumbnail amplia num lightbox)
 const zoom = ref<{ url: string; name: string } | null>(null);
@@ -386,9 +367,10 @@ const orderedCollections = computed(() =>
 );
 // Celular (abaixo de `sm`, a régua da toolbar do kit): a coleção é o primário da linha,
 // numa lista (são mais de quatro e as pílulas rolavam para fora); os recortes e as
-// colunas moram no painel "Filtros", com os ativos como chips removíveis. O
-// `NuxtSelect` não aceita valor vazio: "Todas" é `ALL_COLLECTIONS` só aqui.
-const { belowSm: isNarrow } = useScreen();
+// colunas moram no painel "Filtros", com os ativos como chips removíveis. Lista no
+// celular e pílulas na mesa decididas pelo CSS (`sm:hidden`/`max-sm:hidden`): o
+// primeiro desenho do servidor já é o certo. O `NuxtSelect` não aceita valor vazio:
+// "Todas" é `ALL_COLLECTIONS` só aqui.
 const ALL_COLLECTIONS = "all";
 const collectionSelectItems = computed(() =>
   collectionTabs.value.map((tab) => ({
@@ -483,30 +465,14 @@ const {
 
 // ── selection + floating bulk bar (acts on the active recorte) ─────────────────
 const selected = ref<Set<string>>(new Set());
-const isSelected = (sku: string) => selected.value.has(sku);
-// Entrega o estado ao UTable para que a própria anatomia canônica marque a linha
-// (`data-selected` + variante oficial), em vez de pintar apenas a célula Produto.
-const catalogRowSelection = computed<Record<string, boolean>>(() =>
-  Object.fromEntries([...selected.value].map((sku) => [sku, true])),
-);
-function toggleSelect(sku: string) {
-  const next = new Set(selected.value);
-  if (next.has(sku)) next.delete(sku);
-  else next.add(sku);
-  selected.value = next;
-}
-const visibleSkus = computed(() => rows.value.map((r) => r.sku));
-const allSelected = computed(
-  () =>
-    visibleSkus.value.length > 0 &&
-    visibleSkus.value.every((s) => selected.value.has(s)),
-);
-const someSelected = computed(
-  () => selected.value.size > 0 && !allSelected.value,
-);
-function toggleSelectAll() {
-  selected.value = allSelected.value ? new Set() : new Set(visibleSkus.value);
-}
+// A tabela da suíte marca (coluna de seleção e o "todos" no cabeçalho); o Set guarda,
+// e a barra de lote lê dele.
+const catalogRowSelection = computed<Record<string, boolean>>({
+  get: () => Object.fromEntries([...selected.value].map((sku) => [sku, true])),
+  set: (next) => {
+    selected.value = new Set(Object.keys(next).filter((sku) => next[sku]));
+  },
+});
 function clearSelection() {
   selected.value = new Set();
 }
@@ -1113,11 +1079,7 @@ useHead({ title: "Catálogo" });
         <!-- Recortes e escolha de colunas pertencem à DashboardToolbar, não à
              faixa de identidade da DashboardNavbar. -->
         <FilterBar v-model="filters" :dimensions="dimensions" touch />
-        <ColumnPicker
-          v-if="surfaces.length"
-          v-model="hiddenColumns"
-          :columns="columnOptions"
-        />
+        <OperatorTableView v-if="surfaces.length" table-key="orders-catalog" />
         <!-- No celular a coleção é o primário da linha (o `NuxtSelect` abaixo); aqui,
              só do `sm` para cima, pelo CSS. -->
         <span
@@ -1168,12 +1130,12 @@ useHead({ title: "Catálogo" });
           <span class="tabular-nums">{{ catalogCountLine }}</span>
         </p>
       </template>
-      <template v-if="isNarrow && collections.length" #filters-primary>
+      <template v-if="collections.length" #filters-primary>
         <NuxtSelect
           :model-value="collectionRef || ALL_COLLECTIONS"
           :items="collectionSelectItems"
           aria-label="Coleção do catálogo"
-          class="min-w-0 max-w-full"
+          class="min-w-0 max-w-full sm:hidden"
           data-collection-select
           @update:model-value="
             selectCollection(
@@ -1211,27 +1173,6 @@ useHead({ title: "Catálogo" });
         ]"
         data-testid="vocation-notice"
       />
-      <NuxtAlert
-        v-if="error"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-triangle-alert"
-        title="Não foi possível atualizar o catálogo"
-        :description="
-          matrix
-            ? 'Exibindo a última leitura disponível.'
-            : 'Tente atualizar para consultar os produtos.'
-        "
-        :actions="[
-          {
-            label: 'Tentar de novo',
-            color: 'error',
-            variant: 'outline',
-            onClick: () => refresh(),
-          },
-        ]"
-      />
-
       <NuxtAlert
         v-if="orderDraft"
         color="warning"
@@ -1349,63 +1290,46 @@ useHead({ title: "Catálogo" });
         </template>
       </NuxtCard>
 
-      <!-- A matriz é NuxtTable (colunas dinâmicas, pinning da coluna Produto, header
-           sticky, carregamento e rolagem horizontal são do componente oficial),
-           integrada a um card branco sem padding. O card é uma grade de uma linha
-           para a tabela continuar rolando por dentro. -->
-      <NuxtCard
-        v-if="loading || rows.length"
-        class="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]"
+      <!-- A matriz é a tabela da suíte (`OperatorTable`, compacta por padrão): colunas
+           dinâmicas, Produto fixado à esquerda e o ⋯ à direita, cabeçalho preso e a
+           rolagem por dentro do cartão (`fill`). -->
+      <OperatorTable
+        v-model:row-selection="catalogRowSelection"
+        :data="displayRows"
+        :columns="catalogColumns"
+        :row-key="(row: CatalogRowProjection) => row.sku"
+        :row-label="(row: CatalogRowProjection) => row.name"
+        :row-class="catalogRowClass"
+        :loading="pending"
+        :error="Boolean(error)"
+        what="o catálogo"
+        :error-description="matrix ? 'Exibindo a última leitura disponível.' : ''"
+        empty-icon="i-lucide-package-search"
+        :empty-title="
+          Object.keys(filters).length || query.trim()
+            ? 'Nenhum produto com esses filtros.'
+            : `Nenhum produto ${activeCollection ? `na coleção ${activeCollection.name}` : 'no catálogo'}.`
+        "
+        selectable
+        pinned="product"
+        pinned-end="actions"
+        fill
+        view-key="orders-catalog"
+        caption="Produtos e disponibilidade por canal"
+        data-catalog-matrix
+        @retry="refresh()"
       >
-        <NuxtTable
-          v-model:column-pinning="catalogColumnPinning"
-          :data="loading ? [] : displayRows"
-          :columns="catalogColumns"
-          :meta="catalogTableMeta"
-          :get-row-id="(row) => row.sku"
-          :row-selection="catalogRowSelection"
-          :loading="loading"
-          sticky="header"
-          class="h-full"
-          caption="Produtos e disponibilidade por canal"
-          data-catalog-matrix
-        >
-          <template #loading>
-            <div
-              class="space-y-3"
-              role="status"
-              aria-label="Carregando catálogo"
-            >
-              <div
-                v-for="i in 8"
-                :key="i"
-                class="flex items-center gap-3"
-                aria-hidden="true"
-              >
-                <NuxtSkeleton class="size-10 shrink-0" />
-                <NuxtSkeleton class="h-4 w-48 max-w-[40%]" />
-                <div class="ms-auto flex gap-2">
-                  <NuxtSkeleton
-                    v-for="j in 6"
-                    :key="j"
-                    class="size-8 shrink-0"
-                  />
-                </div>
-              </div>
-            </div>
-          </template>
-
-          <template #product-header>
-            <NuxtCheckbox
-              :model-value="allSelected"
-              :indeterminate="someSelected"
-              label="Produto"
-              @update:model-value="toggleSelectAll"
-            />
-          </template>
+        <template v-if="Object.keys(filters).length" #empty-actions>
+          <NuxtButton
+            label="Limpar filtros"
+            color="neutral"
+            variant="outline"
+            @click="filters = {}"
+          />
+        </template>
 
           <template
-            v-for="surface in visibleSurfaces"
+            v-for="surface in surfaces"
             :key="`head-${surface.ref}`"
             #[`${surfaceColumnId(surface.ref)}-header`]
           >
@@ -1457,7 +1381,7 @@ useHead({ title: "Catálogo" });
             <template v-for="row in [tableRow.original]" :key="row.sku">
               <div
                 :data-dragkey="row.sku"
-                class="flex min-w-[260px] items-center gap-3"
+                class="flex items-center gap-3 sm:min-w-[260px]"
               >
                 <!-- handle de arrastar (pointer events): aparece só quando a coleção ativa é reordenável -->
                 <span v-if="canReorderRows" class="touch-none">
@@ -1476,11 +1400,6 @@ useHead({ title: "Catálogo" });
                     @click.stop
                   />
                 </span>
-                <NuxtCheckbox
-                  :model-value="isSelected(row.sku)"
-                  :aria-label="`Selecionar ${row.name}`"
-                  @update:model-value="toggleSelect(row.sku)"
-                />
                 <div class="flex min-w-0 flex-1 items-center gap-3">
                   <!-- UAvatar mantém foto e fallback na mesma geometria canônica. -->
                   <NuxtButton
@@ -1522,14 +1441,14 @@ useHead({ title: "Catálogo" });
                   </span>
                   <div class="flex min-w-0 flex-col">
                     <span
-                      class="flex items-center gap-1.5 truncate font-medium"
+                      class="flex flex-wrap items-center gap-1.5 font-medium"
                       :class="
                         rowStatuses[row.sku]?.off
                           ? 'text-muted-foreground'
                           : 'text-foreground'
                       "
                     >
-                      <span class="truncate">{{ row.name }}</span>
+                      <span>{{ row.name }}</span>
                       <NuxtBadge
                         v-if="rowStatuses[row.sku]?.label"
                         :color="
@@ -1609,7 +1528,7 @@ useHead({ title: "Catálogo" });
           </template>
 
           <template
-            v-for="surface in visibleSurfaces"
+            v-for="surface in surfaces"
             :key="`cell-${surface.ref}`"
             #[`${surfaceColumnId(surface.ref)}-cell`]="{ row: tableRow }"
           >
@@ -1816,30 +1735,7 @@ useHead({ title: "Catálogo" });
               </template>
             </template>
           </template>
-        </NuxtTable>
-      </NuxtCard>
-
-      <NuxtEmpty
-        v-else-if="!pending && !error"
-        icon="i-lucide-package-search"
-        :title="
-          Object.keys(filters).length || query.trim()
-            ? 'Nenhum produto com esses filtros'
-            : `Nenhum produto ${activeCollection ? `na coleção ${activeCollection.name}` : 'no catálogo'}`
-        "
-        :actions="
-          Object.keys(filters).length
-            ? [
-                {
-                  label: 'Limpar filtros',
-                  onClick: () => {
-                    filters = {};
-                  },
-                },
-              ]
-            : []
-        "
-      />
+      </OperatorTable>
     </section>
 
     <!-- A seleção em lote é chrome contextual do painel, não um Card flutuante. -->

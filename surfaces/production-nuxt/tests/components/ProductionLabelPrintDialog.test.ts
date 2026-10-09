@@ -509,7 +509,7 @@ describe("ProductionLabelPrintDialog", () => {
 
     expect(window.print).not.toHaveBeenCalled();
     expect(view.get('[data-testid="print-error"]').text()).toContain(
-      "documento congelado",
+      "A etiqueta não carregou",
     );
   });
 

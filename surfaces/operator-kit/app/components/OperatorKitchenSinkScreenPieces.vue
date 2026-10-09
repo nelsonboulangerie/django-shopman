@@ -55,6 +55,29 @@ onMounted(() =>
     { from: route.fullPath, label: "Pedidos para retirar" },
   ),
 );
+// A tabela da suíte: compacta por padrão, Exibir com a densidade e as colunas,
+// ordenação, seleção, linha aberta e a coluna de apoio que some no celular.
+interface TableOrder {
+  ref: string;
+  customer: string;
+  channel: string;
+  total_q: number;
+  items: string[];
+}
+const tableOrders: TableOrder[] = [
+  { ref: "1046", customer: "Bruno Lima", channel: "Balcão", total_q: 2390, items: ["2 croissants", "1 café coado"] },
+  { ref: "1048", customer: "Ana Souza de Albuquerque Figueiredo", channel: "iFood", total_q: 4870, items: ["1 baguete", "1 geleia de frutas vermelhas"] },
+  { ref: "1051", customer: "Carla Dias", channel: "Loja", total_q: 9320, items: ["1 bolo de laranja inteiro"] },
+];
+const tableColumns = [
+  { accessorKey: "ref", header: "Pedido", enableHiding: false, enableSorting: true },
+  { accessorKey: "customer", header: "Cliente", enableSorting: true },
+  { accessorKey: "channel", header: "Canal", meta: { supporting: true } },
+  { accessorKey: "total_q", header: "Total", enableSorting: true },
+];
+const tableSelection = ref<Record<string, boolean>>({});
+const brl = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
 const openRecord = computed(() =>
   typeof route.query.record === "string" ? route.query.record : "1048",
 );
@@ -163,6 +186,42 @@ const rows = [
         <p class="op-micro text-muted">
           A lista de origem: {{ trailOrders.map((order) => order.ref).join(", ") }}.
         </p>
+      </div>
+    </NuxtCard>
+
+    <NuxtCard
+      title="Tabela"
+      description="OperatorTable: compacta por padrão, ordenação pelo cabeçalho, seleção, linha aberta com o respiro da confortável, Pedido fixado e Canal como coluna de apoio (some no celular). OperatorTableView (o ícone Exibir) troca a densidade e as colunas, guardadas neste dispositivo."
+      data-catalog-operator-table
+    >
+      <div class="space-y-3">
+        <div class="flex items-center justify-end gap-2">
+          <span class="me-auto op-micro text-muted">{{ Object.keys(tableSelection).length }} marcados</span>
+          <OperatorTableView table-key="kitchen-sink-orders" />
+        </div>
+        <OperatorTable
+          v-model:row-selection="tableSelection"
+          :data="tableOrders"
+          :columns="tableColumns"
+          :row-key="(row: TableOrder) => row.ref"
+          :row-label="(row: TableOrder) => `o pedido ${row.ref}`"
+          selectable
+          pinned="ref"
+          view-key="kitchen-sink-orders"
+          caption="Pedidos de exemplo"
+        >
+          <template #ref-cell="{ row }">
+            <span class="font-semibold tabular-nums">{{ row.original.ref }}</span>
+          </template>
+          <template #total_q-cell="{ row }">
+            <span class="whitespace-nowrap tabular-nums">{{ brl(row.original.total_q) }}</span>
+          </template>
+          <template #expanded="{ row }">
+            <ul class="space-y-1 text-sm">
+              <li v-for="item in row.original.items" :key="item">{{ item }}</li>
+            </ul>
+          </template>
+        </OperatorTable>
       </div>
     </NuxtCard>
 
