@@ -6,7 +6,7 @@
 //
 // - celular: ocupa a tela inteira (`h-dvh`, `w-screen`, sem raio);
 // - do `sm` para cima: usa a largura da mesa até 1280 px e a altura até 900 px;
-// - o corpo do modal rola sozinho (`overflow-y-auto` do tema), o título e o fechar
+// - o corpo do modal rola sozinho (o tema do `NuxtModal` põe `overflow-y-auto` no `body` quando `scrollable` fica desligado), o título e o fechar
 //   ficam;
 // - fechar devolve o foco a quem abriu (o `FocusScope` do Reka guarda o elemento que
 //   tinha o foco quando o diálogo montou e o devolve ao desmontar). A tela que troca a
@@ -34,7 +34,6 @@ const WORKSPACE_CLASS =
     :open="open"
     :title="title"
     :description="description"
-    :close="{ 'aria-label': 'Fechar' }"
     :class="WORKSPACE_CLASS"
     data-marketing-workspace
     @update:open="emit('update:open', $event)"

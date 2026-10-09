@@ -80,14 +80,14 @@ const headerActions = computed(() => [
     label: "Criar oferta",
     icon: "i-lucide-plus",
     priority: 1,
-    onSelect: () => {
+    onSelect: (): void => {
       dialog.value = "offer";
     },
   },
   {
     label: "Criar cupom",
     icon: "i-lucide-ticket-percent",
-    onSelect: () => {
+    onSelect: (): void => {
       dialog.value = "coupon";
     },
   },
@@ -95,7 +95,7 @@ const headerActions = computed(() => [
     label: "Atualizar",
     icon: "i-lucide-refresh-cw",
     kbds: ["R"],
-    onSelect: () => void refresh(),
+    onSelect: (): void => void refresh(),
   },
 ]);
 

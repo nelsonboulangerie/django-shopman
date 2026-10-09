@@ -245,7 +245,6 @@ useHead({ title: "Modelos" });
           ? 'Troque o modelo nas campanhas abaixo antes de apagá-lo. Nenhuma alteração foi feita.'
           : 'O modelo será removido. Nada do que já foi disparado muda.'
       "
-      :close="{ 'aria-label': 'Fechar' }"
       data-template-remove-dialog
       @update:open="
         (v) => {

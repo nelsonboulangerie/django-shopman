@@ -806,7 +806,6 @@ useHead({ title: "Plataformas" });
       title="Confirmar configuração do WhatsApp"
       description="Esta escolha muda o alcance das próximas mensagens e fica registrada na auditoria."
       :dismissible="!savingTemplate"
-      :close="{ 'aria-label': 'Fechar' }"
       data-platform-confirm-dialog
       @update:open="
         (value) => {
@@ -858,7 +857,6 @@ useHead({ title: "Plataformas" });
               :model-value="totp.split('')"
               :length="6"
               otp
-              type="number"
               :disabled="savingTemplate"
               @update:model-value="totp = ($event ?? []).join('')"
             />

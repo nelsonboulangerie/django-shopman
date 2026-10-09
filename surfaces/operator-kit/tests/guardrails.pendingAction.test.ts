@@ -160,12 +160,6 @@ function inertAsyncClicks(source: string): string[] {
 // O que já existia sem pendente declarado em 01/10/2026. Só encolhe.
 const KNOWN_INERT: Record<string, string[]> = {
   "bi-nuxt/app/pages/explore.vue": ["removeLoaded"],
-  "marketing-nuxt/app/components/MarketingBoard.vue": ["confirmReject"],
-  "marketing-nuxt/app/pages/announcements/[id].vue": [
-    "refreshAll",
-    "trackDeliveryUntilSettled",
-  ],
-  "marketing-nuxt/app/pages/settings/platforms.vue": ["onVerifyCatalog"],
   "marketing-nuxt/app/pages/settings/templates.vue": ["confirmRemove"],
   "orders-nuxt/app/components/ChannelHealthChecklist.vue": ["copyAddress"],
   "orders-nuxt/app/pages/catalog.vue": ["saveOrderDraft"],

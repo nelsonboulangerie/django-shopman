@@ -27,7 +27,14 @@ describe("experiência canônica do Marketing V2", () => {
       "sm:max-w-[min(1280px,calc(100vw-3rem))]",
     );
     expect(workspaceDialog).toContain("h-dvh");
-    expect(workspaceDialog).toContain("overflow-y-auto");
+    // O corpo rola pelo tema do NuxtModal: com `scrollable` desligado (o padrão) o
+    // slot `body` recebe `overflow-y-auto` e o cabeçalho com o fechar fica parado.
+    // Para isso o conteúdo tem de ir no `#body` e o modal não pode ligar `scrollable`
+    // nem trocar as classes do corpo por `:ui`.
+    const template = workspaceDialog.slice(workspaceDialog.indexOf("<template>"));
+    expect(template).toMatch(/<NuxtModal[\s\S]*<template #body>[\s\S]*<slot \/>/);
+    expect(template).not.toMatch(/\bscrollable\b/);
+    expect(template).not.toMatch(/:ui=/);
   });
 
   it("faz Plataformas voltar sempre à própria rota (o panorama V2 saiu)", () => {

@@ -303,22 +303,43 @@ async function submit() {
     secondApproved: secondApproved.value,
   });
 }
+
+// Celular: folha presa ao pé, largura inteira, cantos de cima arredondados e entrada
+// de baixo para cima (as keyframes `slide-*-bottom` do próprio Nuxt UI, as mesmas do
+// Slideover de baixo). Do `sm` para cima vale o modal centrado do tema.
+const SEAL_SHEET_CLASS =
+  "max-sm:inset-x-0 max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-t-2xl max-sm:rounded-b-none max-sm:pb-[env(safe-area-inset-bottom)] max-sm:data-[state=open]:animate-[slide-in-from-bottom_200ms_var(--ease-out)] max-sm:data-[state=closed]:animate-[slide-out-to-bottom_200ms_var(--ease-out)]";
 </script>
 
 <template>
   <!-- O selo no NuxtModal do conjunto mínimo: título com o ato e quantos lugares, a
-       linha do quando como descrição, o que sai, para quem, e a confirmação no rodapé. -->
+       linha do quando como descrição, o que sai, para quem, e a confirmação no rodapé.
+       No celular a caixa sobe do pé como folha (v4, "a revisão aberta, com o selo"), ao
+       alcance do polegar; do tablet para cima segue centrada. A troca é só de CSS
+       (`SEAL_SHEET_CLASS`), sem ler a largura no script: o servidor já entrega certo. -->
   <NuxtModal
     :open="command !== null"
     :title="title"
     :description="description"
     :dismissible="!busy"
+    :class="SEAL_SHEET_CLASS"
     @update:open="
       (open) => {
         if (!open && !busy) emit('cancel');
       }
     "
   >
+    <!-- O carimbo redondo de quem aprova: o `actions` do cabeçalho vem depois do título
+         no DOM, e o `order-first` o põe à esquerda dele, como no selo do v4. -->
+    <template v-if="sealed" #actions>
+      <span
+        class="order-first me-1.5 grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary"
+        aria-hidden="true"
+        data-seal-stamp
+      >
+        <Icon name="lucide:stamp" class="size-5" />
+      </span>
+    </template>
     <template #body>
       <div class="space-y-3" data-marketing-seal>
         <template v-if="challenge">
@@ -484,6 +505,7 @@ async function submit() {
             :icon="deviceFirst ? 'i-lucide-fingerprint' : undefined"
             :label="confirmLabel"
             :disabled="!ready"
+            class="max-sm:flex-1 max-sm:justify-center"
             data-seal-confirm
             @click="submit"
           />

@@ -807,15 +807,16 @@ const onceFoldChoice = computed({
   },
 });
 
+// O NuxtCheckboxGroup trabalha com valor em texto; o dia segue número no formulário.
 const WEEKDAY_ITEMS = WEEKDAY_LABELS.map((label, day) => ({
   label,
-  value: day,
+  value: String(day),
 }));
 const weekdaysChoice = computed({
-  get: () => weekdays.value,
-  set: (next: number[]) => {
+  get: () => weekdays.value.map(String),
+  set: (next: string[]) => {
     scheduleTouched.value = true;
-    weekdays.value = [...next];
+    weekdays.value = next.map(Number);
   },
 });
 
