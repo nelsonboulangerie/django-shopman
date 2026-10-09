@@ -826,8 +826,8 @@ describe("situationAfterContinua: a situação depois de “<REF> continua” (d
     expect(situationAfterContinua("Em preparo")).toBe("em preparo");
     expect(situationAfterContinua("Pronto")).toBe("pronto");
   });
-  it("“Saiu para entrega” é verbo e vira “na rua”", () => {
-    expect(situationAfterContinua("Saiu para entrega")).toBe("na rua");
+  it("“Saiu para entrega” é verbo: entra como o nome do estado, entre aspas, sem apelido", () => {
+    expect(situationAfterContinua("Saiu para entrega")).toBe("em “Saiu para entrega”");
   });
   it("sem rótulo, sem situação", () => {
     expect(situationAfterContinua("")).toBe("");

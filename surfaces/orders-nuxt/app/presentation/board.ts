@@ -943,15 +943,17 @@ export function cardSeal(
 
 /** A situação do pedido como predicado de "<REF> continua …" (frase do dono, 09/10/2026):
  *  "WEB-6 continua novo", "continua em preparo". O rótulo vem da projeção
- *  (`status_label`); só a inicial desce. "Saiu para entrega" é verbo, não estado, e não
- *  cabe depois de "continua": vira "na rua", o nome que a Fila já usa para os que saíram.
+ *  (`status_label`); só a inicial desce. "Saiu para entrega" é verbo, não adjetivo, e não
+ *  cabe solto depois de "continua": entra como o nome do estado, entre aspas e com "em",
+ *  igual ao selo do cartão ("H58 continua em “Saiu para entrega”"). Nada de apelido: a
+ *  frase cita o estado com o nome que o operador vê (dono, 09/10/2026).
  *  Sem rótulo, devolve "" e a frase cai na forma sem situação. */
 export function situationAfterContinua(
   statusLabel: string | null | undefined,
 ): string {
   const label = (statusLabel ?? "").trim();
   if (!label) return "";
-  if (/^saiu\b/i.test(label)) return "na rua";
+  if (/^saiu\b/i.test(label)) return `em “${label}”`;
   return label.charAt(0).toLocaleLowerCase("pt-BR") + label.slice(1);
 }
 
