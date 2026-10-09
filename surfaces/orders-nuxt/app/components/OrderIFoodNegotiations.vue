@@ -84,6 +84,14 @@ function changed(item: IFoodNegotiationProjection) {
     String(actionFor(item)?.payload_schema.base_revision || "")
   );
 }
+/** A primeira negociação que ainda pede resposta: a decisão dela é o controle que
+ *  recebe o foco quando o aviso traz o operador até aqui (`useNextFocus` da página). */
+const firstOpenId = computed(
+  () =>
+    props.negotiations?.find(
+      (item) => item.can_respond && !draft(item.id).sent,
+    )?.id,
+);
 function canSend(item: IFoodNegotiationProjection) {
   const d = draft(item.id);
   const validReason =
@@ -202,6 +210,8 @@ watch(
     v-if="negotiations?.length"
     id="ifood-negotiations"
     data-ifood-negotiations
+    data-focus-target="ifood-negotiations"
+    class="scroll-mt-4 outline-none"
   >
     <template #header>
       <h2 class="op-title">Negociações iFood</h2>
@@ -269,6 +279,7 @@ watch(
               <NuxtFormField label="Decisão">
                 <NuxtSelect
                   class="w-full"
+                  :data-focus-control="item.id === firstOpenId ? '' : undefined"
                   :model-value="draft(item.id).decision || undefined"
                   placeholder="Selecione uma decisão"
                   :items="

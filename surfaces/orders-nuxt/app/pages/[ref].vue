@@ -72,6 +72,28 @@ const {
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
 const { realtime } = useOrderEvents(orderRef.value, () => refresh());
 
+// Próximo foco (F4 do laudo do Gestor): o aviso com prazo ("Responder") e o link da
+// Fila chegam com `#ifood-negotiations`. Abrir o pedido não basta: a página vai até a
+// resposta e o foco de teclado fica na decisão. O bloco só existe depois da leitura,
+// por isso a chave nasce quando as negociações chegam. É chegada com destino, não
+// primeira pintura: mesmo que o navegador já tenha rolado pelo `#`, o teclado vai para
+// a decisão (o `reveal` explícito; a fonte reativa pularia o foco com o bloco à vista).
+const IFOOD_NEGOTIATIONS = "ifood-negotiations";
+const focusKey = computed(() =>
+  route.hash === `#${IFOOD_NEGOTIATIONS}` &&
+  order.value?.ifood_negotiations?.length
+    ? IFOOD_NEGOTIATIONS
+    : null,
+);
+const { reveal } = useNextFocus();
+watch(
+  focusKey,
+  (key, previous) => {
+    if (key && key !== previous) reveal(key);
+  },
+  { immediate: true, flush: "post" },
+);
+
 // O rascunho do comentário mora aqui (o aviso de texto não salvo é da página);
 // o campo é do `OperatorOrderDetail`, que só o mostra com a ação `comment`.
 const comment = ref("");
