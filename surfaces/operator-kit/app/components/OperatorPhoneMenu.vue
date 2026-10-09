@@ -11,7 +11,7 @@
 //     operador; tema; giro; capacidade). A `OperatorSectionBar` monta sozinha.
 //   - `variant="header"`: as iniciais na barra de 56px, para quem não tem barra embaixo
 //     (a Central, uma seção só, como em `depois-hub-celular`).
-import { computed, ref } from "vue";
+import { computed } from "vue";
 
 import type { OperatorSection } from "../presentation/appBar";
 
@@ -24,12 +24,19 @@ const props = withDefaults(
     overflow?: readonly OperatorSection[];
     /** `bar`: a seção ativa (acende o "Mais" quando ela mora nele). */
     current?: string;
+    /**
+     * `bar`: desenha o próprio botão "Mais". `false` quando quem monta já tem o
+     * gatilho (a `OperatorSectionBar`, que põe o "Mais" como item da barra, no mesmo
+     * desenho das seções) e abre a folha por `v-model:open`.
+     */
+    trigger?: boolean;
   }>(),
   {
     operatorName: undefined,
     variant: "bar",
     overflow: () => [],
     current: undefined,
+    trigger: true,
   },
 );
 
@@ -64,7 +71,7 @@ const overflowItems = computed(() =>
   })),
 );
 
-const open = ref(false);
+const open = defineModel<boolean>("open", { default: false });
 function lock() {
   open.value = false;
   emit("lock");
@@ -85,6 +92,7 @@ function choose(section: OperatorSection) {
     direction="bottom"
   >
     <NuxtChip
+      v-if="trigger"
       :show="overflowAttention"
       color="warning"
       size="2xl"

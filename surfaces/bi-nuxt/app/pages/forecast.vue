@@ -41,6 +41,7 @@ import {
 
 const { report, freshness, pending, error, refresh, target, horizon, period, presets } = useBiForecast();
 const shareItems = useBiShareMenuItems();
+const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
 // O troco é a mesma decisão de véspera: quem planeja o sábado quer abastecer a
 // gaveta no mesmo momento em que decide a fornada. Separá-lo em outra aba faria
@@ -99,11 +100,9 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
       da leitura no fim da linha. No cabeçalho ele empurrava o título para fora da tela
       no tablet.
     -->
-    <OperatorPageHeader title="O que esperar?">
-      <template #actions>
-        <OperatorReadingPageMenu :items="shareItems" />
-      </template>
-      <template #filters>
+    <OperatorPageHeader title="O que esperar?" :actions="readingActions" :actions-label="readingLabel">
+      <!-- Celular: período e frescor são os dois primários; não há painel de filtros. -->
+      <template #filters-primary>
         <OperatorPeriodPicker
           v-model="period"
           :presets="presets"
@@ -111,6 +110,8 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
           align="start"
           label="Período que você está planejando"
         />
+      </template>
+      <template #filters-end>
         <ClientOnly>
           <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
         </ClientOnly>

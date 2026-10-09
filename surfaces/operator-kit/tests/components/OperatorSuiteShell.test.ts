@@ -281,11 +281,12 @@ describe("OperatorSuiteShell: a barra inferior (o menu rápido)", () => {
     const bar = menus.find((menu) => menu.props("orientation") === "horizontal")!;
     expect(wrapper.find("[data-operator-quick-bar]").exists()).toBe(true);
     expect(bar.props("ui").root).toContain("justify-around border-t border-default py-2");
-    expect(bar.props("ui")).toMatchObject({
-      linkLeadingIcon: "size-5",
-      linkLabel: "text-[10px]/3 font-normal",
-    });
-    expect(bar.props("ui").link).toContain("flex-col gap-1 px-3");
+    expect(bar.props("ui").linkLeadingIcon).toBe("size-5");
+    expect(bar.props("ui").linkLabel).toContain("text-[10px]/3 font-normal");
+    // O rótulo quebra em vez de cortar (cópia da casa não se corta): sem o `truncate`
+    // do oficial, e com a margem lateral mínima para caber a 320 px.
+    expect(bar.props("ui").linkLabel).toContain("text-clip whitespace-normal");
+    expect(bar.props("ui").link).toContain("flex-col gap-1 px-1");
     // Itens espalhados por igual na largura (decisão do dono, 08/10).
     expect(bar.props("ui").list).toContain("w-full");
     expect(bar.props("ui").item).toContain("flex-1");

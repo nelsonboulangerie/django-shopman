@@ -211,6 +211,14 @@ function backToToday() {
   }
   set(currentPeriod(props.modelValue));
 }
+
+// Compacto, abaixo de `sm` (a linha da toolbar do celular): o botão é só a forma curta
+// da janela, sem o calendário e a seta; a borda já diz que é botão, e o nome acessível
+// segue a frase inteira.
+// Sem `:ui` por instância (trava do Gestor canônico): a classe mira os ícones pelo
+// `data-slot` oficial do botão.
+const COMPACT_TRIGGER_CLASS =
+  "max-sm:[&_[data-slot=leadingIcon]]:hidden max-sm:[&_[data-slot=trailingIcon]]:hidden";
 </script>
 
 <template>
@@ -241,6 +249,7 @@ function backToToday() {
           trailing-icon="i-lucide-chevron-down"
           :label="compact ? undefined : buttonLabel"
           class="suite-page:min-h-control"
+          :class="compact ? COMPACT_TRIGGER_CLASS : ''"
           :aria-label="`${label}: ${buttonLabel}`"
           data-period-button
           data-period-label
@@ -418,7 +427,22 @@ function backToToday() {
       color="neutral"
       variant="link"
       label="Voltar para hoje"
+      :class="compact ? 'max-sm:hidden' : ''"
       data-period-today
+      @click="backToToday"
+    />
+    <!-- Compacto, abaixo de `sm`: o mesmo gesto como ícone (a frase empurrava o
+         período para fora da linha da toolbar do celular). -->
+    <NuxtButton
+      v-if="!current && compact"
+      class="sm:hidden"
+      color="neutral"
+      variant="ghost"
+      icon="i-lucide-calendar-check"
+      square
+      aria-label="Voltar para hoje"
+      title="Voltar para hoje"
+      data-period-today-icon
       @click="backToToday"
     />
   </div>

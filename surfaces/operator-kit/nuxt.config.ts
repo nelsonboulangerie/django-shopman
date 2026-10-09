@@ -86,6 +86,13 @@ export default defineNuxtConfig({
               path: "/__operator_kit_catalog",
               file: fileURLToPath(new URL("./catalog/OperatorKitCatalogPage.vue", import.meta.url)),
             });
+            // A bancada da regra do celular (barra do topo e toolbar), medida por
+            // `tests/catalog/phone-header.spec.ts`.
+            pages.push({
+              name: "operator-kit-catalog-phone-header",
+              path: "/__operator_kit_catalog/phone-header",
+              file: fileURLToPath(new URL("./catalog/OperatorKitPhoneHeaderPage.vue", import.meta.url)),
+            });
           },
         }
       : {}),

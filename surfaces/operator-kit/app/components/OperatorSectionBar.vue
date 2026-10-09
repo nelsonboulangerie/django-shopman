@@ -13,10 +13,17 @@
 // na largura da janela ela cobria o que estivesse à esquerda. `data-focus-obstruction`
 // é a régua do kit para o que flutua na base: o próximo foco e o "Tem mais abaixo"
 // descontam a altura dela.
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
-import { PHONE_BAR_SECTIONS, phoneBarLayout, sectionDescription } from "../presentation/suiteChrome";
+import {
+  PHONE_BAR_SECTIONS,
+  phoneBarLayout,
+  railSignalChip,
+  sectionDescription,
+  sectionRailSignal,
+} from "../presentation/suiteChrome";
+import { TAB_BAR_UI } from "../presentation/tabBar";
 
 const props = withDefaults(defineProps<{
   sections: readonly OperatorSection[];
@@ -37,18 +44,46 @@ const route = useRoute();
 const active = computed(() => props.current ?? activeSectionKey(route.path, props.sections));
 const barSections = computed(() => props.sections.filter((section) => section.where !== "rail"));
 const layout = computed(() => phoneBarLayout(barSections.value, props.max));
-const visibleItems = computed(() => layout.value.visible.map((section) => ({
-  label: section.shortLabel || section.label,
-  icon: section.icon,
-  to: section.to,
-  active: active.value === section.key,
-  badge: section.badge || (section.attention ? "!" : undefined),
-  "aria-label": sectionDescription(section),
-  "data-section": section.key,
-  onSelect: () => {
-    if (!section.to) emit("select", section.key);
+// O "Mais" é item da MESMA barra (ícone em cima, nome embaixo, como as seções): o
+// desenho "With bottom tab bar" do kit (`TAB_BAR_UI`, o mesmo da barra inferior do
+// shell). A folha é a do `OperatorPhoneMenu`, aberta por aqui.
+const moreOpen = ref(false);
+const activeInOverflow = computed(() => layout.value.overflow.some((section) => section.key === active.value));
+const overflowAttention = computed(() => layout.value.overflow.some((section) => section.badge || section.attention));
+const visibleItems = computed(() => [
+  ...layout.value.visible.map((section) => ({
+    label: section.shortLabel || section.label,
+    icon: section.icon,
+    to: section.to,
+    active: active.value === section.key,
+    // O sinal é o MESMO da barra lateral e da barra inferior do shell: o chip do item.
+    chip: (() => {
+      const signal = sectionRailSignal(section);
+      return signal ? railSignalChip(signal) : undefined;
+    })(),
+    "aria-label": sectionDescription(section),
+    "data-section": section.key,
+    onSelect: () => {
+      if (!section.to) emit("select", section.key);
+    },
+  })),
+  {
+    label: "Mais",
+    icon: "i-lucide-ellipsis",
+    active: activeInOverflow.value,
+    chip: overflowAttention.value ? { color: "warning" as const } : undefined,
+    "aria-label": props.operatorName
+      ? `Mais: outras seções e o menu de ${props.operatorName}`
+      : "Mais: outras seções e o menu do dispositivo",
+    "aria-haspopup": "dialog",
+    "data-operator-phone-menu": "",
+    "data-variant": "bar",
+    "data-active": activeInOverflow.value || undefined,
+    onSelect: () => {
+      moreOpen.value = true;
+    },
   },
-})));
+]);
 </script>
 
 <template>
@@ -60,14 +95,17 @@ const visibleItems = computed(() => layout.value.visible.map((section) => ({
     data-focus-obstruction
   >
     <NuxtNavigationMenu
-      class="min-w-0 flex-1 suite-page:**:data-[slot=link]:min-h-control"
+      class="w-full min-w-0"
       orientation="horizontal"
       :items="visibleItems"
+      :ui="TAB_BAR_UI"
       :aria-label="label"
       data-operator-section-items
     />
     <OperatorPhoneMenu
+      v-model:open="moreOpen"
       variant="bar"
+      :trigger="false"
       :operator-name="operatorName"
       :overflow="layout.overflow"
       :current="active"

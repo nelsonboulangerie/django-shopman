@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 // Unificações — a trilha e o desfazer.
 //
 // O `MergeService` aceita desfazer por 24 horas. Esta tela é a porta dele no Gestor
@@ -28,11 +29,26 @@ async function confirmUndo() {
       `Unificação desfeita: ${row.source_ref} voltou a ser um cadastro separado.`,
     );
 }
+// Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
+// celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
+// desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
+const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const phoneHeaderActions = computed(() =>
+  isNarrow.value
+    ? [
+        { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+      ]
+    : undefined,
+);
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Unificações" :filters-wrap="false">
+    <OperatorPageHeader
+      title="Unificações"
+      :filters-wrap="false"
+      :actions="phoneHeaderActions"
+    >
       <template #lead>
         <NuxtButton
           to="/customers"
@@ -43,7 +59,7 @@ async function confirmUndo() {
           aria-label="Voltar para Clientes"
         />
       </template>
-      <template #filters>
+      <template v-if="!isNarrow" #filters>
         <NuxtButton
           icon="i-lucide-refresh-cw"
           label="Atualizar"
@@ -52,6 +68,8 @@ async function confirmUndo() {
           :loading="pending"
           @click="refresh()"
         />
+      </template>
+      <template #filters-end>
         <ReadFreshness
           inline
           :metadata="readMetadata"

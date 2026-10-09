@@ -38,6 +38,7 @@ const { selection, bounds, presets, savedWindow, setPreset, applyCustom } = useB
 // teclado virtual sobe quando a pessoa toca na busca (README do kit, "Escolha numa lista").
 const touch = useMediaQuery("(pointer: coarse)");
 const shareItems = useBiShareMenuItems();
+const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 // No celular o eixo do gráfico mostra menos datas, para os rótulos não se encostarem.
 const wide = useMediaQuery("(min-width: 640px)");
 
@@ -217,11 +218,9 @@ const errorActions = computed(() => [
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="O que você quer cruzar?">
-      <template #actions>
-        <OperatorReadingPageMenu :items="shareItems" />
-      </template>
-      <template #filters>
+    <OperatorPageHeader title="O que você quer cruzar?" :actions="readingActions" :actions-label="readingLabel">
+      <!-- Celular: período e frescor são os dois primários; não há painel de filtros. -->
+      <template #filters-primary>
         <OperatorPeriodPicker
           v-model="selection"
           :presets="presets"
@@ -233,6 +232,8 @@ const errorActions = computed(() => [
           align="start"
           label="Período de análise"
         />
+      </template>
+      <template #filters-end>
         <ClientOnly>
           <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
         </ClientOnly>

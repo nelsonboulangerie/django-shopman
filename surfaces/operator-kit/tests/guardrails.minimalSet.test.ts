@@ -53,7 +53,7 @@ const CEILING: Record<string, Partial<Record<Rule, number>>> = {
     cardVariant: 1,
     alertOutsideSet: 19,
     // Inclui duas exceções declaradas: o chip `4xl` (`text-[12px]/none` no
-    // app.config) e o rótulo da barra inferior (`text-[10px]/3` no `OperatorQuickBar`),
+    // app.config) e o rótulo da barra inferior (`text-[10px]/3` em `presentation/tabBar.ts`, o desenho das duas barras de baixo),
     // que é o valor do exemplo oficial "With bottom tab bar" do NavigationMenu (dono,
     // 08/10/2026, PR #1544).
     arbitraryTextSize: 12,

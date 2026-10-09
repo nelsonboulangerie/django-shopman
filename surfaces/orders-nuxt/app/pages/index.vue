@@ -418,6 +418,11 @@ function menuDo(fn: () => void, close = true) {
 }
 // Celular (abaixo de md): as colunas viram abas.
 const isPhone = useMediaQuery("(max-width: 767.98px)");
+// A régua do kit para a barra do topo e a toolbar (abaixo de `sm`, README "Barra do
+// topo no celular" e "Toolbar no celular"): ali as ações da fila vão para o ⋯ da barra
+// e os recortes, a ordem e a visão para o painel "Filtros" do kit. Entre `sm` e `md`
+// segue o painel próprio da fila ("Filtros e ações da fila").
+const kitPhone = useMediaQuery("(max-width: 639.98px)");
 // Tablet em pé: três colunas de ~240 px cortavam selo e prazo do cartão. Abaixo do
 // lg, com mais de uma coluna aberta, o quadro usa as abas do celular.
 const isNarrowTablet = useMediaQuery(
@@ -755,6 +760,52 @@ function pickFulfillment(value: string | number) {
   if (value === "all" || value === "delivery" || value === "pickup")
     fulfillment.value = value;
 }
+// As ações da fila no celular, em dados para o kit: o "Visto" (e o som bloqueado)
+// disputam a vaga de ícone com a Busca e vencem enquanto valem; o resto vai para o ⋯.
+const phoneHeaderActions = computed(() => {
+  if (!kitPhone.value) return undefined;
+  return [
+    ...(attentionPending.value && !exitPostView.value
+      ? [{ label: "Visto", icon: "i-lucide-check", priority: 1, onSelect: () => acknowledgeAttention() }]
+      : []),
+    {
+      label:
+        soundOn.value && soundBlocked.value
+          ? "Som bloqueado: ativar"
+          : soundOn.value
+            ? "Som ligado: desligar"
+            : "Som desligado: ligar",
+      icon: soundOn.value && !soundBlocked.value ? "i-lucide-volume-2" : "i-lucide-volume-x",
+      ...(soundOn.value && soundBlocked.value ? { priority: 2 } : {}),
+      onSelect: () => handleSoundAction(),
+    },
+    { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+    {
+      label: selecting.value ? EXIT_SELECTION_LABEL : "Selecionar pedidos",
+      icon: "i-lucide-list-checks",
+      onSelect: () => (selecting.value ? stopSelection() : startSelection()),
+    },
+    { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => exportCsv() },
+    { label: "Imprimir fila", icon: "i-lucide-printer", onSelect: () => printQueue() },
+  ];
+});
+// Os recortes ativos (chips removíveis abaixo da linha e o número no "Filtros").
+const activeFilters = computed(() => [
+  ...(fulfillment.value !== "all"
+    ? [{
+        key: "fulfillment",
+        label: String(fulfillmentFilterTabs.value.find((tab) => tab.value === fulfillment.value)?.label ?? fulfillment.value),
+        remove: () => pickFulfillment("all"),
+      }]
+    : []),
+  ...(channel.value !== "all"
+    ? [{
+        key: "channel",
+        label: `Canal: ${channelItems.value.find((item) => item.value === channel.value)?.label ?? channel.value}`,
+        remove: () => (channel.value = "all"),
+      }]
+    : []),
+]);
 const queueSortLabel = computed(
   () =>
     QUEUE_SORT_OPTIONS.find((o) => o.key === queueSort.value)?.label ??
@@ -1227,6 +1278,9 @@ function printQueue() {
     <OperatorPageHeader
       :title="exitPostView ? 'Saída' : 'Pedidos'"
       :filters-wrap="false"
+      :actions="phoneHeaderActions"
+      actions-label="Mais ações da fila"
+      :active-filters="activeFilters"
     >
       <template #status>
         <!-- O texto visível é do selo (a hora, a cadência, "Última leitura às…",
@@ -1380,17 +1434,6 @@ function printQueue() {
         "
         #filters
       >
-        <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
-             muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. -->
-        <NuxtTabs
-          v-if="view === 'queue'"
-          :model-value="scope"
-          :items="queueScopeTabs"
-          :content="false"
-          variant="pill"
-          data-queue-scopes
-          @update:model-value="pickScope"
-        />
         <NuxtTabs
           :model-value="fulfillment"
           :items="fulfillmentFilterTabs"
@@ -1406,10 +1449,43 @@ function printQueue() {
           aria-label="Canal"
           data-channel-picker
         />
-        <!-- celular: os controles do quadro num painel só ("Filtros" da prévia v3), no começo
-             da linha para nunca ficar fora da tela -->
+        <!-- celular do kit (abaixo de `sm`): no painel "Filtros", a ordem, a visão e o
+             frescor; as ações (atualizar, selecionar, exportar, imprimir, som) estão no
+             ⋯ da barra do topo. -->
+        <template v-if="kitPhone">
+          <NuxtFormField label="Ordenar">
+            <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'start' }">
+              <NuxtButton
+                icon="i-lucide-arrow-up-down"
+                trailing-icon="i-lucide-chevron-down"
+                :label="view === 'queue' ? queueSortLabel : sortLabel"
+                color="neutral"
+                variant="outline"
+                data-board-sort
+              />
+            </NuxtDropdownMenu>
+          </NuxtFormField>
+          <NuxtFormField label="Ver como">
+            <NuxtTabs
+              :model-value="view"
+              :items="viewTabs"
+              :content="false"
+              variant="pill"
+              aria-label="Visão do Gestor"
+              data-view-switch
+              @update:model-value="pickView"
+            />
+          </NuxtFormField>
+          <ReadFreshness
+            inline
+            :metadata="readMetadata"
+            :failed="Boolean(error)"
+          />
+        </template>
+        <!-- celular entre `sm` e `md`: os controles do quadro num painel só ("Filtros"
+             da prévia v3), no começo da linha para nunca ficar fora da tela -->
         <NuxtChip
-          v-if="isPhone"
+          v-if="isPhone && !kitPhone"
           :show="attentionPending || (soundOn && soundBlocked)"
           color="warning"
           size="2xl"
@@ -1427,6 +1503,22 @@ function printQueue() {
           />
         </NuxtChip>
       </template>
+      <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
+           muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. É o primário
+           da toolbar: no celular fica na linha, ao lado do "Filtros". -->
+      <template
+        v-if="view === 'queue' && !(isPhone && phoneExitMode)"
+        #filters-primary
+      >
+        <NuxtTabs
+          :model-value="scope"
+          :items="queueScopeTabs"
+          :content="false"
+          variant="pill"
+          data-queue-scopes
+          @update:model-value="pickScope"
+        />
+      </template>
       <template v-if="hasChannelQueueSignal" #feedback>
         <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
         <ChannelQueueSignal :attention="channelAttention" />
@@ -1435,7 +1527,7 @@ function printQueue() {
 
     <!-- celular: o painel dos controles sobe do pé, ao alcance do polegar -->
     <NuxtDrawer
-      v-if="isPhone"
+      v-if="isPhone && !kitPhone"
       :open="moreOpen"
       title="Filtros e ações da fila"
       description="Ordenação, visão, atualização e ações auxiliares."

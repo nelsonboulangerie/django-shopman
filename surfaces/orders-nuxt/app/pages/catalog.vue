@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
 // Catalog matrix — produto × canal. The catalog side of the Gestor hub.
 // Design: a glanceable availability heatmap (tinted cells) with one-click pause and
 // inline reprice per cell; the collection axis (chips) scopes the view; selection +
@@ -35,6 +36,7 @@ import type {
 } from "~/generated/ordersContract";
 import type { HiddenColumns } from "../../../operator-kit/app/types/columns";
 import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
+import { filterBarActiveFilters } from "../../../operator-kit/app/presentation/filterBar";
 import type {
   AssistableField,
   CatalogRowProjection,
@@ -382,6 +384,23 @@ const orderedCollections = computed(() =>
     collectionOverride.value,
     (c) => c.ref,
   ),
+);
+// Celular (abaixo de `sm`, a régua da toolbar do kit): a coleção é o primário da linha,
+// numa lista (são mais de quatro e as pílulas rolavam para fora); os recortes e as
+// colunas moram no painel "Filtros", com os ativos como chips removíveis. O
+// `NuxtSelect` não aceita valor vazio: "Todas" é `ALL_COLLECTIONS` só aqui.
+const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const ALL_COLLECTIONS = "all";
+const collectionSelectItems = computed(() =>
+  collectionTabs.value.map((tab) => ({
+    label: `${tab.label} (${tab.badge})`,
+    value: tab.value || ALL_COLLECTIONS,
+  })),
+);
+const activeFilters = computed(() =>
+  filterBarActiveFilters(dimensions.value, filters.value, (next) => {
+    filters.value = next;
+  }),
 );
 const collectionTabs = computed(() => [
   {
@@ -1044,7 +1063,11 @@ useHead({ title: "Catálogo" });
   <main class="flex min-h-0 flex-1 flex-col">
     <!-- Cabeçalho de uma linha (UX-KIT-V1, prévia v3 `orders-catalog3.html`): título +
          ao vivo + busca e filtro + colunas; as coleções na segunda linha. -->
-    <OperatorPageHeader title="Catálogo" :filters-wrap="false">
+    <OperatorPageHeader
+      title="Catálogo"
+      :filters-wrap="false"
+      :active-filters="activeFilters"
+    >
       <template #status>
         <OperatorLiveStatus
           :tone="
@@ -1101,13 +1124,13 @@ useHead({ title: "Catálogo" });
           :columns="columnOptions"
         />
         <span
-          v-if="collections.length"
+          v-if="collections.length && !isNarrow"
           class="me-1 shrink-0 op-eyebrow text-muted-foreground"
           >Coleção</span
         >
         <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
         <NuxtTabs
-          v-if="collections.length"
+          v-if="collections.length && !isNarrow"
           :model-value="collectionRef"
           :items="collectionTabs"
           :content="false"
@@ -1146,6 +1169,20 @@ useHead({ title: "Catálogo" });
         >
           <span class="tabular-nums">{{ catalogCountLine }}</span>
         </p>
+      </template>
+      <template v-if="isNarrow && collections.length" #filters-primary>
+        <NuxtSelect
+          :model-value="collectionRef || ALL_COLLECTIONS"
+          :items="collectionSelectItems"
+          aria-label="Coleção do catálogo"
+          class="min-w-0 max-w-full"
+          data-collection-select
+          @update:model-value="
+            selectCollection(
+              String($event) === ALL_COLLECTIONS ? '' : String($event),
+            )
+          "
+        />
       </template>
     </OperatorPageHeader>
 

@@ -65,6 +65,7 @@ function setQuery(key: "channel" | "compare", value: string, empty: string) {
 
 const { report, freshness, pending, error, refresh } = useBiReport<BISalesReport>("sales", extra);
 const shareItems = useBiShareMenuItems();
+const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
 const compareItems = [
   { label: "período anterior", value: "previous" },
@@ -162,6 +163,13 @@ const channelTabs = computed(() => [
 function pickChannel(value: string | number) {
   setQuery("channel", value === "all" ? "" : String(value), "");
 }
+// O canal escolhido é o recorte ativo (o "Comparar com" é a régua, não um recorte).
+const activeFilters = computed(() => {
+  const channel = report.value?.channel;
+  if (!channel || channel === "all") return [];
+  const label = channelTabs.value.find((tab) => tab.value === channel)?.label ?? channel;
+  return [{ key: "channel", label: `Canal: ${label}`, remove: () => pickChannel("all") }];
+});
 
 const retryActions = computed(() => [
   { label: "Tentar de novo", icon: "i-lucide-refresh-cw", color: "error" as const, variant: "outline" as const, onClick: () => refresh() },
@@ -170,11 +178,10 @@ const retryActions = computed(() => [
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Quanto vendemos?">
-      <template #actions>
-        <OperatorReadingPageMenu :items="shareItems" />
-      </template>
-      <template #filters>
+    <OperatorPageHeader title="Quanto vendemos?" :actions="readingActions" :actions-label="readingLabel" :active-filters="activeFilters">
+      <!-- Celular (regra da toolbar do kit): período e frescor na linha; comparar e canal
+           no painel "Filtros", com o canal escolhido como chip removível. -->
+      <template #filters-primary>
         <OperatorPeriodPicker
           v-model="selection"
           :presets="presets"
@@ -186,6 +193,8 @@ const retryActions = computed(() => [
           align="start"
           label="Período de análise"
         />
+      </template>
+      <template #filters>
         <NuxtFormField v-if="report" label="Comparar com" :help="compareCaption" orientation="horizontal" data-bi-sales-compare>
           <NuxtSelect :model-value="compare" :items="compareItems" class="min-w-48" @update:model-value="pickCompare" />
         </NuxtFormField>
@@ -205,6 +214,8 @@ const retryActions = computed(() => [
           data-bi-channel-tabs
           @update:model-value="pickChannel"
         />
+      </template>
+      <template #filters-end>
         <ClientOnly>
           <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
         </ClientOnly>

@@ -35,6 +35,7 @@ import {
 const { filters, report, freshness, pending, error, refresh, apply } = useBiProfiles();
 const { selection, bounds, presets } = useBiWindow();
 const shareItems = useBiShareMenuItems();
+const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
 const errorActions = computed(() => [
   { label: "Tentar de novo", icon: "i-lucide-refresh-cw", color: "error" as const, variant: "outline" as const, onClick: () => refresh() },
@@ -65,6 +66,19 @@ const hourBand = computed({
   get: () => filters.value.hour_band || ALL,
   set: (value: string) => apply({ hour_band: value === ALL ? "" : value }),
 });
+// Os recortes ativos (chips removíveis no celular, número no "Filtros").
+const activeFilters = computed(() => [
+  ...(weekday.value !== ALL
+    ? [{ key: "weekday", label: `Dia: ${WEEKDAY_NAMES[Number(weekday.value)] ?? weekday.value}`, remove: () => (weekday.value = ALL) }]
+    : []),
+  ...(hourBand.value !== ALL
+    ? [{
+        key: "hour_band",
+        label: `Faixa: ${bandItems.value.find((item) => item.value === hourBand.value)?.label ?? hourBand.value}`,
+        remove: () => (hourBand.value = ALL),
+      }]
+    : []),
+]);
 
 // ── Leituras ────────────────────────────────────────────────────────────────
 const readingRows = (reading: string): BIProfileRow[] =>
@@ -314,11 +328,10 @@ const revpashCsv = computed<ReadingCsv>(() => ({
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Quem compra no balcão?">
-      <template #actions>
-        <OperatorReadingPageMenu :items="shareItems" />
-      </template>
-      <template #filters>
+    <OperatorPageHeader title="Quem compra no balcão?" :actions="readingActions" :actions-label="readingLabel" :active-filters="activeFilters">
+      <!-- Celular (regra da toolbar do kit): período e frescor na linha; dia da semana e
+           faixa de hora no painel "Filtros", e o que estiver escolhido vira chip. -->
+      <template #filters-primary>
         <OperatorPeriodPicker
           v-model="selection"
           :presets="presets"
@@ -330,12 +343,16 @@ const revpashCsv = computed<ReadingCsv>(() => ({
           align="start"
           label="Período de análise"
         />
+      </template>
+      <template #filters>
         <NuxtFormField label="Dia da semana" orientation="horizontal">
           <NuxtSelect v-model="weekday" :items="weekdayItems" class="w-36" data-bi-profiles-weekday />
         </NuxtFormField>
         <NuxtFormField label="Faixa de hora" orientation="horizontal">
           <NuxtSelect v-model="hourBand" :items="bandItems" class="w-44" data-bi-profiles-band />
         </NuxtFormField>
+      </template>
+      <template #filters-end>
         <ClientOnly>
           <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
         </ClientOnly>

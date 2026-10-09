@@ -18,14 +18,31 @@
 //   - tablet e desktop: a linha inteira. Os controles quebram para baixo antes de
 //     espremer a busca (`flex-wrap`), sem rolagem horizontal da página.
 //
+// Celular (abaixo de `sm`), a regra única da barra do topo e da toolbar
+// (`presentation/pageHeader.ts`, README "Barra do topo no celular" e "Toolbar no
+// celular"): ☰, o título (quebra, nunca corta) e no máximo 2 ícones fixos (Avisos e a
+// Busca, ou a ação da tela de `priority` menor); todo o resto das `actions` vai para UM
+// ⋯ "Mais ações". O `#status` (e o posto do dispositivo) desce para uma segunda linha da
+// barra, nunca se espreme ao lado do título. No shell, o selo do app sai da barra (a
+// gaveta já o tem). A toolbar é uma linha só: `#filters-primary` e `#filters-end` (até
+// 2 controles somados; o `end` é a leitura, como o frescor, que na mesa fica no fim da
+// linha) e "Filtros", que abre `#filters` num painel de baixo; os recortes ativos
+// (`active-filters`) viram chips removíveis logo abaixo.
+//
 // A busca é UMA, a da suíte (`OperatorSuiteSearch`, V6-BUSCA): toda tela a tem no
 // cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
 // o alcance "Esta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, useSlots } from "vue";
 import { useMediaQuery } from "@vueuse/core";
 
 import { SUITE_MARKER_SELECTOR } from "../composables/useSuiteMarker";
+import {
+  filtersButtonLabel,
+  phoneHeaderLayout,
+  type OperatorActiveFilter,
+  type OperatorHeaderAction,
+} from "../presentation/pageHeader";
 import type { OperatorSession } from "../types/operator";
 
 const props = withDefaults(
@@ -51,6 +68,26 @@ const props = withDefaults(
     search?: boolean;
     /** O texto do campo da busca padrão (sem filtro próprio da tela). */
     searchPlaceholder?: string;
+    /**
+     * As ações da tela, declaradas como dados (regra da barra do topo no celular). Do
+     * `sm` para cima, um ⋯ com todas (ao lado do `#actions`, que segue como está).
+     * Abaixo do `sm`, as de `priority` disputam a vaga de ícone com a Busca; as outras
+     * vão para o ⋯ "Mais ações", na ordem declarada. A tela que declara `actions` tem o
+     * `#actions` escondido no celular: o que importa no polegar está aqui.
+     */
+    actions?: OperatorHeaderAction[];
+    /** O nome do ⋯ (o que ele guarda). */
+    actionsLabel?: string;
+    /** Recortes ativos: o número no "Filtros" e os chips removíveis abaixo da linha. */
+    activeFilters?: OperatorActiveFilter[];
+    /** "Limpar" do painel de filtros. Padrão: remove cada recorte ativo. */
+    clearFilters?: () => void;
+    /**
+     * A toolbar no celular: `drawer` (uma linha, "Filtros" abre o painel; padrão no
+     * shell da suíte) ou `row` (a linha de sempre, para os apps ainda fora do shell até
+     * a onda de cada um).
+     */
+    phoneFilters?: "drawer" | "row";
   }>(),
   {
     eyebrow: "",
@@ -58,6 +95,11 @@ const props = withDefaults(
     inbox: true,
     search: true,
     searchPlaceholder: "Buscar pedido, cliente, produto ou tela",
+    actions: undefined,
+    actionsLabel: "Mais ações",
+    activeFilters: () => [],
+    clearFilters: undefined,
+    phoneFilters: undefined,
   },
 );
 
@@ -92,6 +134,15 @@ onMounted(() => {
 });
 const actionsBelow = computed(() => suitePage.value && phone.value);
 
+// A régua do celular da barra do topo e da toolbar: abaixo de `sm`. Lida depois da
+// montagem (o servidor desenha a largura de mesa; o primeiro quadro do cliente também).
+const narrowMedia = useMediaQuery("(max-width: 639.98px)", { ssrWidth: 1280 });
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
+const narrow = computed(() => mounted.value && narrowMedia.value);
+
 const { data: operatorSession } =
   useNuxtData<OperatorSession>("operator-session");
 // O app pode dispensar o selo do posto (`operatorHeader.workstationBadge: false` no
@@ -107,6 +158,51 @@ const eyebrowText = computed(() => {
 });
 
 const { request: openSearch } = useSuiteSearchRequest();
+
+// Barra do topo no celular. Avisos ocupa uma vaga onde a barra lateral não está na
+// tela (abaixo de `sm` ela nunca está).
+const slots = useSlots();
+const declaredActions = computed(() => props.actions ?? []);
+const phoneLayout = computed(() =>
+  phoneHeaderLayout({
+    search: props.search || Boolean(slots.search),
+    inbox: props.inbox,
+    actions: declaredActions.value,
+  }),
+);
+function menuItem(action: OperatorHeaderAction & { search?: true }) {
+  // `priority` e `search` são do kit, não do item do DropdownMenu.
+  const item: Record<string, unknown> = { ...action };
+  delete item.priority;
+  delete item.search;
+  return {
+    ...item,
+    onSelect: action.search ? () => openSearch() : action.onSelect,
+  };
+}
+const menuItems = computed(() =>
+  (narrow.value ? phoneLayout.value.overflow : declaredActions.value).map(menuItem),
+);
+const moreClass = computed(() => [
+  phoneLayout.value.overflow.length ? "" : "max-sm:hidden",
+  declaredActions.value.length ? "" : "sm:hidden",
+]);
+const optedIn = computed(() => props.actions !== undefined);
+
+// No shell, o selo do app sai da barra do celular: a gaveta (☰) o mostra no topo.
+const sealClass = computed(() => (suiteRail ? "max-sm:hidden" : ""));
+
+// Toolbar no celular.
+const filtersMode = computed(
+  () => props.phoneFilters ?? (suiteRail ? "drawer" : "row"),
+);
+const filterLine = computed(() => narrow.value && filtersMode.value === "drawer");
+const filtersOpen = ref(false);
+const activeCount = computed(() => props.activeFilters.length);
+function clearAll() {
+  if (props.clearFilters) props.clearFilters();
+  else for (const filter of [...props.activeFilters]) filter.remove();
+}
 </script>
 
 <template>
@@ -117,7 +213,7 @@ const { request: openSearch } = useSuiteSearchRequest();
     data-operator-page-header
   >
     <template #leading>
-      <OperatorAppSeal v-if="hubUrl && !$slots.lead" />
+      <OperatorAppSeal v-if="hubUrl && !$slots.lead" :class="sealClass" />
       <NuxtButton
         v-if="suiteRail"
         class="hidden lg:inline-flex"
@@ -150,14 +246,30 @@ const { request: openSearch } = useSuiteSearchRequest();
       <NuxtBadge
         v-if="eyebrowText"
         color="neutral"
+        class="max-sm:hidden"
         data-page-header-eyebrow
         >{{ eyebrowText }}</NuxtBadge
       >
     </template>
 
-    <template #trailing>
-      <slot name="subtitle" />
-      <slot name="status" />
+    <!-- No celular, o estado e o posto descem para uma segunda linha da barra (o
+         `basis-full` quebra a linha do `left`, que no tema é `max-sm:flex-wrap`): ao
+         lado do título eles se espremiam por cima dele. -->
+    <template v-if="eyebrowText || $slots.subtitle || $slots.status" #trailing>
+      <div
+        class="flex min-w-0 items-center gap-1.5 max-sm:basis-full max-sm:flex-wrap"
+        data-page-header-status
+      >
+        <NuxtBadge
+          v-if="eyebrowText"
+          color="neutral"
+          class="sm:hidden"
+          data-page-header-eyebrow-phone
+          >{{ eyebrowText }}</NuxtBadge
+        >
+        <slot name="subtitle" />
+        <slot name="status" />
+      </div>
     </template>
 
     <template v-if="$slots.search || search" #default>
@@ -172,6 +284,7 @@ const { request: openSearch } = useSuiteSearchRequest();
       <NuxtButton
         v-if="$slots.search || search"
         class="lg:hidden suite-page:size-control suite-page:justify-center"
+        :class="phoneLayout.searchIcon ? '' : 'max-sm:hidden'"
         color="neutral"
         variant="ghost"
         icon="i-lucide-search"
@@ -193,10 +306,46 @@ const { request: openSearch } = useSuiteSearchRequest();
       <div
         v-if="$slots.actions && !actionsBelow"
         class="flex items-center gap-2"
+        :class="optedIn ? 'max-sm:hidden' : ''"
         data-page-header-actions
       >
         <slot name="actions" />
       </div>
+      <!-- Celular: as ações da tela que ganharam vaga de ícone. -->
+      <NuxtButton
+        v-for="action in phoneLayout.icons"
+        :key="action.label"
+        class="sm:hidden"
+        :icon="action.icon"
+        :to="action.to"
+        :target="action.target"
+        :disabled="action.disabled"
+        color="neutral"
+        variant="ghost"
+        square
+        :aria-label="action.label"
+        :title="action.label"
+        data-page-header-icon-action
+        @click="action.onSelect?.($event)"
+      />
+      <!-- O ⋯ "Mais ações": no celular, o que não ganhou vaga; do `sm` para cima, as
+           ações declaradas (ao lado do `#actions`). -->
+      <NuxtDropdownMenu
+        v-if="declaredActions.length || phoneLayout.overflow.length"
+        :items="menuItems"
+        :content="{ align: 'end' }"
+      >
+        <NuxtButton
+          icon="i-lucide-ellipsis"
+          color="neutral"
+          variant="ghost"
+          square
+          :class="moreClass"
+          :aria-label="actionsLabel"
+          :title="actionsLabel"
+          data-page-header-more
+        />
+      </NuxtDropdownMenu>
       <ClientOnly v-if="inbox">
         <div
           v-if="!railShown"
@@ -218,7 +367,134 @@ const { request: openSearch } = useSuiteSearchRequest();
     </div>
   </NuxtDashboardToolbar>
 
-  <NuxtDashboardToolbar v-if="$slots.filters" class="py-2">
+  <!-- Toolbar no celular (abaixo de `sm`, no shell): UMA linha de altura fixa, com os
+       primários da tela e "Filtros"; o resto mora no painel de baixo. -->
+  <template
+    v-if="
+      filterLine &&
+      ($slots.filters || $slots['filters-primary'] || $slots['filters-end'])
+    "
+  >
+    <NuxtDashboardToolbar class="py-2" data-page-header-filter-line>
+      <div class="flex w-full min-w-0 flex-nowrap items-center gap-2">
+        <div
+          v-if="$slots['filters-primary']"
+          class="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0"
+          data-page-header-filters-primary
+        >
+          <slot name="filters-primary" />
+        </div>
+        <!-- Sem primário, a leitura (`#filters-end`) cabe na linha. -->
+        <div
+          v-else-if="$slots['filters-end']"
+          class="flex min-w-0 flex-1 items-center"
+          data-page-header-filters-end
+        >
+          <slot name="filters-end" />
+        </div>
+        <NuxtButton
+          v-if="$slots.filters"
+          class="ms-auto shrink-0"
+          icon="i-lucide-sliders-horizontal"
+          color="neutral"
+          variant="outline"
+          :title="filtersButtonLabel(activeCount)"
+          aria-haspopup="dialog"
+          :aria-expanded="filtersOpen"
+          :aria-label="filtersButtonLabel(activeCount)"
+          data-page-header-filters-open
+          @click="filtersOpen = true"
+        >
+          <!-- Abaixo de 360 px o rótulo sai da vista (fica no nome acessível e no
+               `title`): a 320 px ele empurrava o período para trás da rolagem. -->
+          <span class="max-[359.98px]:sr-only">Filtros</span>
+          <template v-if="activeCount" #trailing>
+            <NuxtBadge
+              color="primary"
+              size="sm"
+              :label="String(activeCount)"
+              data-page-header-filters-count
+            />
+          </template>
+        </NuxtButton>
+      </div>
+    </NuxtDashboardToolbar>
+    <NuxtDashboardToolbar
+      v-if="activeFilters.length"
+      class="py-2"
+      data-page-header-active-filters
+    >
+      <div
+        class="flex w-full flex-nowrap items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0"
+      >
+        <NuxtButton
+          v-for="filter in activeFilters"
+          :key="filter.key"
+          :label="filter.label"
+          trailing-icon="i-lucide-x"
+          color="primary"
+          variant="ghost"
+          active
+          active-variant="soft"
+          :aria-label="`Tirar o recorte ${filter.label}`"
+          data-page-header-active-filter
+          @click="filter.remove()"
+        />
+      </div>
+    </NuxtDashboardToolbar>
+    <!-- Com primário na linha, a leitura (o frescor) desce para uma faixa de texto
+         própria, como o `ReadFreshness` fora do cabeçalho: espremida ao lado do
+         período, ela se cortava ("Últim…"). -->
+    <div
+      v-if="$slots['filters-primary'] && $slots['filters-end']"
+      class="border-b border-default bg-card px-4 py-1 sm:px-6 [&_[data-read-freshness]]:max-w-none"
+      data-page-header-filters-end
+    >
+      <slot name="filters-end" />
+    </div>
+    <NuxtDrawer
+      v-if="$slots.filters"
+      v-model:open="filtersOpen"
+      title="Filtros"
+      description="Recortes e controles desta tela."
+      direction="bottom"
+    >
+      <template #body>
+        <div
+          class="flex flex-col items-stretch gap-4 [&>*]:max-w-full"
+          data-page-header-filters-panel
+        >
+          <slot name="filters" />
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full items-center gap-2">
+          <NuxtButton
+            class="flex-1 justify-center"
+            label="Limpar"
+            color="neutral"
+            variant="outline"
+            :disabled="!activeCount"
+            data-page-header-filters-clear
+            @click="clearAll()"
+          />
+          <NuxtButton
+            class="flex-1 justify-center"
+            label="Ver resultados"
+            data-page-header-filters-done
+            @click="filtersOpen = false"
+          />
+        </div>
+      </template>
+    </NuxtDrawer>
+  </template>
+
+  <NuxtDashboardToolbar
+    v-else-if="
+      $slots.filters || $slots['filters-primary'] || $slots['filters-end']
+    "
+    class="py-2"
+  >
     <div
       class="flex w-full items-center gap-2"
       :class="
@@ -228,7 +504,9 @@ const { request: openSearch } = useSuiteSearchRequest();
       "
       data-page-header-filters
     >
+      <slot name="filters-primary" />
       <slot name="filters" />
+      <slot name="filters-end" />
     </div>
   </NuxtDashboardToolbar>
 

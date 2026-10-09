@@ -6,8 +6,8 @@
 //
 // O desenho é o exemplo oficial "With bottom tab bar" do NavigationMenu
 // (https://ui.nuxt.com/docs/components/navigation-menu#with-bottom-tab-bar): ícone em
-// cima, rótulo embaixo, ativo pelo `active` do item. O `:ui` desse exemplo mora AQUI,
-// uma vez para a suíte inteira, nunca nas telas. Do kit somam-se a fixação embaixo
+// cima, rótulo embaixo, ativo pelo `active` do item. O `:ui` desse exemplo mora em
+// `presentation/tabBar.ts` (o mesmo da barra do polegar), nunca nas telas. Do kit somam-se a fixação embaixo
 // (fim da coluna de conteúdo), a área segura do iPhone e o alvo de toque mínimo
 // (`min-h-control`). O tamanho do rótulo é o valor da documentação, exceção declarada
 // no teto da trava do conjunto mínimo (`guardrails.minimalSet.test.ts`).
@@ -18,6 +18,7 @@ import { computed } from "vue";
 
 import type { OperatorSection } from "../presentation/appBar";
 import { quickBarLayout, railSignalChip, sectionDescription, sectionRailSignal } from "../presentation/suiteChrome";
+import { TAB_BAR_UI } from "../presentation/tabBar";
 
 const props = defineProps<{
   sections: readonly OperatorSection[];
@@ -28,21 +29,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{ select: [key: string]; more: [] }>();
 
-/**
- * O exemplo oficial, mais o alvo de toque do kit no link e os itens espalhados por
- * igual na largura (decisão do dono, 08/10: no exemplo literal eles se juntam no
- * centro, longe do polegar).
- */
-const QUICK_BAR_UI = {
-  // O Reka põe um <div> entre o root e a lista; ele precisa crescer para a lista
-  // ocupar a largura (o root do Nuxt UI já mira esse filho com `[&>div]:min-w-0`).
-  root: "justify-around border-t border-default py-2 [&>div]:flex-1",
-  list: "w-full",
-  item: "py-0 flex-1",
-  link: "w-full flex-col gap-1 px-3 min-h-control justify-center",
-  linkLeadingIcon: "size-5",
-  linkLabel: "text-[10px]/3 font-normal",
-};
 
 const layout = computed(() => quickBarLayout(props.sections));
 
@@ -86,7 +72,7 @@ const items = computed(() => [
       class="w-full"
       orientation="horizontal"
       :items="items"
-      :ui="QUICK_BAR_UI"
+      :ui="TAB_BAR_UI"
       :aria-label="label"
       data-operator-quick-bar
     />

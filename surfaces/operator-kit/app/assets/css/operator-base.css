@@ -130,6 +130,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Título que recebe o foco por programa (o leitor de tela anuncia a tela nova): não
+     é controle, não se alcança pelo Tab, e o anel ao abrir a tela parecia um botão
+     selecionado ("Painel" do Marketing). O anel de foco é de controle. */
+  :where(h1, h2, h3)[tabindex="-1"]:focus {
+    outline: none;
+  }
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;

@@ -209,7 +209,7 @@ useOperatorShortcutMap(
          e dois "Avisos" para quem procura pelo nome. -->
     <div class="flex flex-col items-center gap-1" data-rail-foot :data-foot-order="footOrder">
       <ClientOnly v-if="inbox && footOrder === 'inbox-first'">
-        <OperatorInbox v-if="railShown" placement="rail" />
+        <OperatorInbox v-if="railShown" placement="rail" labeled />
       </ClientOnly>
 
       <nav v-if="footSections.length" class="flex flex-col items-center gap-1" :aria-label="`${label}: ajustes`">
@@ -240,7 +240,7 @@ useOperatorShortcutMap(
       />
 
       <ClientOnly v-if="inbox && footOrder === 'settings-first'">
-        <OperatorInbox v-if="railShown" placement="rail" />
+        <OperatorInbox v-if="railShown" placement="rail" labeled />
       </ClientOnly>
 
       <!-- Atalhos (?): só com ponteiro fino; no toque não há teclado. -->
