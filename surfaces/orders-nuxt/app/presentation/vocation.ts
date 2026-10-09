@@ -1,7 +1,7 @@
 // Vocação do produto (etiqueta de consumo do SKU) — puro e determinístico.
 //
 // Serve só ao B.I. (lotação, consumo local × levar); não muda a venda. Por isso
-// pesa pouco na tela: uma linha no painel e um aviso de uma linha na lista.
+// pesa pouco na tela: uma linha no painel e um aviso `info` na lista.
 // As escolhas vêm do servidor (papéis de consumo editáveis no Admin): o Nuxt
 // não tem lista própria, só o rótulo do estado vazio.
 import type { VocationChoice, VocationPending } from "~/types/catalog";
@@ -49,7 +49,7 @@ function joinNames(names: string[]): string {
 }
 
 /**
- * O aviso discreto da lista: quantos produtos à venda ainda não têm vocação, e
+ * O aviso da lista: quantos produtos à venda ainda não têm vocação, e
  * quais. Nenhum pendente = sem aviso (null), nunca "0 produtos".
  */
 export function vocationNotice(

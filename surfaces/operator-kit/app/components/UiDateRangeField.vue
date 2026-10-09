@@ -3,7 +3,7 @@
 // UCalendar(range). O contrato externo continua em ISO (`YYYY-MM-DD`) para não
 // contaminar APIs e projections com os objetos de @internationalized/date.
 import { parseDate, type CalendarDate, type DateValue } from "@internationalized/date";
-import { useMediaQuery } from "@vueuse/core";
+import { useScreen } from "../composables/useScreen";
 import type { DateRange } from "reka-ui";
 import { computed, ref, useAttrs } from "vue";
 import { vLocalizedSegments } from "../utils/localizedSegments";
@@ -48,7 +48,8 @@ const emit = defineEmits<{
 
 const attrs = useAttrs();
 const inputDate = ref<InputDateRef | null>(null);
-const desktop = useMediaQuery("(min-width: 640px)");
+const screen = useScreen();
+const desktop = computed(() => !screen.belowSm.value);
 
 const fieldAttrs = computed(() => {
   const rest = { ...attrs };

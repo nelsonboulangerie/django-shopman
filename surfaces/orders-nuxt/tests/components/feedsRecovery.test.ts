@@ -9,6 +9,7 @@ const setCollections = vi.fn();
 const setAutomatic = vi.fn();
 for (const [key, value] of Object.entries({ computed, ref })) vi.stubGlobal(key, value);
 vi.stubGlobal("useHead", vi.fn());
+vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), belowMd: ref(false), belowLg: ref(false), belowXl: ref(false) }));
 vi.stubGlobal("useRoute", () => ({ query: {} }));
 vi.stubGlobal("useNextFocus", vi.fn());
 let leave: () => boolean | Promise<boolean>;

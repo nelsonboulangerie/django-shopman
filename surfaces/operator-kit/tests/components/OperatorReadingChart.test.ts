@@ -26,6 +26,7 @@ const PlotStub = defineComponent({
     height: { type: Number, default: undefined },
     forcedIndex: { type: Number, default: null },
     maxTicks: { type: Number, default: undefined },
+    horizontal: { type: Boolean, default: false },
   },
   emits: ["point", "leave"],
   setup(props, { emit }) {
@@ -183,6 +184,44 @@ describe("OperatorReadingChart: tabela, legenda e vazio", () => {
     await mountChart({ points: [] });
     expect(document.querySelector("[data-operator-reading-area]")).toBeNull();
     expect(document.body.textContent).toContain("Sem dados para esta leitura");
+  });
+
+  it("deitado e empilhado: o desenho recebe a forma deitada e a altura de uma faixa por ponto", async () => {
+    await mountChart({
+      kind: "stacked",
+      horizontal: true,
+      axisLabel: "Produto",
+      height: 120,
+      series: [
+        { key: "sold", label: "Vendeu" },
+        { key: "leftover", label: "Sobrou", fill: "tint" },
+        { key: "lost", label: "Vendas perdidas", tone: "error", fill: "hatch" },
+      ],
+      points: [
+        { label: "Chausson", values: { sold: 0, leftover: 28, lost: 0 } },
+        { label: "Croissant", values: { sold: 44, leftover: 0, lost: 14 } },
+        { label: "Ciabatta", values: { sold: 3, leftover: 18, lost: 0 } },
+      ],
+    });
+    const last = plotProps.at(-1)!;
+    expect(last.kind).toBe("stacked");
+    expect(last.horizontal).toBe(true);
+    expect(last.height).toBe(3 * 40 + 32);
+    const swatches = [...document.querySelectorAll("[data-operator-reading-legend] [data-fill]")].map((el) =>
+      el.getAttribute("data-fill"),
+    );
+    expect(swatches).toEqual(["solid", "tint", "hatch"]);
+    const cells = [...document.querySelectorAll("[data-operator-reading-table] tbody tr:first-child td")].map(
+      (cell) => cell.textContent?.trim(),
+    );
+    expect(cells).toEqual(["Chausson", "0", "28", "0"]);
+  });
+
+  it("deitar não vale para a linha: ela segue em pé, com a altura pedida", async () => {
+    await mountChart({ kind: "line", horizontal: true, height: 150 });
+    const last = plotProps.at(-1)!;
+    expect(last.horizontal).toBe(false);
+    expect(last.height).toBe(150);
   });
 
   it("entrega ao desenho a forma, as séries e o teto de rótulos", async () => {
