@@ -78,9 +78,19 @@ export function toggleHidden(hidden: readonly string[], id: string, visible: boo
  */
 export function tableDensityUi(density: OperatorTableDensity) {
   return density === "compact"
-    ? { th: "px-2 py-1 text-sm", td: "px-2 py-1.5 text-sm whitespace-normal" }
-    : { th: "px-4 py-3.5 text-sm", td: "p-4 text-sm whitespace-normal" };
+    ? { th: "px-2 py-1 text-sm", td: `px-2 py-1.5 text-sm whitespace-normal ${PINNED_SELECTED_CELL}` }
+    : { th: "px-4 py-3.5 text-sm", td: `p-4 text-sm whitespace-normal ${PINNED_SELECTED_CELL}` };
 }
+
+/**
+ * A célula fixada pinta o fundo do cartão (tema) por cima do que rola; na linha marcada
+ * ela acompanha a cor da linha (o `bg-elevated/50` oficial, aqui opaco), em vez de
+ * ficar um retalho branco no meio da linha.
+ */
+export const PINNED_SELECTED_CELL = [
+  "data-[pinned=left]:in-data-[selected=true]:bg-[color-mix(in_srgb,var(--ui-bg-elevated)_50%,var(--card))]",
+  "data-[pinned=right]:in-data-[selected=true]:bg-[color-mix(in_srgb,var(--ui-bg-elevated)_50%,var(--card))]",
+].join(" ");
 
 /**
  * O respiro extra do conteúdo aberto: na compacta, somado ao `px-2 py-1.5` da célula,

@@ -44,8 +44,8 @@ describe("seletor de Cenário", () => {
   it("os salvos vêm antes dos exemplos, e o favorito leva a estrela como ícone", () => {
     const groups = scenarioMenuItems(
       [
-        { id: 7, name: "Sábado", is_favorite: true },
-        { id: 8, name: "Domingo", is_favorite: false },
+        { id: 7, name: "Sábado", pinned: true },
+        { id: 8, name: "Domingo", pinned: false },
       ],
       [],
     );
@@ -58,7 +58,7 @@ describe("seletor de Cenário", () => {
   });
 
   it("nenhum item tem valor vazio (o Select do Nuxt UI recusa)", () => {
-    const values = scenarioMenuItems([{ id: 1, name: "A", is_favorite: false }], [{ name: "B" }])
+    const values = scenarioMenuItems([{ id: 1, name: "A", pinned: false }], [{ name: "B" }])
       .flat()
       .filter((item) => item.type !== "label")
       .map((item) => item.value);
