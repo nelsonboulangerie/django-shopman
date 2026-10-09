@@ -91,14 +91,18 @@ describe("G01: os recortes Precisa de você · Todos · Atrasados", () => {
 });
 
 describe("G02: densidade pela atenção", () => {
-  it("4 em foco; o resto da fila e o que anda viram um número só", () => {
+  it("4 em foco; o resto da fila e o que anda viram duas contagens, cada uma com o seu nome (P1-7)", () => {
     expect(QUEUE_FOCUS).toBe(4);
     const lines = [
       { key: "kitchen" as const, label: "Na Cozinha", icon: "", count: 5, detail: "" },
       { key: "road" as const, label: "Na rua", icon: "", count: 2, detail: "" },
     ];
-    expect(restLine(lines, 5)).toEqual({ count: 12, text: "mais 5 pedem você · em andamento: 5 na cozinha, 2 na rua" });
-    expect(restLine(lines)).toEqual({ count: 7, text: "em andamento, nada pede você: 5 na cozinha, 2 na rua" });
+    expect(restLine(lines, 5)).toEqual({ hidden: 5, moving: 7, text: "Mais 5 pedem você · Em andamento: 5 na cozinha, 2 na rua" });
+    expect(restLine(lines, 1).text).toBe("Mais 1 pede você · Em andamento: 5 na cozinha, 2 na rua");
+    expect(restLine(lines)).toEqual({ hidden: 0, moving: 7, text: "Em andamento: 5 na cozinha, 2 na rua" });
+    expect(restLine([], 3).text).toBe("Mais 3 pedem você");
+    // Nenhuma soma de grandezas diferentes: o 12 (5 + 7) não aparece.
+    expect(restLine(lines, 5).text).not.toMatch(/\+?12\b/);
   });
 });
 

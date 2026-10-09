@@ -4,7 +4,7 @@
 //   PRECISA DE VOCÊ 4                         Mais urgente primeiro (tempo contra a meta)
 //   [R7K  27 min meta 30 | João Oliveira · Entrega · … | Dinheiro …  R$ 74,00 [Saiu]]
 //   …
-//   +7 em andamento, nada pede você: 5 na Cozinha, 2 na rua               Ver todos ›
+//   Mais 3 pedem você · Em andamento: 5 na cozinha, 2 na rua              Ver todos ›
 //
 //   EM ANDAMENTO 7 · O SISTEMA FEZ (últimos 15 min) · AGORA NO CARDÁPIO
 //
@@ -87,7 +87,7 @@ const progress = computed(() => inProgress(props.cards, props.nowMs));
 const rest = computed(() =>
   props.scope === "attention"
     ? restLine(progress.value, hidden.value)
-    : { count: 0, text: "" },
+    : { hidden: 0, moving: 0, text: "" },
 );
 const working = computed(() => workingOrders(props.cards, props.nowMs));
 const workingCount = computed(
@@ -575,13 +575,14 @@ function switchHint(row: {
         </div>
       </NuxtPageCard>
 
-      <!-- o excedente vira número: nunca paginação. "Ver todos" abre o recorte Todos. -->
+      <!-- o excedente vira contagem com nome, nunca paginação nem soma de grandezas
+           diferentes (P1-7). "Ver todos" abre o recorte Todos. -->
       <NuxtButton
-        v-if="rest.count"
+        v-if="rest.text"
         color="neutral"
         variant="outline"
         trailing-icon="i-lucide-chevron-right"
-        :label="`+${rest.count}${hidden ? ':' : ''} ${rest.text} · Ver todos`"
+        :label="`${rest.text} · Ver todos`"
         data-queue-rest
         @click="emit('scope', 'all')"
       />

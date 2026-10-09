@@ -269,26 +269,24 @@ export function kitchenDetail(
   return `próximo pronto em ~${Math.max(1, Math.ceil(left / 60))} min`;
 }
 
-/** O excedente da Fila num número só (nunca paginação): os que ainda pedem você além dos
- *  em foco e o que está andando. "+7 em andamento, nada pede você: 5 na Cozinha, 2 na rua";
- *  com fila escondida, "+12: mais 5 pedem você · em andamento: 5 na Cozinha, 2 na rua". */
+/** O excedente da Fila, sem paginação e sem somar grandezas (P1-7 do laudo do Gestor):
+ *  "pedem você" e "em andamento" são duas contagens diferentes, cada uma com o seu
+ *  nome; o "+12" que somava as duas não dizia de quê. "Mais 5 pedem você · Em
+ *  andamento: 5 na cozinha, 2 na rua"; sem fila escondida, só "Em andamento: …".
+ *  `hidden` e `moving` ficam separados para quem precisar do número. */
 export function restLine(
   lines: ProgressLine[],
   hidden = 0,
-): { count: number; text: string } {
+): { hidden: number; moving: number; text: string } {
   const moving = lines.reduce((n, line) => n + line.count, 0);
-  const count = moving + hidden;
-  if (!count) return { count: 0, text: "" };
   const parts = lines
     .filter((line) => line.count)
     .map((line) => `${line.count} ${line.label.toLowerCase()}`);
-  if (!hidden)
-    return { count, text: `em andamento, nada pede você: ${parts.join(", ")}` };
-  const ask = `mais ${hidden} ${hidden === 1 ? "pede" : "pedem"} você`;
-  return {
-    count,
-    text: parts.length ? `${ask} · em andamento: ${parts.join(", ")}` : ask,
-  };
+  const ask = hidden
+    ? `Mais ${hidden} ${hidden === 1 ? "pede" : "pedem"} você`
+    : "";
+  const going = parts.length ? `Em andamento: ${parts.join(", ")}` : "";
+  return { hidden, moving, text: [ask, going].filter(Boolean).join(" · ") };
 }
 
 export interface QueueGesture {

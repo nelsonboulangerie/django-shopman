@@ -15,8 +15,10 @@ test("o desktop abre na Fila, por urgência, com a coluna de consciência", asyn
   await expect(items.first().locator("[data-queue-primary]")).toBeDisabled();
   await expect(items.nth(1).getByRole("button", { name: "Iniciar preparo" })).toBeEnabled();
   await expect(items.nth(1).locator("[data-queue-goal]")).toHaveText("meta 5");
-  // O resto vira número; o agregado, o que o sistema fez e o cardápio ao lado.
-  await expect(queue.locator("[data-queue-rest]")).toContainText("+1");
+  // O resto vira contagem com nome (sem "+N" somando grandezas); o agregado, o que o
+  // sistema fez e o cardápio ao lado.
+  await expect(queue.locator("[data-queue-rest]")).toContainText("Em andamento:");
+  await expect(queue.locator("[data-queue-rest]")).not.toContainText("+");
   await expect(queue.locator("[data-queue-progress]")).toContainText("Na Cozinha");
   await expect(queue.locator("[data-queue-system]")).toContainText("Aceito · prazo de confirmação");
   await expect(queue.locator("[data-queue-menu]")).toContainText("Bichon au Citron esgotado");
