@@ -73,6 +73,11 @@ const props = withDefaults(
     loading?: boolean;
     /** Força a leitura sem movimento (o catálogo mostra os dois modos lado a lado). */
     reducedMotion?: boolean;
+    /** De que superfície vem o tom da camada no SÓLIDO. O padrão decide pela cor: a
+     *  invertida nas cores (um tom mais fundo), a da página no neutro (que já é a
+     *  invertida). Quem pinta o neutro sólido com outra cor (o Pronto verde da
+     *  Cozinha, `KdsCardButton`) diz `inverted`. */
+    fillTint?: "inverted" | "page";
   }>(),
   {
     since: undefined,
@@ -87,6 +92,7 @@ const props = withDefaults(
     disabled: false,
     loading: false,
     reducedMotion: false,
+    fillTint: undefined,
   },
 );
 const emit = defineEmits<{ click: [event: MouseEvent]; expire: [] }>();
@@ -220,7 +226,8 @@ function toKey(value: Instant | undefined): string {
 // Contornado: a cor do rótulo (`currentColor`) a 10%.
 const fillClass = computed(() => {
   if (props.variant === "outline") return "bg-current/10";
-  return props.color === "neutral" ? "bg-(--ui-bg)/30" : "bg-(--ui-bg-inverted)/30";
+  const tint = props.fillTint ?? (props.color === "neutral" ? "page" : "inverted");
+  return tint === "page" ? "bg-(--ui-bg)/30" : "bg-(--ui-bg-inverted)/30";
 });
 </script>
 
