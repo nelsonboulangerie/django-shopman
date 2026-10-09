@@ -190,7 +190,7 @@ watch(() => props.open, (open) => { if (!open) emit("search", ""); });
 // resposta do servidor chega: sem isto, a recusa nasceria atrás de uma tela
 // fechada e o operador veria a venda seguir com o cliente errado.
 const isReceiptDecision = computed(() => props.customerDecision?.kind === "receipt_identity");
-const receiptTitleRef = ref<{ $el?: HTMLElement } | null>(null);
+const receiptTitleRef = ref<HTMLElement | null>(null);
 const receiptActionRef = ref<{ $el?: HTMLElement } | null>(null);
 const decisionCopy = computed(() =>
   props.customerDecision ? customerDecisionCopy(props.customerDecision) : null,
@@ -198,7 +198,7 @@ const decisionCopy = computed(() =>
 watch(() => props.customerDecision, (decision, previous) => {
   if (decision && !props.open) emit("update:open", true);
   if (!decision && previous?.kind === "receipt_identity") emit("update:open", false);
-  if (decision?.kind === "receipt_identity") void nextTick(() => receiptTitleRef.value?.$el?.focus());
+  if (decision?.kind === "receipt_identity") void nextTick(() => receiptTitleRef.value?.focus());
 });
 // O contato que o painel libera: o que o operador digitou, ou o valor do dono
 // quando a recusa veio sem o digitado.
@@ -298,7 +298,7 @@ function receiptButtons() {
   return [...(receiptPanelRef.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || [])];
 }
 watch(confirmingAttend, () => {
-  if (isReceiptDecision.value) void nextTick(() => receiptTitleRef.value?.$el?.focus());
+  if (isReceiptDecision.value) void nextTick(() => receiptTitleRef.value?.focus());
 });
 function onReceiptKey(event: KeyboardEvent) {
   if (!isReceiptDecision.value || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
@@ -399,7 +399,7 @@ const taxIdInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 function onOpenAutoFocus(event: Event) {
   event.preventDefault();
   void nextTick(() => {
-    if (isReceiptDecision.value) receiptTitleRef.value?.$el?.focus();
+    if (isReceiptDecision.value) receiptTitleRef.value?.focus();
     else if (!hasCustomer.value) {
       if (props.seedQuery) searchRef.value?.seed(props.seedQuery);
       searchRef.value?.focus();
@@ -416,16 +416,22 @@ const newCustomerNote = computed(() => {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <!-- A decisão do documento usa largura compacta; o cadastro mantém seu formulário. -->
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto" :class="isReceiptDecision ? 'w-[calc(100%-2rem)] max-w-[360px] sm:max-w-[360px]' : 'sm:max-w-lg'" @open-auto-focus="onOpenAutoFocus" @keydown.capture="onReceiptKey">
-      <UiDialogHeader>
-        <UiDialogTitle ref="receiptTitleRef" :tabindex="isReceiptDecision ? -1 : undefined" :class="isReceiptDecision ? 'pr-4 text-left' : undefined">{{ isReceiptDecision ? receiptTitle : "Cliente" }}</UiDialogTitle>
-        <UiDialogDescription v-if="!isReceiptDecision">
-          Busque por nome, telefone, CPF ou e-mail. Depois, escolha um cadastro ou crie um novo.
-        </UiDialogDescription>
-      </UiDialogHeader>
-
+  <!-- A decisão do documento usa largura compacta; o cadastro mantém seu formulário.
+       As teclas da decisão (1 2 3, setas, Enter, Esc) são ouvidas na captura do
+       conteúdo inteiro, inclusive com o foco no título. -->
+  <NuxtModal
+    :open="open"
+    :title="isReceiptDecision ? receiptTitle : 'Cliente'"
+    :description="isReceiptDecision ? undefined : 'Busque por nome, telefone, CPF ou e-mail. Depois, escolha um cadastro ou crie um novo.'"
+    :content="{ onOpenAutoFocus, ...({ onKeydownCapture: onReceiptKey } as object) }"
+    :ui="{ content: isReceiptDecision ? 'w-[calc(100%-2rem)] max-w-[360px] sm:max-w-[360px]' : 'sm:max-w-lg', title: isReceiptDecision ? 'pr-4 text-left' : undefined }"
+    data-pos-customer-modal
+    @update:open="$emit('update:open', Boolean($event))"
+  >
+    <template #title>
+      <span ref="receiptTitleRef" :tabindex="isReceiptDecision ? -1 : undefined" class="outline-none" data-pos-customer-title>{{ isReceiptDecision ? receiptTitle : "Cliente" }}</span>
+    </template>
+    <template #body>
       <div>
         <div class="grid gap-5">
           <!-- 1 · A PERGUNTA — e ela vem antes do resto porque é o que trava
@@ -892,12 +898,18 @@ const newCustomerNote = computed(() => {
         </div>
       </div>
 
-      <UiDialogFooter v-if="!isReceiptDecision">
-        <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision) || lookupBusy || concludePending" @click="onConclude">
-          <Icon v-if="concludePending" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
-          {{ footerLabel }}
-        </UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+    <template v-if="!isReceiptDecision" #footer>
+      <NuxtButton
+        size="xl"
+        block
+        color="primary"
+        :label="footerLabel"
+        :loading="concludePending"
+        :disabled="Boolean(customerDecision) || lookupBusy || concludePending"
+        data-pos-customer-conclude
+        @click="onConclude"
+      />
+    </template>
+  </NuxtModal>
 </template>

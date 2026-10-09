@@ -96,83 +96,87 @@ function submit() {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <UiDialogContent class="sm:max-w-md">
-      <UiDialogHeader>
-        <!-- ⚠️ O título NÃO pode ser um dos três modos: "Transferir" era ao
-             mesmo tempo o nome da caixa e o nome de um dos botões dentro
-             dela, e quem escolhia "Dividir" lia "Transferir" no topo. A
-             comanda é o assunto; os verbos são dela (dividir, transferir,
-             juntar) e moram nos botões. -->
-        <UiDialogTitle>Comanda #{{ tabDisplay || "atual" }}</UiDialogTitle>
-        <UiDialogDescription v-if="showPriceNote">
-          O preço de cada item é mantido como foi cobrado nesta comanda.
-        </UiDialogDescription>
-      </UiDialogHeader>
-
-      <div class="grid gap-2" :style="{ gridTemplateColumns: `repeat(${modes.length}, minmax(0, 1fr))` }">
-        <UiButton
-          v-for="option in modes"
-          :key="option.ref"
-          variant="outline"
-          size="sm"
-          :class="mode === option.ref ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground' : ''"
-          @click="mode = option.ref"
-        >
-          {{ option.label }}
-        </UiButton>
-      </div>
-
-      <p v-if="mode === 'merge'" class="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
-        Junta todos os itens desta comanda na comanda escolhida e libera esta.
-      </p>
-
-      <!-- Preparo em curso: o diálogo abre na hora e a comanda é persistida por
-           baixo — sem isto o botão do rodapé parecia morto. -->
-      <p v-if="preparing" class="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-        <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
-        Preparando a comanda…
-      </p>
-      <div v-else-if="needsSelection" class="grid max-h-56 gap-1 overflow-y-auto">
-        <div
-          v-for="line in lineViews"
-          :key="line.id"
-          class="flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5"
-          :class="selected.has(line.id) ? 'border-primary bg-primary/5' : ''"
-        >
-          <UiCheckbox
-            :model-value="selected.has(line.id)"
-            :aria-label="`Selecionar ${line.label}`"
-            @update:model-value="toggle(line.id)"
+  <!-- ⚠️ O título NÃO pode ser um dos três modos: "Transferir" era ao mesmo tempo o
+       nome da caixa e o nome de um dos botões dentro dela, e quem escolhia "Dividir"
+       lia "Transferir" no topo. A comanda é o assunto; os verbos são dela (dividir,
+       transferir, juntar) e moram nos botões. -->
+  <NuxtModal
+    :open="open"
+    :title="`Comanda #${tabDisplay || 'atual'}`"
+    :description="showPriceNote ? 'O preço de cada item é mantido como foi cobrado nesta comanda.' : undefined"
+    :ui="{ content: 'sm:max-w-md' }"
+    data-pos-move-dialog
+    @update:open="$emit('update:open', Boolean($event))"
+  >
+    <template #body>
+      <div class="grid gap-3">
+        <div class="grid gap-2" :style="{ gridTemplateColumns: `repeat(${modes.length}, minmax(0, 1fr))` }">
+          <NuxtButton
+            v-for="option in modes"
+            :key="option.ref"
+            block
+            :color="mode === option.ref ? 'primary' : 'neutral'"
+            :variant="mode === option.ref ? 'solid' : 'outline'"
+            :label="option.label"
+            :aria-pressed="mode === option.ref"
+            @click="mode = option.ref"
           />
-          <span class="min-w-0 flex-1 truncate text-sm">{{ line.label }}</span>
-          <span class="text-xs tabular-nums text-muted-foreground">{{ line.amountDisplay }}</span>
+        </div>
+
+        <p v-if="mode === 'merge'" class="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
+          Junta todos os itens desta comanda na comanda escolhida e libera esta.
+        </p>
+
+        <!-- Preparo em curso: o diálogo abre na hora e a comanda é persistida por
+             baixo; sem isto o botão do rodapé parecia morto. -->
+        <p v-if="preparing" class="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+          <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
+          Preparando a comanda…
+        </p>
+        <div v-else-if="needsSelection" class="grid max-h-56 gap-1 overflow-y-auto">
+          <div
+            v-for="line in lineViews"
+            :key="line.id"
+            class="flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5"
+            :class="selected.has(line.id) ? 'border-primary bg-primary/5' : ''"
+          >
+            <UiCheckbox
+              :model-value="selected.has(line.id)"
+              :aria-label="`Selecionar ${line.label}`"
+              @update:model-value="toggle(line.id)"
+            />
+            <span class="min-w-0 flex-1 truncate text-sm">{{ line.label }}</span>
+            <span class="text-xs tabular-nums text-muted-foreground">{{ line.amountDisplay }}</span>
+          </div>
+        </div>
+
+        <label v-if="mode === 'split'" class="grid gap-1 text-sm">
+          <span class="font-medium text-muted-foreground">Nova comanda</span>
+          <UiInput v-model="splitRef" placeholder="Ex: 1007/2" />
+        </label>
+
+        <div v-else class="grid gap-1 text-sm">
+          <span id="pos-move-target-label" class="font-medium text-muted-foreground">Comanda de destino</span>
+          <NuxtSelect
+            class="w-full"
+            :model-value="targetSessionKey || undefined"
+            :items="targetOptions.map((option) => ({ label: option.label, value: option.sessionKey }))"
+            :placeholder="targetOptions.length ? 'Escolha a comanda' : 'Nenhuma outra comanda aberta'"
+            :disabled="!targetOptions.length"
+            aria-labelledby="pos-move-target-label"
+            data-pos-move-target
+            @update:model-value="(value) => { targetSessionKey = String(value ?? ''); }"
+          />
         </div>
       </div>
-
-      <label v-if="mode === 'split'" class="grid gap-1 text-sm">
-        <span class="font-medium text-muted-foreground">Nova comanda</span>
-        <UiInput v-model="splitRef" placeholder="Ex: 1007/2" />
-      </label>
-
-      <label v-else class="grid gap-1 text-sm">
-        <span class="font-medium text-muted-foreground">Comanda de destino</span>
-        <UiNativeSelect
-          v-model="targetSessionKey"
-        >
-          <option v-if="!targetOptions.length" value="" disabled>Nenhuma outra comanda aberta</option>
-          <option v-for="option in targetOptions" :key="option.sessionKey" :value="option.sessionKey">
-            {{ option.label }}
-          </option>
-        </UiNativeSelect>
-      </label>
-
-      <UiDialogFooter>
-        <UiButton variant="outline" :disabled="busy" @click="$emit('update:open', false)">Cancelar</UiButton>
-        <!-- O botão repete o modo escolhido. Dizia "Mover" — um quarto verbo
-             para um gesto que já tinha três nomes na mesma caixa. -->
-        <UiButton :disabled="!canSubmit" :loading="busy" @click="submit">{{ submitLabel }}</UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+    <template #footer>
+      <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <NuxtButton color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="$emit('update:open', false)" />
+        <!-- O botão repete o modo escolhido. Dizia "Mover": um quarto verbo para um
+             gesto que já tinha três nomes na mesma caixa. -->
+        <NuxtButton color="primary" :label="submitLabel" :disabled="!canSubmit" :loading="busy" @click="submit" />
+      </div>
+    </template>
+  </NuxtModal>
 </template>

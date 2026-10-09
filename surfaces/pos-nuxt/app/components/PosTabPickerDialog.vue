@@ -71,13 +71,16 @@ function confirmTyped() {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <UiDialogContent class="sm:max-w-xl">
-      <UiDialogHeader>
-        <UiDialogTitle>{{ title }}</UiDialogTitle>
-        <UiDialogDescription>{{ description }}</UiDialogDescription>
-      </UiDialogHeader>
-
+  <NuxtModal
+    :open="open"
+    :title="title"
+    :description="description"
+    :ui="{ content: 'sm:max-w-xl' }"
+    data-pos-tab-picker
+    @update:open="$emit('update:open', Boolean($event))"
+  >
+    <template #body>
+      <div class="grid gap-4">
       <form class="grid gap-2" @submit.prevent="confirmTyped">
         <label class="grid gap-1 text-xs">
           <span class="font-medium text-muted-foreground">Referência da comanda</span>
@@ -89,9 +92,7 @@ function confirmTyped() {
               autofocus
               @update:model-value="updateValue"
             />
-            <UiButton type="submit" :disabled="busy || !modelValue.trim()">
-              Abrir comanda
-            </UiButton>
+            <NuxtButton type="submit" color="primary" label="Abrir comanda" :disabled="busy || !modelValue.trim()" />
           </div>
         </label>
       </form>
@@ -126,11 +127,17 @@ function confirmTyped() {
         </p>
       </div>
 
-      <UiDialogFooter>
-        <UiDialogClose as-child>
-          <UiButton type="button" variant="outline" :disabled="busy">Cancelar</UiButton>
-        </UiDialogClose>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+      </div>
+    </template>
+    <template #footer>
+      <NuxtButton
+        class="ml-auto"
+        color="neutral"
+        variant="outline"
+        label="Cancelar"
+        :disabled="busy"
+        @click="$emit('update:open', false)"
+      />
+    </template>
+  </NuxtModal>
 </template>

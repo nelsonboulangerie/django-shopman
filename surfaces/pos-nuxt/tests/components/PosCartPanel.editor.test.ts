@@ -107,21 +107,45 @@ describe("PosCartPanel — editor da linha sob demanda (v4)", () => {
     expect(wrapper.emitted("fire")).toHaveLength(1);
   });
 
-  it("folha (tablet e celular): fechada mostra o resumo e o Pagamento; puxada mostra as linhas", async () => {
-    const wrapper = await mountSuspended(PosCartPanel, { props: props({ sheet: true }) });
-    expect(wrapper.find("[data-pos-ticket]").attributes("data-pos-sheet")).toBe("closed");
-    expect(wrapper.find("[data-pos-sheet-summary]").text()).toContain("3 itens");
-    expect(wrapper.find("[data-pos-sheet-summary]").text()).toContain(formatBRL(1100));
-    expect(wrapper.find("[data-pos-line-editor]").exists()).toBe(false);
-    expect(wrapper.find("[data-receipt-list]").attributes("style") ?? "").toContain("display: none");
-    await wrapper.find("[data-pos-sheet-primary]").trigger("click");
+  it("folha (tablet e celular): fechada é a barra da ação do momento; puxada, a gaveta com as linhas", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ sheet: true, tabTitle: "Mesa 6" }) });
+    const bar = wrapper.find("[data-pos-sheet-bar]");
+    expect(bar.attributes("data-pos-sheet")).toBe("closed");
+    // A linha de contexto: comanda, itens e cozinha; o número é o total confirmado.
+    expect(bar.find("[data-operator-action-bar-context]").text()).toContain("Mesa 6 · 3 itens");
+    expect(bar.find("[data-operator-action-bar-context]").text()).toContain("3 ainda não foram à cozinha");
+    expect(bar.find("[data-operator-action-bar-context]").text()).toContain(formatBRL(1100));
+    // Nada da comanda na tela enquanto a gaveta está fechada (sem véu sobre a folha).
+    expect(wrapper.find("[data-receipt-list]").exists()).toBe(false);
+    expect(document.body.querySelector("[data-pos-line-editor]")).toBeNull();
+    expect(wrapper.find("[data-pos-sheet-backdrop]").exists()).toBe(false);
+    // Com itens a enviar, Enviar à cozinha é a ação do momento.
+    const action = bar.find("[data-operator-action-bar-action]");
+    expect(action.text()).toContain("Enviar à cozinha");
+    await action.trigger("click");
+    expect(wrapper.emitted("fire")).toHaveLength(1);
+    // "Ver a comanda" puxa a gaveta: linhas e o Pagamento dentro dela.
+    await bar.find("[data-operator-action-bar-secondary]").trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(wrapper.find("[data-pos-sheet-bar]").attributes("data-pos-sheet")).toBe("open");
+    const drawer = document.body.querySelector('[data-pos-ticket][data-pos-sheet="open"]');
+    expect(drawer?.querySelector("[data-receipt-list]")).not.toBeNull();
+    expect(drawer?.querySelector("[data-pos-sheet-title]")?.textContent).toContain("Mesa 6 · 3 itens");
+    (drawer?.querySelector("[data-pos-primary]") as HTMLButtonElement).click();
     expect(wrapper.emitted("prepare")).toHaveLength(1);
-    await wrapper.find("[data-pos-sheet-summary]").trigger("click");
-    expect(wrapper.find("[data-pos-ticket]").attributes("data-pos-sheet")).toBe("open");
-    expect(wrapper.find("[data-receipt-list]").attributes("style") ?? "").not.toContain("display: none");
-    expect(wrapper.find("[data-pos-primary]").exists()).toBe(true);
-    await wrapper.find('[aria-label="Recolher a comanda"]').trigger("click");
-    expect(wrapper.find("[data-pos-ticket]").attributes("data-pos-sheet")).toBe("closed");
+    (drawer?.querySelector('[aria-label="Recolher a comanda"]') as HTMLButtonElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(wrapper.find("[data-pos-sheet-bar]").attributes("data-pos-sheet")).toBe("closed");
+  });
+
+  it("folha sem nada a enviar: o Pagamento é a ação do momento", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, {
+      props: props({ items: [item({ sku: "PAO", name: "Pão", fired: true })], sheet: true }),
+    });
+    const action = wrapper.find("[data-pos-sheet-bar] [data-operator-action-bar-action]");
+    expect(action.text()).toContain("Pagamento");
+    await action.trigger("click");
+    expect(wrapper.emitted("prepare")).toHaveLength(1);
   });
 
   it("Pagamento é uma faixa só, com o total dentro", async () => {

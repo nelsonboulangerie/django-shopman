@@ -91,8 +91,13 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
     expect(cart).toMatch(/Pronto<\/button>/);
   });
   it("com itens a enviar, a folha fechada promove 'Enviar à cozinha'; aberta, PIX e Maquininha", () => {
-    expect(cart).toContain("data-pos-sheet-fire");
+    // A folha fechada é a barra da ação do momento do kit; a primária é o envio
+    // quando há o que enviar (`sheetFirePrimary`), e a gaveta aberta paga direto.
+    expect(cart).toContain("<OperatorActionBar");
+    expect(cart).toContain("sheetFirePrimary.value");
+    expect(cart).toContain("<NuxtDrawer");
     expect(cart).toContain("data-pos-sheet-pay");
+    expect(cart).not.toContain("<UiScrim");
   });
   it("a folha aberta leva o dinheiro da V6-CAIXA uma vez só, secundário, e a gaveta não abre dali", () => {
     const page = read("../app/pages/index.vue");

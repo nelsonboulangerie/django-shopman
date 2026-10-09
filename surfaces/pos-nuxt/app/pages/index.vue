@@ -26,8 +26,9 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // O ao vivo discreto da barra de contexto: estado do push e hora da última leitura.
 const liveStatus = usePosLiveStatus();
 // Tablet em pé e celular (v4 `pos-tablet.jpg`): a grade é a tela e a comanda vira a
-// folha de baixo. Do desktop (1024px) para cima ela segue como coluna.
-const ticketAsSheet = useMediaQuery("(max-width: 1023.98px)");
+// folha de baixo. Do desktop (1024px) para cima ela segue como coluna. A régua é a do
+// kit (`useScreen`, segura para o SSR): até a hidratação, mesa; depois, a largura real.
+const { belowLg: ticketAsSheet } = useScreen();
 
 const apiPath = useApiPath();
 const action = usePosAction();
@@ -338,6 +339,10 @@ function clearOrDiscard() {
 }
 
 const confirmCounterMode = ref(false);
+// A TRAVA CONTRA COBRANÇA DUPLICADA no cabeçalho: o aviso (`alerts`) leva UMA ação,
+// e ela abre a caixa com as três saídas (conferir Últimas vendas, procurar no Gestor,
+// liberar a tentativa depois de conferir). Sem nada além de Últimas vendas para fazer
+// (outra aba cobrando), a ação do aviso é ela mesma, sem caixa no meio.
 const uncertainCloseRecoveryOpen = ref(false);
 const uncertainCloseReviewed = ref(false);
 const uncertainCloseRecoveryBusy = ref(false);
@@ -345,6 +350,13 @@ function openUncertainCloseRecovery() {
   uncertainCloseReviewed.value = false;
   uncertainCloseRecoveryOpen.value = true;
 }
+function checkRecentSalesFromGuard() {
+  uncertainCloseRecoveryOpen.value = false;
+  recentSalesOpen.value = true;
+}
+watch(closeGuardNotice, (notice) => {
+  if (!notice) uncertainCloseRecoveryOpen.value = false;
+});
 async function confirmUncertainCloseRecovery() {
   if (!uncertainCloseReviewed.value || uncertainCloseRecoveryBusy.value) return;
   uncertainCloseRecoveryBusy.value = true;
@@ -834,6 +846,19 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
 // Avisos da tela no lugar da suíte (`alerts` do cabeçalho), cada um com a saída.
 const screenAlerts = computed<OperatorScreenAlert[]>(() => {
   const list: OperatorScreenAlert[] = [];
+  const guard = closeGuardNotice.value;
+  if (guard) {
+    const hasExits = Boolean(guard.link || guard.canRelease);
+    list.push({
+      id: "close-guard",
+      color: "error",
+      title: guard.title,
+      description: guard.body,
+      action: hasExits
+        ? { label: "Conferir a venda", onSelect: () => openUncertainCloseRecovery() }
+        : { label: "Conferir últimas vendas", onSelect: () => { recentSalesOpen.value = true; } },
+    });
+  }
   if (inSaleView.value && tabConflict.value) {
     list.push({
       id: "tab-conflict",
@@ -1268,37 +1293,6 @@ onBeforeUnmount(() => {
 
     <div class="flex min-h-0 flex-1 max-lg:flex-col">
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <UiAlert
-        v-if="closeGuardNotice"
-        variant="destructive"
-        icon="lucide:triangle-alert"
-        class="mx-4 mt-3 shrink-0"
-        role="alert"
-      >
-        <UiAlertTitle>{{ closeGuardNotice.title }}</UiAlertTitle>
-        <UiAlertDescription class="gap-3">
-          <p>{{ closeGuardNotice.body }}</p>
-          <div class="flex flex-wrap gap-2">
-            <UiButton variant="outline" size="sm" @click="recentSalesOpen = true">Conferir últimas vendas</UiButton>
-            <!-- O corpo dizia "confira no Gestor" e não levava. Agora leva: a
-                 fila, porque o que está em dúvida é se o pedido nasceu — não há
-                 `ref` para apontar. -->
-            <UiButton
-              v-if="closeGuardNotice.link"
-              variant="outline"
-              size="sm"
-              class="gap-1.5"
-              :href="closeGuardNotice.link.href"
-              v-bind="crossAppAttrs(closeGuardNotice.link.href)"
-              data-close-guard-orders-link
-            >
-              <Icon name="lucide:external-link" class="size-4" />
-              {{ closeGuardNotice.link.label }}
-            </UiButton>
-            <UiButton v-if="closeGuardNotice.canRelease" size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
-          </div>
-        </UiAlertDescription>
-      </UiAlert>
 
       <!-- Abaixo do desktop a comanda é a folha de baixo: a grade ganha o respiro dela. -->
       <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-3 pt-2.5 pb-3 max-md:overflow-x-clip max-md:overflow-y-auto md:overflow-hidden">
@@ -1643,35 +1637,75 @@ onBeforeUnmount(() => {
       :max-date="scheduleMaxDate"
     />
 
-    <UiDialog v-model:open="confirmCounterMode">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Converter para atendimento de balcão?</UiDialogTitle>
-          <UiDialogDescription>A entrega, o agendamento e a cobrança na entrega serão removidos. Os itens e o cliente continuam neste atendimento.</UiDialogDescription>
-        </UiDialogHeader>
-        <UiDialogFooter class="gap-2">
-          <UiButton variant="outline" @click="confirmCounterMode = false">Continuar encomenda</UiButton>
-          <UiButton :disabled="busy" @click="convertToCounter">Converter para balcão</UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+    <NuxtModal
+      v-model:open="confirmCounterMode"
+      title="Converter para atendimento de balcão?"
+      description="A entrega, o agendamento e a cobrança na entrega serão removidos. Os itens e o cliente continuam neste atendimento."
+      :ui="{ content: 'sm:max-w-md' }"
+      data-pos-counter-mode
+    >
+      <template #footer>
+        <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <NuxtButton color="neutral" variant="outline" label="Continuar encomenda" @click="confirmCounterMode = false" />
+          <NuxtButton color="primary" label="Converter para balcão" :disabled="busy" @click="convertToCounter" />
+        </div>
+      </template>
+    </NuxtModal>
 
-    <UiDialog v-model:open="uncertainCloseRecoveryOpen">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Você conferiu pedido e pagamento?</UiDialogTitle>
-          <UiDialogDescription>Verifique primeiro em Últimas vendas ou no Gestor. Liberar sem conferir pode repetir uma cobrança cujo resultado não chegou a esta tela.</UiDialogDescription>
-        </UiDialogHeader>
-        <label class="flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm">
-          <UiSwitch v-model="uncertainCloseReviewed" />
-          <span>Conferi o pedido e o pagamento e sei se esta venda precisa ser tentada novamente.</span>
-        </label>
-        <UiDialogFooter class="gap-2">
-          <UiButton variant="outline" @click="uncertainCloseRecoveryOpen = false">Voltar e conferir</UiButton>
-          <UiButton :disabled="!uncertainCloseReviewed || uncertainCloseRecoveryBusy" @click="confirmUncertainCloseRecovery">{{ uncertainCloseRecoveryBusy ? 'Verificando…' : 'Liberar tentativa' }}</UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+    <!-- A venda que ficou sem resposta (a trava contra cobrança duplicada): as três
+         saídas do aviso do cabeçalho numa caixa só. Conferir vem antes de liberar;
+         liberar pede a declaração explícita de quem conferiu. -->
+    <NuxtModal
+      v-model:open="uncertainCloseRecoveryOpen"
+      :title="closeGuardNotice?.title || 'Conferir a venda'"
+      :description="closeGuardNotice?.body"
+      :ui="{ content: 'sm:max-w-md' }"
+      data-close-guard-dialog
+    >
+      <template #body>
+        <div class="grid gap-3">
+          <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-history"
+              label="Conferir últimas vendas"
+              data-close-guard-recent
+              @click="checkRecentSalesFromGuard"
+            />
+            <!-- O corpo dizia "confira no Gestor" e não levava. Leva: a fila, porque o
+                 que está em dúvida é se o pedido nasceu; não há `ref` para apontar. -->
+            <NuxtButton
+              v-if="closeGuardNotice?.link"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-external-link"
+              :label="closeGuardNotice.link.label"
+              :href="closeGuardNotice.link.href"
+              v-bind="crossAppAttrs(closeGuardNotice.link.href)"
+              data-close-guard-orders-link
+            />
+          </div>
+          <label v-if="closeGuardNotice?.canRelease" class="flex cursor-pointer items-center gap-3 rounded-md border border-default p-3 text-sm" data-close-guard-reviewed>
+            <UiSwitch v-model="uncertainCloseReviewed" />
+            <span>Conferi o pedido e o pagamento e sei se esta venda precisa ser tentada novamente.</span>
+          </label>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <NuxtButton color="neutral" variant="outline" label="Voltar e conferir" @click="uncertainCloseRecoveryOpen = false" />
+          <NuxtButton
+            v-if="closeGuardNotice?.canRelease"
+            color="primary"
+            :label="uncertainCloseRecoveryBusy ? 'Verificando…' : 'Liberar tentativa'"
+            :disabled="!uncertainCloseReviewed || uncertainCloseRecoveryBusy"
+            data-close-guard-release
+            @click="confirmUncertainCloseRecovery"
+          />
+        </div>
+      </template>
+    </NuxtModal>
 
     <PosTabPickerDialog
       v-model:open="tabDialogOpen"

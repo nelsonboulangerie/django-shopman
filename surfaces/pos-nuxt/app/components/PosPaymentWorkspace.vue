@@ -2122,12 +2122,14 @@ defineExpose({
        atendendo, e o erro só aparece no fechamento do dia. Não pergunta se deu
        certo — se a maquininha recusar, o operador fecha o diálogo e troca a
        forma; a venda ainda não foi registrada. -->
-  <UiDialog v-model:open="machineConfirmOpen">
-    <UiDialogContent class="sm:max-w-sm">
-      <UiDialogHeader>
-        <UiDialogTitle>Passe na maquininha</UiDialogTitle>
-        <UiDialogDescription>Digite este valor no terminal e conclua a operação com o cliente.</UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    v-model:open="machineConfirmOpen"
+    title="Passe na maquininha"
+    description="Digite este valor no terminal e conclua a operação com o cliente."
+    :ui="{ content: 'sm:max-w-sm' }"
+    data-pos-machine-confirm
+  >
+    <template #body>
       <div class="grid gap-2">
         <!-- As DUAS coisas que o operador vai reproduzir na maquininha têm o
              mesmo peso: a função (crédito ou débito — teclas diferentes, prazos
@@ -2146,14 +2148,14 @@ defineExpose({
           <p class="text-5xl font-bold tabular-nums tracking-tight text-primary">{{ line.amountDisplay }}</p>
         </div>
       </div>
-      <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
-        <UiButton size="lg" class="h-12 text-base" @click="onMachineConfirmed">
-          OK, cobrei na maquininha
-        </UiButton>
-        <UiButton variant="ghost" size="sm" @click="machineConfirmOpen = false">Voltar</UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+    <template #footer>
+      <div class="flex w-full flex-col gap-2">
+        <NuxtButton size="xl" block color="primary" label="OK, cobrei na maquininha" data-pos-machine-charged @click="onMachineConfirmed" />
+        <NuxtButton block color="neutral" variant="ghost" label="Voltar" @click="machineConfirmOpen = false" />
+      </div>
+    </template>
+  </NuxtModal>
 
   <!-- MODAL: Dividir conta — o irmão do de Desconto, e de propósito.
        Era um trilho de cinco botões preso na coluna: ocupava altura fixa em
@@ -2163,14 +2165,15 @@ defineExpose({
        Escolher o número JÁ É a decisão inteira — por isso o toque fecha o
        modal, sem "Concluir". Só o desfazer fica, porque desfazer com partes já
        lançadas merece uma frase antes. -->
-  <UiDialog v-model:open="splitSheetOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-md" @keydown="onSplitKeydown">
-      <UiDialogHeader>
-        <UiDialogTitle>Dividir conta</UiDialogTitle>
-        <UiDialogDescription>
-          Em quantas pessoas? Digite o número ou toque. Cada forma de pagamento lançada depois cobra uma parte já calculada; os centavos fecham sozinhos.
-        </UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    v-model:open="splitSheetOpen"
+    title="Dividir conta"
+    description="Em quantas pessoas? Digite o número ou toque. Cada forma de pagamento lançada depois cobra uma parte já calculada; os centavos fecham sozinhos."
+    :content="{ ...({ onKeydown: onSplitKeydown } as object) }"
+    :ui="{ content: 'sm:max-w-md' }"
+    data-pos-split-modal
+  >
+    <template #body>
       <div class="grid gap-4">
         <p
           v-if="hasLinkTender"
@@ -2200,31 +2203,35 @@ defineExpose({
           </UiButton>
         </div>
       </div>
-      <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
+    </template>
+    <template v-if="splitNote || splitActive" #footer>
+      <div class="flex w-full flex-col gap-2">
         <p v-if="splitNote" class="text-center text-sm text-muted-foreground">{{ splitNote }}</p>
         <template v-if="splitActive">
-          <UiButton variant="outline" class="w-full gap-2" @click="$emit('setSplitCount', 0); splitSheetOpen = false">
+          <NuxtButton block color="neutral" variant="outline" @click="$emit('setSplitCount', 0); splitSheetOpen = false">
             Não dividir
             <OperatorKbd aria-hidden="true">1</OperatorKbd>
-          </UiButton>
+          </NuxtButton>
           <p v-if="splitInProgress" class="text-center text-xs text-muted-foreground">
             As partes já lançadas continuam na conta. Para recomeçar, remova cada linha de pagamento.
           </p>
         </template>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+      </div>
+    </template>
+  </NuxtModal>
 
   <!-- MODAL: Desconto -->
-  <UiDialog v-model:open="discountSheetOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-md">
-      <UiDialogHeader>
-        <UiDialogTitle>Desconto</UiDialogTitle>
-        <!-- "backend" era a única palavra de implementação em toda a copy do
-             PDV. E o diálogo fechava sem dizer o número que o operador vai falar
-             em voz alta — ele aplicava 15% e só descobria o total depois. -->
-        <UiDialogDescription>Tipo, valor e motivo. A loja confere e aplica.</UiDialogDescription>
-      </UiDialogHeader>
+  <!-- "backend" era a única palavra de implementação em toda a copy do PDV. E o
+       diálogo fechava sem dizer o número que o operador vai falar em voz alta: ele
+       aplicava 15% e só descobria o total depois. -->
+  <NuxtModal
+    v-model:open="discountSheetOpen"
+    title="Desconto"
+    description="Tipo, valor e motivo. A loja confere e aplica."
+    :ui="{ content: 'sm:max-w-md' }"
+    data-pos-discount-modal
+  >
+    <template #body>
       <div class="grid gap-4">
         <div class="grid grid-cols-2 gap-2">
             <UiButton
@@ -2254,14 +2261,16 @@ defineExpose({
             </UiButton>
           </div>
         </div>
-        <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
-          <p v-if="review" class="text-center text-sm text-muted-foreground">
-            Fica <strong class="font-semibold tabular-nums text-foreground">{{ review.total_display }}</strong>
-          </p>
-          <UiButton class="w-full" @click="discountSheetOpen = false">Voltar ao pagamento</UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+    </template>
+    <template #footer>
+      <div class="flex w-full flex-col gap-2">
+        <p v-if="review" class="text-center text-sm text-muted-foreground">
+          Fica <strong class="font-semibold tabular-nums text-foreground">{{ review.total_display }}</strong>
+        </p>
+        <NuxtButton block color="primary" label="Voltar ao pagamento" @click="discountSheetOpen = false" />
+      </div>
+    </template>
+  </NuxtModal>
 
   <!-- AUTORIZAÇÃO DO GERENTE -->
   <OperatorManagerAuth

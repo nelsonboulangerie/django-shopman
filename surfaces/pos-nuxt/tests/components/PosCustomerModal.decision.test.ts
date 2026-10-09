@@ -417,7 +417,7 @@ describe("decisão do documento", () => {
     expect(screenText()).not.toContain("Cadastro existente");
     expect(buttonByText("Concluir")).toBeUndefined();
     expect(document.querySelector('input')).toBeNull();
-    expect(document.activeElement?.tagName).toBe("H2");
+    expect(document.activeElement?.closest("h2")?.contains(document.querySelector("[data-pos-customer-title]"))).toBe(true);
     const actions = Array.from(document.querySelectorAll('button'));
     expect(actions.indexOf(buttonByText("Não, usar dados só neste pedido")!)).toBeGreaterThan(actions.indexOf(buttonByText("Sim, vincular ao pedido")!));
     expect(screenText()).toContain("529.982.247-25");
@@ -456,12 +456,12 @@ describe("atalhos da decisão do documento", () => {
     key("1");
     await wrapper.vm.$nextTick();
     await wrapper.vm.$nextTick();
-    expect(document.activeElement?.tagName).toBe("H2");
+    expect(document.activeElement?.closest("h2")?.contains(document.querySelector("[data-pos-customer-title]"))).toBe(true);
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
     key("Escape");
     await wrapper.vm.$nextTick();
     await wrapper.vm.$nextTick();
-    expect(document.activeElement?.tagName).toBe("H2");
+    expect(document.activeElement?.closest("h2")?.contains(document.querySelector("[data-pos-customer-title]"))).toBe(true);
     key("Escape");
     expect(wrapper.emitted("update:open")).toEqual([[false]]);
     expect(wrapper.emitted("decisionCancel")).toBeUndefined();
@@ -515,7 +515,7 @@ describe("cadastro pelo documento", () => {
   it('prioriza cadastrar sem aceitar o Enter usado para abrir', async () => {
     const wrapper = await mount({ customerDecision: { ...CONFLICT, kind: 'receipt_identity', receiptCreate: true, current: null, other: null, receiptFields: [newField] } });
     expect(screenText()).toContain('Cadastrar o cliente deste pedido?');
-    expect(document.activeElement?.tagName).toBe('H2');
+    expect(document.activeElement?.closest("h2")?.contains(document.querySelector("[data-pos-customer-title]"))).toBe(true);
     document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(wrapper.emitted('decisionConfirm')).toBeUndefined();
     document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: '1', bubbles: true }));
