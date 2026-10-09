@@ -104,3 +104,92 @@ describe("OperatorActionBar, a ação do momento na base do celular", () => {
     expect(reject).toHaveBeenCalledTimes(1);
   });
 });
+
+// As classes que a peça acrescenta ao botão com prazo (a camada atrás do rótulo). Tudo
+// o mais é o botão de origem, classe por classe.
+const TIMED_EXTRA = new Set(["relative", "isolate", "overflow-hidden", "tabular-nums"]);
+const tokens = (el: Element) => new Set(el.className.split(/\s+/).filter(Boolean));
+
+describe("OperatorActionBar com prazo: a barra não muda, só o texto do botão (dono, 09/10/2026)", () => {
+  it("entrar no prazo mantém cartão, contexto, segunda ação e a aparência do botão", async () => {
+    const T0 = Date.now();
+    const done = vi.fn();
+    const undo = vi.fn();
+    mounted = await mountSuspended(OperatorActionBar, {
+      attachTo: document.body,
+      props: {
+        action: { label: "Pronto 0131", icon: "i-lucide-check", onSelect: done },
+        secondary: { label: "Bloquear" },
+        contextLabel: "Pedido 0131 · Balcão",
+        contextValue: "3 itens",
+      },
+    });
+    const surface = document.querySelector("[data-operator-action-bar-surface]");
+    const context = document.querySelector("[data-operator-action-bar-context]");
+    const secondary = document.querySelector("[data-operator-action-bar-secondary]");
+    const before = document.querySelector<HTMLElement>("[data-operator-action-bar-action]")!;
+    const beforeTokens = tokens(before);
+
+    await mounted.setProps({
+      action: {
+        label: "Desfazer 0131",
+        icon: "i-lucide-undo-2",
+        ariaLabel: "Desfazer o Pronto do pedido 0131",
+        timed: { until: T0 + 5000, duration: 5000 },
+        onSelect: undo,
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // A mesma barra: os mesmos nós, o mesmo contexto, a mesma segunda ação.
+    expect(document.querySelectorAll("[data-operator-action-bar]")).toHaveLength(1);
+    expect(document.querySelector("[data-operator-action-bar-surface]")).toBe(surface);
+    expect(document.querySelector("[data-operator-action-bar-context]")).toBe(context);
+    expect(context!.textContent).toContain("Pedido 0131 · Balcão");
+    expect(document.querySelector("[data-operator-action-bar-secondary]")).toBe(secondary);
+
+    // O botão: mesma cor, variante e tamanho. Só o texto muda, e o fundo esvazia atrás.
+    const after = document.querySelector<HTMLElement>("[data-operator-action-bar-action]")!;
+    expect(after.hasAttribute("data-operator-action-bar-timed")).toBe(true);
+    expect(after.textContent?.trim()).toBe("Desfazer 0131");
+    expect(after.getAttribute("aria-label")).toBe("Desfazer o Pronto do pedido 0131");
+    const afterTokens = tokens(after);
+    for (const token of beforeTokens) expect(afterTokens, `classe ${token}`).toContain(token);
+    for (const token of afterTokens) {
+      if (!beforeTokens.has(token)) expect(TIMED_EXTRA, `classe nova ${token}`).toContain(token);
+    }
+    expect(after.querySelector("[data-timed-fill]")).not.toBeNull();
+
+    after.click();
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(done).not.toHaveBeenCalled();
+  });
+
+  it("ao fim do prazo, o botão fica no lugar, desligado, e avisa uma vez", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      const onExpire = vi.fn();
+      const onSelect = vi.fn();
+      mounted = await mountSuspended(OperatorActionBar, {
+        attachTo: document.body,
+        props: {
+          action: {
+            label: "Desfazer 0131",
+            timed: { until: Date.now() + 5000, duration: 5000, onExpire },
+            onSelect,
+          },
+        },
+      });
+      vi.advanceTimersByTime(5100);
+      await mounted.vm.$nextTick();
+      const action = document.querySelector<HTMLButtonElement>("[data-operator-action-bar-action]")!;
+      expect(action).not.toBeNull();
+      expect(action.disabled).toBe(true);
+      expect(onExpire).toHaveBeenCalledTimes(1);
+      action.click();
+      expect(onSelect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

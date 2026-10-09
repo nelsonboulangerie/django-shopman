@@ -795,6 +795,8 @@ function nuxtIcon(icon: string): string {
       <!-- @container: o rodapé decide pela própria largura (card largo, coluna estreita,
            grade da Saída), não pelo breakpoint da página. -->
       <div class="@container flex items-end gap-2">
+        <!-- O Desfazer é o MESMO botão da saída tocada (dono, 09/10/2026): o primário
+             sólido, no mesmo lugar e tamanho; muda só o texto, e o fundo esvazia atrás. -->
         <OperatorTimedButton
           v-if="handoff && handoff.canUndo"
           :until="handoff.untilIso"
@@ -803,8 +805,8 @@ function nuxtIcon(icon: string): string {
           label="Desfazer"
           block
           class="min-w-0 flex-1"
-          color="neutral"
-          variant="outline"
+          color="primary"
+          variant="solid"
           icon="i-lucide-undo-2"
           :disabled="busy"
           :loading="busy"
