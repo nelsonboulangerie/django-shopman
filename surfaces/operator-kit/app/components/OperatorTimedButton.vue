@@ -295,10 +295,10 @@ const fillClass = computed(() => {
   background-color: var(--timed-spent);
 }
 /* Escuro: o que resta quase branco, o que esvaziou um pouco mais fundo. */
-:global(.dark) .timed-remaining {
+.dark .timed-remaining {
   --timed-remaining: rgb(255 255 255 / 0.9);
 }
-:global(.dark) .timed-spent {
+.dark .timed-spent {
   --timed-spent: rgb(0 0 0 / 0.2);
 }
 .timed-fill {

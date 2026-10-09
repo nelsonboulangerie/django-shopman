@@ -62,7 +62,7 @@ const OUTLINE_ALPHA = 0.1;
 const sfc = readFileSync(new URL("../app/components/OperatorTimedButton.vue", import.meta.url), "utf8");
 const style = sfc.slice(sfc.indexOf("<style scoped>"));
 function layer(name: string, dark: boolean): { hex: string; alpha: number } {
-  const re = new RegExp(`${dark ? ":global\\(\\.dark\\) " : "^"}\\.timed-${name} \\{\\s*--timed-${name}: rgb\\((\\d+) (\\d+) (\\d+) / ([\\d.]+)\\)`, "m");
+  const re = new RegExp(`${dark ? "^\\.dark " : "^"}\\.timed-${name} \\{\\s*--timed-${name}: rgb\\((\\d+) (\\d+) (\\d+) / ([\\d.]+)\\)`, "m");
   const match = style.match(re);
   expect(match, `--timed-${name} ${dark ? "escuro" : "claro"} no <style> da peça`).not.toBeNull();
   const hex = `#${[1, 2, 3].map((i) => Number(match![i]).toString(16).padStart(2, "0")).join("")}`;
