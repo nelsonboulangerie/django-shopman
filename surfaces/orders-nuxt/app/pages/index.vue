@@ -420,6 +420,11 @@ function menuDo(fn: () => void, close = true) {
 // A régua da suíte (`useScreen` do kit): mesa no servidor e na hidratação, a largura
 // real depois. Decidir a árvore com `useMediaQuery` cru fazia o celular hidratar outra
 // árvore na carga direta: a Fila ficava no esqueleto para sempre.
+// Ela responde "mesa" até montar, então a barra do topo e a toolbar NÃO decidem por ela
+// (o celular desenhava a barra da mesa encavalada até hidratar): `phone-actions`,
+// `actions-from="md"` e as classes `max-lg:`/`md:` fazem isso pelo CSS. Daqui só o que
+// muda a árvore depois de montar: as colunas que viram abas, a Fila só do `lg`, o
+// conteúdo do painel "Filtros" (aberto depois de montar) e o puxar para atualizar.
 const screen = useScreen();
 // Celular (abaixo de md): as colunas viram abas.
 const isPhone = screen.belowMd;
@@ -781,8 +786,9 @@ function pickFulfillment(value: string | number) {
 }
 // As ações da fila no celular, em dados para o kit: o "Visto" (e o som bloqueado)
 // disputam a vaga de ícone com a Busca e vencem enquanto valem; o resto vai para o ⋯.
+// Declaradas sempre (`phone-actions`): o kit as mostra só abaixo de `sm`, pelo CSS, e o
+// servidor já desenha a barra do celular (sem o flash da mesa antes de montar).
 const phoneHeaderActions = computed(() => {
-  if (!kitPhone.value) return undefined;
   return [
     ...(attentionPending.value && !exitPostView.value
       ? [{ label: "Visto", icon: "i-lucide-check", priority: 1, onSelect: () => acknowledgeAttention() }]
@@ -1297,7 +1303,8 @@ function printQueue() {
     <OperatorPageHeader
       :title="exitPostView ? 'Saída' : 'Pedidos'"
       :filters-wrap="false"
-      :actions="phoneHeaderActions"
+      :phone-actions="phoneHeaderActions"
+      actions-from="md"
       actions-label="Mais ações da fila"
       :active-filters="activeFilters"
     >
@@ -1325,10 +1332,13 @@ function printQueue() {
           @update:model-value="(v) => (query = v)"
         />
       </template>
-      <template v-if="!isPhone" #actions>
+      <!-- Os controles da mesa (do `md` para cima) escolhidos pelo CSS, não pela régua
+           do JS: ela responde "mesa" até montar, e o celular desenhava esta linha
+           encavalada sobre o título até a hidratação terminar. -->
+      <template #actions>
         <!-- a visão deste posto e o caminho de volta às três colunas -->
         <template
-          v-if="view === 'board' && !boardLayout.allOpen.value && !isPhone"
+          v-if="view === 'board' && !boardLayout.allOpen.value"
         >
           <NuxtButton
             icon="i-lucide-columns-3"
@@ -1345,7 +1355,7 @@ function printQueue() {
              botão do som sozinho. No posto Saída o Visto fica no ⋯. O som tem os
              mesmos 3 estados do KDS: ligado, desligado e ligado-mas-bloqueado pelo
              autoplay (ponto âmbar até o 1º gesto). -->
-        <NuxtFieldGroup v-if="!isPhone" data-sound-group>
+        <NuxtFieldGroup data-sound-group>
           <!-- Filhos diretos do FieldGroup, sem Chip no meio: o grupo arredonda só as
                pontas e cola as bordas pelo primeiro e último filho. "Som bloqueado
                pelo navegador" é a cor do próprio botão (warning) até o 1º gesto. -->
@@ -1380,7 +1390,7 @@ function printQueue() {
           />
         </NuxtFieldGroup>
 
-        <template v-if="!compactHeader && !isPhone">
+        <template v-if="!compactHeader">
           <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
                no quadro e na tabela, a ordem deles -->
           <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'end' }">
@@ -1416,7 +1426,7 @@ function printQueue() {
              Saída (v4 `gestor-colunas`) não tem ⋯: a leitura se atualiza sozinha e o Visto
              é tocar a faixa da Entrada que pulsa. -->
         <BoardMenu
-          v-if="!isPhone && !exitPostView"
+          v-if="!exitPostView"
           mode="dropdown"
           :metadata="readMetadata"
           :failed="Boolean(error)"
@@ -1444,10 +1454,13 @@ function printQueue() {
            seletor só. O posto Saída usa a mesma faixa: o título já diz a visão. -->
       <!-- A Saída no celular (v4 `cozinha-celular` (a)) não tem a linha de recortes: a
            barra de cima, as duas abas e a lista. -->
+      <!-- Antes de montar (e enquanto a fila chega) a faixa existe: no celular o kit
+           desenha "Filtros" já no primeiro desenho, e na mesa a faixa não some e volta
+           quando os cartões chegam. -->
       <template
         v-if="
           ((exitPostView && desktopZones.length) ||
-            (allCards.length && !exitPostView) ||
+            ((allCards.length || pending || !hydrated) && !exitPostView) ||
             isPhone) &&
           !(isPhone && phoneExitMode)
         "
@@ -1529,7 +1542,10 @@ function printQueue() {
         v-if="view === 'queue' && !(isPhone && phoneExitMode)"
         #filters-primary
       >
+        <!-- A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o mesmo, e o
+             celular não desenha os escopos antes de montar. -->
         <NuxtTabs
+          class="max-lg:hidden"
           :model-value="scope"
           :items="queueScopeTabs"
           :content="false"

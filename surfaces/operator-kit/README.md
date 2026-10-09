@@ -600,9 +600,24 @@ interna) já nasce com a largura real.
 
 - O que é **só apresentação** decide no CSS (`max-sm:hidden`, `hidden md:inline-flex`):
   o servidor já desenha certo e nada troca.
-- O que **muda a árvore** (slot, `v-if`, prop de componente, ações da barra) lê
-  `useScreen()`. Nunca `useMediaQuery` de largura na tela, nunca `ssrWidth`: a árvore
-  hidratada tem de ser a que o servidor mandou.
+- O que **muda a árvore** (slot, `v-if`, prop de componente) lê `useScreen()`. Nunca
+  `useMediaQuery` de largura na tela, nunca `ssrWidth`: a árvore hidratada tem de ser a
+  que o servidor mandou.
+- **O primeiro desenho no celular é do celular.** Como a régua responde "mesa" até
+  montar, tudo que ela decide aparece primeiro no layout da mesa (em rede lenta,
+  segundos). Por isso a barra do topo, a toolbar e as barras de base NÃO decidem por
+  ela: declare as duas variantes e deixe o CSS escolher. O `OperatorPageHeader` desenha,
+  antes de hidratar, a linha do celular e a toolbar da mesa (`sm:hidden` /
+  `max-sm:hidden`) e os dois ⋯, e tira da árvore a que não serve depois de montar. A
+  tela passa `phone-actions` sempre (não `isNarrow ? [...] : undefined`), `actions-from`
+  para dizer de que largura o `#actions` aparece, `desk-only-filters` quando o
+  `#filters` só existe na mesa e `phone-title` para o título curto. `useScreen()` fica
+  para o que a árvore precisa mesmo mudar depois de montar (as colunas da fila que
+  viram abas, a Fila "Precisa de você" só do `lg`, a direção da gaveta, o puxar para
+  atualizar), sempre com um comentário dizendo por quê. Prova:
+  `orders-nuxt/tests/ssr/directLoadPhone.spec.ts` abre cada rota a 390 px **sem
+  JavaScript** (o HTML do servidor) e exige a barra inteira: título sem nada por cima,
+  nenhum controle da mesa visível, nenhum corte na largura.
 - Dado lido só no cliente (`useFetch` com `server: false`) segue a mesma regra: o
   esqueleto aparece também antes de hidratar (`pending || !screen.ready`), senão o
   cliente hidrata um nó que o servidor não mandou.
@@ -653,8 +668,13 @@ A tela declara as ações como **dados**, e o kit decide o que transborda
 
 - Com `actions`, o `#actions` some abaixo de `sm` (o que importa ao polegar está nos
   dados); do `sm` para cima, nada muda: o `#actions` segue como está e as ações
-  declaradas aparecem num ⋯ ao lado dele. Quem tem as mesmas ações no `#actions` passa
-  `actions` só no celular (`isNarrow ? [...] : undefined`), como o Gestor.
+  declaradas aparecem num ⋯ ao lado dele. Quem tem as mesmas ações no `#actions` (ou na
+  toolbar) passa `phone-actions`: o mesmo papel no celular, sem ⋯ delas na mesa. Sempre
+  declaradas, nunca `isNarrow ? [...] : undefined`: o servidor não sabe a largura e o
+  celular nasceria com a barra da mesa (o flash do Gestor, 09/10/2026).
+- `actions-from="md"`: o `#actions` só do `md` para cima (pelo CSS), para a tela cujo
+  celular vai até o `md` (a fila e o pedido do Gestor).
+- `phone-title`: o título curto do celular ("W01" para "Pedido W01"), escolhido pelo CSS.
 - Página de leitura: `useReadingPageActions(items)` dá "Copiar link desta leitura" mais
   as da página, e o nome do ⋯ (`actions-label`).
 - `#phone-actions` é para o ⋯ PRÓPRIO da tela, quando o menu é um painel e não uma lista
@@ -688,6 +708,11 @@ a toolbar do cabeçalho é **uma linha só, de altura fixa**:
   nunca para o painel "Filtros".
 - Os apps ainda fora do shell seguem com a linha de sempre (`row`) até a onda de cada um;
   `phone-filters="drawer"` os traz antes.
+- `desk-only-filters`: o `#filters` só existe na mesa (ali moram ações, que no celular
+  já estão nas `phone-actions`); no celular não há "Filtros" nem painel. Melhor que
+  `v-if="!isNarrow"` no slot, que só vale depois de montar.
+- A linha do celular e a toolbar da mesa vão as duas no HTML do servidor, cada uma
+  escondida pelo CSS na largura da outra; depois de montar, a que não serve sai.
 
 Trava: `tests/catalog/phone-header.spec.ts` (linha de no máximo 64 px, primário sem
 rolagem escondida, o painel abre, o recorte vira chip e sai pelo ×).

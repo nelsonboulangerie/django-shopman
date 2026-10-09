@@ -31,14 +31,9 @@ async function confirmUndo() {
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
-const { belowSm: isNarrow } = useScreen();
-const phoneHeaderActions = computed(() =>
-  isNarrow.value
-    ? [
-        { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
-      ]
-    : undefined,
-);
+const phoneHeaderActions = computed(() => [
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+]);
 </script>
 
 <template>
@@ -46,7 +41,8 @@ const phoneHeaderActions = computed(() =>
     <OperatorPageHeader
       title="Unificações"
       :filters-wrap="false"
-      :actions="phoneHeaderActions"
+      :phone-actions="phoneHeaderActions"
+      desk-only-filters
     >
       <template #lead>
         <NuxtButton
@@ -58,7 +54,7 @@ const phoneHeaderActions = computed(() =>
           aria-label="Voltar para Clientes"
         />
       </template>
-      <template v-if="!isNarrow" #filters>
+      <template #filters>
         <NuxtButton
           icon="i-lucide-refresh-cw"
           label="Atualizar"

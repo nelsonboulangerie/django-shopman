@@ -53,17 +53,12 @@ const notFound = computed(() => httpError(error.value).status === 404);
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
-const { belowSm: isNarrow } = useScreen();
-const phoneHeaderActions = computed(() =>
-  isNarrow.value
-    ? [
-        ...(adminUrl.value && customer.value
-          ? [{ label: "Editar no Admin", icon: "i-lucide-pencil", to: adminUrl.value, target: "_blank" }]
-          : []),
-        { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
-      ]
-    : undefined,
-);
+const phoneHeaderActions = computed(() => [
+  ...(adminUrl.value && customer.value
+    ? [{ label: "Editar no Admin", icon: "i-lucide-pencil", to: adminUrl.value, target: "_blank" }]
+    : []),
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+]);
 </script>
 
 <template>
@@ -71,7 +66,8 @@ const phoneHeaderActions = computed(() =>
     <OperatorPageHeader
       :title="customer?.name || 'Cliente'"
       :filters-wrap="false"
-      :actions="phoneHeaderActions"
+      :phone-actions="phoneHeaderActions"
+      desk-only-filters
     >
       <template #lead>
         <NuxtButton
@@ -84,7 +80,7 @@ const phoneHeaderActions = computed(() =>
           @click.prevent="router.back()"
         />
       </template>
-      <template v-if="!isNarrow" #filters>
+      <template #filters>
         <NuxtButton
           v-if="adminUrl && customer"
           :to="adminUrl"

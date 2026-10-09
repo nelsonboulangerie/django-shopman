@@ -55,12 +55,9 @@ const filters = useRouteFilters(dimensions, { resetKeys: ["page"] });
 // Celular (abaixo de `sm`, a régua da barra e da toolbar do kit): "Atualizar" vai para
 // o ⋯ da barra; o período fica na linha e os recortes no painel "Filtros", com os
 // ativos como chips removíveis.
-const { belowSm: isNarrow } = useScreen();
-const phoneHeaderActions = computed(() =>
-  isNarrow.value
-    ? [{ label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() }]
-    : undefined,
-);
+const phoneHeaderActions = computed(() => [
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+]);
 function clearSku() {
   router.replace({
     query: routeQueryFromHistory({ ...historyQuery.value, sku: "", page: 1 }),
@@ -146,7 +143,7 @@ const historyColumns = [
     <OperatorPageHeader
       title="Histórico"
       :filters-wrap="false"
-      :actions="phoneHeaderActions"
+      :phone-actions="phoneHeaderActions"
       :active-filters="activeFilters"
     >
       <template #status>
