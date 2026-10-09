@@ -976,9 +976,11 @@ desfazer a saída no Gestor.
 - `class`, `data-*` e `aria-*` chegam ao botão. SFC puro (imports explícitos): os
   harnesses sem runtime Nuxt dos apps montam a peça de verdade.
 
-Onde mora: o Desfazer do Pronto na Cozinha (`KdsTicketCard`, prazo guardado pelo
-`useKdsBoard`) e o Desfazer da saída no Gestor (`OrderCard` e o detalhe do pedido,
-prazo e começo da janela vindos da projeção: `undo_until_iso`/`undo_since_iso`). A conta
+Onde mora: o Desfazer do Pronto na Cozinha (na mesa, o mesmo Pronto verde do
+`KdsCardButton`; no celular, a ação na base com `action.timed`; prazo guardado pelo
+`useKdsBoard`) e o Desfazer da saída no Gestor (o primário sólido do `OrderCard`; no
+detalhe, o primário do cabeçalho e a ação na base; prazo e começo da janela vindos da
+projeção: `undo_until_iso`/`undo_since_iso`). A conta
 é pura em `presentation/timedAction.ts`. Trava: `tests/timedAction.test.ts` e
 `tests/components/OperatorTimedButton.test.ts`. Vitrine: "Ação com prazo", nas peças de
 tela do catálogo.
