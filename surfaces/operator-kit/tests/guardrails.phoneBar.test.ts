@@ -108,7 +108,7 @@ describe("guardrail da barra de cima do celular", () => {
       vueFiles(join(surfacesDir, app, "app")).filter((path) => phoneBarBlocks(readFileSync(path, "utf8")).length),
     );
     const rel = found.map((path) => relative(surfacesDir, path));
-    expect(rel).toContain("purchase-nuxt/app/pages/index.vue");
+    expect(rel).toContain("marketing-nuxt/app/pages/campaigns.vue");
   });
 
   it("nenhum app de operador põe Atualizar solto na barra de 56px (mora no ⋯)", () => {

@@ -88,9 +88,6 @@ describe("guardrail do cabeçalho de seções", () => {
       "marketing-nuxt/app/components/MarketingNav.vue",
       // V4-PDV: o rail e a barra do polegar do PDV (`place`), como o GestorNav.
       "pos-nuxt/app/components/PosFunctionRail.vue",
-      // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
-      // `current` e devolvem `select`.
-      "purchase-nuxt/app/components/PurchaseNav.vue",
     ];
     for (const file of migrados) {
       const source = readFileSync(join(SURFACES, file), "utf8");
@@ -126,6 +123,13 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(production).toContain(':sections="sections"');
     expect(production).not.toContain("<ProductionNav");
     expect(production).toContain("data-production-kiosk");
+
+    // Fase 2 (onda do Compras, 09/10/2026): o Compras entrou no shell; cada seção é rota.
+    const purchase = readFileSync(join(SURFACES, "purchase-nuxt/app/app.vue"), "utf8");
+    expect(purchase).toContain("<OperatorSuiteShell");
+    expect(purchase).toContain(':sections="sections"');
+    expect(purchase).not.toContain("<PurchaseNav");
+    expect(purchase).not.toMatch(/data-suite=/);
   });
 });
 
@@ -135,7 +139,6 @@ const NAVS = [
   "kds-nuxt/app/components/KdsNav.vue",
   "marketing-nuxt/app/components/MarketingNav.vue",
   "pos-nuxt/app/components/PosFunctionRail.vue",
-  "purchase-nuxt/app/components/PurchaseNav.vue",
 ];
 const KIT = (name: string) =>
   readFileSync(join(SURFACES, "operator-kit/app/components", name), "utf8");

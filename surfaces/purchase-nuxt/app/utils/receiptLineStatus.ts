@@ -19,13 +19,18 @@ export const RECEIPT_LINE_STATUS_ROW: Record<ReceiptLineStatus, string> = {
   checked: "border-success/30 bg-success/5",
 };
 
-// A etiqueta cheia da suíte (`pill-*` do kit): tinta de 12% e texto no tom.
-export const RECEIPT_LINE_STATUS_BADGE: Record<ReceiptLineStatus, string> = {
-  blocked: "pill-destructive",
-  attention: "pill-warning",
-  ready: "pill-info",
-  matched: "pill-success",
-  checked: "pill-success",
+/**
+ * A cor do selo (`NuxtBadge`, variante `soft` do tema) de cada estado. É a etiqueta
+ * do conjunto mínimo: na gaveta do item e na linha da lista, o mesmo estado tem a
+ * mesma cor.
+ */
+export type ReceiptLineStatusColor = "error" | "warning" | "info" | "success";
+export const RECEIPT_LINE_STATUS_COLOR: Record<ReceiptLineStatus, ReceiptLineStatusColor> = {
+  blocked: "error",
+  attention: "warning",
+  ready: "info",
+  matched: "success",
+  checked: "success",
 };
 
 /** Só a cor do texto/ícone — para o ícone da linha, que não leva fundo. */

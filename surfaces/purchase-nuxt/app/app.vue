@@ -1,75 +1,132 @@
 <script setup lang="ts">
+import { baseSectionOf, purchaseSections } from "~/presentation/purchaseSections";
+import type { PurchaseView } from "~/types/purchase";
+
+// Compras no shell da suíte (WP-FASE2-UX-OPERADOR, onda do Compras), como o Gestor:
+// barra lateral em três estados na mesa, gaveta e barra inferior abaixo de `lg`. Cada
+// seção é uma rota (Painel `/`, Comprar `/buy`, Receber `/receive`, Base `/base/…`),
+// e as quatro dividem o mesmo carregamento (`usePurchaseDesk`, em `useState`).
 const OPERATOR_PERM = "backstage.operate_purchase";
-const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock, stationRef } =
+const { canIdentify, sessionState, sessionUnavailable, refresh, locked, mustChange, operator, lock, stationRef } =
   useOperatorLock(OPERATOR_PERM);
-// Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
-// parede, só para quem gere operadores, num dispositivo que ainda não é posto.
+// Uma decisão só separa autenticação, autorização, rede e trava (a mesma do Gestor):
+// o conteúdo só monta com o acesso decidido, para nenhuma leitura protegida correr
+// durante a conferência e virar um login falso.
+const surface = computed(() =>
+  operatorSurfaceGate({
+    sessionState: sessionState.value,
+    canIdentify: canIdentify.value,
+    sessionUnavailable: sessionUnavailable.value,
+    locked: locked.value,
+    mustChange: mustChange.value,
+    harness: false,
+  }),
+);
+// Vincular o dispositivo a um posto (kit, a mesma regra dos apps): oferta, não parede.
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
-const { view, selectMaterial, selectSupplier } = usePurchaseDesk();
-const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
+
+const { view, baseView, metrics, receiptTotalPending, pending, backendReady, refresh: refreshPurchase } = usePurchaseDesk();
+
+// A hora da última leitura útil da base (o selo de cada tela). O Compras não tem SSE:
+// a leitura acontece ao abrir e em Atualizar, e o selo diz isso sem fingir ao vivo.
+const readAt = useState("purchase-read-at", () => "");
+watch(
+  [pending, backendReady],
+  ([isPending, ready]) => {
+    if (!isPending && ready) {
+      readAt.value = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    }
+  },
+  { immediate: true },
+);
+// R atualiza a tela (o item "Atualizar" do ⋯ de toda tela), fora de campo de texto e
+// de diálogo aberto.
+onKeyStroke(["r", "R"], (event) => {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog']")) return;
+  void refreshPurchase();
+});
+const sections = computed(() =>
+  purchaseSections({ urgentMaterials: metrics.value.urgentMaterials, receivePending: receiptTotalPending.value }),
+);
+
+// A seção e a sub-seção da Base vêm da rota. O carregamento da Contagem (e o que mais
+// depender da vista) segue a mesma fonte.
 const route = useRoute();
-
-const SECTION_KEYS = ["panel", "buy", "receive", "base"] as const;
-
-// Atalho do PWA ("Recebimento" → `/?view=receive`) e links diretos para uma seção.
-function applyShortcutView(value: unknown) {
-  if (typeof value === "string" && (SECTION_KEYS as readonly string[]).includes(value)) {
-    view.value = value as typeof view.value;
-  }
+function viewOf(path: string): PurchaseView {
+  if (path.startsWith("/buy")) return "buy";
+  if (path.startsWith("/receive")) return "receive";
+  if (path.startsWith("/base")) return "base";
+  return "panel";
 }
-applyShortcutView(route.query.view);
-watch(() => route.query.view, applyShortcutView);
-
-// A busca da suíte abre um insumo ou um fornecedor na Base (`/?view=base&material=SKU`,
-// `&supplier=REF`): o mesmo gesto do clique na lista.
-function applyBaseLink(material: unknown, supplier: unknown) {
-  if (typeof material === "string" && material) selectMaterial(material);
-  else if (typeof supplier === "string" && supplier) selectSupplier(supplier);
-}
-applyBaseLink(route.query.material, route.query.supplier);
-watch(() => [route.query.material, route.query.supplier], ([material, supplier]) => applyBaseLink(material, supplier));
+watch(
+  () => route.path,
+  (path) => {
+    view.value = viewOf(path);
+    const base = baseSectionOf(path);
+    if (base) baseView.value = base;
+  },
+  { immediate: true },
+);
 
 useOperatorWindowTitle();
 </script>
 
 <template>
-  <!-- `data-suite="v3"`: o Compras veste a camada visual da suíte (V4-COMPRAS, modelo do
-       Gestor). Os primitivos do kit leem esse atributo para vestir o visual das prévias. -->
-  <div class="flex min-h-dvh bg-background text-foreground" data-suite="v3">
-    <NuxtRouteAnnouncer />
-    <OfflineBanner />
-    <!-- Rail da suíte (kit): o selo do app (Central), as quatro seções, avisos, Bloquear
-         e o menu do operador. Do tablet para cima; no celular as seções vão para a barra
-         do polegar, no fim da coluna de conteúdo. -->
-    <PurchaseNav
-      v-if="canIdentify"
-      place="rail"
-      :hub-url="hubUrl"
-      :operator-name="operator?.name"
-      @lock="lock"
-    />
-    <div class="flex min-w-0 flex-1 flex-col">
-      <div v-show="canIdentify" class="flex min-h-0 min-w-0 flex-1 flex-col">
-        <NuxtPage />
-      </div>
-      <PurchaseNav v-if="canIdentify && !locked && !mustChange" place="bar" :operator-name="operator?.name" @lock="lock" />
+  <OperatorAppRoot>
+    <div class="flex min-h-dvh bg-background text-foreground" data-purchase-app>
+      <NuxtRouteAnnouncer />
+      <OfflineBanner />
+      <OperatorSuiteShell
+        v-if="surface.showPage"
+        storage-key="purchase"
+        :sections="sections"
+        label="Seções do Compras"
+        :operator-name="operator?.name"
+        @lock="lock"
+      >
+        <div class="flex min-h-0 flex-1 flex-col">
+          <OperatorStationSetup
+            v-if="stationSetup.offer.value"
+            mode="inline"
+            @done="stationSetup.done()"
+            @dismiss="stationSetup.dismiss()"
+            @unavailable="stationSetup.dismiss({ remember: false })"
+          />
+          <NuxtPage />
+        </div>
+      </OperatorSuiteShell>
+      <main v-else-if="surface.showForbidden" class="grid min-h-dvh flex-1 place-items-center p-4">
+        <NuxtEmpty
+          icon="i-lucide-shield-x"
+          title="Seu acesso não inclui o Compras"
+          description="Peça a um responsável a permissão de comprar e receber insumos. Entrar novamente não concede essa permissão."
+        />
+      </main>
+      <main
+        v-else-if="surface.showChecking"
+        class="grid min-h-dvh flex-1 place-items-center p-4"
+        role="status"
+        aria-busy="true"
+      >
+        <div class="grid w-full max-w-sm gap-3 text-center">
+          <NuxtSkeleton class="mx-auto h-12 w-12" />
+          <p class="text-sm text-muted-foreground">Conferindo seu acesso ao Compras…</p>
+        </div>
+      </main>
+      <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do alpha subia
+           a tela de senha com a sessão viva. -->
+      <OperatorSessionUnavailable v-if="surface.showUnavailable" scope="as compras" @retry="refresh()" />
+      <OperatorLogin
+        v-if="surface.showLogin"
+        :expired="sessionState === 'expired'"
+        :title="sessionState === 'expired' ? undefined : 'Entre para operar Compras'"
+        :description="sessionState === 'expired' ? undefined : 'Use uma conta autorizada a comprar e receber insumos.'"
+      />
+      <OperatorLock v-else-if="surface.showLock" :perm="OPERATOR_PERM" />
+      <OperatorSonner />
+      <OperatorPwaRuntime />
     </div>
-    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
-         alpha subia a tela de senha com a sessão viva. -->
-    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="as compras" @retry="refresh()" />
-    <OperatorLogin
-      v-if="!canIdentify && !sessionUnavailable"
-      title="Entre para operar Compras"
-      description="Use uma conta autorizada a comprar e receber insumos."
-    />
-    <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
-    <OperatorStationSetup
-      v-if="stationSetup.offer.value"
-      @done="stationSetup.done()"
-      @dismiss="stationSetup.dismiss()"
-      @unavailable="stationSetup.dismiss({ remember: false })"
-    />
-    <OperatorSonner />
-    <OperatorPwaRuntime />
-  </div>
+  </OperatorAppRoot>
 </template>

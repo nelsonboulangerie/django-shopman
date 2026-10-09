@@ -35,29 +35,23 @@ describe("documento da entrada no cabeçalho", () => {
   });
 });
 
-describe("camada visual da suíte no Compras", () => {
-  it("o shell liga a camada e monta a navegação da suíte nos dois lugares", () => {
+describe("Compras no shell da suíte (fase 2)", () => {
+  it("o app entrega as seções ao shell do kit, sem navegação própria nem a pele legada", () => {
     const shell = app("app.vue");
-    expect(shell).toContain('data-suite="v3"');
-    expect(shell).toContain('<PurchaseNav\n      v-if="canIdentify"\n      place="rail"');
-    expect(shell).toContain('place="bar"');
-    expect(shell).not.toContain("<OperatorRail");
+    expect(shell).toContain("<OperatorSuiteShell");
+    expect(shell).toContain(':sections="sections"');
+    expect(shell).not.toMatch(/data-suite=/);
+    expect(shell).not.toContain("<PurchaseNav");
+    expect(shell).not.toContain("<OperatorSuiteRail");
     expect(shell).not.toContain("<nav");
   });
 
-  it("as seções são estado: as peças recebem a vista e devolvem a escolha", () => {
-    const nav = app("components/PurchaseNav.vue");
-    expect(nav).toContain("<OperatorSuiteRail");
-    expect(nav).toContain("<OperatorSectionBar");
-    expect(nav).toContain(':current="view"');
-    expect(nav).toContain('@select="select"');
-    for (const key of ['"panel"', '"buy"', '"receive"', '"base"']) expect(nav).toContain(`key: ${key}`);
-  });
-
-  it("toda vista abre com o cabeçalho de uma linha do kit", () => {
-    const page = app("pages/index.vue");
-    expect(page).toContain("<OperatorPageHeader");
-    expect(page).toContain("<OperatorLiveStatus");
-    expect(page).toContain('panel: "Painel", buy: "Comprar", receive: "Receber", base: "Base"');
+  it("cada seção é uma rota; a Base tem as quatro sub-seções com rota em inglês", () => {
+    for (const page of ["pages/index.vue", "pages/buy.vue", "pages/receive.vue", "pages/base/materials.vue", "pages/base/suppliers.vue", "pages/base/costs.vue", "pages/base/count.vue"]) {
+      const source = app(page);
+      expect(source, page).toContain("<OperatorPageHeader");
+      expect(source, page).toContain("<PurchaseReadStatus");
+    }
+    expect(app("pages/base/index.vue")).toContain('redirect: "/base/materials"');
   });
 });

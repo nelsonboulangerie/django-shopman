@@ -49,7 +49,6 @@ const CEILING: Record<string, { max: number; reason: string; arriving?: string }
   "pos-nuxt/app/pages/preorders/index.vue": { max: 1, reason: "dívida: Encomendas, onda do PDV" },
   "pos-nuxt/app/pages/index.vue": { max: 2, reason: "dívida: comanda e barra de funções da venda, onda do PDV" },
   "pos-nuxt/app/pages/settings/seating.vue": { max: 1, reason: "dívida: Ajustes do salão, onda do PDV" },
-  "purchase-nuxt/app/pages/index.vue": { max: 2, reason: "dívida: Receber e item, onda do Compras" },
 };
 
 function vueFiles(dir: string, found: string[] = []): string[] {
