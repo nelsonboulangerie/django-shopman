@@ -658,7 +658,7 @@ describe("realtimeIndicator — honestidade do tempo-real", () => {
     expect(realtimeIndicator("connecting").dotClass).not.toContain("green");
     const polling = realtimeIndicator("polling");
     expect(polling.live).toBe(false);
-    expect(polling.label).toContain("automática"); // ainda atualiza, mas não em tempo real
+    expect(polling.label).toBe("Atualiza a cada 30 s"); // ainda atualiza, mas não em tempo real
     expect(polling.dotClass).not.toContain("green");
   });
 });

@@ -473,7 +473,7 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
     };
   }
   return {
-    label: "Atualização automática",
+    label: "Atualiza a cada 30 s",
     live: false,
     dotClass: "bg-muted-foreground/40",
     title: "Sem tempo real; o board atualiza sozinho a cada 30s",

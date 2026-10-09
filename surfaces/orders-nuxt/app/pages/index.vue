@@ -1229,25 +1229,13 @@ function printQueue() {
       :filters-wrap="false"
     >
       <template #status>
-        <!-- No celular o título não se corta: o estado vai por extenso só na falha; o
-             resto fica no ponto, na hora e no nome acessível. -->
+        <!-- O texto visível é do selo (a hora, a cadência, "Última leitura às…",
+             "Sem conexão"); o rótulo do estado e o detalhe vão ao nome acessível. -->
         <OperatorLiveStatus
           :tone="liveTone"
           :time="readClock"
-          :label="
-            isPhone && !error
-              ? ''
-              : error
-                ? isPhone
-                  ? 'Falhou'
-                  : 'Atualização falhou'
-                : realtimeView.label
-          "
-          :detail="
-            isPhone
-              ? `${error ? 'Atualização falhou. ' : `${realtimeView.label}. `}${realtimeView.title}`
-              : realtimeView.title
-          "
+          :label="error ? 'Atualização falhou' : realtimeView.label"
+          :detail="realtimeView.title"
         />
       </template>
       <template #search>
