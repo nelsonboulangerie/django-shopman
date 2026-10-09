@@ -144,7 +144,13 @@ const favoritesClass = computed(() =>
 
 <template>
   <div class="flex min-w-0 items-center gap-2" data-operator-quick-filters :data-quick-filters-mode="mode">
-    <div class="flex min-w-0 items-center gap-2 overflow-x-auto no-scrollbar" :class="stripClass">
+    <!-- A faixa rola na horizontal de propósito (o contrato do scanner de geometria:
+         `data-operator-overflow="horizontal"`). -->
+    <div
+      class="flex min-w-0 items-center gap-2 overflow-x-auto no-scrollbar"
+      :class="stripClass"
+      data-operator-overflow="horizontal"
+    >
       <NuxtTabs
         v-if="mode !== 'multiple'"
         v-model="tabValue"
