@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // As peças de tela da fase 2 (WP-FASE2-UX-OPERADOR), com dados fixos: a vitrine de
 // quem vai migrar um app. Cada peça entra aqui no mesmo PR em que nasce no kit.
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import { useRecordTrail } from "../composables/useRecordTrail";
 import type { OperatorMoreMenuItems } from "../presentation/moreMenu";
@@ -62,6 +62,28 @@ const openOrder = computed(() => trailOrders.find((order) => order.ref === openR
 function recordLocation(id: string) {
   return { path: route.path, query: { ...route.query, record: id } };
 }
+
+// A ação na base: o que ela mexe, uma ação larga e o motivo quando não pode.
+const acting = ref(false);
+function act() {
+  acting.value = true;
+  setTimeout(() => {
+    acting.value = false;
+    said("Pronto para retirar");
+  }, 800);
+}
+const readyAction = computed(() => ({
+  label: "Pronto para retirar",
+  icon: "i-lucide-check",
+  loading: acting.value,
+  onSelect: act,
+}));
+const blockedAction = {
+  label: "Iniciar preparo",
+  icon: "i-lucide-lock",
+  disabled: true,
+  reason: "O Pix ainda não caiu. O pedido libera sozinho quando cair.",
+};
 
 const rows = [
   { sku: "PAO-FRANCES", name: "Pão francês" },
@@ -141,6 +163,32 @@ const rows = [
         <p class="op-micro text-muted">
           A lista de origem: {{ trailOrders.map((order) => order.ref).join(", ") }}.
         </p>
+      </div>
+    </NuxtCard>
+
+    <NuxtCard
+      title="Ação na base"
+      description="OperatorActionBar: no celular e no tablet, a ação do momento fica na base, em fluxo, entre o conteúdo e a barra inferior. Na mesa (1024 px ou mais) ela não aparece: a ação sobe para a barra do topo."
+      data-catalog-action-bar
+    >
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="flex flex-col overflow-hidden rounded-lg border border-default">
+          <p class="flex-1 p-3 text-sm text-muted">Itens e cliente do pedido 1048.</p>
+          <OperatorActionBar
+            :action="readyAction"
+            context-label="Pedido 1048 · Ana Souza"
+            context-value="R$ 48,70"
+          />
+        </div>
+        <div class="flex flex-col overflow-hidden rounded-lg border border-default">
+          <p class="flex-1 p-3 text-sm text-muted">Itens e cliente do pedido 1049.</p>
+          <OperatorActionBar
+            :action="blockedAction"
+            :secondary="{ label: 'Recusar', color: 'error', onSelect: () => said('Recusar') }"
+            context-label="Pedido 1049 · Pix"
+            context-value="R$ 93,20"
+          />
+        </div>
       </div>
     </NuxtCard>
   </section>

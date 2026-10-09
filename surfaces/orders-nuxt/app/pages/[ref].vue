@@ -580,6 +580,30 @@ const primary = computed(() => {
   }
   return null;
 });
+// A base do celular: a ação primária e o "Recusar" como dados do `OperatorActionBar`.
+const rejectThumb = computed(() =>
+  rejectAction.value
+    ? {
+        label: "Recusar",
+        color: "error" as const,
+        disabled: busy.value || !rejectAction.value.enabled,
+        onSelect: () => openDialog("reject"),
+      }
+    : undefined,
+);
+const thumbAction = computed(() => {
+  const p = primary.value;
+  // Sem ação primária, o "Recusar" é a ação do momento.
+  if (!p) return rejectThumb.value ?? null;
+  return {
+    label: p.label,
+    icon: p.icon.replace("lucide:", "i-lucide-"),
+    disabled: busy.value || !p.enabled,
+    reason: p.enabled ? "" : p.reason,
+    onSelect: runPrimary,
+  };
+});
+const thumbReject = computed(() => (primary.value ? rejectThumb.value : undefined));
 function runPrimary() {
   const p = primary.value;
   if (!p?.enabled || busy.value) return;
@@ -1071,37 +1095,16 @@ const outside = useOutsideStore(
       </OperatorOrderDetail>
     </div>
 
-    <!-- No celular, a ação pertence ao chrome do painel. Como irmã do scroller ela
-         permanece visível sem cobrir a barra de seções da suíte. -->
-    <OperatorToolbar
-      v-if="isPhone && order && (primary || rejectAction)"
-      as="footer"
+    <!-- No celular, a ação do momento mora na base (`OperatorActionBar`, fase 2): em
+         fluxo, irmã do conteúdo que rola, acima da barra inferior; o motivo aparece
+         escrito quando ela não pode. -->
+    <OperatorActionBar
+      v-if="isPhone && order && thumbAction"
+      :action="thumbAction"
+      :secondary="thumbReject"
+      label="Ação do pedido"
       data-detail-thumb
-    >
-      <div class="flex w-full items-center gap-2">
-        <NuxtButton
-          v-if="rejectAction"
-          type="button"
-          label="Recusar"
-          color="error"
-          variant="outline"
-          :disabled="busy || !rejectAction.enabled"
-          data-action="reject"
-          @click="openDialog('reject')"
-        />
-        <div v-if="primary" class="min-w-0 flex-1">
-          <NuxtButton
-            block
-            type="button"
-            :icon="primary.icon.replace('lucide:', 'i-lucide-')"
-            :label="primary.label"
-            :disabled="busy || !primary.enabled"
-            :data-action="primary.key"
-            @click="runPrimary"
-          />
-        </div>
-      </div>
-    </OperatorToolbar>
+    />
 
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons or
          store presets + free text) -->
