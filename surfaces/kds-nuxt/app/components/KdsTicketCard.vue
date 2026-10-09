@@ -65,7 +65,7 @@ const props = withDefaults(
     /** Rótulo fino acima do código (celular: "Agora"). */
     eyebrow?: string;
     /** Celular: o ato do ticket em foco mora na ação na base (`OperatorActionBar`, na
-     *  página). O card só mostra o Desfazer, que fica onde o card está. */
+     *  página), o Desfazer inclusive, no mesmo botão do Pronto. O card não tem botão. */
     actionInBar?: boolean;
   }>(),
   {
@@ -363,9 +363,8 @@ const d = computed(() => ({
     </div>
 
     <!-- AÇÃO: um botão, o ato escrito nele, na base do card, dentro da moldura. No
-         celular o ato do card em foco está na ação na base da página; o Desfazer fica
-         aqui, com o fundo que esvazia. -->
-    <div v-if="finishing" :class="d.inset" data-kds-undo>
+         celular o ato do card em foco (o Desfazer inclusive) está na ação na base. -->
+    <div v-if="finishing && !actionInBar" :class="d.inset" data-kds-undo>
         <OperatorTimedButton
           :until="undoUntil"
           :duration="KDS_UNDO_WINDOW_MS"

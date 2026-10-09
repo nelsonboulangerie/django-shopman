@@ -346,11 +346,11 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     expect(mountCard({ ticket: ticket() }).find("[data-kds-started]").exists()).toBe(false);
   });
 
-  it("no celular o ato mora na base da página; o card só guarda o Desfazer, com o código", () => {
+  it("no celular o ato mora na base da página, o Desfazer inclusive: o card não tem botão", () => {
     const working = mountCard({ ticket: ticket({ order_ref: "WEB-1-W07" }), actionInBar: true });
     expect(working.find("[data-kds-action]").exists()).toBe(false);
     const finishing = mountCard({ ticket: ticket({ order_ref: "WEB-1-W07" }), actionInBar: true, finishing: true });
-    expect(finishing.get("[data-kds-action]").text()).toContain("Desfazer W07");
+    expect(finishing.find("[data-kds-action]").exists()).toBe(false);
   });
 
   it("toque longo no ticket emite hold (desfazer, reabrir, ver o pedido)", async () => {

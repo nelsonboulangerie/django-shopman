@@ -431,7 +431,11 @@ const phoneAction = computed<OperatorActionBarAction | null>(() => {
         disabled: true,
         reason: `${card.finish_block_label}. ${card.finish_block_reason}`,
       };
-    // O Desfazer fica no card em foco, com o fundo que esvazia; a base sai da frente.
+    // Dono, 09/10/2026: a barra NÃO some nem se troca no Pronto; fica igual, e só o
+    // botão diz "Desfazer …". O fundo que esvazia atrás do botão é a ação com prazo da
+    // `OperatorActionBar`, que chega pelo PR do kit (`claude/kit-desfazer-no-mesmo-botao`).
+    case "undo":
+      return { label: `Desfazer ${code}`, icon: "i-lucide-undo-2", onSelect: () => void undoFinish(card.pk) };
     default:
       return null;
   }
