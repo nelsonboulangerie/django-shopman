@@ -1,7 +1,11 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import Button from "@nuxt/ui/components/Button.vue";
 import OperatorTimedButton from "../../app/components/OperatorTimedButton.vue";
+
+const TIMED_EXTRA = new Set(["relative", "isolate", "overflow-hidden", "tabular-nums"]);
+const tokens = (el: Element) => new Set(el.className.split(/\s+/).filter(Boolean));
 
 // O botão com prazo: o fundo esvazia até a janela fechar; o rótulo é fixo; o tempo
 // mora numa descrição fixa; ao fim, `expire` uma vez e o botão some ou desabilita.
@@ -140,6 +144,43 @@ describe("OperatorTimedButton", () => {
     vi.advanceTimersByTime(600);
     await button.vm.$nextTick();
     expect(button.emitted("expire")).toHaveLength(1);
+  });
+
+  // A menor interferência possível (dono, 09/10/2026): o botão com prazo é o botão de
+  // origem, classe por classe; a peça só acrescenta o que segura a camada atrás do texto.
+  for (const variant of ["solid", "outline"] as const) {
+    for (const color of ["primary", "neutral", "error"] as const) {
+      for (const size of ["md", "xl"] as const) {
+        it(`herda a aparência do botão de origem: ${variant} ${color} ${size}`, async () => {
+          const origin = await mountSuspended(Button, {
+            props: { label: "Pronto 0131", variant, color, size, block: true },
+          });
+          const timed = await mountTimed({ label: "Desfazer 0131", variant, color, size, block: true });
+          const before = tokens(origin.get("button").element);
+          const after = tokens(timed.get("button").element);
+          for (const token of before) expect(after, `classe ${token}`).toContain(token);
+          for (const token of after) {
+            if (!before.has(token)) expect(TIMED_EXTRA, `classe nova ${token}`).toContain(token);
+          }
+          origin.unmount();
+        });
+      }
+    }
+  }
+
+  it("sólido de cor: duas partes nítidas, o que resta e o que esvaziou", async () => {
+    const solid = await mountTimed({ variant: "solid", color: "primary" });
+    expect(solid.get("[data-timed-fill]").classes()).toContain("timed-remaining");
+    expect(solid.get("[data-timed-spent]").classes()).toContain("timed-spent");
+    // O verde do Pronto (neutro sólido pintado) pede as mesmas duas partes.
+    const painted = await mountTimed({ variant: "solid", color: "neutral", fillTint: "inverted" });
+    expect(painted.find("[data-timed-spent]").exists()).toBe(true);
+    const neutral = await mountTimed({ variant: "solid", color: "neutral" });
+    expect(neutral.find("[data-timed-spent]").exists()).toBe(false);
+    const outline = await mountTimed({ variant: "outline", color: "error" });
+    expect(outline.get("[data-timed-fill]").classes()).toContain("bg-current/10");
+    // As duas esvaziam na mesma direção: a janela que sobra encolhe para a esquerda.
+    expect(outline.get("[data-timed-fill]").classes()).toContain("origin-left");
   });
 
   it("um prazo novo reabre a janela", async () => {

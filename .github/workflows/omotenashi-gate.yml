@@ -38,7 +38,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine
         env:
           POSTGRES_DB: shopman
           POSTGRES_USER: shopman
@@ -172,7 +172,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine
         env:
           POSTGRES_DB: shopman
           POSTGRES_USER: shopman
@@ -188,7 +188,7 @@ jobs:
       # (django_ratelimit.E003 exige cache compartilhado) — o servidor nem sobe
       # sem um Redis de verdade, exatamente como no deploy.
       redis:
-        image: redis:7-alpine
+        image: public.ecr.aws/docker/library/redis:7-alpine
         ports:
           - "6379:6379"
         options: >-
@@ -244,7 +244,7 @@ jobs:
     # erro também não tinha). Um E2E que ninguém roda apodrece calado.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine
         env:
           POSTGRES_DB: shopman
           POSTGRES_USER: shopman

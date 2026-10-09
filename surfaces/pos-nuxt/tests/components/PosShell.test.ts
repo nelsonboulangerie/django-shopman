@@ -15,7 +15,7 @@ import { ref } from "vue";
 import App from "~/app.vue";
 
 const { calls } = vi.hoisted(() => ({
-  calls: { terminal: 0, operatorLock: 0, autoLock: 0, events: 0 },
+  calls: { terminal: 0, operatorLock: 0, autoLock: 0, events: 0, shell: 0 },
 }));
 
 // Os composables de operador viram contadores: a pergunta deste arquivo é SE
@@ -48,6 +48,11 @@ mockNuxtImport("usePosEvents", () => () => {
   return { realtime: ref("polling") };
 });
 mockNuxtImport("useConnectivity", () => () => ({ isOnline: ref(true), onReconnect: vi.fn() }));
+// A navegação da suíte (seções, Encomendas, sonda do agente) é do shell de operador.
+mockNuxtImport("usePosShell", () => () => {
+  calls.shell += 1;
+  return { sections: ref([]), current: ref("board"), select: vi.fn() };
+});
 
 const OPERATOR_CHROME = { OperatorLock: true, OperatorStationSetup: true, OfflineBanner: true, UiSonner: true };
 const PAGE_STUB = { NuxtPage: { template: '<div data-testid="page" />' } };
@@ -74,6 +79,7 @@ describe("app.vue — um shell por rota", () => {
     calls.operatorLock = 0;
     calls.autoLock = 0;
     calls.events = 0;
+    calls.shell = 0;
   });
   afterEach(() => {
     for (const wrapper of mounted.splice(0)) wrapper.unmount();
@@ -91,7 +97,7 @@ describe("app.vue — um shell por rota", () => {
 
     expect(wrapper.find('[data-pos-shell="customer-display"]').exists()).toBe(true);
     expect(wrapper.find('[data-pos-shell="operator"]').exists()).toBe(false);
-    expect(calls).toEqual({ terminal: 0, operatorLock: 0, autoLock: 0, events: 0 });
+    expect(calls).toEqual({ terminal: 0, operatorLock: 0, autoLock: 0, events: 0, shell: 0 });
     expect(wrapper.text()).not.toContain("Entre para operar o caixa");
   });
 
@@ -102,7 +108,7 @@ describe("app.vue — um shell por rota", () => {
     expect(wrapper.find('[data-pos-shell="operator"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="page"]').exists()).toBe(true);
 
-    expect(calls).toEqual({ terminal: 0, operatorLock: 0, autoLock: 0, events: 0 });
+    expect(calls).toEqual({ terminal: 0, operatorLock: 0, autoLock: 0, events: 0, shell: 0 });
     // Nada de tela de senha na parede.
     expect(wrapper.find("form").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Entre para operar o caixa");
@@ -129,6 +135,7 @@ describe("app.vue — um shell por rota", () => {
     expect(calls.operatorLock).toBe(1);
     expect(calls.autoLock).toBe(1);
     expect(calls.events).toBe(1);
+    expect(calls.shell).toBe(1);
     // Dispositivo sem estação reconhecida: a tela de senha, no lugar da página.
     expect(wrapper.text()).toContain("Entre para operar o caixa");
     expect(wrapper.find('[data-testid="page"]').exists()).toBe(false);

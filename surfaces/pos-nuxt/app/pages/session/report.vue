@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
+
 // RELATÓRIO da sessão de caixa na antesala (WP-ADM-4, benchmark Odoo POS):
 // leitura X (parcial do turno ABERTO do operador), leituras Z (turnos
 // FECHADOS do dia) e o histórico agregado de turnos/vendas. Read-only sobre
@@ -37,35 +39,38 @@ function reprint(entryId: number) {
 async function goToCashSession() {
   await navigateTo("/session");
 }
+
+const headerActions = computed<OperatorHeaderAction[]>(() => [
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", priority: 1, disabled: pending.value, onSelect: () => void refresh() },
+]);
 </script>
 
 <template>
   <main class="min-h-dvh bg-background text-foreground">
-    <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
-      <UiButton
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Voltar à sessão de caixa"
-        title="Sessão de caixa"
-        @click="goToCashSession"
-      >
-        <Icon name="lucide:arrow-left" class="size-5" />
-      </UiButton>
-      <h1 class="shrink-0 whitespace-nowrap text-lg font-semibold">Relatório de caixa</h1>
-      <span v-if="report" class="ml-auto min-w-0 text-right text-sm text-muted-foreground">
-        {{ report.date_display }} · leituras X/Z do dia
-      </span>
-      <UiButton
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Atualizar relatório"
-        title="Atualizar"
-        :disabled="pending"
-        @click="refresh()"
-      >
-        <Icon name="lucide:refresh-cw" class="size-4" :class="pending ? 'animate-spin' : ''" />
-      </UiButton>
-    </header>
+    <!-- O cabeçalho da suíte, no papel de corredor (WP-FASE2 §6, K6): voltar ao Caixa,
+         o título, o dia e o Atualizar no ⋯; sem campo de busca, sem Avisos, sem navegação. -->
+    <OperatorPageHeader title="Relatório de caixa" :inbox="false" :actions="headerActions" actions-label="Mais ações do relatório">
+      <!-- A busca da suíte só no Ctrl K (e na lupa do celular): no corredor não há campo
+           de busca na tela, e o "/" não tira a pessoa da contagem. -->
+      <template #search>
+        <OperatorSuiteSearch variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
+      </template>
+      <template #lead>
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          square
+          aria-label="Voltar à sessão de caixa"
+          title="Sessão de caixa"
+          data-report-back
+          @click="goToCashSession"
+        />
+      </template>
+      <template v-if="report" #status>
+        <span class="text-xs text-muted-foreground">{{ report.date_display }} · leituras X/Z do dia</span>
+      </template>
+    </OperatorPageHeader>
 
     <div class="mx-auto grid w-full max-w-2xl gap-4 p-4 md:py-8">
       <!-- Sem permissão de operação do PDV. -->

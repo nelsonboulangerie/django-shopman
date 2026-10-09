@@ -935,6 +935,12 @@ contra ela, nos dois temas, travados em `tests/actionBarContrast.test.ts`.
   peça, não da tela.
 - **`reason`**: com `disabled`, o motivo aparece escrito sob a ação (`role="status"`, e o
   botão aponta para ele com `aria-describedby`).
+- **Ação com prazo** (`action.timed = { until, since?, duration?, serverNow?, onExpire? }`,
+  o "Desfazer"): a barra NÃO muda (dono, 09/10/2026). Mesmo cartão invertido, mesma
+  linha de contexto, mesma segunda ação; o botão tocado fica no lugar, mesma cor,
+  variante e tamanho, troca só o texto ("Pronto 0131" vira "Desfazer 0131", com
+  `ariaLabel` para o nome completo) e ganha o fundo que esvazia (`OperatorTimedButton`).
+  Ao fim do prazo o botão fica no lugar, desligado, até quem chama trocar a ação.
 - **Só abaixo de `lg`**: na mesa, a ação sobe para a barra superior primária.
 - **Some com o teclado aberto** (`data-keyboard="open"` no `<html>`, do
   `plugins/visualViewport.client.ts`): o campo que a pessoa digita fica com a tela.
@@ -991,11 +997,24 @@ desfazer a saída no Gestor.
   prazo. Quem guarda o prazo é o dono do estado (o quadro, a projeção), nunca a peça.
 - **Uma animação só**, em CSS, do tamanho da janela, com atraso negativo para começar
   onde a janela já está. Nada redesenha a cada quadro.
-- **Conjunto mínimo**: o `NuxtButton` de sempre, `md`/`xl` × `outline`/`solid` ×
-  `primary`/`neutral`/`error`. No contornado, a cor da casa esvazia por trás do rótulo;
-  no sólido, a cor do botão é o que esvazia, e o que passou fica mais claro. As cores de
-  aviso (`info`, `success`, `warning`) só como ação de um `NuxtAlert` daquela cor (a
-  exceção declarada do conjunto).
+- **A menor interferência possível** (dono, 09/10/2026): o botão com prazo é o MESMO
+  botão que ele substitui, no mesmo lugar. Quem chama passa a cor, a variante e o
+  tamanho do botão de origem (o padrão é o da ação principal, `primary` `solid` `md`);
+  só o texto muda ("Pronto 0131" vira "Desfazer 0131") e o fundo esvazia atrás dele.
+  Nada de trocar para contornado ou neutro, nada de mudar altura ou largura. Trava: o
+  teste compara, classe por classe, com o `NuxtButton` de mesma cor, variante e tamanho.
+- **O esvaziamento se vê de relance** (dono, 09/10/2026: a primeira versão era "muito
+  sutil"). No sólido de cor (`primary`, e o verde do Pronto da Cozinha com
+  `fill-tint="inverted"`) são duas partes com 3:1 entre si (WCAG 1.4.11) e o rótulo AA
+  sobre as duas: no claro, o que RESTA é a cor quase preta e o que esvaziou é a cor do
+  botão; no escuro, o que resta é a cor quase branca e o que esvaziou fica um pouco mais
+  fundo. A borda entre elas é seca, sem degradê. Os valores moram no `<style>` da peça
+  (`--timed-remaining`, `--timed-spent`) e a trava `tests/timedButtonContrast.test.ts`
+  lê de lá. O neutro sólido (`fill-tint="page"`) e o contornado não comportam duas
+  partes com o rótulo AA e ficam com o tom leve (contornado: a cor do rótulo a 10%).
+  Conjunto mínimo: `md`/`xl` × `outline`/`solid` × `primary`/`neutral`/`error`; as
+  cores de aviso (`info`,
+  `success`, `warning`) só como ação de um `NuxtAlert` daquela cor (a exceção declarada).
 - **Movimento reduzido** (`prefers-reduced-motion: reduce`): nada anima; o botão mostra
   o número de segundos ("4 s"), que muda uma vez por segundo.
 - **Leitor de tela**: o nome do botão é o rótulo, fixo (ou o `aria-label` de quem chama:
@@ -1008,9 +1027,11 @@ desfazer a saída no Gestor.
 - `class`, `data-*` e `aria-*` chegam ao botão. SFC puro (imports explícitos): os
   harnesses sem runtime Nuxt dos apps montam a peça de verdade.
 
-Onde mora: o Desfazer do Pronto na Cozinha (`KdsTicketCard`, prazo guardado pelo
-`useKdsBoard`) e o Desfazer da saída no Gestor (`OrderCard` e o detalhe do pedido,
-prazo e começo da janela vindos da projeção: `undo_until_iso`/`undo_since_iso`). A conta
+Onde mora: o Desfazer do Pronto na Cozinha (na mesa, o mesmo Pronto verde do
+`KdsCardButton`; no celular, a ação na base com `action.timed`; prazo guardado pelo
+`useKdsBoard`) e o Desfazer da saída no Gestor (o primário sólido do `OrderCard`; no
+detalhe, o primário do cabeçalho e a ação na base; prazo e começo da janela vindos da
+projeção: `undo_until_iso`/`undo_since_iso`). A conta
 é pura em `presentation/timedAction.ts`. Trava: `tests/timedAction.test.ts` e
 `tests/components/OperatorTimedButton.test.ts`. Vitrine: "Ação com prazo", nas peças de
 tela do catálogo.
