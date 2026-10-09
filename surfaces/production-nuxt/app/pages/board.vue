@@ -253,7 +253,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
             variant="ghost"
             square
             class="board-pagedot"
-            :class="{ 'board-pagedot--active': pages.page.value === p - 1 }"
+            :class="{ 'board-pagedot-current': pages.page.value === p - 1 }"
             :aria-label="`Página ${p}`"
             :aria-pressed="pages.page.value === p - 1"
             @click="
@@ -373,8 +373,8 @@ const STATUS_CHARS = 10; // CONFIRMADO
 .board-pagedot:hover {
   background: var(--board-line);
 }
-.board-pagedot--active,
-.board-pagedot--active:hover {
+.board-pagedot-current,
+.board-pagedot-current:hover {
   background: var(--board-text);
   transform: scale(1.25);
 }
