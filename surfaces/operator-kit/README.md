@@ -1369,12 +1369,28 @@ os componentes em `tests/components/OperatorReadingChart.test.ts`.
 </OperatorReadingCard>
 ```
 
-- **Quatro formas, e só quatro** (`kind`): `bars` (séries lado a lado), `comparison` (barras
-  da primeira série e o traço tracejado da segunda, o período de comparação), `diverging`
-  (uma série com sinal; `diverging` dá o nome de cada lado, "Sobrou" e "Faltou", e do zero)
-  e `line` (linha com área). O desenho é Unovis (o Nuxt UI não tem Chart; o template
-  oficial de dashboard usa Unovis), dentro de `<ClientOnly>` com `NuxtSkeleton` da mesma
-  altura. Cores só do tema (`READING_TONE_COLOR`), nunca hexadecimal.
+- **Cinco formas, e só cinco** (`kind`): `bars` (séries lado a lado), `stacked` (séries
+  que são PARTES de um todo, numa barra só: "vendeu" mais "sobrou" é o que a casa fez),
+  `comparison` (barras da primeira série e o traço tracejado da segunda, o período de
+  comparação), `diverging` (uma série com sinal; `diverging` dá o nome de cada lado,
+  "Sobrou" e "Faltou", e do zero) e `line` (linha com área). O desenho é Unovis (o Nuxt
+  UI não tem Chart; o template oficial de dashboard usa Unovis), dentro de `<ClientOnly>`
+  com `NuxtSkeleton` da mesma altura. Cores só do tema (`READING_TONE_COLOR`), nunca
+  hexadecimal.
+- **Preenchimento é a segunda codificação** (`fill` da série, nas barras): `solid` (o
+  padrão), `tint` (o mesmo tom a 30%, a parte que completa o todo) e `hatch` (listrado,
+  a estimativa). Os tons do tema são quentes e vizinhos (latão, âmbar, tijolo): medidos
+  com o validador de paleta, latão × âmbar e latão × tijolo não se separam para quem não
+  distingue vermelho de verde, e âmbar × latão nem para quem distingue. Dois segmentos
+  vizinhos se diferenciam pelo preenchimento, não pela cor. A legenda desenha o mesmo
+  preenchimento.
+- **Deitado** (`horizontal`, só nas formas de barra): quando o eixo é de NOMES (produto,
+  receita), não de datas. As categorias descem pelo eixo vertical, a primeira no topo,
+  TODAS com rótulo (até 120 px, quebrando em duas linhas), e a altura cresce com elas
+  (`readingHorizontalHeight`: 40 px por faixa mais a régua; `height` não vale). Cada
+  faixa tem um trilho discreto que é a régua e o alvo do ponteiro (a barra curta não
+  encolhe o alvo); a faixa lida fica cheia e as outras esmaecem. Sem linha de grade: ela
+  cruzava as barras por cima.
 - **O ponto em leitura é um só** para mouse, toque e teclado: a frase dele fica acima do
   gráfico e o traço vertical marca onde ele está. A área do gráfico é uma parada de
   tabulação (`role="group"`, nome = `title`); setas andam, Home e End vão às pontas,

@@ -8,6 +8,10 @@ import type {
   BIOverShortRow,
   BIOverShortUnavailable,
 } from "~/types/bi";
+import type {
+  ReadingChartPoint,
+  ReadingChartSeries,
+} from "../../../operator-kit/app/presentation/readingChart";
 import { csvMoney, formatInt, formatQty, shortDate } from "./bi";
 
 /** Custo da sobra em reais inteiros ("R$ 158"), como na prévia: centavo não decide produção. */
@@ -295,34 +299,26 @@ export function versusTypicalText(row: BIOverShortRow): string {
   return typical ? `típico ${typical}` : "sem típico ainda";
 }
 
-/** A escala comum das barras: o maior entre feito, vendido + perdido e típico. */
-export function barScale(rows: readonly BIOverShortRow[]): number {
-  return Math.max(
-    1,
-    ...rows.flatMap((row) => [num(row.made), num(row.sold) + num(row.lost_estimate), num(row.typical_sold)]),
-  );
-}
+// ── O gráfico "Fez × vendeu" (OperatorReadingChart do kit, deitado e empilhado) ──
 
-export interface BarGeometry {
-  made: number;
-  sold: number;
-  lostFrom: number;
-  lost: number;
-  typical: number | null;
-}
+/**
+ * Os segmentos de cada barra: o que vendeu (cheio) e o que sobrou (o mesmo latão,
+ * claro) somam o que a casa fez; as vendas perdidas depois que acabou (tijolo,
+ * listrado: é estimativa) estendem a barra além do feito. Sobra e falta não aparecem
+ * juntas no mesmo produto.
+ */
+export const MADE_SOLD_SERIES: ReadingChartSeries[] = [
+  { key: "sold", label: "Vendeu", tone: "primary" },
+  { key: "leftover", label: "Sobrou", tone: "primary", fill: "tint" },
+  { key: "lost", label: "Vendas perdidas (estimativa)", tone: "error", fill: "hatch" },
+];
 
-/** Porcentagens da barra compacta (pino 6): trilho = fez, cheio = vendeu, tracejado = perdidas, traço = típico. */
-export function barGeometry(row: BIOverShortRow, scale: number): BarGeometry {
-  const pct = (value: number) => Math.min(100, (value / scale) * 100);
-  const made = num(row.made);
-  const sold = Math.min(num(row.sold), Math.max(made, num(row.sold)));
-  return {
-    made: pct(made),
-    sold: pct(sold),
-    lostFrom: pct(sold),
-    lost: pct(num(row.lost_estimate)),
-    typical: row.typical_sold ? pct(num(row.typical_sold)) : null,
-  };
+/** Um ponto por produto, na ordem da leitura (faltou primeiro, depois a maior sobra). */
+export function madeSoldPoints(rows: readonly BIOverShortRow[]): ReadingChartPoint[] {
+  return rows.map((row) => ({
+    label: row.name,
+    values: { sold: num(row.sold), leftover: num(row.leftover), lost: num(row.lost_estimate) },
+  }));
 }
 
 /** "+4 produtos: Focaccia do dia (sobrou 6) · Madeleine e Kuro Pan (na medida)". */
