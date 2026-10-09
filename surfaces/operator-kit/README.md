@@ -829,6 +829,63 @@ Contrato em `tests/components/OperatorRecordNav.test.ts` e `tests/recordTrail.te
 Primeiro uso: o pedido do Gestor (`orders-nuxt/app/pages/[ref].vue`), com a trilha da
 fila (`pages/index.vue`) e a do histórico (`pages/history.vue`).
 
+### Ação na base (`OperatorActionBar`)
+
+A ação do momento no celular e no tablet: a estrutura de sucesso do Storefront
+(`.shop-action-dock` da sacola) como regra, não como classe. A linha de contexto (o que a
+ação mexe), UMA ação larga e o motivo escrito quando ela não pode, num cartão
+**flutuante em superfície invertida** (dono, 09/10/2026): escura no tema claro, creme no
+escuro (`bg-inverted`/`text-inverted`, os tokens do tema), com sombra, como a sacola do
+Storefront. Contraste AA dos dois botões sobre ela, nos dois temas, travado em
+`tests/actionBarContrast.test.ts`.
+
+```vue
+<OperatorActionBar
+  :action="{ label: 'Iniciar preparo', icon: 'i-lucide-lock', disabled: true,
+             reason: 'O Pix ainda não caiu. O pedido libera sozinho quando cair.' }"
+  :secondary="{ label: 'Recusar', onSelect: reject }"
+  context-label="Pedido 1049 · Pix"
+  context-value="R$ 93,20"
+/>
+```
+
+- **Em fluxo**: a tela a põe como irmã do conteúdo que rola, DEPOIS dele (o rodapé do
+  painel, a posição do `#footer` do `NuxtDashboardPanel`). Nada de `fixed`, nada de
+  `bottom-16` adivinhando a altura da barra inferior.
+- **A ação** (`OperatorActionBarAction`, `presentation/actionBar.ts`) leva verbo e alvo
+  ("Pronto para retirar"), `xl`. A PRINCIPAL é `primary` `solid` (o dourado); a segunda
+  (`secondary`), se houver, é SECUNDÁRIA (`outline`), nunca discreta (`ghost`) (dono,
+  09/10/2026). Sobre a superfície invertida as duas ganham contorno na cor do texto
+  invertido: o dourado sozinho não separa da superfície (2,8:1 no claro, 1,8:1 no
+  escuro). A cor de cada uma é da peça, não da tela.
+- **`reason`**: com `disabled`, o motivo aparece escrito sob a ação (`role="status"`, e o
+  botão aponta para ele com `aria-describedby`).
+- **Só abaixo de `lg`**: na mesa, a ação sobe para a barra superior primária.
+- **Some com o teclado aberto** (`data-keyboard="open"` no `<html>`, do
+  `plugins/visualViewport.client.ts`): o campo que a pessoa digita fica com a tela.
+- Marca `data-focus-obstruction`: o próximo foco e o "Tem mais abaixo" descontam a altura.
+
+**Convivência na base do celular**, de baixo para cima:
+
+1. a **barra inferior** (`OperatorQuickBar`, 3 a 5 vagas, do shell), sempre visível;
+2. a **ação na base**, uma por tela, colada em cima dela;
+3. o **conteúdo**, que rola acima das duas e nunca fica coberto.
+
+Enquanto houver seleção numa lista, a barra de seleção (`OperatorBulkBar`, por vir)
+ocupa o lugar da ação na base. **Ponto de encontro com o `OperatorThumbAction`** (o
+polegar da Saída do Gestor, #1564): é o mesmo papel (a ação do momento ao alcance do
+polegar, `xl`, `data-focus-obstruction`), hoje `sticky` dentro da área que rola e só
+abaixo de `md`. Próximo passo: o polegar vira um `OperatorActionBar` sem linha de
+contexto (a Saída passa a ação para o rodapé do painel), e as duas peças viram uma. A
+trava abaixo declara o teto dele (1, que só cai).
+
+Trava: `tests/guardrails.actionBar.test.ts` conta, por arquivo, o texto de classe com
+`sticky`/`fixed` e `bottom-*` nos templates dos apps de operador e do kit: uso novo
+reprova, e o teto das barras feitas à mão (Cozinha, Marketing, PDV, Compras) só cai.
+Contrato em `tests/components/OperatorActionBar.test.ts`. Primeiro uso: o pedido do
+Gestor no celular (`orders-nuxt/app/pages/[ref].vue`: a ação primária, "Recusar" como
+segunda, o motivo do bloqueio escrito).
+
 ## Busca da suíte (`OperatorSuiteSearch`)
 
 Uma busca, uma tecla (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gestor-busca`,
