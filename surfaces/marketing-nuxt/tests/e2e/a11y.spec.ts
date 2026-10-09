@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
+// Alvo mínimo = altura `md` (32 px), decisão do dono de 09/10/2026; acima do piso
+// WCAG 2.2 AA (2.5.8, 24 px).
+const MIN_TARGET = 32;
+
 type AxeViolation = {
   id: string;
   impact: string | null;
@@ -57,7 +61,7 @@ async function expectTouchTargets(page: Page, context: string) {
           const target = node.closest('[data-slot="switch"]');
           if (target) {
             const targetRect = target.getBoundingClientRect();
-            if (targetRect.width >= 44 && targetRect.height >= 44) return [];
+            if (targetRect.width >= MIN_TARGET && targetRect.height >= MIN_TARGET) return [];
           }
         }
         if (["checkbox", "radio"].includes(input.type)) {
@@ -66,10 +70,10 @@ async function expectTouchTargets(page: Page, context: string) {
             document.querySelector(`label[for="${node.id}"]`);
           if (label) {
             const labelRect = label.getBoundingClientRect();
-            if (labelRect.width >= 44 && labelRect.height >= 44) return [];
+            if (labelRect.width >= MIN_TARGET && labelRect.height >= MIN_TARGET) return [];
           }
         }
-        return rect.width >= 44 && rect.height >= 44
+        return rect.width >= MIN_TARGET && rect.height >= MIN_TARGET
           ? []
           : [
               {

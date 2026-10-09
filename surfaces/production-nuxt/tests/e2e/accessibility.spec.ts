@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
+// Alvo mínimo = altura `md` (32 px), decisão do dono de 09/10/2026; acima do piso
+// WCAG 2.2 AA (2.5.8, 24 px).
+const MIN_TARGET = 32;
+
 const authed = {
   name: "e2e_session",
   value: "authed",
@@ -76,7 +80,7 @@ async function expectTouchTargets(page: Page, context: string) {
           rect.height === 0
         )
           return [];
-        return rect.width >= 44 && rect.height >= 44
+        return rect.width >= MIN_TARGET && rect.height >= MIN_TARGET
           ? []
           : [
               {

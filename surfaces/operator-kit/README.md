@@ -88,10 +88,10 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useNowTick.ts` | `useNowTick` | o relógio do servidor: um timer só para a tela, ancorado no `server_now_iso`/`generated_at` da projeção |
 | `app/components/UiToolbar.vue` | `<UiToolbar>` | barra de trabalho sob o nav: slot padrão à esquerda, slot `end` à direita (com `flex-wrap`) |
 | `app/components/UiSearchInput.vue` | `<UiSearchInput>` | busca da barra: ícone, limpar, expand-on-focus, `focus()` exposto para o atalho `/` |
-| `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem e slot de ícone — alvo de toque de 44 px (`min-h-control`) |
+| `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem e slot de ícone — alvo de toque de 32 px (`min-h-control`) |
 | `app/components/FilterBar.vue` | `<FilterBar>` | filtro universal: "+ Filtro" → campo → valores, chip removível que reabre a edição, painel de baixo no celular (ver "Filtro universal") |
 | `app/composables/useRouteFilters.ts` | `useRouteFilters` | o recorte da `FilterBar` na URL (`filtersToQuery`/`filtersFromQuery` em `presentation/filterBar.ts`) |
-| `app/components/UiIconButton.vue` | `<UiIconButton>` | ação quadrada de ícone da barra (44 px, `size-control`), com `active` e `spinning` |
+| `app/components/UiIconButton.vue` | `<UiIconButton>` | ação quadrada de ícone da barra (32 px, `size-control`), com `active` e `spinning` |
 | `app/presentation/windowTitle.ts` | `operatorAppName`, `windowTitle` | regra pura do nome e do título: `"<Casa> · <App> · <Página>"`, sempre com ponto médio — ver "Nome do app instalado" |
 | `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle`, `useOperatorAppName` | instala o `titleTemplate` no `app.vue` (e `error.vue`) e expõe o nome resolvido; as páginas passam só o próprio título |
 | `app/presentation/nextFocus.ts` | `revealPlan`, `needsInitialReveal`, … | regra pura do próximo foco (alinhamento, movimento, quando rolar na montagem) |
@@ -1286,8 +1286,8 @@ Agora os três vivem aqui, com nome global `Ui<Nome>`, e o `MaterialPicker` foi
 
 Contrato:
 
-- **Alvo de toque de 44 px pelo token** (`min-h-control`/`h-control`/`size-control`),
-  nunca literal. `UiCheckbox` sem rótulo vira um quadrado de 44 px; com rótulo, a linha
+- **Alvo de toque de 32 px pelo token** (altura `md`, decisão do dono de 09/10/2026) (`min-h-control`/`h-control`/`size-control`),
+  nunca literal. `UiCheckbox` sem rótulo vira um quadrado de 32 px; com rótulo, a linha
   inteira é o alvo. Quem atende balcão está com uma mão só e o celular na outra.
 - **ARIA de verdade, não `<input>` pintado**: `role="checkbox"` com
   `aria-checked="true|false|mixed"`, `role="radiogroup"`/`role="radio"`,
