@@ -52,6 +52,14 @@ import {
 import type { OperatorSession } from "../types/operator";
 import { alertActions } from "../utils/alertActions";
 
+// A descrição do aviso da tela na cor plena. O oficial a desenha com `opacity-90`, e
+// sobre o fundo pré-composto do kit isso fica abaixo do AA: medido (axe, 09/10/2026)
+// 4,24:1 no `warning`; `error` e `success` do claro e `error` e `info` do escuro também
+// ficam abaixo de 4,5. Na cor plena, todos passam de 4,9:1. O título continua o primeiro
+// na leitura pelo peso. Mora aqui, e não no `app.config` (tema): o tema do kit repinta
+// as baselines de todas as consumidoras e pede aceite do dono.
+const SCREEN_ALERT_UI = { description: "opacity-100" } as const;
+
 const props = withDefaults(
   defineProps<{
     title: string;
@@ -642,6 +650,7 @@ function clearAll() {
         :actions="alertActions(alert.color, headerAlertActions(alert))"
         orientation="horizontal"
         :role="alert.color === 'error' ? 'alert' : 'status'"
+        :ui="SCREEN_ALERT_UI"
         data-page-header-alert
       />
       <NuxtButton
