@@ -18,7 +18,7 @@ const tabs = computed(() =>
     label: section.label,
     value: section.key,
     icon: section.icon,
-    badge: props.counts?.[section.key] ? { label: String(props.counts[section.key]), color: "neutral" as const } : undefined,
+    count: props.counts?.[section.key] ?? 0,
   })),
 );
 const options = computed(() =>
@@ -55,6 +55,10 @@ function go(value: unknown) {
       class="w-max max-sm:hidden"
       data-base-sections-desk
       @update:model-value="go"
-    />
+    >
+      <template #trailing="{ item }">
+        <OperatorCountChip :count="item.count" />
+      </template>
+    </NuxtTabs>
   </div>
 </template>
