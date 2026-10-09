@@ -593,13 +593,16 @@ export function railBadge(list: Pick<PreorderListResponse, "days"> | null | unde
 // ── O painel de filtros da suíte (`OperatorFilterPanel`, fase 2) ────────────
 //
 // Os recortes de todo dia do balcão (decisão do dono, P1 de 02/10: A receber, Sem
-// Via Pedido, Retiradas, Entregas) são os FILTROS RÁPIDOS do painel único da
-// suíte, o mesmo do Gestor; o resto (Pagas, Na conta da casa e o "A conferir"
-// que o aviso liga) mora nos filtros completos dele. Na mesa os recortes ativos
-// viram chips ao lado do botão; no celular, os chips do cabeçalho. O estado
+// Via Pedido, Retiradas, Entregas) são UM toque, com a contagem: a faixa de filtros
+// rápidos da suíte (`OperatorQuickFilters`, vários que somam), à esquerda da toolbar.
+// O painel único (`OperatorFilterPanel`) guarda o resto (Pagas, Na conta da casa e o
+// "A conferir" que o aviso liga) nos filtros completos; os recortes ligados viram
+// chips removíveis (na mesa ao lado do botão, no celular abaixo da linha). O estado
 // continua o de sempre (`PreorderFilters`, na URL); aqui só se traduz.
 
 export interface QuickFilter {
+  /** A chave do item na faixa. */
+  key: string;
   /** A dimensão do estado que o filtro rápido escreve. */
   dimension: keyof PreorderFilters;
   value: string;
@@ -607,16 +610,58 @@ export interface QuickFilter {
 }
 
 export const QUICK_FILTERS: readonly QuickFilter[] = [
-  { dimension: "pay", value: "to_receive", label: "A receber" },
-  { dimension: "print", value: "pending", label: "Sem Via Pedido" },
-  { dimension: "fulfillment", value: "pickup", label: "Retiradas" },
-  { dimension: "fulfillment", value: "delivery", label: "Entregas" },
+  { key: "to_receive", dimension: "pay", value: "to_receive", label: "A receber" },
+  { key: "unprinted", dimension: "print", value: "pending", label: "Sem Via Pedido" },
+  { key: "pickup", dimension: "fulfillment", value: "pickup", label: "Retiradas" },
+  { key: "delivery", dimension: "fulfillment", value: "delivery", label: "Entregas" },
 ];
+
+/** As chaves da faixa ligadas no estado da tela. */
+export function quickKeysOf(filters: PreorderFilters): string[] {
+  return QUICK_FILTERS.filter((quick) => filters[quick.dimension] === quick.value).map((quick) => quick.key);
+}
+
+/**
+ * O que a faixa devolveu → o estado da tela. O desligado volta a "Todas" na dimensão
+ * dele; o ligado escreve a dele. Retiradas e Entregas moram na mesma dimensão: a
+ * tocada vence a que estava.
+ */
+export function filtersFromQuickKeys(current: PreorderFilters, keys: readonly string[]): PreorderFilters {
+  const before = new Set(quickKeysOf(current));
+  const after = new Set(keys);
+  const next: PreorderFilters = { ...current };
+  for (const quick of QUICK_FILTERS) {
+    if (before.has(quick.key) && !after.has(quick.key) && next[quick.dimension] === quick.value) {
+      (next as Record<keyof PreorderFilters, string>)[quick.dimension] = "all";
+    }
+  }
+  for (const quick of QUICK_FILTERS) {
+    if (after.has(quick.key) && !before.has(quick.key)) {
+      (next as Record<keyof PreorderFilters, string>)[quick.dimension] = quick.value;
+    }
+  }
+  return next;
+}
+
+/**
+ * Os itens da faixa, com a contagem de cada um: o que ELE mostraria com os OUTROS
+ * filtros como estão (a mesma conta das opções do painel).
+ */
+export function quickFilterItems(
+  cards: readonly FilterCard[],
+  filters: PreorderFilters,
+): { key: string; label: string; count: number }[] {
+  const chips = filterChips(cards, filters);
+  const count = (dimension: keyof PreorderFilters, value: string) =>
+    (chips[dimension] as FilterChip<string>[]).find((chip) => chip.key === value)?.count ?? 0;
+  return QUICK_FILTERS.map((quick) => ({ key: quick.key, label: quick.label, count: count(quick.dimension, quick.value) }));
+}
 
 /**
  * O que o painel devolveu → o estado da tela. Cada dimensão das Encomendas tem um
- * valor só (Retiradas e Entregas se excluem); o filtro rápido do painel SOMA na
- * dimensão, então o valor novo vence o que já estava.
+ * valor só (Retiradas e Entregas se excluem); quando o painel devolve dois numa
+ * dimensão (o favorito fixado do grupo "Filtros rápidos" dele soma), o valor novo
+ * vence o que já estava.
  */
 export function fromPanelFilters(current: PreorderFilters, next: ActiveFilters): PreorderFilters {
   const single: ActiveFilters = {};
