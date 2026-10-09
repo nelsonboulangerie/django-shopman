@@ -20,7 +20,7 @@ const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
 const SKIP_DIRS = new Set(["node_modules", ".nuxt", ".output", "dist"]);
 
 /** Apps em que lista de trabalho é só `OperatorTable`. */
-const MIGRATED = ["orders-nuxt"];
+const MIGRATED = ["orders-nuxt", "marketing-nuxt"];
 
 function vueFiles(dir: string, found: string[] = []): string[] {
   let entries: string[];

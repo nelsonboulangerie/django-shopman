@@ -82,10 +82,6 @@ describe("guardrail do cabeçalho de seções", () => {
   it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
     const migrados = [
       "kds-nuxt/app/components/KdsNav.vue",
-      // V4-MKT: a segunda linha de Ajustes do Marketing (Campanhas, Modelos, Ofertas e
-      // cupons, Plataformas) mora em `MarketingSettingsNav.vue`, na linha de recortes
-      // do `OperatorPageHeader`; ela não é barra de seções do app.
-      "marketing-nuxt/app/components/MarketingNav.vue",
       // V4-PDV: o rail e a barra do polegar do PDV (`place`), como o GestorNav.
       "pos-nuxt/app/components/PosFunctionRail.vue",
       // V4-PROD: o ciclo do lote no rail (Alt1 a Alt5 impressos) e na barra do polegar.
@@ -120,6 +116,14 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(bi).toContain(':sections="sections"');
     expect(bi).not.toContain("<BiNav");
     expect(bi).not.toMatch(/data-suite=/);
+
+    // Fase 2 (onda do Marketing): o Marketing segue o Gestor. As sub-seções de Ajustes
+    // moram em `MarketingSettingsNav.vue`, na faixa esquerda da toolbar.
+    const marketing = readFileSync(join(SURFACES, "marketing-nuxt/app/app.vue"), "utf8");
+    expect(marketing).toContain("<OperatorSuiteShell");
+    expect(marketing).toContain(':sections="sections"');
+    expect(marketing).not.toContain("<MarketingNav");
+    expect(marketing).not.toMatch(/data-suite=/);
   });
 });
 
@@ -127,7 +131,6 @@ describe("guardrail do cabeçalho de seções", () => {
 // abaixo nasceu de uma divergência medida que pode voltar.
 const NAVS = [
   "kds-nuxt/app/components/KdsNav.vue",
-  "marketing-nuxt/app/components/MarketingNav.vue",
   "pos-nuxt/app/components/PosFunctionRail.vue",
   "production-nuxt/app/components/ProductionNav.vue",
   "purchase-nuxt/app/components/PurchaseNav.vue",

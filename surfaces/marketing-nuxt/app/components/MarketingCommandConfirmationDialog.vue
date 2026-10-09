@@ -413,8 +413,8 @@ async function submit() {
               </p>
               <NuxtTextarea
                 id="decision-typed-confirmation"
-                aria-describedby="decision-typed-phrase"
                 v-model="typedConfirmation"
+                aria-describedby="decision-typed-phrase"
                 name="typed_confirmation"
                 :rows="1"
                 autocomplete="off"

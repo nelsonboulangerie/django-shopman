@@ -31,7 +31,6 @@ const KIT_ALLOWED = new Set(["app/composables/useScreen.ts", "app/composables/us
 /** Teto por app ainda não migrado (09/10/2026). Migrou? Baixe o número; nunca suba. */
 const CEILING: Record<string, number> = {
   "bi-nuxt": 7,
-  "marketing-nuxt": 1,
   "pos-nuxt": 7,
   "production-nuxt": 3,
   "purchase-nuxt": 3,

@@ -719,8 +719,8 @@ function closeDialog(open: boolean) {
               </p>
               <NuxtTextarea
                 id="recovery-typed-confirmation"
-                aria-describedby="recovery-typed-phrase"
                 v-model="typedConfirmation"
+                aria-describedby="recovery-typed-phrase"
                 name="typed_confirmation"
                 :rows="1"
                 autocomplete="off"
