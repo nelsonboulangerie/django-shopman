@@ -105,6 +105,9 @@ function installGlobals() {
   vi.stubGlobal("reactive", reactive);
   vi.stubGlobal("watch", watch);
   vi.stubGlobal("useSonner", { success: vi.fn(), error: vi.fn() });
+  // Mesa, mouse: sem o painel encaixado do tablet de toque.
+  vi.stubGlobal("useTouchPointer", () => ref(false));
+  vi.stubGlobal("useScreen", () => ({ belowLg: ref(false), belowSm: ref(false), ready: ref(true) }));
   vi.stubGlobal("useOperatorAppLink", () => ({
     attrsFor: () => ({ target: "_self" }),
   }));
