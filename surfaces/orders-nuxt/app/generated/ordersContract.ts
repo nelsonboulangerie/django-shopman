@@ -383,6 +383,7 @@ export interface UndoProjection {
   action_ref: string;
   held_effect: string;
   already_out: string;
+  undo_since_iso: string;
 }
 
 /** Uma estação da Cozinha neste pedido, vista do Gestor (SUITE-UX §15). */
