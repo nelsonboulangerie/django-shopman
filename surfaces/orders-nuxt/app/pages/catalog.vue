@@ -988,7 +988,7 @@ watch(
   },
   { immediate: true },
 );
-// Vocação (só para o B.I.): o aviso discreto da lista conta os produtos à venda
+// Vocação (só para o B.I.): o aviso da lista conta os produtos à venda
 // sem vocação, da loja inteira. "Classificar" recorta a lista neles (todas as
 // coleções) e abre o primeiro já na aba "Preço e config", onde a vocação mora.
 const vocation = computed(() => vocationNotice(matrix.value?.vocation_pending));
@@ -1194,22 +1194,25 @@ useHead({ title: "Catálogo" });
         icon="i-lucide-circle-alert"
         :description="errorMsg"
       />
-      <!-- Vocação: aviso de uma linha, tom neutro. Serve só ao B.I.; não pede pressa. -->
-      <p
+      <!-- Vocação: aviso padrão do conjunto mínimo, em `info` (serve só ao B.I.;
+           não pede pressa). A ação repete a cor do aviso (PR #1545). -->
+      <NuxtAlert
         v-if="vocation"
-        class="-my-2 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground"
+        color="info"
+        variant="subtle"
+        icon="i-lucide-tags"
+        :title="vocation.headline"
+        :description="vocation.names"
+        :actions="[
+          {
+            label: 'Classificar',
+            color: 'info',
+            variant: 'outline',
+            onClick: classifyVocation,
+          },
+        ]"
         data-testid="vocation-notice"
-      >
-        <span>{{ vocation.headline }} ({{ vocation.names }})</span>
-        <span class="text-muted-foreground/50" aria-hidden="true">·</span>
-        <NuxtButton
-          type="button"
-          label="Classificar"
-          color="neutral"
-          variant="ghost"
-          @click="classifyVocation"
-        />
-      </p>
+      />
       <NuxtAlert
         v-if="error"
         color="error"
