@@ -432,12 +432,12 @@ const stateCounts = computed(() => ({
 }));
 const STATE_LABELS = { active: "Ligadas", inactive: "Desligadas" } as const;
 const stateItems = computed(() => [
-  { label: "Todas", value: "all", badge: stateCounts.value.all },
-  { label: STATE_LABELS.active, value: "active", badge: stateCounts.value.active },
+  { label: "Todas", value: "all", count: stateCounts.value.all },
+  { label: STATE_LABELS.active, value: "active", count: stateCounts.value.active },
   {
     label: STATE_LABELS.inactive,
     value: "inactive",
-    badge: stateCounts.value.inactive,
+    count: stateCounts.value.inactive,
   },
 ]);
 const stateChoice = computed({
@@ -630,7 +630,11 @@ useHead({ title: "Campanhas" });
           :content="false"
           variant="pill"
           aria-label="Situação das campanhas"
-        />
+        >
+          <template #trailing="{ item }">
+            <OperatorCountChip :count="item.count" />
+          </template>
+        </NuxtTabs>
         <NuxtSelect
           v-model="platformChoice"
           :items="platformItems"
