@@ -279,12 +279,11 @@ async function confirm() {
             </div>
           </div>
 
-          <NuxtAlert
+          <NuxtEmpty
             v-if="loadingPreview"
-            color="info"
-            variant="subtle"
-            icon="i-line-md-loading-loop"
-            description="Calculando o que muda…"
+            loading
+            size="sm"
+            title="Calculando o que muda…"
             aria-live="polite"
           />
           <NuxtAlert

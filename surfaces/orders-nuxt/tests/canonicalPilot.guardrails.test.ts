@@ -371,6 +371,36 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(runtimeOffenders(/data-suite=["']v3["']/)).toEqual([]);
   });
 
+  // P0-5/F3 do laudo do Gestor: o selo ao vivo tinha virado "On/Off" verde, em inglês,
+  // e esta trava exigia isso. O contrato é o do README do kit, confirmado pelo dono em
+  // 08/10/2026: quatro tons, cada um com cor E texto próprios, e o "Sem conexão" com o
+  // ponto vermelho (PR #1539). O comportamento é provado no `SuiteChrome.test.ts` do kit.
+  it("o selo ao vivo fala português em quatro tons, nunca On/Off", () => {
+    const live = readFileSync(
+      new URL(
+        "../../operator-kit/app/components/OperatorLiveStatus.vue",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(live).toMatch(/live:\s*"success"/);
+    expect(live).toMatch(/calm:\s*"neutral"/);
+    expect(live).toMatch(/late:\s*"warning"/);
+    expect(live).toMatch(/off:\s*"error"/);
+    expect(live).toContain('"Sem conexão"');
+    expect(live).toContain("Última leitura às");
+    const code = live.replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toMatch(/["'`]O(?:n|ff)["'`]/);
+    // Selo e chip sem variante própria: o `soft` e o `ring-2` vêm do tema do kit.
+    expect(live).not.toMatch(/<NuxtBadge[^>]*\bvariant=/s);
+  });
+
+  // P2-9 do laudo do Gestor: carregando é o `loading` do componente (NuxtButton,
+  // NuxtEmpty), com o ícone e o giro do tema; nunca um spinner trocado à mão no `icon`.
+  it("carregando usa o loading canônico, sem spinner à mão", () => {
+    expect(runtimeOffenders(/i-line-md-loading-loop/)).toEqual([]);
+  });
+
   it("escolhe variantes de Alert por uso e mantém o subtle opaco no tema", () => {
     const appConfig = readFileSync(
       new URL("../../operator-kit/app/app.config.ts", import.meta.url),
@@ -411,7 +441,7 @@ describe("Gestor canônico em Nuxt UI", () => {
       chips.filter(({ tag }) => !/\binset\b/.test(tag)).map(({ file }) => file),
     ).toEqual([]);
     // A regra aprovada: Chip com número é o numérico (4xl, texto de 12 px); sem
-    // número é o indicativo (2xl); o On/Off é xl. A única expressão aceita é o
+    // número é o indicativo (2xl); o ponto do selo ao vivo é xl. A única expressão aceita é o
     // tamanho amarrado ao próprio texto: `:size="X ? '4xl' : '2xl'"` com `:text="X"`.
     const chipSizeOk = ({ file, tag }: { file: string; tag: string }) => {
       if (file.endsWith("OperatorLiveStatus.vue")) return /\bsize="xl"/.test(tag);

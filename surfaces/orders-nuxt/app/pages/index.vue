@@ -15,7 +15,6 @@ import {
   cardAffordances,
   changeBackSuggestionQ,
   channelOptions,
-  elapsedLabel,
   EXIT_SELECTION_LABEL,
   flattenZones,
   fulfillmentCounts,
@@ -44,6 +43,7 @@ import {
 import {
   QUEUE_FOCUS,
   QUEUE_SORT_OPTIONS,
+  liveAge,
   queueGesture,
   queueItems,
   queueScopeCounts,
@@ -270,7 +270,7 @@ const supervisionColumns = computed(() => [
   { id: "expand", header: "" },
   { id: "select", header: "" },
   { id: "order", header: "Pedido" },
-  { id: "stage", header: "Etapa" },
+  { id: "stage", header: "Situação" },
   { id: "items", header: "Itens" },
   { id: "total", header: "Total" },
   { id: "elapsed", header: "Tempo" },
@@ -409,7 +409,7 @@ const { run: bulkAdvance, pending: bulkAdvancing } = usePendingAction(
   },
 );
 
-// ⋯ da fila: atualizar, Ciente, seleção, exportar e imprimir (e, no posto Saída e no
+// ⋯ da fila: atualizar, Visto, seleção, exportar e imprimir (e, no posto Saída e no
 // celular, também ordenar, a visão e o som).
 const moreOpen = ref(false);
 function menuDo(fn: () => void, close = true) {
@@ -1272,7 +1272,7 @@ function printQueue() {
   <main class="flex min-h-0 flex-1 flex-col">
     <!-- Cabeçalho de UMA linha (UX-KIT-V2, prévia v4 `gestor-fila4.html`): título, ao vivo,
          busca e poucos controles (som, ordenar, visão, ⋯). Atualizar, exportar, imprimir,
-         a seleção em lote e a última leitura útil moram no ⋯; Ciente aparece aqui só
+         a seleção em lote e a última leitura útil moram no ⋯; Visto aparece aqui só
          enquanto há pedido novo esperando. No posto Saída (`gestor-colunas4.html`):
          "Visão: Saída", "Mostrar as 3 colunas" e o som; o resto no ⋯. -->
     <OperatorPageHeader
@@ -1283,25 +1283,13 @@ function printQueue() {
       :active-filters="activeFilters"
     >
       <template #status>
-        <!-- No celular o título não se corta: o estado vai por extenso só na falha; o
-             resto fica no ponto, na hora e no nome acessível. -->
+        <!-- O texto visível é do selo (a hora, a cadência, "Última leitura às…",
+             "Sem conexão"); o rótulo do estado e o detalhe vão ao nome acessível. -->
         <OperatorLiveStatus
           :tone="liveTone"
           :time="readClock"
-          :label="
-            isPhone && !error
-              ? ''
-              : error
-                ? isPhone
-                  ? 'Falhou'
-                  : 'Atualização falhou'
-                : realtimeView.label
-          "
-          :detail="
-            isPhone
-              ? `${error ? 'Atualização falhou. ' : `${realtimeView.label}. `}${realtimeView.title}`
-              : realtimeView.title
-          "
+          :label="error ? 'Atualização falhou' : realtimeView.label"
+          :detail="realtimeView.title"
         />
       </template>
       <template #search>
@@ -1333,9 +1321,9 @@ function printQueue() {
             @click="boardLayout.showAll()"
           />
         </template>
-        <!-- O som de pedido novo e o "Ciente" que o cala formam um grupo só: o Ciente
+        <!-- O som de pedido novo e o "Visto" que o cala formam um grupo só: o Visto
              aparece enquanto há pedido novo tocando e, reconhecido, some, deixando o
-             botão do som sozinho. No posto Saída o Ciente fica no ⋯. O som tem os
+             botão do som sozinho. No posto Saída o Visto fica no ⋯. O som tem os
              mesmos 3 estados do KDS: ligado, desligado e ligado-mas-bloqueado pelo
              autoplay (ponto âmbar até o 1º gesto). -->
         <NuxtFieldGroup v-if="!isPhone" data-sound-group>
@@ -1365,10 +1353,10 @@ function printQueue() {
           <NuxtButton
             v-if="attentionPending && !exitPostView"
             icon="i-lucide-check"
-            label="Ciente"
+            label="Visto"
             color="neutral"
             variant="outline"
-            aria-label="Reconhecer aviso de pedido novo"
+            aria-label="Visto: parar o som de pedido novo"
             @click="acknowledgeAttention"
           />
         </NuxtFieldGroup>
@@ -1406,7 +1394,7 @@ function printQueue() {
         </template>
 
         <!-- ⋯ da fila (do tablet para cima; no celular ele mora no fim dos recortes). O posto
-             Saída (v4 `gestor-colunas`) não tem ⋯: a leitura se atualiza sozinha e o Ciente
+             Saída (v4 `gestor-colunas`) não tem ⋯: a leitura se atualiza sozinha e o Visto
              é tocar a faixa da Entrada que pulsa. -->
         <BoardMenu
           v-if="!isPhone && !exitPostView"
@@ -1604,7 +1592,7 @@ function printQueue() {
         <div class="ms-auto flex flex-wrap items-center gap-1.5">
           <NuxtButton
             v-if="confirmableSel.length"
-            :icon="bulkConfirming ? 'i-line-md-loading-loop' : 'i-lucide-check'"
+            icon="i-lucide-check"
             :label="`Aceitar ${confirmableSel.length}`"
             color="primary"
             :disabled="bulkConfirming"
@@ -1614,9 +1602,7 @@ function printQueue() {
           />
           <NuxtButton
             v-if="advanceableSel.length"
-            :icon="
-              bulkAdvancing ? 'i-line-md-loading-loop' : 'i-lucide-arrow-right'
-            "
+            icon="i-lucide-arrow-right"
             :label="`Avançar ${advanceableSel.length}`"
             color="neutral"
             variant="outline"
@@ -1915,15 +1901,15 @@ function printQueue() {
               }}</span>
             </template>
             <template #elapsed-cell="{ row }">
+              <!-- O relógio vivo do kit (useNowTick), como a Grade: P1-8. -->
               <NuxtBadge
                 :color="
-                  timerTone(row.original.card.timer_class) === 'late'
-                    ? 'warning'
-                    : timerTone(row.original.card.timer_class) === 'warning'
-                      ? 'warning'
-                      : 'neutral'
+                  liveAge(row.original.card, nowMs).tone === 'ok'
+                    ? 'neutral'
+                    : 'warning'
                 "
-                :label="elapsedLabel(row.original.card.elapsed_seconds)"
+                :label="liveAge(row.original.card, nowMs).label"
+                class="tabular-nums"
               />
             </template>
             <template #actions-cell="{ row }">
@@ -2076,7 +2062,7 @@ function printQueue() {
           </template>
         </NuxtCard>
 
-        <!-- Agendados: pedidos confirmados para datas futuras, fora das colunas
+        <!-- Encomendas: pedidos confirmados para datas futuras, fora das colunas
              do dia. Agrupados pela data combinada; no dia, o despertador devolve
              o pedido ao fluxo normal do board. -->
         <section v-if="preordersCount" class="mt-6" data-preorders-section>
@@ -2085,7 +2071,7 @@ function printQueue() {
               name="lucide:calendar-clock"
               class="size-4 text-muted-foreground"
             />
-            <h2 class="text-sm font-bold uppercase tracking-wide">Agendados</h2>
+            <h2 class="text-sm font-bold uppercase tracking-wide">Encomendas</h2>
             <NuxtBadge
               color="neutral"
               :label="String(preordersCount)"
@@ -2148,7 +2134,8 @@ function printQueue() {
         <div class="grid gap-4">
           <NuxtEmpty
             v-if="rejectReasonsLoading"
-            icon="i-line-md-loading-loop"
+            loading
+            size="sm"
             title="Carregando motivos do iFood…"
           />
           <NuxtAlert
