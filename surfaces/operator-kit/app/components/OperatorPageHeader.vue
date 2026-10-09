@@ -503,12 +503,7 @@ function clearAll() {
                `title`): a 320 px ele empurrava o período para trás da rolagem. -->
           <span class="max-[359.98px]:sr-only">Filtros</span>
           <template v-if="activeCount" #trailing>
-            <NuxtBadge
-              color="primary"
-              size="sm"
-              :label="String(activeCount)"
-              data-page-header-filters-count
-            />
+            <OperatorCountChip :count="activeCount" data-page-header-filters-count />
           </template>
         </NuxtButton>
       </div>
