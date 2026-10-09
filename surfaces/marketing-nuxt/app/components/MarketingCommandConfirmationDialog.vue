@@ -329,11 +329,12 @@ const SEAL_SHEET_CLASS =
       }
     "
   >
-    <!-- O carimbo redondo de quem aprova: o `actions` do cabeçalho vem depois do título
-         no DOM, e o `order-first` o põe à esquerda dele, como no selo do v4. -->
+    <!-- O carimbo redondo de quem aprova, no tom do app (`--app-color`, posto no
+         `<html>` pelo app.vue): o `actions` do cabeçalho vem depois do título no DOM,
+         e o `order-first` o põe à esquerda dele, como no selo do v4. -->
     <template v-if="sealed" #actions>
       <span
-        class="order-first me-1.5 grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary"
+        class="order-first me-1.5 grid size-10 shrink-0 place-items-center rounded-full bg-[color-mix(in_oklab,var(--app-color,var(--ui-primary))_14%,transparent)] text-[var(--app-color,var(--ui-primary))]"
         aria-hidden="true"
         data-seal-stamp
       >
