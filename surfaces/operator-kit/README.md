@@ -610,7 +610,7 @@ valia 639 px em nove e 1279 px na fila) e decidia `v-if` com ela. Na carga diret
 celular (recarregar, PWA, link) a Fila ficava no esqueleto para sempre (`Cannot read
 properties of null (reading 'emitsOptions')`) e a toolbar do Histórico, dos Clientes e do
 Catálogo sumia. Travas: `tests/guardrails.screen.test.ts` (só a régua e o rail usam
-`useMediaQuery` no kit; o Gestor é zero; os apps não migrados têm teto que só cai) e
+`useMediaQuery` no kit; Gestor e Cozinha são zero; os apps não migrados têm teto que só cai) e
 `orders-nuxt/tests/ssr/directLoadPhone.spec.ts` (build de produção, 390 e 1440 px, toda
 rota aberta direto: nenhum mismatch, nenhum erro de página).
 

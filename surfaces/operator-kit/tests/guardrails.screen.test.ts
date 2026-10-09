@@ -31,7 +31,6 @@ const KIT_ALLOWED = new Set(["app/composables/useScreen.ts", "app/composables/us
 /** Teto por app ainda não migrado (09/10/2026). Migrou? Baixe o número; nunca suba. */
 const CEILING: Record<string, number> = {
   "bi-nuxt": 7,
-  "kds-nuxt": 1,
   "marketing-nuxt": 1,
   "pos-nuxt": 7,
   "production-nuxt": 3,
@@ -76,7 +75,7 @@ describe("régua de tela única (useScreen)", () => {
     expect(ssrWidth.map((file) => relative(kitDir, file)), "`ssrWidth` adivinha a largura no servidor; use `useScreen()`").toEqual([]);
   });
 
-  it("nos apps de operador, nenhuma régua própria além do teto (o Gestor já é zero)", () => {
+  it("nos apps de operador, nenhuma régua própria além do teto (Gestor e Cozinha já são zero)", () => {
     const over: string[] = [];
     for (const app of OPERATOR_SURFACES) {
       if (app === "operator-kit") continue;
