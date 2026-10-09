@@ -35,6 +35,7 @@ import { readingChartCsv, readingMoneyFormat } from "../../../operator-kit/app/p
 const { report, freshness, pending, error, refresh } = useBiReport<BICashReport>("cash");
 const { selection, bounds, presets } = useBiWindow();
 const shareItems = useBiShareMenuItems();
+const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
 const days = computed(() => report.value?.days ?? []);
 const differencePoints = computed(() => cashDifferencePoints(days.value));
@@ -100,11 +101,9 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="O caixa fechou certo?" eyebrow="Auditoria do Dono">
-      <template #actions>
-        <OperatorReadingPageMenu :items="shareItems" />
-      </template>
-      <template #filters>
+    <OperatorPageHeader title="O caixa fechou certo?" eyebrow="Auditoria do Dono" :actions="readingActions" :actions-label="readingLabel">
+      <!-- Celular: período e frescor são os dois primários; não há painel de filtros. -->
+      <template #filters-primary>
         <OperatorPeriodPicker
           v-model="selection"
           :presets="presets"
@@ -116,6 +115,8 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
           align="start"
           label="Período de análise"
         />
+      </template>
+      <template #filters-end>
         <ClientOnly>
           <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
         </ClientOnly>

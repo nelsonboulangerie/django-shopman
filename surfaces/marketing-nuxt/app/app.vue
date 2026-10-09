@@ -41,7 +41,8 @@ watch(sessionState, async (next, previous) => {
     "[data-marketing-app-root] main h1",
   );
   heading?.setAttribute("tabindex", "-1");
-  heading?.focus();
+  // O foco é para o leitor de tela anunciar a tela; sem anel (não é controle).
+  heading?.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
 });
 </script>
 

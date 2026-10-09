@@ -21,10 +21,17 @@ export default defineAppConfig({
     // ele quebra em linhas (`text-clip` tira o `truncate` no merge, `whitespace-normal`
     // deixa quebrar) e a barra cresce além dos 56 px só quando precisa (`min-h`). A
     // coluna da direita é `shrink-0` no oficial: o título nunca empurra os botões.
+    //
+    // No celular (abaixo de `sm`, README "Barra do topo no celular"), a coluna da
+    // esquerda ocupa a sobra (`flex-1`) e pode quebrar (`flex-wrap`): o título fica com
+    // toda a largura que sobra ao lado do ☰ e do voltar (`flex-1 basis-0`), e o estado
+    // (`data-page-header-status`, `basis-full`) desce para a segunda linha em vez de se
+    // espremer por cima do título.
     dashboardNavbar: {
       slots: {
         root: "bg-card h-auto min-h-(--ui-header-height) py-1",
-        title: "text-clip whitespace-normal text-pretty min-w-0",
+        left: "max-sm:flex-1 max-sm:flex-wrap max-sm:gap-y-0.5",
+        title: "text-clip whitespace-normal text-pretty min-w-0 max-sm:flex-1 max-sm:basis-0",
       },
     },
     dashboardToolbar: { slots: { root: "bg-card" } },

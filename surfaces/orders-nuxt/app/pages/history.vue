@@ -11,6 +11,7 @@ import {
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
 import { useRouteFilters } from "../../../operator-kit/app/composables/useRouteFilters";
+import { filterBarActiveFilters } from "../../../operator-kit/app/presentation/filterBar";
 import {
   HISTORY_PRESETS,
   historyDimensions,
@@ -49,6 +50,33 @@ const dimensions = computed(() =>
   historyDimensions(history.value?.facets ?? []),
 );
 const filters = useRouteFilters(dimensions, { resetKeys: ["page"] });
+
+// Celular (abaixo de `sm`, a régua da barra e da toolbar do kit): "Atualizar" vai para
+// o ⋯ da barra; o período fica na linha e os recortes no painel "Filtros", com os
+// ativos como chips removíveis.
+const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const phoneHeaderActions = computed(() =>
+  isNarrow.value
+    ? [{ label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() }]
+    : undefined,
+);
+function clearSku() {
+  router.replace({
+    query: routeQueryFromHistory({ ...historyQuery.value, sku: "", page: 1 }),
+  });
+}
+const activeFilters = computed(() => [
+  ...(historyQuery.value.sku
+    ? [{
+        key: "sku",
+        label: `Produto: ${history.value?.sku_name || historyQuery.value.sku}`,
+        remove: clearSku,
+      }]
+    : []),
+  ...filterBarActiveFilters(dimensions.value, filters.value, (next) => {
+    filters.value = next;
+  }),
+]);
 
 const period = computed<PeriodSelection>({
   get: () => historyQuery.value.period,
@@ -102,7 +130,12 @@ const historyColumns = [
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Histórico" :filters-wrap="false">
+    <OperatorPageHeader
+      title="Histórico"
+      :filters-wrap="false"
+      :actions="phoneHeaderActions"
+      :active-filters="activeFilters"
+    >
       <template #status>
         <span class="hidden op-micro text-muted-foreground lg:inline"
           >Pedidos concluídos e cancelados</span
@@ -128,15 +161,7 @@ const historyColumns = [
           active-variant="soft"
           :aria-label="`Tirar o recorte do produto ${history?.sku_name || historyQuery.sku}`"
           data-history-sku
-          @click="
-            router.replace({
-              query: routeQueryFromHistory({
-                ...historyQuery,
-                sku: '',
-                page: 1,
-              }),
-            })
-          "
+          @click="clearSku()"
         />
         <FilterBar
           v-model="filters"
@@ -144,23 +169,32 @@ const historyColumns = [
           touch
           class="min-w-0 flex-1"
         />
-        <div class="flex items-center gap-3">
-          <OperatorPeriodPicker
-            v-model="period"
-            :presets="HISTORY_PRESETS"
-            custom
-            :today="today"
-            :max="today"
-            label="Período do histórico"
-          />
-          <NuxtButton
-            icon="i-lucide-refresh-cw"
-            label="Atualizar"
-            color="neutral"
-            variant="outline"
-            :loading="pending"
-            @click="refresh()"
-          />
+        <NuxtButton
+          v-if="!isNarrow"
+          icon="i-lucide-refresh-cw"
+          label="Atualizar"
+          color="neutral"
+          variant="outline"
+          :loading="pending"
+          @click="refresh()"
+        />
+      </template>
+      <!-- O período é o primário da toolbar: no celular fica na linha. -->
+      <template #filters-primary>
+        <OperatorPeriodPicker
+          v-model="period"
+          :presets="HISTORY_PRESETS"
+          custom
+          compact
+          :today="today"
+          :max="today"
+          label="Período do histórico"
+        />
+      </template>
+      <!-- A leitura (total e frescor): no fim da linha na mesa; no celular, numa faixa
+           de texto logo abaixo da linha. -->
+      <template #filters-end>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span
             v-if="history"
             class="shrink-0 text-xs text-muted-foreground tabular-nums"

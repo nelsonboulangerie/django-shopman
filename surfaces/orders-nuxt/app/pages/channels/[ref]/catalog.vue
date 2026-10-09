@@ -105,6 +105,17 @@ onBeforeRouteLeave(
     }),
 );
 useHead({ title: "Revisão de vínculos" });
+// Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
+// celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
+// desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
+const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const phoneHeaderActions = computed(() =>
+  isNarrow.value
+    ? [
+        { label: "Atualizar revisão", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+      ]
+    : undefined,
+);
 </script>
 
 <template>
@@ -112,6 +123,7 @@ useHead({ title: "Revisão de vínculos" });
     <OperatorPageHeader
       :title="`${board?.channel_name || channel} · Revisão de vínculos`"
       :filters-wrap="false"
+      :actions="phoneHeaderActions"
     >
       <template #lead>
         <NuxtButton
@@ -123,7 +135,7 @@ useHead({ title: "Revisão de vínculos" });
           aria-label="Voltar para Canais"
         />
       </template>
-      <template #filters>
+      <template v-if="!isNarrow" #filters>
         <NuxtButton
           icon="i-lucide-refresh-cw"
           label="Atualizar revisão"
@@ -132,6 +144,8 @@ useHead({ title: "Revisão de vínculos" });
           :loading="pending"
           @click="refresh()"
         />
+      </template>
+      <template #filters-end>
         <ReadFreshness
           inline
           :metadata="readMetadata"

@@ -93,12 +93,27 @@ async function toggleActive(row: WorkstationManageRow) {
   }
   await update(row.ref, { is_active: !row.is_active });
 }
+// Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
+// celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
+// desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
+const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const phoneHeaderActions = computed(() =>
+  isNarrow.value
+    ? [
+        { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+      ]
+    : undefined,
+);
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader :title="c.manage_title ?? ''" :filters-wrap="false">
-      <template #filters>
+    <OperatorPageHeader
+      :title="c.manage_title ?? ''"
+      :filters-wrap="false"
+      :actions="phoneHeaderActions"
+    >
+      <template v-if="!isNarrow" #filters>
         <NuxtButton
           icon="i-lucide-refresh-cw"
           label="Atualizar"

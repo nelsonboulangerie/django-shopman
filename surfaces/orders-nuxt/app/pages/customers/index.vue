@@ -66,11 +66,30 @@ const customerColumns = [
   { id: "contact", header: "Contato" },
   { id: "orders", header: "Pedidos" },
 ];
+// Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
+// celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
+// desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
+const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const phoneHeaderActions = computed(() =>
+  isNarrow.value
+    ? [
+        { label: "Unificações", icon: "i-lucide-history", to: "/customers/merges" },
+        ...(adminBaseUrl
+          ? [{ label: "Cadastrar ou editar no Admin", icon: "i-lucide-settings", to: `${adminBaseUrl}/admin/guestman/customer/`, target: "_blank" }]
+          : []),
+        { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+      ]
+    : undefined,
+);
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Clientes" :filters-wrap="false">
+    <OperatorPageHeader
+      title="Clientes"
+      :filters-wrap="false"
+      :actions="phoneHeaderActions"
+    >
       <template #status>
         <span class="hidden op-micro text-muted-foreground lg:inline"
           >Buscar, comparar e unificar cadastros</span
@@ -84,7 +103,7 @@ const customerColumns = [
           aria-label="Buscar cliente"
         />
       </template>
-      <template #filters>
+      <template #filters-primary>
         <NuxtTabs
           :model-value="listQuery.filter"
           :items="filterItems"
@@ -93,6 +112,8 @@ const customerColumns = [
           aria-label="Filtrar clientes"
           @update:model-value="setFilter(String($event))"
         />
+      </template>
+      <template v-if="!isNarrow" #filters>
         <div class="flex items-center gap-3">
           <NuxtButton
             to="/customers/merges"
@@ -120,6 +141,10 @@ const customerColumns = [
             :loading="pending"
             @click="refresh()"
           />
+        </div>
+      </template>
+      <template #filters-end>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span
             v-if="list"
             class="text-xs text-muted-foreground tabular-nums"

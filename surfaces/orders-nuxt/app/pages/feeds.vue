@@ -280,17 +280,33 @@ onBeforeRouteLeave(
 );
 
 useHead({ title: "Canais" });
+// Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
+// celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
+// desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
+const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const phoneHeaderActions = computed(() =>
+  isNarrow.value
+    ? [
+        { label: "Configurar canais no Admin", icon: "i-lucide-settings", to: `${adminBase}/admin/shop/channel/`, target: "_blank" },
+        { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+      ]
+    : undefined,
+);
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Canais" :filters-wrap="false">
+    <OperatorPageHeader
+      title="Canais"
+      :filters-wrap="false"
+      :actions="phoneHeaderActions"
+    >
       <template #status>
         <span class="hidden op-micro text-muted-foreground lg:inline"
           >Venda e exibição do catálogo</span
         >
       </template>
-      <template #filters>
+      <template v-if="!isNarrow" #filters>
         <p class="hidden op-micro text-muted-foreground lg:block">
           <span class="tabular-nums">{{
             feeds.length + catalogChannels.length
@@ -316,6 +332,8 @@ useHead({ title: "Canais" });
           :loading="pending"
           @click="refresh()"
         />
+      </template>
+      <template #filters-end>
         <ReadFreshness
           inline
           :metadata="readMetadata"

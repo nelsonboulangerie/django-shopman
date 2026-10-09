@@ -581,6 +581,87 @@ gaveta) até a onda de cada um.
 Contrato em `tests/suiteChrome.test.ts` (máximo 5, mínimo 3, "Mais" só quando sobra) e
 `tests/components/OperatorSuiteShell.test.ts`.
 
+**O desenho das duas barras de baixo é um só** (`TAB_BAR_UI` em
+`presentation/tabBar.ts`): a barra inferior do shell (`OperatorQuickBar`) e a barra do
+polegar dos apps ainda fora do shell (`OperatorSectionBar`, com o "Mais" como item da
+mesma barra). Ícone em cima, nome **inteiro** embaixo: o rótulo quebra em vez de cortar
+(o oficial leva `truncate`, e a 320 px o Marketing dizia "De…", "Age…", "En…").
+
+### Barra do topo no celular
+
+Regra única para todo app (dono, 08/10/2026: "no mobile tem muitas opções na navbar
+superior que estão se sobrepondo"). Abaixo de `sm`, a barra do topo
+(`OperatorPageHeader`) mostra no máximo:
+
+- **☰** (a gaveta, no shell);
+- **o título**, que quebra em até 2 linhas e nunca se corta (a coluna da esquerda ocupa
+  a sobra: `dashboardNavbar.slots.left`/`title` em `app.config.ts`);
+- **até 2 ícones fixos**: Avisos (onde a barra lateral não está) e a Busca, ou a ação da
+  tela de `priority` menor que a da Busca (`SEARCH_PRIORITY`);
+- **um ⋯ "Mais ações"** (`NuxtDropdownMenu`) com todo o resto, na ordem declarada. A
+  Busca que perde a vaga vira "Buscar" no ⋯.
+
+O que **não** fica na barra: o estado (`#status`, o selo ao vivo) e o posto do
+dispositivo descem para uma segunda linha da barra (`data-page-header-status`), em vez de
+se espremer por cima do título. O selo do app sai da barra no shell (a gaveta o mostra no
+topo). Controles de leitura (período, frescor, recortes) moram na toolbar, nunca na barra.
+
+A tela declara as ações como **dados**, e o kit decide o que transborda
+(`phoneHeaderLayout` em `presentation/pageHeader.ts`):
+
+```vue
+<OperatorPageHeader
+  title="Pedidos"
+  :actions="[
+    { label: 'Ciente de todos', icon: 'i-lucide-check', priority: 1, onSelect: ack },
+    { label: 'Atualizar', icon: 'i-lucide-refresh-cw', onSelect: refresh },
+    { label: 'Exportar CSV', icon: 'i-lucide-download', onSelect: exportCsv },
+  ]"
+  actions-label="Mais ações da fila"
+/>
+```
+
+- Com `actions`, o `#actions` some abaixo de `sm` (o que importa ao polegar está nos
+  dados); do `sm` para cima, nada muda: o `#actions` segue como está e as ações
+  declaradas aparecem num ⋯ ao lado dele. Quem tem as mesmas ações no `#actions` passa
+  `actions` só no celular (`isNarrow ? [...] : undefined`), como o Gestor.
+- Página de leitura: `useReadingPageActions(items)` dá "Copiar link desta leitura" mais
+  as da página, e o nome do ⋯ (`actions-label`).
+- `#phone-actions` é para o ⋯ PRÓPRIO da tela, quando o menu é um painel e não uma lista
+  (o pedido do Gestor): conta como o ⋯.
+
+Trava: `tests/pageHeader.test.ts` (quem ganha a vaga, nada se perde) e
+`tests/catalog/phone-header.spec.ts` (no navegador, a 320 e a 390 px, na bancada
+`/__operator_kit_catalog/phone-header`: nenhuma caixa se cruza ou sai da largura, título
+inteiro em até 2 linhas, no máximo 3 controles à direita, todas as ações no ⋯).
+
+### Toolbar no celular
+
+Abaixo de `sm`, no shell (`phone-filters="drawer"`, o padrão com `OperatorSuiteShell`),
+a toolbar do cabeçalho é **uma linha só, de altura fixa**:
+
+| slot | do `sm` para cima | abaixo do `sm` |
+| --- | --- | --- |
+| `#filters-primary` | começo da linha | na linha (até 2 controles; o período em `compact`) |
+| `#filters` | a linha de sempre | no painel "Filtros" (`NuxtDrawer` de baixo), inteiros e rotulados, com "Limpar" e "Ver resultados" |
+| `#filters-end` | fim da linha (o frescor, a contagem) | faixa de texto logo abaixo da linha (ou na linha, se não há primário) |
+| `active-filters` | (a própria barra mostra) | número no "Filtros" e chips removíveis numa faixa que rola, só quando há algum |
+
+- O botão "Filtros" só existe se há `#filters`; abaixo de 360 px ele fica só com o
+  ícone (o nome segue no `aria-label` e no `title`).
+- `clear-filters` faz o "Limpar"; sem ele, o kit remove cada recorte ativo.
+  `filterBarActiveFilters(dimensions, filtros, atualizar)` converte os campos da
+  `FilterBar` em recortes ativos.
+- Aba ou segmentado com mais de 4 opções vira `NuxtSelect` no celular (a Coleção do
+  Catálogo); com até 4, rola na horizontal, sem cortar rótulo.
+- Ação não é filtro: "Atualizar", "Exportar", "Admin" vão para as `actions` da barra,
+  nunca para o painel "Filtros".
+- Os apps ainda fora do shell seguem com a linha de sempre (`row`) até a onda de cada um;
+  `phone-filters="drawer"` os traz antes.
+
+Trava: `tests/catalog/phone-header.spec.ts` (linha de no máximo 64 px, primário sem
+rolagem escondida, o painel abre, o recorte vira chip e sai pelo ×).
+
 ### Escolha numa lista: `NuxtSelect` e `NuxtSelectMenu`
 
 `UiNativeSelect` **está aposentado** (dono, 08/10/2026): nada de lista do sistema, em

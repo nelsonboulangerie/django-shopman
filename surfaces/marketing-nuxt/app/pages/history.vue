@@ -178,11 +178,8 @@ useHead({ title: "Enviados" });
         <MarketingPageMenu heading="Enviados" :items="MENU" @select="refresh()" />
       </template>
       <template #status>
-        <span
-          class="flex min-w-0 shrink-[1000] overflow-hidden"
-          :class="live.tone === 'live' || live.tone === 'calm' ? 'max-[379px]:sr-only' : ''"
-          data-marketing-live
-        >
+        <!-- No celular o kit desce o estado para a segunda linha da barra. -->
+        <span class="flex min-w-0" data-marketing-live>
           <OperatorLiveStatus :tone="live.tone" :time="live.time" :label="live.label" :detail="live.detail" />
         </span>
       </template>

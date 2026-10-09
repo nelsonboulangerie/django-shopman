@@ -12,6 +12,7 @@ import { scenarioReportHeadline, scenarioStatusLabel } from "~/presentation/bi";
 
 const { page, freshness, pending, error, refresh, generate, generating } = useBiScenarios();
 const shareItems = useBiShareMenuItems();
+const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 const focus = ref("sales");
 const openId = ref<number | null>(null);
 
@@ -51,13 +52,10 @@ const errorActions = computed(() => [
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Que cenários a IA propõe?">
-      <template #actions>
-        <OperatorReadingPageMenu :items="shareItems" />
-      </template>
+    <OperatorPageHeader title="Que cenários a IA propõe?" :actions="readingActions" :actions-label="readingLabel">
       <!-- Sem período (a IA lê os agregados de sempre): a linha de recortes leva só o
            frescor, no mesmo lugar das outras telas. -->
-      <template #filters>
+      <template #filters-end>
         <ClientOnly>
           <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
         </ClientOnly>

@@ -16,6 +16,7 @@ import { customersAnswer, formatInt, formatMoney, shortDate } from "~/presentati
 const { report, freshness, pending, error, refresh } = useBiReport<BICustomersReport>("customers");
 const { selection, bounds, presets } = useBiWindow();
 const shareItems = useBiShareMenuItems();
+const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
 const errorActions = computed(() => [
   { label: "Tentar de novo", icon: "i-lucide-refresh-cw", color: "error" as const, variant: "outline" as const, onClick: () => refresh() },
@@ -52,11 +53,9 @@ const formatCount = (value: number) => formatInt(value);
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Os clientes estão voltando?">
-      <template #actions>
-        <OperatorReadingPageMenu :items="shareItems" />
-      </template>
-      <template #filters>
+    <OperatorPageHeader title="Os clientes estão voltando?" :actions="readingActions" :actions-label="readingLabel">
+      <!-- Celular: período e frescor são os dois primários; não há painel de filtros. -->
+      <template #filters-primary>
         <OperatorPeriodPicker
           v-model="selection"
           :presets="presets"
@@ -68,6 +67,8 @@ const formatCount = (value: number) => formatInt(value);
           align="start"
           label="Período de análise"
         />
+      </template>
+      <template #filters-end>
         <ClientOnly>
           <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(error)" />
         </ClientOnly>

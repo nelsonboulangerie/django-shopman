@@ -25,9 +25,18 @@ import {
   inboxTotal,
 } from "../presentation/suiteChrome";
 
-const props = withDefaults(defineProps<{ placement?: "rail" | "header" }>(), {
-  placement: "header",
-});
+const props = withDefaults(
+  defineProps<{
+    placement?: "rail" | "header";
+    /**
+     * O item com nome ("Avisos" sob o sino), como as seções do rail de 76 px do
+     * `OperatorSuiteRail` (os apps ainda fora do shell). No shell, o sino fica ao lado
+     * do menu do operador e o nome mora no `aria-label`.
+     */
+    labeled?: boolean;
+  }>(),
+  { placement: "header", labeled: false },
+);
 const source = useOperatorInboxAlerts();
 const {
   items,
@@ -120,7 +129,17 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
     }"
     @update:open="onOpen"
   >
+    <RailSection
+      v-if="labeled"
+      icon="lucide:bell"
+      label="Avisos"
+      :badge="badge"
+      :aria-label="label"
+      data-operator-inbox-trigger
+      :data-placement="props.placement"
+    />
     <NuxtChip
+      v-else
       :show="Boolean(badge)"
       color="warning"
       :text="badge"
