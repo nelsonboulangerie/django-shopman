@@ -757,6 +757,49 @@ qualquer lugar. Os apps ainda fora do shell (Marketing, Compras, Produção, PDV
 ⋯ com `UiPopover`: trocam pela peça na onda de cada um. Contrato em
 `tests/components/OperatorMoreMenu.test.ts` e `tests/moreMenu.test.ts`.
 
+### Anterior e próximo (`OperatorRecordNav` + `useRecordTrail`)
+
+"‹ 3 de 18 ›" no detalhe de um registro: anda DENTRO da lista de onde a pessoa veio, com
+o recorte dela (a busca, o escopo, a ordenação). "18" são os que ela via.
+
+```ts
+// Na lista: grava a ordem que a tela mostra (a cada mudança).
+const { remember } = useRecordTrail("orders-queue");
+watch(visibleRefs, (refs) => remember(refs, { from: route.fullPath, label: "Pedidos" }), { immediate: true });
+```
+
+```vue
+<!-- No detalhe, no #status do OperatorPageHeader (a barra do topo; no celular, a 2ª linha). -->
+<OperatorRecordNav
+  trail="orders-queue"
+  :current="orderRef"
+  :to="(ref) => `/${ref}`"
+  previous-label="Pedido anterior"
+  next-label="Próximo pedido"
+/>
+```
+
+- **A trilha** (`presentation/recordTrail.ts`) mora na sessão do navegador, por chave:
+  o detalhe recarregado ainda sabe de que lista veio; outra aba começa sem trilha. Duas
+  listas que abrem o mesmo detalhe usam chaves diferentes (a fila e o histórico do
+  Gestor), e o detalhe lê a da lista por onde a pessoa chegou.
+- **Sem trilha, sem par**: aberto por link, por outro app, ou com o registro fora da
+  lista (que já mudou), o par não aparece. Sozinho na lista, também não.
+- **Cada lado é um link** (`to`): a URL é a do registro, abre em outra aba, e o voltar do
+  navegador volta ao registro anterior. Na ponta, o lado que falta fica desabilitado.
+- **Teclas** J (próximo) e K (anterior), e as setas → e ← (`RECORD_NAV_SHORTCUTS`, pela
+  infraestrutura de atalhos do kit). Não agem com o foco num campo, com diálogo aberto
+  nem onde as setas já têm dono (abas, rádio, menu, lista, divisor:
+  `ignoreWithin` do comando de atalho).
+- **O lugar** é a barra do topo, o papel "onde estou": o `#status` do `OperatorPageHeader`.
+  No celular ele é a segunda linha da barra; nunca uma barra própria.
+- No servidor não há trilha: o par aparece depois de montar e nunca diverge na
+  hidratação.
+
+Contrato em `tests/components/OperatorRecordNav.test.ts` e `tests/recordTrail.test.ts`.
+Primeiro uso: o pedido do Gestor (`orders-nuxt/app/pages/[ref].vue`), com a trilha da
+fila (`pages/index.vue`) e a do histórico (`pages/history.vue`).
+
 ## Busca da suíte (`OperatorSuiteSearch`)
 
 Uma busca, uma tecla (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gestor-busca`,

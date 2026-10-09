@@ -58,3 +58,34 @@ export const SUITE_RAIL_SHORTCUT = defineOperatorShortcutMap([
     alternative: "Botão da barra lateral na barra do topo",
   },
 ] satisfies readonly OperatorShortcutCommand[]);
+
+// Anterior e próximo dentro da lista de origem (`OperatorRecordNav`). J/K como nas
+// listas com teclado; ←/→ para quem não conhece o J/K. As setas cedem a vez a quem já
+// anda com elas (abas, rádio, menu, tabela navegável, o divisor de painéis).
+const RECORD_NAV_ARROW_OWNERS =
+  "[role='tablist'], [role='radiogroup'], [role='menu'], [role='menubar'], [role='listbox'], [role='grid'], [role='tree'], [role='slider'], [role='separator'], [role='spinbutton']";
+
+const recordNav = {
+  scope: "screen" as const,
+  owner: "OperatorRecordNav",
+  enabledContexts: [] as const,
+  forbiddenContexts: [] as const,
+  alternative: "Botões ‹ › ao lado de \"3 de 18\" no cabeçalho",
+};
+
+export const RECORD_NAV_SHORTCUTS = defineOperatorShortcutMap([
+  {
+    ...recordNav,
+    id: "record.previous",
+    label: "Registro anterior da lista",
+    combinations: [{ code: "KeyK" }, { code: "ArrowLeft" }],
+    ignoreWithin: RECORD_NAV_ARROW_OWNERS,
+  },
+  {
+    ...recordNav,
+    id: "record.next",
+    label: "Próximo registro da lista",
+    combinations: [{ code: "KeyJ" }, { code: "ArrowRight" }],
+    ignoreWithin: RECORD_NAV_ARROW_OWNERS,
+  },
+] satisfies readonly OperatorShortcutCommand[]);

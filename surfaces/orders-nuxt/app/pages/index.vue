@@ -33,6 +33,7 @@ import {
   triageCards,
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
+import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import type { SwipeAction } from "~/components/SwipeReveal.vue";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 import {
@@ -706,6 +707,28 @@ const queueOrder = computed(() => {
   }).map((item) => item.card);
   return scope.value === "attention" ? order.slice(0, QUEUE_FOCUS) : order;
 });
+// A trilha do anterior/próximo do pedido (fase 2, `OperatorRecordNav`): a ordem que
+// esta tela mostra, com o recorte (escopo, busca, canal, ordenação). Na Grade, todos
+// do escopo, não só os em foco: "3 de 18" conta o que o escopo tem.
+const { remember: rememberTrail } = useRecordTrail(ORDERS_QUEUE_TRAIL);
+const trailRefs = computed(() =>
+  (view.value === "queue"
+    ? queueItems(queueCards.value, nowMs.value, {
+        scope: scope.value,
+        sort: queueSort.value,
+      }).map((item) => item.card.ref)
+    : tableRows.value.map((row) => row.card.ref)
+  ).join("\n"),
+);
+watch(
+  trailRefs,
+  (refs) =>
+    rememberTrail(refs ? refs.split("\n") : [], {
+      from: route.fullPath,
+      label: "Pedidos",
+    }),
+  { immediate: true },
+);
 const scopeCounts = computed(() =>
   queueScopeCounts(queueCards.value, nowMs.value),
 );

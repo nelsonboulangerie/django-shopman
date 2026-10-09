@@ -169,6 +169,7 @@ const stubs = {
   // O cabeçalho de uma linha (G14) carrega a ação primária e o ⋯: os slots entram.
   OperatorPageHeader: { template: "<header><slot name='lead' /><slot name='status' /><slot name='actions' /><slot name='phone-actions' /></header>" },
   OperatorLiveStatus: true,
+  OperatorRecordNav: true,
   ReadFreshness: true,
   UiIconButton: defineComponent({
     inheritAttrs: false,
