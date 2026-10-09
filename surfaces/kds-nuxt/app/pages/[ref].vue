@@ -194,9 +194,9 @@ watch(isPhone, (phone) => {
 const filterTabs = computed(() => {
   const counts = filterCounts.value;
   return [
-    { label: "Todos", value: "all", badge: { label: String(counts.all) } },
+    { label: "Todos", value: "all", count: counts.all },
     ...(counts.delivery || filter.value === "delivery"
-      ? [{ label: "Entrega", value: "delivery", icon: "i-lucide-bike", badge: { label: String(counts.delivery) } }]
+      ? [{ label: "Entrega", value: "delivery", icon: "i-lucide-bike", count: counts.delivery }]
       : []),
     ...(counts.late || filter.value === "late"
       ? [
@@ -204,7 +204,7 @@ const filterTabs = computed(() => {
             label: "Atrasados",
             value: "late",
             icon: "i-lucide-timer",
-            badge: { label: String(counts.late), color: "error" as const },
+            count: counts.late,
           },
         ]
       : []),
@@ -529,7 +529,9 @@ function clearSearchAndFilter() {
           size="md"
           aria-label="Recortes da fila"
           data-kds-filters
-        />
+        >
+          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+        </NuxtTabs>
         <span class="text-sm text-muted-foreground">Mais urgente primeiro, da esquerda para a direita.</span>
       </template>
     </OperatorPageHeader>
