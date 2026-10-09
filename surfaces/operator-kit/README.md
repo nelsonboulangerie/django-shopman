@@ -1015,6 +1015,52 @@ ganha o respiro da confortável).
 - Substituiu as cinco tabelas do Gestor (Lista da fila, Histórico, Clientes, Unificações e a
   matriz do Catálogo) e aposentou o `ColumnPicker`.
 
+### Painel de filtros (`OperatorFilterPanel` + `useSavedViews` + `#filter-panel`)
+
+UM painel, igual no celular e na mesa (dono, 09/10/2026, referência: o Odoo), sobre o
+`NuxtCommandPalette` oficial (busca, teclado e submenus de graça), na ordem fixa:
+
+1. **Favoritos** (os da pessoa, fixados primeiro) e "Gerenciar favoritos" (fixar nos
+   filtros rápidos, apagar);
+2. **Filtros rápidos** (os favoritos fixados e as opções que a tela declara em `quick`);
+3. **Data**: o período das LISTAS mora aqui (`period-presets`, `custom-period` abre
+   "Escolher as datas"); as setas ‹ › ficam para as telas de leitura (B.I., Fechamento);
+4. **Agrupar por** (só onde a tela agrupa, `groups`);
+5. **Filtros completos**: cada dimensão de lista abre as opções dela; digitar oferece
+   "Cliente contém …" para as dimensões de texto. Intervalos ficam com o `FilterBar`.
+
+No pé, **Limpar** e **Salvar como favorito** (o diálogo pede o nome e "Mostrar nos
+filtros rápidos da tela"). O botão: só o ícone com o número no celular; ícone, "Filtros"
+e o número na mesa. Contêiner: `NuxtDrawer` de baixo no celular, `NuxtPopover` na mesa.
+Na mesa os recortes ativos viram chips ao lado do botão (`chips`); no celular, os chips
+são os do cabeçalho (`active-filters`).
+
+```vue
+<OperatorPageHeader title="Histórico" :active-filters="activeFilters" :actions="[atualizar]">
+  <template #filter-panel>
+    <OperatorFilterPanel
+      v-model="filters" v-model:period="period"
+      :dimensions="dimensions" :period-presets="HISTORY_PRESETS" custom-period
+      :default-period="{ preset: 'day', from: '', to: '' }"
+      surface="orders" screen="history"
+    />
+  </template>
+</OperatorPageHeader>
+```
+
+- O recorte é o mesmo `ActiveFilters` do `FilterBar` (a URL já sabe guardá-lo), mais
+  `period` e `group`. O favorito guarda `{ filters, period?, group? }`.
+- **Favoritos no servidor, por pessoa** (`useSavedViews(surface, screen)` →
+  `/api/v1/backstage/saved-views/`, modelo `SavedView`). Cada tela se registra em
+  `shopman/backstage/api/saved_views.py` (`SCREENS`: a permissão de quem lê a tela e a
+  gramática do recorte); recorte fora da gramática não salva. O B.I. guarda ali os
+  cenários do explorador (`bi`/`explore`; a migração `backstage.0090` levou os antigos
+  `BIView` sem perder nenhum). "Publicar para a equipe" (gerente) fica para depois.
+- `#filter-panel` do `OperatorPageHeader`: no celular, fixo na ponta da linha da
+  toolbar (o último a sair); na mesa, logo depois dos recortes primários.
+- Trava: `guardrails.filterPanel.test.ts` (nenhum `FilterBar` no Gestor; toda tela
+  que guarda favorito está no registro do servidor).
+
 ### Barra de seleção (`OperatorBulkBar` + `#selection` do `OperatorPageHeader`)
 
 Uma por tela, desenhada pela mesma peça em dois lugares (dono, 09/10/2026):
@@ -1310,6 +1356,9 @@ Contrato:
   está declarado com motivo numa lista que **só encolhe** (hoje: dois pontos da Produção).
 
 ## Filtro universal (`FilterBar` + `useRouteFilters`)
+
+> Nas telas migradas da fase 2 o recorte de lista é o `OperatorFilterPanel` (acima, em
+> "Peças de tela"). O `FilterBar` segue para intervalos e para os apps ainda não migrados.
 
 Uma barra só para recortar qualquer lista, a do plano SUITE-UX ("Filtrar"). Os 3 a 6
 recortes mais usados podem continuar como `UiFilterChip` com contagem na linha; o resto

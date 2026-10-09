@@ -95,6 +95,23 @@ const bulkItems = [
   ],
 ];
 const bulkDemoCount = computed(() => tableSelected.value || 2);
+// O painel de filtros único: aqui sem favoritos (o catálogo não tem servidor); nas
+// telas, `surface` e `screen` ligam os favoritos da pessoa.
+const panelFilters = ref<Record<string, string[]>>({ status: ["cancelled"] });
+const panelPeriod = ref({ preset: "day", from: "", to: "" });
+const panelDimensions = [
+  {
+    id: "status",
+    label: "Situação",
+    type: "multi-select" as const,
+    options: [
+      { value: "done", label: "Concluído", count: 41 },
+      { value: "cancelled", label: "Cancelado", count: 3 },
+      { value: "returned", label: "Devolvido", count: 1 },
+    ],
+  },
+  { id: "customer", label: "Cliente", type: "text" as const, options: [] },
+];
 const brl = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const openRecord = computed(() =>
@@ -242,6 +259,23 @@ const rows = [
           </template>
         </OperatorTable>
       </div>
+    </NuxtCard>
+
+    <NuxtCard
+      title="Painel de filtros"
+      description="OperatorFilterPanel: um painel só, sobre o NuxtCommandPalette, na ordem Favoritos, Filtros rápidos, Data, Agrupar por e Filtros completos, com Salvar como favorito no pé. No celular é o ícone com o número e abre de baixo; na mesa, ícone, Filtros e o número, com os chips ao lado."
+      data-catalog-filter-panel
+    >
+      <OperatorFilterPanel
+        v-model="panelFilters"
+        v-model:period="panelPeriod"
+        :dimensions="panelDimensions"
+        :quick="[{ dimension: 'status', value: 'cancelled', label: 'Cancelados' }]"
+        :period-presets="['day', 'week', '7d', '28d']"
+        custom-period
+        :default-period="{ preset: 'day', from: '', to: '' }"
+        :groups="[{ value: 'channel', label: 'Canal' }]"
+      />
     </NuxtCard>
 
     <NuxtCard

@@ -388,7 +388,10 @@ function clearAll() {
   <template
     v-if="
       filterLine &&
-      ($slots.filters || $slots['filters-primary'] || $slots['filters-end'])
+      ($slots.filters ||
+        $slots['filters-primary'] ||
+        $slots['filters-end'] ||
+        $slots['filter-panel'])
     "
   >
     <NuxtDashboardToolbar
@@ -411,6 +414,15 @@ function clearAll() {
           data-page-header-filters-end
         >
           <slot name="filters-end" />
+        </div>
+        <!-- O painel de filtros único (fase 2, K4): no celular, só o ícone com o
+             número, fixo à direita da linha (o último a sair). -->
+        <div
+          v-if="$slots['filter-panel']"
+          class="ms-auto shrink-0"
+          data-page-header-filter-panel
+        >
+          <slot name="filter-panel" />
         </div>
         <NuxtButton
           v-if="$slots.filters"
@@ -511,7 +523,10 @@ function clearAll() {
 
   <NuxtDashboardToolbar
     v-else-if="
-      $slots.filters || $slots['filters-primary'] || $slots['filters-end']
+      $slots.filters ||
+      $slots['filters-primary'] ||
+      $slots['filters-end'] ||
+      $slots['filter-panel']
     "
     class="py-2"
     :class="$slots.selection ? 'lg:hidden' : ''"
@@ -526,6 +541,7 @@ function clearAll() {
       data-page-header-filters
     >
       <slot name="filters-primary" />
+      <slot name="filter-panel" />
       <slot name="filters" />
       <slot name="filters-end" />
     </div>

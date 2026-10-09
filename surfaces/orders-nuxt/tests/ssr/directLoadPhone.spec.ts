@@ -77,13 +77,16 @@ test.describe("carga direta no celular: a tela que o celular promete", () => {
     test(`${path} tem a linha da toolbar com "Filtros"`, async ({ page }) => {
       expect(await openDirect(page, path)).toEqual([]);
       await expect(page.locator("[data-page-header-filter-line]")).toBeVisible();
-      await expect(page.locator("[data-page-header-filters-open]")).toBeVisible();
+      // O painel de filtros único (fase 2, K4): no celular, o ícone na ponta da linha.
+      await expect(page.locator("[data-page-header-filter-panel] [data-operator-filter-panel-open]")).toBeVisible();
     });
   }
 
-  test("/history tem o período na linha", async ({ page }) => {
+  test("/history abre o painel com a Data (o período da lista mora nele)", async ({ page }) => {
     await openDirect(page, "/history");
-    await expect(page.getByRole("button", { name: /Hoje/ })).toBeVisible();
+    await page.locator("[data-operator-filter-panel-open]").click();
+    await expect(page.locator("[data-operator-filter-panel]")).toBeVisible();
+    await expect(page.locator("[data-operator-filter-panel]").getByText("Data", { exact: true })).toBeVisible();
   });
 
   test("/catalog tem a Coleção na linha", async ({ page }) => {

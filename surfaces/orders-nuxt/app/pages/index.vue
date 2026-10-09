@@ -35,6 +35,7 @@ import {
 import type { OrderCardProjection } from "~/types/orders";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
+import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type { OperatorSwipeAction } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 import {
@@ -822,6 +823,36 @@ function pickFulfillment(value: string | number) {
   if (value === "all" || value === "delivery" || value === "pickup")
     fulfillment.value = value;
 }
+// O painel de filtros único (fase 2, K4), na mesa: o recebimento e o canal como campos
+// de escolha única, e os favoritos da pessoa. As abas e o seletor de canal continuam à
+// vista como os recortes rápidos; o painel e eles mexem no mesmo estado.
+const panelDimensions = computed<FilterDimension[]>(() => [
+  {
+    id: "fulfillment",
+    label: "Recebimento",
+    type: "single-select",
+    options: [
+      { value: "delivery", label: "Entrega" },
+      { value: "pickup", label: "Retirada" },
+    ],
+  },
+  {
+    id: "channel",
+    label: "Canal",
+    type: "single-select",
+    options: channels.value.map((option) => ({ value: option.ref, label: option.label, count: option.count })),
+  },
+]);
+const panelFilters = computed<ActiveFilters>({
+  get: () => ({
+    ...(fulfillment.value !== "all" ? { fulfillment: [fulfillment.value] } : {}),
+    ...(channel.value !== "all" ? { channel: [channel.value] } : {}),
+  }),
+  set: (next) => {
+    pickFulfillment(next.fulfillment?.[0] ?? "all");
+    channel.value = next.channel?.[0] ?? "all";
+  },
+});
 // As ações da fila no celular, em dados para o kit: o "Visto" (e o som bloqueado)
 // disputam a vaga de ícone com a Busca e vencem enquanto valem; o resto vai para o ⋯.
 const phoneHeaderActions = computed(() => {
@@ -1566,6 +1597,17 @@ function printQueue() {
             @click="moreOpen = true"
           />
         </NuxtChip>
+      </template>
+      <!-- O painel de filtros único, na mesa (no celular a fila segue com o painel
+           próprio dela, que também leva a ordem e a visão). -->
+      <template v-if="!isPhone && !exitPostView" #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          surface="orders"
+          screen="queue"
+          :chips="false"
+        />
       </template>
       <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
            muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. É o primário

@@ -1203,10 +1203,18 @@ useHead({ title: "Catálogo" });
           </template>
         </OperatorMoreMenu>
       </template>
-      <template #filters>
-        <!-- Recortes e escolha de colunas pertencem à DashboardToolbar, não à
-             faixa de identidade da DashboardNavbar. -->
-        <FilterBar v-model="filters" :dimensions="dimensions" touch />
+      <!-- O painel de filtros único (favoritos e recortes): no celular, o ícone com o
+           número na ponta da linha; na mesa, o botão e os chips. -->
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="filters"
+          :dimensions="dimensions"
+          surface="orders"
+          screen="catalog"
+        />
+      </template>
+      <!-- Na mesa: Exibir e as coleções. No celular a coleção é o primário da linha. -->
+      <template v-if="!isNarrow" #filters>
         <OperatorTableView v-if="surfaces.length" table-key="orders-catalog" />
         <!-- No celular a coleção é o primário da linha (o `NuxtSelect` abaixo); aqui,
              só do `sm` para cima, pelo CSS. -->

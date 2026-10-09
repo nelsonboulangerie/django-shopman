@@ -3354,7 +3354,7 @@
       }
     }
   },
-  "/api/v1/backstage/bi/views/": {
+  "/api/v1/backstage/saved-views/?surface=bi&screen=explore": {
     "views": []
   },
   "/api/v1/backstage/bi/explore/?date_from=2026-09-11&date_to=2026-10-08&metric=revenue&by=time&by2": {

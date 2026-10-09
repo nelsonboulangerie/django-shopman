@@ -18,8 +18,6 @@ from .bi import (
     BIProductionView,
     BISalesView,
     BIScenariosView,
-    BIViewDetailView,
-    BIViewListView,
 )
 from .catalog import (
     CatalogAiAssistView,
@@ -288,6 +286,7 @@ from .recipe_book import (
     RecipeVersionRatingView,
     RecipeVersionView,
 )
+from .saved_views import SavedViewDetailView, SavedViewListView
 from .search import SuiteSearchView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
@@ -562,8 +561,10 @@ urlpatterns = [
     ),
     path("bi/forecast/", BIForecastView.as_view(), name="api-backstage-bi-forecast"),
     path("bi/change/", BIChangeView.as_view(), name="api-backstage-bi-change"),
-    path("bi/views/", BIViewListView.as_view(), name="api-backstage-bi-views"),
-    path("bi/views/<int:pk>/", BIViewDetailView.as_view(), name="api-backstage-bi-view"),
+    # Leituras salvas (favoritos do painel de filtros), por pessoa e por tela; o B.I.
+    # guarda os cenários do explorador aqui (``bi``/``explore``).
+    path("saved-views/", SavedViewListView.as_view(), name="api-backstage-saved-views"),
+    path("saved-views/<int:pk>/", SavedViewDetailView.as_view(), name="api-backstage-saved-view"),
     path("bi/scenarios/", BIScenariosView.as_view(), name="api-backstage-bi-scenarios"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
     path(
