@@ -54,24 +54,28 @@ const isPhone = useMediaQuery("(max-width: 767.98px)");
 
 // O shell (rail, Ajustes) sabe da estação: o selo do Preparo, a densidade e o som da
 // estação e a estação deste dispositivo (o item "Preparo" do rail volta para cá).
+// ⚠️ Só depois de montar: o shell (rail e barra) é desenhado no servidor antes de o
+// quadro ter dados, e gravar aqui durante o setup fazia a hidratação do cliente ver um
+// shell diferente do que o servidor mandou (selo e rótulos). Depois de montar, a troca
+// é reatividade comum.
 const { remember } = useKdsStation();
 const boardState = useKdsBoardState();
-watch(
-  view,
-  (current) => {
-    if (!current || notHere.value) return;
-    remember(stationRef.value, current.instanceName);
-    boardState.value = {
-      onBoard: true,
-      total: current.total,
-      stationRef: stationRef.value,
-      stationName: current.instanceName,
-      density: current.density,
-      soundEnabled: current.soundEnabled,
-    };
-  },
-  { immediate: true },
-);
+function shareWithShell(current: typeof view.value) {
+  if (!current || notHere.value) return;
+  remember(stationRef.value, current.instanceName);
+  boardState.value = {
+    onBoard: true,
+    total: current.total,
+    stationRef: stationRef.value,
+    stationName: current.instanceName,
+    density: current.density,
+    soundEnabled: current.soundEnabled,
+  };
+}
+onMounted(() => {
+  shareWithShell(view.value);
+  watch(view, shareWithShell);
+});
 onBeforeUnmount(() => {
   boardState.value = { ...boardState.value, onBoard: false };
 });
