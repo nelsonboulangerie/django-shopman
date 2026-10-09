@@ -520,7 +520,7 @@ function nuxtIcon(icon: string): string {
             v-if="card.is_preorder"
             color="neutral"
             icon="i-lucide-calendar-clock"
-            :label="`Agendado${card.commitment_date_display ? ` · ${card.commitment_date_display}` : ''}`"
+            :label="`Encomenda${card.commitment_date_display ? ` · ${card.commitment_date_display}` : ''}`"
             data-preorder-badge
           />
           <!-- fila de espera: o pedido não está parado, está esperando o lote -->

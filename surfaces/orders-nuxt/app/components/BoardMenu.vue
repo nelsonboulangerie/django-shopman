@@ -51,7 +51,7 @@ const items = computed(() => {
     ...(props.attentionPending
       ? [
           {
-            label: "Ciente de todos",
+            label: "Visto",
             icon: "i-lucide-check",
             onSelect: () => emit("acknowledge"),
           },

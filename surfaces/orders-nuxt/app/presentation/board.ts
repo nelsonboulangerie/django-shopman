@@ -488,7 +488,7 @@ export function treatableOrderRefs(
   // Encomenda futura pode até ter ação administrativa disponível (aceitar,
   // corrigir, cancelar), mas não é trabalho do turno de agora. Incluí-la aqui
   // fazia o sino do Gestor tocar no instante da venda, embora o próprio board a
-  // colocasse corretamente em "Agendados". Quando a data chega, a projeção (e,
+  // colocasse corretamente em "Encomendas". Quando a data chega, a projeção (e,
   // quando aplicável, o despertador do lifecycle) leva o card ao fluxo do dia;
   // só então ele entra neste conjunto e a atenção toca uma única vez.
   const cards = [
@@ -613,7 +613,7 @@ export function flattenZones(zones: ZoneView[]): FlatRow[] {
 export function rowsToCsv(rows: FlatRow[]): string {
   const header = [
     "Código",
-    "Etapa",
+    "Situação",
     "Canal",
     "Cliente",
     "Itens",
