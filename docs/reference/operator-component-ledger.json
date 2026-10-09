@@ -770,6 +770,25 @@
           "runner": {
             "config": "playwright.visual.config.ts"
           }
+        },
+        {
+          "id": "proposal-fase2",
+          "source_files": [
+            "app/pages/proposal/fase2/index.vue"
+          ],
+          "routes": [
+            "/proposal/fase2"
+          ],
+          "variants": [
+            "normal"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
         }
       ]
     },
