@@ -20,7 +20,7 @@ const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
  * cobrança → fila do Gestor, aviso de recebimento pendente → fila do Gestor.
  */
 const CROSS_APP_HREF =
-  /:href="(hubUrl|tile\.url|productionGrid|workOrderHref\(row\)|closeGuardNotice\.link\.href|note\.link\.href)"/;
+  /:href="(hubUrl|tile\.url|productionGrid|workOrderHref\(row(?:\.original)?\)|closeGuardNotice\.link\.href|note\.link\.href)"/;
 
 /** O link declara o alvo pela regra do kit — por `:target` ou pelo `v-bind` inteiro. */
 function declaresTarget(tag: string): boolean {
