@@ -55,8 +55,8 @@ const notHere = computed(() => stationMissing.value);
 // (e a `class` divergente só é avisada, não corrigida, em produção).
 const { belowMd: isPhone } = useScreen();
 
-// O shell (rail, Ajustes) sabe da estação: o selo do Preparo, a densidade e o som da
-// estação e a estação deste dispositivo (o item "Preparo" do rail volta para cá).
+// O shell (barras, Ajustes) sabe da estação: o selo dela, a densidade e o som e a
+// estação deste dispositivo (a que vai à frente na barra inferior).
 // ⚠️ Só depois de montar: o shell (rail e barra) é desenhado no servidor antes de o
 // quadro ter dados, e gravar aqui durante o setup fazia a hidratação do cliente ver um
 // shell diferente do que o servidor mandou (selo e rótulos). Depois de montar, a troca
@@ -83,10 +83,10 @@ onBeforeUnmount(() => {
   boardState.value = { ...boardState.value, onBoard: false };
 });
 
-const eyebrow = computed(() => {
-  const name = view.value?.instanceName || stationRef.value;
-  return /^esta[çc][aã]o\b/i.test(name) ? name : `Estação ${name}`;
-});
+// O título é o NOME da estação (Cafés, Lanches): estação é um posto específico, e não
+// existe estação chamada "Preparo" (dono, 09/10/2026). É o mesmo nome do item aceso na
+// navegação.
+const stationTitle = computed(() => view.value?.instanceName || stationRef.value);
 
 // O som é da estação (Ajustes). No cabeçalho fica o ESTADO; o toque destrava o áudio
 // quando o navegador o bloqueou, e nos outros casos leva aos Ajustes, onde se muda.
@@ -299,7 +299,7 @@ function warnLocked(pk: number) {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col md:h-dvh md:flex-none md:overflow-hidden">
-    <OperatorPageHeader title="Preparo" :eyebrow="eyebrow">
+    <OperatorPageHeader :title="stationTitle">
       <template #status>
         <OperatorLiveStatus :tone="liveTone" :time="lastRead" :label="liveLabel" :detail="liveCue.title" />
       </template>

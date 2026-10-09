@@ -1,16 +1,18 @@
-// O que o shell da Cozinha (rail, barra do polegar, Ajustes) sabe das telas.
+// O que o shell da Cozinha (barra lateral, barra inferior, Ajustes) sabe das telas.
 //
+// - As estações da casa, do índice do servidor: cada uma é um item da navegação, pelo
+//   nome, levando à sua bancada. Não há item genérico "Preparo" (dono, 09/10/2026).
 // - A estação deste dispositivo: a aberta agora, ou a última aberta (lembrada por
-//   dispositivo). É ela que o item "Preparo" do rail abre.
-// - O quadro conta ao rail quantos pedidos tem (selo do Preparo) e aos Ajustes como a
-//   estação se mostra (densidade e som, guardados no cadastro da estação). Fora do
-//   quadro os números vêm do índice das estações.
-// - A Saída é a coluna do Gestor (SUITE-UX §15): o item do rail é um atalho para lá,
-//   com o selo dos pedidos prontos para sair que o índice já conta.
+//   dispositivo). Ela vai à frente na barra inferior.
+// - O quadro conta ao shell quantos pedidos tem (selo da estação aberta) e aos Ajustes
+//   como a estação se mostra (densidade e som, guardados no cadastro da estação). Fora
+//   do quadro os números vêm do índice das estações.
+// - A Saída é a coluna do Gestor (SUITE-UX §15): o item é um atalho para lá, com o selo
+//   dos pedidos prontos para sair que o índice já conta.
 import type { KDSIndexResponse, KDSStationSettingsResponse } from "~/types/kds";
 import type { KDSDensity } from "~/presentation/board";
 import { EXIT_STATION_TYPE, gestorExitUrl } from "~/presentation/exitStation";
-import { kdsSections } from "~/presentation/sections";
+import { kdsSections, stationSectionKey } from "~/presentation/sections";
 
 export interface KdsStationMemory {
   ref: string;
@@ -50,7 +52,7 @@ export function useKdsStation() {
         station.value = { ref: parsed.ref, name: String(parsed.name || parsed.ref) };
       }
     } catch {
-      // Sem storage ou valor estranho: o rail mostra só Estações.
+      // Sem storage ou valor estranho: a barra segue a ordem do cadastro.
     }
   }
   return { station, remember, restore };
@@ -123,9 +125,10 @@ export function useKdsSections(place: "rail" | "bar") {
   const route = useRoute();
   const exitUrl = gestorExitUrl(String(useRuntimeConfig().public.ordersUrl || ""));
 
-  // O mesmo índice da tela de estações (mesma chave): o selo da Saída e o do Preparo
+  // O mesmo índice da tela de estações (mesma chave): a lista das estações e os selos
   // fora do quadro. Relido a cada 30 s para o selo não envelhecer (só pelo rail, que
-  // fica montado em todos os tamanhos: um relógio só).
+  // fica montado em todos os tamanhos: um relógio só). Vem no payload do servidor, então
+  // o servidor e a hidratação desenham a MESMA lista.
   const { data: index, refresh } = useFetch<KDSIndexResponse>("/api/v1/backstage/kds/", {
     key: "kds-index",
   });
@@ -138,15 +141,15 @@ export function useKdsSections(place: "rail" | "bar") {
     if (timer) clearInterval(timer);
   });
 
-  // ⚠️ No quadro de uma estação, a estação do Preparo é a da ROTA, não a memória. A
-  // memória só se preenche no cliente (o quadro grava ao ver os dados; o localStorage
-  // se lê no `onMounted`), e o servidor desenha a barra sem ela. Na carga direta de
-  // `/bancada` o servidor mandava "Saída · Estações" e a hidratação montava "Preparo ·
-  // Saída": o Vue corrige o texto mas não os atributos, e o "Preparo" ficava com o
-  // `href` da Saída e a "Saída" com o `/` marcado como página atual. A rota é a mesma
-  // nos dois lados; a memória vale fora do quadro (Estações, Ajustes).
+  // ⚠️ A estação ABERTA é a da ROTA, não a memória. A memória só se preenche no cliente
+  // (o quadro grava ao montar; o localStorage se lê no `onMounted`), e o servidor
+  // desenha a barra sem ela. Se a memória decidisse a ordem ou o item atual no primeiro
+  // desenho, a hidratação montaria outra barra sobre o HTML do servidor: o Vue corrige o
+  // texto mas não os atributos, e um item ficava com o `href` do vizinho (#1563). A rota
+  // é a mesma nos dois lados; a memória só reordena a barra depois de montar, fora do
+  // quadro (reatividade comum, não hidratação).
   const routeStation = computed(() => (route.name === "ref" ? String(route.params.ref || "") : ""));
-  const stationRef = computed(() => routeStation.value || station.value.ref);
+  const priorityRef = computed(() => routeStation.value || station.value.ref);
 
   const instances = computed(() => index.value?.instances ?? []);
   const exitCount = computed(() =>
@@ -154,24 +157,33 @@ export function useKdsSections(place: "rail" | "bar") {
       .filter((inst) => inst.type === EXIT_STATION_TYPE)
       .reduce((sum, inst) => sum + (inst.active_count || 0), 0),
   );
-  const prepCount = computed(() => {
-    if (board.value.onBoard && board.value.stationRef === stationRef.value) return board.value.total;
-    return instances.value.find((inst) => inst.ref === stationRef.value)?.active_count ?? 0;
-  });
+  // A estação de Saída vira o item Saída (Gestor). Sem a URL do Gestor ela segue como
+  // estação comum, para não perder o acesso à tela dela.
+  const stations = computed(() =>
+    instances.value
+      .filter((inst) => !(exitUrl && inst.type === EXIT_STATION_TYPE))
+      .map((inst) => ({
+        ref: inst.ref,
+        name: inst.name,
+        type: inst.type,
+        count:
+          board.value.onBoard && board.value.stationRef === inst.ref && inst.ref === routeStation.value
+            ? board.value.total
+            : inst.active_count || 0,
+      })),
+  );
 
   const sections = computed(() =>
     kdsSections({
-      stationRef: stationRef.value,
-      prepCount: prepCount.value,
+      stations: stations.value,
+      priorityRef: priorityRef.value,
       exitUrl,
       exitCount: exitCount.value,
       place,
     }),
   );
-  const current = computed(() => {
-    if (route.path === "/") return "stations";
-    if (routeStation.value) return "prep";
-    return undefined;
-  });
+  // A estação da rota é a atual. Fora de uma bancada (a tela de escolher a estação),
+  // nenhum item é o atual: "" (não `undefined`) para a barra não adivinhar pela rota.
+  const current = computed(() => (routeStation.value ? stationSectionKey(routeStation.value) : ""));
   return { sections, current };
 }

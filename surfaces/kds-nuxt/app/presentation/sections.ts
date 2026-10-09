@@ -1,55 +1,95 @@
-// As seções da Cozinha no rail da suíte e na barra do polegar (prévia v4,
-// `cozinha-estacao4.html` e `cozinha-celular4.html`). Em cima, a operação: Estações,
-// Preparo (a estação deste dispositivo), Saída (a coluna Saída do Gestor, SUITE-UX §15:
-// a Cozinha não tem tela de Saída, o item é um atalho para lá) e o Painel de retirada.
-// No pé, Ajustes (densidade da grade e a data de consulta).
+// As seções da Cozinha na barra lateral e na barra inferior (prévia v4,
+// `cozinha-estacao4.html` e `cozinha-celular4.html`).
+//
+// Conceito (dono, 09/10/2026): cada item da operação é uma ESTAÇÃO DA CASA, pelo nome
+// que ela tem no cadastro (Cafés, Lanches, Encomendas…), e leva à bancada dela
+// (`/<ref>`). Estação é um posto de preparo específico: não existe estação chamada
+// "Preparo", e por isso não há item genérico "Preparo". A Saída é o atalho para a
+// coluna Saída do Gestor (SUITE-UX §15: a Cozinha não tem tela de Saída). Abaixo, na
+// barra lateral, o Painel de retirada; no pé, Ajustes (densidade e som da estação).
+//
+// A lista vem do servidor (o índice das estações), nunca fixa no código.
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
-export interface KdsSectionsInput {
-  /** A estação deste dispositivo (a aberta agora ou a última aberta). */
-  stationRef: string;
+/** Quantas seções a barra inferior mostra antes do "Mais" (regra da suíte: 3 a 5 vagas
+ *  ao todo; aqui 4 seções + "Mais"). O "Mais" existe sempre: leva o resto e o menu do
+ *  operador (Bloquear, trocar de operador). */
+export const KDS_BAR_SECTIONS = 4;
+
+export interface KdsStationNav {
+  ref: string;
+  name: string;
+  /** `prep` ou `picking` (a de Saída não entra aqui: é o item Saída). */
+  type: string;
   /** Pedidos ativos nela. Zero não é selo. */
-  prepCount: number;
+  count: number;
+}
+
+export interface KdsSectionsInput {
+  /** As estações da casa, na ordem do cadastro. */
+  stations: readonly KdsStationNav[];
+  /**
+   * A estação que vai à frente na barra inferior: a aberta agora ou, fora do quadro, a
+   * deste dispositivo. A barra lateral não reordena (as teclas Alt 1…9 seguem o cadastro).
+   */
+  priorityRef: string;
   /** A coluna Saída do Gestor; vazio sem a URL do Gestor. */
   exitUrl: string;
   /** Pedidos prontos para sair (a estação de Saída do cadastro). */
   exitCount: number;
-  /** A barra do polegar não leva o Painel de retirada (é tela de TV, não de bolso)
-   *  e começa pelo Preparo, como na prévia do celular. */
+  /** A barra inferior não leva o Painel de retirada (é tela de TV, não de bolso). */
   place: "rail" | "bar";
 }
 
-export function kdsSections(input: KdsSectionsInput): OperatorSection[] {
-  const sections: OperatorSection[] = [];
-  const stations: OperatorSection = { key: "stations", label: "Estações", icon: "lucide:layout-grid", to: "/" };
-  // Rail (v4 `cozinha-estacao4.html`): Estações, Preparo, Saída, Painel de retirada.
-  // Barra do polegar (v4 `cozinha-celular4.html`): Preparo, Saída, Estações e o "Mais".
-  if (input.place === "bar" && input.stationRef) sections.push(prepSection(input));
-  if (input.place === "rail") sections.push(stations);
-  if (input.place === "rail" && input.stationRef) sections.push(prepSection(input));
-  if (input.exitUrl) {
-    sections.push({
-      key: "exit",
-      label: "Saída",
-      icon: "lucide:package-check",
-      to: input.exitUrl,
-      badge: input.exitCount > 0 ? String(input.exitCount) : undefined,
-    });
-  }
-  if (input.place === "bar") sections.push(stations);
-  if (input.place === "rail") {
-    sections.push({ key: "pickup", label: "Painel de retirada", icon: "lucide:monitor", to: "/pickup" });
-  }
-  sections.push({ key: "settings", label: "Ajustes", icon: "lucide:settings-2", foot: true });
-  return sections;
+/** A chave da seção de uma estação. É o que o item atual compara. */
+export function stationSectionKey(ref: string): string {
+  return `station:${ref}`;
 }
 
-function prepSection(input: KdsSectionsInput): OperatorSection {
+function stationIcon(type: string): string {
+  return type === "picking" ? "lucide:layers" : "lucide:flame";
+}
+
+function stationSection(station: KdsStationNav): OperatorSection {
   return {
-    key: "prep",
-    label: "Preparo",
-    icon: "lucide:flame",
-    to: `/${input.stationRef}`,
-    badge: input.prepCount > 0 ? String(input.prepCount) : undefined,
+    key: stationSectionKey(station.ref),
+    label: station.name || station.ref,
+    icon: stationIcon(station.type),
+    to: `/${station.ref}`,
+    badge: station.count > 0 ? String(station.count) : undefined,
   };
+}
+
+export function kdsSections(input: KdsSectionsInput): OperatorSection[] {
+  const exit: OperatorSection | null = input.exitUrl
+    ? {
+        key: "exit",
+        label: "Saída",
+        icon: "lucide:package-check",
+        to: input.exitUrl,
+        badge: input.exitCount > 0 ? String(input.exitCount) : undefined,
+      }
+    : null;
+  const settings: OperatorSection = { key: "settings", label: "Ajustes", icon: "lucide:settings-2", foot: true };
+
+  if (input.place === "rail") {
+    return [
+      ...input.stations.map(stationSection),
+      ...(exit ? [exit] : []),
+      { key: "pickup", label: "Painel de retirada", icon: "lucide:monitor", to: "/pickup" },
+      settings,
+    ];
+  }
+
+  // Barra inferior: a estação aberta (ou a deste dispositivo) primeiro, as outras na
+  // ordem do cadastro, e a Saída sempre à vista. O que não cabe vai para o "Mais".
+  const priority = input.stations.find((station) => station.ref === input.priorityRef);
+  const ordered = priority ? [priority, ...input.stations.filter((station) => station !== priority)] : [...input.stations];
+  const stationSlots = Math.max(1, KDS_BAR_SECTIONS - (exit ? 1 : 0));
+  return [
+    ...ordered.slice(0, stationSlots).map(stationSection),
+    ...(exit ? [exit] : []),
+    ...ordered.slice(stationSlots).map(stationSection),
+    settings,
+  ];
 }

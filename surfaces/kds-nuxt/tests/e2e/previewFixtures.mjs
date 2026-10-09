@@ -116,6 +116,12 @@ export const PREP_TICKETS = [
 export const PREVIEW_INDEX = {
   instances: [
     { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: PREP_TICKETS.length },
+    // As outras estações da casa, como o seed as cria: a navegação da Cozinha lista
+    // cada uma pelo nome, e a Saída vira o atalho para o Gestor.
+    { ref: "cafes", name: "Cafés", type: "prep", type_display: "Preparo", active_count: 2 },
+    { ref: "lanches", name: "Lanches", type: "prep", type_display: "Preparo", active_count: 0 },
+    { ref: "encomendas", name: "Encomendas", type: "picking", type_display: "Separação", active_count: 1 },
+    { ref: "saida", name: "Saída", type: "expedition", type_display: "Saída", active_count: 3 },
   ],
 };
 
@@ -149,7 +155,8 @@ export function createPreviewState() {
   return {
     index: () => PREVIEW_INDEX,
     board(ref) {
-      return boardFor(ref, prep, "Bancada");
+      const name = PREVIEW_INDEX.instances.find((inst) => inst.ref === ref)?.name || ref;
+      return boardFor(ref, ref === "bancada" ? prep : [], name);
     },
     /** Aplica um POST de escrita; devolve true se reconheceu a rota. */
     write(url) {
