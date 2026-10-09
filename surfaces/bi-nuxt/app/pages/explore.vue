@@ -73,7 +73,7 @@ function onScenarioChange(value: string | undefined) {
   selectedScenario.value = value;
   if (value.startsWith("view:")) {
     const view = views.value.find((v) => String(v.id) === value.slice(5));
-    if (view) applyScenario(view.config);
+    if (view) applyScenario(view.query);
   } else if (value.startsWith("example:")) {
     const example = examples.value.find((e) => e.name === value.slice(8));
     if (example) applyScenario({ ...example.config });
@@ -287,8 +287,8 @@ const errorActions = computed(() => [
                         variant="ghost"
                         block
                         class="justify-start"
-                        :icon="loadedView.is_favorite ? 'i-lucide-star-off' : 'i-lucide-star'"
-                        :label="loadedView.is_favorite ? 'Tirar dos favoritos' : 'Favoritar'"
+                        :icon="loadedView.pinned ? 'i-lucide-star-off' : 'i-lucide-star'"
+                        :label="loadedView.pinned ? 'Tirar dos favoritos' : 'Favoritar'"
                         @click="toggleFavorite(loadedView)"
                       />
                       <NuxtButton

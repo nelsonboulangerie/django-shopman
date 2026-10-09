@@ -6,7 +6,6 @@ from .alias_benchmark import AliasBenchmarkReport
 from .aliases import AliasStatus, CategoryAlias, PaymentMethodAlias, ProductAlias
 from .bi_alerts import BIAlertEvent, BIAlertRule
 from .bi_scenario import BIScenarioReport
-from .bi_view import BIView
 from .blind_prep import BlindPrepCode
 from .closing import DayClosing
 from .consumption import Beverage, ConsumptionRole, ProductConsumptionTag, Reading
@@ -39,6 +38,7 @@ from .pos import POSTab
 from .print_job import PrintAgentCredential, PrintAttempt, PrintJob
 from .recipe_favorite import OperatorRecipeFavorite
 from .recipe_rating import RecipeRatingCriterion, RecipeVersionRating, RecipeVersionRatingScore
+from .saved_view import SavedView
 from .seating import FixtureKind, SeatingFixture, SeatingSpot, SpotKind, SpotShape
 from .shelf_outage import OutageReason, ShelfOutage
 from .sign_in import SignInEvent, SignInMethod, SignInOutcome
@@ -58,7 +58,7 @@ __all__ = [
     "CategoryAlias",
     "PaymentMethodAlias",
     "ProductAlias",
-    "BIView",
+    "SavedView",
     "Beverage",
     "BlindPrepCode",
     "ConsumptionRole",

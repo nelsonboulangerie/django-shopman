@@ -34,6 +34,8 @@ import {
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
+import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
+import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type { OperatorSwipeAction } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 import {
@@ -368,9 +370,6 @@ function toggleSelect(ref_: string) {
   else next.add(ref_);
   selected.value = next;
 }
-function clearSelection() {
-  selected.value = new Set();
-}
 // select-all over the currently visible (triaged) cards.
 const visibleRefs = computed(() => tableRows.value.map((r) => r.card.ref));
 const allVisibleSelected = computed(
@@ -383,6 +382,46 @@ function toggleSelectAll() {
     ? new Set()
     : new Set(visibleRefs.value);
 }
+// A barra de seleção (OperatorBulkBar): a ação principal (Aceitar) e o resto no mesmo
+// peso; o × sai do modo de seleção. O recorte vai por extenso ("em Entrega · iFood").
+const bulkScope = computed(() =>
+  [
+    fulfillment.value !== "all"
+      ? String(fulfillmentFilterTabs.value.find((tab) => tab.value === fulfillment.value)?.label ?? "")
+      : "",
+    channel.value !== "all"
+      ? String(channelItems.value.find((item) => item.value === channel.value)?.label ?? "")
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · "),
+);
+const bulkItems = computed<OperatorBulkItem[]>(() => [
+  ...(confirmableSel.value.length
+    ? [{
+        label: `Aceitar ${confirmableSel.value.length}`,
+        icon: "i-lucide-check",
+        primary: true,
+        loading: bulkConfirming.value,
+        disabled: bulkConfirming.value,
+        onSelect: () => void bulkConfirm(),
+      }]
+    : []),
+  ...(advanceableSel.value.length
+    ? [{
+        label: `Avançar ${advanceableSel.value.length}`,
+        icon: "i-lucide-arrow-right",
+        loading: bulkAdvancing.value,
+        disabled: bulkAdvancing.value,
+        onSelect: () => void bulkAdvance(),
+      }]
+    : []),
+  {
+    label: allVisibleSelected.value ? "Desmarcar todos" : "Marcar todos",
+    icon: allVisibleSelected.value ? "i-lucide-square" : "i-lucide-check-check",
+    onSelect: toggleSelectAll,
+  },
+]);
 const confirmableSel = computed(() =>
   bulkableRefs(allCards.value, selected.value, "confirm"),
 );
@@ -789,6 +828,36 @@ function pickFulfillment(value: string | number) {
   if (value === "all" || value === "delivery" || value === "pickup")
     fulfillment.value = value;
 }
+// O painel de filtros único (fase 2, K4), na mesa: o recebimento e o canal como campos
+// de escolha única, e os favoritos da pessoa. As abas e o seletor de canal continuam à
+// vista como os recortes rápidos; o painel e eles mexem no mesmo estado.
+const panelDimensions = computed<FilterDimension[]>(() => [
+  {
+    id: "fulfillment",
+    label: "Recebimento",
+    type: "single-select",
+    options: [
+      { value: "delivery", label: "Entrega" },
+      { value: "pickup", label: "Retirada" },
+    ],
+  },
+  {
+    id: "channel",
+    label: "Canal",
+    type: "single-select",
+    options: channels.value.map((option) => ({ value: option.ref, label: option.label, count: option.count })),
+  },
+]);
+const panelFilters = computed<ActiveFilters>({
+  get: () => ({
+    ...(fulfillment.value !== "all" ? { fulfillment: [fulfillment.value] } : {}),
+    ...(channel.value !== "all" ? { channel: [channel.value] } : {}),
+  }),
+  set: (next) => {
+    pickFulfillment(next.fulfillment?.[0] ?? "all");
+    channel.value = next.channel?.[0] ?? "all";
+  },
+});
 // As ações da fila no celular, em dados para o kit: o "Visto" (e o som bloqueado)
 // disputam a vaga de ícone com a Busca e vencem enquanto valem; o resto vai para o ⋯.
 // Declaradas sempre (`phone-actions`): o kit as mostra só abaixo de `sm`, pelo CSS, e o
@@ -1542,6 +1611,20 @@ function printQueue() {
           />
         </NuxtChip>
       </template>
+      <!-- O painel de filtros único, do `md` para cima (abaixo, a fila segue com o
+           painel próprio dela, que também leva a ordem e a visão). -->
+      <template v-if="!exitPostView" #filter-panel>
+        <!-- Pelo CSS (o servidor desenha o celular e a mesa juntos até hidratar). -->
+        <div class="max-md:hidden">
+          <OperatorFilterPanel
+            v-model="panelFilters"
+            :dimensions="panelDimensions"
+            surface="orders"
+            screen="queue"
+            :chips="false"
+          />
+        </div>
+      </template>
       <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
            muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. É o primário
            da toolbar: no celular fica na linha, ao lado do "Filtros". -->
@@ -1564,6 +1647,19 @@ function printQueue() {
       <template v-if="hasChannelQueueSignal" #feedback>
         <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
         <ChannelQueueSignal :attention="channelAttention" />
+      </template>
+      <!-- Com o modo de seleção ligado, a barra de seleção toma o lugar da toolbar. -->
+      <template v-if="selecting" #selection>
+        <OperatorBulkBar
+          :escape="false"
+          :count="selected.size"
+          :scope="bulkScope"
+          empty="Toque nos pedidos para marcar"
+          :items="bulkItems"
+          :clear-label="EXIT_SELECTION_LABEL"
+          data-bulk-bar
+          @clear="stopSelection"
+        />
       </template>
     </OperatorPageHeader>
 
@@ -1617,65 +1713,6 @@ function printQueue() {
       />
     </OperatorToolbar>
 
-    <!-- barra da seleção em lote (o modo ligado) -->
-    <OperatorToolbar v-if="selecting" data-bulk-bar>
-      <template #left>
-        <NuxtBadge
-          color="primary"
-          icon="i-lucide-list-checks"
-          :label="
-            selected.size
-              ? `${selected.size} selecionado${selected.size > 1 ? 's' : ''}`
-              : 'Toque nos pedidos para marcar'
-          "
-        />
-      </template>
-      <template #right>
-        <div class="ms-auto flex flex-wrap items-center gap-1.5">
-          <NuxtButton
-            v-if="confirmableSel.length"
-            icon="i-lucide-check"
-            :label="`Aceitar ${confirmableSel.length}`"
-            color="primary"
-            :disabled="bulkConfirming"
-            :loading="bulkConfirming"
-            :aria-busy="bulkConfirming || undefined"
-            @click="bulkConfirm"
-          />
-          <NuxtButton
-            v-if="advanceableSel.length"
-            icon="i-lucide-arrow-right"
-            :label="`Avançar ${advanceableSel.length}`"
-            color="neutral"
-            variant="outline"
-            :disabled="bulkAdvancing"
-            :loading="bulkAdvancing"
-            :aria-busy="bulkAdvancing || undefined"
-            @click="bulkAdvance"
-          />
-          <NuxtButton
-            :label="allVisibleSelected ? 'Desmarcar todos' : 'Marcar todos'"
-            color="neutral"
-            variant="outline"
-            @click="toggleSelectAll"
-          />
-          <NuxtButton
-            v-if="selected.size"
-            label="Limpar"
-            color="neutral"
-            variant="ghost"
-            @click="clearSelection"
-          />
-          <NuxtButton
-            :label="EXIT_SELECTION_LABEL"
-            color="neutral"
-            variant="outline"
-            data-bulk-done
-            @click="stopSelection"
-          />
-        </div>
-      </template>
-    </OperatorToolbar>
 
     <section
       ref="queueViewport"
@@ -1865,7 +1902,7 @@ function printQueue() {
           data-supervision-table
         >
           <template #order-cell="{ row }">
-            <div class="flex min-w-0 flex-col">
+            <div class="flex min-w-36 flex-col">
               <NuxtLink
                 v-if="canManageOrders"
                 :to="`/${row.original.card.ref}`"
@@ -2126,6 +2163,20 @@ function printQueue() {
         </section>
       </template>
     </section>
+
+    <!-- A barra de seleção da suíte, abaixo do `lg`: na base (a da mesa toma o lugar
+         da toolbar, no `#selection` do cabeçalho). -->
+    <OperatorBulkBar
+      v-if="selecting"
+      placement="base"
+      :count="selected.size"
+      :scope="bulkScope"
+      empty="Toque nos pedidos para marcar"
+      :items="bulkItems"
+      :clear-label="EXIT_SELECTION_LABEL"
+      data-bulk-bar
+      @clear="stopSelection"
+    />
 
     <!-- reject dialog -->
     <NuxtModal

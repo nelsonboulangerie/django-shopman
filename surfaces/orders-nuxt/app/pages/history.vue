@@ -2,11 +2,13 @@
 // Histórico — os pedidos que já saíram do quadro (concluídos, cancelados, devolvidos).
 //
 // Pedido do dono (03/10/2026): "acesso a um histórico dos pedidos concluídos e
-// cancelados, com filtro por data, status, forma de pagamento". O período é o seletor
-// do kit; os recortes são a FilterBar universal ("+ Filtro" → campo → valores, chip
-// que reabre a edição) e tudo mora na URL, então voltar do detalhe devolve a mesma
+// cancelados, com filtro por data, status, forma de pagamento". O período e os
+// recortes moram no painel de filtros único do kit (`OperatorFilterPanel`, com os
+// favoritos da pessoa) e tudo mora na URL, então voltar do detalhe devolve a mesma
 // lista. Filtrar e paginar é do servidor: a casa tem milhares de pedidos fechados.
 import {
+  periodLabel,
+  resolvePeriod,
   todayIso,
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
@@ -52,12 +54,14 @@ const dimensions = computed(() =>
 );
 const filters = useRouteFilters(dimensions, { resetKeys: ["page"] });
 
-// Celular (abaixo de `sm`, a régua da barra e da toolbar do kit): "Atualizar" vai para
-// o ⋯ da barra; o período fica na linha e os recortes no painel "Filtros", com os
-// ativos como chips removíveis.
-const phoneHeaderActions = computed(() => [
+// "Atualizar" age sobre a tela inteira: mora no ⋯ da barra (fase 2, regras de
+// precedência), no celular e na mesa. Os recortes e o período moram no painel de
+// filtros único (`OperatorFilterPanel`): na mesa, chips ao lado do botão; no celular,
+// os chips do cabeçalho.
+const headerActions = [
   { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
-]);
+];
+const DEFAULT_PERIOD: PeriodSelection = { preset: "day", from: "", to: "" };
 function clearSku() {
   router.replace({
     query: routeQueryFromHistory({ ...historyQuery.value, sku: "", page: 1 }),
@@ -69,6 +73,19 @@ const activeFilters = computed(() => [
         key: "sku",
         label: `Produto: ${history.value?.sku_name || historyQuery.value.sku}`,
         remove: clearSku,
+      }]
+    : []),
+  ...(historyQuery.value.period.preset !== DEFAULT_PERIOD.preset || historyQuery.value.period.from
+    ? [{
+        key: "period",
+        label: periodLabel(
+          historyQuery.value.period,
+          resolvePeriod(historyQuery.value.period, { today: today.value }),
+          today.value,
+        ),
+        remove: () => {
+          period.value = DEFAULT_PERIOD;
+        },
       }]
     : []),
   ...filterBarActiveFilters(dimensions.value, filters.value, (next) => {
@@ -148,7 +165,7 @@ function openOrder(ref: string) {
     <OperatorPageHeader
       title="Histórico"
       :filters-wrap="false"
-      :phone-actions="phoneHeaderActions"
+      :actions="headerActions"
       :active-filters="activeFilters"
     >
       <template #status>
@@ -164,49 +181,38 @@ function openOrder(ref: string) {
           aria-label="Buscar pedido no histórico"
         />
       </template>
-      <template #filters>
-        <NuxtButton
-          v-if="historyQuery.sku"
-          type="button"
-          :label="`Produto: ${history?.sku_name || historyQuery.sku}`"
-          trailing-icon="i-lucide-x"
-          color="primary"
-          variant="ghost"
-          active
-          active-variant="soft"
-          :aria-label="`Tirar o recorte do produto ${history?.sku_name || historyQuery.sku}`"
-          data-history-sku
-          @click="clearSku()"
-        />
-        <FilterBar
-          v-model="filters"
-          :dimensions="dimensions"
-          touch
-          class="min-w-0 flex-1"
-        />
-        <OperatorTableView table-key="orders-history" />
-        <!-- No celular, "Atualizar" está no ⋯ da barra (CSS: o servidor já desenha certo). -->
-        <NuxtButton
-          class="max-sm:hidden"
-          icon="i-lucide-refresh-cw"
-          label="Atualizar"
-          color="neutral"
-          variant="outline"
-          :loading="pending"
-          @click="refresh()"
-        />
-      </template>
-      <!-- O período é o primário da toolbar: no celular fica na linha. -->
-      <template #filters-primary>
-        <OperatorPeriodPicker
-          v-model="period"
-          :presets="HISTORY_PRESETS"
-          custom
-          compact
-          :today="today"
-          :max="today"
-          label="Período do histórico"
-        />
+      <!-- O painel de filtros único: favoritos, data (o período da lista mora aqui) e
+           os recortes. O recorte do produto (o "Abrir os N pedidos" do B.I.) vai
+           como chip ao lado, na mesa; no celular, com os chips do cabeçalho. -->
+      <template #filter-panel>
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
+          <OperatorFilterPanel
+            v-model="filters"
+            v-model:period="period"
+            :dimensions="dimensions"
+            :period-presets="HISTORY_PRESETS"
+            custom-period
+            :default-period="DEFAULT_PERIOD"
+            :today="today"
+            :max="today"
+            surface="orders"
+            screen="history"
+          />
+          <NuxtButton
+            v-if="historyQuery.sku"
+            class="max-sm:hidden"
+            type="button"
+            :label="`Produto: ${history?.sku_name || historyQuery.sku}`"
+            trailing-icon="i-lucide-x"
+            color="primary"
+            variant="ghost"
+            active
+            active-variant="soft"
+            :aria-label="`Tirar o recorte do produto ${history?.sku_name || historyQuery.sku}`"
+            data-history-sku
+            @click="clearSku()"
+          />
+        </div>
       </template>
       <!-- A leitura (total e frescor): no fim da linha na mesa; no celular, numa faixa
            de texto logo abaixo da linha. -->
