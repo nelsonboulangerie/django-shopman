@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 // A receita (/recipes/[ref]) — a lente da versão selecionada (âncora e base,
 // tabela g/%, métricas com faixa de referência, partes, mistura final, BOM), a
 // linha do tempo das versões e as ações: nova versão (copia a selecionada em
@@ -295,7 +296,7 @@ const publishDiff = computed(() => [
           variant="subtle"
           icon="i-lucide-wifi-off"
           title="Sem atualizar. Mostrando a última leitura."
-          :actions="[{ label: 'Tentar de novo', color: 'warning', variant: 'outline', onClick: () => refresh() }]"
+          :actions="alertActions('warning', [{ label: 'Tentar de novo', onClick: () => refresh() }])"
           role="status"
           aria-live="polite"
         />
@@ -529,7 +530,7 @@ const publishDiff = computed(() => [
             variant="subtle"
             icon="i-lucide-tag"
             title="Associe um SKU antes de publicar."
-            :actions="[{ label: 'Associar SKU', color: 'warning', variant: 'outline', onClick: skuFromPublish }]"
+            :actions="alertActions('warning', [{ label: 'Associar SKU', onClick: skuFromPublish }])"
           />
           <NuxtAlert
             v-if="unmatched.length"
@@ -538,7 +539,7 @@ const publishDiff = computed(() => [
             icon="i-lucide-unlink"
             :title="unmatched.length === 1 ? '1 ingrediente ainda sem insumo' : `${unmatched.length} ingredientes ainda sem insumo`"
             :description="`${unmatched.map((item) => item.name).join(', ')}. Case todos no editor.`"
-            :actions="[{ label: 'Abrir o editor', color: 'warning', variant: 'outline', onClick: editorFromPublish }]"
+            :actions="alertActions('warning', [{ label: 'Abrir o editor', onClick: editorFromPublish }])"
           />
 
           <template v-if="publishCompare.ready.value">

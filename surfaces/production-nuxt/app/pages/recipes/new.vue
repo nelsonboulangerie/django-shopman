@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 // Nova receita (/recipes/new) — três portas na mesma tela: Anotação (colar texto),
 // Foto (câmera/arquivo, redimensionada no navegador) e Manual (editor vazio). As
 // duas primeiras leem por POST recipes/capture/ e mostram o rascunho lido —
@@ -244,7 +245,7 @@ const touch = useTouchPointer();
             variant="subtle"
             icon="i-lucide-sparkles"
             :title="CAPTURE_UNAVAILABLE_MESSAGE"
-            :actions="[{ label: 'Preencher à mão', icon: 'i-lucide-pencil', color: 'info', variant: 'outline', onClick: () => (door = 'manual') }]"
+            :actions="alertActions('info', [{ label: 'Preencher à mão', icon: 'i-lucide-pencil', onClick: () => (door = 'manual') }])"
           />
 
           <template v-else-if="!hasDraft">
@@ -327,7 +328,7 @@ const touch = useTouchPointer();
               variant="subtle"
               icon="i-lucide-cloud-off"
               :title="capture.error.value"
-              :actions="[{ label: 'Preencher à mão', color: 'error', variant: 'outline', onClick: () => (door = 'manual') }]"
+              :actions="alertActions('error', [{ label: 'Preencher à mão', onClick: () => (door = 'manual') }])"
             />
           </template>
 

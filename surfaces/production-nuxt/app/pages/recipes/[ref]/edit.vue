@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 // O editor do rascunho (/recipes/[ref]/edit?v=n). Rendimento, âncora, a tabela
 // editável (nome, insumo com busca, quantidade, unidade, papel), partes, etapas e
 // notas; à direita a PRÉVIA DA LENTE, recalculada pelo servidor com debounce. O
@@ -385,7 +386,7 @@ const touch = useTouchPointer();
             variant="subtle"
             icon="i-lucide-circle-alert"
             :title="saveError"
-            :actions="[{ label: 'Salvar de novo', color: 'error', variant: 'outline', disabled: busy, onClick: () => save() }]"
+            :actions="alertActions('error', [{ label: 'Salvar de novo', disabled: busy, onClick: () => save() }])"
           />
 
           <!-- Rendimento, âncora, o que mudou -->

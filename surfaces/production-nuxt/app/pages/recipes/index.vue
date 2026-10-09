@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 // Inventário de receitas (/recipes) — a lista do conhecimento da casa. Busca,
 // chips por tipo, os dois toggles que importam ("sem SKU" = receita ainda só
 // conhecimento; "com rascunho" = alguém começou e não publicou) e as arquivadas
@@ -130,7 +131,7 @@ watch(
         variant="subtle"
         icon="i-lucide-wifi-off"
         title="Sem atualizar. Mostrando a última lista carregada."
-        :actions="[{ label: 'Tentar de novo', color: 'warning', variant: 'outline', onClick: () => refresh() }]"
+        :actions="alertActions('warning', [{ label: 'Tentar de novo', onClick: () => refresh() }])"
         role="status"
         aria-live="polite"
       />
