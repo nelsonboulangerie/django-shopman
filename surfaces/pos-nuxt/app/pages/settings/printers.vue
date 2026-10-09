@@ -51,7 +51,7 @@ function save(printer: PosPrinterSetting) {
         <div class="grid gap-4 sm:grid-cols-2">
           <fieldset class="grid gap-2">
             <legend class="mb-1 op-label text-muted-foreground">Largura do rolo</legend>
-            <div class="inline-flex h-11 items-center gap-1 rounded-md bg-secondary p-1" role="group">
+            <div class="inline-flex h-8 items-center gap-1 rounded-md bg-secondary p-1" role="group">
               <button
                 v-for="width in settings.data.value.roll_widths"
                 :key="width"
@@ -65,7 +65,7 @@ function save(printer: PosPrinterSetting) {
           </fieldset>
           <fieldset class="grid gap-2">
             <legend class="mb-1 op-label text-muted-foreground">Corte do papel</legend>
-            <div class="inline-flex h-11 items-center gap-1 rounded-md bg-secondary p-1" role="group">
+            <div class="inline-flex h-8 items-center gap-1 rounded-md bg-secondary p-1" role="group">
               <button
                 v-for="mode in settings.data.value.cut_modes"
                 :key="mode.value"

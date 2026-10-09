@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
+// Alvo mínimo = altura `md` (32 px), decisão do dono de 09/10/2026; acima do piso
+// WCAG 2.2 AA (2.5.8, 24 px).
+const MIN_TARGET = 32;
+
 type AxeViolation = {
   id: string;
   impact: string | null;
@@ -40,7 +44,7 @@ async function expectTouchTargets(page: Page, context: string) {
     .locator(
       'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="switch"]',
     )
-    .evaluateAll((elements) =>
+    .evaluateAll((elements, minTarget) =>
       elements.flatMap((element) => {
         const node = element as HTMLElement;
         const style = getComputedStyle(node);
@@ -57,7 +61,7 @@ async function expectTouchTargets(page: Page, context: string) {
           const target = node.closest('[data-slot="switch"]');
           if (target) {
             const targetRect = target.getBoundingClientRect();
-            if (targetRect.width >= 44 && targetRect.height >= 44) return [];
+            if (targetRect.width >= minTarget && targetRect.height >= minTarget) return [];
           }
         }
         if (["checkbox", "radio"].includes(input.type)) {
@@ -66,10 +70,10 @@ async function expectTouchTargets(page: Page, context: string) {
             document.querySelector(`label[for="${node.id}"]`);
           if (label) {
             const labelRect = label.getBoundingClientRect();
-            if (labelRect.width >= 44 && labelRect.height >= 44) return [];
+            if (labelRect.width >= minTarget && labelRect.height >= minTarget) return [];
           }
         }
-        return rect.width >= 44 && rect.height >= 44
+        return rect.width >= minTarget && rect.height >= minTarget
           ? []
           : [
               {
@@ -83,6 +87,7 @@ async function expectTouchTargets(page: Page, context: string) {
               },
             ];
       }),
+    MIN_TARGET,
     );
   expect(failures, `${context}: ${JSON.stringify(failures, null, 2)}`).toEqual(
     [],

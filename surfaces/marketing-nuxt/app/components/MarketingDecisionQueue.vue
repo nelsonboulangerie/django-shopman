@@ -292,7 +292,7 @@ const scheduledLine = computed(() =>
           <NuxtLink
             :to="check.href"
             :data-automatic-check="check.state"
-            class="flex min-h-11 items-start gap-2.5 rounded-xl px-1 py-1.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            class="flex min-h-8 items-start gap-2.5 rounded-xl px-1 py-1.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span
               class="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"

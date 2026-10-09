@@ -424,7 +424,7 @@ async function submit() {
               :rows="1"
               autocomplete="off"
               spellcheck="false"
-              class="mt-1 min-h-11 resize-none font-mono"
+              class="mt-1 min-h-8 resize-none font-mono"
             />
           </div>
 

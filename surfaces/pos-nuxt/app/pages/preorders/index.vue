@@ -406,7 +406,7 @@ function refreshAll() {
           @keydown.enter.prevent="openSingle"
         />
         <!-- "Incluir concluídas" só vale para a busca: sem busca digitada, não aparece. -->
-        <label v-if="searching" class="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-2 text-sm hover:bg-accent">
+        <label v-if="searching" class="inline-flex min-h-8 shrink-0 items-center gap-2 rounded-md px-2 text-sm hover:bg-accent">
           <UiSwitch v-model="includeCompleted" data-preorders-include-completed />
           Incluir concluídas
         </label>
@@ -417,7 +417,7 @@ function refreshAll() {
       <UiButton
         variant="outline"
         size="lg"
-        class="h-11 shrink-0 gap-2"
+        class="h-8 shrink-0 gap-2"
         aria-label="Nova encomenda"
         data-preorders-new
         @click="navigateTo(NEW_ORDER_ROUTE)"
@@ -433,7 +433,7 @@ function refreshAll() {
         v-for="chip in phoneChips"
         :key="chip.key"
         type="button"
-        class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full border px-3.5 op-label transition"
+        class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3.5 op-label transition"
         :class="chip.active ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
         :aria-pressed="chip.active"
         :data-preorders-phone-chip="chip.key"
@@ -702,7 +702,7 @@ function refreshAll() {
                      o dia da semana nunca some. Na lista, o cabeçalho é uma linha só. -->
                 <button
                   type="button"
-                  class="grid min-h-11 gap-1 rounded-md text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  class="grid min-h-8 gap-1 rounded-md text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   :class="[
                     weekDay.is_today ? '-mx-1 -mt-1 border-primary/30 bg-primary/10 px-2 pt-2 hover:bg-primary/15' : 'border-border hover:bg-accent',
                     weekDay.orders.length ? 'border-b pb-3' : 'pb-1',

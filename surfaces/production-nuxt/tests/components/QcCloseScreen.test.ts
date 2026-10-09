@@ -477,7 +477,7 @@ describe("QcCloseScreen — correção auditável", () => {
     );
     const fairQuantity = wrapper.find('[data-grade-ref="fair"]');
     expect(fairReason.text()).toBe("Formato");
-    expect(fairReason.classes()).toContain("h-11");
+    expect(fairReason.classes()).toContain("h-8");
     expect(fairReason.classes()).toContain("rounded-md");
     expect(fairReason.classes()).toContain("ml-3");
     expect(fairReason.classes()).toContain("mr-2");
@@ -500,7 +500,7 @@ describe("QcCloseScreen — correção auditável", () => {
       'button[aria-label="Editar motivo da perda: Queimado"]',
     );
     expect(lossReason.text()).toBe("Queimado");
-    expect(lossReason.classes()).toContain("h-11");
+    expect(lossReason.classes()).toContain("h-8");
     expect(lossReason.classes()).toContain("rounded-md");
     expect(lossReason.classes()).toContain("w-[calc(100%-1rem)]");
     expect(lossReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(

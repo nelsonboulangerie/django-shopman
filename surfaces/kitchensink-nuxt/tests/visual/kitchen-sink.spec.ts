@@ -192,9 +192,11 @@ test("toque amplia alvo sem deformar switch e checkbox", async ({
   const bounds = (await control.boundingBox())!;
   expect(bounds.height).toBeLessThanOrEqual(24);
   expect(bounds.width).toBeLessThanOrEqual(44);
+  // Toque fora do corpo do switch (≤ 12 px do centro) e dentro do envelope de
+  // 32 px (`size-control`, 16 px do centro): a altura `md` do dono, 09/10/2026.
   await page.mouse.click(
     bounds.x + bounds.width / 2,
-    bounds.y + bounds.height / 2 + 18,
+    bounds.y + bounds.height / 2 + 14,
   );
   await expect(control).toHaveAttribute("aria-checked", "false");
   const checkbox = page.getByRole("checkbox", { name: "Exige revisão" });

@@ -148,7 +148,7 @@ const hasBlockers = computed(
       </p>
       <button
         type="button"
-        class="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 op-label font-semibold hover:bg-accent"
+        class="mt-2 inline-flex h-8 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 op-label font-semibold hover:bg-accent"
         data-receipt-ressalva-open
         @click="emit('ressalva')"
       >

@@ -52,14 +52,14 @@ const hiddenTitle = computed(() => hidden.value.map((entry) => `${entry.qty}× $
 </script>
 
 <template>
-  <div ref="box" class="relative flex min-h-11 shrink-0 items-center gap-2 overflow-hidden" data-kds-all-day>
+  <div ref="box" class="relative flex min-h-8 shrink-0 items-center gap-2 overflow-hidden" data-kds-all-day>
     <span class="inline-flex w-[86px] shrink-0 items-center gap-1.5 op-eyebrow text-muted-foreground">
       <Icon name="lucide:clipboard-list" class="size-4" />A fazer
     </span>
     <span
       v-for="entry in visible"
       :key="entry.name"
-      class="inline-flex h-11 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-3"
+      class="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-3"
       data-kds-all-day-chip
     >
       <b class="text-lg tabular-nums">{{ entry.qty }}×</b>
@@ -67,7 +67,7 @@ const hiddenTitle = computed(() => hidden.value.map((entry) => `${entry.qty}× $
     </span>
     <span
       v-if="hidden.length"
-      class="inline-flex h-11 shrink-0 items-center rounded-md px-2 op-label font-semibold text-muted-foreground"
+      class="inline-flex h-8 shrink-0 items-center rounded-md px-2 op-label font-semibold text-muted-foreground"
       :title="hiddenTitle"
       data-kds-all-day-more
     >
@@ -82,7 +82,7 @@ const hiddenTitle = computed(() => hidden.value.map((entry) => `${entry.qty}× $
       <span
         v-for="entry in entries"
         :key="entry.name"
-        class="inline-flex h-11 shrink-0 items-center gap-2 rounded-md border px-3"
+        class="inline-flex h-8 shrink-0 items-center gap-2 rounded-md border px-3"
         data-measure-chip
       >
         <b class="text-lg tabular-nums">{{ entry.qty }}×</b>

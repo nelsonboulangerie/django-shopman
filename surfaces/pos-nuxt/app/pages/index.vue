@@ -1294,7 +1294,7 @@ onBeforeUnmount(() => {
                     v-for="mode in CONTEXT_SALES_MODES"
                     :key="mode.ref"
                     type="button"
-                    class="inline-flex h-11 items-center justify-center gap-1.5 rounded op-label transition"
+                    class="inline-flex h-8 items-center justify-center gap-1.5 rounded op-label transition"
                     :class="(cart.salesMode || 'counter') === mode.ref ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
                     :aria-pressed="(cart.salesMode || 'counter') === mode.ref"
                     @click="contextMoreOpen = false; requestSalesMode(mode.ref)"
@@ -1302,19 +1302,19 @@ onBeforeUnmount(() => {
                     <Icon :name="mode.icon" class="size-4" />{{ mode.label }}
                   </button>
                 </div>
-                <button v-if="hasOpenTab" type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent sm:hidden" @click="contextMoreOpen = false; openFulfillmentHere()">
+                <button v-if="hasOpenTab" type="button" class="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent sm:hidden" @click="contextMoreOpen = false; openFulfillmentHere()">
                   <Icon :name="cart.salesMode === 'order' ? 'lucide:store' : 'lucide:utensils'" class="size-4 text-muted-foreground" />
                   {{ cart.salesMode === "order" ? `Recebimento: ${fulfillmentChipLabel}` : "Consumir aqui (entregar vira encomenda)" }}
                 </button>
-                <button v-if="hasOpenTab" type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent xl:hidden" @click="contextMoreOpen = false; openScheduleHere()">
+                <button v-if="hasOpenTab" type="button" class="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent xl:hidden" @click="contextMoreOpen = false; openScheduleHere()">
                   <Icon name="lucide:clock" class="size-4 text-muted-foreground" />
                   {{ cart.salesMode === "order" ? `Quando: ${scheduleChipLabel}` : "Agendar (vira encomenda)" }}
                 </button>
-                <button type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent" @click="contextMoreOpen = false; recentSalesOpen = true">
+                <button type="button" class="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left op-label hover:bg-accent" @click="contextMoreOpen = false; recentSalesOpen = true">
                   <Icon name="lucide:history" class="size-4 text-muted-foreground" />
                   Últimas vendas
                 </button>
-                <button v-if="hasOpenTab" type="button" class="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-left op-label text-destructive hover:bg-destructive/10" data-pos-release-tab-more @click="contextMoreOpen = false; tabHeaderRef?.askRelease()">
+                <button v-if="hasOpenTab" type="button" class="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left op-label text-destructive hover:bg-destructive/10" data-pos-release-tab-more @click="contextMoreOpen = false; tabHeaderRef?.askRelease()">
                   <Icon name="lucide:x" class="size-4" />
                   Liberar comanda
                 </button>

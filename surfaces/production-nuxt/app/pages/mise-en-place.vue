@@ -197,7 +197,7 @@ function refreshAll() {
           <!-- Modo em segmento compacto: alterna duas visões da mesma preparação. -->
           <button
             type="button"
-            class="min-h-11 rounded-md px-4 op-label font-semibold transition"
+            class="min-h-8 rounded-md px-4 op-label font-semibold transition"
             :class="
               mode === 'preparos'
                 ? 'bg-card text-foreground shadow-sm'
@@ -210,7 +210,7 @@ function refreshAll() {
           </button>
           <button
             type="button"
-            class="min-h-11 rounded-md px-4 op-label font-semibold transition"
+            class="min-h-8 rounded-md px-4 op-label font-semibold transition"
             :class="
               mode === 'insumos'
                 ? 'bg-card text-foreground shadow-sm'
@@ -308,7 +308,7 @@ function refreshAll() {
           <p class="text-base font-medium">Nada para separar nesta data.</p>
           <NuxtLink
             to="/plan"
-            class="inline-flex min-h-11 items-center text-sm text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-8 items-center text-sm text-primary underline-offset-2 hover:underline"
             >Planejar produção</NuxtLink
           >
         </div>
@@ -547,7 +547,7 @@ function refreshAll() {
           </p>
           <NuxtLink
             to="/plan"
-            class="inline-flex min-h-11 items-center text-sm text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-8 items-center text-sm text-primary underline-offset-2 hover:underline"
             >Planejar produção</NuxtLink
           >
         </div>

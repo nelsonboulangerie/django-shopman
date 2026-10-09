@@ -32,7 +32,10 @@ export async function scanOperatorGeometry(
 ): Promise<OperatorGeometryFinding[]> {
   return page.evaluate((input) => {
     const findings: OperatorGeometryFinding[] = [];
-    const minTarget = input.minTouchTarget ?? (innerWidth >= 600 ? 48 : 44);
+    // Alvo de toque = altura `md` (32 px, o `--spacing-control`), decisão do dono de
+    // 09/10/2026: campos e botões em 32 px em todos os apps, inclusive no toque.
+    // Fica acima do piso WCAG 2.2 AA (2.5.8, 24 px).
+    const minTarget = input.minTouchTarget ?? 32;
     const minSpacing = input.minTargetSpacing ?? 8;
     const interactiveSelector = [
       "button",

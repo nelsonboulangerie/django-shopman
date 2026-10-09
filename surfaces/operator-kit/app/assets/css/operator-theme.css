@@ -15,8 +15,11 @@
    ============================================================================ */
 
 @theme {
-  /* Escala opt-in para fluxos de toque que a pedem explicitamente. */
-  --spacing-control: 2.75rem;
+  /* Campos e botões na altura `md` do Nuxt UI (32 px) em todos os apps, também no
+     PDV e na Cozinha (dono, 09/10/2026, opção 1: "diminuir os campos"). O token
+     segue existindo porque os componentes legados o pedem; ele não sobe mais a
+     44 px nem a 48 px em tablet. `action` é o degrau `xl`, para o ato principal. */
+  --spacing-control: 2rem;
   --spacing-action: 3rem;
   /* Corpo/UI = Instrument Sans, a família canônica do design system (mesma da
      vitrine). O app hospedeiro incorpora os webfonts licenciados e declara os
@@ -24,21 +27,6 @@
   --font-sans:
     "Instrument Sans", ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-}
-
-/* Tablet de operação não é desktop estreito. Com ponteiro touch e largura de tablet,
-   o alvo de quem FAZ opt-in (`min-h-control`) sobe para 48 px; no celular fica 44 px
-   e no desktop com mouse também. Decisão por capacidade do dispositivo. A pilha do
-   Gestor tinha tirado esta regra; os sete apps não migrados (PDV, Cozinha, Produção…)
-   ainda a usam no balcão, e o kit só muda por opt-in (WP-OPERADOR-NUXTUI-ONDAS): vale
-   onde a página veste a suíte (`data-suite="v3"`, os sete) e no catálogo do kit (que
-   documenta o envelope até a onda dele), não no Gestor. Pelo `:root`
-   o token chega também aos overlays em portal. Não infla nada sozinha: vale só onde o
-   componente pede `min-h-control`. */
-@media (pointer: coarse) and (min-width: 600px) {
-  :root:has([data-suite="v3"], [data-operator-catalog]) {
-    --spacing-control: 3rem;
-  }
 }
 
 @theme inline {

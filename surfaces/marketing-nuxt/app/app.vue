@@ -148,7 +148,7 @@ watch(sessionState, async (next, previous) => {
             :href="hubUrl"
             :target="hubLink.target"
             :rel="hubLink.rel"
-            class="mt-4 inline-flex min-h-11 items-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
+            class="mt-4 inline-flex min-h-8 items-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
           >
             Voltar à Central
           </a>

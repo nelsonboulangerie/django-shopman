@@ -352,7 +352,7 @@ const matchedNames = computed(() => props.view.matched.map((preview) => receiptL
           </span>
           <button
             type="button"
-            class="inline-flex h-11 shrink-0 items-center rounded-full px-3 text-[14px] font-semibold text-primary hover:bg-accent"
+            class="inline-flex h-8 shrink-0 items-center rounded-full px-3 text-[14px] font-semibold text-primary hover:bg-accent"
             @click="swapExpiry(preview.line.id)"
           >
             Trocar

@@ -265,7 +265,7 @@ useHead({ title: "Modelos" });
           <NuxtLink
             v-if="removing?.used_by_campaigns?.length"
             to="/campaigns"
-            class="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
+            class="inline-flex min-h-8 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
             @click="removing = null"
           >
             Ver campanhas

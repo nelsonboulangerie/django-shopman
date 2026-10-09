@@ -806,7 +806,7 @@ useHead({ title: "Campanhas" });
           </button>
 
           <div
-            class="mt-2 flex min-h-11 shrink-0 items-center justify-end gap-2"
+            class="mt-2 flex min-h-8 shrink-0 items-center justify-end gap-2"
           >
             <span
               v-if="!rule.requires_approval"

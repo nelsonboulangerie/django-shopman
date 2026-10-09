@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
+// Alvo mínimo = altura `md` (32 px), decisão do dono de 09/10/2026; acima do piso
+// WCAG 2.2 AA (2.5.8, 24 px).
+const MIN_TARGET = 32;
+
 const authed = {
   name: "e2e_session",
   value: "authed",
@@ -47,7 +51,7 @@ async function expectTouchTargets(page: Page, context: string) {
     .locator(
       'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="switch"]',
     )
-    .evaluateAll((elements) =>
+    .evaluateAll((elements, minTarget) =>
       elements.flatMap((element) => {
         const node = element as HTMLElement;
         const style = getComputedStyle(node);
@@ -76,7 +80,7 @@ async function expectTouchTargets(page: Page, context: string) {
           rect.height === 0
         )
           return [];
-        return rect.width >= 44 && rect.height >= 44
+        return rect.width >= minTarget && rect.height >= minTarget
           ? []
           : [
               {
@@ -90,6 +94,7 @@ async function expectTouchTargets(page: Page, context: string) {
               },
             ];
       }),
+    MIN_TARGET,
     );
   expect(failures, `${context}: ${JSON.stringify(failures, null, 2)}`).toEqual(
     [],
@@ -166,7 +171,7 @@ for (const route of criticalRoutes) {
   });
 }
 
-test("relatório populado mantém os controles compostos com alvo de 44 px", async ({
+test("relatório populado mantém os controles compostos com alvo de 32 px", async ({
   context,
   page,
 }, testInfo) => {
