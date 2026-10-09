@@ -47,7 +47,7 @@ export function marketingLiveStatus(input: {
   if (input.realtime === "polling") {
     return {
       tone: "calm",
-      label: "Atualiza a cada 1 min",
+      label: "Atualiza sozinho a cada 1 min",
       time,
       detail: "O aviso imediato caiu; a tela confere sozinha a cada minuto.",
     };
