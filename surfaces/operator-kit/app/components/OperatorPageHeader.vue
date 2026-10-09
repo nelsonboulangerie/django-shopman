@@ -34,7 +34,7 @@
 // o alcance "Esta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
 import { computed, onMounted, ref, useSlots } from "vue";
-import { useMediaQuery } from "@vueuse/core";
+import { useScreen } from "../composables/useScreen";
 
 import { SUITE_MARKER_SELECTOR } from "../composables/useSuiteMarker";
 import {
@@ -127,21 +127,17 @@ const railShown = computed(() =>
 // em `#actions` no celular e não muda (WP-OPERADOR-NUXTUI-ONDAS, onda 0). Sem isto, o
 // período da Produção espremia a barra de 56px: a lupa cobria o selo do app (axe
 // target-size) e a página rolava na horizontal.
-const phone = useMediaQuery("(max-width: 767.98px)", { ssrWidth: 1280 });
+const screen = useScreen();
+const phone = screen.belowMd;
 const suitePage = ref(false);
 onMounted(() => {
   suitePage.value = Boolean(document.querySelector(SUITE_MARKER_SELECTOR));
 });
 const actionsBelow = computed(() => suitePage.value && phone.value);
 
-// A régua do celular da barra do topo e da toolbar: abaixo de `sm`. Lida depois da
-// montagem (o servidor desenha a largura de mesa; o primeiro quadro do cliente também).
-const narrowMedia = useMediaQuery("(max-width: 639.98px)", { ssrWidth: 1280 });
-const mounted = ref(false);
-onMounted(() => {
-  mounted.value = true;
-});
-const narrow = computed(() => mounted.value && narrowMedia.value);
+// A régua do celular da barra do topo e da toolbar: abaixo de `sm`. A do kit
+// (`useScreen`): o servidor e a hidratação desenham a mesa; a largura real vem depois.
+const narrow = screen.belowSm;
 
 const { data: operatorSession } =
   useNuxtData<OperatorSession>("operator-session");

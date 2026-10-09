@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useMediaQuery } from "@vueuse/core";
 // Ficha do cliente — quem é, o que comprou, e quem PODE ser a mesma pessoa.
 //
 // Os candidatos vêm com o motivo escrito ("Mesmo cliente no iFood", "Mesmo CPF",
@@ -54,7 +53,7 @@ const notFound = computed(() => httpError(error.value).status === 404);
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
-const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const { belowSm: isNarrow } = useScreen();
 const phoneHeaderActions = computed(() =>
   isNarrow.value
     ? [

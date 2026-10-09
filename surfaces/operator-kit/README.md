@@ -587,6 +587,33 @@ polegar dos apps ainda fora do shell (`OperatorSectionBar`, com o "Mais" como it
 mesma barra). Ícone em cima, nome **inteiro** embaixo: o rótulo quebra em vez de cortar
 (o oficial leva `truncate`, e a 320 px o Marketing dizia "De…", "Age…", "En…").
 
+### Régua de tela (`useScreen`)
+
+Uma régua só, a do CSS: `useScreen()` devolve `belowSm`, `belowMd`, `belowLg` e
+`belowXl`, as mesmas bordas do `max-sm:`/`max-md:`/`max-lg:`/`max-xl:` do Tailwind
+(`presentation/screen.ts`). O servidor não sabe a largura, então **até a hidratação
+terminar toda leitura responde "mesa"** (falso), no servidor e no cliente; depois, a
+largura real entra como reatividade comum. Tela montada depois da hidratação (navegação
+interna) já nasce com a largura real.
+
+- O que é **só apresentação** decide no CSS (`max-sm:hidden`, `hidden md:inline-flex`):
+  o servidor já desenha certo e nada troca.
+- O que **muda a árvore** (slot, `v-if`, prop de componente, ações da barra) lê
+  `useScreen()`. Nunca `useMediaQuery` de largura na tela, nunca `ssrWidth`: a árvore
+  hidratada tem de ser a que o servidor mandou.
+- Dado lido só no cliente (`useFetch` com `server: false`) segue a mesma regra: o
+  esqueleto aparece também antes de hidratar (`pending || !screen.ready`), senão o
+  cliente hidrata um nó que o servidor não mandou.
+
+Por quê (alpha, 09/10/2026): o Gestor tinha a régua redeclarada em dez telas (`isNarrow`
+valia 639 px em nove e 1279 px na fila) e decidia `v-if` com ela. Na carga direta no
+celular (recarregar, PWA, link) a Fila ficava no esqueleto para sempre (`Cannot read
+properties of null (reading 'emitsOptions')`) e a toolbar do Histórico, dos Clientes e do
+Catálogo sumia. Travas: `tests/guardrails.screen.test.ts` (só a régua e o rail usam
+`useMediaQuery` no kit; o Gestor é zero; os apps não migrados têm teto que só cai) e
+`orders-nuxt/tests/ssr/directLoadPhone.spec.ts` (build de produção, 390 e 1440 px, toda
+rota aberta direto: nenhum mismatch, nenhum erro de página).
+
 ### Barra do topo no celular
 
 Regra única para todo app (dono, 08/10/2026: "no mobile tem muitas opções na navbar

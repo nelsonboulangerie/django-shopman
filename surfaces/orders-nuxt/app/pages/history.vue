@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useMediaQuery } from "@vueuse/core";
 // Histórico — os pedidos que já saíram do quadro (concluídos, cancelados, devolvidos).
 //
 // Pedido do dono (03/10/2026): "acesso a um histórico dos pedidos concluídos e
@@ -55,7 +54,7 @@ const filters = useRouteFilters(dimensions, { resetKeys: ["page"] });
 // Celular (abaixo de `sm`, a régua da barra e da toolbar do kit): "Atualizar" vai para
 // o ⋯ da barra; o período fica na linha e os recortes no painel "Filtros", com os
 // ativos como chips removíveis.
-const isNarrow = useMediaQuery("(max-width: 639.98px)");
+const { belowSm: isNarrow } = useScreen();
 const phoneHeaderActions = computed(() =>
   isNarrow.value
     ? [{ label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() }]
@@ -170,8 +169,9 @@ const historyColumns = [
           touch
           class="min-w-0 flex-1"
         />
+        <!-- No celular, "Atualizar" está no ⋯ da barra (CSS: o servidor já desenha certo). -->
         <NuxtButton
-          v-if="!isNarrow"
+          class="max-sm:hidden"
           icon="i-lucide-refresh-cw"
           label="Atualizar"
           color="neutral"
