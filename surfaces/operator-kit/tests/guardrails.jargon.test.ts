@@ -171,7 +171,7 @@ function screenSnippets(file: string): Snippet[] {
   const found: Snippet[] = [];
   const templateOpen = text.indexOf("<template");
   const templateClose = text.lastIndexOf("</template>");
-  for (const match of text.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) {
+  for (const match of text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script[^>]*>/gi)) {
     const start = (match.index ?? 0) + match[0].indexOf(">") + 1;
     found.push(...proseLiterals(match[1] ?? "", start));
   }
