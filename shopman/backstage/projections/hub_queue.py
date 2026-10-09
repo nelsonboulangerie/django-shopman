@@ -497,7 +497,7 @@ def _alerts(user, urls: dict[str, str], labels: dict[str, str], now: datetime, o
         if alert.type in OperatorAlert.PRODUCTION_TYPES:
             # Alerta de produção carrega o ref do LOTE em ``order_ref``: nunca vira "Abrir o
             # pedido" no Gestor. Sem a Produção, ele fica no sino de quem a opera.
-            app = "production" if can_production else ""
+            app, surface = ("production", "production") if can_production else ("", "")
         elif can_orders and (alert.audience == "orders" or alert.order_ref) and alert.type not in alert_service.ORDERS_SCOPE_EXCLUDED:
             app, surface = "gestor", "orders"
         if not app:
@@ -534,7 +534,8 @@ def _alerts(user, urls: dict[str, str], labels: dict[str, str], now: datetime, o
                 time_mode="since",
                 attention=critical,
                 action_label=action.label,
-                url=_join_url(urls[app], action.href),
+                # O aviso que se resolve noutro app já vem com o endereço inteiro.
+                url=action.href if action.href.startswith(("http://", "https://")) else _join_url(urls[app], action.href),
                 # Crítico vai para o topo; erro entra no meio, atrás do que estourou a meta.
                 slack_seconds=-3600 if critical else DUE_SOON_SECONDS,
             )
