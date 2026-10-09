@@ -170,7 +170,9 @@ const sortable = computed(() =>
 const OWN_SLOTS = new Set(["expanded", "footer", "empty-actions"]);
 const forwarded = computed(() => Object.keys(slots).filter((name) => !OWN_SLOTS.has(name)));
 
-const ui = computed(() => ({ ...tableDensityUi(density.value), tr: "data-[expanded=true]:bg-elevated/50" }));
+// Sem pintar a linha aberta: a coluna fixada tem o fundo do cartão (tema), e a linha
+// pintada ficava com um retalho branco nela.
+const ui = computed(() => tableDensityUi(density.value));
 const meta = computed(() => ({
   class: {
     tr: (row: TableRow<T>) =>
@@ -231,6 +233,8 @@ const select = computed(() =>
         :on-select="select"
         :data-density="density"
         data-operator-table
+        data-operator-overflow="horizontal"
+        tabindex="0"
         v-bind="$attrs"
       >
         <template v-if="selectable" #select-header="{ table }">
@@ -240,6 +244,7 @@ const select = computed(() =>
             data-operator-table-select-all
             @update:model-value="(value: boolean | 'indeterminate') => table.toggleAllRowsSelected(!!value)"
           />
+          <span class="sr-only">Seleção</span>
         </template>
         <template v-if="selectable" #select-cell="{ row }">
           <NuxtCheckbox
@@ -248,6 +253,10 @@ const select = computed(() =>
             data-operator-table-select
             @update:model-value="(value: boolean | 'indeterminate') => row.toggleSelected(!!value)"
           />
+        </template>
+        <!-- Cabeçalho das colunas de controle: texto para o leitor de tela (axe). -->
+        <template v-if="hasExpanded" #expand-header>
+          <span class="sr-only">Detalhes</span>
         </template>
         <template v-if="hasExpanded" #expand-cell="{ row }">
           <NuxtButton
@@ -267,7 +276,7 @@ const select = computed(() =>
             :trailing-icon="sortIcon(tableColumn.getIsSorted())"
             color="neutral"
             variant="ghost"
-            class="-mx-2.5"
+            class="-ms-2.5"
             :aria-label="sortLabel(column.label, tableColumn.getIsSorted())"
             :data-operator-table-sort="column.id"
             @click="tableColumn.toggleSorting(tableColumn.getIsSorted() === 'asc')"

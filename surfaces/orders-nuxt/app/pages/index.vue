@@ -1888,11 +1888,9 @@ function printQueue() {
             />
           </template>
           <template #items-cell="{ row }">
-            <span
-              class="block max-w-40 truncate text-muted-foreground xl:max-w-64"
-              :title="row.original.card.items_summary"
-              >{{ row.original.card.items_summary }}</span
-            >
+            <span class="block min-w-40 text-muted-foreground">{{
+              row.original.card.items_summary
+            }}</span>
           </template>
           <template #total-cell="{ row }">
             <span class="whitespace-nowrap font-semibold tabular-nums">{{
