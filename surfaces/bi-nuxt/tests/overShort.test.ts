@@ -5,8 +5,8 @@ import type { BIOverShortReport, BIOverShortRow } from "~/types/bi";
 import { BI_SECTIONS, biSections } from "~/presentation/biSections";
 import { cashAnswer, customersAnswer, salesAnswer } from "~/presentation/bi";
 import {
-  barGeometry,
-  barScale,
+  MADE_SOLD_SERIES,
+  madeSoldPoints,
   carryLabel,
   clientCount,
   compareName,
@@ -200,14 +200,18 @@ describe("cada produto", () => {
     expect(versusTypicalText(shokupan)).toBe("acabou perto de fechar");
   });
 
-  it("a barra compacta usa uma escala comum", () => {
-    const scale = barScale(report.rows);
-    expect(scale).toBe(60);
-    const geometry = barGeometry(croissant, scale);
-    expect(Math.round(geometry.made)).toBe(73);
-    expect(Math.round(geometry.lost)).toBe(23);
-    expect(geometry.lostFrom).toBe(geometry.sold);
-    expect(Math.round(geometry.typical!)).toBe(83);
+  it("o gráfico fez × vendeu: vendeu e sobrou somam o feito; a falta estimada vem listrada", () => {
+    const points = madeSoldPoints(report.rows);
+    expect(points.map((point) => point.label)).toEqual(report.rows.map((row) => row.name));
+    const croissantPoint = points[report.rows.indexOf(croissant)]!;
+    expect(croissantPoint.values).toEqual({
+      sold: Number(croissant.sold),
+      leftover: Number(croissant.leftover),
+      lost: Number(croissant.lost_estimate),
+    });
+    const bagutePoint = points[report.rows.indexOf(baguete)]!;
+    expect(bagutePoint.values.sold! + bagutePoint.values.leftover!).toBe(Number(baguete.made));
+    expect(MADE_SOLD_SERIES.map((item) => item.fill ?? "solid")).toEqual(["solid", "tint", "hatch"]);
   });
 
   it("o resto da lista vira uma linha só", () => {

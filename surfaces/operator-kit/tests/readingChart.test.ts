@@ -9,6 +9,8 @@ import {
   readingCsvMoney,
   readingCsvNumber,
   readingCsvText,
+  readingFillColor,
+  readingHorizontalHeight,
   readingMoneyAxisFormat,
   readingMoneyFormat,
   readingRunIndex,
@@ -26,6 +28,11 @@ import {
 const revenue: ReadingChartSeries[] = [
   { key: "current", label: "Esta semana" },
   { key: "previous", label: "Semana anterior" },
+];
+const madeSold: ReadingChartSeries[] = [
+  { key: "sold", label: "Vendeu" },
+  { key: "leftover", label: "Sobrou", tone: "primary", fill: "tint" },
+  { key: "lost", label: "Vendas perdidas", tone: "error", fill: "hatch" },
 ];
 const days: ReadingChartPoint[] = [
   { label: "Seg 05/10", values: { current: 3180, previous: 2950 } },
@@ -66,16 +73,53 @@ describe("a frase do ponto em leitura", () => {
 describe("legenda", () => {
   it("a comparação desenha a segunda série como traço tracejado", () => {
     expect(readingLegend("comparison", revenue)).toEqual([
-      { label: "Esta semana", tone: "primary", dashed: false },
-      { label: "Semana anterior", tone: "neutral", dashed: true },
+      { label: "Esta semana", tone: "primary", dashed: false, fill: "solid" },
+      { label: "Semana anterior", tone: "neutral", dashed: true, fill: "solid" },
     ]);
   });
 
   it("o divergente mostra os dois lados, com a cor de cada um", () => {
     expect(readingLegend("diverging", difference, { ...overShort, positiveTone: "warning" })).toEqual([
-      { label: "Sobrou", tone: "warning", dashed: false },
-      { label: "Faltou", tone: "error", dashed: false },
+      { label: "Sobrou", tone: "warning", dashed: false, fill: "solid" },
+      { label: "Faltou", tone: "error", dashed: false, fill: "solid" },
     ]);
+  });
+
+  it("o empilhado leva o preenchimento de cada segmento, a segunda codificação além da cor", () => {
+    expect(readingLegend("stacked", madeSold)).toEqual([
+      { label: "Vendeu", tone: "primary", dashed: false, fill: "solid" },
+      { label: "Sobrou", tone: "primary", dashed: false, fill: "tint" },
+      { label: "Vendas perdidas", tone: "error", dashed: false, fill: "hatch" },
+    ]);
+  });
+
+  it("o claro é o mesmo tom a 30%; cheio e listrado usam o tom puro", () => {
+    expect(readingFillColor("primary")).toBe("var(--ui-primary)");
+    expect(readingFillColor("primary", "tint")).toBe("color-mix(in srgb, var(--ui-primary) 30%, transparent)");
+    expect(readingFillColor("error", "hatch")).toBe("var(--ui-error)");
+  });
+});
+
+describe("empilhado", () => {
+  const products: ReadingChartPoint[] = [
+    { label: "Chausson", values: { sold: 0, leftover: 28, lost: 0 } },
+    { label: "Croissant", values: { sold: 44, leftover: 0, lost: 14 } },
+  ];
+
+  it("o domínio é a soma dos segmentos da barra mais longa", () => {
+    expect(readingYDomain("stacked", madeSold, products)).toEqual([0, 58]);
+    expect(readingYDomain("stacked", madeSold, [])).toEqual([0, 1]);
+  });
+
+  it("a frase do ponto diz cada segmento, inclusive o zero", () => {
+    expect(readingPointSummary(products[0]!, "stacked", madeSold)).toBe(
+      "Chausson: Vendeu 0; Sobrou 28; Vendas perdidas 0",
+    );
+  });
+
+  it("deitado, uma faixa por ponto mais a régua", () => {
+    expect(readingHorizontalHeight(8)).toBe(8 * 40 + 32);
+    expect(readingHorizontalHeight(0)).toBe(40 + 32);
   });
 });
 

@@ -138,6 +138,16 @@ export function useKdsSections(place: "rail" | "bar") {
     if (timer) clearInterval(timer);
   });
 
+  // ⚠️ No quadro de uma estação, a estação do Preparo é a da ROTA, não a memória. A
+  // memória só se preenche no cliente (o quadro grava ao ver os dados; o localStorage
+  // se lê no `onMounted`), e o servidor desenha a barra sem ela. Na carga direta de
+  // `/bancada` o servidor mandava "Saída · Estações" e a hidratação montava "Preparo ·
+  // Saída": o Vue corrige o texto mas não os atributos, e o "Preparo" ficava com o
+  // `href` da Saída e a "Saída" com o `/` marcado como página atual. A rota é a mesma
+  // nos dois lados; a memória vale fora do quadro (Estações, Ajustes).
+  const routeStation = computed(() => (route.name === "ref" ? String(route.params.ref || "") : ""));
+  const stationRef = computed(() => routeStation.value || station.value.ref);
+
   const instances = computed(() => index.value?.instances ?? []);
   const exitCount = computed(() =>
     instances.value
@@ -145,13 +155,13 @@ export function useKdsSections(place: "rail" | "bar") {
       .reduce((sum, inst) => sum + (inst.active_count || 0), 0),
   );
   const prepCount = computed(() => {
-    if (board.value.onBoard) return board.value.total;
-    return instances.value.find((inst) => inst.ref === station.value.ref)?.active_count ?? 0;
+    if (board.value.onBoard && board.value.stationRef === stationRef.value) return board.value.total;
+    return instances.value.find((inst) => inst.ref === stationRef.value)?.active_count ?? 0;
   });
 
   const sections = computed(() =>
     kdsSections({
-      stationRef: station.value.ref,
+      stationRef: stationRef.value,
       prepCount: prepCount.value,
       exitUrl,
       exitCount: exitCount.value,
@@ -160,7 +170,7 @@ export function useKdsSections(place: "rail" | "bar") {
   );
   const current = computed(() => {
     if (route.path === "/") return "stations";
-    if (station.value.ref && route.path.replace(/\/+$/, "") === `/${station.value.ref}`) return "prep";
+    if (routeStation.value) return "prep";
     return undefined;
   });
   return { sections, current };
