@@ -170,11 +170,16 @@ export function phoneBarLayout(sections: readonly OperatorSection[], max = PHONE
  *   não;
  * - app que não declara: as primeiras seções, até 4, e "Mais" quando sobra;
  * - menos de 3 vagas é erro de configuração (`quickBarProblems`), salvo o app que tem
- *   menos de 3 seções ao todo, ou a exceção declarada com motivo.
+ *   menos de 3 seções ao todo, ou a exceção declarada com motivo;
+ * - com 2 vagas, mostra as 2; com UMA vaga só, a barra não aparece (`shown: false`): o
+ *   ☰ já leva ao menu completo, e um item sozinho embaixo é ruído (a Central, com
+ *   "Início" só).
  */
 export const QUICK_BAR_MIN = 3;
 export const QUICK_BAR_MAX = 5;
 export const QUICK_BAR_DEFAULT = 4;
+/** Abaixo disto (uma vaga só) a barra inferior não aparece. */
+export const QUICK_BAR_SHOWN_MIN = 2;
 
 export interface QuickBarLayout {
   /** As seções da barra, na ordem da lista. */
@@ -183,13 +188,16 @@ export interface QuickBarLayout {
   more: boolean;
   /** As seções que ficaram só na gaveta. */
   overflow: OperatorSection[];
+  /** A barra aparece: duas vagas ou mais (seções + "Mais"). Uma vaga só é ruído. */
+  shown: boolean;
 }
 
 export function quickBarLayout(sections: readonly OperatorSection[]): QuickBarLayout {
   const declared = sections.filter((section) => section.quick);
   const items = (declared.length ? declared : sections.slice(0, QUICK_BAR_DEFAULT)).slice(0, QUICK_BAR_MAX);
   const overflow = sections.filter((section) => !items.includes(section));
-  return { items, more: items.length < QUICK_BAR_MAX && overflow.length > 0, overflow };
+  const more = items.length < QUICK_BAR_MAX && overflow.length > 0;
+  return { items, more, overflow, shown: items.length + (more ? 1 : 0) >= QUICK_BAR_SHOWN_MIN };
 }
 
 /**

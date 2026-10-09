@@ -27,6 +27,7 @@ import {
   type SuiteSearchScope,
 } from "../presentation/suiteSearch";
 import { SUITE_SEARCH_SHORTCUTS } from "../shortcuts/suiteShortcuts";
+import { alertActions } from "../utils/alertActions";
 
 const props = withDefaults(
   defineProps<{
@@ -34,7 +35,7 @@ const props = withDefaults(
     placeholder?: string;
     screenLabel?: string;
     screenCount?: number | null;
-    variant?: "header" | "hero" | "hotkey";
+    variant?: "header" | "hotkey";
     ariaLabel?: string;
   }>(),
   {
@@ -267,25 +268,18 @@ defineExpose({ focus: openSearch, open: openSearch });
 
 <template>
   <div
-    :class="
-      variant === 'hero'
-        ? 'w-full md:w-[34rem]'
-        : variant === 'hotkey'
-          ? 'contents'
-          : 'w-full md:w-fit'
-    "
+    :class="variant === 'hotkey' ? 'contents' : 'w-full md:w-fit'"
     data-suite-search
     :data-suite-search-variant="variant"
   >
     <NuxtDashboardSearchButton
       v-if="variant !== 'hotkey'"
       class="w-full suite-page:min-h-control"
-      :size="variant === 'hero' ? 'xl' : 'md'"
+      size="md"
       :label="text || placeholder"
       :aria-label="label"
-      :kbds="variant === 'hero' ? ['/', 'meta', 'k'] : ['/']"
+      :kbds="['/']"
       data-suite-search-input
-      :data-suite-search-phone-trigger="variant === 'hero' ? '' : undefined"
       @click="openSearch"
     />
 
@@ -411,14 +405,7 @@ defineExpose({ focus: openSearch, open: openSearch });
                 variant="subtle"
                 icon="i-lucide-circle-alert"
                 :title="hasScreen ? COPY.failed : COPY.failedNoScreen"
-                :actions="[
-                  {
-                    label: COPY.retry,
-                    color: 'error',
-                    variant: 'outline',
-                    onClick: retry,
-                  },
-                ]"
+                :actions="alertActions('error', [{ label: COPY.retry, onClick: retry }])"
                 data-suite-search-error
               />
               <NuxtEmpty

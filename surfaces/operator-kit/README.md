@@ -485,7 +485,9 @@ declarado em objeto no prop `actions`) usa a cor do próprio aviso: `warning`, `
 `success` ou `error`. É a saída daquele aviso; neutro, ele se descola do estado que o
 chamou. Fora de um aviso, a cor do botão continua `primary`, `neutral` ou `error`. A
 trava `guardrails.minimalSet` não conta em `buttonColor` o botão dentro de um aviso cuja
-cor é a do aviso (com a cor do aviso ligada, qualquer cor de aviso passa).
+cor é a do aviso (com a cor do aviso ligada, qualquer cor de aviso passa). Desde 09/10
+(dono) a principal é `solid` e a secundária `outline`, as duas na cor do aviso, por
+`alertActions` (ver "Ação dentro de aviso", no "Aviso da tela").
 
 ### Rail da suíte em três estados (`OperatorSuiteShell`)
 
@@ -532,6 +534,9 @@ dourado mora no `ui.dashboardSidebar` deste `app.config`.
   ("1 pendência").
 - O pé: seções do pé do app, Atalhos (só ponteiro fino), Bloquear, Avisos e o menu do
   operador (o "Ocultar a barra lateral" do menu leva ao estado oculto).
+- **Variante "início"** (`home`, só a Central): o selo do topo da barra lateral e da
+  gaveta é identidade, sem "voltar à Central" e sem link para a própria tela. Nos outros
+  apps o selo leva à Central (`operatorHubUrl`).
 
 Contrato em `tests/components/OperatorSuiteShell.test.ts` e `tests/suiteChrome.test.ts`.
 
@@ -554,6 +559,10 @@ O contrato (`quickBarLayout` e `quickBarProblems` em `presentation/suiteChrome.t
 | `quick: true` em mais de 5 | o kit corta em 5, e `quickBarProblems` acusa |
 
 - "Mais" abre a gaveta; só existe quando sobra seção.
+- **Quantas vagas aparecem**: de 3 a 5 é a regra; com 2, mostra as 2; com **1, a barra
+  some** (`shown: false` no `quickBarLayout`, e o `OperatorQuickBar` não monta). O ☰ já
+  dá o menu completo, e um item sozinho embaixo é ruído. É o caso da Central, que tem
+  só "Início".
 - Menos de 3 vagas (seções + "Mais") é erro de configuração, que o teste das seções do
   app acusa com `expect(quickBarProblems(sections)).toEqual([])`. App com menos de 3
   seções ao todo mostra todas, sem erro.
@@ -986,7 +995,8 @@ Carregando, vazio, erro e sem conexão, com UMA frase por estado
 <OperatorScreenState v-else-if="pending && !report" state="loading" what="os lotes do período" in-card />
 ```
 
-- **"Tentar de novo" na cor do aviso** (a exceção declarada do conjunto mínimo), `outline`,
+- **"Tentar de novo" na cor do aviso** (a exceção declarada do conjunto mínimo), `solid`
+  (é a principal do aviso, por `alertActions`),
   tamanho `md` como o resto da suíte: o `xs` que o `NuxtAlert` dá por padrão às ações
   fica fora do conjunto. Vale para toda ação dentro de aviso montada pelo kit.
 - **`in-card`**: dentro de um cartão o vazio e o carregando perdem a moldura própria
@@ -1010,11 +1020,35 @@ cabeçalho, logo abaixo da toolbar.
 ```
 
 - `NuxtAlert subtle` nas 4 cores do conjunto (`info`, `success`, `warning`, `error`); o
-  ícone vem da cor se a tela não escolher. A saída (`action`) repete a cor do aviso, `md`.
+  ícone vem da cor se a tela não escolher. A saída (`action`) é a principal do aviso:
+  `solid` na cor dele, `md` (ver "Ação dentro de aviso" abaixo).
 - **Um aviso inteiro**; os outros ficam atrás de "e mais N avisos", que abre todos. A
   ordem é a da tela: o mais importante primeiro.
 - O aviso fica fixo com o cabeçalho (não rola com o conteúdo): o "um inteiro, o resto em
   e mais N" é o que impede que ele coma a tela do celular.
+
+**Ação dentro de aviso** (dono, 09/10/2026): a ação acompanha a cor do aviso. A
+**principal** é `solid` na cor do aviso; a **secundária**, `outline` na mesma cor. Nunca um
+`primary` ou `neutral` "normal" dentro de um aviso `info`/`warning`/`error`/`success`.
+
+```vue
+<NuxtAlert color="warning" variant="subtle" title="Seu rascunho foi preservado"
+  :actions="alertActions('warning', [
+    { label: 'Manter meu rascunho', onClick: keep },
+    { label: 'Usar o valor atual', onClick: discard },
+  ])" />
+```
+
+- `alertActions(cor, ações)` (`app/utils/alertActions.ts`, auto-import) tira a cor e a
+  variante do aviso: a primeira é a principal, as outras secundárias; `secondary: true` ou
+  `false` diz quando a ordem não é essa (o convite de instalação: "Agora não" antes de
+  "Instalar"). O tamanho é `md`.
+- O `OperatorPageHeader` (`alerts`), o `OperatorScreenState` (erro), os convites (versão,
+  instalação, avisos) e a busca da suíte já passam por ela. Botão no slot `#actions` do
+  aviso segue a mesma regra à mão: a cor do aviso, `solid` na principal.
+- Trava: `tests/guardrails.alertActions.test.ts` lê o kit e os apps de operador e reprova
+  `NuxtAlert`/`UAlert` com `:actions` fora de `alertActions(<cor do aviso>, …)` e botão de
+  `#actions` com outra cor.
 
 **Onde cada aviso mora** (a regra; nenhuma tela monta faixa própria):
 
@@ -1205,9 +1239,10 @@ Uma busca, uma tecla (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gesto
   (`operatorPwa.app`; o Gestor é `orders` no kit e `gestor` no Django).
 - Teclas: `/` fora de campo e Ctrl K (⌘K) em qualquer lugar abrem; ↑↓ anda, Enter abre, Tab
   troca o alcance. Impressas só com ponteiro fino.
-- Variantes: `header` (padrão), `hero` (a barra grande da Central, 34rem, "/" e Ctrl K) e
-  `hotkey` (sem campo na tela: a Venda e as Encomendas do PDV, onde o `/` é do campo do
-  produto e do "cliente veio buscar"; só Ctrl K e a lupa abrem a suíte).
+- Variantes: `header` (padrão, em todo app e na Central, que desde a fase 2 usa a busca do
+  cabeçalho como os outros) e `hotkey` (sem campo na tela: a Venda e as Encomendas do PDV,
+  onde o `/` é do campo do produto e do "cliente veio buscar"; só Ctrl K e a lupa abrem a
+  suíte). A barra grande da Central (`hero`) saiu com a fase 2.
 
 Contrato em `tests/components/OperatorSuiteSearch.test.ts` e `tests/suiteSearch.test.ts`;
 `tests/guardrails.suiteSearch.test.ts` trava que os oito apps e a Central a têm e que o

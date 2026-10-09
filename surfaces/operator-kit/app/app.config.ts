@@ -130,6 +130,12 @@ export default defineAppConfig({
     // (1 e 6 escritos, mais os ligados do OperatorInbox, contados em 08/10 depois de o
     // Gestor zerar os seus); ficam até a migração desses avisos e morrem com ela.
     alert: {
+      // A descrição na cor plena do aviso. O oficial a desenha com `opacity-90`, e
+      // sobre o fundo pré-composto isso fica abaixo do AA: medido (axe, 09/10/2026)
+      // 4,24:1 no `warning`, 4,47 no `error` e 4,42 no `success` do claro; 4,27 no
+      // `error` e 4,33 no `info` do escuro. Na cor plena, todos passam de 4,9:1. O
+      // título continua o primeiro na leitura pelo peso (`font-medium`).
+      slots: { description: "opacity-100" },
       compoundVariants: [
         {
           color: "primary",

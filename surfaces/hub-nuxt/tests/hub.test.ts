@@ -258,8 +258,8 @@ describe("a Central no shell da suíte (fase 2)", () => {
     expect(template).toMatch(/<OperatorAppSeal\s+home\b/);
   });
 
-  it("estado da tela pelo OperatorScreenState: vazio da fila, sem app e falha", () => {
-    expect(template.match(/<OperatorScreenState\b/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+  it("estado da tela pelo OperatorScreenState: sem app e falha", () => {
+    expect(template.match(/<OperatorScreenState\b/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
   });
 
   it("conjunto mínimo: nada cru, nada nativo, nenhuma régua de largura no script", () => {
@@ -275,7 +275,7 @@ describe("selo, aviso e nome acessível do bloco", () => {
 
   it("a releitura que falha diz de quando é a tela, e nunca usa travessão", () => {
     expect(staleQueueAlert("10:42")).toEqual({
-      title: "A fila não foi atualizada.",
+      title: "Os apps não foram atualizados.",
       description: "O que está na tela é de 10:42.",
     });
     expect(staleQueueAlert("").description).toBe("O que está na tela pode estar desatualizado.");

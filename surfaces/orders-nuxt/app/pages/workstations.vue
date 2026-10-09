@@ -22,6 +22,7 @@ import {
   devicesSummary,
   editableKinds,
 } from "~/presentation/workstations";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const {
   state,
@@ -134,14 +135,12 @@ const phoneHeaderActions = computed(() => [
           icon="i-lucide-triangle-alert"
           title="Não foi possível carregar os postos"
           :description="httpErrorMessage(error, c.manage_error ?? '')"
-          :actions="[
+          :actions="alertActions('error', [
             {
               label: 'Tentar de novo',
-              color: 'error',
-              variant: 'outline',
               onClick: () => refresh(),
             },
-          ]"
+          ])"
         />
         <NuxtAlert
           v-if="message"

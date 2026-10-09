@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // Central: a home do Shopman e o launcher pós-login, no shell da suíte (fase 2, variante
-// "início"). A casca é a mesma dos apps migrados (`OperatorSuiteShell`): barra lateral em
-// três estados na mesa, gaveta pelo ☰ e barra do topo no celular, com "Início" como única
-// seção. A página é o `OperatorPageHeader` (saudação, selo de cadência, busca da suíte,
-// avisos da tela e o ⋯ único) e o conteúdo: "Precisa de você" (a fila das filas: o item
-// exato de cada app, com o gesto que abre o lugar exato) e os blocos dos apps com a linha
-// de estado de cada um. Tudo já vem filtrado por permissão.
+// "início", `home`: o selo do topo da barra lateral é identidade, sem "voltar à Central").
+// A casca é a mesma dos apps migrados (`OperatorSuiteShell`): barra lateral em três estados
+// na mesa, gaveta pelo ☰ e barra do topo no celular, com "Início" como única seção (por
+// isso sem barra inferior: uma vaga só não aparece). A página é o `OperatorPageHeader`
+// (saudação, selo de cadência, busca da suíte, avisos da tela e o ⋯ único) e o conteúdo:
+// os apps, cada um com a linha de estado e, quando há, a pendência mais urgente dele como
+// ação direta (leva ao item exato); os apps com pendência vêm primeiro. Tudo já vem filtrado por permissão.
 // Sem CRUD: cada bloco abre a superfície dedicada (ou deep-linka pro Unfold, no caso da
 // Loja). Herda do kit o OfflineBanner, o re-gate de 401 (useOperatorSession) e
 // httpErrorMessage.
@@ -24,30 +25,23 @@ import {
   HUB_NAMED_OF,
   HUB_REFRESH_LABEL,
   HUB_SECTIONS,
-  QUEUE_EMPTY_COPY,
-  QUEUE_HINT_COPY,
   hubBrandLine,
   hubFailure,
   hubFailureCopy,
   hubDateLine,
   hubGreeting,
   hubIsEmpty,
+  nextItemMeta,
   queueActionAriaLabel,
-  queueCount,
-  queueDetailLine,
-  queueMoreLabel,
-  queuePhoneLine,
-  queueTimeLabel,
   readClockLabel,
   serverClockOffset,
   staleQueueAlert,
   tileAriaLabel,
-  tileForItem,
   tileIcon,
   tileIconUrl,
   tileLinkAttrs,
+  tilesByPendency,
   tileStatus,
-  PHONE_QUEUE_ROWS,
 } from "~/presentation/hub";
 
 // O que só o navegador sabe (a origem da janela, o fuso, se a Central está instalada)
@@ -108,20 +102,10 @@ const stationSetup = useStationSetupOffer({
   stationRef: computed(() => stationSession.value?.station ?? ""),
 });
 
-// Precisa de você. O relógio anda a cada segundo (a contagem "aceita sozinho em 2:40" não
-// congela entre uma leitura e outra) e conta pela hora do servidor, não pela do dispositivo.
-const queueItems = computed(() => queue.value?.items ?? []);
-const queueTotal = computed(() => queueCount(queue.value));
-const queueMore = computed(() => queueMoreLabel(queue.value?.more_count ?? 0));
-// No celular, "Precisa de você" mostra até 3 linhas; o resto abre num toque. A linha
-// inteira é o toque.
-const phoneQueueOpen = ref(false);
-const phoneQueueItems = computed(() =>
-  phoneQueueOpen.value ? queueItems.value : queueItems.value.slice(0, PHONE_QUEUE_ROWS),
-);
-const phoneQueueHidden = computed(() =>
-  phoneQueueOpen.value ? 0 : Math.max(0, queueItems.value.length - PHONE_QUEUE_ROWS),
-);
+// Os apps com pendência primeiro, na ordem de sempre entre si (a lista não pula quando
+// a urgência muda). O relógio anda a cada segundo (a contagem "aceita sozinho em 2:40"
+// não congela entre uma leitura e outra) e conta pela hora do servidor.
+const sortedTiles = computed(() => tilesByPendency(tiles.value));
 const clockOffset = ref(0);
 watch(
   () => queue.value?.server_now,
@@ -214,16 +198,9 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
   },
 ]);
 
-// A linha da fila usa o ícone do app de destino (o mesmo do bloco) e abre do mesmo jeito
-// que o bloco abriria: na janela própria do app quando a Central está instalada.
-function itemIconSrc(item: HubQueueItemProjection): string | null {
-  const tile = tileForItem(tiles.value, item);
-  return tile ? tileImageSrc(tile) : null;
-}
-function itemIcon(item: HubQueueItemProjection): string {
-  return tileIcon(tileForItem(tiles.value, item)?.icon || "circle-dot");
-}
-function itemLinkAttrs(item: HubQueueItemProjection) {
+// A pendência abre do mesmo jeito que o app abriria: na janela própria do app quando a
+// Central está instalada.
+function nextItemLinkAttrs(item: HubQueueItemProjection) {
   return tileLinkAttrs({ kind: "launch", url: item.url }, linkContext.value);
 }
 
@@ -281,6 +258,7 @@ function toneDot(tile: HubTileProjection): string {
       <OperatorSuiteShell
         v-else
         storage-key="hub"
+        home
         :sections="HUB_SECTIONS"
         current="home"
         :label="`Seções ${HUB_NAMED_OF}`"
@@ -325,141 +303,11 @@ function toneDot(tile: HubTileProjection): string {
               />
 
               <template v-else>
-                <!-- Precisa de você: a fila das filas (UX-H1). O item exato primeiro,
-                     ordenado por urgência entre apps; cada linha com o gesto que abre o
-                     lugar exato no app certo. -->
-                <section aria-labelledby="hub-queue-title" data-hub-queue>
-                  <div class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <h2 id="hub-queue-title" class="text-base font-semibold">Precisa de você</h2>
-                    <NuxtBadge v-if="queueTotal" color="neutral" :label="String(queueTotal)" />
-                    <p class="ms-auto text-xs text-muted max-md:hidden">{{ QUEUE_HINT_COPY }}</p>
-                  </div>
-
-                  <OperatorScreenState
-                    v-if="!queueItems.length"
-                    state="empty"
-                    icon="i-lucide-circle-check"
-                    :title="QUEUE_EMPTY_COPY"
-                    data-hub-queue-empty
-                  />
-
-                  <NuxtCard v-else :ui="{ body: 'p-0 sm:p-0' }">
-                    <!-- Celular: a linha inteira é o toque, com o ponto de atenção e o
-                         chevron; até 3, o resto num toque. O texto quebra, nunca corta. -->
-                    <ol class="divide-y divide-default md:hidden" data-hub-queue-phone>
-                      <li v-for="item in phoneQueueItems" :key="item.key" data-hub-queue-item>
-                        <a
-                          :href="item.url"
-                          :target="itemLinkAttrs(item).target"
-                          :rel="itemLinkAttrs(item).rel"
-                          :aria-label="queueActionAriaLabel(item)"
-                          class="flex min-h-14 items-center gap-3 px-4 py-2 transition-colors active:bg-elevated"
-                          data-hub-queue-action
-                        >
-                          <span
-                            class="grid size-8 shrink-0 place-items-center overflow-hidden rounded-md text-primary"
-                            :class="itemIconSrc(item) ? '' : 'bg-primary/10'"
-                          >
-                            <img
-                              v-if="itemIconSrc(item)"
-                              :src="itemIconSrc(item)!"
-                              :data-app-icon="item.app"
-                              class="size-8 rounded-md"
-                              alt=""
-                              loading="lazy"
-                              decoding="async"
-                              @error="brokenTileIcons.add(item.app)"
-                            >
-                            <NuxtIcon v-else :name="itemIcon(item)" class="size-4" />
-                          </span>
-                          <span class="min-w-0 flex-1">
-                            <span class="block text-sm font-semibold">{{ item.title }}</span>
-                            <span class="block text-xs text-muted">{{ queuePhoneLine(item, nowMs) }}</span>
-                          </span>
-                          <span
-                            v-if="item.attention"
-                            class="size-2 shrink-0 rounded-full bg-warning"
-                            aria-hidden="true"
-                            data-hub-queue-dot
-                          />
-                          <NuxtIcon name="i-lucide-chevron-right" class="size-5 shrink-0 text-muted" aria-hidden="true" />
-                        </a>
-                      </li>
-                    </ol>
-
-                    <!-- Tablet e mesa: app, o item, o tempo e o gesto, numa linha que
-                         quebra o texto em vez de cortar. -->
-                    <ol class="hidden divide-y divide-default md:block">
-                      <li
-                        v-for="item in queueItems"
-                        :key="item.key"
-                        data-hub-queue-item
-                        class="flex min-h-14 items-center gap-3.5 px-4 py-2"
-                      >
-                        <span
-                          class="grid size-7 shrink-0 place-items-center overflow-hidden rounded-md text-primary"
-                          :class="itemIconSrc(item) ? '' : 'bg-primary/10'"
-                        >
-                          <img
-                            v-if="itemIconSrc(item)"
-                            :src="itemIconSrc(item)!"
-                            :data-app-icon="item.app"
-                            class="size-7 rounded-md"
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            @error="brokenTileIcons.add(item.app)"
-                          >
-                          <NuxtIcon v-else :name="itemIcon(item)" class="size-4" />
-                        </span>
-                        <span class="w-20 shrink-0 text-xs text-muted">{{ item.app_label }}</span>
-
-                        <div class="min-w-0 flex-1">
-                          <p class="text-sm font-semibold">{{ item.title }}</p>
-                          <p class="text-xs text-muted">{{ queueDetailLine(item, nowMs) }}</p>
-                        </div>
-
-                        <span
-                          data-hub-queue-time
-                          class="w-28 shrink-0 text-right text-sm tabular-nums"
-                          :class="item.attention ? 'font-semibold text-warning' : 'text-muted'"
-                        >{{ queueTimeLabel(item, nowMs) }}</span>
-
-                        <!-- Largura fixa (a coluna não serrilha): o gesto longo ("Resolver
-                             no contexto") quebra em duas linhas dentro do botão. -->
-                        <NuxtButton
-                          :to="item.url"
-                          :target="itemLinkAttrs(item).target"
-                          :rel="itemLinkAttrs(item).rel"
-                          :aria-label="queueActionAriaLabel(item)"
-                          color="neutral"
-                          variant="outline"
-                          trailing-icon="i-lucide-arrow-right"
-                          class="w-40 shrink-0 justify-center"
-                          data-hub-queue-action
-                        >
-                          <span class="text-center leading-tight whitespace-normal" data-hub-queue-action-label>{{ item.action_label }}</span>
-                        </NuxtButton>
-                      </li>
-                    </ol>
-                  </NuxtCard>
-
-                  <NuxtButton
-                    v-if="phoneQueueHidden"
-                    :label="`Ver mais ${phoneQueueHidden}`"
-                    color="neutral"
-                    variant="ghost"
-                    block
-                    class="mt-1 md:hidden"
-                    data-hub-queue-phone-more
-                    @click="phoneQueueOpen = true"
-                  />
-
-                  <p v-if="queueMore" class="mt-2 text-xs text-muted" data-hub-queue-more>{{ queueMore }}</p>
-                </section>
-
-                <!-- Os apps: o bloco inteiro é o link, com a linha de estado que concorda
-                     com a fila acima. -->
+                <!-- Os apps: o bloco inteiro é o link para o app, com a linha de estado.
+                     A pendência mais urgente de cada app (`next_item`) é a ação direta da
+                     linha, que leva ao item exato; os apps com pendência vêm primeiro, na
+                     ordem de sempre entre si (dono, 09/10/2026: "Precisa de você" saiu, porque
+                     empurrava os apps para baixo e repetia o que cada app já diz). -->
                 <section aria-labelledby="hub-apps-title">
                   <div class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h2 id="hub-apps-title" class="text-base font-semibold">Apps</h2>
@@ -471,7 +319,7 @@ function toneDot(tile: HubTileProjection): string {
                        quebram, nunca cortam. -->
                   <NuxtCard class="md:hidden" :ui="{ body: 'p-0 sm:p-0' }">
                     <ul class="divide-y divide-default" data-hub-apps-phone>
-                      <li v-for="tile in tiles" :key="tile.ref">
+                      <li v-for="tile in sortedTiles" :key="tile.ref" data-hub-app-item>
                         <a
                           :href="tile.url"
                           :target="tileLinkAttrs(tile, linkContext).target"
@@ -513,6 +361,29 @@ function toneDot(tile: HubTileProjection): string {
                             aria-hidden="true"
                           />
                         </a>
+                        <div v-if="tile.next_item" class="px-4 pb-3 ps-[68px]" data-hub-app-next>
+                          <NuxtButton
+                            :to="tile.next_item.url"
+                            :target="nextItemLinkAttrs(tile.next_item).target"
+                            :rel="nextItemLinkAttrs(tile.next_item).rel"
+                            :aria-label="queueActionAriaLabel(tile.next_item)"
+                            color="neutral"
+                            variant="outline"
+                            block
+                            trailing-icon="i-lucide-arrow-right"
+                            class="justify-between text-start"
+                            data-hub-app-next-action
+                          >
+                            <span class="min-w-0 whitespace-normal">
+                              <span class="block font-semibold">{{ tile.next_item.title }}</span>
+                              <span
+                                v-if="nextItemMeta(tile.next_item, nowMs)"
+                                class="block text-xs font-normal"
+                                :class="tile.next_item.attention ? 'text-warning' : 'text-muted'"
+                              >{{ nextItemMeta(tile.next_item, nowMs) }}</span>
+                            </span>
+                          </NuxtButton>
+                        </div>
                       </li>
                     </ul>
                   </NuxtCard>
@@ -521,7 +392,7 @@ function toneDot(tile: HubTileProjection): string {
                        grade tem linhas de mesma altura; o texto quebra, nunca corta. -->
                   <NuxtPageGrid class="hidden auto-rows-fr gap-3 md:grid md:grid-cols-2 lg:grid-cols-4 lg:gap-3">
                     <NuxtPageCard
-                      v-for="tile in tiles"
+                      v-for="tile in sortedTiles"
                       :key="tile.ref"
                       :to="tile.url"
                       :target="tileLinkAttrs(tile, linkContext).target"
@@ -560,8 +431,8 @@ function toneDot(tile: HubTileProjection): string {
                           />
                         </span>
                       </template>
-                      <template v-if="tileStatus(tile).hasStatus" #footer>
-                        <span class="flex min-w-0 items-start gap-2 text-sm" data-tile-status>
+                      <template v-if="tileStatus(tile).hasStatus || tile.next_item" #footer>
+                        <span v-if="tileStatus(tile).hasStatus" class="flex min-w-0 items-start gap-2 text-sm" data-tile-status>
                           <span
                             class="mt-1.5 size-[7px] shrink-0 rounded-full"
                             :class="toneDot(tile)"
@@ -580,6 +451,30 @@ function toneDot(tile: HubTileProjection): string {
                             </template>
                           </span>
                         </span>
+                        <!-- `relative z-[1]`: acima do link do cartão (a camada que cobre o
+                             cartão inteiro), para a pendência levar ao item e não ao app. -->
+                        <NuxtButton
+                          v-if="tile.next_item"
+                          :to="tile.next_item.url"
+                          :target="nextItemLinkAttrs(tile.next_item).target"
+                          :rel="nextItemLinkAttrs(tile.next_item).rel"
+                          :aria-label="queueActionAriaLabel(tile.next_item)"
+                          color="neutral"
+                          variant="outline"
+                          block
+                          trailing-icon="i-lucide-arrow-right"
+                          class="relative z-[1] mt-2 justify-between text-start"
+                          data-hub-app-next-action
+                        >
+                          <span class="min-w-0 whitespace-normal">
+                            <span class="block font-semibold">{{ tile.next_item.title }}</span>
+                            <span
+                              v-if="nextItemMeta(tile.next_item, nowMs)"
+                              class="block text-xs font-normal"
+                              :class="tile.next_item.attention ? 'text-warning' : 'text-muted'"
+                            >{{ nextItemMeta(tile.next_item, nowMs) }}</span>
+                          </span>
+                        </NuxtButton>
                       </template>
                     </NuxtPageCard>
                   </NuxtPageGrid>

@@ -23,6 +23,7 @@ import {
 import { onMounted, onBeforeUnmount } from "vue";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import type { CancellationReason } from "~/types/orders";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
@@ -852,20 +853,16 @@ const outside = useOutsideStore(
         icon="i-lucide-map-pin"
         title="Usar a localização deste dispositivo?"
         description="Fora da loja, o Gestor pode mostrar somente o que pede decisão."
-        :actions="[
+        :actions="alertActions('info', [
           {
             label: 'Permitir',
-            color: 'info',
-            variant: 'outline',
             onClick: () => outside.allow(),
           },
           {
             label: 'Agora não',
-            color: 'info',
-            variant: 'outline',
             onClick: () => outside.decline(),
           },
-        ]"
+        ])"
         data-outside-consent
       />
       <NuxtAlert
@@ -875,14 +872,12 @@ const outside = useOutsideStore(
         icon="i-lucide-map-pin-off"
         title="Você está fora da loja"
         description="Mostrando somente o que pede decisão."
-        :actions="[
+        :actions="alertActions('info', [
           {
             label: 'Ver tudo',
-            color: 'info',
-            variant: 'outline',
             onClick: () => outside.showAll(),
           },
-        ]"
+        ])"
         data-outside-band
       />
 
@@ -986,17 +981,15 @@ const outside = useOutsideStore(
                 [undo.detail, undo.alreadyOut].filter(Boolean).join(' · ')
               "
               :actions="
-                undo.canUndo && undo.kind !== 'handoff'
+                alertActions('success', undo.canUndo && undo.kind !== 'handoff'
                   ? [
                       {
                         label: 'Desfazer',
-                        color: 'success',
-                        variant: 'outline',
                         disabled: busy,
                         onClick: () => onUndo(),
                       },
                     ]
-                  : []
+                  : [])
               "
               :data-undo="undo.kind"
             >
@@ -1009,7 +1002,7 @@ const outside = useOutsideStore(
                   label="Desfazer"
                   icon="i-lucide-undo-2"
                   color="success"
-                  variant="outline"
+                  variant="solid"
                   :disabled="busy"
                   :loading="busy"
                   data-undo-button
@@ -1093,20 +1086,16 @@ const outside = useOutsideStore(
                 variant="subtle"
                 title="A nota mudou enquanto você escrevia"
                 :description="`Seu texto foi preservado. A nota gravada é: ${order.kitchen_note || '(vazia)'}`"
-                :actions="[
+                :actions="alertActions('warning', [
                   {
                     label: 'Manter meu texto',
-                    color: 'warning',
-                    variant: 'outline',
                     onClick: () => acceptLatestNotesBase(),
                   },
                   {
                     label: 'Usar a nota gravada',
-                    color: 'warning',
-                    variant: 'outline',
                     onClick: () => useLatestNotes(),
                   },
-                ]"
+                ])"
               />
               <NuxtAlert
                 v-if="mutationError"
@@ -1189,14 +1178,12 @@ const outside = useOutsideStore(
             variant="subtle"
             title="O pedido ou turno mudou"
             :description="`Confira o contexto atual: ${settleAction?.confirmation.description || ''}`"
-            :actions="[
+            :actions="alertActions('warning', [
               {
                 label: 'Conferir e manter os valores digitados',
-                color: 'warning',
-                variant: 'outline',
                 onClick: () => reviewSettleCustody(),
               },
-            ]"
+            ])"
           />
           <NuxtFormField label="Valor recebido">
             <NuxtInput

@@ -54,6 +54,7 @@ import {
   type QueueSort,
 } from "~/presentation/queue";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const {
   readMetadata,
@@ -2022,14 +2023,12 @@ function printQueue() {
               variant="subtle"
               icon="i-lucide-triangle-alert"
               :description="actionError(row.original.card.ref)"
-              :actions="[
+              :actions="alertActions('error', [
                 {
                   label: 'Dispensar',
-                  color: 'error',
-                  variant: 'outline',
                   onClick: () => clearActionError(row.original.card.ref),
                 },
-              ]"
+              ])"
             />
           </template>
           <!-- a linha aberta: os detalhes do pedido e todas as outras ações -->
@@ -2207,14 +2206,12 @@ function printQueue() {
             variant="subtle"
             icon="i-lucide-triangle-alert"
             :description="rejectReasonsError"
-            :actions="[
+            :actions="alertActions('error', [
               {
                 label: 'Consultar novamente',
-                color: 'error',
-                variant: 'outline',
                 onClick: () => loadRejectReasons(),
               },
-            ]"
+            ])"
           />
           <NuxtEmpty
             v-else-if="isMarketplaceReject && !rejectReasons.length"
@@ -2324,14 +2321,12 @@ function printQueue() {
             variant="subtle"
             title="O pedido ou turno mudou"
             :description="`Confira o contexto atual: ${settleAction?.confirmation.description || ''}`"
-            :actions="[
+            :actions="alertActions('warning', [
               {
                 label: 'Conferir e manter os valores digitados',
-                color: 'warning',
-                variant: 'outline',
                 onClick: () => reviewSettleCustody(),
               },
-            ]"
+            ])"
           />
           <NuxtFormField label="Valor recebido">
             <NuxtInput
