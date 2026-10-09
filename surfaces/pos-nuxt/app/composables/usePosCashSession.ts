@@ -221,7 +221,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // Fragmento em minúscula de propósito: entra DENTRO de "O comprovante não
       // saiu: …", e a saída (ação "Tentar de novo" + onde se resolve) é do toast
       // logo abaixo. Frase inteira aqui duplicaria o sujeito.
-      outcome = { status: "failed", detail: httpErrorMessage(error, "o servidor não montou o comprovante") };
+      outcome = { status: "failed", detail: httpErrorMessage(error, "o comprovante não ficou pronto") };
     }
     if (outcome.status === "failed") {
       // Nunca só "indisponível": o operador ganha a saída na mão — tentar de
@@ -374,7 +374,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       `/api/v1/backstage/pos/cash/refund/${encodeURIComponent(payload.orderRef)}/`,
       body,
       "A devolução não foi registrada.",
-      "O dinheiro não saiu da gaveta e a devolução segue pendente. Tente de novo: o servidor não devolve duas vezes.",
+      "O dinheiro não saiu da gaveta e a devolução segue pendente. Tente de novo: a devolução não sai duas vezes.",
     ).then((ok) => {
       // A gaveta abre para entregar as notas, e só depois do `ok`: devolução
       // recusada (PIN errado, já devolvida) não pode abrir a gaveta.

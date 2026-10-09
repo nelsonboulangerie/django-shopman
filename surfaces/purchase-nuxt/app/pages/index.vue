@@ -1363,7 +1363,7 @@ function onPackageCode(code: string) {
       >
         <span v-if="pending && !backendReady" class="inline-flex items-center gap-2 text-muted-foreground">
           <Icon name="lucide:loader-circle" class="size-4 animate-spin" />
-          Conectando ao Core de compras
+          Carregando as compras…
         </span>
         <span v-else-if="readonlyFallback" class="inline-flex items-center gap-2 text-warning">
           <Icon name="lucide:wifi-off" class="size-4" />

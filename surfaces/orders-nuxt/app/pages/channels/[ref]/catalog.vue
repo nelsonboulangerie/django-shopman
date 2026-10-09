@@ -204,7 +204,7 @@ const phoneHeaderActions = computed(() => [
                   arquivo será guardado no sistema; nenhum produto será alterado
                   ou vinculado automaticamente.
                 </p>
-                <NuxtFormField label="Arquivo JSON da captura">
+                <NuxtFormField label="Arquivo da captura (.json)">
                   <NuxtInput
                     class="w-full"
                     type="file"

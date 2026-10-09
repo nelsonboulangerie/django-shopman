@@ -249,8 +249,8 @@ useHead(() => ({
           }}
         </p>
         <p class="mt-0.5 text-sm text-muted-foreground">
-          As decisões continuam protegidas pelo servidor. Atualize antes de agir
-          se os números abaixo influenciarem sua escolha.
+          Atualize antes de decidir pelos números abaixo. Se algo mudou, a
+          decisão é recusada e nada é disparado.
         </p>
       </div>
     </section>
