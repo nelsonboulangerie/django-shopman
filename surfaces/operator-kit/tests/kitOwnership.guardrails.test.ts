@@ -384,8 +384,20 @@ describe("operator-kit: os primitivos respeitam o token de alvo de toque", () =>
 
   // Comentário fora ANTES de medir: o próprio cabeçalho destes arquivos CITA o `h-9`
   // que a cópia tinha, e citar a dívida não é cometê-la.
-  const stripComments = (text: string): string =>
-    text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "").replace(/<!--[\s\S]*?-->/g, "");
+  // Repete até parar de mudar: tirar um comentário pode juntar as metades de outro
+  // (`<!<!---->--`), e uma passada só deixaria o resto para trás (alerta do CodeQL).
+  const stripComments = (text: string): string => {
+    let previous: string;
+    let current = text;
+    do {
+      previous = current;
+      current = current
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/[^\n]*/g, "")
+        .replace(/<!--[\s\S]*?-->/g, "");
+    } while (current !== previous);
+    return current;
+  };
 
   // Barra e escolha juntos: o interruptor entrou com um alvo de 24 px vindo do PDV,
   // e o que cobra os dois é a mesma régua.

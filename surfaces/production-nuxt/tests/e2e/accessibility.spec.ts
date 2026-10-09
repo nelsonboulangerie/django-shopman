@@ -278,9 +278,15 @@ for (const { route, endpoint, offset } of [
     // não muda a seleção, não sai request, e o teste morre em timeout — foi
     // exatamente o que aconteceu em 17/09/2026, dia em que o literal
     // "2026-09-17" virou hoje e a matriz inteira ficou vermelha. Dois dias de
-    // distância cobrem o fuso do runner (UTC) contra o da loja (-03:00).
+    // distância. O "hoje" do alvo é o da página (o `timezoneId` do
+    // playwright.config, America/Sao_Paulo), não o do runner (UTC): entre 00h e
+    // 03h UTC os dois discordam, os dois cliques para a frente paravam um dia
+    // antes do alvo e a matriz caía em timeout (08/10/2026, 21h em Londrina).
     const target = (() => {
-      const day = new Date();
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+      }).format(new Date());
+      const day = new Date(`${today}T12:00:00Z`);
       day.setUTCDate(day.getUTCDate() + offset);
       return day.toISOString().slice(0, 10);
     })();
