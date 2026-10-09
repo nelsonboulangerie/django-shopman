@@ -224,8 +224,11 @@ describe("Gestor canônico em Nuxt UI", () => {
     // 08/10/2026, PR #1544), no `OperatorQuickBar`. O ⋯ único (`OperatorMoreMenu`,
     // fase 2) e a ação na base (`OperatorActionBar`) trocam o corte do rótulo pela
     // quebra de linha: texto da casa não se corta. A tabela da suíte (`OperatorTable`)
-    // guarda ali a densidade (compacta ou confortável): o único `:ui` de tabela.
+    // guarda ali a densidade (compacta ou confortável): o único `:ui` de tabela. O aviso
+    // da tela (`OperatorPageHeader`) põe a descrição na cor plena: o `opacity-90` oficial
+    // reprova o AA (4,24:1 no `warning`), e no tema repintaria toda consumidora.
     const kitPieceUi = new Set([
+      "operator-kit/OperatorPageHeader.vue",
       "operator-kit/OperatorQuickBar.vue",
       "operator-kit/OperatorMoreMenu.vue",
       "operator-kit/OperatorActionBar.vue",
