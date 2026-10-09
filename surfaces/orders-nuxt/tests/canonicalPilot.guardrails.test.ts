@@ -257,6 +257,8 @@ describe("Gestor canônico em Nuxt UI", () => {
       "operator-kit/OperatorMoreMenu.vue",
       "operator-kit/OperatorActionBar.vue",
       "operator-kit/OperatorTable.vue",
+      // A busca da suíte troca o corte do item do painel pela quebra de linha.
+      "operator-kit/OperatorSuiteSearch.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),

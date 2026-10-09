@@ -1,19 +1,17 @@
-// Busca da suíte, a parte pura (V6-BUSCA): alcances, recorte, contagens, realce e teclas.
+// Busca da suíte, a parte pura (V6-BUSCA; fase 2, K6): níveis, contagens, realce e teclas.
 import { describe, expect, it } from "vitest";
 
 import {
   SUITE_SEARCH_MIN_LENGTH,
   appCount,
   flattenGroups,
-  groupsForScope,
-  groupsForType,
   highlightParts,
-  nextSuiteScope,
   suiteEmptyCopy,
+  suiteLevels,
   suiteQueryReady,
   suiteResultColor,
   suiteResultLabel,
-  suiteScopes,
+  suiteScreenTarget,
   suiteSearchHotkey,
   suiteTotal,
   surfaceRefForKitApp,
@@ -30,18 +28,29 @@ const GROUPS: SuiteSearchGroup[] = [
   { type: "materials", label: "Insumos", results: [result("purchase", "MANTEIGA", "materials")] },
 ];
 
-describe("alcances", () => {
-  it("esta tela só existe onde a tela filtra; a Central só tem a suíte", () => {
-    expect(suiteScopes({ hasScreen: true, appRef: "gestor" })).toEqual(["screen", "app", "suite"]);
-    expect(suiteScopes({ hasScreen: false, appRef: "gestor" })).toEqual(["app", "suite"]);
-    expect(suiteScopes({ hasScreen: false, appRef: "" })).toEqual(["suite"]);
+describe("níveis", () => {
+  it("No app é o app atual; Na suíte, os outros; cada resultado num nível só", () => {
+    const levels = suiteLevels(GROUPS, "gestor");
+    expect(levels.app.map((item) => [item.result.key, item.typeLabel])).toEqual([
+      ["X36", "Pedidos"],
+      ["U78", "Pedidos"],
+    ]);
+    expect(levels.suite.map((item) => [item.result.key, item.typeLabel])).toEqual([
+      ["E1", "Encomendas"],
+      ["MANTEIGA", "Insumos"],
+    ]);
   });
 
-  it("Tab anda pelos alcances e dá a volta; Shift+Tab volta", () => {
-    const scopes = suiteScopes({ hasScreen: true, appRef: "gestor" });
-    expect(nextSuiteScope(scopes, "screen")).toBe("app");
-    expect(nextSuiteScope(scopes, "suite")).toBe("screen");
-    expect(nextSuiteScope(scopes, "screen", true)).toBe("suite");
+  it("sem app (a Central), tudo é Na suíte", () => {
+    const levels = suiteLevels(GROUPS, "");
+    expect(levels.app).toEqual([]);
+    expect(levels.suite).toHaveLength(4);
+  });
+
+  it("o alvo do recorte sai do rótulo da tela", () => {
+    expect(suiteScreenTarget("filtrando o quadro")).toBe("o quadro");
+    expect(suiteScreenTarget("Filtrando os clientes")).toBe("os clientes");
+    expect(suiteScreenTarget("")).toBe("esta tela");
   });
 
   it("o app do kit vira o nome que o Django usa (o Gestor é `orders` no kit)", () => {
@@ -53,17 +62,6 @@ describe("alcances", () => {
 });
 
 describe("recorte", () => {
-  it("App recorta pelo app atual e some com o grupo vazio; suíte e esta tela mostram tudo", () => {
-    expect(groupsForScope(GROUPS, "app", "gestor").map((g) => g.type)).toEqual(["orders"]);
-    expect(groupsForScope(GROUPS, "suite", "gestor")).toBe(GROUPS);
-    expect(groupsForScope(GROUPS, "screen", "gestor")).toBe(GROUPS);
-  });
-
-  it("o chip de tipo do celular estreita para um grupo", () => {
-    expect(groupsForType(GROUPS, "materials").map((g) => g.type)).toEqual(["materials"]);
-    expect(groupsForType(GROUPS, "")).toBe(GROUPS);
-  });
-
   it("contagens: o total da suíte e o do app vêm da resposta", () => {
     expect(suiteTotal(GROUPS)).toBe(4);
     expect(flattenGroups(GROUPS).map((r) => r.key)).toEqual(["X36", "U78", "E1", "MANTEIGA"]);

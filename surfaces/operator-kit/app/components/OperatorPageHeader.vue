@@ -31,7 +31,7 @@
 //
 // A busca é UMA, a da suíte (`OperatorSuiteSearch`, V6-BUSCA): toda tela a tem no
 // cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
-// o alcance "Esta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
+// o nível "Nesta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
 import { computed, onMounted, ref, useSlots } from "vue";
 import { useScreen } from "../composables/useScreen";

@@ -1098,30 +1098,42 @@ ganha o respiro da confortável).
 - Substituiu as cinco tabelas do Gestor (Lista da fila, Histórico, Clientes, Unificações e a
   matriz do Catálogo) e aposentou o `ColumnPicker`.
 
-## Busca da suíte (`OperatorSuiteSearch`)
+## Busca da suíte em níveis (`OperatorSuiteSearch`)
 
-Uma busca, uma tecla (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gestor-busca`,
-`depois-hub-celular` e o campo do cabeçalho das v4). O `OperatorPageHeader` já a traz
-(`search = true`): toda tela tem o campo de 22rem do tablet para cima e a lupa na barra de
-56px do celular, que abre a busca em tela cheia (com a câmera onde o navegador lê código).
+Uma busca, uma tecla, três níveis (fase 2, K6; dono, 09/10/2026: "busca em níveis no
+canônico"). O botão é o `NuxtDashboardSearchButton` e o painel é o `NuxtDashboardSearch`
+oficial (o `Modal` com o `CommandPalette` do Nuxt UI: teclado, grupos e tela cheia no
+celular vêm dele). O `OperatorPageHeader` já a traz (`search = true`): toda tela tem o
+botão de 22rem do tablet para cima e a lupa na barra de 56px do celular.
 
-- **Esta tela**: a tela que filtra a própria lista passa a sua no `#search`, com `v-model`
-  (e `screen-label="filtrando o quadro"`, `screen-count` se souber contar). Digitar filtra a
-  tela, como antes; Esc fecha o painel e mantém o filtro.
-- **App** e **Toda a suíte**: `GET /api/v1/backstage/search/?q=` (projeção
-  `shopman/backstage/projections/suite_search.py`): pedidos, encomendas, clientes, produtos,
-  insumos, fornecedores, lotes, receitas, campanhas e telas que o operador abre, agrupados por
-  tipo, cada um com o link profundo para o app de destino. "App" recorta pelo app atual
-  (`operatorPwa.app`; o Gestor é `orders` no kit e `gestor` no Django).
-- Teclas: `/` fora de campo e Ctrl K (⌘K) em qualquer lugar abrem; ↑↓ anda, Enter abre, Tab
-  troca o alcance. Impressas só com ponteiro fino.
+Os níveis são os GRUPOS do painel, em ordem fixa (`preserve-group-order`):
+
+1. **Nesta tela** (só onde a tela filtra a própria lista e passa o `v-model` no
+   `#search`): "Filtrar o quadro por “maria”" vira o recorte da tela; com a tela já
+   filtrada, "Tirar o filtro “maria” de o quadro". O alvo sai do `screen-label`
+   ("filtrando o quadro" → "o quadro").
+2. **No app (Gestor)**: o que a suíte achou no app atual.
+3. **Na suíte**: o que achou nos outros apps (`GET /api/v1/backstage/search/?q=`,
+   projeção `shopman/backstage/projections/suite_search.py`), cada um com o tipo ao lado
+   ("Pedidos", "Clientes") e o link profundo para o app de destino.
+
+- **Digitar não mexe na tela**: o recorte entra quando a pessoa escolhe "Filtrar … por";
+  Esc fecha sem mudar nada. Aberto com a tela filtrada, o painel já traz o termo.
+- O estado da suíte (falta letra, buscando, não respondeu com "Tentar de novo", nada
+  achado) é o último item de "Na suíte", para não sumir atrás do recorte da tela.
+- Teclas: `/` fora de campo e Ctrl K (⌘K) em qualquer lugar abrem, pela infraestrutura de
+  atalhos do kit (`SUITE_SEARCH_SHORTCUTS`); o atalho próprio do `DashboardSearch` fica
+  desligado (`shortcut=""`) para não abrir duas vezes. O clique do botão é desta busca
+  (o `toggleSearch` do grupo do Dashboard abriria todas as buscas montadas).
+- Câmera (onde o navegador lê código): no pé do painel, "Ler um código com a câmera".
 - Variantes: `header` (padrão), `hero` (a barra grande da Central, 34rem, "/" e Ctrl K) e
-  `hotkey` (sem campo na tela: a Venda e as Encomendas do PDV, onde o `/` é do campo do
-  produto e do "cliente veio buscar"; só Ctrl K e a lupa abrem a suíte).
+  `hotkey` (sem botão na tela: a Venda e as Encomendas do PDV, onde o `/` é do campo do
+  produto; só Ctrl K e a lupa abrem a suíte).
 
 Contrato em `tests/components/OperatorSuiteSearch.test.ts` e `tests/suiteSearch.test.ts`;
-`tests/guardrails.suiteSearch.test.ts` trava que os oito apps e a Central a têm e que o
-`#search` do cabeçalho é sempre ela, e uma só.
+`tests/guardrails.suiteSearch.test.ts` trava que os oito apps e a Central a têm, que o
+`#search` do cabeçalho é sempre ela, e uma só, e que ela é o `NuxtDashboardSearch` (sem
+`Modal`, `Tabs` ou `CommandPalette` montados à mão).
 
 ## Próximo foco (`useNextFocus`)
 
