@@ -182,9 +182,9 @@ const showUnavailable = computed(
 );
 const hasDraft = computed(() => capture.state.value === "done" && !!capture.draft.value);
 // Listas curtas e fixas: `NuxtSelect`. O insumo de cada ingrediente lido: `NuxtSelectMenu`.
-const kinds = [...KIND_OPTIONS];
+const kinds: { value: string; label: string }[] = [...KIND_OPTIONS];
 const yieldUnits = [...YIELD_UNIT_OPTIONS];
-const roles = [...ROLE_OPTIONS];
+const roles: { value: string; label: string }[] = [...ROLE_OPTIONS];
 const NO_SKU = "__none__";
 function candidateItems(item: { candidates: { sku: string; name: string }[] }) {
   return [

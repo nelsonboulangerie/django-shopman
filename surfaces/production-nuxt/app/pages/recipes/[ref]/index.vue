@@ -182,7 +182,7 @@ async function confirmArchive() {
     useSonner.success(entry.value.is_archived ? "Receita restaurada." : "Receita arquivada.");
   }
 }
-const kinds = [...KIND_OPTIONS];
+const kinds: { value: string; label: string }[] = [...KIND_OPTIONS];
 const PUBLISH_NUM = { class: { th: "text-right", td: "text-right tabular-nums" } };
 const PUBLISH_DIFF_COLUMNS = [
   { id: "name", header: "O que muda", enableHiding: false },
