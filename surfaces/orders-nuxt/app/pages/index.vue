@@ -760,13 +760,13 @@ function pickFulfillment(value: string | number) {
   if (value === "all" || value === "delivery" || value === "pickup")
     fulfillment.value = value;
 }
-// As ações da fila no celular, em dados para o kit: o "Ciente" (e o som bloqueado)
+// As ações da fila no celular, em dados para o kit: o "Visto" (e o som bloqueado)
 // disputam a vaga de ícone com a Busca e vencem enquanto valem; o resto vai para o ⋯.
 const phoneHeaderActions = computed(() => {
   if (!kitPhone.value) return undefined;
   return [
     ...(attentionPending.value && !exitPostView.value
-      ? [{ label: "Ciente de todos", icon: "i-lucide-check", priority: 1, onSelect: () => acknowledgeAttention() }]
+      ? [{ label: "Visto", icon: "i-lucide-check", priority: 1, onSelect: () => acknowledgeAttention() }]
       : []),
     {
       label:

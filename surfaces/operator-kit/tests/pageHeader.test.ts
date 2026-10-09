@@ -38,10 +38,10 @@ describe("phoneHeaderLayout: no máximo 2 ícones fixos, o resto no ⋯", () => 
   });
 
   it("uma ação de prioridade menor que a da Busca toma a vaga; a Busca vira 'Buscar' no ⋯", () => {
-    const actions = [act("Atualizar"), act("Ciente de todos", SEARCH_PRIORITY - 1)];
+    const actions = [act("Atualizar"), act("Visto", SEARCH_PRIORITY - 1)];
     const layout = phoneHeaderLayout({ search: true, inbox: true, actions });
     expect(layout.searchIcon).toBe(false);
-    expect(layout.icons.map((item) => item.label)).toEqual(["Ciente de todos"]);
+    expect(layout.icons.map((item) => item.label)).toEqual(["Visto"]);
     expect(layout.overflow.map((item) => item.label)).toEqual(["Buscar", "Atualizar"]);
   });
 

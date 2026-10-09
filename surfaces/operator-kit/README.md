@@ -613,7 +613,7 @@ A tela declara as ações como **dados**, e o kit decide o que transborda
 <OperatorPageHeader
   title="Pedidos"
   :actions="[
-    { label: 'Ciente de todos', icon: 'i-lucide-check', priority: 1, onSelect: ack },
+    { label: 'Visto', icon: 'i-lucide-check', priority: 1, onSelect: ack },
     { label: 'Atualizar', icon: 'i-lucide-refresh-cw', onSelect: refresh },
     { label: 'Exportar CSV', icon: 'i-lucide-download', onSelect: exportCsv },
   ]"
