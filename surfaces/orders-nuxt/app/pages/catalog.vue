@@ -375,7 +375,7 @@ const orderedCollections = computed(() =>
 const ALL_COLLECTIONS = "all";
 const collectionSelectItems = computed(() =>
   collectionTabs.value.map((tab) => ({
-    label: `${tab.label} (${tab.badge})`,
+    label: `${tab.label} (${tab.count})`,
     value: tab.value || ALL_COLLECTIONS,
   })),
 );

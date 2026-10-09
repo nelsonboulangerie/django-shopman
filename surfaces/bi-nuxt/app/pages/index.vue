@@ -147,7 +147,7 @@ const verdictItems = computed(() => [
   ...VERDICTS.map((key) => ({ value: key, label: verdictMeta(key).label, count: counts.value[key] })),
 ]);
 const verdictOptions = computed(() =>
-  verdictItems.value.map((item) => ({ value: item.value, label: `${item.label} (${item.badge})` })),
+  verdictItems.value.map((item) => ({ value: item.value, label: `${item.label} (${item.count})` })),
 );
 const CHIP_DOT = { short: "bg-error", over: "bg-warning", right: "bg-success" } as const;
 const VERDICT_TEXT = { error: "text-error", warning: "text-warning", success: "text-success" } as const;
