@@ -400,7 +400,7 @@ migrou não muda um pixel. O Gestor é o piloto; os outros apps entram um a um, 
 Como um app migra:
 
 1. Põe `data-suite="v3"` no elemento raiz do `app.vue`. Os primitivos do kit
-   (`UiFilterChip`, `UiSearchInput`, `UiIconButton`, `ColumnPicker`) trazem o visual novo
+   (`UiFilterChip`, `UiSearchInput`, `UiIconButton`) trazem o visual novo
    atrás da variante `suite:` e só a vestem dentro desse atributo.
 2. Troca `OperatorRail` + `<OperatorAppBar>` por `<OperatorSuiteRail>` (as mesmas
    `OperatorSection`, agora dentro do rail, do tablet para cima) e monta
@@ -952,6 +952,68 @@ do erro; um aviso inteiro e "e mais N") e `tests/catalog/phone-header.spec.ts` (
 navegador, a 320, 390 e 1440 px: um aviso visível, "e mais 2 avisos" abre os três, a saída
 do aviso no tamanho da suíte e sem rolagem lateral). Primeiro uso do estado: o B.I. (oito
 erros de leitura, em sete telas); do aviso: a bancada do catálogo.
+
+### Tabela (`OperatorTable` + `OperatorTableView`)
+
+A `NuxtTable` oficial dentro do cartão branco, com o que toda tabela de operador repete.
+Decisões do dono (09/10/2026): **compacta é o padrão**; Confortável é a alternância,
+guardada por dispositivo; **a linha aberta não compacta** (o conteúdo de `#expanded`
+ganha o respiro da confortável).
+
+```vue
+<!-- toolbar da tela (só na mesa; no celular as colunas já são as que cabem) -->
+<OperatorTableView table-key="orders-history" />
+
+<OperatorTable
+  :data="items"
+  :columns="[
+    { id: 'order', header: 'Pedido', enableHiding: false },
+    { accessorKey: 'customer', header: 'Cliente', enableSorting: true },
+    { id: 'payment', header: 'Pagamento', meta: { supporting: true } },
+  ]"
+  :row-key="(row) => row.ref"
+  :row-label="(row) => `o pedido ${row.ref}`"
+  :on-select="(row) => open(row.ref)"
+  :loading="pending" :error="Boolean(error)" what="o histórico" @retry="refresh()"
+  empty-title="Nenhum pedido neste recorte."
+  pinned="order" view-key="orders-history" selectable
+  v-model:row-selection="selection" v-model:expanded="expanded"
+  caption="Pedidos concluídos e cancelados"
+>
+  <template #order-cell="{ row }">…</template>
+  <template #expanded="{ row }">…</template>
+  <template #footer><NuxtPagination … /></template>
+</OperatorTable>
+```
+
+- **Exibir** (`OperatorTableView`, só o ícone): Linhas (Compacta, Confortável) e as colunas
+  visíveis, num menu só. Muda a FORMA da tabela, por isso nunca mora no painel de
+  filtros. A lista de colunas vem da própria tabela com a mesma chave; ficam de fora a
+  que diz `enableHiding: false` e as fixadas.
+- **Por dispositivo, sem piscar**: cookie `op-table-<chave>` (lido no servidor, que já
+  desenha a densidade e as colunas certas). Guarda as OCULTAS: coluna nova nasce visível.
+- **Ordenação pelo cabeçalho**: a coluna que diz `enableSorting: true` ganha o botão com
+  a seta e o nome acessível ("Ordenar por total"). Tabela paginada no servidor não liga
+  ordenação local (ordenaria só a página da vez).
+- **Seleção múltipla** (`selectable`, `v-model:row-selection`): caixa em cada linha e o
+  "todos" no cabeçalho; marcar não abre a linha.
+- **Linha expansível**: basta o slot `#expanded`; a seta entra sozinha.
+- **Coluna fixada** (`pinned`, e `pinned-end` para o ⋯ de uma matriz larga): presa ao
+  rolar de lado e, no celular, com largura máxima (o texto dela quebra).
+- **Colunas de apoio** (`meta.supporting`): somem no celular por CSS (`max-sm:hidden`),
+  nunca por media query em JS.
+- **Estado** pelo `OperatorScreenState`: carregando sem linhas, vazio (título da tela,
+  `#empty-actions` para a saída) e erro com "Tentar de novo" (as linhas da leitura
+  anterior continuam abaixo).
+- `fill`: a tabela ocupa a altura que sobra e rola por dentro, com o cabeçalho preso (a
+  matriz do Catálogo). `row-class` dá à tela a classe da linha (arrastar); `active-key`
+  marca o registro aberto ao lado.
+- **A célula quebra** (`whitespace-normal`): texto da casa nunca é cortado. Número e ação
+  que não devem quebrar dizem isso na própria célula (`whitespace-nowrap`, `min-w-max`).
+- **Sem `:ui` na tela**: a densidade é o único `:ui` da tabela e mora no componente
+  (`presentation/operatorTable.ts`).
+- Substituiu as cinco tabelas do Gestor (Lista da fila, Histórico, Clientes, Unificações e a
+  matriz do Catálogo) e aposentou o `ColumnPicker`.
 
 ## Busca da suíte (`OperatorSuiteSearch`)
 

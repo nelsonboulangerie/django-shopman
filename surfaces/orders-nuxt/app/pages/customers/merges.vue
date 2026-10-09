@@ -11,9 +11,10 @@ useHead({ title: "Unificações de clientes" });
 const { merges, pending, error, refresh, readMetadata, undo, busyId, message } =
   useCustomerMerges();
 const confirming = ref<MergeAuditRowProjection | null>(null);
+// Movimentação é de apoio (some no celular); a unificação e o desfazer ficam.
 const mergeColumns = [
   { id: "merge", header: "Unificação" },
-  { id: "details", header: "Movimentação" },
+  { id: "details", header: "Movimentação", meta: { supporting: true } },
   { id: "status", header: "Estado" },
   { id: "actions", header: "Ações" },
 ];
@@ -90,44 +91,22 @@ const phoneHeaderActions = computed(() =>
         icon="i-lucide-circle-alert"
         :description="message"
       />
-      <NuxtAlert
-        v-if="error"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-triangle-alert"
-        title="Não foi possível carregar as unificações"
-        :description="
-          httpErrorMessage(error, 'Não foi possível carregar as unificações.')
-        "
-        :actions="[
-          {
-            label: 'Tentar de novo',
-            color: 'error',
-            variant: 'outline',
-            onClick: () => refresh(),
-          },
-        ]"
-      />
-
-      <div v-if="pending && !merges" class="space-y-2">
-        <NuxtSkeleton
-          v-for="i in 4"
-          :key="i"
-          class="h-12 w-full"
-          aria-label="Carregando uniões de clientes"
-        />
-      </div>
-
-      <NuxtTable
-        v-else-if="merges?.items.length"
-        :data="merges.items"
+      <OperatorTable
+        :data="merges?.items ?? []"
         :columns="mergeColumns"
-        :get-row-id="(row) => String(row.id)"
+        :row-key="(row: MergeAuditRowProjection) => String(row.id)"
+        :row-label="(row: MergeAuditRowProjection) => `a unificação de ${row.source_ref}`"
+        :loading="pending"
+        :error="Boolean(error)"
+        what="as unificações"
+        empty-icon="i-lucide-merge"
+        empty-title="Nenhuma unificação até agora."
         caption="Histórico de unificações de clientes"
         data-merge-list
+        @retry="refresh()"
       >
         <template #merge-cell="{ row }">
-          <div class="min-w-60" :data-merge-row="row.original.id">
+          <div :data-merge-row="row.original.id">
             <span class="font-mono text-xs">{{ row.original.source_ref }}</span>
             <Icon
               name="lucide:arrow-right"
@@ -147,7 +126,7 @@ const phoneHeaderActions = computed(() =>
           </div>
         </template>
         <template #details-cell="{ row }">
-          <span class="block min-w-44 text-xs text-muted-foreground">
+          <span class="block text-xs text-muted-foreground">
             {{ row.original.merged_at_display
             }}<template v-if="row.original.actor">
               · por {{ row.original.actor }}</template
@@ -159,7 +138,7 @@ const phoneHeaderActions = computed(() =>
         </template>
         <template #status-cell="{ row }">
           <span
-            class="min-w-44 text-xs"
+            class="text-xs"
             :class="
               row.original.can_undo
                 ? 'text-foreground'
@@ -185,12 +164,7 @@ const phoneHeaderActions = computed(() =>
             :label="row.original.status_label"
           />
         </template>
-      </NuxtTable>
-      <NuxtEmpty
-        v-else-if="merges"
-        icon="i-lucide-merge"
-        title="Nenhuma unificação até agora"
-      />
+      </OperatorTable>
     </section>
 
     <NuxtModal
