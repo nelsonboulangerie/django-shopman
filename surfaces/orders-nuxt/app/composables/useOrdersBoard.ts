@@ -538,7 +538,7 @@ export function useOrdersBoard() {
       ?.find((item) => item.ref === action)
       ?.label?.trim();
     const situation = situationAfterContinua(card?.status_label);
-    if (!label) return "O pedido ficou como estava. Tente de novo.";
+    if (!label) return "O pedido não foi atualizado. Tente de novo.";
     return card?.ref && situation
       ? `${card.ref} continua ${situation}: o ${label} não chegou. Tente de novo.`
       : `O ${label} não chegou. Tente de novo.`;

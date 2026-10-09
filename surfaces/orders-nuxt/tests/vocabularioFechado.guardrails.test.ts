@@ -46,8 +46,12 @@ const RETIRED: Array<[string, RegExp]> = [
   //   "N pedidos não foram atualizados"  → "N pedidos ficaram como estavam. Cada cartão diz por quê."
   //   "Sem pedir você: 1 na cozinha"     → "Seguem sozinhos: 1 na cozinha"
   //   "Atualiza a cada 30 s"             → "Atualiza sozinho a cada 30 s"
+  //   "O pedido ficou como estava. Tente de novo." → "O pedido não foi atualizado. Tente de novo."
+  //   "H58 continua na rua"              → "H58 continua em “Saiu para entrega”" (o nome do selo, sem apelido)
   ["Não deu para concluir", /Não deu para concluir/],
-  ["não foi/foram atualizado(s)", /não (?:foi atualizado|foram atualizados)/],
+  ["não foram atualizados", /não foram atualizados/],
+  ["ficou como estava. Tente de novo.", /ficou como estava\. Tente de novo/],
+  ["continua na rua", /continua na rua/],
   ["O motivo está no cartão", /O motivo está (?:no|em cada) cartão/],
   ["Sem pedir você", /Sem pedir você/],
   ["Atualiza a cada", /Atualiza a cada/],
