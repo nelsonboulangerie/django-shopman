@@ -9,7 +9,7 @@ describe("campaign activation switch", () => {
   // telas de uma vez.
   it("monta o interruptor do kit, sem trilho próprio", () => {
     const page = readFileSync(
-      new URL("../app/pages/campaigns.vue", import.meta.url),
+      new URL("../app/pages/settings/campaigns.vue", import.meta.url),
       "utf8",
     );
 
@@ -45,7 +45,7 @@ describe("campaign activation switch", () => {
 
   it("never opens a server-disabled manual fire action", () => {
     const page = readFileSync(
-      new URL("../app/pages/campaigns.vue", import.meta.url),
+      new URL("../app/pages/settings/campaigns.vue", import.meta.url),
       "utf8",
     );
 
@@ -62,7 +62,7 @@ describe("campaign activation switch", () => {
 
   it("never opens editing when the projected Action is disabled", () => {
     const page = readFileSync(
-      new URL("../app/pages/campaigns.vue", import.meta.url),
+      new URL("../app/pages/settings/campaigns.vue", import.meta.url),
       "utf8",
     );
 
@@ -73,7 +73,7 @@ describe("campaign activation switch", () => {
 
   it("keeps the open editor across the authentication gate", () => {
     const page = readFileSync(
-      new URL("../app/pages/campaigns.vue", import.meta.url),
+      new URL("../app/pages/settings/campaigns.vue", import.meta.url),
       "utf8",
     );
 

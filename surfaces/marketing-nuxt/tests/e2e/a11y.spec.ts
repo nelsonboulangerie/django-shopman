@@ -276,7 +276,7 @@ test("Ofertas e cupons preserva reflow, toque e semântica no mobile", async ({
   page,
 }) => {
   await signIn(page);
-  await page.goto("/offers");
+  await page.goto("/settings/offers");
   await expect(
     page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
   ).toBeVisible();

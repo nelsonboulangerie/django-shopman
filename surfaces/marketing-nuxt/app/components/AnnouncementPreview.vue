@@ -232,7 +232,7 @@ function previewProblem(error: unknown): PreviewProblem {
         : "Não foi possível atualizar a prévia agora.",
     fieldDetail,
     retryable,
-    repairHref: isMediaProblem ? "/templates" : "",
+    repairHref: isMediaProblem ? "/settings/templates" : "",
   };
 }
 

@@ -10,9 +10,9 @@ function read(relativePath: string): string {
 }
 
 describe("experiência canônica do Marketing V2", () => {
-  const campaigns = read("../app/pages/campaigns.vue");
-  const templates = read("../app/pages/templates.vue");
-  const platforms = read("../app/pages/platforms.vue");
+  const campaigns = read("../app/pages/settings/campaigns.vue");
+  const templates = read("../app/pages/settings/templates.vue");
+  const platforms = read("../app/pages/settings/platforms.vue");
   const campaignForm = read("../app/components/CampaignForm.vue");
   const workspaceDialog = read(
     "../app/components/MarketingWorkspaceDialog.vue",
@@ -31,11 +31,11 @@ describe("experiência canônica do Marketing V2", () => {
   });
 
   it("faz Plataformas voltar sempre à própria rota (o panorama V2 saiu)", () => {
-    expect(platforms).toContain('path: "/platforms"');
+    expect(platforms).toContain('path: "/settings/platforms"');
     expect(platforms).toContain("closePlatformWorkspace");
     expect(platforms).toContain(':data-marketing-platform="platform.platform"');
     expect(platforms).not.toContain("/v2");
-    expect(campaignForm).toContain("path: '/platforms'");
+    expect(campaignForm).toContain("path: '/settings/platforms'");
     expect(campaignForm).not.toContain("'/v2'");
   });
 });

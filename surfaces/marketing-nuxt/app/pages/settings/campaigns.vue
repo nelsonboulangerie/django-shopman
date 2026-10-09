@@ -401,7 +401,7 @@ async function onSubmit(payload: Record<string, unknown>) {
   const created = result as Campaign;
   await navigateTo(
     {
-      path: "/campaigns",
+      path: "/settings/campaigns",
       query: { created: created.pk },
     },
     { replace: true },
@@ -448,7 +448,7 @@ function triggerWhen(rule: Campaign): string {
 
 // O ⋯ e a ação primária na linha do título (v3 pino 4), com as teclas.
 const MENU = [
-  { key: "templates", label: "Modelos de texto", icon: "lucide:file-text", to: "/templates" },
+  { key: "templates", label: "Modelos de texto", icon: "lucide:file-text", to: "/settings/templates" },
   { key: "history", label: "Histórico de disparos", icon: "lucide:history", to: "/history" },
   { key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" },
 ];

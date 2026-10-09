@@ -343,7 +343,7 @@ test.describe("fila de decisões", () => {
 
 test.describe("Ajustes, uma rota por lugar", () => {
   test("campanhas em lista no mobile", async ({ page }) => {
-    await openScenario(page, "board-normal", "/campaigns", V390);
+    await openScenario(page, "board-normal", "/settings/campaigns", V390);
     await expect(
       page.getByRole("heading", { level: 1, name: "Campanhas" }),
     ).toBeVisible();
@@ -371,7 +371,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
   test("plataformas distinguem prontidão e catálogo no desktop", async ({
     page,
   }) => {
-    await openScenario(page, "board-normal", "/platforms", V1280);
+    await openScenario(page, "board-normal", "/settings/platforms", V1280);
     await expect(
       page.getByRole("heading", { level: 1, name: "Plataformas" }),
     ).toBeVisible();
@@ -379,7 +379,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
   });
 
   test("ofertas e cupons ficam legíveis no desktop", async ({ page }) => {
-    await openScenario(page, "board-normal", "/offers", V1280);
+    await openScenario(page, "board-normal", "/settings/offers", V1280);
     await expect(
       page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
     ).toBeVisible();
@@ -390,7 +390,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
   test("nova oferta não comprime datas nem múltiplas escolhas no desktop", async ({
     page,
   }) => {
-    await openScenario(page, "board-normal", "/offers", V1280);
+    await openScenario(page, "board-normal", "/settings/offers", V1280);
     await page.getByRole("button", { name: "Criar oferta" }).click();
     const dialog = page.getByRole("dialog", { name: "Nova oferta" });
     await expect(dialog.getByRole("group", { name: "Produtos" })).toBeVisible();
@@ -407,7 +407,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
   });
 
   test("novo cupom preserva formulário no mobile", async ({ page }) => {
-    await openScenario(page, "board-normal", "/offers", V390);
+    await openScenario(page, "board-normal", "/settings/offers", V390);
     await page.getByRole("button", { name: "Mais: Ofertas e cupons" }).click();
     await page.getByRole("menuitem", { name: "Criar cupom" }).click();
     await expect(
@@ -623,7 +623,7 @@ test.describe("cartão de anúncio", () => {
 
 test.describe("listas operacionais", () => {
   test("campanhas no menor mobile", async ({ page }) => {
-    await openScenario(page, "campaigns-dense", "/campaigns", V320);
+    await openScenario(page, "campaigns-dense", "/settings/campaigns", V320);
     await expectStableScreenshot(page, "campaigns__list", V320);
   });
 
@@ -631,7 +631,7 @@ test.describe("listas operacionais", () => {
     await openScenario(
       page,
       "campaigns-filters",
-      "/campaigns?state=inactive&platform=facebook&q=artesanal",
+      "/settings/campaigns?state=inactive&platform=facebook&q=artesanal",
       V390,
     );
     // Os recortes da tela primeiro: no celular a lupa abre a busca da suíte em tela
@@ -652,7 +652,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("campanhas densas paginam sem ocultar estado", async ({ page }) => {
-    await openScenario(page, "campaigns-dense", "/campaigns", V1280);
+    await openScenario(page, "campaigns-dense", "/settings/campaigns", V1280);
     await expect(
       page.getByRole("navigation", { name: "Páginas de campanhas" }),
     ).toBeVisible();
@@ -660,7 +660,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("lista de campanhas realmente vazia", async ({ page }) => {
-    await openScenario(page, "campaigns-empty", "/campaigns", V1440);
+    await openScenario(page, "campaigns-empty", "/settings/campaigns", V1440);
     await expectStableScreenshot(page, "campaigns__empty", V1440);
   });
 
@@ -669,7 +669,7 @@ test.describe("listas operacionais", () => {
   // isso que a grade reflui para quatro colunas. Mudança feita para o menor mobile
   // precisa de retrato no menor mobile.
   test("os sete dias cabem a 320 porque a grade reflui", async ({ page }) => {
-    await openScenario(page, "campaigns-dense", "/campaigns", V320);
+    await openScenario(page, "campaigns-dense", "/settings/campaigns", V320);
     await page.getByRole("button", { name: "Nova campanha" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Quando acontecer").selectOption("schedule");
@@ -692,7 +692,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("nova campanha preserva formulário e CTA com foco", async ({ page }) => {
-    await openScenario(page, "campaigns-dense", "/campaigns", V320);
+    await openScenario(page, "campaigns-dense", "/settings/campaigns", V320);
     await page.getByRole("button", { name: "Nova campanha" }).click();
     await page.getByLabel("Nome da campanha").focus();
     await expectStableScreenshot(
@@ -708,7 +708,7 @@ test.describe("listas operacionais", () => {
   // oficial do CheckboxGroup (fieldset, linhas inteiras e quadrados opacos sobre a
   // linha), justamente o detalhe que não aparecia em nenhum baseline anterior.
   test("destinos usam o grupo canônico no mobile", async ({ page }) => {
-    await openScenario(page, "campaigns-dense", "/campaigns", V390);
+    await openScenario(page, "campaigns-dense", "/settings/campaigns", V390);
     await page.getByRole("button", { name: "Nova campanha" }).click();
     const dialog = page.getByRole("dialog").last();
     await dialog.getByLabel("Nome da campanha").fill("Campanha visual");
@@ -727,7 +727,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("edição longa mostra schema completo", async ({ page }) => {
-    await openScenario(page, "campaigns-dense", "/campaigns", V390);
+    await openScenario(page, "campaigns-dense", "/settings/campaigns", V390);
     await page
       .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
       .click();
@@ -747,7 +747,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("período recorrente usa o campo canônico único", async ({ page }) => {
-    await openScenario(page, "campaigns-dense", "/campaigns", V768);
+    await openScenario(page, "campaigns-dense", "/settings/campaigns", V768);
     await page.getByRole("button", { name: "Nova campanha" }).click();
     await page.getByLabel("Quando acontecer").selectOption("schedule");
     await prepareNewCampaignForMoment(page);
@@ -765,7 +765,7 @@ test.describe("listas operacionais", () => {
   // já existiam afirmavam "Público alvo" pelo DOM e nunca mostraram um só deles. Sete
   // controles trocados e nenhum olho em cima é como a deriva de desenho volta.
   test("as escolhas de público são as peças do kit", async ({ page }) => {
-    await openScenario(page, "campaigns-dense", "/campaigns", V390);
+    await openScenario(page, "campaigns-dense", "/settings/campaigns", V390);
     await page
       .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
       .click();
@@ -795,7 +795,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("edição completa em desktop", async ({ page }) => {
-    await openScenario(page, "campaigns-dense", "/campaigns", V1280);
+    await openScenario(page, "campaigns-dense", "/settings/campaigns", V1280);
     await page
       .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
       .click();
@@ -828,7 +828,7 @@ test.describe("listas operacionais", () => {
       ...base,
       name: "Minha campanha local",
     });
-    await openScenario(page, "campaigns-dense", "/campaigns", V1440);
+    await openScenario(page, "campaigns-dense", "/settings/campaigns", V1440);
     await page
       .getByRole("button", { name: "Editar a campanha Fornada artesanal 01" })
       .click();
@@ -846,7 +846,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("falha de modelos não parece lista vazia", async ({ page }) => {
-    await openScenario(page, "templates-outage", "/templates", V390);
+    await openScenario(page, "templates-outage", "/settings/templates", V390);
     await expect(page.getByRole("alert")).toContainText(
       "não significa que ela esteja vazia",
     );
@@ -854,7 +854,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("modelo mostra dependências antes de apagar", async ({ page }) => {
-    await openScenario(page, "templates-dependency", "/templates", V1280);
+    await openScenario(page, "templates-dependency", "/settings/templates", V1280);
     await page
       .getByRole("button", { name: "Apagar o modelo Novidades da padaria" })
       .click();
@@ -869,7 +869,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("edição de modelo cabe no menor mobile", async ({ page }) => {
-    await openScenario(page, "templates-list", "/templates", V320);
+    await openScenario(page, "templates-list", "/settings/templates", V320);
     await page.locator("main ul li").first().locator("button").first().click();
     await expectStableScreenshot(page, "templates__edit", V320, "light", {
       fullPage: false,
@@ -877,7 +877,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("documentação de variável fica no contexto", async ({ page }) => {
-    await openScenario(page, "templates-list", "/templates", V390);
+    await openScenario(page, "templates-list", "/settings/templates", V390);
     await page.getByRole("button", { name: "Novo modelo" }).click();
     await expect(page.getByText("Variáveis disponíveis")).toBeVisible();
     await expectStableScreenshot(
@@ -890,7 +890,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("variantes reais aparecem no formulário", async ({ page }) => {
-    await openScenario(page, "templates-list", "/templates", V768);
+    await openScenario(page, "templates-list", "/settings/templates", V768);
     await page.locator("main ul li").first().locator("button").first().click();
     const google = page.getByTestId("composition-google_business");
     await google.locator("summary").click();
@@ -910,14 +910,14 @@ test.describe("listas operacionais", () => {
   });
 
   test("lista de modelos realmente vazia", async ({ page }) => {
-    await openScenario(page, "templates-empty", "/templates", V1440);
+    await openScenario(page, "templates-empty", "/settings/templates", V1440);
     await expectStableScreenshot(page, "templates__empty", V1440);
   });
 
   test("falha de plataformas não parece ausência de configuração", async ({
     page,
   }) => {
-    await openScenario(page, "platforms-outage", "/platforms", V390);
+    await openScenario(page, "platforms-outage", "/settings/platforms", V390);
     await expect(page.getByRole("alert")).toContainText(
       "não significa que nenhuma plataforma esteja configurada",
     );
@@ -925,12 +925,12 @@ test.describe("listas operacionais", () => {
   });
 
   test("plataforma pronta em desktop", async ({ page }) => {
-    await openScenario(page, "platforms-ready", "/platforms", V1280);
+    await openScenario(page, "platforms-ready", "/settings/platforms", V1280);
     await expectStableScreenshot(page, "platforms__ready", V1280);
   });
 
   test("plataforma bloqueada explica reparo no mobile", async ({ page }) => {
-    await openScenario(page, "platforms-blocked", "/platforms", V320);
+    await openScenario(page, "platforms-blocked", "/settings/platforms", V320);
     await page.locator("[data-marketing-platform]").first().click();
     await expect(page.getByRole("dialog").last()).toBeVisible();
     await expectStableScreenshot(page, "platforms__blocked", V320, "light", {
@@ -939,7 +939,7 @@ test.describe("listas operacionais", () => {
   });
 
   test("teste sandbox preserva comprovante", async ({ page }) => {
-    await openScenario(page, "platforms-ready", "/platforms", V768);
+    await openScenario(page, "platforms-ready", "/settings/platforms", V768);
     await page.locator('[data-marketing-platform="whatsapp"]').click();
     await page.getByRole("button", { name: "Enviar teste" }).click();
     await expect(
@@ -957,7 +957,7 @@ test.describe("listas operacionais", () => {
   test("conflito de configuração mantém consequência visível", async ({
     page,
   }) => {
-    await openScenario(page, "platforms-conflict", "/platforms", V1440);
+    await openScenario(page, "platforms-conflict", "/settings/platforms", V1440);
     await page.locator('[data-marketing-platform="whatsapp"]').click();
     // O modelo aprovado virou UMA linha com lista (`UiSelect`): abre e escolhe,
     // em vez de um cartão por modelo.
@@ -991,7 +991,7 @@ test.describe("disparo manual seguro", () => {
     ["fire-large", "large-audience", V1280],
   ] as const) {
     test(`${state}`, async ({ page }) => {
-      await openScenario(page, scenario, "/campaigns", viewport);
+      await openScenario(page, scenario, "/settings/campaigns", viewport);
       await page
         .getByRole("button", {
           name: /Preparar o disparo da campanha Fornada artesanal 01/,
@@ -1024,7 +1024,7 @@ test.describe("disparo manual seguro", () => {
   }
 
   test("contagem em andamento mantém o CTA bloqueado", async ({ page }) => {
-    await openScenario(page, "fire-loading", "/campaigns", V390);
+    await openScenario(page, "fire-loading", "/settings/campaigns", V390);
     await page
       .getByRole("button", {
         name: /Preparar o disparo da campanha Fornada artesanal 01/,
@@ -1045,7 +1045,7 @@ test.describe("disparo manual seguro", () => {
   });
 
   test("throttle explica a espera sem perder o painel", async ({ page }) => {
-    await openScenario(page, "fire-throttled", "/campaigns", V768);
+    await openScenario(page, "fire-throttled", "/settings/campaigns", V768);
     await page
       .getByRole("button", {
         name: /Preparar o disparo da campanha Fornada artesanal 01/,
@@ -1069,7 +1069,7 @@ test.describe("disparo manual seguro", () => {
   test("conflito atualiza a versão e mantém recuperação inline", async ({
     page,
   }) => {
-    await openScenario(page, "fire-conflict", "/campaigns", V1024);
+    await openScenario(page, "fire-conflict", "/settings/campaigns", V1024);
     await page
       .getByRole("button", {
         name: /Preparar o disparo da campanha Fornada artesanal 01/,
@@ -1099,7 +1099,7 @@ test.describe("disparo manual seguro", () => {
   test("o produto da ocorrência se escolhe com busca, não rolando a lista", async ({
     page,
   }) => {
-    await openScenario(page, "fire-product", "/campaigns", V390);
+    await openScenario(page, "fire-product", "/settings/campaigns", V390);
     await page
       .getByRole("button", {
         name: /Preparar o disparo da campanha Fornada artesanal 01/,
@@ -1124,7 +1124,7 @@ test.describe("disparo manual seguro", () => {
   test("aceite leva direto à revisão, dizendo que nada foi disparado", async ({
     page,
   }) => {
-    await openScenario(page, "fire-accepted", "/campaigns", V1440);
+    await openScenario(page, "fire-accepted", "/settings/campaigns", V1440);
     await page
       .getByRole("button", {
         name: /Preparar o disparo da campanha Fornada artesanal 01/,
@@ -1257,7 +1257,7 @@ test.describe("modos transversais", () => {
 
   test("equivalente a zoom 200% sem perder ação", async ({ page }) => {
     const zoom = { width: 640, height: 800, label: "zoom-200" };
-    await openScenario(page, "platforms-blocked", "/platforms", zoom);
+    await openScenario(page, "platforms-blocked", "/settings/platforms", zoom);
     await expectStableScreenshot(page, "platforms__blocked", zoom, "light", {
       fullPage: false,
       // Chromium rasteriza texto ampliado com uma pequena variação entre

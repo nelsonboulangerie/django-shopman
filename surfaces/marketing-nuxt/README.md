@@ -41,21 +41,21 @@ Instagram e até 12 mensagens no WhatsApp — não 12 mensagens no Instagram.
 
 A casa (`/`) é a fila de decisões, ordenada por prazo; o sino abre a mesma fila.
 As seções de operação são Decisões (`/`), Agendados (`/scheduled`), Enviados
-(`/history`) e Ajustes (`/campaigns`), com as próprias seções numa segunda linha:
-Campanhas, Modelos (`/templates`), Ofertas e cupons (`/offers`) e Plataformas
-(`/platforms`). A segunda pessoa do selo confirma em `/second-control/:ref`, que o
+(`/history`) e Ajustes (`/settings/campaigns`), com as próprias seções numa segunda linha:
+Campanhas, Modelos (`/settings/templates`), Ofertas e cupons (`/settings/offers`) e Plataformas
+(`/settings/platforms`). A segunda pessoa do selo confirma em `/second-control/:ref`, que o
 push dela abre. No celular elas ficam numa barra no pé da tela.
 
 <!-- marketing-ui-routes:start -->
 - `/`
 - `/announcements/:id`
-- `/campaigns`
+- `/settings/campaigns`
 - `/history`
-- `/offers`
-- `/platforms`
+- `/settings/offers`
+- `/settings/platforms`
 - `/scheduled`
 - `/second-control/:ref`
-- `/templates`
+- `/settings/templates`
 <!-- marketing-ui-routes:end -->
 
 O histórico (`/history`) é a seção Enviados. Links

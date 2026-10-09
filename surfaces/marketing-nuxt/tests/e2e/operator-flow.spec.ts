@@ -57,7 +57,7 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
   await mobileSections(page)
     .getByRole("link", { name: "Ajustes", exact: true })
     .click();
-  await expect(page).toHaveURL(/\/campaigns$/);
+  await expect(page).toHaveURL(/\/settings\/campaigns$/);
   await expect(
     page.getByRole("heading", { level: 1, name: "Campanhas" }),
   ).toBeVisible();
@@ -155,7 +155,7 @@ test("Ajustes tem as próprias seções, uma rota por lugar", async ({
 }) => {
   await enterAsSyntheticOperator(page);
 
-  await gotoHydrated(page, "/offers");
+  await gotoHydrated(page, "/settings/offers");
   await expect(
     page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
   ).toBeVisible();
@@ -176,8 +176,8 @@ test("Plataformas usa detalhe modal e volta para a própria lista", async ({
 }) => {
   await enterAsSyntheticOperator(page);
 
-  await gotoHydrated(page, "/platforms");
-  await expect(page).toHaveURL(/\/platforms$/);
+  await gotoHydrated(page, "/settings/platforms");
+  await expect(page).toHaveURL(/\/settings\/platforms$/);
 
   const google = page.locator('[data-marketing-platform="google_business"]');
   await google.click();
@@ -187,7 +187,7 @@ test("Plataformas usa detalhe modal e volta para a própria lista", async ({
   await expect(dialog.getByRole("heading", { name: /Google/ })).toBeVisible();
   await dialog.getByRole("button", { name: "Fechar" }).click();
 
-  await expect(page).toHaveURL(/\/platforms$/);
+  await expect(page).toHaveURL(/\/settings\/platforms$/);
   await expect(google).toBeFocused();
   await expect(
     page.getByRole("heading", { level: 1, name: "Plataformas" }),
@@ -197,7 +197,7 @@ test("Plataformas usa detalhe modal e volta para a própria lista", async ({
 test("composer usa modal amplo no desktop", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await enterAsSyntheticOperator(page);
-  await gotoHydrated(page, "/campaigns");
+  await gotoHydrated(page, "/settings/campaigns");
   await page.getByRole("button", { name: /^Nova campanha/ }).filter({ visible: true }).first().click();
 
   const dialog = page.getByRole("dialog").last();
@@ -212,14 +212,14 @@ test("a oferta abre o composer funcional com Google entre os destinos", async ({
   page,
 }) => {
   await enterAsSyntheticOperator(page);
-  await gotoHydrated(page, "/offers");
+  await gotoHydrated(page, "/settings/offers");
   const useOffer = page.getByRole("link", {
     name: "Criar campanha com esta oferta",
   });
   await expect(useOffer).toBeVisible();
   await useOffer.click();
 
-  await expect(page).toHaveURL(/\/campaigns\?.*offer=hibisco-primavera/);
+  await expect(page).toHaveURL(/\/settings\/campaigns\?.*offer=hibisco-primavera/);
   const editor = page.getByRole("dialog").last();
   await expect(editor).toBeVisible();
   await editor.getByLabel("Nome da campanha").fill("Primavera · Hibisco");
@@ -236,7 +236,7 @@ test("Campanhas liga ou desliga campanha com CAS e recuperação de conflito", a
   page,
 }) => {
   await enterAsSyntheticOperator(page);
-  await gotoHydrated(page, "/campaigns");
+  await gotoHydrated(page, "/settings/campaigns");
 
   const activation = page.getByRole("switch", {
     name: "Desligar a campanha Fornada artesanal 01",
@@ -262,7 +262,7 @@ test("Campanhas prepara disparo idempotente e leva o receipt à revisão", async
       path: "/",
     },
   ]);
-  await gotoHydrated(page, "/campaigns");
+  await gotoHydrated(page, "/settings/campaigns");
   const prepare = page.getByRole("button", {
     name: /Preparar o disparo da campanha Fornada artesanal 01/,
   });

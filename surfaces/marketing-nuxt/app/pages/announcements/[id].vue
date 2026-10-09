@@ -405,7 +405,7 @@ const card = ref<{ openScheduling: () => void; askToReject: () => void } | null>
 const REVIEW_MENU = [
   { key: "schedule", label: "Agendar para outra hora", icon: "lucide:calendar-clock" },
   { key: "reject", label: "Recusar com motivo", icon: "lucide:circle-slash" },
-  { key: "campaigns", label: "Ver as campanhas", icon: "lucide:megaphone", to: "/campaigns" },
+  { key: "campaigns", label: "Ver as campanhas", icon: "lucide:megaphone", to: "/settings/campaigns" },
 ];
 function onReviewMenu(key: string) {
   if (key === "schedule") card.value?.openScheduling();

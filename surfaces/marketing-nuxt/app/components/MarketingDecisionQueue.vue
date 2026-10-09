@@ -91,7 +91,7 @@ const iconToneClasses: Record<DeadlineTone, string> = {
 
 // Atualizar mora no ⋯ do cabeçalho, com a tecla R (v3: "Atualizar R").
 const DECISIONS_MENU = [
-  { key: "templates", label: "Modelos de texto", icon: "lucide:file-text", to: "/templates" },
+  { key: "templates", label: "Modelos de texto", icon: "lucide:file-text", to: "/settings/templates" },
   { key: "history", label: "Histórico de disparos", icon: "lucide:history", to: "/history" },
   { key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" },
 ];
@@ -132,7 +132,7 @@ const scheduledLine = computed(() =>
            primária por último, na mesma linha. No celular o polegar tem o sino e o menu. -->
       <template #actions>
         <MarketingPageMenu heading="Decisões" :items="DECISIONS_MENU" @select="onMenu" />
-        <UiButton to="/campaigns" data-decisions-primary>
+        <UiButton to="/settings/campaigns" data-decisions-primary>
           <Icon name="lucide:send" class="size-4" aria-hidden="true" />
           Preparar disparo
         </UiButton>

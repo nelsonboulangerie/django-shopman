@@ -24,7 +24,7 @@ const opened = ref<Platform | null>(null);
 async function closePlatformWorkspace() {
   const platformRef = opened.value?.platform || "";
   opened.value = null;
-  await navigateTo({ path: "/platforms" }, { replace: true });
+  await navigateTo({ path: "/settings/platforms" }, { replace: true });
   await nextTick();
   if (platformRef) {
     document

@@ -264,7 +264,7 @@ useHead({ title: "Modelos" });
           </UiButton>
           <NuxtLink
             v-if="removing?.used_by_campaigns?.length"
-            to="/campaigns"
+            to="/settings/campaigns"
             class="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
             @click="removing = null"
           >

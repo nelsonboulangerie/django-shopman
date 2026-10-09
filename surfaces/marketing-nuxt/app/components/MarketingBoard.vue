@@ -295,7 +295,7 @@ useHead(() => ({
             {{ limit.action }}
           </p>
           <NuxtLink
-            :to="{ path: '/platforms' }"
+            :to="{ path: '/settings/platforms' }"
             class="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold underline"
           >
             Ver em Plataformas
@@ -432,7 +432,7 @@ useHead(() => ({
           revisar.
         </p>
         <NuxtLink
-          to="/campaigns"
+          to="/settings/campaigns"
           class="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-muted"
         >
           <Icon name="lucide:sliders-horizontal" class="size-4" />

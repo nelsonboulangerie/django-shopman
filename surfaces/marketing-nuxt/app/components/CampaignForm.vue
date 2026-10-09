@@ -855,7 +855,7 @@ function submit() {
           class="mt-1 text-xs text-muted-foreground"
         >
           Nenhum modelo cadastrado ainda.
-          <NuxtLink to="/templates" class="font-medium underline"
+          <NuxtLink to="/settings/templates" class="font-medium underline"
             >Crie o primeiro aqui</NuxtLink
           >
           antes de criar a campanha.
@@ -1130,7 +1130,7 @@ function submit() {
           <template v-if="note.tone !== 'limited'">
             A campanha pode ser salva assim mesmo.
             <NuxtLink
-              :to="{ path: '/platforms' }"
+              :to="{ path: '/settings/platforms' }"
               class="font-semibold underline"
             >
               Ver em Plataformas

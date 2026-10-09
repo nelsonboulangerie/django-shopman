@@ -249,7 +249,7 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     const error = wrapper.get("[data-testid='preview-error']");
     expect(error.text()).toContain("Corrija a imagem para gerar a prévia");
     expect(error.text()).toContain("Corrigir imagem nos modelos");
-    expect(error.get("button").attributes("to")).toBe("/templates");
+    expect(error.get("button").attributes("to")).toBe("/settings/templates");
     wrapper.unmount();
   });
 

@@ -792,7 +792,7 @@ defineExpose({ openScheduling, askToReject });
         data-review-readiness
       >
         {{ readinessSummary.text }}
-        <NuxtLink v-if="readinessSummary.link" to="/platforms" class="font-semibold underline">Ver em Ajustes › Plataformas</NuxtLink>
+        <NuxtLink v-if="readinessSummary.link" to="/settings/platforms" class="font-semibold underline">Ver em Ajustes › Plataformas</NuxtLink>
       </p>
       <p v-if="hasDirectMessage" class="mt-2 text-[13px] text-muted-foreground" data-review-audience>
         <Icon name="lucide:users" class="mr-1 inline size-4 align-[-3px]" aria-hidden="true" />{{ audience }}<template v-if="vip"> · {{ vip }}</template>
@@ -919,7 +919,7 @@ defineExpose({ openScheduling, askToReject });
 
     <p v-if="expired" class="text-xs font-medium text-destructive" role="alert">
       O prazo deste anúncio venceu: preço e estoque já podem ter mudado.
-      <NuxtLink to="/campaigns" class="font-semibold underline">Prepare um disparo novo em Campanhas.</NuxtLink>
+      <NuxtLink to="/settings/campaigns" class="font-semibold underline">Prepare um disparo novo em Campanhas.</NuxtLink>
     </p>
 
     <!-- A decisão, fixa no polegar (v3 a). ⚠️ "Continuar" é pedido do dono: este botão
