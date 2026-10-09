@@ -126,7 +126,10 @@ const itemCountLabel = computed(() => {
             >
               <span class="sr-only">Valor sem desconto: </span>{{ snapshot.grossTotalDisplay }}
             </span>
-            <span class="text-7xl font-semibold tabular-nums tracking-tight md:text-8xl">{{ snapshot?.totalDisplay }}</span>
+            <span v-if="snapshot?.totalPending" class="text-5xl font-semibold text-muted-foreground md:text-6xl" data-display-total-pending>
+              Calculando…
+            </span>
+            <span v-else class="text-7xl font-semibold tabular-nums tracking-tight md:text-8xl">{{ snapshot?.totalDisplay }}</span>
           </span>
         </div>
       </footer>

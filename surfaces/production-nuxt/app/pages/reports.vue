@@ -7,7 +7,10 @@
 //     filtros (datas, ficha, posto, operador) e download CSV (link direto);
 //   · Mapa código-cego ↔ preparo: a correlação que as telas de chão NUNCA
 //     mostram (etiquetas circulam só com o código) — aqui é a visão de gestor.
-// Sem gráficos: tabelas caladas e números pré-formatados pelas projections.
+// Sem gráficos: tabelas da suíte (`OperatorTable`) e números pré-formatados pelas
+// projections. O filtro aplica ao mudar (fase 2: sem o cartão "Aplicar").
+import { watchDebounced } from "@vueuse/core";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import { isStale, isoForOffset } from "~/presentation/production";
 import {
   periodAnchor,
@@ -62,8 +65,8 @@ const {
 const activeKind = computed(() => filters.value.report_kind);
 
 // O intervalo do relatório é o "Período" do kit (Tipo 2) com personalizado: os
-// últimos 7 dias por padrão, ‹ › andam um período igual, e a troca já aplica (o
-// resto do filtro continua esperando o "Aplicar").
+// últimos 7 dias por padrão, ‹ › andam um período igual. Todo filtro aplica ao mudar;
+// o operador digitado espera a pessoa parar de digitar.
 const reportPeriod = ref<PeriodSelection>({ preset: "7d", from: "", to: "" });
 function changeReportPeriod(next: PeriodSelection) {
   reportPeriod.value = next;
@@ -72,6 +75,15 @@ function changeReportPeriod(next: PeriodSelection) {
   filterDraft.date_to = range.date_to;
   applyFilters();
 }
+watch(
+  () => [filterDraft.recipe_ref, filterDraft.position_ref, filterDraft.sort],
+  () => applyFilters(),
+);
+watchDebounced(
+  () => filterDraft.operator_ref,
+  () => applyFilters(),
+  { debounce: 400 },
+);
 const exportEligible = computed(
   () => !filtersDirty.value && !filterError.value,
 );
@@ -102,20 +114,136 @@ const forbidden = computed(
   () => reportsForbidden.value || managementForbidden.value,
 );
 
-const hasRows = computed(() => {
-  if (activeKind.value === "operator_productivity")
-    return operatorRows.value.length > 0;
-  if (activeKind.value === "recipe_waste") return wasteRows.value.length > 0;
-  if (activeKind.value === "quality") return qualityRows.value.length > 0;
-  return historyRows.value.length > 0;
-});
 const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!reports.value }),
 );
-function changeReportKind(reportKind: (typeof REPORT_KINDS)[number]["kind"]) {
-  selectKind(reportKind);
-  applyFilters();
-}
+const kindTabs = REPORT_KINDS.map((entry) => ({ value: entry.kind, label: entry.label }));
+const reportKind = computed({
+  get: () => activeKind.value,
+  set: (kind: string) => {
+    selectKind(kind as (typeof REPORT_KINDS)[number]["kind"]);
+    applyFilters();
+  },
+});
+
+// Listas curtas e fixas: `NuxtSelect`. A ficha técnica cresce: `NuxtSelectMenu` com busca.
+const ALL = "__all__";
+const recipeItems = computed(() => [
+  { value: ALL, label: "Todas" },
+  ...availableRecipes.value.map((recipe) => ({ value: recipe.ref, label: recipe.name })),
+]);
+const positionItems = computed(() => [
+  { value: ALL, label: "Todos" },
+  ...availablePositions.value.map((position) => ({ value: position.ref, label: position.name })),
+]);
+const recipeRef = computed({
+  get: () => filterDraft.recipe_ref || ALL,
+  set: (value: string) => {
+    filterDraft.recipe_ref = value === ALL ? "" : value;
+  },
+});
+const positionRef = computed({
+  get: () => filterDraft.position_ref || ALL,
+  set: (value: string) => {
+    filterDraft.position_ref = value === ALL ? "" : value;
+  },
+});
+const sortItems = computed(() => [
+  { value: "default", label: "Padrão" },
+  ...(filterDraft.report_kind === "history"
+    ? [
+        { value: "date_desc", label: "Data mais recente" },
+        { value: "date_asc", label: "Data mais antiga" },
+      ]
+    : []),
+  { value: "name_asc", label: "Nome A–Z" },
+  { value: "name_desc", label: "Nome Z–A" },
+  { value: "quantity_desc", label: "Maior quantidade" },
+  { value: "quantity_asc", label: "Menor quantidade" },
+]);
+const touch = useTouchPointer();
+
+// Colunas: a chave fica (fixada); as de apoio somem no celular por CSS.
+const NUM = { class: { th: "text-right", td: "text-right tabular-nums whitespace-nowrap" } };
+const SUPPORT_NUM = { ...NUM, supporting: true };
+const lateColumns = [
+  { id: "ref", header: "OP", enableHiding: false },
+  { id: "product", header: "Produto" },
+  { accessorKey: "elapsed_minutes", header: "Tempo (min)", meta: NUM },
+  { accessorKey: "target_minutes", header: "Meta (min)", meta: SUPPORT_NUM },
+  { id: "operator", header: "Operador", meta: { supporting: true } },
+];
+const historyColumns = [
+  { id: "ref", header: "OP", enableHiding: false },
+  { accessorKey: "date", header: "Data", meta: { supporting: true } },
+  { accessorKey: "recipe_name", header: "Ficha técnica" },
+  { id: "position", header: "Posto", meta: { supporting: true } },
+  { accessorKey: "qty_planned", header: "Planejado", meta: SUPPORT_NUM },
+  { id: "started", header: "Previsto", meta: SUPPORT_NUM },
+  { id: "finished", header: "Realizado", meta: NUM },
+  { accessorKey: "qty_loss", header: "Perda", meta: NUM },
+  { id: "yield", header: "Aproveitamento", meta: SUPPORT_NUM },
+  { id: "operator", header: "Operador", meta: { supporting: true } },
+  { id: "duration", header: "Tempo (min)", meta: SUPPORT_NUM },
+];
+const operatorColumns = [
+  { accessorKey: "operator_name", header: "Operador", enableHiding: false },
+  { accessorKey: "wo_count", header: "Ordens", meta: NUM },
+  { accessorKey: "qty_total", header: "Qtd realizada", meta: NUM },
+  { id: "yield", header: "Aproveitamento médio", meta: SUPPORT_NUM },
+  { id: "duration", header: "Tempo médio (min)", meta: SUPPORT_NUM },
+];
+const qualityColumns = [
+  { accessorKey: "recipe_name", header: "Ficha técnica", enableHiding: false },
+  { accessorKey: "grade_label", header: "Grau" },
+  { id: "defect", header: "Defeito" },
+  { accessorKey: "quantity", header: "Qtd", meta: NUM },
+  { accessorKey: "share", header: "% da receita", meta: SUPPORT_NUM },
+];
+const wasteColumns = [
+  { accessorKey: "recipe_name", header: "Ficha técnica", enableHiding: false },
+  { accessorKey: "wo_count", header: "Ordens", meta: NUM },
+  { accessorKey: "loss_total", header: "Perda total", meta: NUM },
+  { id: "yield", header: "Aproveitamento médio", meta: SUPPORT_NUM },
+];
+const blindColumns = [
+  { id: "code", header: "Código", enableHiding: false },
+  { accessorKey: "name", header: "Preparo" },
+  { accessorKey: "output_quantity_display", header: "Rendimento", meta: NUM },
+];
+
+// O aviso da tela mora no cabeçalho (`alerts`), sempre com a saída.
+const screenAlerts = computed<OperatorScreenAlert[]>(() => {
+  if (cursorStale.value)
+    return [
+      {
+        id: "cursor",
+        color: "warning",
+        icon: "i-lucide-refresh-cw",
+        title: "O relatório mudou enquanto você navegava.",
+        description: "As páginas ficam paradas até reconciliar.",
+        action: { label: "Reconciliar relatório", onSelect: () => applyFilters() },
+      },
+    ];
+  if (stale.value)
+    return [
+      {
+        id: "stale",
+        color: "warning",
+        icon: "i-lucide-wifi-off",
+        title: "Sem atualizar: mostrando a última página aplicada.",
+        action: { label: "Tentar de novo", onSelect: () => refresh() },
+      },
+    ];
+  return [];
+});
+const exportTitle = computed(() =>
+  exportStatus.value === "pending"
+    ? "Exportação em andamento."
+    : canExport.value
+      ? undefined
+      : "Corrija o período antes de baixar.",
+);
 
 function refreshAll() {
   refresh();
@@ -124,39 +252,31 @@ function refreshAll() {
 }
 </script>
 
+
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
     <ProductionHeader
       title="Relatórios"
       :searchable="false"
       :pending="pending || managementPending"
+      :alerts="forbidden ? [] : screenAlerts"
       @refresh="refreshAll()"
     />
 
     <!-- Sem a perm fina de gestor: explica com calma, sem beco. -->
-    <section
-      v-if="forbidden"
-      class="grid flex-1 place-items-center p-6 text-center"
-    >
-      <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
-        <Icon name="lucide:lock" class="mx-auto size-8 text-muted-foreground" />
-        <p class="text-base font-semibold">Área do gestor</p>
-        <p class="text-sm text-muted-foreground">
-          Os relatórios de produção pedem uma permissão de gestão que este
-          operador não tem. Peça a liberação a quem administra a loja.
-        </p>
-        <NuxtLink
-          to="/"
-          class="mt-1 text-sm text-primary underline-offset-2 hover:underline"
-          >Voltar para a produção</NuxtLink
-        >
-      </div>
+    <section v-if="forbidden" class="grid flex-1 place-items-center p-6">
+      <NuxtEmpty
+        icon="i-lucide-lock"
+        title="Área do gestor"
+        description="Os relatórios de produção pedem uma permissão de gestão que este operador não tem. Peça a liberação a quem administra a loja."
+        :actions="[{ label: 'Voltar para a produção', to: '/', color: 'neutral', variant: 'outline' }]"
+      />
     </section>
 
     <section v-else class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <!-- ── Gestão do dia ─────────────────────────────────────────────── -->
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <h2 class="op-title">Gestão do dia</h2>
+        <h2 class="text-base font-semibold">Gestão do dia</h2>
         <OperatorPeriodPicker
           v-model="managementPeriod"
           :presets="['day']"
@@ -165,181 +285,108 @@ function refreshAll() {
           label="Data da gestão"
           align="start"
         />
-        <span v-if="management" class="text-sm text-muted-foreground">{{
-          management.selected_date_display
-        }}</span>
       </div>
 
-      <div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div class="rounded-md border bg-card p-3">
-          <p
-            class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-          >
-            Aproveitamento médio
-          </p>
-          <p class="mt-1 text-xl font-bold tabular-nums">
-            {{ management?.average_yield_rate || "—" }}
-          </p>
-          <p class="text-xs text-muted-foreground">
-            Realizado ÷ previsto em
-            {{ management?.finished_orders ?? 0 }} lotes fechados
-          </p>
-        </div>
-        <div class="rounded-md border bg-card p-3">
-          <p
-            class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-          >
-            Capacidade
-          </p>
-          <p class="mt-1 text-xl font-bold tabular-nums">
-            <template v-if="management?.capacity_percent != null"
-              >{{ management.capacity_percent }}%</template
-            >
-            <template v-else>—</template>
-          </p>
-          <p class="text-xs text-muted-foreground">
-            {{
-              management?.capacity_percent != null
-                ? "Do planejado sobre a capacidade diária"
-                : "Sem capacidade configurada nas fichas"
-            }}
-          </p>
-        </div>
-        <div class="rounded-md border bg-card p-3">
-          <p
-            class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-          >
-            Planejado
-          </p>
-          <p class="mt-1 text-xl font-bold tabular-nums">
-            {{ management?.planned_qty || "0" }}
-          </p>
-          <p class="text-xs text-muted-foreground">
-            {{ management?.planned_orders ?? 0 }} lotes planejados
-          </p>
-        </div>
-        <div class="rounded-md border bg-card p-3">
-          <p
-            class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-          >
-            Perda
-          </p>
-          <p class="mt-1 text-xl font-bold tabular-nums">
-            {{ management?.loss_qty || "0" }}
-          </p>
-          <p class="text-xs text-muted-foreground">
-            Realizado {{ management?.finished_qty || "0" }} de
-            {{ management?.started_qty || "0" }} previstos
-          </p>
-        </div>
+      <div class="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4" data-reports-kpis>
+        <OperatorMetric
+          title="Aproveitamento médio"
+          :value="management?.average_yield_rate || '—'"
+          :hint="`Realizado ÷ previsto em ${management?.finished_orders ?? 0} lotes fechados`"
+        />
+        <OperatorMetric
+          title="Capacidade"
+          :value="management?.capacity_percent != null ? `${management.capacity_percent}%` : '—'"
+          :hint="
+            management?.capacity_percent != null
+              ? 'Do planejado sobre a capacidade diária'
+              : 'Sem capacidade configurada nas fichas'
+          "
+        />
+        <OperatorMetric
+          title="Planejado"
+          :value="management?.planned_qty || '0'"
+          :hint="`${management?.planned_orders ?? 0} lotes planejados`"
+        />
+        <OperatorMetric
+          title="Perda"
+          :value="management?.loss_qty || '0'"
+          :hint="`Realizado ${management?.finished_qty || '0'} de ${management?.started_qty || '0'} previstos`"
+        />
       </div>
 
-      <div
-        v-if="lateOrders.length"
-        class="mb-4 overflow-hidden rounded-md border"
-      >
-        <p
-          class="flex items-center gap-2 border-b bg-warning/10 px-3 py-2 text-sm font-semibold text-warning"
+      <div v-if="lateOrders.length" class="mb-4 grid gap-2" data-reports-late>
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-warning">
+          <NuxtIcon name="i-lucide-timer" class="size-4" /> Atrasos em andamento
+        </h3>
+        <OperatorTable
+          :data="lateOrders"
+          :columns="lateColumns"
+          :row-key="(row) => String(row.pk)"
+          pinned="ref"
+          caption="Lotes em andamento acima da meta de tempo"
         >
-          <Icon name="lucide:timer" class="size-4" /> Atrasos em andamento
-        </p>
-        <table class="w-full text-sm">
-          <thead
-            class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
-          >
-            <tr>
-              <th class="px-3 py-2 font-semibold">OP</th>
-              <th class="px-3 py-2 font-semibold">Produto</th>
-              <th class="px-3 py-2 text-right font-semibold">Tempo (min)</th>
-              <th class="px-3 py-2 text-right font-semibold">Meta (min)</th>
-              <th class="px-3 py-2 font-semibold">Operador</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y">
-            <tr v-for="item in lateOrders" :key="item.pk">
-              <td class="px-3 py-2 font-mono text-xs">{{ item.ref }}</td>
-              <td class="px-3 py-2">
-                <p class="font-medium">
-                  {{ item.recipe_name || item.output_sku }}
-                </p>
-                <p class="text-xs text-muted-foreground">
-                  {{ item.output_sku }}
-                </p>
-              </td>
-              <td
-                class="px-3 py-2 text-right tabular-nums font-semibold text-warning"
-              >
-                {{ item.elapsed_minutes }}
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ item.target_minutes }}
-              </td>
-              <td class="px-3 py-2">{{ item.operator_ref || "—" }}</td>
-            </tr>
-          </tbody>
-        </table>
+          <template #ref-cell="{ row }">
+            <span class="font-mono text-xs">{{ row.original.ref }}</span>
+          </template>
+          <template #product-cell="{ row }">
+            <span class="block font-medium">{{ row.original.recipe_name || row.original.output_sku }}</span>
+            <span class="block text-xs text-muted-foreground">{{ row.original.output_sku }}</span>
+          </template>
+          <template #elapsed_minutes-cell="{ row }">
+            <span class="font-semibold text-warning">{{ row.original.elapsed_minutes }}</span>
+          </template>
+          <template #operator-cell="{ row }">{{ row.original.operator_ref || "—" }}</template>
+        </OperatorTable>
       </div>
 
       <!-- ── Relatórios por período ────────────────────────────────────── -->
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <h2 class="text-lg font-semibold">Relatórios</h2>
-        <div
-          class="flex items-center gap-1 rounded-md border bg-background p-0.5"
-          role="group"
+        <h2 class="text-base font-semibold">Relatórios</h2>
+        <!-- Na mesa, as quatro abas; no celular elas não cabem sem cortar o rótulo, e a
+             escolha vira lista (o CSS escolhe, sem esperar a hidratação). -->
+        <NuxtTabs
+          v-model="reportKind"
+          :items="kindTabs"
+          :content="false"
+          variant="pill"
+          class="max-sm:hidden"
           aria-label="Tipo de relatório"
-        >
-          <!-- Segmento compacto de relatório; preserva a leitura de abas mutuamente exclusivas. -->
-          <button
-            v-for="entry in REPORT_KINDS"
-            :key="entry.kind"
-            type="button"
-            class="min-h-8 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              activeKind === entry.kind
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-pressed="activeKind === entry.kind"
-            @click="changeReportKind(entry.kind)"
-          >
-            {{ entry.label }}
-          </button>
+          data-report-kind
+        />
+        <NuxtSelect
+          v-model="reportKind"
+          :items="kindTabs"
+          value-key="value"
+          class="w-44 sm:hidden"
+          aria-label="Tipo de relatório"
+        />
+        <div class="ml-auto flex items-center gap-2">
+          <NuxtButton
+            icon="i-lucide-download"
+            color="neutral"
+            variant="outline"
+            :label="exportStatus === 'pending' ? 'Exportando…' : 'Baixar CSV'"
+            :loading="exportStatus === 'pending'"
+            :disabled="!canExport"
+            :title="exportTitle"
+            @click="downloadCsv()"
+          />
+          <NuxtButton
+            v-if="exportStatus === 'pending'"
+            label="Cancelar"
+            color="neutral"
+            variant="ghost"
+            @click="cancelExport()"
+          />
         </div>
-        <UiButton
-          type="button"
-          variant="outline"
-          size="sm"
-          class="ml-auto min-h-8"
-          :disabled="!canExport"
-          :title="
-            exportStatus === 'pending'
-              ? 'Exportação em andamento.'
-              : canExport
-                ? undefined
-                : 'Aplique os filtros válidos antes de baixar.'
-          "
-          @click="downloadCsv()"
-        >
-          <Icon name="lucide:download" class="size-4" />
-          {{ exportStatus === "pending" ? "Exportando…" : "Baixar CSV" }}
-        </UiButton>
-        <UiButton
-          v-if="exportStatus === 'pending'"
-          type="button"
-          variant="ghost"
-          size="sm"
-          class="min-h-8"
-          @click="cancelExport()"
-        >
-          Cancelar
-        </UiButton>
         <p
           v-if="exportMessage"
-          class="basis-full text-right text-xs text-muted-foreground"
-          :class="{
-            'text-destructive':
-              exportStatus === 'failure' || exportStatus === 'session_expired',
-          }"
+          class="basis-full text-right text-xs"
+          :class="
+            exportStatus === 'failure' || exportStatus === 'session_expired'
+              ? 'text-error'
+              : 'text-muted-foreground'
+          "
           role="status"
           aria-live="polite"
         >
@@ -347,11 +394,9 @@ function refreshAll() {
         </p>
       </div>
 
-      <div
-        class="mb-3 flex flex-wrap items-end gap-3 rounded-md border bg-card p-3"
-      >
-        <div class="grid gap-1 text-xs font-medium text-muted-foreground">
-          Período
+      <!-- Os filtros aplicam ao mudar: nada de "Aplicar". -->
+      <div class="mb-3 flex flex-wrap items-end gap-3" data-report-filters>
+        <NuxtFormField label="Período">
           <OperatorPeriodPicker
             :model-value="reportPeriod"
             :presets="['day', 'week', 'month', '7d', '28d']"
@@ -362,432 +407,177 @@ function refreshAll() {
             align="start"
             @update:model-value="changeReportPeriod"
           />
-        </div>
-        <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-          Ficha técnica
-          <UiNativeSelect v-model="filterDraft.recipe_ref" class="w-auto">
-            <option value="">Todas</option>
-            <option
-              v-for="recipe in availableRecipes"
-              :key="recipe.ref"
-              :value="recipe.ref"
-            >
-              {{ recipe.name }}
-            </option>
-          </UiNativeSelect>
-        </label>
-        <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-          Posto
-          <UiNativeSelect v-model="filterDraft.position_ref" class="w-auto">
-            <option value="">Todos</option>
-            <option
-              v-for="position in availablePositions"
-              :key="position.ref"
-              :value="position.ref"
-            >
-              {{ position.name }}
-            </option>
-          </UiNativeSelect>
-        </label>
-        <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-          Operador
-          <UiInput
-            v-model="filterDraft.operator_ref"
-            type="text"
-            placeholder="Nome ou usuário"
-            class="w-auto"
+        </NuxtFormField>
+        <NuxtFormField label="Ficha técnica">
+          <NuxtSelectMenu
+            v-model="recipeRef"
+            :items="recipeItems"
+            value-key="value"
+            class="w-56"
+            :search-input="{ autofocus: !touch, placeholder: 'Buscar ficha técnica' }"
+            aria-label="Ficha técnica"
           />
-        </label>
-        <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-          Ordenar
-          <UiNativeSelect v-model="filterDraft.sort" class="w-auto">
-            <option value="default">Padrão</option>
-            <option
-              v-if="filterDraft.report_kind === 'history'"
-              value="date_desc"
-            >
-              Data mais recente
-            </option>
-            <option
-              v-if="filterDraft.report_kind === 'history'"
-              value="date_asc"
-            >
-              Data mais antiga
-            </option>
-            <option value="name_asc">Nome A–Z</option>
-            <option value="name_desc">Nome Z–A</option>
-            <option value="quantity_desc">Maior quantidade</option>
-            <option value="quantity_asc">Menor quantidade</option>
-          </UiNativeSelect>
-        </label>
-        <UiButton
-          type="button"
-          size="sm"
-          class="min-h-8"
-          :disabled="!!filterError"
-          @click="applyFilters()"
-        >
-          Aplicar
-        </UiButton>
+        </NuxtFormField>
+        <NuxtFormField label="Posto">
+          <NuxtSelect v-model="positionRef" :items="positionItems" value-key="value" class="w-40" aria-label="Posto" />
+        </NuxtFormField>
+        <NuxtFormField label="Operador">
+          <NuxtInput v-model="filterDraft.operator_ref" placeholder="Nome ou usuário" class="w-44" aria-label="Operador" />
+        </NuxtFormField>
+        <NuxtFormField label="Ordenar">
+          <NuxtSelect v-model="filterDraft.sort" :items="sortItems" value-key="value" class="w-48" aria-label="Ordenar" />
+        </NuxtFormField>
         <p
           id="report-date-help"
           role="status"
           aria-live="polite"
           class="basis-full text-xs"
-          :class="filterError ? 'text-destructive' : 'text-muted-foreground'"
+          :class="filterError ? 'text-error' : 'text-muted-foreground'"
         >
-          {{
-            filterError ||
-            "Período máximo: 93 dias. O período vale na hora; os outros filtros, ao aplicar."
-          }}
+          {{ filterError || "Período máximo: 93 dias." }}
         </p>
-      </div>
-
-      <div
-        v-if="cursorStale"
-        role="alert"
-        aria-live="assertive"
-        class="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
-      >
-        <Icon name="lucide:refresh-cw" class="size-4 shrink-0" />
-        <span>O relatório mudou enquanto você navegava.</span>
-        <UiButton
-          type="button"
-          size="sm"
-          variant="outline"
-          class="ml-auto min-h-8"
-          @click="applyFilters()"
-        >
-          Reconciliar relatório
-        </UiButton>
-      </div>
-
-      <div
-        v-if="stale && !cursorStale"
-        role="status"
-        aria-live="polite"
-        class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
-      >
-        <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
-        <span>Sem atualizar: mostrando a última página aplicada.</span>
-      </div>
-
-      <div
-        v-if="cursorStale"
-        class="grid place-items-center rounded-md border border-dashed border-warning/40 py-12 text-center text-sm text-muted-foreground"
-      >
-        Navegação bloqueada até reconciliar o relatório.
-      </div>
-      <p
-        v-else-if="pending && !reports"
-        class="text-sm text-muted-foreground"
-      >
-        Carregando…
-      </p>
-      <div
-        v-else-if="error && !reports"
-        class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
-      >
-        <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
-        <p class="text-base font-medium text-foreground">
-          Não foi possível carregar os relatórios.
-        </p>
-        <UiButton
-          type="button"
-          variant="outline"
-          size="sm"
-          class="mt-1 min-h-8"
-          @click="refresh()"
-        >
-          <Icon name="lucide:refresh-cw" class="size-4" />
-          Tentar de novo
-        </UiButton>
-      </div>
-      <div
-        v-else-if="!hasRows"
-        class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
-      >
-        <Icon name="lucide:table-2" class="size-8" />
-        <p class="text-base font-medium">Nenhum lote nesse período.</p>
-        <p class="text-sm">Ajuste as datas ou os filtros acima.</p>
       </div>
 
       <!-- Histórico por OP -->
-      <div
-        v-else-if="activeKind === 'history'"
-        class="overflow-x-auto rounded-md border"
+      <OperatorTable
+        v-if="activeKind === 'history'"
+        :data="cursorStale ? [] : historyRows"
+        :columns="historyColumns"
+        :row-key="(row) => row.ref"
+        :loading="pending && !reports"
+        :error="Boolean(error) && !reports"
+        what="os relatórios"
+        empty-icon="i-lucide-table-2"
+        :empty-title="cursorStale ? 'Navegação parada até reconciliar o relatório.' : 'Nenhum lote nesse período.'"
+        :empty-description="cursorStale ? '' : 'Ajuste o período ou os filtros acima.'"
+        pinned="ref"
+        view-key="production-report-history"
+        caption="Histórico por ordem de produção"
+        @retry="refresh()"
       >
-        <table class="w-full min-w-[64rem] text-sm">
-          <thead
-            class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
-          >
-            <tr>
-              <th class="px-3 py-2 font-semibold">OP</th>
-              <th class="px-3 py-2 font-semibold">Data</th>
-              <th class="px-3 py-2 font-semibold">Ficha técnica</th>
-              <th class="px-3 py-2 font-semibold">Posto</th>
-              <th class="px-3 py-2 text-right font-semibold">Planejado</th>
-              <th class="px-3 py-2 text-right font-semibold">Previsto</th>
-              <th class="px-3 py-2 text-right font-semibold">Realizado</th>
-              <th class="px-3 py-2 text-right font-semibold">Perda</th>
-              <th class="px-3 py-2 text-right font-semibold">
-                Aproveitamento
-              </th>
-              <th class="px-3 py-2 font-semibold">Operador</th>
-              <th class="px-3 py-2 text-right font-semibold">Tempo (min)</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y">
-            <tr
-              v-for="row in historyRows"
-              :key="row.ref"
-              class="hover:bg-muted/30"
-            >
-              <td class="px-3 py-2 font-mono text-xs">{{ row.ref }}</td>
-              <td class="px-3 py-2 tabular-nums">{{ row.date }}</td>
-              <td class="px-3 py-2 font-medium">{{ row.recipe_name }}</td>
-              <td class="px-3 py-2">{{ row.position_ref || "—" }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.qty_planned }}
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.qty_started || "—" }}
-                <!-- Fechamento sem abertura: o previsto não foi declarado, foi
-                     assumido igual ao planejado. A tela não o apresenta como fato. -->
-                <span
-                  v-if="row.started_assumed"
-                  class="ml-1 rounded-sm border border-warning/40 bg-warning/10 px-1 text-xs font-medium text-warning"
-                  title="Fechado sem abertura: previsto assumido igual ao planejado"
-                  >assumido</span
-                >
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.qty_finished || "—" }}
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.qty_loss }}
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.yield_rate || "—" }}
-              </td>
-              <td class="px-3 py-2">{{ row.operator_ref || "—" }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.duration_minutes || "—" }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <p
-          v-if="historyRows.some((row) => row.started_assumed)"
-          class="border-t px-3 py-2 text-xs text-muted-foreground"
-        >
-          <b class="font-medium text-warning">assumido</b>: o lote foi fechado
-          sem abertura, e o previsto foi assumido igual ao planejado. Ninguém o
-          declarou.
-        </p>
-      </div>
+        <template #ref-cell="{ row }">
+          <span class="font-mono text-xs">{{ row.original.ref }}</span>
+        </template>
+        <template #position-cell="{ row }">{{ row.original.position_ref || "—" }}</template>
+        <template #started-cell="{ row }">
+          {{ row.original.qty_started || "—" }}
+          <!-- Fechamento sem abertura: o previsto não foi declarado, foi assumido igual
+               ao planejado. A tela não o apresenta como fato. -->
+          <NuxtBadge
+            v-if="row.original.started_assumed"
+            color="warning"
+            class="ml-1"
+            label="assumido"
+            title="Fechado sem abertura: previsto assumido igual ao planejado"
+          />
+        </template>
+        <template #finished-cell="{ row }">{{ row.original.qty_finished || "—" }}</template>
+        <template #yield-cell="{ row }">{{ row.original.yield_rate || "—" }}</template>
+        <template #operator-cell="{ row }">{{ row.original.operator_ref || "—" }}</template>
+        <template #duration-cell="{ row }">{{ row.original.duration_minutes || "—" }}</template>
+        <template v-if="historyRows.some((row) => row.started_assumed) || (pagination && pagination.total)" #footer>
+          <p v-if="historyRows.some((row) => row.started_assumed)" class="mb-2 text-xs text-muted-foreground">
+            <b class="font-medium text-warning">assumido</b>: o lote foi fechado sem abertura, e o
+            previsto foi assumido igual ao planejado. Ninguém o declarou.
+          </p>
+          <ReportPagination
+            v-if="pagination && pagination.total && !cursorStale"
+            :pagination="pagination"
+            :pending="pending"
+            @open="openCursor"
+          />
+        </template>
+      </OperatorTable>
 
       <!-- Produtividade por operador -->
-      <div
+      <OperatorTable
         v-else-if="activeKind === 'operator_productivity'"
-        class="overflow-x-auto rounded-md border"
+        :data="cursorStale ? [] : operatorRows"
+        :columns="operatorColumns"
+        :row-key="(row) => row.operator_ref"
+        :loading="pending && !reports"
+        :error="Boolean(error) && !reports"
+        what="os relatórios"
+        empty-icon="i-lucide-table-2"
+        :empty-title="cursorStale ? 'Navegação parada até reconciliar o relatório.' : 'Nenhum lote nesse período.'"
+        :empty-description="cursorStale ? '' : 'Ajuste o período ou os filtros acima.'"
+        view-key="production-report-operators"
+        caption="Produtividade por operador"
+        @retry="refresh()"
       >
-        <table class="w-full text-sm">
-          <thead
-            class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
-          >
-            <tr>
-              <th class="px-3 py-2 font-semibold">Operador</th>
-              <th class="px-3 py-2 text-right font-semibold">Ordens</th>
-              <th class="px-3 py-2 text-right font-semibold">Qtd realizada</th>
-              <th class="px-3 py-2 text-right font-semibold">
-                Aproveitamento médio
-              </th>
-              <th class="px-3 py-2 text-right font-semibold">
-                Tempo médio (min)
-              </th>
-            </tr>
-          </thead>
-          <tbody class="divide-y">
-            <tr
-              v-for="row in operatorRows"
-              :key="row.operator_ref"
-              class="hover:bg-muted/30"
-            >
-              <td class="px-3 py-2 font-medium">{{ row.operator_name }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.wo_count }}
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.qty_total }}
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.yield_avg || "—" }}
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.duration_avg_minutes || "—" }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        <template #yield-cell="{ row }">{{ row.original.yield_avg || "—" }}</template>
+        <template #duration-cell="{ row }">{{ row.original.duration_avg_minutes || "—" }}</template>
+        <template v-if="pagination && pagination.total && !cursorStale" #footer>
+          <ReportPagination :pagination="pagination" :pending="pending" @open="openCursor" />
+        </template>
+      </OperatorTable>
 
       <!-- Qualidade: a partição do QC por receita × grau × defeito -->
-      <div
+      <OperatorTable
         v-else-if="activeKind === 'quality'"
-        class="overflow-x-auto rounded-md border"
+        :data="cursorStale ? [] : qualityRows"
+        :columns="qualityColumns"
+        :row-key="(row) => `${row.recipe_ref}:${row.grade_ref}:${row.defect_ref}`"
+        :loading="pending && !reports"
+        :error="Boolean(error) && !reports"
+        what="os relatórios"
+        empty-icon="i-lucide-table-2"
+        :empty-title="cursorStale ? 'Navegação parada até reconciliar o relatório.' : 'Nenhum lote nesse período.'"
+        :empty-description="cursorStale ? '' : 'Ajuste o período ou os filtros acima.'"
+        view-key="production-report-quality"
+        caption="Qualidade por ficha, grau e defeito"
+        @retry="refresh()"
       >
-        <table class="w-full text-sm">
-          <thead
-            class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
-          >
-            <tr>
-              <th class="px-3 py-2 font-semibold">Ficha técnica</th>
-              <th class="px-3 py-2 font-semibold">Grau</th>
-              <th class="px-3 py-2 font-semibold">Defeito</th>
-              <th class="px-3 py-2 text-right font-semibold">Qtd</th>
-              <th class="px-3 py-2 text-right font-semibold">% da receita</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y">
-            <tr
-              v-for="row in qualityRows"
-              :key="`${row.recipe_ref}:${row.grade_ref}:${row.defect_ref}`"
-              class="hover:bg-muted/30"
-            >
-              <td class="px-3 py-2 font-medium">{{ row.recipe_name }}</td>
-              <td class="px-3 py-2">{{ row.grade_label }}</td>
-              <td class="px-3 py-2">{{ row.defect_label || "—" }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.quantity }}
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.share }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        <template #defect-cell="{ row }">{{ row.original.defect_label || "—" }}</template>
+        <template v-if="pagination && pagination.total && !cursorStale" #footer>
+          <ReportPagination :pagination="pagination" :pending="pending" @open="openCursor" />
+        </template>
+      </OperatorTable>
 
       <!-- Desperdício por ficha -->
-      <div v-else class="overflow-x-auto rounded-md border">
-        <table class="w-full text-sm">
-          <thead
-            class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
-          >
-            <tr>
-              <th class="px-3 py-2 font-semibold">Ficha técnica</th>
-              <th class="px-3 py-2 text-right font-semibold">Ordens</th>
-              <th class="px-3 py-2 text-right font-semibold">Perda total</th>
-              <th class="px-3 py-2 text-right font-semibold">
-                Aproveitamento médio
-              </th>
-            </tr>
-          </thead>
-          <tbody class="divide-y">
-            <tr
-              v-for="row in wasteRows"
-              :key="row.recipe_ref"
-              class="hover:bg-muted/30"
-            >
-              <td class="px-3 py-2 font-medium">{{ row.recipe_name }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.wo_count }}
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.loss_total }}
-              </td>
-              <td class="px-3 py-2 text-right tabular-nums">
-                {{ row.yield_avg || "—" }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <nav
-        v-if="pagination && pagination.total && !cursorStale"
-        class="mt-3 flex items-center justify-between gap-3 text-sm"
-        aria-label="Paginação do relatório"
+      <OperatorTable
+        v-else
+        :data="cursorStale ? [] : wasteRows"
+        :columns="wasteColumns"
+        :row-key="(row) => row.recipe_ref"
+        :loading="pending && !reports"
+        :error="Boolean(error) && !reports"
+        what="os relatórios"
+        empty-icon="i-lucide-table-2"
+        :empty-title="cursorStale ? 'Navegação parada até reconciliar o relatório.' : 'Nenhum lote nesse período.'"
+        :empty-description="cursorStale ? '' : 'Ajuste o período ou os filtros acima.'"
+        view-key="production-report-waste"
+        caption="Desperdício por ficha técnica"
+        @retry="refresh()"
       >
-        <span class="text-muted-foreground" role="status" aria-live="polite">
-          Exibindo {{ pagination.from }}–{{ pagination.to }} de
-          {{ pagination.total }} resultado{{
-            pagination.total === 1 ? "" : "s"
-          }}
-        </span>
-        <div class="flex gap-2">
-          <UiButton
-            type="button"
-            size="sm"
-            variant="outline"
-            class="min-h-8"
-            :disabled="!pagination.previous_cursor || pending"
-            @click="openCursor(pagination.previous_cursor)"
-          >
-            Anterior
-          </UiButton>
-          <UiButton
-            type="button"
-            size="sm"
-            variant="outline"
-            class="min-h-8"
-            :disabled="!pagination.next_cursor || pending"
-            @click="openCursor(pagination.next_cursor)"
-          >
-            Próxima
-          </UiButton>
-        </div>
-      </nav>
+        <template #yield-cell="{ row }">{{ row.original.yield_avg || "—" }}</template>
+        <template v-if="pagination && pagination.total && !cursorStale" #footer>
+          <ReportPagination :pagination="pagination" :pending="pending" @open="openCursor" />
+        </template>
+      </OperatorTable>
 
       <!-- ── Mapa código-cego ↔ preparo (visão de gestor) ──────────────── -->
-      <div class="mt-6">
-        <div class="mb-2 flex flex-wrap items-center gap-2">
-          <h2 class="text-lg font-semibold">Mapa código-cego</h2>
-          <UiBadge variant="outline" class="px-1.5 py-0 text-xs"
-            >Visão de gestor</UiBadge
-          >
+      <div class="mt-6 grid max-w-2xl gap-2" data-reports-blind-map>
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-base font-semibold">Mapa código-cego</h2>
+          <NuxtBadge color="neutral" label="Visão de gestor" />
         </div>
-        <p class="mb-3 max-w-2xl text-sm text-muted-foreground">
-          As etiquetas de pesagem circulam pela cozinha apenas com o código do
-          dia. Esta tabela é a única correlação código ↔ preparo, e ela não
-          aparece nas telas de chão.
+        <p class="text-sm text-muted-foreground">
+          As etiquetas de pesagem circulam pela cozinha apenas com o código do dia. Esta
+          tabela é a única correlação código ↔ preparo, e ela não aparece nas telas de chão.
         </p>
-        <div
-          v-if="!blindMap.rows.value.length"
-          class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"
+        <OperatorTable
+          :data="blindMap.rows.value"
+          :columns="blindColumns"
+          :row-key="(row) => row.code"
+          empty-icon="i-lucide-tag"
+          empty-title="Nenhum preparo aberto nesta data, então não há códigos para correlacionar."
+          caption="Código do dia e preparo correspondente"
         >
-          Nenhum preparo aberto nesta data, então não há códigos para correlacionar.
-        </div>
-        <div v-else class="max-w-2xl overflow-hidden rounded-md border">
-          <table class="w-full text-sm">
-            <thead
-              class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
-            >
-              <tr>
-                <th class="px-3 py-2 font-semibold">Código</th>
-                <th class="px-3 py-2 font-semibold">Preparo</th>
-                <th class="px-3 py-2 text-right font-semibold">Rendimento</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y">
-              <tr
-                v-for="row in blindMap.rows.value"
-                :key="row.code"
-                class="hover:bg-muted/30"
-              >
-                <td class="px-3 py-2">
-                  <span
-                    class="rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-sm font-bold tracking-wide text-primary"
-                    >{{ row.code }}</span
-                  >
-                </td>
-                <td class="px-3 py-2 font-medium">{{ row.name }}</td>
-                <td class="px-3 py-2 text-right tabular-nums">
-                  {{ row.output_quantity_display }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+          <template #code-cell="{ row }">
+            <NuxtBadge color="primary" class="font-mono font-semibold tracking-wide" :label="row.original.code" />
+          </template>
+        </OperatorTable>
       </div>
     </section>
   </main>

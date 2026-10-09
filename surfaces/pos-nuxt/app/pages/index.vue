@@ -230,6 +230,9 @@ const {
   reviewCheckout,
   reviewFailed,
   reviewFailureReason,
+  saleReview,
+  saleTotal,
+  saleTotalPaused,
   submitSale,
   dismissResult,
   markFiscalState,
@@ -268,6 +271,9 @@ const {
   managerChallenge: editChallenge,
 } = orderEdit;
 const editManagerOpen = ref(false);
+// A edição de encomenda tem a prévia própria (no "Salvar alterações"): a
+// revisão de venda fica parada e o botão não mostra total.
+watch(editing, (on) => { saleTotalPaused.value = on; }, { immediate: true });
 
 async function startOrderEdit(ref: string) {
   const tab = await orderEdit.start(ref);
@@ -381,7 +387,7 @@ function convertToCounter() {
 // Tela do cliente (segundo monitor): fontes lidas por getter; publicação e
 // transformação vivem inteiras no <PosDisplayPublisher> (renderless). O troco
 // congelado já viaja dentro do `result` (`changeQ`).
-const displaySources = { pos: () => pos.value, items: () => cart.items, review: () => review.value, result: () => result.value, pixStatus: () => pixStatus.value, checkoutMode: () => checkoutMode.value };
+const displaySources = { pos: () => pos.value, items: () => cart.items, review: () => (checkoutMode.value ? review.value : saleReview.value), result: () => result.value, pixStatus: () => pixStatus.value, checkoutMode: () => checkoutMode.value };
 
 // Auto-lock ciente do pagamento: o shell (app.vue) lê este sinal e ADIA o lock
 // de ociosidade enquanto o checkout está aberto ou um PIX segue aguardando —
@@ -1621,6 +1627,7 @@ onBeforeUnmount(() => {
             :quick-payments="quickPayments"
             :auto-fire="autoFireOn"
             :items="cart.items"
+            :total="saleTotal"
             :requires-tab="tabRequiredForCart"
             :has-open-tab="hasOpenTab"
             :loading="busy"

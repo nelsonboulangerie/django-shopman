@@ -889,6 +889,12 @@ contra ela, nos dois temas, travados em `tests/actionBarContrast.test.ts`.
   peça, não da tela.
 - **`reason`**: com `disabled`, o motivo aparece escrito sob a ação (`role="status"`, e o
   botão aponta para ele com `aria-describedby`).
+- **Ação com prazo** (`action.timed = { until, since?, duration?, serverNow?, onExpire? }`,
+  o "Desfazer"): a barra NÃO muda (dono, 09/10/2026). Mesmo cartão invertido, mesma
+  linha de contexto, mesma segunda ação; o botão tocado fica no lugar, mesma cor,
+  variante e tamanho, troca só o texto ("Pronto 0131" vira "Desfazer 0131", com
+  `ariaLabel` para o nome completo) e ganha o fundo que esvazia (`OperatorTimedButton`).
+  Ao fim do prazo o botão fica no lugar, desligado, até quem chama trocar a ação.
 - **Só abaixo de `lg`**: na mesa, a ação sobe para a barra superior primária.
 - **Some com o teclado aberto** (`data-keyboard="open"` no `<html>`, do
   `plugins/visualViewport.client.ts`): o campo que a pessoa digita fica com a tela.
@@ -945,11 +951,24 @@ desfazer a saída no Gestor.
   prazo. Quem guarda o prazo é o dono do estado (o quadro, a projeção), nunca a peça.
 - **Uma animação só**, em CSS, do tamanho da janela, com atraso negativo para começar
   onde a janela já está. Nada redesenha a cada quadro.
-- **Conjunto mínimo**: o `NuxtButton` de sempre, `md`/`xl` × `outline`/`solid` ×
-  `primary`/`neutral`/`error`. No contornado, a cor da casa esvazia por trás do rótulo;
-  no sólido, a cor do botão é o que esvazia, e o que passou fica mais claro. As cores de
-  aviso (`info`, `success`, `warning`) só como ação de um `NuxtAlert` daquela cor (a
-  exceção declarada do conjunto).
+- **A menor interferência possível** (dono, 09/10/2026): o botão com prazo é o MESMO
+  botão que ele substitui, no mesmo lugar. Quem chama passa a cor, a variante e o
+  tamanho do botão de origem (o padrão é o da ação principal, `primary` `solid` `md`);
+  só o texto muda ("Pronto 0131" vira "Desfazer 0131") e o fundo esvazia atrás dele.
+  Nada de trocar para contornado ou neutro, nada de mudar altura ou largura. Trava: o
+  teste compara, classe por classe, com o `NuxtButton` de mesma cor, variante e tamanho.
+- **O esvaziamento se vê de relance** (dono, 09/10/2026: a primeira versão era "muito
+  sutil"). No sólido de cor (`primary`, e o verde do Pronto da Cozinha com
+  `fill-tint="inverted"`) são duas partes com 3:1 entre si (WCAG 1.4.11) e o rótulo AA
+  sobre as duas: no claro, o que RESTA é a cor quase preta e o que esvaziou é a cor do
+  botão; no escuro, o que resta é a cor quase branca e o que esvaziou fica um pouco mais
+  fundo. A borda entre elas é seca, sem degradê. Os valores moram no `<style>` da peça
+  (`--timed-remaining`, `--timed-spent`) e a trava `tests/timedButtonContrast.test.ts`
+  lê de lá. O neutro sólido (`fill-tint="page"`) e o contornado não comportam duas
+  partes com o rótulo AA e ficam com o tom leve (contornado: a cor do rótulo a 10%).
+  Conjunto mínimo: `md`/`xl` × `outline`/`solid` × `primary`/`neutral`/`error`; as
+  cores de aviso (`info`,
+  `success`, `warning`) só como ação de um `NuxtAlert` daquela cor (a exceção declarada).
 - **Movimento reduzido** (`prefers-reduced-motion: reduce`): nada anima; o botão mostra
   o número de segundos ("4 s"), que muda uma vez por segundo.
 - **Leitor de tela**: o nome do botão é o rótulo, fixo (ou o `aria-label` de quem chama:
@@ -962,9 +981,11 @@ desfazer a saída no Gestor.
 - `class`, `data-*` e `aria-*` chegam ao botão. SFC puro (imports explícitos): os
   harnesses sem runtime Nuxt dos apps montam a peça de verdade.
 
-Onde mora: o Desfazer do Pronto na Cozinha (`KdsTicketCard`, prazo guardado pelo
-`useKdsBoard`) e o Desfazer da saída no Gestor (`OrderCard` e o detalhe do pedido,
-prazo e começo da janela vindos da projeção: `undo_until_iso`/`undo_since_iso`). A conta
+Onde mora: o Desfazer do Pronto na Cozinha (na mesa, o mesmo Pronto verde do
+`KdsCardButton`; no celular, a ação na base com `action.timed`; prazo guardado pelo
+`useKdsBoard`) e o Desfazer da saída no Gestor (o primário sólido do `OrderCard`; no
+detalhe, o primário do cabeçalho e a ação na base; prazo e começo da janela vindos da
+projeção: `undo_until_iso`/`undo_since_iso`). A conta
 é pura em `presentation/timedAction.ts`. Trava: `tests/timedAction.test.ts` e
 `tests/components/OperatorTimedButton.test.ts`. Vitrine: "Ação com prazo", nas peças de
 tela do catálogo.
@@ -1097,6 +1118,96 @@ ganha o respiro da confortável).
   (`presentation/operatorTable.ts`).
 - Substituiu as cinco tabelas do Gestor (Lista da fila, Histórico, Clientes, Unificações e a
   matriz do Catálogo) e aposentou o `ColumnPicker`.
+
+### Painel de filtros (`OperatorFilterPanel` + `useSavedViews` + `#filter-panel`)
+
+UM painel, igual no celular e na mesa (dono, 09/10/2026, referência: o Odoo), sobre o
+`NuxtCommandPalette` oficial (busca, teclado e submenus de graça), na ordem fixa:
+
+1. **Favoritos** (os da pessoa, fixados primeiro) e "Gerenciar favoritos" (fixar nos
+   filtros rápidos, apagar);
+2. **Filtros rápidos** (os favoritos fixados e as opções que a tela declara em `quick`);
+3. **Data**: o período das LISTAS mora aqui (`period-presets`, `custom-period` abre
+   "Escolher as datas"); as setas ‹ › ficam para as telas de leitura (B.I., Fechamento);
+4. **Agrupar por** (só onde a tela agrupa, `groups`);
+5. **Filtros completos**: cada dimensão de lista abre as opções dela; digitar oferece
+   "Cliente contém …" para as dimensões de texto. Intervalos ficam com o `FilterBar`.
+
+No pé, **Limpar** e **Salvar como favorito** (o diálogo pede o nome e "Mostrar nos
+filtros rápidos da tela"). O botão: só o ícone com o número no celular; ícone, "Filtros"
+e o número na mesa. Contêiner: `NuxtDrawer` de baixo no celular, `NuxtPopover` na mesa.
+Na mesa os recortes ativos viram chips ao lado do botão (`chips`); no celular, os chips
+são os do cabeçalho (`active-filters`).
+
+```vue
+<OperatorPageHeader title="Histórico" :active-filters="activeFilters" :actions="[atualizar]">
+  <template #filter-panel>
+    <OperatorFilterPanel
+      v-model="filters" v-model:period="period"
+      :dimensions="dimensions" :period-presets="HISTORY_PRESETS" custom-period
+      :default-period="{ preset: 'day', from: '', to: '' }"
+      surface="orders" screen="history"
+    />
+  </template>
+</OperatorPageHeader>
+```
+
+- O recorte é o mesmo `ActiveFilters` do `FilterBar` (a URL já sabe guardá-lo), mais
+  `period` e `group`. O favorito guarda `{ filters, period?, group? }`.
+- **Favoritos no servidor, por pessoa** (`useSavedViews(surface, screen)` →
+  `/api/v1/backstage/saved-views/`, modelo `SavedView`). Cada tela se registra em
+  `shopman/backstage/api/saved_views.py` (`SCREENS`: a permissão de quem lê a tela e a
+  gramática do recorte); recorte fora da gramática não salva. O B.I. guarda ali os
+  cenários do explorador (`bi`/`explore`; a migração `backstage.0090` levou os antigos
+  `BIView` sem perder nenhum). "Publicar para a equipe" (gerente) fica para depois.
+- `#filter-panel` do `OperatorPageHeader`: no celular, fixo na ponta da linha da
+  toolbar (o último a sair); na mesa, logo depois dos recortes primários.
+- Trava: `guardrails.filterPanel.test.ts` (nenhum `FilterBar` no Gestor; toda tela
+  que guarda favorito está no registro do servidor).
+
+### Barra de seleção (`OperatorBulkBar` + `#selection` do `OperatorPageHeader`)
+
+Uma por tela, desenhada pela mesma peça em dois lugares (dono, 09/10/2026):
+
+- **Mesa** (do `lg` para cima): no `#selection` do cabeçalho, que **toma o lugar da
+  toolbar** enquanto houver marcados. Diz em que recorte a seleção foi feita ("3
+  selecionados em Rústicos"): o recorte não muda com marcados fora da vista.
+- **Abaixo do `lg`**: `placement="base"`, no lugar e no desenho da `OperatorActionBar`
+  (cartão flutuante, em fluxo, entre o conteúdo e a barra inferior), na superfície
+  invertida (`bg-inverted`). Campo e botões levam o próprio fundo (`outline`, nunca
+  `ghost`, nem o ×) e por isso ficam legíveis sobre ela nos dois temas. O tema do kit
+  não muda (mudar o tema repinta as baselines das consumidoras).
+
+```vue
+<OperatorPageHeader title="Catálogo">
+  <template v-if="selected.size" #selection>
+    <OperatorBulkBar :count="selected.size" :scope="collection" :items="items('toolbar')" @clear="clear">
+      <template #lead="{ size, block }">
+        <NuxtSelect v-model="channel" :items="channels" :size="size" :class="block ? 'w-full' : 'min-w-56'" />
+      </template>
+      <template #price><ReusePrice /></template>
+    </OperatorBulkBar>
+  </template>
+</OperatorPageHeader>
+<!-- … o conteúdo … -->
+<OperatorBulkBar v-if="selected.size" placement="base" … />
+```
+
+- **Ordem fixa**: quantos | o `#lead` (o campo da tela, ex.: o canal) | as ações, na
+  ordem dada | ×. Pares de gestos opostos (Pausar/Ativar, Ocultar/Exibir) vão num
+  array: viram um `NuxtFieldGroup`, com o **mesmo peso** (todos `outline`). Uma ação só
+  pode ser `primary` (a principal, `solid`).
+- **Altura**: campo e botão na mesma altura, `md` na mesa e `lg` no toque. O `#lead`
+  recebe `size` e `block` (na base o campo ocupa a linha).
+- **Painel**: a ação com `panel: "price"` abre um `NuxtPopover` com o slot `#price`;
+  `open`/`onUpdateOpen` são da tela. Com as duas barras na tela, abra só o da largura da
+  vez (`useScreen().belowLg`), senão abririam os dois.
+- **Modo de seleção** (a Fila): `empty` é a instrução com zero marcados; `clear-label`
+  dá o nome do × ("Sair da seleção").
+- **Esc** limpa (uma escuta, a da mesa), salvo com lista, menu ou diálogo aberto.
+- Na tabela, a célula fixada acompanha a cor da linha marcada (na `OperatorTable`, `PINNED_SELECTED_CELL`; o tema não muda).
+- Trava: `guardrails.bulkBar.test.ts` (no Gestor, nenhuma barra de lote à mão; toda
+  tela com `#selection` tem a barra nos dois lugares).
 
 ## Busca da suíte (`OperatorSuiteSearch`)
 
@@ -1349,6 +1460,9 @@ Contrato:
   está declarado com motivo numa lista que **só encolhe** (hoje: dois pontos da Produção).
 
 ## Filtro universal (`FilterBar` + `useRouteFilters`)
+
+> Nas telas migradas da fase 2 o recorte de lista é o `OperatorFilterPanel` (acima, em
+> "Peças de tela"). O `FilterBar` segue para intervalos e para os apps ainda não migrados.
 
 Uma barra só para recortar qualquer lista, a do plano SUITE-UX ("Filtrar"). Os 3 a 6
 recortes mais usados podem continuar como `UiFilterChip` com contagem na linha; o resto

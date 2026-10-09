@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
 import { mount } from "@vue/test-utils";
+import { OperatorTableStub } from "../support/nativeUiStubs";
 
 import FormulaLens from "../../app/components/FormulaLens.vue";
 import type { FormulaItemProjection, FormulaLensProjection } from "../../app/types/recipeBook";
@@ -55,6 +56,8 @@ function lens(over: Partial<FormulaLensProjection> = {}): FormulaLensProjection 
 const stubs = {
   Icon: true,
   UiBadge: { template: "<span><slot /></span>" },
+  NuxtBadge: { props: ["label"], template: "<span>{{ label }}<slot /></span>" },
+  OperatorTable: OperatorTableStub,
 };
 
 function mountLens(props: { lens: FormulaLensProjection | null; pending?: boolean; error?: string; compact?: boolean }) {

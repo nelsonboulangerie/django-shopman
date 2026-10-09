@@ -181,6 +181,24 @@ const showUnavailable = computed(
   () => capture.unavailable.value || (!accessPending.value && !captureAvailable.value),
 );
 const hasDraft = computed(() => capture.state.value === "done" && !!capture.draft.value);
+// Listas curtas e fixas: `NuxtSelect`. O insumo de cada ingrediente lido: `NuxtSelectMenu`.
+const kinds: { value: string; label: string }[] = [...KIND_OPTIONS];
+const yieldUnits = [...YIELD_UNIT_OPTIONS];
+const roles: { value: string; label: string }[] = [...ROLE_OPTIONS];
+const NO_SKU = "__none__";
+function candidateItems(item: { candidates: { sku: string; name: string }[] }) {
+  return [
+    { value: NO_SKU, label: "Sem insumo (casar no editor)" },
+    ...item.candidates.map((candidate) => ({ value: candidate.sku, label: `${candidate.name} · ${candidate.sku}` })),
+  ];
+}
+const draftColumns = [
+  { id: "ingredient", header: "Ingrediente lido", enableHiding: false },
+  { id: "quantity", header: "Qtd", meta: { class: { th: "text-right", td: "text-right tabular-nums whitespace-nowrap" } } },
+  { id: "sku", header: "Insumo" },
+  { id: "role", header: "Papel" },
+];
+const touch = useTouchPointer();
 </script>
 
 <template>
@@ -350,11 +368,7 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Tipo
-                  <UiNativeSelect v-model="draftKind" class="w-auto">
-                    <option v-for="option in KIND_OPTIONS" :key="option.value" :value="option.value">
-                      {{ option.label }}
-                    </option>
-                  </UiNativeSelect>
+                  <NuxtSelect v-model="draftKind" :items="kinds" value-key="value" class="w-44" aria-label="Tipo" />
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Rendimento
@@ -365,69 +379,58 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
                       inputmode="decimal"
                       class="w-20"
                     />
-                    <UiNativeSelect v-model="draftYieldUnit" class="w-auto">
-                      <option v-for="unit in YIELD_UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                    </UiNativeSelect>
+                    <NuxtSelect v-model="draftYieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" />
                   </span>
                 </label>
               </div>
             </div>
 
-            <div class="overflow-hidden rounded-md border">
-              <table class="w-full text-sm">
-                <thead class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th class="px-3 py-2 font-semibold">Ingrediente lido</th>
-                    <th class="px-3 py-2 text-right font-semibold">Qtd</th>
-                    <th class="px-3 py-2 font-semibold">Insumo</th>
-                    <th class="px-3 py-2 font-semibold">Papel</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y">
-                  <tr v-if="!draftItems.length">
-                    <td colspan="4" class="px-3 py-4 text-center text-muted-foreground">
-                      Nenhum ingrediente foi lido. Continue no editor e preencha à mão.
-                    </td>
-                  </tr>
-                  <tr v-for="(item, index) in draftItems" :key="`${item.name}-${index}`">
-                    <td class="px-3 py-2">
-                      <p class="font-medium">{{ item.name }}</p>
-                      <p v-if="item.original_text && item.original_text !== item.name" class="text-xs text-muted-foreground">
-                        {{ item.original_text }}
-                      </p>
-                    </td>
-                    <td class="px-3 py-2 text-right tabular-nums">{{ item.quantity }} {{ item.unit }}</td>
-                    <td class="px-3 py-2">
-                      <UiNativeSelect
-                        :value="item.sku"
-                        class="min-w-40"
-                        :class="item.sku ? '' : 'border-warning/50'"
-                        :aria-label="`Insumo para ${item.name}`"
-                        @change="chooseCandidate(index, ($event.target as HTMLSelectElement).value)"
-                      >
-                        <option value="">Sem insumo (casar no editor)</option>
-                        <option v-for="candidate in item.candidates" :key="candidate.sku" :value="candidate.sku">
-                          {{ candidate.name }} · {{ candidate.sku }}
-                        </option>
-                      </UiNativeSelect>
-                      <p v-if="candidateFor(item) && item.match_confidence" class="mt-0.5 text-xs text-muted-foreground">
-                        Confiança {{ item.match_confidence }}
-                      </p>
-                    </td>
-                    <td class="px-3 py-2">
-                      <UiNativeSelect
-                        :value="item.role"
-                        class="w-auto"
-                        :aria-label="`Papel de ${item.name}`"
-                        @change="setRole(index, ($event.target as HTMLSelectElement).value)"
-                      >
-                        <option v-for="role in ROLE_OPTIONS" :key="role.value" :value="role.value">{{ role.label }}</option>
-                      </UiNativeSelect>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <OperatorTable
+              :data="draftItems"
+              :columns="draftColumns"
+              :row-key="(item) => `${item.name}-${draftItems.indexOf(item)}`"
+              pinned="ingredient"
+              empty-title="Nenhum ingrediente foi lido. Continue no editor e preencha à mão."
+              caption="Ingredientes lidos do rascunho"
+            >
+              <template #ingredient-cell="{ row }">
+                <span class="block font-medium">{{ row.original.name }}</span>
+                <span
+                  v-if="row.original.original_text && row.original.original_text !== row.original.name"
+                  class="block text-xs text-muted-foreground"
+                  >{{ row.original.original_text }}</span
+                >
+              </template>
+              <template #quantity-cell="{ row }">{{ row.original.quantity }} {{ row.original.unit }}</template>
+              <template #sku-cell="{ row }">
+                <NuxtSelectMenu
+                  :model-value="row.original.sku || NO_SKU"
+                  :items="candidateItems(row.original)"
+                  value-key="value"
+                  class="w-56"
+                  :color="row.original.sku ? 'primary' : 'warning'"
+                  :highlight="!row.original.sku"
+                  :search-input="{ autofocus: !touch, placeholder: 'Buscar insumo' }"
+                  :aria-label="`Insumo para ${row.original.name}`"
+                  @update:model-value="(sku: string) => chooseCandidate(draftItems.indexOf(row.original), sku === NO_SKU ? '' : sku)"
+                />
+                <span
+                  v-if="candidateFor(row.original) && row.original.match_confidence"
+                  class="mt-0.5 block text-xs text-muted-foreground"
+                  >Confiança {{ row.original.match_confidence }}</span
+                >
+              </template>
+              <template #role-cell="{ row }">
+                <NuxtSelect
+                  :model-value="row.original.role"
+                  :items="roles"
+                  value-key="value"
+                  class="w-36"
+                  :aria-label="`Papel de ${row.original.name}`"
+                  @update:model-value="(role: string) => setRole(draftItems.indexOf(row.original), role)"
+                />
+              </template>
+            </OperatorTable>
 
             <div v-if="capture.draft.value?.steps?.length" class="rounded-md border bg-card p-4">
               <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Etapas lidas</p>
@@ -472,9 +475,7 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Tipo
-              <UiNativeSelect v-model="manualKind" class="w-auto">
-                <option v-for="option in KIND_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-              </UiNativeSelect>
+              <NuxtSelect v-model="manualKind" :items="kinds" value-key="value" class="w-44" aria-label="Tipo" />
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Rendimento
@@ -485,9 +486,7 @@ const hasDraft = computed(() => capture.state.value === "done" && !!capture.draf
                   inputmode="decimal"
                   class="w-20"
                 />
-                <UiNativeSelect v-model="manualYieldUnit" class="w-auto">
-                  <option v-for="unit in YIELD_UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                </UiNativeSelect>
+                <NuxtSelect v-model="manualYieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" />
               </span>
             </label>
           </div>

@@ -28,6 +28,7 @@ import {
   focusGrid,
   focusSlice,
   KDS_ARM_DELAY_MS,
+  KDS_UNDO_WINDOW_MS,
   matchesBoardFilter,
   realtimeIndicator,
   queuePositionLabel,
@@ -431,11 +432,19 @@ const phoneAction = computed<OperatorActionBarAction | null>(() => {
         disabled: true,
         reason: `${card.finish_block_label}. ${card.finish_block_reason}`,
       };
-    // Dono, 09/10/2026: a barra NÃO some nem se troca no Pronto; fica igual, e só o
-    // botão diz "Desfazer …". O fundo que esvazia atrás do botão é a ação com prazo da
-    // `OperatorActionBar`, que chega pelo PR do kit (`claude/kit-desfazer-no-mesmo-botao`).
-    case "undo":
-      return { label: `Desfazer ${code}`, icon: "i-lucide-undo-2", onSelect: () => void undoFinish(card.pk) };
+    // O Desfazer mora no MESMO botão da base onde o Pronto foi tocado (dono,
+    // 09/10/2026): a barra não muda, só o texto, e o fundo esvazia atrás dele.
+    case "undo": {
+      const until = finishUntil.value.get(card.pk);
+      if (!until) return null;
+      return {
+        label: `Desfazer ${code}`,
+        icon: "i-lucide-undo-2",
+        ariaLabel: `Desfazer o Pronto do pedido ${code}`,
+        timed: { until, duration: KDS_UNDO_WINDOW_MS },
+        onSelect: () => void undoFinish(card.pk),
+      };
+    }
     default:
       return null;
   }

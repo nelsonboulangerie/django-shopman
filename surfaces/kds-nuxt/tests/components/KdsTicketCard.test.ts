@@ -252,6 +252,13 @@ describe("KdsTicketCard — o Desfazer mora no card", () => {
     expect(Number(action.attributes("data-duration"))).toBe(5000);
     expect(Number(action.attributes("data-until"))).toBeGreaterThan(Date.now());
     expect(action.text()).toContain("Desfazer");
+    // O MESMO botão do Pronto (dono, 09/10/2026): verde sólido, mesmo tamanho; só o
+    // texto muda. Classe por classe igual ao Pronto de antes do toque.
+    const pronto = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
+    expect(action.attributes("color")).toBe(pronto.attributes("data-color"));
+    expect(action.attributes("variant")).toBe(pronto.attributes("data-variant"));
+    expect(action.attributes("size")).toBe("xl");
+    expect(new Set(action.classes())).toEqual(new Set(pronto.classes()));
     await action.trigger("click");
     expect(w.emitted("undo")).toHaveLength(1);
     expect(w.emitted("finish")).toBeUndefined();
@@ -346,11 +353,14 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     expect(mountCard({ ticket: ticket() }).find("[data-kds-started]").exists()).toBe(false);
   });
 
-  it("no celular o ato mora na base da página, o Desfazer inclusive: o card não tem botão", () => {
+  it("no celular o ato e o Desfazer moram na base da página; o card só apaga", () => {
+    // O Pronto foi tocado na ação na base, e é lá que o Desfazer fica, no mesmo botão
+    // (dono, 09/10/2026). O card não ganha um segundo botão.
     const working = mountCard({ ticket: ticket({ order_ref: "WEB-1-W07" }), actionInBar: true });
     expect(working.find("[data-kds-action]").exists()).toBe(false);
     const finishing = mountCard({ ticket: ticket({ order_ref: "WEB-1-W07" }), actionInBar: true, finishing: true });
     expect(finishing.find("[data-kds-action]").exists()).toBe(false);
+    expect(finishing.get("article").classes()).toContain("border-dashed");
   });
 
   it("toque longo no ticket emite hold (desfazer, reabrir, ver o pedido)", async () => {

@@ -18,7 +18,6 @@
 // (estudo de notação de pâtonnage pendente). Nomenclatura interna do sistema
 // intacta (planned/started/finished) — as lentes são linguagem de UI.
 import { nextTick, onMounted } from "vue";
-import { useMediaQuery } from "@vueuse/core";
 
 import {
   boardDisplay,
@@ -681,12 +680,15 @@ function voidableOrders(row: ProductionMatrixRowProjection): WorkOrderCardProjec
 // direita, sem cobrir a lista (v3 `depois-producao-dia-tablet`).
 // Só depois de montar: o SSR não conhece a tela, e a hidratação não corrige
 // classe divergente (o botão nasceria cheio e ficaria cheio).
-const dockedQuery = useMediaQuery("(pointer: coarse) and (min-width: 1024px)");
+const touchPointer = useTouchPointer();
+const screen = useScreen();
 const gridMounted = ref(false);
 onMounted(() => {
   gridMounted.value = true;
 });
-const docked = computed(() => gridMounted.value && dockedQuery.value);
+const docked = computed(
+  () => gridMounted.value && touchPointer.value && !screen.belowLg.value,
+);
 // Com o painel encaixado a lista estreita: colunas de número compactas (v3 tablet).
 const openCols = computed(() =>
   docked.value
@@ -988,7 +990,16 @@ function weekdayPlural(iso: string): string {
   ] ?? "";
 }
 const plannedMenuSku = ref<string | null>(null);
-const plannedLineMenuOpen = ref(false);
+// O ⋯ da linha dos planejados: o rótulo do grupo e um item por produto planejado.
+const plannedLineMenu = computed(() => [
+  { type: "label" as const, label: "Corrigir um planejado" },
+  ...planGroups.value.planned.map((row) => ({
+    label: `${rowLabel(row)} · ${formatQty(plannedQtyLabel(row), row.output_unit)}`,
+    icon: "i-lucide-pencil",
+    disabled: !actionEnabled(row) || isBusy(row.output_sku),
+    onSelect: () => onAction(row),
+  })),
+]);
 // "Planejado 15:12": a hora do plano mais recente do dia.
 const plannedTime = computed(() => latestPlanTime(planGroups.value.planned));
 const allPlannedAsSuggested = computed(
@@ -1627,43 +1638,13 @@ function fromPlannedMenu(action: () => void) {
                 data-planned-as-suggested
                 >como sugerido</span
               >
-              <!-- ⋮ da linha (v4 pino 8): corrigir e ver encomendas, um produto por vez. -->
-              <UiPopover v-model:open="plannedLineMenuOpen">
-                <UiPopoverTrigger as-child>
-                  <button
-                    type="button"
-                    class="ml-auto grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                    aria-label="Planejados: corrigir um produto"
-                    data-planned-line-menu
-                  >
-                    <Icon name="lucide:ellipsis-vertical" class="size-5" />
-                  </button>
-                </UiPopoverTrigger>
-                <UiPopoverContent
-                  align="end"
-                  :side-offset="4"
-                  class="max-h-80 w-72 overflow-y-auto p-1.5"
-                >
-                  <p class="px-2.5 pt-1.5 pb-1 op-eyebrow text-muted-foreground">
-                    Corrigir um planejado
-                  </p>
-                  <button
-                    v-for="row in planGroups.planned"
-                    :key="`menu-${row.output_sku}`"
-                    type="button"
-                    class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent disabled:opacity-50"
-                    :disabled="!actionEnabled(row) || isBusy(row.output_sku)"
-                    @click="
-                      plannedLineMenuOpen = false;
-                      onAction(row);
-                    "
-                  >
-                    <Icon name="lucide:pencil" class="size-4 text-muted-foreground" />
-                    <span class="min-w-0 flex-1 truncate">{{ rowLabel(row) }}</span>
-                    <b class="tnum">{{ formatQty(plannedQtyLabel(row), row.output_unit) }}</b>
-                  </button>
-                </UiPopoverContent>
-              </UiPopover>
+              <!-- O ⋯ da linha (o único da suíte): corrigir um planejado, um produto por vez. -->
+              <OperatorMoreMenu
+                label="Mais ações dos planejados"
+                class="ml-auto"
+                :items="plannedLineMenu"
+                data-planned-line-menu
+              />
             </div>
           </template>
           <p

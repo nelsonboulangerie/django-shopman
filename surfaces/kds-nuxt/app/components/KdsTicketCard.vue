@@ -22,7 +22,10 @@
 //
 // Pronto não some com o card: por 5 s ele fica no lugar, apagado, com
 // "Desfazer" exatamente onde o dedo acabou de tocar. O tempo mora no próprio botão
-// (`OperatorTimedButton` do kit: o fundo esvazia até a janela fechar).
+// (`OperatorTimedButton` do kit: o fundo esvazia até a janela fechar), e o botão é o
+// MESMO do Pronto (verde sólido, mesmo tamanho): muda só o texto (dono, 09/10/2026).
+// No celular o Pronto foi tocado na ação na base, e é LÁ que o Desfazer fica, no
+// mesmo botão (`action.timed` da `OperatorActionBar`); o card só apaga.
 //
 // O preparo é estado do TICKET, guardado no servidor: todos os tablets veem quem
 // já pegou o pedido.
@@ -363,19 +366,17 @@ const d = computed(() => ({
     </div>
 
     <!-- AÇÃO: um botão, o ato escrito nele, na base do card, dentro da moldura. No
-         celular o ato do card em foco (o Desfazer inclusive) está na ação na base. -->
+         celular o ato do card em foco (e o Desfazer dele) está na ação na base da
+         página. -->
     <div v-if="finishing && !actionInBar" :class="d.inset" data-kds-undo>
-        <OperatorTimedButton
-          :until="undoUntil"
-          :duration="KDS_UNDO_WINDOW_MS"
+        <!-- O Desfazer é o MESMO botão do Pronto tocado (dono, 09/10/2026): o verde
+             sólido, no mesmo tamanho e lugar; muda só o texto, e o fundo esvazia. -->
+        <KdsCardButton
+          tone="confirm"
+          icon="lucide:undo-2"
           :label="actionLabel"
-          icon="i-lucide-undo-2"
-          size="xl"
-          variant="outline"
-          color="neutral"
-          block
-          class="justify-center"
-          :class="d.action"
+          :size-class="d.action"
+          :timed="{ until: undoUntil, duration: KDS_UNDO_WINDOW_MS }"
           :aria-label="actionAria"
           data-kds-action
           @click="onAction"

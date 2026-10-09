@@ -4,7 +4,7 @@ import { mount } from "@vue/test-utils";
 
 import MiseEnPlacePage from "../../app/pages/mise-en-place.vue";
 import type { WeighingTicketProjection } from "../../app/types/production";
-import { UiButtonStub } from "../support/nativeUiStubs";
+import { OperatorTableStub, UiButtonStub } from "../support/nativeUiStubs";
 
 const tickets = ref<WeighingTicketProjection[]>([]);
 const miseLines = ref<Array<Record<string, unknown>>>([]);
@@ -97,6 +97,8 @@ const stubs = {
   Icon: true,
   NuxtLink: { template: "<a><slot /></a>" },
   UiBadge: { template: "<span><slot /></span>" },
+  NuxtBadge: { props: ["label"], template: "<span>{{ label }}<slot /></span>" },
+  OperatorTable: OperatorTableStub,
   UiButton: UiButtonStub,
   WeighingLabels: {
     props: ["printMode", "labels", "tickets"],
