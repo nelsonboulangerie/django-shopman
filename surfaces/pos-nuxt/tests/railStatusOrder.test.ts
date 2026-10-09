@@ -42,7 +42,7 @@ describe("pé do rail do PDV", () => {
   it("no kit (v4): slot do app, traço, Avisos, Atalhos, Bloquear; sem medidor de capacidade", () => {
     const slot = KIT_RAIL.indexOf('<slot name="foot" />');
     const rule = KIT_RAIL.indexOf("data-rail-foot-rule");
-    const inbox = KIT_RAIL.indexOf('<OperatorInbox v-if="railShown" placement="rail" />', rule);
+    const inbox = KIT_RAIL.indexOf('<OperatorInbox v-if="railShown" placement="rail" labeled />', rule);
     const shortcuts = KIT_RAIL.indexOf('label="Atalhos"');
     const lock = KIT_RAIL.indexOf('label="Bloquear"');
     expect(slot).toBeGreaterThan(-1);

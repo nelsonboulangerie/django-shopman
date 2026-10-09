@@ -24,8 +24,14 @@ function files(path: URL): URL[] {
 
 /** O arquivo sem comentários: `// …`, `/* … *\/` e `<!-- … -->`. */
 function withoutComments(source: string): string {
-  return source
-    .replace(/<!--[\s\S]*?-->/g, "")
+  // Repete até estabilizar: um `<!--` que sobra de comentários aninhados também sai.
+  let stripped = source;
+  let previous: string;
+  do {
+    previous = stripped;
+    stripped = stripped.replace(/<!--[\s\S]*?-->/g, "");
+  } while (stripped !== previous);
+  return stripped
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
 }
