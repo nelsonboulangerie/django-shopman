@@ -122,6 +122,18 @@ Duas exceções legítimas, e só duas:
 - **O Painel da TV** diz só **"sem sinal"** — a palheta é curta porque a palheta é curta. Mas
   então é só isso, sem uma segunda redação no `title`.
 
+### 2.4 Mensagens do Gestor na voz do dono (09/10/2026)
+
+Frases aprovadas pelo dono, no lugar das que o #1557 introduziu e ele recusou. A recusada
+está na trava `surfaces/orders-nuxt/tests/vocabularioFechado.guardrails.test.ts`.
+
+| Situação | Fica | Saiu |
+|---|---|---|
+| Gesto que não chegou ao servidor (sem motivo do servidor) | **"WEB-6 continua novo: o Aceitar não chegou. Tente de novo."** Forma geral: `<REF> continua <situação>: o <gesto> não chegou. Tente de novo.`, com a referência, a situação (`status_label`, inicial minúscula; "Saiu para entrega" vira "na rua") e o nome do botão vindos da projeção. Sem referência ou situação: `O <gesto> não chegou. Tente de novo.` | "Não deu para concluir “Aceitar”. Tente de novo." |
+| Lote em que alguns pedidos falharam | **"N pedidos ficaram como estavam. Cada cartão diz por quê."** · singular **"1 pedido ficou como estava. O cartão diz por quê."** | "N pedidos não foram atualizados. O motivo está em cada cartão." |
+| Os que andam sem precisar do operador (fim da Fila) | **"Seguem sozinhos: 1 na cozinha, 2 na rua"** | "Sem pedir você: …" |
+| Selo ao vivo sem tempo real (poll) | **"Atualiza sozinho a cada 30 s"**, e a mesma forma nos outros apps: PDV "a cada 60 s", KDS "a cada 15 s". O Marketing ("Atualiza a cada 1 min") fica para a sessão que regera as baselines visuais dele: o rótulo aparece em três retratos da matriz |  "Atualiza a cada 30 s" |
+
 ---
 
 ## 3. PDV

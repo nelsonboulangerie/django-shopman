@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 //
 //   "Ciente"           → "Visto" (§2.1: reconhecer um aviso é Visto, nos nove apps)
 //   "Agendado(s)"      → "Encomenda(s)" (pedido para data futura, §3 e §5)
-//   "Falha na ação"    → o nome do gesto que falhou ("Não deu para concluir “Aceitar”")
+//   "Falha na ação"    → a situação e o gesto que não chegou ("WEB-6 continua novo: o Aceitar não chegou.")
 //   coluna "Etapa"     → "Situação" (etapa é da receita, §1; o Histórico já diz Situação)
 
 const root = new URL("../app/", import.meta.url);
@@ -41,6 +41,16 @@ const RETIRED: Array<[string, RegExp]> = [
   ["Agendado", /\bAgendad[oa]s?\b/],
   ["Falha na ação", /Falha na ação/],
   ['"Etapa" como coluna', /["'`]Etapa["'`]/],
+  // Frases que o dono recusou em 09/10/2026, com a que ficou no lugar:
+  //   "Não deu para concluir “X”"        → "<REF> continua <situação>: o X não chegou."
+  //   "N pedidos não foram atualizados"  → "N pedidos ficaram como estavam. Cada cartão diz por quê."
+  //   "Sem pedir você: 1 na cozinha"     → "Seguem sozinhos: 1 na cozinha"
+  //   "Atualiza a cada 30 s"             → "Atualiza sozinho a cada 30 s"
+  ["Não deu para concluir", /Não deu para concluir/],
+  ["não foi/foram atualizado(s)", /não (?:foi atualizado|foram atualizados)/],
+  ["O motivo está no cartão", /O motivo está (?:no|em cada) cartão/],
+  ["Sem pedir você", /Sem pedir você/],
+  ["Atualiza a cada", /Atualiza a cada/],
 ];
 
 describe("vocabulário fechado no Gestor (F8 do laudo)", () => {

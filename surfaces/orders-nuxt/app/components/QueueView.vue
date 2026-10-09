@@ -4,7 +4,7 @@
 //   PRECISA DE VOCÊ 4                         Mais urgente primeiro (tempo contra a meta)
 //   [R7K  27 min meta 30 | João Oliveira · Entrega · … | Dinheiro …  R$ 74,00 [Saiu]]
 //   …
-//   Mais 3 pedem você · Sem pedir você: 5 na cozinha, 2 na rua            Ver todos ›
+//   Mais 3 pedem você · Seguem sozinhos: 5 na cozinha, 2 na rua            Ver todos ›
 //
 //   EM ANDAMENTO 7 · O SISTEMA FEZ (últimos 15 min) · AGORA NO CARDÁPIO
 //

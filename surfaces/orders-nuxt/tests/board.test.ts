@@ -35,6 +35,7 @@ import {
   confirmationRemainingLabel,
   deadlineTone,
   realtimeIndicator,
+  situationAfterContinua,
 } from "../app/presentation/board";
 import type {
   OrderCardProjection,
@@ -658,7 +659,7 @@ describe("realtimeIndicator — honestidade do tempo-real", () => {
     expect(realtimeIndicator("connecting").dotClass).not.toContain("green");
     const polling = realtimeIndicator("polling");
     expect(polling.live).toBe(false);
-    expect(polling.label).toBe("Atualiza a cada 30 s"); // ainda atualiza, mas não em tempo real
+    expect(polling.label).toBe("Atualiza sozinho a cada 30 s"); // ainda atualiza, mas não em tempo real
     expect(polling.dotClass).not.toContain("green");
   });
 });
@@ -817,4 +818,19 @@ it("acerto no card exige Action autorizada e preserva o motivo de bloqueio", () 
       }),
     ).find((item) => item.ref === "settle_cash")?.disabled,
   ).toBe(false);
+});
+
+describe("situationAfterContinua: a situação depois de “<REF> continua” (dono, 09/10/2026)", () => {
+  it("desce só a inicial do rótulo da projeção", () => {
+    expect(situationAfterContinua("Novo")).toBe("novo");
+    expect(situationAfterContinua("Em preparo")).toBe("em preparo");
+    expect(situationAfterContinua("Pronto")).toBe("pronto");
+  });
+  it("“Saiu para entrega” é verbo e vira “na rua”", () => {
+    expect(situationAfterContinua("Saiu para entrega")).toBe("na rua");
+  });
+  it("sem rótulo, sem situação", () => {
+    expect(situationAfterContinua("")).toBe("");
+    expect(situationAfterContinua(undefined)).toBe("");
+  });
 });

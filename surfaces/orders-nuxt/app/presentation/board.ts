@@ -473,7 +473,7 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
     };
   }
   return {
-    label: "Atualiza a cada 30 s",
+    label: "Atualiza sozinho a cada 30 s",
     live: false,
     dotClass: "bg-muted-foreground/40",
     title: "Sem tempo real; o board atualiza sozinho a cada 30s",
@@ -939,6 +939,20 @@ export function cardSeal(
   if (card.can_confirm) return { label: "Novo", tone: "primary" };
   if (opts.next) return { label: "Próximo", tone: "primary" };
   return { label: card.status_label, tone: SEAL_TONE[card.status] ?? "muted" };
+}
+
+/** A situação do pedido como predicado de "<REF> continua …" (frase do dono, 09/10/2026):
+ *  "WEB-6 continua novo", "continua em preparo". O rótulo vem da projeção
+ *  (`status_label`); só a inicial desce. "Saiu para entrega" é verbo, não estado, e não
+ *  cabe depois de "continua": vira "na rua", o nome que a Fila já usa para os que saíram.
+ *  Sem rótulo, devolve "" e a frase cai na forma sem situação. */
+export function situationAfterContinua(
+  statusLabel: string | null | undefined,
+): string {
+  const label = (statusLabel ?? "").trim();
+  if (!label) return "";
+  if (/^saiu\b/i.test(label)) return "na rua";
+  return label.charAt(0).toLocaleLowerCase("pt-BR") + label.slice(1);
 }
 
 /** "há 9 min": o tempo do pedido em palavras, como na v4. Abaixo de um minuto, "agora". */

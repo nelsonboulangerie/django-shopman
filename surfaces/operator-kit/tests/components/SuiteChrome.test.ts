@@ -684,10 +684,10 @@ describe("OperatorLiveStatus", () => {
 
   it("calmo: neutro, sem ponto, a cadência por extenso", async () => {
     const wrapper = await mountSuspended(OperatorLiveStatus, {
-      props: { tone: "calm", time: "10:30", label: "Atualiza a cada 60 s" },
+      props: { tone: "calm", time: "10:30", label: "Atualiza sozinho a cada 60 s" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
-    expect(wrapper.text().trim()).toBe("Atualiza a cada 60 s");
+    expect(wrapper.text().trim()).toBe("Atualiza sozinho a cada 60 s");
     expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
     expect(wrapper.attributes("class")).toContain("bg-elevated");
     expect(wrapper.attributes("class")).not.toContain("ring-accented");
