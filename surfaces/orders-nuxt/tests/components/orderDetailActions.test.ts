@@ -38,7 +38,10 @@ vi.stubGlobal("useConfirm", () => vi.fn(async () => false));
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
-vi.stubGlobal("useRoute", () => ({ params: { ref: "WEB-1" } }));
+const routeHash = ref("");
+vi.stubGlobal("useRoute", () => ({ params: { ref: "WEB-1" }, get hash() { return routeHash.value; } }));
+const reveal = vi.fn();
+vi.stubGlobal("useNextFocus", () => ({ reveal }));
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "https://api.exemplo" } }));
 vi.stubGlobal("useOrderEvents", () => ({ realtime: ref("polling") }));
 vi.stubGlobal("useOrdersContext", () => ({ location: ref({ path: "/", query: {} }) }));
@@ -176,6 +179,7 @@ const stubs = {
   }),
   NuxtLink: { template: "<a><slot /></a>" },
   OrderCourierPanel: true,
+  OrderIFoodNegotiations: true,
   OrderReasonDialog: true,
   UiDialog: { template: "<div><slot /></div>" },
   UiDialogContent: { template: "<div><slot /></div>" },
@@ -189,6 +193,27 @@ function abrir(projection: OperatorOrderProjection) {
   detalhe.value = projection;
   return mount(OrderDetailPage, { global: { stubs, mocks: { $router: { go: vi.fn() } } } });
 }
+
+// F4 do laudo do Gestor: o aviso com prazo ("Responder") chega com #ifood-negotiations;
+// a página leva o operador à resposta, não só ao pedido.
+describe("detalhe do pedido — o aviso leva à negociação iFood", () => {
+  beforeEach(() => {
+    reveal.mockClear();
+    routeHash.value = "";
+  });
+  const negotiation = { id: "d1", can_respond: true } as unknown as OperatorOrderProjection["ifood_negotiations"][number];
+  it("com o destino no endereço e a negociação lida, revela o bloco", async () => {
+    routeHash.value = "#ifood-negotiations";
+    abrir(order({ ifood_negotiations: [negotiation] }));
+    await flushPromises();
+    expect(reveal).toHaveBeenCalledWith("ifood-negotiations");
+  });
+  it("sem o destino no endereço, a página não rola sozinha", async () => {
+    abrir(order({ ifood_negotiations: [negotiation] }));
+    await flushPromises();
+    expect(reveal).not.toHaveBeenCalled();
+  });
+});
 
 describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
   it("preserva a quantidade fracionária projetada sem arredondar", () => {

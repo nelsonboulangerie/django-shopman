@@ -253,7 +253,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
       useSonner.success(`${count} item(ns) atualizado(s).`);
       return count;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Falha na ação em lote.");
+      errorMsg.value = httpErrorMessage(error, "Não deu para publicar as mudanças. Tente de novo.");
       useSonner.error(errorMsg.value);
       return null;
     } finally {

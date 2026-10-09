@@ -423,7 +423,7 @@ defineExpose({ focus: openSearch, open: openSearch });
               />
               <NuxtEmpty
                 v-else-if="status === 'loading'"
-                icon="i-line-md-loading-loop"
+                loading
                 :title="COPY.searching"
               />
               <NuxtEmpty

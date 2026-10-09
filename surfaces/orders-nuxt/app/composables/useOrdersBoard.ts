@@ -123,7 +123,7 @@ export const gestorAttentionStorageKey = (serviceDay: string) =>
 // Aqui o aviso INSISTE (`startAlert`), diferente do KDS: no KDS o operador
 // está de frente para a tela; no Gestor o pedido chega enquanto a loja toca
 // a vida dela, e um toque único já deixou passar pedido de cliente real.
-// Quem cala é o operador: o "Ciente", ou um toque/tecla na tela depois que o
+// Quem cala é o operador: o "Visto", ou um toque/tecla na tela depois que o
 // aviso já soou (presença de quem ouviu). O som tocar não cala nada.
 
 export function useOrdersBoard() {
@@ -243,7 +243,7 @@ export function useOrdersBoard() {
   }
 
   function rememberPendingTreatableRefs() {
-    // Só roda a partir de evento do browser (Ciente, gesto, reprodução); o
+    // Só roda a partir de evento do browser (Visto, gesto, reprodução); o
     // storage já é protegido pelo try/catch abaixo.
     const day = pendingAttentionDay;
     if (!day) return;
@@ -372,7 +372,7 @@ export function useOrdersBoard() {
 
   // Toque/tecla na tela depois de o aviso ter soado = o operador está ali e
   // ouviu. O gesto que destrava o autoplay não conta (ainda não soou): ele faz
-  // o kit tocar, e o próximo gesto (ou o Ciente) reconhece.
+  // o kit tocar, e o próximo gesto (ou o Visto) reconhece.
   const acknowledgeOnGesture = () => {
     if (attentionPending.value && pendingAttentionHeard)
       rememberPendingTreatableRefs();
@@ -525,6 +525,20 @@ export function useOrdersBoard() {
     next.delete(ref_);
     actionErrors.value = next;
   }
+  // A falha diz QUAL gesto não aconteceu (F8 do laudo do Gestor): o nome é o do botão
+  // que o operador tocou, vindo da projeção. "Falha na ação" não dizia qual.
+  function failureMessage(ref_: string, action: string): string {
+    const card = [
+      ...zones.value.flatMap((zone) => zone.cards),
+      ...(queue.value?.preorders ?? []),
+    ].find((item) => item.ref === ref_);
+    const label = card?.actions
+      ?.find((item) => item.ref === action)
+      ?.label?.trim();
+    return label
+      ? `Não deu para concluir “${label}”. Tente de novo.`
+      : "Não deu para concluir. Tente de novo.";
+  }
 
   // ``send``: o gesto fala com outro endpoint que não o do pedido (o "Pronto" da
   // estação sem tela e o "Voltar para…" da Cozinha), com a mesma trava por pedido,
@@ -613,9 +627,10 @@ export function useOrdersBoard() {
             error,
             "O pedido mudou de estado antes da ação chegar.",
           ) + " Atualizamos o quadro: confira o pedido antes de tentar de novo."
-        : httpErrorMessage(error, "Falha na ação. Tente de novo.");
+        : httpErrorMessage(error, failureMessage(ref_, action));
+      // Um lugar só: o aviso no cartão (ou na linha), que fica até a próxima tentativa.
+      // O toast repetia a mesma frase ao mesmo tempo (laudo do Gestor, P1-6).
       setActionError(ref_, message);
-      useSonner.error(message);
       // Refetch canônico: o estado no servidor pode ter mudado (é justamente o
       // caso do 409) — o quadro precisa mostrar a verdade, não a foto velha.
       await refresh();
@@ -730,7 +745,7 @@ export function useOrdersBoard() {
           );
         } catch (error) {
           failures += 1;
-          setActionError(r, httpErrorMessage(error, "Falha na ação."));
+          setActionError(r, httpErrorMessage(error, failureMessage(r, action)));
         }
       }),
     );
@@ -739,7 +754,11 @@ export function useOrdersBoard() {
     busy.value = next;
     await refresh();
     if (failures)
-      useSonner.error(`${failures} pedido(s) não puderam ser atualizados.`);
+      useSonner.error(
+        failures === 1
+          ? "1 pedido não foi atualizado. O motivo está no cartão."
+          : `${failures} pedidos não foram atualizados. O motivo está em cada cartão.`,
+      );
     return failures;
   }
   const confirmMany = (refs: string[]) => actMany(refs, "confirm");

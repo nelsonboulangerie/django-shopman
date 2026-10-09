@@ -298,14 +298,14 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(opts.body).toMatchObject({ reason: "Sem estoque", cancellation_code: "CODE_2" });
   });
 
-  it("falha na ação acende erro inline por-ref + toast, devolve false e reconcilia via refresh", async () => {
+  it("falha na ação acende erro inline por-ref (um lugar só, sem toast), devolve false e reconcilia via refresh", async () => {
     env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "Pagamento não confirmado" } });
     env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-2", actions: fixtureActions({ can_confirm: true }) }] } };
     const board = useOrdersBoard();
     const ok = await board.confirm("WEB-2");
     expect(ok).toBe(false);
     expect(board.actionError("WEB-2")).toBe("Pagamento não confirmado");
-    expect(env.sonner.error).toHaveBeenCalledWith("Pagamento não confirmado");
+    expect(env.sonner.error).not.toHaveBeenCalled();
     // Mesmo em erro o board refaz o fetch canônico: o estado no servidor pode
     // ter mudado por baixo (auto-confirmação, outra estação).
     expect(env.refresh).toHaveBeenCalledTimes(1);
@@ -323,8 +323,17 @@ describe("useOrdersBoard — ações (act)", () => {
     const message = board.actionError("WEB-5");
     expect(message).toContain("Pedido não está mais aguardando confirmação");
     expect(message).toContain("Atualizamos o quadro: confira o pedido antes de tentar de novo.");
-    expect(env.sonner.error).toHaveBeenCalledWith(message);
+    expect(env.sonner.error).not.toHaveBeenCalled();
     expect(env.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("falha sem motivo do servidor diz QUAL gesto não aconteceu, com o nome do botão (F8)", async () => {
+    env.fetchMock.mockRejectedValueOnce({ status: 500 });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-6", actions: fixtureActions({ can_confirm: true }) }] } };
+    const board = useOrdersBoard();
+    expect(await board.confirm("WEB-6")).toBe(false);
+    expect(board.actionError("WEB-6")).toBe("Não deu para concluir “Aceitar”. Tente de novo.");
+    expect(board.actionError("WEB-6")).not.toContain("Falha na ação");
   });
 
   it("uma nova tentativa limpa o erro anterior do ref", async () => {
@@ -666,7 +675,7 @@ describe("useOrdersBoard — o aviso de pedido novo insiste até o operador reco
     } finally { view.unmount(); }
   });
 
-  it("o Ciente reconhece mesmo sem som", async () => {
+  it("o Visto reconhece mesmo sem som", async () => {
     const view = await mountWithTreatableOrder(false);
     try {
       view.board.acknowledgeAttention();

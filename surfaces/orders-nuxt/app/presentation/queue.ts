@@ -103,6 +103,18 @@ function cancelSeconds(
     : null;
 }
 
+/** O tempo de um pedido na Lista, com o relógio vivo (P1-8 do laudo do Gestor): o
+ *  mesmo número, a mesma base e o mesmo formato da Grade ("7 min", da chegada ou de
+ *  quando passou a pedir você). A Lista lia `elapsed_seconds`, a foto da última
+ *  leitura, e ficava parada em "10m" para todos. */
+export function liveAge(
+  card: OrderCardProjection,
+  nowMs: number,
+): { label: string; tone: QueueTone } {
+  const item = itemFor(card, nowMs);
+  return { label: item.timeLabel, tone: item.tone };
+}
+
 function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
   if (!card.attention) {
     const seconds =
@@ -269,26 +281,26 @@ export function kitchenDetail(
   return `próximo pronto em ~${Math.max(1, Math.ceil(left / 60))} min`;
 }
 
-/** O excedente da Fila num número só (nunca paginação): os que ainda pedem você além dos
- *  em foco e o que está andando. "+7 em andamento, nada pede você: 5 na Cozinha, 2 na rua";
- *  com fila escondida, "+12: mais 5 pedem você · em andamento: 5 na Cozinha, 2 na rua". */
+/** O excedente da Fila, sem paginação e sem somar grandezas (P1-7 do laudo do Gestor):
+ *  os que pedem você e os que andam sem pedir são duas contagens diferentes, cada uma
+ *  com o seu nome; o "+12" que somava as duas não dizia de quê. "Mais 5 pedem você ·
+ *  Sem pedir você: 5 na cozinha, 2 na rua"; sem fila escondida, só a segunda.
+ *  "Sem pedir você" e não "em andamento": o painel Em andamento ao lado conta TODOS os
+ *  que estão na cozinha, inclusive os que pedem você, e os dois números se
+ *  contradiriam. `hidden` e `moving` ficam separados para quem precisar do número. */
 export function restLine(
   lines: ProgressLine[],
   hidden = 0,
-): { count: number; text: string } {
+): { hidden: number; moving: number; text: string } {
   const moving = lines.reduce((n, line) => n + line.count, 0);
-  const count = moving + hidden;
-  if (!count) return { count: 0, text: "" };
   const parts = lines
     .filter((line) => line.count)
     .map((line) => `${line.count} ${line.label.toLowerCase()}`);
-  if (!hidden)
-    return { count, text: `em andamento, nada pede você: ${parts.join(", ")}` };
-  const ask = `mais ${hidden} ${hidden === 1 ? "pede" : "pedem"} você`;
-  return {
-    count,
-    text: parts.length ? `${ask} · em andamento: ${parts.join(", ")}` : ask,
-  };
+  const ask = hidden
+    ? `Mais ${hidden} ${hidden === 1 ? "pede" : "pedem"} você`
+    : "";
+  const going = parts.length ? `Sem pedir você: ${parts.join(", ")}` : "";
+  return { hidden, moving, text: [ask, going].filter(Boolean).join(" · ") };
 }
 
 export interface QueueGesture {

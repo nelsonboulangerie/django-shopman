@@ -68,6 +68,12 @@ describe("OrderIFoodNegotiations", () => {
     expect(w.text()).toContain("A resposta não foi aplicada");
     expect(w.get('[role="checkbox"]').attributes("aria-checked")).toBe("false");
   });
+  it("o aviso leva à resposta: o card é o próximo foco e a decisão da primeira aberta recebe o teclado (F4)", () => {
+    const w = mount(OrderIFoodNegotiations, { props: { orderRef: "IFOOD-123", negotiations: [negotiation({ id: "d0", can_respond: false, response_notice: "Prazo encerrado." }), negotiation({ id: "d1" }), negotiation({ id: "d2" })] } });
+    expect(w.get('[data-focus-target="ifood-negotiations"]').attributes("id")).toBe("ifood-negotiations");
+    expect(w.findAll("[data-focus-control]")).toHaveLength(1);
+    expect(w.find('[data-dispute-id="d1"] select[data-focus-control]').exists()).toBe(true);
+  });
   it("permits only the current order's evidence proxy among relative URLs", () => {
     const good = "/api/v1/backstage/orders/IFOOD-123/ifood-handshake-evidence/?dispute_id=dispute-1&index=0";
     const w = render(negotiation({ evidence_urls: [good, "//evil.example/test", "/arbitrary", "/api/v1/backstage/orders/OTHER/ifood-handshake-evidence/?index=0"] }));
