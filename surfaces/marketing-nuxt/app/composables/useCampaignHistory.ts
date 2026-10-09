@@ -120,7 +120,7 @@ export function useCampaignHistory() {
         }),
       );
       if (envelope.data.kind !== "history") {
-        throw new Error("unexpected Marketing history projection");
+        throw new Error("O histórico veio num formato inesperado. Atualize a tela.");
       }
       appended.value.push(envelope);
     } catch (caught) {

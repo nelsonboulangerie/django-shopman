@@ -1060,7 +1060,7 @@ const outside = useOutsideStore(
                 color="warning"
                 variant="subtle"
                 title="A nota mudou enquanto você escrevia"
-                :description="`Seu texto foi preservado. No servidor: ${order.kitchen_note || '(vazia)'}`"
+                :description="`Seu texto foi preservado. A nota gravada é: ${order.kitchen_note || '(vazia)'}`"
                 :actions="[
                   {
                     label: 'Manter meu texto',
@@ -1069,7 +1069,7 @@ const outside = useOutsideStore(
                     onClick: () => acceptLatestNotesBase(),
                   },
                   {
-                    label: 'Usar texto do servidor',
+                    label: 'Usar a nota gravada',
                     color: 'warning',
                     variant: 'outline',
                     onClick: () => useLatestNotes(),

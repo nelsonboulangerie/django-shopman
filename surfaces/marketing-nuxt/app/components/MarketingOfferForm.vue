@@ -298,7 +298,7 @@ function submit() {
 
           <NuxtFormField
             label="Horário de início e fim"
-            :help="`Horário da loja: ${options?.shop_timezone || 'configurado pelo servidor'}.`"
+            :help="options?.shop_timezone ? `Horário da loja: ${options.shop_timezone}.` : 'Vale o horário da loja.'"
             :error="validityProblem || undefined"
             required
           >

@@ -73,7 +73,7 @@ const EXCECOES: Array<{ arquivo: string; trecho: string; porque: string }> = [
   },
   {
     arquivo: "composables/usePosCashSession.ts",
-    trecho: 'detail: httpErrorMessage(error, "o servidor não montou o comprovante")',
+    trecho: 'detail: httpErrorMessage(error, "o comprovante não ficou pronto")',
     porque: "fragmento: entra em 'O comprovante não saiu: …', cuja saída é a ação 'Tentar de novo' do toast",
   },
   {
@@ -93,7 +93,7 @@ const EXCECOES: Array<{ arquivo: string; trecho: string; porque: string }> = [
   },
   {
     arquivo: "pages/index.vue",
-    trecho: 'danfeFallbackToast(orderRef, httpErrorMessage(error, "o servidor não montou a DANFE"))',
+    trecho: 'danfeFallbackToast(orderRef, httpErrorMessage(error, "a DANFE não ficou pronta"))',
     porque: "fragmento: o danfeFallbackToast traz 'Ver a nota na tela' ou 'Reimprima nas últimas vendas'",
   },
 ];

@@ -509,7 +509,7 @@ const phoneHeaderActions = computed(() =>
                       v-if="collectionConflict(sc)"
                       color="warning"
                       variant="subtle"
-                      title="As coleções mudaram no servidor"
+                      title="Alguém mudou as coleções enquanto você editava"
                       :description="`Agora: ${sc.collections.map((c) => c.name).join(', ') || 'nenhuma coleção'}. Sua seleção foi preservada.`"
                       :actions="[
                         {
@@ -588,7 +588,7 @@ const phoneHeaderActions = computed(() =>
                       v-if="rotationConflict(sc)"
                       color="warning"
                       variant="subtle"
-                      title="A rotação mudou no servidor"
+                      title="Alguém mudou a rotação enquanto você editava"
                       :description="`Agora: ${sc.rotate_seconds} s e ${sc.items_per_page} itens. Seu rascunho foi preservado.`"
                       :actions="[
                         {
@@ -680,7 +680,7 @@ const phoneHeaderActions = computed(() =>
                       v-if="automaticConflict(sc)"
                       color="warning"
                       variant="subtle"
-                      title="A configuração mudou no servidor"
+                      title="Alguém mudou a configuração enquanto você editava"
                       description="Seu texto foi preservado."
                       :actions="[
                         {

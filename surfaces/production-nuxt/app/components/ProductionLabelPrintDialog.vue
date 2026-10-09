@@ -262,7 +262,7 @@ async function openNativePrintDialog(): Promise<void> {
   if (!frozenDocument.value) {
     printing.errorCode.value = "print_document_missing";
     printing.errorMessage.value =
-      "O documento congelado não veio do servidor. Atualize antes de imprimir.";
+      "A etiqueta não carregou. Atualize antes de imprimir.";
     return;
   }
   browserBusy.value = true;
