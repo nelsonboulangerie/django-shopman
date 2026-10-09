@@ -1,26 +1,40 @@
 <script setup lang="ts">
 // Quadro da estação, no desenho da prévia v4 (`cozinha-estacao4.html`, celular em
-// `cozinha-celular4.html` (b)). Lê a projection canônica + tempo real (SSE + poll de
-// 15 s) por useKdsBoard; os gestos (iniciar, Pronto, desfazer, reabrir, recebi o
-// cancelamento, visto) passam pelo proxy do Django (CSRF lá) de forma otimista.
+// `cozinha-celular4.html` (b)), dentro do shell da suíte (fase 2). Lê a projection
+// canônica + tempo real (SSE + poll de 15 s) por useKdsBoard; os gestos (iniciar,
+// Pronto, desfazer, reabrir, recebi o cancelamento, visto) passam pelo proxy do Django
+// (CSRF lá) de forma otimista.
 //
 // A FILA do cozinheiro: 4 a 6 tickets em foco (3×2 no tablet deitado), o resto vira
-// "+N na fila" e entra no "A fazer" (SUITE-UX §10.3). Ticket longo ocupa duas alturas
-// em vez de cortar. No celular, um ticket inteiro em foco e os seguintes em linhas, o
-// ato no polegar ("Pronto W07") e desfazer, reabrir e ver o pedido no toque longo.
+// "+N na fila" e entra no "A fazer" (SUITE-UX §10.3), sempre na ordem de leitura, com a
+// posição escrita no ticket (Agora, Próximo, Depois). No celular, um ticket inteiro em foco e os seguintes em linhas, o
+// ato na base (`OperatorActionBar`, "Pronto W07"), deslizar a linha para Pronto (F7) e
+// ver o pedido, desfazer e reabrir no toque longo.
+//
+// Os avisos da tela (cancelamento, pedido novo tocando, som bloqueado) moram no
+// `alerts` do cabeçalho, cada um com a ação que o resolve; o estado da leitura
+// (carregando, erro, sem conexão, vazio) é o `OperatorScreenState` do kit.
 //
 // O quadro é sempre o de HOJE (nota 2: a prévia de outra data foi para a Produção/
 // Encomendas). Densidade e som são da estação provisionada (nota 1, Ajustes).
+import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
+import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   boardFilterCounts,
-  cancelledSummary,
+  cancelledAlert,
+  elapsedLabel,
   focusGrid,
   focusSlice,
+  KDS_ARM_DELAY_MS,
   matchesBoardFilter,
   realtimeIndicator,
+  queuePositionLabel,
   restSummary,
   splitRef,
+  ticketAction,
+  ticketOverline,
   type KDSBoardFilter,
 } from "~/presentation/board";
 
@@ -33,6 +47,7 @@ const {
   pending,
   error,
   stationMissing,
+  refresh,
   soundOn,
   soundBlocked,
   attentionPending,
@@ -51,17 +66,20 @@ const {
 } = useKdsBoard(stationRef.value);
 
 const notHere = computed(() => stationMissing.value);
-// A régua da suíte (`useScreen` do kit): o servidor e a hidratação desenham o tablet;
-// a largura real entra depois. Com `useMediaQuery` cru o celular hidratava outra árvore
-// (e a `class` divergente só é avisada, não corrigida, em produção).
-const { belowMd: isPhone } = useScreen();
+// A régua da suíte (`useScreen` do kit) responde "mesa" até a hidratação terminar. Para
+// o celular não nascer com o quadro da mesa e trocar de árvore na frente de quem olha,
+// antes de hidratar as DUAS variantes vão no HTML e o CSS mostra a certa (`md:hidden`
+// / `max-md:hidden`); depois, a que não serve sai da árvore.
+const screen = useScreen();
+const isPhone = screen.belowMd;
+const phoneVariant = computed(() => !screen.ready.value || isPhone.value);
+const deskVariant = computed(() => !screen.ready.value || !isPhone.value);
 
 // O shell (barras, Ajustes) sabe da estação: o selo dela, a densidade e o som e a
 // estação deste dispositivo (a que vai à frente na barra inferior).
-// ⚠️ Só depois de montar: o shell (rail e barra) é desenhado no servidor antes de o
-// quadro ter dados, e gravar aqui durante o setup fazia a hidratação do cliente ver um
-// shell diferente do que o servidor mandou (selo e rótulos). Depois de montar, a troca
-// é reatividade comum.
+// ⚠️ Só depois de montar: o shell é desenhado no servidor antes de o quadro ter dados,
+// e gravar aqui durante o setup fazia a hidratação do cliente ver um shell diferente do
+// que o servidor mandou (selo e rótulos). Depois de montar, a troca é reatividade comum.
 const { remember } = useKdsStation();
 const boardState = useKdsBoardState();
 function shareWithShell(current: typeof view.value) {
@@ -89,8 +107,8 @@ onBeforeUnmount(() => {
 // navegação.
 const stationTitle = computed(() => view.value?.instanceName || stationRef.value);
 
-// O som é da estação (Ajustes). No cabeçalho fica o ESTADO; o toque destrava o áudio
-// quando o navegador o bloqueou, e nos outros casos leva aos Ajustes, onde se muda.
+// O som é da estação (Ajustes). O navegador que bloqueia o áudio vira aviso da tela,
+// com "Ativar o som"; ligar e desligar é dos Ajustes (o ⋯ diz o estado no rótulo).
 const settingsOpen = useKdsSettingsOpen();
 function handleSoundAction() {
   if (soundOn.value && soundBlocked.value) {
@@ -99,15 +117,10 @@ function handleSoundAction() {
   }
   settingsOpen.value = true;
 }
-const soundLabel = computed(() => {
-  if (soundOn.value && soundBlocked.value) return "Som bloqueado: toque para ativar";
-  return soundOn.value ? "Som da estação" : "Som desligado";
-});
 
-// A4 — o estado vazio prometia "a gente avisa quando o próximo chegar", e o aviso
-// é o SOM: com ele desligado ou bloqueado pelo autoplay, o card entra em silêncio
-// numa tela que acabou de convidar a cozinha a não olhar. A frase diz o que de fato
-// vai acontecer.
+// A4: o estado vazio prometia "a gente avisa quando o próximo chegar", e o aviso é o
+// SOM: com ele desligado ou bloqueado pelo autoplay, o card entra em silêncio numa tela
+// que acabou de convidar a cozinha a não olhar. A frase diz o que de fato vai acontecer.
 const soundAnnounces = computed(() => soundOn.value && !soundBlocked.value);
 const emptyTodayLine = computed(() =>
   soundAnnounces.value
@@ -176,6 +189,33 @@ watch(filterCounts, (counts) => {
 watch(isPhone, (phone) => {
   if (phone) filter.value = "all";
 });
+// Os recortes na toolbar (só da mesa): abas com a contagem; Entrega e Atrasados só
+// aparecem quando há o que mostrar.
+const filterTabs = computed(() => {
+  const counts = filterCounts.value;
+  return [
+    { label: "Todos", value: "all", badge: { label: String(counts.all) } },
+    ...(counts.delivery || filter.value === "delivery"
+      ? [{ label: "Entrega", value: "delivery", icon: "i-lucide-bike", badge: { label: String(counts.delivery) } }]
+      : []),
+    ...(counts.late || filter.value === "late"
+      ? [
+          {
+            label: "Atrasados",
+            value: "late",
+            icon: "i-lucide-timer",
+            badge: { label: String(counts.late), color: "error" as const },
+          },
+        ]
+      : []),
+  ];
+});
+const filterModel = computed({
+  get: () => filter.value as string,
+  set: (value: string) => {
+    filter.value = value as KDSBoardFilter;
+  },
+});
 
 // A fila em foco: quantos tickets cabem na área (colunas pela densidade, linhas pela
 // altura); o resto vira "+N na fila". "Ver a fila inteira" e a busca mostram todos.
@@ -192,7 +232,9 @@ const slice = computed(() =>
 );
 const rest = computed(() => restSummary(slice.value.rest));
 // A grade enche a altura (prévia v4: `grid-rows-2 flex-1`): as linhas dividem a área,
-// e o ticket estica até o pé da linha, com o botão no mesmo lugar em todos.
+// e o ticket estica até o pé da linha, com o botão no mesmo lugar em todos. Cada
+// ticket tem a sua célula, posta explicitamente na ordem de leitura (`focusSlice`):
+// nunca `grid-auto-flow: dense` nem colunas CSS, que reordenam a fila na tela.
 const gridStyle = computed(() => {
   const columns = `repeat(${grid.value.columns}, minmax(0, 1fr))`;
   if (showsEverything.value) return { gridTemplateColumns: columns, gridAutoRows: "minmax(min-content, auto)" };
@@ -202,10 +244,21 @@ const gridStyle = computed(() => {
     height: "100%",
   };
 });
+// A posição de ataque escrita em cada ticket da mesa (Agora, Próximo, Depois), contada
+// sobre a fila inteira sem os que estão na janela do Desfazer. Com busca ou recorte a
+// grade mostra um pedaço da fila, e a posição sai junto com o destaque do próximo.
+const positions = computed(() => {
+  const map = new Map<number, string>();
+  if (query.value.trim() || filter.value !== "all" || !view.value) return map;
+  view.value.cards
+    .filter((card) => !view.value!.finishingPks.has(card.pk))
+    .forEach((card, index) => map.set(card.pk, queuePositionLabel(index)));
+  return map;
+});
 function placementStyle(pk: number) {
   const place = slice.value.placements.get(pk);
   if (!place) return {};
-  return { gridColumn: String(place.column + 1), gridRow: `${place.row + 1} / span ${place.span}` };
+  return { gridColumn: String(place.column + 1), gridRow: String(place.row + 1) };
 }
 
 // Atalho "/" leva à busca (ensinado no campo).
@@ -217,7 +270,7 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
   searchInput.value?.focus();
 });
 
-// A faixa de avisos: QUAL pedido está tocando ("Pedido novo U13"), com o Visto.
+// O aviso do pedido novo: QUAL pedido está tocando ("Pedido novo U13"), com o Visto.
 const attentionCodes = computed(() => {
   const codes: string[] = [];
   for (const key of attentionKeys.value) {
@@ -234,6 +287,71 @@ const attentionTitle = computed(() => {
   return `${codes.length} pedidos novos: ${codes.slice(0, 3).join(", ")}${codes.length > 3 ? "…" : ""}`;
 });
 const activeRefs = computed(() => new Set(tickets.value.map((card) => card.order_ref)));
+
+// Os avisos da tela, na ordem da gravidade: o cancelamento (trava o Pronto e diz o que
+// não preparar), o pedido novo que está tocando e o som que o navegador bloqueou. O
+// primeiro aparece inteiro; os outros ficam em "e mais N" (regra do kit).
+const screenAlerts = computed<OperatorScreenAlert[]>(() => {
+  const current = view.value;
+  if (!current || notHere.value) return [];
+  const alerts: OperatorScreenAlert[] = current.cancelled.map((cancelled) => {
+    const copy = cancelledAlert(cancelled, activeRefs.value);
+    return {
+      id: `cancelled-${cancelled.pk}`,
+      color: "error",
+      icon: "i-lucide-ban",
+      title: copy.title,
+      description: copy.description,
+      action: { label: "Recebi o cancelamento", onSelect: () => void acknowledge(cancelled.pk) },
+    };
+  });
+  if (attentionPending.value) {
+    alerts.push({
+      id: "attention",
+      color: "info",
+      icon: "i-lucide-bell-ring",
+      title: attentionTitle.value,
+      description: "Toca nesta estação até alguém dar Visto.",
+      action: { label: "Visto", onSelect: () => void acknowledgeAttention() },
+    });
+  }
+  if (soundOn.value && soundBlocked.value) {
+    alerts.push({
+      id: "sound-blocked",
+      color: "warning",
+      icon: "i-lucide-volume-x",
+      title: "O navegador bloqueou o som desta estação",
+      description: "Pedido novo entra sem tocar até alguém ativar o som.",
+      action: { label: "Ativar o som", onSelect: () => void activateAttentionSound() },
+    });
+  }
+  return alerts;
+});
+
+// O ⋯ "Mais ações": o que age na tela inteira. Reabrir (desfazer um Pronto de até 30
+// minutos), os Ajustes da estação com o estado do som no rótulo, e Atualizar.
+const headerActions = computed<OperatorHeaderAction[]>(() => {
+  const recent = view.value?.recentDone.length ?? 0;
+  return [
+    {
+      label: recent ? `Reabrir um concluído (${recent})` : "Reabrir um concluído",
+      icon: "i-lucide-rotate-ccw",
+      disabled: !recent,
+      reason: recent ? undefined : "Nada concluído nos últimos 30 minutos.",
+      onSelect: () => {
+        recallOpen.value = true;
+      },
+    },
+    {
+      label: soundOn.value ? "Ajustes da estação (som ligado)" : "Ajustes da estação (som desligado)",
+      icon: soundOn.value ? "i-lucide-volume-2" : "i-lucide-volume-x",
+      onSelect: () => {
+        settingsOpen.value = true;
+      },
+    },
+    { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+  ];
+});
 
 // Detalhe: o card é leitura de relance; o toque na área de leitura abre o detalhe.
 const openTicketPk = ref<number | null>(null);
@@ -255,8 +373,82 @@ function setModalOpen(value: boolean) {
   if (!value) openTicketPk.value = null;
 }
 
-// Toque longo no celular (prévia v4 nota 7): o menu do pedido com desfazer, reabrir
-// e ver o pedido, no lugar dos botões que o tablet mostra no cabeçalho.
+// O ticket em foco no celular: o tocado (ou o deslizado para Pronto), senão o primeiro
+// da fila. O ato dele mora na ação na base.
+const chosenPk = ref<number | null>(null);
+const phoneFocus = computed<KDSTicketProjection | null>(
+  () => filteredCards.value.find((card) => card.pk === chosenPk.value) ?? filteredCards.value[0] ?? null,
+);
+// Armar o Pronto na base: o botão fica no MESMO lugar ao passar de Iniciar para Pronto,
+// então o toque que iniciou não pode, quicando, marcar Pronto também (a mesma janela do
+// card, `KDS_ARM_DELAY_MS`).
+const barArmed = ref(true);
+let barArmTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => [phoneFocus.value?.pk, phoneFocus.value?.status] as const,
+  ([pk, status], [previousPk, previousStatus]) => {
+    if (barArmTimer) clearTimeout(barArmTimer);
+    if (pk === previousPk && previousStatus === "pending" && status === "in_progress") {
+      barArmed.value = false;
+      barArmTimer = setTimeout(() => (barArmed.value = true), KDS_ARM_DELAY_MS);
+    } else {
+      barArmed.value = true;
+    }
+  },
+);
+onBeforeUnmount(() => {
+  if (barArmTimer) clearTimeout(barArmTimer);
+});
+const phoneAction = computed<OperatorActionBarAction | null>(() => {
+  const card = phoneFocus.value;
+  const current = view.value;
+  if (!card || !current) return null;
+  const code = splitRef(card.order_ref).code;
+  const action = ticketAction(card, {
+    armed: barArmed.value,
+    blocked: current.blockedRefs.has(card.order_ref),
+    finishing: current.finishingPks.has(card.pk),
+  });
+  switch (action.kind) {
+    case "start":
+      return { label: `Iniciar ${code}`, icon: "i-lucide-play", onSelect: () => void start(card.pk) };
+    case "finish":
+      return {
+        label: `Pronto ${code}`,
+        icon: "i-lucide-check",
+        disabled: !action.enabled,
+        onSelect: () => void finish(card.pk),
+      };
+    case "blocked":
+      return {
+        label: `Pronto ${code}`,
+        icon: "i-lucide-ban",
+        disabled: true,
+        reason: "Item cancelado neste pedido. Toque em Recebi o cancelamento, no aviso do topo.",
+      };
+    case "locked":
+      return {
+        label: `Pronto ${code}`,
+        icon: "i-lucide-lock",
+        disabled: true,
+        reason: `${card.finish_block_label}. ${card.finish_block_reason}`,
+      };
+    // O Desfazer fica no card em foco, com o fundo que esvazia; a base sai da frente.
+    default:
+      return null;
+  }
+});
+const phoneContext = computed(() => {
+  const card = phoneFocus.value;
+  if (!card) return { label: "", value: "" };
+  return {
+    label: `${splitRef(card.order_ref).code} · ${ticketOverline(card)}`,
+    value: elapsedLabel(card.elapsed_seconds),
+  };
+});
+
+// Toque longo no celular (prévia v4 nota 7): o menu do pedido com ver o pedido,
+// desfazer e reabrir.
 const heldPk = ref<number | null>(null);
 const heldTicket = computed(() => tickets.value.find((card) => card.pk === heldPk.value) ?? null);
 const holdOpen = computed({
@@ -287,7 +479,7 @@ onMounted(() => {
 // repete PARA ONDE ir. O gesto se chama "Recebi o cancelamento".
 function warnBlocked() {
   useSonner.error(
-    "Este pedido tem item cancelado. Toque em Recebi o cancelamento, no cartão vermelho, para poder marcar Pronto.",
+    "Este pedido tem item cancelado. Toque em Recebi o cancelamento, no aviso vermelho do topo, para poder marcar Pronto.",
   );
 }
 // Toque no Pronto travado pelo pagamento: o motivo, com as palavras do servidor.
@@ -296,11 +488,20 @@ function warnLocked(pk: number) {
   if (!card) return;
   useSonner.warning(`${card.finish_block_label}. ${card.finish_block_reason}`);
 }
+function clearSearchAndFilter() {
+  query.value = "";
+  filter.value = "all";
+}
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col md:h-dvh md:flex-none md:overflow-hidden">
-    <OperatorPageHeader :title="stationTitle">
+  <main class="flex min-h-0 flex-1 flex-col">
+    <OperatorPageHeader
+      :title="stationTitle"
+      :alerts="screenAlerts"
+      :actions="headerActions"
+      desk-only-filters
+    >
       <template #status>
         <OperatorLiveStatus :tone="liveTone" :time="lastRead" :label="liveLabel" :detail="liveCue.title" />
       </template>
@@ -308,248 +509,104 @@ function warnLocked(pk: number) {
         <OperatorSuiteSearch
           ref="searchInput"
           v-model="query"
-          class="suite:md:w-[19rem]!"
           screen-label="filtrando os tickets"
           placeholder="Código, cliente ou item"
           aria-label="Buscar pedido por código, cliente ou item (atalho: /)"
         />
       </template>
-      <!-- Celular (prévia v4 b): a barra de cima é só selo, título, ao vivo, busca e
-           sino; som e reabrir vão para os Ajustes e para o toque longo. -->
-      <template v-if="!isPhone" #actions>
-        <button
-          type="button"
-          class="relative hidden h-8 items-center gap-2 rounded-md px-3 op-label transition md:inline-flex"
-          :class="
-            soundOn && soundBlocked
-              ? 'border border-warning/50 bg-warning/10 font-semibold text-warning'
-              : 'bg-muted text-muted-foreground hover:text-foreground'
-          "
-          :aria-label="soundOn && soundBlocked ? 'Som bloqueado. Toque para ativar' : soundOn ? 'Som da estação ligado. Ajustes da estação' : 'Som da estação desligado. Ajustes da estação'"
-          data-kds-sound
-          @click="handleSoundAction"
-        >
-          <Icon
-            :name="soundOn ? 'lucide:volume-2' : 'lucide:volume-x'"
-            class="size-[18px]"
-            :class="soundOn && !soundBlocked ? 'text-success' : ''"
-          />
-          {{ soundLabel }}
-        </button>
-        <button
-          v-if="view && view.recentDone.length"
-          type="button"
-          class="hidden h-8 items-center gap-2 rounded-md border border-border bg-card px-3.5 op-label font-semibold transition hover:bg-accent md:inline-flex"
-          :aria-label="`Reabrir concluídos recentes: ${view.recentDone.length}`"
-          title="Concluídos nos últimos 30 minutos"
-          data-kds-recall
-          @click="recallOpen = true"
-        >
-          <Icon name="lucide:rotate-ccw" class="size-[18px] text-muted-foreground" />
-          Reabrir
-          <span
-            class="grid h-5 min-w-5 place-items-center rounded-full bg-foreground px-1 text-xs font-bold tabular-nums text-background"
-            >{{ view.recentDone.length }}</span
-          >
-        </button>
+      <!-- Na mesa, a hora de relance; o resto age pelo ⋯ "Mais ações". -->
+      <template #actions>
         <ClientOnly>
           <span v-if="now" class="hidden pl-1 op-figure leading-none md:inline" aria-hidden="true">{{ clockTime }}</span>
         </ClientOnly>
       </template>
+      <!-- Os recortes da fila (só na mesa: o celular mostra a fila inteira, a mais
+           urgente primeiro, prévia v4 b). -->
+      <template v-if="tickets.length" #filters>
+        <NuxtTabs
+          v-model="filterModel"
+          :items="filterTabs"
+          :content="false"
+          variant="pill"
+          size="md"
+          aria-label="Recortes da fila"
+          data-kds-filters
+        />
+        <span class="text-sm text-muted-foreground">Mais urgente primeiro, da esquerda para a direita.</span>
+      </template>
     </OperatorPageHeader>
 
-    <section class="flex min-h-0 flex-1 flex-col gap-2 px-3 pt-3 pb-3 md:px-4 md:pt-2.5 md:pb-2">
-      <p v-if="pending && !view" class="op-body text-muted-foreground">Carregando…</p>
+    <!-- No celular a região rola; na mesa a grade enche a altura e rola por dentro. -->
+    <section
+      class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pt-3 pb-3 md:overflow-hidden md:px-4 md:pt-2.5 md:pb-2"
+    >
+      <OperatorScreenState v-if="pending && !view" state="loading" what="os pedidos desta estação" />
       <!-- Estação que não existe mais (404): não é falha de conexão, e o board em
            cache seria de uma estação que sumiu. Diz o que houve e leva à lista. -->
-      <div
-        v-if="notHere"
-        class="rounded-lg border border-destructive/30 bg-destructive/5 p-4 op-body text-destructive"
+      <OperatorScreenState
+        v-else-if="notHere"
+        state="empty"
+        icon="i-lucide-map-pin-off"
+        title="Esta estação não existe mais"
+        description="Escolha a estação deste dispositivo na lista."
       >
-        <p>Esta estação não existe mais. Escolha a estação deste dispositivo na lista.</p>
-        <NuxtLink
-          to="/"
-          class="mt-3 inline-flex h-8 items-center gap-2 rounded-md border px-3 font-medium text-foreground transition hover:bg-accent"
-        >
-          <Icon name="lucide:list" class="size-4" />
-          Ver estações
-        </NuxtLink>
-      </div>
-      <!-- Erro com dados em cache NUNCA apaga o board: um blip de 1 poll não pode
-           esconder os tickets da cozinha — banner acima, cards embaixo. -->
-      <p
+        <template #actions>
+          <NuxtButton to="/" color="neutral" variant="outline" icon="i-lucide-list" label="Ver estações" />
+        </template>
+      </OperatorScreenState>
+      <OperatorScreenState
         v-else-if="error && !view"
-        class="rounded-lg border border-destructive/30 bg-destructive/5 p-4 op-body text-destructive"
-      >
-        Não deu para carregar os pedidos desta estação. Tentando de novo.
-      </p>
-      <p
-        v-else-if="error && view"
-        class="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 op-label text-warning"
-      >
-        Sem conexão: mostrando o último estado. Reconectando…
-      </p>
+        state="error"
+        what="os pedidos desta estação"
+        @retry="refresh()"
+      />
+      <!-- Erro com dados em cache NUNCA apaga o board: um blip de 1 poll não pode
+           esconder os tickets da cozinha. O aviso em cima, os cards embaixo. -->
+      <OperatorScreenState v-else-if="error && view" state="offline" :since="lastRead" />
 
       <template v-if="view && !notHere">
-        <!-- Celular com o aviso no bolso ligado (prévia v4 b): o pedido novo toca e vibra
-             mesmo com a tela apagada. Sem push, o convite do kit oferece ligar. -->
-        <p
-          v-if="isPhone && push.active.value"
-          class="flex min-h-10 shrink-0 items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 op-label font-semibold text-success"
-          data-kds-push-on
-        >
-          <Icon name="lucide:vibrate" class="size-4 shrink-0" />
-          Toca e vibra mesmo com a tela apagada (push)
-        </p>
-
-        <!-- AVISOS: pedido novo (Visto) e cancelamentos (Recebi o cancelamento), lado
-             a lado do tablet para cima. O vermelho é alerta de verdade só aqui. -->
-        <div
-          v-if="attentionPending || view.cancelled.length"
-          class="flex shrink-0 flex-col gap-2 md:flex-row md:flex-wrap"
-          data-kds-notices
-        >
-          <div
-            v-if="attentionPending"
-            class="flex min-h-[60px] flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-info/45 bg-info/12 py-1.5 pr-1.5 pl-3 md:min-w-[18rem] md:flex-1"
-            data-kds-attention
-          >
-            <span class="grid size-9 shrink-0 place-items-center rounded-full bg-info/20 text-info">
-              <Icon name="lucide:bell-ring" class="size-5" />
-            </span>
-            <p class="min-w-0 flex-1 basis-[10rem] op-title leading-tight">
-              <span class="tabular-nums">{{ attentionTitle }}</span>
-              <span class="block op-label font-normal text-muted-foreground">toca nesta estação até alguém dar Visto</span>
-            </p>
-            <button
-              type="button"
-              class="inline-flex h-12 shrink-0 items-center gap-2 rounded-md bg-foreground px-5 op-title text-background transition hover:bg-foreground/90"
-              aria-label="Visto: silenciar o aviso de pedido novo em todas as telas desta estação"
-              data-kds-seen
-              @click="acknowledgeAttention"
-            >
-              <Icon name="lucide:check" class="size-5" />
-              Visto
-            </button>
-          </div>
-          <TransitionGroup tag="div" name="kds-cancel" class="contents">
-            <article
-              v-for="t in view.cancelled"
-              :key="`x-${t.pk}`"
-              class="flex min-h-[60px] flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-l-4 border-destructive/45 border-l-destructive bg-destructive/12 py-1.5 pr-1.5 pl-3 md:min-w-[22rem] md:flex-[1.35]"
-              data-kds-cancelled
-            >
-              <div class="min-w-0 flex-1 basis-[14rem] leading-tight">
-                <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <b class="text-xl tabular-nums">{{ splitRef(t.order_ref).code }}</b>
-                  <span class="inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-semibold pill-destructive">
-                    <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ cancelledSummary(t, activeRefs).label }}
-                  </span>
-                  <span v-if="cancelledSummary(t, activeRefs).rest" class="op-label text-muted-foreground">{{
-                    cancelledSummary(t, activeRefs).rest
-                  }}</span>
-                </p>
-                <p class="mt-0.5 op-label font-semibold break-words line-through decoration-destructive/70">
-                  {{ t.items.map((item) => `${item.qty}× ${item.name}`).join(", ") }}
-                </p>
-              </div>
-              <button
-                type="button"
-                class="inline-flex h-12 shrink-0 items-center gap-2 rounded-md border border-destructive/60 px-4 op-title text-destructive transition hover:bg-destructive/15 active:scale-[0.98]"
-                :aria-label="`Confirmar que a cozinha viu o cancelamento do pedido ${splitRef(t.order_ref).code}`"
-                @click="acknowledge(t.pk)"
-              >
-                <Icon name="lucide:check" class="size-5" />
-                Recebi o cancelamento
-              </button>
-            </article>
-          </TransitionGroup>
-        </div>
-
         <!-- A FAZER: o que falta somando a fila INTEIRA (inclusive o "+N"), numa linha,
-             sem chip cortado na borda. -->
-        <KdsAllDayStrip v-if="view.allDay.length && !isPhone" :entries="view.allDay" />
+             sem chip cortado na borda. Só na mesa. -->
+        <KdsAllDayStrip v-if="view.allDay.length && deskVariant" class="max-md:hidden" :entries="view.allDay" />
 
         <!-- vazio: estação zerada, estado calmo (omotenashi) -->
-        <div
+        <OperatorScreenState
           v-if="!view.cards.length"
-          class="grid flex-1 place-items-center content-center gap-3 rounded-xl border border-dashed py-16 text-center"
+          state="empty"
+          icon="i-lucide-coffee"
+          title="Tudo em dia"
+          :description="emptyTodayLine"
         >
-          <div class="grid size-16 place-items-center rounded-full bg-success/10 text-success">
-            <Icon name="lucide:coffee" class="size-8" />
-          </div>
-          <p class="op-display">Tudo em dia</p>
-          <p class="max-w-sm op-body text-muted-foreground">{{ emptyTodayLine }}</p>
-          <button
-            v-if="!soundAnnounces"
-            type="button"
-            class="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent"
-            @click="handleSoundAction"
-          >
-            <Icon name="lucide:volume-2" class="size-4" />
-            {{ soundOn && soundBlocked ? "Ativar o som" : "Ligar o som nos Ajustes" }}
-          </button>
-        </div>
+          <template v-if="!soundAnnounces" #actions>
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-volume-2"
+              :label="soundOn && soundBlocked ? 'Ativar o som' : 'Ligar o som nos Ajustes'"
+              @click="handleSoundAction"
+            />
+          </template>
+        </OperatorScreenState>
+
+        <!-- busca ou recorte sem resultado -->
+        <OperatorScreenState
+          v-else-if="!filteredCards.length"
+          state="empty"
+          icon="i-lucide-search-x"
+          :title="query.trim() ? `Nenhum pedido para “${query.trim()}”.` : 'Nenhum pedido neste recorte.'"
+        >
+          <template #actions>
+            <NuxtButton color="neutral" variant="outline" label="Limpar busca e recorte" @click="clearSearchAndFilter" />
+          </template>
+        </OperatorScreenState>
 
         <template v-else>
-          <!-- cabeça da grade: a ordem e os recortes (do tablet para cima; o celular não
-               tem recortes, prévia v4 b) -->
-          <div v-if="!isPhone" class="flex min-h-8 shrink-0 flex-wrap items-center gap-2">
-            <Icon name="lucide:arrow-down-wide-narrow" class="size-4 text-muted-foreground" />
-            <h2 class="op-eyebrow text-muted-foreground">Mais urgente primeiro</h2>
-            <span class="op-micro text-muted-foreground">· o destacado é o próximo</span>
-            <span class="flex-1" />
-            <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Recortes da fila">
-              <UiFilterChip :active="filter === 'all'" :count="filterCounts.all" :aria-pressed="filter === 'all'" @click="filter = 'all'">
-                <template #icon><Icon v-if="filter === 'all'" name="lucide:check" class="size-4 text-primary" /></template>
-                Todos
-              </UiFilterChip>
-              <UiFilterChip
-                v-if="filterCounts.delivery || filter === 'delivery'"
-                :active="filter === 'delivery'"
-                :count="filterCounts.delivery"
-                :aria-pressed="filter === 'delivery'"
-                @click="filter = filter === 'delivery' ? 'all' : 'delivery'"
-              >
-                <template #icon><Icon name="lucide:bike" class="size-4" /></template>
-                Entrega
-              </UiFilterChip>
-              <UiFilterChip
-                v-if="filterCounts.late || filter === 'late'"
-                :active="filter === 'late'"
-                :count="filterCounts.late"
-                :aria-pressed="filter === 'late'"
-                class="suite:border-destructive/50! suite:text-destructive!"
-                @click="filter = filter === 'late' ? 'all' : 'late'"
-              >
-                <template #icon><Icon name="lucide:timer" class="size-4" /></template>
-                Atrasados
-              </UiFilterChip>
-            </div>
-          </div>
-
-          <!-- busca ou recorte sem resultado -->
-          <div
-            v-if="!filteredCards.length"
-            class="grid place-items-center gap-2 rounded-xl border border-dashed py-16 text-center"
-          >
-            <Icon name="lucide:search-x" class="size-10 text-muted-foreground" />
-            <p class="op-title">
-              {{ query.trim() ? `Nenhum pedido para “${query.trim()}”.` : "Nenhum pedido neste recorte." }}
-            </p>
-            <button
-              type="button"
-              class="min-h-8 px-2 op-label text-muted-foreground underline-offset-2 hover:underline"
-              @click="query = ''; filter = 'all'"
-            >
-              Limpar busca e recorte
-            </button>
-          </div>
-
           <!-- celular: um ticket em foco + a fila em linhas -->
           <KdsPhoneQueue
-            v-else-if="isPhone"
+            v-if="phoneVariant"
+            class="md:hidden"
             :cards="filteredCards"
+            :focus-pk="phoneFocus?.pk ?? null"
             :next-pk="query ? null : view.nextPk"
             :blocked-refs="view.blockedRefs"
             :addition-pks="view.additionPks"
@@ -557,17 +614,16 @@ function warnLocked(pk: number) {
             :finish-until="finishUntil"
             :all-day="view.allDay"
             :density="density"
+            :push-on="push.active.value"
+            @choose="(pk) => (chosenPk = pk)"
             @open="(pk) => (openTicketPk = pk)"
-            @start="(pk) => start(pk)"
-            @finish="(pk) => finish(pk)"
             @undo="(pk) => undoFinish(pk)"
-            @blocked="warnBlocked"
-            @locked="warnLocked"
+            @finish="(pk) => finish(pk)"
             @hold="onHold"
           />
 
           <!-- tablet e desktop: a fila em foco -->
-          <template v-else>
+          <div v-if="deskVariant" class="flex min-h-0 flex-1 flex-col gap-2 max-md:hidden">
             <div ref="gridBox" class="min-h-0 flex-1 overflow-y-auto" data-kds-grid-box>
               <TransitionGroup tag="div" name="kds-card" class="grid gap-2.5" :style="gridStyle" data-kds-grid>
                 <div
@@ -579,6 +635,7 @@ function warnLocked(pk: number) {
                   <KdsTicketCard
                     :ticket="card"
                     :density="density"
+                    :eyebrow="positions.get(card.pk) ?? ''"
                     :next="!query && filter === 'all' && card.pk === view.nextPk"
                     :blocked="view.blockedRefs.has(card.order_ref)"
                     :addition="view.additionPks.has(card.pk)"
@@ -595,38 +652,45 @@ function warnLocked(pk: number) {
               </TransitionGroup>
             </div>
             <!-- o excedente: número e agregado, nunca card minúsculo nem paginação -->
-            <button
+            <NuxtButton
               v-if="slice.rest.length"
-              type="button"
-              class="flex min-h-8 shrink-0 flex-wrap items-center justify-center gap-x-2 rounded-lg border border-dashed border-border px-3 op-label text-muted-foreground transition hover:bg-accent"
+              color="neutral"
+              variant="outline"
+              block
+              class="shrink-0 justify-center whitespace-normal text-center"
               data-kds-rest
               @click="expanded = true"
             >
-              <b class="text-base tabular-nums text-foreground">{{ rest.count }}</b>
-              <span>· {{ rest.detail }}</span>
-              <span class="font-semibold text-foreground underline underline-offset-2">Ver a fila inteira</span>
-            </button>
-            <button
+              <span>
+                <b class="tabular-nums text-highlighted">{{ rest.count }}</b>
+                · {{ rest.detail }} ·
+                <span class="font-semibold text-highlighted underline underline-offset-2">Ver a fila inteira</span>
+              </span>
+            </NuxtButton>
+            <NuxtButton
               v-else-if="expanded"
-              type="button"
-              class="min-h-8 shrink-0 rounded-lg border border-dashed border-border px-3 op-label font-semibold transition hover:bg-accent"
+              color="neutral"
+              variant="outline"
+              block
+              class="shrink-0 justify-center"
+              label="Voltar à fila em foco"
               data-kds-rest-collapse
               @click="expanded = false"
-            >
-              Voltar à fila em foco
-            </button>
-          </template>
+            />
+          </div>
         </template>
       </template>
     </section>
 
-    <!-- celular: o botão do ticket em foco, no polegar, acima da barra das seções -->
-    <div
-      v-if="isPhone && view && !notHere && filteredCards.length"
-      id="kds-thumb"
-      class="sticky bottom-16 z-20 mt-auto bg-gradient-to-t from-background from-70% to-transparent px-3 pt-6 pb-3 md:hidden"
-      data-focus-obstruction
-    />
+    <!-- celular: o ato do ticket em foco, na base, entre a fila e a barra inferior -->
+    <div v-if="phoneVariant && phoneAction && view && !notHere" class="contents md:hidden">
+      <OperatorActionBar
+        :action="phoneAction"
+        :context-label="phoneContext.label"
+        :context-value="phoneContext.value"
+        label="Ato do pedido em foco"
+      />
+    </div>
 
     <!-- detalhe (aberto pelo card ou pelo toque longo) -->
     <KdsTicketModal
@@ -649,55 +713,56 @@ function warnLocked(pk: number) {
     />
 
     <!-- recall: concluídos recentes (desfazer o Pronto) -->
-    <UiDialog :open="recallOpen" @update:open="recallOpen = Boolean($event)">
-      <UiDialogContent class="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-md" data-suite="v3">
-        <UiDialogTitle class="border-b px-5 py-4 op-title">Concluídos recentes</UiDialogTitle>
-        <UiDialogDescription class="sr-only"
-          >Reabra um pedido marcado Pronto por engano (últimos 30 minutos).</UiDialogDescription
-        >
-        <div class="min-h-0 flex-1 overflow-y-auto p-3">
-          <p v-if="!view || !view.recentDone.length" class="p-6 text-center op-body text-muted-foreground">
-            Nada concluído nos últimos 30 minutos.
-          </p>
-          <ul v-else class="flex flex-col gap-1.5">
-            <li
-              v-for="t in view.recentDone"
-              :key="t.pk"
-              class="flex items-center justify-between gap-3 rounded-lg border p-3"
-            >
-              <div class="min-w-0">
-                <p class="truncate text-lg font-bold tabular-nums leading-tight">
-                  {{ splitRef(t.order_ref).code }}
-                </p>
-                <p class="truncate op-label text-muted-foreground">
-                  {{ t.customer_name || t.order_ref
-                  }}<template v-if="t.completed_at_display"> · {{ t.completed_at_display }}</template>
-                </p>
-              </div>
-              <button
-                v-if="t.volumes_order_ref"
-                type="button"
-                class="ml-auto inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent active:scale-[0.98]"
-                :aria-label="`Volumes do pedido ${splitRef(t.order_ref).code}`"
-                data-kds-recent-volumes
-                @click="openFromRecent(t.pk)"
-              >
-                <Icon name="lucide:package" class="size-4" />
-                {{ t.volumes ? t.volumes : "Volumes" }}
-              </button>
-              <button
-                type="button"
-                class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 op-label font-semibold transition hover:bg-accent active:scale-[0.98]"
-                @click="recall(t.pk)"
-              >
-                <Icon name="lucide:rotate-ccw" class="size-4" />
-                Reabrir
-              </button>
-            </li>
-          </ul>
-        </div>
-      </UiDialogContent>
-    </UiDialog>
+    <NuxtModal
+      v-model:open="recallOpen"
+      title="Concluídos recentes"
+      description="Reabra um pedido marcado Pronto por engano (últimos 30 minutos)."
+    >
+      <template #body>
+        <OperatorScreenState
+          v-if="!view || !view.recentDone.length"
+          state="empty"
+          in-card
+          icon="i-lucide-rotate-ccw"
+          title="Nada concluído nos últimos 30 minutos."
+        />
+        <ul v-else class="flex flex-col gap-1.5" data-kds-recall-list>
+          <li
+            v-for="t in view.recentDone"
+            :key="t.pk"
+            class="flex items-center gap-3 rounded-lg border border-default p-3"
+          >
+            <div class="min-w-0 flex-1">
+              <p class="text-lg font-bold tabular-nums leading-tight">
+                {{ splitRef(t.order_ref).code }}
+              </p>
+              <p class="break-words op-label text-muted-foreground">
+                {{ t.customer_name || t.order_ref
+                }}<template v-if="t.completed_at_display"> · {{ t.completed_at_display }}</template>
+              </p>
+            </div>
+            <NuxtButton
+              v-if="t.volumes_order_ref"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-package"
+              :label="t.volumes ? `${t.volumes} volumes` : 'Volumes'"
+              :aria-label="`Volumes do pedido ${splitRef(t.order_ref).code}`"
+              data-kds-recent-volumes
+              @click="openFromRecent(t.pk)"
+            />
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-rotate-ccw"
+              label="Reabrir"
+              :aria-label="`Reabrir o pedido ${splitRef(t.order_ref).code}`"
+              @click="recall(t.pk)"
+            />
+          </li>
+        </ul>
+      </template>
+    </NuxtModal>
   </main>
 </template>
 
@@ -719,32 +784,11 @@ function warnLocked(pk: number) {
   transform: scale(0.96);
 }
 
-/* Cancelamento entra duas vezes com um pulso curto: atenção inequívoca, sem manter o
-   board inteiro piscando. "Recebi o cancelamento" encerra o estado. */
-.kds-cancel-enter-active {
-  animation: kds-cancel-attention 0.7s ease-in-out 2;
-}
-@keyframes kds-cancel-attention {
-  0%,
-  100% {
-    transform: translateX(0) scale(1);
-  }
-  30% {
-    transform: translateX(-5px) scale(1.015);
-  }
-  60% {
-    transform: translateX(5px) scale(1.015);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .kds-card-move,
   .kds-card-enter-active,
   .kds-card-leave-active {
     transition: none;
-  }
-  .kds-cancel-enter-active {
-    animation: none;
   }
 }
 </style>

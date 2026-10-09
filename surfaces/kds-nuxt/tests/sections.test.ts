@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { KDS_BAR_SECTIONS, kdsSections } from "../app/presentation/sections";
+import { KDS_BAR_SECTIONS, kdsSections, kdsShellSections } from "../app/presentation/sections";
+import { quickBarLayout, quickBarProblems } from "../../operator-kit/app/presentation/suiteChrome";
 
 // As seções da Cozinha (dono, 09/10/2026): cada estação da casa pelo NOME, levando à sua
 // bancada; a Saída leva ao Gestor. Não existe estação chamada "Preparo".
@@ -67,5 +68,23 @@ describe("seções da Cozinha", () => {
   it("sem a estação aberta nem lembrada, a barra segue a ordem do cadastro", () => {
     const sections = kdsSections({ ...base, place: "bar" });
     expect(sections.map((s) => s.label)).toEqual(["Cafés", "Lanches", "Encomendas", "Saída", "Ajustes"]);
+  });
+});
+
+describe("seções da Cozinha no shell da suíte", () => {
+  it("uma lista, as duas ordens: a lateral pelo cadastro, a inferior com a aberta à frente", () => {
+    const sections = kdsShellSections({ ...base, priorityRef: "encomendas" });
+    const rail = sections.filter((s) => s.where !== "bar" && !s.foot).map((s) => s.label);
+    const quick = sections.filter((s) => s.where !== "rail");
+    expect(rail).toEqual(["Cafés", "Lanches", "Encomendas", "Saída", "Painel de retirada"]);
+    expect(quick.filter((s) => s.quick).map((s) => s.label)).toEqual(["Encomendas", "Cafés", "Lanches", "Saída"]);
+    expect(quick.at(-1)?.key).toBe("settings");
+    expect(sections.filter((s) => s.foot).map((s) => s.label)).toEqual(["Ajustes"]);
+  });
+
+  it("a barra inferior cabe na regra da suíte (4 seções e o Mais com Ajustes)", () => {
+    const quick = kdsShellSections({ ...base, priorityRef: "" }).filter((s) => s.where !== "rail");
+    expect(quickBarProblems(quick)).toEqual([]);
+    expect(quickBarLayout(quick).more).toBe(true);
   });
 });

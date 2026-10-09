@@ -31,51 +31,54 @@ function typeIcon(type: string): string {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Estações">
-    </OperatorPageHeader>
+    <OperatorPageHeader title="Estações" />
 
-    <section class="mx-auto flex w-full max-w-5xl flex-col gap-3 p-4 md:p-6">
-      <p class="op-label text-muted-foreground">Escolha a estação que esta tela mostra.</p>
-      <p v-if="pending && !instances.length" class="op-body text-muted-foreground">Carregando…</p>
-      <p
-        v-else-if="!instances.length"
-        class="rounded-xl border border-dashed p-8 text-center op-body text-muted-foreground"
-      >
-        Nenhuma estação configurada.
-      </p>
+    <!-- O shell não rola: a região de conteúdo rola sozinha, sob o cabeçalho fixo. -->
+    <section class="min-h-0 flex-1 overflow-y-auto">
+      <div class="mx-auto flex w-full max-w-5xl flex-col gap-3 p-4 md:p-6">
+        <p class="op-label text-muted-foreground">Escolha a estação que esta tela mostra.</p>
+        <OperatorScreenState v-if="pending && !instances.length" state="loading" what="as estações" />
+        <OperatorScreenState
+          v-else-if="!instances.length"
+          state="empty"
+          icon="i-lucide-flame"
+          title="Nenhuma estação cadastrada"
+          description="Cadastre as estações da cozinha no Admin para escolher uma aqui."
+        />
 
-      <ul v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-kds-stations>
-        <li v-for="inst in instances" :key="inst.ref">
-          <NuxtLink
-            :to="stationLink(inst)"
-            :external="isExit(inst) && Boolean(exitUrl)"
-            class="flex min-h-24 items-center gap-4 rounded-xl border bg-card p-4 transition hover:border-primary/50 hover:bg-accent active:translate-y-px"
-            :class="inst.ref === station.ref ? 'border-primary/60' : 'border-border'"
-          >
-            <span class="grid size-12 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-              <Icon :name="typeIcon(inst.type)" class="size-6" />
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="block op-eyebrow text-muted-foreground">
-                {{ isExit(inst) && exitUrl ? "Saída · no Gestor" : inst.type_display }}
-              </span>
-              <span class="block text-xl font-bold leading-tight break-words">{{ inst.name }}</span>
-              <span v-if="inst.ref === station.ref" class="block op-micro text-muted-foreground">a deste dispositivo</span>
-            </span>
-            <span
-              v-if="inst.active_count"
-              class="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-sm font-bold tabular-nums pill-primary"
+        <ul v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-kds-stations>
+          <li v-for="inst in instances" :key="inst.ref">
+            <NuxtLink
+              :to="stationLink(inst)"
+              :external="isExit(inst) && Boolean(exitUrl)"
+              class="flex min-h-24 items-center gap-4 rounded-lg border bg-default p-4 transition hover:border-primary/50 hover:bg-elevated active:translate-y-px"
+              :class="inst.ref === station.ref ? 'border-primary/60' : 'border-default'"
             >
-              {{ inst.active_count }}
-              <span class="text-xs font-medium">{{ activeLabel(inst) }}</span>
-            </span>
-            <Icon
-              :name="isExit(inst) && exitUrl ? 'lucide:arrow-up-right' : 'lucide:chevron-right'"
-              class="size-5 shrink-0 text-muted-foreground"
-            />
-          </NuxtLink>
-        </li>
-      </ul>
+              <span class="grid size-12 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                <Icon :name="typeIcon(inst.type)" class="size-6" />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block op-eyebrow text-muted-foreground">
+                  {{ isExit(inst) && exitUrl ? "Saída · no Gestor" : inst.type_display }}
+                </span>
+                <span class="block text-xl font-bold leading-tight break-words">{{ inst.name }}</span>
+                <span v-if="inst.ref === station.ref" class="block op-micro text-muted-foreground">a deste dispositivo</span>
+              </span>
+              <NuxtBadge
+                v-if="inst.active_count"
+                color="primary"
+                size="lg"
+                class="shrink-0 tabular-nums"
+                :label="`${inst.active_count} ${activeLabel(inst)}`"
+              />
+              <Icon
+                :name="isExit(inst) && exitUrl ? 'lucide:arrow-up-right' : 'lucide:chevron-right'"
+                class="size-5 shrink-0 text-muted-foreground"
+              />
+            </NuxtLink>
+          </li>
+        </ul>
+      </div>
     </section>
   </main>
 </template>
