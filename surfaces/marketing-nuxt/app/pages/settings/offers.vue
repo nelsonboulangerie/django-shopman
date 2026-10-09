@@ -50,181 +50,204 @@ function offerValue(offer: (typeof offers.value)[number]): string {
   return money(offer.value);
 }
 
-const STATUS: Record<string, string> = {
-  live: "Em vigor",
-  scheduled: "Agendada",
-  expired: "Encerrada",
-  inactive: "Inativa",
+const STATUS: Record<
+  string,
+  { label: string; color: "success" | "info" | "neutral" }
+> = {
+  live: { label: "Em vigor", color: "success" },
+  scheduled: { label: "Agendada", color: "info" },
+  expired: { label: "Encerrada", color: "neutral" },
+  inactive: { label: "Inativa", color: "neutral" },
 };
+
+function couponUses(offer: (typeof offers.value)[number]): number {
+  return offer.coupons.reduce((total, coupon) => total + coupon.uses_count, 0);
+}
 
 onKeyStroke(["r", "R"], (event) => {
   const target = event.target as HTMLElement | null;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (dialog.value) return;
   if (target?.closest("input, textarea, select, [contenteditable='true']"))
     return;
   void refresh();
 });
-const MENU = [
-  { key: "coupon", label: "Criar cupom", icon: "lucide:ticket-percent" },
-  {
-    key: "refresh",
-    label: "Atualizar",
-    icon: "lucide:refresh-cw",
-    shortcut: "R",
-  },
-];
 
-function selectMenu(key: string) {
-  if (key === "coupon") {
-    dialog.value = "coupon";
-    return;
-  }
-  if (key === "refresh") void refresh();
-}
+// As ações da tela como dados (barra do topo no celular): "Criar oferta" disputa a
+// vaga de ícone; "Criar cupom" e "Atualizar" (tecla R) moram no ⋯.
+const headerActions = computed(() => [
+  {
+    label: "Criar oferta",
+    icon: "i-lucide-plus",
+    priority: 1,
+    onSelect: () => {
+      dialog.value = "offer";
+    },
+  },
+  {
+    label: "Criar cupom",
+    icon: "i-lucide-ticket-percent",
+    onSelect: () => {
+      dialog.value = "coupon";
+    },
+  },
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    kbds: ["R"],
+    onSelect: () => void refresh(),
+  },
+]);
+
+// A lista que já está na tela continua valendo quando a releitura falha: o aviso vai
+// para o cabeçalho, com a saída.
+const headerAlerts = computed(() =>
+  error.value && offers.value.length
+    ? [
+        {
+          id: "offers-stale",
+          color: "error" as const,
+          title: "As ofertas e cupons não carregaram.",
+          description: "Atualize antes de criar uma campanha com desconto.",
+          action: { label: "Atualizar", onSelect: () => void refresh() },
+        },
+      ]
+    : [],
+);
 
 useHead({ title: "Ofertas e cupons" });
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-marketing-offers>
-    <MarketingPageHeader title="Ofertas e cupons" phone-hides-actions>
+    <OperatorPageHeader
+      title="Ofertas e cupons"
+      search-placeholder="Buscar campanha, modelo ou tela"
+      :actions="headerActions"
+      actions-label="Mais ações de Ofertas e cupons"
+      :alerts="headerAlerts"
+    >
       <template #actions>
-        <MarketingPageMenu
-          heading="Ofertas e cupons"
-          :items="MENU"
-          @select="selectMenu"
+        <NuxtButton
+          icon="i-lucide-ticket-percent"
+          label="Criar cupom"
+          color="neutral"
+          variant="outline"
+          data-coupon-new
+          @click="dialog = 'coupon'"
         />
-        <UiButton type="button" variant="outline" @click="dialog = 'coupon'">
-          <Icon
-            name="lucide:ticket-percent"
-            class="size-4"
-            aria-hidden="true"
-          />
-          Criar cupom
-        </UiButton>
-        <UiButton type="button" @click="dialog = 'offer'">
-          <Icon name="lucide:plus" class="size-4" aria-hidden="true" />
-          Criar oferta
-        </UiButton>
-      </template>
-      <template #phone-actions>
-        <MarketingPageMenu
-          heading="Ofertas e cupons"
-          :items="MENU"
-          @select="selectMenu"
-        />
-        <UiIconButton
-          icon="lucide:plus"
+        <NuxtButton
+          icon="i-lucide-plus"
           label="Criar oferta"
+          data-offer-new
           @click="dialog = 'offer'"
         />
       </template>
-    </MarketingPageHeader>
+      <template #filters-primary><MarketingSettingsNav /></template>
+    </OperatorPageHeader>
 
-    <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-5 sm:px-6">
-      <p class="max-w-2xl text-sm text-muted-foreground">
-        Oferta dá o benefício sozinha. Cupom pede o código na sacola e nasce com
-        a regra dele, sem mexer em oferta que já está no ar.
-      </p>
-
-      <div
-        v-if="error"
-        class="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
-        role="alert"
-      >
-        <strong>As ofertas e cupons não carregaram.</strong>
-        <span class="text-muted-foreground">
-          Atualize antes de criar uma campanha com desconto.</span
-        >
-      </div>
-
-      <div
-        v-if="loading && !offers.length"
-        class="grid gap-3 md:grid-cols-2"
-        aria-busy="true"
-      >
-        <UiSkeleton
-          v-for="n in 2"
-          :key="n"
-          class="h-32 rounded-xl"
-          label="Carregando ofertas"
-        />
-      </div>
-
-      <ul v-else-if="offers.length" class="grid gap-3 md:grid-cols-2">
-        <li
-          v-for="offer in offers"
-          :key="offer.ref"
-          :data-marketing-offer="offer.ref"
-          :tabindex="offer.ref === createdRef ? -1 : undefined"
-          class="rounded-xl border border-border bg-card p-5"
-          :class="offer.ref === createdRef ? 'ring-2 ring-primary/30' : ''"
-        >
-          <div class="flex items-start gap-3">
-            <span
-              class="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"
-            >
-              <Icon
-                name="lucide:badge-percent"
-                class="size-5"
-                aria-hidden="true"
-              />
-            </span>
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <strong>{{ offer.name }}</strong>
-                <span
-                  class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold"
-                  >{{ STATUS[offer.status] ?? offer.status }}</span
-                >
-              </div>
-              <span class="mt-1 block text-sm">{{ offerValue(offer) }}</span>
-              <span class="mt-1 block text-xs text-muted-foreground">
-                <template v-if="offer.coupons.length">
-                  Cupom
-                  {{ offer.coupons.map((coupon) => coupon.code).join(", ") }} ·
-                  {{
-                    offer.coupons.reduce(
-                      (total, coupon) => total + coupon.uses_count,
-                      0,
-                    )
-                  }}
-                  usos
-                </template>
-                <template v-else-if="offer.available_for_campaign"
-                  >Pode ir numa campanha.</template
-                >
-                <template v-else
-                  >Regra comercial cadastrada; não pode ir numa campanha nova
-                  agora.</template
-                >
-              </span>
-            </div>
-          </div>
-          <NuxtLink
-            v-if="offer.available_for_campaign"
-            :to="{ path: '/settings/campaigns', query: { new: '1', offer: offer.ref } }"
-            class="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline"
-          >
-            Criar campanha com esta oferta
-          </NuxtLink>
-        </li>
-      </ul>
-      <div
-        v-else
-        class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
-      >
-        <Icon
-          name="lucide:badge-percent"
-          class="mx-auto size-8 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <p class="mt-2 font-semibold">Nenhuma oferta ainda</p>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Crie uma oferta automática ou um cupom para começar.
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <div class="mx-auto flex w-full max-w-5xl flex-col gap-4">
+        <p class="max-w-2xl text-sm text-muted-foreground">
+          Oferta dá o benefício sozinha. Cupom pede o código na sacola e nasce
+          com a regra dele, sem mexer em oferta que já está no ar.
         </p>
+
+        <OperatorScreenState
+          v-if="error && !offers.length"
+          state="error"
+          what="as ofertas e cupons"
+          description="Atualize antes de criar uma campanha com desconto."
+          @retry="refresh()"
+        />
+
+        <OperatorScreenState
+          v-else-if="loading && !offers.length"
+          state="loading"
+          what="as ofertas e cupons"
+        />
+
+        <ul v-else-if="offers.length" class="grid gap-3 md:grid-cols-2">
+          <li v-for="offer in offers" :key="offer.ref">
+            <NuxtCard
+              class="h-full"
+              :class="offer.ref === createdRef ? 'ring-2 ring-primary/30' : ''"
+              :data-marketing-offer="offer.ref"
+              :tabindex="offer.ref === createdRef ? -1 : undefined"
+            >
+              <div class="flex items-start gap-3">
+                <Icon
+                  name="lucide:badge-percent"
+                  class="mt-0.5 size-5 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-base font-semibold">{{
+                      offer.name
+                    }}</span>
+                    <NuxtBadge
+                      :color="STATUS[offer.status]?.color ?? 'neutral'"
+                      :label="STATUS[offer.status]?.label ?? offer.status"
+                    />
+                  </div>
+                  <span class="mt-1 block text-sm">{{ offerValue(offer) }}</span>
+                  <span class="mt-1 block text-xs text-muted-foreground">
+                    <template v-if="offer.coupons.length">
+                      Cupom
+                      {{ offer.coupons.map((coupon) => coupon.code).join(", ") }}
+                      · {{ couponUses(offer) }} usos
+                    </template>
+                    <template v-else-if="offer.available_for_campaign"
+                      >Pode ir numa campanha.</template
+                    >
+                    <template v-else
+                      >Regra comercial cadastrada; não pode ir numa campanha
+                      nova agora.</template
+                    >
+                  </span>
+                  <NuxtButton
+                    v-if="offer.available_for_campaign"
+                    :to="{
+                      path: '/settings/campaigns',
+                      query: { new: '1', offer: offer.ref },
+                    }"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-megaphone"
+                    label="Criar campanha com esta oferta"
+                    class="mt-4"
+                  />
+                </div>
+              </div>
+            </NuxtCard>
+          </li>
+        </ul>
+
+        <OperatorScreenState
+          v-else
+          state="empty"
+          icon="i-lucide-badge-percent"
+          title="Nenhuma oferta ainda"
+          description="Crie uma oferta automática ou um cupom para começar."
+        >
+          <template #actions>
+            <NuxtButton
+              icon="i-lucide-plus"
+              label="Criar oferta"
+              @click="dialog = 'offer'"
+            />
+            <NuxtButton
+              icon="i-lucide-ticket-percent"
+              label="Criar cupom"
+              color="neutral"
+              variant="outline"
+              @click="dialog = 'coupon'"
+            />
+          </template>
+        </OperatorScreenState>
       </div>
-    </div>
+    </section>
 
     <MarketingWorkspaceDialog
       :open="dialog !== null"

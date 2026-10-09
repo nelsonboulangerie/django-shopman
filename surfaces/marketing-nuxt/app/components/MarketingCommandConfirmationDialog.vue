@@ -134,6 +134,21 @@ const title = computed(() => {
   return includesDirectMessages.value ? `Enviar para ${places}` : `Publicar em ${places}`;
 });
 
+/** A linha sob o título: o que acontece, ou quando e para quantos. */
+const description = computed(() => {
+  if (isFire.value) return "Nada é disparado agora. O anúncio vai para revisão.";
+  if (props.command?.action === "reject") return "Não vai para lugar nenhum e não volta para a fila.";
+  return whenLine.value || "Depois de confirmar, não tem desfazer.";
+});
+
+/** O autenticador digita casa a casa (`NuxtPinInput`); o comando leva o código inteiro. */
+const credentialDigits = computed({
+  get: () => credential.value.split(""),
+  set: (digits: string[]) => {
+    credential.value = digits.join("").replace(/\D/g, "").slice(0, 6);
+  },
+});
+
 /** "Agora, às 10:04 · 86 clientes no WhatsApp". */
 const whenLine = computed(() => {
   const current = challenge.value;
@@ -291,213 +306,199 @@ async function submit() {
 </script>
 
 <template>
-  <UiDialog
+  <!-- O selo no NuxtModal do conjunto mínimo: título com o ato e quantos lugares, a
+       linha do quando como descrição, o que sai, para quem, e a confirmação no rodapé. -->
+  <NuxtModal
     :open="command !== null"
+    :title="title"
+    :description="description"
+    :dismissible="!busy"
     @update:open="
       (open) => {
         if (!open && !busy) emit('cancel');
       }
     "
   >
-    <!-- No celular a caixa sobe do pé como folha (v4, "a revisão aberta, com o selo"),
-         ao alcance do polegar; do tablet para cima segue centrada. -->
-    <UiDialogContent
-      class="sm:max-w-lg max-sm:top-auto max-sm:bottom-0 max-sm:max-w-full max-sm:translate-y-0 max-sm:rounded-t-[22px] max-sm:rounded-b-none max-sm:border-x-0 max-sm:border-b-0 max-sm:px-4 max-sm:pb-[max(1.25rem,env(safe-area-inset-bottom))]"
-      data-marketing-seal
-    >
-      <span class="mx-auto -mt-2 mb-1 h-1 w-10 rounded-full bg-muted-foreground/25 sm:hidden" aria-hidden="true" />
-      <UiDialogHeader class="flex-row items-start gap-3 text-left">
-        <span
-          v-if="sealed"
-          class="grid size-10 shrink-0 place-items-center rounded-full bg-[color-mix(in_oklab,var(--app-color,var(--primary))_14%,transparent)] text-[var(--app-color,var(--primary))]"
-          aria-hidden="true"
-        >
-          <Icon name="lucide:stamp" class="size-5" />
-        </span>
-        <div class="flex min-w-0 flex-col gap-1">
-          <UiDialogTitle class="text-[20px] leading-tight font-semibold">{{ title }}</UiDialogTitle>
-          <UiDialogDescription>
-            <template v-if="isFire">Nada é disparado agora. O anúncio vai para revisão.</template>
-            <template v-else-if="command?.action === 'reject'">Não vai para lugar nenhum e não volta para a fila.</template>
-            <template v-else-if="whenLine">{{ whenLine }}</template>
-            <template v-else>Depois de confirmar, não tem desfazer.</template>
-          </UiDialogDescription>
-        </div>
-      </UiDialogHeader>
-
-      <div v-if="challenge" class="space-y-3">
-        <!-- O QUÊ antes do PARA QUEM. No celular a folha deixa a revisão à vista por
-             cima dela (v4); do tablet para cima a caixa cobre a tela, então o resumo do
-             que sai vem junto. -->
-        <div
-          v-if="outgoing"
-          class="flex gap-3 rounded-lg border border-border bg-muted/40 p-3 max-sm:hidden"
-        >
-          <img v-if="imageUrl" :src="imageUrl" alt="Imagem do anúncio" class="size-16 shrink-0 rounded object-cover">
-          <div
-            v-else-if="missingImageForPost"
-            class="flex size-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded border border-dashed border-warning/60 text-warning"
-          >
-            <Icon name="lucide:image-off" class="size-5" />
-            <span class="text-[10px] font-medium leading-none">Sem foto</span>
-          </div>
-          <div class="min-w-0 flex-1 text-sm">
-            <p v-if="outgoing.text" class="max-h-28 overflow-y-auto whitespace-pre-line">{{ outgoing.text }}</p>
-            <p v-if="outgoing.tags.length" class="mt-1 text-xs text-muted-foreground">{{ outgoing.tags.join(" ") }}</p>
-          </div>
-          <AnnouncementSimulatedPreview :scenes="simulatedScenes" trigger-class="-my-1 shrink-0 self-start" />
-        </div>
-
-        <ul class="rounded-xl border border-border px-3.5" aria-label="Para quem vai" data-seal-rows>
-          <li
-            v-for="row in reach"
-            :key="row.platform"
-            class="flex min-h-[52px] items-center gap-3 py-2 [&+&]:border-t [&+&]:border-border"
-            :data-seal-row="row.platform"
-          >
-            <Icon :name="platformIcon(row.platform)" class="size-5" aria-hidden="true" />
-            <span class="min-w-0 flex-1 text-[15px] leading-tight">{{ row.label }} <span v-if="row.kind" class="block text-[13px] text-muted-foreground">{{ row.kind }}</span></span>
-            <span class="tnum" :class="row.strong ? 'text-[15px] font-semibold' : 'text-[14px]'">{{ row.amount }}</span>
-          </li>
-          <li v-if="!reach.length" class="flex min-h-[52px] items-center text-sm text-muted-foreground">Nenhuma plataforma</li>
-        </ul>
-        <p v-if="consequence" class="text-[13px] leading-snug text-muted-foreground" data-seal-consequence>{{ consequence }}</p>
-
-        <p v-if="challenge.scheduled_for && !whenLine" class="text-sm font-medium">
-          {{ scheduleSummary(challenge.scheduled_for, shopTimezone) }}
-        </p>
-        <p v-if="challenge.scheduled_for" class="text-[13px] text-muted-foreground">{{ scheduledOutcomeNote }}</p>
-
-        <p v-if="isFire && command && 'productLabel' in command && command.productLabel" class="text-sm">
-          {{ command.productLabel }}
-        </p>
-
-        <!-- Segunda pessoa (v4 pino 7). -->
-        <div
-          v-if="dualLine"
-          class="flex gap-2.5 rounded-xl bg-muted/60 px-3.5 py-3 text-[14px] leading-snug"
-          :role="dualControl ? 'alert' : undefined"
-          data-seal-dual
-        >
-          <Icon name="lucide:users" class="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <div class="min-w-0 flex-1">
-            <p><b class="font-semibold">{{ dualLine.head }}</b>{{ dualLine.rest }}</p>
-            <template v-if="dualControl">
-              <UiButton
-                v-if="secondState === 'idle' || secondState === 'expired'"
-                type="button"
-                variant="outline"
-                class="mt-2"
-                data-seal-call-second
-                :disabled="device.busy.value"
-                @click="callSecondPerson"
+    <template #body>
+      <div class="space-y-3" data-marketing-seal>
+        <template v-if="challenge">
+          <!-- O QUÊ antes do PARA QUEM. Do tablet para cima a caixa cobre a tela, então o
+               resumo do que sai vem junto; no celular a revisão já mostra foto e texto. -->
+          <NuxtCard v-if="outgoing" variant="soft" class="max-sm:hidden">
+            <div class="flex gap-3">
+              <img v-if="imageUrl" :src="imageUrl" alt="Imagem do anúncio" class="size-16 shrink-0 rounded object-cover">
+              <div
+                v-else-if="missingImageForPost"
+                class="flex size-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded border border-dashed border-warning/60 text-warning"
               >
-                <Icon name="lucide:bell-ring" class="size-4" aria-hidden="true" />
-                {{ secondState === "expired" ? "O pedido venceu. Chamar de novo" : "Pedir a confirmação de outra pessoa" }}
-              </UiButton>
-              <p v-else-if="secondState === 'calling'" class="mt-2 text-muted-foreground" role="status">Chamando…</p>
-              <p v-else-if="secondState === 'waiting'" class="mt-2 flex items-center gap-1.5 text-muted-foreground" role="status" data-seal-waiting>
-                <Icon name="lucide:loader-circle" class="size-4 animate-spin" aria-hidden="true" />
-                {{ secondCalled ? `Pedido enviado a ${secondCalled} ${secondCalled === 1 ? "pessoa" : "pessoas"}.` : "Pedido enviado." }}
-                Esperando a confirmação no celular.
-              </p>
-              <p v-else class="mt-2 flex items-center gap-1.5 font-semibold text-success" role="status" data-seal-second-approved>
-                <Icon name="lucide:check" class="size-4" aria-hidden="true" />
-                A segunda pessoa confirmou.
-              </p>
-            </template>
-          </div>
-        </div>
-
-        <!-- O código de sempre: alternativa à digital, ou o caminho quando o dispositivo
-             não reconhece a pessoa. -->
-        <template v-if="!deviceFirst">
-          <div v-if="challenge.typed_phrase">
-            <label for="decision-typed-confirmation" class="block text-xs font-medium text-muted-foreground">
-              Digite exatamente
-              <code class="rounded bg-muted px-1.5 py-0.5">{{ challenge.typed_phrase }}</code>
-            </label>
-            <UiTextarea
-              id="decision-typed-confirmation"
-              v-model="typedConfirmation"
-              name="typed_confirmation"
-              :rows="1"
-              autocomplete="off"
-              spellcheck="false"
-              class="mt-1 min-h-11 resize-none font-mono"
-            />
-          </div>
-
-          <div v-if="challenge.step_up !== 'none'">
-            <div v-if="challenge.step_up === 'password'" class="mb-3">
-              <label for="decision-username" class="block text-xs font-medium text-muted-foreground">Usuário</label>
-              <UiInput
-                id="decision-username"
-                name="username"
-                :model-value="operatorUsername"
-                type="text"
-                autocomplete="username"
-                readonly
-                class="mt-1 bg-muted text-muted-foreground"
-              />
+                <Icon name="lucide:image-off" class="size-5" />
+                <span class="text-xs font-medium leading-none">Sem foto</span>
+              </div>
+              <div class="min-w-0 flex-1 text-sm">
+                <p v-if="outgoing.text" class="max-h-28 overflow-y-auto whitespace-pre-line">{{ outgoing.text }}</p>
+                <p v-if="outgoing.tags.length" class="mt-1 text-xs text-muted-foreground">{{ outgoing.tags.join(" ") }}</p>
+              </div>
+              <AnnouncementSimulatedPreview :scenes="simulatedScenes" trigger-class="-my-1 shrink-0 self-start" />
             </div>
-            <UiVerificationCodeInput
-              v-if="challenge.step_up === 'totp'"
-              id="decision-credential"
-              v-model="credential"
-              :disabled="busy"
-              @keydown.enter="submit"
-            />
-            <template v-else>
-              <label for="decision-credential" class="block text-xs font-medium text-muted-foreground">Sua senha</label>
-              <UiInput
-                id="decision-credential"
-                v-model="credential"
-                name="current_password"
-                type="password"
-                autocomplete="current-password"
-                :maxlength="200"
-                class="mt-1"
-                @keyup.enter="submit"
+          </NuxtCard>
+
+          <ul class="rounded-lg border border-border px-3.5" aria-label="Para quem vai" data-seal-rows>
+            <li
+              v-for="row in reach"
+              :key="row.platform"
+              class="flex min-h-13 items-center gap-3 py-2 [&+&]:border-t [&+&]:border-border"
+              :data-seal-row="row.platform"
+            >
+              <Icon :name="platformIcon(row.platform)" class="size-5" aria-hidden="true" />
+              <span class="min-w-0 flex-1 text-sm leading-tight">{{ row.label }} <span v-if="row.kind" class="block text-xs text-muted-foreground">{{ row.kind }}</span></span>
+              <span class="tnum text-sm" :class="row.strong ? 'font-semibold' : ''">{{ row.amount }}</span>
+            </li>
+            <li v-if="!reach.length" class="flex min-h-13 items-center text-sm text-muted-foreground">Nenhuma plataforma</li>
+          </ul>
+          <p v-if="consequence" class="text-sm leading-snug text-muted-foreground" data-seal-consequence>{{ consequence }}</p>
+
+          <p v-if="challenge.scheduled_for && !whenLine" class="text-sm font-medium">
+            {{ scheduleSummary(challenge.scheduled_for, shopTimezone) }}
+          </p>
+          <p v-if="challenge.scheduled_for" class="text-sm text-muted-foreground">{{ scheduledOutcomeNote }}</p>
+
+          <p v-if="isFire && command && 'productLabel' in command && command.productLabel" class="text-sm">
+            {{ command.productLabel }}
+          </p>
+
+          <!-- Segunda pessoa (v4 pino 7): aviso que pede gesto quando o servidor exige
+               duas pessoas; informação quando basta você. -->
+          <NuxtAlert
+            v-if="dualLine"
+            :color="dualControl ? 'warning' : 'info'"
+            variant="subtle"
+            icon="i-lucide-users"
+            :role="dualControl ? 'alert' : 'status'"
+            data-seal-dual
+          >
+            <template #description>
+              <p><b class="font-semibold">{{ dualLine.head }}</b>{{ dualLine.rest }}</p>
+              <template v-if="dualControl">
+                <p v-if="secondState === 'calling'" class="mt-2" role="status">Chamando…</p>
+                <p v-else-if="secondState === 'waiting'" class="mt-2 flex items-center gap-1.5" role="status" data-seal-waiting>
+                  <Icon name="lucide:loader-circle" class="size-4 animate-spin" aria-hidden="true" />
+                  {{ secondCalled ? `Pedido enviado a ${secondCalled} ${secondCalled === 1 ? "pessoa" : "pessoas"}.` : "Pedido enviado." }}
+                  Esperando a confirmação no celular.
+                </p>
+                <p v-else-if="secondState === 'approved'" class="mt-2 flex items-center gap-1.5 font-semibold text-success" role="status" data-seal-second-approved>
+                  <Icon name="lucide:check" class="size-4" aria-hidden="true" />
+                  A segunda pessoa confirmou.
+                </p>
+              </template>
+            </template>
+            <template v-if="dualControl && (secondState === 'idle' || secondState === 'expired')" #actions>
+              <NuxtButton
+                color="warning"
+                variant="outline"
+                icon="i-lucide-bell-ring"
+                :label="secondState === 'expired' ? 'O pedido venceu. Chamar de novo' : 'Pedir a confirmação de outra pessoa'"
+                :disabled="device.busy.value"
+                data-seal-call-second
+                @click="callSecondPerson"
               />
             </template>
-          </div>
+          </NuxtAlert>
+
+          <!-- O código de sempre: alternativa à digital, ou o caminho quando o dispositivo
+               não reconhece a pessoa. -->
+          <template v-if="!deviceFirst">
+            <NuxtFormField v-if="challenge.typed_phrase" label="Digite exatamente esta frase">
+              <p id="decision-typed-phrase" class="mb-1.5">
+                <code class="rounded bg-muted px-1.5 py-0.5 text-sm">{{ challenge.typed_phrase }}</code>
+              </p>
+              <NuxtTextarea
+                id="decision-typed-confirmation"
+                aria-describedby="decision-typed-phrase"
+                v-model="typedConfirmation"
+                name="typed_confirmation"
+                :rows="1"
+                autocomplete="off"
+                spellcheck="false"
+                class="w-full font-mono"
+              />
+            </NuxtFormField>
+
+            <template v-if="challenge.step_up !== 'none'">
+              <NuxtFormField v-if="challenge.step_up === 'password'" label="Usuário">
+                <NuxtInput
+                  id="decision-username"
+                  name="username"
+                  :model-value="operatorUsername"
+                  type="text"
+                  autocomplete="username"
+                  readonly
+                  class="w-full"
+                />
+              </NuxtFormField>
+              <NuxtFormField v-if="challenge.step_up === 'totp'" label="Código de 6 dígitos do autenticador">
+                <NuxtPinInput
+                  id="decision-credential"
+                  v-model="credentialDigits"
+                  :length="6"
+                  otp
+                  :disabled="busy"
+                  @keydown.enter="submit"
+                />
+              </NuxtFormField>
+              <NuxtFormField v-else-if="challenge.step_up === 'password'" label="Sua senha">
+                <NuxtInput
+                  id="decision-credential"
+                  v-model="credential"
+                  name="current_password"
+                  type="password"
+                  autocomplete="current-password"
+                  :maxlength="200"
+                  class="w-full"
+                  @keyup.enter="submit"
+                />
+              </NuxtFormField>
+            </template>
+          </template>
         </template>
+
+        <NuxtAlert
+          v-if="error || sealError"
+          color="error"
+          variant="subtle"
+          :title="error || sealError"
+        />
       </div>
+    </template>
 
-      <p v-if="error || sealError" class="text-sm text-destructive" role="alert">{{ error || sealError }}</p>
-
-      <UiDialogFooter class="max-sm:flex-row max-sm:gap-2.5">
-        <UiButton
-          type="button"
-          variant="outline"
-          class="max-sm:h-14 max-sm:rounded-xl max-sm:px-5 max-sm:text-[15px] max-sm:font-semibold"
-          :disabled="busy"
-          @click="emit('cancel')"
-        >
-          Voltar
-        </UiButton>
-        <UiButton
-          type="button"
-          class="max-sm:h-14 max-sm:flex-1 max-sm:rounded-xl max-sm:text-[16px] max-sm:font-semibold"
-          :disabled="!ready"
-          data-seal-confirm
-          @click="submit"
-        >
-          <Icon v-if="deviceFirst" name="lucide:fingerprint" class="size-5" aria-hidden="true" />
-          {{ confirmLabel }}
-        </UiButton>
-      </UiDialogFooter>
-      <p v-if="needsCode && device.supported.value" class="-mt-1 text-center text-[13px] text-muted-foreground" data-seal-method>
-        <template v-if="!usingCode">
-          Confirma com a digital do dispositivo ·
-          <button type="button" class="min-h-8 font-semibold text-foreground underline underline-offset-2" data-seal-use-code @click="usingCode = true">Usar o meu código</button>
-        </template>
-        <template v-else>
-          Confirma com o seu código ·
-          <button type="button" class="min-h-8 font-semibold text-foreground underline underline-offset-2" @click="usingCode = false">Usar a digital</button>
-        </template>
-      </p>
-    </UiDialogContent>
-  </UiDialog>
+    <template #footer>
+      <div class="flex w-full flex-col gap-2">
+        <div class="flex w-full justify-end gap-2">
+          <NuxtButton
+            color="neutral"
+            variant="outline"
+            label="Voltar"
+            :disabled="busy"
+            @click="emit('cancel')"
+          />
+          <NuxtButton
+            :icon="deviceFirst ? 'i-lucide-fingerprint' : undefined"
+            :label="confirmLabel"
+            :disabled="!ready"
+            data-seal-confirm
+            @click="submit"
+          />
+        </div>
+        <p v-if="needsCode && device.supported.value" class="flex flex-wrap items-center justify-end gap-x-1 text-sm text-muted-foreground" data-seal-method>
+          <template v-if="!usingCode">
+            Confirma com a digital do dispositivo ·
+            <NuxtButton color="neutral" variant="ghost" label="Usar o meu código" data-seal-use-code @click="usingCode = true" />
+          </template>
+          <template v-else>
+            Confirma com o seu código ·
+            <NuxtButton color="neutral" variant="ghost" label="Usar a digital" @click="usingCode = false" />
+          </template>
+        </p>
+      </div>
+    </template>
+  </NuxtModal>
 </template>

@@ -7,10 +7,10 @@
 // gesto, "Revisar", que leva ao lugar exato onde a decisão já é tomada (a revisão
 // do anúncio, ou o resultado da entrega dele). A fila não decide nada sozinha.
 //
-// Desenho: `marketing-decisoes4.html` (v4). Cartão de 14px de raio e 12px de
-// respiro; a miniatura de 60px (a ocasião, ou a plataforma que falhou); título de
-// 16px e destino de 13px; o motivo da falha numa faixa vermelha clara; o prazo como
-// hora + tom; "Revisar" de 48px, cheio só no mais urgente.
+// Desenho: `marketing-decisoes4.html` (v4), no conjunto mínimo da suíte (fase 2): o
+// cartão é um `NuxtCard` de bloco único com 12 px de respiro; a miniatura de 60 px (a
+// ocasião, ou a plataforma que falhou); o motivo da falha num `NuxtAlert` de erro; o
+// prazo como hora + tom; "Revisar" cheio só no mais urgente.
 import { platformIcon } from "~/presentation/campaign";
 import {
   automaticCheckLine,
@@ -89,15 +89,17 @@ const iconToneClasses: Record<DeadlineTone, string> = {
   none: "text-muted-foreground",
 };
 
-// Atualizar mora no ⋯ do cabeçalho, com a tecla R (v3: "Atualizar R").
-const DECISIONS_MENU = [
-  { key: "templates", label: "Modelos de texto", icon: "lucide:file-text", to: "/settings/templates" },
-  { key: "history", label: "Histórico de disparos", icon: "lucide:history", to: "/history" },
-  { key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" },
+// O cabeçalho da suíte (fase 2): "Preparar disparo" é a ação primária (o botão cheio na
+// mesa; no celular, a vaga de ícone). O resto, com "Atualizar" (tecla R), é o ⋯.
+const headerActions = [
+  { label: "Modelos de texto", icon: "i-lucide-file-text", to: "/settings/templates" },
+  { label: "Enviados", icon: "i-lucide-history", to: "/history" },
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
 ];
-function onMenu(key: string) {
-  if (key === "refresh") void refresh();
-}
+const phoneHeaderActions = [
+  { label: "Preparar disparo", icon: "i-lucide-send", to: "/settings/campaigns", priority: 1 },
+  ...headerActions,
+];
 onKeyStroke(["r", "R"], (event) => {
   const target = event.target as HTMLElement | null;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -125,22 +127,18 @@ const scheduledLine = computed(() =>
 );
 </script>
 
+
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-marketing-decisions>
-    <MarketingPageHeader title="Decisões" phone-hides-actions>
-      <!-- Do tablet para cima (v3): o ⋯ com o que não é o gesto da tela e a ação
-           primária por último, na mesma linha. No celular o polegar tem o sino e o menu. -->
-      <template #actions>
-        <MarketingPageMenu heading="Decisões" :items="DECISIONS_MENU" @select="onMenu" />
-        <UiButton to="/settings/campaigns" data-decisions-primary>
-          <Icon name="lucide:send" class="size-4" aria-hidden="true" />
-          Preparar disparo
-        </UiButton>
-      </template>
+    <OperatorPageHeader
+      title="Decisões"
+      :actions="headerActions"
+      :phone-actions="phoneHeaderActions"
+      actions-label="Mais ações de Decisões"
+    >
       <template #status>
         <!-- No celular o kit desce o estado para a segunda linha da barra (README "Barra
-             do topo no celular"): ele não disputa mais a largura com o título, e o rótulo
-             por extenso ("Atualiza sozinho a cada 1 min") aparece inteiro. -->
+             do topo no celular"), e o rótulo por extenso aparece inteiro. -->
         <span class="flex min-w-0" data-marketing-live>
           <OperatorLiveStatus
             :tone="live.tone"
@@ -150,177 +148,189 @@ const scheduledLine = computed(() =>
           />
         </span>
       </template>
-    </MarketingPageHeader>
+      <template #actions>
+        <NuxtButton
+          to="/settings/campaigns"
+          icon="i-lucide-send"
+          label="Preparar disparo"
+          data-decisions-primary
+        />
+      </template>
+    </OperatorPageHeader>
 
-    <div class="mx-auto flex w-full max-w-3xl flex-col gap-2.5 px-4 pt-3 pb-5 sm:px-6">
-      <!-- Uma linha limpa (v4): quantas e em que ordem. Atualizar mora no ⋯ do
-           cabeçalho (tecla R), não aqui. -->
-      <p class="flex min-h-8 items-center text-[14px] text-muted-foreground" role="status" aria-live="polite" :aria-busy="loading" data-decisions-headline>
-        <span><strong class="font-semibold text-foreground">{{ headline.strong }}</strong><template v-if="headline.rest"> · {{ headline.rest }}</template></span>
-      </p>
-
-      <div
-        v-if="error && !queue"
-        class="rounded-[14px] border border-destructive/30 bg-destructive/5 p-4"
-        role="alert"
-      >
-        <p class="font-semibold">A fila de decisões não carregou</p>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Isso não quer dizer que nada pede você. Atualize antes de concluir.
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <div class="mx-auto flex w-full max-w-3xl flex-col gap-3">
+        <!-- Uma linha limpa (v4): quantas e em que ordem. -->
+        <p
+          v-if="queue"
+          class="flex min-h-8 items-center text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+          :aria-busy="loading"
+          data-decisions-headline
+        >
+          <span><strong class="font-semibold text-foreground">{{ headline.strong }}</strong><template v-if="headline.rest"> · {{ headline.rest }}</template></span>
         </p>
-        <UiButton
-          type="button"
-          variant="outline"
-          class="mt-3"
-          @click="refresh()"
-        >
-          Tentar de novo
-        </UiButton>
-      </div>
 
-      <ol v-else-if="items.length" class="flex flex-col gap-2.5">
-        <li
-          v-for="(item, index) in items"
-          :key="item.ref"
-          :data-decision="item.ref"
-          :data-decision-kind="item.kind"
-          class="flex flex-col gap-2.5 rounded-[14px] border bg-card p-3"
-          :class="index === 0 ? 'border-primary ring-1 ring-primary' : 'border-border'"
-          :data-decision-focus="index === 0 || undefined"
-        >
-          <div class="flex gap-3">
-            <img
-              v-if="photo(item)"
-              :src="photo(item)"
-              alt=""
-              class="size-[60px] shrink-0 rounded-lg object-cover"
-              loading="lazy"
-              data-decision-photo
-              @error="brokenImages = new Set([...brokenImages, item.ref])"
-            >
-            <span
-              v-else
-              class="grid size-[60px] shrink-0 place-items-center rounded-lg"
-              :class="
-                item.kind === 'review'
-                  ? 'bg-[color-mix(in_oklab,var(--app-color,var(--primary))_14%,transparent)] text-[var(--app-color,var(--primary))]'
-                  : 'bg-destructive/10 text-destructive'
-              "
-              aria-hidden="true"
-            >
-              <Icon :name="icon(item)" class="size-7" />
-            </span>
-            <div class="min-w-0 flex-1">
-              <h2 class="break-words text-[16px] font-semibold leading-snug">
-                {{ title(item) }}
-              </h2>
-              <p class="mt-0.5 break-words text-[13px] leading-snug text-muted-foreground">
-                {{ subtitle(item) }}
-              </p>
-            </div>
-          </div>
+        <OperatorScreenState
+          v-if="error && !queue"
+          state="error"
+          what="as decisões"
+          description="Isso não quer dizer que nada pede você. Atualize antes de concluir."
+          @retry="refresh()"
+        />
 
-          <ul
-            v-if="item.failures.length"
-            class="flex flex-col gap-1.5"
-            :aria-label="`Motivo de ${title(item)}`"
+        <OperatorScreenState
+          v-else-if="loading && !queue"
+          state="loading"
+          what="as decisões"
+        />
+
+        <ol v-else-if="items.length" class="flex flex-col gap-3">
+          <li
+            v-for="(item, index) in items"
+            :key="item.ref"
+            :data-decision="item.ref"
+            :data-decision-kind="item.kind"
+            :data-decision-focus="index === 0 || undefined"
           >
-            <li
-              v-for="failure in item.failures"
-              :key="failure.platform_ref"
-              class="flex items-start gap-1.5 rounded-lg bg-destructive/8 px-2.5 py-2 text-[13px] leading-snug font-medium text-destructive"
+            <!-- Um bloco só, 12 px de respiro, sem cabeçalho nem rodapé destacados. O
+                 mais urgente leva o anel na cor da ação. -->
+            <NuxtCard
+              class="*:data-[slot=body]:p-3"
+              :class="index === 0 ? 'ring-2 ring-primary' : ''"
+              data-decision-card
             >
-              <Icon
-                name="lucide:triangle-alert"
-                class="mt-px size-4"
-                aria-hidden="true"
-              />
-              <span>{{ failureReason(failure, item.kind) }}</span>
-            </li>
-          </ul>
+              <div class="flex flex-col gap-3">
+                <div class="flex gap-3">
+                  <img
+                    v-if="photo(item)"
+                    :src="photo(item)"
+                    alt=""
+                    class="size-15 shrink-0 rounded-lg object-cover"
+                    loading="lazy"
+                    data-decision-photo
+                    @error="brokenImages = new Set([...brokenImages, item.ref])"
+                  >
+                  <span
+                    v-else
+                    class="grid size-15 shrink-0 place-items-center rounded-lg"
+                    :class="
+                      item.kind === 'review'
+                        ? 'bg-primary/10 text-primary'
+                        : 'bg-error/10 text-error'
+                    "
+                    aria-hidden="true"
+                  >
+                    <Icon :name="icon(item)" class="size-7" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <h2 class="break-words text-base font-semibold leading-snug">
+                      {{ title(item) }}
+                    </h2>
+                    <p class="mt-0.5 break-words text-sm leading-snug text-muted-foreground">
+                      {{ subtitle(item) }}
+                    </p>
+                  </div>
+                </div>
 
-          <div class="flex items-center gap-3">
-            <Icon
-              :name="item.scheduled_for ? 'lucide:calendar' : 'lucide:clock'"
-              class="size-5"
-              :class="iconToneClasses[deadline(item).tone]"
-              aria-hidden="true"
-            />
-            <p class="min-w-0 flex-1 leading-tight">
-              <span class="block text-[14px]">{{ splitClock(deadline(item).label)[0] }}<b v-if="splitClock(deadline(item).label)[1]" class="tnum font-semibold">{{ splitClock(deadline(item).label)[1] }}</b></span>
+                <ul
+                  v-if="item.failures.length"
+                  class="flex flex-col gap-2"
+                  :aria-label="`Motivo de ${title(item)}`"
+                >
+                  <li v-for="failure in item.failures" :key="failure.platform_ref">
+                    <NuxtAlert
+                      color="error"
+                      variant="subtle"
+                      icon="i-lucide-triangle-alert"
+                      :title="failureReason(failure, item.kind)"
+                    />
+                  </li>
+                </ul>
+
+                <div class="flex items-center gap-3">
+                  <Icon
+                    :name="item.scheduled_for ? 'lucide:calendar' : 'lucide:clock'"
+                    class="size-5"
+                    :class="iconToneClasses[deadline(item).tone]"
+                    aria-hidden="true"
+                  />
+                  <p class="min-w-0 flex-1 leading-tight">
+                    <span class="block text-sm">{{ splitClock(deadline(item).label)[0] }}<b v-if="splitClock(deadline(item).label)[1]" class="tnum font-semibold">{{ splitClock(deadline(item).label)[1] }}</b></span>
+                    <span
+                      v-if="deadline(item).detail"
+                      class="block text-xs tnum"
+                      :class="toneClasses[deadline(item).tone]"
+                      >{{ deadline(item).detail }}</span
+                    >
+                  </p>
+                  <!-- Cheio só no mais urgente (v4): o estado ativo do botão, nunca a
+                       troca de variante. -->
+                  <NuxtButton
+                    :to="item.href"
+                    label="Revisar"
+                    variant="outline"
+                    :active="index === 0"
+                    active-variant="solid"
+                    class="shrink-0"
+                    :aria-label="`Revisar: ${title(item)}`"
+                    data-decision-review
+                  />
+                </div>
+              </div>
+            </NuxtCard>
+          </li>
+        </ol>
+
+        <OperatorScreenState
+          v-else-if="queue"
+          state="empty"
+          icon="i-lucide-inbox"
+          title="Nenhuma decisão espera você agora."
+          description="Quando um anúncio pedir revisão, ele aparece aqui, com o prazo."
+          data-decisions-empty
+        />
+
+        <ul
+          v-if="automaticChecks.length"
+          class="flex flex-col gap-1"
+          aria-label="Conferências automáticas"
+        >
+          <li v-for="check in automaticChecks" :key="check.ref">
+            <NuxtLink
+              :to="check.href"
+              :data-automatic-check="check.state"
+              class="flex min-h-11 items-start gap-2.5 rounded-lg px-1 py-1.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
               <span
-                v-if="deadline(item).detail"
-                class="block text-[13px] tnum"
-                :class="toneClasses[deadline(item).tone]"
-                >{{ deadline(item).detail }}</span
+                class="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"
+                aria-hidden="true"
               >
-            </p>
-            <UiButton
-              :to="item.href"
-              :variant="index === 0 ? 'default' : 'outline'"
-              class="h-12 shrink-0 rounded-xl px-6 text-[15px] font-semibold"
-              :aria-label="`Revisar: ${title(item)}`"
-              data-decision-review
-            >
-              Revisar
-            </UiButton>
-          </div>
-        </li>
-      </ol>
+                <Icon name="lucide:sparkles" class="size-4" />
+              </span>
+              <!-- Título e detalhe na MESMA linha do template: espaço entre tags que
+                   atravessa quebra de linha o compilador do Vue descarta, e a frase
+                   virava "incerto.O sistema". -->
+              <span class="min-w-0 flex-1 text-sm leading-snug text-muted-foreground"><strong class="font-semibold text-foreground">{{ automaticCheckLine(check, shopTimezone, nowMs).title }}</strong> {{ automaticCheckLine(check, shopTimezone, nowMs).detail }}</span>
+            </NuxtLink>
+          </li>
+        </ul>
 
-      <div
-        v-else-if="queue"
-        class="rounded-[14px] border border-dashed border-border bg-card/50 px-6 py-10 text-center"
-      >
-        <Icon
-          name="lucide:inbox"
-          class="mx-auto size-8 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <p class="mt-2 font-semibold">Nenhuma decisão esperando você</p>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Quando um anúncio pedir revisão, ele aparece aqui, com o prazo.
-        </p>
+        <NuxtLink
+          v-if="queue && scheduledLine"
+          to="/scheduled"
+          class="flex min-h-12 items-center gap-2 rounded-lg border border-dashed border-border px-3.5 text-sm hover:bg-muted"
+          data-decisions-scheduled-line
+        >
+          <span class="min-w-0 flex-1"><b v-if="scheduledLine.lead" class="tnum font-semibold">{{ scheduledLine.lead }}</b> <span class="text-muted-foreground">{{ scheduledLine.rest }}</span></span>
+          <Icon
+            name="lucide:chevron-right"
+            class="size-5 text-muted-foreground"
+            aria-hidden="true"
+          />
+        </NuxtLink>
       </div>
-
-      <ul
-        v-if="automaticChecks.length"
-        class="flex flex-col gap-1"
-        aria-label="Conferências automáticas"
-      >
-        <li v-for="check in automaticChecks" :key="check.ref">
-          <NuxtLink
-            :to="check.href"
-            :data-automatic-check="check.state"
-            class="flex min-h-11 items-start gap-2.5 rounded-xl px-1 py-1.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span
-              class="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"
-              aria-hidden="true"
-            >
-              <Icon name="lucide:sparkles" class="size-4" />
-            </span>
-            <!-- Título e detalhe na MESMA linha do template: espaço entre tags que
-                 atravessa quebra de linha o compilador do Vue descarta, e a frase
-                 virava "incerto.O sistema". -->
-            <span class="min-w-0 flex-1 text-[13px] leading-snug text-muted-foreground"><strong class="font-semibold text-foreground">{{ automaticCheckLine(check, shopTimezone, nowMs).title }}</strong> {{ automaticCheckLine(check, shopTimezone, nowMs).detail }}</span>
-          </NuxtLink>
-        </li>
-      </ul>
-
-      <NuxtLink
-        v-if="queue && scheduledLine"
-        to="/scheduled"
-        class="flex min-h-12 items-center gap-2 rounded-xl border border-dashed border-border px-3.5 text-[14px] hover:bg-muted"
-        data-decisions-scheduled-line
-      >
-        <span class="min-w-0 flex-1"><b v-if="scheduledLine.lead" class="tnum font-semibold">{{ scheduledLine.lead }}</b> <span class="text-muted-foreground">{{ scheduledLine.rest }}</span></span>
-        <Icon
-          name="lucide:chevron-right"
-          class="size-5 text-muted-foreground"
-          aria-hidden="true"
-        />
-      </NuxtLink>
-    </div>
+    </section>
   </main>
 </template>

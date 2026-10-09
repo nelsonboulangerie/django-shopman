@@ -116,3 +116,92 @@ export function historyWhen(instant: string, timeZone: string, nowMs = Date.now(
   const date = at.year === today.year ? at.short : `${at.short}/${at.year}`;
   return `${date} às ${at.time}`;
 }
+
+/** Os quatro recortes de Enviados (os mesmos valores e a mesma URL de antes). */
+export type HistoryFilterName = "outcome" | "platform" | "period" | "actor";
+
+/**
+ * O valor "sem recorte" de cada `NuxtSelect`. O Select do Nuxt UI (Reka) não aceita
+ * item de valor vazio, então "Todas" é `all` na tela e volta a ser vazio na URL.
+ */
+export const HISTORY_FILTER_ALL = "all";
+
+export interface HistoryFilter {
+  name: HistoryFilterName;
+  label: string;
+  options: Array<{ value: string; label: string }>;
+}
+
+export const HISTORY_FILTERS: readonly HistoryFilter[] = [
+  {
+    name: "outcome",
+    label: "Situação",
+    options: [
+      { value: HISTORY_FILTER_ALL, label: "Todas" },
+      { value: "not_started", label: "Ainda não iniciada" },
+      { value: "fanout_pending", label: "Preparando destinos" },
+      { value: "delivering", label: "Em andamento" },
+      { value: "succeeded", label: "Concluída" },
+      { value: "completed_with_failures", label: "Concluída com falhas" },
+      { value: "unknown", label: "Resultado incerto" },
+      { value: "cancelled", label: "Cancelada" },
+      { value: "expired", label: "Expirada" },
+      { value: "legacy_untracked", label: "Registro antigo" },
+    ],
+  },
+  {
+    name: "platform",
+    label: "Plataforma",
+    options: [
+      { value: HISTORY_FILTER_ALL, label: "Todas" },
+      { value: "instagram", label: "Instagram" },
+      { value: "facebook", label: "Facebook" },
+      { value: "google_business", label: "Google" },
+      { value: "whatsapp", label: "WhatsApp" },
+    ],
+  },
+  {
+    name: "period",
+    label: "Criado em",
+    options: [
+      { value: HISTORY_FILTER_ALL, label: "Qualquer período" },
+      { value: "today", label: "Hoje" },
+      { value: "7d", label: "Últimos 7 dias" },
+      { value: "30d", label: "Últimos 30 dias" },
+    ],
+  },
+  {
+    name: "actor",
+    label: "Origem da decisão",
+    options: [
+      { value: HISTORY_FILTER_ALL, label: "Todas" },
+      { value: "operator", label: "Pessoa" },
+      { value: "automation", label: "Automação" },
+    ],
+  },
+];
+
+/** O valor do `NuxtSelect` a partir do recorte da URL (vazio vira "Todas"). */
+export function historyFilterValue(current: string | undefined | null): string {
+  return current || HISTORY_FILTER_ALL;
+}
+
+/** O valor que vai para a URL (`setFilter`): "Todas" e "Qualquer período" saem dela. */
+export function historyFilterQueryValue(value: string): string {
+  return value === HISTORY_FILTER_ALL ? "" : value;
+}
+
+/**
+ * Os recortes fora do padrão, um chip cada ("Criado em: Últimos 7 dias"). Valor que a
+ * lista não conhece não vira chip (o composable já filtra a URL antes).
+ */
+export function historyActiveFilters(
+  current: Partial<Record<HistoryFilterName, string | undefined | null>>,
+): Array<{ name: HistoryFilterName; label: string }> {
+  return HISTORY_FILTERS.flatMap((filter) => {
+    const value = historyFilterValue(current[filter.name]);
+    if (value === HISTORY_FILTER_ALL) return [];
+    const option = filter.options.find((entry) => entry.value === value);
+    return option ? [{ name: filter.name, label: `${filter.label}: ${option.label}` }] : [];
+  });
+}

@@ -40,21 +40,24 @@ Instagram e até 12 mensagens no WhatsApp — não 12 mensagens no Instagram.
 ## Rotas da superfície
 
 A casa (`/`) é a fila de decisões, ordenada por prazo; o sino abre a mesma fila.
-As seções de operação são Decisões (`/`), Agendados (`/scheduled`), Enviados
-(`/history`) e Ajustes (`/settings/campaigns`), com as próprias seções numa segunda linha:
-Campanhas, Modelos (`/settings/templates`), Ofertas e cupons (`/settings/offers`) e Plataformas
-(`/settings/platforms`). A segunda pessoa do selo confirma em `/second-control/:ref`, que o
-push dela abre. No celular elas ficam numa barra no pé da tela.
+As seções de operação são Decisões (`/`), Agendados (`/scheduled`) e Enviados
+(`/history`); Ajustes (`/settings`) lista as quatro sub-seções, cada uma com rota própria:
+Campanhas (`/settings/campaigns`), Modelos (`/settings/templates`), Ofertas e cupons
+(`/settings/offers`) e Plataformas (`/settings/platforms`). Dentro de uma sub-seção, a faixa
+da toolbar leva às outras. A segunda pessoa do selo confirma em `/second-control/:ref`, que
+o push dela abre. O app mora no shell da suíte (`OperatorSuiteShell`): barra lateral na
+mesa, gaveta pelo ☰ e barra inferior abaixo de `lg`.
 
 <!-- marketing-ui-routes:start -->
 - `/`
 - `/announcements/:id`
-- `/settings/campaigns`
 - `/history`
-- `/settings/offers`
-- `/settings/platforms`
 - `/scheduled`
 - `/second-control/:ref`
+- `/settings`
+- `/settings/campaigns`
+- `/settings/offers`
+- `/settings/platforms`
 - `/settings/templates`
 <!-- marketing-ui-routes:end -->
 

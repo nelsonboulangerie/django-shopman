@@ -1,19 +1,13 @@
 import { mount, flushPromises } from "@vue/test-utils";
-import { computed, defineComponent, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import AnnouncementResultPanel from "~/components/AnnouncementResultPanel.vue";
-import VerificationCodeInput from "../../../operator-kit/app/components/Ui/VerificationCodeInput.vue";
 import type {
   AnnouncementProjectionV2,
   MarketingActionProjectionV2,
   MarketingCommandResponse,
 } from "~/types/campaign";
 
-const SlotStub = defineComponent({ template: "<div><slot /></div>" });
-const DialogStub = defineComponent({
-  props: { open: Boolean },
-  template: '<div v-if="open"><slot /></div>',
-});
 
 beforeAll(() => {
   Object.assign(globalThis, {
@@ -244,17 +238,8 @@ function panel(options: { actions?: MarketingActionProjectionV2[] } = {}) {
       },
     },
     global: {
-      components: {
-        UiVerificationCodeInput: VerificationCodeInput,
-      },
       stubs: {
         Icon: true,
-        UiDialog: DialogStub,
-        UiDialogContent: SlotStub,
-        UiDialogHeader: SlotStub,
-        UiDialogTitle: SlotStub,
-        UiDialogDescription: SlotStub,
-        UiDialogFooter: SlotStub,
       },
     },
   });
@@ -313,15 +298,8 @@ describe("AnnouncementResultPanel", () => {
         },
       },
       global: {
-        components: { UiVerificationCodeInput: VerificationCodeInput },
         stubs: {
           Icon: true,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -352,15 +330,8 @@ describe("AnnouncementResultPanel", () => {
           },
         },
         global: {
-          components: { UiVerificationCodeInput: VerificationCodeInput },
           stubs: {
             Icon: true,
-            UiDialog: DialogStub,
-            UiDialogContent: SlotStub,
-            UiDialogHeader: SlotStub,
-            UiDialogTitle: SlotStub,
-            UiDialogDescription: SlotStub,
-            UiDialogFooter: SlotStub,
           },
         },
       });
@@ -392,12 +363,6 @@ describe("AnnouncementResultPanel", () => {
       global: {
         stubs: {
           Icon: true,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -508,7 +473,8 @@ describe("AnnouncementResultPanel", () => {
     const confirmButton = wrapper
       .findAll("button")
       .find((button) => button.text().includes("Consultar resultado"))!;
-    expect(confirmButton.classes()).toContain("w-full");
+    // A ação ocupa a largura do rodapé (`block`), centrada como a de voltar.
+    expect(confirmButton.attributes("block")).toBeDefined();
   });
 
   it("collects and preserves a cancellation reason before requesting confirmation", async () => {

@@ -14,7 +14,11 @@ import { marketingTemplateSummary } from "~/presentation/marketingVariables";
 
 const { templates, loading, error, load, create, patch, remove } =
   useAnnouncementTemplates();
-const { variables, deliveryCapabilities } = useCampaigns();
+const {
+  variables,
+  deliveryCapabilities,
+  refresh: refreshCampaigns,
+} = useCampaigns();
 const { aiAssistAvailable } = useCampaignBoard();
 
 const editing = ref<AnnouncementTemplate | null>(null);
@@ -63,134 +67,145 @@ async function confirmRemove() {
   busy.value = false;
 }
 
+// As ações da tela como dados (barra do topo no celular): "Novo modelo" disputa a vaga
+// de ícone; "Atualizar" (tecla R) mora no ⋯.
+const headerActions = computed(() => [
+  {
+    label: "Novo modelo",
+    icon: "i-lucide-plus",
+    priority: 1,
+    onSelect: openNew,
+  },
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    kbds: ["R"],
+    onSelect: () => void load(),
+  },
+]);
+
+onKeyStroke(["r", "R"], (event) => {
+  const target = event.target as HTMLElement | null;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (panelOpen.value || removing.value) return;
+  if (target?.closest("input, textarea, select, [contenteditable='true']"))
+    return;
+  void load();
+});
+
 useHead({ title: "Modelos" });
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <MarketingPageHeader title="Modelos">
+    <OperatorPageHeader
+      title="Modelos"
+      search-placeholder="Buscar campanha, modelo ou tela"
+      :actions="headerActions"
+      actions-label="Mais ações de Modelos"
+    >
       <template #actions>
-        <UiButton type="button" @click="openNew">
-          <Icon name="lucide:plus" class="size-4" />
-          Novo modelo
-        </UiButton>
-      </template>
-    </MarketingPageHeader>
-    <div class="mx-auto w-full max-w-3xl px-4 py-6">
-
-    <div
-      v-if="error && !templates.length"
-      class="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-5"
-      role="alert"
-    >
-      <div class="flex items-start gap-3">
-        <Icon
-          name="lucide:cloud-off"
-          class="mt-0.5 size-5 shrink-0 text-destructive"
+        <NuxtButton
+          icon="i-lucide-plus"
+          label="Novo modelo"
+          data-template-new
+          @click="openNew"
         />
-        <div>
-          <p class="font-semibold">Não foi possível carregar os modelos</p>
-          <p class="mt-1 text-sm text-muted-foreground">
-            A lista está indisponível agora; isso não significa que ela esteja
-            vazia. Seus modelos não foram alterados.
-          </p>
-          <UiButton
-            type="button"
-            variant="outline"
-            class="mt-3"
-            :disabled="loading"
-            @click="load()"
-          >
-            {{ loading ? "Carregando…" : "Tentar de novo" }}
-          </UiButton>
-        </div>
-      </div>
-    </div>
+      </template>
+      <template #filters-primary><MarketingSettingsNav /></template>
+    </OperatorPageHeader>
 
-    <div
-      v-else-if="loading && !templates.length"
-      class="space-y-2"
-      aria-busy="true"
-    >
-      <UiSkeleton
-        v-for="n in 3"
-        :key="n"
-        class="h-16 rounded-md"
-        label="Carregando modelos"
-      />
-    </div>
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <div class="mx-auto w-full max-w-3xl">
+        <OperatorScreenState
+          v-if="error && !templates.length"
+          state="error"
+          what="os modelos"
+          description="A lista está indisponível agora; isso não significa que ela esteja vazia. Seus modelos não foram alterados."
+          @retry="load()"
+        />
 
-    <!-- Vazio é o estado que mais importa aqui: era exatamente ele que travava tudo. -->
-    <div
-      v-else-if="!templates.length"
-      class="rounded-md border border-border bg-card px-4 py-8 text-center"
-    >
-      <Icon
-        name="lucide:file-text"
-        class="mx-auto size-8 text-muted-foreground"
-      />
-      <p class="mt-3 font-semibold">Nenhum modelo ainda</p>
-      <p class="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-        O modelo é o texto que o cliente recebe. Sem pelo menos um, não há como
-        criar campanha.
-      </p>
-      <UiButton type="button" class="mt-4" @click="openNew">
-        <Icon name="lucide:plus" class="size-4" />
-        Criar o primeiro
-      </UiButton>
-    </div>
+        <OperatorScreenState
+          v-else-if="loading && !templates.length"
+          state="loading"
+          what="os modelos"
+        />
 
-    <ul
-      v-else
-      class="divide-y divide-border rounded-md border border-border bg-card"
-    >
-      <li
-        v-for="template in templates"
-        :key="template.pk"
-        class="flex items-start gap-3 px-4 py-3"
-      >
-        <!-- A linha inteira abre a edição; o alvo amplo reduz precisão e navegação do operador. -->
-        <button
-          type="button"
-          class="min-w-0 flex-1 text-left"
-          @click="openEdit(template)"
+        <!-- Vazio é o estado que mais importa aqui: era exatamente ele que travava tudo. -->
+        <OperatorScreenState
+          v-else-if="!templates.length"
+          state="empty"
+          icon="i-lucide-file-text"
+          title="Nenhum modelo ainda"
+          description="O modelo é o texto que o cliente recebe. Sem pelo menos um, não há como criar campanha."
         >
-          <p
-            class="font-semibold"
-            :class="template.is_active ? '' : 'text-muted-foreground'"
-          >
-            {{ template.name }}
-          </p>
-          <p class="mt-0.5 truncate text-sm text-muted-foreground">
-            {{ marketingTemplateSummary(template.body) }}
-          </p>
-          <p
-            v-if="template.use_ai_generation"
-            class="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground"
-          >
-            <Icon name="lucide:sparkles" class="size-3.5" />
-            Sugestão disponível na revisão
-          </p>
-        </button>
-        <div class="flex shrink-0 items-center gap-2">
-          <span
-            v-if="!template.is_active"
-            class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-          >
-            Inativo
-          </span>
-          <UiIconButton
-            icon="lucide:trash-2"
-            :label="`Apagar o modelo ${template.name}`"
-            @click="removing = template"
-          />
-          <Icon
-            name="lucide:chevron-right"
-            class="size-4 text-muted-foreground"
-          />
-        </div>
-      </li>
-    </ul>
+          <template #actions>
+            <NuxtButton
+              icon="i-lucide-plus"
+              label="Criar o primeiro"
+              @click="openNew"
+            />
+          </template>
+        </OperatorScreenState>
+
+        <NuxtCard v-else data-template-list>
+          <ul class="-my-2 divide-y divide-default">
+            <li
+              v-for="template in templates"
+              :key="template.pk"
+              class="flex items-start gap-2 py-2"
+              :data-template="template.pk"
+            >
+              <!-- A linha inteira abre a edição: alvo amplo, um toque. -->
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                block
+                trailing-icon="i-lucide-chevron-right"
+                class="min-w-0 flex-1 justify-start text-left"
+                @click="openEdit(template)"
+              >
+                <span class="min-w-0 flex-1">
+                  <span class="flex flex-wrap items-center gap-2">
+                    <span
+                      class="font-semibold"
+                      :class="template.is_active ? '' : 'text-muted-foreground'"
+                      >{{ template.name }}</span
+                    >
+                    <NuxtBadge
+                      v-if="!template.is_active"
+                      color="neutral"
+                      label="Inativo"
+                    />
+                  </span>
+                  <span
+                    class="mt-0.5 block truncate text-sm font-normal text-muted-foreground"
+                  >
+                    {{ marketingTemplateSummary(template.body) }}
+                  </span>
+                  <span
+                    v-if="template.use_ai_generation"
+                    class="mt-1 inline-flex items-center gap-1 text-xs font-normal text-muted-foreground"
+                  >
+                    <Icon name="lucide:sparkles" class="size-3.5" />
+                    Sugestão disponível na revisão
+                  </span>
+                </span>
+              </NuxtButton>
+              <NuxtButton
+                icon="i-lucide-trash-2"
+                color="error"
+                variant="ghost"
+                square
+                :aria-label="`Apagar o modelo ${template.name}`"
+                :title="`Apagar o modelo ${template.name}`"
+                @click="removing = template"
+              />
+            </li>
+          </ul>
+        </NuxtCard>
+      </div>
+    </section>
 
     <MarketingWorkspaceDialog
       :open="panelOpen"
@@ -212,40 +227,34 @@ useHead({ title: "Modelos" });
           :draft-owner="draftOwner"
           @submit="onSubmit"
           @cancel="close"
+          @reload="refreshCampaigns()"
         />
       </div>
     </MarketingWorkspaceDialog>
 
     <!-- Apagar é destrutivo: dependências aparecem antes da confirmação. -->
-    <UiDialog
+    <NuxtModal
       :open="removing !== null"
+      :title="
+        removing?.used_by_campaigns?.length
+          ? `“${removing.name}” está em uso`
+          : `Apagar “${removing?.name}”?`
+      "
+      :description="
+        removing?.used_by_campaigns?.length
+          ? 'Troque o modelo nas campanhas abaixo antes de apagá-lo. Nenhuma alteração foi feita.'
+          : 'O modelo será removido. Nada do que já foi disparado muda.'
+      "
+      :close="{ 'aria-label': 'Fechar' }"
+      data-template-remove-dialog
       @update:open="
         (v) => {
           if (!v) removing = null;
         }
       "
     >
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>
-            {{
-              removing?.used_by_campaigns?.length
-                ? `“${removing.name}” está em uso`
-                : `Apagar “${removing?.name}”?`
-            }}
-          </UiDialogTitle>
-          <UiDialogDescription v-if="removing?.used_by_campaigns?.length">
-            Troque o modelo nas campanhas abaixo antes de apagá-lo. Nenhuma
-            alteração foi feita.
-          </UiDialogDescription>
-          <UiDialogDescription v-else>
-            O modelo será removido. Nada do que já foi disparado muda.
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <ul
-          v-if="removing?.used_by_campaigns?.length"
-          class="space-y-1 rounded-lg bg-muted/40 p-3 text-sm"
-        >
+      <template v-if="removing?.used_by_campaigns?.length" #body>
+        <ul class="space-y-1 text-sm">
           <li
             v-for="campaign in removing.used_by_campaigns"
             :key="campaign"
@@ -258,29 +267,29 @@ useHead({ title: "Modelos" });
             {{ campaign }}
           </li>
         </ul>
-        <UiDialogFooter>
-          <UiButton type="button" variant="outline" @click="removing = null">
-            Manter
-          </UiButton>
-          <NuxtLink
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <NuxtButton
+            color="neutral"
+            variant="outline"
+            label="Manter"
+            @click="removing = null"
+          />
+          <NuxtButton
             v-if="removing?.used_by_campaigns?.length"
             to="/settings/campaigns"
-            class="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
+            label="Ver campanhas"
             @click="removing = null"
-          >
-            Ver campanhas
-          </NuxtLink>
-          <UiButton
+          />
+          <NuxtButton
             v-else
-            type="button"
-            variant="destructive"
+            color="error"
+            label="Apagar"
             @click="confirmRemove"
-          >
-            Apagar
-          </UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
-    </div>
+          />
+        </div>
+      </template>
+    </NuxtModal>
   </main>
 </template>

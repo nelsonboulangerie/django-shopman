@@ -30,6 +30,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   submit: [payload: Record<string, unknown>];
   cancel: [];
+  /** Pede ao pai que leia de novo os formatos publicáveis (falharam ao carregar). */
+  reload: [];
 }>();
 
 const name = ref("");
@@ -267,6 +269,9 @@ const draft = useMarketingDraft({
   apply: applyTemplateDraft,
 });
 
+// O `NuxtForm` pede um estado; a validação é a do `canSubmit` (e a do servidor).
+const formState = computed(() => ({ name: name.value, body: body.value }));
+
 function insertVariable(variable: string) {
   body.value = `${body.value}{{${variable}}}`;
 }
@@ -290,7 +295,7 @@ function submit() {
 </script>
 
 <template>
-  <form class="space-y-5" @submit.prevent="submit">
+  <NuxtForm :state="formState" class="space-y-5" @submit="submit">
     <DraftRecoveryNotice
       :state="draft.state.value"
       :saved-at="draft.savedAt.value"
@@ -300,101 +305,90 @@ function submit() {
       @keep-server="draft.keepServer()"
       @discard="draft.discard()"
     />
-    <div>
-      <label
-        for="tpl-name"
-        class="mb-1 block text-xs font-medium text-muted-foreground"
-        >Nome do modelo</label
-      >
-      <UiInput
+
+    <NuxtFormField label="Nome do modelo">
+      <NuxtInput
         id="tpl-name"
         v-model="name"
         type="text"
         placeholder="Saiu do forno"
+        class="w-full"
       />
-    </div>
+    </NuxtFormField>
 
-    <div>
-      <label
-        for="tpl-body"
-        class="mb-1 block text-xs font-medium text-muted-foreground"
-        >Texto</label
-      >
-      <UiTextarea
-        id="tpl-body"
-        v-model="body"
-        :rows="4"
-        placeholder="O pão acabou de sair do forno!"
-        class="resize-y"
-      />
+    <div class="space-y-2">
+      <NuxtFormField label="Texto">
+        <NuxtTextarea
+          id="tpl-body"
+          v-model="body"
+          :rows="4"
+          autoresize
+          placeholder="O pão acabou de sair do forno!"
+          class="w-full"
+        />
+      </NuxtFormField>
 
-      <!-- Chips nativos inserem apenas variáveis do backend e evitam redigitação inválida. -->
-      <p class="mt-2 text-xs text-muted-foreground">Variáveis disponíveis</p>
-      <div class="mt-1 flex flex-wrap gap-1">
-        <button
+      <!-- Só as variáveis do backend: inserir por toque evita redigitação inválida. -->
+      <p class="text-xs text-muted-foreground">Variáveis disponíveis</p>
+      <div class="flex flex-wrap gap-1">
+        <NuxtButton
           v-for="variable in variables"
           :key="variable"
-          type="button"
+          color="neutral"
+          variant="outline"
+          :active="usedVariables.includes(variable)"
+          active-color="primary"
+          active-variant="outline"
           :title="`Insere {{${variable}}}`"
-          class="rounded border border-border px-2 py-1 text-xs transition hover:bg-muted"
-          :class="
-            usedVariables.includes(variable)
-              ? 'border-primary text-primary'
-              : ''
-          "
+          :label="marketingVariableLabel(variable)"
           @click="insertVariable(variable)"
-        >
-          {{ marketingVariableLabel(variable) }}
-        </button>
+        />
       </div>
     </div>
 
-    <div>
-      <label
-        for="tpl-image"
-        class="mb-1 block text-xs font-medium text-muted-foreground"
-        >Imagem</label
+    <div class="space-y-3">
+      <NuxtFormField label="Imagem">
+        <NuxtSelect
+          id="tpl-image"
+          v-model="imageSource"
+          :items="IMAGE_SOURCES"
+          class="w-full"
+        />
+      </NuxtFormField>
+      <NuxtFormField
+        v-if="imageSource === 'custom'"
+        label="Endereço público da imagem"
+        help="A plataforma precisa conseguir baixar a imagem sem login. Para Stories, use JPEG e prefira uma arte vertical 9:16 pronta para publicar."
       >
-      <UiNativeSelect id="tpl-image" v-model="imageSource" class="w-full">
-        <option
-          v-for="source in IMAGE_SOURCES"
-          :key="source.value"
-          :value="source.value"
-        >
-          {{ source.label }}
-        </option>
-      </UiNativeSelect>
-      <div v-if="imageSource === 'custom'" class="mt-3">
-        <label
-          for="tpl-image-url"
-          class="mb-1 block text-xs font-medium text-muted-foreground"
-        >
-          Endereço público da imagem
-        </label>
-        <UiInput
+        <NuxtInput
           id="tpl-image-url"
           v-model="customImageUrl"
           type="url"
           inputmode="url"
           autocomplete="url"
           placeholder="https://cdn.exemplo.com/story.jpg"
+          class="w-full"
         />
-        <p class="mt-1 text-xs text-muted-foreground">
-          A plataforma precisa conseguir baixar a imagem sem login. Para
-          Stories, use JPEG e prefira uma arte vertical 9:16 pronta para
-          publicar.
-        </p>
-      </div>
-      <p
+      </NuxtFormField>
+      <NuxtAlert
         v-else-if="imageSource === 'none' && instagramNeedsMedia"
-        class="mt-2 text-xs text-warning"
-      >
-        Campanhas que incluírem Instagram ficarão bloqueadas: o formato
-        escolhido exige uma imagem.
-      </p>
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-image-off"
+        title="Campanhas que incluírem Instagram ficarão bloqueadas: o formato escolhido exige uma imagem."
+        :actions="[
+          {
+            label: 'Usar a foto do produto',
+            color: 'warning',
+            variant: 'outline',
+            size: 'md',
+            onClick: () => (imageSource = 'product'),
+          },
+        ]"
+      />
       <p
         v-else-if="imageSource === 'product' && instagramNeedsMedia"
-        class="mt-2 text-xs text-muted-foreground"
+        class="text-xs text-muted-foreground"
       >
         Usa a foto do produto, em JPEG. Produto sem foto não dá para aprovar.
       </p>
@@ -410,14 +404,23 @@ function submit() {
           realmente precisar; formatos e opções vêm da capacidade executável.
         </p>
       </div>
-      <p
+      <NuxtAlert
         v-if="!platformCapabilities.length"
-        class="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive"
-        role="alert"
-      >
-        Não foi possível carregar os formatos que o Shopman consegue publicar.
-        Atualize a tela; este modelo não será salvo no escuro.
-      </p>
+        color="error"
+        variant="subtle"
+        icon="i-lucide-cloud-off"
+        title="Não foi possível carregar os formatos que o Shopman consegue publicar."
+        description="Atualize os formatos; este modelo não será salvo no escuro."
+        :actions="[
+          {
+            label: 'Atualizar os formatos',
+            color: 'error',
+            variant: 'outline',
+            size: 'md',
+            onClick: () => emit('reload'),
+          },
+        ]"
+      />
       <PlatformCompositionEditor
         v-for="capability in platformCapabilities"
         :key="capability.platform"
@@ -430,47 +433,46 @@ function submit() {
     </section>
 
     <!-- Two server-side gates plus the credential decide availability. -->
-    <fieldset
-      v-if="aiAvailable"
-      class="rounded-lg border border-border bg-card p-4"
-    >
-      <legend class="px-1 text-xs font-medium text-muted-foreground">
-        Sugestão de texto
-      </legend>
-      <UiCheckbox
-        v-model="useAi"
-        label="Oferecer “Sugerir texto” durante a revisão"
-        description="A sugestão aparece ao lado do texto e só entra no rascunho se alguém escolher usar. Nunca publica sozinha."
-      />
-      <div v-if="useAi" class="mt-3">
-        <label
-          for="tpl-ai"
-          class="mb-1 block text-xs font-medium text-muted-foreground"
-          >Orientação de estilo</label
-        >
-        <UiTextarea
-          id="tpl-ai"
-          v-model="aiPrompt"
-          :rows="2"
-          placeholder="Fale do cheiro e do miolo. Uma frase."
-          class="resize-y"
+    <NuxtCard v-if="aiAvailable">
+      <div class="space-y-3">
+        <p class="text-sm font-semibold">Sugestão de texto</p>
+        <NuxtCheckbox
+          v-model="useAi"
+          label="Oferecer “Sugerir texto” durante a revisão"
+          description="A sugestão aparece ao lado do texto e só entra no rascunho se alguém escolher usar. Nunca publica sozinha."
         />
-        <p class="mt-1 text-xs text-muted-foreground">
-          Não escreva preço, validade, estoque nem link: o sistema põe os
-          atuais.
-        </p>
+        <NuxtFormField
+          v-if="useAi"
+          label="Orientação de estilo"
+          help="Não escreva preço, validade, estoque nem link: o sistema põe os atuais."
+        >
+          <NuxtTextarea
+            id="tpl-ai"
+            v-model="aiPrompt"
+            :rows="2"
+            autoresize
+            placeholder="Fale do cheiro e do miolo. Uma frase."
+            class="w-full"
+          />
+        </NuxtFormField>
       </div>
-    </fieldset>
+    </NuxtCard>
 
-    <UiCheckbox v-model="isActive" label="Ativo" />
+    <NuxtCheckbox v-model="isActive" label="Ativo" />
 
     <div class="flex items-center justify-end gap-2">
-      <UiButton type="button" variant="outline" @click="emit('cancel')">
-        Cancelar
-      </UiButton>
-      <UiButton type="submit" :disabled="!canSubmit">
-        {{ template ? "Salvar" : "Criar modelo" }}
-      </UiButton>
+      <NuxtButton
+        color="neutral"
+        variant="outline"
+        label="Cancelar"
+        @click="emit('cancel')"
+      />
+      <NuxtButton
+        type="submit"
+        :disabled="!canSubmit"
+        :loading="busy"
+        :label="template ? 'Salvar' : 'Criar modelo'"
+      />
     </div>
-  </form>
+  </NuxtForm>
 </template>

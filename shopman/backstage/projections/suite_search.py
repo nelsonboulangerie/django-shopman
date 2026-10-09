@@ -139,7 +139,9 @@ SCREENS: tuple[_Screen, ...] = (
     _Screen("marketing", "Enviados", "/history", "send", "historico disparos"),
     _Screen("marketing", "Campanhas", "/settings/campaigns", "megaphone", "gatilho"),
     _Screen("marketing", "Modelos", "/settings/templates", "file-text", "modelos de texto"),
-    _Screen("marketing", "Plataformas", "/v2?area=platforms", "radio-tower", "instagram facebook whatsapp google"),
+    _Screen("marketing", "Ofertas e cupons", "/settings/offers", "ticket-percent", "desconto cupom promocao"),
+    _Screen("marketing", "Plataformas", "/settings/platforms", "radio-tower", "instagram facebook whatsapp google"),
+    _Screen("marketing", "Ajustes", "/settings", "settings-2", "configuracao"),
     _Screen("bi", "Visão geral", "/", "chart-no-axes-combined", "bi numeros"),
     _Screen("bi", "Vendas", "/sales", "chart-column", "faturamento"),
     _Screen("bi", "Caixa", "/cash", "wallet", "quebra apuracao", can_audit_cash),
@@ -458,7 +460,7 @@ def _campaigns(user, query, app, app_label, base):
             place=f"{app_label} › Campanhas",
             title=campaign.name,
             detail=" · ".join(("campanha", "ligada" if campaign.is_active else "desligada")),
-            url=_join_url(base, "campaigns", {"q": campaign.name}),
+            url=_join_url(base, "settings/campaigns", {"q": campaign.name}),
             icon="megaphone",
         )
 

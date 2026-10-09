@@ -818,10 +818,10 @@
         {
           "id": "campaigns",
           "source_files": [
-            "app/pages/campaigns.vue"
+            "app/pages/settings/campaigns.vue"
           ],
           "routes": [
-            "/campaigns"
+            "/settings/campaigns"
           ],
           "variants": [
             "list",
@@ -905,10 +905,10 @@
         {
           "id": "offers",
           "source_files": [
-            "app/pages/offers.vue"
+            "app/pages/settings/offers.vue"
           ],
           "routes": [
-            "/offers"
+            "/settings/offers"
           ],
           "variants": [
             "offers",
@@ -931,10 +931,10 @@
         {
           "id": "platforms",
           "source_files": [
-            "app/pages/platforms.vue"
+            "app/pages/settings/platforms.vue"
           ],
           "routes": [
-            "/platforms"
+            "/settings/platforms"
           ],
           "variants": [
             "connections",
@@ -1003,10 +1003,10 @@
         {
           "id": "templates",
           "source_files": [
-            "app/pages/templates.vue"
+            "app/pages/settings/templates.vue"
           ],
           "routes": [
-            "/templates"
+            "/settings/templates"
           ],
           "variants": [
             "list",
@@ -1021,6 +1021,23 @@
             "data-display",
             "feedback",
             "search"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "settings",
+          "source_files": [
+            "app/pages/settings/index.vue"
+          ],
+          "routes": [
+            "/settings"
+          ],
+          "variants": [
+            "list"
+          ],
+          "families": [
+            "navigation",
+            "data-display"
           ],
           "status": "pending"
         }

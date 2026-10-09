@@ -40,8 +40,13 @@ beforeEach(() => {
     // ela fica fechada para o gate de sessão ser o único assunto.
     useStationSetupOffer: () => ({ offer: ref(false), dismiss: vi.fn(), done: vi.fn() }),
     watch,
-    // A revisão em tela cheia esconde a barra do polegar pelo `meta` da rota.
-    useRoute: () => ({ meta: {}, path: "/" }),
+    // As seções e o resumo das decisões na caixa de Avisos (o shell é stub aqui).
+    useMarketingSections: () => ({
+      sections: ref([]),
+      activeSection: ref("decisions"),
+    }),
+    useMarketingDecisions: () => ({ decisionCount: ref(0) }),
+    provideOperatorInboxAlerts: vi.fn(),
   });
 });
 
@@ -62,7 +67,11 @@ function mountApp() {
         OfflineBanner: true,
         OperatorLock: true,
         OperatorLogin: true,
-        MarketingNav: true,
+        OperatorAppRoot: { template: "<div><slot /></div>" },
+        OperatorSuiteShell: {
+          name: "OperatorSuiteShell",
+          template: '<div data-testid="suite-shell"><slot /></div>',
+        },
         MarketingInboxLive: true,
         OperatorStationSetup: true,
         UiSonner: true,
@@ -89,8 +98,8 @@ describe("Marketing app session gate", () => {
     const wrapper = mountApp();
 
     expect(wrapper.find('[data-testid="protected-page"]').exists()).toBe(true);
-    // A camada visual da suíte (V4-MKT) e a caixa pessoal, uma só, depois do gate.
-    expect(wrapper.get("[data-marketing-app-root]").attributes("data-suite")).toBe("v3");
+    // Fase 2: o app mora no shell da suíte, e a caixa pessoal (uma só) vem depois do gate.
+    expect(wrapper.find('[data-testid="suite-shell"]').exists()).toBe(true);
     expect(wrapper.findComponent({ name: "MarketingInboxLive" }).exists()).toBe(true);
   });
 

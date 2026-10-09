@@ -255,6 +255,103 @@ const cannotSubmit = computed(() => {
   );
 });
 
+// A escolha exclusiva fala em texto (o RadioGroup do Reka não aceita booleano).
+const AUDIENCE_SAVED = "saved";
+const AUDIENCE_NOW = "now";
+const audienceMode = computed({
+  get: () => (useSaved.value ? AUDIENCE_SAVED : AUDIENCE_NOW),
+  set: (next: string) => {
+    useSaved.value = next === AUDIENCE_SAVED;
+  },
+});
+const audienceModeItems = computed(() => [
+  {
+    label: "O público da campanha",
+    value: AUDIENCE_SAVED,
+    description: props.rule
+      ? audienceRulesSummary(props.rule.audience_rules, audienceLabels.value)
+      : "",
+  },
+  {
+    label: "Escolher agora",
+    value: AUDIENCE_NOW,
+    description: "Vale só para este disparo. A campanha continua como está.",
+  },
+]);
+
+const MATCH_ITEMS = [
+  {
+    label: "Qualquer uma",
+    value: "any",
+    description: "Quem se encaixa em pelo menos uma regra",
+  },
+  {
+    label: "Todas",
+    value: "all",
+    description: "Só quem se encaixa em todas as regras",
+  },
+];
+const matchChoice = computed({
+  get: () => match.value,
+  set: (next: string) => {
+    match.value = next === "all" ? "all" : "any";
+  },
+});
+
+/** O produto escolhido como item da lista (o `NuxtSelectMenu` devolve o item). */
+const selectedProduct = computed(
+  () => props.products?.find((product) => product.value === productSku.value),
+);
+function chooseProduct(item: unknown) {
+  const value =
+    item && typeof item === "object" ? (item as Choice).value : item;
+  productSku.value = String(value ?? "");
+}
+
+/** O aviso de público salvo vazio leva ao gesto que resolve: escolher agora. */
+const savedAudienceActions = computed(() =>
+  useSaved.value
+    ? [
+        {
+          label: "Escolher agora",
+          color: "warning" as const,
+          variant: "outline" as const,
+          size: "md" as const,
+          onClick: () => {
+            useSaved.value = false;
+          },
+        },
+      ]
+    : [],
+);
+
+/** A contagem falhou: a saída é contar de novo, no próprio aviso. */
+const countFailedActions = computed(() => [
+  {
+    label: "Tentar de novo",
+    color: "warning" as const,
+    variant: "outline" as const,
+    size: "md" as const,
+    onClick: () => measureAgain(),
+  },
+]);
+
+const submitLabel = computed(() =>
+  props.busy
+    ? "Preparando…"
+    : countFailed.value && !publicOnly.value
+      ? "Aguardando contagem"
+      : "Revisar anúncio",
+);
+
+function submit() {
+  emit("submit", {
+    audience: chosen.value,
+    sku: productSku.value,
+    productLabel: chosenProductLabel.value,
+  });
+}
+
 function measureAgain() {
   const rules = useSaved.value
     ? ((props.rule?.audience_rules ?? {}) as ChosenAudience)
@@ -285,343 +382,250 @@ watch(
 </script>
 
 <template>
-  <form
+  <NuxtForm
+    :state="{ audience: chosen, sku: productSku }"
     class="space-y-5"
-    @submit.prevent="
-      emit('submit', {
-        audience: chosen,
-        sku: productSku,
-        productLabel: chosenProductLabel,
-      })
-    "
+    @submit="submit"
   >
     <p class="text-xs text-muted-foreground">
       O texto vem do modelo da campanha. Para mudá-lo, edite a campanha.
     </p>
 
-    <div v-if="needsProduct">
-      <!-- ⚠️ `UiSelect`, não o select do sistema: o catálogo da padaria passa de doze
-           itens com folga, e acima disso ninguém varre a lista com o olho — é para isso
-           que o primitivo traz busca (e ela ignora acento).
-           ⚠️ O rótulo é um `<span id>` com `labelledBy`, NUNCA um `<label>`: um
-           `<label>` sem `for` adota o botão que abre e reencaminha para ele todo clique
-           que caia em parte não interativa, inclusive o véu de fechar — o painel
-           fechava e reabria no mesmo gesto. Isto é memória de um defeito pago no
-           recebimento do Compras. -->
-      <span
-        id="fire-product-label"
-        class="mb-1 block text-xs font-medium text-muted-foreground"
-      >
-        Produto desta ocorrência
-      </span>
-      <UiSelect
-        :model-value="productSku"
-        :options="products ?? []"
-        labelled-by="fire-product-label"
+    <!-- ⚠️ Lista com busca (`NuxtSelectMenu`), não a do sistema: o catálogo da padaria
+         passa de doze itens com folga, e acima disso ninguém varre a lista com o olho.
+         O rótulo é o do `NuxtFormField` (com `for`): um `<label>` sem `for` adotava o
+         botão que abre e reencaminhava para ele o clique no véu de fechar. -->
+    <NuxtFormField
+      v-if="needsProduct"
+      label="Produto desta ocorrência"
+      :description="
+        (products ?? []).length
+          ? 'Preenche nome, preço, disponibilidade e link com dados atuais do catálogo.'
+          : undefined
+      "
+      :error="
+        (products ?? []).length
+          ? undefined
+          : 'Nenhum produto publicável está disponível; o disparo permanece bloqueado.'
+      "
+    >
+      <NuxtSelectMenu
+        :model-value="selectedProduct"
+        :items="products ?? []"
         placeholder="Escolha o produto"
-        search-placeholder="Buscar produto"
-        empty-text="Nenhum produto com esse nome"
-        @update:model-value="productSku = String($event)"
+        :search-input="{ placeholder: 'Buscar produto' }"
+        class="w-full"
+        @update:model-value="chooseProduct"
       />
-      <p
-        v-if="(products ?? []).length"
-        class="mt-1 text-xs text-muted-foreground"
-      >
-        Preenche nome, preço, disponibilidade e link com dados atuais do
-        catálogo.
-      </p>
-      <p v-else class="mt-1 text-xs text-destructive" role="alert">
-        Nenhum produto publicável está disponível; o disparo permanece
-        bloqueado.
-      </p>
-    </div>
+    </NuxtFormField>
 
-    <div
+    <NuxtAlert
       v-if="publicOnly"
-      class="rounded-lg border border-primary/30 bg-primary/5 p-3"
-    >
-      <div class="flex items-start gap-3">
-        <Icon
-          name="lucide:megaphone"
-          class="mt-0.5 size-5 shrink-0 text-primary"
-        />
-        <div>
-          <p class="text-sm font-semibold">
-            {{ formatCount(publicPostCount) }}
-            {{
-              publicPostCount === 1
-                ? "postagem pública"
-                : "postagens públicas"
-            }}
-          </p>
-          <!-- "Uma em cada plataforma" deixava o leitor completar o sujeito: uma o
-               quê? A frase nomeia a coisa contada e o gesto que não acontece. -->
-          <p class="mt-1 text-xs text-muted-foreground">
-            Uma postagem por plataforma. Não seleciona contatos.
+      color="info"
+      variant="subtle"
+      icon="i-lucide-megaphone"
+      :title="`${formatCount(publicPostCount)} ${publicPostCount === 1 ? 'postagem pública' : 'postagens públicas'}`"
+      description="Uma postagem por plataforma. Não seleciona contatos."
+    />
+
+    <template v-else>
+      <!-- Escolha exclusiva: seta anda entre as duas, uma parada de tabulação só. -->
+      <NuxtRadioGroup
+        v-model="audienceMode"
+        :items="audienceModeItems"
+        legend="Público alvo"
+      />
+      <NuxtAlert
+        v-if="savedAudienceEmpty"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-users"
+        title="Esta campanha não tem público salvo."
+        description="Escolha o público agora, para este disparo, ou edite a campanha para dar um público a ela."
+        :actions="savedAudienceActions"
+      />
+    </template>
+
+    <NuxtCard v-if="!publicOnly && !useSaved">
+      <div class="space-y-4">
+        <!-- Etiquetas primeiro: é o único público que o operador monta sozinho. RFM e
+             churn são calculados, faixa é comercial, aniversário é cadastral. -->
+        <div v-if="tags.length">
+          <NuxtCheckboxGroup
+            v-model="chosenTags"
+            :items="tags"
+            legend="Etiquetas"
+            orientation="horizontal"
+          />
+          <p class="mt-1.5 text-xs text-muted-foreground">
+            Quem etiqueta é quem atende, na ficha do cliente.
           </p>
         </div>
-      </div>
-    </div>
 
-    <fieldset v-else class="space-y-2">
-      <legend class="text-xs font-medium text-muted-foreground">
-        Público alvo
-      </legend>
-
-      <!-- Escolha exclusiva pelo primitivo da casa: seta anda entre as duas, uma
-           parada de tabulação só, alvo de 44 px. -->
-      <UiRadioGroup v-model="useSaved" label="Público alvo">
-        <UiRadio :value="true" label="O público da campanha">
-          <template #description>
-            {{
-              rule
-                ? audienceRulesSummary(rule.audience_rules, audienceLabels)
-                : ""
-            }}
-            <span
-              v-if="savedAudienceEmpty"
-              class="mt-1 block text-warning"
-            >
-              Esta campanha não tem público salvo. Escolha agora, logo abaixo, ou
-              edite a campanha para dar um público a ela.
-            </span>
-          </template>
-        </UiRadio>
-        <UiRadio
-          :value="false"
-          label="Escolher agora"
-          description="Vale só para este disparo. A campanha continua como está."
-        />
-      </UiRadioGroup>
-    </fieldset>
-
-    <div
-      v-if="!publicOnly && !useSaved"
-      class="space-y-4 rounded-lg bg-muted/40 p-3"
-    >
-      <!-- Etiquetas primeiro: é o único público que o operador monta sozinho. RFM e
-           churn são calculados, faixa é comercial, aniversário é cadastral. -->
-      <section v-if="tags.length">
-        <UiCheckboxGroup
-          v-model="chosenTags"
-          :items="tags"
-          legend="Etiquetas"
+        <NuxtCheckboxGroup
+          v-if="priceTiers.length"
+          v-model="tiers"
+          :items="priceTiers"
+          legend="Faixa de preço"
           orientation="horizontal"
-          :ui="{
-            fieldset: 'gap-x-4 gap-y-0.5',
-            legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground',
-          }"
         />
-        <p class="mt-1.5 text-xs text-muted-foreground">
-          Quem etiqueta é quem atende, na ficha do cliente.
+
+        <NuxtCheckboxGroup
+          v-if="rfmSegments.length"
+          v-model="segments"
+          :items="rfmSegments"
+          legend="Comportamento de compra"
+          orientation="horizontal"
+        />
+
+        <NuxtCheckboxGroup
+          v-model="occasionalAudience"
+          :items="OCCASIONAL_AUDIENCE_ITEMS"
+          description-key="hint"
+          legend="Outros públicos"
+          variant="card"
+        />
+
+        <p v-if="nothingChosen" class="text-xs text-muted-foreground">
+          Escolha pelo menos um grupo acima para ver quantas pessoas recebem.
         </p>
-      </section>
 
-      <UiCheckboxGroup
-        v-if="priceTiers.length"
-        v-model="tiers"
-        :items="priceTiers"
-        orientation="horizontal"
-        :ui="{
-          fieldset: 'gap-x-4 gap-y-0.5',
-          legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground',
-        }"
-      >
-        <template #legend>Faixa de preço</template>
-      </UiCheckboxGroup>
-
-      <UiCheckboxGroup
-        v-if="rfmSegments.length"
-        v-model="segments"
-        :items="rfmSegments"
-        legend="Comportamento de compra"
-        orientation="horizontal"
-        :ui="{
-          fieldset: 'gap-x-4 gap-y-0.5',
-          legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground',
-        }"
-      />
-
-      <UiCheckboxGroup
-        v-model="occasionalAudience"
-        :items="OCCASIONAL_AUDIENCE_ITEMS"
-        legend="Outros públicos"
-        variant="card"
-        :ui="{ legend: 'mb-1.5 text-xs font-semibold uppercase text-muted-foreground' }"
-      />
-
-      <p v-if="nothingChosen" class="text-xs text-muted-foreground">
-        Escolha pelo menos um grupo acima para ver quantas pessoas recebem.
-      </p>
-
-      <!-- ⚠️ Só com duas ou mais regras escolhidas: cruzar uma regra com nada dá ela
-           mesma, e oferecer o interruptor ali ensinaria uma diferença que não existe. -->
-      <fieldset v-if="rulesChosen > 1" class="border-t border-border pt-3">
-        <legend class="sr-only">Como combinar as regras</legend>
-        <div class="flex gap-2">
-          <!-- Cartões nativos mantêm a escolha exclusiva e o significado de cada combinação visíveis. -->
-          <button
-            v-for="mode in [
-              {
-                value: 'any',
-                title: 'Qualquer uma',
-                hint: 'Quem se encaixa em pelo menos uma regra',
-              },
-              {
-                value: 'all',
-                title: 'Todas',
-                hint: 'Só quem se encaixa em todas as regras',
-              },
-            ] as const"
-            :key="mode.value"
-            type="button"
-            class="flex-1 rounded-lg border p-2.5 text-left transition"
-            :class="
-              match === mode.value
-                ? 'border-primary bg-primary/5'
-                : 'border-border hover:bg-muted'
-            "
-            :aria-pressed="match === mode.value"
-            @click="match = mode.value"
-          >
-            <span class="block text-sm font-medium">{{ mode.title }}</span>
-            <span class="block text-xs text-muted-foreground">{{
-              mode.hint
-            }}</span>
-          </button>
-        </div>
-      </fieldset>
-    </div>
+        <!-- ⚠️ Só com duas ou mais regras escolhidas: cruzar uma regra com nada dá ela
+             mesma, e oferecer a escolha ali ensinaria uma diferença que não existe. -->
+        <NuxtRadioGroup
+          v-if="rulesChosen > 1"
+          v-model="matchChoice"
+          :items="MATCH_ITEMS"
+          legend="Como combinar as regras"
+          orientation="horizontal"
+          variant="card"
+          class="border-t border-default pt-3"
+        />
+      </div>
+    </NuxtCard>
 
     <!-- O número, enquanto se escolhe. Sem ele, o tamanho do público só se conhecia
-         depois do envio — e "somar alarga" era invisível. -->
-    <div
+         depois do envio, e "somar alarga" era invisível. -->
+    <NuxtCard
       v-if="!publicOnly && (count || counting || countFailed)"
-      class="rounded-lg border border-border p-3"
       aria-live="polite"
     >
-      <div class="flex items-baseline gap-2">
-        <template v-if="count && !count.empty_selection">
-          <span class="text-2xl font-semibold tabular-nums">{{
-            formatCount(count.total)
-          }}</span>
-          <span class="text-sm text-muted-foreground">
-            {{ count.total === 1 ? "pessoa recebe" : "pessoas recebem" }}
-          </span>
-        </template>
-        <span v-else-if="counting" class="text-sm text-muted-foreground"
-          >Contando…</span
-        >
-        <span v-else-if="countFailed" class="text-sm font-medium text-warning">
-          Não foi possível conferir o público. O disparo está bloqueado.
-        </span>
-        <Icon
-          v-if="counting && count"
-          name="lucide:loader-circle"
-          class="size-3 animate-spin text-muted-foreground"
-        />
-      </div>
-
-      <!-- As parcelas contam a história que o total sozinho esconde: com "todas", o total
-           fica MENOR que qualquer parcela, e é aí que o recorte se explica sozinho. -->
-      <ul v-if="count && showParts" class="mt-2 space-y-0.5">
-        <li
-          v-for="part in count.parts"
-          :key="part.label"
-          class="flex items-baseline justify-between gap-3 text-xs text-muted-foreground"
-        >
-          <span class="truncate">{{ part.label }}</span>
-          <span class="tabular-nums">{{ formatCount(part.count) }}</span>
-        </li>
-        <li
-          class="flex items-baseline justify-between gap-3 border-t border-border pt-1 text-xs"
-        >
-          <span class="text-muted-foreground">{{ count.match_label }}</span>
-          <span class="font-medium tabular-nums">{{
-            formatCount(count.total)
-          }}</span>
-        </li>
-      </ul>
-
-      <p
-        v-if="count && count.vip_count > 0"
-        class="mt-2 text-xs text-muted-foreground"
-      >
-        {{ formatCount(count.vip_count) }} recebem primeiro; o resto, 15 min
-        depois.
-      </p>
-
-      <p v-if="zeroText" class="mt-2 text-xs text-warning">
-        {{ zeroText }}
-      </p>
-
-      <!-- Quem ficou de fora, e por quê. Sem isto, "1 favoritou" e "0 recebem" na mesma
-           tela parecem contradição — e a contradição parece bug. -->
-      <div v-if="exclusions.length" class="mt-2" data-audience-exclusions>
-        <p class="text-xs font-medium text-muted-foreground">Ficam de fora</p>
-        <ul class="mt-0.5 space-y-0.5">
-          <li
-            v-for="note in exclusions"
-            :key="note"
-            class="text-xs text-muted-foreground"
+      <div class="space-y-2">
+        <div class="flex items-baseline gap-2">
+          <template v-if="count && !count.empty_selection">
+            <span class="text-2xl font-semibold tabular-nums">{{
+              formatCount(count.total)
+            }}</span>
+            <span class="text-sm text-muted-foreground">
+              {{ count.total === 1 ? "pessoa recebe" : "pessoas recebem" }}
+            </span>
+          </template>
+          <span v-else-if="counting" class="text-sm text-muted-foreground"
+            >Contando…</span
           >
-            {{ note }}
+          <Icon
+            v-if="counting && count"
+            name="lucide:loader-circle"
+            class="size-3 animate-spin text-muted-foreground"
+          />
+        </div>
+
+        <NuxtAlert
+          v-if="countFailed"
+          color="warning"
+          variant="subtle"
+          title="Não foi possível conferir o público. O disparo está bloqueado."
+          :actions="countFailedActions"
+        />
+
+        <!-- As parcelas contam a história que o total sozinho esconde: com "todas", o
+             total fica MENOR que qualquer parcela, e é aí que o recorte se explica. -->
+        <ul v-if="count && showParts" class="space-y-0.5">
+          <li
+            v-for="part in count.parts"
+            :key="part.label"
+            class="flex items-baseline justify-between gap-3 text-xs text-muted-foreground"
+          >
+            <span>{{ part.label }}</span>
+            <span class="tabular-nums">{{ formatCount(part.count) }}</span>
+          </li>
+          <li
+            class="flex items-baseline justify-between gap-3 border-t border-default pt-1 text-xs"
+          >
+            <span class="text-muted-foreground">{{ count.match_label }}</span>
+            <span class="font-medium tabular-nums">{{
+              formatCount(count.total)
+            }}</span>
           </li>
         </ul>
-        <p v-if="exclusionsHint" class="mt-1 text-xs text-muted-foreground">
-          {{ exclusionsHint }}
+
+        <p
+          v-if="count && count.vip_count > 0"
+          class="text-xs text-muted-foreground"
+        >
+          {{ formatCount(count.vip_count) }} recebem primeiro; o resto, 15 min
+          depois.
+        </p>
+
+        <p v-if="zeroText" class="text-xs text-warning">
+          {{ zeroText }}
+        </p>
+
+        <!-- Quem ficou de fora, e por quê. Sem isto, "1 favoritou" e "0 recebem" na
+             mesma tela parecem contradição, e a contradição parece bug. -->
+        <div v-if="exclusions.length" data-audience-exclusions>
+          <p class="text-xs font-medium text-muted-foreground">Ficam de fora</p>
+          <ul class="mt-0.5 space-y-0.5">
+            <li
+              v-for="note in exclusions"
+              :key="note"
+              class="text-xs text-muted-foreground"
+            >
+              {{ note }}
+            </li>
+          </ul>
+          <p v-if="exclusionsHint" class="mt-1 text-xs text-muted-foreground">
+            {{ exclusionsHint }}
+          </p>
+        </div>
+
+        <NuxtAlert
+          v-if="count && !count.can_approve"
+          color="warning"
+          variant="subtle"
+          :title="
+            count.blocked_reason ||
+            'Não foi possível conferir todas as fontes do público. O disparo está bloqueado.'
+          "
+        />
+
+        <!-- O zero da fila de "me avise" precisa dizer QUAL zero é: ninguém pediu, ou
+             pediram e a fila já foi servida. Ver `alertsNote`. -->
+        <p v-if="emptyAlerts" class="text-xs text-muted-foreground">
+          {{ emptyAlerts }}.
         </p>
       </div>
+    </NuxtCard>
 
-      <p
-        v-if="count && !count.can_approve"
-        class="mt-2 text-xs font-medium text-warning"
-        role="alert"
-      >
-        {{ count.blocked_reason || "Não foi possível conferir todas as fontes do público. O disparo está bloqueado." }}
-      </p>
-      <UiButton
-        v-if="countFailed"
-        type="button"
-        variant="outline"
-        class="mt-3"
-        @click="measureAgain"
-      >
-        Tentar de novo
-      </UiButton>
-
-      <!-- O zero da fila de "me avise" precisa dizer QUAL zero é: ninguém pediu, ou
-           pediram e a fila já foi servida. Ver `alertsNote`. -->
-      <p v-if="emptyAlerts" class="mt-2 text-xs text-muted-foreground">
-        {{ emptyAlerts }}.
-      </p>
-    </div>
-
-    <p
-      v-if="!publicOnly"
-      class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
-    >
+    <p v-if="!publicOnly" class="text-xs text-muted-foreground">
       Quem não deu consentimento para o WhatsApp não recebe.
     </p>
 
-    <p v-if="error" class="text-sm text-destructive" role="alert">
-      {{ error }}
-    </p>
+    <NuxtAlert v-if="error" color="error" variant="subtle" :title="error" />
 
     <div class="flex items-center justify-end gap-2">
-      <UiButton type="button" variant="ghost" @click="emit('cancel')">
-        Cancelar
-      </UiButton>
-      <UiButton type="submit" :disabled="cannotSubmit">
-        <Icon name="lucide:send" class="size-4" />
-        {{
-          busy
-            ? "Preparando…"
-            : countFailed && !publicOnly
-              ? "Aguardando contagem"
-              : "Revisar anúncio"
-        }}
-      </UiButton>
+      <NuxtButton
+        label="Cancelar"
+        color="neutral"
+        variant="ghost"
+        @click="emit('cancel')"
+      />
+      <NuxtButton
+        type="submit"
+        icon="i-lucide-send"
+        :label="submitLabel"
+        :disabled="cannotSubmit"
+      />
     </div>
-  </form>
+  </NuxtForm>
 </template>

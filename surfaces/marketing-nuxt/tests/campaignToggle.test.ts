@@ -7,40 +7,39 @@ describe("campaign activation switch", () => {
   // interruptor próprio, diferente do do PDV. Agora a página monta o primitivo, e
   // o alvo de 44 px é cobrado UMA vez, no kit — que é onde o conserto chega às dez
   // telas de uma vez.
-  it("monta o interruptor do kit, sem trilho próprio", () => {
+  // A página monta o interruptor do Nuxt UI (`NuxtSwitch`) na célula "Ligada" da
+  // tabela da suíte: nada de trilho à mão, nada de primitivo legado. O alvo de toque é
+  // do tema do kit (`switch.slots.base` no app.config), cobrado uma vez lá.
+  it("monta o interruptor do Nuxt UI, sem trilho próprio", () => {
     const page = readFileSync(
       new URL("../app/pages/settings/campaigns.vue", import.meta.url),
       "utf8",
     );
 
-    expect(page).toContain("<UiSwitch");
-    expect(page).toContain(':model-value="rule.is_active"');
+    expect(page).toContain("<NuxtSwitch");
+    expect(page).not.toContain("<UiSwitch");
+    expect(page).toContain(':model-value="row.original.is_active"');
     expect(page).toContain(
-      ':disabled="mutatingCampaignPk !== null || !editState(rule).enabled"',
+      ':disabled="mutatingCampaignPk !== null || !editState(row.original).enabled"',
     );
-    expect(page).toContain('@update:model-value="toggle(rule)"');
+    expect(page).toContain('@update:model-value="toggle(row.original)"');
     expect(page).toContain("campaignEditAvailability(rule, actions.value)");
     // O trilho à mão não volta: nem o `role="switch"` nem as classes dele.
     expect(page).not.toContain('role="switch"');
     expect(page).not.toContain("rounded-full transition-colors");
   });
 
-  it("o interruptor do kit usa o Nuxt UI e mantém o alvo de toque no token", () => {
-    const primitive = readFileSync(
-      new URL(
-        "../../operator-kit/app/components/UiSwitch.vue",
-        import.meta.url,
-      ),
+  it("a lista é a tabela da suíte, sem tabela crua", () => {
+    const page = readFileSync(
+      new URL("../app/pages/settings/campaigns.vue", import.meta.url),
       "utf8",
     );
 
-    expect(primitive).toContain("<NuxtSwitch");
-    expect(primitive).toContain("size-control");
-    expect(primitive).toContain(':model-value="modelValue"');
-    expect(primitive).not.toContain('role="switch"');
-    // Que o literal (`size-11`) não volte é cobrado no kit, onde a varredura tira
-    // os comentários antes de medir — o cabeçalho do primitivo CITA o literal que
-    // ele aposentou, e citar a dívida não é cometê-la.
+    expect(page).toContain("<OperatorTable");
+    expect(page).toContain('<OperatorTableView table-key="marketing-campaigns"');
+    expect(page).toContain('view-key="marketing-campaigns"');
+    expect(page).not.toMatch(/<table[\s>]/);
+    expect(page).not.toMatch(/<(button|select|input)[\s>]/);
   });
 
   it("never opens a server-disabled manual fire action", () => {
@@ -54,7 +53,7 @@ describe("campaign activation switch", () => {
       "utf8",
     );
 
-    expect(page).toContain(':disabled="!fireAction(rule)?.enabled"');
+    expect(page).toContain(':disabled="!fireAction(row.original)?.enabled"');
     expect(page).toContain("fireActionFor(rule, actions.value)");
     expect(presentation).toContain('action.kind === "fire_campaign"');
     expect(page).toContain('"Indisponível"');
@@ -66,9 +65,13 @@ describe("campaign activation switch", () => {
       "utf8",
     );
 
-    expect(page).toContain(':disabled="!editState(rule).enabled"');
+    // Abrir a linha passa por `openEdit`, que recusa sem a Action; o "Editar" do ⋯
+    // fica desabilitado com o motivo, e o motivo também vai escrito sob a linha.
+    expect(page).toContain(':on-select="(rule: Campaign) => openEdit(rule)"');
     expect(page).toContain("if (!editState(rule).enabled) return");
-    expect(page).toContain("{{ editState(rule).reason }}");
+    expect(page).toContain("disabled: !edit.enabled");
+    expect(page).toContain("reason: edit.enabled ? undefined : edit.reason");
+    expect(page).toContain("{{ editState(row.original).reason }}");
   });
 
   it("keeps the open editor across the authentication gate", () => {

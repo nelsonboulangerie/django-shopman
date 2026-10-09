@@ -27,9 +27,9 @@ const props = withDefaults(defineProps<{ experience?: "current" | "v2" }>(), {
 // Mesma leitura do histórico: sucesso PARCIAL não se disfarça de pendente.
 // Se o Google saiu e o Instagram falhou, a linha precisa chamar atenção.
 const OUTCOME_META = {
-  published: { icon: "lucide:check-circle-2", class: "text-emerald-600" },
+  published: { icon: "lucide:check-circle-2", class: "text-success" },
   partial: { icon: "lucide:alert-circle", class: "text-warning" },
-  failed: { icon: "lucide:x-circle", class: "text-destructive" },
+  failed: { icon: "lucide:x-circle", class: "text-error" },
   pending: { icon: "lucide:clock", class: "text-muted-foreground" },
 } as const;
 
@@ -100,7 +100,6 @@ const decidingPlatformContent = computed(
 const { platforms: platformReadiness } = usePlatforms();
 const busyPk = ref<number | null>(null);
 const rejecting = ref<number | null>(null);
-const rejectReason = ref("");
 const confirmingDecision = ref(false);
 const draftOwner = useMarketingDraftOwner();
 
@@ -122,13 +121,15 @@ async function onApprove(
   }
 }
 
-async function confirmReject() {
+// Recusar é irreversível: o diálogo de motivo do kit confirma antes. O motivo é
+// opcional de propósito (campo obrigatório aqui só produziria "não" digitado com
+// pressa); quando o gestor escreve, a recusa passa a explicar a campanha.
+async function confirmReject(choice: { reason: string }) {
   const pk = rejecting.value;
   if (pk === null) return;
-  const reason = rejectReason.value.trim();
+  const reason = choice.reason.trim();
   busyPk.value = pk;
   rejecting.value = null;
-  rejectReason.value = "";
   const response = await reject(pk, reason);
   busyPk.value = null;
   if (response) {
@@ -174,6 +175,19 @@ async function resumeServerDecision() {
   await navigateTo(`/announcements/${pk}`);
 }
 
+const headerActions = [
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+];
+
+const freshnessTitle = computed(() => {
+  if (freshness.value?.state === "stale") return "Atualização atrasada";
+  if (freshness.value?.state === "degraded") return "Dados parcialmente atualizados";
+  return "Situação ao vivo indisponível";
+});
+
+const REJECT_CONSEQUENCE =
+  "Ele não vai para nenhuma plataforma e não volta para a fila. Nada mais muda: a campanha e o que aconteceu na padaria seguem como estão.";
+
 useHead(() => ({
   title: props.experience === "v2" ? "Painel · V2" : "Painel",
 }));
@@ -181,406 +195,317 @@ useHead(() => ({
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <MarketingPageHeader title="Painel">
-      <template #actions>
-        <UiIconButton
-          icon="lucide:refresh-cw"
-          label="Atualizar"
-          @click="refresh()"
+    <OperatorPageHeader
+      title="Painel"
+      :actions="headerActions"
+      actions-label="Mais ações do Painel"
+    />
+
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <div class="mx-auto flex w-full max-w-4xl flex-col gap-5">
+        <NuxtAlert
+          v-if="pendingReauthentication"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-log-in"
+          title="Sua sessão voltou. A decisão não foi enviada."
+          description="Seu texto e sua escolha estão guardados. Retome para confirmar de novo."
+          :actions="[
+            {
+              label: confirmingDecision ? 'Retomando…' : 'Retomar e reconfirmar',
+              color: 'warning',
+              variant: 'outline',
+              size: 'md',
+              loading: confirmingDecision,
+              onClick: () => void resumeServerDecision(),
+            },
+            {
+              label: 'Agora não',
+              color: 'warning',
+              variant: 'outline',
+              size: 'md',
+              disabled: confirmingDecision,
+              onClick: () => cancelDecision(),
+            },
+          ]"
+          role="status"
         />
-      </template>
-    </MarketingPageHeader>
-
-    <div class="mx-auto w-full max-w-4xl px-4 py-6">
-    <section
-      v-if="pendingReauthentication"
-      class="mb-5 rounded-md border border-warning/40 bg-warning/5 p-4"
-      role="status"
-    >
-      <p class="font-semibold">Sua sessão voltou. A decisão não foi enviada.</p>
-      <p class="mt-1 text-sm text-muted-foreground">
-        Seu texto e sua escolha estão guardados. Retome para confirmar de novo.
-      </p>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <UiButton
-          type="button"
-          :disabled="confirmingDecision"
-          @click="resumeServerDecision"
-        >
-          {{ confirmingDecision ? "Retomando…" : "Retomar e reconfirmar" }}
-        </UiButton>
-        <UiButton
-          type="button"
-          variant="outline"
-          :disabled="confirmingDecision"
-          @click="cancelDecision"
-        >
-          Agora não
-        </UiButton>
-      </div>
-      <p
-        v-if="decisionError"
-        class="mt-2 text-sm text-destructive"
-        role="alert"
-      >
-        {{ decisionError }}
-      </p>
-    </section>
-
-
-    <section
-      v-if="freshness && freshness.state !== 'fresh' && !error"
-      class="mb-5 flex items-start gap-2.5 rounded-lg border border-warning/40 bg-warning/5 px-3 py-3"
-      role="status"
-      aria-label="Atualidade dos dados"
-    >
-      <Icon
-        name="lucide:clock-alert"
-        class="mt-0.5 size-4 shrink-0 text-warning"
-      />
-      <div>
-        <p class="text-sm font-semibold">
-          {{
-            freshness.state === "stale"
-              ? "Atualização atrasada"
-              : freshness.state === "degraded"
-                ? "Dados parcialmente atualizados"
-                : "Situação ao vivo indisponível"
-          }}
-        </p>
-        <p class="mt-0.5 text-sm text-muted-foreground">
-          Atualize antes de decidir pelos números abaixo. Se algo mudou, a
-          decisão é recusada e nada é disparado.
-        </p>
-      </div>
-    </section>
-
-    <!-- Entrega por plataforma, ANTES de publicar. Bloqueio e limitação não podem
-         parecer iguais: um diz "nada sai por aqui", o outro diz "sai, mas não para
-         todo mundo". Antes disto o aviso existia só no `check --deploy`, que o gestor
-         nunca lê — e só sabia falar de WhatsApp. -->
-    <section
-      v-if="reachLimits.length"
-      class="mb-5 space-y-2"
-      aria-label="Situação de entrega por plataforma"
-    >
-      <div
-        v-for="limit in reachLimits"
-        :key="limit.code"
-        class="flex items-start gap-2.5 rounded-lg border px-3 py-2.5"
-        :class="
-          limit.blocking
-            ? 'border-destructive/40 bg-destructive/5'
-            : 'border-warning/40 bg-warning/5'
-        "
-        role="status"
-      >
-        <Icon
-          :name="
-            limit.blocking ? 'lucide:circle-slash' : 'lucide:triangle-alert'
-          "
-          class="mt-0.5 size-4 shrink-0"
-          :class="limit.blocking ? 'text-destructive' : 'text-warning'"
+        <NuxtAlert
+          v-if="pendingReauthentication && decisionError"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :title="decisionError"
+          role="alert"
         />
-        <div class="min-w-0">
-          <p class="text-sm font-semibold">{{ limit.title }}</p>
-          <p class="mt-0.5 text-sm text-muted-foreground">{{ limit.detail }}</p>
-          <!-- ⚠️ O aviso NÃO configura mais nada. Ele conta o fato e aponta a casa: a
-               configuração vive em Plataformas, e alerta não é lugar de morar config —
-               ela desaparecia junto com o alerta. -->
-          <p
-            v-if="limit.action"
-            class="mt-1 text-xs font-medium text-muted-foreground"
+
+        <NuxtAlert
+          v-if="freshness && freshness.state !== 'fresh' && !error"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-clock-alert"
+          :title="freshnessTitle"
+          description="Atualize antes de decidir pelos números abaixo. Se algo mudou, a decisão é recusada e nada é disparado."
+          :actions="[
+            {
+              label: 'Atualizar',
+              color: 'warning',
+              variant: 'outline',
+              size: 'md',
+              onClick: () => void refresh(),
+            },
+          ]"
+          role="status"
+          aria-label="Atualidade dos dados"
+        />
+
+        <!-- Entrega por plataforma, ANTES de publicar. Bloqueio e limitação não podem
+             parecer iguais: um diz "nada sai por aqui", o outro diz "sai, mas não para
+             todo mundo". ⚠️ O aviso NÃO configura nada: conta o fato e aponta a casa
+             (Plataformas), porque alerta não é lugar de morar configuração. -->
+        <section
+          v-if="reachLimits.length"
+          class="flex flex-col gap-2"
+          aria-label="Situação de entrega por plataforma"
+        >
+          <NuxtAlert
+            v-for="limit in reachLimits"
+            :key="limit.code"
+            :color="limit.blocking ? 'error' : 'warning'"
+            variant="subtle"
+            :icon="limit.blocking ? 'i-lucide-circle-slash' : 'i-lucide-triangle-alert'"
+            :title="limit.title"
+            :actions="[
+              {
+                label: 'Ver em Plataformas',
+                to: { path: '/settings/platforms' },
+                trailingIcon: 'i-lucide-arrow-right',
+                color: limit.blocking ? 'error' : 'warning',
+                variant: 'outline',
+                size: 'md',
+              },
+            ]"
+            role="status"
           >
-            {{ limit.action }}
-          </p>
-          <NuxtLink
-            :to="{ path: '/settings/platforms' }"
-            class="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold underline"
-          >
-            Ver em Plataformas
-            <Icon name="lucide:arrow-right" class="size-3" />
-          </NuxtLink>
-        </div>
-      </div>
-    </section>
+            <template #description>
+              <span class="block">{{ limit.detail }}</span>
+              <span v-if="limit.action" class="mt-1 block font-medium">{{ limit.action }}</span>
+            </template>
+          </NuxtAlert>
+        </section>
 
-    <!-- Números do dia
-         ⚠️ Uma pessoa que recebe mensagem e um mural que recebe postagem são
-         grandezas diferentes, e somá-las produzia um número que o gestor lê de manhã
-         para decidir se disparou demais. Onde o número é bom, ele vai separado em dois
-         cartões; onde o número é um problema a resolver, ele fica junto e a linha de
-         baixo diz de quê — juntar dois alarmes em cartões distintos esconderia o
-         menor deles. -->
-    <section
-      v-if="stats"
-      class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3"
-      aria-label="Situação operacional"
-    >
-      <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold tabular-nums">
-          {{ formatCount(stats.pending_decision_count) }}
-        </p>
-        <p class="text-xs text-muted-foreground">Aguardando decisão</p>
-      </div>
-      <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold tabular-nums">
-          {{ formatCount(stats.confirmed_people_today) }}
-        </p>
-        <p class="text-xs text-muted-foreground">Pessoas que receberam hoje</p>
-      </div>
-      <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold tabular-nums">
-          {{ formatCount(stats.confirmed_posts_today) }}
-        </p>
-        <p class="text-xs text-muted-foreground">Postagens publicadas hoje</p>
-      </div>
-      <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold tabular-nums">
-          {{ formatCount(acceptedUnconfirmed.total) }}
-        </p>
-        <p class="text-xs text-muted-foreground">Sem confirmação ainda</p>
-        <p class="text-xs text-muted-foreground">
-          {{ acceptedUnconfirmed.breakdown }}
-        </p>
-      </div>
-      <div
-        class="rounded-lg border px-3 py-2.5"
-        :class="
-          failedFinal.total > 0
-            ? 'border-destructive/40 bg-destructive/5'
-            : 'border-border bg-card'
-        "
-      >
-        <p
-          class="text-2xl font-bold tabular-nums"
-          :class="failedFinal.total > 0 ? 'text-destructive' : ''"
+        <!-- Números do dia
+             ⚠️ Uma pessoa que recebe mensagem e um mural que recebe postagem são
+             grandezas diferentes, e somá-las produzia um número que o gestor lê de manhã
+             para decidir se disparou demais. Onde o número é bom, ele vai separado em dois
+             cartões; onde o número é um problema a resolver, ele fica junto e a linha de
+             baixo diz de quê: juntar dois alarmes em cartões distintos esconderia o
+             menor deles. -->
+        <section
+          v-if="stats"
+          class="grid grid-cols-2 gap-3 sm:grid-cols-3"
+          aria-label="Situação operacional"
         >
-          {{ formatCount(failedFinal.total) }}
-        </p>
-        <p class="text-xs text-muted-foreground">Falhas finais hoje</p>
-        <p class="text-xs text-muted-foreground">{{ failedFinal.breakdown }}</p>
-      </div>
-      <div
-        class="rounded-lg border px-3 py-2.5"
-        :class="
-          unknownOpen.total > 0
-            ? 'border-warning/40 bg-warning/5'
-            : 'border-border bg-card'
-        "
-      >
-        <p
-          class="text-2xl font-bold tabular-nums"
-          :class="unknownOpen.total > 0 ? 'text-warning' : ''"
-        >
-          {{ formatCount(unknownOpen.total) }}
-        </p>
-        <p class="text-xs text-muted-foreground">Resultados incertos</p>
-        <p class="text-xs text-muted-foreground">{{ unknownOpen.breakdown }}</p>
-      </div>
-    </section>
-
-    <!-- Erro de carga: o painel não finge estar vazio quando não conseguiu ler -->
-    <div
-      v-if="error"
-      class="mb-6 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm"
-      role="alert"
-    >
-      <p class="font-semibold text-destructive">
-        Não conseguimos carregar o painel.
-      </p>
-      <UiButton type="button" variant="link" class="mt-1" @click="refresh()">
-        Tentar de novo
-      </UiButton>
-    </div>
-
-    <!-- Pendentes -->
-    <section class="mb-8">
-      <h2
-        class="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground"
-      >
-        Aguardando decisão
-      </h2>
-
-      <div
-        v-if="loading && pendingPosts.length === 0"
-        class="space-y-3"
-        aria-busy="true"
-      >
-        <UiSkeleton
-          v-for="n in 2"
-          :key="n"
-          class="h-48 rounded-md"
-          label="Carregando quadro de marketing"
-        />
-      </div>
-
-      <div
-        v-else-if="pendingPosts.length === 0"
-        class="rounded-md border border-dashed border-border bg-card/50 px-6 py-10 text-center"
-      >
-        <Icon
-          name="lucide:coffee"
-          class="mx-auto size-8 text-muted-foreground"
-        />
-        <p class="mt-2 font-semibold">Nenhum anúncio aguardando decisão</p>
-        <p class="mt-1 text-sm text-muted-foreground">
-          <!-- ⚠️ Dizia "quando uma fornada terminar", e fornada é UM dos gatilhos: há
-               estoque baixo, produto novo, hora marcada e o disparo na mão. Copy que nomeia
-               um caso ensina o gestor a esperar só aquele. -->
-          Quando uma campanha disparar, o anúncio aparece aqui para você
-          revisar.
-        </p>
-        <NuxtLink
-          to="/settings/campaigns"
-          class="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-muted"
-        >
-          <Icon name="lucide:sliders-horizontal" class="size-4" />
-          Ver as campanhas
-        </NuxtLink>
-      </div>
-
-      <div v-else class="space-y-4">
-        <AnnouncementCard
-          v-for="announcement in pendingPosts"
-          :key="announcement.pk"
-          :announcement="announcement"
-          :platform-options="platforms"
-          :platform-readiness="platformReadiness"
-          :product-options="products"
-          :busy="busyPk === announcement.pk"
-          :ai-assist-available="aiAssistAvailable"
-          :draft-owner="draftOwner"
-          :shop-timezone="shopTimezone"
-          :quiet-hours-suspended-for-local-simulation="
-            quietHoursSuspendedForLocalSimulation
-          "
-          @approve="onApprove"
-          @reject="
-            (pk) => {
-              rejecting = pk;
-              rejectReason = '';
-            }
-          "
-        />
-      </div>
-    </section>
-
-    <!-- Publicados nas últimas 24h -->
-    <section v-if="recentPosts.length > 0">
-      <div class="mb-3 flex items-center gap-2">
-        <h2
-          class="text-sm font-semibold uppercase tracking-wide text-muted-foreground"
-        >
-          Últimas 24 horas
-        </h2>
-        <!-- A linha do tempo completa deixou de ser aba e virou aprofundamento: a pergunta
-             "o que saiu?" é fraca, e quem quer varrer clica aqui (plano §8). -->
-        <NuxtLink
-          to="/history"
-          class="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground underline transition hover:text-foreground"
-        >
-          Ver tudo
-          <Icon name="lucide:arrow-right" class="size-3" />
-        </NuxtLink>
-      </div>
-      <ul
-        class="divide-y divide-border overflow-hidden rounded-md border border-border bg-card"
-      >
-        <li
-          v-for="announcement in recentPosts"
-          :key="announcement.pk"
-          class="flex items-start gap-3 px-4 py-3"
-        >
-          <Icon
-            :name="
-              OUTCOME_META[announcementOutcome(announcement.platform_results)]
-                .icon
-            "
-            class="mt-0.5 size-4 shrink-0"
-            :class="
-              OUTCOME_META[announcementOutcome(announcement.platform_results)]
-                .class
-            "
-          />
-          <div class="min-w-0 flex-1">
-            <p class="truncate text-sm">{{ announcement.body }}</p>
-            <p class="mt-0.5 text-xs text-muted-foreground">
-              {{
-                shortDateTime(
-                  announcement.published_at || announcement.created_at,
-                )
-              }}
-              ·
-              {{ audienceSummary(announcement.audience) }}
+          <NuxtCard class="*:data-[slot=body]:p-3">
+            <p class="text-2xl font-semibold tabular-nums">
+              {{ formatCount(stats.pending_decision_count) }}
             </p>
-          </div>
-          <NuxtLink
-            :to="`/announcements/${announcement.pk}`"
-            class="inline-flex min-h-11 shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            <p class="text-xs text-muted-foreground">Aguardando decisão</p>
+          </NuxtCard>
+          <NuxtCard class="*:data-[slot=body]:p-3">
+            <p class="text-2xl font-semibold tabular-nums">
+              {{ formatCount(stats.confirmed_people_today) }}
+            </p>
+            <p class="text-xs text-muted-foreground">Pessoas que receberam hoje</p>
+          </NuxtCard>
+          <NuxtCard class="*:data-[slot=body]:p-3">
+            <p class="text-2xl font-semibold tabular-nums">
+              {{ formatCount(stats.confirmed_posts_today) }}
+            </p>
+            <p class="text-xs text-muted-foreground">Postagens publicadas hoje</p>
+          </NuxtCard>
+          <NuxtCard class="*:data-[slot=body]:p-3">
+            <p class="text-2xl font-semibold tabular-nums">
+              {{ formatCount(acceptedUnconfirmed.total) }}
+            </p>
+            <p class="text-xs text-muted-foreground">Sem confirmação ainda</p>
+            <p class="text-xs text-muted-foreground">
+              {{ acceptedUnconfirmed.breakdown }}
+            </p>
+          </NuxtCard>
+          <NuxtCard class="*:data-[slot=body]:p-3">
+            <p
+              class="text-2xl font-semibold tabular-nums"
+              :class="failedFinal.total > 0 ? 'text-error' : ''"
+            >
+              {{ formatCount(failedFinal.total) }}
+            </p>
+            <p class="text-xs text-muted-foreground">Falhas finais hoje</p>
+            <p class="text-xs text-muted-foreground">{{ failedFinal.breakdown }}</p>
+          </NuxtCard>
+          <NuxtCard class="*:data-[slot=body]:p-3">
+            <p
+              class="text-2xl font-semibold tabular-nums"
+              :class="unknownOpen.total > 0 ? 'text-warning' : ''"
+            >
+              {{ formatCount(unknownOpen.total) }}
+            </p>
+            <p class="text-xs text-muted-foreground">Resultados incertos</p>
+            <p class="text-xs text-muted-foreground">{{ unknownOpen.breakdown }}</p>
+          </NuxtCard>
+        </section>
+
+        <!-- Erro de carga: o painel não finge estar vazio quando não conseguiu ler -->
+        <OperatorScreenState
+          v-if="error"
+          state="error"
+          what="o painel"
+          @retry="refresh()"
+        />
+
+        <!-- Pendentes -->
+        <section aria-labelledby="board-pending-title">
+          <h2
+            id="board-pending-title"
+            class="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground"
           >
-            Ver resultado
-            <Icon name="lucide:arrow-right" class="size-3.5" />
-          </NuxtLink>
-        </li>
-      </ul>
-      <NuxtLink
-        to="/history"
-        class="mt-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
-      >
-        Ver o histórico completo
-        <Icon name="lucide:arrow-right" class="size-3.5" />
-      </NuxtLink>
+            Aguardando decisão
+          </h2>
+
+          <OperatorScreenState
+            v-if="loading && pendingPosts.length === 0"
+            state="loading"
+            what="os anúncios"
+          />
+
+          <!-- ⚠️ Dizia "quando uma fornada terminar", e fornada é UM dos gatilhos: há
+               estoque baixo, produto novo, hora marcada e o disparo na mão. Copy que
+               nomeia um caso ensina o gestor a esperar só aquele. -->
+          <OperatorScreenState
+            v-else-if="pendingPosts.length === 0"
+            state="empty"
+            icon="i-lucide-coffee"
+            title="Nenhum anúncio aguardando decisão."
+            description="Quando uma campanha disparar, o anúncio aparece aqui para você revisar."
+          >
+            <template #actions>
+              <NuxtButton
+                to="/settings/campaigns"
+                icon="i-lucide-sliders-horizontal"
+                label="Ver as campanhas"
+                color="neutral"
+                variant="outline"
+              />
+            </template>
+          </OperatorScreenState>
+
+          <div v-else class="flex flex-col gap-4">
+            <AnnouncementCard
+              v-for="announcement in pendingPosts"
+              :key="announcement.pk"
+              :announcement="announcement"
+              :platform-options="platforms"
+              :platform-readiness="platformReadiness"
+              :product-options="products"
+              :busy="busyPk === announcement.pk"
+              :ai-assist-available="aiAssistAvailable"
+              :draft-owner="draftOwner"
+              :shop-timezone="shopTimezone"
+              :quiet-hours-suspended-for-local-simulation="
+                quietHoursSuspendedForLocalSimulation
+              "
+              @approve="onApprove"
+              @reject="(pk) => (rejecting = pk)"
+            />
+          </div>
+        </section>
+
+        <!-- Publicados nas últimas 24h -->
+        <section v-if="recentPosts.length > 0" aria-labelledby="board-recent-title">
+          <div class="mb-3 flex items-center gap-2">
+            <h2
+              id="board-recent-title"
+              class="text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+            >
+              Últimas 24 horas
+            </h2>
+            <!-- A linha do tempo completa deixou de ser aba e virou aprofundamento: a
+                 pergunta "o que saiu?" é fraca, e quem quer varrer clica aqui (plano §8). -->
+            <NuxtButton
+              to="/history"
+              label="Ver tudo"
+              trailing-icon="i-lucide-arrow-right"
+              color="neutral"
+              variant="ghost"
+              class="ml-auto"
+            />
+          </div>
+          <NuxtCard class="*:data-[slot=body]:p-0">
+            <ul class="divide-y divide-border">
+              <li
+                v-for="announcement in recentPosts"
+                :key="announcement.pk"
+                class="flex items-start gap-3 px-4 py-3"
+              >
+                <Icon
+                  :name="
+                    OUTCOME_META[announcementOutcome(announcement.platform_results)]
+                      .icon
+                  "
+                  class="mt-0.5 size-4 shrink-0"
+                  :class="
+                    OUTCOME_META[announcementOutcome(announcement.platform_results)]
+                      .class
+                  "
+                  aria-hidden="true"
+                />
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm">{{ announcement.body }}</p>
+                  <p class="mt-0.5 text-xs text-muted-foreground">
+                    {{
+                      shortDateTime(
+                        announcement.published_at || announcement.created_at,
+                      )
+                    }}
+                    ·
+                    {{ audienceSummary(announcement.audience) }}
+                  </p>
+                </div>
+                <NuxtButton
+                  :to="`/announcements/${announcement.pk}`"
+                  label="Ver resultado"
+                  trailing-icon="i-lucide-arrow-right"
+                  color="neutral"
+                  variant="ghost"
+                  class="shrink-0"
+                />
+              </li>
+            </ul>
+          </NuxtCard>
+          <NuxtButton
+            to="/history"
+            label="Ver o histórico completo"
+            trailing-icon="i-lucide-arrow-right"
+            color="neutral"
+            variant="ghost"
+            class="mt-3"
+          />
+        </section>
+      </div>
     </section>
 
-    <!-- Recusar é irreversível: confirma antes -->
-    <UiDialog
+    <!-- Recusar é irreversível: confirma antes, com o motivo opcional. -->
+    <OperatorReasonDialog
       :open="rejecting !== null"
-      @update:open="
-        (v) => {
-          if (!v) rejecting = null;
-        }
-      "
-    >
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Recusar este anúncio?</UiDialogTitle>
-          <!-- ⚠️ Dizia "A fornada segue normalmente" — e fornada é UM dos gatilhos
-               (a regra deste arquivo, lá em cima). A recusa é só do anúncio. -->
-          <UiDialogDescription>
-            Ele não vai para nenhuma plataforma e não volta para a fila. Nada
-            mais muda: a campanha e o que aconteceu na padaria seguem como
-            estão.
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <!-- Opcional de propósito: campo obrigatório aqui só produziria "não" digitado
-             com pressa. Quando o gestor escreve, a recusa passa a explicar a campanha. -->
-        <div>
-          <label
-            for="reject-reason"
-            class="mb-1 block text-xs font-medium text-muted-foreground"
-          >
-            Motivo (opcional)
-          </label>
-          <UiInput
-            id="reject-reason"
-            v-model="rejectReason"
-            type="text"
-            :maxlength="200"
-            placeholder="Foto ruim, texto errado, produto acabou…"
-            @keyup.enter="confirmReject"
-          />
-        </div>
-        <UiDialogFooter>
-          <UiButton type="button" variant="outline" @click="rejecting = null">
-            Manter na fila
-          </UiButton>
-          <UiButton type="button" variant="destructive" @click="confirmReject">
-            Recusar
-          </UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+      title="Recusar este anúncio?"
+      :description="REJECT_CONSEQUENCE"
+      confirm-label="Recusar"
+      reason-label="Motivo (opcional)"
+      placeholder="Foto ruim, texto errado, produto acabou…"
+      :maxlength="200"
+      @update:open="(open) => { if (!open) rejecting = null; }"
+      @confirm="confirmReject"
+    />
 
     <MarketingCommandConfirmationDialog
       :command="pendingDecision"
@@ -592,6 +517,5 @@ useHead(() => ({
       @confirm="confirmServerDecision"
       @cancel="cancelDecision"
     />
-    </div>
   </main>
 </template>

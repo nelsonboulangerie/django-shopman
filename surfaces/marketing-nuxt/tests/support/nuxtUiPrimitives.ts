@@ -866,6 +866,47 @@ const NuxtSlideover = defineComponent({
   },
 });
 
+// Fiel ao UPinInput no que o selo usa: uma casa por dígito, `modelValue` como lista de
+// strings (o contrato do PinInputRoot da reka-ui) e os atributos (id) na raiz.
+const NuxtPinInput = defineComponent({
+  name: "NuxtPinInput",
+  inheritAttrs: false,
+  props: {
+    modelValue: { type: Array as () => string[], default: () => [] },
+    length: { type: [Number, String], default: 5 },
+    disabled: Boolean,
+  },
+  emits: ["update:modelValue", "complete"],
+  setup(props, { attrs, emit }) {
+    return () => {
+      const length = Number(props.length);
+      return h(
+        "div",
+        { ...attrs, role: "group", "data-slot": "root" },
+        Array.from({ length }, (_, index) =>
+          h("input", {
+            type: "text",
+            inputmode: "numeric",
+            autocomplete: "one-time-code",
+            "aria-label": `Dígito ${index + 1} de ${length}`,
+            disabled: props.disabled,
+            value: props.modelValue[index] ?? "",
+            onInput: (event: Event) => {
+              const next = Array.from(
+                { length },
+                (__, at) => props.modelValue[at] ?? "",
+              );
+              next[index] = (event.target as HTMLInputElement).value;
+              emit("update:modelValue", next);
+              if (next.every((digit) => digit !== "")) emit("complete", next);
+            },
+          }),
+        ),
+      );
+    };
+  },
+});
+
 const NuxtLink = defineComponent({
   name: "NuxtLink",
   inheritAttrs: false,
@@ -906,8 +947,89 @@ const textPrimitive = (name: string, tag = "div") =>
     },
   });
 
+// Como o real (Reka): cada etapa é um botão nomeado pelo título ("2. Destinos", o
+// slot `#title` com o número), a atual tem `aria-current="step"`, a desabilitada não
+// anda, e o `mousedown` do botão esquerdo escolhe (o gatilho do Reka anda no mousedown).
+const NuxtStepper = defineComponent({
+  name: "NuxtStepper",
+  inheritAttrs: false,
+  props: {
+    modelValue: { type: [String, Number], default: 0 },
+    items: {
+      type: Array as () => Array<{ title?: string; disabled?: boolean }>,
+      default: () => [],
+    },
+    disabled: Boolean,
+  },
+  emits: ["update:modelValue"],
+  setup(props, { attrs, emit }) {
+    const choose = (index: number, item: { disabled?: boolean }) => {
+      if (!item.disabled && !props.disabled) emit("update:modelValue", index);
+    };
+    return () =>
+      h("div", { ...attrs, role: "group" }, [
+        h(
+          "ol",
+          props.items.map((item, index) =>
+            h("li", [
+              h(
+                "button",
+                {
+                  type: "button",
+                  disabled: item.disabled || props.disabled,
+                  "aria-current":
+                    Number(props.modelValue) === index ? "step" : undefined,
+                  "aria-label": `${index + 1}. ${item.title ?? ""}`,
+                  onMousedown: (event: MouseEvent) => {
+                    if (event.button === 0 && !event.ctrlKey)
+                      choose(index, item);
+                  },
+                },
+                String(index + 1),
+              ),
+            ]),
+          ),
+        ),
+      ]);
+  },
+});
+
+// A paginação: os números como botões e `update:page` ao tocar.
+const NuxtPagination = defineComponent({
+  name: "NuxtPagination",
+  inheritAttrs: false,
+  props: {
+    page: { type: Number, default: 1 },
+    total: { type: Number, default: 0 },
+    itemsPerPage: { type: Number, default: 10 },
+  },
+  emits: ["update:page"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h(
+        "nav",
+        attrs,
+        Array.from(
+          { length: Math.max(1, Math.ceil(props.total / props.itemsPerPage)) },
+          (_, index) =>
+            h(
+              "button",
+              {
+                type: "button",
+                "aria-current": index + 1 === props.page ? "page" : undefined,
+                onClick: () => emit("update:page", index + 1),
+              },
+              String(index + 1),
+            ),
+        ),
+      );
+  },
+});
+
 config.global.components = {
   ...config.global.components,
+  NuxtStepper,
+  NuxtPagination,
   NuxtCheckbox,
   NuxtCheckboxGroup,
   NuxtSwitch,
@@ -937,6 +1059,7 @@ config.global.components = {
   NuxtEmpty: textPrimitive("NuxtEmpty"),
   NuxtKbd: textPrimitive("NuxtKbd", "kbd"),
   NuxtLink,
+  NuxtPinInput,
   NuxtSkeleton: textPrimitive("NuxtSkeleton"),
   NuxtTimeline: textPrimitive("NuxtTimeline"),
   OperatorMoreMenu,
