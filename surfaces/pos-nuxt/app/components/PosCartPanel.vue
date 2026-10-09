@@ -28,12 +28,14 @@ import {
   lineTotalQ,
   unitChargedQ,
 } from "~/presentation/lineDiscounts";
-import { cartNetTotalQ } from "~/presentation/receipt";
+import { saleTotalText, type SaleTotalView } from "~/presentation/saleTotal";
 import { isWeighedLine, lineQtyLabel } from "~/presentation/weighed";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
   items: POSCartItem[];
+  /** O total da revisão do servidor, ou o estado sem número (`saleTotalView`). */
+  total: SaleTotalView;
   requiresTab: boolean;
   hasOpenTab: boolean;
   loading: boolean;
@@ -221,13 +223,13 @@ function badgeTone(tone: KitchenBadgeView["tone"]): string {
   return "bg-muted text-muted-foreground";
 }
 
-// O "Total parcial" — a MESMA soma da tela do cliente e do total interino do
-// pagamento, por `cartNetTotalQ`. Esta conta estava escrita à mão aqui, uma
-// TERCEIRA cópia dela (as outras em `receipt.ts` e `customerDisplay.ts`), e as
-// três aplicavam por conta própria o percentual de desconto da linha — que o
-// servidor descarta quando um desconto automático maior já ganhou. Resultado na
-// tela: linha de R$ 10,20 e Total parcial de R$ 9,18, um debaixo do outro.
-const totalDisplay = computed(() => formatBRL(cartNetTotalQ(props.items)));
+// O total da comanda é o do SERVIDOR (a revisão), nunca a soma local: regra do
+// dono (09/10), total que ainda pode mudar não aparece como definitivo. Sem a
+// revisão, o lugar do número diz "Calculando…" (ou "Não calculado", quando ela
+// falhou; o Pagamento diz o motivo e oferece "Tentar de novo").
+const totalText = computed(() => saleTotalText(props.total));
+const totalConfirmed = computed(() => props.total.status === "confirmed");
+const totalShown = computed(() => props.total.status !== "hidden");
 
 /** O selo do desconto que venceu a linha. Usa `reasonOptions`, que normaliza a
  *  lista do servidor e cai nos motivos padrão: o selo diz "Cortesia", não o ref. */
@@ -945,7 +947,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           <span v-if="cartUnits" class="absolute -top-1.5 -right-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-suite-badge px-1 op-micro font-bold text-suite-badge-foreground tnum">{{ cartUnits }}</span>
         </span>
         <span class="min-w-0 flex-1">
-          <span class="block truncate whitespace-nowrap op-title tnum">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }} · {{ totalDisplay }}</span>
+          <span class="block truncate whitespace-nowrap op-title tnum">{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}<template v-if="totalShown"> · <span :class="totalConfirmed ? '' : 'font-normal text-muted-foreground'" data-pos-sheet-total :data-total-state="total.status">{{ totalText }}</span></template></span>
           <span v-if="fireBar.unfired && fireBar.visible" class="flex min-w-0 items-center gap-1 op-micro text-muted-foreground" data-pos-sheet-kitchen>
             <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" /><span>{{ fireBar.unfired }} ainda não {{ fireBar.unfired === 1 ? "foi" : "foram" }} à cozinha</span>
           </span>
@@ -1638,14 +1640,16 @@ defineExpose({ focusItem, onDigit, onBackspace });
          seleção, o pé encolhe para o total: o gesto geral espera o Concluir. -->
     <div v-if="batchMode" class="flex shrink-0 items-baseline justify-between border-t border-border px-3.5 py-3">
       <span class="op-label text-muted-foreground">Total parcial</span>
-      <strong class="text-xl font-semibold tnum">{{ totalDisplay }}</strong>
+      <strong v-if="totalConfirmed" class="text-xl font-semibold tnum" data-pos-batch-total>{{ totalText }}</strong>
+      <span v-else-if="totalShown" class="op-label text-muted-foreground" data-pos-batch-total :data-total-state="total.status">{{ totalText }}</span>
     </div>
     <!-- FOLHA ABERTA (v4 tablet b): pagar direto daqui, pelos meios eletrônicos que
          o dispositivo leva à mesa. "Outras formas" abre o Pagamento de sempre. -->
     <div v-else-if="sheet && sheetOpen && quickPayments?.length && !primaryLabel" class="shrink-0 border-t border-border p-3" data-pos-sheet-pay>
       <div class="mb-2 flex items-baseline gap-2">
         <span class="op-label text-muted-foreground">Pagar</span>
-        <strong class="text-3xl font-semibold tnum">{{ totalDisplay }}</strong>
+        <strong v-if="totalConfirmed" class="text-3xl font-semibold tnum" data-pos-sheet-pay-total>{{ totalText }}</strong>
+        <span v-else class="op-title font-normal text-muted-foreground" data-pos-sheet-pay-total :data-total-state="total.status">{{ totalText }}</span>
         <span class="flex-1" />
         <button
           type="button"
@@ -1699,9 +1703,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
         <span class="text-lg font-semibold whitespace-nowrap">{{ primaryText }}</span>
         <OperatorKbd v-if="!coarsePointer" variant="inverse" class="max-lg:hidden" aria-hidden="true">F4</OperatorKbd>
         <span class="flex-1" />
-        <span class="flex flex-col items-end leading-none">
+        <span v-if="totalShown" class="flex flex-col items-end leading-none" data-pos-primary-total :data-total-state="total.status">
           <span class="op-micro opacity-80">total</span>
-          <span class="text-xl leading-8 font-semibold tnum xl:text-3xl">{{ totalDisplay }}</span>
+          <span v-if="totalConfirmed" class="text-xl leading-8 font-semibold tnum xl:text-3xl">{{ totalText }}</span>
+          <span v-else class="text-base leading-8 font-medium opacity-80">{{ totalText }}</span>
         </span>
       </button>
     </div>

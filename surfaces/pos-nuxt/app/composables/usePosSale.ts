@@ -62,6 +62,7 @@ import {
   tabRefMaxLength,
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
+import { saleTotalView } from "~/presentation/saleTotal";
 import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, type PosReceiptSnapshot } from "~/presentation/receipt";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
 import { resolveFiscalState, type PosSaleResultSnapshot } from "~/presentation/saleResult";
@@ -3449,11 +3450,89 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
+  // ── O total da VENDA, antes de abrir o pagamento ─────────────────────────
+  // Regra do dono (09/10): total que ainda pode mudar não aparece como
+  // definitivo. O botão do Pagamento e a folha da mesa mostravam a soma local
+  // do carrinho, que não sabe do desconto automático, da taxa de entrega nem do
+  // desconto manual que o servidor descarta. A fonte é a MESMA do pagamento: a
+  // revisão do servidor, aqui pedida em silêncio (sem `busy`, sem toast, sem
+  // mexer no `clientRequestId` do carrinho) a cada mudança que pode mexer no
+  // total. Enquanto ela não volta, a tela diz "Calculando…" e nenhum número.
+  const saleReview = ref<POSSaleReviewProjection | null>(null);
+  const saleReviewFailed = ref(false);
+  /** A edição de encomenda tem a prévia própria (no "Salvar alterações"): ali a
+   *  revisão de venda não é pedida, e a tela não mostra total. */
+  const saleTotalPaused = ref(false);
+  let saleReviewTimer: ReturnType<typeof setTimeout> | null = null;
+  let saleReviewSeq = 0;
+  const saleTotalKey = computed(() => JSON.stringify([
+    checkoutMode.value,
+    saleTotalPaused.value,
+    cart.items,
+    cart.salesMode,
+    cart.fulfillmentConfirmed,
+    cart.fulfillmentType,
+    cart.deliveryAddress,
+    cart.deliveryAddressStructured,
+    cart.deliveryStreetNumber,
+    cart.deliveryNeighborhood,
+    cart.deliveryDate,
+    cart.deliveryTimeSlot,
+    cart.deliveryFeeOverrideInput,
+    cart.deliveryFeeOverride,
+    cart.discountType,
+    cart.discountValue,
+    cart.customerRef,
+    cart.tabRef,
+  ]));
+  function scheduleSaleReview() {
+    saleReviewSeq += 1;
+    saleReview.value = null;
+    saleReviewFailed.value = false;
+    if (saleReviewTimer) clearTimeout(saleReviewTimer);
+    saleReviewTimer = null;
+    if (checkoutMode.value || saleTotalPaused.value || !cart.items.length) return;
+    const seq = saleReviewSeq;
+    saleReviewTimer = setTimeout(() => {
+      saleReviewTimer = null;
+      void runSaleReview(seq);
+    }, 450);
+  }
+  async function runSaleReview(seq: number) {
+    try {
+      const response = await action.call<POSSaleReviewResponse>(
+        actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
+        { body: buildPosSaleIntent(currentIntentState(), checkoutContract.value?.intent_version) },
+      );
+      // Resposta de um carrinho que já mudou: descartada.
+      if (seq !== saleReviewSeq) return;
+      saleReview.value = response.review;
+    } catch {
+      // Sem toast: quem diz o motivo é o Pagamento, que revisa de novo ao abrir
+      // e oferece "Tentar de novo". Aqui a tela só não mostra número.
+      if (seq !== saleReviewSeq) return;
+      saleReviewFailed.value = true;
+    }
+  }
+  watch(saleTotalKey, () => scheduleSaleReview(), { immediate: true });
+  /** O total que a tela de venda mostra: do servidor, ou o estado sem número. */
+  const saleTotal = computed(() => saleTotalView({
+    checkoutMode: checkoutMode.value,
+    checkoutReview: review.value,
+    checkoutReviewFailed: reviewFailed.value,
+    saleReview: saleReview.value,
+    saleReviewFailed: saleReviewFailed.value,
+    paused: saleTotalPaused.value,
+    hasItems: cart.items.length > 0,
+  }));
+
   onScopeDispose(() => {
     stopPixPolling();
     stopDeliveryPolling();
     if (autoReviewTimer) clearTimeout(autoReviewTimer);
     autoReviewTimer = null;
+    if (saleReviewTimer) clearTimeout(saleReviewTimer);
+    saleReviewTimer = null;
   });
 
   return {
@@ -3506,6 +3585,9 @@ export function usePosSale(deps: PosSaleDeps) {
     reviewFailed,
     reviewFailureReason,
     totalStatus,
+    saleReview,
+    saleTotal,
+    saleTotalPaused,
     customerLookup,
     tabDialogOpen,
     tabDialogReason,
