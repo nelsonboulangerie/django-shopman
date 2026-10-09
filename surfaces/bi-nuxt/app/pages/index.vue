@@ -143,11 +143,11 @@ const counts = computed(() => ({
 // quatro, com o "Todos" na fileira); no celular as quatro pílulas não cabem e cortavam
 // ("Na me…", laudo F18), então o mesmo recorte vira um NuxtSelect (lista curta e fixa).
 const verdictItems = computed(() => [
-  { value: "all", label: "Todos", badge: rows.value.length },
-  ...VERDICTS.map((key) => ({ value: key, label: verdictMeta(key).label, badge: counts.value[key] })),
+  { value: "all", label: "Todos", count: rows.value.length },
+  ...VERDICTS.map((key) => ({ value: key, label: verdictMeta(key).label, count: counts.value[key] })),
 ]);
 const verdictOptions = computed(() =>
-  verdictItems.value.map((item) => ({ value: item.value, label: `${item.label} (${item.badge})` })),
+  verdictItems.value.map((item) => ({ value: item.value, label: `${item.label} (${item.count})` })),
 );
 const CHIP_DOT = { short: "bg-error", over: "bg-warning", right: "bg-success" } as const;
 const VERDICT_TEXT = { error: "text-error", warning: "text-warning", success: "text-success" } as const;
@@ -340,6 +340,7 @@ const csv = computed(() => overShortCsv(filtered.value));
               <template #leading="{ item }">
                 <span v-if="item.value !== 'all'" class="size-2 rounded-full" :class="CHIP_DOT[item.value as keyof typeof CHIP_DOT]" aria-hidden="true" />
               </template>
+              <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
             </NuxtTabs>
           </div>
           <NuxtFormField label="Veredito" orientation="horizontal" class="sm:hidden" data-bi-verdict-select>

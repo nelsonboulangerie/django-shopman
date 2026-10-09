@@ -413,7 +413,7 @@ const canSave = computed(() => Boolean(saved) && activeCount.value > 0);
       >
         <span class="max-sm:sr-only">Filtros</span>
         <template v-if="activeCount" #trailing>
-          <NuxtBadge color="primary" size="sm" :label="String(activeCount)" data-operator-filter-panel-count />
+          <OperatorCountChip :count="activeCount" data-operator-filter-panel-count />
         </template>
       </NuxtButton>
       <template #body><ReusePalette /></template>
@@ -431,7 +431,7 @@ const canSave = computed(() => Boolean(saved) && activeCount.value > 0);
       >
         <span class="max-sm:sr-only">Filtros</span>
         <template v-if="activeCount" #trailing>
-          <NuxtBadge color="primary" size="sm" :label="String(activeCount)" data-operator-filter-panel-count />
+          <OperatorCountChip :count="activeCount" data-operator-filter-panel-count />
         </template>
       </NuxtButton>
       <template #content><ReusePalette /></template>
