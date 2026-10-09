@@ -87,6 +87,19 @@ describe("OperatorBulkBar", () => {
     expect(mounted.emitted("clear")).toHaveLength(1);
   });
 
+  it("com uma lista aberta, o Esc é dela e não limpa a seleção", async () => {
+    mounted = await mountSuspended(OperatorBulkBar, { attachTo: document.body, props: { count: 1, items } });
+    const listbox = document.createElement("div");
+    listbox.setAttribute("role", "listbox");
+    const option = document.createElement("button");
+    listbox.append(option);
+    document.body.append(listbox);
+    const event = new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true });
+    option.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(mounted.emitted("clear")).toBeUndefined();
+  });
+
   it("na base: a superfície invertida da ação na base, só abaixo do lg, com o nome do modo", async () => {
     mounted = await mountSuspended(OperatorBulkBar, {
       attachTo: document.body,

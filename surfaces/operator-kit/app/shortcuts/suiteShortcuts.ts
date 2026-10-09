@@ -103,5 +103,9 @@ export const BULK_BAR_SHORTCUTS = defineOperatorShortcutMap([
     label: "Limpar a seleção",
     combinations: [{ code: "Escape" }],
     alternative: "Botão × da barra de seleção",
+    // Com uma lista, um menu ou um painel aberto (o canal, o preço), o Esc é de quem
+    // está aberto: o foco está dentro dele, ou no gatilho que o abriu.
+    ignoreWithin:
+      "[role='listbox'], [role='menu'], [role='dialog'], [aria-expanded='true'], [data-reka-popper-content-wrapper]",
   },
 ] satisfies readonly OperatorShortcutCommand[]);
