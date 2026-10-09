@@ -836,8 +836,8 @@ A ação do momento no celular e no tablet: a estrutura de sucesso do Storefront
 ação mexe), UMA ação larga e o motivo escrito quando ela não pode, num cartão
 **flutuante em superfície invertida** (dono, 09/10/2026): escura no tema claro, creme no
 escuro (`bg-inverted`/`text-inverted`, os tokens do tema), com sombra, como a sacola do
-Storefront. Contraste AA dos dois botões sobre ela, nos dois temas, travado em
-`tests/actionBarContrast.test.ts`.
+Storefront. Contraste AA do rótulo dentro de cada botão e o contorno da segunda ação
+contra ela, nos dois temas, travados em `tests/actionBarContrast.test.ts`.
 
 ```vue
 <OperatorActionBar
@@ -855,9 +855,12 @@ Storefront. Contraste AA dos dois botões sobre ela, nos dois temas, travado em
 - **A ação** (`OperatorActionBarAction`, `presentation/actionBar.ts`) leva verbo e alvo
   ("Pronto para retirar"), `xl`. A PRINCIPAL é `primary` `solid` (o dourado); a segunda
   (`secondary`), se houver, é SECUNDÁRIA (`outline`), nunca discreta (`ghost`) (dono,
-  09/10/2026). Sobre a superfície invertida as duas ganham contorno na cor do texto
-  invertido: o dourado sozinho não separa da superfície (2,8:1 no claro, 1,8:1 no
-  escuro). A cor de cada uma é da peça, não da tela.
+  09/10/2026). A principal é o `solid` canônico, sem anel (dono, 09/10/2026): o 3:1 de
+  componente (WCAG 1.4.11) vale para a informação que identifica o botão, e aqui são o
+  rótulo e o ícone, AA dentro dele nos dois temas; o dourado contra a superfície (2,8:1
+  no claro, 1,8:1 no escuro) não precisa separar. A segunda leva o contorno da variante,
+  na cor do texto invertido, travado em 3:1 contra a superfície. A cor de cada uma é da
+  peça, não da tela.
 - **`reason`**: com `disabled`, o motivo aparece escrito sob a ação (`role="status"`, e o
   botão aponta para ele com `aria-describedby`).
 - **Só abaixo de `lg`**: na mesa, a ação sobe para a barra superior primária.
