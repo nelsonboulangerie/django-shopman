@@ -27,9 +27,10 @@ describe("OperatorActionBar, a ação do momento na base do celular", () => {
     expect(root.className).toContain("in-data-[keyboard=open]:hidden");
     // Em fluxo: nunca grudada à mão.
     expect(root.className).not.toMatch(/(?:^|\s)(?:fixed|sticky)(?:\s|$)/);
-    // O cartão flutua em superfície invertida (tema escuro só dentro dele).
+    // O cartão flutua em superfície invertida (escura no claro, creme no escuro).
     const surface = root.querySelector<HTMLElement>("[data-operator-action-bar-surface]")!;
-    expect(surface.classList.contains("dark")).toBe(true);
+    expect(surface.className).toContain("bg-inverted");
+    expect(surface.className).toContain("text-inverted");
     expect(surface.className).toContain("shadow-lg");
   });
 
@@ -74,13 +75,27 @@ describe("OperatorActionBar, a ação do momento na base do celular", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("a principal é o dourado com contorno; a segunda é contorno, não ghost", async () => {
+    mounted = await mountSuspended(OperatorActionBar, {
+      attachTo: document.body,
+      props: { action: { label: "Aceitar" }, secondary: { label: "Limpar" } },
+    });
+    const action = document.querySelector<HTMLElement>("[data-operator-action-bar-action]")!;
+    const secondary = document.querySelector<HTMLElement>("[data-operator-action-bar-secondary]")!;
+    expect(action.className).toContain("bg-primary");
+    expect(action.className).toContain("ring-(--ui-text-inverted)");
+    expect(secondary.className).toContain("ring-(--ui-text-inverted)");
+    expect(secondary.className).toContain("text-inverted");
+    expect(secondary.className).not.toMatch(/(?:^|\s)bg-default(?:\s|$)/);
+  });
+
   it("a segunda ação é outline, de peso menor", async () => {
     const reject = vi.fn();
     mounted = await mountSuspended(OperatorActionBar, {
       attachTo: document.body,
       props: {
         action: { label: "Aceitar" },
-        secondary: { label: "Recusar", color: "error", onSelect: reject },
+        secondary: { label: "Recusar", onSelect: reject },
       },
     });
     const secondary = document.querySelector<HTMLButtonElement>("[data-operator-action-bar-secondary]")!;

@@ -834,15 +834,16 @@ fila (`pages/index.vue`) e a do histórico (`pages/history.vue`).
 A ação do momento no celular e no tablet: a estrutura de sucesso do Storefront
 (`.shop-action-dock` da sacola) como regra, não como classe. A linha de contexto (o que a
 ação mexe), UMA ação larga e o motivo escrito quando ela não pode, num cartão
-**flutuante em superfície invertida** (escura, com sombra; dono, 09/10/2026: "mais
-contraste, como no Storefront"). O cartão troca os tokens para o tema escuro só dentro
-dele (classe `dark`), então a ação e o texto seguem as cores do tema, sem pele própria.
+**flutuante em superfície invertida** (dono, 09/10/2026): escura no tema claro, creme no
+escuro (`bg-inverted`/`text-inverted`, os tokens do tema), com sombra, como a sacola do
+Storefront. Contraste AA dos dois botões sobre ela, nos dois temas, travado em
+`tests/actionBarContrast.test.ts`.
 
 ```vue
 <OperatorActionBar
   :action="{ label: 'Iniciar preparo', icon: 'i-lucide-lock', disabled: true,
              reason: 'O Pix ainda não caiu. O pedido libera sozinho quando cair.' }"
-  :secondary="{ label: 'Recusar', color: 'error', onSelect: reject }"
+  :secondary="{ label: 'Recusar', onSelect: reject }"
   context-label="Pedido 1049 · Pix"
   context-value="R$ 93,20"
 />
@@ -852,8 +853,11 @@ dele (classe `dark`), então a ação e o texto seguem as cores do tema, sem pel
   painel, a posição do `#footer` do `NuxtDashboardPanel`). Nada de `fixed`, nada de
   `bottom-16` adivinhando a altura da barra inferior.
 - **A ação** (`OperatorActionBarAction`, `presentation/actionBar.ts`) leva verbo e alvo
-  ("Pronto para retirar"), `xl`, `solid`. A segunda (`secondary`), se houver, é
-  `outline` e de peso menor; `color: "error"` só para a destrutiva.
+  ("Pronto para retirar"), `xl`. A PRINCIPAL é `primary` `solid` (o dourado); a segunda
+  (`secondary`), se houver, é SECUNDÁRIA (`outline`), nunca discreta (`ghost`) (dono,
+  09/10/2026). Sobre a superfície invertida as duas ganham contorno na cor do texto
+  invertido: o dourado sozinho não separa da superfície (2,8:1 no claro, 1,8:1 no
+  escuro). A cor de cada uma é da peça, não da tela.
 - **`reason`**: com `disabled`, o motivo aparece escrito sob a ação (`role="status"`, e o
   botão aponta para ele com `aria-describedby`).
 - **Só abaixo de `lg`**: na mesa, a ação sobe para a barra superior primária.
