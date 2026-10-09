@@ -507,7 +507,7 @@ os botões, abas e recortes usavam ("Todos 7", "Entrega 3", "Atrasados").
   queimado no claro, marrom quase preto sobre o âmbar claro no escuro.
 - **Anel de 2 px na cor do fundo do pai.** No canto do ícone é `ring-bg` (separa o chip
   do ícone; na barra lateral o `--ui-bg` do escopo é a cor dela). No fluxo o chip não
-  cobre nada e o anel é `ring-transparent`, que é exatamente o fundo do pai em qualquer
+  cobre nada e o anel é `ring-transparent` (o `:ui` único do componente), que é exatamente o fundo do pai em qualquer
   pai: o dourado do botão ativo, o `soft` translúcido do recorte, a linha ativa da barra
   lateral, o hover.
 - **Zero não aparece.** Um círculo âmbar com "0" aponta para o nada. Sem contagem maior

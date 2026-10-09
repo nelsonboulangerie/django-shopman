@@ -7,8 +7,8 @@
 //
 // É o `NuxtChip` canônico, `standalone` + `inset`: no fluxo da linha, sem o deslocamento
 // de meio chip do canto. O tamanho (`4xl`, 16 px) e o anel de 2 px vêm do `chip` do
-// app.config. O anel no fluxo é `ring-transparent` (o `chip` do app.config, para
-// `standalone` + `inset`), e é isso que o põe na cor do fundo do
+// app.config. O anel no fluxo é `ring-transparent` (o único `:ui` desta peça, e mora
+// aqui, uma vez no kit), e é isso que o põe na cor do fundo do
 // pai em qualquer pai: o fundo do botão dourado ativo, o do recorte `soft` translúcido,
 // a linha ativa da barra lateral, o hover. No fluxo o chip não cobre nada; o anel com a
 // cor de um fundo fixo (`ring-bg`) aparecia como aro onde o pai tem outro fundo. No canto
@@ -60,6 +60,7 @@ const text = computed(() => (numbered.value ? countChipText(props.count as numbe
     :size="size"
     inset
     standalone
+    :ui="{ base: 'ring-transparent' }"
   >
     <template #content>
       <span v-bind="passThrough" class="tabular-nums" data-count-chip>{{ text }}</span>

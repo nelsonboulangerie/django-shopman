@@ -257,6 +257,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       "operator-kit/OperatorMoreMenu.vue",
       "operator-kit/OperatorActionBar.vue",
       "operator-kit/OperatorTable.vue",
+      // O chip de contagem (dono, 09/10/2026): no fluxo o anel é transparente, a cor
+      // do fundo do pai em qualquer pai; no canto do ícone continua o `ring-bg` do tema.
+      "operator-kit/OperatorCountChip.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),

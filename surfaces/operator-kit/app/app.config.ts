@@ -59,12 +59,6 @@ export default defineAppConfig({
     // PR #1539). O anel é `ring-bg` do Nuxt UI: tem a cor do fundo onde o chip
     // está e o descola do ícone (no rail dourado, o `--ui-bg` do escopo do rail).
     // O `4xl` numerado é exceção declarada: o `3xl` oficial não lê dois dígitos.
-    //
-    // No FLUXO (`standalone` + `inset`: o chip de contagem na ponta direita de um
-    // botão, aba ou item da barra lateral aberta, dono 09/10/2026) o anel é
-    // transparente: lá o chip não cobre nada, e o transparente é exatamente o fundo do
-    // pai em qualquer pai (o dourado do botão ativo, o `soft` translúcido, a linha ativa
-    // da barra lateral, o hover). No canto do ícone continua `ring-bg`.
     chip: {
       slots: { base: "ring-2" },
       variants: {
@@ -72,9 +66,6 @@ export default defineAppConfig({
           "4xl": "h-4 min-w-4 px-1 text-[12px]/none",
         },
       },
-      compoundVariants: [
-        { standalone: true, inset: true, class: { base: "ring-transparent" } },
-      ],
     },
     // `soft` é uma variante oficial do Kbd. Defini-la aqui evita que atalhos
     // idênticos mudem de aparência conforme a tela ou o componente consumidor.
