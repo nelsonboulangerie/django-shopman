@@ -429,6 +429,8 @@ Como um app migra:
 | `OperatorPhoneMenu` | o menu do operador sem o rail: o "Mais" da barra de baixo (`variant="bar"`) ou as iniciais na barra de 56px (`variant="header"`, a Central) | menu de `_rail3bottom.html` |
 | `OperatorMenuItems` | o conteúdo do menu do operador (posto, Bloquear no celular, tema, giro, capacidade do serviço escrita) | menu de `_rail3bottom.html` |
 | `OperatorAppSeal` | o selo do app na barra de 56px dos cabeçalhos próprios (PDV, Central) | `_rail3top.html` |
+| `OperatorSwipeRow` | deslizar uma linha no toque (F7, 09/10/2026): à esquerda revela `actions` (gaveta que fica aberta depois da metade); à direita faz `commit` depois do ponto de compromisso, com o verbo e o alvo atrás da linha. Mouse não desliza; o eixo se decide no começo (rolar nunca vira deslize); `motion-safe:` na volta. Nunca a única porta: o mesmo ato existe num botão visível, e a camada de trás é `aria-hidden` | `cozinha-celular` (a), v4 |
+| `OperatorThumbAction` | o polegar do celular: o gesto principal da tela num botão `xl` largo, preso na base da área que rola (`data-focus-obstruction`), com o verbo e o alvo ("Entregar U13 a Ana"). Um por tela, só abaixo de `md` | `cozinha-celular` (a), v4 |
 
 **O título da barra do topo não se corta** (PR-K5, achado do B.I. a 390 px: "Quem compra
 no balc…"). O `NuxtDashboardNavbar` oficial leva `truncate` no título; o tema do kit

@@ -33,7 +33,7 @@ import {
   triageCards,
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
-import type { SwipeAction } from "~/components/SwipeReveal.vue";
+import type { OperatorSwipeAction } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 import {
   BOARD_COLUMNS_QUERY,
@@ -490,8 +490,8 @@ const {
   label: pullText,
 } = usePullToRefresh(queueViewport, () => refresh(), isPhone);
 // Deslizar o cartão para a esquerda (G17): Atender (quem gerencia) e Recusar (pedido novo).
-function swipeActions(card: OrderCardProjection): SwipeAction[] {
-  const actions: SwipeAction[] = [];
+function swipeActions(card: OrderCardProjection): OperatorSwipeAction[] {
+  const actions: OperatorSwipeAction[] = [];
   if (canManageOrders.value) {
     actions.push({
       key: "assign",
