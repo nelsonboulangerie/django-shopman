@@ -41,6 +41,14 @@
   }
 }
 
+/* Superfície invertida com o TEMA invertido (`.op-inverted`): a barra de seleção na
+   base do celular (`OperatorBulkBar`) leva campo, grupo de botões e lista de escolha,
+   e cada um precisa das cores do tema oposto inteiras, não de um fundo escuro com
+   controles do tema claro. No claro, o bloco recebe os tokens do escuro; no escuro, os
+   do claro. Os tokens e a ponte `--ui-*` são declarados no próprio elemento (as duas
+   listas de seletor abaixo) porque `var()` se resolve onde é declarado: herdar a ponte
+   resolvida no `:root` traria as cores do tema da página. */
+
 @theme inline {
   /* Rail de operador (OperatorRail/RailItem) tem cor PRÓPRIA, desacoplada da ação:
      no escuro a ação é dourada-pop, mas o rail precisa recuar (chrome, não ação). */
@@ -48,6 +56,7 @@
   --color-rail-foreground: var(--rail-foreground);
 }
 
+.op-inverted,
 :root {
   --radius: 0.625rem; /* soft (10px) — levemente mais arredondado que o antigo 8px */
 
@@ -155,6 +164,7 @@
   --ui-border-inverted: var(--foreground);
 }
 
+html:not(.dark) .op-inverted,
 .dark {
   --background: #221610; /* marrom-burgundy quase-preto */
   --foreground: #f0e6d2; /* creme */

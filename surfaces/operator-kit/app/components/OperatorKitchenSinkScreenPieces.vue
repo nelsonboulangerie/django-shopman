@@ -76,6 +76,25 @@ const tableColumns = [
   { accessorKey: "total_q", header: "Total", enableSorting: true },
 ];
 const tableSelection = ref<Record<string, boolean>>({});
+const tableSelected = computed(() => Object.values(tableSelection.value).filter(Boolean).length);
+// A barra de seleção: o canal no `#lead`, os pares opostos em grupo, o preço num painel.
+const bulkChannel = ref("pdv");
+const bulkChannels = [
+  { label: "Todos os canais", value: "*" },
+  { label: "PDV", value: "pdv" },
+  { label: "iFood", value: "ifood" },
+];
+const bulkItems = [
+  [
+    { label: "Pausar", icon: "i-lucide-pause", onSelect: () => said("Pausar") },
+    { label: "Ativar", icon: "i-lucide-play", onSelect: () => said("Ativar") },
+  ],
+  [
+    { label: "Ocultar", icon: "i-lucide-eye-off", onSelect: () => said("Ocultar") },
+    { label: "Exibir", icon: "i-lucide-eye", onSelect: () => said("Exibir") },
+  ],
+];
+const bulkDemoCount = computed(() => tableSelected.value || 2);
 const brl = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const openRecord = computed(() =>
@@ -222,6 +241,50 @@ const rows = [
             </ul>
           </template>
         </OperatorTable>
+      </div>
+    </NuxtCard>
+
+    <NuxtCard
+      title="Barra de seleção"
+      description="OperatorBulkBar: na mesa ocupa o lugar da toolbar (o #selection do OperatorPageHeader) e diz em que recorte a seleção foi feita; abaixo de 1024 px é a ação na base, na superfície invertida. Ordem fixa: quantos, o campo da tela, as ações (pares opostos num grupo, mesmo peso) e o ×. Esc limpa."
+      data-catalog-bulk-bar
+    >
+      <div class="space-y-4">
+        <div class="rounded-lg border border-default p-2">
+          <OperatorBulkBar
+            :count="bulkDemoCount"
+            scope="Rústicos"
+            :items="bulkItems"
+            @clear="tableSelection = {}"
+          >
+            <template #lead="{ size, block }">
+              <NuxtSelect
+                v-model="bulkChannel"
+                :items="bulkChannels"
+                :size="size"
+                :class="block ? 'w-full' : 'min-w-56'"
+                aria-label="Aplicar seleção em"
+              />
+            </template>
+          </OperatorBulkBar>
+        </div>
+        <OperatorBulkBar
+          placement="base"
+          :count="bulkDemoCount"
+          scope="Rústicos"
+          :items="bulkItems"
+          @clear="tableSelection = {}"
+        >
+          <template #lead="{ size, block }">
+            <NuxtSelect
+              v-model="bulkChannel"
+              :items="bulkChannels"
+              :size="size"
+              :class="block ? 'w-full' : 'min-w-56'"
+              aria-label="Aplicar seleção em, na base"
+            />
+          </template>
+        </OperatorBulkBar>
       </div>
     </NuxtCard>
 

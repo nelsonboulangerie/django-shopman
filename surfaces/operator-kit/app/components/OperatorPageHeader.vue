@@ -391,7 +391,11 @@ function clearAll() {
       ($slots.filters || $slots['filters-primary'] || $slots['filters-end'])
     "
   >
-    <NuxtDashboardToolbar class="py-2" data-page-header-filter-line>
+    <NuxtDashboardToolbar
+      class="py-2"
+      :class="$slots.selection ? 'lg:hidden' : ''"
+      data-page-header-filter-line
+    >
       <div class="flex w-full min-w-0 flex-nowrap items-center gap-2">
         <div
           v-if="$slots['filters-primary']"
@@ -510,6 +514,7 @@ function clearAll() {
       $slots.filters || $slots['filters-primary'] || $slots['filters-end']
     "
     class="py-2"
+    :class="$slots.selection ? 'lg:hidden' : ''"
   >
     <div
       class="flex w-full items-center gap-2"
@@ -524,6 +529,18 @@ function clearAll() {
       <slot name="filters" />
       <slot name="filters-end" />
     </div>
+  </NuxtDashboardToolbar>
+
+  <!-- A barra de seleção (fase 2, K2): do `lg` para cima ela OCUPA O LUGAR da toolbar
+       enquanto houver marcados (dono, 09/10/2026); abaixo, a tela a põe na base
+       (`OperatorBulkBar placement="base"`) e a toolbar fica. Por CSS: o servidor e o
+       cliente desenham a mesma árvore. -->
+  <NuxtDashboardToolbar
+    v-if="$slots.selection"
+    class="py-2 max-lg:hidden"
+    data-page-header-selection
+  >
+    <slot name="selection" />
   </NuxtDashboardToolbar>
 
   <!-- Navegação secundária da tela (as abas de Ajustes do PDV, o prazo do anúncio no

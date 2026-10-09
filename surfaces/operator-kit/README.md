@@ -1015,6 +1015,49 @@ ganha o respiro da confortável).
 - Substituiu as cinco tabelas do Gestor (Lista da fila, Histórico, Clientes, Unificações e a
   matriz do Catálogo) e aposentou o `ColumnPicker`.
 
+### Barra de seleção (`OperatorBulkBar` + `#selection` do `OperatorPageHeader`)
+
+Uma por tela, desenhada pela mesma peça em dois lugares (dono, 09/10/2026):
+
+- **Mesa** (do `lg` para cima): no `#selection` do cabeçalho, que **toma o lugar da
+  toolbar** enquanto houver marcados. Diz em que recorte a seleção foi feita ("3
+  selecionados em Rústicos"): o recorte não muda com marcados fora da vista.
+- **Abaixo do `lg`**: `placement="base"`, no lugar e no desenho da `OperatorActionBar`
+  (cartão flutuante, em fluxo, entre o conteúdo e a barra inferior), na superfície
+  invertida com o **tema invertido inteiro** (`.op-inverted`, em `operator-theme.css`):
+  campo, grupo de botões e lista de escolha ficam legíveis sobre ela.
+
+```vue
+<OperatorPageHeader title="Catálogo">
+  <template v-if="selected.size" #selection>
+    <OperatorBulkBar :count="selected.size" :scope="collection" :items="items('toolbar')" @clear="clear">
+      <template #lead="{ size, block }">
+        <NuxtSelect v-model="channel" :items="channels" :size="size" :class="block ? 'w-full' : 'min-w-56'" />
+      </template>
+      <template #price><ReusePrice /></template>
+    </OperatorBulkBar>
+  </template>
+</OperatorPageHeader>
+<!-- … o conteúdo … -->
+<OperatorBulkBar v-if="selected.size" placement="base" … />
+```
+
+- **Ordem fixa**: quantos | o `#lead` (o campo da tela, ex.: o canal) | as ações, na
+  ordem dada | ×. Pares de gestos opostos (Pausar/Ativar, Ocultar/Exibir) vão num
+  array: viram um `NuxtFieldGroup`, com o **mesmo peso** (todos `outline`). Uma ação só
+  pode ser `primary` (a principal, `solid`).
+- **Altura**: campo e botão na mesma altura, `md` na mesa e `lg` no toque. O `#lead`
+  recebe `size` e `block` (na base o campo ocupa a linha).
+- **Painel**: a ação com `panel: "price"` abre um `NuxtPopover` com o slot `#price`;
+  `open`/`onUpdateOpen` são da tela. Com as duas barras na tela, abra só o da largura da
+  vez (`useScreen().belowLg`), senão abririam os dois.
+- **Modo de seleção** (a Fila): `empty` é a instrução com zero marcados; `clear-label`
+  dá o nome do × ("Sair da seleção").
+- **Esc** limpa (uma escuta, a da mesa), salvo com lista, menu ou diálogo aberto.
+- Na tabela, a célula fixada acompanha a cor da linha marcada (tema, `table.pinned`).
+- Trava: `guardrails.bulkBar.test.ts` (no Gestor, nenhuma barra de lote à mão; toda
+  tela com `#selection` tem a barra nos dois lugares).
+
 ## Busca da suíte (`OperatorSuiteSearch`)
 
 Uma busca, uma tecla (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gestor-busca`,
