@@ -1418,6 +1418,12 @@ watch(() => [activeLineId.value, blockVisible.value, selectMode.value] as const,
   if (visible && !selectMode.value) revealLine(lineId);
 });
 watch(() => markAnchor.value, (lineId) => { if (selectMode.value) revealLine(lineId); });
+// A comanda que chega (abrir a comanda, o push da cozinha) também: a lista nasce com o
+// editor aberto na última linha, e ela precisa estar à vista, não sob o bloco.
+watch(() => props.items.map((item) => item.line_id).join("|"), () => {
+  if (blockVisible.value && !selectMode.value) revealLine(activeLineId.value);
+}, { flush: "post" });
+onMounted(() => { if (blockVisible.value) revealLine(activeLineId.value); });
 watch(() => [lineEditing.value, resendOffer.value] as const, () => {
   const lineId = selectMode.value ? markAnchor.value : activeLineId.value;
   if (blockVisible.value) revealLine(lineId);

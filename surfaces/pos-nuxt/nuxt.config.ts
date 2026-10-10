@@ -159,6 +159,10 @@ export default defineNuxtConfig({
   icon: {
     clientBundle: {
       scan: true,
+      // Ícones que só aparecem como DADO (seção "Fim do dia" do rail, o botão da barra
+      // lateral do kit): o scan não os vê, e o navegador ia buscá-los na API do
+      // Iconify, que a CSP bloqueia (erro no console da prévia, 10/10/2026).
+      icons: ["lucide:clipboard-check", "lucide:panel-left-dashed"],
       sizeLimitKb: 0
     },
 
