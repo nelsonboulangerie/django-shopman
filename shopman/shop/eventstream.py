@@ -1,12 +1,58 @@
-"""django-eventstream channel permissions for Shopman."""
+"""django-eventstream para o Shopman: a view de stream e as permissões de canal.
+
+Toda rota SSE passa por :func:`events`, nunca pela view crua do
+``django_eventstream``. A diferença é a conexão de banco: a view crua lê o banco
+(permissão do canal, histórico do ``DjangoModelStorage``) e deixa a conexão aberta
+pela vida inteira do stream, porque o Django só a devolve no fim do request. Com
+um ``EventSource`` de KDS ou PDV aberto o dia todo, cada tela prendia uma conexão
+que não fazia nada. :func:`events` devolve a conexão depois de cada leitura.
+"""
 
 from __future__ import annotations
 
 import logging
 
+from asgiref.sync import sync_to_async
+from django.db import connections
 from django_eventstream.channelmanager import DefaultChannelManager
+from django_eventstream.views import events as _eventstream_events
 
 logger = logging.getLogger(__name__)
+
+
+def release_db_connections() -> None:
+    """Devolve as conexões de banco abertas neste contexto (ao pool, ou fecha).
+
+    Conexão dentro de ``atomic`` fica onde está: fechar ali marcaria a transação
+    para rollback. Nenhum caminho de SSE abre transação, então na prática isso só
+    protege o ``TestCase``, que embrulha tudo num ``atomic``.
+    """
+    for conn in connections.all(initialized_only=True):
+        if conn.connection is not None and not conn.in_atomic_block:
+            conn.close()
+
+
+async def _release_between_reads(content):
+    """Repassa o stream devolvendo a conexão antes de cada espera.
+
+    A primeira devolução cobre o que a view e os middlewares abriram (sessão,
+    permissão do canal). As seguintes vêm depois de cada pedaço, e todo pedaço
+    sai logo depois de uma leitura do histórico ou de um keep-alive, ou seja,
+    imediatamente antes de o stream voltar a esperar evento.
+    """
+    release = sync_to_async(release_db_connections)
+    await release()
+    async for chunk in content:
+        await release()
+        yield chunk
+
+
+def events(request, **kwargs):
+    """A view de stream do ``django_eventstream``, sem prender conexão de banco."""
+    response = _eventstream_events(request, **kwargs)
+    if getattr(response, "streaming", False) and getattr(response, "is_async", False):
+        response.streaming_content = _release_between_reads(response.streaming_content)
+    return response
 
 
 class ShopmanChannelManager(DefaultChannelManager):
