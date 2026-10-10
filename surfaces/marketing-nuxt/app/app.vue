@@ -1,6 +1,11 @@
 <script setup lang="ts">
-// Shell do Marketing. Casca fina: painel, regras e histórico são páginas
-// próprias (pages/), e o shell segura o outlet + a chrome + o gate de operador.
+// Shell do Marketing. Casca fina: fila, ajustes e histórico são páginas próprias
+// (pages/), e o shell segura o outlet + a chrome + o gate de operador.
+//
+// Fase 2 (WP-FASE2-UX-OPERADOR, onda do Marketing): o app mora no shell da suíte, o
+// mesmo do Gestor (`OperatorSuiteShell`): barra lateral em três estados na mesa,
+// gaveta pelo ☰ e barra inferior de 3 a 5 vagas abaixo de `lg`. As seções vêm de
+// `useMarketingSections`, uma fonte só.
 //
 // O destrave só pede a capability de entrar. A autorização de cada Action é
 // revalidada no backend; abrir o app nunca concede publicação por herança.
@@ -21,9 +26,9 @@ const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
 const publicConfig = useRuntimeConfig().public;
 const hubUrl = publicConfig.operatorHubUrl as string;
-// A cor do app (a mesma do selo no rail) vira `--app-color` no `<html>`: as miniaturas
-// da fila de decisões e o carimbo do selo usam o tom dela, como na prévia v4. No
-// `<html>`, e não no shell, porque o selo é diálogo teleportado para fora dele.
+// A cor do app (a mesma do selo na barra lateral) vira `--app-color` no `<html>`: as
+// miniaturas da fila de decisões e o carimbo do selo usam o tom dela. No `<html>`, e
+// não no shell, porque o selo é diálogo teleportado para fora dele.
 const appColor = (
   publicConfig.operatorPwa as { identity?: { color?: string } } | undefined
 )?.identity?.color;
@@ -31,8 +36,35 @@ if (appColor) useHead({ htmlAttrs: { style: `--app-color: ${appColor}` } });
 const { attrsFor: appLinkAttrsFor } = useOperatorAppLink();
 const hubLink = computed(() => appLinkAttrsFor(hubUrl));
 
+const { sections, activeSection } = useMarketingSections();
+
+// Avisos (MKT-01/T-13): a caixa do kit, a mesma em todo app. As decisões entram nela
+// como UM resumo que leva à fila, não como uma segunda lista (decisão do dono de
+// 03/10/2026: "o sino abre a mesma fila"). A caixa pessoal (avisos de acesso) entra na
+// outra aba.
+const { decisionCount } = useMarketingDecisions();
+provideOperatorInboxAlerts(() => ({
+  title: "Decisões",
+  emptyText: "Nenhuma decisão esperando você.",
+  count: decisionCount.value,
+  items: decisionCount.value
+    ? [
+        {
+          key: "decisions",
+          tone: "warning" as const,
+          message:
+            decisionCount.value === 1
+              ? "1 decisão espera você."
+              : `${decisionCount.value} decisões esperam você.`,
+          meta: "O prazo mais curto primeiro.",
+          href: "/",
+          hrefLabel: "Abrir a fila de decisões",
+        },
+      ]
+    : [],
+}));
+
 useOperatorWindowTitle();
-const route = useRoute();
 
 watch(sessionState, async (next, previous) => {
   if (next !== "authenticated" || previous === "authenticated") return;
@@ -47,129 +79,108 @@ watch(sessionState, async (next, previous) => {
 </script>
 
 <template>
-  <!-- NuxtPage fica presente para o router, mas a página recebida pelo slot só é
-       instanciada depois do gate. Isso evita tanto fetch anônimo quanto o falso
-       warning do Nuxt causado por remover condicionalmente o próprio outlet. -->
-  <NuxtPage v-slot="{ Component }">
-    <!-- `data-suite="v3"`: o Marketing veste a camada visual da suíte (V4-MKT, modelo:
-         o Gestor). Os primitivos do kit leem esse atributo para vestir o visual das
-         prévias. -->
-    <div
-      data-marketing-app-root
-      data-suite="v3"
-      class="flex min-h-dvh bg-background text-foreground"
-    >
-      <NuxtRouteAnnouncer />
-      <!-- Aviso calmo de conexão (kit) — global, só aparece offline. -->
-      <OfflineBanner />
-      <!-- O app protegido só existe depois de sessão + capability confirmadas. O
-         login deixou de ser uma cortina sobre fetches e timers já montados. -->
-      <template v-if="sessionState === 'authenticated'">
-        <!-- Rail da suíte (kit): o selo do app (Central), as seções do Marketing,
-             Bloquear e o menu do operador. Do tablet para cima; no celular as seções
-             vão para a barra do polegar, no fim da coluna de conteúdo. -->
-        <MarketingNav
-          place="rail"
-          :hub-url="hubUrl"
+  <OperatorAppRoot>
+    <!-- NuxtPage fica presente para o router, mas a página recebida pelo slot só é
+         instanciada depois do gate. Isso evita tanto fetch anônimo quanto o falso
+         warning do Nuxt causado por remover condicionalmente o próprio outlet. -->
+    <NuxtPage v-slot="{ Component }">
+      <div
+        data-marketing-app-root
+        class="flex min-h-dvh bg-background text-foreground"
+      >
+        <NuxtRouteAnnouncer />
+        <!-- Aviso calmo de conexão (kit): global, só aparece offline. -->
+        <OfflineBanner />
+        <!-- O app protegido só existe depois de sessão + capability confirmadas. O
+             login deixou de ser uma cortina sobre fetches e timers já montados. -->
+        <OperatorSuiteShell
+          v-if="sessionState === 'authenticated'"
+          storage-key="marketing"
+          :sections="sections"
+          :current="activeSection"
+          label="Seções do Marketing"
           :operator-name="operator?.name"
           @lock="lock"
-        />
-        <div class="flex min-w-0 flex-1 flex-col">
-          <component :is="Component" />
-          <!-- Barra do polegar (celular): no fim da COLUNA, não da janela, para
-               nunca cobrir o que estiver à esquerda. Ver MarketingNav.vue. A revisão do
-               anúncio é tela cheia (v4: o polegar é de Recusar e Continuar), e a página
-               declara isso em `definePageMeta({ fullscreen: true })`. -->
-          <MarketingNav v-if="!route.meta.fullscreen" place="bar" :operator-name="operator?.name" @lock="lock" />
-        </div>
-        <!-- A caixa pessoal (SSE, poll, "visto"): uma só, em qualquer largura. -->
-        <MarketingInboxLive />
-      </template>
+        >
+          <div class="flex min-h-0 flex-1 flex-col">
+            <component :is="Component" />
+          </div>
+          <!-- A caixa pessoal (SSE, poll, "visto"): uma só, em qualquer largura. -->
+          <MarketingInboxLive />
+        </OperatorSuiteShell>
 
-      <main
-        v-else-if="sessionUnavailable"
-        class="grid min-h-screen flex-1 place-items-center p-4"
-      >
-        <div class="max-w-sm rounded-md border bg-card p-6 text-center">
-          <Icon
-            name="lucide:wifi-off"
-            class="mx-auto size-7 text-muted-foreground"
+        <main
+          v-else-if="sessionUnavailable"
+          class="grid min-h-dvh flex-1 place-items-center p-4"
+        >
+          <NuxtEmpty
+            icon="i-lucide-wifi-off"
+            title="Não foi possível conferir seu acesso"
+            description="O Marketing continua fechado e nenhum dado de Marketing foi carregado."
+            :actions="[
+              {
+                label: 'Tentar de novo',
+                icon: 'i-lucide-refresh-cw',
+                color: 'neutral',
+                variant: 'outline',
+                onClick: () => refreshSession(),
+              },
+            ]"
           />
-          <h1 class="mt-3 text-lg font-semibold">
-            Não foi possível conferir seu acesso
-          </h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            O painel continua fechado e nenhum dado de Marketing foi carregado.
-          </p>
-          <UiButton
-            type="button"
-            variant="outline"
-            class="mt-4"
-            @click="refreshSession()"
-          >
-            Tentar de novo
-          </UiButton>
-        </div>
-      </main>
+        </main>
 
-      <main
-        v-else-if="sessionState === 'checking'"
-        class="grid min-h-screen flex-1 place-items-center p-4"
-        aria-busy="true"
-      >
-        <p class="flex items-center gap-2 text-sm text-muted-foreground">
-          <Icon
-            name="line-md:loading-loop"
-            class="size-5 motion-reduce:animate-none"
+        <main
+          v-else-if="sessionState === 'checking'"
+          class="grid min-h-dvh flex-1 place-items-center p-4"
+          role="status"
+          aria-busy="true"
+        >
+          <NuxtEmpty
+            loading
+            title="Conferindo seu acesso ao Marketing"
+            variant="naked"
           />
-          Conferindo seu acesso…
-        </p>
-      </main>
+        </main>
 
-      <main
-        v-else-if="sessionState === 'forbidden'"
-        class="grid min-h-screen flex-1 place-items-center p-4"
-      >
-        <div class="max-w-sm rounded-md border bg-card p-6 text-center">
-          <Icon
-            name="lucide:shield-x"
-            class="mx-auto size-7 text-muted-foreground"
-          />
-          <h1 class="mt-3 text-lg font-semibold">
-            Seu acesso não inclui Marketing
-          </h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Entrar de novo não resolve. Peça a um responsável o acesso ao
-            Marketing.
-          </p>
-          <!-- Mesma regra do ícone da Central no rail: instalado, ele abre na
+        <main
+          v-else-if="sessionState === 'forbidden'"
+          class="grid min-h-dvh flex-1 place-items-center p-4"
+        >
+          <!-- Mesma regra do ícone da Central na barra lateral: instalado, ele abre na
                janela DELA (ver operator-kit/app/presentation/appLaunch.ts). -->
-          <a
-            :href="hubUrl"
-            :target="hubLink.target"
-            :rel="hubLink.rel"
-            class="mt-4 inline-flex min-h-8 items-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
-          >
-            Voltar à Central
-          </a>
-        </div>
-      </main>
+          <NuxtEmpty
+            icon="i-lucide-shield-x"
+            title="Seu acesso não inclui o Marketing"
+            description="Entrar de novo não resolve. Peça a um responsável o acesso ao Marketing."
+            :actions="[
+              {
+                label: 'Voltar à Central',
+                color: 'neutral',
+                variant: 'outline',
+                href: hubUrl,
+                target: hubLink.target,
+                rel: hubLink.rel,
+              },
+            ]"
+          />
+        </main>
 
-      <OperatorLogin
-        v-else-if="sessionState === 'expired' || !canIdentify"
-        role="main"
-        :expired="sessionState === 'expired'"
-        :reload-on-success="false"
-      />
-      <OperatorLock v-else :perm="OPERATOR_PERM" />
-      <OperatorStationSetup
-        v-if="stationSetup.offer.value"
-        @done="stationSetup.done()"
-        @dismiss="stationSetup.dismiss()"
-        @unavailable="stationSetup.dismiss({ remember: false })"
-      />
-      <OperatorSonner />
-      <OperatorPwaRuntime />
-    </div>
-  </NuxtPage>
+        <OperatorLogin
+          v-else-if="sessionState === 'expired' || !canIdentify"
+          role="main"
+          :expired="sessionState === 'expired'"
+          :reload-on-success="false"
+        />
+        <OperatorLock v-else :perm="OPERATOR_PERM" />
+        <OperatorStationSetup
+          v-if="stationSetup.offer.value"
+          @done="stationSetup.done()"
+          @dismiss="stationSetup.dismiss()"
+          @unavailable="stationSetup.dismiss({ remember: false })"
+        />
+        <OperatorSonner />
+        <OperatorPwaRuntime />
+      </div>
+    </NuxtPage>
+  </OperatorAppRoot>
 </template>

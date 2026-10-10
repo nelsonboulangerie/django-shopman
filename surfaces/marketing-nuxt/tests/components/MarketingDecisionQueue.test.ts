@@ -3,10 +3,13 @@ import { computed, ref } from "vue";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import MarketingDecisionQueue from "~/components/MarketingDecisionQueue.vue";
 import type { DecisionItem, DecisionQueue } from "~/types/decisions";
+// O estado da tela entra de verdade: as frases são do kit, e é delas que a fila depende.
+import OperatorScreenState from "../../../operator-kit/app/components/OperatorScreenState.vue";
 
 const NOW = Date.parse("2026-10-03T10:03:00-03:00");
 const queue = ref<DecisionQueue | null>(null);
 const error = ref<unknown>(null);
+const loading = ref(false);
 const refresh = vi.fn();
 
 function item(over: Partial<DecisionItem>): DecisionItem {
@@ -41,7 +44,7 @@ beforeAll(() => {
       automaticChecks: computed(() => queue.value?.automatic_checks ?? []),
       shopTimezone: ref("America/Sao_Paulo"),
       nowMs: ref(NOW),
-      loading: ref(false),
+      loading,
       error,
       refresh,
     }),
@@ -52,6 +55,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   error.value = null;
+  loading.value = false;
   refresh.mockReset();
   queue.value = {
     generated_at: "2026-10-03T10:03:00-03:00",
@@ -96,24 +100,23 @@ beforeEach(() => {
   };
 });
 
+// O cabeçalho da suíte tem teste próprio no kit; aqui, o que a tela entrega a ele: o
+// título, o estado, a ação primária e as ações declaradas como dados.
+const HeaderStub = {
+  props: ["title", "actions", "phoneActions", "actionsLabel"],
+  template:
+    '<header><h1>{{ title }}</h1><slot name="status" /><slot name="actions" /></header>',
+};
+
 function render() {
   return mount(MarketingDecisionQueue, {
     global: {
+      components: { OperatorScreenState },
       stubs: {
         Icon: true,
         NuxtLink: RouterLinkStub,
-        UiIconButton: true,
         OperatorLiveStatus: true,
-        // O cabeçalho da suíte tem teste próprio no kit; aqui só o conteúdo dele.
-        MarketingPageHeader: {
-          props: ["title"],
-          template: '<header><h1>{{ title }}</h1><slot name="status" /></header>',
-        },
-        UiButton: {
-          props: ["to", "variant"],
-          template:
-            '<a :href="to" :data-variant="variant" v-bind="$attrs"><slot /></a>',
-        },
+        OperatorPageHeader: HeaderStub,
       },
     },
   });
@@ -133,11 +136,11 @@ describe("MarketingDecisionQueue", () => {
     expect(cards[0]!.text()).toContain("Instagram, Facebook e WhatsApp (86 clientes)");
     expect(cards[0]!.text()).toContain("Decide até 10:15");
     expect(cards[0]!.text()).toContain("faltam 12 min");
-    // O mais urgente tem destaque (v4: a borda na cor da ação).
+    // O mais urgente tem destaque (v4: o anel na cor da ação).
     expect(cards[0]!.attributes("data-decision-focus")).toBe("true");
-    expect(cards[0]!.classes()).toContain("ring-primary");
+    expect(cards[0]!.get("[data-decision-card]").classes()).toContain("ring-primary");
     expect(cards[1]!.attributes("data-decision-focus")).toBeUndefined();
-    expect(cards[1]!.classes()).not.toContain("ring-primary");
+    expect(cards[1]!.get("[data-decision-card]").classes()).not.toContain("ring-primary");
     expect(wrapper.get("h1").text()).toBe("Decisões");
   });
 
@@ -150,15 +153,19 @@ describe("MarketingDecisionQueue", () => {
       "/announcements/9#result",
     ]);
     expect(reviews.map((link) => link.text())).toEqual(["Revisar", "Revisar"]);
-    expect(reviews[0]!.attributes("data-variant")).toBe("default");
-    expect(reviews[1]!.attributes("data-variant")).toBe("outline");
+    // Cheio só no mais urgente: o estado ativo do botão, nunca a troca de variante.
+    expect(reviews.map((link) => link.attributes("variant"))).toEqual(["outline", "outline"]);
+    expect(reviews.map((link) => link.attributes("active"))).toEqual(["true", "false"]);
+    expect(reviews[0]!.attributes("active-variant")).toBe("solid");
   });
 
-  it("escreve o motivo da falha no cartão", () => {
+  it("escreve o motivo da falha no cartão, num aviso de erro", () => {
     const failure = render().findAll("[data-decision]")[1]!;
 
     expect(failure.text()).toContain("Falhou no Instagram · 1 envio");
-    expect(failure.text()).toContain("A conexão com a plataforma caiu antes do envio.");
+    expect(failure.get("[role='alert']").text()).toContain(
+      "A conexão com a plataforma caiu antes do envio.",
+    );
     expect(failure.text()).toContain("Repetir até 11:40");
   });
 
@@ -173,12 +180,57 @@ describe("MarketingDecisionQueue", () => {
     expect(line.getComponent(RouterLinkStub).props("to")).toBe("/scheduled");
   });
 
-  it("não confunde fila vazia com fila que não carregou", () => {
+  it("leva a ação primária ao cabeçalho, e o resto ao ⋯ com Atualizar (R)", () => {
+    const wrapper = render();
+    const header = wrapper.getComponent(HeaderStub);
+
+    expect(wrapper.get("[data-decisions-primary]").attributes("href")).toBe(
+      "/settings/campaigns",
+    );
+    expect(header.props("actionsLabel")).toBe("Mais ações de Decisões");
+    const desk = header.props("actions") as Array<Record<string, unknown>>;
+    expect(desk.map((action) => action.label)).toEqual([
+      "Modelos de texto",
+      "Enviados",
+      "Atualizar",
+    ]);
+    // No celular a primária disputa a vaga de ícone; na mesa ela é o botão cheio.
+    const phone = header.props("phoneActions") as Array<Record<string, unknown>>;
+    expect(phone[0]).toMatchObject({
+      label: "Preparar disparo",
+      to: "/settings/campaigns",
+      priority: 1,
+    });
+    const update = desk.find((action) => action.label === "Atualizar")!;
+    expect(update.kbds).toEqual(["R"]);
+    (update.onSelect as () => void)();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("diz que não há decisão esperando, no padrão da suíte", () => {
+    queue.value = { ...queue.value!, items: [], automatic_checks: [] };
+    const wrapper = render();
+
+    expect(wrapper.find("[data-decision]").exists()).toBe(false);
+    expect(wrapper.get("[data-decisions-empty]").text()).toContain(
+      "Nenhuma decisão espera você agora.",
+    );
+  });
+
+  it("não confunde fila vazia com fila que não carregou", async () => {
     queue.value = null;
+    loading.value = true;
+    expect(render().get("[data-operator-screen-state='loading']").text()).toContain(
+      "Carregando as decisões",
+    );
+
+    loading.value = false;
     error.value = new Error("offline");
     const failed = render();
-    expect(failed.get("[role='alert']").text()).toContain(
-      "Isso não quer dizer que nada pede você.",
-    );
+    const alert = failed.get("[role='alert']");
+    expect(alert.text()).toContain("Não foi possível carregar as decisões");
+    expect(alert.text()).toContain("Isso não quer dizer que nada pede você.");
+    await alert.get("button").trigger("click");
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });

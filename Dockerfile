@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.12-slim AS runtime
+# A imagem base é ARG só para a CI trocar de REGISTRO (espelho público da mesma
+# imagem oficial, sem o limite de pull anônimo do Docker Hub). O default é o que o
+# deploy usa e não muda: deploy-images.yml e o App Platform não passam o arg.
+ARG PYTHON_IMAGE=python:3.12-slim
+
+FROM ${PYTHON_IMAGE} AS runtime
 
 ENV DJANGO_SETTINGS_MODULE=config.settings \
     PATH="/home/shopman/.local/bin:${PATH}" \

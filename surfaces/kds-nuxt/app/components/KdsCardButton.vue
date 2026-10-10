@@ -16,6 +16,13 @@
 //  - `blocked` contornado em vermelho: item cancelado, não se convida ninguém.
 //  - `locked`  tracejado e listrado, com cadeado: o servidor recusaria o Pronto
 //    (pagamento não confirmado). O toque diz o motivo.
+//
+// Com prazo (`timed`, o Desfazer do Pronto): o MESMO botão, no mesmo tom, tamanho e
+// lugar (dono, 09/10/2026); muda só o texto, e o fundo esvazia atrás dele
+// (`OperatorTimedButton` do kit). O verde do Pronto pinta um neutro sólido, então a
+// camada vem da superfície invertida (`fill-tint="inverted"`), como nas cores.
+import OperatorTimedButton from "../../../operator-kit/app/components/OperatorTimedButton.vue";
+
 export type KdsCardButtonTone = "lead" | "invite" | "confirm" | "outline" | "blocked" | "locked";
 
 const props = withDefaults(
@@ -26,10 +33,15 @@ const props = withDefaults(
     /** Altura + corpo de texto (escala de densidade; nunca abaixo de h-11). */
     sizeClass: string;
     disabled?: boolean;
+    /** A ação só vale até um prazo: fim (epoch ms) e tamanho da janela (ms). */
+    timed?: { until: number; duration?: number };
   }>(),
-  { icon: "", disabled: false },
+  { icon: "", disabled: false, timed: undefined },
 );
 defineEmits<{ click: [event: MouseEvent] }>();
+// `aria-label`, `title` e `data-*` chegam ao botão nos dois casos (no com prazo, pela
+// peça do kit, que os passa ao NuxtButton).
+defineOptions({ inheritAttrs: false });
 
 type Look = { color: "primary" | "neutral" | "error"; variant: "solid" | "outline"; extra: string };
 const LOOKS: Record<KdsCardButtonTone, Look> = {
@@ -58,7 +70,27 @@ const icon = computed(() => props.icon || undefined);
 </script>
 
 <template>
+  <OperatorTimedButton
+    v-if="timed"
+    v-bind="$attrs"
+    :until="timed.until"
+    :duration="timed.duration"
+    size="xl"
+    block
+    :color="look.color"
+    :variant="look.variant"
+    :fill-tint="tone === 'confirm' ? 'inverted' : undefined"
+    :icon="icon"
+    :label="label"
+    :disabled="disabled"
+    :ui="BUTTON_UI"
+    class="shrink-0 justify-center font-semibold"
+    :class="[sizeClass, look.extra]"
+    @click="$emit('click', $event)"
+  />
   <NuxtButton
+    v-else
+    v-bind="$attrs"
     size="xl"
     block
     :color="look.color"

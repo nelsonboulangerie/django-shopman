@@ -12,6 +12,7 @@ import type {
 } from "~/types/feeds";
 import { realtimeIndicator } from "~/presentation/board";
 import { IFOOD_CHANNEL_REF } from "~/presentation/ifoodStore";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const {
   readMetadata,
@@ -358,14 +359,12 @@ const phoneHeaderActions = computed(() => [
             ? 'Exibindo a última leitura disponível.'
             : 'Tente atualizar para consultar os canais.'
         "
-        :actions="[
+        :actions="alertActions('error', [
           {
             label: 'Tentar de novo',
-            color: 'error',
-            variant: 'outline',
             onClick: () => refresh(),
           },
-        ]"
+        ])"
       />
       <!-- skeleton -->
       <div v-if="loading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -507,20 +506,16 @@ const phoneHeaderActions = computed(() => [
                       variant="subtle"
                       title="Alguém mudou as coleções enquanto você editava"
                       :description="`Agora: ${sc.collections.map((c) => c.name).join(', ') || 'nenhuma coleção'}. Sua seleção foi preservada.`"
-                      :actions="[
+                      :actions="alertActions('warning', [
                         {
                           label: 'Manter minha seleção',
-                          color: 'warning',
-                          variant: 'outline',
                           onClick: () => resolveCollections(sc, true),
                         },
                         {
                           label: 'Usar valor atual',
-                          color: 'warning',
-                          variant: 'outline',
                           onClick: () => resolveCollections(sc, false),
                         },
-                      ]"
+                      ])"
                     />
                     <NuxtFormField label="Coleções exibidas">
                       <NuxtCheckboxGroup
@@ -586,20 +581,16 @@ const phoneHeaderActions = computed(() => [
                       variant="subtle"
                       title="Alguém mudou a rotação enquanto você editava"
                       :description="`Agora: ${sc.rotate_seconds} s e ${sc.items_per_page} itens. Seu rascunho foi preservado.`"
-                      :actions="[
+                      :actions="alertActions('warning', [
                         {
                           label: 'Manter meus valores',
-                          color: 'warning',
-                          variant: 'outline',
                           onClick: () => resolveRotation(sc, true),
                         },
                         {
                           label: 'Usar valor atual',
-                          color: 'warning',
-                          variant: 'outline',
                           onClick: () => resolveRotation(sc, false),
                         },
-                      ]"
+                      ])"
                     />
                     <NuxtFormField label="Trocar a cada" hint="segundos">
                       <NuxtInput
@@ -678,20 +669,16 @@ const phoneHeaderActions = computed(() => [
                       variant="subtle"
                       title="Alguém mudou a configuração enquanto você editava"
                       description="Seu texto foi preservado."
-                      :actions="[
+                      :actions="alertActions('warning', [
                         {
                           label: 'Manter meu texto',
-                          color: 'warning',
-                          variant: 'outline',
                           onClick: () => resolveAutomatic(sc, true),
                         },
                         {
                           label: 'Usar valor atual',
-                          color: 'warning',
-                          variant: 'outline',
                           onClick: () => resolveAutomatic(sc, false),
                         },
-                      ]"
+                      ])"
                     />
                     <NuxtFormField
                       label="Frase 1"

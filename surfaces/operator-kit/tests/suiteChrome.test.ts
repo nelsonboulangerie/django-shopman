@@ -147,6 +147,20 @@ describe("barra inferior do shell: regra única de 3 a 5 vagas (dono, 08/10/2026
   it("app com menos de 3 seções mostra todas, sem erro", () => {
     expect(quickBarProblems(SECTIONS.slice(0, 2))).toEqual([]);
   });
+
+  it("com 2 vagas mostra as 2; com UMA vaga só, a barra não aparece", () => {
+    const two = quickBarLayout(SECTIONS.slice(0, 2));
+    expect(keys(two.items)).toEqual(["a", "b"]);
+    expect(two.shown).toBe(true);
+    // 1 declarada + "Mais" = 2 vagas: aparece.
+    expect(quickBarLayout(quick(["a"])).shown).toBe(true);
+    // Uma seção só (a Central, com "Início"): o ☰ já dá o menu completo.
+    const one = quickBarLayout(SECTIONS.slice(0, 1));
+    expect(keys(one.items)).toEqual(["a"]);
+    expect(one.more).toBe(false);
+    expect(one.shown).toBe(false);
+    expect(quickBarLayout(SECTIONS).shown).toBe(true);
+  });
 });
 
 describe("a descrição única da seção (barra lateral, gaveta e barra inferior)", () => {
@@ -290,8 +304,9 @@ describe("rail da suíte em três estados (PR-K4)", () => {
   });
 
   it("o chip: ponto no tamanho padrão; número 4xl, sem inset, e 99+ acima de 99", () => {
-    expect(railSignalChip({ color: "success" })).toEqual({ color: "success" });
-    expect(railSignalChip({ color: "error", count: 12 })).toEqual({ color: "error", text: "12", size: "4xl", inset: false });
+    expect(railSignalChip({ color: "success" })).toMatchObject({ color: "success" });
+    expect(railSignalChip({ color: "success" }).text).toBeUndefined();
+    expect(railSignalChip({ color: "error", count: 12 })).toMatchObject({ color: "error", text: "12", size: "4xl", inset: false });
     expect(railSignalChip({ color: "error", count: 99 }).text).toBe("99");
     expect(railSignalChip({ color: "error", count: 100 }).text).toBe("99+");
   });

@@ -5,7 +5,6 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAudienceCount } from "~/composables/useAudienceCount";
 import FireCampaignPanel from "~/components/FireCampaignPanel.vue";
 import type { AudienceCount, Campaign } from "~/types/campaign";
-import { UiNativeSelectStub } from "../support/nativeUiStubs";
 
 /** O que a contagem do servidor devolveu por último — o teste inspeciona e controla. */
 let counted: AudienceCount;
@@ -71,12 +70,11 @@ async function settleCount(wrapper: {
   await wrapper.vm.$nextTick();
 }
 
-/** Escolhe o produto pelo `UiSelect` do kit — abre e clica na opção, como a mão faz.
- *
- * ⚠️ O primitivo entra de VERDADE no harness (`tests/support/uiPrimitives.ts`), então o
- * teste dirige o contrato real: `aria-haspopup="listbox"` no gatilho e `role="option"`
- * na lista. Era um `<select>` do sistema e o teste dava `setValue`; o catálogo da
- * padaria passa de doze itens, e acima disso ninguém varre a lista com o olho. */
+/** Escolhe o produto pela lista com busca (`NuxtSelectMenu`): abre e clica na opção,
+ * como a mão faz. O dublê do harness (`tests/support/uiPrimitives.ts`) guarda o
+ * contrato que o painel dirige: `aria-haspopup="listbox"` no gatilho e `role="option"`
+ * na lista. O catálogo da padaria passa de doze itens, e acima disso ninguém varre a
+ * lista com o olho. */
 async function chooseProduct(
   wrapper: VueWrapper,
   label: string,
@@ -128,7 +126,6 @@ function panel(
   return mount(FireCampaignPanel, {
     props: { rule, priceTiers: TIERS, tags: TAGS, rfmSegments: SEGMENTS, ...extra },
     global: {
-      components: { UiNativeSelect: UiNativeSelectStub },
       stubs: { Icon: true },
     },
     globalProperties: {},
@@ -231,7 +228,13 @@ describe("FireCampaignPanel — disparar agora", () => {
   });
 
   it("avisa que a escolha não altera a campanha salva", () => {
-    expect(panel().text()).toContain("A campanha continua como está");
+    // A frase é a descrição da opção "Escolher agora" no grupo de rádio.
+    const items = panel()
+      .findAllComponents({ name: "NuxtRadioGroup" })[0]!
+      .props("items") as Array<{ label: string; description?: string }>;
+    expect(
+      items.find((item) => item.label === "Escolher agora")?.description,
+    ).toContain("A campanha continua como está");
   });
 });
 
@@ -259,7 +262,6 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
       global: {
         stubs: {
           Icon: true,
-          UiNativeSelect: UiNativeSelectStub,
         },
       },
     });
@@ -583,8 +585,9 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
 
   it("manda `match: all` ao escolher 'Todas' — o recorte que a união não sabe fazer", async () => {
     const wrapper = await twoRulesChosen();
-    const modes = wrapper.findAll("button[aria-pressed]");
-    await modes.find((m) => m.text().includes("Todas"))!.trigger("click");
+    // A escolha exclusiva é um grupo de rádio (`NuxtRadioGroup`), não pílulas com aria-pressed.
+    const modes = wrapper.findAll('[role="radio"]');
+    await modes.find((m) => m.text() === "Todas")!.trigger("click");
     await wrapper.find("form").trigger("submit");
 
     const [payload] = wrapper.emitted("submit")!.at(-1) as [
@@ -603,8 +606,9 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
 
   it("trocar de campanha volta a somar, sem herdar o cruzamento anterior", async () => {
     const wrapper = await twoRulesChosen();
-    const modes = wrapper.findAll("button[aria-pressed]");
-    await modes.find((m) => m.text().includes("Todas"))!.trigger("click");
+    // A escolha exclusiva é um grupo de rádio (`NuxtRadioGroup`), não pílulas com aria-pressed.
+    const modes = wrapper.findAll('[role="radio"]');
+    await modes.find((m) => m.text() === "Todas")!.trigger("click");
 
     await wrapper.setProps({ rule: makeRule({ pk: 77, name: "Outra" }) });
     await wrapper.find("form").trigger("submit");

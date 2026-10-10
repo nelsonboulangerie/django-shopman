@@ -1,50 +1,88 @@
-// As seções do Marketing, numa fonte só: o rail da suíte (tablet e desktop), a barra
-// do polegar (celular) e a segunda linha de Ajustes leem daqui.
+// As seções do Marketing, numa fonte só: a barra lateral e a gaveta (`OperatorSuiteShell`),
+// a barra inferior do celular e a faixa de sub-seções de Ajustes leem daqui.
 //
-// Decisão do dono (03/10/2026, SUITE-UX §6): o andar de OPERAÇÃO tem quatro seções,
-// Decisões, Agendados, Enviados e Ajustes, e o andar de AJUSTES entra por um item só,
-// com as próprias seções numa segunda linha (Campanhas, Modelos, Ofertas e cupons,
-// Plataformas). Na camada visual da suíte (V4-MKT), Ajustes mora no pé do rail, longe
-// da operação, como no Gestor.
+// Decisão do dono (03/10/2026, SUITE-UX §6): o andar de OPERAÇÃO tem Decisões,
+// Agendados e Enviados; Ajustes entra por um item só, no pé da barra lateral, longe da
+// operação, como no Gestor.
 //
-// Um nome por lugar (`depois-navegacao.jpg`): cada seção de Ajustes é uma rota própria,
-// `/campaigns`, `/templates`, `/offers` e `/platforms`.
+// Fase 2 (WP-FASE2-UX-OPERADOR, A4): Ajustes é uma seção com rota própria, `/settings`
+// (a página que lista as quatro sub-seções, como os Ajustes do Gestor), e cada
+// sub-seção mora embaixo dela: `/settings/campaigns`, `/settings/templates`,
+// `/settings/offers` e `/settings/platforms`. Dentro de uma sub-seção, a faixa da
+// toolbar (`MarketingSettingsNav`) leva às outras três sem voltar.
+//
+// Barra inferior (regra única do kit, `quickBarLayout`): as quatro seções declaram
+// `quick`; sem seção de fora, não há "Mais" (o ☰ abre a gaveta com o menu completo).
 import type { OperatorSection } from "../../../operator-kit/app/presentation/appBar";
 
 export type MarketingSectionKey = "decisions" | "scheduled" | "sent" | "settings";
 export type MarketingSettingsKey = "campaigns" | "templates" | "offers" | "platforms";
+
+export const MARKETING_SETTINGS_ROOT = "/settings";
 
 export const MARKETING_SETTINGS_SECTIONS: ReadonlyArray<{
   key: MarketingSettingsKey;
   label: string;
   icon: string;
   to: string;
+  /** O que mora ali, numa frase (a página de Ajustes lista, não esconde). */
+  description: string;
 }> = [
-  { key: "campaigns", label: "Campanhas", icon: "lucide:megaphone", to: "/campaigns" },
-  { key: "templates", label: "Modelos", icon: "lucide:file-text", to: "/templates" },
-  { key: "offers", label: "Ofertas e cupons", icon: "lucide:ticket-percent", to: "/offers" },
-  { key: "platforms", label: "Plataformas", icon: "lucide:radio-tower", to: "/platforms" },
+  {
+    key: "campaigns",
+    label: "Campanhas",
+    icon: "lucide:megaphone",
+    to: "/settings/campaigns",
+    description: "O que dispara um anúncio, quando e para quem",
+  },
+  {
+    key: "templates",
+    label: "Modelos",
+    icon: "lucide:file-text",
+    to: "/settings/templates",
+    description: "Os textos e as fotos que as campanhas usam",
+  },
+  {
+    key: "offers",
+    label: "Ofertas e cupons",
+    icon: "lucide:ticket-percent",
+    to: "/settings/offers",
+    description: "Descontos e cupons que um anúncio pode levar",
+  },
+  {
+    key: "platforms",
+    label: "Plataformas",
+    icon: "lucide:radio-tower",
+    to: "/settings/platforms",
+    description: "Instagram, Facebook, Google e WhatsApp: conexão e formato",
+  },
 ];
+
+export function marketingSectionFor(path: string): MarketingSectionKey {
+  if (path === "/" || path.startsWith("/announcements")) return "decisions";
+  if (path.startsWith("/second-control")) return "decisions";
+  if (path === "/scheduled") return "scheduled";
+  if (path === "/history") return "sent";
+  return "settings";
+}
+
+export function marketingSettingsFor(path: string): MarketingSettingsKey | null {
+  const entry = MARKETING_SETTINGS_SECTIONS.find(
+    (section) => path === section.to || path.startsWith(`${section.to}/`),
+  );
+  return entry?.key ?? null;
+}
 
 export function useMarketingSections() {
   const route = useRoute();
   const { decisionCount } = useMarketingDecisions();
 
-  const activeSection = computed<MarketingSectionKey>(() => {
-    const path = route.path;
-    if (path === "/" || path.startsWith("/announcements")) return "decisions";
-    if (path === "/scheduled") return "scheduled";
-    if (path === "/history") return "sent";
-    if (path.startsWith("/second-control")) return "decisions";
-    return "settings";
-  });
-
-  const activeSettings = computed<MarketingSettingsKey>(() => {
-    if (route.path === "/templates") return "templates";
-    if (route.path === "/platforms") return "platforms";
-    if (route.path === "/offers") return "offers";
-    return "campaigns";
-  });
+  const activeSection = computed<MarketingSectionKey>(() =>
+    marketingSectionFor(route.path),
+  );
+  const activeSettings = computed<MarketingSettingsKey | null>(() =>
+    marketingSettingsFor(route.path),
+  );
 
   const sections = computed<OperatorSection[]>(() => [
     {
@@ -52,7 +90,9 @@ export function useMarketingSections() {
       label: "Decisões",
       icon: "lucide:inbox",
       to: "/",
+      match: ["/announcements", "/second-control"],
       group: "Operação",
+      quick: true,
       badge: decisionCount.value ? String(decisionCount.value) : undefined,
     },
     {
@@ -61,6 +101,7 @@ export function useMarketingSections() {
       icon: "lucide:calendar-clock",
       to: "/scheduled",
       group: "Operação",
+      quick: true,
     },
     {
       key: "sent",
@@ -68,16 +109,23 @@ export function useMarketingSections() {
       icon: "lucide:send",
       to: "/history",
       group: "Operação",
+      quick: true,
     },
     {
       key: "settings",
       label: "Ajustes",
       icon: "lucide:settings-2",
-      to: "/campaigns",
-      match: ["/campaigns", "/templates", "/offers", "/platforms"],
+      to: MARKETING_SETTINGS_ROOT,
+      match: [MARKETING_SETTINGS_ROOT],
       foot: true,
+      quick: true,
     },
   ]);
 
-  return { activeSection, activeSettings, sections, settingsSections: MARKETING_SETTINGS_SECTIONS };
+  return {
+    activeSection,
+    activeSettings,
+    sections,
+    settingsSections: MARKETING_SETTINGS_SECTIONS,
+  };
 }

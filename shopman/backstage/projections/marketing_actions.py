@@ -533,7 +533,7 @@ def _campaign_actions(
             version=campaign.version,
             kind="edit_campaign",
             priority="primary",
-            href=f"/campaigns#campaign-{campaign_id}",
+            href=f"/settings/campaigns#campaign-{campaign_id}",
             method="GET",
             idempotency="none",
             capabilities=("shop.edit_marketing_campaigns",),
@@ -567,7 +567,7 @@ def _platform_actions(
     *,
     actor,
 ) -> tuple[MarketingActionProjectionV2, ...]:
-    page = f"/platforms#{platform.platform_ref}"
+    page = f"/settings/platforms#{platform.platform_ref}"
     resource_ref = f"platform:{platform.platform_ref}"
     actions = [
         _action(
@@ -612,7 +612,7 @@ def _platform_actions(
             version=platform.version,
             kind="send_platform_test",
             priority="secondary",
-            href="/platforms#whatsapp-test",
+            href="/settings/platforms#whatsapp-test",
             method="GET",
             idempotency="none",
             capabilities=("shop.send_marketing_test",),

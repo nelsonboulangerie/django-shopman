@@ -5,6 +5,7 @@
 // "Mesmo nome"): é sugestão, e a unificação é sempre um gesto do gestor, depois da
 // prévia lado a lado (`CustomerMergeDialog`).
 import type { CustomerCandidateProjection } from "~/generated/ordersContract";
+import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 
 const route = useRoute();
 const router = useRouter();
@@ -126,14 +127,12 @@ const phoneHeaderActions = computed(() => [
         :description="
           httpErrorMessage(error, 'Não foi possível carregar a ficha.')
         "
-        :actions="[
+        :actions="alertActions('error', [
           {
             label: 'Tentar de novo',
-            color: 'error',
-            variant: 'outline',
             onClick: () => refresh(),
           },
-        ]"
+        ])"
       />
 
       <div v-if="pending && !customer" class="space-y-3">
@@ -162,16 +161,14 @@ const phoneHeaderActions = computed(() => [
               : 'Este cadastro está desativado.'
           "
           :actions="
-            customer.merged_into_ref
+            alertActions('warning', customer.merged_into_ref
               ? [
                   {
                     label: `Abrir ${customer.merged_into_ref}`,
-                    color: 'warning',
-                    variant: 'outline',
                     to: `/customers/${encodeURIComponent(customer.merged_into_ref)}`,
                   },
                 ]
-              : []
+              : [])
           "
           data-customer-absorbed
         />

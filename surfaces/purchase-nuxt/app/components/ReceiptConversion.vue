@@ -68,6 +68,25 @@ function openDeclare() {
   declaring.value = true;
 }
 
+/**
+ * "Direto na unidade" é a ausência de embalagem. O `NuxtSelect` não aceita item de
+ * valor vazio (o item real lança), então ela ganha um valor próprio que vira
+ * `null` na saída: a linha nunca volta com uma conversão que não existe.
+ */
+const DIRECT = "__direct__";
+const conversionItems = computed(() => [
+  { value: DIRECT, label: `Direto em ${props.preview.material.unit}` },
+  ...props.conversions.map((conversion) => ({ value: conversion.id, label: conversion.label })),
+]);
+const kindItems = [
+  { value: "conventional", label: "Exato: é assim que vem embalado" },
+  { value: "approximate", label: "Aproximado: é uma estimativa" },
+];
+
+function selectConversion(value: unknown) {
+  emit("select", !value || value === DIRECT ? null : String(value));
+}
+
 function submitDeclare() {
   if (!canSave.value) return;
   emit("declare", { label: label.value.trim(), factor: factor.value.replace(",", "."), kind: kind.value });
@@ -86,14 +105,14 @@ function submitDeclare() {
     <!-- A CONTA, e não o fator: quem recebe confere um resultado. -->
     <div v-if="deciding && proposal" class="rounded-md bg-card px-3 py-2">
       <p class="text-sm text-muted-foreground">{{ proposal.line }}</p>
-      <p class="mt-0.5 text-lg font-semibold tabular-nums">= {{ proposal.total }}</p>
+      <p class="mt-0.5 text-base font-semibold tabular-nums">= {{ proposal.total }}</p>
     </div>
 
     <!-- Sem fator ainda (o insumo só foi escolhido agora): a nota já dá o total,
-         e é isso que se mostra. O fator quem calcula é o servidor, ao aceitar. -->
+         e é isso que se mostra. O fator se calcula ao aceitar. -->
     <div v-else-if="deciding && preview.invoiceAxes" class="rounded-md bg-card px-3 py-2">
       <p class="text-sm text-muted-foreground">A nota diz</p>
-      <p class="mt-0.5 text-lg font-semibold tabular-nums">{{ preview.invoiceAxes }}</p>
+      <p class="mt-0.5 text-base font-semibold tabular-nums">{{ preview.invoiceAxes }}</p>
     </div>
 
     <p v-if="deciding && (proposal || preview.invoiceAxes)" class="mt-2 text-xs text-muted-foreground">
@@ -101,22 +120,15 @@ function submitDeclare() {
     </p>
 
     <div v-if="deciding && (proposal || preview.invoiceAxes)" class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-      <button
-        type="button"
+      <NuxtButton
+        icon="i-lucide-check"
+        label="Confere"
+        class="justify-center"
         :disabled="pending"
-        class="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-auto"
+        :loading="pending"
         @click="proposal ? emit('accept') : emit('acceptAxes')"
-      >
-        <Icon name="lucide:check" class="size-4" />
-        Confere
-      </button>
-      <button
-        type="button"
-        class="inline-flex h-8 w-full items-center justify-center rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-accent sm:w-auto"
-        @click="choosing = true"
-      >
-        Não é assim
-      </button>
+      />
+      <NuxtButton variant="outline" color="neutral" label="Não é assim" class="justify-center" @click="choosing = true" />
     </div>
 
     <!-- Nem proposta nem eixos: a nota não respondeu, e a tela diz o que fazer. -->
@@ -125,83 +137,63 @@ function submitDeclare() {
         A nota não diz quanto vale cada {{ preview.line.invoiceUnit || "embalagem" }} em {{ preview.material.unit }}.
       </p>
       <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <button type="button" class="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground sm:w-auto" @click="openDeclare">
-          <Icon name="lucide:plus" class="size-4" />
-          Cadastrar embalagem
-        </button>
-        <button v-if="conversions.length" type="button" class="inline-flex h-8 w-full items-center justify-center rounded-md border border-border bg-card px-4 text-sm font-medium hover:bg-accent sm:w-auto" @click="choosing = true">
-          Escolher uma já cadastrada
-        </button>
+        <NuxtButton icon="i-lucide-plus" label="Cadastrar embalagem" class="justify-center" @click="openDeclare" />
+        <NuxtButton
+          v-if="conversions.length"
+          variant="outline"
+          color="neutral"
+          label="Escolher uma já cadastrada"
+          class="justify-center"
+          @click="choosing = true"
+        />
       </div>
     </div>
 
     <!-- O campo: normal quando não há nada a decidir, ou revelado por "Não é assim". -->
-    <div v-if="showsField && !declaring">
-      <label class="block text-xs font-medium text-muted-foreground" :class="choosing ? 'mt-3' : ''">
-        Como isto é contado
-        <!-- `value=""` e nao `:value="null"`: quem le a selecao aqui e o DOM, e
-             o DOM so guarda string. Um `null` ligado viraria a string "null" e
-             a linha voltaria com uma conversao inexistente. -->
-        <UiNativeSelect
-          :value="preview.line.conversionId ?? ''"
-          class="mt-1 w-full"
-          @change="emit('select', ($event.target as HTMLSelectElement).value || null)"
-        >
-          <option value="">Direto em {{ preview.material.unit }}</option>
-          <option v-for="conversion in conversions" :key="conversion.id" :value="conversion.id">{{ conversion.label }}</option>
-        </UiNativeSelect>
-      </label>
+    <div v-if="showsField && !declaring" :class="choosing ? 'mt-3' : ''">
+      <NuxtFormField label="Como isto é contado">
+        <NuxtSelect
+          class="w-full"
+          :model-value="preview.line.conversionId ?? DIRECT"
+          :items="conversionItems"
+          data-receipt-conversion-select
+          @update:model-value="selectConversion"
+        />
+      </NuxtFormField>
       <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium hover:bg-accent" @click="openDeclare">
-          <Icon name="lucide:plus" class="size-3.5" />
-          Cadastrar embalagem
-        </button>
-        <button v-if="choosing" type="button" class="inline-flex h-9 items-center rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-accent" @click="choosing = false">
-          Voltar
-        </button>
+        <NuxtButton variant="outline" color="neutral" icon="i-lucide-plus" label="Cadastrar embalagem" @click="openDeclare" />
+        <NuxtButton v-if="choosing" variant="ghost" color="neutral" label="Voltar" @click="choosing = false" />
       </div>
     </div>
 
-    <div v-if="declaring" class="mt-2 space-y-2 rounded-md border border-border bg-card p-3">
-      <p class="text-xs font-semibold text-foreground">Cadastrar embalagem</p>
-      <label class="block text-xs font-medium text-muted-foreground">
-        Como você chama isto
-        <input
-          v-model="label"
-          class="mt-1 h-8 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
-          :placeholder="preview.line.invoiceUnit ? `${preview.line.invoiceUnit.toLowerCase()} 5 kg` : 'saco 25 kg'"
-        />
-      </label>
-      <label class="block text-xs font-medium text-muted-foreground">
-        Quanto vale UMA, em {{ preview.material.unit }}
-        <input
-          v-model="factor"
-          inputmode="decimal"
-          class="mt-1 h-8 w-full rounded-md border border-border bg-background px-3 text-sm tabular-nums text-foreground"
-          placeholder="25"
-        />
-      </label>
-      <label class="block text-xs font-medium text-muted-foreground">
-        Esse número é
-        <UiNativeSelect v-model="kind" class="mt-1 w-full">
-          <option value="conventional">Exato: é assim que vem embalado</option>
-          <option value="approximate">Aproximado: é uma estimativa</option>
-        </UiNativeSelect>
-      </label>
-      <div class="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center">
-        <button
-          type="button"
-          :disabled="!canSave || pending"
-          class="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50 sm:w-auto"
-          @click="submitDeclare"
-        >
-          <Icon name="lucide:check" class="size-4" />
-          Salvar
-        </button>
-        <button type="button" class="inline-flex h-8 w-full items-center justify-center rounded-md border border-border px-4 text-sm font-medium hover:bg-accent sm:w-auto" @click="declaring = false">
-          Cancelar
-        </button>
+    <NuxtCard v-if="declaring" variant="soft" class="mt-2" data-receipt-conversion-declare>
+      <div class="space-y-2">
+        <p class="text-xs font-semibold text-foreground">Cadastrar embalagem</p>
+        <NuxtFormField label="Como você chama isto">
+          <NuxtInput
+            v-model="label"
+            class="w-full"
+            :placeholder="preview.line.invoiceUnit ? `${preview.line.invoiceUnit.toLowerCase()} 5 kg` : 'saco 25 kg'"
+          />
+        </NuxtFormField>
+        <NuxtFormField :label="`Quanto vale UMA, em ${preview.material.unit}`">
+          <NuxtInput v-model="factor" inputmode="decimal" class="w-full tabular-nums" placeholder="25" />
+        </NuxtFormField>
+        <NuxtFormField label="Esse número é">
+          <NuxtSelect v-model="kind" class="w-full" :items="kindItems" />
+        </NuxtFormField>
+        <div class="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center">
+          <NuxtButton
+            icon="i-lucide-check"
+            label="Salvar"
+            class="justify-center"
+            :disabled="!canSave || pending"
+            :loading="pending"
+            @click="submitDeclare"
+          />
+          <NuxtButton variant="outline" color="neutral" label="Cancelar" class="justify-center" @click="declaring = false" />
+        </div>
       </div>
-    </div>
+    </NuxtCard>
   </ReceiptField>
 </template>

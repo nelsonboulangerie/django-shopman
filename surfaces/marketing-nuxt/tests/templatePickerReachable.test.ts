@@ -8,20 +8,20 @@ import { describe, expect, it } from "vitest";
 // havia campanha ativa, e invisível DE NOVO depois de configurada.
 //
 // A correção final não foi dar um botão ao painel: foi dar **casa** à configuração. Ela mora
-// em `/platforms`, e o painel volta a ser só decisão.
+// em `/settings/platforms`, e o painel volta a ser só decisão.
 function read(path: string): string {
   return readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
 }
 
 describe("a configuração de plataforma tem casa", () => {
   it("o seletor de template vive na tela de Plataformas", () => {
-    const page = read("../app/pages/platforms.vue");
+    const page = read("../app/pages/settings/platforms.vue");
     expect(page).toContain("onChooseTemplate");
     expect(page).toContain("Teste seguro do WhatsApp");
     expect(page).not.toContain("test-recipient");
     expect(page).toContain("testTargets");
     expect(page).toContain("Verificado em");
-    expect(page).toContain("UiVerificationCodeInput");
+    expect(page).toContain("NuxtPinInput");
     expect(page).toContain("waTemplate.commandAvailable");
     expect(page).not.toContain("{{ option.ns }}");
   });
@@ -35,7 +35,7 @@ describe("a configuração de plataforma tem casa", () => {
 
   it("o aviso do painel aponta a casa em vez de configurar", () => {
     const board = read("../app/components/MarketingBoard.vue");
-    expect(board).toContain("path: '/platforms'");
+    expect(board).toContain("path: '/settings/platforms'");
     expect(board).not.toContain("'/v2'");
   });
 
@@ -46,7 +46,7 @@ describe("a configuração de plataforma tem casa", () => {
     expect(composable).toContain(
       'event: options.event || "announcement_published"',
     );
-    expect(read("../app/pages/platforms.vue")).toContain(
+    expect(read("../app/pages/settings/platforms.vue")).toContain(
       "event: testEvent.value",
     );
     expect(composable).not.toContain("body: { recipient");

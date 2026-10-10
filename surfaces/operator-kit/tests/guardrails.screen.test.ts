@@ -31,10 +31,11 @@ const KIT_ALLOWED = new Set(["app/composables/useScreen.ts", "app/composables/us
 /** Teto por app ainda não migrado (09/10/2026). Migrou? Baixe o número; nunca suba. */
 const CEILING: Record<string, number> = {
   "bi-nuxt": 7,
-  "marketing-nuxt": 1,
   "pos-nuxt": 4,
   "production-nuxt": 1,
-  "purchase-nuxt": 3,
+  // Compras (fase 2): a régua é o `useScreen()`; sobra o ponteiro grosso
+  // (`useCoarsePointer`), que não é largura: decide o foco da busca da lista longa.
+  "purchase-nuxt": 1,
 };
 
 function sourceFiles(dir: string): string[] {

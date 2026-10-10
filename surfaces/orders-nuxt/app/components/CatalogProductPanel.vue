@@ -19,6 +19,7 @@ import type {
 } from "~/types/catalog";
 import { vocationLabel, vocationOptions } from "~/presentation/vocation";
 import { useIntersectionObserver } from "@vueuse/core";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   open: boolean;
@@ -720,20 +721,16 @@ const sectionClass =
               )
               .join(' · ')
           "
-          :actions="[
+          :actions="alertActions('warning', [
             {
               label: 'Manter meu rascunho',
-              color: 'warning',
-              variant: 'outline',
               onClick: () => emit('review-conflict', true),
             },
             {
               label: 'Usar valores atuais',
-              color: 'warning',
-              variant: 'outline',
               onClick: () => emit('review-conflict', false),
             },
-          ]"
+          ])"
         />
         <NuxtAlert
           v-else-if="error"
@@ -747,22 +744,18 @@ const sectionClass =
           color="warning"
           variant="subtle"
           title="Há alterações não salvas neste produto"
-          :actions="[
+          :actions="alertActions('warning', [
             {
               label: 'Continuar editando',
-              color: 'warning',
-              variant: 'outline',
               onClick: () => {
                 discardRequested = false;
               },
             },
             {
               label: 'Descartar e fechar',
-              color: 'warning',
-              variant: 'outline',
               onClick: () => emit('update:open', false),
             },
-          ]"
+          ])"
         />
 
         <!-- abas: o formulário é longo demais para uma coluna só. Rolam na horizontal

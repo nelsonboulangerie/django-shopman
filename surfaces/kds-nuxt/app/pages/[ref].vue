@@ -28,6 +28,7 @@ import {
   focusGrid,
   focusSlice,
   KDS_ARM_DELAY_MS,
+  KDS_UNDO_WINDOW_MS,
   matchesBoardFilter,
   realtimeIndicator,
   queuePositionLabel,
@@ -194,9 +195,9 @@ watch(isPhone, (phone) => {
 const filterTabs = computed(() => {
   const counts = filterCounts.value;
   return [
-    { label: "Todos", value: "all", badge: { label: String(counts.all) } },
+    { label: "Todos", value: "all", count: counts.all },
     ...(counts.delivery || filter.value === "delivery"
-      ? [{ label: "Entrega", value: "delivery", icon: "i-lucide-bike", badge: { label: String(counts.delivery) } }]
+      ? [{ label: "Entrega", value: "delivery", icon: "i-lucide-bike", count: counts.delivery }]
       : []),
     ...(counts.late || filter.value === "late"
       ? [
@@ -204,7 +205,7 @@ const filterTabs = computed(() => {
             label: "Atrasados",
             value: "late",
             icon: "i-lucide-timer",
-            badge: { label: String(counts.late), color: "error" as const },
+            count: counts.late,
           },
         ]
       : []),
@@ -431,7 +432,19 @@ const phoneAction = computed<OperatorActionBarAction | null>(() => {
         disabled: true,
         reason: `${card.finish_block_label}. ${card.finish_block_reason}`,
       };
-    // O Desfazer fica no card em foco, com o fundo que esvazia; a base sai da frente.
+    // O Desfazer mora no MESMO botão da base onde o Pronto foi tocado (dono,
+    // 09/10/2026): a barra não muda, só o texto, e o fundo esvazia atrás dele.
+    case "undo": {
+      const until = finishUntil.value.get(card.pk);
+      if (!until) return null;
+      return {
+        label: `Desfazer ${code}`,
+        icon: "i-lucide-undo-2",
+        ariaLabel: `Desfazer o Pronto do pedido ${code}`,
+        timed: { until, duration: KDS_UNDO_WINDOW_MS },
+        onSelect: () => void undoFinish(card.pk),
+      };
+    }
     default:
       return null;
   }
@@ -529,7 +542,9 @@ function clearSearchAndFilter() {
           size="md"
           aria-label="Recortes da fila"
           data-kds-filters
-        />
+        >
+          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+        </NuxtTabs>
         <span class="text-sm text-muted-foreground">Mais urgente primeiro, da esquerda para a direita.</span>
       </template>
     </OperatorPageHeader>

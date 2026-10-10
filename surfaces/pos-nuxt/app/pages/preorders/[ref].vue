@@ -32,6 +32,7 @@ import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetai
 import { handOverCta, redoNotice } from "~/presentation/preorderActions";
 import { customerLine, moneyLine, rowShowsSituation, situationTone } from "~/presentation/preorders";
 import { canComment, toneBadge } from "../../../../operator-kit/app/presentation/orderDetail";
+import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
 
 const route = useRoute();
 const ref_ = computed(() => String(route.params.ref || ""));
@@ -90,6 +91,18 @@ function cancelAndRedo() {
   cancelOpen.value = true;
 }
 
+// A ação na base do celular (`OperatorActionBar`): o mesmo gesto principal do painel.
+const handOverBar = computed<OperatorActionBarAction | null>(() => {
+  const handOver = counter.value?.hand_over;
+  if (!handOver?.allowed || !card.value) return null;
+  return {
+    label: handOverCta(handOver),
+    icon: handOver.needs_payment ? "i-lucide-hand-coins" : "i-lucide-package-check",
+    disabled: actions.busy.value,
+    onSelect: () => { handOverOpen.value = true; },
+  };
+});
+
 async function confirmHandOver(body: HandOverBody) {
   const done = await actions.handOver(body);
   // Entregou, ou o cliente acabou de pagar online (o aviso fica na página).
@@ -140,33 +153,37 @@ function goBack() {
   <PosPreordersShell :pos="pos" :pending="posPending || pending" wide @refresh="refreshPos(); refresh()">
     <div class="mx-auto grid w-full max-w-3xl gap-4 lg:max-w-6xl">
       <div>
-        <UiButton variant="ghost" size="sm" data-preorder-back @click="goBack">
-          <Icon name="lucide:arrow-left" class="size-4" />
-          Voltar
-        </UiButton>
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          label="Voltar"
+          data-preorder-back
+          @click="goBack"
+        />
       </div>
 
-      <p v-if="pending && !detail" class="p-4 text-sm text-muted-foreground">Carregando a encomenda…</p>
+      <OperatorScreenState v-if="!detail && !error" state="loading" what="a encomenda" />
 
-      <section
+      <OperatorScreenState
         v-else-if="notFound"
-        class="grid justify-items-center gap-2 rounded-md border border-dashed border-border p-8 text-center"
+        state="empty"
+        icon="i-lucide-search-x"
+        :title="`O pedido ${ref_} não é uma encomenda: não existe, foi cancelado ou foi venda de Balcão.`"
         data-preorder-not-found
       >
-        <Icon name="lucide:search-x" class="size-6 text-muted-foreground" />
-        <p class="text-sm text-muted-foreground">
-          O pedido {{ ref_ }} não é uma encomenda: não existe, foi cancelado ou foi venda de Balcão.
-        </p>
-        <UiButton variant="outline" size="sm" :to="PREORDERS_HOME">Procurar outra encomenda</UiButton>
-      </section>
+        <template #actions>
+          <NuxtButton color="neutral" variant="outline" label="Procurar outra encomenda" :to="PREORDERS_HOME" />
+        </template>
+      </OperatorScreenState>
 
-      <p
+      <OperatorScreenState
         v-else-if="error"
-        class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-      >
-        <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
-        <span>{{ httpErrorMessage(error, "Não deu para ler a encomenda agora.") }} Tente de novo em Atualizar, no menu ao lado.</span>
-      </p>
+        state="error"
+        what="a encomenda"
+        :description="`${httpErrorMessage(error, '')} Confira a conexão e tente de novo.`.trim()"
+        @retry="refresh()"
+      />
 
       <template v-else-if="detail && counter && card">
         <!-- Uma árvore só: em tela larga o painel do Balcão fica à direita e FIXO (o
@@ -174,7 +191,7 @@ function goBack() {
              estreita ele vem primeiro, e o saldo é a primeira coisa da tela. -->
         <div ref="layout" class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_23rem] lg:items-start" data-preorder-layout>
           <aside
-            class="grid gap-3 rounded-md border bg-card p-4 lg:sticky lg:top-6 lg:col-start-2 lg:row-start-1"
+            class="grid gap-3 rounded-lg bg-default p-4 ring ring-default lg:sticky lg:top-6 lg:col-start-2 lg:row-start-1"
             aria-label="Balcão"
             data-preorder-counter-panel
           >
@@ -197,122 +214,125 @@ function goBack() {
               </p>
             </header>
 
-            <p
+            <NuxtAlert
               v-if="actions.paidOnline.value && counter.hand_over.allowed && !counter.hand_over.needs_payment"
-              class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-badge-check"
+              :title="actions.paidOnline.value"
               role="status"
               data-preorder-paid-online
-            >
-              <Icon name="lucide:badge-check" class="mt-0.5 size-4 shrink-0" />
-              <span>{{ actions.paidOnline.value }}</span>
-            </p>
+            />
 
-            <!-- O GESTO PRINCIPAL ocupa a largura; quando não pode, a tela diz por quê. -->
-            <UiButton
+            <!-- O GESTO PRINCIPAL ocupa a largura na mesa; no celular ele é a ação na
+                 base (o `#footer`, abaixo). Quando não pode, a tela diz por quê. -->
+            <NuxtButton
               v-if="counter.hand_over.allowed"
-              size="lg"
-              class="w-full"
+              size="xl"
+              block
+              class="max-lg:hidden"
+              :icon="counter.hand_over.needs_payment ? 'i-lucide-hand-coins' : 'i-lucide-package-check'"
+              :label="handOverCta(counter.hand_over)"
               :disabled="actions.busy.value"
               data-preorder-hand-over
               @click="handOverOpen = true"
-            >
-              <Icon :name="counter.hand_over.needs_payment ? 'lucide:hand-coins' : 'lucide:package-check'" class="size-5" />
-              {{ handOverCta(counter.hand_over) }}
-            </UiButton>
-            <p
+            />
+            <NuxtAlert
               v-else-if="card.situation !== 'delivered'"
-              class="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+              color="info"
+              variant="subtle"
+              icon="i-lucide-info"
+              :title="counter.hand_over.block_reason"
               data-preorder-hand-over-blocked
-            >
-              <Icon name="lucide:info" class="mt-0.5 size-4 shrink-0" />
-              <span>{{ counter.hand_over.block_reason }}</span>
-            </p>
+            />
 
             <!-- Os gestos de uso médio, lado a lado e menores que o principal: cada um
                  na largura do próprio rótulo, e o que não cabe desce de linha. -->
             <div class="flex flex-wrap gap-2" data-preorder-actions>
-              <UiButton
+              <NuxtButton
                 v-if="counter.reschedule.allowed"
+                color="neutral"
                 variant="outline"
-                class="flex-auto"
+                class="flex-auto justify-center"
+                icon="i-lucide-calendar-clock"
+                label="Reagendar"
                 :disabled="actions.busy.value"
                 data-preorder-reschedule
                 @click="rescheduleOpen = true"
-              >
-                <Icon name="lucide:calendar-clock" class="size-4" />
-                Reagendar
-              </UiButton>
-              <!-- A Via Pedido individual: a mesma impressão da Via Pedido – painel. -->
-              <UiButton
+              />
+              <!-- A Via Pedido individual: a mesma impressão da Via Pedido – painel.
+                   Já saiu uma vez: o papel sai carimbado "2ª via" pelo servidor
+                   (`_stamp_first_print`), e o botão diz o mesmo (dono, 03/10). -->
+              <NuxtButton
+                color="neutral"
                 variant="outline"
-                class="flex-auto"
+                class="flex-auto justify-center"
+                icon="i-lucide-printer"
+                :label="counter.ticket_printed ? 'Imprimir 2ª via' : 'Imprimir Via Pedido'"
                 :disabled="!!tickets.printingRef.value"
                 :loading="tickets.printingRef.value === ref_"
                 data-preorder-print
                 @click="printTicket"
-              >
-                <Icon name="lucide:printer" class="size-4" />
-                <!-- Já saiu uma vez: o papel sai carimbado "2ª via" pelo servidor
-                     (`_stamp_first_print`), e o botão diz o mesmo (dono, 03/10). -->
-                {{ counter.ticket_printed ? "Imprimir 2ª via" : "Imprimir Via Pedido" }}
-              </UiButton>
-              <UiButton
+              />
+              <NuxtButton
                 v-if="counter.edit.allowed"
+                color="neutral"
                 variant="outline"
-                class="flex-auto"
+                class="flex-auto justify-center"
+                icon="i-lucide-pencil"
+                label="Editar encomenda"
                 :disabled="actions.busy.value"
                 data-preorder-edit
                 @click="editOrder"
-              >
-                <Icon name="lucide:pencil" class="size-4" />
-                Editar encomenda
-              </UiButton>
-              <UiButton
+              />
+              <NuxtButton
                 v-else-if="counter.edit.cancel_and_redo && counter.cancel.allowed"
+                color="neutral"
                 variant="outline"
-                class="flex-auto"
+                class="flex-auto justify-center"
+                icon="i-lucide-rotate-ccw"
+                label="Cancelar e refazer"
                 :disabled="actions.busy.value"
                 data-preorder-cancel-and-redo
                 @click="cancelAndRedo"
-              >
-                <Icon name="lucide:rotate-ccw" class="size-4" />
-                Cancelar e refazer
-              </UiButton>
+              />
             </div>
             <p
               v-if="!counter.edit.allowed && counter.edit.cancel_and_redo && counter.cancel.allowed"
-              class="text-sm text-muted-foreground"
+              class="text-sm text-muted"
               data-preorder-edit-blocked
             >{{ counter.edit.block_reason }}</p>
-            <p v-if="!tickets.hasPrinter.value" class="text-sm text-muted-foreground">
+            <p v-if="!tickets.hasPrinter.value" class="text-sm text-muted">
               {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
             </p>
 
             <!-- Comentar: atalho para o campo do histórico (o campo é do kit, e só
                  existe quando o servidor oferece a ação). -->
-            <UiButton
+            <NuxtButton
               v-if="commentAllowed"
+              color="neutral"
               variant="ghost"
-              class="w-full justify-start"
+              block
+              class="justify-start"
+              icon="i-lucide-message-square-plus"
+              label="Comentar no histórico"
               data-preorder-comment-shortcut
               @click="goToComment"
-            >
-              <Icon name="lucide:message-square-plus" class="size-4" />
-              Comentar no histórico
-            </UiButton>
+            />
 
             <!-- CANCELAR fica separado, no pé, e sem destaque maior que o gesto seguro. -->
-            <div v-if="counter.cancel.allowed" class="border-t pt-3" data-preorder-cancel-zone>
-              <UiButton
+            <div v-if="counter.cancel.allowed" class="border-t border-default pt-3" data-preorder-cancel-zone>
+              <NuxtButton
+                color="error"
                 variant="ghost"
-                class="w-full justify-start text-destructive hover:text-destructive"
+                block
+                class="justify-start"
+                icon="i-lucide-x"
+                label="Cancelar encomenda"
                 :disabled="actions.busy.value"
                 data-preorder-cancel
                 @click="redoAfterCancel = false; cancelOpen = true"
-              >
-                <Icon name="lucide:x" class="size-4" />
-                Cancelar encomenda
-              </UiButton>
+              />
             </div>
           </aside>
 
@@ -363,5 +383,17 @@ function goBack() {
         />
       </template>
     </div>
+
+    <!-- CELULAR: o gesto principal na base, ao alcance do polegar (a mesa o tem no
+         painel do Balcão). -->
+    <template v-if="handOverBar" #footer>
+      <OperatorActionBar
+        :action="handOverBar"
+        :context-label="card ? customerLine(card) : ''"
+        :context-value="card ? moneyLine(card) : ''"
+        label="Entregar a encomenda"
+        data-preorder-hand-over-bar
+      />
+    </template>
   </PosPreordersShell>
 </template>
