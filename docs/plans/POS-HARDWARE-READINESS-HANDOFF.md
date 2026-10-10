@@ -45,7 +45,7 @@ com `printer` / `cash_drawer` / `scanner` / `payment_terminal` /
 guarda o nome de um adapter. O que ele precisa passar a guardar, por terminal:
 
 - **impressora**: fila/nome no SO, largura do rolo (80mm aqui, mas 58mm existe no
-  mundo), se imprime automático ao fechar venda;
+  mundo), se imprime automático ao validar a venda;
 - **gaveta**: adapter (`manual` = abre com a chave, `agent` = kick pelo agente),
   endereço do agente, pulso;
 - **leitor**: prefixo/sufixo do código, se o crachá identifica ou autoriza.

@@ -68,8 +68,14 @@ npm run build
 
 O PDV opta explicitamente pela capability PWA do `operator-kit`: abre em modo
 standalone, mantém a tela acordada quando o navegador permite e oferece atalhos
-para Venda e Caixa. A atualização só é aplicada após confirmação do operador;
-nenhuma venda ou resposta de API é mantida offline.
+para Venda e Caixa. A atualização só é aplicada após confirmação do operador.
+
+Sem conexão, o balcão continua vendendo em dinheiro e maquininha: ao tocar em
+**Validar**, a venda fica guardada neste dispositivo (fila local em IndexedDB) e é
+enviada sozinha quando a rede volta; a nota fiscal sai depois do envio. O caixa só
+fecha com a fila vazia. Pix, link, cartão online, desconto, encomenda e envio à
+cozinha esperam a conexão. Desenho e decisões em
+[`docs/plans/WP-PDV-SEM-CONEXAO.md`](../../docs/plans/WP-PDV-SEM-CONEXAO.md).
 
 Gere os ícones a partir do símbolo mestre versionado e rode o gate na raiz do
 repositório, sempre com Node 22:
@@ -81,7 +87,8 @@ make pwa app=pos
 ```
 
 O gate falha se o service worker cachear API, eventos, Admin, HTML ou navegação.
-Sem rede, o PDV mostra apenas um casco informativo e não simula operação offline.
+Por isso, recarregar a tela sem rede abre só um aviso (`public/offline.html`): as
+vendas guardadas continuam no dispositivo e sobem quando a tela abre com rede.
 
 ## Tests
 
