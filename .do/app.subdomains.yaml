@@ -1,5 +1,10 @@
 # DigitalOcean App Platform blueprint — Fase 1 do headless: cutover por SUBDOMÍNIOS.
 #
+# ⚠️ NÃO é o caminho da virada (D-029, 10/10/2026): a loja vira produção no
+#    próprio app vivo `shopman-nelson`, mesmo banco, trocando as chaves do spec
+#    vivo (docs/runbooks/go-live-cutover.md). Este arquivo fica como template
+#    para um app novo, e os bancos que ele anexa não existem.
+#
 # ⚠️ Este é o TEMPLATE de PRODUÇÃO (domínio no apex real). Para validar primeiro
 #    em ALPHA use o blueprint de referência `.do/app.alpha-subdomains.yaml`
 #    (site em `www.nelsonboulangerie.com.br`; Pix mock, cartão Stripe em teste).
@@ -1133,6 +1138,11 @@ jobs:
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb
 
+# ⚠️ REFERÊNCIA MORTA (D-029, 10/10/2026): `shopman-headless-postgres` e
+#    `shopman-headless-cache` não existem na conta. A loja vira produção no
+#    PRÓPRIO app vivo (`shopman-nelson`), no cluster que ele já usa; este bloco
+#    só serve a quem criar um app NOVO a partir do template, e aí os nomes são
+#    os do cluster que essa pessoa criar.
 databases:
   - name: postgres
     engine: PG

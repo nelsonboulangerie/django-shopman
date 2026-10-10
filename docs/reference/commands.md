@@ -1634,6 +1634,51 @@ check falhou ou, em modo estrito, se há bloqueio externo). O JSON ganha
 make production-readiness read_only=1 json=1 manual_qa=docs/reports/manual-qa.md preprod_url=https://staging.example.com
 ```
 
+#### Numa worktree ou na CI, sem segredo
+
+Os alvos de prontidão rodam igual no checkout principal, numa worktree e na CI.
+Numa worktree (sem `.venv`), usam o `.venv` da árvore principal com o código
+da worktree à frente no `PYTHONPATH`. Sem `.env` e sem `DJANGO_SECRET_KEY`, a
+medição **local** roda no perfil de desenvolvimento com chave descartável (o
+`settings` recusa subir fora de DEBUG sem segredo, e localmente não há segredo
+a medir); o que vier do ambiente, como na CI, é preservado. Banco vazio não
+derruba mais o relatório: cada passo que quebra vira uma linha `FAIL` com o
+motivo (e a dica `make migrate seed` quando faltam tabelas), e os demais passos
+seguem medindo.
+
+#### Modo alvo (`target=1`): o app VIVO, não esta árvore
+
+A medição local responde sobre o `settings` do processo que a roda, nunca sobre
+o app que atende a loja. Para a linha `production-readiness` da
+[matriz canônica](../plans/GO-LIVE-READINESS-PLAN.md), use o modo alvo
+(`scripts/release_readiness_target.py`). Ele não importa Django nem toca banco:
+
+- lê o spec vivo com `doctl apps spec get` (só leitura; nenhum `update`);
+- avalia o ambiente efetivo (app + componente) de cada componente que roda
+  Django: perfil `production` (as mesmas regras do local), dinheiro e nota
+  (`EFI_SANDBOX=false`, `FOCUS_NFE_ENVIRONMENT=producao`, Stripe `pk_live_`;
+  ausência reprova, porque o default do `settings` é de ensaio), as chaves que
+  só se ligam no corte (`SHOPMAN_ADMIN_REQUIRE_2FA`, `SHOPMAN_GO_LIVE`) e o job
+  de release com `migration_safety` antes do `migrate`;
+- sonda `/health/` e `/ready/` do domínio da API (`/ready/` com qualquer
+  dependência fora de `ok` reprova, mesmo com 200).
+
+Valor de segredo nunca é lido nem impresso; regra que dependa de um vira
+`WARN`. É sempre estrito: sai 1 enquanto houver qualquer `FAIL`.
+
+| Variável/flag | Default | Descrição |
+|---------------|---------|-----------|
+| `target=1` / `--target` | — | Liga o modo alvo |
+| `context=...` / `--doctl-context=...` | `SHOPMAN_DOCTL_CONTEXT` | Contexto do `doctl` (hoje `shopman-do-app-admin`) |
+| `app=...` / `--target-app=...` | `shopman-nelson` | Nome ou UUID do app |
+| `target_spec=...` / `--target-spec=...` | — | Spec já baixado (pula o `doctl`) |
+| `target_url=...` / `--target-url=...` | `https://api.boulangerie.com.br` | Base das sondas |
+
+```bash
+make production-readiness target=1 context=shopman-do-app-admin
+make production-readiness target=1 context=shopman-do-app-admin json=1
+```
+
 ---
 
 ### export_backup

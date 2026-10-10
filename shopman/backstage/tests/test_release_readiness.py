@@ -564,3 +564,25 @@ def test_main_read_only_flag_reaches_build_report_and_keeps_exit_semantics(monke
         ),
     )
     assert readiness.main(["--read-only"]) == 0
+
+
+@pytest.mark.django_db
+def test_a_crashing_step_becomes_a_failed_line_and_the_report_goes_on(monkeypatch):
+    from django.db.utils import OperationalError
+
+    def empty_database(**kwargs):
+        raise OperationalError("no such table: shop_shop")
+
+    empty_database.__name__ = "_storefront_contact_check"
+    monkeypatch.setattr(readiness, "_storefront_contact_check", empty_database)
+
+    report = readiness.build_report(profile="pilot", read_only=True)
+
+    by_id = {check.id: check for check in report.checks}
+    crashed = by_id["readiness.storefront_contact_check"]
+    assert crashed.status == "failed"
+    assert "no such table" in crashed.message
+    assert "make migrate seed" in crashed.details["hint"]
+    # Os passos seguintes continuam medindo.
+    assert "rules.load" in by_id
+    assert report.local_failed
