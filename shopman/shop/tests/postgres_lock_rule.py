@@ -80,3 +80,9 @@ def install() -> None:
         return
     sql_compiler.SQLCompiler.get_from_clause = _get_from_clause_remembering_aliases
     sql_compiler.SQLCompiler.as_sql = _as_sql_with_postgres_lock_rule
+
+
+def pytest_configure(config) -> None:
+    """Também serve de plugin: ``pytest -p shopman.shop.tests.postgres_lock_rule``
+    liga a mesma regra nas suítes dos pacotes do Core, que têm conftest próprio."""
+    install()
