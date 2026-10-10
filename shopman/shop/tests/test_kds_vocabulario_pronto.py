@@ -24,7 +24,9 @@ from shopman.shop.services import kds as kds_core
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 KDS_SERVICE = Path(kds_core.__file__)
-KDS_BOARD_PAGE = REPO_ROOT / "surfaces" / "kds-nuxt" / "app" / "pages" / "[ref].vue"
+# O rótulo da ciência mora na apresentação do quadro (``changeAckLabel``): é o botão
+# do card que mudou e da barra do celular (dono, 10/10/2026).
+KDS_BOARD_PAGE = REPO_ROOT / "surfaces" / "kds-nuxt" / "app" / "presentation" / "board.ts"
 
 # Montadas em pedaços para este arquivo não se reprovar se alguém o varrer.
 BANNED = re.compile("|".join(["final" + "iz", r"\bCi" + r"ente\b"]), re.IGNORECASE)
