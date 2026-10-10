@@ -43,7 +43,6 @@ const CEILING: Record<string, { max: number; reason: string; arriving?: string }
     max: 1,
     reason: "o aviso de versão nova do app instalado, acima da barra inferior",
   },
-  "pos-nuxt/app/pages/session/closing.vue": { max: 3, reason: "dívida: Fim do dia, onda do PDV" },
   "pos-nuxt/app/pages/settings/seating.vue": { max: 1, reason: "dívida: Ajustes do salão, onda do PDV" },
 };
 
