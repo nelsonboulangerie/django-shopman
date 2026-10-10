@@ -149,11 +149,11 @@ def test_material_and_supplier_open_the_purchase_base(client):
     search = _search(client, _admin(), "man")
     [material] = _group(search, "materials")
     assert material["app"] == "purchase"
-    assert material["url"] == "https://compras.example.test/?view=base&material=MANTEIGA-82"
+    assert material["url"] == "https://compras.example.test/base/materials/MANTEIGA-82"
     search = _search(client, _admin(), "anaconda")
     [supplier] = _group(search, "suppliers")
     assert supplier["title"] == "Moinho Anaconda"
-    assert supplier["url"] == "https://compras.example.test/?view=base&supplier=MOINHO-ANACONDA"
+    assert supplier["url"] == "https://compras.example.test/base/suppliers/MOINHO-ANACONDA"
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)

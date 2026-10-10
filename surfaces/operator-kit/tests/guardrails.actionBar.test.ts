@@ -45,7 +45,6 @@ const CEILING: Record<string, { max: number; reason: string; arriving?: string }
   },
   "pos-nuxt/app/pages/session/closing.vue": { max: 3, reason: "dívida: Fim do dia, onda do PDV" },
   "pos-nuxt/app/pages/settings/seating.vue": { max: 1, reason: "dívida: Ajustes do salão, onda do PDV" },
-  "purchase-nuxt/app/pages/index.vue": { max: 2, reason: "dívida: Receber e item, onda do Compras" },
 };
 
 function vueFiles(dir: string, found: string[] = []): string[] {

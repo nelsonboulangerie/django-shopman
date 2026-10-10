@@ -177,107 +177,120 @@ const matchedNames = computed(() => props.view.matched.map((preview) => receiptL
   <section class="space-y-3" aria-label="Conferência por exceção" data-exception-flow>
     <!-- c. Um item não bate: progresso e o item, no topo. -->
     <template v-if="view.exceptions.length">
-      <div class="rounded-2xl border border-border bg-card p-4" data-exception-progress>
+      <NuxtCard data-exception-progress>
         <div class="flex items-baseline justify-between gap-2">
-          <h2 class="text-[19px] leading-snug font-semibold">{{ headline }}</h2>
-          <span v-if="view.perishables.length" class="op-label text-muted-foreground tnum">validade {{ view.expiryDone }} de {{ view.perishables.length }}</span>
+          <h2 class="text-base font-semibold">{{ headline }}</h2>
+          <span v-if="view.perishables.length" class="text-xs text-muted-foreground tnum">validade {{ view.expiryDone }} de {{ view.perishables.length }}</span>
         </div>
         <div class="mt-2 flex h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true">
           <span class="h-full bg-success" :style="{ width: `${(view.matched.length / Math.max(1, lineCount)) * 100}%` }" />
           <span class="h-full bg-warning" :style="{ width: `${(view.exceptions.length / Math.max(1, lineCount)) * 100}%` }" />
         </div>
-      </div>
+      </NuxtCard>
 
-      <div v-if="currentException" class="rounded-2xl border-2 border-warning/70 bg-card p-4" :data-exception-item="currentException.line.id">
+      <NuxtCard v-if="currentException" class="ring-2 ring-warning" :data-exception-item="currentException.line.id">
         <div class="flex items-start gap-2.5">
-          <Icon name="lucide:triangle-alert" class="mt-0.5 size-6 shrink-0 text-warning" />
+          <Icon name="lucide:triangle-alert" class="mt-0.5 size-5 shrink-0 text-warning" />
           <div class="min-w-0 flex-1">
-            <h3 class="truncate text-[18px] leading-snug font-semibold">{{ receiptLineLabel(currentException) }}</h3>
-            <p class="op-label font-normal text-muted-foreground tnum">{{ exceptionDigest(currentException) }}</p>
+            <h3 class="text-base font-semibold" :title="receiptLineLabel(currentException)">{{ receiptLineLabel(currentException) }}</h3>
+            <p class="text-sm text-muted-foreground tnum">{{ exceptionDigest(currentException) }}</p>
           </div>
-          <button type="button" class="inline-flex h-10 shrink-0 items-center rounded-full px-3 op-label font-semibold text-primary hover:bg-accent" @click="emit('open', currentException.line.id)">
-            Detalhes
-          </button>
+          <NuxtButton variant="ghost" label="Detalhes" @click="emit('open', currentException.line.id)" />
         </div>
         <ReceiptDifference class="mt-3" :preview="currentException" @reason="emit('reason', currentException.line.id, $event)" />
         <div v-if="receiptLineDifference(currentException.line)" class="mt-3 flex items-center gap-3">
-          <button type="button" class="grid size-12 shrink-0 place-items-center rounded-xl border border-border bg-card hover:bg-accent" aria-label="Um a menos" :disabled="pending" @click="bumpException(-1)">
-            <Icon name="lucide:minus" class="size-5" />
-          </button>
-          <p class="min-w-0 flex-1 text-center op-title tnum">{{ currentException.line.purchaseQty }} {{ exceptionUnit }} contados</p>
-          <button type="button" class="grid size-12 shrink-0 place-items-center rounded-xl border border-border bg-card hover:bg-accent" aria-label="Um a mais" :disabled="pending" @click="bumpException(1)">
-            <Icon name="lucide:plus" class="size-5" />
-          </button>
+          <NuxtButton
+            size="xl"
+            variant="outline"
+            color="neutral"
+            square
+            icon="i-lucide-minus"
+            aria-label="Um a menos"
+            :disabled="pending"
+            @click="bumpException(-1)"
+          />
+          <p class="min-w-0 flex-1 text-center text-base font-semibold tnum">{{ currentException.line.purchaseQty }} {{ exceptionUnit }} contados</p>
+          <NuxtButton
+            size="xl"
+            variant="outline"
+            color="neutral"
+            square
+            icon="i-lucide-plus"
+            aria-label="Um a mais"
+            :disabled="pending"
+            @click="bumpException(1)"
+          />
         </div>
         <ul v-if="view.exceptions.length > 1" class="mt-3 grid grid-cols-1 gap-2">
           <li v-for="preview in view.exceptions.filter((item) => item.line.id !== currentException?.line.id)" :key="`exception-${preview.line.id}`">
-            <button
-              type="button"
-              class="flex min-h-12 w-full min-w-0 items-center gap-3 rounded-xl border border-warning/45 bg-card px-3 py-2 text-left hover:bg-accent"
+            <NuxtButton
+              size="xl"
+              variant="outline"
+              color="neutral"
+              block
+              class="justify-start text-left"
               @click="emit('open', preview.line.id)"
             >
               <Icon name="lucide:triangle-alert" class="size-5 shrink-0 text-warning" />
-              <span class="min-w-0 flex-1 truncate op-label font-semibold">{{ receiptLineLabel(preview) }}</span>
-              <span class="shrink-0 op-micro text-muted-foreground tnum">{{ exceptionDigest(preview) }}</span>
-            </button>
+              <span class="min-w-0 flex-1 text-sm font-semibold" :title="receiptLineLabel(preview)">{{ receiptLineLabel(preview) }}</span>
+              <span class="shrink-0 text-xs font-normal text-muted-foreground tnum">{{ exceptionDigest(preview) }}</span>
+            </NuxtButton>
           </li>
         </ul>
-      </div>
+      </NuxtCard>
     </template>
 
     <!-- a. O que o sistema já sabe (some quando há exceção: vira o cartão recolhido abaixo). -->
-    <div
-      v-if="!view.exceptions.length && !volumesSettled"
-      class="rounded-2xl border border-success/35 bg-success/8 p-4"
-      data-exception-verdict
-    >
+    <NuxtCard v-if="!view.exceptions.length && !volumesSettled" data-exception-verdict>
       <div class="flex items-start gap-3">
-        <span class="grid size-11 shrink-0 place-items-center rounded-full bg-success text-white">
-          <Icon name="lucide:check-check" class="size-6" />
+        <span class="grid size-10 shrink-0 place-items-center rounded-full bg-success text-white">
+          <Icon name="lucide:check-check" class="size-5" />
         </span>
         <div class="min-w-0 flex-1">
-          <h2 class="text-[19px] leading-snug font-semibold">{{ headline }}</h2>
-          <p class="mt-0.5 op-body tnum">
+          <h2 class="text-base font-semibold">{{ headline }}</h2>
+          <p class="mt-0.5 text-sm tnum">
             {{ lineCount }} {{ lineCount === 1 ? "item" : "itens" }}<template v-if="totalCostQ > 0"> · {{ formatMoney(totalCostQ) }}</template>
           </p>
         </div>
       </div>
       <ul class="mt-3 grid gap-1.5" data-exception-facts>
-        <li v-for="fact in autoFacts" :key="fact" class="flex items-center gap-2 text-[14px] leading-5 text-foreground/85">
+        <li v-for="fact in autoFacts" :key="fact" class="flex items-center gap-2 text-sm">
           <Icon name="lucide:sparkles" class="size-4 shrink-0 text-muted-foreground" />
           {{ fact }}
         </li>
       </ul>
-      <button
-        type="button"
-        class="mt-3 inline-flex h-10 items-center gap-1.5 rounded-full px-1 op-label font-semibold text-primary"
+      <NuxtButton
+        class="mt-3"
+        variant="ghost"
+        :trailing-icon="matchedExpanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+        :label="`Ver os ${lineCount} itens`"
         :aria-expanded="matchedExpanded"
         data-exception-see-items
         @click="matchedExpanded = !matchedExpanded"
-      >
-        Ver os {{ lineCount }} itens
-        <Icon :name="matchedExpanded ? 'lucide:chevron-up' : 'lucide:chevron-down'" class="size-4" />
-      </button>
+      />
       <ul v-if="matchedExpanded" class="mt-1 grid grid-cols-1 gap-2">
         <li v-for="preview in view.matched" :key="`matched-${preview.line.id}`">
-          <button
-            type="button"
-            class="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-xl border border-border bg-card px-3 text-left hover:bg-accent"
+          <NuxtButton
+            size="xl"
+            variant="outline"
+            color="neutral"
+            block
+            trailing-icon="i-lucide-chevron-right"
+            class="justify-start text-left"
             @click="emit('open', preview.line.id)"
           >
-            <span class="min-w-0 flex-1 truncate op-label font-semibold">{{ receiptLineLabel(preview) }}</span>
-            <span class="shrink-0 op-micro text-muted-foreground tnum">{{ receiptSettledSummary(preview) }}</span>
-            <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
-          </button>
+            <span class="min-w-0 flex-1 text-sm font-semibold" :title="receiptLineLabel(preview)">{{ receiptLineLabel(preview) }}</span>
+            <span class="shrink-0 text-xs font-normal text-muted-foreground tnum">{{ receiptSettledSummary(preview) }}</span>
+          </NuxtButton>
         </li>
       </ul>
-    </div>
+    </NuxtCard>
 
     <!-- b. A validade é incontornável: com os volumes contados, ela é o foco no topo. -->
     <div v-if="view.perishables.length && (volumesSettled || view.exceptions.length)" class="space-y-2" data-exception-expiry>
       <div class="flex items-baseline justify-between gap-2 px-0.5">
-        <h3 class="text-[19px] leading-snug font-semibold">{{ view.nextExpiry ? "Falta só a validade" : "Validades" }}</h3>
-        <span class="op-body font-semibold tnum">{{ view.expiryDone }} de {{ view.perishables.length }}</span>
+        <h3 class="text-base font-semibold">{{ view.nextExpiry ? "Falta só a validade" : "Validades" }}</h3>
+        <span class="text-sm font-semibold tnum">{{ view.expiryDone }} de {{ view.perishables.length }}</span>
       </div>
       <div class="flex gap-1.5" aria-hidden="true">
         <span
@@ -288,87 +301,92 @@ const matchedNames = computed(() => props.view.matched.map((preview) => receiptL
         />
       </div>
 
-      <div v-if="currentExpiry" class="rounded-2xl border-2 border-primary bg-card p-3" :data-receipt-expiry="currentExpiry.line.id">
+      <NuxtCard v-if="currentExpiry" class="ring-2 ring-primary" :data-receipt-expiry="currentExpiry.line.id">
         <div class="flex items-center gap-2.5">
           <span class="grid size-9 shrink-0 place-items-center rounded-full bg-primary/12 text-primary">
             <Icon name="lucide:calendar-clock" class="size-5" />
           </span>
           <div class="min-w-0 flex-1">
-            <p class="truncate op-title">{{ receiptLineLabel(currentExpiry) }}</p>
-            <p class="op-label font-normal text-muted-foreground tnum">{{ receiptSettledSummary(currentExpiry) }} · vence quando?</p>
+            <p class="text-base font-semibold" :title="receiptLineLabel(currentExpiry)">{{ receiptLineLabel(currentExpiry) }}</p>
+            <p class="text-sm text-muted-foreground tnum">{{ receiptSettledSummary(currentExpiry) }} · vence quando?</p>
           </div>
         </div>
         <div class="mt-3 grid grid-cols-2 gap-2">
-          <button
+          <NuxtButton
             v-for="(shortcut, index) in currentShortcuts"
             :key="shortcut.key"
-            type="button"
-            class="col-span-2 flex min-h-12 w-full items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left hover:bg-accent disabled:opacity-50"
-            :class="index === 0 ? 'border-primary/50 bg-primary/6' : 'border-border bg-card'"
+            size="xl"
+            variant="outline"
+            color="neutral"
+            :active="index === 0"
+            active-variant="outline"
+            active-color="primary"
+            block
+            :icon="shortcut.key === 'last' ? 'i-lucide-history' : 'i-lucide-calendar-plus'"
+            class="col-span-2 justify-start text-left"
             :disabled="pending"
             :data-expiry-shortcut="shortcut.key"
             @click="chooseExpiry(currentExpiry.line.id, shortcut.date)"
           >
-            <Icon :name="shortcut.key === 'last' ? 'lucide:history' : 'lucide:calendar-plus'" class="size-5 shrink-0" :class="index === 0 ? 'text-primary' : 'text-muted-foreground'" />
-            <span class="flex-1 text-[14px] leading-[17px] font-semibold">{{ shortcut.label }}</span>
-            <span class="text-[13px] leading-4 text-muted-foreground tnum">{{ shortcut.caption }}</span>
-          </button>
-          <button
-            type="button"
-            class="flex min-h-12 w-full items-center gap-2 rounded-xl border border-border bg-card px-2.5 text-left text-[14px] font-semibold hover:bg-accent disabled:opacity-50"
+            <span class="flex-1 text-sm font-semibold">{{ shortcut.label }}</span>
+            <span class="text-xs font-normal text-muted-foreground tnum">{{ shortcut.caption }}</span>
+          </NuxtButton>
+          <NuxtButton
+            size="xl"
+            variant="outline"
+            color="neutral"
+            block
+            icon="i-lucide-scan-text"
+            class="justify-start text-left"
             :disabled="pending"
             data-expiry-read-package
             @click="emit('read-package', currentExpiry.line.id)"
           >
-            <Icon name="lucide:scan-text" class="size-5 shrink-0 text-muted-foreground" />
-            Ler da embalagem
-          </button>
-          <button
+            <!-- Rótulo no slot: o do Nuxt UI corta ("Ler da emba…") a 390 px. -->
+            <span class="text-sm font-medium">Ler da embalagem</span>
+          </NuxtButton>
+          <NuxtButton
             v-if="!otherDateOpen"
-            type="button"
-            class="flex min-h-12 w-full items-center gap-2 rounded-xl border border-border bg-card px-2.5 text-left text-[14px] font-semibold hover:bg-accent"
+            size="xl"
+            variant="outline"
+            color="neutral"
+            block
+            icon="i-lucide-calendar"
+            label="Outra data"
+            class="justify-start"
             @click="otherDateOpen = true"
-          >
-            <Icon name="lucide:calendar" class="size-5 shrink-0 text-muted-foreground" />
-            Outra data
-          </button>
+          />
           <OperatorDayPicker v-else v-model="otherDate" class="col-span-2" :today="todayIso" label="Validade" />
         </div>
-        <p class="mt-2 op-label font-normal text-muted-foreground">Um toque grava e passa para o próximo.</p>
-      </div>
+        <p class="mt-2 text-sm text-muted-foreground">Um toque grava e passa para o próximo.</p>
+      </NuxtCard>
 
       <ul v-if="expiryDoneList.length || noExpiryItems.length" class="grid grid-cols-1 gap-2">
         <li
           v-for="preview in expiryDoneList"
           :key="`expiry-${preview.line.id}`"
-          class="flex min-h-12 items-center gap-3 rounded-xl border border-success/30 bg-success/5 px-3 py-1.5"
+          class="flex min-h-12 items-center gap-3 rounded-md border border-success/30 bg-success/5 px-3 py-1.5"
         >
-          <Icon name="lucide:circle-check-big" class="size-6 shrink-0 text-success" />
+          <Icon name="lucide:circle-check-big" class="size-5 shrink-0 text-success" />
           <span class="min-w-0 flex-1">
-            <span class="block truncate text-[15px] font-semibold">{{ receiptLineLabel(preview) }}</span>
-            <span class="block op-label font-normal text-muted-foreground tnum">
+            <span class="block text-sm font-semibold" :title="receiptLineLabel(preview)">{{ receiptLineLabel(preview) }}</span>
+            <span class="block text-xs text-muted-foreground tnum">
               Vence {{ formatShortDate(preview.line.expiryDate) }}<template v-if="preview.line.expiryFromInvoice"> · veio na nota</template><template v-else-if="preview.line.invoiceLot"> · lote {{ preview.line.invoiceLot }}</template>
             </span>
           </span>
-          <button
-            type="button"
-            class="inline-flex h-8 shrink-0 items-center rounded-full px-3 text-[14px] font-semibold text-primary hover:bg-accent"
-            @click="swapExpiry(preview.line.id)"
-          >
-            Trocar
-          </button>
+          <NuxtButton variant="ghost" label="Trocar" @click="swapExpiry(preview.line.id)" />
         </li>
         <li
           v-if="noExpiryItems.length"
-          class="flex min-h-12 items-center gap-3 rounded-xl border border-border bg-card px-3 py-1.5"
+          class="flex min-h-12 items-center gap-3 rounded-md border border-border bg-card px-3 py-1.5"
           data-expiry-none
         >
           <Icon name="lucide:check" class="size-5 shrink-0 text-muted-foreground" />
-          <span class="min-w-0 flex-1 truncate text-[14px]">
+          <span class="min-w-0 flex-1 text-sm" :title="noExpirySummary">
             <b class="font-semibold">{{ noExpiryItems.length }} sem validade</b>
             <span class="text-muted-foreground"> {{ noExpirySummary }}</span>
           </span>
-          <span class="shrink-0 rounded-full bg-muted px-2 op-micro font-semibold">ok</span>
+          <NuxtBadge color="success" label="ok" />
         </li>
       </ul>
     </div>
@@ -376,101 +394,111 @@ const matchedNames = computed(() => props.view.matched.map((preview) => receiptL
     <!-- Contei os volumes: o único ato físico. Contado e batendo, recolhe numa linha. -->
     <div
       v-if="view.available && volumesSettled"
-      class="flex min-h-12 items-center gap-3 rounded-xl border border-success/30 bg-success/5 px-3"
+      class="flex min-h-12 items-center gap-3 rounded-md border border-success/30 bg-success/5 px-3"
       data-volumes-settled
     >
       <Icon name="lucide:package-check" class="size-5 shrink-0 text-success" />
-      <span class="min-w-0 flex-1 op-label">
+      <span class="min-w-0 flex-1 text-sm">
         <b class="tnum">{{ view.countedVolumes }} de {{ view.expectedVolumes }}</b> volumes contados
       </span>
-      <button type="button" class="inline-flex h-10 shrink-0 items-center rounded-full px-3 op-label font-semibold text-primary hover:bg-accent" @click="emit('count', null)">
-        Recontar
-      </button>
+      <NuxtButton variant="ghost" label="Recontar" @click="emit('count', null)" />
     </div>
-    <div
+    <NuxtCard
       v-else-if="view.available"
       data-receipt-anchor="volumes"
-      class="scroll-mt-4 rounded-2xl bg-card p-4 transition-shadow"
-      :class="[countMismatch ? 'border-2 border-destructive' : 'border-2 border-primary', volumesRing]"
+      class="scroll-mt-4 transition-shadow"
+      :class="[countMismatch ? 'ring-2 ring-destructive' : 'ring-2 ring-primary', volumesRing]"
     >
-      <p class="op-eyebrow" :class="countMismatch ? 'text-destructive' : 'text-primary'">O que só você vê</p>
-      <h3 class="mt-1 text-[18px] leading-snug font-semibold">Contei os volumes</h3>
-      <p class="op-label font-normal text-muted-foreground">{{ volumesSource }}</p>
+      <p class="text-xs font-semibold" :class="countMismatch ? 'text-destructive' : 'text-primary'">O que só você vê</p>
+      <h3 class="mt-1 text-base font-semibold">Contei os volumes</h3>
+      <p class="text-sm text-muted-foreground">{{ volumesSource }}</p>
 
       <div class="mt-3 flex items-center gap-3">
-        <button
-          type="button"
-          class="grid size-14 shrink-0 place-items-center rounded-[14px] border border-border bg-card hover:bg-accent disabled:opacity-50"
+        <NuxtButton
+          size="xl"
+          variant="outline"
+          color="neutral"
+          square
+          icon="i-lucide-minus"
           aria-label="Um volume a menos"
           :disabled="pending || draftCount <= 0"
           @click="stepCount(-1)"
-        >
-          <Icon name="lucide:minus" class="size-6" />
-        </button>
+        />
         <div
-          class="flex h-16 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border tnum"
+          class="flex h-14 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border tnum"
           :class="countMatches ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'"
           aria-live="polite"
         >
-          <span class="text-[34px] leading-none font-semibold">{{ draftCount }}</span>
-          <span class="text-[17px] font-medium text-muted-foreground">de {{ view.expectedVolumes }}</span>
+          <span class="text-2xl leading-none font-semibold">{{ draftCount }}</span>
+          <span class="text-base font-medium text-muted-foreground">de {{ view.expectedVolumes }}</span>
           <Icon v-if="countMatches" name="lucide:circle-check" class="ml-1 size-5 text-success" />
         </div>
-        <button
-          type="button"
-          class="grid size-14 shrink-0 place-items-center rounded-[14px] border border-border bg-card hover:bg-accent disabled:opacity-50"
+        <NuxtButton
+          size="xl"
+          variant="outline"
+          color="neutral"
+          square
+          icon="i-lucide-plus"
           aria-label="Um volume a mais"
           :disabled="pending"
           @click="stepCount(1)"
-        >
-          <Icon name="lucide:plus" class="size-6" />
-        </button>
+        />
       </div>
 
-      <button
-        type="button"
-        class="mt-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 op-title hover:bg-accent disabled:opacity-50"
+      <NuxtButton
+        class="mt-3 justify-center"
+        size="xl"
+        variant="outline"
+        color="neutral"
+        block
+        icon="i-lucide-scan-barcode"
+        label="Bipar cada volume"
         :disabled="pending"
         data-scan-volumes
         @click="emit('scan-volumes')"
-      >
-        <Icon name="lucide:scan-barcode" class="size-5" />
-        Bipar cada volume
-      </button>
+      />
 
-      <button
+      <NuxtButton
         v-if="!countDeclared && !countInThumb"
-        type="button"
-        class="mt-2 inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 op-action text-primary-foreground disabled:opacity-50"
+        class="mt-2 justify-center"
+        size="xl"
+        block
+        icon="i-lucide-check"
+        :label="`Contei ${draftCount} ${draftCount === 1 ? 'volume' : 'volumes'}`"
         :disabled="pending || draftCount <= 0"
         @click="emit('count', draftCount)"
-      >
-        <Icon name="lucide:check" class="size-5" />
-        Contei {{ draftCount }} {{ draftCount === 1 ? "volume" : "volumes" }}
-      </button>
-      <p v-if="countMismatch" class="mt-3 flex items-start gap-2 rounded-xl bg-destructive/10 px-3 py-2.5 op-label text-destructive">
-        <Icon name="lucide:circle-alert" class="mt-0.5 size-5 shrink-0" />
-        Contou {{ view.countedVolumes }} de {{ view.expectedVolumes }}. Abra o item que chegou diferente e corrija a quantidade que chegou.
-      </p>
+      />
+      <NuxtAlert
+        v-if="countMismatch"
+        class="mt-3"
+        variant="subtle"
+        color="error"
+        icon="i-lucide-circle-alert"
+        :title="`Contou ${view.countedVolumes} de ${view.expectedVolumes}.`"
+        description="Abra o item que chegou diferente e corrija a quantidade que chegou."
+      />
 
       <!-- Contagem que não fecha: a lista do que bate vira a lista de onde procurar. -->
       <ul v-if="countMismatch && view.matched.length" class="mt-3 grid grid-cols-1 gap-2">
         <li v-for="preview in view.matched" :key="`count-${preview.line.id}`">
-          <button
-            type="button"
-            class="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-xl border border-border bg-card px-3 text-left hover:bg-accent"
+          <NuxtButton
+            size="xl"
+            variant="outline"
+            color="neutral"
+            block
+            trailing-icon="i-lucide-chevron-right"
+            class="justify-start text-left"
             @click="emit('open', preview.line.id)"
           >
-            <span class="min-w-0 flex-1 truncate op-label font-semibold">{{ receiptLineLabel(preview) }}</span>
-            <span class="shrink-0 op-micro text-muted-foreground tnum">{{ receiptSettledSummary(preview) }}</span>
-            <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
-          </button>
+            <span class="min-w-0 flex-1 text-sm font-semibold" :title="receiptLineLabel(preview)">{{ receiptLineLabel(preview) }}</span>
+            <span class="shrink-0 text-xs font-normal text-muted-foreground tnum">{{ receiptSettledSummary(preview) }}</span>
+          </NuxtButton>
         </li>
       </ul>
-    </div>
+    </NuxtCard>
     <p
       v-if="view.available && !volumesSettled && pendingExpiries > 0"
-      class="flex items-center gap-2 px-1 op-label font-normal text-muted-foreground"
+      class="flex items-center gap-2 px-1 text-sm text-muted-foreground"
       data-volumes-next
     >
       <Icon name="lucide:calendar-clock" class="size-4 shrink-0" />
@@ -478,43 +506,50 @@ const matchedNames = computed(() => props.view.matched.map((preview) => receiptL
     </p>
 
     <!-- c. O que bate, recolhido num cartão (só quando há exceção). -->
-    <div v-if="view.exceptions.length && view.matched.length" class="rounded-2xl border border-success/30 bg-success/5" data-exception-matched>
-      <button
-        type="button"
-        class="flex min-h-14 w-full items-center gap-3 px-3 py-2 text-left"
+    <NuxtCard v-if="view.exceptions.length && view.matched.length" data-exception-matched>
+      <NuxtButton
+        variant="ghost"
+        color="neutral"
+        block
+        class="justify-start text-left"
+        :trailing-icon="matchedExpanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
         :aria-expanded="matchedExpanded"
         @click="matchedExpanded = !matchedExpanded"
       >
-        <Icon name="lucide:circle-check-big" class="size-6 shrink-0 text-success" />
+        <Icon name="lucide:circle-check-big" class="size-5 shrink-0 text-success" />
         <span class="min-w-0 flex-1">
-          <span class="block op-title">{{ view.matched.length }} {{ view.matched.length === 1 ? "item bate" : "itens batem" }} com a nota</span>
-          <span class="block truncate op-label font-normal text-muted-foreground">{{ matchedNames }}</span>
+          <span class="block text-base font-semibold">{{ view.matched.length }} {{ view.matched.length === 1 ? "item bate" : "itens batem" }} com a nota</span>
+          <span class="block text-sm font-normal text-muted-foreground" :title="matchedNames">{{ matchedNames }}</span>
         </span>
-        <Icon :name="matchedExpanded ? 'lucide:chevron-up' : 'lucide:chevron-down'" class="size-5 shrink-0 text-muted-foreground" />
-      </button>
-      <ul v-if="matchedExpanded" class="grid grid-cols-1 gap-2 px-3 pb-3">
+      </NuxtButton>
+      <ul v-if="matchedExpanded" class="mt-2 grid grid-cols-1 gap-2">
         <li v-for="preview in view.matched" :key="`m-${preview.line.id}`">
-          <button
-            type="button"
-            class="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-xl border border-border bg-card px-3 text-left hover:bg-accent"
+          <NuxtButton
+            size="xl"
+            variant="outline"
+            color="neutral"
+            block
+            class="justify-start text-left"
             @click="emit('open', preview.line.id)"
           >
-            <span class="min-w-0 flex-1 truncate op-label font-semibold">{{ receiptLineLabel(preview) }}</span>
-            <span class="shrink-0 op-micro text-muted-foreground tnum">{{ receiptSettledSummary(preview) }}</span>
-          </button>
+            <span class="min-w-0 flex-1 text-sm font-semibold" :title="receiptLineLabel(preview)">{{ receiptLineLabel(preview) }}</span>
+            <span class="shrink-0 text-xs font-normal text-muted-foreground tnum">{{ receiptSettledSummary(preview) }}</span>
+          </NuxtButton>
         </li>
       </ul>
-    </div>
-    <button
+    </NuxtCard>
+    <NuxtButton
       v-if="currentException"
-      type="button"
-      class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-destructive/30 bg-card px-3 op-title text-destructive hover:bg-destructive/10 disabled:opacity-50"
+      size="xl"
+      variant="outline"
+      color="error"
+      block
+      icon="i-lucide-undo-2"
+      label="Devolver só este item"
+      class="justify-center"
       :disabled="pending"
       data-reject-line
       @click="emit('reject-line', currentException.line.id)"
-    >
-      <Icon name="lucide:undo-2" class="size-5" />
-      Devolver só este item
-    </button>
+    />
   </section>
 </template>

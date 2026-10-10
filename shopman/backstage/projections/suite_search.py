@@ -130,10 +130,10 @@ SCREENS: tuple[_Screen, ...] = (
     _Screen("production", "Relatórios", "/reports", "file-chart-column", "relatorio"),
     _Screen("production", "Timers", "/timers", "timer", "despertador"),
     _Screen("production", "Letreiro", "/board", "tower-control", "painel"),
-    _Screen("purchase", "Painel", "/?view=panel", "layout-dashboard", "compras"),
-    _Screen("purchase", "Comprar", "/?view=buy", "shopping-cart", "pedido de compra reposicao"),
-    _Screen("purchase", "Receber", "/?view=receive", "package-open", "recebimento nota nf conferencia doca"),
-    _Screen("purchase", "Base", "/?view=base", "database", "insumos fornecedores custos"),
+    _Screen("purchase", "Painel", "/", "layout-dashboard", "compras"),
+    _Screen("purchase", "Comprar", "/buy", "shopping-cart", "pedido de compra reposicao"),
+    _Screen("purchase", "Receber", "/receive", "package-open", "recebimento nota nf conferencia doca"),
+    _Screen("purchase", "Base", "/base/materials", "database", "insumos fornecedores custos"),
     _Screen("marketing", "Decisões", "/", "inbox", "fila anuncio revisar"),
     _Screen("marketing", "Agendados", "/scheduled", "calendar-clock", "agenda"),
     _Screen("marketing", "Enviados", "/history", "send", "historico disparos"),
@@ -364,7 +364,7 @@ def _materials(user, query, app, app_label, base):
             place=f"{app_label} › Base",
             title=material.name,
             detail=" · ".join(("insumo", material.sku, f"em {material.get_unit_display()}")),
-            url=_join_url(base, "/", {"view": "base", "material": material.sku}),
+            url=_join_url(base, f"/base/materials/{quote(material.sku, safe='')}"),
             icon="package",
         )
 
@@ -385,7 +385,7 @@ def _suppliers(user, query, app, app_label, base):
             place=f"{app_label} › Base",
             title=title,
             detail=" · ".join(part for part in ("fornecedor", supplier.name if supplier.name != title else "") if part),
-            url=_join_url(base, "/", {"view": "base", "supplier": supplier.ref}),
+            url=_join_url(base, f"/base/suppliers/{quote(supplier.ref, safe='')}"),
             icon="truck",
         )
 

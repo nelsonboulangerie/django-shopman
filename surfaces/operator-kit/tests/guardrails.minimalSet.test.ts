@@ -69,7 +69,6 @@ const CEILING: Record<string, Partial<Record<Rule, number>>> = {
   },
   "pos-nuxt": { arbitraryTextSize: 7 },
   "production-nuxt": { arbitraryTextSize: 8 },
-  "purchase-nuxt": { arbitraryTextSize: 19 },
 };
 
 const BUTTON_SIZES = new Set(["md", "xl"]);

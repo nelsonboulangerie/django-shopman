@@ -174,7 +174,7 @@ export function usePurchaseDesk() {
     if (backendErrorStatus.value === 401) {
       return "Entre novamente para carregar dados reais e registrar ações.";
     }
-    return "Insumos, fornecedores e custos não carregaram. Toque em Atualizar para tentar de novo.";
+    return "Insumos, fornecedores e custos não carregaram.";
   });
 
   const enrichedMaterials = computed(() =>
@@ -280,6 +280,17 @@ export function usePurchaseDesk() {
   );
   const receiptSupplierBlockers = computed(() =>
     receiptIsBlank.value || receiptSupplierRef.value ? [] : ["Definir fornecedor"],
+  );
+  // Conta ITENS travados, não avisos: uma linha que precisa de insumo E de validade é
+  // um item para resolver, não dois bloqueios. O mesmo número no resumo da conferência,
+  // no selo de Receber (barra lateral e barra inferior) e no Painel.
+  const receiptTotalPending = computed(() =>
+    receiptIsBlank.value ? 0 : (
+      receiptPendingLines.value.length +
+      receiptDocumentBlockers.value.length +
+      receiptSupplierBlockers.value.length +
+      (receiptVolumesStep.value ? 1 : 0)
+    ),
   );
   // O gesto que o botao `Confirmar entrada` responde quando ainda nao da.
   const receiptFirstBlocker = computed(() =>
@@ -1249,6 +1260,7 @@ export function usePurchaseDesk() {
     receiptBlockers,
     receiptWatchWarnings,
     receiptPendingLines,
+    receiptTotalPending,
     receiptDocumentBlockers,
     receiptSupplierBlockers,
     receiptConference,

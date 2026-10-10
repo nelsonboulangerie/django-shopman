@@ -64,42 +64,46 @@ describe("C01: a busca da Base aparece (o kit lê $slots no render)", () => {
   });
 });
 
-describe("C02/C04/C05/C06: a Base", () => {
-  const page = app("pages/index.vue");
-  it("Ordenar e o ⋯ na linha do título", () => {
-    expect(page).toContain("data-base-sort");
-    expect(page).toContain(':items="view === \'receive\' ? receiveMenuItems : baseMenuItems"');
+describe("C02/C04/C05/C06: a Base (fase 2)", () => {
+  const page = app("pages/base/materials.vue");
+  it("ordenar pelo cabeçalho da tabela da suíte; o ⋯ como dados do cabeçalho", () => {
+    expect(page).toContain("<OperatorTable");
+    expect(page).toContain("enableSorting: true");
+    expect(page).toContain(':actions="headerActions"');
   });
-  it("etiquetas quebram em vez de cortar; tabela sem largura mínima que estoura o tablet em pé", () => {
+  it("etiquetas quebram em vez de cortar", () => {
     expect(page).toContain("data-base-role-tags");
-    expect(page).not.toContain("min-w-[56rem]");
+    expect(page).not.toContain("truncate");
   });
-  it("celular: segmentado em quatro partes iguais", () => {
-    expect(page).toContain("data-base-tabs-phone");
+  it("sub-seções: lista no celular, abas na mesa, decididas pelo CSS", () => {
+    const sections = app("components/PurchaseBaseSections.vue");
+    expect(sections).toContain("<NuxtSelect");
+    expect(sections).toContain('class="w-44 sm:hidden"');
+    expect(sections).toContain("max-sm:hidden");
   });
 });
 
-describe("C12 a C19: o Receber no celular", () => {
-  const page = app("pages/index.vue");
-  it("voltar e ⋮ na barra do documento, sem Atualizar nem sino nela", () => {
-    const phoneActions = page.slice(page.indexOf("<template #phone-actions>"), page.indexOf("<!-- No celular o Receber"));
-    const receiptBranch = phoneActions.slice(0, phoneActions.indexOf("<template v-else>"));
-    expect(receiptBranch).toContain("PurchaseMoreMenu vertical");
-    expect(receiptBranch).not.toContain("PurchasePhoneBell");
-    expect(receiptBranch).not.toContain("Atualizar\"\n");
+describe("C12 a C19: o Receber no celular (fase 2)", () => {
+  const page = app("pages/receive.vue");
+  it("voltar na barra do documento; o ⋯ é o do cabeçalho, com Atualizar dentro", () => {
     expect(page).toContain("data-receipt-back");
-  });
-  it("sem sobrelinha acima do título: o documento mora na linha sob ele", () => {
-    expect(page).toContain('const pageEyebrow = computed(() => "");');
     expect(page).toContain("data-receipt-subtitle");
+    expect(page).toContain(':actions="headerActions"');
+    expect(page).not.toContain("PurchaseMoreMenu");
   });
-  it("'Contei N volumes' e 'Algo não bate' no polegar; Escanear NF no polegar do começo", () => {
-    expect(page).toContain("data-thumb-count");
-    expect(page).toContain("data-thumb-mismatch");
-    expect(page).toContain("data-thumb-scan-nf");
+  it("a ação do momento mora no OperatorActionBar (Escanear NF, Contei N volumes, Confirmar entrada)", () => {
+    expect(page).toContain("<OperatorActionBar");
+    expect(page).toContain('label: actionPending.value ? "Lendo a NF" : "Escanear NF"');
+    expect(page).toContain('label: `Contei ${plural(volumesDraft.value, "volume", "volumes")}`');
+    expect(page).toContain('label: actionPending.value ? "Confirmando a entrada" : "Confirmar entrada"');
+    expect(page).not.toMatch(/sticky bottom-/);
   });
   it("os pendentes não se repetem no painel quando a conferência por exceção está na tela", () => {
     expect(page).toContain("pendingLines: exceptionFlowOn.value ? [] : receiptPendingLines.value");
+  });
+  it("o item aberto tem endereço e anda com OperatorRecordNav", () => {
+    expect(page).toContain("route.query.line");
+    expect(page).toContain("<OperatorRecordNav");
   });
 });
 
@@ -117,15 +121,11 @@ describe("C09/C10: a gaveta do item", () => {
   });
 });
 
-describe("T-06: Painel e Comprar no celular seguem a Base", () => {
-  const page = app("pages/index.vue");
-  const menu = app("components/PurchaseMoreMenu.vue");
-  it("o Atualizar mora no ⋮ da barra de 56px, com a tecla R", () => {
-    expect(page).toContain(`<PurchaseMoreMenu v-if="view === 'panel' || view === 'buy'" vertical :items="refreshMenuItems"`);
-    expect(page).toContain('const refreshMenuItems: MoreMenuItem[] = [{ key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" }];');
-    expect(page).toContain('onKeyStroke(["r", "R"]');
-  });
-  it("a tecla aparece só onde há teclado", () => {
-    expect(menu).toContain("pointer-fine:inline");
+describe("T-06: Atualizar mora no ⋯, com a tecla R", () => {
+  it("toda tela declara Atualizar nas ações do cabeçalho; a tecla é do app", () => {
+    for (const page of ["pages/index.vue", "pages/buy.vue", "pages/base/materials.vue"]) {
+      expect(app(page), page).toContain('{ label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"]');
+    }
+    expect(app("app.vue")).toContain('onKeyStroke(["r", "R"]');
   });
 });
