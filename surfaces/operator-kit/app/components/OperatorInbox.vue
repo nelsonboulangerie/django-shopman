@@ -223,7 +223,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                 class="min-w-0 basis-0 flex-[2]"
                 :to="alert.href"
                 :color="alertColor(alert.tone)"
-                variant="outline"
+                variant="solid"
                 trailing-icon="i-lucide-arrow-right"
                 :label="alert.hrefLabel || 'Abrir'"
                 :target="attrsFor(alert.href).target"
@@ -259,7 +259,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             <template #actions
               ><NuxtButton
                 color="error"
-                variant="outline"
+                variant="solid"
                 label="Atualizar avisos"
                 @click="refresh"
             /></template>
@@ -287,7 +287,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                 v-if="item.action_url && item.action_label"
                 :to="item.action_url"
                 :color="isHighlighted(item) ? 'warning' : 'neutral'"
-                variant="outline"
+                variant="solid"
                 trailing-icon="i-lucide-arrow-right"
                 :label="item.action_label"
                 :target="attrsFor(item.action_url).target"
@@ -338,7 +338,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             <template #actions
               ><NuxtButton
                 color="error"
-                variant="outline"
+                variant="solid"
                 label="Atualizar acessos"
                 @click="loadSignIns"
             /></template>

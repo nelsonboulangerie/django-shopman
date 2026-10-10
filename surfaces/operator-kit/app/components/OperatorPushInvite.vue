@@ -5,6 +5,7 @@
 // canônico (`app-identity.json`, via `runtimeConfig.public.operatorPwa.identity`), o
 // mesmo que nomeia o convite de instalação e a barra de título; aqui ele entra na
 // frase, com o artigo contraído pela gramática da identidade.
+import { alertActions } from "../utils/alertActions";
 interface OperatorPushIdentity {
   label: string;
   article: string;
@@ -44,8 +45,6 @@ const scope = computed(() => {
 const actions = computed(() => [
   {
     label: push.loading.value ? "Ativando…" : "Ativar avisos",
-    color: "info" as const,
-    variant: "outline" as const,
     loading: push.loading.value,
     onClick: push.activate,
   },
@@ -66,6 +65,6 @@ const actions = computed(() => [
     icon="i-lucide-bell-ring"
     title="Avisos mesmo com o app fechado"
     :description="`Ative neste dispositivo para receber só os avisos ${scope}.`"
-    :actions="actions"
+    :actions="alertActions('info', actions)"
   />
 </template>
