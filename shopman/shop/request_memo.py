@@ -17,8 +17,9 @@ ao banco.
 O ``Shop.load()`` também passa por aqui: era o campeão de idas ao Redis do
 cardápio (6 de 10 ``GET`` por request, todos da mesma chave ``shop_singleton``).
 Também passam o ``ChannelConfig`` montado das leituras de estoque
-(:func:`channel_config`) e o registro de atributos
-(``services.attributes.registry``).
+(:func:`channel_config`), o registro de atributos
+(``services.attributes.registry``) e a ficha de SKU do validador composto
+(``adapters.sku_validator``).
 
 Leituras de estoque têm um memo à parte, mais estreito (:func:`stock_reads_scope`):
 
@@ -36,6 +37,7 @@ Leituras de estoque têm um memo à parte, mais estreito (:func:`stock_reads_sco
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
@@ -44,7 +46,10 @@ from typing import Any
 from django.db import connections
 from django.db.models.signals import post_delete, post_save
 
+logger = logging.getLogger(__name__)
+
 _store: ContextVar[dict[Any, Any] | None] = ContextVar("shopman_request_memo", default=None)
+_request_end: ContextVar[dict[Any, Callable[[], Any]] | None] = ContextVar("shopman_request_end", default=None)
 _stock_store: ContextVar[dict[Any, Any] | None] = ContextVar("shopman_request_stock_reads", default=None)
 
 #: Marca, dentro do memo de estoque, de que o request já escreveu no banco.
@@ -186,20 +191,90 @@ post_save.connect(_clear_on_write, sender="shop.Channel", dispatch_uid="request_
 post_delete.connect(_clear_on_write, sender="shop.Channel", dispatch_uid="request_memo_channel_deleted")
 post_save.connect(_clear_on_write, sender="shop.Shop", dispatch_uid="request_memo_shop_saved")
 post_delete.connect(_clear_on_write, sender="shop.Shop", dispatch_uid="request_memo_shop_deleted")
+# O cadastro que o validador de SKU lê (``adapters.sku_validator``): produto, a
+# coleção principal dele e o insumo.
+for _model in ("offerman.Product", "offerman.CollectionItem", "offerman.Collection", "buyman.Material"):
+    post_save.connect(_clear_on_write, sender=_model, dispatch_uid=f"request_memo_{_model}_saved")
+    post_delete.connect(_clear_on_write, sender=_model, dispatch_uid=f"request_memo_{_model}_deleted")
+
+
+def run_at_request_end(key: Any, fn: Callable[[], Any]) -> None:
+    """Roda ``fn`` UMA vez quando o request acaba, coalescido por ``key``; fora de request, agora.
+
+    Para reação derivada que é idempotente, lê o estado ATUAL e não faz parte da
+    resposta (observar a falta de um SKU, religar pedido e fornada). Fechar uma
+    venda do PDV passa por três transações em série (reserva, confirmação, baixa)
+    e cada commit agendava a sua reação para o MESMO SKU ou pedido. Medido no seed
+    (10/10/2026), três itens com estoque: a observação de falta rodou nove vezes,
+    cada uma lendo a disponibilidade em todo canal que vende, e era 40% do
+    ``sale/close``. A última leitura vale pelas anteriores, então basta uma, depois
+    de todos os commits. O registro repetido da mesma ``key`` fica com a função
+    mais nova.
+
+    "Quando o request acaba" é DEPOIS de a resposta sair (ver
+    :class:`RequestMemoMiddleware`): o operador não espera por uma reação que não
+    muda o que a tela dele mostra.
+
+    Quem chama agenda isto DE DENTRO de um ``on_commit``: transação desfeita não
+    registra nada. Fora de um request (comando, worker, teste direto no service)
+    não há fila e ``fn`` roda na hora, como antes.
+    """
+    pending = _request_end.get()
+    if pending is None:
+        fn()
+        return
+    pending.pop(key, None)
+    pending[key] = fn
+
+
+def _flush_request_end(pending: dict[Any, Callable[[], Any]]) -> None:
+    """Roda o que foi agendado, num memo próprio. Uma falha não impede as outras nem sobe."""
+    batch = list(pending.items())
+    pending.clear()
+    with request_memo_scope():
+        for key, fn in batch:
+            try:
+                fn()
+            except Exception:
+                # Reação derivada é melhor-esforço: a resposta já foi decidida (a
+                # venda fechou), e a reconciliação periódica corrige.
+                logger.exception("request_memo.request_end_failed key=%r", key)
 
 
 class RequestMemoMiddleware:
     """Abre o escopo do memo para o request inteiro (view e demais middlewares).
 
     O memo de estoque só em GET/HEAD (:data:`STOCK_READ_METHODS`).
+
+    As reações agendadas com :func:`run_at_request_end` rodam no ``close()`` da
+    resposta, que o servidor chama DEPOIS de entregar o corpo (ASGI e WSGI; o
+    ``Client`` de teste também chama, antes de devolver a resposta). Rodam na
+    mesma thread do request, antes do ``request_finished`` que devolve a conexão
+    do banco. Resposta em streaming (SSE) não espera o fim do stream: roda já.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        with request_memo_scope():
-            if request.method in STOCK_READ_METHODS:
-                with stock_reads_scope():
-                    return self.get_response(request)
-            return self.get_response(request)
+        pending: dict[Any, Callable[[], Any]] = {}
+        token = _request_end.set(pending)
+        try:
+            with request_memo_scope():
+                if request.method in STOCK_READ_METHODS:
+                    with stock_reads_scope():
+                        response = self.get_response(request)
+                else:
+                    response = self.get_response(request)
+        except BaseException:
+            _request_end.reset(token)
+            _flush_request_end(pending)
+            raise
+        _request_end.reset(token)
+        if pending:
+            closers = getattr(response, "_resource_closers", None)
+            if getattr(response, "streaming", False) or closers is None:
+                _flush_request_end(pending)
+            else:
+                closers.append(lambda: _flush_request_end(pending))
+        return response

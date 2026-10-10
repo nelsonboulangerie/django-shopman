@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import threading
 
+from shopman.shop.request_memo import memoized
+
 
 class ComposedSkuValidator:
     """SkuValidator chaining Offerman (products) then Buyman (materials)."""
@@ -31,6 +33,14 @@ class ComposedSkuValidator:
         self._buyman = MaterialSkuValidator()
 
     def validate_sku(self, sku: str):
+        # Uma leitura por SKU por request (``request_memo``): fechar uma venda
+        # pergunta o MESMO SKU dezenas de vezes (reserva, escopo, disponibilidade,
+        # promessa), e cada pergunta eram uma a três consultas. O cadastro não
+        # muda no meio de uma venda; quem grava produto, coleção ou insumo no
+        # request esvazia o memo (sinais no fim do módulo ``request_memo``).
+        return memoized(("sku_validator.validate", sku), lambda: self._validate_sku(sku))
+
+    def _validate_sku(self, sku: str):
         result = self._offerman.validate_sku(sku)
         if result.valid:
             return result
@@ -47,7 +57,10 @@ class ComposedSkuValidator:
         return merged
 
     def get_sku_info(self, sku: str):
-        return self._offerman.get_sku_info(sku) or self._buyman.get_sku_info(sku)
+        return memoized(
+            ("sku_validator.info", sku),
+            lambda: self._offerman.get_sku_info(sku) or self._buyman.get_sku_info(sku),
+        )
 
     def get_sku_infos(self, skus: list[str]) -> dict:
         merged = self._offerman.get_sku_infos(skus)
