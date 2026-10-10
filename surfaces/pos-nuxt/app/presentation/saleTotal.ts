@@ -9,8 +9,10 @@ import type { POSSaleReviewProjection } from "~/types/pos";
 /** `confirmed`: o número é do servidor. `calculating`: a revisão está a caminho.
  *  `failed`: a revisão não respondeu (o Pagamento diz o motivo e oferece
  *  "Tentar de novo"). `hidden`: não há total a mostrar aqui (edição de
- *  encomenda, que tem a prévia própria no "Salvar alterações"). */
-export type SaleTotalStatus = "confirmed" | "calculating" | "failed" | "hidden";
+ *  encomenda, que tem a prévia própria no "Salvar alterações"). `offline`: sem
+ *  conexão, o número é da TELA, pela última leitura de preços (`offlineSaleReview`),
+ *  e a tela diz isso ao lado dele. */
+export type SaleTotalStatus = "confirmed" | "offline" | "calculating" | "failed" | "hidden";
 
 export interface SaleTotalView {
   status: SaleTotalStatus;
@@ -34,14 +36,14 @@ export interface SaleTotalInputs {
 export function saleTotalView(inputs: SaleTotalInputs): SaleTotalView {
   if (!inputs.hasItems || (inputs.paused && !inputs.checkoutMode)) return { status: "hidden", display: "" };
   const review = inputs.checkoutMode ? inputs.checkoutReview : inputs.saleReview;
-  if (review) return { status: "confirmed", display: review.total_display };
+  if (review) return { status: review.offline ? "offline" : "confirmed", display: review.total_display };
   const failed = inputs.checkoutMode ? inputs.checkoutReviewFailed : inputs.saleReviewFailed;
   return { status: failed ? "failed" : "calculating", display: "" };
 }
 
 /** O que a tela escreve no lugar do número. */
 export function saleTotalText(view: SaleTotalView): string {
-  if (view.status === "confirmed") return view.display;
+  if (view.status === "confirmed" || view.status === "offline") return view.display;
   if (view.status === "failed") return "Não calculado";
   if (view.status === "calculating") return "Calculando…";
   return "";

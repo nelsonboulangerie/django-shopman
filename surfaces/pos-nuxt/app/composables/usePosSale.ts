@@ -36,6 +36,7 @@ import {
   isTotalChangedRefusal,
   moneyInputToQ,
   newLineId,
+  POS_SALE_INTENT_VERSION,
   resolvePayment,
   withExpectedTotal,
 } from "~/utils/posIntent";
@@ -85,6 +86,12 @@ import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
+import {
+  offlineSaleBlockers,
+  offlinePaymentLabel,
+  offlineSaleLabel,
+  offlineSaleReview,
+} from "~/presentation/offlineSales";
 
 type FulfillmentType = "pickup" | "delivery";
 type PaymentCollection = "terminal" | "on_delivery";
@@ -222,6 +229,22 @@ export function usePosSale(deps: PosSaleDeps) {
     minutes: computed(() => Number(pos.value?.cash_drawer?.idle_open_alert_minutes ?? 0)),
     blocked: computed(() => drawerLock.open.value),
   });
+
+  // A VENDA SEM CONEXÃO (WP-PDV-SEM-CONEXAO): a fila local que guarda a venda de
+  // balcão feita sem rede e a reenvia, idempotente, quando a conexão volta.
+  const offlineSales = usePosOfflineSales();
+  /** Sem rede AGORA, pelo navegador (o mesmo sinal do aviso de conexão). */
+  const offlineNow = () => import.meta.client && globalThis.navigator?.onLine === false;
+  /** Quando a tela leu os preços pela última vez: a nota do total sem conexão. */
+  const pricesAt = ref(new Date().toISOString());
+  // A tela de resultado de uma venda guardada passa a dizer o pedido quando a
+  // fila a envia (a venda pode subir com a tela ainda de pé).
+  watch(() => offlineSales.sentOrderRefs.value, (sent) => {
+    const offline = result.value?.offline;
+    if (!offline || offline.sentOrderRef || !sent[offline.id]) return;
+    result.value = { ...result.value!, offline: { ...offline, sentOrderRef: sent[offline.id] } };
+  });
+  watch(() => pos.value?.products, () => { pricesAt.value = new Date().toISOString(); });
 
   const tabInput = ref("");
   const busy = ref(false);
@@ -700,6 +723,12 @@ export function usePosSale(deps: PosSaleDeps) {
     managerUsername: "",
     managerPin: "",
     clientRequestId: "",
+    /**
+     * Comanda aberta SEM CONEXÃO: só o número, na tela, sem sessão no servidor
+     * (não há servidor para abri-la). Fecha como venda de balcão direta; o
+     * número fica só na tela e no recibo. Ver `openTab`.
+     */
+    localTab: false,
   });
 
   const receiptIdentityChoices = ref<POSReceiptIdentityChoice[]>([]);
@@ -789,7 +818,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const totalDisplay = computed(() => formatBRL(cartTotalQ(cart.items)));
   const itemCount = computed(() => cart.items.reduce((sum, item) => sum + lineUnits(item), 0));
   const hasOpenTab = computed(() => Boolean(cart.tabSessionKey));
-  const inSaleView = computed(() => !showTabs.value && hasOpenTab.value);
+  const inSaleView = computed(() => !showTabs.value && (hasOpenTab.value || cart.localTab));
   function goToTabs() {
     showTabs.value = true;
   }
@@ -1536,6 +1565,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.managerUsername = "";
     cart.managerPin = "";
     cart.clientRequestId = "";
+    cart.localTab = false;
     customerLookup.value = null;
     checkoutMode.value = false;
     invalidateReview();
@@ -1697,6 +1727,23 @@ export function usePosSale(deps: PosSaleDeps) {
     // Abrir comanda com a tela de resultado ainda de pé é sair dela: passa pelo
     // mesmo caminho do CTA (PIX aguardando vira chip, nunca é descartado).
     dismissResult();
+    // SEM CONEXÃO: só comanda LIVRE abre, e abre só na tela. A em uso tem itens
+    // e dono no servidor, que não dá para ler agora.
+    if (offlineNow()) {
+      const known = tabs.value.find((row) => row.ref === tabRef);
+      if (known && known.state !== "empty") {
+        serverError.value = `Sem conexão, a comanda ${known.display_ref || tabRef} não abre: ela está em uso. Escolha uma comanda livre.`;
+        return;
+      }
+      if (!options.preserveDraft) resetCart();
+      cart.tabRef = tabRef;
+      cart.tabDisplay = known?.display_ref || tabRef;
+      cart.tabNumber = tabRef;
+      cart.localTab = true;
+      tabInput.value = "";
+      showTabs.value = false;
+      return;
+    }
     busy.value = true;
     try {
       const path = concreteActionHref(
@@ -1789,7 +1836,10 @@ export function usePosSale(deps: PosSaleDeps) {
       : null;
     const resolvedPayment = resolvePayment(cart.paymentTenders, paymentTotalQ.value);
     return {
-      tabRef: cart.tabRef,
+      // A comanda aberta sem conexão não existe no servidor: a venda sobe como
+      // balcão direto, sem identidade de comanda (senão o servidor pediria a
+      // sessão que nunca nasceu).
+      tabRef: cart.localTab ? "" : cart.tabRef,
       tabSessionKey: cart.tabSessionKey,
       expectedRevision: cart.expectedRevision,
       items: cart.items,
@@ -2753,11 +2803,39 @@ export function usePosSale(deps: PosSaleDeps) {
     await refresh();
   }
 
+  /** O total sem o servidor, pela última leitura de preços (ver `offlineSaleReview`). */
+  function localReview(): POSSaleReviewProjection {
+    return offlineSaleReview({
+      items: cart.items,
+      tenders: cart.paymentTenders,
+      intentVersion: checkoutContract.value?.intent_version || POS_SALE_INTENT_VERSION,
+      pricesAt: pricesAt.value,
+    });
+  }
+
+  /** O que impede esta venda de seguir sem conexão (vazio = pode). */
+  function currentOfflineBlockers(): string[] {
+    return offlineSaleBlockers({
+      salesMode: cart.salesMode,
+      fulfillmentType: cart.fulfillmentType,
+      items: cart.items,
+      orderDiscountValue: cart.discountValue,
+      tenderMethods: cart.paymentTenders.map((tender) => tender.method),
+      paymentCollection: cart.paymentCollection,
+    });
+  }
+
   async function reviewSale() {
     if (!cart.items.length) return null;
     const state = currentIntentState();
     cart.clientRequestId = state.clientRequestId;
     const generation = reviewGeneration;
+    if (offlineNow()) {
+      const local = localReview();
+      review.value = local;
+      reviewedGeneration = generation;
+      return local;
+    }
     try {
       const response = await action.call<POSSaleReviewResponse>(
         actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
@@ -2773,6 +2851,13 @@ export function usePosSale(deps: PosSaleDeps) {
       // revisão que a mudança já agendou.
       if (generation !== reviewGeneration) return null;
       if (handleReceiptIdentityFailure(error, "review")) return null;
+      // A rede caiu com a revisão em voo: o total sai da última leitura.
+      if (!httpError(error).status && offlineNow()) {
+        const local = localReview();
+        review.value = local;
+        reviewedGeneration = generation;
+        return local;
+      }
       throw error;
     }
   }
@@ -2794,6 +2879,13 @@ export function usePosSale(deps: PosSaleDeps) {
     // e no alpha isso passava de 20 s. A projeção do terminal não muda o total;
     // e a revisão lê a comanda gravada, então não há o que recarregar antes.
     const generation = reviewGeneration;
+    // SEM CONEXÃO não há comanda a salvar nem revisão a pedir: o total sai da
+    // última leitura de preços (`reviewSale` responde local) e a venda segue.
+    if (offlineNow()) {
+      await reviewSale();
+      busy.value = false;
+      return;
+    }
     try {
       let reviewed = false;
       if (hasOpenTab.value) {
@@ -2865,7 +2957,9 @@ export function usePosSale(deps: PosSaleDeps) {
     | { kind: "ok"; response: Partial<POSCloseSaleResponse>; orderRef: string }
     | { kind: "error"; error: unknown }
     | { kind: "invalid" }
-    | { kind: "blocked" };
+    | { kind: "blocked" }
+    /** A rede caiu com o fechamento em voo e a venda pode esperar na fila. */
+    | { kind: "queue" };
 
   async function requestCloseUnderGuard(expectedTotalQ: number): Promise<GuardedCloseResult> {
     const lockManager = globalThis.navigator?.locks;
@@ -2931,6 +3025,16 @@ export function usePosSale(deps: PosSaleDeps) {
           } | null)?.error;
           const outcomeUnknown = Boolean(failure?.order_created)
             || failure?.code === "sale_payment_outcome_unknown";
+          // A rede caiu no meio do fechamento de uma venda que pode esperar
+          // (dinheiro ou maquininha, sem comanda): ela vai para a fila com a
+          // MESMA chave. Se o servidor chegou a fechar, o reenvio devolve o mesmo
+          // pedido (`client_request_id`); se não chegou, fecha agora. Por isso o
+          // marcador de resultado incerto pode sair: a dúvida passa para a fila,
+          // que a resolve sozinha, em vez de travar o balcão.
+          if (!errorInfo.status && offlineNow() && !currentOfflineBlockers().length) {
+            releaseOwnedCloseGuard(marker);
+            return { kind: "queue" };
+          }
           // Só 4xx sem sinal de outcome incerto prova rejeição pré-commit. Status
           // 0 e TODO 5xx retêm o marcador, mesmo quando trazem error.code.
           if (errorInfo.status >= 400 && errorInfo.status < 500 && !outcomeUnknown) {
@@ -2980,6 +3084,10 @@ export function usePosSale(deps: PosSaleDeps) {
     }
     serverError.value = "";
     managerApprovalError.value = "";
+    if (offlineNow()) {
+      await closeOffline();
+      return;
+    }
     result.value = null;
     busy.value = true;
     try {
@@ -2988,131 +3096,18 @@ export function usePosSale(deps: PosSaleDeps) {
       // `if (!review.value)` acima garante existir neste ponto.
       const guarded = await requestCloseUnderGuard(review.value.total_q);
       if (guarded.kind === "blocked") return;
+      if (guarded.kind === "queue") {
+        busy.value = false;
+        await closeOffline();
+        return;
+      }
       if (guarded.kind === "invalid") {
         serverError.value = closeOutcomeUncertainMessage;
         return;
       }
       if (guarded.kind === "error") throw guarded.error;
       const { response, orderRef } = guarded;
-      // COBRANÇA NA ENTREGA/RETIRADA: o dinheiro ainda não entrou. O troco
-      // calculado é o que o entregador vai separar, não o que sai da gaveta.
-      const paidOnDelivery = cart.paymentCollection === "on_delivery";
-      // Freeze a receipt snapshot before the cart resets (spec §D3): the
-        // printed receipt is a record of what was sold, not live state.
-        const receipt: PosReceiptSnapshot = {
-          orderRef,
-          tabDisplay: cart.tabDisplay,
-          customerName: cart.customerName,
-          items: cart.items.map((item) => ({
-            name: item.name,
-            qty: item.qty,
-            price_q: item.price_q,
-            discountPct: item.discount?.value || 0,
-            ...(item.weighed ? { weightG: item.weighed.weight_g } : {}),
-          })),
-          totalDisplay: review.value?.total_display || "",
-          payments: cart.paymentTenders.map((tender) => ({
-            method: tender.method,
-            amount_q: tender.amount_q,
-            // ONDE foi recebido viaja com a linha: é o que separa dinheiro na
-            // gaveta de dinheiro que sai com o entregador.
-            collection: tender.collection,
-          })),
-          fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
-          printedAtMs: Date.now(),
-          // O recibo do navegador imprime como o servidor (`receipt_escpos`):
-          // "Dinheiro R$ 42 / Recebido R$ 100 / Troco R$ 58", e não a linha
-          // como digitada. "Recebido" é medição — só viaja quando o operador
-          // digitou (`tendered_q`, dinheiro sozinho no caixa).
-          tenderedQ: paidOnDelivery ? 0 : (resolvePayment(cart.paymentTenders, paymentTotalQ.value).tenderedQ ?? 0),
-          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
-          paymentPending: paidOnDelivery,
-          fiscalHandoffLine: receiptFiscalHandoffLine(resolveFiscalState(response)),
-        };
-        // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
-        // operador confere de relance e repete ao cliente.
-        function orderFulfillmentLabel(): string {
-          const base = receipt.fulfillmentLabel;
-          if (cart.fulfillmentType !== "delivery") return base;
-          const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
-          return bairro ? `${base} · ${bairro}` : base;
-        }
-        const proof = paymentProofView(response.payment);
-        result.value = {
-          salesMode: cart.salesMode,
-          orderRef,
-          nextUrl: orderUrl(ordersUrl.value, orderRef),
-          payment: proof,
-          paymentDelivery: response.payment_delivery || null,
-          receipt,
-          // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
-          // emitem por forma de pagamento, sem o operador marcar nada.
-          fiscalExpected: !!response.fiscal_expected,
-          // Onde a nota está: dito pelo close; sem `fiscal_state`, deriva.
-          fiscalState: resolveFiscalState(response),
-          // Troco congelado AGORA — o resetCart logo abaixo apaga os tenders e
-          // o troco computado voltaria a zero. Uma fonte só: a tela de
-          // resultado do operador e a tela do cliente leem daqui.
-          //
-          // ⚠️ Na cobrança na entrega/retirada o troco é ZERO aqui: a tela
-          // anunciava "TROCO R$ 58 · Confira o troco" e travava Enter e
-          // auto-avanço por um dinheiro que ainda não tinha entrado. O que o
-          // entregador leva vai em `courierChangeQ`, informativo.
-          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
-          courierChangeQ: paidOnDelivery ? Math.max(0, paymentChangeQ.value) : 0,
-          // Congelado pelo mesmo motivo do troco: o `resetCart` logo abaixo
-          // apaga os canais, e a nota autoriza depois — segundos ou minutos.
-          wantsPrintedInvoice: cart.receiptChannels.includes("print"),
-          // ENCOMENDA: a leitura de volta ("Retirada · sáb, 10:00 às 10:30")
-          // congela aqui pelo mesmo motivo do troco — o `resetCart` apaga a
-          // data, a janela e o bairro, e a tela de resultado precisa deles.
-          fulfillmentLabel: cart.salesMode === "order" ? orderFulfillmentLabel() : "",
-          scheduleLabel: cart.salesMode === "order"
-            ? scheduleLabel(cart.deliveryDate, deliveryWindowLabel.value, scheduleToday.value)
-            : "",
-        };
-        // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
-        if (proof?.isPix && proof?.hasProof) {
-          if (pendingPixOrderRef.value) {
-            // Um só polling por estação: a prova anterior ainda pendente não
-            // pode ser abandonada calada — acusa e aponta o gestor.
-            toast.warning(`Não confirmamos o PIX do pedido ${pendingPixOrderRef.value}. Confira no gestor ou gere um novo pagamento.`);
-            pendingPixOrderRef.value = "";
-          }
-          startPixPolling(orderRef);
-        } else if (proof?.isLink && response.payment_delivery
-          && ["queued", "sending"].includes(response.payment_delivery.status)) {
-          startDeliveryPolling(orderRef);
-        } else if (!pendingPixOrderRef.value) {
-          // Sem prova nova e sem chip pendente: nada a pollar. (Com chip, o
-          // polling da venda anterior segue vivo até resolver/expirar.)
-          stopPixPolling();
-          pixStatus.value = "idle";
-        }
-        // Entrou dinheiro na gaveta → ela precisa abrir para sair troco. Lido
-        // do snapshot congelado, não do cart, que a linha abaixo já zerou.
-        // Sem await: a venda terminou, e a tela não espera o spooler.
-        // SÓ o dinheiro que entrou NA GAVETA a faz abrir — ver `cashLandedInDrawer`.
-        //
-        // No TABLET (o agente do Balcão não está nesta máquina) ela NUNCA abre
-        // sozinha: o atendente ainda está na mesa. A venda vira o cartão
-        // "Dinheiro da comanda · leve ao Balcão", e ele toca "Abrir gaveta do
-        // Balcão" na frente da gaveta (`useDrawerOpening`, pulso pelo relay).
-        if (cashLandedInDrawer(receipt.payments)) {
-          void drawerOpening.afterCashSale(
-            { orderRef, tabDisplay: receipt.tabDisplay || "", changeQ: Math.max(0, result.value?.changeQ ?? 0) },
-            drawer.opensOnCashSale.value,
-          );
-        }
-        resetCart();
-        try {
-          await refresh();
-        } catch {
-          // `ok + order_ref` já confirmou o fechamento. Refresh é só leitura:
-          // sua falha não desfaz pedido, recibo nem pagamento, e não pode cair
-          // no catch do close como se o resultado da venda fosse desconhecido.
-          toast.warning(`Pedido ${orderRef} registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.`);
-        }
+      await completeSale(response, orderRef);
     } catch (error) {
       const errorInfo = httpError(error);
       const failure = (errorInfo.data as {
@@ -3188,6 +3183,186 @@ export function usePosSale(deps: PosSaleDeps) {
       } else {
         serverError.value = httpErrorMessage(error, "Não foi possível confirmar o resultado da venda. Mantenha esta tentativa e confira o pedido antes de reenviar.");
       }
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  /**
+   * O que acontece depois que a venda FECHOU (no servidor, ou guardada na fila sem
+   * conexão): congela o recibo e o troco, monta a tela de resultado, abre a gaveta
+   * do dinheiro e zera o carrinho. Sem conexão não há o que pollar nem reler.
+   */
+  async function completeSale(
+    response: Partial<POSCloseSaleResponse>,
+    orderRef: string,
+    offline?: { capturedAt: string; id: string },
+  ) {
+      // COBRANÇA NA ENTREGA/RETIRADA: o dinheiro ainda não entrou. O troco
+      // calculado é o que o entregador vai separar, não o que sai da gaveta.
+      const paidOnDelivery = cart.paymentCollection === "on_delivery";
+      // Freeze a receipt snapshot before the cart resets (spec §D3): the
+        // printed receipt is a record of what was sold, not live state.
+        const receipt: PosReceiptSnapshot = {
+          orderRef,
+          tabDisplay: cart.tabDisplay,
+          customerName: cart.customerName,
+          items: cart.items.map((item) => ({
+            name: item.name,
+            qty: item.qty,
+            price_q: item.price_q,
+            discountPct: item.discount?.value || 0,
+            ...(item.weighed ? { weightG: item.weighed.weight_g } : {}),
+          })),
+          totalDisplay: review.value?.total_display || "",
+          payments: cart.paymentTenders.map((tender) => ({
+            method: tender.method,
+            amount_q: tender.amount_q,
+            // ONDE foi recebido viaja com a linha: é o que separa dinheiro na
+            // gaveta de dinheiro que sai com o entregador.
+            collection: tender.collection,
+          })),
+          fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
+          printedAtMs: Date.now(),
+          // O recibo do navegador imprime como o servidor (`receipt_escpos`):
+          // "Dinheiro R$ 42 / Recebido R$ 100 / Troco R$ 58", e não a linha
+          // como digitada. "Recebido" é medição — só viaja quando o operador
+          // digitou (`tendered_q`, dinheiro sozinho no caixa).
+          tenderedQ: paidOnDelivery ? 0 : (resolvePayment(cart.paymentTenders, paymentTotalQ.value).tenderedQ ?? 0),
+          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
+          paymentPending: paidOnDelivery,
+          fiscalHandoffLine: receiptFiscalHandoffLine(resolveFiscalState(response)),
+        };
+        // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
+        // operador confere de relance e repete ao cliente.
+        function orderFulfillmentLabel(): string {
+          const base = receipt.fulfillmentLabel;
+          if (cart.fulfillmentType !== "delivery") return base;
+          const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
+          return bairro ? `${base} · ${bairro}` : base;
+        }
+        const proof = paymentProofView(response.payment);
+        result.value = {
+          salesMode: cart.salesMode,
+          orderRef,
+          nextUrl: offline ? "" : orderUrl(ordersUrl.value, orderRef),
+          payment: proof,
+          paymentDelivery: response.payment_delivery || null,
+          receipt,
+          // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
+          // emitem por forma de pagamento, sem o operador marcar nada.
+          fiscalExpected: !!response.fiscal_expected,
+          // Onde a nota está: dito pelo close; sem `fiscal_state`, deriva.
+          fiscalState: resolveFiscalState(response),
+          // Troco congelado AGORA — o resetCart logo abaixo apaga os tenders e
+          // o troco computado voltaria a zero. Uma fonte só: a tela de
+          // resultado do operador e a tela do cliente leem daqui.
+          //
+          // ⚠️ Na cobrança na entrega/retirada o troco é ZERO aqui: a tela
+          // anunciava "TROCO R$ 58 · Confira o troco" e travava Enter e
+          // auto-avanço por um dinheiro que ainda não tinha entrado. O que o
+          // entregador leva vai em `courierChangeQ`, informativo.
+          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
+          courierChangeQ: paidOnDelivery ? Math.max(0, paymentChangeQ.value) : 0,
+          // Congelado pelo mesmo motivo do troco: o `resetCart` logo abaixo
+          // apaga os canais, e a nota autoriza depois — segundos ou minutos.
+          wantsPrintedInvoice: cart.receiptChannels.includes("print"),
+          // ENCOMENDA: a leitura de volta ("Retirada · sáb, 10:00 às 10:30")
+          // congela aqui pelo mesmo motivo do troco — o `resetCart` apaga a
+          // data, a janela e o bairro, e a tela de resultado precisa deles.
+          fulfillmentLabel: cart.salesMode === "order" ? orderFulfillmentLabel() : "",
+          scheduleLabel: cart.salesMode === "order"
+            ? scheduleLabel(cart.deliveryDate, deliveryWindowLabel.value, scheduleToday.value)
+            : "",
+          ...(offline ? { offline: { capturedAt: offline.capturedAt, id: offline.id } } : {}),
+        };
+        // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
+        if (proof?.isPix && proof?.hasProof) {
+          if (pendingPixOrderRef.value) {
+            // Um só polling por estação: a prova anterior ainda pendente não
+            // pode ser abandonada calada — acusa e aponta o gestor.
+            toast.warning(`Não confirmamos o PIX do pedido ${pendingPixOrderRef.value}. Confira no gestor ou gere um novo pagamento.`);
+            pendingPixOrderRef.value = "";
+          }
+          startPixPolling(orderRef);
+        } else if (proof?.isLink && response.payment_delivery
+          && ["queued", "sending"].includes(response.payment_delivery.status)) {
+          startDeliveryPolling(orderRef);
+        } else if (!pendingPixOrderRef.value) {
+          // Sem prova nova e sem chip pendente: nada a pollar. (Com chip, o
+          // polling da venda anterior segue vivo até resolver/expirar.)
+          stopPixPolling();
+          pixStatus.value = "idle";
+        }
+        // Entrou dinheiro na gaveta → ela precisa abrir para sair troco. Lido
+        // do snapshot congelado, não do cart, que a linha abaixo já zerou.
+        // Sem await: a venda terminou, e a tela não espera o spooler.
+        // SÓ o dinheiro que entrou NA GAVETA a faz abrir — ver `cashLandedInDrawer`.
+        //
+        // No TABLET (o agente do Balcão não está nesta máquina) ela NUNCA abre
+        // sozinha: o atendente ainda está na mesa. A venda vira o cartão
+        // "Dinheiro da comanda · leve ao Balcão", e ele toca "Abrir gaveta do
+        // Balcão" na frente da gaveta (`useDrawerOpening`, pulso pelo relay).
+        if (cashLandedInDrawer(receipt.payments)) {
+          void drawerOpening.afterCashSale(
+            { orderRef, tabDisplay: receipt.tabDisplay || "", changeQ: Math.max(0, result.value?.changeQ ?? 0) },
+            drawer.opensOnCashSale.value,
+          );
+        }
+        resetCart();
+        if (offline) return;
+        try {
+          await refresh();
+        } catch {
+          // `ok + order_ref` já confirmou o fechamento. Refresh é só leitura:
+          // sua falha não desfaz pedido, recibo nem pagamento, e não pode cair
+          // no catch do close como se o resultado da venda fosse desconhecido.
+          toast.warning(`Pedido ${orderRef} registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.`);
+        }
+  }
+
+  /**
+   * Fecha a venda SEM CONEXÃO: guarda na fila local o mesmo `close_sale` que iria
+   * ao servidor (mesma chave, mesmo total da tela, mais a hora da cobrança) e
+   * segue para a tela de resultado. A fila envia sozinha quando a rede voltar.
+   */
+  async function closeOffline() {
+    const blockers = currentOfflineBlockers();
+    if (blockers.length) {
+      serverError.value = blockers[0] || "";
+      return;
+    }
+    const shown = review.value;
+    if (!shown) return;
+    busy.value = true;
+    result.value = null;
+    try {
+      const capturedAt = new Date().toISOString();
+      const pricesAtIso = shown.offline?.prices_at || pricesAt.value;
+      const body: Record<string, unknown> = {
+        ...withExpectedTotal(buildCurrentIntent(), shown.total_q),
+        offline_captured_at: capturedAt,
+        offline_prices_at: pricesAtIso,
+      };
+      const id = String(body.client_request_id || newClientRequestId());
+      body.client_request_id = id;
+      try {
+        await offlineSales.enqueue({
+          id,
+          capturedAt,
+          pricesAt: pricesAtIso,
+          body,
+          totalQ: shown.total_q,
+          itemCount: cart.items.reduce((sum, item) => sum + lineUnits(item), 0),
+          paymentLabel: offlinePaymentLabel(cart.paymentTenders.map((tender) => tender.method)),
+          status: "pending",
+          attempts: 0,
+        });
+      } catch {
+        serverError.value = "A venda não foi guardada neste dispositivo e não está registrada. Tente finalizar de novo.";
+        return;
+      }
+      await completeSale({ ok: true, order_ref: offlineSaleLabel(id), fiscal_expected: false }, offlineSaleLabel(id), { capturedAt, id });
     } finally {
       busy.value = false;
     }
@@ -3523,6 +3698,10 @@ export function usePosSale(deps: PosSaleDeps) {
     }, 450);
   }
   async function runSaleReview(seq: number) {
+    if (offlineNow()) {
+      saleReview.value = localReview();
+      return;
+    }
     try {
       const response = await action.call<POSSaleReviewResponse>(
         actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
@@ -3535,6 +3714,10 @@ export function usePosSale(deps: PosSaleDeps) {
       // Sem toast: quem diz o motivo é o Pagamento, que revisa de novo ao abrir
       // e oferece "Tentar de novo". Aqui a tela só não mostra número.
       if (seq !== saleReviewSeq) return;
+      if (offlineNow()) {
+        saleReview.value = localReview();
+        return;
+      }
       saleReviewFailed.value = true;
     }
   }
