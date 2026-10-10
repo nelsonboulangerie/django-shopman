@@ -65,14 +65,14 @@ const pills = computed(() => phoneCardPills(props.card));
 
 <template>
   <div
-    class="flex min-w-0 items-stretch rounded-md border border-border bg-card transition hover:border-primary/50 hover:shadow-sm"
+    class="flex min-w-0 items-stretch rounded-md bg-elevated/50 transition hover:bg-elevated"
     :draggable="movable ? 'true' : undefined"
     :data-preorder-card="card.ref"
     :data-preorder-movable="movable ? '' : undefined"
   >
     <NuxtLink
       :to="preorderDetailPath(card.ref, back)"
-      class="flex min-h-8 min-w-0 flex-1 items-start gap-3 p-3 text-left transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      class="flex min-h-8 min-w-0 flex-1 items-start gap-3 p-3 text-left focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
       :class="slots.aside ? 'rounded-l-md' : 'rounded-md'"
       :draggable="movable ? 'false' : undefined"
       :data-preorder="card.ref"
@@ -143,7 +143,7 @@ const pills = computed(() => phoneCardPills(props.card));
         </span>
       </span>
     </NuxtLink>
-    <div v-if="slots.aside" class="flex shrink-0 border-l border-border max-md:hidden">
+    <div v-if="slots.aside" class="flex shrink-0 items-start max-md:hidden">
       <slot name="aside" />
     </div>
   </div>

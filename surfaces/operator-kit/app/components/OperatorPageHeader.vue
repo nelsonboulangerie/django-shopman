@@ -31,7 +31,7 @@
 //
 // A busca é UMA, a da suíte (`OperatorSuiteSearch`, V6-BUSCA): toda tela a tem no
 // cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
-// o alcance "Esta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
+// o nível "Nesta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
 import { computed, onMounted, ref, useSlots } from "vue";
 import { useScreen } from "../composables/useScreen";
@@ -50,6 +50,15 @@ import {
   type OperatorScreenAlert,
 } from "../presentation/screenState";
 import type { OperatorSession } from "../types/operator";
+import { alertActions } from "../utils/alertActions";
+
+// A descrição do aviso da tela na cor plena. O oficial a desenha com `opacity-90`, e
+// sobre o fundo pré-composto do kit isso fica abaixo do AA: medido (axe, 09/10/2026)
+// 4,24:1 no `warning`; `error` e `success` do claro e `error` e `info` do escuro também
+// ficam abaixo de 4,5. Na cor plena, todos passam de 4,9:1. O título continua o primeiro
+// na leitura pelo peso. Mora aqui, e não no `app.config` (tema): o tema do kit repinta
+// as baselines de todas as consumidoras e pede aceite do dono.
+const SCREEN_ALERT_UI = { description: "opacity-100" } as const;
 
 const props = withDefaults(
   defineProps<{
@@ -269,17 +278,13 @@ const shownAlerts = computed(() =>
   alertsOpen.value ? props.alerts : props.alerts.slice(0, SCREEN_ALERTS_VISIBLE),
 );
 const hiddenAlerts = computed(() => Math.max(0, props.alerts.length - SCREEN_ALERTS_VISIBLE));
-function alertActions(alert: OperatorScreenAlert) {
-  if (!alert.action) return undefined;
-  // A saída do aviso repete a cor dele, no tamanho da suíte (`md`), nunca o `xs` do
-  // default do aviso.
+function headerAlertActions(alert: OperatorScreenAlert) {
+  if (!alert.action) return [];
+  // A saída do aviso é a principal dele: `solid` na cor do aviso (`alertActions`).
   return [
     {
       label: alert.action.label,
       to: alert.action.to,
-      color: alert.color,
-      variant: "outline" as const,
-      size: "md" as const,
       onClick: (event: Event) => alert.action?.onSelect?.(event),
     },
   ];
@@ -291,376 +296,379 @@ function clearAll() {
 </script>
 
 <template>
-  <NuxtDashboardNavbar
-    as="header"
-    :toggle="Boolean(suiteRail)"
-    class="print:hidden"
-    data-operator-page-header
-  >
-    <template #leading>
-      <OperatorAppSeal v-if="hubUrl && !$slots.lead" :class="sealClass" />
-      <NuxtButton
-        v-if="suiteRail"
-        class="hidden lg:inline-flex"
-        :icon="suiteRail.next.value.icon"
-        color="neutral"
-        variant="ghost"
-        square
-        :aria-label="suiteRail.next.value.label"
-        :title="suiteRail.next.value.label"
-        data-rail-cycle
-        @click="suiteRail.cycle()"
-      />
-      <NuxtButton
-        v-else-if="isCollapsed"
-        class="hidden rail:inline-flex"
-        icon="i-lucide-panel-left-open"
-        color="neutral"
-        variant="ghost"
-        square
-        aria-label="Mostrar a barra lateral"
-        title="Mostrar a barra lateral"
-        data-page-header-show-rail
-        @click="setRail('compact')"
-      />
-      <slot name="lead" />
-    </template>
+  <!-- UM landmark para o cabeçalho inteiro: a barra, as toolbars (filtros, ações), o
+       aviso e o feedback. Antes a barra era o `<header>` e as toolbars ficavam soltas
+       ao lado, fora de qualquer landmark (axe `region`, onda da Central, 09/10/2026).
+       `contents`: o invólucro não entra no layout, os filhos seguem na coluna do pai
+       como antes. -->
+  <header class="contents" data-operator-page-header-landmark>
+    <NuxtDashboardNavbar
+      as="div"
+      :toggle="Boolean(suiteRail)"
+      class="print:hidden"
+      data-operator-page-header
+    >
+      <template #leading>
+        <OperatorAppSeal v-if="hubUrl && !$slots.lead" :class="sealClass" />
+        <NuxtButton
+          v-if="suiteRail"
+          class="hidden lg:inline-flex"
+          :icon="suiteRail.next.value.icon"
+          color="neutral"
+          variant="ghost"
+          square
+          :aria-label="suiteRail.next.value.label"
+          :title="suiteRail.next.value.label"
+          data-rail-cycle
+          @click="suiteRail.cycle()"
+        />
+        <NuxtButton
+          v-else-if="isCollapsed"
+          class="hidden rail:inline-flex"
+          icon="i-lucide-panel-left-open"
+          color="neutral"
+          variant="ghost"
+          square
+          aria-label="Mostrar a barra lateral"
+          title="Mostrar a barra lateral"
+          data-page-header-show-rail
+          @click="setRail('compact')"
+        />
+        <slot name="lead" />
+      </template>
 
-    <template #title>
-      <span :class="phoneTitle ? 'max-sm:hidden' : ''">{{ title }}</span>
-      <span v-if="phoneTitle" class="sm:hidden" data-page-header-phone-title>{{
-        phoneTitle
-      }}</span>
-      <NuxtBadge
-        v-if="eyebrowText"
-        color="neutral"
-        class="max-sm:hidden"
-        data-page-header-eyebrow
-        >{{ eyebrowText }}</NuxtBadge
-      >
-    </template>
-
-    <!-- No celular, o estado e o posto descem para uma segunda linha da barra (o
-         `basis-full` quebra a linha do `left`, que no tema é `max-sm:flex-wrap`): ao
-         lado do título eles se espremiam por cima dele. -->
-    <template v-if="eyebrowText || $slots.subtitle || $slots.status" #trailing>
-      <div
-        class="flex min-w-0 items-center gap-1.5 max-sm:basis-full max-sm:flex-wrap"
-        data-page-header-status
-      >
+      <template #title>
+        <span :class="phoneTitle ? 'max-sm:hidden' : ''">{{ title }}</span>
+        <span v-if="phoneTitle" class="sm:hidden" data-page-header-phone-title>{{
+          phoneTitle
+        }}</span>
         <NuxtBadge
           v-if="eyebrowText"
           color="neutral"
-          class="sm:hidden"
-          data-page-header-eyebrow-phone
+          class="max-sm:hidden"
+          data-page-header-eyebrow
           >{{ eyebrowText }}</NuxtBadge
         >
-        <slot name="subtitle" />
-        <slot name="status" />
-      </div>
-    </template>
+      </template>
 
-    <template v-if="$slots.search || search" #default>
-      <div class="w-full" data-page-header-search>
-        <slot name="search"
-          ><OperatorSuiteSearch :placeholder="searchPlaceholder"
-        /></slot>
-      </div>
-    </template>
+      <!-- No celular, o estado e o posto descem para uma segunda linha da barra (o
+           `basis-full` quebra a linha do `left`, que no tema é `max-sm:flex-wrap`): ao
+           lado do título eles se espremiam por cima dele. -->
+      <template v-if="eyebrowText || $slots.subtitle || $slots.status" #trailing>
+        <div
+          class="flex min-w-0 items-center gap-1.5 max-sm:basis-full max-sm:flex-wrap"
+          data-page-header-status
+        >
+          <NuxtBadge
+            v-if="eyebrowText"
+            color="neutral"
+            class="sm:hidden"
+            data-page-header-eyebrow-phone
+            >{{ eyebrowText }}</NuxtBadge
+          >
+          <slot name="subtitle" />
+          <slot name="status" />
+        </div>
+      </template>
 
-    <template #right>
-      <NuxtButton
-        v-if="$slots.search || search"
-        class="lg:hidden suite-page:size-control suite-page:justify-center"
-        :class="phoneLayout.searchIcon ? '' : 'max-sm:hidden'"
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-search"
-        square
-        aria-label="Buscar"
-        aria-haspopup="dialog"
-        data-page-header-search-toggle
-        @click="openSearch"
-      />
-      <!-- As ações de polegar são do celular (o comentário do topo): do `md` para cima o
-           `#actions` já está na linha, e as duas juntas desenham o mesmo gesto duas vezes. -->
+      <template v-if="$slots.search || search" #default>
+        <div class="w-full" data-page-header-search>
+          <slot name="search"
+            ><OperatorSuiteSearch :placeholder="searchPlaceholder"
+          /></slot>
+        </div>
+      </template>
+
+      <template #right>
+        <NuxtButton
+          v-if="$slots.search || search"
+          class="lg:hidden suite-page:size-control suite-page:justify-center"
+          :class="phoneLayout.searchIcon ? '' : 'max-sm:hidden'"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-search"
+          square
+          aria-label="Buscar"
+          aria-haspopup="dialog"
+          data-page-header-search-toggle
+          @click="openSearch"
+        />
+        <!-- As ações de polegar são do celular (o comentário do topo): do `md` para cima o
+             `#actions` já está na linha, e as duas juntas desenham o mesmo gesto duas vezes. -->
+        <div
+          v-if="$slots['phone-actions']"
+          class="flex items-center md:hidden"
+          data-page-header-phone-actions
+        >
+          <slot name="phone-actions" />
+        </div>
+        <div
+          v-if="$slots.actions && !actionsBelow"
+          class="flex items-center gap-2"
+          :class="actionsClass"
+          data-page-header-actions
+        >
+          <slot name="actions" />
+        </div>
+        <!-- Celular: as ações da tela que ganharam vaga de ícone. -->
+        <NuxtButton
+          v-for="action in phoneLayout.icons"
+          :key="action.label"
+          class="sm:hidden"
+          :icon="action.icon"
+          :to="action.to"
+          :target="action.target"
+          :disabled="action.disabled"
+          color="neutral"
+          variant="ghost"
+          square
+          :aria-label="action.label"
+          :title="action.label"
+          data-page-header-icon-action
+          @click="action.onSelect?.($event)"
+        />
+        <!-- O ⋯ "Mais ações": no celular, o que não ganhou vaga; do `sm` para cima, as
+             ações declaradas (ao lado do `#actions`). -->
+        <OperatorMoreMenu
+          v-if="phoneVariant && phoneLayout.overflow.length"
+          :items="phoneMenuItems"
+          :label="actionsLabel"
+          class="sm:hidden"
+          data-page-header-more
+        />
+        <OperatorMoreMenu
+          v-if="deskVariant && declaredActions.length"
+          :items="deskMenuItems"
+          :label="actionsLabel"
+          class="max-sm:hidden"
+          data-page-header-more
+        />
+        <ClientOnly v-if="inbox">
+          <div
+            v-if="!railShown"
+            class="flex shrink-0 items-center"
+            data-page-header-inbox
+          >
+            <OperatorInbox placement="header" />
+          </div>
+        </ClientOnly>
+      </template>
+    </NuxtDashboardNavbar>
+
+    <NuxtDashboardToolbar v-if="$slots.actions && actionsBelow" class="py-2">
       <div
-        v-if="$slots['phone-actions']"
-        class="flex items-center md:hidden"
-        data-page-header-phone-actions
-      >
-        <slot name="phone-actions" />
-      </div>
-      <div
-        v-if="$slots.actions && !actionsBelow"
-        class="flex items-center gap-2"
-        :class="actionsClass"
+        class="flex w-full items-center gap-2 flex-nowrap overflow-x-auto no-scrollbar [&>*]:shrink-0"
         data-page-header-actions
       >
         <slot name="actions" />
       </div>
-      <!-- Celular: as ações da tela que ganharam vaga de ícone. -->
-      <NuxtButton
-        v-for="action in phoneLayout.icons"
-        :key="action.label"
-        class="sm:hidden"
-        :icon="action.icon"
-        :to="action.to"
-        :target="action.target"
-        :disabled="action.disabled"
-        color="neutral"
-        variant="ghost"
-        square
-        :aria-label="action.label"
-        :title="action.label"
-        data-page-header-icon-action
-        @click="action.onSelect?.($event)"
-      />
-      <!-- O ⋯ "Mais ações": no celular, o que não ganhou vaga; do `sm` para cima, as
-           ações declaradas (ao lado do `#actions`). -->
-      <OperatorMoreMenu
-        v-if="phoneVariant && phoneLayout.overflow.length"
-        :items="phoneMenuItems"
-        :label="actionsLabel"
-        class="sm:hidden"
-        data-page-header-more
-      />
-      <OperatorMoreMenu
-        v-if="deskVariant && declaredActions.length"
-        :items="deskMenuItems"
-        :label="actionsLabel"
-        class="max-sm:hidden"
-        data-page-header-more
-      />
-      <ClientOnly v-if="inbox">
-        <div
-          v-if="!railShown"
-          class="flex shrink-0 items-center"
-          data-page-header-inbox
-        >
-          <OperatorInbox placement="header" />
-        </div>
-      </ClientOnly>
-    </template>
-  </NuxtDashboardNavbar>
-
-  <NuxtDashboardToolbar v-if="$slots.actions && actionsBelow" class="py-2">
-    <div
-      class="flex w-full items-center gap-2 flex-nowrap overflow-x-auto no-scrollbar [&>*]:shrink-0"
-      data-page-header-actions
-    >
-      <slot name="actions" />
-    </div>
-  </NuxtDashboardToolbar>
-
-  <!-- Toolbar no celular (abaixo de `sm`, no shell): UMA linha de altura fixa, com os
-       primários da tela e "Filtros"; o resto mora no painel de baixo. -->
-  <template v-if="filterLine()">
-    <NuxtDashboardToolbar
-      class="py-2 sm:hidden"
-      :class="$slots.selection ? 'lg:hidden' : ''"
-      data-page-header-filter-line
-    >
-      <div class="flex w-full min-w-0 flex-nowrap items-center gap-2">
-        <div
-          v-if="$slots['filters-primary']"
-          class="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0"
-          data-page-header-filters-primary
-        >
-          <slot name="filters-primary" />
-        </div>
-        <!-- Sem primário, a leitura (`#filters-end`) cabe na linha. -->
-        <div
-          v-else-if="$slots['filters-end']"
-          class="flex min-w-0 flex-1 items-center"
-          data-page-header-filters-end
-        >
-          <slot name="filters-end" />
-        </div>
-        <!-- O painel de filtros único (fase 2, K4): no celular, só o ícone com o
-             número, fixo à direita da linha (o último a sair). -->
-        <div
-          v-if="$slots['filter-panel']"
-          class="ms-auto shrink-0"
-          data-page-header-filter-panel
-        >
-          <slot name="filter-panel" />
-        </div>
-        <NuxtButton
-          v-if="phoneFilterSlot()"
-          class="ms-auto shrink-0"
-          icon="i-lucide-sliders-horizontal"
-          color="neutral"
-          variant="outline"
-          :title="filtersButtonLabel(activeCount)"
-          aria-haspopup="dialog"
-          :aria-expanded="filtersOpen"
-          :aria-label="filtersButtonLabel(activeCount)"
-          data-page-header-filters-open
-          @click="filtersOpen = true"
-        >
-          <!-- Abaixo de 360 px o rótulo sai da vista (fica no nome acessível e no
-               `title`): a 320 px ele empurrava o período para trás da rolagem. -->
-          <span class="max-[359.98px]:sr-only">Filtros</span>
-          <template v-if="activeCount" #trailing>
-            <NuxtBadge
-              color="primary"
-              size="sm"
-              :label="String(activeCount)"
-              data-page-header-filters-count
-            />
-          </template>
-        </NuxtButton>
-      </div>
     </NuxtDashboardToolbar>
-    <NuxtDashboardToolbar
-      v-if="activeFilters.length"
-      class="py-2 sm:hidden"
-      data-page-header-active-filters
-    >
-      <div
-        class="flex w-full flex-nowrap items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0"
+
+    <!-- Toolbar no celular (abaixo de `sm`, no shell): UMA linha de altura fixa, com os
+         primários da tela e "Filtros"; o resto mora no painel de baixo. -->
+    <template v-if="filterLine()">
+      <NuxtDashboardToolbar
+        class="py-2 sm:hidden"
+        :class="$slots.selection ? 'lg:hidden' : ''"
+        data-page-header-filter-line
       >
-        <NuxtButton
-          v-for="filter in activeFilters"
-          :key="filter.key"
-          :label="filter.label"
-          trailing-icon="i-lucide-x"
-          color="primary"
-          variant="ghost"
-          active
-          active-variant="soft"
-          :aria-label="`Tirar o recorte ${filter.label}`"
-          data-page-header-active-filter
-          @click="filter.remove()"
-        />
-      </div>
-    </NuxtDashboardToolbar>
-    <!-- Com primário na linha, a leitura (o frescor) desce para uma faixa de texto
-         própria, como o `ReadFreshness` fora do cabeçalho: espremida ao lado do
-         período, ela se cortava ("Últim…"). -->
-    <div
-      v-if="$slots['filters-primary'] && $slots['filters-end']"
-      class="border-b border-default bg-card px-4 py-1 sm:hidden [&_[data-read-freshness]]:max-w-none"
-      data-page-header-filters-end
-    >
-      <slot name="filters-end" />
-    </div>
-    <NuxtDrawer
-      v-if="phoneFilterSlot()"
-      v-model:open="filtersOpen"
-      title="Filtros"
-      description="Recortes e controles desta tela."
-      direction="bottom"
-    >
-      <template #body>
-        <div
-          class="flex flex-col items-stretch gap-4 [&>*]:max-w-full"
-          data-page-header-filters-panel
-        >
-          <slot name="filters" />
-        </div>
-      </template>
-      <template #footer>
-        <div class="flex w-full items-center gap-2">
+        <div class="flex w-full min-w-0 flex-nowrap items-center gap-2">
+          <div
+            v-if="$slots['filters-primary']"
+            class="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0"
+            data-page-header-filters-primary
+          >
+            <slot name="filters-primary" />
+          </div>
+          <!-- Sem primário, a leitura (`#filters-end`) cabe na linha. -->
+          <div
+            v-else-if="$slots['filters-end']"
+            class="flex min-w-0 flex-1 items-center"
+            data-page-header-filters-end
+          >
+            <slot name="filters-end" />
+          </div>
+          <!-- O painel de filtros único (fase 2, K4): no celular, só o ícone com o
+               número, fixo à direita da linha (o último a sair). -->
+          <div
+            v-if="$slots['filter-panel']"
+            class="ms-auto shrink-0"
+            data-page-header-filter-panel
+          >
+            <slot name="filter-panel" />
+          </div>
           <NuxtButton
-            class="flex-1 justify-center"
-            label="Limpar"
+            v-if="phoneFilterSlot()"
+            class="ms-auto shrink-0"
+            icon="i-lucide-sliders-horizontal"
             color="neutral"
             variant="outline"
-            :disabled="!activeCount"
-            data-page-header-filters-clear
-            @click="clearAll()"
-          />
+            :title="filtersButtonLabel(activeCount)"
+            aria-haspopup="dialog"
+            :aria-expanded="filtersOpen"
+            :aria-label="filtersButtonLabel(activeCount)"
+            data-page-header-filters-open
+            @click="filtersOpen = true"
+          >
+            <!-- Abaixo de 360 px o rótulo sai da vista (fica no nome acessível e no
+                 `title`): a 320 px ele empurrava o período para trás da rolagem. -->
+            <span class="max-[359.98px]:sr-only">Filtros</span>
+            <template v-if="activeCount" #trailing>
+              <OperatorCountChip :count="activeCount" data-page-header-filters-count />
+            </template>
+          </NuxtButton>
+        </div>
+      </NuxtDashboardToolbar>
+      <NuxtDashboardToolbar
+        v-if="activeFilters.length"
+        class="py-2 sm:hidden"
+        data-page-header-active-filters
+      >
+        <div
+          class="flex w-full flex-nowrap items-center gap-2 overflow-x-auto no-scrollbar [&>*]:shrink-0"
+        >
           <NuxtButton
-            class="flex-1 justify-center"
-            label="Ver resultados"
-            data-page-header-filters-done
-            @click="filtersOpen = false"
+            v-for="filter in activeFilters"
+            :key="filter.key"
+            :label="filter.label"
+            trailing-icon="i-lucide-x"
+            color="primary"
+            variant="ghost"
+            active
+            active-variant="soft"
+            :aria-label="`Tirar o recorte ${filter.label}`"
+            data-page-header-active-filter
+            @click="filter.remove()"
           />
         </div>
-      </template>
-    </NuxtDrawer>
-  </template>
+      </NuxtDashboardToolbar>
+      <!-- Com primário na linha, a leitura (o frescor) desce para uma faixa de texto
+           própria, como o `ReadFreshness` fora do cabeçalho: espremida ao lado do
+           período, ela se cortava ("Últim…"). -->
+      <div
+        v-if="$slots['filters-primary'] && $slots['filters-end']"
+        class="border-b border-default bg-card px-4 py-1 sm:hidden [&_[data-read-freshness]]:max-w-none"
+        data-page-header-filters-end
+      >
+        <slot name="filters-end" />
+      </div>
+      <NuxtDrawer
+        v-if="phoneFilterSlot()"
+        v-model:open="filtersOpen"
+        title="Filtros"
+        description="Recortes e controles desta tela."
+        direction="bottom"
+      >
+        <template #body>
+          <div
+            class="flex flex-col items-stretch gap-4 [&>*]:max-w-full"
+            data-page-header-filters-panel
+          >
+            <slot name="filters" />
+          </div>
+        </template>
+        <template #footer>
+          <div class="flex w-full items-center gap-2">
+            <NuxtButton
+              class="flex-1 justify-center"
+              label="Limpar"
+              color="neutral"
+              variant="outline"
+              :disabled="!activeCount"
+              data-page-header-filters-clear
+              @click="clearAll()"
+            />
+            <NuxtButton
+              class="flex-1 justify-center"
+              label="Ver resultados"
+              data-page-header-filters-done
+              @click="filtersOpen = false"
+            />
+          </div>
+        </template>
+      </NuxtDrawer>
+    </template>
 
-  <NuxtDashboardToolbar
-    v-if="deskToolbar()"
-    class="py-2"
-    :class="[drawerMode ? 'max-sm:hidden' : '', $slots.selection ? 'lg:hidden' : '']"
-  >
-    <div
-      class="flex w-full items-center gap-2"
-      :class="
-        filtersWrap
-          ? 'flex-wrap'
-          : 'flex-nowrap overflow-x-auto no-scrollbar [&>*]:shrink-0'
-      "
-      data-page-header-filters
+    <NuxtDashboardToolbar
+      v-if="deskToolbar()"
+      class="py-2"
+      :class="[drawerMode ? 'max-sm:hidden' : '', $slots.selection ? 'lg:hidden' : '']"
     >
-      <slot name="filters-primary" />
-      <slot name="filter-panel" />
-      <slot name="filters" />
-      <slot name="filters-end" />
+      <div
+        class="flex w-full items-center gap-2"
+        :class="
+          filtersWrap
+            ? 'flex-wrap'
+            : 'flex-nowrap overflow-x-auto no-scrollbar [&>*]:shrink-0'
+        "
+        data-page-header-filters
+      >
+        <slot name="filters-primary" />
+        <slot name="filter-panel" />
+        <slot name="filters" />
+        <slot name="filters-end" />
+      </div>
+    </NuxtDashboardToolbar>
+
+    <!-- A barra de seleção (fase 2, K2): do `lg` para cima ela OCUPA O LUGAR da toolbar
+         enquanto houver marcados (dono, 09/10/2026); abaixo, a tela a põe na base
+         (`OperatorBulkBar placement="base"`) e a toolbar fica. Por CSS: o servidor e o
+         cliente desenham a mesma árvore. -->
+    <NuxtDashboardToolbar
+      v-if="$slots.selection"
+      class="py-2 max-lg:hidden"
+      data-page-header-selection
+    >
+      <slot name="selection" />
+    </NuxtDashboardToolbar>
+
+    <!-- Navegação secundária da tela (as abas de Ajustes do PDV, o prazo do anúncio no
+         Marketing, a seção do Compras no celular). Vue descarta slot não declarado sem
+         aviso: sem esta linha, as abas de Ajustes do PDV somem. -->
+    <slot name="below" />
+
+    <!-- O aviso da tela (fase 2, K6): abaixo da toolbar, um inteiro e o resto em "e mais
+         N". Lugar declarado: a tela não monta faixa de aviso própria. -->
+    <div
+      v-if="alerts.length"
+      class="flex flex-col gap-2 px-4 py-2 sm:px-6"
+      data-page-header-alerts
+    >
+      <NuxtAlert
+        v-for="alert in shownAlerts"
+        :key="alert.id ?? alert.title"
+        :color="alert.color"
+        variant="subtle"
+        :icon="alert.icon ?? screenAlertIcon(alert.color)"
+        :title="alert.title"
+        :description="alert.description"
+        :actions="alertActions(alert.color, headerAlertActions(alert))"
+        orientation="horizontal"
+        :role="alert.color === 'error' ? 'alert' : 'status'"
+        :ui="SCREEN_ALERT_UI"
+        data-page-header-alert
+      />
+      <NuxtButton
+        v-if="hiddenAlerts && !alertsOpen"
+        class="self-start"
+        :label="moreAlertsLabel(hiddenAlerts)"
+        color="neutral"
+        variant="ghost"
+        trailing-icon="i-lucide-chevron-down"
+        :aria-expanded="false"
+        data-page-header-alerts-more
+        @click="alertsOpen = true"
+      />
     </div>
-  </NuxtDashboardToolbar>
 
-  <!-- A barra de seleção (fase 2, K2): do `lg` para cima ela OCUPA O LUGAR da toolbar
-       enquanto houver marcados (dono, 09/10/2026); abaixo, a tela a põe na base
-       (`OperatorBulkBar placement="base"`) e a toolbar fica. Por CSS: o servidor e o
-       cliente desenham a mesma árvore. -->
-  <NuxtDashboardToolbar
-    v-if="$slots.selection"
-    class="py-2 max-lg:hidden"
-    data-page-header-selection
-  >
-    <slot name="selection" />
-  </NuxtDashboardToolbar>
-
-  <!-- Navegação secundária da tela (as abas de Ajustes do PDV, o prazo do anúncio no
-       Marketing, a seção do Compras no celular). Vue descarta slot não declarado sem
-       aviso: sem esta linha, as abas de Ajustes do PDV somem. -->
-  <slot name="below" />
-
-  <!-- O aviso da tela (fase 2, K6): abaixo da toolbar, um inteiro e o resto em "e mais
-       N". Lugar declarado: a tela não monta faixa de aviso própria. -->
-  <div
-    v-if="alerts.length"
-    class="flex flex-col gap-2 px-4 py-2 sm:px-6"
-    data-page-header-alerts
-  >
-    <NuxtAlert
-      v-for="alert in shownAlerts"
-      :key="alert.id ?? alert.title"
-      :color="alert.color"
-      variant="subtle"
-      :icon="alert.icon ?? screenAlertIcon(alert.color)"
-      :title="alert.title"
-      :description="alert.description"
-      :actions="alertActions(alert)"
-      orientation="horizontal"
-      :role="alert.color === 'error' ? 'alert' : 'status'"
-      data-page-header-alert
-    />
-    <NuxtButton
-      v-if="hiddenAlerts && !alertsOpen"
-      class="self-start"
-      :label="moreAlertsLabel(hiddenAlerts)"
-      color="neutral"
-      variant="ghost"
-      trailing-icon="i-lucide-chevron-down"
-      :aria-expanded="false"
-      data-page-header-alerts-more
-      @click="alertsOpen = true"
-    />
-  </div>
-
-  <!-- Feedback contextual não é controle de toolbar. Ações, filtros, contagens e
-       freshness pertencem ao slot #filters e, portanto, à DashboardToolbar oficial. -->
-  <div
-    v-if="$slots.feedback"
-    class="px-4 py-2 sm:px-6"
-    data-page-header-feedback
-  >
-    <slot name="feedback" />
-  </div>
+    <!-- Feedback contextual não é controle de toolbar. Ações, filtros, contagens e
+         freshness pertencem ao slot #filters e, portanto, à DashboardToolbar oficial. -->
+    <div
+      v-if="$slots.feedback"
+      class="px-4 py-2 sm:px-6"
+      data-page-header-feedback
+    >
+      <slot name="feedback" />
+    </div>
+  </header>
 </template>

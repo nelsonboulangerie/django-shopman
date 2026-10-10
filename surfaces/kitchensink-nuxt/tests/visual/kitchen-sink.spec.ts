@@ -65,7 +65,7 @@ test("toggle mobile abre e fecha navegação canônica", async ({ page }, testIn
   await expect(page.locator('[data-hydrated="true"]')).toBeAttached();
   await page.getByRole("button", { name: "Abrir barra lateral" }).click();
   const navigation = page.getByRole("navigation", { name: "Seções do catálogo" });
-  await expect(navigation.getByRole("button", { name: "Dashboard, 3 decisões pendentes" })).toBeVisible();
+  await expect(navigation.getByRole("button", { name: "Dashboard · 3 pendências" })).toBeVisible();
   await navigation.getByRole("button", { name: "Estados", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page.getByRole("banner")).toBeVisible();

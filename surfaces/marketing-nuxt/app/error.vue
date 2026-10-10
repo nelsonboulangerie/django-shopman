@@ -27,7 +27,7 @@ const code = computed(() => {
 const presentation = computed(() => {
   if (!online.value)
     return {
-      icon: "lucide:wifi-off",
+      icon: "i-lucide-wifi-off",
       title: "Você está sem conexão",
       detail:
         "O Marketing continua fechado para novas decisões. Reconecte e tente novamente; nada foi enviado.",
@@ -35,15 +35,15 @@ const presentation = computed(() => {
     };
   if (status.value === 404)
     return {
-      icon: "lucide:map-pin-off",
+      icon: "i-lucide-map-pin-off",
       title: "Esta página não existe",
       detail:
-        "O endereço pode estar incompleto ou o item pode ter sido removido. Volte ao painel para continuar.",
+        "O endereço pode estar incompleto ou o item pode ter sido removido. Volte às decisões para continuar.",
       retry: false,
     };
   if (status.value === 426 || code.value === "unsupported_contract")
     return {
-      icon: "lucide:refresh-cw",
+      icon: "i-lucide-refresh-cw",
       title: "Esta versão precisa ser atualizada",
       detail:
         "Recarregue a página para carregar a versão nova do Marketing. Nada foi enviado por esta tela.",
@@ -51,14 +51,14 @@ const presentation = computed(() => {
     };
   if (status.value === 503)
     return {
-      icon: "lucide:construction",
+      icon: "i-lucide-construction",
       title: "Marketing temporariamente indisponível",
       detail:
         "A operação está em manutenção ou ainda não ficou pronta. Aguarde a liberação antes de tentar novamente.",
       retry: true,
     };
   return {
-    icon: "lucide:triangle-alert",
+    icon: "i-lucide-triangle-alert",
     title: "Não foi possível abrir o Marketing",
     detail:
       "O problema foi mantido separado de uma decisão de campanha. Tente novamente; se persistir, informe a referência abaixo.",
@@ -84,49 +84,47 @@ onBeforeUnmount(() => {
 // que ser instalado aqui também, senão a janela perde o nome do app.
 useOperatorWindowTitle();
 useHead({ title: presentation.value.title });
+
+// As saídas da tela de erro, no conjunto mínimo: voltar à casa (secundária) e tentar de
+// novo (a principal, quando faz sentido).
+const errorActions = computed(() => [
+  {
+    label: "Voltar às decisões",
+    icon: "i-lucide-arrow-left",
+    color: "neutral" as const,
+    variant: "outline" as const,
+    onClick: () => clearError({ redirect: "/" }),
+  },
+  ...(presentation.value.retry
+    ? [
+        {
+          label: "Tentar de novo",
+          icon: "i-lucide-refresh-cw",
+          onClick: () => clearError({ redirect: route.fullPath }),
+        },
+      ]
+    : []),
+]);
 </script>
 
 <template>
+  <!-- Sem o shell da suíte: o Nuxt desenha esta página NO LUGAR do app.vue. -->
   <main class="grid min-h-screen place-items-center bg-background p-4 text-foreground">
-    <section
-      class="w-full max-w-md rounded-md border border-border bg-card p-6 text-center shadow-sm"
-      aria-labelledby="marketing-error-title"
+    <NuxtEmpty
+      class="w-full max-w-md"
+      :icon="presentation.icon"
+      :title="presentation.title"
+      :actions="errorActions"
+      data-marketing-error
     >
-      <div class="mx-auto grid size-12 place-items-center rounded-full bg-muted">
-        <Icon :name="presentation.icon" class="size-6 text-muted-foreground" />
-      </div>
-      <p class="mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Erro {{ status }}
-      </p>
-      <h1 id="marketing-error-title" class="mt-1 text-lg font-semibold">
-        {{ presentation.title }}
-      </h1>
-      <p class="mt-2 text-sm text-muted-foreground">
-        {{ presentation.detail }}
-      </p>
-      <p
-        v-if="requestRef"
-        class="mt-3 break-all rounded-md bg-muted px-3 py-2 text-left text-xs text-muted-foreground"
-      >
-        Referência para suporte:
-        <strong class="font-mono text-foreground">{{ requestRef }}</strong>
-      </p>
-      <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-center">
-        <NuxtLink
-          to="/"
-          class="inline-flex min-h-8 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted"
-          @click="clearError({ redirect: '/' })"
-        >
-          Voltar às decisões
-        </NuxtLink>
-        <UiButton
-          v-if="presentation.retry"
-          type="button"
-          @click="clearError({ redirect: route.fullPath })"
-        >
-          Tentar de novo
-        </UiButton>
-      </div>
-    </section>
+      <template #description>
+        <span class="block text-xs font-semibold uppercase tracking-wide">Erro {{ status }}</span>
+        <span class="mt-2 block">{{ presentation.detail }}</span>
+        <span v-if="requestRef" class="mt-3 block break-all text-xs">
+          Referência para suporte:
+          <strong class="font-mono text-foreground">{{ requestRef }}</strong>
+        </span>
+      </template>
+    </NuxtEmpty>
   </main>
 </template>

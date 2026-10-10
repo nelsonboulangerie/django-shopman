@@ -51,6 +51,11 @@ const props = defineProps<{
   label: string;
   current?: string;
   operatorName?: string;
+  /**
+   * Variante "início": o shell da própria Central. O selo do topo da barra lateral (e
+   * da gaveta) é só identidade, sem "voltar à Central" apontando para ela mesma.
+   */
+  home?: boolean;
 }>();
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
@@ -209,12 +214,11 @@ function signalOf(item: unknown): RailSignal | undefined {
   return (item as { signal?: RailSignal }).signal;
 }
 
-/** O chip da ponta direita (rail aberto): o mesmo do canto do ícone; o ponto leva o
- *  tamanho do chip do NavigationMenu (`linkLeadingChipSize` do tema). */
-function trailingChip(item: unknown, menuChipSize: string) {
-  const chip = railSignalChip(signalOf(item)!);
-  return { ...chip, size: (chip.size ?? menuChipSize) as ChipProps["size"] };
+/** O ponto da barra aberta tem o tamanho do chip do NavigationMenu (`linkLeadingChipSize`). */
+function menuDotSize(size: string): ChipProps["size"] {
+  return size as ChipProps["size"];
 }
+
 
 </script>
 
@@ -247,7 +251,7 @@ function trailingChip(item: unknown, menuChipSize: string) {
           class="flex w-full items-center gap-2"
           :class="isCollapsed ? 'justify-center' : ''"
         >
-          <OperatorAppSeal placement="rail" />
+          <OperatorAppSeal placement="rail" :home="home" />
           <span v-if="!isCollapsed && appLabel" class="font-semibold">{{
             appLabel
           }}</span>
@@ -264,15 +268,16 @@ function trailingChip(item: unknown, menuChipSize: string) {
           :aria-label="label"
           data-suite-rail-navigation
         >
-          <!-- Aberto: o mesmo chip na ponta direita da linha. `standalone` + `inset`:
-               no fluxo da linha, sem o deslocamento de meio chip do canto. O ponto
-               tem o tamanho do chip do NavigationMenu. -->
+          <!-- Aberto: o chip de contagem da suíte na ponta direita da linha, no centro
+               vertical (`OperatorCountChip`). O ponto tem o tamanho do chip do
+               NavigationMenu. -->
           <template #item-trailing="{ item, ui }">
-            <NuxtChip
+            <OperatorCountChip
               v-if="!isCollapsed && signalOf(item)"
-              v-bind="trailingChip(item, ui.linkLeadingChipSize())"
-              inset
-              standalone
+              :count="signalOf(item)!.count"
+              :color="signalOf(item)!.color"
+              :dot="signalOf(item)!.count === undefined"
+              :dot-size="menuDotSize(ui.linkLeadingChipSize())"
             />
           </template>
         </NuxtNavigationMenu>
@@ -290,11 +295,12 @@ function trailingChip(item: unknown, menuChipSize: string) {
             :aria-label="`${label}: pé`"
           >
             <template #item-trailing="{ item, ui }">
-              <NuxtChip
+              <OperatorCountChip
                 v-if="!isCollapsed && signalOf(item)"
-                v-bind="trailingChip(item, ui.linkLeadingChipSize())"
-                inset
-                standalone
+                :count="signalOf(item)!.count"
+                :color="signalOf(item)!.color"
+                :dot="signalOf(item)!.count === undefined"
+                :dot-size="menuDotSize(ui.linkLeadingChipSize())"
               />
             </template>
           </NuxtNavigationMenu>

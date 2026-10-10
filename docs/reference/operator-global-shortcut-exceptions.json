@@ -17,7 +17,6 @@
     { "path": "surfaces/production-nuxt/app/components/ProductionHeader.vue", "kind": "legacy-command", "reason": "Comandos da estação migram no inventário operacional de Produção.", "owner": "WP-UX-13H", "test": "surfaces/production-nuxt/tests/**/*.test.ts", "decision_owner": "WP-UX-13H" },
     { "path": "surfaces/production-nuxt/app/components/QcCloseScreen.vue", "kind": "legacy-command", "reason": "Comandos de qualidade migram junto da jornada correspondente.", "owner": "WP-UX-13H", "test": "surfaces/production-nuxt/tests/**/*.test.ts", "decision_owner": "WP-UX-13H" },
     { "path": "surfaces/production-nuxt/app/pages/close.vue", "kind": "legacy-command", "reason": "Comandos do fechamento migram no WP de Produção.", "owner": "WP-UX-13H", "test": "surfaces/production-nuxt/tests/**/*.test.ts", "decision_owner": "WP-UX-13H" },
-    { "path": "surfaces/purchase-nuxt/app/pages/index.vue", "kind": "legacy-command", "reason": "A rota monolítica será dividida em cenários e comandos no WP de Compras.", "owner": "WP-UX-13G", "test": "surfaces/purchase-nuxt/tests/**/*.test.ts", "decision_owner": "WP-UX-13G" },
     { "path": "surfaces/kds-nuxt/app/pages/[ref].vue", "kind": "legacy-command", "reason": "Comandos da estação migram após prova com toque, luvas e teclado no WP da Cozinha.", "owner": "WP-UX-13I", "test": "surfaces/kds-nuxt/tests/**/*.test.ts", "decision_owner": "WP-UX-13I" }
   ]
 }

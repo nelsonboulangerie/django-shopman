@@ -48,68 +48,68 @@ function confirm() {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="(value) => emit('update:open', value)">
-    <UiDialogContent class="sm:max-w-md" data-preorder-hand-over-dialog>
-      <UiDialogHeader>
-        <UiDialogTitle>{{ handOver.needs_payment ? "Receber e entregar" : "Entregar a encomenda" }}</UiDialogTitle>
-        <UiDialogDescription>
-          <template v-if="handOver.needs_payment">
-            Falta receber {{ handOver.amount_display }} de {{ customerName }}. A encomenda é entregue assim que o pagamento for registrado.
-          </template>
-          <template v-else>
-            A encomenda de {{ customerName }} já está paga. Confirme a entrega.
-          </template>
-        </UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    :open="open"
+    :title="handOver.needs_payment ? 'Receber e entregar' : 'Entregar a encomenda'"
+    :description="handOver.needs_payment
+      ? `Falta receber ${handOver.amount_display} de ${customerName}. A encomenda é entregue assim que o pagamento for registrado.`
+      : `A encomenda de ${customerName} já está paga. Confirme a entrega.`"
+    @update:open="(value: boolean) => emit('update:open', value)"
+  >
+    <template #body>
+      <form class="grid gap-4" data-preorder-hand-over-dialog @submit.prevent="confirm">
+        <NuxtAlert
+          v-if="handOver.needs_payment && handOver.digital_charge_notice"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-link-2-off"
+          :title="handOver.digital_charge_notice"
+          data-preorder-digital-charge-notice
+        />
 
-      <p
-        v-if="handOver.needs_payment && handOver.digital_charge_notice"
-        class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
-        data-preorder-digital-charge-notice
-      >
-        <Icon name="lucide:link-2-off" class="mt-0.5 size-4 shrink-0" />
-        <span>{{ handOver.digital_charge_notice }}</span>
-      </p>
-
-      <form class="grid gap-4" @submit.prevent="confirm">
         <template v-if="handOver.needs_payment">
-          <fieldset class="grid gap-2">
-            <legend class="text-sm font-medium">Forma de pagamento</legend>
-            <UiRadioGroup
+          <NuxtFormField label="Forma de pagamento">
+            <NuxtRadioGroup
               v-model="method"
-              label="Forma de pagamento"
               orientation="horizontal"
-              :options="methodOptions"
+              variant="card"
+              :items="methodOptions"
               data-preorder-method
             />
-          </fieldset>
+          </NuxtFormField>
 
-          <label v-if="method === 'cash'" class="grid gap-1.5">
-            <span class="text-sm font-medium">Valor recebido em dinheiro</span>
-            <UiInput
+          <NuxtFormField v-if="method === 'cash'" label="Valor recebido em dinheiro">
+            <NuxtInput
               v-model="received"
+              class="w-full"
               inputmode="decimal"
               autocomplete="off"
-              class="h-8 text-base tabular-nums"
+              :ui="{ base: 'tabular-nums' }"
               :placeholder="handOver.amount_display.replace('R$ ', '')"
               data-preorder-received
             />
-            <span class="text-sm tabular-nums" :class="check.ok ? 'text-muted-foreground' : 'text-destructive'" data-preorder-change>
-              {{ check.ok ? changeLine(check.changeQ) : check.message }}
-            </span>
-          </label>
-          <p v-else class="text-sm text-muted-foreground">
+            <template #help>
+              <span class="tabular-nums" :class="check.ok ? 'text-muted' : 'text-error'" data-preorder-change>
+                {{ check.ok ? changeLine(check.changeQ) : check.message }}
+              </span>
+            </template>
+          </NuxtFormField>
+          <p v-else class="text-sm text-muted">
             Passe {{ handOver.amount_display }} na maquininha e confirme quando o pagamento for aprovado.
           </p>
         </template>
 
-        <UiDialogFooter>
-          <UiButton type="button" variant="outline" @click="emit('update:open', false)">Voltar</UiButton>
-          <UiButton type="submit" :disabled="busy || !check.ok" :loading="busy" data-preorder-hand-over-confirm>
-            {{ handOver.needs_payment ? receiveConfirmLabel(method, handOver.amount_display) : "Entregar" }}
-          </UiButton>
-        </UiDialogFooter>
+        <div class="flex justify-end gap-2">
+          <NuxtButton type="button" color="neutral" variant="outline" label="Voltar" @click="emit('update:open', false)" />
+          <NuxtButton
+            type="submit"
+            :disabled="busy || !check.ok"
+            :loading="busy"
+            :label="handOver.needs_payment ? receiveConfirmLabel(method, handOver.amount_display) : 'Entregar'"
+            data-preorder-hand-over-confirm
+          />
+        </div>
       </form>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+  </NuxtModal>
 </template>

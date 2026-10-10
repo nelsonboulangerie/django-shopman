@@ -182,6 +182,34 @@ async function confirmArchive() {
     useSonner.success(entry.value.is_archived ? "Receita restaurada." : "Receita arquivada.");
   }
 }
+const kinds: { value: string; label: string }[] = [...KIND_OPTIONS];
+const PUBLISH_NUM = { class: { th: "text-right", td: "text-right tabular-nums" } };
+const PUBLISH_DIFF_COLUMNS = [
+  { id: "name", header: "O que muda", enableHiding: false },
+  { id: "a", header: "Atual", meta: PUBLISH_NUM },
+  { accessorKey: "b_display", header: "Nova", meta: PUBLISH_NUM },
+  { id: "delta", header: "Diferença", meta: PUBLISH_NUM },
+];
+const publishDiff = computed(() => [
+  ...changedRows.value.map((row) => ({
+    key: `row-${row.sku || row.name}`,
+    name: row.name || row.sku,
+    metric: false,
+    a_display: row.a_display,
+    b_display: row.b_display,
+    delta_display: row.delta_display,
+    tone: row.tone,
+  })),
+  ...changedMetrics.value.map((metric) => ({
+    key: `metric-${metric.label}`,
+    name: metric.label,
+    metric: true,
+    a_display: metric.a_display,
+    b_display: metric.b_display,
+    delta_display: metric.delta_display,
+    tone: metric.tone,
+  })),
+]);
 </script>
 
 <template>
@@ -506,23 +534,24 @@ async function confirmArchive() {
           <p v-else-if="!changedRows.length && !changedMetrics.length" class="text-sm text-muted-foreground">
             Nenhuma diferença de ingrediente ou métrica contra a versão atual.
           </p>
-          <div v-else class="max-h-64 overflow-auto rounded-md border text-sm">
-            <table class="w-full">
-              <tbody class="divide-y">
-                <tr v-for="row in changedRows" :key="`row-${row.sku || row.name}`">
-                  <td class="px-3 py-1.5">{{ row.name || row.sku }}</td>
-                  <td class="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{{ row.a_display }}</td>
-                  <td class="px-3 py-1.5 text-right tabular-nums">{{ row.b_display }}</td>
-                  <td class="px-3 py-1.5 text-right tabular-nums" :class="toneClass(row.tone)">{{ row.delta_display }}</td>
-                </tr>
-                <tr v-for="metric in changedMetrics" :key="`metric-${metric.label}`" class="bg-muted/30">
-                  <td class="px-3 py-1.5 font-medium">{{ metric.label }}</td>
-                  <td class="px-3 py-1.5 text-right tabular-nums text-muted-foreground">{{ metric.a_display }}</td>
-                  <td class="px-3 py-1.5 text-right tabular-nums">{{ metric.b_display }}</td>
-                  <td class="px-3 py-1.5 text-right tabular-nums" :class="toneClass(metric.tone)">{{ metric.delta_display }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <!-- O que muda contra a versão atual: ingredientes e, por último, métricas. -->
+          <div v-else class="max-h-64 overflow-auto">
+            <OperatorTable
+              :data="publishDiff"
+              :columns="PUBLISH_DIFF_COLUMNS"
+              :row-key="(row) => row.key"
+              caption="Diferenças contra a versão atual"
+            >
+              <template #name-cell="{ row }">
+                <span :class="row.original.metric ? 'font-medium' : ''">{{ row.original.name }}</span>
+              </template>
+              <template #a-cell="{ row }">
+                <span class="text-muted-foreground">{{ row.original.a_display }}</span>
+              </template>
+              <template #delta-cell="{ row }">
+                <span :class="toneClass(row.original.tone)">{{ row.original.delta_display }}</span>
+              </template>
+            </OperatorTable>
           </div>
         </template>
 
@@ -555,9 +584,7 @@ async function confirmArchive() {
           </label>
           <label class="grid gap-1 text-xs font-medium text-muted-foreground">
             Tipo
-            <UiNativeSelect v-model="detailsKind">
-              <option v-for="option in KIND_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-            </UiNativeSelect>
+            <NuxtSelect v-model="detailsKind" :items="kinds" value-key="value" class="w-full" aria-label="Tipo" />
           </label>
           <label class="grid gap-1 text-xs font-medium text-muted-foreground">
             Notas

@@ -44,19 +44,20 @@ const emit = defineEmits<{
   refresh: [];
 }>();
 
-const TONE_CLASS = {
-  ok: "border-emerald-500/40 bg-emerald-500/5 text-emerald-800 dark:text-emerald-300",
-  attention:
-    "border-warning/40 bg-warning/5 text-warning",
-  danger: "border-destructive/40 bg-destructive/5 text-destructive",
-  quiet: "border-border bg-muted/40 text-foreground",
+/** O tom do resultado na cor do aviso do conjunto mínimo. */
+const RESULT_COLOR = {
+  ok: "success",
+  attention: "warning",
+  danger: "error",
+  quiet: "info",
 } as const;
 
-const COUNT_TONE_CLASS = {
-  ok: "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
-  attention: "bg-warning/10 text-warning",
-  danger: "bg-destructive/10 text-destructive",
-  quiet: "bg-muted text-muted-foreground",
+/** O tom de cada contagem na cor do selo. */
+const COUNT_COLOR = {
+  ok: "success",
+  attention: "warning",
+  danger: "error",
+  quiet: "neutral",
 } as const;
 
 const result = computed(() =>
@@ -231,6 +232,14 @@ const recoveryReach = computed(() =>
     audienceCount: challenge.value?.audience_count ?? 0,
   }),
 );
+
+/** O autenticador digita casa a casa (`NuxtPinInput`); o comando leva o código inteiro. */
+const credentialDigits = computed({
+  get: () => credential.value.split(""),
+  set: (digits: string[]) => {
+    credential.value = digits.join("").replace(/\D/g, "").slice(0, 6);
+  },
+});
 
 const confirmationReady = computed(() => {
   const current = challenge.value;
@@ -412,52 +421,52 @@ function closeDialog(open: boolean) {
 
 <template>
   <section class="space-y-4" aria-labelledby="delivery-result-heading">
-    <div
-      class="rounded-md border p-4"
-      :class="TONE_CLASS[result.tone]"
+    <!-- O estado da entrega: aviso do conjunto mínimo, na cor do que aconteceu. -->
+    <NuxtAlert
+      :color="RESULT_COLOR[result.tone]"
+      variant="subtle"
+      :icon="result.icon"
       role="status"
+      data-delivery-result
     >
-      <div class="flex items-start gap-2.5">
-        <Icon :name="result.icon" class="mt-0.5 size-5 shrink-0" />
-        <div class="min-w-0">
-          <h2 id="delivery-result-heading" class="font-semibold">
-            {{ result.label }}
-          </h2>
-          <p class="mt-1 text-sm opacity-90">{{ result.detail }}</p>
-          <p
-            v-if="announcement.delivery.freshness.as_of"
-            class="mt-1.5 text-xs opacity-75"
-          >
-            Estado consultado em
-            {{
-              scheduleSummary(
-                announcement.delivery.freshness.as_of,
-                shopTimezone,
-              )
-            }}
-            ({{ shopTimezone }}).
-          </p>
-          <p
-            v-if="acceptedNote"
-            class="mt-2 border-t border-current/20 pt-2 text-sm opacity-90"
-          >
-            {{ acceptedNote }}
-          </p>
-        </div>
-      </div>
-    </div>
+      <template #title>
+        <h2 id="delivery-result-heading" class="font-semibold">
+          {{ result.label }}
+        </h2>
+      </template>
+      <template #description>
+        <p>{{ result.detail }}</p>
+        <p
+          v-if="announcement.delivery.freshness.as_of"
+          class="mt-1.5 text-xs"
+        >
+          Estado consultado em
+          {{
+            scheduleSummary(
+              announcement.delivery.freshness.as_of,
+              shopTimezone,
+            )
+          }}
+          ({{ shopTimezone }}).
+        </p>
+        <p v-if="acceptedNote" class="mt-2">
+          {{ acceptedNote }}
+        </p>
+      </template>
+    </NuxtAlert>
 
-    <section
+    <NuxtCard
       v-if="receipt && receiptSummary"
-      class="rounded-md border border-sky-500/40 bg-sky-500/5 p-4"
+      as="section"
       aria-labelledby="command-receipt-heading"
+      data-command-receipt
     >
       <div class="flex items-start gap-2.5">
         <Icon
           name="lucide:receipt-text"
-          class="mt-0.5 size-5 shrink-0 text-sky-700 dark:text-sky-300"
+          class="mt-0.5 size-5 shrink-0 text-muted-foreground"
         />
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <h2 id="command-receipt-heading" class="font-semibold">
             {{ approvalEvidence ? "Resumo da decisão" : receiptSummary.title }}
           </h2>
@@ -470,9 +479,9 @@ function closeDialog(open: boolean) {
           </p>
           <dl
             v-if="approvalEvidence"
-            class="mt-3 grid overflow-hidden rounded-md border border-sky-500/20 bg-background/60 text-sm sm:grid-cols-2"
+            class="mt-3 grid overflow-hidden rounded-md border border-border text-sm sm:grid-cols-2"
           >
-            <div class="border-b border-sky-500/20 p-3 sm:col-span-2">
+            <div class="border-b border-border p-3 sm:col-span-2">
               <dt class="text-xs font-medium text-muted-foreground">
                 Texto aprovado
               </dt>
@@ -480,13 +489,13 @@ function closeDialog(open: boolean) {
                 {{ approvedText || "Texto aprovado preservado no anúncio." }}
               </dd>
             </div>
-            <div class="border-b border-sky-500/20 p-3 sm:border-r">
+            <div class="border-b border-border p-3 sm:border-r">
               <dt class="text-xs font-medium text-muted-foreground">Versão</dt>
               <dd class="mt-1 font-semibold">
-                {{ receipt.resulting_version ?? "—" }}
+                {{ receipt.resulting_version ?? "não informada" }}
               </dd>
             </div>
-            <div class="border-b border-sky-500/20 p-3">
+            <div class="border-b border-border p-3">
               <dt class="text-xs font-medium text-muted-foreground">Público</dt>
               <dd class="mt-1 font-semibold">{{ approvalEvidence.audience }}</dd>
               <dd
@@ -496,15 +505,15 @@ function closeDialog(open: boolean) {
                 {{ approvalEvidence.canary }}
               </dd>
             </div>
-            <div class="border-b border-sky-500/20 p-3 sm:border-r">
+            <div class="border-b border-border p-3 sm:border-r">
               <dt class="text-xs font-medium text-muted-foreground">Plataformas</dt>
               <dd class="mt-1 font-semibold">{{ approvalEvidence.platforms }}</dd>
             </div>
-            <div class="border-b border-sky-500/20 p-3">
+            <div class="border-b border-border p-3">
               <dt class="text-xs font-medium text-muted-foreground">Horário</dt>
               <dd class="mt-1 font-semibold">{{ approvalEvidence.execution }}</dd>
             </div>
-            <div class="border-b border-sky-500/20 p-3 sm:border-b-0 sm:border-r">
+            <div class="border-b border-border p-3 sm:border-b-0 sm:border-r">
               <dt class="text-xs font-medium text-muted-foreground">
                 Estado da entrega
               </dt>
@@ -516,7 +525,7 @@ function closeDialog(open: boolean) {
               </dt>
               <dd class="mt-1 font-semibold">{{ decisionNextStep }}</dd>
             </div>
-            <div class="border-t border-sky-500/20 p-3 sm:col-span-2">
+            <div class="border-t border-border p-3 sm:col-span-2">
               <dt class="text-xs font-medium text-muted-foreground">
                 Fuso e horário permitido
               </dt>
@@ -533,7 +542,7 @@ function closeDialog(open: boolean) {
             <div>
               <dt class="inline text-muted-foreground">Versão resultante:</dt>
               <dd class="inline font-semibold">
-                {{ receipt.resulting_version ?? "—" }}
+                {{ receipt.resulting_version ?? "não informada" }}
               </dd>
             </div>
           </dl>
@@ -553,7 +562,7 @@ function closeDialog(open: boolean) {
           </p>
         </div>
       </div>
-    </section>
+    </NuxtCard>
 
     <section
       v-if="showsPlatformResults"
@@ -566,10 +575,11 @@ function closeDialog(open: boolean) {
         Resultado por plataforma
       </h2>
       <ul class="mt-2 grid gap-3 sm:grid-cols-2">
-        <li
+        <NuxtCard
           v-for="platform in announcement.delivery.platforms"
           :key="platform.platform_ref"
-          class="rounded-md border border-border bg-card p-3"
+          as="li"
+          :data-platform-result="platform.platform_ref"
         >
           <div class="flex items-center justify-between gap-2">
             <h3 class="font-semibold">
@@ -583,19 +593,16 @@ function closeDialog(open: boolean) {
             </span>
           </div>
           <ul class="mt-2 flex flex-wrap gap-1.5">
-            <li
-              v-for="item in platformCountItems(platform)"
-              :key="item.key"
-              class="rounded-full px-2.5 py-1 text-xs"
-              :class="COUNT_TONE_CLASS[item.tone]"
-            >
-              <strong>{{ formatCount(item.count) }}</strong> {{ item.label }}
+            <li v-for="item in platformCountItems(platform)" :key="item.key">
+              <NuxtBadge :color="COUNT_COLOR[item.tone]">
+                <strong>{{ formatCount(item.count) }}</strong> {{ item.label }}
+              </NuxtBadge>
             </li>
           </ul>
           <p v-if="waitsForSwitch(platform)" class="mt-2 text-xs text-warning">
             {{ platformSwitchedOffNote(platform.platform_ref) }}
           </p>
-        </li>
+        </NuxtCard>
       </ul>
     </section>
 
@@ -607,268 +614,210 @@ function closeDialog(open: boolean) {
         Próximo passo
       </h2>
       <ul class="mt-2 space-y-2">
-        <li
-          v-for="action in recoveryActions"
-          :key="action.ref"
-          class="rounded-md border border-border bg-card p-3"
-        >
+        <NuxtCard v-for="action in recoveryActions" :key="action.ref" as="li">
           <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
             <!-- ⚠️ O rótulo mora no BOTÃO, e só lá. Impresso também aqui, a tela lia
                  "Consultar 2 resultados incertos" duas vezes na mesma linha, e a
-                 explicação — que é o que o gestor precisa para decidir — virava a
+                 explicação, que é o que o gestor precisa para decidir, virava a
                  letra miúda de um eco. -->
-            <div class="min-w-0 flex-1">
-              <p class="text-sm">
-                {{
-                  action.enabled
-                    ? recoveryActionExplanation(action)
-                    : recoveryDisabledReason(action.reason)
-                }}
-              </p>
-            </div>
-            <UiButton
-              type="button"
+            <p class="min-w-0 flex-1 text-sm">
+              {{
+                action.enabled
+                  ? recoveryActionExplanation(action)
+                  : recoveryDisabledReason(action.reason)
+              }}
+            </p>
+            <NuxtButton
               class="shrink-0"
-              :variant="
-                action.kind === 'cancel_announcement' ? 'outline' : 'default'
-              "
-              :class="
-                action.kind === 'cancel_announcement'
-                  ? 'border-destructive/40 text-destructive hover:bg-destructive/5'
-                  : ''
-              "
+              :color="action.kind === 'cancel_announcement' ? 'error' : 'primary'"
+              :variant="action.kind === 'cancel_announcement' ? 'outline' : 'solid'"
+              :label="recoveryActionLabel(action)"
               :disabled="!action.enabled || pending"
               @click="startRecovery(action)"
-            >
-              {{ recoveryActionLabel(action) }}
-            </UiButton>
+            />
           </div>
-        </li>
+        </NuxtCard>
       </ul>
     </section>
 
-    <UiDialog :open="dialogOpen" @update:open="closeDialog">
-      <UiDialogContent class="rounded-2xl p-5 sm:max-w-lg sm:p-6">
-        <UiDialogHeader class="items-center text-center sm:text-center">
-          <div
-            class="grid size-12 place-items-center rounded-full bg-primary/10 text-primary"
-            aria-hidden="true"
+    <NuxtModal
+      :open="dialogOpen"
+      :title="activeAction ? recoveryActionLabel(activeAction) : 'Confirmar recuperação'"
+      description="Confira o que vai ser feito antes de autorizar."
+      :dismissible="!pending"
+      @update:open="closeDialog"
+    >
+      <template #body>
+        <div class="space-y-4" data-recovery-dialog>
+          <NuxtFormField
+            v-if="activeAction?.kind === 'cancel_announcement' && !challenge"
+            label="Motivo do cancelamento"
+            description="Este motivo fica registrado para a equipe entender o que aconteceu."
           >
-            <Icon :name="recoveryDialogPresentation.icon" class="size-5" />
-          </div>
-          <UiDialogTitle class="text-xl">
-            {{
-              activeAction
-                ? recoveryActionLabel(activeAction)
-                : "Confirmar recuperação"
-            }}
-          </UiDialogTitle>
-          <UiDialogDescription class="max-w-sm">
-            Confira o que vai ser feito antes de autorizar.
-          </UiDialogDescription>
-        </UiDialogHeader>
-
-        <div
-          v-if="activeAction?.kind === 'cancel_announcement' && !challenge"
-          class="mx-auto w-full max-w-sm"
-        >
-          <label for="recovery-cancel-reason" class="block text-xs font-medium text-muted-foreground">
-            Motivo do cancelamento
-          </label>
-          <UiTextarea
-            id="recovery-cancel-reason"
-            v-model="reason"
-            :rows="3"
-            :maxlength="500"
-            autofocus
-            class="mt-1"
-            placeholder="Ex.: horário alterado ou conteúdo precisa de revisão"
-          />
-          <p class="mt-1 text-xs text-muted-foreground">
-            Este motivo fica registrado para a equipe entender o que aconteceu.
-          </p>
-        </div>
-
-        <div
-          v-if="pending && !challenge"
-          class="flex items-center gap-2 text-sm"
-          aria-live="polite"
-        >
-          <Icon name="lucide:loader-circle" class="size-4 animate-spin" />
-          Conferindo versão, autorização e consequência…
-        </div>
-
-        <div v-else-if="challenge" class="space-y-4">
-          <div
-            class="flex gap-3 rounded-md border border-sky-500/30 bg-sky-500/5 p-3 text-sm"
-          >
-            <Icon
-              name="lucide:shield-check"
-              class="mt-0.5 size-5 shrink-0 text-sky-700 dark:text-sky-300"
-              aria-hidden="true"
+            <NuxtTextarea
+              id="recovery-cancel-reason"
+              v-model="reason"
+              :rows="3"
+              :maxlength="500"
+              autofocus
+              class="w-full"
+              placeholder="Ex.: horário alterado ou conteúdo precisa de revisão"
             />
-            <div>
-              <p class="font-semibold">{{ recoveryDialogPresentation.safetyTitle }}</p>
-              <p class="mt-0.5 text-muted-foreground">
-                {{ recoveryDialogPresentation.safetyDetail }}
-              </p>
-            </div>
-          </div>
+          </NuxtFormField>
 
-          <!-- ⚠️ Este é o diálogo onde o gestor autoriza REENVIO, e era o que ainda
-               chamava postagem de "destino": um número só, e "37 destinos" tanto podia
-               ser 37 pessoas quanto um mural repetido 37 vezes. A caixa de confirmação
-               irmã já contava certo; a mesma regra agora mora na camada de apresentação
-               e as duas leem dela. -->
-          <dl
-            class="rounded-md border border-border bg-muted/40 px-3 py-3 text-center"
+          <p
+            v-if="pending && !challenge"
+            class="flex items-center gap-2 text-sm"
+            aria-live="polite"
           >
-            <dt class="text-xs text-muted-foreground">O que isto alcança</dt>
-            <dd class="mt-1 space-y-0.5 text-sm font-semibold">
-              <p v-for="line in recoveryReach" :key="line">{{ line }}</p>
-              <p v-if="!recoveryReach.length" class="text-muted-foreground">
-                Nenhuma plataforma
-              </p>
-            </dd>
-          </dl>
+            <Icon name="lucide:loader-circle" class="size-4 animate-spin" />
+            Conferindo versão, autorização e consequência…
+          </p>
 
-          <div
-            v-if="challenge.dual_control"
-            class="rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm"
-            role="alert"
-          >
+          <template v-else-if="challenge">
+            <NuxtAlert
+              color="info"
+              variant="subtle"
+              :icon="recoveryDialogPresentation.icon"
+              :title="recoveryDialogPresentation.safetyTitle"
+              :description="recoveryDialogPresentation.safetyDetail"
+            />
+
+            <!-- ⚠️ Este é o diálogo onde o gestor autoriza REENVIO, e era o que ainda
+                 chamava postagem de "destino": um número só, e "37 destinos" tanto podia
+                 ser 37 pessoas quanto um mural repetido 37 vezes. A caixa de confirmação
+                 irmã já contava certo; a mesma regra agora mora na camada de apresentação
+                 e as duas leem dela. -->
+            <NuxtCard variant="soft">
+              <dl class="text-center">
+                <dt class="text-xs text-muted-foreground">O que isto alcança</dt>
+                <dd class="mt-1 space-y-0.5 text-sm font-semibold">
+                  <p v-for="line in recoveryReach" :key="line">{{ line }}</p>
+                  <p v-if="!recoveryReach.length" class="text-muted-foreground">
+                    Nenhuma plataforma
+                  </p>
+                </dd>
+              </dl>
+            </NuxtCard>
+
             <!-- ⚠️ `dual_control` deixa o botão de confirmar morto PARA SEMPRE nesta
                  caixa. O texto antigo explicava o desenho do gate e não dizia o gesto:
                  botão apagado com frase que não resolve é o mesmo que botão apagado sem
                  frase. Esta termina no que fazer. -->
-            <p class="font-semibold">Este disparo precisa de duas pessoas.</p>
-            <p class="mt-1 text-muted-foreground">
-              Você já fez a sua parte. Peça a outra pessoa com acesso ao
-              Marketing para abrir este mesmo anúncio e confirmar. Nada é
-              disparado até lá.
-            </p>
-          </div>
-
-          <div v-if="challenge.typed_phrase" class="mx-auto w-full max-w-sm">
-            <label
-              for="recovery-typed-confirmation"
-              class="block text-xs font-medium text-muted-foreground"
-            >
-              Digite exatamente
-              <code class="rounded bg-muted px-1.5 py-0.5">{{
-                challenge.typed_phrase
-              }}</code>
-            </label>
-            <UiTextarea
-              id="recovery-typed-confirmation"
-              v-model="typedConfirmation"
-              name="typed_confirmation"
-              :rows="1"
-              autocomplete="off"
-              spellcheck="false"
-              class="mt-1 min-h-8 resize-none font-mono"
+            <NuxtAlert
+              v-if="challenge.dual_control"
+              color="warning"
+              variant="subtle"
+              role="alert"
+              title="Este disparo precisa de duas pessoas."
+              description="Você já fez a sua parte. Peça a outra pessoa com acesso ao Marketing para abrir este mesmo anúncio e confirmar. Nada é disparado até lá."
             />
-          </div>
 
-          <div
-            v-if="challenge.step_up !== 'none'"
-            class="mx-auto w-full max-w-sm"
-          >
-            <div v-if="challenge.step_up === 'password'" class="mb-3">
-              <label for="recovery-username" class="block text-xs font-medium text-muted-foreground">
-                Usuário
-              </label>
-              <UiInput
-                id="recovery-username"
-                name="username"
-                :model-value="operatorUsername"
-                type="text"
-                autocomplete="username"
-                readonly
-                class="mt-1 bg-muted text-muted-foreground"
+            <NuxtFormField v-if="challenge.typed_phrase" label="Digite exatamente esta frase">
+              <p id="recovery-typed-phrase" class="mb-1.5">
+                <code class="rounded bg-muted px-1.5 py-0.5 text-sm">{{ challenge.typed_phrase }}</code>
+              </p>
+              <NuxtTextarea
+                id="recovery-typed-confirmation"
+                v-model="typedConfirmation"
+                aria-describedby="recovery-typed-phrase"
+                name="typed_confirmation"
+                :rows="1"
+                autocomplete="off"
+                spellcheck="false"
+                class="w-full font-mono"
               />
-            </div>
-            <UiVerificationCodeInput
-              v-if="challenge.step_up === 'totp'"
-              id="recovery-credential"
-              v-model="credential"
-              :disabled="pending"
-              class="text-center"
-              @keydown.enter="confirmRecovery"
-            />
-            <template v-else>
-              <label for="recovery-credential" class="block text-xs font-medium text-muted-foreground">
-                Sua senha
-              </label>
-              <UiInput
-                id="recovery-credential"
-                v-model="credential"
-                name="current_password"
-                type="password"
-                autocomplete="current-password"
-                :maxlength="200"
-                class="mt-1"
-                @keyup.enter="confirmRecovery"
-              />
+            </NuxtFormField>
+
+            <template v-if="challenge.step_up !== 'none'">
+              <NuxtFormField v-if="challenge.step_up === 'password'" label="Usuário">
+                <NuxtInput
+                  id="recovery-username"
+                  name="username"
+                  :model-value="operatorUsername"
+                  type="text"
+                  autocomplete="username"
+                  readonly
+                  class="w-full"
+                />
+              </NuxtFormField>
+              <NuxtFormField v-if="challenge.step_up === 'totp'" label="Código de 6 dígitos do autenticador">
+                <NuxtPinInput
+                  id="recovery-credential"
+                  v-model="credentialDigits"
+                  :length="6"
+                  otp
+                  :disabled="pending"
+                  @keydown.enter="confirmRecovery"
+                />
+              </NuxtFormField>
+              <NuxtFormField v-else-if="challenge.step_up === 'password'" label="Sua senha">
+                <NuxtInput
+                  id="recovery-credential"
+                  v-model="credential"
+                  name="current_password"
+                  type="password"
+                  autocomplete="current-password"
+                  :maxlength="200"
+                  class="w-full"
+                  @keyup.enter="confirmRecovery"
+                />
+              </NuxtFormField>
             </template>
-          </div>
+          </template>
+
+          <NuxtAlert
+            v-if="commandError"
+            color="error"
+            variant="subtle"
+            :title="commandError"
+          />
         </div>
+      </template>
 
-        <p v-if="commandError" class="text-sm text-destructive" role="alert">
-          {{ commandError }}
-        </p>
-
-        <UiDialogFooter class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <UiButton
-            type="button"
+      <template #footer>
+        <div class="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+          <NuxtButton
+            color="neutral"
             variant="outline"
-            class="w-full"
+            block
+            label="Voltar sem alterar"
             :disabled="pending"
             @click="closeDialog(false)"
-          >
-            Voltar sem alterar
-          </UiButton>
-          <UiButton
+          />
+          <NuxtButton
             v-if="activeAction?.kind === 'cancel_announcement' && !challenge"
-            type="button"
-            class="w-full"
+            block
+            :label="pending ? 'Conferindo…' : 'Conferir cancelamento'"
             :disabled="pending || !reason.trim()"
             @click="requestRecovery"
-          >
-            {{ pending ? "Conferindo…" : "Conferir cancelamento" }}
-          </UiButton>
+          />
           <!-- Com duplo controle o confirmar nunca liga, então no lugar dele vai o
                gesto que existe: fechar a caixa. -->
-          <UiButton
+          <NuxtButton
             v-if="challenge && challenge.dual_control"
-            type="button"
-            class="w-full"
+            block
+            label="Entendi"
             @click="closeDialog(false)"
-          >
-            Entendi
-          </UiButton>
-          <UiButton
+          />
+          <NuxtButton
             v-else-if="challenge"
-            type="button"
-            class="w-full"
+            block
+            :label="pending ? 'Registrando…' : recoveryDialogPresentation.confirmLabel"
             :disabled="!confirmationReady"
             @click="confirmRecovery"
-          >
-            {{ pending ? "Registrando…" : recoveryDialogPresentation.confirmLabel }}
-          </UiButton>
-          <UiButton
+          />
+          <NuxtButton
             v-else-if="
               commandError && activeAction?.kind !== 'cancel_announcement'
             "
-            type="button"
-            class="w-full"
+            block
+            label="Tentar de novo"
             :disabled="pending || !activeAction"
             @click="requestRecovery"
-          >
-            Tentar de novo
-          </UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+          />
+        </div>
+      </template>
+    </NuxtModal>
   </section>
 </template>

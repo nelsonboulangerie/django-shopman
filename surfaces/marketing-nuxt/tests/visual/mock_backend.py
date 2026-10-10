@@ -739,7 +739,7 @@ class Handler(BaseHTTPRequestHandler):
                 action(
                     f"campaign:{rule['pk']}",
                     "edit_campaign",
-                    f"/campaigns#campaign-{rule['pk']}",
+                    f"/settings/campaigns#campaign-{rule['pk']}",
                     enabled=True,
                     version=rule["version"],
                 )

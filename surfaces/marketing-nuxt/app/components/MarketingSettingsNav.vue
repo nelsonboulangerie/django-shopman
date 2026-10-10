@@ -1,47 +1,52 @@
 <script setup lang="ts">
-// A segunda linha de Ajustes: Campanhas, Modelos, Ofertas e cupons e Plataformas.
+// A faixa das sub-seções de Ajustes: Campanhas, Modelos, Ofertas e cupons e Plataformas.
 //
-// Decisão do dono (03/10/2026, SUITE-UX §6): Ajustes entra por um item só (no pé do
-// rail, ou na barra do polegar) e tem as próprias seções aqui, na linha de recortes do
-// cabeçalho da tela (`MarketingPageHeader` a monta em toda tela de Ajustes). O desenho
-// é o do chip da suíte (`UiFilterChip` sob `data-suite`, `orders-board3.html`): pílula
-// de 44px, a ativa com a borda e o fundo claro da cor primária.
+// Fase 2 (WP-FASE2-UX-OPERADOR, A4 e seção 5): sub-seção divide a faixa esquerda da
+// toolbar com os recortes rápidos, mas muda a URL (cada uma tem rota própria embaixo
+// de `/settings`). A tela a põe no `#filters-primary` do `OperatorPageHeader`.
 //
-// ⚠️ A aba ativa vem para dentro da área visível: numa tela estreita a linha rola, e a
-// seção em que o operador está não pode ficar escondida fora dela (o defeito foi
-// medido aqui antes de virar regra do `OperatorAppBar`).
+// Com quatro opções, a regra do celular (seção 11: "sub-seção com mais de 3 opções vira
+// `NuxtSelect`") pede a lista no celular e as abas do `sm` para cima. As duas vão no
+// HTML do servidor e o CSS escolhe (régua única, sem `v-if` de largura): o celular
+// nasce no desenho do celular.
+//
+// ⚠️ Peça a promover: o `OperatorQuickFilters` do kit (K4, com `to`) ainda não existe;
+// quando existir, esta faixa vira ele.
 const { activeSettings, settingsSections } = useMarketingSections();
-const nav = ref<HTMLElement | null>(null);
 
-function revealActive() {
-  const active = nav.value?.querySelector<HTMLElement>("[aria-current='page']");
-  active?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-}
-onMounted(revealActive);
-watch(activeSettings, () => nextTick(revealActive));
+const items = computed(() =>
+  settingsSections.map((section) => ({
+    label: section.label,
+    value: section.key,
+    icon: section.icon.replace("lucide:", "i-lucide-"),
+  })),
+);
+
+const current = computed({
+  get: () => activeSettings.value ?? undefined,
+  set: (next: string | undefined) => {
+    const target = settingsSections.find((section) => section.key === next);
+    if (target && target.key !== activeSettings.value) void navigateTo(target.to);
+  },
+});
 </script>
 
 <template>
-  <nav
-    ref="nav"
-    class="flex gap-1.5 *:shrink-0"
-    aria-label="Seções de Ajustes"
-    data-marketing-settings-nav
-  >
-    <NuxtLink
-      v-for="section in settingsSections"
-      :key="section.key"
-      :to="section.to"
-      :aria-current="activeSettings === section.key ? 'page' : undefined"
-      class="inline-flex min-h-control items-center gap-2 rounded-full border px-3 text-[13px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      :class="
-        activeSettings === section.key
-          ? 'border-primary bg-primary/10 font-semibold text-foreground'
-          : 'border-border bg-card font-medium text-foreground hover:bg-accent'
-      "
-    >
-      <Icon :name="section.icon" class="size-4" aria-hidden="true" />
-      {{ section.label }}
-    </NuxtLink>
+  <nav class="flex min-w-0" aria-label="Seções de Ajustes" data-marketing-settings-nav>
+    <NuxtTabs
+      v-model="current"
+      :items="items"
+      :content="false"
+      variant="pill"
+      class="max-sm:hidden"
+      aria-label="Seções de Ajustes"
+    />
+    <NuxtSelect
+      v-model="current"
+      :items="items"
+      class="w-48 sm:hidden"
+      aria-label="Seção de Ajustes"
+      data-marketing-settings-select
+    />
   </nav>
 </template>

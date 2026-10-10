@@ -34,6 +34,7 @@ import { computed, onBeforeUnmount } from "vue";
 import { danfeLine } from "~/presentation/danfe";
 import { kitchenChips } from "~/presentation/kitchen";
 import OrderCardMenu from "./OrderCardMenu.vue";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 // ``canOpen``: falso para quem só expede; o detalhe do pedido e o "Atender" são de quem
 // gerencia. ``selecting``: o modo de seleção em lote está ligado e o cartão mostra a
@@ -217,8 +218,6 @@ const notices = computed<CardNotice[]>(() => {
               {
                 icon: "i-lucide-check",
                 label: `Pronto de ${chip.station}`,
-                color: chip.tone === "alert" ? "error" : "neutral",
-                variant: "outline",
                 disabled: props.busy,
                 onClick: () => emit("station-ready", chip.ref),
               },
@@ -247,8 +246,6 @@ const notices = computed<CardNotice[]>(() => {
                 ? "Imprimindo…"
                 : danfe.value.action,
             icon: "i-lucide-printer",
-            color: "warning",
-            variant: "outline",
             disabled: props.danfePrinting || danfe.value.sending,
             onClick: () => emit("print-danfe"),
           },
@@ -270,8 +267,6 @@ const notices = computed<CardNotice[]>(() => {
           {
             label: "Abrir e reprocessar",
             to: `/${card.ref}`,
-            color: "warning",
-            variant: "outline",
           },
           { "data-fiscal-failed-open": "" },
         ),
@@ -291,8 +286,6 @@ const notices = computed<CardNotice[]>(() => {
           {
             label: "Abrir solicitação",
             to: `/${card.ref}#ifood-negotiations`,
-            color: "warning",
-            variant: "outline",
           },
           { "data-ifood-negotiation-link": "" },
         ),
@@ -717,7 +710,7 @@ function nuxtIcon(icon: string): string {
               :icon="notice.icon"
               :title="notice.title"
               :description="notice.description"
-              :actions="notice.actions"
+              :actions="alertActions(notice.color, notice.actions ?? [])"
               v-bind="notice.attrs"
             />
           </template>
@@ -802,6 +795,8 @@ function nuxtIcon(icon: string): string {
       <!-- @container: o rodapé decide pela própria largura (card largo, coluna estreita,
            grade da Saída), não pelo breakpoint da página. -->
       <div class="@container flex items-end gap-2">
+        <!-- O Desfazer é o MESMO botão da saída tocada (dono, 09/10/2026): o primário
+             sólido, no mesmo lugar e tamanho; muda só o texto, e o fundo esvazia atrás. -->
         <OperatorTimedButton
           v-if="handoff && handoff.canUndo"
           :until="handoff.untilIso"
@@ -810,8 +805,8 @@ function nuxtIcon(icon: string): string {
           label="Desfazer"
           block
           class="min-w-0 flex-1"
-          color="neutral"
-          variant="outline"
+          color="primary"
+          variant="solid"
           icon="i-lucide-undo-2"
           :disabled="busy"
           :loading="busy"

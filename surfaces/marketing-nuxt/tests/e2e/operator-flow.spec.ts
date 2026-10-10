@@ -42,11 +42,10 @@ async function gotoHydrated(page: Page, path: string) {
   );
 }
 
-// No celular as quatro seções moram na barra do pé da tela.
+// No celular as quatro seções moram na barra do pé da tela (a barra da suíte, a mesma
+// navegação que vira trilho do `sm` para cima).
 function mobileSections(page: Page) {
-  return page.getByRole("navigation", {
-    name: "Seções do Marketing no celular",
-  });
+  return page.getByRole("navigation", { name: "Seções do Marketing" });
 }
 
 test("operador entra e alcança os três postos de trabalho sem redigitação", async ({
@@ -57,15 +56,18 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
   await mobileSections(page)
     .getByRole("link", { name: "Ajustes", exact: true })
     .click();
-  await expect(page).toHaveURL(/\/campaigns$/);
+  // Ajustes abre o índice das sub-seções; cada cartão leva à sua rota.
+  await expect(page).toHaveURL(/\/settings$/);
+  await page.locator('[data-settings-section="campaigns"]').click();
+  await expect(page).toHaveURL(/\/settings\/campaigns$/);
   await expect(
     page.getByRole("heading", { level: 1, name: "Campanhas" }),
   ).toBeVisible();
-  // Do desktop largo para cima a lista é a tabela; abaixo, a lista em cartões.
-  // As duas vêm no HTML e o CSS mostra uma só: a campanha aparece uma vez na tela.
+  // A lista é a OperatorTable em toda largura (no celular, as linhas que abrem):
+  // a campanha aparece uma vez na tela.
   const campaignName = page.getByText("Fornada artesanal 01");
   await expect(campaignName.filter({ visible: true })).toHaveCount(1);
-  await expect(page.locator("[data-campaigns-table]")).toBeHidden();
+  await expect(page.locator("[data-campaigns-table]")).toBeVisible();
 
   await page.getByRole("button", { name: /^Nova campanha/ }).filter({ visible: true }).first().click();
   const editor = page.getByRole("dialog").last();
@@ -88,10 +90,10 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
   await page.keyboard.press("Escape");
   await expect(editor).toBeHidden();
 
-  await page
-    .getByRole("link", { name: "Plataformas", exact: true })
-    .first()
-    .click();
+  // No celular as sub-seções de Ajustes são uma lista (NuxtSelect).
+  await page.getByRole("combobox", { name: "Seção de Ajustes" }).click();
+  await page.getByRole("option", { name: "Plataformas", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/platforms$/);
   await expect(
     page.getByRole("heading", { level: 1, name: "Plataformas" }),
   ).toBeVisible();
@@ -134,7 +136,12 @@ test("a fila de decisões leva cada cartão ao lugar exato da decisão", async (
 
   // O sino é a caixa de Avisos do kit (V6-KIT): as decisões entram nela como um
   // resumo que leva à mesma fila, sem lista própria.
-  await page.locator("[data-operator-inbox-trigger]").first().click();
+  // Há um sino no trilho (mesa) e outro no cabeçalho do celular: o visível.
+  await page
+    .locator("[data-operator-inbox-trigger]")
+    .filter({ visible: true })
+    .first()
+    .click();
   const inbox = page.locator("[data-operator-inbox-panel]");
   await expect(inbox.getByText("2 decisões esperam você.")).toBeVisible();
   await expect(
@@ -155,17 +162,25 @@ test("Ajustes tem as próprias seções, uma rota por lugar", async ({
 }) => {
   await enterAsSyntheticOperator(page);
 
-  await gotoHydrated(page, "/offers");
+  await gotoHydrated(page, "/settings/offers");
   await expect(
     page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
   ).toBeVisible();
+  // No celular (mais de 3 opções) as sub-seções são uma lista com a atual escolhida.
   const settings = page.getByRole("navigation", { name: "Seções de Ajustes" });
+  await expect(
+    settings.getByRole("combobox", { name: "Seção de Ajustes" }),
+  ).toContainText("Ofertas e cupons");
+  // Do `sm` para cima viram abas, e cada aba muda a rota.
+  await page.setViewportSize({ width: 1280, height: 900 });
   for (const name of ["Campanhas", "Modelos", "Ofertas e cupons", "Plataformas"]) {
-    await expect(settings.getByRole("link", { name, exact: true })).toBeVisible();
+    await expect(settings.getByRole("tab", { name, exact: true })).toBeVisible();
   }
   await expect(
-    settings.getByRole("link", { name: "Ofertas e cupons", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+    settings.getByRole("tab", { name: "Ofertas e cupons", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await settings.getByRole("tab", { name: "Modelos", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/templates$/);
   // O endereço antigo do panorama não existe mais (pré-go-live: zero legado).
   const old = await page.goto("/v2");
   expect(old?.status()).toBe(404);
@@ -176,8 +191,8 @@ test("Plataformas usa detalhe modal e volta para a própria lista", async ({
 }) => {
   await enterAsSyntheticOperator(page);
 
-  await gotoHydrated(page, "/platforms");
-  await expect(page).toHaveURL(/\/platforms$/);
+  await gotoHydrated(page, "/settings/platforms");
+  await expect(page).toHaveURL(/\/settings\/platforms$/);
 
   const google = page.locator('[data-marketing-platform="google_business"]');
   await google.click();
@@ -187,7 +202,7 @@ test("Plataformas usa detalhe modal e volta para a própria lista", async ({
   await expect(dialog.getByRole("heading", { name: /Google/ })).toBeVisible();
   await dialog.getByRole("button", { name: "Fechar" }).click();
 
-  await expect(page).toHaveURL(/\/platforms$/);
+  await expect(page).toHaveURL(/\/settings\/platforms$/);
   await expect(google).toBeFocused();
   await expect(
     page.getByRole("heading", { level: 1, name: "Plataformas" }),
@@ -197,7 +212,7 @@ test("Plataformas usa detalhe modal e volta para a própria lista", async ({
 test("composer usa modal amplo no desktop", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await enterAsSyntheticOperator(page);
-  await gotoHydrated(page, "/campaigns");
+  await gotoHydrated(page, "/settings/campaigns");
   await page.getByRole("button", { name: /^Nova campanha/ }).filter({ visible: true }).first().click();
 
   const dialog = page.getByRole("dialog").last();
@@ -212,14 +227,14 @@ test("a oferta abre o composer funcional com Google entre os destinos", async ({
   page,
 }) => {
   await enterAsSyntheticOperator(page);
-  await gotoHydrated(page, "/offers");
+  await gotoHydrated(page, "/settings/offers");
   const useOffer = page.getByRole("link", {
     name: "Criar campanha com esta oferta",
   });
   await expect(useOffer).toBeVisible();
   await useOffer.click();
 
-  await expect(page).toHaveURL(/\/campaigns\?.*offer=hibisco-primavera/);
+  await expect(page).toHaveURL(/\/settings\/campaigns\?.*offer=hibisco-primavera/);
   const editor = page.getByRole("dialog").last();
   await expect(editor).toBeVisible();
   await editor.getByLabel("Nome da campanha").fill("Primavera · Hibisco");
@@ -236,7 +251,7 @@ test("Campanhas liga ou desliga campanha com CAS e recuperação de conflito", a
   page,
 }) => {
   await enterAsSyntheticOperator(page);
-  await gotoHydrated(page, "/campaigns");
+  await gotoHydrated(page, "/settings/campaigns");
 
   const activation = page.getByRole("switch", {
     name: "Desligar a campanha Fornada artesanal 01",
@@ -262,7 +277,7 @@ test("Campanhas prepara disparo idempotente e leva o receipt à revisão", async
       path: "/",
     },
   ]);
-  await gotoHydrated(page, "/campaigns");
+  await gotoHydrated(page, "/settings/campaigns");
   const prepare = page.getByRole("button", {
     name: /Preparar o disparo da campanha Fornada artesanal 01/,
   });
@@ -282,8 +297,10 @@ test("Campanhas prepara disparo idempotente e leva o receipt à revisão", async
   await expect(page).toHaveURL(
     /\/announcements\/77\?dispatch=new#review/,
   );
-  // A revisão ocupa a tela inteira, sem a barra de seções do polegar (v4, MKT-14).
-  await expect(mobileSections(page)).toHaveCount(0);
+  // Fase 2: a barra inferior da suíte fica (o kit a mantém sempre visível) e a
+  // decisão vem na ação na base, colada em cima dela.
+  await expect(mobileSections(page)).toBeVisible();
+  await expect(page.locator("[data-review-actions]")).toBeVisible();
   await expect(
     page.getByText("Este anúncio acabou de ser criado pelo seu disparo"),
   ).toBeVisible();

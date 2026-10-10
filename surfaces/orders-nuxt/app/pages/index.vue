@@ -54,6 +54,7 @@ import {
   type QueueSort,
 } from "~/presentation/queue";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const {
   readMetadata,
@@ -530,7 +531,7 @@ const phoneTabItems = computed(() =>
     ...tab,
     value: tab.key,
     label: tab.title,
-    badge: triaged(tab.zone).length,
+    count: triaged(tab.zone).length,
   })),
 );
 // Puxe para atualizar (celular) e o aviso dos gestos no fim da lista.
@@ -786,7 +787,7 @@ const queueScopeTabs = computed(() =>
   QUEUE_SCOPES.map((option) => ({
     value: option.key,
     label: option.label,
-    badge: scopeCounts.value[option.key],
+    count: scopeCounts.value[option.key],
   })),
 );
 const fulfillmentTabs = computed(() => [
@@ -794,19 +795,19 @@ const fulfillmentTabs = computed(() => [
     value: "all",
     label: "Todos",
     icon: "i-lucide-layers-3",
-    badge: allCards.value.length,
+    count: allCards.value.length,
   },
   {
     value: "delivery",
     label: "Entrega",
     icon: "i-lucide-bike",
-    badge: fulfillment_.value.delivery,
+    count: fulfillment_.value.delivery,
   },
   {
     value: "pickup",
     label: "Retirada",
     icon: "i-lucide-store",
-    badge: fulfillment_.value.pickup,
+    count: fulfillment_.value.pickup,
   },
 ]);
 const fulfillmentCompactTabs = computed(() =>
@@ -1549,7 +1550,9 @@ function printQueue() {
           variant="pill"
           aria-label="Tipo de entrega"
           @update:model-value="pickFulfillment"
-        />
+        >
+          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+        </NuxtTabs>
         <NuxtSelect
           v-if="channels.length"
           v-model="channel"
@@ -1642,7 +1645,9 @@ function printQueue() {
           variant="pill"
           data-queue-scopes
           @update:model-value="pickScope"
-        />
+        >
+          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+        </NuxtTabs>
       </template>
       <template v-if="hasChannelQueueSignal" #feedback>
         <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
@@ -1710,7 +1715,9 @@ function printQueue() {
         variant="link"
         data-board-zone-tabs
         @update:model-value="pickPhoneZone"
-      />
+      >
+        <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+      </NuxtTabs>
     </OperatorToolbar>
 
 
@@ -2022,14 +2029,12 @@ function printQueue() {
               variant="subtle"
               icon="i-lucide-triangle-alert"
               :description="actionError(row.original.card.ref)"
-              :actions="[
+              :actions="alertActions('error', [
                 {
                   label: 'Dispensar',
-                  color: 'error',
-                  variant: 'outline',
                   onClick: () => clearActionError(row.original.card.ref),
                 },
-              ]"
+              ])"
             />
           </template>
           <!-- a linha aberta: os detalhes do pedido e todas as outras ações -->
@@ -2121,10 +2126,7 @@ function printQueue() {
               class="size-4 text-muted-foreground"
             />
             <h2 class="text-sm font-bold uppercase tracking-wide">Encomendas</h2>
-            <NuxtBadge
-              color="neutral"
-              :label="String(preordersCount)"
-            />
+            <OperatorCountChip :count="preordersCount" />
             <span
               class="ms-auto hidden text-end text-xs text-muted-foreground sm:block"
               >Confirmados para os próximos dias</span
@@ -2207,14 +2209,12 @@ function printQueue() {
             variant="subtle"
             icon="i-lucide-triangle-alert"
             :description="rejectReasonsError"
-            :actions="[
+            :actions="alertActions('error', [
               {
                 label: 'Consultar novamente',
-                color: 'error',
-                variant: 'outline',
                 onClick: () => loadRejectReasons(),
               },
-            ]"
+            ])"
           />
           <NuxtEmpty
             v-else-if="isMarketplaceReject && !rejectReasons.length"
@@ -2324,14 +2324,12 @@ function printQueue() {
             variant="subtle"
             title="O pedido ou turno mudou"
             :description="`Confira o contexto atual: ${settleAction?.confirmation.description || ''}`"
-            :actions="[
+            :actions="alertActions('warning', [
               {
                 label: 'Conferir e manter os valores digitados',
-                color: 'warning',
-                variant: 'outline',
                 onClick: () => reviewSettleCustody(),
               },
-            ]"
+            ])"
           />
           <NuxtFormField label="Valor recebido">
             <NuxtInput

@@ -796,6 +796,79 @@ describe("AnnouncementCard", () => {
   });
 });
 
+// A Revisão (fase 2): a decisão mora na PÁGINA (ação na base do kit e barra do topo),
+// e o cartão expõe o estado e os gestos. Sem a página (o painel), ele a desenha em fluxo.
+describe("AnnouncementCard — decisão montada pela página", () => {
+  type Exposed = {
+    canContinue: boolean;
+    continueBlockedReason: string;
+    continueDecision: () => void;
+    askToReject: () => void;
+    openScheduling: () => void;
+  };
+
+  it("na página, não desenha a própria barra e expõe o que a página monta", async () => {
+    const wrapper = mountCard(makeAnnouncement(), "", "America/Sao_Paulo", false, false, {
+      decisionInPage: true,
+    });
+    const card = wrapper.vm as unknown as Exposed;
+
+    expect(wrapper.find("[data-review-actions]").exists()).toBe(false);
+    expect(wrapper.find("[data-testid=publish-now]").exists()).toBe(false);
+    // A frase do que vem depois continua no cartão: ela explica o Continuar de onde ele estiver.
+    expect(wrapper.text()).toContain(
+      "O texto que você conferir na próxima tela é o que vai",
+    );
+    expect(card.canContinue).toBe(true);
+    expect(card.continueBlockedReason).toBe("");
+
+    card.continueDecision();
+    expect(wrapper.emitted("approve")![0]![2]).toBe("now");
+    card.askToReject();
+    expect(wrapper.emitted("reject")![0]).toEqual([7]);
+  });
+
+  it("diz por que Continuar não pode, com a frase do campo que falta", async () => {
+    const wrapper = mountCard(makeAnnouncement(), "", "America/Sao_Paulo", false, false, {
+      decisionInPage: true,
+    });
+    const card = wrapper.vm as unknown as Exposed;
+
+    await wrapper.find("textarea").setValue("   ");
+    expect(card.canContinue).toBe(false);
+    expect(card.continueBlockedReason).toBe("O anúncio precisa de um texto.");
+
+    await wrapper.find("textarea").setValue("x".repeat(2201));
+    expect(card.canContinue).toBe(false);
+    expect(card.continueBlockedReason).toContain("passou do limite");
+
+    card.continueDecision();
+    expect(wrapper.emitted("approve")).toBeFalsy();
+  });
+
+  it("no silêncio do WhatsApp, o motivo aponta o Agendado; agendar abre a hora sugerida", async () => {
+    vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 no relógio da loja.
+    const wrapper = mountCard(
+      makeAnnouncement({ platforms: ["whatsapp"] }),
+      "",
+      "America/Sao_Paulo",
+      false,
+      false,
+      { decisionInPage: true },
+    );
+    const card = wrapper.vm as unknown as Exposed;
+
+    expect(card.canContinue).toBe(false);
+    expect(card.continueBlockedReason).toContain("Agendado");
+
+    card.openScheduling();
+    await wrapper.vm.$nextTick();
+    expect(card.canContinue).toBe(true);
+    card.continueDecision();
+    expect(wrapper.emitted("approve")![0]![2]).toBe("scheduled");
+  });
+});
+
 describe("AnnouncementCard — post do Google", () => {
   it("só pergunta pelo post do Google quando o Google está entre as plataformas", () => {
     expect(

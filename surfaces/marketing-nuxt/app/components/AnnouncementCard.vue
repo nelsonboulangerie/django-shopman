@@ -43,6 +43,8 @@ import {
   googlePostTypeLabel,
 } from "~/presentation/googleBusinessPost";
 import type { GoogleBusinessOptions } from "~/presentation/googleBusinessPost";
+import { useFileDialog } from "@vueuse/core";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   announcement: Announcement;
@@ -62,6 +64,10 @@ const props = defineProps<{
   /** Produtos publicáveis (`options.products`): o nome que o gestor fala, no lugar
    *  do SKU. Sem rótulo, o SKU continua sendo o que há. */
   productOptions?: { value: string; label: string }[];
+  /** A página da revisão monta a decisão (ação na base do kit abaixo de `lg`, barra do
+   *  topo na mesa) com o que o cartão expõe; sem isto (o painel), o cartão desenha
+   *  Recusar e Continuar em fluxo, no fim dele. */
+  decisionInPage?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -469,7 +475,18 @@ function clockOf(instant: string): string {
 const photoUrl = ref("");
 const photoBusy = ref(false);
 const photoError = ref("");
-const photoInput = ref<HTMLInputElement | null>(null);
+// O seletor de arquivo com `capture` é API do navegador: o `useFileDialog` o cria fora
+// da tela, e o gesto é o botão "Tirar outra" (nenhum controle cru no template).
+const camera = useFileDialog({
+  accept: "image/*",
+  capture: "environment",
+  multiple: false,
+  reset: true,
+});
+camera.onChange((files) => {
+  const file = files?.[0];
+  if (file) void uploadPhoto(file);
+});
 const shownPhoto = computed(() => photoUrl.value || outgoingImage.value);
 const photoCaption = computed(() => {
   if (photoUrl.value) return "Foto tirada agora";
@@ -477,11 +494,7 @@ const photoCaption = computed(() => {
   return props.announcement.lot_quantity ? `Foto do lote${at ? `, ${at}` : ""}` : "Foto do produto";
 });
 
-async function onPhotoPicked(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = "";
-  if (!file) return;
+async function uploadPhoto(file: File) {
   photoBusy.value = true;
   photoError.value = "";
   try {
@@ -560,19 +573,76 @@ function editsWithPhoto(): AnnouncementEdits {
   return photoUrl.value ? { ...edits(), image_url: photoUrl.value } : edits();
 }
 
-defineExpose({ openScheduling, askToReject });
+/** O erro do campo de texto, escrito junto dele. */
+const bodyError = computed(() => {
+  if (!body.value.trim()) return "O anúncio precisa de um texto.";
+  if (textLength.value > textLimit.value)
+    return "O texto passou do limite da plataforma mais curta escolhida.";
+  return "";
+});
+
+/** As duas ocorrências de um horário que o relógio repete (horário de verão). */
+const foldOptions = computed(() =>
+  scheduleResolution.value.candidates.map((candidate, index) => ({
+    value: index === 0 ? "earlier" : "later",
+    label: `${index === 0 ? "Primeira" : "Segunda"} ocorrência (UTC${candidate.offset})`,
+  })),
+);
+
+// ── A decisão: o que a página lê para montar Recusar e Continuar ─────────────────
+
+/** Continuar leva ao selo: pode quando o texto, as plataformas e o "quando" fecham. */
+const canContinue = computed(
+  () =>
+    (scheduling.value ? canSchedule.value : canPublishNow.value) &&
+    textLength.value <= textLimit.value,
+);
+
+/** Por que Continuar não pode agora, escrito sob a ação (no toque não há dica). Vazio
+ *  enquanto a decisão anda (`busy`): aí o botão só carrega. */
+const continueBlockedReason = computed(() => {
+  if (props.busy) return "";
+  if (expired.value) return "O prazo deste anúncio venceu: prepare um disparo novo em Campanhas.";
+  if (!body.value.trim()) return "O anúncio precisa de um texto.";
+  if (platforms.value.length === 0) return "Escolha ao menos uma plataforma.";
+  if (textLength.value > textLimit.value)
+    return "O texto passou do limite da plataforma mais curta escolhida.";
+  if (scheduling.value) {
+    return scheduleResolution.value.ok
+      ? ""
+      : scheduleResolution.value.detail || "Escolha a data e a hora do disparo.";
+  }
+  if (nowFallsInQuietHours.value)
+    return "O WhatsApp está em silêncio até as 08:00. Escolha Agendado para marcar a hora.";
+  return "";
+});
+
+/** O gesto de Continuar: agora ou na hora marcada, conforme o "Quando". */
+function continueDecision() {
+  if (!canContinue.value) return;
+  if (scheduling.value) schedule();
+  else publishNow();
+}
+
+defineExpose({
+  openScheduling,
+  askToReject,
+  continueDecision,
+  canContinue,
+  continueBlockedReason,
+});
 </script>
 
 <template>
   <!-- A revisão do anúncio (v4 "a revisão aberta" e v3 a "revisar o anúncio do lote"):
        a origem escrita, a foto grande com "Tirar outra", o texto com o limite da
-       plataforma, as plataformas numa lista com chave por linha, e "Recusar" +
-       "Continuar" fixos no polegar. O prazo mora no cabeçalho da tela. -->
-  <article class="flex flex-col gap-4 pb-28 sm:pb-0" data-announcement-review>
-    <p class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]" data-review-origin>
-      <span class="inline-flex h-7 items-center gap-1.5 rounded-full bg-warning/12 px-2.5 font-semibold text-warning">
-        <span class="size-1.5 rounded-full bg-warning" aria-hidden="true" />Pede sua aprovação
-      </span>
+       plataforma, as plataformas numa lista com chave por linha, e o "Quando". A
+       decisão (Recusar e Continuar) mora na PÁGINA: na ação na base do kit abaixo de
+       `lg` e na barra do topo na mesa (`decision-in-page`). Fora da página, no painel,
+       o cartão desenha a decisão em fluxo, no fim dele. O prazo mora no cabeçalho. -->
+  <article class="flex flex-col gap-4" data-announcement-review>
+    <p class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm" data-review-origin>
+      <NuxtBadge color="warning" icon="i-lucide-clock">Pede sua aprovação</NuxtBadge>
       <span v-if="draftOrigin" class="text-muted-foreground">{{ draftOrigin }}</span>
       <span
         v-else-if="announcement.sku"
@@ -594,7 +664,7 @@ defineExpose({ openScheduling, askToReject });
 
     <!-- A foto como vai sair, grande. ⚠️ A imagem de verdade costuma morar no conteúdo
          POR PLATAFORMA: `outgoingImageUrl()` lê os dois, como a caixa de confirmação. -->
-    <figure class="relative overflow-hidden rounded-2xl border border-border bg-muted/40" data-review-photo>
+    <figure class="relative overflow-hidden rounded-lg border border-border bg-muted/40" data-review-photo>
       <img
         v-if="shownPhoto"
         :src="shownPhoto"
@@ -607,106 +677,94 @@ defineExpose({ openScheduling, askToReject });
       </div>
       <span
         v-if="shownPhoto"
-        class="absolute top-3 left-3 inline-flex h-8 items-center gap-1.5 rounded-full bg-black/55 px-3 text-[13px] font-semibold text-white backdrop-blur-sm"
+        class="absolute top-3 left-3 inline-flex h-8 items-center gap-1.5 rounded-full bg-black/55 px-3 text-xs font-semibold text-white backdrop-blur-sm"
       >
         <Icon name="lucide:image" class="size-4" aria-hidden="true" />{{ photoCaption }}
       </span>
-      <button
-        type="button"
-        class="absolute right-3 bottom-3 inline-flex h-8 items-center gap-2 rounded-full bg-card/95 px-4 text-[14px] font-semibold text-foreground shadow-sm disabled:opacity-60"
-        :disabled="photoBusy || busy"
+      <NuxtButton
+        class="absolute right-3 bottom-3 shadow-sm"
+        color="neutral"
+        variant="outline"
+        :icon="photoBusy ? undefined : 'i-lucide-camera'"
+        :loading="photoBusy"
+        :label="photoBusy ? 'Enviando a foto…' : shownPhoto ? 'Tirar outra' : 'Tirar foto'"
+        :disabled="busy"
         data-review-retake
-        @click="photoInput?.click()"
-      >
-        <Icon :name="photoBusy ? 'lucide:loader-circle' : 'lucide:camera'" class="size-5" :class="photoBusy ? 'animate-spin' : ''" aria-hidden="true" />
-        {{ photoBusy ? "Enviando a foto…" : shownPhoto ? "Tirar outra" : "Tirar foto" }}
-      </button>
-      <input
-        ref="photoInput"
-        type="file"
-        accept="image/*"
-        capture="environment"
-        class="sr-only"
-        aria-label="Tirar a foto do lote"
-        tabindex="-1"
-        @change="onPhotoPicked"
-      >
+        @click="camera.open()"
+      />
     </figure>
-    <p v-if="photoError" class="-mt-2 text-[13px] text-destructive" role="alert">{{ photoError }}</p>
+    <NuxtAlert v-if="photoError" class="-mt-2" color="error" variant="subtle" :title="photoError" />
 
     <!-- O texto: editável no lugar, com o limite da plataforma mais curta escolhida. -->
-    <div>
-      <div class="mb-1.5 flex items-center justify-between gap-2">
-        <label :for="`body-${announcement.pk}`" class="op-eyebrow text-muted-foreground">Texto</label>
-        <span class="flex items-center gap-2">
-          <UiButton
-            v-if="aiAssistAvailable && announcement.ai_suggestion_enabled"
-            type="button"
-            :disabled="rewriting || busy"
-            variant="outline"
-            size="xs"
-            @click="rewrite"
-          >
-            <Icon
-              :name="rewriting ? 'lucide:loader-circle' : 'lucide:sparkles'"
-              class="size-3.5"
-              :class="rewriting ? 'animate-spin' : ''"
-            />
-            {{ rewriting ? "Preparando…" : "Sugerir texto" }}
-          </UiButton>
-          <span
-            class="op-micro tnum"
-            :class="textLength > textLimit ? 'font-semibold text-destructive' : 'text-muted-foreground'"
-            data-review-counter
-          >{{ formatCountPt(textLength) }} / {{ formatCountPt(textLimit) }}</span>
-        </span>
-      </div>
-      <UiTextarea
+    <NuxtFormField
+      label="Texto"
+      :error="bodyError || undefined"
+    >
+      <template #hint>
+        <span
+          class="tnum text-xs"
+          :class="textLength > textLimit ? 'font-semibold text-error' : 'text-muted-foreground'"
+          data-review-counter
+        >{{ formatCountPt(textLength) }} / {{ formatCountPt(textLimit) }}</span>
+      </template>
+      <NuxtTextarea
         :id="`body-${announcement.pk}`"
         v-model="body"
         name="announcement_body"
         :rows="4"
+        autoresize
         autocomplete="off"
-        class="resize-y rounded-xl text-[16px] leading-relaxed"
+        class="w-full"
       />
-      <p v-if="!body.trim()" class="mt-1 text-xs text-destructive" role="alert">O anúncio precisa de um texto.</p>
-      <p v-else-if="textLength > textLimit" class="mt-1 text-xs text-destructive" role="alert">
-        O texto passou do limite da plataforma mais curta escolhida.
-      </p>
-      <p
-        v-if="assistError"
-        class="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
-        role="alert"
-        data-testid="ai-assist-error"
-      >{{ assistError }}</p>
-      <section
-        v-if="suggestion"
-        class="mt-3 space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-3"
-        aria-label="Comparação da sugestão de IA"
-        data-testid="ai-suggestion-compare"
-      >
+    </NuxtFormField>
+
+    <div v-if="aiAssistAvailable && announcement.ai_suggestion_enabled" class="-mt-2">
+      <NuxtButton
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-sparkles"
+        :loading="rewriting"
+        :label="rewriting ? 'Preparando…' : 'Sugerir texto'"
+        :disabled="busy"
+        @click="rewrite"
+      />
+    </div>
+    <NuxtAlert
+      v-if="assistError"
+      color="error"
+      variant="subtle"
+      :title="assistError"
+      data-testid="ai-assist-error"
+    />
+    <NuxtCard
+      v-if="suggestion"
+      as="section"
+      aria-label="Comparação da sugestão de IA"
+      data-testid="ai-suggestion-compare"
+    >
+      <div class="space-y-3">
         <div>
           <p class="text-sm font-semibold">Sugestão pronta para comparar</p>
           <p class="text-xs text-muted-foreground">Usar muda só este rascunho. Nada é publicado.</p>
         </div>
         <div class="grid gap-2 sm:grid-cols-2">
-          <div class="rounded-md border border-border bg-background p-2">
-            <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Seu texto</p>
+          <NuxtCard variant="soft">
+            <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Seu texto</p>
             <p class="whitespace-pre-wrap text-sm">{{ beforeSuggestion?.body }}</p>
-          </div>
-          <div class="rounded-md border border-primary/30 bg-background p-2">
-            <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-primary">Sugestão</p>
+          </NuxtCard>
+          <NuxtCard variant="soft">
+            <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">Sugestão</p>
             <p class="whitespace-pre-wrap text-sm">{{ suggestion.body }}</p>
             <p v-if="suggestion.hashtags.length" class="mt-2 text-xs text-muted-foreground">
               {{ suggestion.hashtags.map(displayHashtag).join(" ") }}
             </p>
-          </div>
+          </NuxtCard>
         </div>
         <div v-if="suggestion.facts.length" class="text-xs">
           <p class="font-semibold">Dados usados</p>
           <ul class="mt-1 flex flex-wrap gap-1.5">
-            <li v-for="fact in suggestion.facts" :key="fact.id" class="rounded-full border border-border bg-background px-2 py-1">
-              {{ fact.label }}: {{ fact.value }}
+            <li v-for="fact in suggestion.facts" :key="fact.id">
+              <NuxtBadge color="neutral">{{ fact.label }}: {{ fact.value }}</NuxtBadge>
             </li>
           </ul>
         </div>
@@ -716,89 +774,87 @@ defineExpose({ openScheduling, askToReject });
           </li>
         </ul>
         <div class="flex flex-wrap gap-2">
-          <UiButton v-if="!suggestionUsed" type="button" size="xs" data-testid="use-ai-suggestion" @click="useSuggestion">
-            Usar no rascunho
-          </UiButton>
-          <UiButton v-else type="button" variant="outline" size="xs" data-testid="undo-ai-suggestion" @click="undoSuggestion">
-            Desfazer uso
-          </UiButton>
-          <UiButton type="button" variant="outline" size="xs" @click="discardSuggestion">Descartar</UiButton>
+          <NuxtButton v-if="!suggestionUsed" label="Usar no rascunho" data-testid="use-ai-suggestion" @click="useSuggestion" />
+          <NuxtButton v-else color="neutral" variant="outline" label="Desfazer uso" data-testid="undo-ai-suggestion" @click="undoSuggestion" />
+          <NuxtButton color="neutral" variant="outline" label="Descartar" @click="discardSuggestion" />
         </div>
-      </section>
-
-      <!-- Hashtags: guardadas limpas, lidas com "#". Uma linha discreta sob o texto. -->
-      <div class="mt-2">
-        <button
-          v-if="!showHashtags"
-          type="button"
-          class="inline-flex min-h-9 items-center gap-1 text-[13px] font-medium text-muted-foreground underline underline-offset-2"
-          @click="showHashtags = true"
-        >
-          <Icon name="lucide:hash" class="size-3.5" aria-hidden="true" />Pôr hashtags
-        </button>
-        <template v-else>
-          <label :for="`tags-${announcement.pk}`" class="sr-only">Hashtags</label>
-          <UiInput
-            :id="`tags-${announcement.pk}`"
-            v-model="hashtagsText"
-            name="announcement_hashtags"
-            type="text"
-            autocomplete="off"
-            placeholder="Hashtags, ex.: #padaria #croissant"
-            class="h-10 text-[14px]"
-          />
-        </template>
       </div>
+    </NuxtCard>
+
+    <!-- Hashtags: guardadas limpas, lidas com "#". Uma linha discreta sob o texto. -->
+    <div class="-mt-2">
+      <NuxtButton
+        v-if="!showHashtags"
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-hash"
+        label="Pôr hashtags"
+        @click="showHashtags = true"
+      />
+      <NuxtInput
+        v-else
+        :id="`tags-${announcement.pk}`"
+        v-model="hashtagsText"
+        name="announcement_hashtags"
+        type="text"
+        autocomplete="off"
+        aria-label="Hashtags"
+        placeholder="Hashtags, ex.: #padaria #croissant"
+        class="w-full"
+      />
     </div>
 
     <!-- Plataformas: uma linha por plataforma, com a chave (v3 a). Publicação pública e
          mensagem direta separadas pela segunda linha de cada uma. -->
-    <fieldset>
+    <fieldset class="flex flex-col gap-2">
       <legend class="sr-only">Disparado via</legend>
-      <ul class="rounded-2xl border border-border bg-card px-4" data-review-platforms>
-        <li
-          v-for="option in platformOptions"
-          :key="option.value"
-          class="flex min-h-[60px] items-center gap-3 py-2 [&+&]:border-t [&+&]:border-border"
-          :data-readiness="readinessNote(option).tone"
-          :data-review-platform="option.value"
-        >
-          <Icon :name="platformIcon(option.value)" class="size-5 shrink-0" aria-hidden="true" />
-          <span class="min-w-0 flex-1 leading-tight">
-            <span class="text-[16px]">{{ rowLabel(option) }}</span>
-            <span v-if="rowKind(option)" class="ml-1.5 text-[13px] text-muted-foreground">{{ rowKind(option) }}</span>
-            <span
-              v-if="readinessNote(option).badge"
-              class="block text-[12px] font-medium"
-              :class="readinessNote(option).tone === 'blocked' ? 'text-destructive' : 'text-warning'"
-            >{{ readinessNote(option).badge }}</span>
-          </span>
-          <UiSwitch
-            :model-value="platforms.includes(option.value)"
-            :aria-label="`${platforms.includes(option.value) ? 'Tirar' : 'Pôr'} ${rowLabel(option)}`"
-            @update:model-value="togglePlatform(option.value)"
-          />
-        </li>
-      </ul>
-      <p v-if="platforms.length === 0" class="mt-1 text-xs text-destructive" role="alert">Escolha ao menos uma plataforma.</p>
+      <NuxtCard>
+        <ul data-review-platforms>
+          <li
+            v-for="option in platformOptions"
+            :key="option.value"
+            class="flex min-h-14 items-center gap-3 py-2 [&+&]:border-t [&+&]:border-border"
+            :data-readiness="readinessNote(option).tone"
+            :data-review-platform="option.value"
+          >
+            <Icon :name="platformIcon(option.value)" class="size-5 shrink-0" aria-hidden="true" />
+            <span class="min-w-0 flex-1 leading-tight">
+              <span class="text-base">{{ rowLabel(option) }}</span>
+              <span v-if="rowKind(option)" class="ml-1.5 text-sm text-muted-foreground">{{ rowKind(option) }}</span>
+              <span
+                v-if="readinessNote(option).badge"
+                class="block text-xs font-medium"
+                :class="readinessNote(option).tone === 'blocked' ? 'text-error' : 'text-warning'"
+              >{{ readinessNote(option).badge }}</span>
+            </span>
+            <NuxtSwitch
+              :model-value="platforms.includes(option.value)"
+              :aria-label="`${platforms.includes(option.value) ? 'Tirar' : 'Pôr'} ${rowLabel(option)}`"
+              @update:model-value="togglePlatform(option.value)"
+            />
+          </li>
+        </ul>
+      </NuxtCard>
+      <p v-if="platforms.length === 0" class="text-xs text-error" role="alert">Escolha ao menos uma plataforma.</p>
       <!-- Aprovar continua possível (a pré-condição é de publicar): o gestor só fica
            sabendo AGORA, e não no comprovante, onde o anúncio não vai sair. Uma frase
-           só para todas, não um parágrafo por plataforma. -->
-      <p
+           só para todas, não um parágrafo por plataforma; a saída leva a Plataformas. -->
+      <NuxtAlert
         v-if="readinessSummary"
-        class="mt-2 text-[13px]"
-        :class="readinessSummary.tone === 'blocked' ? 'text-destructive' : 'text-warning'"
+        :color="readinessSummary.tone === 'blocked' ? 'error' : 'warning'"
+        variant="subtle"
+        :description="readinessSummary.text"
+        :actions="alertActions(readinessSummary.tone === 'blocked' ? 'error' : 'warning', readinessSummary.link
+          ? [{ label: 'Ver em Ajustes › Plataformas', to: '/settings/platforms' }]
+          : [])"
         role="status"
         data-review-readiness
-      >
-        {{ readinessSummary.text }}
-        <NuxtLink v-if="readinessSummary.link" to="/platforms" class="font-semibold underline">Ver em Ajustes › Plataformas</NuxtLink>
+      />
+      <p v-if="hasDirectMessage" class="text-sm text-muted-foreground" data-review-audience>
+        <Icon name="lucide:users" class="mr-1 inline size-4 align-text-bottom" aria-hidden="true" />{{ audience }}<template v-if="vip"> · {{ vip }}</template>
       </p>
-      <p v-if="hasDirectMessage" class="mt-2 text-[13px] text-muted-foreground" data-review-audience>
-        <Icon name="lucide:users" class="mr-1 inline size-4 align-[-3px]" aria-hidden="true" />{{ audience }}<template v-if="vip"> · {{ vip }}</template>
-      </p>
-      <p v-else class="mt-2 text-[13px] text-muted-foreground">
-        <Icon name="lucide:globe-2" class="mr-1 inline size-4 align-[-3px]" aria-hidden="true" />Postagem pública. Não escolhe contatos.
+      <p v-else class="text-sm text-muted-foreground">
+        <Icon name="lucide:globe-2" class="mr-1 inline size-4 align-text-bottom" aria-hidden="true" />Postagem pública. Não escolhe contatos.
       </p>
     </fieldset>
 
@@ -813,16 +869,15 @@ defineExpose({ openScheduling, askToReject });
          conteúdo GRAVADO do anúncio com as edições daqui. Abre sob pedido: a revisão já
          mostra a foto e o texto. -->
     <div>
-      <button
-        type="button"
-        class="inline-flex min-h-8 items-center gap-1.5 text-[14px] font-semibold text-foreground"
+      <NuxtButton
+        color="neutral"
+        variant="ghost"
+        :icon="showPreview ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+        label="Ver como fica em cada plataforma"
         :aria-expanded="showPreview"
         data-review-preview-toggle
         @click="showPreview = !showPreview"
-      >
-        <Icon :name="showPreview ? 'lucide:chevron-up' : 'lucide:chevron-down'" class="size-4" aria-hidden="true" />
-        Ver como fica em cada plataforma
-      </button>
+      />
       <AnnouncementPreview
         v-if="showPreview"
         class="mt-2"
@@ -836,123 +891,120 @@ defineExpose({ openScheduling, askToReject });
     </div>
 
     <!-- Quando: atributo do disparo, não destino. Agora é o padrão; agendar abre a hora. -->
-    <div class="rounded-2xl border border-border bg-card px-4 py-3" data-review-when>
-      <div class="flex items-center gap-3">
-        <span class="flex-1 text-[15px]">Quando</span>
-        <div role="group" aria-label="Disparo" class="flex gap-1 rounded-lg bg-muted p-1">
-          <button
-            type="button"
-            data-testid="delivery-now"
-            :aria-pressed="!scheduling"
-            class="min-h-10 rounded-md px-4 text-sm transition"
-            :class="scheduling ? 'font-medium text-muted-foreground' : 'bg-card font-semibold shadow-sm'"
-            @click="scheduling = false"
-          >
-            Imediato
-          </button>
-          <button
-            type="button"
-            data-testid="delivery-scheduled"
-            :aria-pressed="scheduling"
-            class="min-h-10 rounded-md px-4 text-sm transition"
-            :class="scheduling ? 'bg-card font-semibold shadow-sm' : 'font-medium text-muted-foreground'"
-            @click="openScheduling"
-          >
-            Agendado
-          </button>
-        </div>
-      </div>
-      <p
-        v-if="hasDirectMessage && quietHoursSuspendedForLocalSimulation"
-        class="mt-2 text-xs font-medium text-sky-700 dark:text-sky-300"
-        role="status"
-      >
-        Ensaio local: o silêncio das 20:00 às 08:00 está suspenso e nenhuma mensagem é enviada deste computador.
-      </p>
-      <p v-else-if="scheduleRecommended" class="mt-2 text-xs font-medium text-warning" role="status">
-        O WhatsApp está em silêncio das 20:00 às 08:00 ({{ timezoneName }}). Envio imediato fica indisponível até as
-        08:00. Em Agendado, o próximo horário permitido já vem preenchido.
-      </p>
-
-      <div v-if="scheduling" class="mt-3 space-y-2">
-        <div class="flex flex-wrap items-center gap-2">
-          <label :for="`when-${announcement.pk}`" class="text-xs font-medium text-muted-foreground">Disparar em</label>
-          <UiDateTimeField
-            :id="`when-${announcement.pk}`"
-            v-model="publishAt"
-            label="Data e hora do disparo"
-            :aria-describedby="`when-help-${announcement.pk}`"
-            @update:model-value="publishFold = ''"
-          />
-          <span class="text-xs font-semibold text-muted-foreground">{{ timezoneName }}</span>
-        </div>
-        <p
-          v-if="scheduleResolution.problem && scheduleResolution.problem !== 'ambiguous'"
-          :id="`when-help-${announcement.pk}`"
-          class="text-xs text-destructive"
-          role="alert"
-        >
-          {{ scheduleResolution.detail }}
-          <UiButton v-if="scheduleResolution.nextAllowedLocal" type="button" variant="link" class="ml-1" @click="useNextAllowedTime">
-            Usar o próximo horário permitido
-          </UiButton>
-        </p>
-        <fieldset v-if="scheduleResolution.problem === 'ambiguous'" class="rounded-md border border-warning/40 bg-warning/5 p-2">
-          <legend class="px-1 text-xs font-semibold">Horário repetido pela mudança do relógio</legend>
-          <p class="text-xs text-muted-foreground">{{ scheduleResolution.detail }}</p>
-          <UiRadioGroup v-model="publishFold" label="Qual das duas ocorrências" orientation="horizontal" class="mt-1 text-xs">
-            <UiRadio
-              v-for="(candidate, index) in scheduleResolution.candidates"
-              :key="candidate.instant"
-              :value="index === 0 ? 'earlier' : 'later'"
-              variant="inline"
-              :label="`${index === 0 ? 'Primeira' : 'Segunda'} ocorrência (UTC${candidate.offset})`"
+    <NuxtCard data-review-when>
+      <div class="flex flex-col gap-3">
+        <div class="flex items-center gap-3">
+          <span class="flex-1 text-sm font-medium">Quando</span>
+          <div role="group" aria-label="Disparo" class="flex gap-1">
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              active-variant="outline"
+              :active="!scheduling"
+              :aria-pressed="!scheduling"
+              label="Imediato"
+              data-testid="delivery-now"
+              @click="scheduling = false"
             />
-          </UiRadioGroup>
-        </fieldset>
-        <p v-if="schedulePreview && scheduleResolution.ok" class="text-xs text-muted-foreground">
-          Será entregue em {{ schedulePreview }} · UTC{{ scheduleResolution.candidate?.offset }}.
-          {{ quietHoursSuspendedForLocalSimulation ? "Ensaio local sem efeito externo." : "WhatsApp respeita o silêncio das 20:00 às 08:00." }}
-        </p>
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              active-variant="outline"
+              :active="scheduling"
+              :aria-pressed="scheduling"
+              label="Agendado"
+              data-testid="delivery-scheduled"
+              @click="openScheduling"
+            />
+          </div>
+        </div>
+        <NuxtAlert
+          v-if="hasDirectMessage && quietHoursSuspendedForLocalSimulation"
+          color="info"
+          variant="subtle"
+          role="status"
+          title="Ensaio local: o silêncio das 20:00 às 08:00 está suspenso e nenhuma mensagem é enviada deste computador."
+        />
+        <NuxtAlert
+          v-else-if="scheduleRecommended"
+          color="warning"
+          variant="subtle"
+          role="status"
+          :title="`O WhatsApp está em silêncio das 20:00 às 08:00 (${timezoneName}). Envio imediato fica indisponível até as 08:00. Em Agendado, o próximo horário permitido já vem preenchido.`"
+        />
+
+        <div v-if="scheduling" class="space-y-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <label :for="`when-${announcement.pk}`" class="text-xs font-medium text-muted-foreground">Disparar em</label>
+            <UiDateTimeField
+              :id="`when-${announcement.pk}`"
+              v-model="publishAt"
+              label="Data e hora do disparo"
+              :aria-describedby="`when-help-${announcement.pk}`"
+              @update:model-value="publishFold = ''"
+            />
+            <span class="text-xs font-semibold text-muted-foreground">{{ timezoneName }}</span>
+          </div>
+          <NuxtAlert
+            v-if="scheduleResolution.problem && scheduleResolution.problem !== 'ambiguous'"
+            :id="`when-help-${announcement.pk}`"
+            color="error"
+            variant="subtle"
+            role="alert"
+            :title="scheduleResolution.detail"
+            :actions="alertActions('error', scheduleResolution.nextAllowedLocal
+              ? [{ label: 'Usar o próximo horário permitido', onClick: useNextAllowedTime }]
+              : [])"
+          />
+          <NuxtRadioGroup
+            v-if="scheduleResolution.problem === 'ambiguous'"
+            v-model="publishFold"
+            legend="Horário repetido pela mudança do relógio"
+            orientation="horizontal"
+            :items="foldOptions"
+          />
+          <p v-if="scheduleResolution.problem === 'ambiguous'" class="text-xs text-muted-foreground">{{ scheduleResolution.detail }}</p>
+          <p v-if="schedulePreview && scheduleResolution.ok" class="text-xs text-muted-foreground">
+            Será entregue em {{ schedulePreview }} · UTC{{ scheduleResolution.candidate?.offset }}.
+            {{ quietHoursSuspendedForLocalSimulation ? "Ensaio local sem efeito externo." : "WhatsApp respeita o silêncio das 20:00 às 08:00." }}
+          </p>
+        </div>
       </div>
+    </NuxtCard>
+
+    <NuxtAlert
+      v-if="expired"
+      color="error"
+      variant="subtle"
+      role="alert"
+      title="O prazo deste anúncio venceu: preço e estoque já podem ter mudado."
+      :actions="alertActions('error', [{ label: 'Preparar um disparo novo em Campanhas', to: '/settings/campaigns' }])"
+    />
+
+    <!-- A decisão no painel (fora da página da revisão), em fluxo no fim do cartão.
+         ⚠️ "Continuar" é pedido do dono: este botão não dispara, leva ao selo, e lá o
+         ato tem o nome (Publicar e enviar, Agendar). Recusar ANTES. -->
+    <div v-if="!decisionInPage" class="flex gap-2" data-review-actions>
+      <NuxtButton
+        color="neutral"
+        variant="outline"
+        label="Recusar"
+        :disabled="busy"
+        @click="askToReject"
+      />
+      <NuxtButton
+        class="flex-1"
+        block
+        trailing-icon="i-lucide-arrow-right"
+        label="Continuar"
+        :loading="busy"
+        :disabled="!canContinue"
+        data-testid="publish-now"
+        @click="continueDecision"
+      />
     </div>
-
-    <p v-if="expired" class="text-xs font-medium text-destructive" role="alert">
-      O prazo deste anúncio venceu: preço e estoque já podem ter mudado.
-      <NuxtLink to="/campaigns" class="font-semibold underline">Prepare um disparo novo em Campanhas.</NuxtLink>
+    <p class="text-xs text-muted-foreground" data-review-next-step>
+      O texto que você conferir na próxima tela é o que vai: agora, ou na hora que você marcar.
     </p>
-
-    <!-- A decisão, fixa no polegar (v3 a). ⚠️ "Continuar" é pedido do dono: este botão
-         não dispara, leva ao selo, e lá o ato tem o nome (Publicar e enviar, Agendar).
-         Recusar ANTES, da mesma largura. -->
-    <footer
-      class="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:static sm:rounded-2xl sm:border sm:bg-card sm:pb-3"
-      data-review-actions
-    >
-      <div class="mx-auto flex max-w-2xl gap-2.5">
-        <UiButton
-          type="button"
-          :disabled="busy"
-          variant="outline"
-          class="h-14 flex-1 basis-0 rounded-xl text-[16px] font-semibold sm:h-12 sm:flex-none sm:basis-auto sm:px-6"
-          @click="askToReject"
-        >
-          Recusar
-        </UiButton>
-        <UiButton
-          type="button"
-          data-testid="publish-now"
-          :disabled="(scheduling ? !canSchedule : !canPublishNow) || textLength > textLimit"
-          class="h-14 flex-[2] basis-0 rounded-xl text-[16px] font-semibold sm:h-12 sm:flex-1"
-          @click="scheduling ? schedule() : publishNow()"
-        >
-          <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:arrow-right'" class="size-5" aria-hidden="true" />
-          Continuar
-        </UiButton>
-      </div>
-      <p class="mt-1.5 text-center text-[12px] text-muted-foreground">
-        O texto que você conferir na próxima tela é o que vai: agora, ou na hora que você marcar.
-      </p>
-    </footer>
   </article>
 </template>

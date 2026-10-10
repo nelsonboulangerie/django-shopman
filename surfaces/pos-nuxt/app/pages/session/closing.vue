@@ -584,7 +584,7 @@ const discrepancyColumns = [
           <section v-if="closing.already_closed && closing.has_pending_production" class="grid gap-2" aria-labelledby="pending-production-title">
             <div class="flex items-center gap-2">
               <h2 id="pending-production-title" class="op-title">Produção pendente</h2>
-              <NuxtBadge color="warning" :label="String(closing.pending_production.length)" />
+              <OperatorCountChip :count="closing.pending_production.length" />
             </div>
             <p class="text-sm text-muted-foreground">
               Ordens que seguiam abertas quando o dia foi encerrado. Elas ficaram registradas neste fechamento; toque na ordem para abri-la na Produção.
@@ -640,7 +640,7 @@ const discrepancyColumns = [
           <section v-if="closing.already_closed && closing.has_upcoming_preorders" class="grid gap-2" aria-labelledby="upcoming-title">
             <div class="flex items-center gap-2">
               <h2 id="upcoming-title" class="op-title">Encomendas para os próximos dias</h2>
-              <NuxtBadge color="neutral" :label="String(closing.upcoming_preorders.length)" />
+              <OperatorCountChip :count="closing.upcoming_preorders.length" />
             </div>
             <p class="text-sm text-muted-foreground">
               Todas as encomendas confirmadas ou a confirmar com data depois de hoje, qualquer que seja o dia em que foram feitas. Saem do estoque na data combinada.

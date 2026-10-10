@@ -2,9 +2,10 @@
 
 Read model do "launcher" do operador: uma grade de tiles das superfícies de operador
 (PDV · Cozinha · Gestor · Produção · Marketing · Loja), **permission-aware** — o app que o
-operador não pode acessar nem aparece. Não hospeda CRUD: no topo, a fila "Precisa de você"
-(``projections/hub_queue.py``) leva cada item ao lugar exato no app certo; embaixo, os blocos dos
-apps, cada um com uma linha de estado que concorda com a fila (UX-H1). O tile
+operador não pode acessar nem aparece. Não hospeda CRUD: cada linha de app traz a linha de
+estado e, quando há, a pendência mais urgente dele (``next_item``, de
+``projections/hub_queue.py``), que leva direto ao item no app certo; os apps com pendência
+sobem para o topo (dono, 09/10/2026: a seção "Precisa de você" saiu da Central). O tile
 Loja abre a **loja do cliente** (storefront) em nova aba — fora da zona de operador.
 
 Registry declarativo (tipado aqui; caminho claro p/ configurável no Admin depois). Cada
@@ -34,7 +35,11 @@ from shopman.backstage.permissions import (
     can_view_bi,
     is_superuser,
 )
-from shopman.backstage.projections.hub_queue import HubQueueProjection, collect_hub_queue
+from shopman.backstage.projections.hub_queue import (
+    HubQueueItemProjection,
+    HubQueueProjection,
+    collect_hub_queue,
+)
 
 # URLs de DEV das superfícies — usadas apenas com DEBUG ligado, quando
 # `settings.SHOPMAN_SURFACE_URLS` não cobre a superfície. Fora de DEBUG não há
@@ -69,6 +74,10 @@ class HubTileProjection:
     #: O estado bom e sabido ("Caixa aberto", "Aberta"): o ponto do bloco fica verde
     #: quando nada pede alguém. Vazio quando o app não tem estado positivo a dizer.
     status_positive: str = ""
+    #: A pendência mais urgente deste app para este operador (o item exato, com o link
+    #: que leva a ele), ou ``None``. É a ação direta da linha do app na Central, e os apps
+    #: com pendência sobem para o topo da lista (dono, 09/10/2026).
+    next_item: HubQueueItemProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -197,7 +206,7 @@ def build_operator_hub(user) -> OperatorHubProjection:
     urls = _surface_urls()
     visible = [spec for spec in _REGISTRY if spec.can_access(user) and urls.get(spec.ref)]
     # Só app que o operador abre entra na fila: o item leva para dentro dele.
-    queue, statuses = collect_hub_queue(
+    queue, statuses, most_urgent = collect_hub_queue(
         user,
         urls={spec.ref: urls[spec.ref] for spec in visible},
         labels={spec.ref: spec.queue_label for spec in visible},
@@ -213,6 +222,7 @@ def build_operator_hub(user) -> OperatorHubProjection:
             status_attention=statuses[spec.ref].attention if spec.ref in statuses else "",
             status_summary=statuses[spec.ref].summary if spec.ref in statuses else "",
             status_positive=statuses[spec.ref].positive if spec.ref in statuses else "",
+            next_item=most_urgent.get(spec.ref),
         )
         for spec in visible
     )

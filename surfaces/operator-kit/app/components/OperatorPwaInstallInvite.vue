@@ -64,20 +64,20 @@ async function install() {
 }
 
 // Alvo de toque do `main` só nas páginas que vestem a suíte (ver `suite-page:`).
+import { alertActions } from "../utils/alertActions";
 const TOUCH = "suite-page:min-h-control";
 const actions = computed(() => [
   {
     label: "Agora não",
-    color: "neutral" as const,
-    variant: "outline" as const,
+    secondary: true,
     class: TOUCH,
     onClick: () => pwa.dismiss(),
   },
   // Ninguém sabe daqui se ela seguiu os passos; quem sabe é ela. Dizer "já instalei"
   // encerra o convite de vez em vez de repeti-lo na semana seguinte.
   plan.value.kind === "prompt"
-    ? { label: "Instalar", class: TOUCH, loading: installing.value, onClick: install }
-    : { label: "Já instalei", class: TOUCH, onClick: () => pwa.dismissAsDone() },
+    ? { label: "Instalar", secondary: false, class: TOUCH, loading: installing.value, onClick: install }
+    : { label: "Já instalei", secondary: false, class: TOUCH, onClick: () => pwa.dismissAsDone() },
 ]);
 </script>
 
@@ -93,7 +93,7 @@ const actions = computed(() => [
     variant="subtle"
     icon="i-lucide-monitor-down"
     :title="title"
-    :actions="actions"
+    :actions="alertActions('info', actions)"
     data-operator-pwa-install
   >
     <template #description>
