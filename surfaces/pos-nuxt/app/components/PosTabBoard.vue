@@ -128,45 +128,57 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
       </UiButton>
     </form>
     <div v-if="tabs.length" class="flex shrink-0 flex-wrap items-center gap-2">
-      <div class="flex gap-1">
-        <UiButton
-          size="sm"
+      <!-- Recorte e arrumação: o ligado é `solid` (o ativo único da suíte), os outros
+           `outline`, como a faixa de filtros rápidos do kit (`OperatorQuickFilters`). -->
+      <div class="flex gap-1" role="group" aria-label="Quais comandas">
+        <NuxtButton
+          color="neutral"
           variant="outline"
-          :class="tabFilter === 'all' ? 'border-primary bg-primary/5' : ''"
+          active-color="primary"
+          active-variant="solid"
+          :active="tabFilter === 'all'"
+          :aria-pressed="tabFilter === 'all'"
+          :label="`Todas ${tabs.length}`"
           @click="tabFilter = 'all'"
-        >
-          Todas {{ tabs.length }}
-        </UiButton>
-        <UiButton
-          size="sm"
+        />
+        <NuxtButton
+          color="neutral"
           variant="outline"
-          :class="tabFilter === 'in_use' ? 'border-primary bg-primary/5' : ''"
+          active-color="primary"
+          active-variant="solid"
+          :active="tabFilter === 'in_use'"
+          :aria-pressed="tabFilter === 'in_use'"
+          :label="`Em uso ${openCount}`"
           @click="tabFilter = 'in_use'"
-        >
-          Em uso {{ openCount }}
-        </UiButton>
+        />
       </div>
-      <div class="ml-auto flex gap-1">
-        <UiButton
-          size="icon-sm"
+      <div class="ml-auto flex gap-1" role="group" aria-label="Arrumação das comandas">
+        <NuxtButton
+          color="neutral"
           variant="outline"
+          active-color="primary"
+          active-variant="solid"
+          icon="i-lucide-layout-grid"
+          square
+          :active="tabView === 'grid'"
+          :aria-pressed="tabView === 'grid'"
           aria-label="Ver em grade"
           title="Grade"
-          :class="tabView === 'grid' ? 'border-primary bg-primary/5' : ''"
           @click="tabView = 'grid'"
-        >
-          <Icon name="lucide:layout-grid" class="size-4" />
-        </UiButton>
-        <UiButton
-          size="icon-sm"
+        />
+        <NuxtButton
+          color="neutral"
           variant="outline"
+          active-color="primary"
+          active-variant="solid"
+          icon="i-lucide-list"
+          square
+          :active="tabView === 'list'"
+          :aria-pressed="tabView === 'list'"
           aria-label="Ver em lista"
           title="Lista"
-          :class="tabView === 'list' ? 'border-primary bg-primary/5' : ''"
           @click="tabView = 'list'"
-        >
-          <Icon name="lucide:list" class="size-4" />
-        </UiButton>
+        />
       </div>
     </div>
 

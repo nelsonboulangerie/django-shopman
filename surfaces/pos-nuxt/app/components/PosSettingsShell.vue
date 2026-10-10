@@ -6,15 +6,31 @@
 // com as mesmas abas.
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 
-defineProps<{
+const props = defineProps<{
   title: string;
   /** O que a aba ajusta, em poucas palavras, ao lado do título. */
   subtitle?: string;
+  /**
+   * O que o "Atualizar" relê. Padrão: os dados dos Ajustes (`pos-settings`, a mesma
+   * chave do `usePosSettings`), e só eles: reler o terminal inteiro trazia de novo
+   * a venda, as comandas e o caixa para trocar uma impressora. A aba que mostra
+   * outra leitura (Terminal: a saúde do balcão) passa a dela.
+   */
+  refresh?: () => unknown;
 }>();
 
 const { pos, refresh: refreshPos } = await usePosTerminal();
+const refreshing = ref(false);
+async function refreshSettings() {
+  refreshing.value = true;
+  try {
+    await (props.refresh ? props.refresh() : refreshNuxtData("pos-settings"));
+  } finally {
+    refreshing.value = false;
+  }
+}
 const headerActions = computed<OperatorHeaderAction[]>(() => [
-  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refreshPos() },
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", disabled: refreshing.value, onSelect: () => void refreshSettings() },
 ]);
 </script>
 

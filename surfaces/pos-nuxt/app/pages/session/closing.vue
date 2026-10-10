@@ -55,6 +55,11 @@ useHead({ title: "Fim do dia" });
 
 const action = usePosAction();
 const runtimeConfig = useRuntimeConfig();
+// Celular (abaixo de `md`): o kit desce o `#actions` para uma linha própria. No
+// corredor a única ação dali é o "Sair" (o gesto do passo está na base), e uma linha
+// inteira para um botão empurrava a contagem para baixo: o "Sair" sobe para a linha
+// do título (`#phone-actions`) e o `#actions` não é declarado.
+const { belowMd: phoneHeader } = useScreen();
 const productionUrl = computed(() => String(runtimeConfig.public.productionUrl || ""));
 // Sair do PDV para a Produção é troca de APP: instalado, o destino tem janela
 // própria. Quem decide `target`/`rel` é o kit, nunca um `_blank` na mão.
@@ -175,11 +180,17 @@ watch(drawerMode, () => {
 // O selo ecoa o número antes de fechar: é a última leitura antes de ele virar a única
 // palavra do operador no livro.
 async function confirmDrawer() {
+  // Gaveta vazia é legítima (o dinheiro já saiu numa sangria), mas "nada contado" e
+  // "confirmei sem contar" têm a mesma cara: o zero pede a pergunta com o nome dele,
+  // em vez de passar pelo mesmo "Fechar o caixa com R$ 0,00 contados?" de sempre.
+  const empty = drawerQ.value === 0;
   const ok = await confirm({
     tone: "primary",
-    title: `Fechar o caixa com ${drawerDisplay.value} contados?`,
-    description: "O turno encerra aqui. A contagem fica registrada no turno; a conferência é da retaguarda.",
-    confirmLabel: "Fechar o caixa",
+    title: empty ? "Confirmar gaveta vazia?" : `Fechar o caixa com ${drawerDisplay.value} contados?`,
+    description: empty
+      ? "Nenhum valor foi contado: o turno encerra com R$ 0,00 na gaveta. Se ainda há dinheiro nela, volte e conte."
+      : "O turno encerra aqui. A contagem fica registrada no turno; a conferência é da retaguarda.",
+    confirmLabel: empty ? "Fechar com a gaveta vazia" : "Fechar o caixa",
     cancelLabel: "Voltar à contagem",
   });
   if (!ok) return;
@@ -361,7 +372,19 @@ const discrepancyColumns = [
         />
         <span v-if="pos" class="text-xs text-muted-foreground">{{ pos.terminal_label }}<template v-if="closing"> · {{ closing.today_display }}</template></span>
       </template>
-      <template #actions>
+      <template #phone-actions>
+        <NuxtButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-x"
+          label="Sair"
+          to="/session"
+          aria-label="Sair do fim do dia e voltar à sessão de caixa"
+          title="Sair: o que já foi contado fica na tela até você voltar"
+          data-closing-exit
+        />
+      </template>
+      <template v-if="!phoneHeader" #actions>
         <NuxtBadge
           v-if="closing?.operator_display"
           color="neutral"
@@ -371,6 +394,7 @@ const discrepancyColumns = [
           data-closing-operator
         />
         <NuxtButton
+          class="max-md:hidden"
           color="neutral"
           variant="outline"
           icon="i-lucide-x"

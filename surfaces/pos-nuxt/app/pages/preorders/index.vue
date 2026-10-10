@@ -112,15 +112,23 @@ const { pos, pending: posPending, refresh: refreshPos } = await usePosTerminal()
 
 const route = useRoute();
 const router = useRouter();
-const today = isoDate(new Date());
-const view = computed(() => parseView(route.query, today));
+// HOJE é o dia da LOJA, nunca o relógio deste dispositivo: um tablet com a data ou o
+// fuso errado abria as Encomendas no dia errado e chamava de "Hoje" o dia de ontem. O
+// servidor diz o dia dele em dois lugares, os dois `timezone.localdate()`: na lista
+// (`list.today`, contrato `PreorderList.today` em `projections/preorders.py`) e no
+// terminal (`pos.delivery_today`). A lista depende do recorte, e o recorte parte de
+// hoje: o primeiro desenho lê o terminal (já carregado, `await` acima); a lista, quando
+// chega, confirma. O relógio do dispositivo só entra se o servidor não disse nada.
+const deviceToday = isoDate(new Date());
+const today = computed(() => pos.value?.delivery_today || deviceToday);
+const view = computed(() => parseView(route.query, today.value));
 
 function update(patch: Partial<PreordersView>) {
-  void router.replace({ path: "/preorders", query: viewQuery({ ...view.value, ...patch }, today) });
+  void router.replace({ path: "/preorders", query: viewQuery({ ...view.value, ...patch }, today.value) });
 }
 
 // O recorte de agora: cada linha o leva ao detalhe (`?back=`), e a volta cai nele.
-const back = computed(() => viewPath(view.value, today));
+const back = computed(() => viewPath(view.value, today.value));
 
 // ── O período (Dia ou Semana) ──
 const params = computed(() => periodParams(view.value));
@@ -139,7 +147,7 @@ const toReceive = computed(() => (list.value && list.value.count
   ? toReceiveLine(list.value.to_receive_q, list.value.to_receive_display)
   : ""));
 // O resumo do período some quando o período é só hoje: a linha "Hoje" já diz.
-const showSummary = computed(() => !!summary.value && !periodIsToday(view.value, today));
+const showSummary = computed(() => !!summary.value && !periodIsToday(view.value, today.value));
 
 // ── Hoje: do período, quando ele contém hoje; senão, da leitura do selo da barra ──
 const ahead = usePosPreordersAhead();
@@ -147,8 +155,8 @@ const todayLine = computed(() => todayFacts(todayOf(list.value, ahead.value)));
 // O "Período" do kit (Tipo 2): ‹ › andam um período igual ao escolhido, e o
 // estado continua na URL (modo + data, e o fim no personalizado).
 const periodSelection = computed<PeriodSelection>({
-  get: () => periodSelectionOf(view.value, today),
-  set: (next) => update(viewOfPeriod(next, today)),
+  get: () => periodSelectionOf(view.value, today.value),
+  set: (next) => update(viewOfPeriod(next, today.value)),
 });
 
 // ── Os filtros: o painel único da suíte ──
@@ -296,9 +304,9 @@ const cardsClass = computed(() => (asGrid.value
   : "grid gap-2"));
 
 // ── Mudar de dia: arrastar o card na semana, ou o menu do card ──
-// O hoje da LOJA (o servidor diz na lista), e não o relógio deste dispositivo:
-// é ele que decide se um dia já passou.
-const storeToday = computed(() => list.value?.today || today);
+// O hoje da LOJA que a lista confirmou (`list.today`): é ele que decide se um dia já
+// passou ao mover um card.
+const storeToday = computed(() => list.value?.today || today.value);
 const move = usePosPreorderMove({ pos, today: storeToday, refresh: () => period.refresh() });
 const dragging = ref<PreorderCard | null>(null);
 const dropDate = ref("");
@@ -476,10 +484,11 @@ function refreshAll() {
           :key="option.value"
           :icon="option.icon"
           color="neutral"
-          variant="ghost"
+          variant="outline"
           square
           :active="layout === option.value"
-          active-variant="soft"
+          active-color="primary"
+          active-variant="solid"
           :aria-label="option.label"
           :title="option.label"
           :aria-pressed="layout === option.value"

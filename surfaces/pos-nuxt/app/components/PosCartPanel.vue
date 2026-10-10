@@ -427,6 +427,11 @@ const sheetSecondary: OperatorActionBarAction = {
 // No toque (tablet, prévia `pos-tablet.jpg`) o editor e o numérico só aparecem ao
 // tocar a linha: a lista fica inteira enquanto se lança.
 const coarsePointer = useMediaQuery("(pointer: coarse)");
+// O tamanho dos controles da comanda no conjunto mínimo: `md` no mouse, `xl` no toque.
+const controlSize = computed(() => (coarsePointer.value ? "xl" : "md"));
+// A coluna de ações do numérico do toque: rótulo de ação não se corta ("Obser…" não
+// diz nada); na coluna estreita do celular ele quebra a linha em vez de truncar.
+const SIDE_KEY_UI = { label: "whitespace-normal text-clip text-center leading-tight", leadingIcon: "size-4" };
 const editorClosed = ref(false);
 onMounted(() => { if (coarsePointer.value) editorClosed.value = true; });
 const editorVisible = computed(() => Boolean(activeItem.value) && !batchMode.value && !editorClosed.value);
@@ -799,7 +804,7 @@ function finishItemMode() {
   discountOpen.value = false;
   expandedLineId.value = "";
   clearSelection();
-  listEntry.value?.focus();
+  listEntry.value?.$el?.focus();
 }
 function toggleBatchMode() {
   if (batchMode.value) { finishItemMode(); return; }
@@ -823,7 +828,8 @@ function chooseMode(mode: LineMode) {
   else setMode(mode);
 }
 const receiptList = ref<HTMLElement | null>(null);
-const listEntry = ref<HTMLButtonElement | null>(null);
+// O `NuxtButton` do "Selecionar": o foco volta ao elemento dele (`$el`).
+const listEntry = ref<{ $el?: HTMLElement } | null>(null);
 async function focusItem(lineId = activeLineId.value) {
   const buttons = Array.from(
     receiptList.value?.querySelectorAll<HTMLButtonElement>(
@@ -954,52 +960,56 @@ defineExpose({ focusItem, onDigit, onBackspace });
           </template>
         </div>
         <div class="flex-1" />
-        <button
+        <NuxtButton
           ref="listEntry"
-          type="button"
+          :size="controlSize"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-list-checks"
+          class="shrink-0"
           aria-keyshortcuts="Alt+s"
           title="Selecionar linhas (Alt S): transferir, descontar e remover várias"
-          class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 op-label transition hover:bg-accent"
           aria-label="Iniciar seleção"
           @click="toggleBatchMode"
         >
-          <Icon name="lucide:list-checks" class="size-4" aria-hidden="true" />
           <span class="sr-only">Selecionar</span>
           <OperatorKbd v-if="!coarsePointer" aria-hidden="true">Alt S</OperatorKbd>
-        </button>
+        </NuxtButton>
         <!-- ENVIAR ganha calor quando HÁ o que enviar: item lançado e não enviado é
-             trabalho parado. Borda e fundo primários, nunca o sólido: o sólido é do
+             trabalho parado. Contorno primário, nunca o sólido: o sólido é do
              Pagamento. A contagem é badge (o número é o dado, o resto é rótulo). -->
         <div v-if="fireBar.visible" class="flex shrink-0 flex-col items-end gap-0.5">
-        <button
-          type="button"
-          class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border pr-1.5 pl-2.5 op-label font-semibold whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-60"
-          :class="fireBar.unfired && !fireBar.disabled
-            ? 'border-primary bg-primary/10 hover:bg-primary/15'
-            : 'border-border bg-card text-muted-foreground'"
+        <NuxtButton
+          :size="controlSize"
+          :color="fireBar.unfired && !fireBar.disabled ? 'primary' : 'neutral'"
+          variant="outline"
+          :icon="firing ? undefined : 'i-lucide-chef-hat'"
+          :loading="firing"
+          class="shrink-0 font-semibold whitespace-nowrap"
           :disabled="fireBar.disabled || firing"
           :aria-busy="firing || undefined"
           title="Enviar à cozinha as linhas novas (F9)"
           data-pos-fire
           @click="$emit('fire')"
         >
-          <Icon :name="firing ? 'lucide:loader-circle' : 'lucide:chef-hat'" class="size-4" :class="[fireBar.unfired && !fireBar.disabled ? 'text-primary' : '', firing ? 'animate-spin motion-reduce:animate-none' : '']" />
           {{ fireBar.label }}
-          <span
-            v-if="fireBar.unfired"
-            class="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-primary px-1 op-micro font-semibold tabular-nums text-primary-foreground"
-            :aria-label="`${fireBar.unfired} item(ns) a enviar`"
-            >{{ fireBar.unfired }}</span
-          >
-          <OperatorKbd v-if="!coarsePointer" aria-hidden="true">F9</OperatorKbd>
-        </button>
+          <template #trailing>
+            <OperatorCountChip
+              v-if="fireBar.unfired"
+              :count="fireBar.unfired"
+              :aria-label="`${fireBar.unfired} item(ns) a enviar`"
+            />
+            <OperatorKbd v-if="!coarsePointer" aria-hidden="true">F9</OperatorKbd>
+          </template>
+        </NuxtButton>
         <!-- "envio automático: desligado" (v4 pino 1): o estado das estações desta
              comanda. O interruptor é por estação (decisão do dono), e mora em
              Ajustes › Envio à cozinha; o toque aqui leva até ele. -->
-        <button
+        <NuxtButton
           v-if="!sheet"
-          type="button"
-          class="inline-flex items-center gap-1.5 op-micro text-muted-foreground hover:text-foreground"
+          color="neutral"
+          variant="ghost"
+          class="gap-1.5 px-1 py-0 op-micro font-normal text-muted-foreground"
           :title="autoFire ? 'Envio automático ligado na estação destes itens (Ajustes › Envio à cozinha)' : 'Envio automático desligado (Ajustes › Envio à cozinha)'"
           data-pos-auto-fire
           @click="$emit('autoFireSettings')"
@@ -1008,17 +1018,19 @@ defineExpose({ focusItem, onDigit, onBackspace });
             <span class="absolute top-0.5 size-2.5 rounded-full bg-card shadow transition-all" :class="autoFire ? 'left-3' : 'left-0.5'" />
           </span>
           envio automático: {{ autoFire ? "ligado" : "desligado" }}
-        </button>
+        </NuxtButton>
         </div>
-        <button
+        <NuxtButton
           v-if="sheet"
-          type="button"
-          class="grid size-10 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent"
+          size="xl"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-chevron-down"
+          square
+          class="shrink-0"
           aria-label="Recolher a comanda"
           @click="sheetOpen = false"
-        >
-          <Icon name="lucide:chevron-down" class="size-5" />
-        </button>
+        />
       </header>
 
       <!-- Modo seleção (Alt S): o cabeçalho da comanda vira a barra do lote, numa faixa
@@ -1027,74 +1039,87 @@ defineExpose({ focusItem, onDigit, onBackspace });
            como ícones na mesma faixa (o F9 envia todas as novas). -->
       <template v-else>
         <header class="flex min-h-14 shrink-0 items-center gap-1.5 border-b border-border bg-primary/10 px-2 py-1.5" data-pos-selection-bar>
-          <button
-            type="button"
-            class="grid size-10 shrink-0 place-items-center rounded-md transition hover:bg-accent"
+          <NuxtButton
+            :size="controlSize"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-x"
+            square
+            class="shrink-0"
             aria-label="Concluir seleção"
             title="Sair da seleção (Esc)"
             @click="toggleBatchMode"
-          >
-            <Icon name="lucide:x" class="size-4" />
-          </button>
+          />
           <p class="min-w-0 shrink truncate op-title tnum whitespace-nowrap">
             {{ selection.count ? `${selection.count} ${selection.count === 1 ? "selecionada" : "selecionadas"}` : "Toque nas linhas" }}
           </p>
           <div class="flex-1" />
-          <button
+          <NuxtButton
             v-if="canMove && hasOpenTab && selection.count"
-            type="button"
-            class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 op-label font-semibold transition hover:bg-accent disabled:opacity-50"
+            :size="controlSize"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-split"
+            class="shrink-0 font-semibold"
             :disabled="loading"
             title="Transferir as linhas marcadas para outra comanda (F10)"
             @click="$emit('move', selection.lineIds)"
           >
-            <Icon name="lucide:split" class="size-4" />
             Transferir
             <OperatorKbd v-if="!coarsePointer" class="max-xl:hidden" aria-hidden="true">F10</OperatorKbd>
-          </button>
-          <button
+          </NuxtButton>
+          <NuxtButton
             v-if="!lineAdjustmentsBlocked"
-            type="button"
-            class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border px-2 op-label transition hover:bg-accent disabled:opacity-50"
-            :class="discountOpen ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
+            :size="controlSize"
+            color="neutral"
+            variant="outline"
+            active-color="primary"
+            active-variant="solid"
+            :active="discountOpen"
+            icon="i-lucide-percent"
+            class="shrink-0"
             :aria-pressed="discountOpen"
             :disabled="!selection.count"
+            label="Desconto"
             @click="toggleDiscount"
-          >
-            <Icon name="lucide:percent" class="size-4" />
-            Desconto
-          </button>
-          <button
-            type="button"
-            class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 op-label text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
+          />
+          <NuxtButton
+            :size="controlSize"
+            color="error"
+            variant="outline"
+            icon="i-lucide-trash-2"
+            class="shrink-0"
             :disabled="mutationBusy || !selection.count"
+            label="Remover"
             @click="batchRemove"
-          >
-            <Icon name="lucide:trash-2" class="size-4" />Remover
-          </button>
-          <button
+          />
+          <NuxtButton
             v-if="fireAction.present && selection.canFire"
-            type="button"
-            class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card text-primary transition hover:bg-accent disabled:opacity-50"
+            :size="controlSize"
+            color="primary"
+            variant="outline"
+            icon="i-lucide-chef-hat"
+            square
+            class="shrink-0"
             :disabled="mutationBusy || firing || !fireAction.enabled"
             :aria-label="`Enviar à cozinha só as marcadas`"
             title="Enviar à cozinha só as marcadas"
             data-pos-batch-fire
             @click="batchFire"
-          >
-            <Icon name="lucide:chef-hat" class="size-4" />
-          </button>
-          <button
+          />
+          <NuxtButton
             v-if="selection.canUnfire && unfireAction.present"
-            type="button"
-            class="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-card transition hover:bg-accent disabled:opacity-50"
+            :size="controlSize"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-undo-2"
+            square
+            class="shrink-0"
             :disabled="mutationBusy || firing || !unfireAction.enabled"
             :aria-label="unfireAction.label || 'Cancelar envio à cozinha'"
             :title="unfireAction.label || 'Cancelar envio à cozinha'"
             @click="batchUnfire"
-          >
-            <Icon name="lucide:undo-2" class="size-4" />
-          </button>
+          />
         </header>
       </template>
 
@@ -1125,9 +1150,11 @@ defineExpose({ focusItem, onDigit, onBackspace });
             "
             @click="batchMode && toggleSelect(item.line_id)"
           >
-            <button
+            <NuxtButton
               v-if="batchMode"
-              class="grid w-11 shrink-0 place-items-center"
+              color="neutral"
+              variant="ghost"
+              class="w-11 shrink-0 justify-center rounded-none"
               :aria-label="`Selecionar ${item.name}`"
               :aria-pressed="isSelected(item.line_id)"
               @click.stop="toggleSelect(item.line_id)"
@@ -1144,9 +1171,11 @@ defineExpose({ focusItem, onDigit, onBackspace });
                   name="lucide:check"
                   class="size-3.5"
               /></span>
-            </button>
-            <button
-              class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 py-1.5 pr-3.5 text-left focus-visible:outline-none"
+            </NuxtButton>
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-none py-1.5 pr-3.5 text-left font-normal hover:bg-transparent focus-visible:outline-none"
               :class="batchMode ? 'pl-0' : 'pl-3.5'"
               :data-item-select="item.line_id"
               :aria-label="`Editar ${item.name}`"
@@ -1213,7 +1242,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
               <strong class="op-title tnum">{{
                 formatBRL(lineTotalQ(item))
               }}</strong>
-            </button>
+            </NuxtButton>
             <div
               v-if="expandedLineId === item.line_id"
               :id="detailsId(item.line_id)"
@@ -1259,27 +1288,25 @@ defineExpose({ focusItem, onDigit, onBackspace });
                     })
                   }}
                 </p></ClientOnly
-              ><UiButton
+              ><NuxtButton
                 v-if="lineKitchenState(item) === 'fired_cancellable'"
+                color="neutral"
                 variant="ghost"
-                size="sm"
                 :disabled="mutationBusy || firing || !unfireAction.enabled"
+                :label="unfireAction.label"
                 @click.stop="$emit('unfire', item.line_id)"
-                >{{ unfireAction.label }}</UiButton
-              >
+              />
               <div v-if="!batchMode && !lineAdjustmentsBlocked" class="mt-1 flex justify-between">
-                <button
-                  class="min-h-9 font-medium text-primary"
+                <NuxtButton
+                  color="primary"
+                  variant="ghost"
+                  icon="i-lucide-sticky-note"
+                  label="Observação"
                   @click="
                     selectLine(item.line_id);
                     openNoteDialog();
                   "
-                >
-                  <Icon
-                    name="lucide:sticky-note"
-                    class="mr-1 inline size-4"
-                  />Observação
-                </button>
+                />
               </div>
             </div>
           </li>
@@ -1313,13 +1340,15 @@ defineExpose({ focusItem, onDigit, onBackspace });
           </div>
           <p v-if="activeAuthorship || lineKitchenState(activeItem) === 'fired_cancellable'" class="mt-1 flex items-center gap-2 op-micro text-muted-foreground">
             <span class="min-w-0 flex-1 truncate">{{ activeAuthorship }}</span>
-            <button
+            <NuxtButton
               v-if="lineKitchenState(activeItem) === 'fired_cancellable'"
-              type="button"
-              class="shrink-0 font-medium text-primary disabled:opacity-50"
+              color="primary"
+              variant="ghost"
+              class="shrink-0"
               :disabled="mutationBusy || firing || !unfireAction.enabled"
+              :label="unfireAction.label"
               @click="$emit('unfire', activeItem.line_id)"
-            >{{ unfireAction.label }}</button>
+            />
           </p>
         </template>
         <template v-else-if="!batchMode && activeItem">
@@ -1340,93 +1369,105 @@ defineExpose({ focusItem, onDigit, onBackspace });
               :aria-label="`Quantidade de ${activeItem.name}`"
               title="Quantidade: −/+ ou digite"
             >
-              <button
-                type="button"
-                class="grid size-11 place-items-center border-r border-border hover:bg-accent disabled:opacity-50"
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-minus"
+                square
+                class="rounded-none border-r border-border"
                 aria-label="Diminuir"
                 :disabled="mutationBusy"
                 @click="bump(activeItem.line_id, 'decrement')"
-              >
-                <Icon name="lucide:minus" class="size-4" />
-              </button>
-              <button
-                type="button"
-                class="h-8 w-8 text-center op-title tnum disabled:opacity-50"
-                :class="numpadMode === 'qty' && !numpadFresh ? 'bg-primary/10' : ''"
+              />
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                class="w-8 justify-center rounded-none op-title tnum"
+                active-color="primary"
+                active-variant="solid"
+                :active="numpadMode === 'qty' && !numpadFresh"
                 :aria-label="`Editar quantidade de ${activeItem.name}`"
                 :disabled="mutationBusy"
+                :label="String(activeItem.qty)"
                 @click="
                   selectLine(activeItem.line_id);
                   setMode('qty');
                 "
-              >
-                {{ activeItem.qty }}
-              </button>
-              <button
-                type="button"
-                class="grid size-11 place-items-center border-l border-border hover:bg-accent disabled:opacity-50"
+              />
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-plus"
+                square
+                class="rounded-none border-l border-border"
                 aria-label="Aumentar"
                 :disabled="mutationBusy"
                 @click="bump(activeItem.line_id, 'increment')"
-              >
-                <Icon name="lucide:plus" class="size-4" />
-              </button>
+              />
             </div>
-            <button
-              type="button"
-              class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 op-label font-semibold whitespace-nowrap text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
+            <NuxtButton
+              color="error"
+              variant="ghost"
+              icon="i-lucide-trash-2"
+              class="shrink-0 font-semibold whitespace-nowrap"
               aria-label="Remover"
               title="Remover, com confirmação e desfazer"
               :disabled="mutationBusy"
               @click="askRemove(activeItem.line_id)"
             >
-              <Icon name="lucide:trash-2" class="size-4" />Remover
+              Remover
               <OperatorKbd v-if="!coarsePointer" class="max-xl:hidden" aria-hidden="true">Del</OperatorKbd>
-            </button>
+            </NuxtButton>
             <div class="flex-1" />
-            <button
-              type="button"
-              class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 op-label whitespace-nowrap text-muted-foreground transition hover:bg-accent"
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              class="shrink-0 whitespace-nowrap"
               title="Fechar o editor"
               data-pos-line-editor-close
               @click="closeEditor"
             >
               Fechar
               <OperatorKbd v-if="!coarsePointer" class="max-xl:hidden" aria-hidden="true">Esc</OperatorKbd>
-            </button>
+            </NuxtButton>
           </div>
           <div v-if="!lineAdjustmentsBlocked" class="mt-2 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              class="inline-flex h-10 items-center justify-center gap-1.5 rounded-md border px-2.5 op-label whitespace-nowrap transition hover:bg-accent disabled:opacity-50"
-              :class="discountOpen || activeItem.discount?.value ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              active-color="primary"
+              active-variant="solid"
+              :active="discountOpen"
+              icon="i-lucide-percent"
+              class="justify-center whitespace-nowrap"
+              :class="!discountOpen && activeItem.discount?.value ? 'font-semibold' : ''"
               :aria-pressed="discountOpen"
               :disabled="mutationBusy"
+              :label="discountButtonLabel"
               data-pos-line-discount
               @click="toggleDiscount"
-            >
-              <Icon name="lucide:percent" class="size-4 text-primary" />
-              {{ discountButtonLabel }}
-            </button>
-            <button
-              type="button"
-              class="inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-2.5 op-label whitespace-nowrap transition hover:bg-accent disabled:opacity-50"
+            />
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-message-square-text"
+              class="justify-center whitespace-nowrap"
               :disabled="mutationBusy"
+              label="Observação"
               @click="chooseMode('note')"
-            >
-              <Icon name="lucide:message-square-text" class="size-4" />
-              Observação
-            </button>
+            />
           </div>
           <p v-if="activeAuthorship || lineKitchenState(activeItem) === 'fired_cancellable'" class="mt-1.5 flex items-center gap-2 op-micro text-muted-foreground" data-pos-line-authorship>
             <span class="min-w-0 flex-1 truncate">{{ activeAuthorship }}</span>
-            <button
+            <NuxtButton
               v-if="lineKitchenState(activeItem) === 'fired_cancellable'"
-              type="button"
-              class="shrink-0 font-medium text-primary disabled:opacity-50"
+              color="primary"
+              variant="ghost"
+              class="shrink-0"
               :disabled="mutationBusy || firing || !unfireAction.enabled"
+              :label="unfireAction.label"
               @click="$emit('unfire', activeItem.line_id)"
-            >{{ unfireAction.label }}</button>
+            />
           </p>
         </template>
 
@@ -1434,19 +1475,21 @@ defineExpose({ focusItem, onDigit, onBackspace });
              aparece aqui e, nos dispositivos de toque, também para a quantidade. -->
         <div v-if="discountOpen && !lineAdjustmentsBlocked" class="mt-2 grid gap-2" data-pos-discount-panel>
           <div class="flex items-center gap-2">
-            <div class="inline-flex h-10 shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Formato do desconto">
-              <button
+            <div class="inline-flex shrink-0 items-center gap-1" role="group" aria-label="Formato do desconto">
+              <NuxtButton
                 v-for="mode in discountModes"
                 :key="mode.ref"
-                type="button"
-                class="inline-flex h-full items-center rounded px-2.5 op-label transition disabled:opacity-50"
-                :class="numpadMode === mode.ref ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
+                :size="controlSize"
+                color="neutral"
+                variant="outline"
+                active-color="primary"
+                active-variant="solid"
+                :active="numpadMode === mode.ref"
                 :aria-pressed="numpadMode === mode.ref"
                 :disabled="mutationBusy"
+                :label="mode.label"
                 @click="chooseMode(mode.ref)"
-              >
-                {{ mode.label }}
-              </button>
+              />
             </div>
             <p class="min-w-0 flex-1 truncate text-right op-micro text-muted-foreground">
               {{
@@ -1476,60 +1519,81 @@ defineExpose({ focusItem, onDigit, onBackspace });
 
         <div v-if="touchEditor && activeItem" class="mt-2 grid grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.6fr)] gap-2" data-pos-line-numpad>
           <template v-for="(row, rowIndex) in [[1, 2, 3], [4, 5, 6], [7, 8, 9], ['decimal', 0, 'back']]" :key="rowIndex">
-            <button
+            <!-- O numérico do toque é xl com a altura de tecla (h-14/h-16): a mesma
+                 exceção de altura do numérico do Pagamento, alvo de polegar. -->
+            <NuxtButton
               v-for="key in row"
               :key="String(key)"
-              type="button"
-              class="h-14 rounded-md border border-border bg-card text-3xl font-medium tnum transition hover:bg-muted active:bg-muted disabled:opacity-40 sm:h-16"
+              size="xl"
+              color="neutral"
+              variant="outline"
+              class="h-14 justify-center text-3xl font-medium tnum sm:h-16"
+              :icon="key === 'back' ? 'i-lucide-delete' : undefined"
               :aria-label="typeof key === 'number' ? 'Dígito ' + key : key === 'back' ? 'Apagar último dígito' : 'Vírgula'"
               :disabled="mutationBusy || !numpadCanType || (key === 'decimal' && numpadMode !== 'disc_brl')"
+              :label="key === 'back' ? undefined : key === 'decimal' ? ',' : String(key)"
               @click="typeof key === 'number' ? onDigit(String(key)) : key === 'back' ? onBackspace() : onComma()"
-            >
-              <Icon v-if="key === 'back'" name="lucide:delete" class="mx-auto size-6" />
-              <template v-else>{{ key === "decimal" ? "," : key }}</template>
-            </button>
-            <button
+            />
+            <NuxtButton
               v-if="rowIndex === 0"
-              type="button"
-              class="inline-flex h-14 items-center justify-center gap-1.5 rounded-md border px-2 op-label font-semibold transition disabled:opacity-40 sm:h-16"
-              :class="discountOpen || activeItem.discount?.value ? 'border-primary bg-primary/15' : 'border-transparent bg-secondary'"
+              size="xl"
+              color="neutral"
+              variant="outline"
+              active-color="primary"
+              active-variant="solid"
+              :active="discountOpen"
+              icon="i-lucide-percent"
+              class="h-14 justify-center gap-1.5 px-1.5 text-sm font-semibold sm:h-16"
+              :ui="SIDE_KEY_UI"
               :aria-pressed="discountOpen"
               :disabled="mutationBusy || lineAdjustmentsBlocked"
+              :label="discountOpen ? 'Quantidade' : 'Desconto'"
               data-pos-line-discount
               @click="toggleDiscount"
-            ><Icon name="lucide:percent" class="size-4 shrink-0" /><span>{{ discountOpen ? "Quantidade" : "Desconto" }}</span></button>
-            <button
+            />
+            <NuxtButton
               v-else-if="rowIndex === 1"
-              type="button"
-              class="inline-flex h-14 items-center justify-center gap-1.5 rounded-md border border-transparent bg-secondary px-2 op-label font-semibold transition disabled:opacity-40 sm:h-16"
+              size="xl"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-message-square-text"
+              class="h-14 justify-center gap-1.5 px-1.5 text-sm font-semibold sm:h-16"
+              :ui="SIDE_KEY_UI"
               :disabled="mutationBusy || lineAdjustmentsBlocked"
+              label="Observação"
               @click="chooseMode('note')"
-            ><Icon name="lucide:message-square-text" class="size-4 shrink-0" /><span>Observação</span></button>
-            <button
+            />
+            <NuxtButton
               v-else-if="rowIndex === 2"
-              type="button"
-              class="inline-flex h-14 items-center justify-center gap-1.5 rounded-md border border-destructive/30 bg-card px-2 op-label font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-40 sm:h-16"
+              size="xl"
+              color="error"
+              variant="outline"
+              icon="i-lucide-trash-2"
+              class="h-14 justify-center gap-1.5 px-1.5 text-sm font-semibold sm:h-16"
+              :ui="SIDE_KEY_UI"
               :disabled="mutationBusy"
+              label="Remover"
               @click="askRemove(activeItem.line_id)"
-            ><Icon name="lucide:trash-2" class="size-4 shrink-0" /><span>Remover</span></button>
-            <button
+            />
+            <NuxtButton
               v-else
-              type="button"
-              class="inline-flex h-14 items-center justify-center gap-1.5 rounded-md bg-foreground px-2 op-label font-semibold text-background transition hover:bg-foreground/90 sm:h-16"
+              size="xl"
+              color="neutral"
+              icon="i-lucide-check"
+              class="h-14 justify-center gap-1.5 px-1.5 text-sm font-semibold sm:h-16"
+              :ui="SIDE_KEY_UI"
               data-pos-line-editor-close
               @click="closeEditor"
-            ><Icon name="lucide:check" class="size-4 shrink-0" />Pronto</button>
+            >Pronto</NuxtButton>
           </template>
         </div>
         <div v-if="numpadVisible" class="mt-2 grid grid-cols-3 gap-1.5" data-pos-line-numpad>
-          <button
+          <NuxtButton
             v-for="key in [1, 2, 3, 4, 5, 6, 7, 8, 9, 'decimal', 0, 'back']"
             :key="key"
-            type="button"
-            class="h-8 rounded-md border bg-card op-title transition hover:bg-muted disabled:opacity-40"
-            :class="
-              key === 'back' ? 'border-destructive/30 text-destructive' : 'border-border'
-            "
+            :color="key === 'back' ? 'error' : 'neutral'"
+            variant="outline"
+            class="justify-center op-title"
             :aria-label="
               typeof key === 'number'
                 ? 'Dígito ' + key
@@ -1542,6 +1606,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
               !numpadCanType ||
               (key === 'decimal' && numpadMode !== 'disc_brl')
             "
+            :label="typeof key === 'number' ? String(key) : key === 'back' ? '⌫' : ','"
             @click="
               typeof key === 'number'
                 ? onDigit(String(key))
@@ -1549,9 +1614,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
                   ? onBackspace()
                   : onComma()
             "
-          >
-            {{ typeof key === "number" ? key : key === "back" ? "⌫" : "," }}
-          </button>
+          />
         </div>
 
         <p
@@ -1588,34 +1651,39 @@ defineExpose({ focusItem, onDigit, onBackspace });
           <strong v-if="totalConfirmed" class="text-3xl font-semibold tnum" data-pos-sheet-pay-total>{{ totalText }}</strong>
           <span v-else class="op-title font-normal text-muted-foreground" data-pos-sheet-pay-total :data-total-state="total.status">{{ totalText }}</span>
           <span class="flex-1" />
-          <button
-            type="button"
-            class="min-h-10 rounded-md px-2 op-label font-medium text-primary hover:bg-accent disabled:opacity-50"
+          <NuxtButton
+            size="xl"
+            color="primary"
+            variant="ghost"
             :disabled="!items.length || loading || saving"
+            label="Outras formas"
             data-pos-sheet-other-payment
             @click="$emit('prepare')"
-          >Outras formas</button>
+          />
         </div>
         <div class="grid gap-2" :class="primaryQuickPayments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
-          <button
+          <NuxtButton
             v-for="method in primaryQuickPayments"
             :key="method.ref"
-            type="button"
-            class="flex h-14 items-center justify-center gap-2.5 rounded-lg bg-primary text-lg font-semibold text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+            size="xl"
+            color="primary"
+            class="h-14 justify-center gap-2.5 text-lg font-semibold"
             :disabled="!items.length || loading || saving"
             :data-pos-sheet-pay-method="method.ref"
             @click="$emit('pay', method.ref)"
           >
             <Icon :name="method.icon" class="size-6 shrink-0" />
             {{ method.label }}
-          </button>
+          </NuxtButton>
           <!-- V6-CAIXA: dinheiro na mesa, secundário; a gaveta do Balcão abre pelo
                cartão que a venda deixa (nunca sozinha longe dela). -->
-          <button
+          <NuxtButton
             v-for="method in secondaryQuickPayments"
             :key="method.ref"
-            type="button"
-            class="col-span-full flex h-12 items-center justify-center gap-2.5 rounded-lg border border-border bg-card op-label font-semibold transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+            size="xl"
+            color="neutral"
+            variant="outline"
+            class="col-span-full h-12 justify-center gap-2.5 font-semibold"
             :disabled="!items.length || loading || saving"
             :data-pos-sheet-pay-method="method.ref"
             @click="$emit('pay', method.ref)"
@@ -1623,13 +1691,16 @@ defineExpose({ focusItem, onDigit, onBackspace });
             <Icon :name="method.icon" class="size-5 shrink-0" />
             {{ method.label }}
             <span v-if="method.hint" class="font-normal text-muted-foreground">· {{ method.hint }}</span>
-          </button>
+          </NuxtButton>
         </div>
       </div>
       <div v-else class="shrink-0 border-t border-border p-3">
-        <button
-          type="button"
-          class="flex h-16 w-full items-center gap-3 rounded-lg bg-primary pr-3.5 pl-4 text-primary-foreground shadow-[0_2px_0_color-mix(in_oklab,var(--primary)_60%,black)] transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+        <!-- O maior alvo da tela: `xl` com a altura da faixa (h-16), o total dentro. -->
+        <NuxtButton
+          size="xl"
+          color="primary"
+          block
+          class="h-16 justify-start gap-3 pr-3.5 pl-4"
           :disabled="!items.length || loading || saving"
           :aria-busy="loading || undefined"
           :title="`${primaryText} (F4)`"
@@ -1645,7 +1716,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             <span v-if="totalConfirmed" class="text-xl leading-8 font-semibold tnum xl:text-3xl">{{ totalText }}</span>
             <span v-else class="text-base leading-8 font-medium opacity-80">{{ totalText }}</span>
           </span>
-        </button>
+        </NuxtButton>
       </div>
   </DefineTicketBody>
 
@@ -1662,9 +1733,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         Escolha uma comanda para este atendimento não se perder.
       </p>
     </div>
-    <UiButton type="button" size="lg" :disabled="loading" @click="$emit('requestTab')">
-      Escolher comanda
-    </UiButton>
+    <NuxtButton size="xl" color="primary" class="justify-self-center" :disabled="loading" label="Escolher comanda" @click="$emit('requestTab')" />
   </div>
 
   <!-- FOLHA (v4 tablet, `pos-tablet.jpg`): abaixo do desktop a comanda é a barra da

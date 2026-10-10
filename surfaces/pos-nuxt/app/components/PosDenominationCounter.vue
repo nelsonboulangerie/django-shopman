@@ -140,7 +140,7 @@ defineExpose({ filled, totalQ, touched: computed(() => (props.mode === "total" ?
           inputmode="numeric"
           pattern="[0-9]"
           placeholder="0"
-          class="w-20 text-right tabular-nums"
+          class="h-8 w-20 text-right tabular-nums"
           :disabled="props.disabled"
           :aria-label="`Quantidade de ${denom.shape === 'note' ? 'notas' : 'moedas'} de ${denom.label}`"
         />
@@ -173,7 +173,7 @@ defineExpose({ filled, totalQ, touched: computed(() => (props.mode === "total" ?
             :ref="(el) => { inputs[denom.q] = el as HTMLInputElement | null; }"
             :value="counts[denom.q] ?? ''"
             inputmode="numeric"
-            class="h-12 w-full rounded-md border bg-card text-center text-xl font-semibold tnum outline-none transition"
+            class="h-8 w-full rounded-md border bg-card text-center text-base font-semibold tnum outline-none transition"
             :class="activeQ === denom.q ? 'border-2 border-foreground/80' : 'border-border'"
             :disabled="disabled"
             :aria-label="`Quantidade de ${denom.shape === 'note' ? 'notas' : 'moedas'} de ${denom.label}`"

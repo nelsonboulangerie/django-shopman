@@ -221,13 +221,13 @@ function onAddressSelected(address: StructuredAddressProjection) {
               <strong class="tabular-nums">{{ deliveryFeeKnown ? formatBRL(deliveryFeeQ) : "—" }}</strong>
             </div>
             <p class="text-xs text-muted-foreground">{{ deliveryFeeNote }}</p>
-            <button
-              type="button"
-              class="justify-self-start text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              class="justify-self-start"
+              :label="deliveryFeeOverride ? 'Usar a taxa da loja' : 'Combinar outro valor'"
               @click="$emit('update:deliveryFeeOverride', !deliveryFeeOverride)"
-            >
-              {{ deliveryFeeOverride ? "Usar a taxa da loja" : "Combinar outro valor" }}
-            </button>
+            />
             <UiInput
               v-if="deliveryFeeOverride"
               :model-value="deliveryFeeOverrideInput"
@@ -245,17 +245,18 @@ function onAddressSelected(address: StructuredAddressProjection) {
              bloco de entrega, elas simplesmente NÃO EXISTIAM na retirada, e a
              encomenda por telefone para retirar na quinta não tinha onde ser
              escrita. O atalho fica FORA do bloco de entrega pela mesma razão. -->
-        <button
-          type="button"
-          class="flex items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-left text-sm transition hover:bg-accent"
+        <NuxtButton
+          color="neutral"
+          variant="outline"
+          trailing-icon="i-lucide-chevron-right"
+          class="justify-between gap-2 px-3 py-2 text-left font-normal"
           @click="$emit('openSchedule')"
         >
           <span>
             <span class="block font-medium text-muted-foreground">Quando</span>
             <span class="block text-xs opacity-80">{{ scheduleLabel }}</span>
           </span>
-          <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
-        </button>
+        </NuxtButton>
 
         <!-- Observações do pedido valem para RETIRADA também (não só entrega):
              o dado sempre viajou no intent; só a tela o escondia. -->

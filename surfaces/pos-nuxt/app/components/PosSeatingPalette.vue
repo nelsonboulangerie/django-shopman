@@ -134,7 +134,7 @@ function glyphClass(shape: SpotShape) {
         :key="area.name"
         color="neutral"
         variant="ghost"
-        active-color="primary" active-variant="soft"
+        active-color="primary" active-variant="solid"
         :active="activeArea === area.name"
         class="gap-2 text-left"
         :aria-pressed="activeArea === area.name"

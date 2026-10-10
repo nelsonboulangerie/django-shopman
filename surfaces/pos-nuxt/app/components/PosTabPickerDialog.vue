@@ -103,12 +103,13 @@ function confirmTyped() {
           <UiBadge v-if="hasDraft" variant="outline">Rascunho atual</UiBadge>
         </div>
         <div v-if="filteredTabs.length" class="grid max-h-72 gap-2 overflow-auto pr-1 sm:grid-cols-2">
-          <button
+          <NuxtButton
             v-for="tab in filteredTabs"
             :key="tab.ref"
-            type="button"
-            class="grid gap-1 rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-border disabled:hover:bg-transparent"
-            :class="tab.state === 'in_use' ? 'border-warning/40 bg-warning/10' : ''"
+            color="neutral"
+            variant="outline"
+            class="grid gap-1 px-3 py-2 text-left font-normal"
+            :class="tab.state === 'in_use' ? 'bg-warning/10' : ''"
             :disabled="busy || !canAssociate(tab)"
             @click="selectTab(tab)"
           >
@@ -120,7 +121,7 @@ function confirmTyped() {
             <span v-if="hasDraft && !canAssociate(tab)" class="text-xs text-warning">
               Abra separadamente para evitar mistura de pedidos.
             </span>
-          </button>
+          </NuxtButton>
         </div>
         <p v-else class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
           Nenhuma comanda encontrada. Digite uma referência para abrir uma nova.
