@@ -13,6 +13,7 @@
 // do ⋯ leva a mesma leitura. O endereço não aparece mais escrito na tela (F14).
 import type { TableColumn } from "#ui/types";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
+import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
 import type { BIOverShortRow, BIProductionReport, BIReading } from "~/types/bi";
 import { formatInt, formatQty } from "~/presentation/bi";
 import {
@@ -141,17 +142,13 @@ const counts = computed(() => ({
   right: day.value?.summary.right ?? 0,
 }));
 
-// Recorte por veredito: NuxtTabs em pílula do tablet para cima (escolha de UM entre
-// quatro, com o "Todos" na fileira); no celular as quatro pílulas não cabem e cortavam
-// ("Na me…", laudo F18), então o mesmo recorte vira um NuxtSelect (lista curta e fixa).
-const verdictItems = computed(() => [
-  { value: "all", label: "Todos", count: rows.value.length },
-  ...VERDICTS.map((key) => ({ value: key, label: verdictMeta(key).label, count: counts.value[key] })),
+// Recorte por veredito: os filtros rápidos da suíte (`OperatorQuickFilters`, um de cada
+// vez, com a contagem ao lado). A peça cuida do celular sozinha: a faixa rola sem cortar
+// rótulo (laudo F18, "Na me…") e, acima do teto, vira seletor.
+const verdictItems = computed<QuickFilterItem[]>(() => [
+  { key: "all", label: "Todos", count: rows.value.length },
+  ...VERDICTS.map((key) => ({ key, label: verdictMeta(key).label, count: counts.value[key] })),
 ]);
-const verdictOptions = computed(() =>
-  verdictItems.value.map((item) => ({ value: item.value, label: `${item.label} (${item.count})` })),
-);
-const CHIP_DOT = { short: "bg-error", over: "bg-warning", right: "bg-success" } as const;
 const VERDICT_TEXT = { error: "text-error", warning: "text-warning", success: "text-success" } as const;
 
 // Coleção: a lista cresce com o catálogo, então é NuxtSelectMenu com busca; a busca
@@ -231,7 +228,7 @@ const activeFilters = computed(() => {
     ...(verdict.value !== "all"
       ? [{
           key: "verdict",
-          label: `Veredito: ${verdictItems.value.find((item) => item.value === verdict.value)?.label ?? verdict.value}`,
+          label: `Veredito: ${verdictItems.value.find((item) => item.key === verdict.value)?.label ?? verdict.value}`,
           remove: () => (verdict.value = "all"),
         }]
       : []),
@@ -302,8 +299,8 @@ const csv = computed(() => overShortCsv(filtered.value));
       </template>
       <!-- Um tempo por aba, no mesmo lugar das outras telas: o primeiro da linha de
            recortes. A aba "Sobrou ou faltou" lê um dia; "Lotes no período", a janela.
-           No celular (regra da toolbar do kit), o tempo e a troca de leitura ficam na
-           linha; comparar, veredito, coleção e o frescor moram no painel "Filtros". -->
+           O veredito é filtro rápido, na mesma linha (um toque, com a contagem);
+           comparar, coleção e o frescor moram no painel "Filtros". -->
       <template #filters-primary>
         <OperatorPeriodPicker
           v-if="view === 'lots'"
@@ -331,36 +328,37 @@ const csv = computed(() => overShortCsv(filtered.value));
           data-bi-reading-day
         />
         <ProductionViewNav v-if="!isNarrow" />
+        <!-- O recorte de todo dia, um toque com a contagem (filtro rápido da suíte). -->
+        <OperatorQuickFilters
+          v-if="!isNarrow && view === 'day' && day"
+          v-model="verdict"
+          :items="verdictItems"
+          label="Recorte por veredito"
+          data-bi-verdict-tabs
+        />
       </template>
       <!-- Celular: a troca de leitura não cabe ao lado do tempo e do "Filtros" (sumia
            atrás da rolagem); ela desce para a navegação da tela, logo abaixo. -->
       <template v-if="isNarrow" #below>
         <OperatorToolbar class="py-2" data-bi-production-nav-phone>
-          <ProductionViewNav />
+          <div class="flex min-w-0 flex-col gap-2">
+            <ProductionViewNav />
+            <!-- No celular o veredito desce junto com a troca de leitura: a linha de cima
+                 já leva o dia e o "Filtros", e a faixa espremida mostrava só "Todos". -->
+            <OperatorQuickFilters
+              v-if="view === 'day' && day"
+              v-model="verdict"
+              :items="verdictItems"
+              label="Recorte por veredito"
+              data-bi-verdict-tabs-phone
+            />
+          </div>
         </OperatorToolbar>
       </template>
       <template v-if="view === 'day' && day" #filters>
         <template v-if="day">
           <NuxtFormField label="Comparar com" orientation="horizontal" :hint="isPhone ? undefined : compareCaption(day.day, day.compare_days)" data-bi-compare>
             <NuxtSelect :model-value="compare" :items="compareItems" @update:model-value="setCompare(String($event))" />
-          </NuxtFormField>
-          <div class="max-sm:hidden">
-            <NuxtTabs
-              v-model="verdict"
-              :items="verdictItems"
-              :content="false"
-              variant="pill"
-              aria-label="Recorte por veredito"
-              data-bi-verdict-tabs
-            >
-              <template #leading="{ item }">
-                <span v-if="item.value !== 'all'" class="size-2 rounded-full" :class="CHIP_DOT[item.value as keyof typeof CHIP_DOT]" aria-hidden="true" />
-              </template>
-              <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
-            </NuxtTabs>
-          </div>
-          <NuxtFormField label="Veredito" orientation="horizontal" class="sm:hidden" data-bi-verdict-select>
-            <NuxtSelect v-model="verdict" :items="verdictOptions" />
           </NuxtFormField>
           <NuxtFormField v-if="collectionItems.length > 1" label="Coleção" orientation="horizontal" data-bi-collection>
             <NuxtSelectMenu v-model="collection" :items="collectionItems" value-key="value" :search-input="{ autofocus: !touch, placeholder: 'Buscar coleção' }" />
