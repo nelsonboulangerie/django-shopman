@@ -21,8 +21,8 @@
       "baselines": "surfaces/pos-nuxt/tests/visual/baselines"
     }
   ],
-  "themeFingerprint": "sha256:944fb4b8649d37b5649b68c1b43c39f39c435b6d344ae45396071a561880de98",
-  "acceptedOn": "2026-10-09",
+  "themeFingerprint": "sha256:2cfb281967e6a76e5eaf0b435d3e9417138156606823c944036b474dbf1eaf47",
+  "acceptedOn": "2026-10-10",
   "owner": "Pablo Valentini",
-  "note": "Aceite do dono (Pablo Valentini, no chat em 09/10/2026: \"sim\") ao tema com campos e botões na altura md (32 px) em todos os apps de operador, no pouso #1574. Aceite anterior (#1555): \"O tema em si está ok! Eu já tinha aprovado\". Baselines de Marketing promovidas da CI no mesmo PR; as 4 do PDV não têm job visual na CI."
+  "note": "Aceite do dono (Pablo Valentini, no chat em 10/10/2026: \"1) aplica em todos\") a levar a descrição de todo aviso (Alert) à cor plena no tema do kit (slots.description opacity-100; o primary subtle escreve com --primary-ink): AA nas 6 cores × 2 temas, trava em surfaces/operator-kit/tests/alertContrast.test.ts. Aceite anterior (09/10/2026, \"sim\", #1574): campos e botões na altura md (32 px). Baselines das consumidoras promovidas da CI no mesmo PR; as 4 do PDV não têm job visual na CI."
 }

@@ -1224,7 +1224,6 @@ const startedDescription = computed(() => {
                 ? 'O Planejamento sugere a partir das receitas ativas. Ative ou crie uma no livro de receitas.'
                 : 'O Planejamento sugere a partir das receitas ativas. Peça a quem gerencia a produção para ativar ou criar uma receita.'
             "
-            :ui="{ description: 'opacity-100' }"
             data-plan-empty
           >
             <template v-if="recipeBook.canView.value" #actions>
