@@ -238,6 +238,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       // O chip de contagem (dono, 09/10/2026): no fluxo o anel é transparente, a cor
       // do fundo do pai em qualquer pai; no canto do ícone continua o `ring-bg` do tema.
       "operator-kit/OperatorCountChip.vue",
+      // Os filtros rápidos (fase 2, K4): a faixa rola no celular e o rótulo da aba não
+      // se corta nem estica (as abas do Nuxt UI crescem e truncam por padrão).
+      "operator-kit/OperatorQuickFilters.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),

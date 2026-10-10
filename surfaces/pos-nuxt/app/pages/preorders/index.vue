@@ -12,15 +12,18 @@
 //                       busca já com a leitura. A ação primária (Nova encomenda;
 //                       no celular o kit a desce para a linha de baixo da barra)
 //                       e, no ⋯, o lote das Vias Pedido e Atualizar.
-//   Toolbar             o Período do kit (dia, semana, mês, próximos e últimos
-//                       dias, personalizado; ‹ › e a data) e o painel de filtros
-//                       único da suíte (`OperatorFilterPanel`): os recortes de todo
-//                       dia (A receber, Sem Via Pedido, Retiradas, Entregas) são os
-//                       filtros rápidos, o resto mora nos filtros completos. Na
-//                       mesa, grade ou lista e, no fim, a leitura: "Hoje" (o que
-//                       falta para o dia, sempre de hoje) e o resumo do período.
-//                       Durante a busca o Período sai (a busca não tem período) e
-//                       entra "Incluir concluídas".
+//   Toolbar             à esquerda, os recortes de todo dia (A receber, Sem Via
+//                       Pedido, Retiradas, Entregas) num toque e com a contagem: a
+//                       faixa de filtros rápidos da suíte (`OperatorQuickFilters`,
+//                       decisão do dono, P1 de 02/10), com os favoritos fixados no
+//                       fim. Depois o Período do kit (dia, semana, mês, próximos e
+//                       últimos dias, personalizado; ‹ › e a data) e o painel de
+//                       filtros único da suíte (`OperatorFilterPanel`): o resto mora
+//                       nos filtros completos, e os favoritos são do balcão
+//                       (`pos`/`preorders`). Na mesa, grade ou lista e, no fim, a
+//                       leitura: "Hoje" (o que falta para o dia, sempre de hoje) e o
+//                       resumo do período. Durante a busca os recortes e o Período
+//                       saem (a busca não tem período) e entra "Incluir concluídas".
 //   Aviso da tela       o pagamento a conferir, com o gesto de ver só elas.
 //   Cards               a semana (dias lado a lado, ou um embaixo do outro) ou o
 //                       dia por janela, em grade ou lista. Na semana o card se
@@ -46,7 +49,6 @@ import {
   PREORDERS_MAX_SPAN_DAYS,
   PREORDERS_PERIOD_PRESETS,
   PREORDERS_SCOPE_NOTE,
-  QUICK_FILTERS,
   SEARCH_LABEL,
   SEARCH_MIN_CHARS,
   SEARCH_PLACEHOLDER,
@@ -62,6 +64,8 @@ import {
   filterDimensions,
   filterEmptyMessage,
   flattenDays,
+  filtersFromQuickKeys,
+  fromActiveFilters,
   fromPanelFilters,
   groupByWindow,
   listSummary,
@@ -75,6 +79,8 @@ import {
   periodSummaryLabel,
   preorderCountLabel,
   printPlan,
+  quickFilterItems,
+  quickKeysOf,
   searchCompletedHeading,
   searchEmptyMessage,
   searchLimitNote,
@@ -94,6 +100,7 @@ import {
 } from "~/presentation/preorders";
 import type { PeriodSelection } from "../../../../operator-kit/app/presentation/dates";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
+import type { FilterPanelQuery } from "../../../../operator-kit/app/presentation/filterPanel";
 import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
 import type { OperatorScreenAlert } from "../../../../operator-kit/app/presentation/screenState";
 import type { ActiveFilters } from "../../../../operator-kit/app/types/filters";
@@ -150,6 +157,17 @@ const activePanel = computed<ActiveFilters>({
   get: () => toActiveFilters(filters.value),
   set: (next) => { filters.value = fromPanelFilters(filters.value, next); },
 });
+// Os recortes de todo dia: um toque, com a contagem (a faixa de filtros rápidos).
+const quickItems = computed(() => quickFilterItems(allCards.value, filters.value));
+const quickModel = computed<string[]>({
+  get: () => quickKeysOf(filters.value),
+  set: (keys) => { filters.value = filtersFromQuickKeys(filters.value, keys); },
+});
+const panelQuery = computed<FilterPanelQuery>(() => ({ filters: activePanel.value }));
+// O favorito fixado aplica o recorte inteiro dele (não soma no que está).
+function applyFavorite(query: FilterPanelQuery) {
+  filters.value = fromActiveFilters(query.filters ?? {});
+}
 const activeFilters = computed(() => filterBarActiveFilters(dimensions.value, activePanel.value, (next) => {
   activePanel.value = next;
 }));
@@ -403,12 +421,27 @@ function refreshAll() {
       />
     </template>
 
-    <!-- O RECORTE: o Período (fora da busca) ou "Incluir concluídas" (só na busca). -->
+    <!-- O RECORTE: os recortes de todo dia e o Período (fora da busca), ou "Incluir
+         concluídas" (só na busca). -->
     <template #filters-primary>
+      <OperatorQuickFilters
+        v-if="!searching && list && list.count"
+        v-model="quickModel"
+        :items="quickItems"
+        multiple
+        label="Recortes das encomendas"
+        surface="pos"
+        screen="preorders"
+        :query="panelQuery"
+        data-preorders-quick
+        @apply="applyFavorite"
+      />
+      <!-- No celular o Período vem primeiro (que dia é a tela) e os recortes rolam
+           depois dele; na mesa, recortes à esquerda e o Período depois. -->
       <OperatorPeriodPicker
         v-if="!searching"
         v-model="periodSelection"
-        class="min-w-0"
+        class="min-w-0 max-sm:order-first"
         compact
         :presets="PREORDERS_PERIOD_PRESETS"
         custom
@@ -429,7 +462,8 @@ function refreshAll() {
       <OperatorFilterPanel
         v-model="activePanel"
         :dimensions="dimensions"
-        :quick="[...QUICK_FILTERS]"
+        surface="pos"
+        screen="preorders"
         data-preorders-filters
       />
     </template>

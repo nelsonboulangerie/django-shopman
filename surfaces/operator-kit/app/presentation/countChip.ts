@@ -48,16 +48,20 @@ export function hasCount(count: number | null | undefined): count is number {
  *
  *   tabActive  aba ativa preenchida (`NuxtTabs` `pill`: o dourado/latão do `primary`)
  *              nos dois temas: o âmbar some no dourado.
+ *   pressed    botão ligado (`aria-pressed="true"`): o ativo da suíte é `solid`
+ *              primário (`QUICK_ACTIVE`), o mesmo dourado da aba ativa.
  *   rail       barra lateral clara (latão), linha comum e linha ativa. No escuro a
  *              barra é bronze escuro e o âmbar contrasta: não inverte.
  *
  * A inversão é derivada do pai pelo próprio CSS (o pai ativo é o ancestral, não uma
  * prop da tela): `data-slot=trigger` + `data-state=active` é a aba ativa do Nuxt UI;
+ * `aria-pressed=true` é o botão ligado;
  * `.bg-rail` é o escopo da barra lateral (o `RAIL_SCOPE` do app.config), aberta,
  * compactada ou em gaveta. Vale para o chip no fluxo e para o do canto do ícone.
  */
 export const COUNT_CHIP_INVERTED_ON = {
   tabActive: { themes: ["light", "dark"], parentBg: "primary", parentText: "primary-foreground" },
+  pressed: { themes: ["light", "dark"], parentBg: "primary", parentText: "primary-foreground" },
   rail: { themes: ["light"], parentBg: "rail", parentText: "rail-foreground" },
   railActive: { themes: ["light"], parentBg: "rail", parentText: "rail-foreground" },
 } as const;
@@ -70,6 +74,8 @@ export const COUNT_CHIP_INVERTED_ON = {
 export const COUNT_CHIP_INVERT_CLASSES = [
   "in-[[data-slot=trigger][data-state=active]]:bg-(--ui-text-inverted)",
   "in-[[data-slot=trigger][data-state=active]]:text-(--ui-primary)",
+  "in-[[aria-pressed=true]]:bg-(--ui-text-inverted)",
+  "in-[[aria-pressed=true]]:text-(--ui-primary)",
   "[:root:not(.dark)_.bg-rail_&]:bg-(--ui-text)",
   "[:root:not(.dark)_.bg-rail_&]:text-(--ui-bg)",
 ].join(" ");
