@@ -154,13 +154,15 @@ async function submitForcedChange(payload: {
     ref="overlay"
     data-operator-lock
     tabindex="-1"
-    class="fixed inset-0 outline-none z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
+    class="fixed inset-0 outline-none z-[100] grid place-items-center overflow-y-auto bg-background/95 p-4 backdrop-blur-sm"
   >
     <!-- O cartão tem a largura do teclado: a lista de nomes, o campo do PIN, o
          teclado e os avisos são UMA coluna e batem borda com borda (dono,
          10/10/2026). -->
     <NuxtCard class="w-full max-w-xs">
-      <div class="grid gap-5">
+      <!-- Tela baixa (até 700 px de altura, o celular com a barra do navegador):
+           sem o cadeado e com respiro menor, para a trava caber sem rolar. -->
+      <div class="grid gap-5 [@media(max-height:43.75rem)]:gap-3">
       <!-- Forced change: manager reset the operator's PIN; rotate before operating. -->
       <OperatorPinChange
         v-if="mustChange && operator"
@@ -228,7 +230,7 @@ async function submitForcedChange(payload: {
              navega por ele. O mesmo desenho do cabeçalho do login do operador
              (`OperatorLoginForm`): o cadeado no centro, título e uma linha. -->
         <header class="grid justify-items-center gap-3 text-center">
-          <NuxtAvatar size="3xl" icon="i-lucide-lock" alt="" />
+          <NuxtAvatar size="3xl" icon="i-lucide-lock" alt="" class="[@media(max-height:43.75rem)]:hidden" />
           <div class="grid gap-1">
             <h2 class="text-lg font-semibold">Identifique-se para operar</h2>
             <p class="text-sm text-muted-foreground">Você assume o balcão.</p>

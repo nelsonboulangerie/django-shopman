@@ -92,11 +92,11 @@ const shownError = computed(() => localError.value || props.error || "");
 </script>
 
 <template>
-  <div class="grid gap-5">
+  <div class="grid gap-5 [@media(max-height:43.75rem)]:gap-3">
     <!-- Mesmo cabeçalho da trava (cadeado → chave): centrado, título e a
          linha que diz o que fazer. -->
     <header class="grid justify-items-center gap-3 text-center">
-      <NuxtAvatar size="3xl" icon="i-lucide-key-round" alt="" />
+      <NuxtAvatar size="3xl" icon="i-lucide-key-round" alt="" class="[@media(max-height:43.75rem)]:hidden" />
       <div class="grid gap-1">
         <h2 class="text-lg font-semibold">
           {{ forced ? "Defina um novo PIN" : "Trocar meu PIN" }}

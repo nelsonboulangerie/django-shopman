@@ -129,10 +129,16 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="grid w-full min-w-0 gap-4" data-operator-pin-pad>
+  <div
+    ref="root"
+    class="grid w-full min-w-0 gap-4 [@media(max-height:43.75rem)]:gap-3 [--op-pin-key:3.5rem] [@media(max-height:47.5rem)]:[--op-pin-key:2.75rem]"
+    data-operator-pin-pad
+  >
     <!-- Uma coluna só, da largura de quem chama: o campo, o aviso e o teclado
          batem borda com borda (dono, 10/10/2026). As casas dividem a largura do
-         teclado, e a casa tem a altura da tecla. -->
+         teclado, e a casa tem a altura da tecla (`--op-pin-key`): 56 px, e 44 px
+         em tela baixa (até 760 px de altura), para a trava caber inteira no
+         celular sem rolar (dono, 10/10/2026). 44 px é o piso do alvo de toque. -->
     <div class="grid min-w-0 gap-2">
       <p v-if="label" class="text-center text-sm font-medium text-muted-foreground">
         {{ label }}
@@ -152,7 +158,7 @@ onBeforeUnmount(() => {
         :aria-label="fieldName"
         :ui="{
           root: 'flex w-full gap-2',
-          base: 'size-auto h-14 w-0 min-w-0 flex-1 text-base disabled:cursor-default disabled:opacity-100',
+          base: 'size-auto h-(--op-pin-key) w-0 min-w-0 flex-1 text-base disabled:cursor-default disabled:opacity-100',
         }"
         data-operator-pin-field
       />
@@ -181,7 +187,7 @@ onBeforeUnmount(() => {
         color="neutral"
         variant="outline"
         size="xl"
-        class="h-14 text-xl tabular-nums"
+        class="h-(--op-pin-key) text-xl tabular-nums"
         :label="d"
         @click="emit('digit', d)"
       />
@@ -190,7 +196,7 @@ onBeforeUnmount(() => {
         color="neutral"
         variant="ghost"
         size="xl"
-        class="h-14"
+        class="h-(--op-pin-key)"
         icon="i-lucide-delete"
         aria-label="Apagar o último dígito"
         @click="emit('backspace')"
@@ -200,14 +206,14 @@ onBeforeUnmount(() => {
         color="neutral"
         variant="outline"
         size="xl"
-        class="h-14 text-xl tabular-nums"
+        class="h-(--op-pin-key) text-xl tabular-nums"
         label="0"
         @click="emit('digit', '0')"
       />
       <NuxtButton
         block
         size="xl"
-        class="h-14"
+        class="h-(--op-pin-key)"
         :icon="submitIcon"
         :aria-label="submitLabel"
         :disabled="!canSubmit || busy"

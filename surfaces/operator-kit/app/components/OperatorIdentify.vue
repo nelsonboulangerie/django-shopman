@@ -161,7 +161,7 @@ defineExpose({ reset });
 </script>
 
 <template>
-  <div ref="root" class="grid w-full gap-4">
+  <div ref="root" class="grid w-full gap-4 [@media(max-height:43.75rem)]:gap-3">
     <!-- Escolher quem é -->
     <template v-if="hasList && !picked">
       <p class="text-center text-sm text-muted-foreground">{{ prompt }}</p>
