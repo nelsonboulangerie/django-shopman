@@ -68,6 +68,85 @@ def create_ticket(session_key: str, kds_instance, items: list) -> Any:
     )
 
 
+def carry_lines_to_session(*, from_session_key: str, to_session_key: str, line_map: dict[str, str]) -> dict:
+    """A linha que mudou de comanda leva junto o que a cozinha já tem dela.
+
+    ``line_map`` é ``{line_id na origem: line_id no destino}`` (o kernel dá
+    identidade nova à linha movida). Cada ticket VIVO da origem com linha movida:
+
+    - se só tem linhas movidas, passa inteiro para o destino (mesmo ticket, mesmo
+      estado, mesmo papel impresso): só troca a chave e os ``line_id``;
+    - se tem linhas que ficam, divide: a origem fica com as suas e o destino
+      ganha um ticket com as movidas, no MESMO estado, estação e hora do envio.
+      O ticket do destino nasce por ``bulk_create`` de propósito: não é pedido
+      novo, é o mesmo prato mudando de mesa, então não reimprime a Via Cozinha
+      nem apita "pedido novo" na estação (os dois só reagem a ``post_save``); a
+      tela recebe o evento de atualização, como o do ticket que encolheu.
+
+    O ticket cancelado fica na origem: é comprovante de um fato que já foi.
+    Pré-condição: o chamador segura o lock das duas sessões (ordem global
+    ``source -> ticket``). Devolve ``{"moved": n, "split": n}``.
+    """
+    from django.db import transaction
+
+    from shopman.backstage.models import KDSTicket
+
+    line_map = {str(old): str(new) for old, new in (line_map or {}).items() if old and new}
+    if not line_map:
+        return {"moved": 0, "split": 0}
+
+    def relabel(item: dict) -> dict:
+        return {**item, "line_id": line_map[str(item.get("line_id"))]}
+
+    moved = split = 0
+    twins: list = []
+    with transaction.atomic():
+        tickets = (
+            KDSTicket.objects.select_for_update()
+            .filter(session_key=from_session_key)
+            .exclude(status="cancelled")
+            .order_by("pk")
+        )
+        for ticket in tickets:
+            items = ticket.items or []
+            going = [it for it in items if str(it.get("line_id")) in line_map]
+            if not going:
+                continue
+            staying = [it for it in items if str(it.get("line_id")) not in line_map]
+            if not staying:
+                ticket.session_key = to_session_key
+                ticket.items = [relabel(it) for it in items]
+                ticket.save(update_fields=["session_key", "items"])
+                moved += 1
+                continue
+            ticket.items = staying
+            ticket.save(update_fields=["items"])
+            twin = KDSTicket(
+                session_key=to_session_key,
+                kds_instance_id=ticket.kds_instance_id,
+                items=[relabel(it) for it in going],
+                status=ticket.status,
+                completed_at=ticket.completed_at,
+                completed_by=ticket.completed_by,
+                completed_via=ticket.completed_via,
+                seen_at=ticket.seen_at,
+                seen_by=ticket.seen_by,
+            )
+            (twin,) = KDSTicket.objects.bulk_create([twin])
+            # ``auto_now_add`` sobrescreve no insert: a hora do envio é a da origem.
+            KDSTicket.objects.filter(pk=twin.pk).update(created_at=ticket.created_at)
+            twin.created_at = ticket.created_at
+            twins.append(twin)
+            split += 1
+
+    if twins:
+        from shopman.shop.handlers._sse_emitters import emit_kds_change
+
+        for twin in twins:
+            emit_kds_change(twin)  # o emissor já adia a publicação para o commit
+    return {"moved": moved, "split": split}
+
+
 def unfire_session_lines(
     session_key: str,
     line_ids: list[str],

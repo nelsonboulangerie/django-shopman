@@ -940,7 +940,7 @@ const paymentWorkspaceRef = ref<{
 const { open: shortcutsHelpOpen } = useOperatorShortcuts();
 provideOperatorShortcuts(POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION);
 // Transferir a partir do modo seleção da comanda (v4): o diálogo nasce com as linhas
-// marcadas. Pelo F10 (toda a venda) ele nasce vazio, como sempre.
+// marcadas, pelo botão ou pelo F10 que ele anuncia. Sem marcas, o F10 abre vazio.
 const movePreselected = ref<string[]>([]);
 const moveInitialMode = ref<"transfer" | "merge" | undefined>(undefined);
 const cartPanelRef = ref<{ fireSelection: () => boolean; moveSelection: () => boolean } | null>(null);

@@ -606,6 +606,26 @@ createServer((req, res) => {
       });
       return;
     }
+    // Cancelar na cozinha (o "cancelar envio"; com `quantities`, só a diferença).
+    if (path === "/api/v1/backstage/pos/tabs/unfire/") {
+      void readBody(req).then((body) => {
+        const ref = String(body?.session_key || "").replace(/^S-/, "") || "12";
+        const ids = new Set(body?.line_ids || []);
+        const quantities = body?.quantities || {};
+        const before = SAVED_ITEMS.get(ref) ?? tabPayload(ref).items;
+        const items = before.map((item) => {
+          if (!ids.has(item.line_id)) return item;
+          const units = Number(quantities[item.line_id] || 0);
+          const sent = Number(item.fired_qty ?? item.qty);
+          if (units > 0 && units < sent) return { ...item, fired_qty: sent - units };
+          const { fired: _f, fired_qty: _q, kitchen_status: _s, kitchen_tickets: _t, ...rest } = item;
+          return { ...rest, fired: false };
+        });
+        SAVED_ITEMS.set(ref, items);
+        send(res, 200, { ok: true, cancelled: 1, trimmed: 0, fired_lines: [], tab: { ...tabPayload(ref), items } });
+      });
+      return;
+    }
     if (path === "/api/v1/backstage/pos/sale/review/") {
       void readBody(req).then((body) => send(res, 200, { ok: true, review: review(body) }));
       return;
