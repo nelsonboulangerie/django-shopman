@@ -34,10 +34,13 @@ falta virar alguma chave; 2 quando o spec não pôde ser lido.
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 try:
     import yaml
@@ -105,6 +108,10 @@ class Row:
     obrigatoria: bool = True
     #: Restringe a conferência a estes componentes (por nome). Vazio = todos os Django.
     componentes: tuple[str, ...] = field(default_factory=tuple)
+    #: Check do ``production-readiness target=1`` que reúne esta linha:
+    #: ``profile`` (interruptores de ensaio), ``money`` (cobrança e nota),
+    #: ``cutover`` (só se liga no corte) ou ``in_place`` (já em dia, não pode sair).
+    grupo: str = "in_place"
 
     def rule(self, etapa: str) -> Rule | None:
         return self.dia_d if etapa == "dia-d" else self.ensaio_pix
@@ -119,37 +126,37 @@ _HMAC_COMPONENTS = ("web-operator", "web-storefront", "release")
 #: ``docs/runbooks/go-live-delta-do-spec.md`` (o teste confere).
 DELTA: tuple[Row, ...] = (
     # ── O que vira ──────────────────────────────────────────────────────────
-    Row("SHOPMAN_ENVIRONMENT", Rule("equals", "production"), Rule("equals", "staging")),
-    Row("SHOPMAN_PIX_ADAPTER", Rule("equals", _PIX_EFI), Rule("equals", _PIX_EFI)),
-    Row("EFI_SANDBOX", Rule("equals", "false"), Rule("equals", "true")),
-    Row("EFI_CLIENT_ID", Rule("rotated"), Rule("present")),
-    Row("EFI_CLIENT_SECRET", Rule("rotated"), Rule("present")),
-    Row("EFI_CERTIFICATE_PEM_BASE64", Rule("rotated"), Rule("present")),
-    Row("EFI_PIX_KEY", Rule("present"), Rule("present")),
-    Row("EFI_WEBHOOK_TOKEN", Rule("rotated"), Rule("present")),
-    Row("SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", Rule("off")),
-    Row("SHOPMAN_EXPOSE_MOCK_CAPTURE", Rule("off"), Rule("off")),
-    Row("SHOPMAN_MOCK_PIX_AUTO_CONFIRM", Rule("off"), Rule("off")),
-    Row("SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS", Rule("absent"), obrigatoria=False),
-    Row("STRIPE_PUBLISHABLE_KEY", Rule("prefix", "pk_live_")),
-    Row("STRIPE_SECRET_KEY", Rule("rotated")),
-    Row("STRIPE_WEBHOOK_SECRET", Rule("rotated")),
-    Row("FOCUS_NFE_ENVIRONMENT", Rule("equals", "producao")),
-    Row("FOCUS_NFE_TOKEN", Rule("rotated")),
-    Row("SHOPMAN_ADMIN_REQUIRE_2FA", Rule("true")),
-    Row("SHOPMAN_GO_LIVE", Rule("true")),
+    Row("SHOPMAN_ENVIRONMENT", Rule("equals", "production"), Rule("equals", "staging"), grupo="profile"),
+    Row("SHOPMAN_PIX_ADAPTER", Rule("equals", _PIX_EFI), Rule("equals", _PIX_EFI), grupo="profile"),
+    Row("EFI_SANDBOX", Rule("equals", "false"), Rule("equals", "true"), grupo="money"),
+    Row("EFI_CLIENT_ID", Rule("rotated"), Rule("present"), grupo="money"),
+    Row("EFI_CLIENT_SECRET", Rule("rotated"), Rule("present"), grupo="money"),
+    Row("EFI_CERTIFICATE_PEM_BASE64", Rule("rotated"), Rule("present"), grupo="money"),
+    Row("EFI_PIX_KEY", Rule("present"), Rule("present"), grupo="money"),
+    Row("EFI_WEBHOOK_TOKEN", Rule("rotated"), Rule("present"), grupo="money"),
+    Row("SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", Rule("off"), grupo="profile"),
+    Row("SHOPMAN_EXPOSE_MOCK_CAPTURE", Rule("off"), Rule("off"), grupo="profile"),
+    Row("SHOPMAN_MOCK_PIX_AUTO_CONFIRM", Rule("off"), Rule("off"), grupo="profile"),
+    Row("SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS", Rule("absent"), obrigatoria=False, grupo="profile"),
+    Row("STRIPE_PUBLISHABLE_KEY", Rule("prefix", "pk_live_"), grupo="money"),
+    Row("STRIPE_SECRET_KEY", Rule("rotated"), grupo="money"),
+    Row("STRIPE_WEBHOOK_SECRET", Rule("rotated"), grupo="money"),
+    Row("FOCUS_NFE_ENVIRONMENT", Rule("equals", "producao"), grupo="money"),
+    Row("FOCUS_NFE_TOKEN", Rule("rotated"), grupo="money"),
+    Row("SHOPMAN_ADMIN_REQUIRE_2FA", Rule("true"), grupo="cutover"),
+    Row("SHOPMAN_GO_LIVE", Rule("true"), grupo="cutover"),
     # ── O que já está no valor de produção e não pode sair dele ─────────────
-    Row("DJANGO_DEBUG", Rule("off")),
+    Row("DJANGO_DEBUG", Rule("off"), grupo="profile"),
     Row("DJANGO_SECURE_SSL_REDIRECT", Rule("true")),
-    Row("SHOPMAN_CARD_ADAPTER", Rule("equals", _STRIPE)),
-    Row("SHOPMAN_LINK_ADAPTER", Rule("equals_or_absent", _STRIPE)),
-    Row("SHOPMAN_FISCAL_ADAPTER", Rule("equals", _FOCUS)),
-    Row("SHOPMAN_FISCAL_EMISSION_RESOLVER", Rule("present")),
-    Row("FOCUS_NFE_BASE_URL", Rule("absent")),
-    Row("SHOPMAN_EXPOSE_DEBUG_OTP", Rule("off"), Rule("off")),
-    Row("SHOPMAN_STAGING_AUTOPILOT", Rule("off"), Rule("off")),
-    Row("SHOPMAN_ENABLE_CONSOLE_NOTIFICATION_ADAPTER", Rule("off")),
-    Row("SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM", Rule("off")),
+    Row("SHOPMAN_CARD_ADAPTER", Rule("equals", _STRIPE), grupo="profile"),
+    Row("SHOPMAN_LINK_ADAPTER", Rule("equals_or_absent", _STRIPE), grupo="money"),
+    Row("SHOPMAN_FISCAL_ADAPTER", Rule("equals", _FOCUS), grupo="money"),
+    Row("SHOPMAN_FISCAL_EMISSION_RESOLVER", Rule("present"), grupo="money"),
+    Row("FOCUS_NFE_BASE_URL", Rule("absent"), grupo="money"),
+    Row("SHOPMAN_EXPOSE_DEBUG_OTP", Rule("off"), Rule("off"), grupo="profile"),
+    Row("SHOPMAN_STAGING_AUTOPILOT", Rule("off"), Rule("off"), grupo="profile"),
+    Row("SHOPMAN_ENABLE_CONSOLE_NOTIFICATION_ADAPTER", Rule("off"), grupo="profile"),
+    Row("SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM", Rule("off"), grupo="profile"),
     Row("GOOGLE_MAPS_API_KEY", Rule("absent")),
     Row("GOOGLE_MAPS_BROWSER_API_KEY", Rule("present")),
     Row("GOOGLE_MAPS_SERVER_API_KEY", Rule("present")),
@@ -168,26 +175,6 @@ DELTA: tuple[Row, ...] = (
 
 
 # ── Leitura ──────────────────────────────────────────────────────────────────
-
-
-def doctl(*args: str, context: str | None) -> list[str]:
-    return ["doctl", *(["--context", context] if context else []), *args]
-
-
-def fetch_live_spec(app_id: str, *, context: str | None) -> dict:
-    result = subprocess.run(
-        doctl("apps", "spec", "get", app_id, "--format", "yaml", context=context),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"doctl apps spec get falhou: {result.stderr.strip()}")
-    return yaml.safe_load(result.stdout) or {}
-
-
-def load_spec(path: str | Path) -> dict:
-    return yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
 
 
 def django_components(spec: dict) -> dict[str, dict]:
@@ -215,6 +202,8 @@ def effective_envs(spec: dict, component: dict) -> dict[str, dict]:
 
 
 def _is_secret(entry: dict) -> bool:
+    if str(entry.get("value") or "").startswith("EV["):
+        return True
     return str(entry.get("type") or "GENERAL").upper() == "SECRET"
 
 
@@ -232,7 +221,7 @@ def shown(entry: dict | None) -> str:
 
 
 def satisfied(rule: Rule, entry: dict | None, baseline: dict | None) -> bool | None:
-    """``True``/``False``; ``None`` quando não dá para afirmar (rotated sem baseline)."""
+    """``True``/``False``; ``None`` quando não dá para afirmar (segredo que o spec não deixa ler)."""
     raw = None if entry is None else str(entry.get("value", ""))
     norm = (raw or "").strip().lower()
     if rule.kind == "equals":
@@ -246,7 +235,9 @@ def satisfied(rule: Rule, entry: dict | None, baseline: dict | None) -> bool | N
     if rule.kind == "absent":
         return entry is None
     if rule.kind == "prefix":
-        return entry is not None and not _is_secret(entry) and (raw or "").strip().startswith(rule.value)
+        if entry is not None and _is_secret(entry):
+            return None  # cifrado: não dá para ler o prefixo
+        return entry is not None and (raw or "").strip().startswith(rule.value)
     if rule.kind == "present":
         return entry is not None and bool((raw or "").strip())
     if rule.kind == "rotated":
@@ -371,11 +362,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--baseline", help="spec guardado antes da troca, para provar que os segredos mudaram")
     args = parser.parse_args(argv)
 
+    # Um leitor só: o mesmo do `production-readiness target=1`.
+    from scripts import release_readiness_target as target
+
     try:
         spec = (
-            load_spec(args.live_spec) if args.live_spec else fetch_live_spec(args.app_id, context=args.context or None)
+            target.load_spec_file(args.live_spec)
+            if args.live_spec
+            else target.fetch_live_spec(app=args.app_id, context=args.context or None)
         )
-        baseline = load_spec(args.baseline) if args.baseline else None
+        baseline = target.load_spec_file(args.baseline) if args.baseline else None
         findings = evaluate(spec, etapa=args.etapa, baseline_spec=baseline)
     except (OSError, RuntimeError, yaml.YAMLError) as exc:
         print(f"golive-spec-delta: não consegui ler o spec: {exc}", file=sys.stderr)

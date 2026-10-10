@@ -31,29 +31,63 @@ def _spec(app_envs: dict[str, str], *, release: str = _RELEASE, service_envs=Non
     }
 
 
-_TODAY = {
+#: O que já está no valor de produção hoje e segue igual no dia D (grupo
+#: ``in_place`` da tabela do delta). Segredo entra cifrado, como o spec devolve.
+_IN_PLACE = {
     "DJANGO_DEBUG": "false",
+    "DJANGO_SECURE_SSL_REDIRECT": "true",
+    "SHOPMAN_CARD_ADAPTER": "shopman.shop.adapters.payment_stripe",
+    "SHOPMAN_FISCAL_ADAPTER": "shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
+    "SHOPMAN_FISCAL_EMISSION_RESOLVER": "shopman.shop.fiscal_resolvers.on_request_or_tax_id",
+    "SHOPMAN_EXPOSE_DEBUG_OTP": "false",
+    "DJANGO_ALLOWED_HOSTS": "api.boulangerie.com.br",
+    "CSRF_TRUSTED_ORIGINS": "https://api.boulangerie.com.br",
+    "DATABASE_URL": "${postgres.shopman-staging-pool.DATABASE_URL}",
+    "REDIS_URL": "${cache.REDIS_URL}",
+    "SHOPMAN_OPERATOR_COOKIE_DOMAIN": ".boulangerie.com.br",
+    "COMTELE_ROUTE": "17",
+    "EMAIL_HOST": "smtp.gmail.com",
+    "SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY": "EV[1:hmac]",
+    "DJANGO_SECRET_KEY": "EV[1:cifrado]",
+    "GOOGLE_MAPS_BROWSER_API_KEY": "EV[1:maps-browser]",
+    "GOOGLE_MAPS_SERVER_API_KEY": "EV[1:maps-server]",
+    "DOORMAN_ACCESS_LINK_API_KEY": "EV[1:access-link]",
+    "COMTELE_API_KEY": "EV[1:comtele]",
+    "EFI_PIX_KEY": "EV[1:pix-key]",
+}
+
+#: Segredos que o dia D troca: o cifrado muda quando o dono cola o valor novo.
+_ROTATED = (
+    "EFI_CLIENT_ID",
+    "EFI_CLIENT_SECRET",
+    "EFI_CERTIFICATE_PEM_BASE64",
+    "EFI_WEBHOOK_TOKEN",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "FOCUS_NFE_TOKEN",
+)
+
+_TODAY = {
+    **_IN_PLACE,
     "SHOPMAN_ENVIRONMENT": "staging",
     "SHOPMAN_PIX_ADAPTER": "shopman.shop.adapters.payment_mock",
-    "SHOPMAN_CARD_ADAPTER": "shopman.shop.adapters.payment_stripe",
     "EFI_SANDBOX": "true",
     "SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS": "true",
     "SHOPMAN_EXPOSE_MOCK_CAPTURE": "true",
-    "SHOPMAN_EXPOSE_DEBUG_OTP": "false",
     "STRIPE_PUBLISHABLE_KEY": "pk_test_abc",
-    "DJANGO_SECRET_KEY": "EV[1:cifrado]",
+    **{key: f"EV[1:antes-{key}]" for key in _ROTATED},
 }
 
 _FLIPPED = {
-    "DJANGO_DEBUG": "false",
+    **_IN_PLACE,
     "SHOPMAN_ENVIRONMENT": "production",
     "SHOPMAN_PIX_ADAPTER": "shopman.shop.adapters.payment_efi",
-    "SHOPMAN_CARD_ADAPTER": "shopman.shop.adapters.payment_stripe",
     "EFI_SANDBOX": "false",
     "FOCUS_NFE_ENVIRONMENT": "producao",
     "STRIPE_PUBLISHABLE_KEY": "pk_live_abc",
     "SHOPMAN_ADMIN_REQUIRE_2FA": "true",
     "SHOPMAN_GO_LIVE": "true",
+    **{key: f"EV[1:depois-{key}]" for key in _ROTATED},
 }
 
 
@@ -76,12 +110,12 @@ def test_todays_live_spec_fails_with_every_rehearsal_key_named():
     assert checks["production.profile"].status == "failed"
     change = checks["production.profile"].details["change"]
     assert "SHOPMAN_ENVIRONMENT=production (hoje staging)" in change
-    assert "real_payment_adapter_for_pix (SHOPMAN_PIX_ADAPTER)" in change
-    assert "remove_SHOPMAN_EXPOSE_MOCK_CAPTURE" in change
+    assert "SHOPMAN_PIX_ADAPTER=shopman.shop.adapters.payment_efi (hoje shopman.shop.adapters.payment_mock)" in change
+    assert "apagar SHOPMAN_EXPOSE_MOCK_CAPTURE (hoje true)" in change
     assert checks["production.profile"].details["components"] == ["directive-worker", "release", "web-storefront"]
     money = checks["target.money_and_fiscal"].details["change"]
-    assert any(item.startswith("EFI_SANDBOX=false") for item in money)
-    assert any("default homologacao" in item for item in money)
+    assert "EFI_SANDBOX=false (hoje true)" in money
+    assert "FOCUS_NFE_ENVIRONMENT=producao (hoje ausente)" in money
     assert any(item.startswith("STRIPE_PUBLISHABLE_KEY") for item in money)
     assert checks["target.cutover_switches"].status == "failed"
     assert checks["target.release_job"].status == "passed"
@@ -90,10 +124,31 @@ def test_todays_live_spec_fails_with_every_rehearsal_key_named():
 
 
 def test_flipped_spec_passes_the_target_gate():
-    report = target.build_target_report(_spec(_FLIPPED), fetch=_healthy)
+    report = target.build_target_report(_spec(_FLIPPED), fetch=_healthy, baseline_spec=_spec(_TODAY))
 
     assert not report.blocking, [check.as_dict() for check in report.checks if check.status != "passed"]
     assert report.status == "passed"
+
+
+def test_flipped_spec_without_baseline_cannot_prove_the_secrets_were_replaced():
+    # A tabela é a mesma do golive_spec_delta: segredo trocado só se prova pelo
+    # cifrado contra o spec de antes. Sem ele, aviso (não dá para afirmar).
+    report = target.build_target_report(_spec(_FLIPPED), fetch=_healthy)
+    check = _by_id(report)["target.money_and_fiscal"]
+
+    assert check.status == "warning"
+    assert "STRIPE_SECRET_KEY: colar o valor de produção" in check.details["unknown"]
+    assert "EV[" not in json.dumps(report.as_dict())
+
+
+def test_a_key_already_in_place_that_leaves_its_value_fails():
+    envs = {**_FLIPPED, "GOOGLE_MAPS_API_KEY": "AIza-legada"}
+    check = _by_id(target.build_target_report(_spec(envs), fetch=_healthy, baseline_spec=_spec(_TODAY)))[
+        "target.in_place"
+    ]
+
+    assert check.status == "failed"
+    assert "apagar GOOGLE_MAPS_API_KEY (hoje AIza-legada)" in check.details["change"]
 
 
 def test_absent_money_keys_fail_closed_because_the_settings_defaults_are_rehearsal():
@@ -101,7 +156,7 @@ def test_absent_money_keys_fail_closed_because_the_settings_defaults_are_rehears
     check = _by_id(target.build_target_report(_spec(envs), fetch=_healthy))["target.money_and_fiscal"]
 
     assert check.status == "failed"
-    assert "EFI_SANDBOX=false (hoje ausente, default true)" in check.details["change"]
+    assert "EFI_SANDBOX=false (hoje ausente)" in check.details["change"]
 
 
 def test_component_override_is_judged_not_hidden_by_the_app_level_value():
@@ -114,7 +169,7 @@ def test_component_override_is_judged_not_hidden_by_the_app_level_value():
 
 def test_secret_values_are_never_read_and_downgrade_to_warning():
     envs = {**_FLIPPED, "STRIPE_PUBLISHABLE_KEY": "EV[1:cifrado]"}
-    report = target.build_target_report(_spec(envs), fetch=_healthy)
+    report = target.build_target_report(_spec(envs), fetch=_healthy, baseline_spec=_spec(_TODAY))
     check = _by_id(report)["target.money_and_fiscal"]
 
     assert check.status == "warning"

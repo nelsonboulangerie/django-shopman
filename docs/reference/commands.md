@@ -1655,16 +1655,23 @@ o app que atende a loja. Para a linha `production-readiness` da
 
 - lê o spec vivo com `doctl apps spec get` (só leitura; nenhum `update`);
 - avalia o ambiente efetivo (app + componente) de cada componente que roda
-  Django: perfil `production` (as mesmas regras do local), dinheiro e nota
-  (`EFI_SANDBOX=false`, `FOCUS_NFE_ENVIRONMENT=producao`, Stripe `pk_live_`;
-  ausência reprova, porque o default do `settings` é de ensaio), as chaves que
-  só se ligam no corte (`SHOPMAN_ADMIN_REQUIRE_2FA`, `SHOPMAN_GO_LIVE`) e o job
-  de release com `migration_safety` antes do `migrate`;
+  Django contra a **tabela única do dia D** (`DELTA` de
+  `scripts/golive_spec_delta.py`, explicada em
+  [go-live-delta-do-spec.md](../runbooks/go-live-delta-do-spec.md)), em quatro
+  checks: perfil `production` (interruptores de ensaio), dinheiro e nota
+  (`EFI_SANDBOX=false`, `FOCUS_NFE_ENVIRONMENT=producao`, Stripe `pk_live_`,
+  segredos de produção colados; ausência reprova, porque o default do
+  `settings` é de ensaio), as chaves que só se ligam no corte
+  (`SHOPMAN_ADMIN_REQUIRE_2FA`, `SHOPMAN_GO_LIVE`) e as que já estão em dia e
+  não podem sair; mais o job de release com `migration_safety` antes do `migrate`;
 - sonda `/health/` e `/ready/` do domínio da API (`/ready/` com qualquer
   dependência fora de `ok` reprova, mesmo com 200).
 
 Valor de segredo nunca é lido nem impresso; regra que dependa de um vira
-`WARN`. É sempre estrito: sai 1 enquanto houver qualquer `FAIL`.
+`WARN`. Com `baseline=<spec guardado antes da troca>`, a troca de cada segredo
+de produção se prova pelo cifrado que mudou, e o `WARN` some. É sempre estrito:
+sai 1 enquanto houver qualquer `FAIL`. A lista do que colar no painel, chave a
+chave, sai do mesmo avaliador: `.venv/bin/python scripts/golive_spec_delta.py`.
 
 | Variável/flag | Default | Descrição |
 |---------------|---------|-----------|
@@ -1673,10 +1680,12 @@ Valor de segredo nunca é lido nem impresso; regra que dependa de um vira
 | `app=...` / `--target-app=...` | `shopman-nelson` | Nome ou UUID do app |
 | `target_spec=...` / `--target-spec=...` | — | Spec já baixado (pula o `doctl`) |
 | `target_url=...` / `--target-url=...` | `https://api.boulangerie.com.br` | Base das sondas |
+| `baseline=...` / `--target-baseline=...` | — | Spec guardado antes da troca: prova que os segredos de produção foram colados |
 
 ```bash
 make production-readiness target=1 context=shopman-do-app-admin
 make production-readiness target=1 context=shopman-do-app-admin json=1
+make production-readiness target=1 context=shopman-do-app-admin baseline=~/golive-spec-antes.yaml
 ```
 
 ---

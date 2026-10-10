@@ -12,26 +12,13 @@ O script vive fora da árvore do pacote, então é carregado por caminho.
 
 from __future__ import annotations
 
-import importlib.util
 import re
-import sys
 from pathlib import Path
 
+from scripts import check_production_contract as contract
+from scripts import golive_spec_delta as delta
+
 _ROOT = Path(__file__).resolve().parents[3]
-
-
-def _load(name: str):
-    spec = importlib.util.spec_from_file_location(name, _ROOT / "scripts" / f"{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    # As dataclasses do script resolvem anotações pelo módulo em sys.modules.
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-delta = _load("golive_spec_delta")
-contract = _load("check_production_contract")
-
 _RUNBOOK = _ROOT / "docs" / "runbooks" / "go-live-delta-do-spec.md"
 _COMPONENTS = ("web-operator", "web-storefront", "directive-worker", "release")
 
@@ -294,3 +281,9 @@ def test_runbook_e_script_listam_as_mesmas_chaves_na_mesma_ordem():
     documented = re.findall(r"^\| `([A-Z0-9_]+)` \|", table, flags=re.MULTILINE)
 
     assert documented == [row.key for row in delta.DELTA]
+
+
+def test_toda_linha_cai_num_check_do_production_readiness_alvo():
+    # Ferramenta única: o modo alvo do production-readiness agrupa esta mesma
+    # tabela em quatro checks. Grupo desconhecido seria linha que o gate não vê.
+    assert {row.grupo for row in delta.DELTA} == {"profile", "money", "cutover", "in_place"}

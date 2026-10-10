@@ -605,7 +605,7 @@ READINESS_RUN = if [ ! -f .env ] && [ -z "$${DJANGO_SECRET_KEY:-}" ]; then \
 	echo "(sem .env nem DJANGO_SECRET_KEY: medição local em perfil de desenvolvimento)"; \
 	fi; PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(READINESS_PYTHON) scripts/check_release_readiness.py
 READINESS_ARGS = $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
-READINESS_TARGET_ARGS = --target $(if $(json),--json,) $(if $(app),--target-app=$(app),) $(if $(target_spec),--target-spec=$(target_spec),) $(if $(target_url),--target-url=$(target_url),) $(if $(context),--doctl-context=$(context),)
+READINESS_TARGET_ARGS = --target $(if $(json),--json,) $(if $(app),--target-app=$(app),) $(if $(target_spec),--target-spec=$(target_spec),) $(if $(target_url),--target-url=$(target_url),) $(if $(context),--doctl-context=$(context),) $(if $(baseline),--target-baseline=$(baseline),)
 
 release-readiness: ## Consolida prontidao local e bloqueios externos de piloto/release
 	@$(READINESS_RUN) $(if $(profile),--profile=$(profile),) $(READINESS_ARGS)
@@ -616,7 +616,7 @@ release-readiness-strict: ## Igual ao release-readiness, mas falha em bloqueios 
 alpha-readiness: ## Gate para alpha tecnico publicavel: aceita mocks explicitos, bloqueia externos relevantes
 	@$(READINESS_RUN) --profile=alpha --strict-external $(READINESS_ARGS)
 
-production-readiness: ## Gate final de go-live (target=1 lê o app VIVO: spec via doctl + /health/ /ready/; context=<ctx do doctl>)
+production-readiness: ## Gate final de go-live (target=1 lê o app VIVO: spec via doctl + /health/ /ready/; context=<ctx do doctl>; baseline=<spec de antes> prova a troca dos segredos)
 	@$(if $(target),PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(READINESS_PYTHON) scripts/check_release_readiness.py $(READINESS_TARGET_ARGS),$(READINESS_RUN) --profile=production --strict-external $(READINESS_ARGS))
 
 production-contract: ## Contrato hermético de produção com credenciais sintéticas e rede bloqueada

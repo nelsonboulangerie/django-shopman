@@ -1077,6 +1077,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target-spec", default="", help="Already-downloaded live spec (skips doctl).")
     parser.add_argument("--target-url", default=os.environ.get("SHOPMAN_TARGET_URL", ""), help="API base URL.")
     parser.add_argument("--doctl-context", default=os.environ.get("SHOPMAN_DOCTL_CONTEXT", ""), help="doctl context.")
+    parser.add_argument(
+        "--target-baseline",
+        default="",
+        help="Spec saved before the cutover edit: proves each production secret was replaced (ciphertext changed).",
+    )
     args = parser.parse_args(argv)
     if args.target:
         return _main_target(args)
@@ -1109,6 +1114,7 @@ def _main_target(args) -> int:
             app = args.target_app or target.DEFAULT_APP_NAME
             spec = target.fetch_live_spec(app=app, context=args.doctl_context or None)
             source = f"doctl apps spec get {app}"
+        baseline = target.load_spec_file(args.target_baseline) if args.target_baseline else None
     except Exception as exc:  # noqa: BLE001 - leitura do alvo falhou: o gate não pode passar
         report = ReadinessReport(
             checks=(
@@ -1128,6 +1134,7 @@ def _main_target(args) -> int:
             spec,
             base_url=args.target_url or target.DEFAULT_TARGET_URL,
             source=source,
+            baseline_spec=baseline,
         )
     if args.json:
         print(json.dumps({**report.as_dict(), "target": True}, ensure_ascii=False, sort_keys=True, indent=2))

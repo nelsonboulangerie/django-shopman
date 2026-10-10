@@ -4,9 +4,12 @@
 > (`40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f`, contexto `shopman-do-app-admin`),
 > **no mesmo banco** (D-029, decisão do dono B1 = 1). Não há app novo nem
 > spec novo: a virada é trocar as chaves abaixo no painel do app, numa
-> gravação só. Este documento é a lista inteira; o script
-> `scripts/golive_spec_delta.py` confere a mesma lista contra o spec vivo, e um
-> teste (`shopman/shop/tests/test_golive_spec_delta.py`) prende as duas juntas.
+> gravação só. Este documento é a lista inteira. A mesma lista é a tabela
+> `DELTA` de `scripts/golive_spec_delta.py`, que é **a única** regra de chave
+> do gate `make production-readiness target=1` (modo alvo,
+> `scripts/release_readiness_target.py`): o script imprime o que colar, o gate
+> diz se está pronto, e os dois leem o spec do mesmo jeito. Um teste
+> (`shopman/shop/tests/test_golive_spec_delta.py`) prende tabela e documento.
 >
 > Sequência do dia (quem, quando, rollback de dado): [go-live-cutover.md](go-live-cutover.md).
 > Segredos de produção dos provedores: [GO-LIVE-CREDENTIALS-MATRIX](../plans/GO-LIVE-CREDENTIALS-MATRIX.md).
@@ -50,6 +53,8 @@ novo, quem cola é o dono, no painel, como `Encrypt`.
 
    Sai `0` só quando nada obrigatório falta. Depois o release job roda
    `check --deploy`, que recusa chave de teste com `SHOPMAN_ENVIRONMENT=production`.
+   O gate do "depois", com as sondas, é o mesmo avaliador:
+   `make production-readiness target=1 context=shopman-do-app-admin baseline=~/golive-spec-antes.yaml`.
 
 **Ensaio do Pix real** (D-031, Efí em sandbox no app vivo, antes do dia D):
 `--etapa ensaio-pix` confere só o que o ensaio pede (Pix em `payment_efi`,
@@ -70,7 +75,7 @@ vai para o repositório); **apagar** = remover a linha (ausente vale o mesmo que
 |---|---|---|---|---|---|
 | `SHOPMAN_ENVIRONMENT` | `staging` | `production` | É a pergunta "esta é a loja de verdade?" (`shopman/shop/environment.py`). Liga as travas de produção (E010, E012, E015, E022, E023) e fecha `seed --flush`, `qa_scenarios`, `setup_operators`, `import_backup --apply`. | script `[OK]`; release job verde (o `check --deploy` agora cobra produção) | `staging` |
 | `SHOPMAN_PIX_ADAPTER` | `shopman.shop.adapters.payment_mock` | `shopman.shop.adapters.payment_efi` | Pix de verdade. Com Efí, o release roda `efi_webhook --soft` e recadastra o webhook na Efí de produção sozinho. | script; log do release com o webhook conferido; canário de um Pix | `shopman.shop.adapters.payment_mock` (exige `SHOPMAN_ENVIRONMENT=staging` e `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true` juntos) |
-| `EFI_SANDBOX` | `true` | `false` | Sem isto o Pix cobra no ambiente de homologação da Efí. E022 recusa `true` em produção. | script; tela de prontidão "Efí PIX: producao" | `true` |
+| `EFI_SANDBOX` | `true` | `false` | Sem isto o Pix cobra no ambiente de homologação da Efí. E022 recusa `true` em produção; E026 recusa a omissão (tem de estar escrita). | script; tela de prontidão "Efí PIX: producao" | `true` |
 | `EFI_CLIENT_ID` | segredo (homologação) | **colar** o de produção | A Efí tem credenciais separadas por ambiente. | script com `--baseline` (cifrado mudou); prontidão Efí verde | colar de novo o de homologação |
 | `EFI_CLIENT_SECRET` | segredo (homologação) | **colar** o de produção | Idem. | idem | idem |
 | `EFI_CERTIFICATE_PEM_BASE64` | segredo (homologação) | **colar** o certificado de produção (PEM em base64) | O certificado mTLS é por ambiente. E022 olha validade e formato. | idem; prontidão mostra "Certificado válido até …" | colar de novo o de homologação |
@@ -83,7 +88,7 @@ vai para o repositório); **apagar** = remover a linha (ausente vale o mesmo que
 | `STRIPE_PUBLISHABLE_KEY` | `pk_test_…` (não secreta) | **colar** `pk_live_…` | Chave publicável do modo live. E022 recusa `pk_test_` em produção. | script (prefixo `pk_live_`) | colar a `pk_test_` |
 | `STRIPE_SECRET_KEY` | segredo `sk_test_` | **colar** `sk_live_…` | Cobrança de verdade. E022 recusa `sk_test_` em produção. | script com `--baseline`; release verde; canário de um cartão | colar a `sk_test_` |
 | `STRIPE_WEBHOOK_SECRET` | segredo do endpoint de teste | **colar** o `whsec_` do endpoint **live** | No modo live o Stripe exige criar o endpoint de novo: `https://api.boulangerie.com.br/api/webhooks/stripe/`, com os mesmos eventos do de teste. | script com `--baseline`; o canário de cartão confirma por webhook | colar o do endpoint de teste |
-| `FOCUS_NFE_ENVIRONMENT` | ausente (o settings cai em `homologacao`) | `producao` | Nota com valor fiscal. E022 recusa homologação em produção. A URL (`api.focusnfe.com.br`) sai daqui. | script; prontidão "Focus NFe: producao"; NFC-e do canário consultável na SEFAZ | apagar (volta a `homologacao`) |
+| `FOCUS_NFE_ENVIRONMENT` | ausente (o settings cai em `homologacao`) | `producao` | Nota com valor fiscal. E022 recusa homologação em produção; E026 recusa a omissão. A URL (`api.focusnfe.com.br`) sai daqui. | script; prontidão "Focus NFe: producao"; NFC-e do canário consultável na SEFAZ | `homologacao` |
 | `FOCUS_NFE_TOKEN` | segredo (homologação) | **colar** o token de produção | A Focus tem um token por ambiente. | script com `--baseline`; NFC-e do canário autorizada | colar o de homologação |
 | `SHOPMAN_ADMIN_REQUIRE_2FA` | ausente | `true` | Admin com segundo fator. **Pré-condição**: `check_admin_2fa_ready` verde no banco do app (todo staff ativo com autenticador e recuperação). Sem ela, tranca o staff fora. | script; login no Admin pede o código | apagar |
 | `SHOPMAN_GO_LIVE` | ausente | `true` | Arma a política de migração da ADR-015 dentro do contêiner (a imagem não tem `.git`, então a tag `go-live-v1` não é legível lá). | script; log do release: `migration_safety` diz "política ADR-015: ARMADA" | apagar |
@@ -126,7 +131,8 @@ delas sem acusar. Todas estão `[OK]` em 10/10.
 - **Com `SHOPMAN_ENVIRONMENT=production`**, o `check --deploy` do release
   recusa qualquer resto de ensaio: simulador sem permissão (E003), botão de
   simular (E015), Efí em sandbox, Stripe `sk_test_`/`pk_test_` e Focus em
-  homologação (E022), Maps com chave única (E023). O deploy não fica `ACTIVE`
+  homologação (E022), `EFI_SANDBOX`/`FOCUS_NFE_ENVIRONMENT` não escritas
+  (E026), Maps com chave única (E023). O deploy não fica `ACTIVE`
   e o app segue no deployment anterior.
 - **O lado que os checks não cobrem é o contrário**: chaves live com
   `SHOPMAN_ENVIRONMENT=staging`. Fora de produção o E022 não roda, e esse
