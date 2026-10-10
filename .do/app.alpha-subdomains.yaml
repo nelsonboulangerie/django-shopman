@@ -110,15 +110,32 @@ ingress:
         exact: www.nelsonboulangerie.com.br
       path:
         prefix: /
+  # API do Django dividida por path (ver o bloco `services`). A ordem importa e é
+  # do mais específico para o mais geral: backstage antes de `/api/v1/`, e o
+  # resto do host (Admin, `/events/`, webhooks, menuboard, health) no operador.
   - component:
-      name: web
+      name: web-operator
+    match:
+      authority:
+        exact: api.boulangerie.com.br
+      path:
+        prefix: /api/v1/backstage/
+  - component:
+      name: web-storefront
+    match:
+      authority:
+        exact: api.boulangerie.com.br
+      path:
+        prefix: /api/v1/
+  - component:
+      name: web-operator
     match:
       authority:
         exact: api.boulangerie.com.br
       path:
         prefix: /
   - component:
-      name: web
+      name: web-operator
     match:
       authority:
         exact: admin.boulangerie.com.br
@@ -181,7 +198,7 @@ ingress:
       path:
         prefix: /
   - component:
-      name: web
+      name: web-operator
     match:
       authority:
         exact: backup.boulangerie.com.br
@@ -860,6 +877,102 @@ envs:
   value: 'https://img.nelsonboulangerie.com.br/products'
   type: GENERAL
 services:
+# ── Django em DOIS services, mesma imagem e mesmo código ──
+# `web-operator` atende o que segura o balcão: as APIs `/api/v1/backstage/`, o
+# SSE `/events/` (KDS, PDV, Pedidos), o Admin, os webhooks (Pix, cartão, iFood,
+# ManyChat), o menuboard e o atalho `backup.`. Instância DEDICADA: o mesmo Django
+# rodava 10 a 30 vezes mais devagar que a bancada numa vCPU compartilhada, e é
+# o PDV que espera. `web-storefront` atende a API da loja (`/api/v1/`, fora o
+# backstage) numa vCPU compartilhada: um pico de visita na loja não tira CPU do
+# balcão. A divisão é só pelo ingress; ALLOWED_HOSTS, CSRF, sessão (Valkey) e o
+# fanout do SSE (Redis) são do app, iguais nos dois. Os BFFs seguem chamando
+# `https://api.<domínio>`: o path decide o service.
+# Processo: daphne de 1 processo nos dois. Um processo satura ~1 núcleo (bancada
+# 10/10: 1,02 a 1,10 núcleo sob carga, daphne ou uvicorn de 1 worker); um 2º
+# worker numa vCPU só divide o mesmo núcleo e custa ~110 MB. Workers só com 2 vCPU.
+- alerts:
+  - operator: GREATER_THAN
+    rule: CPU_UTILIZATION
+    value: 80
+    window: FIVE_MINUTES
+  - operator: GREATER_THAN
+    rule: MEM_UTILIZATION
+    value: 85
+    window: FIVE_MINUTES
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  # Health check = liveness barata (processo atende; zero banco). O `/health/ready/`
+  # (banco, cache, migrations, fila) fica para o Alpha Smoke e o diagnóstico: tirar o
+  # `web` do ar por banco fora não cura o banco. Os Nuxt usam o `/health/live` do BFF,
+  # que não chama o Django (WP-PERFORMANCE P1).
+  health_check:
+    failure_threshold: 5
+    http_path: /health/live/
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 8000
+  instance_count: 1
+  instance_size_slug: apps-d-1vcpu-2gb
+  liveness_health_check:
+    failure_threshold: 3
+    http_path: /health/live/
+    initial_delay_seconds: 30
+    period_seconds: 30
+    success_threshold: 1
+    timeout_seconds: 5
+  name: web-operator
+  envs:
+  - key: VAPID_PRIVATE_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_PUBLIC_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_CLAIMS_EMAIL
+    scope: RUN_TIME
+    type: SECRET
+  # Segredo compartilhado com os BFFs Nuxt (`storefront-nuxt` e os oito apps de
+  # operador: NUXT_DJANGO_PROXY_SECRET, MESMO valor). O BFF chama o `api.` pela rede
+  # pública e a borda acrescenta o IP de SAÍDA do Nitro ao X-Forwarded-For: com
+  # depth=2 o Django gravava 147.182.186.185 como IP de consentimento e de
+  # maioridade (medido 17/09); nos apps de operador, o mesmo IP ia para a trilha de
+  # acesso (SignInEvent). Com o segredo, lê um salto a mais. Vazio = desligado.
+  - key: SHOPMAN_BFF_PROXY_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  # Recibos de privacidade: o valor das chaves HMAC permanece exclusivamente no
+  # cofre do App Platform. Declarar nome/tipo/escopo impede perda em update.
+  - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION
+    scope: RUN_TIME
+    value: '1'
+    type: GENERAL
+  - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS
+    scope: RUN_TIME
+    type: SECRET
+  # ⚠️ `--access-log=/dev/null` NÃO é economia de log: é vazamento de segredo.
+  # O access log do daphne grava o request-target CRU, com query string
+  # (daphne/http_protocol.py: "path": uri), e o token dos webhooks viaja na query
+  # — `?token=<EFI_WEBHOOK_TOKEN>` — porque é assim que a EFI cadastra a URL.
+  # Esse token é a autenticação ÚNICA do webhook de Pix (a allowlist de IP nasce
+  # vazia e o mTLS é advisory), então cada chamada legítima da EFI escrevia o
+  # segredo em texto puro no stream de log da plataforma. Quem lê o log forja
+  # "Pix recebido" e o pedido se paga sozinho.
+  # O `before_send` do Sentry redige isso PARA O SENTRY; não faz nada pelo stdout.
+  # Verbosity fica em 1: o log da APLICAÇÃO segue em INFO, só o access log morre.
+  run_command: daphne -b 0.0.0.0 -p 8000 --access-log=/dev/null config.asgi:application
+  image:
+    registry_type: DOCR
+    repository: shopman
+    tag: web
+    deploy_on_push:
+      enabled: false
 - alerts:
   - operator: GREATER_THAN
     rule: CPU_UTILIZATION
@@ -894,7 +1007,7 @@ services:
     period_seconds: 30
     success_threshold: 1
     timeout_seconds: 5
-  name: web
+  name: web-storefront
   envs:
   - key: VAPID_PRIVATE_KEY
     scope: RUN_TIME

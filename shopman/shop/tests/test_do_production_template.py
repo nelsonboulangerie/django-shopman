@@ -207,13 +207,16 @@ def test_alpha_declares_live_only_envs_and_privacy_receipt_secrets():
     assert ALPHA_LIVE_ONLY_APP_ENVS <= app_envs.keys()
     assert all(app_envs[key]["scope"] == "RUN_TIME" for key in ALPHA_LIVE_ONLY_APP_ENVS)
 
-    web = next(component for component in spec["services"] if component["name"] == "web")
-    web_envs = {entry["key"]: entry for entry in web["envs"]}
-    for key, expected_type in PRIVACY_RECEIPT_WEB_ENVS.items():
-        assert web_envs[key]["scope"] == "RUN_TIME"
-        assert web_envs[key]["type"] == expected_type
-        if expected_type == "SECRET":
-            assert "value" not in web_envs[key]
+    # Os dois services do Django (mesma imagem) declaram as chaves do recibo: a loja
+    # emite o recibo, o operador o confere.
+    for name in ("web-operator", "web-storefront"):
+        web = next(component for component in spec["services"] if component["name"] == name)
+        web_envs = {entry["key"]: entry for entry in web["envs"]}
+        for key, expected_type in PRIVACY_RECEIPT_WEB_ENVS.items():
+            assert web_envs[key]["scope"] == "RUN_TIME", (name, key)
+            assert web_envs[key]["type"] == expected_type, (name, key)
+            if expected_type == "SECRET":
+                assert "value" not in web_envs[key], (name, key)
 
 
 #: Envs da Machine (entrega por parceiro) que o spec do alpha declara com valor.
