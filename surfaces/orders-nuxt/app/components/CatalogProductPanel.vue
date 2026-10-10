@@ -721,16 +721,18 @@ const sectionClass =
               )
               .join(' · ')
           "
-          :actions="alertActions('warning', [
-            {
-              label: 'Manter meu rascunho',
-              onClick: () => emit('review-conflict', true),
-            },
-            {
-              label: 'Usar valores atuais',
-              onClick: () => emit('review-conflict', false),
-            },
-          ])"
+          :actions="
+            alertActions('warning', [
+              {
+                label: 'Manter meu rascunho',
+                onClick: () => emit('review-conflict', true),
+              },
+              {
+                label: 'Usar valores atuais',
+                onClick: () => emit('review-conflict', false),
+              },
+            ])
+          "
         />
         <NuxtAlert
           v-else-if="error"
@@ -744,18 +746,20 @@ const sectionClass =
           color="warning"
           variant="subtle"
           title="Há alterações não salvas neste produto"
-          :actions="alertActions('warning', [
-            {
-              label: 'Continuar editando',
-              onClick: () => {
-                discardRequested = false;
+          :actions="
+            alertActions('warning', [
+              {
+                label: 'Continuar editando',
+                onClick: () => {
+                  discardRequested = false;
+                },
               },
-            },
-            {
-              label: 'Descartar e fechar',
-              onClick: () => emit('update:open', false),
-            },
-          ])"
+              {
+                label: 'Descartar e fechar',
+                onClick: () => emit('update:open', false),
+              },
+            ])
+          "
         />
 
         <!-- abas: o formulário é longo demais para uma coluna só. Rolam na horizontal
@@ -805,8 +809,8 @@ const sectionClass =
                 variant="soft"
                 data-panel-availability
               >
-                <template #header>
-                  <div>
+                <div class="grid grid-cols-[minmax(0,1fr)] gap-3">
+                  <div data-card-title>
                     <div class="flex flex-wrap items-center gap-2">
                       <h3 class="op-label font-semibold">
                         Disponibilidade nos canais
@@ -835,99 +839,100 @@ const sectionClass =
                       canais.
                     </p>
                   </div>
-                </template>
-                <div class="divide-y divide-default">
-                  <div
-                    v-for="row in availability"
-                    :key="row.ref"
-                    class="flex min-h-12 items-center gap-3 py-2 first:pt-0 last:pb-0"
-                    data-panel-channel
-                  >
-                    <Icon
-                      :name="channelIcon(row)"
-                      class="size-4 shrink-0 text-muted-foreground"
-                    />
-                    <span class="w-28 shrink-0 op-body">{{ row.name }}</span>
-                    <span class="min-w-0 flex-1 op-micro">
-                      <span class="block">
-                        <b
-                          v-if="row.state !== 'available'"
-                          class="font-semibold text-error"
-                          >{{
-                            row.state === "paused"
-                              ? "Pausado"
-                              : row.kind === "display"
-                                ? "Fora de estoque"
-                                : "Esgotado"
-                          }}</b
-                        >
-                        <span v-else class="text-muted-foreground"
-                          >À venda</span
-                        >
-                        <span v-if="row.back_at" class="text-muted-foreground">
-                          · volta ~{{ row.back_at
-                          }}<template v-if="row.back_hint">
-                            ({{ row.back_hint }})</template
-                          ></span
-                        >
+                  <div class="divide-y divide-default">
+                    <div
+                      v-for="row in availability"
+                      :key="row.ref"
+                      class="flex min-h-12 items-center gap-3 py-2 first:pt-0 last:pb-0"
+                      data-panel-channel
+                    >
+                      <Icon
+                        :name="channelIcon(row)"
+                        class="size-4 shrink-0 text-muted-foreground"
+                      />
+                      <span class="w-28 shrink-0 op-body">{{ row.name }}</span>
+                      <span class="min-w-0 flex-1 op-micro">
+                        <span class="block">
+                          <b
+                            v-if="row.state !== 'available'"
+                            class="font-semibold text-error"
+                            >{{
+                              row.state === "paused"
+                                ? "Pausado"
+                                : row.kind === "display"
+                                  ? "Fora de estoque"
+                                  : "Esgotado"
+                            }}</b
+                          >
+                          <span v-else class="text-muted-foreground"
+                            >À venda</span
+                          >
+                          <span
+                            v-if="row.back_at"
+                            class="text-muted-foreground"
+                          >
+                            · volta ~{{ row.back_at
+                            }}<template v-if="row.back_hint">
+                              ({{ row.back_hint }})</template
+                            ></span
+                          >
+                          <span
+                            v-else-if="row.since"
+                            class="text-muted-foreground"
+                          >
+                            desde {{ row.since }}</span
+                          >
+                        </span>
                         <span
-                          v-else-if="row.since"
-                          class="text-muted-foreground"
+                          v-if="
+                            row.note ||
+                            (row.automatic && row.state !== 'available')
+                          "
+                          class="mt-0.5 flex flex-wrap items-center gap-1.5 text-muted-foreground"
+                          data-panel-channel-note
                         >
-                          desde {{ row.since }}</span
-                        >
+                          <NuxtBadge
+                            v-if="row.automatic && row.state !== 'available'"
+                            color="neutral"
+                            icon="i-lucide-sparkles"
+                            label="automático"
+                          />
+                          <span v-if="row.note">{{ row.note }}</span>
+                        </span>
                       </span>
-                      <span
-                        v-if="
-                          row.note ||
-                          (row.automatic && row.state !== 'available')
+                      <NuxtButton
+                        v-if="channelCells?.[row.ref]"
+                        type="button"
+                        :icon="
+                          channelCells[row.ref]!.paused
+                            ? 'i-lucide-play'
+                            : 'i-lucide-pause'
                         "
-                        class="mt-0.5 flex flex-wrap items-center gap-1.5 text-muted-foreground"
-                        data-panel-channel-note
-                      >
-                        <NuxtBadge
-                          v-if="row.automatic && row.state !== 'available'"
-                          color="neutral"
-                          icon="i-lucide-sparkles"
-                          label="automático"
-                        />
-                        <span v-if="row.note">{{ row.note }}</span>
-                      </span>
-                    </span>
-                    <NuxtButton
-                      v-if="channelCells?.[row.ref]"
-                      type="button"
-                      :icon="
-                        channelCells[row.ref]!.paused
-                          ? 'i-lucide-play'
-                          : 'i-lucide-pause'
-                      "
-                      :label="
-                        channelCells[row.ref]!.paused ? 'Retomar' : 'Pausar'
-                      "
-                      color="neutral"
-                      variant="outline"
-                      :disabled="
-                        !channelCells[row.ref]!.enabled ||
-                        channelCells[row.ref]!.busy
-                      "
-                      :aria-label="
-                        channelCells[row.ref]!.paused
-                          ? `Retomar ${row.name}`
-                          : `Pausar ${row.name}`
-                      "
-                      data-panel-pause
-                      @click="
-                        emit(
-                          'pause-channel',
-                          row.ref,
-                          !channelCells[row.ref]!.paused,
-                        )
-                      "
-                    />
+                        :label="
+                          channelCells[row.ref]!.paused ? 'Retomar' : 'Pausar'
+                        "
+                        color="neutral"
+                        variant="outline"
+                        :disabled="
+                          !channelCells[row.ref]!.enabled ||
+                          channelCells[row.ref]!.busy
+                        "
+                        :aria-label="
+                          channelCells[row.ref]!.paused
+                            ? `Retomar ${row.name}`
+                            : `Pausar ${row.name}`
+                        "
+                        data-panel-pause
+                        @click="
+                          emit(
+                            'pause-channel',
+                            row.ref,
+                            !channelCells[row.ref]!.paused,
+                          )
+                        "
+                      />
+                    </div>
                   </div>
-                </div>
-                <template #footer>
                   <p
                     class="flex items-start gap-1.5 op-micro text-muted-foreground"
                   >
@@ -939,7 +944,7 @@ const sectionClass =
                     estoque zera e quando volta. Pausar é para o que não é falta
                     de estoque.
                   </p>
-                </template>
+                </div>
               </NuxtCard>
 
               <div ref="belowEl" class="scroll-mt-4" />
