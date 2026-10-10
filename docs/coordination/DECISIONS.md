@@ -535,7 +535,7 @@ irreversível aberto" e recomendou desligar. **Era exagero.** Nenhuma ação pen
 
 ## D-006 · Pix simulado permanece no alpha por ora
 
-- **Estado:** `ADIADA` · **Dono:** Pablo (produto) · **Data:** 2026-09-29 · **revisar_em:** 2026-10-15
+- **Estado:** `SUPERSEDIDA` (por D-031, 2026-10-10) · **Dono:** Pablo (produto) · **Data:** 2026-09-29
 
 **Decisão do dono:** *"como ainda estamos em alpha, vou manter o pix com a simulação de
 pagamento mais um pouco."*
@@ -904,3 +904,76 @@ desempenho equivalente aos LLMs, e será mais rápido e mais barato.
 **Prova.** Drift do spec em 02/10 (as duas chaves só no vivo); #1373 (as 44 chamadas ao Jev no
 alpha, e o formato da API corrigido).
 
+
+---
+
+## D-029 · A loja vira produção no PRÓPRIO app vivo, no mesmo banco (B1)
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-10 · **revisar_em:** 2026-10-24
+
+**Decisão do dono** (painel de go-live, B1 = 1). A virada acontece no app `shopman-nelson`, no
+cluster `shopman-staging-postgres` que ele já usa: apagar os pedidos sintéticos, carregar os dados
+reais e virar as chaves. Nada de app nem de banco novo de produção. Razão: o app vivo já atende
+`www.`, `api.`, `admin.` e os apps de operador, a restauração foi ensaiada nesse banco (D-021) e o
+custo é zero; app novo refaria domínios, segredos e webhooks.
+
+**Consequência.** O `.do/app.subdomains.yaml` deixa de ser caminho de virada: os bancos que ele
+anexa (`shopman-headless-postgres`, `shopman-headless-cache`) não existem, e ficam anotados no
+próprio arquivo como referência morta. O nome `staging` do cluster é só nome; o ambiente é decidido
+pelas chaves do spec (`SHOPMAN_ENVIRONMENT` e as demais do delta do dia D).
+
+**Prova.** `doctl databases list` em 10/10 (só `shopman-staging-postgres` e
+`shopman-staging-cache`); matriz `docs/plans/GO-LIVE-READINESS-PLAN.md` e
+`docs/runbooks/go-live-cutover.md` §0a, no PR desta frente (`claude/golive-matriz-em-dia`).
+
+---
+
+## D-030 · Sem data fixa: vira quando a matriz fechar (B2)
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-10 · **revisar_em:** 2026-10-24
+
+**Decisão do dono** (B2 = 2). Não há data alvo. A virada acontece quando todas as linhas aplicáveis
+da matriz canônica estiverem `VERIFICADO` ou `N/A`, nos degraus do runbook de cutover (canário
+autorizado, GO limitado, expansão por nova decisão). A recomendação de data fixa com canário de um
+foi recusada.
+
+**Prova.** Linha "Data e degraus da virada" da matriz, no PR desta frente.
+
+---
+
+## D-031 · Ensaiar o Pix real (Efí sandbox) no app vivo já nesta semana (B3)
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-10 · **revisar_em:** 2026-10-17
+
+**Decisão do dono** (B3 = 1). Executa a D-016 agora: Pix em `payment_efi` com `EFI_SANDBOX=true` e
+`SHOPMAN_EXPOSE_MOCK_CAPTURE=false` (o botão público de simular pagamento fecha por construção), um
+Pix de sandbox cobrado, webhook recebido, pedido pago pelo caminho real. Junto: rotacionar o
+`EFI_WEBHOOK_TOKEN`. Outra frente executa. Supersede a D-006 (manter o Pix simulado mais um pouco).
+
+**Prova.** A preencher pela frente que executar (deployment, run do smoke e o pedido pago).
+
+---
+
+## D-032 · Sessão curta com o dono nesta semana (B4)
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (operação) · **Data:** 2026-10-10 · **revisar_em:** 2026-10-17
+
+**Decisão do dono** (B4 = 1). Uns 20 minutos, no Chrome dele, nesta semana: trocar a senha do admin
+e criar o PIN; cadastrar o 2FA (só depois disso `SHOPMAN_ADMIN_REQUIRE_2FA` pode ligar, senão o
+Admin tranca); um login de cliente na loja (fecha o smoke de alertas de login, #1251); um login por
+SMS para provar a chave nova da Comtele.
+
+**Prova.** A preencher depois da sessão.
+
+---
+
+## D-033 · Bucket R2: sim, mas não agora (B8)
+
+- **Estado:** `ADIADA` · **Dono:** Pablo (operação) · **Data:** 2026-10-10 · **revisar_em:** 2026-10-24
+
+**Decisão do dono** (B8). O bucket e o token do R2 (D-010, `docs/runbooks/r2-passo-a-passo-do-dono.md`)
+serão criados, mas não agora; fica com ele. Até lá, sem `R2_*` no spec, arquivo enviado pelo usuário
+continua sumindo no próximo deploy, e a linha "Arquivos de usuário (R2)" da matriz segue
+`BLOQUEADO`.
+
+**Prova.** `doctl apps spec get` em 10/10: nenhuma variável `R2_*`.
