@@ -785,7 +785,7 @@ const QUEUE_SCOPES: { key: QueueScope; label: string }[] = [
 ];
 const queueScopeTabs = computed(() =>
   QUEUE_SCOPES.map((option) => ({
-    value: option.key,
+    key: option.key,
     label: option.label,
     count: scopeCounts.value[option.key],
   })),
@@ -1637,17 +1637,14 @@ function printQueue() {
       >
         <!-- A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o mesmo, e o
              celular não desenha os escopos antes de montar. -->
-        <NuxtTabs
+        <OperatorQuickFilters
           class="max-lg:hidden"
           :model-value="scope"
           :items="queueScopeTabs"
-          :content="false"
-          variant="pill"
+          label="Recortes da fila"
           data-queue-scopes
-          @update:model-value="pickScope"
-        >
-          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
-        </NuxtTabs>
+          @update:model-value="pickScope(String($event))"
+        />
       </template>
       <template v-if="hasChannelQueueSignal" #feedback>
         <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->

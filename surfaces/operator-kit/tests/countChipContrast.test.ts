@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { COUNT_CHIP_INVERTED_ON, COUNT_CHIP_INVERT_CLASSES } from "../app/presentation/countChip";
+import { QUICK_ACTIVE } from "../app/presentation/quickFilters";
 
 // O chip de contagem contrasta com o pai (coordenação, 09/10/2026): círculo × fundo do
 // pai ≥ 3:1 e número × círculo AA (4,5:1), nos dois temas, medido sobre os tokens de
@@ -64,6 +65,8 @@ function parents(theme: Theme): Record<string, string> {
     // recorte/item ativo `soft`: o latão a 10% sobre o cartão
     soft: mix(t.primary!, 0.1, t.card!),
     tabActive: t.primary!,
+    // botão ligado: o ativo da suíte é `solid` primário (`QUICK_ACTIVE`)
+    pressed: t.primary!,
     rail: t.rail!,
     // linha ativa da barra lateral: `--ui-bg-elevated: rgb(0 0 0 / 0.4)` sobre a barra
     railActive: mix("#000000", 0.4, t.rail!),
@@ -92,7 +95,31 @@ describe("chip de contagem: contraste com o pai", () => {
   it("a inversão está no CSS do chip para cada pai que inverte", () => {
     expect(COUNT_CHIP_INVERT_CLASSES).toContain("in-[[data-slot=trigger][data-state=active]]:bg-(--ui-text-inverted)");
     expect(COUNT_CHIP_INVERT_CLASSES).toContain("in-[[data-slot=trigger][data-state=active]]:text-(--ui-primary)");
+    expect(COUNT_CHIP_INVERT_CLASSES).toContain("in-[[aria-pressed=true]]:bg-(--ui-text-inverted)");
+    expect(COUNT_CHIP_INVERT_CLASSES).toContain("in-[[aria-pressed=true]]:text-(--ui-primary)");
     expect(COUNT_CHIP_INVERT_CLASSES).toContain("[:root:not(.dark)_.bg-rail_&]:bg-(--ui-text)");
     expect(COUNT_CHIP_INVERT_CLASSES).toContain("[:root:not(.dark)_.bg-rail_&]:text-(--ui-bg)");
   });
+});
+
+// O recorte ligado se distingue do desligado à primeira vista (coordenação, 09/10/2026):
+// o ativo da suíte (`QUICK_ACTIVE`, `solid` primário) contra o fundo do desligado
+// (`outline`, transparente sobre a página ou o cartão) passa 3:1 (WCAG 1.4.11), e o
+// rótulo do ligado é AA. O `soft` de antes (latão a 10%) ficava abaixo de 1,2:1: era
+// a dúvida sobre o que estava ligado.
+describe("recorte ligado × desligado: contraste", () => {
+  for (const theme of ["light", "dark"] as const) {
+    const t = THEME[theme];
+    for (const ground of ["background", "card"] as const) {
+      it(`${theme} · sobre ${ground}: ligado ≥ 3:1 do desligado, rótulo AA`, () => {
+        expect(QUICK_ACTIVE).toEqual({ color: "primary", variant: "solid" });
+        const on = t.primary!;
+        const off = t[ground]!;
+        expect(contrast(on, off), `ligado ${on} × desligado ${off}`).toBeGreaterThanOrEqual(3);
+        expect(contrast(t["primary-foreground"]!, on)).toBeGreaterThanOrEqual(4.5);
+        // o de antes não passava: a régua mede a diferença que importa
+        expect(contrast(mix(t.primary!, 0.1, off), off)).toBeLessThan(3);
+      });
+    }
+  }
 });

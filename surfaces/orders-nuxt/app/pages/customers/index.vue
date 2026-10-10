@@ -82,7 +82,7 @@ const activeFilters = computed(() =>
 );
 const filterItems = computed(() =>
   (list.value?.filters ?? []).map((option) => ({
-    value: option.ref,
+    key: option.ref,
     label: option.label,
   })),
 );
@@ -127,12 +127,10 @@ const phoneHeaderActions = computed(() => [
         />
       </template>
       <template #filters-primary>
-        <NuxtTabs
+        <OperatorQuickFilters
           :model-value="listQuery.filter"
           :items="filterItems"
-          :content="false"
-          variant="pill"
-          aria-label="Filtrar clientes"
+          label="Filtrar clientes"
           @update:model-value="setFilter(String($event))"
         />
       </template>

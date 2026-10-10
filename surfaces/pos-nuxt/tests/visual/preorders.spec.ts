@@ -7,6 +7,8 @@ const CASES = [
 ] as const;
 
 async function settle(page: Page) {
+  // O mesmo dia do mock (`MOCK_TODAY`): o Período da tela parte do relógio do navegador.
+  await page.clock.setFixedTime(new Date("2026-09-29T12:00:00"));
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
   await page.goto("/preorders");
   await expect(page.locator("[data-week-grid]:visible")).toHaveCount(1);

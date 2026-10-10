@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { HINT_GAP, HINT_REACH, endReached, hintMotionClass, hintOffset, hintScrollBehavior, shouldHint } from "../app/presentation/moreBelow";
 
@@ -49,5 +50,15 @@ describe('tem mais abaixo — regra pura', () => {
     expect(shouldHint(false)).toBe(true)
     expect(shouldHint(true)).toBe(false)
     expect(shouldHint(false, false)).toBe(false)
+  })
+})
+
+// A dica (z-30) passava por cima do painel de filtros aberto no celular: os overlays
+// do Nuxt UI não têm z-index e valem pela ordem no DOM. Com um diálogo aberto ela
+// some, por CSS (o par `role=dialog` + `data-state=open` do Reka).
+describe('tem mais abaixo — nunca por cima de overlay', () => {
+  it('some enquanto houver diálogo aberto', () => {
+    const source = readFileSync(new URL('../app/components/MoreBelow.vue', import.meta.url), 'utf8')
+    expect(source).toContain('[body:has([role=dialog][data-state=open])_&]:hidden')
   })
 })
