@@ -192,6 +192,7 @@ const {
   addOptionsProduct,
   cancelOptionsPrompt,
   setQty,
+  addLineLike,
   restoreItem,
   setLineNotes,
   setLineDiscount,
@@ -701,12 +702,16 @@ async function autoFireLeftovers() {
   await fireTab(auto.length === unfired.length ? undefined : auto);
 }
 let autoFireTimer: ReturnType<typeof setTimeout> | null = null;
+// A coluna segura o relógio enquanto há rascunho aberto (desconto, observação) ou
+// linhas marcadas: a linha não vai à cozinha no meio da observação sendo escrita.
+const autoFireHeld = ref(false);
+const autoFireSkuList = computed(() => [...autoFireSkus.value]);
 watch(
-  () => [cart.tabSessionKey, cart.items.map((item) => `${item.line_id}:${item.qty}:${item.fired ? 1 : 0}`).join("|")],
+  () => [cart.tabSessionKey, cart.items.map((item) => `${item.line_id}:${item.qty}:${item.fired ? 1 : 0}`).join("|"), autoFireHeld.value],
   () => {
     if (autoFireTimer) clearTimeout(autoFireTimer);
     autoFireTimer = null;
-    if (!autoFireSkus.value.size || !inSaleView.value) return;
+    if (!autoFireSkus.value.size || !inSaleView.value || autoFireHeld.value) return;
     autoFireTimer = setTimeout(() => { void autoFireLeftovers(); }, AUTO_FIRE_IDLE_MS);
   },
 );
@@ -853,9 +858,7 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
   }
   list.push({ label: "Últimas vendas", icon: "i-lucide-history", priority: 1, onSelect: () => { recentSalesOpen.value = true; } });
   list.push({ label: "Atualizar", icon: "i-lucide-refresh-cw", disabled: pending.value, onSelect: () => void refresh() });
-  if (saleOpen.value && hasOpenTab.value && !editing.value) {
-    list.push({ label: "Liberar comanda", icon: "i-lucide-x", color: "error", onSelect: () => tabHeaderRef.value?.askRelease() });
-  }
+  // "Liberar comanda" mora no "Comanda ⋯" do cabeçalho da coluna (uma porta por gesto).
   return list;
 });
 // A VENDA SEM CONEXÃO: a fila de vendas guardadas e a lista que o aviso abre.
@@ -938,9 +941,16 @@ provideOperatorShortcuts(POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION);
 // Transferir a partir do modo seleção da comanda (v4): o diálogo nasce com as linhas
 // marcadas. Pelo F10 (toda a venda) ele nasce vazio, como sempre.
 const movePreselected = ref<string[]>([]);
-function openMoveWith(lineIds?: string[]) {
+const moveInitialMode = ref<"transfer" | "merge" | undefined>(undefined);
+const cartPanelRef = ref<{ fireSelection: () => boolean; moveSelection: () => boolean } | null>(null);
+function openMoveWith(lineIds?: string[], mode?: "transfer" | "merge") {
   movePreselected.value = lineIds ?? [];
+  moveInitialMode.value = mode;
   void openMoveDialog();
+}
+// "Reenviar com a observação": cancela na cozinha e envia de novo só esta linha.
+async function resendLine(lineId: string) {
+  if (await unfireSelected([lineId])) await fireTab([lineId]);
 }
 
 async function gotoTabInput() {
@@ -1154,12 +1164,14 @@ function onGlobalKeydown(event: KeyboardEvent) {
     case "F9":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openDiscount();
-      else if (inSaleView.value && cart.items.length && !editing.value) fireTab();
+      // Com linhas marcadas, envia SÓ as marcadas (o botão diz "Enviar 3 marcadas").
+      else if (inSaleView.value && cart.items.length && !editing.value && !cartPanelRef.value?.fireSelection()) fireTab();
       return;
     case "F10":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openSplit();
-      else if (inSaleView.value && cart.items.length && !editing.value) openMoveWith();
+      // Com linhas marcadas, o diálogo nasce com elas (a tecla anunciada no Transferir).
+      else if (inSaleView.value && cart.items.length && !editing.value && !cartPanelRef.value?.moveSelection()) openMoveWith();
       return;
     case "Enter":
       // Total coberto + review fresca → Enter valida, pelo MESMO caminho do
@@ -1595,11 +1607,14 @@ onBeforeUnmount(() => {
     <template v-if="pos && inSaleView && !checkoutMode && !orderSetupPending" #column>
         <div class="flex min-h-0 flex-1 flex-col md:overflow-hidden">
             <PosCartPanel
+              ref="cartPanelRef"
               :sheet="ticketAsSheet"
               :tab-title="hasOpenTab ? tabTitleView(cart.tabDisplay, cart.tabNumber).title : ''"
               :kitchen-stations="kitchenStations"
               :quick-payments="quickPayments"
               :auto-fire="autoFireOn"
+              :auto-fire-skus="autoFireSkuList"
+              :offline="offlineSales.isOnline.value === false"
               :items="cart.items"
               :total="saleTotal"
               :requires-tab="tabRequiredForCart"
@@ -1623,6 +1638,10 @@ onBeforeUnmount(() => {
               @set-discount="setLineDiscount"
               @prepare="editing ? saveOrderEdit() : prepareCheckout()"
               @move="openMoveWith"
+              @add-like="(lineId, qty, done) => done(addLineLike(lineId, qty))"
+              @resend="resendLine"
+              @release="tabHeaderRef?.askRelease()"
+              @auto-fire-hold="(held) => { autoFireHeld = held; }"
               @fire="fireTab"
               @pay="payOnSheet"
               @split="splitFromTicket"
@@ -1840,6 +1859,7 @@ onBeforeUnmount(() => {
       :items="cart.items"
       :suggested-split-ref="suggestedSplitRef"
       :preselected="movePreselected"
+      :initial-mode="moveInitialMode"
       :other-tabs="otherOpenTabs"
       :capability="tabManipulation"
       :busy="busy"

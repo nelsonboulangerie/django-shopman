@@ -32,6 +32,8 @@ import { saleTotalText, type SaleTotalView } from "~/presentation/saleTotal";
 import { isWeighedLine, lineQtyLabel } from "~/presentation/weighed";
 import { toast } from "vue-sonner";
 import { createReusableTemplate } from "@vueuse/core";
+import { fireCellView, kitchenStateView, markedSummary, markRange, toggleMark as toggleMarkRule } from "~/presentation/ticketColumn";
+import { firedLineIncrease, firedLineShrinkPolicy, offersResendWithNote } from "~/presentation/firedLineChange";
 
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 
@@ -81,6 +83,14 @@ const props = defineProps<{
   tabTitle?: string;
   /** Alguma linha desta comanda é de estação com envio automático ligado. */
   autoFire?: boolean;
+  /** Os SKUs que vão sozinhos (estação com envio automático): a linha diz "vai sozinho". */
+  autoFireSkus?: string[];
+  /**
+   * O PDV está sem conexão (a venda de balcão segue). O que precisa do servidor fica
+   * apagado com o motivo em palavra, nunca escondido: enviar, desconto, transferir,
+   * juntar, liberar e cancelar envio.
+   */
+  offline?: boolean;
   /**
    * Os meios eletrônicos que a folha oferece direto (v4 tablet, `pos-tablet.jpg`
    * b): PIX e Maquininha. Vazio, a folha mostra só o Pagamento de sempre.
@@ -114,8 +124,18 @@ const emit = defineEmits<{
   setDiscount: [string, number, string, "percent" | "fixed"];
   /** Operator unit-price override (numpad "Preço"); gated by manager approval. */
   prepare: [];
-  /** Transferir: no modo seleção leva as linhas marcadas (o diálogo nasce com elas). */
-  move: [lineIds?: string[]];
+  /** Transferir: com linhas marcadas (ou "Transferir esta") o diálogo nasce com elas;
+   *  `mode` é a porta do menu da comanda ("Juntar com outra comanda"). */
+  move: [lineIds?: string[], mode?: "transfer" | "merge"];
+  /** + numa linha que já está na cozinha: as unidades novas vão numa linha nova, a
+   *  enviar. `done` devolve o line_id dela, para o editor seguir a linha nova. */
+  addLike: [lineId: string, qty: number, done: (lineId: string) => void];
+  /** "Reenviar com a observação": cancela na cozinha e envia de novo esta linha. */
+  resend: [lineId: string];
+  /** "Liberar comanda" do menu da comanda (a confirmação mora no cabeçalho da venda). */
+  release: [];
+  /** Há rascunho aberto (desconto, observação) ou linhas marcadas: o envio automático espera. */
+  autoFireHold: [held: boolean];
   fire: [];
   unfire: [string];
   /** Multi-select batch (spec §2.2): fire/unfire exatamente estas linhas. */
@@ -130,43 +150,122 @@ const emit = defineEmits<{
   autoFireSettings: [];
 }>();
 
-// Multi-select (spec §2.2): selection is screen state (um conjunto de
-// `line_id`s); the batch toolbar is shaped purely (presentation/selection).
-// Tapping a line's checkbox toggles it without arming the numpad; the toolbar
-// acts on all chosen.
+// MARCAR SEM MODO (decisão 1 do dono, 10/10): a caixa de marcar está sempre à mão (no
+// hover e no foco da linha; visível em todas assim que há marcadas). A linha aberta é a
+// primeira marcada: marcar outra transforma o bloco de 1 no bloco de N, nas mesmas
+// posições, e desmarcar até sobrar uma volta ao editor dela (`presentation/ticketColumn`).
+// A seleção é um conjunto de `line_id`s, a mesma chave que fire/unfire mandam ao servidor.
 const selected = ref<Set<string>>(new Set());
 const selection = computed(() => selectionView(props.items, selected.value));
+const marked = computed(() => markedSummary(props.items, selected.value));
 // O cabeçalho da comanda conta ITENS, não linhas — a mesma grandeza da cozinha,
 // do resumo do pagamento, do quadro de comandas e da tela virada para o
 // cliente. Era o último lugar do app que ainda falava linha, e o mais lido.
 const cartUnits = computed(() => countUnits(props.items));
-const selectMode = computed(() => selection.value.count > 0);
+/** O bloco de N: duas ou mais linhas marcadas. */
+const selectMode = computed(() => selection.value.count >= 2);
 function isSelected(lineId: string) {
   return selected.value.has(lineId);
 }
-function toggleSelect(lineId: string) {
-  selected.value = toggleSelected(selected.value, lineId);
+const markAnchor = ref("");
+function applyMark(result: { marked: Set<string>; open: string }) {
+  const wasPlural = selectMode.value;
+  selected.value = result.marked;
+  if (result.open) {
+    selectLine(result.open);
+  }
+  if (wasPlural !== selectMode.value) {
+    // Trocar de objeto fecha o rascunho que era do outro.
+    discountOpen.value = false;
+    noteDraft.value = null;
+    numpadMode.value = "qty";
+    syncBufferToMode();
+  }
+}
+/** A linha aberta no editor (a que entra na conta ao marcar a primeira outra). */
+const openLineForMarks = computed(() => (editorVisible.value || selectMode.value ? activeLineId.value : ""));
+function toggleSelect(lineId: string, range = false) {
+  const anchor = markAnchor.value && (selectMode.value || markAnchor.value === openLineForMarks.value) ? markAnchor.value : openLineForMarks.value;
+  if (range && anchor) {
+    applyMark(markRange(props.items, selected.value, anchor, lineId));
+  } else {
+    applyMark(toggleMarkRule(selected.value, lineId, selectMode.value ? "" : openLineForMarks.value));
+  }
+  markAnchor.value = lineId;
 }
 function clearSelection() {
   selected.value = new Set();
+}
+/** Esc ou "Desmarcar": volta ao editor da linha em foco, sem marcas. */
+function unmarkAll() {
+  const keep = activeLineId.value;
+  clearSelection();
+  discountOpen.value = false;
+  noteDraft.value = null;
+  numpadMode.value = "qty";
+  if (keep) selectLine(keep);
 }
 // Keep the selection consistent when the cart changes (removed lines drop out).
 watch(
   () => props.items.map((item) => item.line_id).join("|"),
   () => {
-    selected.value = pruneSelection(selected.value, props.items);
+    const pruned = pruneSelection(selected.value, props.items);
+    if (pruned.size === 1) applyMark({ marked: new Set(), open: [...pruned][0]! });
+    else selected.value = pruned;
   },
 );
+/** Clique na linha ABRE a linha. Com marcadas (o foco é o bloco de N), o clique marca ou
+ *  desmarca, para um clique distraído não jogar fora as marcas; Shift + clique marca o
+ *  intervalo. O toque longo já marcou: o clique que o segue não faz nada. */
+// O foco por teclado (Tab) abre a linha; o foco que vem de um clique espera o clique,
+// que decide entre abrir e marcar.
+let rowPointer = false;
+function onRowFocus(lineId: string) {
+  if (rowPointer) return;
+  if (!selectMode.value) selectLine(lineId);
+}
+function onRowClick(lineId: string, event: MouseEvent) {
+  rowPointer = false;
+  if (pressMarked.value) {
+    pressMarked.value = false;
+    return;
+  }
+  if (event.shiftKey || selectMode.value) {
+    toggleSelect(lineId, event.shiftKey);
+    return;
+  }
+  selectLine(lineId);
+}
+// Toque longo marca (tablet e celular): o toque curto continua abrindo a linha.
+let pressTimer: ReturnType<typeof setTimeout> | null = null;
+const pressMarked = ref(false);
+function startPress(lineId: string, event: PointerEvent) {
+  rowPointer = true;
+  if (event.pointerType === "mouse") return;
+  pressMarked.value = false;
+  pressTimer = setTimeout(() => {
+    pressMarked.value = true;
+    toggleSelect(lineId);
+  }, 500);
+}
+function endPress() {
+  if (pressTimer) clearTimeout(pressTimer);
+  pressTimer = null;
+}
+// O ENVIO AUTOMÁTICO ESPERA o rascunho e as marcas: ninguém quer a linha indo à cozinha
+// no meio da observação que está sendo escrita.
 const batchPending = ref(false);
+// ATO EM LOTE CONCLUÍDO LIMPA AS MARCAS (regra única do estudo); no erro, ficam.
 function completeBatch(success: boolean) {
   batchPending.value = false;
-  if (success) finishItemMode();
+  if (success) clearSelection();
 }
 function batchFire() {
   if (
     props.loading ||
     props.saving ||
     props.firing ||
+    props.offline ||
     batchPending.value ||
     !props.fireAction.present ||
     !props.fireAction.enabled
@@ -181,6 +280,7 @@ function batchUnfire() {
     props.loading ||
     props.saving ||
     props.firing ||
+    props.offline ||
     batchPending.value ||
     !props.unfireAction.present ||
     !props.unfireAction.enabled
@@ -190,8 +290,8 @@ function batchUnfire() {
   batchPending.value = true;
   emit("unfireLines", selection.value.lineIds, completeBatch);
 }
-// Remover o LOTE é gesto largo: confirma antes (a seleção pode ter linha já
-// enviada à cozinha e o operador pode ter marcado a mais).
+// Remover o LOTE confirma e oferece Desfazer, como remover uma (uma regra só para
+// destruir, 1 ou N): a seleção pode ter linha já enviada e o operador pode ter marcado a mais.
 function batchRemove() {
   if (props.loading || props.saving) return;
   const lineIds = selection.value.lineIds;
@@ -212,6 +312,21 @@ const fireBar = computed(() =>
     busy: props.loading || props.firing,
   }),
 );
+// O primeiro botão do pé segue o foco: com marcadas, "Enviar 3 marcadas" (e o F9 também).
+const fireCell = computed(() =>
+  fireCellView({
+    unfired: fireBar.value.unfired,
+    label: fireBar.value.label,
+    disabled: fireBar.value.disabled,
+    markedLines: selectMode.value ? selection.value.count : 0,
+    markedFirable: selectMode.value ? selection.value.firableLineIds.length : 0,
+    offline: Boolean(props.offline),
+  }),
+);
+function onFireCell() {
+  if (fireCell.value.onlyMarked) batchFire();
+  else emit("fire");
+}
 function lineKitchenState(item: POSCartItem) {
   return kitchenLineState(item, { canUnfire: props.unfireAction.present });
 }
@@ -394,8 +509,8 @@ const [DefineControlGrid, ReuseControlGrid] = createReusableTemplate<{ rows: Con
 //   quando o editor abre ou fecha): Enviar à cozinha | Dividir. As duas na mesma
 //   linha porque são da comanda e às vezes são as únicas.
 // Célula sem par ocupa as duas colunas: sem buraco.
-type ControlCell = "qty" | "remove" | "fire" | "discount" | "split" | "note";
-const lineControlsInGrid = computed(() => Boolean(activeItem.value) && editorVisible.value && !touchEditor.value && !batchMode.value);
+type ControlCell = "qty" | "move" | "remove" | "fire" | "discount" | "split" | "note";
+const lineControlsInGrid = computed(() => Boolean(activeItem.value) && editorVisible.value && !touchEditor.value);
 const canSplit = computed(() => !props.primaryLabel && props.items.length > 0);
 const lineRows = computed<ControlCell[][]>(() => {
   if (!lineControlsInGrid.value) return [];
@@ -411,23 +526,17 @@ const lineEditing = computed<"discount" | "note" | "">(() => {
 const keyboardHint = computed<string[]>(() => {
   if (lineEditing.value === "discount") return ["Digite o desconto", "Enter aplica", "Esc cancela"];
   if (lineEditing.value === "note") return ["Enter aplica", "Shift Enter quebra a linha", "Esc cancela"];
+  if (selectMode.value) return ["Espaço marca", "Shift clique marca o intervalo", "Esc desmarca tudo"];
   return ["Digite a quantidade", "Del remove", "↑↓ troca a linha"];
 });
-// A SELEÇÃO age no mesmo bloco do editor: as ações nas linhas marcadas, em grade.
-const batchRows = computed<BatchCell[][]>(() => {
-  const cells: BatchCell[] = [];
-  if (canMove.value && props.hasOpenTab) cells.push("move");
-  if (!lineAdjustmentsBlocked.value) cells.push("discount");
-  cells.push("remove");
-  if (props.fireAction.present && selection.value.canFire) cells.push("fire");
-  if (selection.value.canUnfire && props.unfireAction.present) cells.push("unfire");
-  const rows: BatchCell[][] = [];
-  for (let i = 0; i < cells.length; i += 2) rows.push(cells.slice(i, i + 2));
-  return rows;
+// O BLOCO DE N, nas MESMAS posições do bloco de 1 (posição fixa por verbo): só o canto
+// da Quantidade (que é de uma linha) dá lugar a Transferir. Remover no alto à direita,
+// Desconto e Observação embaixo.
+const batchRows = computed<ControlCell[][]>(() => {
+  const top: ControlCell[] = canMove.value && props.hasOpenTab ? ["move", "remove"] : ["remove"];
+  return lineAdjustmentsBlocked.value ? [top] : [top, ["discount", "note"]];
 });
-type BatchCell = "move" | "discount" | "remove" | "fire" | "unfire";
 const tabRows = computed<ControlCell[][]>(() => {
-  if (batchMode.value) return [];
   const row: ControlCell[] = [];
   if (fireBar.value.visible) row.push("fire");
   if (canSplit.value) row.push("split");
@@ -439,18 +548,21 @@ const tabRows = computed<ControlCell[][]>(() => {
 const COUNT_RESERVE_REM = 2;
 const REMOVE_FIT = { label: "Remover", icon: "i-lucide-trash-2" } as const;
 const fireFit = computed(() => ({
-  label: fireBar.value.label,
-  shortLabel: fireBar.value.unfired ? "Enviar" : undefined,
+  label: fireCell.value.label,
+  shortLabel: fireCell.value.shortLabel,
   icon: props.firing ? undefined : "i-lucide-chef-hat",
 }));
-const fireReserve = computed(() => (fireBar.value.unfired ? COUNT_RESERVE_REM : 0));
-const kitchenStateText = computed(() => {
-  const { unfired, fired } = fireBar.value;
-  const parts: string[] = [];
-  if (unfired) parts.push(`${unfired} a enviar`);
-  if (fired) parts.push(`${fired} na cozinha`);
-  return parts.join(" · ");
-});
+const fireReserve = computed(() => (fireCell.value.count ? COUNT_RESERVE_REM : 0));
+const kitchenState = computed(() =>
+  kitchenStateView({
+    unfired: fireBar.value.unfired,
+    fired: fireBar.value.fired,
+    autoFire: Boolean(props.autoFire),
+    offline: Boolean(props.offline),
+  }),
+);
+const kitchenStateText = computed(() => kitchenState.value.counts);
+const autoFireSkuSet = computed(() => new Set(props.autoFireSkus || []));
 
 // A folha fechada é a barra da ação do momento (`OperatorActionBar`): a linha de
 // contexto diz a comanda, os itens e a cozinha; o número é o total da revisão do
@@ -508,7 +620,9 @@ const controlSize = computed(() => (coarsePointer.value ? "xl" : "md"));
 const SIDE_KEY_UI = { label: "whitespace-normal text-clip text-center leading-tight", leadingIcon: "size-4" };
 const editorClosed = ref(false);
 onMounted(() => { if (coarsePointer.value) editorClosed.value = true; });
-const editorVisible = computed(() => Boolean(activeItem.value) && !batchMode.value && !editorClosed.value);
+const editorVisible = computed(() => Boolean(activeItem.value) && !selectMode.value && !editorClosed.value);
+/** O bloco de ação existe: uma linha aberta ou várias marcadas. */
+const blockVisible = computed(() => editorVisible.value || selectMode.value);
 function closeEditor() {
   editorClosed.value = true;
   discountOpen.value = false;
@@ -529,26 +643,28 @@ const discountModes = [
   { ref: "disc_brl", label: "Em R$" },
 ] as const;
 function toggleDiscount() {
-  if (mutationBusy.value || lineAdjustmentsBlocked.value) return;
+  if (mutationBusy.value || lineAdjustmentsBlocked.value || props.offline) return;
+  noteDraft.value = null;
   discountOpen.value = !discountOpen.value;
-  if (discountOpen.value && !inDiscountMode.value) setMode(activeItem.value?.discount?.type === "fixed" ? "disc_brl" : "disc");
-  if (!discountOpen.value && !selectMode.value) setMode("qty");
+  const fixed = !selectMode.value && activeItem.value?.discount?.type === "fixed";
+  if (discountOpen.value) setMode(fixed ? "disc_brl" : "disc");
+  else setMode("qty");
 }
 // EDITAR UMA LINHA É SEMPRE NO MESMO LUGAR (dono, 10/10): o desconto e a observação
-// abrem no bloco do editor, no lugar da grade, e terminam em Cancelar ou Aplicar. Na
-// mesa (mouse e teclado) o desconto é um RASCUNHO: o número e o motivo só valem no
-// Aplicar (Enter); Cancelar (Esc) devolve a linha como estava. No toque, o numérico
-// do editor de toque segue gravando a cada tecla (um instrumento só, "Pronto" fecha).
-const discountDraft = computed(() => !touchEditor.value);
+// abrem no bloco, no lugar da grade, e terminam em Cancelar ou Aplicar. O desconto é um
+// RASCUNHO na mesa E no toque: o número e o motivo só valem no Aplicar (Enter, ou o
+// Aplicar do numérico do toque); Cancelar (Esc) devolve a linha como estava.
+const discountDraft = computed(() => true);
 function applyDiscount() {
+  const wasBatch = selectMode.value;
   commitDiscount();
   discountOpen.value = false;
-  if (!selectMode.value) setMode("qty");
+  setMode("qty");
+  if (wasBatch) unmarkAll();
 }
 function cancelDiscount() {
   discountOpen.value = false;
-  if (!selectMode.value) setMode("qty");
-  else syncBufferToMode();
+  setMode("qty");
 }
 // Na célula estreita o desconto vigente diz só o valor ("10%"), com o ícone.
 const discountShortLabel = computed(() => {
@@ -570,7 +686,7 @@ const discountButtonLabel = computed(() => {
 // (tablet, sem teclado físico), também para a quantidade. No balcão com teclado, a
 // quantidade se digita direto (a dica fica no pé da lista).
 const numpadVisible = computed(() => {
-  if (batchMode.value) return discountOpen.value && !lineAdjustmentsBlocked.value;
+  if (selectMode.value) return discountOpen.value && !lineAdjustmentsBlocked.value;
   if (!editorVisible.value) return false;
   // No toque o numérico mora DENTRO do editor (um instrumento só, v4 tablet b).
   if (touchEditor.value) return false;
@@ -579,7 +695,7 @@ const numpadVisible = computed(() => {
 /** O editor de toque (v4 `pos-tablet.jpg` b): "Quantidade de X (era 1)", a caixa
  *  grande, o numérico 3×4 de 64 px e a coluna Desconto · Observação · Remover ·
  *  Pronto. Um instrumento só para a quantidade, sem −/+ duplicado. */
-const touchEditor = computed(() => coarsePointer.value && editorVisible.value && !batchMode.value);
+const touchEditor = computed(() => coarsePointer.value && editorVisible.value);
 /** O que a caixa grande mostra: a quantidade, ou o desconto que se digita. */
 const touchEditorValue = computed(() => {
   const item = activeItem.value;
@@ -610,28 +726,57 @@ function setMode(mode: "qty" | "disc" | "disc_brl") {
 
 // Observação da linha (Odoo Note): o texto da linha ativa, escrito NO EDITOR (o mesmo
 // lugar do desconto), com Cancelar ou Aplicar. Enter aplica; Shift Enter quebra a linha.
-// O dado já existia (POSCartItem.notes, intent, KDS).
-const noteDraft = ref<{ lineId: string; name: string; text: string } | null>(null);
+// O dado já existia (POSCartItem.notes, intent, KDS). Nas marcadas, a mesma observação
+// vai para todas ("para viagem", "sem glúten"); o rascunho nasce com a que elas já
+// dividem, ou vazio quando cada uma tem a sua.
+const noteDraft = ref<{ lineIds: string[]; text: string } | null>(null);
 const noteField = ref<{ textareaRef?: HTMLTextAreaElement; $el?: HTMLElement } | null>(null);
 function openNoteDialog() {
   if (lineAdjustmentsBlocked.value) return;
-  const item = activeItem.value;
-  if (!item) return;
   discountOpen.value = false;
-  if (inDiscountMode.value && !selectMode.value) setMode("qty");
-  editorClosed.value = false;
-  noteDraft.value = { lineId: item.line_id, name: item.name, text: item.notes || "" };
+  setMode("qty");
+  if (selectMode.value) {
+    const chosen = props.items.filter((item) => selected.value.has(item.line_id));
+    const notes = new Set(chosen.map((item) => (item.notes || "").trim()));
+    noteDraft.value = { lineIds: chosen.map((item) => item.line_id), text: notes.size === 1 ? [...notes][0]! : "" };
+  } else {
+    const item = activeItem.value;
+    if (!item) return;
+    editorClosed.value = false;
+    noteDraft.value = { lineIds: [item.line_id], text: item.notes || "" };
+  }
   void nextTick(() => {
     const field = noteField.value?.textareaRef || noteField.value?.$el?.querySelector?.("textarea");
     field?.focus();
   });
 }
+// "Reenviar com a observação" (a linha já na cozinha, que ainda pode cancelar).
+const resendOffer = ref("");
 function saveNote() {
   const draft = noteDraft.value;
   noteDraft.value = null;
   if (!draft) return;
-  emit("setNotes", draft.lineId, draft.text.trim());
+  const text = draft.text.trim();
+  const single = draft.lineIds.length === 1 ? props.items.find((item) => item.line_id === draft.lineIds[0]) : null;
+  draft.lineIds.forEach((lineId) => emit("setNotes", lineId, text));
+  if (single && offersResendWithNote({
+    fired: Boolean(single.fired),
+    cancellable: lineKitchenState(single) === "fired_cancellable" && props.unfireAction.enabled,
+    before: single.notes || "",
+    after: text,
+  })) {
+    resendOffer.value = single.line_id;
+  }
+  if (draft.lineIds.length > 1) unmarkAll();
 }
+function resendWithNote() {
+  const lineId = resendOffer.value;
+  resendOffer.value = "";
+  if (lineId) emit("resend", lineId);
+}
+watch(activeLineId, (lineId) => {
+  if (resendOffer.value && resendOffer.value !== lineId) resendOffer.value = "";
+});
 function cancelNote() {
   noteDraft.value = null;
 }
@@ -647,7 +792,8 @@ function onNoteKeydown(event: KeyboardEvent) {
 }
 // Trocar de linha fecha a edição que estava aberta (nada fica pendurado em outra linha).
 watch(activeLineId, () => {
-  if (noteDraft.value && noteDraft.value.lineId !== activeLineId.value) noteDraft.value = null;
+  const draft = noteDraft.value;
+  if (draft && draft.lineIds.length === 1 && draft.lineIds[0] !== activeLineId.value) noteDraft.value = null;
 });
 
 // Remover item PERGUNTA, sempre. Já foi "direto com Desfazer", e o balcão
@@ -708,13 +854,115 @@ function runConfirm() {
   confirmAction.value = null;
   if (!action) return;
   if (action.kind === "batch") {
-    action.lineIds.forEach((lineId) => emit("remove", lineId));
+    // N como 1: confirma E oferece Desfazer (devolve cada linha como estava).
+    const snapshots = action.lineIds
+      .map((lineId) => props.items.find((entry) => entry.line_id === lineId))
+      .filter((item): item is POSCartItem => Boolean(item))
+      .map((item) => ({ ...item }));
     clearSelection();
+    selectedLineId.value = "";
+    snapshots.forEach((item) => emit("remove", item.line_id));
+    toast(`${action.units} ${action.units === 1 ? "item removido" : "itens removidos"}.`, {
+      action: { label: "Desfazer", onClick: () => snapshots.forEach((item) => emit("restore", item)) },
+    });
     return;
   }
   const item = props.items.find((entry) => entry.line_id === action.lineId);
   if (item) removeWithUndo(item);
 }
+
+// ── As portas do raro (o ⋯ único da suíte, `OperatorMoreMenu`) ──────────────────────
+// "Ações da comanda" no cabeçalho: o que age na comanda INTEIRA sem marcar nada
+// (Transferir itens, Juntar com outra comanda, Liberar). Sem conexão, apagado com o motivo
+// escrito sob o rótulo (o toque não tem dica de ponteiro).
+const OFFLINE_REASON = "Volta com a conexão.";
+type MoreItem = Record<string, unknown>;
+const tabMenuItems = computed<MoreItem[][]>(() => {
+  const offline = Boolean(props.offline);
+  const reason = offline ? OFFLINE_REASON : undefined;
+  const groups: MoreItem[][] = [];
+  if (canMove.value) {
+    groups.push([
+      {
+        label: "Transferir itens",
+        icon: "i-lucide-arrow-right-left",
+        kbds: coarsePointer.value ? undefined : ["F10"],
+        disabled: offline || !props.items.length || props.loading,
+        reason,
+        onSelect: () => emit("move", selectMode.value ? selection.value.lineIds : undefined, "transfer"),
+      },
+      {
+        label: "Juntar com outra comanda",
+        icon: "i-lucide-merge",
+        disabled: offline || !props.items.length || props.loading,
+        reason,
+        onSelect: () => emit("move", undefined, "merge"),
+      },
+    ]);
+  }
+  groups.push([{
+    label: "Liberar comanda",
+    icon: "i-lucide-x",
+    color: "error",
+    disabled: offline || props.loading,
+    reason,
+    onSelect: () => emit("release"),
+  }]);
+  return groups;
+});
+const showTabMenu = computed(() => props.hasOpenTab && !props.primaryLabel);
+// O ⋯ do bloco de 1: o raro da linha aberta (dois toques), longe da grade de um toque.
+const lineMenuItems = computed<MoreItem[]>(() => {
+  const item = activeItem.value;
+  if (!item) return [];
+  const offline = Boolean(props.offline);
+  const reason = offline ? OFFLINE_REASON : undefined;
+  const state = lineKitchenState(item);
+  const acts: MoreItem[] = [];
+  if (canMove.value && props.hasOpenTab) {
+    acts.push({
+      label: "Transferir esta linha",
+      icon: "i-lucide-arrow-right-left",
+      disabled: offline || props.loading,
+      reason,
+      onSelect: () => emit("move", [item.line_id], "transfer"),
+    });
+  }
+  if (state === "unfired" && fireBar.value.visible) {
+    acts.push({
+      label: "Enviar só esta à cozinha",
+      icon: "i-lucide-chef-hat",
+      disabled: offline || props.firing || !props.fireAction.enabled,
+      reason,
+      onSelect: () => emit("fireLines", [item.line_id], () => {}),
+    });
+  }
+  if (state === "fired_cancellable") {
+    acts.push({
+      label: props.unfireAction.label || "Cancelar envio à cozinha",
+      icon: "i-lucide-undo-2",
+      disabled: offline || props.firing || !props.unfireAction.enabled,
+      reason,
+      onSelect: () => emit("unfire", item.line_id),
+    });
+  }
+  if (hasKitchenCard(item)) {
+    acts.push({ label: "Ver na cozinha", icon: "i-lucide-chef-hat", onSelect: () => { kitchenLineId.value = item.line_id; } });
+  }
+  if (acts.length && activeAuthorship.value) acts.unshift({ type: "label", label: activeAuthorship.value });
+  return acts;
+});
+// O ⋯ do bloco de N: o raro das marcadas.
+const batchMenuItems = computed<MoreItem[]>(() => {
+  if (!selection.value.canUnfire || !props.unfireAction.present) return [];
+  return [{
+    label: "Cancelar envio das marcadas",
+    icon: "i-lucide-undo-2",
+    disabled: Boolean(props.offline) || props.firing || !props.unfireAction.enabled,
+    reason: props.offline ? OFFLINE_REASON : undefined,
+    onSelect: () => batchUnfire(),
+  }];
+});
 
 function commitQty() {
   if (props.loading || props.saving) return;
@@ -725,7 +973,23 @@ function commitQty() {
     askRemove(lineId);
     return;
   }
+  const item = props.items.find((entry) => entry.line_id === lineId);
+  const extra = item ? firedLineIncrease(item, next) : 0;
+  if (extra) {
+    addLike(lineId, extra);
+    return;
+  }
+  if (item?.fired && next < item.qty && firedLineShrinkPolicy() === "ask") {
+    // Pergunta 5 (pendente): a decisão do dono pluga aqui. Hoje só avisa (o selo da linha).
+  }
   emit("setQty", lineId, next);
+}
+/** MAIS numa linha que já está na cozinha vai numa linha NOVA, a enviar; o editor segue
+ *  a linha nova (é nela que o próximo + e o próximo dígito vão). */
+function addLike(lineId: string, qty: number) {
+  emit("addLike", lineId, qty, (newLineId: string) => {
+    if (newLineId) selectLine(newLineId);
+  });
 }
 
 // Discount targets: the whole selection in multi-select, else the active line.
@@ -770,12 +1034,17 @@ function commitDiscount() {
 // no teclado viraria 2 kg. Trocar a peça é remover e lançar a outra etiqueta.
 // E o desconto em R$ é POR UNIDADE — na peça pesada seria "por quilo", que
 // ninguém no balcão quer dizer; nela, desconto é em %.
+/** Desconto em R$ é por unidade: na peça pesada seria "por quilo". Vale para a linha
+ *  aberta e para o lote (com uma peça pesada entre as marcadas, só %). */
+const fixedDiscountBlocked = computed(() =>
+  selectMode.value ? marked.value.hasWeighed : Boolean(activeItem.value && isWeighedLine(activeItem.value)),
+);
 const numpadCanType = computed(() => {
   // Sem desconto de item, a seleção múltipla não tem o que digitar.
   if (lineAdjustmentsBlocked.value && (selectMode.value || inDiscountMode.value)) return false;
   const weighedActive = !!activeItem.value && isWeighedLine(activeItem.value);
   if (!inDiscountMode.value) return !!activeLineId.value && !weighedActive;
-  if (numpadMode.value === "disc_brl" && !selectMode.value && weighedActive) return false;
+  if (numpadMode.value === "disc_brl" && fixedDiscountBlocked.value) return false;
   return discountTargets.value.length > 0;
 });
 // O que o pad está editando, para os rótulos de leitor de tela acompanharem o modo.
@@ -834,19 +1103,16 @@ function onBackspace() {
   else if (!discountDraft.value) commitDiscount();
 }
 
-// Entering multi-select switches the numpad to its discount (batch) mode, since
-// batch quantity has no meaning; leaving it restores quantity entry.
-watch(selectMode, (on) => {
-  numpadMode.value = on && !lineAdjustmentsBlocked.value ? "disc" : "qty";
-  numpadBuffer.value = "";
-  numpadFresh.value = true;
-});
 
 function bump(lineId: string, emitName: "increment" | "decrement") {
   if (props.loading || props.saving) return;
   const line = props.items.find((entry) => entry.line_id === lineId);
   if (line && isWeighedLine(line)) return;
   selectedLineId.value = lineId;
+  if (emitName === "increment" && line?.fired) {
+    addLike(lineId, 1);
+    return;
+  }
   if (emitName === "decrement") {
     if (qtyOf(lineId) <= 1) {
       askRemove(lineId);
@@ -889,23 +1155,33 @@ function onWindowKeydown(event: KeyboardEvent) {
     else cancelDiscount();
     return;
   }
+  // Com marcas, DÍGITO NÃO FAZ NADA (a quantidade é de uma linha): só o desconto aberto
+  // nas marcadas recebe número.
+  const typing = !selectMode.value || discountOpen.value;
   if (event.key >= "0" && event.key <= "9") {
+    if (!typing) return;
     event.preventDefault();
     revealForKeyboard();
     onDigit(event.key);
   } else if (event.key === "Backspace") {
+    if (!typing) return;
     event.preventDefault();
     revealForKeyboard();
     onBackspace();
-  } else if (!batchMode.value && editorVisible.value && event.key === "Escape") {
+  } else if (selectMode.value && event.key === "Escape") {
+    // Esc desmarca tudo.
+    event.preventDefault();
+    unmarkAll();
+  } else if (editorVisible.value && event.key === "Escape") {
     // v4: "Fechar · Esc". Fora de campo, o Esc da venda não tinha outro dono.
     event.preventDefault();
     closeEditor();
-  } else if (!batchMode.value && event.key === "Delete") {
-    // v4: "Del remove" a linha ativa (sempre com a confirmação).
+  } else if (event.key === "Delete") {
+    // "Del remove" o objeto em foco (sempre com a confirmação e o Desfazer).
     event.preventDefault();
-    askRemove(activeLineId.value);
-  } else if (!batchMode.value && editorVisible.value && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+    if (selectMode.value) batchRemove();
+    else askRemove(activeLineId.value);
+  } else if (editorVisible.value && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
     // v4: "↑↓ troca a linha" com o editor aberto.
     event.preventDefault();
     const index = props.items.findIndex((entry) => entry.line_id === activeLineId.value);
@@ -913,36 +1189,12 @@ function onWindowKeydown(event: KeyboardEvent) {
     if (next) selectLine(next.line_id);
   }
 }
-/** O teclado físico digitou: o editor (ou o desconto do lote) volta à vista. */
+/** O teclado físico digitou: o editor volta à vista. */
 function revealForKeyboard() {
-  if (batchMode.value) {
-    if (selectMode.value && !lineAdjustmentsBlocked.value) discountOpen.value = true;
-    return;
-  }
-  editorClosed.value = false;
+  if (!selectMode.value) editorClosed.value = false;
 }
 onMounted(() => window.addEventListener("keydown", onWindowKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
-const batchMode = ref(false);
-function finishItemMode() {
-  batchMode.value = false;
-  discountOpen.value = false;
-  expandedLineId.value = "";
-  clearSelection();
-  listEntry.value?.$el?.focus();
-}
-function toggleBatchMode() {
-  if (batchMode.value) { finishItemMode(); return; }
-  batchMode.value = true;
-  discountOpen.value = false;
-  expandedLineId.value = "";
-  clearSelection();
-  void focusItem();
-}
-function markItem(lineId: string) {
-  batchMode.value = true;
-  toggleSelect(lineId);
-}
 const mutationBusy = computed(() => props.loading || props.saving);
 /** O que o editor da linha escolhe: quantidade, desconto (% ou R$) ou observação. */
 type LineMode = "qty" | "disc" | "disc_brl" | "note";
@@ -953,8 +1205,6 @@ function chooseMode(mode: LineMode) {
   else setMode(mode);
 }
 const receiptList = ref<HTMLElement | null>(null);
-// O `NuxtButton` do "Selecionar": o foco volta ao elemento dele (`$el`).
-const listEntry = ref<{ $el?: HTMLElement } | null>(null);
 async function focusItem(lineId = activeLineId.value) {
   const buttons = Array.from(
     receiptList.value?.querySelectorAll<HTMLButtonElement>(
@@ -964,7 +1214,6 @@ async function focusItem(lineId = activeLineId.value) {
   const button =
     buttons.find((el) => el.dataset.itemSelect === lineId) || buttons[0];
   if (!button) return;
-  batchMode.value = true;
   selectLine(button.dataset.itemSelect!);
   await nextTick();
   button.focus({ preventScroll: true });
@@ -1021,7 +1270,7 @@ async function navigateItems(event: KeyboardEvent) {
   ) {
     event.preventDefault();
     event.stopPropagation();
-    markItem(id);
+    toggleSelect(id);
   } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
     event.preventDefault();
     event.stopPropagation();
@@ -1061,11 +1310,28 @@ async function navigateItems(event: KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
     if (expandedLineId.value) expandedLineId.value = "";
-    else if (batchMode.value) finishItemMode();
+    else if (selectMode.value) unmarkAll();
     else closeEditor();
   }
 }
-defineExpose({ focusItem, onDigit, onBackspace });
+// O envio automático espera o rascunho e as marcas (o relógio mora na página).
+const autoFireHeld = computed(() => Boolean(noteDraft.value) || discountOpen.value || selectMode.value);
+watch(autoFireHeld, (held) => emit("autoFireHold", held), { immediate: true });
+
+// F9 e F10 com marcas agem SÓ nelas (decisão 4 do dono; a tecla anunciada no botão faz o
+// que o botão faz). Devolvem false sem marcas, e a página faz o de sempre.
+function fireSelection(): boolean {
+  if (!selectMode.value) return false;
+  batchFire();
+  return true;
+}
+function moveSelection(): boolean {
+  if (!canMove.value || !props.hasOpenTab || !selectMode.value) return false;
+  if (!props.loading && !props.offline) emit("move", selection.value.lineIds, "transfer");
+  return true;
+}
+
+defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
 </script>
 
 <template>
@@ -1081,23 +1347,24 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <OperatorButton
         v-bind="fireFit"
         :size="controlSize"
-        :color="fireBar.unfired && !fireBar.disabled ? 'primary' : 'neutral'"
+        :color="!fireCell.disabled ? 'primary' : 'neutral'"
         variant="outline"
         :loading="firing"
         block
         class="h-full justify-center bg-default font-semibold"
-        :disabled="fireBar.disabled || firing"
+        :disabled="fireCell.disabled || firing"
         :aria-busy="firing || undefined"
-        :shortcut="coarsePointer || !fireBar.unfired ? undefined : 'F9'"
+        :shortcut="coarsePointer || fireCell.disabled ? undefined : 'F9'"
         aria-keyshortcuts="F9"
-        :title="`${fireBar.label} as linhas novas (F9)`"
+        :title="fireCell.title"
         data-pos-fire
-        @click="$emit('fire')"
+        :data-pos-fire-marked="fireCell.onlyMarked ? '' : undefined"
+        @click="onFireCell"
       >
-        <template v-if="fireBar.unfired" #trailing>
+        <template v-if="fireCell.count" #trailing>
           <OperatorCountChip
-            :count="fireBar.unfired"
-            :aria-label="`${fireBar.unfired} ${fireBar.unfired === 1 ? 'item' : 'itens'} a enviar`"
+            :count="fireCell.count"
+            :aria-label="`${fireCell.count} ${fireCell.count === 1 ? 'item' : 'itens'} a enviar`"
           />
         </template>
       </OperatorButton>
@@ -1166,7 +1433,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
               />
             </NuxtFieldGroup>
           </template>
-          <div v-else-if="cell === 'remove' && activeItem" class="op-fit-scope h-full w-full">
+          <div v-else-if="cell === 'remove' && (activeItem || selectMode)" class="op-fit-scope h-full w-full">
             <OperatorButton
               v-bind="REMOVE_FIT"
               :size="controlSize"
@@ -1176,17 +1443,34 @@ defineExpose({ focusItem, onDigit, onBackspace });
               class="h-full justify-center bg-default font-semibold"
               :shortcut="coarsePointer ? undefined : 'Del'"
               aria-keyshortcuts="Delete"
-              title="Remover (Del), com confirmação e desfazer"
+              :title="selectMode ? 'Remover as marcadas (Del), com confirmação e desfazer' : 'Remover (Del), com confirmação e desfazer'"
               :disabled="mutationBusy"
               data-pos-line-remove
-              @click="askRemove(activeItem.line_id)"
+              @click="selectMode ? batchRemove() : activeItem && askRemove(activeItem.line_id)"
+            />
+          </div>
+          <div v-else-if="cell === 'move'" class="op-fit-scope h-full w-full">
+            <OperatorButton
+              label="Transferir"
+              icon="i-lucide-arrow-right-left"
+              :size="controlSize"
+              color="neutral"
+              variant="outline"
+              block
+              class="h-full justify-center"
+              :shortcut="coarsePointer ? undefined : 'F10'"
+              aria-keyshortcuts="F10"
+              :disabled="loading || offline"
+              :title="offline ? 'Transferir volta com a conexão' : 'Transferir as marcadas para outra comanda (F10)'"
+              data-pos-batch-move
+              @click="$emit('move', selection.lineIds, 'transfer')"
             />
           </div>
           <ReuseFireButton v-else-if="cell === 'fire'" />
           <OperatorButton
-            v-else-if="cell === 'discount' && activeItem"
-            :label="discountButtonLabel"
-            :short-label="discountShortLabel || undefined"
+            v-else-if="cell === 'discount' && (activeItem || selectMode)"
+            :label="selectMode ? 'Desconto' : discountButtonLabel"
+            :short-label="(!selectMode && discountShortLabel) || undefined"
             icon="i-lucide-percent"
             :size="controlSize"
             color="neutral"
@@ -1196,9 +1480,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
             :active="discountOpen"
             block
             class="h-full justify-center"
-            :class="!discountOpen && activeItem.discount?.value ? 'font-semibold' : ''"
+            :class="!selectMode && !discountOpen && activeItem?.discount?.value ? 'font-semibold' : ''"
             :aria-pressed="discountOpen"
-            :disabled="mutationBusy"
+            :disabled="mutationBusy || offline"
+            :title="offline ? 'Desconto volta com a conexão' : undefined"
             data-pos-line-discount
             @click="toggleDiscount"
           />
@@ -1218,7 +1503,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             @click="$emit('split')"
           />
           <OperatorButton
-            v-else-if="cell === 'note' && activeItem"
+            v-else-if="cell === 'note' && (activeItem || selectMode)"
             label="Observação"
             icon="i-lucide-message-square-text"
             :size="controlSize"
@@ -1235,41 +1520,32 @@ defineExpose({ focusItem, onDigit, onBackspace });
     </div>
   </DefineControlGrid>
   <DefineTicketBody>
-      <!-- TOPO DA COMANDA (reorganização do dono, 10/10): só LEITURA, o que ela é (itens,
-           linhas, o pé com a cozinha), e o gesto raro (Selecionar, Alt S), discreto e à
-           vista. O que AGE na comanda inteira mora no pé, junto do Pagamento. -->
+      <!-- Z1 · O CABEÇALHO DA COMANDA (h-16, a altura da barra do topo da venda; as duas
+           divisórias correm na mesma linha). Nunca troca de conteúdo: o que a comanda É
+           (itens, linhas, a cozinha em palavra com o QUANDO do envio automático) e a
+           porta do que age na comanda inteira sem marcar nada (Comanda ⋯). -->
       <header
-        v-if="!batchMode"
         class="shrink-0 border-b border-border"
         :class="sheet ? '' : 'h-16'"
         data-pos-ticket-header
       >
-        <!-- A MESMA ALTURA da barra do topo da venda (h-16): as duas divisórias de baixo
-             correm na mesma linha (dono, 10/10). Duas linhas: o que a comanda é (e o
-             Selecionar) e o estado da cozinha dito em palavra. -->
         <div class="flex h-full flex-col justify-center gap-0.5 pr-2 pl-3.5" :class="sheet ? 'min-h-14 py-1.5' : ''">
           <div class="flex items-center gap-2">
             <div class="min-w-0 flex-1">
               <h3 v-if="sheet" class="op-title tnum [overflow-wrap:anywhere]" data-pos-sheet-title>{{ tabTitle ? `${tabTitle} · ` : "" }}{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
               <div v-else class="flex items-baseline gap-x-1.5 whitespace-nowrap">
                 <h3 class="op-title tnum" data-pos-ticket-count>{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
-                <span v-if="items.length" class="op-micro text-muted-foreground tnum">em {{ items.length }} {{ items.length === 1 ? "linha" : "linhas" }}</span>
+                <span v-if="items.length" class="hidden op-micro text-muted-foreground tnum @min-[23rem]:inline">em {{ items.length }} {{ items.length === 1 ? "linha" : "linhas" }}</span>
               </div>
             </div>
-            <NuxtButton
-              ref="listEntry"
+            <OperatorMoreMenu
+              v-if="showTabMenu"
+              :items="tabMenuItems"
+              label="Ações da comanda: transferir itens, juntar, liberar"
               :size="controlSize"
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-list-checks"
               class="shrink-0"
-              aria-keyshortcuts="Alt+s"
-              title="Selecionar linhas (Alt S): transferir, descontar e remover várias"
-              data-pos-select-lines
-              @click="toggleBatchMode"
-            >
-              Selecionar
-            </NuxtButton>
+              data-pos-tab-menu
+            />
             <NuxtButton
               v-if="sheet"
               size="xl"
@@ -1282,50 +1558,30 @@ defineExpose({ focusItem, onDigit, onBackspace });
               @click="sheetOpen = false"
             />
           </div>
-          <!-- O estado da cozinha, numa linha discreta: o que falta, o que já foi e o
-               envio automático (o ajuste mora em Ajustes › Envio à cozinha; o toque no
-               texto leva lá). Na coluna estreita, o curto escrito à mão. -->
+          <!-- O estado da cozinha, numa linha discreta: o que falta, o que já foi e QUANDO o
+               envio automático manda (o ajuste mora em Ajustes › Envio à cozinha; o toque
+               leva lá). Sem conexão, o motivo no lugar do automático. -->
           <p v-if="fireBar.visible" class="flex items-center gap-x-1.5 op-micro whitespace-nowrap text-muted-foreground" data-pos-kitchen-state>
-            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" aria-hidden="true" />
+            <Icon :name="offline ? 'lucide:wifi-off' : 'lucide:chef-hat'" class="size-3.5 shrink-0" aria-hidden="true" />
             <span v-if="kitchenStateText">{{ kitchenStateText }}</span>
-            <template v-if="!sheet">
+            <template v-if="!sheet || offline">
               <span v-if="kitchenStateText" aria-hidden="true">·</span>
+              <span v-if="!kitchenState.linksToSettings" class="font-medium text-warning" data-pos-kitchen-offline><span :class="kitchenState.auto.wide ? 'hidden @min-[30rem]:inline' : 'hidden @min-[24rem]:inline'">{{ kitchenState.auto.full }}</span><span :class="kitchenState.auto.wide ? '@min-[30rem]:hidden' : '@min-[24rem]:hidden'">{{ kitchenState.auto.short }}</span></span>
               <NuxtButton
+                v-else
                 color="neutral"
                 variant="ghost"
                 class="h-auto min-h-0 rounded-sm p-0 op-micro font-normal text-muted-foreground underline-offset-2 hover:bg-transparent hover:text-foreground hover:underline"
-                :title="autoFire ? 'Envio automático ligado na estação destes itens (Ajustes › Envio à cozinha)' : 'Envio automático desligado (Ajustes › Envio à cozinha)'"
-                :aria-label="`envio automático: ${autoFire ? 'ligado' : 'desligado'}`"
+                :title="autoFire ? 'Envio automático ligado na estação destes itens: vão ao sair da comanda ou depois de 90 s sem mudança (Ajustes › Envio à cozinha)' : 'Envio automático desligado (Ajustes › Envio à cozinha)'"
+                :aria-label="kitchenState.auto.full"
                 data-pos-auto-fire
                 :data-auto-fire="autoFire ? 'on' : 'off'"
                 @click="$emit('autoFireSettings')"
-              ><span class="hidden @min-[24rem]:inline">envio automático: {{ autoFire ? "ligado" : "desligado" }}</span><span class="@min-[24rem]:hidden">automático {{ autoFire ? "ligado" : "desligado" }}</span></NuxtButton>
+              ><span :class="kitchenState.auto.wide ? 'hidden @min-[30rem]:inline' : 'hidden @min-[24rem]:inline'">{{ kitchenState.auto.full }}</span><span :class="kitchenState.auto.wide ? '@min-[30rem]:hidden' : '@min-[24rem]:hidden'">{{ kitchenState.auto.short }}</span></NuxtButton>
             </template>
           </p>
         </div>
       </header>
-
-      <!-- Modo seleção (Alt S): o cabeçalho diz o que está marcado, e só. As ações nas
-           linhas marcadas moram no MESMO lugar das ações da linha (o bloco acima do
-           pé), em grade, com rótulo: a faixa de cima não espreme ícones. -->
-      <template v-else>
-        <header class="flex shrink-0 items-center gap-2 border-b border-border bg-primary/10 px-2" :class="sheet ? 'min-h-14 py-1.5' : 'h-16'" data-pos-selection-bar>
-          <NuxtButton
-            :size="controlSize"
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-x"
-            square
-            class="shrink-0"
-            aria-label="Concluir seleção"
-            title="Sair da seleção (Esc)"
-            @click="toggleBatchMode"
-          />
-          <p class="min-w-0 flex-1 op-label font-semibold tnum">
-            {{ selection.count ? `${selection.count} ${selection.count === 1 ? "selecionada" : "selecionadas"}` : "Toque nas linhas para marcar" }}
-          </p>
-        </header>
-      </template>
 
       <div
         ref="receiptList"
@@ -1340,10 +1596,15 @@ defineExpose({ focusItem, onDigit, onBackspace });
           Escolha um produto para começar.
         </p>
         <ul>
+          <!-- A CAIXA DE MARCAR mora na margem esquerda da linha (w-7, o lugar que antes era
+               o recuo de 14 px), em posição ABSOLUTA: aparecer ou sumir nunca empurra a
+               quantidade, o nome ou o preço. No mouse ela aparece no hover e no foco da
+               linha; com marcadas, fica em todas. No toque, com a linha aberta (sem hover)
+               ou pelo toque longo. -->
           <li
             v-for="item in items"
             :key="item.line_id"
-            class="relative flex flex-wrap items-stretch border-b border-border"
+            class="group/line relative flex flex-wrap items-stretch border-b border-border"
             :aria-current="activeLineId === item.line_id ? 'true' : undefined"
             :class="
               isSelected(item.line_id)
@@ -1352,46 +1613,35 @@ defineExpose({ focusItem, onDigit, onBackspace });
                   ? 'bg-primary/10 shadow-[inset_4px_0_0_var(--primary)]'
                   : 'hover:bg-muted/50'
             "
-            @click="batchMode && toggleSelect(item.line_id)"
+            :data-pos-line-marked="isSelected(item.line_id) ? '' : undefined"
           >
-            <NuxtButton
-              v-if="batchMode"
-              color="neutral"
-              variant="ghost"
-              class="w-11 shrink-0 justify-center rounded-none"
-              :aria-label="`Selecionar ${item.name}`"
-              :aria-pressed="isSelected(item.line_id)"
-              @click.stop="toggleSelect(item.line_id)"
+            <span
+              class="absolute inset-y-0 left-0 z-10 flex w-7 items-center justify-center transition-opacity motion-reduce:transition-none"
+              :class="selectMode || isSelected(item.line_id) || (coarsePointer && editorVisible) ? 'opacity-100' : 'opacity-0 group-hover/line:opacity-100 group-focus-within/line:opacity-100'"
+              :data-pos-line-mark="item.line_id"
+              @click.stop.prevent="toggleSelect(item.line_id, $event.shiftKey)"
             >
-              <span
-                class="grid size-5 place-items-center rounded border"
-                :class="
-                  isSelected(item.line_id)
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-input bg-card'
-                "
-                ><Icon
-                  v-if="isSelected(item.line_id)"
-                  name="lucide:check"
-                  class="size-3.5"
-              /></span>
-            </NuxtButton>
+              <NuxtCheckbox
+                :model-value="isSelected(item.line_id)"
+                :aria-label="`Marcar ${item.name}`"
+                tabindex="-1"
+              />
+            </span>
             <NuxtButton
               color="neutral"
               variant="ghost"
-              class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-none py-1.5 pr-3.5 text-left font-normal hover:bg-transparent focus-visible:outline-none"
-              :class="batchMode ? 'pl-0' : 'pl-3.5'"
+              class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-none py-1.5 pr-3.5 pl-7 text-left font-normal hover:bg-transparent focus-visible:outline-none"
               :data-item-select="item.line_id"
               :aria-label="`Editar ${item.name}`"
-              :aria-pressed="
-                batchMode
-                  ? isSelected(item.line_id)
-                  : activeLineId === item.line_id
-              "
+              :aria-pressed="selectMode ? isSelected(item.line_id) : activeLineId === item.line_id"
               :aria-expanded="expandedLineId === item.line_id"
               :aria-controls="detailsId(item.line_id)"
-              @focus="selectLine(item.line_id)"
-              @click="selectLine(item.line_id)"
+              @focus="onRowFocus(item.line_id)"
+              @click="onRowClick(item.line_id, $event)"
+              @pointerdown="startPress(item.line_id, $event)"
+              @pointerup="endPress"
+              @pointerleave="endPress"
+              @pointercancel="endPress"
             >
               <span v-if="isWeighedLine(item)" class="op-label font-semibold tnum"
                 >{{ lineQtyLabel(item) }}</span
@@ -1438,9 +1688,9 @@ defineExpose({ focusItem, onDigit, onBackspace });
                   <span
                     v-else-if="goesToKitchen(item)"
                     class="inline-flex shrink-0 items-center gap-1"
-                    :title="`Vai para ${kitchenStations?.[item.sku]} quando for enviada`"
+                    :title="autoFireSkuSet.has(item.sku) ? `Vai sozinho para ${kitchenStations?.[item.sku]} ao sair da comanda ou depois de 90 s sem mudança` : `Vai para ${kitchenStations?.[item.sku]} quando for enviada`"
                     data-pos-line-goes-to-kitchen
-                    ><Icon name="lucide:chef-hat" class="size-3.5" aria-hidden="true" />vai à cozinha</span
+                    ><Icon name="lucide:chef-hat" class="size-3.5" aria-hidden="true" />{{ autoFireSkuSet.has(item.sku) && !offline ? "vai sozinho" : "vai à cozinha" }}</span
                   >
                 </span>
               </span>
@@ -1493,43 +1743,24 @@ defineExpose({ focusItem, onDigit, onBackspace });
                     })
                   }}
                 </p></ClientOnly
-              ><NuxtButton
-                v-if="lineKitchenState(item) === 'fired_cancellable'"
-                color="neutral"
-                variant="ghost"
-                :disabled="mutationBusy || firing || !unfireAction.enabled"
-                :label="unfireAction.label"
-                @click.stop="$emit('unfire', item.line_id)"
-              />
-              <div v-if="!batchMode && !lineAdjustmentsBlocked" class="mt-1 flex justify-between">
-                <NuxtButton
-                  color="primary"
-                  variant="ghost"
-                  icon="i-lucide-sticky-note"
-                  label="Observação"
-                  @click="
-                    selectLine(item.line_id);
-                    openNoteDialog();
-                  "
-                />
-              </div>
+              >
             </div>
           </li>
         </ul>
       </div>
 
-      <!-- O BLOCO DE AÇÃO (dono, 10/10): colado no pé da lista, borda primária em cima.
-           Um lugar só para AGIR sobre linhas: a linha aberta no editor (↑↓, clique) ou
-           as linhas marcadas na seleção. Cabeçalho (o que se edita e a dica do teclado
-           do momento), uma divisória, e os controles em grade de duas colunas iguais.
-           Desconto e observação abrem AQUI, no lugar da grade, e terminam em Cancelar
-           ou Aplicar: nada de modal para ajuste de linha. -->
+      <!-- Z3 · O BLOCO DE AÇÃO: colado no pé da lista, borda primária em cima, só quando
+           há foco. Diz no título o OBJETO (a linha aberta, ou "3 linhas marcadas · 5
+           itens · R$ 61,70") e os verbos ficam nas MESMAS posições para 1 ou para N:
+           Remover no alto à direita, Desconto e Observação embaixo; só o canto da
+           Quantidade (que é de uma linha) vira Transferir. O raro mora no ⋯. Desconto e
+           observação abrem AQUI, no lugar da grade, com Cancelar e Aplicar. -->
       <section
-        v-if="editorVisible || batchMode"
-        class="shrink-0 border-t-2 border-primary bg-card px-3 pt-2 shadow-[0_-10px_24px_rgb(0_0_0/.10)]"
-        :class="batchMode ? 'pb-3' : 'pb-2'"
-        aria-label="Console do item"
+        v-if="blockVisible"
+        class="shrink-0 border-t-2 border-primary bg-card px-3 pt-2 pb-2 shadow-[0_-10px_24px_rgb(0_0_0/.10)]"
+        :aria-label="selectMode ? 'Linhas marcadas' : 'Linha aberta'"
         data-pos-line-editor
+        :data-pos-block="selectMode ? 'marked' : 'line'"
       >
         <!-- TOQUE (v4 tablet b): um instrumento só. A caixa grande mostra o número; o
              numérico 3×4 escreve nele; a coluna à direita tem Desconto, Observação,
@@ -1546,23 +1777,12 @@ defineExpose({ focusItem, onDigit, onBackspace });
               :aria-label="inDiscountMode ? 'Desconto' : `Quantidade de ${activeItem.name}`"
               data-pos-touch-editor-value
             >{{ touchEditorValue }}</output>
+            <OperatorMoreMenu v-if="lineMenuItems.length" :items="lineMenuItems" label="Mais ações da linha" size="xl" data-pos-line-menu />
           </div>
-          <p v-if="activeAuthorship || lineKitchenState(activeItem) === 'fired_cancellable'" class="mt-1 flex items-center gap-2 op-micro text-muted-foreground">
-            <span class="min-w-0 flex-1 truncate">{{ activeAuthorship }}</span>
-            <NuxtButton
-              v-if="lineKitchenState(activeItem) === 'fired_cancellable'"
-              color="primary"
-              variant="ghost"
-              class="shrink-0"
-              :disabled="mutationBusy || firing || !unfireAction.enabled"
-              :label="unfireAction.label"
-              @click="$emit('unfire', activeItem.line_id)"
-            />
-          </p>
         </template>
         <!-- O CABEÇALHO do bloco: o que se edita (ou o que está marcado) e a dica do
              teclado do MOMENTO. A divisória separa a leitura dos controles. -->
-        <template v-if="(lineControlsInGrid || lineEditing === 'note') && activeItem">
+        <template v-if="!selectMode && (lineControlsInGrid || lineEditing === 'note') && activeItem">
           <div class="flex items-start gap-2">
             <!-- Três peças que quebram como blocos (o nome inteiro, nunca cortado): na
                  coluna estreita o preço desce de linha em vez de se sobrepor. -->
@@ -1571,6 +1791,13 @@ defineExpose({ focusItem, onDigit, onBackspace });
               <b class="min-w-0 font-semibold text-foreground [overflow-wrap:anywhere]">{{ activeItem.name }}</b>
               <span class="whitespace-nowrap text-muted-foreground tnum">· {{ formatBRL(unitChargedQ(activeItem)) }}{{ isWeighedLine(activeItem) ? "/kg" : " cada" }}</span>
             </p>
+            <OperatorMoreMenu
+              v-if="lineMenuItems.length && !lineEditing"
+              :items="lineMenuItems"
+              label="Mais ações da linha"
+              class="-mt-0.5 shrink-0"
+              data-pos-line-menu
+            />
             <NuxtButton
               color="neutral"
               variant="ghost"
@@ -1595,9 +1822,34 @@ defineExpose({ focusItem, onDigit, onBackspace });
           </p>
           <div class="-mx-3 my-2 border-t border-border" aria-hidden="true" data-pos-editor-divider />
         </template>
-        <template v-else-if="batchMode">
-          <p class="op-micro text-muted-foreground" data-pos-batch-hint>
-            {{ selection.count ? "Ações nas linhas marcadas" : "Marque as linhas na lista para agir em várias de uma vez" }}
+        <template v-else-if="selectMode">
+          <div class="flex items-start gap-2">
+            <p class="min-w-0 flex-1 pt-1 op-label font-semibold tnum [overflow-wrap:anywhere]" data-pos-marked-title>
+              <template v-if="lineEditing === 'discount'"><span class="font-normal text-muted-foreground">Desconto em </span></template>
+              <template v-else-if="lineEditing === 'note'"><span class="font-normal text-muted-foreground">Observação em </span></template>{{ marked.title }}
+            </p>
+            <OperatorMoreMenu v-if="batchMenuItems.length && !lineEditing" :items="batchMenuItems" label="Mais ações nas marcadas" class="-mt-0.5 shrink-0" data-pos-marked-menu />
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-x"
+              square
+              class="-mt-0.5 -mr-1 shrink-0"
+              aria-label="Desmarcar tudo"
+              aria-keyshortcuts="Escape"
+              title="Desmarcar tudo (Esc)"
+              data-pos-unmark
+              @click="unmarkAll"
+            />
+          </div>
+          <p
+            v-if="!coarsePointer && !sheet"
+            class="-mt-0.5 flex flex-wrap items-center gap-x-1.5 op-micro text-muted-foreground"
+            data-pos-keyboard-hint
+          >
+            <template v-for="(part, index) in keyboardHint" :key="part">
+              <span v-if="index" aria-hidden="true">·</span><span>{{ part }}</span>
+            </template>
           </p>
           <div class="-mx-3 my-2 border-t border-border" aria-hidden="true" data-pos-editor-divider />
         </template>
@@ -1615,7 +1867,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             data-pos-note-text
             @keydown="onNoteKeydown"
           />
-          <p class="col-span-2 -mt-1 op-micro text-muted-foreground">A observação sai junto com o item para a cozinha.</p>
+          <p class="col-span-2 -mt-1 op-micro text-muted-foreground" data-pos-note-help>{{ offline ? "A observação vai quando a conexão voltar." : noteDraft.lineIds.length > 1 ? `Vale para as ${noteDraft.lineIds.length} linhas marcadas e sai com elas para a cozinha.` : "A observação sai junto com o item para a cozinha." }}</p>
           <NuxtButton :size="controlSize" color="neutral" variant="outline" block class="justify-center" label="Cancelar" data-pos-edit-cancel @click="cancelNote" />
           <NuxtButton :size="controlSize" color="primary" block class="justify-center" label="Aplicar" data-pos-edit-apply @click="saveNote" />
         </div>
@@ -1635,7 +1887,8 @@ defineExpose({ focusItem, onDigit, onBackspace });
             class="justify-center"
             :active="numpadMode === mode.ref"
             :aria-pressed="numpadMode === mode.ref"
-            :disabled="mutationBusy"
+            :disabled="mutationBusy || (mode.ref === 'disc_brl' && fixedDiscountBlocked)"
+            :title="mode.ref === 'disc_brl' && fixedDiscountBlocked ? 'Peça pesada: desconto só em %' : undefined"
             :label="mode.label"
             @click="chooseMode(mode.ref)"
           />
@@ -1691,112 +1944,43 @@ defineExpose({ focusItem, onDigit, onBackspace });
             data-pos-discount-reason
             @update:model-value="(value) => { discountReason = String(value ?? ''); if (!discountDraft) commitDiscount(); }"
           />
-          <template v-if="discountDraft">
+          <template v-if="!touchEditor">
             <NuxtButton :size="controlSize" color="neutral" variant="outline" block class="justify-center" label="Cancelar" data-pos-edit-cancel @click="cancelDiscount" />
             <NuxtButton :size="controlSize" color="primary" block class="justify-center" label="Aplicar" :disabled="mutationBusy || !discountTargets.length" data-pos-edit-apply @click="applyDiscount" />
           </template>
         </div>
 
-        <!-- A GRADE da linha aberta (quantidade | Remover; Desconto | Observação). -->
+        <!-- A GRADE: da linha aberta (quantidade | Remover; Desconto | Observação) ou das
+             marcadas (Transferir | Remover; Desconto | Observação), nas mesmas posições. -->
+        <ReuseControlGrid v-else-if="selectMode" :rows="batchRows" block="marked" />
         <ReuseControlGrid v-else-if="lineControlsInGrid && activeItem" :rows="lineRows" block="line" />
 
-        <!-- A GRADE das marcadas (Transferir | Desconto; Remover | Enviar…). -->
-        <div v-else-if="batchMode && selection.count" class="grid grid-cols-2 gap-2" data-pos-batch-actions>
-          <template v-for="(row, rowIndex) in batchRows" :key="rowIndex">
-            <div
-              v-for="cell in row"
-              :key="cell"
-              class="op-fit-scope min-w-0"
-              :class="row.length === 1 ? 'col-span-2' : ''"
-              :data-pos-batch-cell="cell"
-            >
-              <OperatorButton
-                v-if="cell === 'move'"
-                label="Transferir"
-                icon="i-lucide-split"
-                :size="controlSize"
-                color="neutral"
-                variant="outline"
-                block
-                class="h-full justify-center"
-                :shortcut="coarsePointer ? undefined : 'F10'"
-                :disabled="loading"
-                title="Transferir as linhas marcadas para outra comanda (F10)"
-                @click="$emit('move', selection.lineIds)"
-              />
-              <OperatorButton
-                v-else-if="cell === 'discount'"
-                label="Desconto"
-                icon="i-lucide-percent"
-                :size="controlSize"
-                color="neutral"
-                variant="outline"
-                block
-                class="h-full justify-center"
-                :disabled="!selection.count"
-                title="Desconto nas linhas marcadas"
-                @click="toggleDiscount"
-              />
-              <OperatorButton
-                v-else-if="cell === 'remove'"
-                label="Remover"
-                icon="i-lucide-trash-2"
-                :size="controlSize"
-                color="error"
-                variant="outline"
-                block
-                class="h-full justify-center bg-default font-semibold"
-                :disabled="mutationBusy || !selection.count"
-                title="Remover as linhas marcadas"
-                @click="batchRemove"
-              />
-              <OperatorButton
-                v-else-if="cell === 'fire'"
-                label="Enviar à cozinha"
-                short-label="Enviar"
-                icon="i-lucide-chef-hat"
-                :size="controlSize"
-                color="primary"
-                variant="outline"
-                block
-                class="h-full justify-center bg-default font-semibold"
-                :disabled="mutationBusy || firing || !fireAction.enabled"
-                title="Enviar à cozinha só as marcadas"
-                data-pos-batch-fire
-                @click="batchFire"
-              />
-              <OperatorButton
-                v-else-if="cell === 'unfire'"
-                :label="unfireAction.label || 'Cancelar envio à cozinha'"
-                short-label="Cancelar envio"
-                icon="i-lucide-undo-2"
-                :size="controlSize"
-                color="neutral"
-                variant="outline"
-                block
-                class="h-full justify-center"
-                :disabled="mutationBusy || firing || !unfireAction.enabled"
-                @click="batchUnfire"
-              />
-            </div>
-          </template>
-        </div>
+        <!-- A LINHA JÁ NA COZINHA ganhou observação: a cozinha recebeu sem ela. O aviso
+             oferece a ação (cancelar e enviar de novo, o que o servidor já faz), na cor
+             do aviso, e se dispensa. -->
+        <NuxtAlert
+          v-if="resendOffer && !lineEditing && !selectMode"
+          class="mt-2"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-chef-hat"
+          title="A cozinha recebeu esta linha sem a observação."
+          orientation="vertical"
+          :actions="alertActions('info', [
+            { label: 'Reenviar com a observação', disabled: offline || firing, onClick: resendWithNote },
+            { label: 'Agora não', onClick: () => { resendOffer = ''; } },
+          ])"
+          data-pos-resend-offer
+        />
 
+        <!-- Sem conexão: o que precisa do servidor fica apagado, e a frase diz por quê. -->
         <p
-          v-if="lineControlsInGrid && activeItem && !lineEditing && (activeAuthorship || lineKitchenState(activeItem) === 'fired_cancellable')"
-          class="mt-1.5 flex flex-wrap items-center gap-x-2 op-micro text-muted-foreground"
-          data-pos-line-authorship
+          v-if="offline && !lineEditing && !lineAdjustmentsBlocked"
+          class="mt-2 flex items-start gap-1.5 op-micro text-muted-foreground"
+          data-pos-block-offline
         >
-          <span class="min-w-0 flex-1">{{ activeAuthorship }}</span>
-          <NuxtButton
-            v-if="lineKitchenState(activeItem) === 'fired_cancellable'"
-            color="primary"
-            variant="ghost"
-            class="shrink-0"
-            :disabled="mutationBusy || firing || !unfireAction.enabled"
-            :label="unfireAction.label"
-            @click="$emit('unfire', activeItem.line_id)"
-          />
+          <Icon name="lucide:wifi-off" class="mt-0.5 size-3.5 shrink-0" />
+          <span>Sem conexão: desconto{{ selectMode ? " e transferir voltam" : " volta" }} com a conexão.</span>
         </p>
 
         <div v-if="touchEditor && activeItem && lineEditing !== 'note'" class="mt-2 grid grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.6fr)] gap-2" data-pos-line-numpad>
@@ -1828,10 +2012,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
               class="h-14 justify-center gap-1.5 px-1.5 text-sm font-semibold sm:h-16"
               :ui="SIDE_KEY_UI"
               :aria-pressed="discountOpen"
-              :disabled="mutationBusy || lineAdjustmentsBlocked"
-              :label="discountOpen ? 'Quantidade' : 'Desconto'"
+              :disabled="mutationBusy || lineAdjustmentsBlocked || offline"
+              :label="discountOpen ? 'Cancelar' : 'Desconto'"
               data-pos-line-discount
-              @click="toggleDiscount"
+              @click="discountOpen ? cancelDiscount() : toggleDiscount()"
             />
             <NuxtButton
               v-else-if="rowIndex === 1"
@@ -1860,13 +2044,13 @@ defineExpose({ focusItem, onDigit, onBackspace });
             <NuxtButton
               v-else
               size="xl"
-              color="neutral"
               icon="i-lucide-check"
               class="h-14 justify-center gap-1.5 px-1.5 text-sm font-semibold sm:h-16"
               :ui="SIDE_KEY_UI"
+              :color="discountOpen ? 'primary' : 'neutral'"
               data-pos-line-editor-close
-              @click="closeEditor"
-            >Pronto</NuxtButton>
+              @click="discountOpen ? applyDiscount() : closeEditor()"
+            >{{ discountOpen ? "Aplicar" : "Pronto" }}</NuxtButton>
           </template>
         </div>
         <p
@@ -1880,16 +2064,12 @@ defineExpose({ focusItem, onDigit, onBackspace });
       </section>
 
 
-      <!-- Pé: UMA faixa, o maior alvo da tela (Pagamento F4 com o total dentro). Na
-           seleção, o pé encolhe para o total: o gesto geral espera o Concluir. -->
-      <div v-if="batchMode" class="flex shrink-0 items-baseline justify-between border-t border-border px-3.5 py-3">
-        <span class="op-label text-muted-foreground">Total parcial</span>
-        <strong v-if="totalConfirmed" class="text-xl font-semibold tnum" data-pos-batch-total>{{ totalText }}</strong>
-        <span v-else-if="totalShown" class="op-label text-muted-foreground" data-pos-batch-total :data-total-state="total.status">{{ totalText }}</span>
-      </div>
+      <!-- Z4 · O PÉ, sempre o mesmo e com a mesma altura: Enviar | Dividir conta (o Enviar
+           segue o foco: com marcadas, "Enviar 3 marcadas") e o Pagamento, que é SEMPRE a
+           comanda inteira (dinheiro não muda de sentido por causa de uma marca). -->
       <!-- FOLHA ABERTA (v4 tablet b): pagar direto daqui, pelos meios eletrônicos que
            o dispositivo leva à mesa. "Outras formas" abre o Pagamento de sempre. -->
-      <div v-else-if="sheet && quickPayments?.length && !primaryLabel" class="shrink-0 border-t border-border p-3" data-pos-sheet-pay>
+      <div v-if="sheet && quickPayments?.length && !primaryLabel" class="shrink-0 border-t border-border p-3" data-pos-sheet-pay>
         <div class="mb-2 flex items-baseline gap-2">
           <span class="op-label text-muted-foreground">Pagar</span>
           <strong v-if="totalConfirmed" class="text-3xl font-semibold tnum" data-pos-sheet-pay-total>{{ totalText }}</strong>
@@ -1941,7 +2121,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <div
         v-else
         class="grid shrink-0 gap-2.5 px-3 pb-3"
-        :class="editorVisible ? 'pt-0' : 'border-t border-border pt-3'"
+        :class="blockVisible ? 'pt-0' : 'border-t border-border pt-3'"
         data-pos-ticket-foot
       >
         <!-- O bloco da COMANDA, sempre aqui, logo acima do Pagamento (não pula quando o

@@ -255,11 +255,4 @@ describe("PosCartPanel — a edição da linha é sempre no editor", () => {
     expect(wrapper.find("[data-pos-keyboard-hint]").text()).toContain("Enter aplica");
   });
 
-  it("seleção: as ações nas marcadas moram no bloco de baixo, em grade, não no cabeçalho", async () => {
-    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    await wrapper.find("[data-pos-select-lines]").trigger("click");
-    await wrapper.find('[aria-label="Selecionar Pão"]').trigger("click");
-    expect(wrapper.find("[data-pos-selection-bar] button[title='Remover as linhas marcadas']").exists()).toBe(false);
-    expect(wrapper.find("[data-pos-batch-actions] [data-pos-batch-cell='remove']").exists()).toBe(true);
-  });
 });

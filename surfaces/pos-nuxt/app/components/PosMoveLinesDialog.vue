@@ -6,11 +6,13 @@ import {
   canSubmitMove,
   defaultMoveTarget,
   freezesPriceOnMove,
+  initialMoveMode,
   type MoveMode,
   type MovePayload,
   moveLineId,
   moveLineView,
   modeNeedsSelection,
+  moveSubmitLabel,
   moveTargetOptions,
   selectedLineIds,
 } from "~/presentation/moveLines";
@@ -31,6 +33,9 @@ const props = defineProps<{
    * operador escolheu antes o que sai. Pelo F10 a lista vem vazia, como sempre.
    */
   preselected?: string[];
+  /** O modo pedido pela porta que abriu o diálogo ("Juntar com outra comanda", no
+   *  menu da comanda). Sem ele, outra comanda quando há, senão a comanda nova. */
+  initialMode?: MoveMode;
 }>();
 
 const emit = defineEmits<{
@@ -43,14 +48,14 @@ const showPriceNote = computed(() => freezesPriceOnMove(props.capability));
 const targetOptions = computed(() => moveTargetOptions(props.otherTabs));
 const lineViews = computed(() => props.items.map(moveLineView));
 
-const mode = ref<MoveMode>("split");
+const mode = ref<MoveMode>("transfer");
 const selected = ref<Set<string>>(new Set());
 const splitRef = ref("");
 const targetSessionKey = ref("");
 
 watch(() => props.open, (isOpen) => {
   if (!isOpen) return;
-  mode.value = modes.value[0]?.ref ?? "split";
+  mode.value = initialMoveMode(modes.value, props.initialMode, targetOptions.value.length > 0);
   // Seleção começa VAZIA: dividir a conta é escolher O QUE SAI — nascer com
   // tudo marcado invertia o gesto (desmarcar o que fica) e um Enter apressado
   // movia a comanda inteira.
@@ -79,9 +84,8 @@ const canSubmit = computed(() => canSubmitMove({
   busy: props.busy,
 }));
 
-// O rodapé diz o verbo do modo selecionado — o dicionário da comanda é
-// dividir · transferir · juntar, e nada além disso.
-const submitLabel = computed(() => modes.value.find((option) => option.ref === mode.value)?.label || "Mover itens");
+// O rodapé diz o verbo: Transferir (para outra comanda ou para uma nova) ou Juntar.
+const submitLabel = computed(() => moveSubmitLabel(mode.value));
 
 function submit() {
   const payload = buildMovePayload({
@@ -96,13 +100,11 @@ function submit() {
 </script>
 
 <template>
-  <!-- ⚠️ O título NÃO pode ser um dos três modos: "Transferir" era ao mesmo tempo o
-       nome da caixa e o nome de um dos botões dentro dela, e quem escolhia "Dividir"
-       lia "Transferir" no topo. A comanda é o assunto; os verbos são dela (dividir,
-       transferir, juntar) e moram nos botões. -->
+  <!-- O título é o VERBO (dono, 10/10): os botões de cima são o destino (outra
+       comanda, comanda nova, juntar), não três verbos concorrentes. -->
   <NuxtModal
     :open="open"
-    :title="`Comanda #${tabDisplay || 'atual'}`"
+    title="Transferir itens"
     :description="showPriceNote ? 'O preço de cada item é mantido como foi cobrado nesta comanda.' : undefined"
     :ui="{ content: 'sm:max-w-md' }"
     data-pos-move-dialog
@@ -124,7 +126,7 @@ function submit() {
         </div>
 
         <p v-if="mode === 'merge'" class="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
-          Junta todos os itens desta comanda na comanda escolhida e libera esta.
+          Leva todos os itens desta comanda para a escolhida e libera esta.
         </p>
 
         <!-- Preparo em curso: o diálogo abre na hora e a comanda é persistida por
@@ -173,8 +175,7 @@ function submit() {
     <template #footer>
       <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <NuxtButton color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="$emit('update:open', false)" />
-        <!-- O botão repete o modo escolhido. Dizia "Mover": um quarto verbo para um
-             gesto que já tinha três nomes na mesma caixa. -->
+        <!-- O botão diz o verbo do ato: Transferir, ou Juntar quando a comanda inteira vai. -->
         <NuxtButton color="primary" :label="submitLabel" :disabled="!canSubmit" :loading="busy" @click="submit" />
       </div>
     </template>

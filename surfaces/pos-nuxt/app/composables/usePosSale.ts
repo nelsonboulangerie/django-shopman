@@ -1465,6 +1465,40 @@ export function usePosSale(deps: PosSaleDeps) {
     });
   }
 
+  /**
+   * MAIS numa linha que JÁ FOI À COZINHA (o + do editor, ou um número maior digitado):
+   * as unidades novas vão numa linha a enviar, nunca na linha enviada (o servidor
+   * deduplica por `line_id`, e a unidade nova não chegaria ao KDS). Soma na linha irmã
+   * ainda não enviada (mesmo produto, mesmas escolhas) quando existe; senão cria uma.
+   * Devolve o `line_id` da linha que recebeu as unidades.
+   */
+  function addLineLike(lineId: string, qty = 1): string {
+    if (!canUseCart.value || orderSetupPending.value) return "";
+    const source = cart.items.find((item) => item.line_id === lineId);
+    if (!source || source.weighed || qty <= 0) return "";
+    invalidateReview();
+    checkoutMode.value = false;
+    const signature = optionsSignature(source.options);
+    const sibling = cart.items.find(
+      (item) => item.sku === source.sku && !item.fired && !item.weighed && optionsSignature(item.options) === signature,
+    );
+    if (sibling) {
+      sibling.qty += qty;
+      return sibling.line_id;
+    }
+    const line: POSCartItem = {
+      line_id: newLineId(),
+      sku: source.sku,
+      name: source.name,
+      price_q: source.price_q,
+      qty,
+      ...(source.options?.length ? { options: source.options.map((option) => ({ ...option })) } : {}),
+      notes: "",
+    };
+    cart.items.push(line);
+    return line.line_id;
+  }
+
   function setQty(lineId: string, qty: number) {
     if (!canUseCart.value || orderSetupPending.value) return;
     invalidateReview();
@@ -3880,6 +3914,7 @@ export function usePosSale(deps: PosSaleDeps) {
     lineQty,
     addProduct,
     setQty,
+    addLineLike,
     restoreItem,
     setLineNotes,
     setLineDiscount,
