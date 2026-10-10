@@ -12,7 +12,10 @@
 // recortam TODOS os quadros. Os dois moram na URL (`?compare=`, `?channel=`), junto da
 // janela: o link colado abre o mesmo recorte.
 import { readingChartCsv, readingMoneyFormat } from "../../../operator-kit/app/presentation/readingChart";
+import type { FilterPanelQuery } from "../../../operator-kit/app/presentation/filterPanel";
 import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
+import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
+import { ALL, filtersToPicks, picksToFilters } from "~/presentation/recortes";
 import type { BISalesReport } from "~/types/bi";
 import {
   SALES_COMPARE_LABELS,
@@ -170,6 +173,25 @@ const channelPick = computed<string>({
 function pickChannel(value: string | number) {
   setQuery("channel", value === "all" ? "" : String(value), "");
 }
+// O painel de filtros da suíte (`OperatorFilterPanel`): o canal como filtro completo e
+// os favoritos (`bi`/`sales`). O favorito guarda o recorte, não a janela nem a régua:
+// a janela é a do B.I. inteiro e o "Comparar com" diz contra o quê se mede.
+const panelDimensions = computed<FilterDimension[]>(() => [
+  {
+    id: "channel",
+    label: "Canal",
+    type: "single-select",
+    options: (report.value?.channels ?? []).map((option) => ({ value: option.ref, label: option.name })),
+  },
+]);
+const panelFilters = computed<ActiveFilters>({
+  get: () => picksToFilters({ channel: channelPick.value }),
+  set: (next) => applyFavorite({ filters: next }),
+});
+const panelQuery = computed<FilterPanelQuery>(() => ({ filters: panelFilters.value }));
+function applyFavorite(query: FilterPanelQuery) {
+  pickChannel(filtersToPicks(query.filters ?? {}, ["channel"]).channel ?? ALL);
+}
 // O canal escolhido é o recorte ativo (o "Comparar com" é a régua, não um recorte).
 const activeFilters = computed(() => {
   const channel = report.value?.channel;
@@ -197,7 +219,27 @@ const activeFilters = computed(() => {
           align="start"
           label="Período de análise"
         />
-        <OperatorQuickFilters v-if="report" v-model="channelPick" :items="channelTabs" label="Recorte por canal" data-bi-channel-tabs />
+        <OperatorQuickFilters
+          v-if="report"
+          v-model="channelPick"
+          :items="channelTabs"
+          label="Recorte por canal"
+          surface="bi"
+          screen="sales"
+          :query="panelQuery"
+          data-bi-channel-tabs
+          @apply="applyFavorite"
+        />
+      </template>
+      <!-- O painel de filtros da suíte: favoritos e o canal. -->
+      <template v-if="report" #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          surface="bi"
+          screen="sales"
+          data-bi-filter-panel
+        />
       </template>
       <template #filters>
         <NuxtFormField v-if="report" label="Comparar com" :help="compareCaption" orientation="horizontal" data-bi-sales-compare>

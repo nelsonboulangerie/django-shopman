@@ -162,6 +162,32 @@ def test_pos_preorders_keeps_favorites_for_the_counter(client, gestor):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("screen", "query"),
+    [
+        ("production", {"filters": {"verdict": ["over"], "collection": ["macios"]}}),
+        ("sales", {"filters": {"channel": ["ifood"]}}),
+    ],
+)
+def test_bi_readings_with_quick_filters_keep_favorites(client, gestor, screen, query):
+    """A Produção e as Vendas do B.I. guardam o recorte (a faixa de filtros rápidos e o painel)."""
+    url = reverse(LIST)
+    where = {"surface": "bi", "screen": screen}
+    analista = _user(f"analista-{screen}", "backstage.view_bi")
+    client.force_login(analista)
+    saved = client.post(url, {**where, "name": "Meu recorte", "query": query, "pinned": True}, content_type="application/json")
+    assert saved.status_code == 200, saved.content
+    views = client.get(url, where).json()["views"]
+    assert [(v["name"], v["pinned"], v["query"]) for v in views] == [("Meu recorte", True, query)]
+    # A gramática é a das listas: o cenário do explorador não cabe aqui.
+    scenario = {"metric": "revenue", "by": "time"}
+    assert client.post(url, {**where, "name": "X", "query": scenario}, content_type="application/json").status_code == 400
+    # Quem não lê o B.I. não guarda favorito dele.
+    client.force_login(gestor)
+    assert client.get(url, where).status_code == 403
+
+
+@pytest.mark.django_db
 def test_someone_elses_favorite_does_not_exist(client, gestor):
     client.force_login(gestor)
     view = client.post(reverse(LIST), {**HISTORY, "name": "Meu", "query": {}}, content_type="application/json").json()["view"]

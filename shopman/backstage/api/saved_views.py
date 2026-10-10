@@ -121,6 +121,10 @@ class Screen:
 # As telas que guardam favorito. Nova tela entra aqui com a permissão de quem a lê.
 SCREENS: dict[tuple[str, str], Screen] = {
     ("bi", "explore"): Screen("backstage.view_bi", bi_explore_query),
+    # As leituras do B.I. com filtros rápidos: o favorito é o recorte (veredito e
+    # coleção na Produção, o canal nas Vendas), com a permissão das APIs do B.I.
+    ("bi", "production"): Screen("backstage.view_bi", screen_query),
+    ("bi", "sales"): Screen("backstage.view_bi", screen_query),
     ("orders", "queue"): Screen("shop.manage_orders", screen_query),
     ("orders", "history"): Screen("shop.manage_orders", screen_query),
     ("orders", "catalog"): Screen("shop.manage_catalog", screen_query),

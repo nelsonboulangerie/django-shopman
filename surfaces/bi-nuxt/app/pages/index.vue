@@ -13,7 +13,10 @@
 // do ⋯ leva a mesma leitura. O endereço não aparece mais escrito na tela (F14).
 import type { TableColumn } from "#ui/types";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
+import type { FilterPanelQuery } from "../../../operator-kit/app/presentation/filterPanel";
 import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
+import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
+import { ALL, filtersToPicks, picksToFilters } from "~/presentation/recortes";
 import type { BIOverShortRow, BIProductionReport, BIReading } from "~/types/bi";
 import { formatInt, formatQty } from "~/presentation/bi";
 import {
@@ -151,13 +154,40 @@ const verdictItems = computed<QuickFilterItem[]>(() => [
 ]);
 const VERDICT_TEXT = { error: "text-error", warning: "text-warning", success: "text-success" } as const;
 
-// Coleção: a lista cresce com o catálogo, então é NuxtSelectMenu com busca; a busca
-// só recebe o foco ao abrir onde há teclado físico.
-const touch = useMediaQuery("(pointer: coarse)");
 const collectionItems = computed(() => [
   { value: "all", label: "Todas as coleções" },
   ...collectionsOf(rows.value).map((item) => ({ value: item.ref, label: item.name })),
 ]);
+
+// O painel de filtros da suíte (`OperatorFilterPanel`): veredito e coleção como
+// filtros completos, e os favoritos (`bi`/`production`). A coleção mora só aqui (a
+// lista cresce com o catálogo: o painel liga a busca sozinho). O favorito fixado
+// entra no fim da faixa do veredito e aplica o recorte inteiro dele.
+const PANEL_KEYS = ["verdict", "collection"] as const;
+const panelDimensions = computed<FilterDimension[]>(() => [
+  {
+    id: "verdict",
+    label: "Veredito",
+    type: "single-select",
+    options: VERDICTS.map((key) => ({ value: key, label: verdictMeta(key).label, count: counts.value[key] })),
+  },
+  {
+    id: "collection",
+    label: "Coleção",
+    type: "single-select",
+    options: collectionsOf(rows.value).map((item) => ({ value: item.ref, label: item.name })),
+  },
+]);
+const panelFilters = computed<ActiveFilters>({
+  get: () => picksToFilters({ verdict: verdict.value, collection: collection.value }),
+  set: (next) => applyFavorite({ filters: next }),
+});
+const panelQuery = computed<FilterPanelQuery>(() => ({ filters: panelFilters.value }));
+function applyFavorite(query: FilterPanelQuery) {
+  const picks = filtersToPicks(query.filters ?? {}, PANEL_KEYS);
+  verdict.value = picks.verdict ?? ALL;
+  collection.value = picks.collection ?? ALL;
+}
 
 const compareItems = computed(() =>
   day.value ? compareOptions(day.value.day).map((option) => ({ value: option.key, label: `${option.label} (${option.reach})` })) : [],
@@ -300,7 +330,8 @@ const csv = computed(() => overShortCsv(filtered.value));
       <!-- Um tempo por aba, no mesmo lugar das outras telas: o primeiro da linha de
            recortes. A aba "Sobrou ou faltou" lê um dia; "Lotes no período", a janela.
            O veredito é filtro rápido, na mesma linha (um toque, com a contagem);
-           comparar, coleção e o frescor moram no painel "Filtros". -->
+           veredito, coleção e os favoritos moram no painel de filtros; comparar e o
+           frescor, no "Filtros" da leitura. -->
       <template #filters-primary>
         <OperatorPeriodPicker
           v-if="view === 'lots'"
@@ -334,7 +365,21 @@ const csv = computed(() => overShortCsv(filtered.value));
           v-model="verdict"
           :items="verdictItems"
           label="Recorte por veredito"
+          surface="bi"
+          screen="production"
+          :query="panelQuery"
           data-bi-verdict-tabs
+          @apply="applyFavorite"
+        />
+      </template>
+      <!-- O painel de filtros da suíte: favoritos, veredito e coleção. -->
+      <template v-if="view === 'day' && day" #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          surface="bi"
+          screen="production"
+          data-bi-filter-panel
         />
       </template>
       <!-- Celular: a troca de leitura não cabe ao lado do tempo e do "Filtros" (sumia
@@ -350,7 +395,11 @@ const csv = computed(() => overShortCsv(filtered.value));
               v-model="verdict"
               :items="verdictItems"
               label="Recorte por veredito"
+              surface="bi"
+              screen="production"
+              :query="panelQuery"
               data-bi-verdict-tabs-phone
+              @apply="applyFavorite"
             />
           </div>
         </OperatorToolbar>
@@ -359,9 +408,6 @@ const csv = computed(() => overShortCsv(filtered.value));
         <template v-if="day">
           <NuxtFormField label="Comparar com" orientation="horizontal" :hint="isPhone ? undefined : compareCaption(day.day, day.compare_days)" data-bi-compare>
             <NuxtSelect :model-value="compare" :items="compareItems" @update:model-value="setCompare(String($event))" />
-          </NuxtFormField>
-          <NuxtFormField v-if="collectionItems.length > 1" label="Coleção" orientation="horizontal" data-bi-collection>
-            <NuxtSelectMenu v-model="collection" :items="collectionItems" value-key="value" :search-input="{ autofocus: !touch, placeholder: 'Buscar coleção' }" />
           </NuxtFormField>
           <ClientOnly>
             <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(dayError)" />
