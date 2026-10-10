@@ -44,7 +44,13 @@ const props = withDefaults(defineProps<{
   surface?: 'background' | 'card'
 }>(), { contained: false, surface: 'background' })
 
-const { sentinel, visible, offset, scrollToEnd } = useMoreBelow({ contained: props.contained })
+const { sentinel, visible, offset, lane, scrollToEnd } = useMoreBelow({ contained: props.contained })
+// Na janela, a dica ocupa a largura do painel de conteúdo (nunca a barra lateral).
+const windowStyle = computed(() => ({
+  bottom: `${offset.value}px`,
+  left: `${lane.value?.left ?? 0}px`,
+  right: `${lane.value?.right ?? 0}px`,
+}))
 const washClass = computed(() => (props.surface === 'card' ? 'from-card' : 'from-background'))
 const pillClass = computed(() => (props.surface === 'card' ? 'bg-card/33 hover:bg-card/60' : 'bg-background/33 hover:bg-background/60'))
 
@@ -122,8 +128,8 @@ function irAteOFim() {
              some, por CSS: nada a observar, e o servidor desenha igual. -->
         <div
           v-if="visible"
-          class="pointer-events-none fixed inset-x-0 z-30 [body:has([role=dialog][data-state=open])_&]:hidden"
-          :style="{ bottom: `${offset}px` }"
+          class="pointer-events-none fixed z-30 [body:has([role=dialog][data-state=open])_&]:hidden"
+          :style="windowStyle"
           data-more-below
         >
           <!-- O degradê é metade da dica: sem ele a pílula boia sobre um texto

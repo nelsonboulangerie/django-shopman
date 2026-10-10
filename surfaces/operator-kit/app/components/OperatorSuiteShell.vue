@@ -341,7 +341,7 @@ function menuDotSize(size: string): ChipProps["size"] {
          scrollable body. Each routed page exposes a fixed header and an explicitly
          scrollable content region; another scroller here made the canonical
          DashboardNavbar and DashboardToolbar move with the page. -->
-    <NuxtDashboardPanel :id="`${storageKey}-content`" class="min-h-0">
+    <NuxtDashboardPanel :id="`${storageKey}-content`" class="min-h-0" data-operator-content-panel>
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
           <slot />

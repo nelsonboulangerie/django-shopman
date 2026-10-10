@@ -1564,8 +1564,14 @@ Contrato:
   baixo, e é o `scroll-margin-bottom` dele (igual ao obstáculo) que faz o fim parar
   ACIMA do card em vez de atrás — o mesmo truque do `scroll-margin-top` do próximo
   foco, do outro lado da tela.
-- **Só o chevron captura o toque.** A faixa teleportada cobre a largura inteira da
-  tela: `pointer-events-none` nela, `pointer-events-auto` no botão. O degradê continua
+- **A dica mora no painel de conteúdo, nunca na barra lateral.** Ela é `fixed` na
+  janela, e as bordas laterais vêm do painel do shell (`data-operator-content-panel`,
+  no `DashboardPanel` dos três shells do kit), medidas e reacompanhadas quando a barra
+  lateral abre ou compacta. Com `inset-x-0`, a 1366, o degradê lavava o pé da barra
+  lateral (Avisos, menu do operador) no B.I., no Compras e no Kitchen Sink (10/10/2026).
+  Fora de um shell, vale a janela inteira. Trava: `tests/catalog/more-below.spec.ts`.
+- **Só o chevron captura o toque.** A faixa teleportada cobre a largura do painel:
+  `pointer-events-none` nela, `pointer-events-auto` no botão. O degradê continua
   `aria-hidden` — ele é desenho.
 - **O que a impede de se ler como botão gordo é a translucidez, não o tamanho**: fundo
   sólido com sombra vira chip pesado em qualquer medida. Com o fundo a 33% e sem
