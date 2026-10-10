@@ -82,12 +82,14 @@ def happy_hour_state() -> dict:
         raw_end = params.get("end", "18:00")
         discount_percent = params.get("discount_percent", 25)
 
+        from shopman.shop.modifiers import in_time_window
+
         sh, sm = map(int, raw_start.split(":"))
         eh, em = map(int, raw_end.split(":"))
         start = time(sh, sm)
         end = time(eh, em)
         now = timezone.localtime().time()
-        active = start <= now < end
+        active = in_time_window(start, end, now)
         return {
             "active": active,
             "discount_percent": discount_percent,

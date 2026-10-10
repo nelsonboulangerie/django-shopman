@@ -843,12 +843,24 @@ def test_seed_oven_history_never_touches_real_measurement():
 
 
 @pytest.mark.django_db
-def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch):
+@pytest.mark.parametrize(
+    "instant",
+    [
+        # Os dois lados da meia-noite de Brasília (UTC-3). O seed leva dezenas de
+        # segundos: com relógio solto ele rodava às 23:59 e o teste calculava
+        # "amanhã" já às 00:00, e a CI reprovou assim em 10/10/2026.
+        datetime(2026, 10, 10, 2, 59, 30, tzinfo=UTC),  # 23:59:30 local
+        datetime(2026, 10, 10, 3, 1, tzinfo=UTC),  # 00:01 local
+    ],
+    ids=["antes-da-virada", "depois-da-virada"],
+)
+def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch, instant):
     """Perfil qa (SEED-DATA-QUALITY-PLAN Fase 2): cada cenário nomeado existe com
     ref previsível QA-*, estado estável e datas relativas a localdate().
 
     Ver docs/reference/qa-seed-scenarios.md — este teste é a âncora de contrato.
     """
+    monkeypatch.setattr("django.utils.timezone.now", lambda: instant)
     from datetime import timedelta
 
     from django.utils import timezone
@@ -864,6 +876,11 @@ def test_nelson_seed_qa_profile_builds_named_scenarios(monkeypatch):
 
     today = timezone.localdate()
     tomorrow = (today + timedelta(days=1)).isoformat()
+
+    # A sobra de ontem é ontem no fuso da loja, não no relógio da máquina (UTC).
+    leftover = Batch.objects.filter(ref__endswith="-SOBRA")
+    assert leftover.exists()
+    assert set(leftover.values_list("production_date", flat=True)) == {today - timedelta(days=1)}
 
     # Todas as refs QA-* nomeadas existem.
     named = {

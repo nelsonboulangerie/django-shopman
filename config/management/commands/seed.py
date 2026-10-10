@@ -3614,7 +3614,7 @@ class Command(BaseCommand):
 
         from datetime import timedelta as _td
 
-        yesterday = date.today() - _td(days=1)
+        yesterday = timezone.localdate() - _td(days=1)
         for sku, qty in LEFTOVER_ITEMS:
             if sku not in products:
                 continue
