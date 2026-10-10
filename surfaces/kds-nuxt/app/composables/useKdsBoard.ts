@@ -65,11 +65,18 @@ export const KDS_CHANGE_ALERT = {
   ],
 };
 
+/** As mudanças que TOCAM. A troca de nome (comanda paga, renomeada, transferida:
+ *  "Era a comanda X") é só aviso visual, sem som (dono, 10/10/2026): o card mostra até
+ *  a ciência, mas não dispara o toque nem a repetição. */
+export function soundingChanges(card: Pick<KDSTicketProjection, "changes">): number {
+  return (card.changes ?? []).filter((change) => change.kind !== "moved").length;
+}
+
 /** Os pedidos novos que pedem atenção agora: ticket aberto que ninguém da estação
- *  viu (`seen` vem do servidor). O que mudou toca o aviso de mudança, não este. */
+ *  viu (`seen` vem do servidor). O que mudou e toca, toca o aviso de mudança, não este. */
 export function kdsAttentionIds(current: KDSBoardView): string[] {
   return current.cards
-    .filter((card) => !card.seen && !hasChanges(card) && !current.finishingPks.has(card.pk))
+    .filter((card) => !card.seen && !soundingChanges(card) && !current.finishingPks.has(card.pk))
     .map((card) => `active:${card.pk}`)
     .sort();
 }
@@ -79,8 +86,8 @@ export function kdsAttentionIds(current: KDSBoardView): string[] {
 export function kdsChangeIds(current: KDSBoardView): string[] {
   return [
     ...current.cards
-      .filter(hasChanges)
-      .map((card) => `change:${card.pk}:${card.change_ticket_pks.join(".")}:${card.changes.length}`),
+      .filter((card) => soundingChanges(card) > 0)
+      .map((card) => `change:${card.pk}:${card.change_ticket_pks.join(".")}:${soundingChanges(card)}`),
     ...current.cancelled.map((card) => `cancelled:${card.pk}`),
   ].sort();
 }

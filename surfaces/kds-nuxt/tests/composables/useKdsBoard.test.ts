@@ -457,6 +457,29 @@ describe("useKdsBoard — atenção por ticket, vista pela estação", () => {
     });
   });
 
+  it("troca de nome é só aviso visual: não toca nem repete (dono, 10/10/2026)", () => {
+    const renamed = view({
+      tickets: [ticket({ pk: 3, seen: true, changes: [{ kind: "moved", text: "Era a comanda Mesa 5" }] })],
+    });
+    expect(kdsChangeIds(renamed)).toEqual([]);
+    expect(kdsChangeDecision(renamed, "")).toEqual({ signature: "", shouldAlert: false, shouldStop: true });
+    // Nome trocado junto com item cancelado: toca pelo cancelamento, contado sem o nome.
+    const both = view({
+      tickets: [
+        ticket({
+          pk: 3,
+          seen: true,
+          changes: [
+            { kind: "moved", text: "Era a comanda Mesa 5" },
+            { kind: "cancelled", text: "Cancelado: 1× Croque" },
+          ],
+          change_ticket_pks: [9],
+        }),
+      ],
+    });
+    expect(kdsChangeIds(both)).toEqual(["change:3:9:1"]);
+  });
+
   it("o aviso de mudança é a figura do Gestor (desce), curta, e não a fanfarra (sobe)", () => {
     const freqs = KDS_CHANGE_ALERT.notes.map((note) => note.f);
     expect(freqs[0]).toBeGreaterThan(freqs[freqs.length - 1]!);
