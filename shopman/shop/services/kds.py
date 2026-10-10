@@ -1024,6 +1024,48 @@ def _acknowledge_ticket_locked(ticket, *, source, actor: str) -> bool:
     return True
 
 
+def acknowledge_changes(ticket, *, cancelled_pks, known_ref: str, actor: str) -> dict:
+    """A estação deu Visto nas mudanças de um card vivo (decisão do dono, 10/10/2026).
+
+    Dá baixa nos tickets cancelados que o card resumia (os mesmos que travam o
+    Pronto em ``_complete_ticket_locked``) e regrava o nome com que a cozinha
+    conhece o pedido (``known_ref``). Só os cancelados da MESMA venda e da MESMA
+    estação, listados por quem tocou: um cancelamento que chegou depois do que a
+    tela mostrava continua pedindo Visto. Se o card caiu inteiro entre a leitura
+    e o toque, os cancelados que ele mostrava recebem a baixa do mesmo jeito (a
+    estação viu); o nome só se regrava em ticket aberto. Idempotente. Devolve
+    ``{"acknowledged": n, "renamed": bool}``.
+    """
+    from django.db import transaction
+
+    pks = {int(pk) for pk in (cancelled_pks or []) if str(pk).strip().lstrip("-").isdigit()}
+    with transaction.atomic():
+        source, ticket = _lock_source_then_ticket(ticket)
+        _ensure_source_due(source)
+        acknowledged = 0
+        if pks:
+            for cancelled in ticket.__class__.objects.select_for_update().filter(
+                pk__in=pks,
+                session_key=ticket.session_key,
+                kds_instance_id=ticket.kds_instance_id,
+                status="cancelled",
+                acknowledged_at__isnull=True,
+            ):
+                if _acknowledge_ticket_locked(cancelled, source=source, actor=actor):
+                    acknowledged += 1
+        renamed = False
+        known_ref = str(known_ref or "")[:150]
+        if known_ref and ticket.status in OPEN_TICKET_STATUSES and ticket.known_ref != known_ref:
+            ticket.known_ref = known_ref
+            ticket.save(update_fields=["known_ref"])
+            renamed = True
+    logger.info(
+        "kds_changes_seen ticket=%d session=%s acknowledged=%d renamed=%s actor=%s",
+        ticket.pk, ticket.session_key, acknowledged, renamed, actor,
+    )
+    return {"acknowledged": acknowledged, "renamed": renamed}
+
+
 def _lock_ticket_after_source(ticket):
     """Lock one ticket only after its Session/Order source is already locked."""
     return ticket.__class__.objects.select_for_update().get(pk=ticket.pk)

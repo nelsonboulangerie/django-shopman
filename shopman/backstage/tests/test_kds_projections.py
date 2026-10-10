@@ -150,7 +150,10 @@ def test_unacknowledged_cancellation_stays_visible_while_same_order_has_active_w
 
     board = build_kds_board(prep.ref)
 
-    assert [ticket.pk for ticket in board.cancelled_tickets] == [cancelled.pk]
+    # O cancelado mora no card vivo do mesmo pedido, até alguém dar Visto.
+    assert board.cancelled_tickets == ()
+    assert board.tickets[0].change_ticket_pks == (cancelled.pk,)
+    assert [c.text for c in board.tickets[0].changes] == ["Cancelado: 1× Item retirado"]
 
 
 @pytest.mark.django_db

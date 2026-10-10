@@ -262,6 +262,42 @@ class KDSTicketAcknowledgeView(APIView):
         return Response({"ok": True, "ticket_pk": ticket_pk})
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Acknowledge the changes shown on a live KDS ticket (Visto)",
+        responses={200: OpenApiResponse(description="Changes acknowledged.")},
+    ),
+)
+class KDSTicketChangesSeenView(APIView):
+    """O Visto da mudança no card vivo: dá baixa nos cancelados que ele resumia."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_kds"
+
+    def post(self, request, ticket_pk: int):
+        body = request.data if isinstance(request.data, dict) else {}
+        cancelled_pks = body.get("cancelled_pks") or []
+        if not isinstance(cancelled_pks, list):
+            return Response(
+                {"detail": "Lista de cancelados inválida.", "field": "cancelled_pks"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            result = kds_service.acknowledge_changes(
+                ticket_pk=ticket_pk,
+                cancelled_pks=cancelled_pks,
+                seen_ref=str(body.get("seen_ref") or ""),
+                actor=_actor(request),
+            )
+        except KDSTicketNotFound as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except KDSError as exc:
+            logger.debug("kds_ticket_changes_seen_failed ticket_pk=%s", ticket_pk, exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao registrar o Visto."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"ok": True, "ticket_pk": ticket_pk, **result})
+
+
 #: Quem pode dar o "Pronto" da estação sem tela: a Saída (KDS) e o PDV. O
 #: grupo Caixa tem ``operate_pos`` e não ``operate_kds`` — e o balcão é uma das
 #: três portas da baixa (decisão do dono, 26/09/2026).
