@@ -823,16 +823,14 @@ const thumbAction = computed(() => {
               :icon="receiptOutcome.kind === 'confirmed' ? 'i-lucide-check-check' : 'i-lucide-undo-2'"
               :title="receiptOutcome.kind === 'confirmed' ? 'Entrada confirmada no estoque' : 'Devolução registrada'"
               :description="`${receiptOutcomeSummary(receiptOutcome)} · ${receiptOutcome.at}`"
-              :actions="[
+              :actions="alertActions(receiptOutcome.kind === 'confirmed' ? 'success' : 'warning', [
                 {
                   label: receiptOutcome.mode === 'manual' ? 'Lançar outra entrada' : 'Escanear outra NF',
                   icon: receiptOutcome.mode === 'manual' ? 'i-lucide-clipboard-pen-line' : 'i-lucide-scan-line',
-                  color: receiptOutcome.kind === 'confirmed' ? 'success' : 'warning',
-                  variant: 'outline',
                   disabled: readonlyFallback || actionPending,
                   onClick: startNextReceipt,
                 },
-              ]"
+              ])"
               close
               data-receipt-outcome
               aria-live="polite"
