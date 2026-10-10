@@ -83,7 +83,13 @@ export default defineAppConfig({
     // passar o AA (4,5:1); ver `--primary-ink` em operator-theme.css. Só a cor do
     // texto muda; anatomia e variantes continuam as do Nuxt UI. Fica para o estado
     // ativo do rail (`active-variant="soft"`).
+    //
+    // Conteúdo no MEIO do botão (dono, 10/10/2026). O oficial só centra com `block`;
+    // sem ele, o botão esticado pela grade ou por `w-full` (tecla do teclado de PIN,
+    // ação que divide a linha) deixava o rótulo encostado à esquerda. Botão que é
+    // linha de lista (rótulo à esquerda de propósito) diz `justify-start`.
     button: {
+      slots: { base: "justify-center" },
       compoundVariants: [
         { color: "primary", variant: "soft", class: "text-(--primary-ink)" },
       ],

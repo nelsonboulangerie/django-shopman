@@ -58,6 +58,7 @@
 
 .op-fit-label {
   display: inline-flex;
+  align-items: center;
   min-width: 0;
   overflow: hidden;
 }
@@ -93,6 +94,11 @@
 /* Ação sem ícone não tem degrau 3: o último texto fica e quebra linha. */
 .op-fit-text[data-op-fit-last][data-op-fit-variant="short"] {
   max-width: clamp(0px, calc((var(--op-fit-full) - 100cqi + 0.01px) * 100000), 100vw);
+  /* Fora da faixa, o curto some também na ALTURA: com largura zero e quebra de
+     linha ligada, ele empilhava uma palavra por linha e esticava o botão, e o
+     completo subia para o topo (o par "Trocar meu PIN" × "Perdi meu crachá" da
+     trava saía desalinhado, 10/10/2026). */
+  max-height: clamp(0px, calc((var(--op-fit-full) - 100cqi + 0.01px) * 100000), 100vh);
   white-space: normal;
   text-overflow: clip;
   text-align: center;

@@ -4,6 +4,7 @@ import {
   type CapturedKey,
   MACHINE_MEDIAN_MAX_MS,
   PIN_MAX_DIGITS,
+  PIN_MIN_DIGITS,
   appendPinDigit,
   backspaceCapture,
   buildUnlockPayload,
@@ -14,6 +15,7 @@ import {
   isLikelyBadge,
   isLocked,
   operatorName,
+  pinSlots,
   resolveEnter,
 } from "../app/presentation/operatorLock";
 import type { OperatorSession } from "../app/types/operator";
@@ -255,5 +257,27 @@ describe("appendPinDigit", () => {
     expect(appendPinDigit("12", "3")).toBe("123");
     expect(appendPinDigit("12", "a")).toBe("12");
     expect(appendPinDigit("12345678", "9")).toBe("12345678"); // capped at 8
+  });
+});
+
+// A regra do PIN é a do doorman (`PIN_MIN_LENGTH = 4`, só dígitos, sem máximo no
+// servidor); a tela para no oitavo. O campo desenha isso: 4 casas, e uma a mais a
+// cada dígito além do quarto, até 8.
+describe("pinSlots: o campo do PIN tem o número certo de casas", () => {
+  it("o mínimo é 4, como no doorman", () => {
+    expect(PIN_MIN_DIGITS).toBe(4);
+    expect(canSubmitPin(1, "123")).toBe(false);
+    expect(canSubmitPin(1, "1234")).toBe(true);
+  });
+
+  it("nasce com 4 casas e continua com 4 até o quarto dígito", () => {
+    for (const length of [0, 1, 2, 3, 4]) expect(pinSlots(length)).toBe(4);
+  });
+
+  it("ganha uma casa por dígito além do quarto, até o teto", () => {
+    expect(pinSlots(5)).toBe(5);
+    expect(pinSlots(6)).toBe(6);
+    expect(pinSlots(PIN_MAX_DIGITS)).toBe(PIN_MAX_DIGITS);
+    expect(pinSlots(PIN_MAX_DIGITS + 3)).toBe(PIN_MAX_DIGITS);
   });
 });

@@ -80,6 +80,7 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useOperatorLock.ts` | `useOperatorLock` | read/write do lock de operador (PIN/crachá) via proxy |
 | `app/components/OperatorLock.vue` | `<OperatorLock>` | overlay de lock (picker + PIN pad + crachá + troca forçada) |
 | `app/components/OperatorPinChange.vue` | `<OperatorPinChange>` | numpad de troca de PIN (forçada e voluntária) |
+| `app/components/OperatorPinPad.vue` | `<OperatorPinPad>` | o PIN da suíte: campo (4 casas, uma a mais por dígito além do quarto, até 8; só mostra, bolinhas) + teclado de dedo no meio do cartão; usado pela identificação (trava, gerente) e pela troca de PIN |
 | `app/components/OperatorNumpad.vue` | `<OperatorNumpad>` | numpad de quantidade (inteiro): POS e quiosque de QC |
 | `app/components/OperatorDayPicker.vue` | `<OperatorDayPicker>` | Tipo 1 de data, "Escolha rápida de dia": Hoje, Amanhã, próxima data, Outra data (ver "Datas") |
 | `app/components/OperatorPeriodPicker.vue` | `<OperatorPeriodPicker>` | Tipo 2 de data, "Período": botão que diz a janela, chips no popover, ‹ › (ver "Datas") |
@@ -806,6 +807,24 @@ dentro do plano, o item dentro do pedido) é `variant="soft"`: só o fundo, sem 
 borda. A regra mora na chamada, não no CSS: um seletor que adivinhasse o aninhamento
 pintaria errado o cartão que só está dentro de uma coluna.
 
+### Conteúdo do botão no meio
+
+O `NuxtButton` oficial só centra o conteúdo com `block`. Sem ele, o botão que a grade ou um
+`w-full`/`flex-1` esticou (tecla de teclado, ação que divide a linha, opção de um grupo)
+deixava rótulo e ícone encostados à esquerda (dono, 10/10/2026). O tema do kit põe
+`justify-center` na base do botão, uma vez, para os nove apps. Botão que é LINHA de lista
+(rótulo à esquerda de propósito: item de paleta, sugestão de endereço, método de
+pagamento) escreve `justify-start` na chamada; o `class` de quem chama vence o tema.
+
+### PIN
+
+A regra é a do doorman: no mínimo 4 dígitos, só dígitos (`PIN_MIN_LENGTH`,
+`PIN_DIGITS_ONLY`), sem máximo no servidor; a tela para no oitavo (`PIN_MAX_DIGITS`). O
+PIN temporário do reset do gerente nasce com 4. O `OperatorPinPad` desenha exatamente
+isso: 4 casas, e uma casa a mais a cada dígito além do quarto, até 8. O campo só mostra
+(bolinhas, nunca o dígito; sem foco, para não abrir o teclado do sistema por cima do pad
+nem tirar o Enter e o crachá da captura).
+
 ### Idioma das peças do Nuxt UI
 
 O `OperatorAppRoot` passa o `pt_br` oficial do Nuxt UI ao `UApp` (`:locale`): o texto
@@ -813,8 +832,8 @@ que as peças escrevem sozinhas (lista vazia, "Selecionar", incrementar e decrem
 fechar) já sai em português. ⚠️ Duas frases ficam em inglês porque o `reka-ui` as
 escreve sem passar pelo locale e sem prop para trocar: o `aria-label` de cada casa do
 `NuxtPinInput` ("pin input 1 of 4") e o do grupo do `NuxtStepper` ("progress"). Não se
-remenda pelo DOM: o PIN do kit já dá o nome do campo inteiro (o `NuxtFormField` do
-`OperatorPinChange`, o `aria-label` do grupo no `OperatorIdentify`). Quando o `reka-ui` aceitar o rótulo, ele entra
+remenda pelo DOM: o PIN do kit já dá o nome do campo inteiro (o `aria-label` do grupo
+no `OperatorPinPad`). Quando o `reka-ui` aceitar o rótulo, ele entra
 aqui, uma vez.
 
 ### Rótulo que cabe (`OperatorButton`, `OperatorFitGroup`, `op-fixed-lines`)

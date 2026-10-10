@@ -3,7 +3,7 @@
 // Proving the current PIN is the authorization (enforced by the backend). Used
 // voluntarily from the lock screen and forced after a manager reset (must-change).
 // Pure UI — the parent owns the network call (changePin) and passes busy/error.
-import { appendPinDigit } from "../presentation/operatorLock";
+import { PIN_MIN_DIGITS, appendPinDigit } from "../presentation/operatorLock";
 
 const props = defineProps<{
   operatorName: string;
@@ -42,7 +42,7 @@ function setActive(v: string) {
   else confirmPin.value = v;
 }
 
-const canAdvance = computed(() => activeValue().trim().length >= 4);
+const canAdvance = computed(() => activeValue().trim().length >= PIN_MIN_DIGITS);
 
 function press(d: string) {
   localError.value = "";
@@ -51,15 +51,6 @@ function press(d: string) {
 function backspace() {
   setActive(activeValue().slice(0, -1));
 }
-function replaceActive(values: string[]) {
-  setActive(
-    values
-      .filter((value) => /^[0-9]$/.test(value))
-      .join("")
-      .slice(0, 8),
-  );
-}
-
 function advance() {
   if (!canAdvance.value || props.busy) return;
   localError.value = "";
@@ -101,79 +92,49 @@ const shownError = computed(() => localError.value || props.error || "");
 </script>
 
 <template>
-  <div>
-    <NuxtAlert
-      class="mb-3"
-      color="neutral"
-      variant="subtle"
-      icon="i-lucide-key-round"
-      :title="forced ? 'Defina um novo PIN' : 'Trocar meu PIN'"
-      :description="
-        forced
-          ? 'O gerente resetou seu PIN. Digite o PIN temporário e escolha um novo antes de operar.'
-          : `${operatorName}, informe o PIN atual e escolha um novo.`
-      "
+  <div class="grid gap-5 [@media(max-height:43.75rem)]:gap-3">
+    <!-- Mesmo cabeçalho da trava (cadeado → chave): centrado, título e a
+         linha que diz o que fazer. -->
+    <header class="grid justify-items-center gap-3 text-center">
+      <NuxtAvatar size="3xl" icon="i-lucide-key-round" alt="" class="[@media(max-height:43.75rem)]:hidden" />
+      <div class="grid gap-1">
+        <h2 class="text-lg font-semibold">
+          {{ forced ? "Defina um novo PIN" : "Trocar meu PIN" }}
+        </h2>
+        <p class="text-sm text-muted-foreground">
+          {{
+            forced
+              ? "O gerente redefiniu seu PIN. Digite o PIN temporário e escolha um novo antes de operar."
+              : `${operatorName}, informe o PIN atual e escolha um novo.`
+          }}
+        </p>
+      </div>
+    </header>
+
+    <OperatorPinPad
+      :key="step"
+      :pin="activeValue()"
+      :label="label"
+      :error="shownError"
+      :can-submit="canAdvance"
+      :busy="busy"
+      :submit-icon="step === 'confirm' ? 'i-lucide-check' : 'i-lucide-arrow-right'"
+      :submit-label="step === 'confirm' ? 'Confirmar o novo PIN' : 'Continuar'"
+      keyboard
+      @digit="press"
+      @backspace="backspace"
+      @submit="advance"
     />
 
-    <div class="mb-2">
+    <!-- Na troca forçada não há o que cancelar no primeiro passo: sem PIN novo
+         não se opera, e um "Cancelar" que não faz nada mentiria. -->
+    <div v-if="!(forced && step === 'current')" class="flex justify-center">
       <NuxtButton
         color="neutral"
-        variant="link"
+        variant="ghost"
         icon="i-lucide-chevron-left"
         :label="step === 'current' ? 'Cancelar' : 'Voltar'"
         @click="back"
-      />
-    </div>
-
-    <NuxtFormField :label="label">
-      <NuxtPinInput
-        :model-value="activeValue().split('')"
-        :length="8"
-        mask
-        size="xl"
-        @update:model-value="replaceActive"
-      />
-    </NuxtFormField>
-    <NuxtAlert
-      v-if="shownError"
-      class="my-2"
-      color="error"
-      variant="subtle"
-      :title="shownError"
-    />
-
-    <div class="grid grid-cols-3 gap-2">
-      <NuxtButton
-        v-for="d in ['1', '2', '3', '4', '5', '6', '7', '8', '9']"
-        :key="d"
-        color="neutral"
-        variant="outline"
-        size="xl"
-        :label="d"
-        @click="press(d)"
-      />
-      <NuxtButton
-        color="neutral"
-        variant="outline"
-        size="xl"
-        icon="i-lucide-delete"
-        aria-label="Apagar o último dígito"
-        @click="backspace"
-      />
-      <NuxtButton
-        color="neutral"
-        variant="outline"
-        size="xl"
-        label="0"
-        @click="press('0')"
-      />
-      <NuxtButton
-        size="xl"
-        :icon="step === 'confirm' ? 'i-lucide-check' : 'i-lucide-arrow-right'"
-        :disabled="!canAdvance || busy"
-        :loading="busy"
-        :aria-label="step === 'confirm' ? 'Confirmar o novo PIN' : 'Continuar'"
-        @click="advance"
       />
     </div>
   </div>
