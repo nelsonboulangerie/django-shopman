@@ -171,6 +171,8 @@ class TestSseReleasesTheConnection:
     def test_release_really_closes_an_open_connection(self):
         from django.db import connection
 
+        if connection.vendor == "sqlite" and connection.is_in_memory_db():
+            pytest.skip("o SQLite em memória da suíte ignora close() de propósito")
         connection.ensure_connection()
         assert connection.connection is not None
         eventstream.release_db_connections()
