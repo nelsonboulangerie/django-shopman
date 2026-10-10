@@ -37,6 +37,7 @@ withDefaults(
     <NuxtDashboardSidebar
       :id="`${storageKey}-navigation`"
       v-model:open="navigationOpen"
+      class="min-h-0"
       role="complementary"
       aria-label="Navegação do aplicativo"
       :default-size="rail ? sidebarSize : sidebarDefaultSize"
@@ -57,7 +58,7 @@ withDefaults(
       /></template>
     </NuxtDashboardSidebar>
     <slot name="search" />
-    <NuxtDashboardPanel v-if="navbar" :id="`${storageKey}-content`">
+    <NuxtDashboardPanel v-if="navbar" :id="`${storageKey}-content`" class="min-h-0">
       <template v-if="navbar" #header>
         <NuxtDashboardNavbar as="header" :title="title">
           <template v-if="!rail" #leading
@@ -80,7 +81,7 @@ withDefaults(
          scrollable body. Operational apps own the header/content/footer regions
          below; wrapping that whole composition in #body creates nested scrolling
          and an inset footer. This is the official full-bleed panel composition. -->
-    <NuxtDashboardPanel v-else :id="`${storageKey}-content`">
+    <NuxtDashboardPanel v-else :id="`${storageKey}-content`" class="min-h-0">
       <slot />
     </NuxtDashboardPanel>
   </NuxtDashboardGroup>

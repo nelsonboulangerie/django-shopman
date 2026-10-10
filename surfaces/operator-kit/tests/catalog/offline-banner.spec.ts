@@ -7,8 +7,8 @@ import type { OperatorVisualViewport } from "../../visual/matrix";
 // (`catalog/OperatorKitPhoneHeaderPage.vue`), a 390, 768 e 1366 px:
 //   - com a faixa, NENHUM controle interativo fica sob ela: todo controle visível
 //     começa abaixo da faixa, e o ponto do meio dele é dele (não da faixa);
-//   - o shell desce exatamente a altura da faixa e cabe na janela (a barra inferior do
-//     celular não sai pela base);
+//   - o shell desce exatamente a altura da faixa e cabe na janela: o painel, a barra
+//     inferior do celular e o pé da barra lateral não saem pela base;
 //   - a faixa leva o ponto vermelho;
 //   - ao voltar a rede, o shell volta ao topo e nada fica deslocado.
 // Sem captura de baseline: só geometria.
@@ -63,8 +63,17 @@ async function underBand(page: Page) {
       const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
       if (hit && band.contains(hit)) covered.push(`${name(element)} (o meio é da faixa)`);
     }
+    // O painel, a barra inferior e o pé da barra lateral cabem na janela: o
+    // `min-h-svh` do Nuxt UI os empurrava pela base quando o shell descia.
+    const beyondBottom = [
+      ...document.querySelectorAll("[data-operator-suite-shell] > *, [data-operator-quick-bar], [data-suite-rail-footer]"),
+    ]
+      .filter(visible)
+      .filter((element) => element.getBoundingClientRect().bottom > window.innerHeight + 0.5)
+      .map((element) => `${element.getAttribute("data-slot") || element.tagName} (base ${Math.round(element.getBoundingClientRect().bottom)})`);
     const shell = document.querySelector("[data-operator-suite-shell]")!.getBoundingClientRect();
     return {
+      beyondBottom,
       count: controls.length,
       covered,
       bandBottom: bandBox.bottom,
@@ -101,6 +110,7 @@ test("faixa \"Sem conexão\": nenhum controle fica sob ela, e nada pula quando a
   const offline = await underBand(page);
   expect(offline.count).toBeGreaterThan(5);
   expect(offline.covered).toEqual([]);
+  expect(offline.beyondBottom).toEqual([]);
   // O shell começa onde a faixa termina e acaba na base da janela.
   expect(Math.abs(offline.shellTop - offline.bandBottom)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(offline.shellBottom - offline.windowHeight)).toBeLessThanOrEqual(0.5);
