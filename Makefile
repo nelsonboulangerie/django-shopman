@@ -585,17 +585,39 @@ coordination: ## Leitura de coordenação só com git: main, fila, PRs abertos, 
 inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branches sem PR, PRs verdes fora da fila
 	@bash scripts/inflight.sh
 
+# Prontidão: roda igual no checkout principal, numa worktree e na CI.
+# - Python: o .venv deste checkout; numa worktree (sem .venv), o .venv da árvore
+#   principal, com o código DESTA árvore à frente no PYTHONPATH (os editable
+#   installs do .venv apontam para a árvore principal).
+# - Sem .env e sem DJANGO_SECRET_KEY (worktree), a medição LOCAL roda no perfil
+#   de desenvolvimento com chave descartável: o settings recusa subir fora de
+#   DEBUG sem segredo, e aqui não há segredo a medir. A CI exporta os dela e o
+#   teste `[ -z ]` preserva o que vier do ambiente.
+# - Banco: o do .env ou o SQLite da árvore; numa worktree nova rode antes
+#   `make migrate seed`, senão os checks de migração e de seed reprovam (é a
+#   medição honesta de um banco vazio).
+# O ALVO (app vivo) se mede com `make production-readiness target=1`, que não lê
+# nada local: ver scripts/release_readiness_target.py.
+GIT_MAIN_ROOT := $(patsubst %/.git,%,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null))
+READINESS_PYTHON := $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,$(or $(wildcard $(GIT_MAIN_ROOT)/.venv/bin/python),python))
+READINESS_RUN = if [ ! -f .env ] && [ -z "$${DJANGO_SECRET_KEY:-}" ]; then \
+	export DJANGO_DEBUG=true DJANGO_SECRET_KEY=local-readiness-not-a-secret; \
+	echo "(sem .env nem DJANGO_SECRET_KEY: medição local em perfil de desenvolvimento)"; \
+	fi; PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(READINESS_PYTHON) scripts/check_release_readiness.py
+READINESS_ARGS = $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+READINESS_TARGET_ARGS = --target $(if $(json),--json,) $(if $(app),--target-app=$(app),) $(if $(target_spec),--target-spec=$(target_spec),) $(if $(target_url),--target-url=$(target_url),) $(if $(context),--doctl-context=$(context),)
+
 release-readiness: ## Consolida prontidao local e bloqueios externos de piloto/release
-	$(PYTHON) scripts/check_release_readiness.py $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	@$(READINESS_RUN) $(if $(profile),--profile=$(profile),) $(READINESS_ARGS)
 
 release-readiness-strict: ## Igual ao release-readiness, mas falha em bloqueios externos
-	$(PYTHON) scripts/check_release_readiness.py --strict-external $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	@$(READINESS_RUN) --strict-external $(if $(profile),--profile=$(profile),) $(READINESS_ARGS)
 
 alpha-readiness: ## Gate para alpha tecnico publicavel: aceita mocks explicitos, bloqueia externos relevantes
-	$(PYTHON) scripts/check_release_readiness.py --profile=alpha --strict-external $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	@$(READINESS_RUN) --profile=alpha --strict-external $(READINESS_ARGS)
 
-production-readiness: ## Gate final de go-live: real money, sem mocks/debug/staging
-	$(PYTHON) scripts/check_release_readiness.py --profile=production --strict-external $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+production-readiness: ## Gate final de go-live (target=1 lê o app VIVO: spec via doctl + /health/ /ready/; context=<ctx do doctl>)
+	@$(if $(target),PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(READINESS_PYTHON) scripts/check_release_readiness.py $(READINESS_TARGET_ARGS),$(READINESS_RUN) --profile=production --strict-external $(READINESS_ARGS))
 
 production-contract: ## Contrato hermético de produção com credenciais sintéticas e rede bloqueada
 	$(PYTHON) scripts/check_production_contract.py

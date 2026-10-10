@@ -40,6 +40,7 @@ import sys
 from collections.abc import Callable
 from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field
+from functools import partial
 from io import StringIO
 from pathlib import Path
 from typing import Literal
@@ -263,32 +264,55 @@ def build_report(
 
     steps: list[Callable[[], ReadinessCheck | tuple[ReadinessCheck, ...]]] = [
         _django_system_check,
-        lambda: _profile_checks(profile),
+        partial(_profile_checks, profile),
         *((_database_connectivity_check, _applied_migrations_check, _cache_read_check) if read_only else ()),
         _migration_check,
-        lambda: _storefront_contact_check(read_only=read_only),
+        partial(_storefront_contact_check, read_only=read_only),
         _omotenashi_seed_check,
-        lambda: _preparation_shelf_life_review_check(profile=profile),
-        lambda: _public_copy_review_check(profile=profile),
-        lambda: _product_image_host_check(profile=profile),
+        partial(_preparation_shelf_life_review_check, profile=profile),
+        partial(_public_copy_review_check, profile=profile),
+        partial(_product_image_host_check, profile=profile),
         _rules_load_check,
         _gateway_smoke_skipped_check if read_only else _gateway_smoke_check,
-        lambda: _gateway_sandbox_check(profile=profile),
-        lambda: _manual_qa_check(manual_qa_evidence, profile=profile),
-        lambda: _preprod_check(preprod_url),
+        partial(_gateway_sandbox_check, profile=profile),
+        partial(_manual_qa_check, manual_qa_evidence, profile=profile),
+        partial(_preprod_check, preprod_url),
     ]
 
     checks: list[ReadinessCheck] = []
     with _suppress_operational_logs(), read_only_database() if read_only else nullcontext():
         for step in steps:
-            with _read_only_transaction() if read_only else nullcontext():
-                result = step()
+            try:
+                with _read_only_transaction() if read_only else nullcontext():
+                    result = step()
+            except Exception as exc:  # noqa: BLE001 - um passo que quebra é falha local, não traceback
+                result = _crashed_step_check(step, exc)
             checks.extend(result if isinstance(result, tuple) else (result,))
     return ReadinessReport(
         checks=tuple(checks),
         strict_external=strict_external,
         profile=profile,
         read_only=read_only,
+    )
+
+
+def _crashed_step_check(step: Callable, exc: Exception) -> ReadinessCheck:
+    """O passo quebrou: vira linha ``failed`` com o motivo, e os demais seguem.
+
+    Medido em 10/10/2026: numa worktree nova o SQLite nasce vazio e o primeiro
+    check que consulta tabela derrubava o relatório inteiro com traceback, sem
+    dizer nada dos outros. Banco sem tabela é a causa mais comum, e ganha a dica.
+    """
+    name = getattr(getattr(step, "func", step), "__name__", "") or "step"
+    details: dict[str, object] = {}
+    if "no such table" in str(exc) or "does not exist" in str(exc):
+        details["hint"] = "Banco local sem as tabelas: rode `make migrate seed` antes (ou aponte DATABASE_URL)."
+    return ReadinessCheck(
+        id=f"readiness.{name.lstrip('_')}",
+        title="Readiness step crashed",
+        status="failed",
+        message=f"{type(exc).__name__}: {exc}",
+        details=details,
     )
 
 
@@ -1041,7 +1065,21 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Zero writes: skip checks that write (local gateway smoke) and refuse any non-read SQL.",
     )
+    parser.add_argument(
+        "--target",
+        action="store_true",
+        help=(
+            "Read the TARGET instead of this tree: live App Platform spec (doctl, read-only) "
+            "plus /health/ and /ready/. Always the production contract, always strict."
+        ),
+    )
+    parser.add_argument("--target-app", default=os.environ.get("SHOPMAN_TARGET_APP", ""), help="App name or UUID.")
+    parser.add_argument("--target-spec", default="", help="Already-downloaded live spec (skips doctl).")
+    parser.add_argument("--target-url", default=os.environ.get("SHOPMAN_TARGET_URL", ""), help="API base URL.")
+    parser.add_argument("--doctl-context", default=os.environ.get("SHOPMAN_DOCTL_CONTEXT", ""), help="doctl context.")
     args = parser.parse_args(argv)
+    if args.target:
+        return _main_target(args)
     strict_external = bool(args.strict_external or args.profile == "production")
 
     # O lock só serializa os smokes que gravam; em --read-only não há o que serializar.
@@ -1056,6 +1094,45 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(report.as_dict(), ensure_ascii=False, sort_keys=True, indent=2))
     else:
+        print_human(report)
+    return 1 if report.blocking else 0
+
+
+def _main_target(args) -> int:
+    """Modo alvo: nada de Django, banco ou settings locais; só o spec vivo e as sondas."""
+    from scripts import release_readiness_target as target
+
+    try:
+        if args.target_spec:
+            spec, source = target.load_spec_file(args.target_spec), args.target_spec
+        else:
+            app = args.target_app or target.DEFAULT_APP_NAME
+            spec = target.fetch_live_spec(app=app, context=args.doctl_context or None)
+            source = f"doctl apps spec get {app}"
+    except Exception as exc:  # noqa: BLE001 - leitura do alvo falhou: o gate não pode passar
+        report = ReadinessReport(
+            checks=(
+                ReadinessCheck(
+                    id="target.spec",
+                    title="Target spec read",
+                    status="failed",
+                    message=f"Não consegui ler o spec do alvo: {exc}",
+                ),
+            ),
+            strict_external=True,
+            profile="production",
+            read_only=True,
+        )
+    else:
+        report = target.build_target_report(
+            spec,
+            base_url=args.target_url or target.DEFAULT_TARGET_URL,
+            source=source,
+        )
+    if args.json:
+        print(json.dumps({**report.as_dict(), "target": True}, ensure_ascii=False, sort_keys=True, indent=2))
+    else:
+        print("alvo: spec vivo + sondas públicas (nada local é medido)")
         print_human(report)
     return 1 if report.blocking else 0
 

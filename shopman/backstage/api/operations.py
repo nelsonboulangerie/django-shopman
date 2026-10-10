@@ -5648,10 +5648,12 @@ class POSTabUnfireView(APIView):
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
+            raw_quantities = body.get("quantities")
             result = pos_tabs_service.cancel_fired_pos_tab_lines(
                 channel_ref=POS_CHANNEL_REF,
                 session_key=str(body.get("session_key") or "").strip(),
                 line_ids=body.get("line_ids") or [],
+                quantities=raw_quantities if isinstance(raw_quantities, dict) else None,
                 actor=_actor_pos(request),
                 operator_username=_username(request),
             )

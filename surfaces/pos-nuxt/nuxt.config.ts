@@ -156,6 +156,16 @@ export default defineNuxtConfig({
     classSuffix: ''
   },
 
+  // Ícones que só aparecem como DADO num .ts (a seção "Fim do dia" do rail, o botão da
+  // barra lateral do kit): o scan do @nuxt/icon lê só os templates, e o navegador ia
+  // buscá-los na API do Iconify, que a CSP bloqueia (erro no console, 10/10/2026). O
+  // gancho do módulo os põe no pacote sem tocar a identidade do app.
+  hooks: {
+    "icon:clientBundleIcons": (bundle: Set<string>) => {
+      for (const name of ["lucide:clipboard-check", "lucide:panel-left-dashed"]) bundle.add(name);
+    },
+  },
+
   icon: {
     clientBundle: {
       scan: true,

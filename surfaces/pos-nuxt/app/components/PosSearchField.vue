@@ -43,7 +43,7 @@ defineExpose({ inputRef });
       v-model="model"
       type="search"
       class="h-8 bg-card pl-10 text-base focus-visible:border-2 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
-      :class="trailing ? (hint ? 'lg:pr-52 pr-24' : 'pr-24') : ''"
+      :class="trailing ? (hint ? 'pr-24 @min-[44rem]:pr-52' : 'pr-24') : ''"
       v-bind="$attrs"
     />
     <span
@@ -51,7 +51,9 @@ defineExpose({ inputRef });
       class="pointer-events-none absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5"
       aria-hidden="true"
     >
-      <span v-if="hint" class="hidden op-micro text-muted-foreground lg:inline">{{ hint }}</span>
+      <!-- A dica pela largura da área de produtos (`@container` da grade), não da
+           janela: na mesa ela divide a largura com a comanda de altura inteira. -->
+      <span v-if="hint" class="hidden op-micro whitespace-nowrap text-muted-foreground @min-[44rem]:inline">{{ hint }}</span>
       <OperatorKbd v-for="key in keys" :key="key">{{ key }}</OperatorKbd>
     </span>
   </div>

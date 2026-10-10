@@ -28,7 +28,9 @@ Se qualquer pré-condição estiver ausente, registrar `PENDENTE`, `BLOQUEADO` o
 ## 2. Runtime e migrations
 
 - [ ] `make test-migrations` e `make production-contract` verdes.
-- [ ] `make production-readiness` executado no ambiente alvo, com evidência
+- [ ] `make production-readiness target=1 context=shopman-do-app-admin` verde
+  contra o app vivo (spec via `doctl`, só leitura, mais `/health/` e `/ready/`);
+  e `make production-readiness read_only=1` no banco alvo, com evidência
   externa e QA exigidas pelo perfil.
 - [ ] `/ready/` confirma banco, cache, migrations e workers/filas.
 - [ ] `git tag -l go-live-v1` e o estado da ADR-015 coincidem com a matriz.

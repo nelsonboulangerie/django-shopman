@@ -181,6 +181,7 @@ const pos = {
 // folha de baixo no celular) sem backend. Sem a variável, o mock é o de sempre e as
 // fotos das Encomendas não mudam.
 const SALE = process.env.MOCK_SCENARIO === "sale";
+const COLUMN_STATES = SALE && process.env.MOCK_COLUMN_STATES === "1";
 const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
 const PRODUCTS = [
   ["PAO-FRANCES", "Pão francês", 90, "paes"],
@@ -191,9 +192,18 @@ const PRODUCTS = [
   ["CAFE-COADO", "Café coado", 690, "bebidas"],
   ["CAPPUCCINO", "Cappuccino", 1290, "bebidas"],
   ["SUCO-LARANJA", "Suco de laranja", 1190, "bebidas"],
-].map(([sku, name, price_q, collection_ref]) => ({
+  // Nomes compridos de verdade (o cartão reserva duas linhas e corta a terceira; a
+  // comanda quebra a linha) e itens que vão à cozinha (o "Enviar à cozinha" acende).
+  ["CROQUE-MONSIEUR", "Croque Monsieur com salada verde e molho de mostarda Dijon", 3890, "cozinha", "Cozinha"],
+  ["QUICHE", "Quiche Lorraine", 2490, "cozinha", "Cozinha"],
+  ["TARTINE", "Tartine de cogumelos", 3290, "cozinha", "Cozinha"],
+  // Prévia da coluna da comanda (MOCK_COLUMN_STATES=1): a estação Forno com envio
+  // automático ligado. Fora da flag, o catálogo não muda (retratos e trava de geometria).
+  ...(COLUMN_STATES ? [["SOPA", "Sopa do dia", 2890, "cozinha", "Forno", true], ["TORTA", "Torta de maçã", 1890, "cozinha", "Forno", true]] : []),
+].map(([sku, name, price_q, collection_ref, kitchen_station = "", kitchen_auto_fire = false]) => ({
   sku, name, price_q, price_display: brl(price_q), collection_ref,
-  collection_color: "", collection_icon: "", image_url: "", kitchen_station: "",
+  collection_color: "", collection_icon: "", image_url: "", kitchen_station,
+  ...(kitchen_auto_fire ? { kitchen_auto_fire: true } : {}),
 }));
 if (SALE) {
   Object.assign(pos, {
@@ -202,6 +212,7 @@ if (SALE) {
       { ref: "paes", name: "Pães" },
       { ref: "viennoiserie", name: "Viennoiserie" },
       { ref: "bebidas", name: "Bebidas" },
+      { ref: "cozinha", name: "Pratos da cozinha" },
     ],
     payment_methods: [
       { ref: "cash", label: "Dinheiro" },
@@ -212,7 +223,10 @@ if (SALE) {
       { ref: "pickup", label: "Retirada", description: "", requires_address: false },
       { ref: "delivery", label: "Entrega", description: "", requires_address: true },
     ],
-    actions: [],
+    actions: [
+      { ref: "fire_tab", kind: "mutation", label: "Enviar à cozinha", enabled: true, reason: "", method: "POST", href: "/api/v1/backstage/pos/tabs/fire/" },
+      { ref: "unfire_tab", kind: "mutation", label: "Cancelar envio à cozinha", enabled: true, reason: "", method: "POST", href: "/api/v1/backstage/pos/tabs/unfire/" },
+    ],
   });
 }
 // `MOCK_DIRECT=1`: o balcão vende SEM comanda (venda de balcão direta) e recebe
@@ -324,6 +338,36 @@ const SALE_ITEMS = [
   { line_id: "L-aaaa0002", sku: "PAIN-CHOC", name: "Pain au chocolat", price_q: 1290, qty: 1, notes: "" },
   { line_id: "L-aaaa0003", sku: "CAFE-COADO", name: "Café coado", price_q: 690, qty: 2, notes: "" },
 ];
+// A comanda CHEIA (13): nove linhas, nomes compridos, uma já na cozinha e três que
+// esperam o envio. É o retrato da coluna da comanda apertada (pedido do dono, 10/10).
+const FULL_ITEMS = [
+  { line_id: "L-bbbb0001", sku: "CROQUE-MONSIEUR", name: "Croque Monsieur com salada verde e molho de mostarda Dijon", price_q: 3890, qty: 1, notes: "Sem mostarda", fired: true, fired_qty: 1, kitchen_status: "in_progress" },
+  { line_id: "L-bbbb0002", sku: "CROISSANT", name: "Croissant", price_q: 1150, qty: 2, notes: "" },
+  { line_id: "L-bbbb0003", sku: "PAIN-CHOC", name: "Pain au chocolat", price_q: 1290, qty: 1, notes: "" },
+  { line_id: "L-bbbb0004", sku: "CAFE-COADO", name: "Café coado", price_q: 690, qty: 2, notes: "" },
+  { line_id: "L-bbbb0005", sku: "QUICHE", name: "Quiche Lorraine", price_q: 2490, qty: 1, notes: "" },
+  { line_id: "L-bbbb0006", sku: "CAPPUCCINO", name: "Cappuccino", price_q: 1290, qty: 1, notes: "" },
+  { line_id: "L-bbbb0007", sku: "TARTINE", name: "Tartine de cogumelos", price_q: 3290, qty: 1, notes: "" },
+  { line_id: "L-bbbb0008", sku: "SUCO-LARANJA", name: "Suco de laranja", price_q: 1190, qty: 1, notes: "" },
+  { line_id: "L-bbbb0009", sku: "CROQUE-MONSIEUR", name: "Croque Monsieur com salada verde e molho de mostarda Dijon", price_q: 3890, qty: 1, notes: "" },
+];
+// As comandas da prévia da coluna (MOCK_COLUMN_STATES=1): a 16 com a cozinha em todos
+// os estados (preparando, pronto, cancelado, divergência) e a 17 com envio automático.
+const ticket = (status, status_label) => [{ pk: 1, station_name: "Cozinha", prints: false, status, status_label, fired_at_display: "21:52", paper_label: "", paper_failed: false, items: [], can_mark_ready: false }];
+const KITCHEN_ITEMS = [
+  { line_id: "L-cccc0001", sku: "CROQUE-MONSIEUR", name: "Croque Monsieur com salada verde e molho de mostarda Dijon", price_q: 3890, qty: 1, notes: "", fired: true, fired_qty: 1, kitchen_status: "in_progress", kitchen_tickets: ticket("in_progress", "Preparando") },
+  { line_id: "L-cccc0002", sku: "CROISSANT", name: "Croissant", price_q: 1150, qty: 1, notes: "", fired: true, fired_qty: 3, kitchen_status: "pending", kitchen_tickets: ticket("pending", "Na fila") },
+  { line_id: "L-cccc0003", sku: "PAIN-CHOC", name: "Pain au chocolat", price_q: 1290, qty: 1, notes: "", fired: true, fired_qty: 1, kitchen_status: "done", kitchen_tickets: ticket("done", "Pronto") },
+  { line_id: "L-cccc0004", sku: "CAFE-COADO", name: "Café coado", price_q: 690, qty: 2, notes: "", fired: true, fired_qty: 2, kitchen_status: "pending", kitchen_tickets: ticket("pending", "Na fila") },
+  { line_id: "L-cccc0005", sku: "QUICHE", name: "Quiche Lorraine", price_q: 2490, qty: 1, notes: "", fired: true, fired_qty: 1, kitchen_status: "cancelled", kitchen_tickets: ticket("cancelled", "Cancelado") },
+  { line_id: "L-cccc0006", sku: "CAPPUCCINO", name: "Cappuccino", price_q: 1290, qty: 1, notes: "", fired: true, fired_qty: 1, kitchen_status: "pending", kitchen_tickets: ticket("pending", "Na fila") },
+];
+const AUTO_ITEMS = [
+  { line_id: "L-dddd0001", sku: "SOPA", name: "Sopa do dia", price_q: 2890, qty: 1, notes: "" },
+  { line_id: "L-dddd0002", sku: "CROISSANT", name: "Croissant", price_q: 1150, qty: 2, notes: "" },
+  { line_id: "L-dddd0003", sku: "TORTA", name: "Torta de maçã", price_q: 1890, qty: 1, notes: "" },
+  { line_id: "L-dddd0004", sku: "TARTINE", name: "Tartine de cogumelos", price_q: 3290, qty: 1, notes: "" },
+];
 const tab = (ref, overrides = {}) => ({
   ref, display_ref: ref, session_key: `S-${ref}`, state: "empty", status_label: "Livre",
   status_class: "", customer_name: "", customer_phone: "", item_count: 0, line_count: 0,
@@ -337,7 +381,19 @@ const TABS = SALE
         opened_at_display: "09:41",
       }),
       tab("14", { state: "in_use", status_label: "Em uso", item_count: 1, line_count: 1, total_display: brl(1290), items_preview: "1 Cappuccino", opened_at_display: "10:02" }),
-      tab("15"), tab("16"), tab("17"), tab("18"),
+      tab("13", {
+        state: "in_use", status_label: "Em uso", customer_name: "Roberto Albuquerque", item_count: 11, line_count: 9,
+        total_display: brl(FULL_ITEMS.reduce((sum, item) => sum + item.price_q * item.qty, 0)), last_touched_display: "agora",
+        items_preview: "1 Croque Monsieur · 2 Croissant · 1 Pain au chocolat", opened_at_display: "09:55",
+      }),
+      tab("15"),
+      ...(COLUMN_STATES
+        ? [
+            tab("16", { state: "in_use", status_label: "Em uso", item_count: 7, line_count: 6, total_display: brl(10450), items_preview: "1 Croque Monsieur · 1 Croissant", opened_at_display: "21:40" }),
+            tab("17", { state: "in_use", status_label: "Em uso", item_count: 5, line_count: 4, total_display: brl(11970), items_preview: "1 Sopa do dia · 2 Croissant", opened_at_display: "21:45" }),
+          ]
+        : [tab("16"), tab("17")]),
+      tab("18"),
     ]
   : [];
 // O que a prévia salvou em cada comanda volta na reabertura (ir ao pagamento relê a
@@ -345,11 +401,16 @@ const TABS = SALE
 const SAVED_ITEMS = new Map();
 function tabPayload(ref) {
   const inUse = ref === "12";
+  const full = ref === "13";
   const saved = SAVED_ITEMS.get(ref);
   return {
     revision: "rev-1", sales_mode: "counter", session_key: `S-${ref}`, tab_session_key: `S-${ref}`,
     tab_ref: ref, tab_display: ref, tab_number: ref, opened_at_display: "09:41", seating_spot_ref: "", edit_of: "",
-    items: saved ?? (inUse ? SALE_ITEMS : []), customer_phone: "", customer_name: inUse ? "Ana Souza" : "", customer_ref: "",
+    items: saved ?? (inUse ? SALE_ITEMS : full ? FULL_ITEMS : COLUMN_STATES && ref === "16" ? KITCHEN_ITEMS : COLUMN_STATES && ref === "17" ? AUTO_ITEMS : []), customer_phone: "",
+    // Cliente com cadastro (`customer_ref`): nome sem ref é RASCUNHO de cliente, e a
+    // tela segura o salvamento ("Não salvo") até alguém concluir o cadastro.
+    customer_name: inUse ? "Ana Souza" : full ? "Roberto Albuquerque" : "",
+    customer_ref: inUse ? "C-1" : full ? "C-13" : "",
     customer_tax_id: "", customer_email: "", fulfillment_type: "", delivery_address: "",
     delivery_address_structured: {}, delivery_date: "", delivery_time_slot: "", delivery_fee_override_q: null,
   };
@@ -534,11 +595,35 @@ createServer((req, res) => {
     if (path === "/api/v1/backstage/pos/tabs/save/") {
       void readBody(req).then((body) => {
         const ref = body?.tab_ref || "12";
+        // O estado da cozinha (enviado, preparando) é do servidor: salvar não o apaga.
+        const before = SAVED_ITEMS.get(ref) ?? tabPayload(ref).items;
         const items = (body?.items || []).map((item) => ({
+          ...(before.find((prev) => prev.line_id === item.line_id) || {}),
           line_id: item.line_id, sku: item.sku, name: item.name, qty: item.qty, price_q: item.unit_price_q, notes: item.notes || "",
         }));
         SAVED_ITEMS.set(ref, items);
         send(res, 200, { ...tabPayload(ref), items });
+      });
+      return;
+    }
+    // Cancelar na cozinha (o "cancelar envio"; com `quantities`, só a diferença).
+    if (path === "/api/v1/backstage/pos/tabs/unfire/") {
+      void readBody(req).then((body) => {
+        const ref = String(body?.session_key || "").replace(/^S-/, "") || "12";
+        const ids = new Set(body?.line_ids || []);
+        const quantities = body?.quantities || {};
+        const before = SAVED_ITEMS.get(ref) ?? tabPayload(ref).items;
+        const items = before.map((item) => {
+          if (!ids.has(item.line_id)) return item;
+          const units = Number(quantities[item.line_id] || 0);
+          const sent = Number(item.fired_qty ?? item.qty);
+          if (units > 0 && units < sent) return { ...item, fired_qty: sent - units };
+          const rest = { ...item, fired: false };
+          for (const key of ["fired_qty", "kitchen_status", "kitchen_tickets"]) delete rest[key];
+          return rest;
+        });
+        SAVED_ITEMS.set(ref, items);
+        send(res, 200, { ok: true, cancelled: 1, trimmed: 0, fired_lines: [], tab: { ...tabPayload(ref), items } });
       });
       return;
     }

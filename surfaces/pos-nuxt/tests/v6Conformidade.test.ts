@@ -81,14 +81,15 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
     expect(cart).not.toContain("toggleDetails(item.line_id)");
     expect(cart).not.toContain('data-testid="kitchen-card-open"\n');
   });
-  it("modo seleção numa faixa só", () => {
-    expect(cart).toContain("data-pos-selection-bar");
+  it("marcar sem modo (dono, 10/10): sem faixa de seleção, o bloco de N no lugar do de 1", () => {
+    expect(cart).not.toContain("data-pos-selection-bar");
+    expect(cart).toContain("data-pos-marked-title");
     expect(cart).not.toContain('class="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2"');
   });
   it("no toque, um instrumento só: caixa grande, numérico e a coluna com Pronto", () => {
     expect(cart).toContain("data-pos-touch-editor");
     expect(cart).toContain("(era {{ qtyWas }})");
-    expect(cart).toMatch(/>Pronto<\/NuxtButton>/);
+    expect(cart).toContain('{{ discountOpen ? "Aplicar" : "Pronto" }}</NuxtButton>');
   });
   it("com itens a enviar, a folha fechada promove 'Enviar à cozinha'; aberta, PIX e Maquininha", () => {
     // A folha fechada é a barra da ação do momento do kit; a primária é o envio
@@ -108,7 +109,7 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
   });
   it("'vai à cozinha' na linha nova e o envio automático à vista", () => {
     expect(cart).toContain("data-pos-line-goes-to-kitchen");
-    expect(cart).toContain("envio automático:");
+    expect(cart).toContain("kitchenState.auto.full");
   });
 });
 

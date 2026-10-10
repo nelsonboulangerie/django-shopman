@@ -710,6 +710,11 @@ def _kitchen_status_by_line(session_key: str) -> dict[str, str]:
             line_id = str((entry or {}).get("line_id") or "")
             if not line_id:
                 continue
+            # O comprovante de uma DIFERENÇA que o balcão cancelou (a conta diminuiu,
+            # decisão do dono 10/10/2026) não é a linha cancelada: ela segue viva no
+            # outro ticket, e quem está no caixa já sabe (foi ele que pediu).
+            if status == "cancelled" and (entry or {}).get("partial_cancel"):
+                continue
             current = out.get(line_id)
             if current is None or rank[status] < rank[current]:
                 out[line_id] = status

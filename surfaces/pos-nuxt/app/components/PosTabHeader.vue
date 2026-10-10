@@ -208,7 +208,8 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         :disabled="loading"
         @click="$emit('salesModeChange', mode.ref)"
       >
-        <span class="max-2xl:sr-only">{{ mode.label }}</span>
+        <span class="sr-only">{{ mode.label }}</span>
+        <span class="hidden @min-[60rem]:inline" aria-hidden="true">{{ mode.label }}</span>
       </NuxtButton>
     </div>
     <!-- tab number (renameable) -->
@@ -263,23 +264,23 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       v-else-if="hasOpenTab && canRename && !readOnly"
       color="neutral"
       variant="ghost"
-      class="min-w-0 max-w-full shrink font-normal"
+      class="max-w-56 shrink-0 font-normal"
       aria-label="Renomear comanda"
       title="Renomear comanda"
       data-pos-tab-title
       @click="startRename"
     >
       <span class="flex min-w-0 flex-col text-left leading-none">
-        <h1 class="truncate op-heading tabular-nums">{{ title.title }}</h1>
-        <span v-if="title.ref || openedAt" class="mt-0.5 truncate op-micro text-muted-foreground tnum lg:hidden" data-pos-tab-subtitle>{{ [title.ref, openedAt ? `aberta ${openedAt}` : ""].filter(Boolean).join(" · ") }}</span>
+        <h1 class="op-heading tabular-nums [overflow-wrap:anywhere]">{{ title.title }}</h1>
+        <span v-if="title.ref || openedAt" class="mt-0.5 op-micro text-muted-foreground tnum lg:hidden" data-pos-tab-subtitle>{{ [title.ref, openedAt ? `aberta ${openedAt}` : ""].filter(Boolean).join(" · ") }}</span>
       </span>
       <span v-if="title.ref" class="shrink-0 self-end pb-1 op-micro text-muted-foreground tnum max-lg:hidden" data-pos-tab-number>{{ title.ref }}</span>
       <Icon name="lucide:pencil" class="size-3.5 shrink-0 text-muted-foreground max-lg:hidden" />
     </NuxtButton>
-    <span v-else-if="hasOpenTab" class="inline-flex min-w-0 items-center gap-1.5 px-2" data-pos-tab-title>
+    <span v-else-if="hasOpenTab" class="inline-flex max-w-56 shrink-0 items-center gap-1.5 px-2" data-pos-tab-title>
       <span class="flex min-w-0 flex-col leading-none">
-        <h1 class="truncate op-heading tabular-nums">{{ title.title }}</h1>
-        <span v-if="title.ref || openedAt" class="mt-0.5 truncate op-micro text-muted-foreground tnum lg:hidden" data-pos-tab-subtitle>{{ [title.ref, openedAt ? `aberta ${openedAt}` : ""].filter(Boolean).join(" · ") }}</span>
+        <h1 class="op-heading tabular-nums [overflow-wrap:anywhere]">{{ title.title }}</h1>
+        <span v-if="title.ref || openedAt" class="mt-0.5 op-micro text-muted-foreground tnum lg:hidden" data-pos-tab-subtitle>{{ [title.ref, openedAt ? `aberta ${openedAt}` : ""].filter(Boolean).join(" · ") }}</span>
       </span>
       <span v-if="title.ref" class="shrink-0 self-end pb-1 op-micro text-muted-foreground tnum max-lg:hidden" data-pos-tab-number>{{ title.ref }}</span>
     </span>
@@ -307,7 +308,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       :size="controlSize"
       :color="customerRequired ? 'primary' : 'neutral'"
       variant="outline"
-      class="min-w-0 shrink-0 gap-2"
+      class="h-auto min-h-8 min-w-0 shrink gap-2 py-1"
       :class="customerRequired ? 'motion-safe:animate-pulse' : ''"
       aria-haspopup="dialog"
       :title="customerLockedReason || (customerRequired ? 'A encomenda precisa de cliente: é quem a casa avisa se algo mudar até a data' : 'Cliente (F6)')"
@@ -318,11 +319,11 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         class="size-4 shrink-0"
         :class="customerRequired ? '' : 'text-muted-foreground'"
       />
-      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-semibold max-sm:sr-only" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
-      <span v-else class="whitespace-nowrap max-sm:sr-only" :class="customerRequired ? '' : 'text-muted-foreground'"><span class="max-2xl:hidden">Identificar cliente</span><span class="2xl:hidden">Cliente</span></span>
+      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-44 text-left leading-tight font-semibold [overflow-wrap:anywhere] max-sm:sr-only" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
+      <span v-else class="whitespace-nowrap max-sm:sr-only" :class="customerRequired ? '' : 'text-muted-foreground'"><span class="hidden @min-[50rem]:inline">Identificar cliente</span><span class="@min-[50rem]:hidden">Cliente</span></span>
       <OperatorKbd
         v-if="!coarsePointer"
-        class="max-lg:hidden"
+        class="hidden @min-[50rem]:inline-flex"
         aria-hidden="true"
       >F6</OperatorKbd>
     </NuxtButton>
@@ -341,15 +342,16 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       variant="outline"
       class="min-w-0 shrink-0 gap-2 max-sm:hidden"
       aria-haspopup="dialog"
-      :title="isCounter ? 'Recebimento (F7): entregar vira encomenda' : 'Recebimento (F7)'"
+      :aria-label="`Recebimento: ${isCounter ? 'Consumir aqui' : fulfillmentLabel}`"
+      :title="isCounter ? 'Consumir aqui. Recebimento (F7): entregar vira encomenda' : `${fulfillmentLabel}. Recebimento (F7)`"
       data-context-entry="fulfillment"
       @click="$emit('openFulfillment')"
     >
       <Icon :name="isCounter ? 'lucide:utensils' : (fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store')" class="size-4 shrink-0 text-muted-foreground" />
-      <span class="min-w-0 max-w-48 truncate font-semibold">{{ isCounter ? 'Consumir aqui' : fulfillmentLabel }}</span>
+      <span class="hidden whitespace-nowrap font-semibold @min-[36rem]:inline" aria-hidden="true">{{ isCounter ? 'Consumir aqui' : fulfillmentLabel }}</span>
       <OperatorKbd
         v-if="!coarsePointer"
-        class="max-lg:hidden"
+        class="hidden @min-[50rem]:inline-flex"
         aria-hidden="true"
       >F7</OperatorKbd>
     </NuxtButton>
@@ -364,11 +366,12 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       :size="controlSize"
       :color="scheduleConflict ? 'error' : (scheduled ? 'primary' : 'neutral')"
       variant="outline"
-      class="min-w-0 shrink-0 gap-2 max-xl:hidden"
+      class="min-w-0 shrink-0 gap-2 max-sm:hidden"
       :class="scheduleConflict || scheduled ? '' : 'text-muted-foreground'"
       data-context-entry="schedule"
       aria-haspopup="dialog"
-      :title="scheduleConflictReason || (isCounter ? 'Quando (F8): agendar vira encomenda' : 'Quando (F8)')"
+      :aria-label="`Quando: ${isCounter ? 'Agora' : scheduleLabel}`"
+      :title="scheduleConflictReason || (isCounter ? 'Agora. Quando (F8): agendar vira encomenda' : `${scheduleLabel}. Quando (F8)`)"
       @click="$emit('openSchedule')"
     >
       <Icon
@@ -376,9 +379,10 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         class="size-4 shrink-0"
         :class="scheduleConflict ? '' : 'text-muted-foreground'"
       />
-      <span class="min-w-0 max-w-56 truncate" :class="scheduled || scheduleConflict ? 'font-semibold' : ''">{{ isCounter ? 'Agora' : scheduleLabel }}</span>
+      <span class="hidden whitespace-nowrap @min-[26rem]:inline" :class="scheduled || scheduleConflict ? 'font-semibold' : ''" aria-hidden="true">{{ isCounter ? 'Agora' : scheduleLabel }}</span>
       <OperatorKbd
         v-if="!coarsePointer"
+        class="hidden @min-[50rem]:inline-flex"
         aria-hidden="true"
       >F8</OperatorKbd>
     </NuxtButton>

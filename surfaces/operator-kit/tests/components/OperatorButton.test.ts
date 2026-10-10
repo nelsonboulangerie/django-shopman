@@ -23,6 +23,18 @@ describe("OperatorButton: o rótulo que cabe", () => {
     expect(wrapper.find('[data-op-fit-variant="full"]').text()).toBe("Enviar à cozinha");
   });
 
+  it("a tecla do atalho é a primeira a cair: some antes do rótulo completo", async () => {
+    const wrapper = await mountSuspended(OperatorButton, {
+      props: { label: "Enviar à cozinha", shortLabel: "Enviar", icon: "i-lucide-chef-hat", shortcut: "F9" },
+    });
+    const key = wrapper.find("[data-op-fit-key]");
+    expect(key.text()).toBe("F9");
+    expect(key.attributes("aria-hidden")).toBe("true");
+    // O limite da tecla é o do completo MAIS a largura dela: cai antes do verbo.
+    expect(key.attributes("style")).toContain("var(--op-fit-full, 0px)");
+    expect(wrapper.find("button").attributes("aria-label")).toBe("Enviar à cozinha");
+  });
+
   it("sem curto, um texto só que some para o ícone", async () => {
     const wrapper = await mountSuspended(OperatorButton, {
       props: { label: "Imprimir", icon: "i-lucide-printer" },
