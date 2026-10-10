@@ -296,3 +296,61 @@ describe("PosCartPanel — envio automático com o quando", () => {
     expect(wrapper.text()).toContain("vai à cozinha");
   });
 });
+
+describe("PosCartPanel — decisão 5: linha da cozinha que sai ou diminui cancela lá", () => {
+  const sent = (overrides: Partial<POSCartItem> = {}) =>
+    item({ sku: "CROISSANT", name: "Croissant", qty: 3, fired: true, fired_qty: 3, kitchen_status: "pending", ...overrides } as Partial<POSCartItem> & { sku: string; name: string });
+
+  it("diminuir cancela na cozinha só a diferença e a coluna diz em palavra", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [sent()] }) });
+    await wrapper.find('[aria-label="Diminuir"]').trigger("click");
+    expect(wrapper.emitted("decrement")).toEqual([["L-CROISSANT"]]);
+    const [entries, done] = wrapper.emitted("cancelInKitchen")![0]! as [Array<{ lineId: string; units?: number }>, (ok: boolean) => void];
+    expect(entries).toEqual([{ lineId: "L-CROISSANT", units: 1 }]);
+    done(true);
+    await wrapper.vm.$nextTick();
+    expect(toastCalls.at(-1)![0]).toBe("1 Croissant cancelado na cozinha.");
+    expect(wrapper.find("[data-pos-line-cancelled-units]").text()).toBe("1 cancelado na cozinha");
+  });
+
+  it("digitar menos numa linha enviada cancela a diferença (2 de 3)", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [sent()] }), attachTo: document.body });
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "1", bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("setQty")).toEqual([["L-CROISSANT", 1]]);
+    expect((wrapper.emitted("cancelInKitchen")![0]![0] as unknown[])).toEqual([{ lineId: "L-CROISSANT", units: 2 }]);
+    (wrapper.emitted("cancelInKitchen")![0]![1] as (ok: boolean) => void)(true);
+    expect(toastCalls.at(-1)![0]).toBe("2 Croissant cancelados na cozinha.");
+  });
+
+  it("remover uma linha enviada confirma 'Remover e cancelar na cozinha' e cancela a linha inteira", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [sent()] }) });
+    await wrapper.find("[data-pos-line-remove]").trigger("click");
+    expect(document.body.textContent).toContain("sai da conta e é cancelado na cozinha");
+    const confirm = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Remover e cancelar na cozinha"));
+    (confirm as HTMLElement).click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("remove")).toEqual([["L-CROISSANT"]]);
+    expect((wrapper.emitted("cancelInKitchen")![0]![0] as unknown[])).toEqual([{ lineId: "L-CROISSANT", units: undefined }]);
+    (wrapper.emitted("cancelInKitchen")![0]![1] as (ok: boolean) => void)(true);
+    const [message, options] = toastCalls.at(-1)!;
+    expect(message).toBe("Croissant removido e cancelado na cozinha.");
+    // Desfazer devolve a linha A ENVIAR: a cozinha já não a tem.
+    options.action!.onClick();
+    expect((wrapper.emitted("restore")![0]![0] as POSCartItem).fired).toBe(false);
+  });
+
+  it("item pronto sai só da conta, e a coluna diz isso", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [sent({ kitchen_status: "done" })] }) });
+    await wrapper.find('[aria-label="Diminuir"]').trigger("click");
+    expect(wrapper.emitted("cancelInKitchen")).toBeUndefined();
+    expect(toastCalls.at(-1)![0]).toBe("Croissant já estava pronto: saiu só da conta.");
+  });
+
+  it("se a cozinha não recebe, a coluna manda avisar de voz", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [sent()] }) });
+    await wrapper.find('[aria-label="Diminuir"]').trigger("click");
+    (wrapper.emitted("cancelInKitchen")![0]![1] as (ok: boolean) => void)(false);
+    expect(toastCalls.at(-1)![0]).toBe("Croissant saiu da conta, mas a cozinha não recebeu o cancelamento: avise de voz.");
+  });
+});

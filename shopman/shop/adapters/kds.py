@@ -68,7 +68,11 @@ def create_ticket(session_key: str, kds_instance, items: list) -> Any:
     )
 
 
-def unfire_session_lines(session_key: str, line_ids: list[str]) -> dict:
+def unfire_session_lines(
+    session_key: str,
+    line_ids: list[str],
+    fractions: dict[str, Any] | None = None,
+) -> dict:
     """Un-fire specific lines for a session: remove them from their live tickets.
 
     Precondition: the caller holds the source Session/Order row lock.  KDS
@@ -80,13 +84,27 @@ def unfire_session_lines(session_key: str, line_ids: list[str]) -> dict:
     prep progress. The model save re-emits the KDS SSE event either way. Removing
     a line drops it from the fire-ledger, so it may be fired again (reprint =
     un-fire + fire). Returns ``{"cancelled": n, "trimmed": n}``.
+
+    ``fractions`` (opcional, ``{line_id: fração}`` com 0 < fração < 1): a conta
+    DIMINUIU uma linha que já está na cozinha (decisão do dono, 10/10/2026: diminuir
+    cancela só a diferença). A linha fica no ticket vivo com o que sobra, e o
+    comprovante cancelado leva só a diferença (a mesma fração de cada item da linha,
+    o que cobre o combo). A linha continua no ledger: segue enviada.
     """
+    from decimal import Decimal
+
     from django.db import transaction
     from django.utils import timezone
 
     from shopman.backstage.models import KDSTicket
+    from shopman.shop.services.order_helpers import json_quantity
 
     targets = {str(lid) for lid in (line_ids or []) if str(lid)}
+    partial: dict[str, Decimal] = {}
+    for line_id, fraction in (fractions or {}).items():
+        value = Decimal(str(fraction))
+        if str(line_id) in targets and Decimal(0) < value < Decimal(1):
+            partial[str(line_id)] = value
     cancelled = trimmed = 0
     if not targets:
         return {"cancelled": 0, "trimmed": 0}
@@ -99,8 +117,23 @@ def unfire_session_lines(session_key: str, line_ids: list[str]) -> dict:
         )
         for ticket in tickets:
             items = ticket.items or []
-            removed = [it for it in items if it.get("line_id") in targets]
-            kept = [it for it in items if it.get("line_id") not in targets]
+            removed = []
+            kept = []
+            for it in items:
+                line_id = it.get("line_id")
+                if line_id not in targets:
+                    kept.append(it)
+                    continue
+                fraction = partial.get(line_id)
+                if fraction is None:
+                    removed.append(it)
+                    continue
+                qty = Decimal(str(it.get("qty") or 0))
+                gone = qty * fraction
+                # `partial_cancel`: o comprovante é de uma DIFERENÇA, pedida pelo balcão;
+                # a linha segue viva no outro ticket (o selo do PDV não vira "Cancelado").
+                removed.append({**it, "qty": json_quantity(gone), "partial_cancel": True})
+                kept.append({**it, "qty": json_quantity(qty - gone)})
             if not removed:
                 continue
             cancelled_at = timezone.now()

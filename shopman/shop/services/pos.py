@@ -2184,8 +2184,14 @@ def cancel_fired_pos_tab_lines(
     line_ids: list[str],
     actor: str,
     operator_username: str,
+    quantities: dict | None = None,
 ) -> PosUnfireResult:
     """Cancel the kitchen fire for specific comanda lines (course returned/wrong).
+
+    ``quantities`` (``{line_id: unidades}``): a conta DIMINUIU uma linha já enviada
+    (decisão do dono, 10/10/2026). Cancela na cozinha só a diferença: a linha segue
+    enviada, com o que sobra, e o comprovante cancelado leva as unidades tiradas.
+    Unidades iguais ou acima do que foi à cozinha cancelam a linha inteira.
 
     The targeted lines leave their live KDS tickets (a ticket is cancelled when
     it empties), drop from ``Session.data["fired_lines"]`` and become re-fireable
@@ -2218,18 +2224,38 @@ def cancel_fired_pos_tab_lines(
         {"sku": i.get("sku"), "name": i.get("name"), "qty": _audit_qty(i)}
         for i in session.items if i.get("line_id") in target_set
     ]
-    result = kds_service.unfire_lines(session_key=session.session_key, line_ids=targets)
+    previous_fired_qty = {
+        str(k): weighed_sale.qty_number(v) for k, v in ((session.data or {}).get("fired_qty") or {}).items()
+    }
+    # Diminuir: a fração do que foi à cozinha que sai (só onde ela é menor que tudo).
+    fractions: dict[str, Decimal] = {}
+    remaining: dict[str, object] = {}
+    for line_id, raw in (quantities or {}).items():
+        line_id = str(line_id).strip()
+        sent = previous_fired_qty.get(line_id)
+        try:
+            gone = Decimal(str(raw))
+        except (InvalidOperation, ValueError):
+            continue
+        if line_id not in target_set or not sent or gone <= 0:
+            continue
+        sent_dec = Decimal(str(sent))
+        if gone < sent_dec:
+            fractions[line_id] = gone / sent_dec
+            remaining[line_id] = weighed_sale.qty_number(sent_dec - gone)
+    result = kds_service.unfire_lines(session_key=session.session_key, line_ids=targets, fractions=fractions)
     fired = sorted(kds_service.fired_line_ids(session.session_key))
     fired_qty = {
-        str(k): int(v)
-        for k, v in ((session.data or {}).get("fired_qty") or {}).items()
-        if str(k) not in target_set
+        line_id: remaining.get(line_id, qty)
+        for line_id, qty in previous_fired_qty.items()
+        if line_id not in target_set or line_id in remaining
     }
     session.data = {**(session.data or {}), "fired_lines": fired, "fired_qty": fired_qty}
     session.save(update_fields=["data"])
 
     session.emit_event("unfired", actor=operator_username, payload={
         "lines": unfired_lines, "line_ids": targets, "cancelled": result["cancelled"],
+        **({"partial": {k: str(v) for k, v in (quantities or {}).items() if k in fractions}} if fractions else {}),
     })
 
     logger.info(

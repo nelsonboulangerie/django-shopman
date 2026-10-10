@@ -193,6 +193,7 @@ const {
   cancelOptionsPrompt,
   setQty,
   addLineLike,
+  cancelLinesInKitchen,
   restoreItem,
   setLineNotes,
   setLineDiscount,
@@ -1640,6 +1641,7 @@ onBeforeUnmount(() => {
               @move="openMoveWith"
               @add-like="(lineId, qty, done) => done(addLineLike(lineId, qty))"
               @resend="resendLine"
+              @cancel-in-kitchen="(entries, done) => cancelLinesInKitchen(entries).then(done)"
               @release="tabHeaderRef?.askRelease()"
               @auto-fire-hold="(held) => { autoFireHeld = held; }"
               @fire="fireTab"

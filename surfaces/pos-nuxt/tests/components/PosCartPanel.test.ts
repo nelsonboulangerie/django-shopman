@@ -146,13 +146,15 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
       await wrapper.find("button[aria-expanded]").trigger("click");
     await wrapper.find('[data-pos-line-remove]').trigger("click");
     expect(wrapper.emitted("remove")).toBeUndefined();
+    // Decisão 5 do dono: a linha na cozinha sai da conta E é cancelada lá.
     const confirm = Array.from(document.querySelectorAll("button")).find((b) =>
-      b.textContent?.includes("Remover item"),
+      b.textContent?.includes("Remover e cancelar na cozinha"),
     );
     expect(confirm).toBeTruthy();
     (confirm as HTMLElement).click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("remove")?.[0]).toEqual(["l1"]);
+    expect(wrapper.emitted("cancelInKitchen")?.[0]?.[0]).toEqual([{ lineId: "l1", units: undefined }]);
   });
 
   it("'Pagamento' emite prepare", async () => {

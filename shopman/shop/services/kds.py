@@ -420,15 +420,19 @@ def preview_order_for_instance(order, instance) -> list[dict]:
     return preview
 
 
-def unfire_lines(*, session_key: str, line_ids: list[str]) -> dict:
-    """Cancel the kitchen fire for specific lines, freeing them to re-fire."""
+def unfire_lines(*, session_key: str, line_ids: list[str], fractions: dict | None = None) -> dict:
+    """Cancel the kitchen fire for specific lines, freeing them to re-fire.
+
+    ``fractions``: cancelar só parte de uma linha (a conta diminuiu); ver
+    ``adapters.kds.unfire_session_lines``.
+    """
     from django.db import transaction
 
     from shopman.shop.adapters import kds as kds_adapter
 
     with transaction.atomic():
         _lock_source_for_session(session_key)
-        return kds_adapter.unfire_session_lines(session_key, line_ids)
+        return kds_adapter.unfire_session_lines(session_key, line_ids, fractions)
 
 
 def _order_to_lines(order) -> list[dict]:

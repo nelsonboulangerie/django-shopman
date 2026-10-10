@@ -32,7 +32,14 @@ import { isWeighedLine, lineQtyLabel } from "~/presentation/weighed";
 import { toast } from "vue-sonner";
 import { createReusableTemplate } from "@vueuse/core";
 import { fireCellView, kitchenStateView, markedSummary, markRange, toggleMark as toggleMarkRule } from "~/presentation/ticketColumn";
-import { firedLineIncrease, firedLineShrinkPolicy, offersResendWithNote } from "~/presentation/firedLineChange";
+import {
+  cancelledFact,
+  type FiredLineShrink,
+  firedLineIncrease,
+  firedLineShrink,
+  firedLineShrinkMessage,
+  offersResendWithNote,
+} from "~/presentation/firedLineChange";
 
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 
@@ -135,6 +142,13 @@ const emit = defineEmits<{
   release: [];
   /** Há rascunho aberto (desconto, observação) ou linhas marcadas: o envio automático espera. */
   autoFireHold: [held: boolean];
+  /**
+   * Linha já na cozinha que SAIU ou DIMINUIU na conta (decisão do dono, 10/10/2026):
+   * cancelar na cozinha pelo caminho canônico (o "cancelar envio" do servidor). `units`
+   * ausente = a linha inteira; presente = só a diferença. `done(ok)` diz se a cozinha
+   * recebeu, e a coluna diz isso em palavra.
+   */
+  cancelInKitchen: [entries: Array<{ lineId: string; units?: number }>, done: (ok: boolean) => void];
   fire: [];
   unfire: [string];
   /** Multi-select batch (spec §2.2): fire/unfire exatamente estas linhas. */
@@ -801,7 +815,7 @@ watch(activeLineId, () => {
 // procurando um toast que já tinha passado. Um modal custa um toque; recontar o
 // pedido do cliente custa a venda.
 const confirmAction = ref<
-  | { kind: "line"; lineId: string; name: string; fired: boolean }
+  | { kind: "line"; lineId: string; name: string; fired: boolean; shrink: FiredLineShrink }
   | { kind: "batch"; lineIds: string[]; units: number; hasFired: boolean }
   | null
 >(null);
@@ -814,16 +828,58 @@ const confirmTitle = computed(() => {
       ? "Remover o item selecionado?"
       : `Remover ${action.units} itens selecionados?`;
   }
-  // Item já na cozinha é outra conversa: sair da tela não o tira do fogão.
+  // Item já na cozinha é outra conversa: sair da conta o tira do fogão também.
   return action.fired
     ? "Remover item enviado à cozinha?"
     : `Remover ${action.name}?`;
 });
-const confirmCta = computed(() =>
-  confirmAction.value?.kind === "batch" && confirmAction.value.units > 1
-    ? "Remover itens"
-    : "Remover item",
+const confirmCta = computed(() => {
+  const action = confirmAction.value;
+  if (action?.kind === "line" && action.shrink.kind === "cancel") return "Remover e cancelar na cozinha";
+  if (action?.kind === "batch" && action.hasFired) return action.units > 1 ? "Remover e cancelar na cozinha" : "Remover e cancelar na cozinha";
+  return action?.kind === "batch" && action.units > 1 ? "Remover itens" : "Remover item";
+});
+/** A cozinha ainda pode cancelar esta linha (ticket não pronto e o servidor oferece). */
+function kitchenCancellable(item: POSCartItem): boolean {
+  return lineKitchenState(item) === "fired_cancellable" && props.unfireAction.present && props.unfireAction.enabled;
+}
+// O fato que fica na linha depois de cancelar PARTE dela ("2 cancelados na cozinha"):
+// estado de tela, some quando a linha sai.
+const cancelledUnits = ref<Record<string, number>>({});
+watch(
+  () => props.items.map((item) => item.line_id).join("|"),
+  () => {
+    const present = new Set(props.items.map((item) => item.line_id));
+    const next = Object.fromEntries(Object.entries(cancelledUnits.value).filter(([id]) => present.has(id)));
+    if (Object.keys(next).length !== Object.keys(cancelledUnits.value).length) cancelledUnits.value = next;
+  },
 );
+/**
+ * A conta tirou unidades de uma linha enviada: a cozinha recebe o cancelamento (só a
+ * diferença, ou a linha inteira) pelo caminho canônico, e a coluna diz o que houve.
+ * Pronto já não se cancela: sai só da conta, e a frase diz isso. Sem conexão a
+ * cozinha não recebe, e a frase manda avisar de voz. `undo`: o Desfazer da remoção.
+ */
+function applyShrink(item: POSCartItem, shrink: FiredLineShrink, undo?: () => void) {
+  const action = undo ? { action: { label: "Desfazer", onClick: undo } } : undefined;
+  if (shrink.kind === "none") return;
+  if (shrink.kind === "account-only" || props.offline) {
+    toast(firedLineShrinkMessage(item.name, shrink, shrink.kind === "account-only" ? "done" : "failed"), action);
+    return;
+  }
+  emit("cancelInKitchen", [{ lineId: item.line_id, units: shrink.whole ? undefined : shrink.units }], (ok) => {
+    toast(firedLineShrinkMessage(item.name, shrink, ok ? "done" : "failed"), action);
+    if (ok && !shrink.whole) {
+      cancelledUnits.value = { ...cancelledUnits.value, [item.line_id]: (cancelledUnits.value[item.line_id] || 0) + shrink.units };
+    }
+  });
+}
+/** Desfazer depois de a cozinha cancelar: a linha volta A ENVIAR (a cozinha já não a tem). */
+function restorable(item: POSCartItem, cancelled: boolean): POSCartItem {
+  if (!cancelled) return { ...item };
+  const { fired: _fired, fired_qty: _firedQty, kitchen_status: _status, kitchen_tickets: _tickets, ...rest } = item;
+  return { ...rest, fired: false };
+}
 function askRemove(lineId: string) {
   if (props.loading || props.saving) return;
   const item = props.items.find((entry) => entry.line_id === lineId);
@@ -833,17 +889,22 @@ function askRemove(lineId: string) {
     lineId,
     name: item.name || "item",
     fired: Boolean(item.fired),
+    shrink: firedLineShrink(item, 0, kitchenCancellable(item)),
   };
 }
 /** O "Desfazer" continua existindo depois do SIM: confirmar não torna o engano
  *  impossível, só deliberado. */
 function removeWithUndo(item: POSCartItem) {
-  const snapshot: POSCartItem = { ...item };
+  const shrink = firedLineShrink(item, 0, kitchenCancellable(item));
+  const snapshot = restorable(item, shrink.kind === "cancel");
   if (selectedLineId.value === item.line_id) selectedLineId.value = "";
   emit("remove", item.line_id);
-  toast(`${snapshot.name} removido.`, {
-    action: { label: "Desfazer", onClick: () => emit("restore", snapshot) },
-  });
+  const undo = () => emit("restore", snapshot);
+  if (shrink.kind === "none") {
+    toast(`${snapshot.name} removido.`, { action: { label: "Desfazer", onClick: undo } });
+    return;
+  }
+  applyShrink(item, shrink, undo);
 }
 function cancelConfirm() {
   confirmAction.value = null;
@@ -854,16 +915,33 @@ function runConfirm() {
   if (!action) return;
   if (action.kind === "batch") {
     // N como 1: confirma E oferece Desfazer (devolve cada linha como estava).
-    const snapshots = action.lineIds
+    const chosen = action.lineIds
       .map((lineId) => props.items.find((entry) => entry.line_id === lineId))
-      .filter((item): item is POSCartItem => Boolean(item))
-      .map((item) => ({ ...item }));
+      .filter((item): item is POSCartItem => Boolean(item));
+    const shrinks = chosen.map((item) => ({ item, shrink: firedLineShrink(item, 0, kitchenCancellable(item)) }));
+    const toCancel = shrinks.filter(({ shrink }) => shrink.kind === "cancel");
+    const ready = shrinks.filter(({ shrink }) => shrink.kind === "account-only").length;
+    const snapshots = shrinks.map(({ item, shrink }) => restorable(item, shrink.kind === "cancel"));
     clearSelection();
     selectedLineId.value = "";
-    snapshots.forEach((item) => emit("remove", item.line_id));
-    toast(`${action.units} ${action.units === 1 ? "item removido" : "itens removidos"}.`, {
-      action: { label: "Desfazer", onClick: () => snapshots.forEach((item) => emit("restore", item)) },
-    });
+    chosen.forEach((item) => emit("remove", item.line_id));
+    const units = action.units;
+    const base = `${units} ${units === 1 ? "item removido" : "itens removidos"}`;
+    const readyNote = ready ? `; ${ready === 1 ? "1 já estava pronto e saiu" : `${ready} já estavam prontos e saíram`} só da conta` : "";
+    const undo = { action: { label: "Desfazer", onClick: () => snapshots.forEach((item) => emit("restore", item)) } };
+    if (!toCancel.length) {
+      toast(`${base}${readyNote}.`, undo);
+      return;
+    }
+    const cancelled = toCancel.length;
+    const say = (ok: boolean) => ok
+      ? `${base}: ${cancelled === 1 ? "1 cancelado" : `${cancelled} cancelados`} na cozinha${readyNote}.`
+      : `${base}, mas a cozinha não recebeu o cancelamento: avise de voz${readyNote}.`;
+    if (props.offline) {
+      toast(say(false), undo);
+      return;
+    }
+    emit("cancelInKitchen", toCancel.map(({ item }) => ({ lineId: item.line_id })), (ok) => toast(say(ok), undo));
     return;
   }
   const item = props.items.find((entry) => entry.line_id === action.lineId);
@@ -978,10 +1056,15 @@ function commitQty() {
     addLike(lineId, extra);
     return;
   }
-  if (item?.fired && next < item.qty && firedLineShrinkPolicy() === "ask") {
-    // Pergunta 5 (pendente): a decisão do dono pluga aqui. Hoje só avisa (o selo da linha).
-  }
+  // Decisão 5 do dono: diminuir uma linha enviada cancela na cozinha só a diferença.
+  // A medida vem ANTES do emit: o pai muda a quantidade da mesma linha na hora.
+  // Enquanto a cozinha responde a um cancelamento, a linha enviada não diminui de novo
+  // (a conta de "quanto foi à cozinha" ainda é a velha, e cancelaria a mais).
+  if (item?.fired && next < item.qty && props.firing) return;
+  const shrink = item?.fired && next < item.qty ? firedLineShrink(item, next, kitchenCancellable(item)) : null;
+  const before = item ? { ...item } : null;
   emit("setQty", lineId, next);
+  if (shrink && before) applyShrink(before, shrink);
 }
 /** MAIS numa linha que já está na cozinha vai numa linha NOVA, a enviar; o editor segue
  *  a linha nova (é nela que o próximo + e o próximo dígito vão). */
@@ -1117,7 +1200,11 @@ function bump(lineId: string, emitName: "increment" | "decrement") {
       askRemove(lineId);
       return;
     }
+    if (line?.fired && props.firing) return;
+    const shrink = line?.fired ? firedLineShrink(line, line.qty - 1, kitchenCancellable(line)) : null;
+    const before = line ? { ...line } : null;
     emit("decrement", lineId);
+    if (shrink && before) applyShrink(before, shrink);
     return;
   }
   emit("increment", lineId);
@@ -1313,6 +1400,29 @@ async function navigateItems(event: KeyboardEvent) {
     else closeEditor();
   }
 }
+// A LINHA EM FOCO FICA À VISTA, ACIMA DO BLOCO (regra do próximo foco): abrir uma
+// linha, lançar um produto ou marcar faz o bloco de ação aparecer ou crescer, e a lista
+// encolhe; a linha aberta (ou a última marcada) rola para dentro da área visível. É
+// `block: "nearest"` na lista e não o `useNextFocus`: o foco de teclado fica onde está
+// (na busca, no teclado físico) e a lista não salta para o topo a cada linha. A linha
+// tem `scroll-mb-16` (a altura da dica "Tem mais abaixo"): ela para ACIMA do degradê,
+// nunca embaixo dele.
+function revealLine(lineId: string) {
+  if (!lineId || !import.meta.client) return;
+  void nextTick(() => requestAnimationFrame(() => {
+    const row = receiptList.value?.querySelector<HTMLElement>(`[data-item-select="${CSS.escape(lineId)}"]`)?.closest("li");
+    row?.scrollIntoView?.({ block: "nearest" });
+  }));
+}
+watch(() => [activeLineId.value, blockVisible.value, selectMode.value] as const, ([lineId, visible]) => {
+  if (visible && !selectMode.value) revealLine(lineId);
+});
+watch(() => markAnchor.value, (lineId) => { if (selectMode.value) revealLine(lineId); });
+watch(() => [lineEditing.value, resendOffer.value] as const, () => {
+  const lineId = selectMode.value ? markAnchor.value : activeLineId.value;
+  if (blockVisible.value) revealLine(lineId);
+});
+
 // O envio automático espera o rascunho e as marcas (o relógio mora na página).
 const autoFireHeld = computed(() => Boolean(noteDraft.value) || discountOpen.value || selectMode.value);
 watch(autoFireHeld, (held) => emit("autoFireHold", held), { immediate: true });
@@ -1603,7 +1713,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
           <li
             v-for="item in items"
             :key="item.line_id"
-            class="group/line relative flex flex-wrap items-stretch border-b border-border"
+            class="group/line relative flex flex-wrap items-stretch border-b border-border scroll-mb-16"
             :aria-current="activeLineId === item.line_id ? 'true' : undefined"
             :class="
               isSelected(item.line_id)
@@ -1659,7 +1769,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                 <!-- O fato da linha, numa linha só (v4): observação, desconto (preço
                      unitário só aqui ou no peso) e o estado na cozinha. -->
                 <span
-                  v-if="item.notes || discountBadge(item) || isWeighedLine(item) || lineKitchenState(item) !== 'unfired' || goesToKitchen(item)"
+                  v-if="item.notes || discountBadge(item) || isWeighedLine(item) || lineKitchenState(item) !== 'unfired' || goesToKitchen(item) || cancelledUnits[item.line_id]"
                   class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 op-micro text-muted-foreground tnum"
                 >
                   <span v-if="item.notes" class="min-w-0 text-foreground/80 [overflow-wrap:anywhere]">Obs.: {{ item.notes }}</span>
@@ -1673,6 +1783,12 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                   >
                   <!-- O fato da cozinha É a porta do card dela (estação, disparo, estado):
                        a linha não carrega enfeite à direita (v4). -->
+                  <span
+                    v-if="cancelledUnits[item.line_id]"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-sm bg-destructive/10 px-1 text-destructive"
+                    data-pos-line-cancelled-units
+                    ><Icon name="lucide:chef-hat" class="size-3.5" aria-hidden="true" />{{ cancelledFact(cancelledUnits[item.line_id]!) }}</span
+                  >
                   <span
                     v-if="lineKitchenState(item) !== 'unfired'"
                     role="button"
@@ -1746,6 +1862,13 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             </div>
           </li>
         </ul>
+        <!-- TEM MAIS ABAIXO (regra da casa): a lista que passa da dobra não termina numa
+             linha cortada sob o bloco de ação sem aviso. A dica é CONTIDA na lista que
+             rola: o bloco de ação e o pé ficam fora dela por construção, então o fim só
+             conta acima deles sem medir obstrução (marcar o bloco com
+             `data-focus-obstruction` faria o resto da tela da venda, à esquerda, achar
+             que a base inteira está coberta). -->
+        <MoreBelow contained surface="card" />
       </div>
 
       <!-- Z3 · O BLOCO DE AÇÃO: colado no pé da lista, borda primária em cima, só quando
@@ -2229,9 +2352,11 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
     @update:open="(value: boolean) => { if (!value) cancelConfirm(); }"
   >
     <template #description>
-      <template v-if="confirmAction?.kind === 'line' && confirmAction.fired">
-        <strong>{{ confirmAction.name }}</strong> já foi enviado à cozinha.
-        Remover tira a linha do pedido; avise o preparo se necessário.
+      <template v-if="confirmAction?.kind === 'line' && confirmAction.shrink.kind === 'cancel'">
+        <strong>{{ confirmAction.name }}</strong> sai da conta e é cancelado na cozinha.
+      </template>
+      <template v-else-if="confirmAction?.kind === 'line' && confirmAction.fired">
+        <strong>{{ confirmAction.name }}</strong> já está pronto: sai só da conta.
       </template>
       <template v-else-if="confirmAction?.kind === 'line'">
         A linha sai do pedido. Dá para desfazer logo depois.
@@ -2239,8 +2364,8 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
       <template v-else-if="confirmAction?.kind === 'batch'">
         {{
           confirmAction.hasFired
-            ? "As linhas selecionadas saem do pedido, inclusive as que já foram à cozinha."
-            : "As linhas selecionadas saem do pedido."
+            ? "As linhas marcadas saem da conta. As que estão na cozinha são canceladas lá; as prontas saem só da conta."
+            : "As linhas marcadas saem da conta."
         }}
       </template>
     </template>

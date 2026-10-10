@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { fireCellView, kitchenStateView, markRange, markedSummary, toggleMark } from "~/presentation/ticketColumn";
-import { firedLineIncrease, firedLineShrinkPolicy, offersResendWithNote } from "~/presentation/firedLineChange";
+import { firedLineIncrease, firedLineShrink, firedLineShrinkPolicy, offersResendWithNote } from "~/presentation/firedLineChange";
 import { availableMoveModes, initialMoveMode, moveSubmitLabel } from "~/presentation/moveLines";
 import type { POSCartItem } from "~/types/pos";
 
@@ -57,12 +57,20 @@ describe("ticketColumn — a cozinha em palavra, com o quando", () => {
   });
 });
 
-describe("firedLineChange — o ponto isolado da pergunta 5", () => {
-  it("mais numa linha enviada vai numa linha nova; menos segue só avisando até o dono decidir", () => {
+describe("firedLineChange — a decisão 5 do dono", () => {
+  it("mais numa linha enviada vai numa linha nova", () => {
     expect(firedLineIncrease({ fired: true, qty: 2 }, 5)).toBe(3);
     expect(firedLineIncrease({ fired: true, qty: 2 }, 1)).toBe(0);
     expect(firedLineIncrease({ fired: false, qty: 2 }, 5)).toBe(0);
-    expect(firedLineShrinkPolicy()).toBe("warn");
+  });
+  it("menos ou remover cancela na cozinha (só a diferença); pronto sai só da conta", () => {
+    expect(firedLineShrinkPolicy()).toBe("cancel");
+    expect(firedLineShrink({ fired: true, qty: 3, fired_qty: 3 }, 1, true)).toEqual({ kind: "cancel", units: 2, whole: false });
+    expect(firedLineShrink({ fired: true, qty: 3, fired_qty: 3 }, 0, true)).toEqual({ kind: "cancel", units: 3, whole: true });
+    expect(firedLineShrink({ fired: true, qty: 3, fired_qty: 3 }, 1, false)).toEqual({ kind: "account-only" });
+    // A conta tinha mais do que a cozinha recebeu: tirar o excesso não cancela nada lá.
+    expect(firedLineShrink({ fired: true, qty: 4, fired_qty: 2 }, 3, true)).toEqual({ kind: "none" });
+    expect(firedLineShrink({ fired: false, qty: 3 }, 1, true)).toEqual({ kind: "none" });
   });
   it("observação nova numa linha cancelável oferece reenviar", () => {
     expect(offersResendWithNote({ fired: true, cancellable: true, before: "", after: "sem sal" })).toBe(true);
