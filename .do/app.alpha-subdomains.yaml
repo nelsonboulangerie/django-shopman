@@ -113,20 +113,25 @@ ingress:
   # API do Django dividida por path (ver o bloco `services`). A ordem importa e é
   # do mais específico para o mais geral: backstage antes de `/api/v1/`, e o
   # resto do host (Admin, `/events/`, webhooks, menuboard, health) no operador.
+  # `preserve_path_prefix: true` é obrigatório: sem ele a DO CORTA o prefixo e o
+  # Django recebe `/storefront/...` no lugar de `/api/v1/storefront/...` (404 da
+  # API inteira no alpha em 10/10, ~20 min). A DO grava o prefixo sem barra final.
   - component:
       name: web-operator
+      preserve_path_prefix: true
     match:
       authority:
         exact: api.boulangerie.com.br
       path:
-        prefix: /api/v1/backstage/
+        prefix: /api/v1/backstage
   - component:
       name: web-storefront
+      preserve_path_prefix: true
     match:
       authority:
         exact: api.boulangerie.com.br
       path:
-        prefix: /api/v1/
+        prefix: /api/v1
   - component:
       name: web-operator
     match:
@@ -431,10 +436,15 @@ envs:
   type: SECRET
 # Entrega por parceiro (TaOn sobre a Machine, API v1). As seis GENERAL abaixo
 # repetem o padrão do config/settings.py (SHOPMAN_MACHINE): aplicar não muda
-# comportamento. ⚠️ SHOPMAN_COURIER_ADAPTER fica FORA deste arquivo de propósito:
-# com ele e sem as quatro credenciais, o `check --deploy` do job release reprova
-# (SHOPMAN_E011) e o deploy para. O interruptor se liga no painel, depois das
-# credenciais e do ensaio de homologação (docs/runbooks/courier-machine-homologacao.md).
+# comportamento. O interruptor SHOPMAN_COURIER_ADAPTER foi ligado no painel pelo
+# dono (D-020, 02/10) depois das quatro credenciais SECRET abaixo; ele mora aqui
+# desde 10/10 para o arquivo descrever o vivo (sem ele, um `apps update` desligaria
+# a entrega por parceiro). Sem as credenciais, o `check --deploy` do release
+# reprova (SHOPMAN_E011): desligar é tirar a chave daqui E do painel.
+- key: SHOPMAN_COURIER_ADAPTER
+  scope: RUN_TIME
+  value: 'shopman.shop.adapters.courier_machine'
+  type: GENERAL
 - key: MACHINE_API_BASE
   scope: RUN_TIME
   value: 'https://api.taximachine.com.br/api/integracao'

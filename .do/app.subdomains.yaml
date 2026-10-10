@@ -110,20 +110,24 @@ ingress:
     # Django headless — host api., dividido por path (ver o bloco `services`).
     # Do mais específico para o mais geral: backstage antes de `/api/v1/`, e o
     # resto do host (Admin, `/events/`, webhooks, menuboard, health) no operador.
+    # `preserve_path_prefix: true` é obrigatório: sem ele a DO CORTA o prefixo e
+    # o Django recebe o caminho sem `/api/v1` (404 da API no alpha em 10/10).
     - match:
         authority:
           exact: api.STORE_DOMAIN
         path:
-          prefix: /api/v1/backstage/
+          prefix: /api/v1/backstage
       component:
         name: web-operator
+        preserve_path_prefix: true
     - match:
         authority:
           exact: api.STORE_DOMAIN
         path:
-          prefix: /api/v1/
+          prefix: /api/v1
       component:
         name: web-storefront
+        preserve_path_prefix: true
     - match:
         authority:
           exact: api.STORE_DOMAIN

@@ -252,15 +252,19 @@ def _shopman_machine_from_settings_py(environ: dict) -> dict:
     return eval(compile(ast.Expression(body=block.value), "settings.py", "eval"), namespace)
 
 
-def test_alpha_machine_envs_repeat_the_code_defaults_and_never_arm_the_adapter():
-    """As seis GENERAL da Machine no spec do alpha são o padrão do código; o interruptor fica fora.
+def test_alpha_machine_envs_repeat_the_code_defaults_and_arm_the_adapter_with_credentials():
+    """As seis GENERAL da Machine no spec do alpha são o padrão do código; o interruptor
+    está ligado, como no vivo (D-020), e só existe junto das quatro credenciais SECRET.
 
-    ``SHOPMAN_COURIER_ADAPTER`` no arquivo ligaria o despacho no próximo ``apps update``
-    e, sem as credenciais, o ``check --deploy`` do release reprovaria (SHOPMAN_E011).
+    ``SHOPMAN_COURIER_ADAPTER`` sem as credenciais faria o ``check --deploy`` do release
+    reprovar (SHOPMAN_E011); fora do arquivo, o próximo ``apps update`` desligaria a
+    entrega por parceiro que o dono ligou no painel.
     """
     spec = _load_spec(ALPHA_SPEC)
     app_envs = {entry["key"]: entry for entry in spec["envs"]}
-    assert "SHOPMAN_COURIER_ADAPTER" not in {key for key, _ in _envs(spec)}
+    assert app_envs["SHOPMAN_COURIER_ADAPTER"]["value"] == "shopman.shop.adapters.courier_machine"
+    assert app_envs["SHOPMAN_COURIER_ADAPTER"]["type"] == "GENERAL"
+    assert set(MACHINE_SECRET_ENVS) <= set(app_envs)
 
     declared = {key: str(app_envs[key]["value"]) for key in MACHINE_GENERAL_ENVS}
     assert all(app_envs[key]["type"] == "GENERAL" for key in MACHINE_GENERAL_ENVS)

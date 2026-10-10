@@ -72,10 +72,9 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
 
 ## Armadilhas ativas (leia antes de mexer)
 
-1. ⛔ **O drift do spec está `[FAIL]` de propósito, só por `SHOPMAN_COURIER_ADAPTER`** (D-020/D-026):
-   ligado no painel, fora do arquivo. **Aplicar o arquivo desliga a entrega por parceiro.** As
-   chaves do Jev e da Concierge ligada para o dono (`assist`, `SHOPMAN_CONCIERGE_ENABLED=true`,
-   `CONCIERGE_TRIAGE_CLASSIFIER=jev`, 03/10) estão no arquivo desde `claude/spec-concierge-ligada`.
+1. `SHOPMAN_COURIER_ADAPTER` mora no arquivo do spec desde 10/10 (#1633), com o valor do vivo
+   (D-026 superada). O drift que restou em 10/10 é `KDS__NUXT_PUBLIC_ORDERS_URL` só no arquivo: o
+   vivo não a tem e a Saída do KDS aponta para `http://127.0.0.1:3004/`; o arquivo está certo.
 2. ⛔ **O checkout principal está 3201 commits atrás** de `origin/main` (02/10 15:55 UTC), num branch do Codex
    de 28/08. Leia de `origin/main`, escreva em worktree.
 3. ⛔ **NUNCA `doctl apps update` no spec vivo.**

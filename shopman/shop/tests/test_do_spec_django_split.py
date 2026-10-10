@@ -6,8 +6,10 @@ O que esta trava garante nos dois specs de `.do/`:
   build, comando, porta, health, chaves de env). Divergir aqui é ter dois
   Djangos diferentes atrás do mesmo `api.`;
 - o operador roda em instância DEDICADA, a loja em compartilhada;
-- o ingress do `api.` manda `/api/v1/backstage/` ao operador ANTES de mandar
-  `/api/v1/` à loja, e o resto do host (Admin, `/events/`, webhooks) ao operador;
+- o ingress do `api.` manda `/api/v1/backstage` ao operador ANTES de mandar
+  `/api/v1` à loja, e o resto do host (Admin, `/events/`, webhooks) ao operador;
+- toda regra com prefixo diferente de `/` que entrega a um componente preserva o
+  prefixo (`preserve_path_prefix: true`);
 - todo componente citado no ingress existe.
 """
 
@@ -78,8 +80,8 @@ def _rules_for(spec: dict, host: str) -> list[tuple[str, str]]:
 def test_api_host_routes_by_path_most_specific_first(spec_name, domain):
     spec = _spec(spec_name)
     assert _rules_for(spec, f"api.{domain}") == [
-        ("/api/v1/backstage/", "web-operator"),
-        ("/api/v1/", "web-storefront"),
+        ("/api/v1/backstage", "web-operator"),
+        ("/api/v1", "web-storefront"),
         ("/", "web-operator"),
     ]
     assert _rules_for(spec, f"admin.{domain}") == [("/", "web-operator")]
@@ -94,6 +96,24 @@ def test_every_ingress_component_exists(spec_name):
         component = (rule.get("component") or {}).get("name")
         if component:
             assert component in names, component
+
+
+@pytest.mark.parametrize("spec_name", SPECS)
+def test_prefixed_component_rules_preserve_the_prefix(spec_name):
+    """A DO CORTA o prefixo da regra antes de entregar ao componente, por padrão.
+
+    Em 10/10 o split subiu sem `preserve_path_prefix` e o Django recebeu
+    `/storefront/...` no lugar de `/api/v1/storefront/...`: a API inteira deu 404
+    no alpha por ~20 min. Quem quiser cortar o prefixo declara `rewrite`.
+    """
+    for rule in _spec(spec_name)["ingress"]["rules"]:
+        component = rule.get("component")
+        prefix = rule["match"]["path"]["prefix"]
+        if not component or prefix == "/" or "rewrite" in component:
+            continue
+        assert component.get("preserve_path_prefix") is True, (prefix, component["name"])
+        # A DO normaliza o prefixo sem barra final; o arquivo fala como o vivo.
+        assert not prefix.endswith("/"), prefix
 
 
 def test_storefront_api_routes_live_under_api_v1_and_backstage_is_separate():
