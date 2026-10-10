@@ -6,6 +6,27 @@ da branch do #1636 (`claude/pdv-comanda-altura-total`), de `shop/services/pos.py
 `orderman`. **Só desenho: nenhum código de app neste PR.** A página com diagrama e wireframes
 dos sete estados é publicada à parte (estudo-coluna-comanda.html).
 
+## Decisões do dono (10/10)
+
+Valem acima das seções 4 a 7, que ficam como registro do estudo.
+
+1. **Marcar sem modo**, com um seletor que não rouba espaço da linha.
+2. **Não existe "Separar".** O verbo da comanda é **Transferir**, e ele já embute "comanda nova"
+   e "juntar". **Dividir a conta** fica só para pagar em partes, no Pagamento.
+3. **"Cobrar marcadas" não será construído** (KISS): transferir as linhas para uma comanda nova
+   e cobrar essa comanda resolve o "cada um paga o seu".
+4. **Com marcas, F9 e Enviar mandam só as marcadas**, e o botão diz isso.
+5. **Linha na cozinha removida ou diminuída cancela AUTOMATICAMENTE na cozinha**, com alarde no
+   KDS a cada mudança, nunca em silêncio. Não se pergunta "só da conta" ao operador.
+
+**O que foi construído**
+
+- **#1645 (mergeado):** transferir, para comanda nova ou para juntar, leva o estado da cozinha
+  junto, e o F10 leva as linhas marcadas. Corrige os dois defeitos da seção 3.
+- **#1636:** a coluna em quatro zonas: marcar sem modo, Transferir e o pé que segue o foco.
+- **`claude/kds-cancelamento-com-alarde`:** o cancelamento automático com alarde no KDS
+  (decisão 5).
+
 ## 1. O diagnóstico
 
 A coluna mistura três objetos (a **comanda**, **uma linha**, **várias linhas**) e cada um
