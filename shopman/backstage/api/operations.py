@@ -624,6 +624,15 @@ class POSView(APIView):
     def get(self, request):
         from shopman.backstage.services.operator import operator_card, pin_must_change
 
+        # ``?only=tabs``: só o quadro de comandas. É o que o aviso de comanda
+        # (SSE ``backstage-tabs-update``) precisa reler: cada salvar de qualquer
+        # balcão avisa todas as estações, e cada uma relia a projeção inteira
+        # (catálogo com disponibilidade, turno, operadores). Com três ou quatro
+        # dispositivos abertos, cada pausa do operador vendendo virava vários
+        # segundos de CPU no servidor, na frente da próxima ida dele.
+        if request.query_params.get("only") == "tabs":
+            return Response({"tabs": projection_data(build_pos_tabs(query=request.query_params.get("q", "")))})
+
         # A ESTAÇÃO diz qual gaveta é esta — o cookie de confiança carrega o ref. É o
         # que permite a loja de duas gavetas ler o quadro certo em cada balcão, em vez
         # de os dois disputarem o primeiro em ordem alfabética.

@@ -45,7 +45,8 @@ export const POS_ORDER_CHANNELS: readonly PosEventChannel[] = [
  * sem esta retomada, a estação ficaria no poll para sempre).
  */
 export function usePosEvents(
-  onPush: () => void,
+  /** `channel` diz qual stream avisou; sem ele (poll, volta à aba) é a releitura inteira. */
+  onPush: (channel?: PosEventChannel) => void,
   opts?: { pollMs?: number; enabled?: () => boolean; channels?: readonly PosEventChannel[] },
 ) {
   /** O stream so conecta com a estacao identificada: no gate os canais sao
@@ -65,7 +66,7 @@ export function usePosEvents(
       try {
         const source = new EventSource(ssePath(channel.path, config.app.baseURL), { withCredentials: true });
         // django-eventstream empurra eventos nomeados; qualquer um = refetch.
-        const onEvent = () => onPush();
+        const onEvent = () => onPush(channel);
         ["message", channel.event].forEach((name) => source.addEventListener(name, onEvent));
         // Um stream vivo já tira a tela do poll; o outro caindo não a devolve
         // para lá, senão o canal saudável passaria a refazer fetch de graça.

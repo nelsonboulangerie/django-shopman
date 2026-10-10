@@ -4,9 +4,10 @@ import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 
 // Read-window do terminal: derivação das fatias (pos/shift/tabs/operators/actions) a
 // partir da Projection serializada. Mockamos useFetch para controlar o payload.
-const { fetchResult } = vi.hoisted(() => ({ fetchResult: { value: null as unknown } }));
+const { fetchResult, fetchMock } = vi.hoisted(() => ({ fetchResult: { value: null as unknown }, fetchMock: vi.fn() }));
 
 mockNuxtImport("useFetch", () => () => fetchResult.value);
+mockNuxtImport("$fetch", () => fetchMock);
 mockNuxtImport("useRequestHeaders", () => () => ({}));
 mockNuxtImport("useRuntimeConfig", () => () => ({ app: { baseURL: "/" } }));
 
@@ -17,6 +18,7 @@ function asyncData(payload: unknown) {
 describe("usePosTerminal", () => {
   beforeEach(() => {
     fetchResult.value = null;
+    fetchMock.mockReset();
   });
 
   it("deriva as fatias da Projection", async () => {
@@ -38,5 +40,31 @@ describe("usePosTerminal", () => {
     expect(t.tabs.value).toEqual([]);
     expect(t.operators.value).toEqual([]);
     expect(t.actions.value).toEqual([]);
+  });
+
+  it("o aviso de comanda relê só o quadro e o encaixa, sem reler a projeção inteira", async () => {
+    const pos = { actions: [], operators: [] };
+    const result = asyncData({ pos, shift: { open: true }, tabs: [{ ref: "T1" }] });
+    fetchResult.value = result;
+    fetchMock.mockResolvedValue({ tabs: [{ ref: "T1" }, { ref: "T2" }] });
+    const t = await usePosTerminal();
+
+    await t.refreshTabs();
+
+    expect(String(fetchMock.mock.calls[0]![0])).toContain("/api/v1/backstage/pos/?only=tabs");
+    expect(t.tabs.value).toEqual([{ ref: "T1" }, { ref: "T2" }]);
+    expect(t.pos.value).toEqual(pos);
+    expect(result.refresh).not.toHaveBeenCalled();
+  });
+
+  it("se o quadro não vem, relê a projeção inteira", async () => {
+    const result = asyncData({ pos: { actions: [], operators: [] }, shift: null, tabs: [] });
+    fetchResult.value = result;
+    fetchMock.mockRejectedValue(new Error("rede"));
+    const t = await usePosTerminal();
+
+    await t.refreshTabs();
+
+    expect(result.refresh).toHaveBeenCalledTimes(1);
   });
 });

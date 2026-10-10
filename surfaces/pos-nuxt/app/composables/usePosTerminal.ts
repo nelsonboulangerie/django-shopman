@@ -44,5 +44,26 @@ export async function usePosTerminal() {
   const operators = computed<POSOperatorProjection[]>(() => pos.value?.operators ?? []);
   const actions = computed<Action[]>(() => pos.value?.actions ?? []);
 
-  return { data, pos, shift, tabs, operators, actions, pending, error, refresh };
+  /**
+   * Relê SÓ o quadro de comandas (`?only=tabs`) e o encaixa na leitura atual.
+   * É a resposta ao aviso de comanda (SSE `/sse/tabs`): cada salvar de qualquer
+   * balcão avisa todas as estações, e reler a projeção inteira a cada aviso
+   * (catálogo com disponibilidade, turno, operadores) enchia o servidor nas
+   * pausas de quem está vendendo. Falhou, ou ainda não há leitura: a inteira.
+   */
+  async function refreshTabs() {
+    if (!data.value) return refresh();
+    try {
+      const response = await $fetch<{ tabs: POSTabProjection[] }>(
+        apiPath("/api/v1/backstage/pos/?only=tabs"),
+        { credentials: "include", headers: requestHeaders },
+      );
+      if (data.value && Array.isArray(response?.tabs)) data.value = { ...data.value, tabs: response.tabs };
+    } catch (failure) {
+      flagIfStationLocked(failure);
+      await refresh();
+    }
+  }
+
+  return { data, pos, shift, tabs, operators, actions, pending, error, refresh, refreshTabs };
 }
