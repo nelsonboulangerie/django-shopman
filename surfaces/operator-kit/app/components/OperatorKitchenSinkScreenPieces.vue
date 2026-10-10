@@ -112,6 +112,21 @@ const panelDimensions = [
   },
   { id: "customer", label: "Cliente", type: "text" as const, options: [] },
 ];
+// Os filtros rápidos: o recorte de todo dia num toque, com a contagem. Vários somam
+// (`multiple`); um de cada vez são abas.
+const quickRecortes = ref<string[]>(["to_receive"]);
+const quickScope = ref("all");
+const quickItems = [
+  { key: "to_receive", label: "A receber", count: 3 },
+  { key: "unprinted", label: "Sem Via Pedido", count: 2 },
+  { key: "pickup", label: "Retiradas", count: 7 },
+  { key: "delivery", label: "Entregas", count: 4 },
+];
+const quickScopes = [
+  { key: "all", label: "Todos", count: 12 },
+  { key: "delivery", label: "Entrega", icon: "i-lucide-bike", count: 4 },
+  { key: "late", label: "Atrasados", icon: "i-lucide-timer", count: 1 },
+];
 const brl = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const openRecord = computed(() =>
@@ -279,6 +294,17 @@ const rows = [
             </ul>
           </template>
         </OperatorTable>
+      </div>
+    </NuxtCard>
+
+    <NuxtCard
+      title="Filtros rápidos"
+      description="OperatorQuickFilters: o recorte de todo dia num toque, com a contagem no chip da suíte, à esquerda da toolbar (#filters-primary). Vários que somam ligam e desligam; um de cada vez são abas; com to, sub-seções que mudam a URL. Favoritos fixados entram no fim. No celular rolam até 4; mais que isso viram seletor."
+      data-catalog-quick-filters
+    >
+      <div class="space-y-3">
+        <OperatorQuickFilters v-model="quickRecortes" :items="quickItems" multiple label="Recortes das encomendas" />
+        <OperatorQuickFilters v-model="quickScope" :items="quickScopes" label="Recortes da fila" />
       </div>
     </NuxtCard>
 
