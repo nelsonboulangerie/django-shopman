@@ -368,3 +368,38 @@ for (const width of ["min", "max"] as const) {
     await page.context().setOffline(false);
   });
 }
+
+// TEM MAIS ABAIXO (auditoria da coordenação, 10/10): a lista que passa da dobra não
+// termina numa linha cortada sob o bloco de ação sem aviso. A dica aparece contida na
+// lista, o toque nela leva ao fim, e a linha aberta fica inteira à vista acima do bloco.
+for (const size of SIZES) {
+  test(`venda ${size.width}x${size.height}: lista longa avisa que tem mais e a linha aberta fica à vista`, async ({ page }) => {
+    await openFullTab(page, size, "light", "default", false);
+    const list = page.locator("[data-pos-ticket-column] [data-receipt-list]");
+    const overflows = await list.evaluate((el) => el.scrollHeight > el.clientHeight + 1);
+    await page.locator("[data-pos-ticket-column] [data-item-select]").nth(7).click();
+    await expect(page.locator("[data-pos-line-editor]")).toBeVisible();
+    // O desconto faz o bloco crescer: a linha aberta continua à vista, acima da dica.
+    await page.locator("[data-pos-line-discount]").click();
+    await page.waitForTimeout(200);
+    const longNow = await list.evaluate((el) => el.scrollHeight > el.clientHeight + 1);
+    // A linha aberta inteira acima do bloco de ação.
+    const fits = await page.evaluate(() => {
+      const row = document.querySelector("[data-pos-ticket-column] li[aria-current='true']")!.getBoundingClientRect();
+      const block = document.querySelector("[data-pos-line-editor]")!.getBoundingClientRect();
+      const listTop = document.querySelector("[data-pos-ticket-column] [data-receipt-list]")!.getBoundingClientRect().top;
+      const hint = document.querySelector("[data-pos-ticket-column] [data-more-below] > div")?.getBoundingClientRect();
+      const floor = hint && hint.height ? Math.min(block.top, hint.top) : block.top;
+      return row.bottom <= floor + 0.5 && row.top >= listTop - 0.5;
+    });
+    expect(fits).toBe(true);
+    if (longNow) {
+      await list.evaluate((el) => { el.scrollTop = 0; });
+      await expect(page.locator("[data-pos-ticket-column] [data-more-below]")).toBeVisible();
+      await page.locator("[data-pos-ticket-column] [data-more-below-jump]").click();
+      await expect(page.locator("[data-pos-ticket-column] [data-more-below]")).toHaveCount(0);
+    } else {
+      expect(overflows).toBe(false);
+    }
+  });
+}

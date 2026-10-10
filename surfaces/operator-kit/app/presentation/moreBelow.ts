@@ -48,9 +48,15 @@ export const HINT_REACH = 64;
 
 // O fim do conteúdo já apareceu: o topo do sentinela está na linha de baixo da
 // área visível (descontado o que flutua na base) ou até `HINT_REACH` abaixo dela.
-export function endReached(sentinelTop: number, visibleBottom: number): boolean {
-  return sentinelTop <= visibleBottom + HINT_REACH;
+export function endReached(sentinelTop: number, visibleBottom: number, reach = HINT_REACH): boolean {
+  return sentinelTop <= visibleBottom + reach;
 }
+
+// DENTRO DE UMA COLUNA QUE ROLA (a comanda do PDV), a lista é de LINHAS: uma linha
+// cortada ao meio sob o bloco de ação, sem dica, parece o fim da comanda (auditoria
+// da coordenação, 10/10/2026). Ali qualquer resto ganha dica: o degradê dissolve a
+// linha cortada, que é a própria mensagem.
+export const CONTAINED_HINT_REACH = 0;
 
 // A dica existe enquanto o FIM do conteúdo não apareceu. Nada de calcular
 // posição de rolagem: quem responde é um sentinela no fim, observado.
