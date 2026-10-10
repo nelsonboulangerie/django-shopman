@@ -27,6 +27,15 @@ export interface UseMoreBelowOptions {
   contained?: boolean;
 }
 
+/** O painel de conteúdo do shell da suíte (o `DashboardPanel`, ao lado da barra lateral). */
+export const CONTENT_PANEL_ATTRIBUTE = "data-operator-content-panel";
+
+/** As bordas laterais da dica na janela: as do painel de conteúdo, ou a janela inteira. */
+export interface MoreBelowLane {
+  left: number;
+  right: number;
+}
+
 /** O ancestral que rola (o contêiner da dica contida). */
 function scrollParent(el: HTMLElement | null): HTMLElement | null {
   for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
@@ -42,6 +51,13 @@ export function useMoreBelow(options: UseMoreBelowOptions = {}) {
   const endReached = ref(true);
   const obstruction = ref(0);
   const offset = computed(() => hintOffset(obstruction.value));
+  // A DICA DA JANELA FICA NO PAINEL DE CONTEÚDO. Ela é `fixed` na janela, e com
+  // `inset-x-0` o degradê atravessava a barra lateral e lavava o pé dela (Avisos, o
+  // menu do operador) a 1366 no B.I., no Compras e no Kitchen Sink (10/10/2026). A
+  // dica fala do conteúdo que rola, então mora na largura dele: as bordas vêm do
+  // painel do shell (`data-operator-content-panel`). Fora de um shell, a janela toda.
+  const lane = ref<MoreBelowLane | null>(null);
+  let laneSize: ResizeObserver | null = null;
   let observer: IntersectionObserver | null = null;
   let obstructionSizes: ResizeObserver | null = null;
 
@@ -110,8 +126,29 @@ export function useMoreBelow(options: UseMoreBelowOptions = {}) {
     chegouAoFim(el.getBoundingClientRect().top, window.innerHeight - obstruction.value);
   }
 
+  function contentPanel(): HTMLElement | null {
+    return sentinel.value?.closest<HTMLElement>(`[${CONTENT_PANEL_ATTRIBUTE}]`) ?? null;
+  }
+
+  function measureLane() {
+    if (!import.meta.client || contained) return;
+    const panel = contentPanel();
+    if (!panel) {
+      lane.value = null;
+      return;
+    }
+    const box = panel.getBoundingClientRect();
+    const next = {
+      left: Math.max(0, Math.round(box.left)),
+      right: Math.max(0, Math.round(document.documentElement.clientWidth - box.right)),
+    };
+    if (lane.value && lane.value.left === next.left && lane.value.right === next.right) return;
+    lane.value = next;
+  }
+
   function measure() {
     if (!import.meta.client) return;
+    measureLane();
     if (contained) {
       // A coluna muda de altura sem a janela mexer (o bloco de ação abre e fecha).
       reavaliar();
@@ -180,6 +217,13 @@ export function useMoreBelow(options: UseMoreBelowOptions = {}) {
       return;
     }
     watchObstructionSizes();
+    // A barra lateral abre, compacta e some sem a janela mexer: o painel muda de
+    // largura, e a dica acompanha.
+    const panel = contentPanel();
+    if (panel && typeof ResizeObserver === "function") {
+      laneSize = new ResizeObserver(measureLane);
+      laneSize.observe(panel);
+    }
   });
   onBeforeUnmount(() => {
     if (quadro) cancelAnimationFrame(quadro);
@@ -189,7 +233,9 @@ export function useMoreBelow(options: UseMoreBelowOptions = {}) {
     obstructionSizes = null;
     containerSize?.disconnect();
     containerSize = null;
+    laneSize?.disconnect();
+    laneSize = null;
   });
 
-  return { sentinel, visible, offset, measure, scrollToEnd };
+  return { sentinel, visible, offset, lane, measure, scrollToEnd };
 }

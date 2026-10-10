@@ -42,6 +42,11 @@ const alerts: OperatorScreenAlert[] = [
   { id: "pix", color: "error", title: "O Pix não respondeu na última hora" },
 ];
 
+// `?more=1`: conteúdo mais alto que a janela, para a trava `more-below.spec.ts`
+// medir que a dica "tem mais abaixo" fica no painel de conteúdo, fora da barra lateral.
+const route = useRoute();
+const longContent = computed(() => route.query.more === "1");
+
 const today = todayIso();
 const period = ref(periodOfDay("day", today, today));
 const channel = ref("all");
@@ -73,7 +78,7 @@ const activeFilters = computed(() =>
       :sections="sections"
       label="Seções da bancada"
     >
-      <main class="flex min-h-0 flex-1 flex-col" data-phone-header-bench :data-chosen="chosen.join(',')">
+      <main class="flex min-h-0 flex-1 flex-col" :class="{ 'overflow-y-auto': longContent }" data-phone-header-bench :data-chosen="chosen.join(',')">
         <OperatorPageHeader
           title="Quem compra no balcão?"
           eyebrow="Auditoria do Dono"
@@ -104,6 +109,10 @@ const activeFilters = computed(() =>
           </template>
         </OperatorPageHeader>
         <section class="p-4 text-sm">Conteúdo da leitura.</section>
+        <section v-if="longContent" class="grid gap-3 p-4 text-sm" data-bench-long>
+          <p v-for="line in 40" :key="line" class="rounded-md border border-default p-3">Linha {{ line }} da leitura.</p>
+          <MoreBelow />
+        </section>
       </main>
     </OperatorSuiteShell>
   </OperatorAppRoot>

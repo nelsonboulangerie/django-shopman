@@ -7,7 +7,7 @@
     <NuxtDashboardSidebar id="operational-navigation" class="min-h-0" :default-size="15">
       <slot name="navigation" />
     </NuxtDashboardSidebar>
-    <NuxtDashboardPanel id="operational-task" class="min-h-0">
+    <NuxtDashboardPanel id="operational-task" class="min-h-0" data-operator-content-panel>
       <template #header><slot name="header" /></template>
       <template #body
         ><main class="min-w-0"><slot /></main
