@@ -19,7 +19,6 @@ import {
   countUnits,
   pruneSelection,
   selectionView,
-  toggleSelected,
 } from "~/presentation/selection";
 import {
   lineDiscountBadge,
