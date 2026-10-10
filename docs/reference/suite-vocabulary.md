@@ -221,6 +221,15 @@ ser kg.
 | atos | **avançar** · **pronto** · **visto** · **recebi o cancelamento** |
 | grandezas | **item = unidade** · **pedido** — ⛔ "volumes" não é grandeza de nada |
 
+**Mudança no que já está na cozinha** (dono, 10/10/2026: "com alarde, a cada mudança. Jamais
+silenciosamente!"). O card afetado diz, acima do código, **Mudou** (ou **Cancelado**, o pedido
+inteiro) e, numa caixa vermelha, uma linha por mudança: **Cancelado: 1× Croissant** ·
+**Pão de queijo: agora 1, eram 3** · **Observação nova em Tapioca: sem glúten** ·
+**Tapioca: observação retirada** · **Tapioca: enviado de novo** · **Era a comanda Mesa 5**;
+o pedido inteiro: **Pedido cancelado às 22:01. Não preparar.** O gesto de ciência é
+**Recebi o cancelamento** quando algo saiu e **Visto** no resto (§2.1). Fonte:
+`backstage/projections/kds.py` (`_item_change`) e `kds-nuxt/app/presentation/board.ts`.
+
 ---
 
 ## 5. Storefront

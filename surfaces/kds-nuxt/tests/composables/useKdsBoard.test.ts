@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises } from "@vue/test-utils";
 import { ref } from "vue";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
-import { KDS_ALERT, kdsAttentionDecision, kdsAttentionIds, useKdsBoard } from "~/composables/useKdsBoard";
+import {
+  KDS_ALERT,
+  KDS_CHANGE_ALERT,
+  kdsAttentionDecision,
+  kdsAttentionIds,
+  kdsChangeDecision,
+  kdsChangeIds,
+  useKdsBoard,
+} from "~/composables/useKdsBoard";
 import { boardView } from "~/presentation/board";
 import type { KDSBoardProjection, KDSTicketProjection } from "~/types/kds";
 
@@ -50,6 +58,8 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     is_preorder: false,
     due_time_display: "",
     seen: false,
+    changes: [],
+    change_ticket_pks: [],
     ...over,
   };
 }
@@ -291,6 +301,52 @@ describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
     );
   });
 
+  it("a ciência da mudança dá baixa só no que o card mostrava, e cala o card na hora", async () => {
+    env.fetchData.value = board({
+      tickets: [
+        ticket({
+          pk: 4,
+          order_ref: "Mesa 5",
+          status: "pending",
+          changes: [{ kind: "cancelled", text: "Cancelado: 1× Croissant" }],
+          change_ticket_pks: [31, 32],
+        }),
+      ],
+    });
+    const { acknowledgeChange } = useKdsBoard("bancada");
+    acknowledgeChange(4);
+    const card = (env.fetchData.value as any).board.tickets[0];
+    expect(card.changes).toEqual([]);
+    expect(card.seen).toBe(true);
+    await flushPromises();
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/kds/tickets/4/changes/seen/",
+      expect.objectContaining({ method: "POST", body: { cancelled_pks: [31, 32], seen_ref: "Mesa 5" } }),
+    );
+  });
+
+  it("a ciência recusada devolve a mudança ao card e avisa", async () => {
+    const changes = [{ kind: "qty", text: "Pão: agora 1, eram 3" }];
+    env.fetchData.value = board({ tickets: [ticket({ pk: 4, changes, change_ticket_pks: [31] })] });
+    env.fetchMock.mockRejectedValueOnce({ data: { detail: "sem rede" } });
+    const { acknowledgeChange } = useKdsBoard("bancada");
+    acknowledgeChange(4);
+    await flushPromises();
+    expect((env.fetchData.value as any).board.tickets[0].changes).toEqual(changes);
+    expect(env.sonner.error).toHaveBeenCalled();
+  });
+
+  it("a ciência no card cancelado inteiro é o Recebi o cancelamento de sempre", async () => {
+    env.fetchData.value = board({ tickets: [], cancelled_tickets: [ticket({ pk: 7, is_cancelled: true })] });
+    const { acknowledgeChange } = useKdsBoard("bancada");
+    acknowledgeChange(7);
+    await flushPromises();
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/kds/tickets/7/acknowledge/",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("re-inserts the card and toasts when the action fails", async () => {
     env.fetchData.value = board({ tickets: [], recent_done: [ticket({ pk: 9 })] });
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "sem rede" } });
@@ -327,7 +383,7 @@ describe("useKdsBoard — Visto da estação no servidor (K20)", () => {
     });
     const { acknowledgeAttention, attentionKeys, attentionPending } = useKdsBoard("bancada");
     // A atenção só arma depois de montar (client-only); o harness monta na criação.
-    attentionKeys.value = ["active:1", "cancelled:7"];
+    attentionKeys.value = ["active:1", "active:7"];
     acknowledgeAttention();
     expect(attentionPending.value).toBe(false);
     expect((env.fetchData.value as any).board.tickets[0].seen).toBe(true);
@@ -364,11 +420,48 @@ describe("useKdsBoard — atenção por ticket, vista pela estação", () => {
     expect(kdsAttentionDecision(current, "active:1").shouldAlert).toBe(true);
   });
 
-  it("o cancelamento que ninguém viu também pede atenção; o que sai pela janela de desfazer não", () => {
-    const current = view({ cancelled_tickets: [ticket({ pk: 7, status: "cancelled" })] });
-    expect(kdsAttentionIds(current)).toEqual(["active:1", "cancelled:7"]);
+  it("o pedido novo e a mudança tocam avisos diferentes; o que sai pela janela de desfazer não toca", () => {
+    const current = view({
+      tickets: [ticket({ pk: 1 }), ticket({ pk: 2, changes: [{ kind: "qty", text: "x" }], change_ticket_pks: [9] })],
+      cancelled_tickets: [ticket({ pk: 7, status: "cancelled", is_cancelled: true })],
+    });
+    // A fanfarra é do pedido novo; o card que mudou toca o aviso de mudança (mesmo sem Visto).
+    expect(kdsAttentionIds(current)).toEqual(["active:1"]);
+    expect(kdsChangeIds(current)).toEqual(["cancelled:7", "change:2:9:1"]);
     const finishing = boardView(board().board as KDSBoardProjection, new Set([1]));
     expect(kdsAttentionIds(finishing)).toEqual([]);
+  });
+
+  it("cada mudança nova toca de novo, mesmo no card que já tocou; sem nenhuma, cala", () => {
+    const once = view({ tickets: [ticket({ pk: 2, changes: [{ kind: "qty", text: "x" }], change_ticket_pks: [9] })] });
+    const first = kdsChangeDecision(once, "");
+    expect(first.shouldAlert).toBe(true);
+    expect(kdsChangeDecision(once, first.signature).shouldAlert).toBe(false);
+    const twice = view({
+      tickets: [
+        ticket({
+          pk: 2,
+          changes: [
+            { kind: "qty", text: "x" },
+            { kind: "cancelled", text: "y" },
+          ],
+          change_ticket_pks: [9, 10],
+        }),
+      ],
+    });
+    expect(kdsChangeDecision(twice, first.signature).shouldAlert).toBe(true);
+    expect(kdsChangeDecision(view({ tickets: [ticket({ seen: true })] }), first.signature)).toEqual({
+      signature: "",
+      shouldAlert: false,
+      shouldStop: true,
+    });
+  });
+
+  it("o aviso de mudança é a figura do Gestor (desce), curta, e não a fanfarra (sobe)", () => {
+    const freqs = KDS_CHANGE_ALERT.notes.map((note) => note.f);
+    expect(freqs[0]).toBeGreaterThan(freqs[freqs.length - 1]!);
+    expect(Math.max(...KDS_CHANGE_ALERT.notes.map((note) => note.t + note.d))).toBeLessThan(2.5);
+    expect(KDS_ALERT.notes[0]!.f).toBeLessThan(KDS_ALERT.notes[2]!.f);
   });
 });
 

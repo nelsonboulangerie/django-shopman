@@ -13,7 +13,8 @@
 //    do Pronto é a assinatura da Cozinha (v4); ele mora aqui, uma vez, sobre o neutro
 //    sólido, e não vira cor de botão da suíte.
 //  - `outline` o gesto de volta.
-//  - `blocked` contornado em vermelho: item cancelado, não se convida ninguém.
+//  - `alarm`   sólido em vermelho: o pedido mudou ou caiu depois de chegar à cozinha, e o
+//    ato é a ciência ("Recebi o cancelamento", "Visto"). É a cor do aviso do card (D8).
 //  - `locked`  tracejado e listrado, com cadeado: o servidor recusaria o Pronto
 //    (pagamento não confirmado). O toque diz o motivo.
 //
@@ -23,7 +24,7 @@
 // camada vem da superfície invertida (`fill-tint="inverted"`), como nas cores.
 import OperatorTimedButton from "../../../operator-kit/app/components/OperatorTimedButton.vue";
 
-export type KdsCardButtonTone = "lead" | "invite" | "confirm" | "outline" | "blocked" | "locked";
+export type KdsCardButtonTone = "lead" | "invite" | "confirm" | "outline" | "alarm" | "locked";
 
 const props = withDefaults(
   defineProps<{
@@ -53,7 +54,7 @@ const LOOKS: Record<KdsCardButtonTone, Look> = {
     extra: "bg-success text-success-foreground hover:bg-success/90 active:bg-success/80 disabled:bg-success",
   },
   outline: { color: "neutral", variant: "outline", extra: "" },
-  blocked: { color: "error", variant: "outline", extra: "" },
+  alarm: { color: "error", variant: "solid", extra: "" },
   locked: {
     color: "neutral",
     variant: "outline",

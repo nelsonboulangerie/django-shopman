@@ -1054,11 +1054,20 @@ def acknowledge_changes(ticket, *, cancelled_pks, known_ref: str, actor: str) ->
                 if _acknowledge_ticket_locked(cancelled, source=source, actor=actor):
                     acknowledged += 1
         renamed = False
+        fields: list[str] = []
         known_ref = str(known_ref or "")[:150]
         if known_ref and ticket.status in OPEN_TICKET_STATUSES and ticket.known_ref != known_ref:
             ticket.known_ref = known_ref
-            ticket.save(update_fields=["known_ref"])
+            fields.append("known_ref")
             renamed = True
+        if ticket.status == "pending" and ticket.seen_at is None:
+            # O item que voltou com outra quantidade chega num ticket NOVO: quem deu
+            # Visto na mudança viu o pedido, e o aviso de pedido novo para junto.
+            ticket.seen_at = timezone.now()
+            ticket.seen_by = str(actor or "")[:150]
+            fields += ["seen_at", "seen_by"]
+        if fields:
+            ticket.save(update_fields=fields)
     logger.info(
         "kds_changes_seen ticket=%d session=%s acknowledged=%d renamed=%s actor=%s",
         ticket.pk, ticket.session_key, acknowledged, renamed, actor,

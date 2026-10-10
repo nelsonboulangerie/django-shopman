@@ -3,7 +3,7 @@
 // screen-ready (timer_class, status_label pre-resolved); this layer
 // only derives the view shape + the functional-color tone for the semaphore. No
 // time/SLA arithmetic (the backend owns elapsed/target/timer_class).
-import type { KDSBoardProjection, KDSTicketProjection, KDSTimerClass } from "~/types/kds";
+import type { KDSBoardProjection, KDSChangeKind, KDSTicketProjection, KDSTimerClass } from "~/types/kds";
 
 /** Functional tone for a ticket's urgency (cor só onde tem significado). */
 export type KDSTone = "ok" | "warning" | "late";
@@ -55,9 +55,13 @@ export type KDSPillTone = "destructive" | "warning" | "info" | "primary" | "mute
  *  Um estilo só, a cor diz a natureza: vermelho trava ou atrasa, azul é novo, latão
  *  está em preparo. */
 export function ticketPill(
-  ticket: Pick<KDSTicketProjection, "status" | "timer_class">,
+  ticket: Pick<KDSTicketProjection, "status" | "timer_class"> & Partial<Pick<KDSTicketProjection, "changes">>,
   state: { next?: boolean; blocked?: boolean },
 ): { label: string; tone: KDSPillTone } | null {
+  // O cancelado inteiro não tem estado de preparo a mostrar: o "Cancelado" mora acima
+  // do código (no lugar da posição na fila), como o "Mudou" do card que mudou.
+  if (ticket.status === "cancelled") return null;
+  // Bloqueado = o servidor recusaria o Pronto por outro motivo (pagamento): `locked`.
   if (state.blocked) return { label: "Bloqueado", tone: "destructive" };
   const tone = ticketTone(ticket.timer_class as KDSTimerClass);
   // O de agora já diz a posição no rótulo acima do código ("Agora"); a pílula diz só o
@@ -145,7 +149,7 @@ export const KDS_ARM_DELAY_MS = 900;
  *  tocar: um aviso no topo da tela não se alcança com a mão ocupada. */
 export const KDS_UNDO_WINDOW_MS = 5000;
 
-export type KDSTicketActionKind = "start" | "finish" | "blocked" | "locked" | "undo" | "none";
+export type KDSTicketActionKind = "seen" | "start" | "finish" | "locked" | "undo" | "none";
 
 export interface KDSTicketAction {
   kind: KDSTicketActionKind;
@@ -161,30 +165,29 @@ const NO_ACTION: KDSTicketAction = { kind: "none", label: "", icon: "", enabled:
 /** O que o botão do card oferece, dado o estado do ticket.
  *
  *  - `undo`  — Pronto há menos de 5 s; o POST ainda não saiu.
- *  - `blocked` — há item cancelado deste pedido esperando confirmação: o servidor
- *    recusaria o Pronto, então a tela recusa antes e diz PARA ONDE ir. Iniciar
- *    nunca é bloqueado — começar o que sobrou é seguro.
+ *  - `seen` — o pedido mudou depois de chegar à cozinha (item cancelado, outra
+ *    quantidade, observação nova, outro nome) ou caiu inteiro: o único ato é a
+ *    ciência ("Recebi o cancelamento" / "Visto"), antes de iniciar ou dar Pronto. O
+ *    servidor também recusa o Pronto enquanto há item cancelado sem ciência.
  *  - `locked` — o servidor recusaria o Pronto por outro motivo (pagamento digital
  *    ainda não capturado, pedido sem confirmação: `finish_block_label`). O botão fica
  *    no lugar, tracejado e com cadeado, e o toque diz o motivo em vez de fingir que
  *    deu Pronto. Iniciar continua livre: "pode adiantar".
  */
 export function ticketAction(
-  ticket: Pick<KDSTicketProjection, "status"> & { finish_block_label?: string },
-  state: { armed: boolean; blocked: boolean; finishing?: boolean },
+  ticket: Pick<KDSTicketProjection, "status"> &
+    Partial<Pick<KDSTicketProjection, "changes" | "is_cancelled">> & { finish_block_label?: string },
+  state: { armed: boolean; finishing?: boolean },
 ): KDSTicketAction {
   if (state.finishing)
     return { kind: "undo", label: "Desfazer", icon: "lucide:undo-2", enabled: true };
+  // A mudança vem antes de qualquer ato: a cozinha precisa ver o que mudou antes de
+  // continuar (dono, 10/10/2026: "com alarde, a cada mudança").
+  if (ticket.is_cancelled || ticket.status === "cancelled" || hasChanges(ticket))
+    return { kind: "seen", label: changeAckLabel(ticket), icon: "lucide:eye", enabled: true };
   if (ticket.status === "pending")
     return { kind: "start", label: "Iniciar preparo", icon: "lucide:play", enabled: true };
   if (ticket.status !== "in_progress") return NO_ACTION;
-  if (state.blocked)
-    return {
-      kind: "blocked",
-      label: "Item cancelado: veja o aviso no topo",
-      icon: "lucide:ban",
-      enabled: true,
-    };
   if (ticket.finish_block_label)
     return { kind: "locked", label: "Pronto", icon: "lucide:lock", enabled: true };
   return {
@@ -193,6 +196,64 @@ export function ticketAction(
     icon: "lucide:check",
     enabled: state.armed,
   };
+}
+
+// ── Mudança no que já está na cozinha (dono, 10/10/2026) ────────────────────
+// O PDV ajusta sozinho o que já foi enviado (remove, diminui, observação nova, libera a
+// comanda, transfere, a comanda vira pedido) e a cozinha recebe CADA mudança com alarde,
+// nunca em silêncio: o card afetado fica vermelho, diz o que mudou ("Cancelado: 1×
+// Croissant", "Pão de queijo: agora 1, eram 3", "Observação nova em Tapioca: sem
+// glúten", "Era a comanda Mesa 5") e o único botão dele é a ciência, até alguém tocar.
+// O pedido que caiu inteiro não some: vira um card "Cancelado", riscado, no topo.
+
+export function hasChanges(ticket: Partial<Pick<KDSTicketProjection, "changes">>): boolean {
+  return Boolean(ticket.changes?.length);
+}
+
+/** Card que pede ciência agora: cancelado inteiro, ou vivo com mudança sem Visto. */
+export function needsAcknowledgement(
+  ticket: Partial<Pick<KDSTicketProjection, "changes" | "is_cancelled" | "status">>,
+): boolean {
+  return Boolean(ticket.is_cancelled) || ticket.status === "cancelled" || hasChanges(ticket);
+}
+
+/** O nome do gesto de ciência (suite-vocabulary §2.1 e §4): item que saiu é
+ *  **Recebi o cancelamento** (é o que destrava o Pronto); o resto é **Visto**. */
+export function changeAckLabel(
+  ticket: Partial<Pick<KDSTicketProjection, "changes" | "is_cancelled" | "status">>,
+): string {
+  const cancels =
+    ticket.is_cancelled ||
+    ticket.status === "cancelled" ||
+    (ticket.changes ?? []).some((change) => change.kind === "cancelled");
+  return cancels ? "Recebi o cancelamento" : "Visto";
+}
+
+const CHANGE_ICONS: Record<KDSChangeKind, string> = {
+  cancelled: "lucide:ban",
+  qty: "lucide:hash",
+  note: "lucide:message-square-warning",
+  resent: "lucide:repeat",
+  moved: "lucide:arrow-right-left",
+};
+
+export function changeIcon(kind: string): string {
+  return CHANGE_ICONS[kind as KDSChangeKind] ?? "lucide:triangle-alert";
+}
+
+/** O que o card cancelado inteiro diz, em cima dos itens riscados. */
+export function cancelledHeadline(ticket: Pick<KDSTicketProjection, "cancelled_at_display">): string {
+  return ticket.cancelled_at_display
+    ? `Pedido cancelado às ${ticket.cancelled_at_display}. Não preparar.`
+    : "Pedido cancelado. Não preparar.";
+}
+
+/** A ordem da grade: o que pede ciência vem antes da fila de trabalho, sem perder a
+ *  ordem de urgência entre os outros. */
+export function alarmsFirst<T extends Partial<Pick<KDSTicketProjection, "changes" | "is_cancelled" | "status">>>(
+  cards: T[],
+): T[] {
+  return [...cards.filter(needsAcknowledgement), ...cards.filter((card) => !needsAcknowledgement(card))];
 }
 
 /** O botão do card no tablet e no desktop: o Pronto leva o código do pedido ("Pronto
@@ -207,6 +268,7 @@ export function cardActionLabel(action: KDSTicketAction, code: string): string {
  *  "Pronto W07", e os outros atos também levam o código junto. */
 export function thumbActionLabel(action: KDSTicketAction, code: string): string {
   if (action.kind === "finish" || action.kind === "locked") return `Pronto ${code}`;
+  if (action.kind === "seen") return `${action.label} ${code}`;
   if (action.kind === "start") return `Iniciar ${code}`;
   if (action.kind === "undo") return `Desfazer ${code}`;
   return action.label;
@@ -285,13 +347,6 @@ export function ticketStartLine(
   return parts.join(" · ");
 }
 
-/** Pedidos com item cancelado ainda sem "Recebi o cancelamento" nesta estação. O servidor
- *  bloqueia o Pronto por pedido+estação; a referência exibida é a mesma
- *  para o ticket vivo e o cancelado da mesma venda. */
-export function blockedOrderRefs(cancelled: KDSTicketProjection[]): Set<string> {
-  return new Set(cancelled.map((ticket) => ticket.order_ref));
-}
-
 /** Tickets que são ADICIONAL de um pedido que já passou por esta estação.
  *  Item novo numa comanda nunca altera o ticket que já está em preparo: o
  *  servidor dispara só o delta, num ticket novo. A tela diz isso, para a
@@ -312,16 +367,15 @@ export function additionTicketPks(cards: KDSTicketProjection[], recentDone: KDST
 export interface KDSBoardView {
   instanceRef: string;
   instanceName: string;
-  /** Active tickets, auto-sorted by urgency. */
+  /** Active tickets: os que mudaram primeiro, depois a ordem de urgência. */
   cards: KDSTicketProjection[];
+  /** Pedidos que caíram inteiros nesta estação, sem ciência: card próprio, no topo. */
   cancelled: KDSTicketProjection[];
   /** Concluídos recentes (≤30min) — para recall (desfazer o Pronto). */
   recentDone: KDSTicketProjection[];
   allDay: KDSAllDayCount[];
   counts: Record<string, number>;
   total: number;
-  /** Pedidos com cancelado sem confirmação: o Pronto espera. */
-  blockedRefs: Set<string>;
   /** Tickets que são adicional de um pedido já visto nesta estação. */
   additionPks: Set<number>;
   /** Marcados Pronto com a janela de "Desfazer" aberta: continuam na grade, apagados. */
@@ -334,9 +388,10 @@ export interface KDSBoardView {
   soundEnabled: boolean;
 }
 
-/** O ticket "próximo" da grade: o primeiro da ordem de urgência que ainda é trabalho. */
+/** O ticket "próximo" da grade: o primeiro da ordem de urgência que ainda é trabalho
+ *  (o que mudou pede ciência antes, e não é o "próximo" de ninguém). */
 export function nextTicketPk(cards: KDSTicketProjection[]): number | null {
-  return cards[0]?.pk ?? null;
+  return cards.find((card) => !hasChanges(card))?.pk ?? null;
 }
 
 export function stationDensity(value: string): KDSDensity {
@@ -354,7 +409,7 @@ export function boardView(
   board: KDSBoardProjection,
   finishingPks: ReadonlySet<number> = new Set(),
 ): KDSBoardView {
-  const cards = sortByUrgency([...board.tickets]);
+  const cards = alarmsFirst(sortByUrgency([...board.tickets]));
   const working = cards.filter((card) => !finishingPks.has(card.pk));
   const recentDone = [...(board.recent_done ?? [])];
   const counts = { ...(board.counts || {}) };
@@ -370,7 +425,6 @@ export function boardView(
     allDay: allDayCounts(working),
     counts,
     total: working.length,
-    blockedRefs: blockedOrderRefs(board.cancelled_tickets),
     additionPks: additionTicketPks(cards, recentDone),
     finishingPks: new Set(finishingPks),
     nextPk: nextTicketPk(working),
@@ -579,20 +633,4 @@ export function queueLine(card: PrepCard): string {
   if (!first) return "";
   const head = `${first.qty}× ${first.name}`;
   return others.length ? `${head} +${others.length}` : head;
-}
-
-/** O cancelamento como aviso da tela (`alerts` do cabeçalho). Se o pedido continua na
- *  estação, foi um ITEM que saiu ("Pedido F22: item cancelado às 22:01. O resto
- *  continua."); senão, o pedido inteiro. A descrição diz o que NÃO preparar. */
-export function cancelledAlert(
-  cancelled: Pick<KDSTicketProjection, "order_ref" | "cancelled_at_display" | "items">,
-  activeRefs: ReadonlySet<string>,
-): { title: string; description: string } {
-  const code = splitRef(cancelled.order_ref).code;
-  const time = cancelled.cancelled_at_display ? ` às ${cancelled.cancelled_at_display}` : "";
-  const items = cancelled.items.map((item) => `${item.qty}× ${item.name}`).join(", ");
-  const title = activeRefs.has(cancelled.order_ref)
-    ? `Pedido ${code}: item cancelado${time}. O resto continua.`
-    : `Pedido ${code} cancelado${time}.`;
-  return { title, description: items ? `Não preparar: ${items}.` : "" };
 }

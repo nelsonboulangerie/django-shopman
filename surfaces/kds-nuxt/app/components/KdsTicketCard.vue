@@ -29,9 +29,18 @@
 //
 // O preparo é estado do TICKET, guardado no servidor: todos os tablets veem quem
 // já pegou o pedido.
+//
+// MUDANÇA (dono, 10/10/2026: "com alarde, a cada mudança. Jamais silenciosamente!"):
+// o pedido que mudou depois de chegar à cozinha fica com moldura vermelha, a pílula
+// "Mudou" e uma caixa com o que mudou, uma linha por mudança, logo abaixo do código; o
+// botão da base vira a ciência ("Recebi o cancelamento" ou "Visto"), vermelho sólido, e
+// só depois dele o card volta a ser trabalho. O pedido que caiu inteiro chega como card
+// "Cancelado": os itens riscados, "Não preparar." e a mesma ciência.
 import type { KDSTicketProjection } from "~/types/kds";
 import {
+  cancelledHeadline,
   cardScale,
+  changeIcon,
   elapsedLabel,
   KDS_ARM_DELAY_MS,
   KDS_UNDO_WINDOW_MS,
@@ -44,6 +53,7 @@ import {
   ticketPill,
   ticketStartLine,
   ticketTone,
+  needsAcknowledgement,
   toneNextSurface,
   toneTimerChip,
   type KDSDensity,
@@ -56,8 +66,6 @@ const props = withDefaults(
     ticket: KDSTicketProjection;
     density?: KDSDensity;
     next?: boolean;
-    /** Há item cancelado deste pedido sem confirmação: o Pronto espera. */
-    blocked?: boolean;
     /** Ticket adicional de um pedido que já passou por esta estação. */
     addition?: boolean;
     /** Marcado Pronto com a janela de "Desfazer" ainda aberta. */
@@ -74,7 +82,6 @@ const props = withDefaults(
   {
     density: "cozy",
     next: false,
-    blocked: false,
     addition: false,
     finishing: false,
     finishUntil: undefined,
@@ -82,13 +89,16 @@ const props = withDefaults(
     actionInBar: false,
   },
 );
-const emit = defineEmits<{ start: []; finish: []; blocked: []; locked: []; undo: []; open: []; hold: [] }>();
+const emit = defineEmits<{ start: []; finish: []; seen: []; locked: []; undo: []; open: []; hold: [] }>();
 
 const tone = computed(() => ticketTone(props.ticket.timer_class));
 const code = computed(() => splitRef(props.ticket.order_ref).code);
 const overline = computed(() => ticketOverline(props.ticket));
 const startLine = computed(() => ticketStartLine(props.ticket));
 const finishLocked = computed(() => Boolean(props.ticket.finish_block_label) && !props.finishing);
+// Pede ciência agora: mudou depois de chegar, ou caiu inteiro.
+const alarm = computed(() => needsAcknowledgement(props.ticket) && !props.finishing);
+const cancelled = computed(() => props.ticket.is_cancelled || props.ticket.status === "cancelled");
 // Toque longo (celular, prévia v4 nota 7): desfazer, reabrir e ver o pedido, sem botões
 // a mais na tela. A página decide se escuta (`@hold`).
 const longPress = useLongPress(() => emit("hold"));
@@ -118,7 +128,6 @@ onBeforeUnmount(() => {
 const action = computed(() =>
   ticketAction(props.ticket, {
     armed: armed.value,
-    blocked: props.blocked,
     finishing: props.finishing,
   }),
 );
@@ -128,7 +137,7 @@ function onAction() {
   const kind = action.value.kind;
   if (kind === "start") emit("start");
   else if (kind === "finish") emit("finish");
-  else if (kind === "blocked") emit("blocked");
+  else if (kind === "seen") emit("seen");
   else if (kind === "locked") emit("locked");
   else if (kind === "undo") emit("undo");
 }
@@ -140,8 +149,7 @@ const actionAria = computed(() => {
   if (kind === "start") return `Iniciar o preparo do pedido ${code.value}`;
   if (kind === "finish") return `Marcar o pedido ${code.value} como pronto`;
   if (kind === "undo") return `Desfazer o Pronto do pedido ${code.value}`;
-  if (kind === "blocked")
-    return `Pedido ${code.value}: toque em Recebi o cancelamento, no aviso vermelho do topo, para poder marcar Pronto`;
+  if (kind === "seen") return `${action.value.label}: pedido ${code.value}`;
   if (kind === "locked")
     return `Pedido ${code.value}: ${props.ticket.finish_block_label}. ${props.ticket.finish_block_reason}`;
   return "";
@@ -153,7 +161,7 @@ const actionTone = computed<KdsCardButtonTone>(() => {
   const kind = action.value.kind;
   if (kind === "start") return props.next ? "lead" : "invite";
   if (kind === "finish") return "confirm";
-  if (kind === "blocked") return "blocked";
+  if (kind === "seen") return "alarm";
   if (kind === "locked") return "locked";
   return "outline";
 });
@@ -161,12 +169,15 @@ const actionTone = computed<KdsCardButtonTone>(() => {
 const pill = computed(() =>
   props.finishing
     ? null
-    : ticketPill(props.ticket, { next: props.next, blocked: props.blocked || finishLocked.value }),
+    : ticketPill(props.ticket, { next: props.next, blocked: finishLocked.value }),
 );
 const surface = computed(() => {
   if (props.finishing) return "border border-dashed border-border bg-muted/40";
+  // A moldura do alarme é a do "próximo atrasado" (borda de 2 px e halo), em vermelho:
+  // é o card mais alto da tela até alguém dar ciência.
+  if (alarm.value) return toneNextSurface("late");
   if (props.next) return toneNextSurface(tone.value);
-  if (props.blocked || finishLocked.value) return "border border-destructive/50 bg-card";
+  if (finishLocked.value) return "border border-destructive/50 bg-card";
   if (props.ticket.status === "in_progress") return "border border-primary/50 bg-card";
   return "border border-border bg-card";
 });
@@ -215,7 +226,7 @@ const d = computed(() => ({
          seguro fica com a área grande, o gesto que sai da cozinha fica no botão. -->
     <div class="relative flex flex-1 flex-col" v-bind="longPress" data-kds-hold>
       <NuxtButton
-        v-if="!finishing"
+        v-if="!finishing && !cancelled"
         color="neutral"
         variant="ghost"
         class="absolute inset-0 z-0 rounded-b-none"
@@ -238,7 +249,15 @@ const d = computed(() => ({
         <!-- IDENTIDADE: código · Retirada/Entrega e cliente | relógio + pílula. -->
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0 flex-1">
-            <span v-if="eyebrow" class="block op-micro text-muted-foreground">{{ eyebrow }}</span>
+            <!-- O que pede ciência diz isso no lugar da posição na fila (Agora, Próximo):
+                 o código fica na mesma altura dos vizinhos da linha. -->
+            <span
+              v-if="alarm"
+              class="block op-micro font-semibold text-error"
+              data-kds-alarm-eyebrow
+              >{{ cancelled ? "Cancelado" : "Mudou" }}</span
+            >
+            <span v-else-if="eyebrow" class="block op-micro text-muted-foreground">{{ eyebrow }}</span>
             <p
               class="whitespace-nowrap font-bold leading-none tracking-tight tabular-nums"
               :class="d.code"
@@ -265,6 +284,7 @@ const d = computed(() => ({
           <!-- À direita, o relógio (o único chip com moldura) e a pílula do estado. -->
           <div class="flex shrink-0 flex-col items-end gap-1">
             <span
+              v-if="!cancelled"
               class="inline-flex items-center gap-1.5 rounded-lg px-2.5 font-bold tabular-nums"
               :class="[timerChip, d.timerH, d.timer]"
             >
@@ -296,8 +316,37 @@ const d = computed(() => ({
           <span class="min-w-0 break-words">{{ startLine }}</span>
         </p>
 
-        <!-- TAREFA: só os itens, inteiros. -->
-        <ul class="flex flex-col divide-y divide-border border-t border-border">
+        <!-- MUDANÇA: o que mudou depois de chegar à cozinha, uma linha por mudança, até
+             a ciência. Caixa sem borda dentro do card (D1), na cor do alarme. -->
+        <div
+          v-if="alarm"
+          class="flex flex-col gap-1 rounded-md bg-error/12 px-2.5 py-2 font-semibold leading-snug text-error"
+          :class="d.note"
+          role="status"
+          data-kds-changes
+        >
+          <p v-if="cancelled" class="flex items-start gap-1.5" data-kds-change="cancelled">
+            <Icon name="lucide:ban" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span class="min-w-0 break-words">{{ cancelledHeadline(ticket) }}</span>
+          </p>
+          <template v-else>
+            <p
+              v-for="(change, idx) in ticket.changes"
+              :key="idx"
+              class="flex items-start gap-1.5"
+              :data-kds-change="change.kind"
+            >
+              <Icon :name="changeIcon(change.kind)" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span class="min-w-0 whitespace-pre-wrap break-words">{{ change.text }}</span>
+            </p>
+          </template>
+        </div>
+
+        <!-- TAREFA: só os itens, inteiros. No cancelado inteiro, riscados. -->
+        <ul
+          class="flex flex-col divide-y divide-border border-t border-border"
+          :class="cancelled ? 'text-muted-foreground line-through decoration-error decoration-2' : ''"
+        >
           <li
             v-for="(item, idx) in ticket.items"
             :key="idx"

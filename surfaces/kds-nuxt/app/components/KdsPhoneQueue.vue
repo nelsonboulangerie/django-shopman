@@ -13,6 +13,8 @@ import type { OperatorSwipeCommit } from "../../../operator-kit/app/components/O
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   elapsedLabel,
+  hasChanges,
+  needsAcknowledgement,
   queueLine,
   queuePositionLabel,
   splitRef,
@@ -26,7 +28,6 @@ const props = defineProps<{
   /** O ticket em foco (a página escolhe: o tocado, ou o primeiro da fila). */
   focusPk: number | null;
   nextPk: number | null;
-  blockedRefs: ReadonlySet<string>;
   additionPks: ReadonlySet<number>;
   finishingPks: ReadonlySet<number>;
   /** O prazo de cada Desfazer aberto (epoch ms). */
@@ -41,6 +42,7 @@ const emit = defineEmits<{
   open: [pk: number];
   undo: [pk: number];
   finish: [pk: number];
+  seen: [pk: number];
   hold: [pk: number];
 }>();
 
@@ -61,17 +63,22 @@ const allDayLine = computed(() =>
 );
 
 // A linha logo abaixo do foco é a "Próximo"; as outras, "Depois" (a mesma régua da mesa).
-function rowLabel(index: number): string {
-  return queuePositionLabel(index + 1);
+function rowLabel(index: number, card: KDSTicketProjection): string {
+  // A linha que pede ciência não tem posição na fila: no lugar dela, por quê.
+  return rowAlarm(card) || queuePositionLabel(index + 1);
 }
 function rowLocked(card: KDSTicketProjection): boolean {
-  return props.blockedRefs.has(card.order_ref) || Boolean(card.finish_block_label);
+  return Boolean(card.finish_block_label);
+}
+/** A linha que pede ciência: "Cancelado" ou "Mudou", em vermelho, no lugar do relógio. */
+function rowAlarm(card: KDSTicketProjection): string {
+  if (card.is_cancelled || card.status === "cancelled") return "Cancelado";
+  return hasChanges(card) ? "Mudou" : "";
 }
 /** Deslizar para Pronto só quando o Pronto pode sair agora (em preparo, sem trava). */
 function rowCommit(card: KDSTicketProjection): OperatorSwipeCommit | null {
   const action = ticketAction(card, {
     armed: true,
-    blocked: props.blockedRefs.has(card.order_ref),
     finishing: props.finishingPks.has(card.pk),
   });
   if (action.kind !== "finish") return null;
@@ -100,14 +107,14 @@ function onRowPointerdown(pk: number, event: PointerEvent) {
       :key="focus.pk"
       :ticket="focus"
       :density="density"
-      :eyebrow="queuePositionLabel(0)"
+      :eyebrow="needsAcknowledgement(focus) ? '' : queuePositionLabel(0)"
       action-in-bar
       :next="focus.pk === nextPk"
-      :blocked="blockedRefs.has(focus.order_ref)"
       :addition="additionPks.has(focus.pk)"
       :finishing="finishingPks.has(focus.pk)"
       :finish-until="finishUntil?.get(focus.pk)"
       @open="emit('open', focus.pk)"
+      @seen="emit('seen', focus.pk)"
       @undo="emit('undo', focus.pk)"
       @hold="emit('hold', focus.pk)"
     />
@@ -123,7 +130,7 @@ function onRowPointerdown(pk: number, event: PointerEvent) {
         role="button"
         tabindex="0"
         class="flex min-h-16 w-full touch-manipulation select-none items-center gap-3 rounded-lg border bg-default px-3.5 text-left transition hover:bg-elevated active:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
-        :class="rowLocked(card) ? 'border-error/40' : 'border-default'"
+        :class="rowAlarm(card) ? 'border-2 border-error bg-error/8' : rowLocked(card) ? 'border-error/40' : 'border-default'"
         :aria-label="`Trazer o pedido ${splitRef(card.order_ref).code} para o foco. Toque longo: ver o pedido, desfazer, reabrir`"
         data-kds-queue-row
         @pointerdown="onRowPointerdown(card.pk, $event)"
@@ -137,11 +144,16 @@ function onRowPointerdown(pk: number, event: PointerEvent) {
         @keydown.enter.prevent="emit('choose', card.pk)"
         @keydown.space.prevent="emit('choose', card.pk)"
       >
-        <span class="w-16 shrink-0 op-micro text-muted-foreground">{{ rowLabel(index) }}</span>
+        <span
+          class="w-16 shrink-0 op-micro"
+          :class="rowAlarm(card) ? 'font-semibold text-error' : 'text-muted-foreground'"
+          :data-kds-queue-alarm="rowAlarm(card) || undefined"
+          >{{ rowLabel(index, card) }}</span
+        >
         <b class="w-12 shrink-0 text-lg tabular-nums">{{ splitRef(card.order_ref).code }}</b>
         <span class="min-w-0 flex-1 break-words text-sm font-semibold">{{ queueLine(card) }}</span>
         <span
-          v-if="rowLocked(card)"
+          v-if="rowLocked(card) && !rowAlarm(card)"
           class="inline-flex shrink-0 items-center gap-1 op-micro font-semibold text-error"
         >
           <Icon name="lucide:lock" class="size-3.5" />Bloqueado
