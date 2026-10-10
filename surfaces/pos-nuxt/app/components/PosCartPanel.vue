@@ -1564,10 +1564,12 @@ defineExpose({ focusItem, onDigit, onBackspace });
              teclado do MOMENTO. A divisória separa a leitura dos controles. -->
         <template v-if="(lineControlsInGrid || lineEditing === 'note') && activeItem">
           <div class="flex items-start gap-2">
-            <p class="min-w-0 flex-1 pt-1 op-label [overflow-wrap:anywhere]" data-pos-line-editor-title>
-              <span class="text-muted-foreground">{{ lineEditing === "discount" ? "Desconto em " : lineEditing === "note" ? "Observação em " : "Editando " }}</span>
-              <b class="font-semibold text-foreground">{{ activeItem.name }}</b>
-              <span class="whitespace-nowrap text-muted-foreground tnum"> · {{ formatBRL(unitChargedQ(activeItem)) }}{{ isWeighedLine(activeItem) ? "/kg" : " cada" }}</span>
+            <!-- Três peças que quebram como blocos (o nome inteiro, nunca cortado): na
+                 coluna estreita o preço desce de linha em vez de se sobrepor. -->
+            <p class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1 pt-1 op-label" data-pos-line-editor-title>
+              <span class="text-muted-foreground">{{ lineEditing === "discount" ? "Desconto em" : lineEditing === "note" ? "Observação em" : "Editando" }}</span>
+              <b class="min-w-0 font-semibold text-foreground [overflow-wrap:anywhere]">{{ activeItem.name }}</b>
+              <span class="whitespace-nowrap text-muted-foreground tnum">· {{ formatBRL(unitChargedQ(activeItem)) }}{{ isWeighedLine(activeItem) ? "/kg" : " cada" }}</span>
             </p>
             <NuxtButton
               color="neutral"
