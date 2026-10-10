@@ -82,8 +82,7 @@ EXPECTED_ONLY_VERSIONED: dict[str, str] = {
     **{
         key: (
             f"declarada explícita no arquivo com `{value}`, o MESMO valor padrão do "
-            "SHOPMAN_MACHINE no config/settings.py. Aplicar não muda comportamento "
-            "(e sem SHOPMAN_COURIER_ADAPTER, que fica fora do arquivo, o adapter nem liga)."
+            "SHOPMAN_MACHINE no config/settings.py. Aplicar não muda comportamento."
         )
         for key, value in (
             ("MACHINE_API_BASE", "https://api.taximachine.com.br/api/integracao"),

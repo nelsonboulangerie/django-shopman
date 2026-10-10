@@ -853,7 +853,7 @@ visual espera aprovação visual do dono).
 
 ## D-026 · Drift do spec em `[FAIL]` por `SHOPMAN_COURIER_ADAPTER` é o desenho do D-020
 
-- **Estado:** `DECIDIDA` · **Dono:** coordenador noturno · **Data:** 2026-10-02 · **revisar_em:** quando a chave entrar no arquivo
+- **Estado:** `SUPERADA` (10/10, PR #1633: a chave entrou no arquivo com o valor do vivo) · **Dono:** coordenador noturno · **Data:** 2026-10-02 · **revisar_em:** —
 
 **Decisão.** Não declarar exceção no `check_do_spec_drift.py`. Com o interruptor ligado no painel e
 fora do arquivo (D-020), o drift acusa `[FAIL]` só nessa chave, e é o que o teste exige
