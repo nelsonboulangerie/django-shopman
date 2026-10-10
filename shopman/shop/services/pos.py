@@ -6,6 +6,7 @@ module owns the Orderman session writes and POS order mutations.
 
 from __future__ import annotations
 
+import copy
 import logging
 import re
 from dataclasses import dataclass
@@ -336,10 +337,25 @@ def close_sale(
         raise PosIntentError(
             code="edit_session_no_sale", message=pos_edit_session.REFUSAL_MESSAGE, field="tab_session_key", focus="cart",
         )
+    from shopman.shop.services import pos_offline_sale
+
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
+    # A venda feita SEM CONEXÃO, dentro das travas e com hora plausível, é a venda
+    # que o balcão COBROU (decisões C e D do dono, 10/10/2026): o payload passa a
+    # ser o cobrado, linha pesada inclusive (pelo quilo que a tela usou), e o
+    # kernel precifica na hora da cobrança. Fora disso, ``None``: régua de sempre.
+    offline_at = pos_offline_sale.pricing_instant(payload)
+    charged = pos_offline_sale.deepcopy_payload(payload) if offline_at else None
     weighed_sale.apply_to_payload(payload, channel=channel)
+    if charged is not None:
+        weighed_sale.apply_to_payload(charged, channel=channel, price_per_kg_from_line=True)
+        if pos_offline_sale.charged_payload_matches(charged):
+            payload = charged
+        else:
+            # As linhas não somam o total cobrado: o navegador não decide preço.
+            offline_at = None
     _refuse_priceless_items(payload, channel=channel)
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
     # GATE precisa dela tanto quanto a review: sem carimbo, ``_payload_discount_q``
@@ -386,12 +402,31 @@ def close_sale(
     # a andar quando a primeira commitou. Ao voltar ela lê o ``order_ref`` NA
     # PRÓPRIA TRAVA (``_answer_sale_claim`` o escreveu dentro da transação) e
     # devolve a mesma venda, em vez de criar a segunda.
+    tab_plan = None
+    leftover_tab = None
+    alert_order_ref = ""
     with transaction.atomic():
         claim = _claim_sale_request(channel_ref=channel.ref, payload=payload)
         session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
         existing = _claimed_sale(claim) or _existing_sale_by_client_request_id(
             channel_ref=channel.ref, payload=payload
         )
+        if existing is None and session is None and offline_at is not None:
+            # A comanda que este dispositivo conhecia já não está aberta: foi paga
+            # ou limpa em outro dispositivo durante a queda.
+            closed_tab = _payload_closed_tab_session(channel_ref=channel.ref, payload=payload)
+            if closed_tab is not None:
+                tab_plan = pos_offline_sale.plan_closed_tab(closed_tab, payload)
+                if tab_plan.outcome == "already_paid_all":
+                    # Tudo o que foi cobrado já estava pago: não nasce pedido. A
+                    # cobrança em dobro fica no pedido pago e o gerente é avisado.
+                    paid_ref = pos_offline_sale.record_duplicate_on_paid_order(
+                        plan=tab_plan, payload=payload, captured_at=offline_at, operator_username=operator_username,
+                    )
+                    existing = Order.objects.get(ref=paid_ref)
+                    alert_order_ref = paid_ref
+                else:
+                    pos_offline_sale.trim_payload_to(payload, tab_plan)
         if existing is not None:
             _answer_sale_claim(claim, order_ref=existing.ref)
         else:
@@ -415,8 +450,14 @@ def close_sale(
                 from shopman.shop.services.pos_intent import pos_session_revision
 
                 if session.state != "open" or ("expected_revision" in payload and payload["expected_revision"] != pos_session_revision(session)):
-                    raise PosIntentError(code="tab_revision_conflict", status=409,
-                        message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
+                    if offline_at is None or session.state != "open":
+                        raise PosIntentError(code="tab_revision_conflict", status=409,
+                            message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
+                    # Venda sem conexão: fecha o que foi cobrado; o resto da
+                    # comanda segue aberto (``reopen_tab_with_leftovers``).
+                    tab_plan = pos_offline_sale.plan_open_tab(session, payload)
+                    if tab_plan.outcome == "revision_only":
+                        tab_plan = None
                 direct_checkout = False
 
             try:
@@ -429,6 +470,8 @@ def close_sale(
                     operator_username=operator_username,
                     direct_checkout=direct_checkout,
                     approved_by=approved_by,
+                    priced_at=offline_at,
+                    tab_plan=tab_plan,
                 )
             except (OrderValidationError, OrderCommitError) as exc:
                 # A regra do commit recusou: NADA nasceu (a transação desfaz o
@@ -437,12 +480,19 @@ def close_sale(
                 # a trava contra cobrança dupla — por um pedido que nunca existiu.
                 raise _commit_refusal(exc) from exc
             _answer_sale_claim(claim, order_ref=result.order_ref)
+            if tab_plan is not None and tab_plan.outcome == "lines_left_open":
+                leftover_tab = pos_offline_sale.reopen_tab_with_leftovers(
+                    channel=channel, config=config, plan=tab_plan, previous_data=session.data or {},
+                    actor=actor, operator_username=operator_username,
+                )
 
             from shopman.shop.services.pos_sale_recovery import prepare
 
             prepare(result.order_ref, shift_id=shift.pk, operator_username=operator_username)
 
     if existing is not None:
+        if alert_order_ref:
+            pos_offline_sale.alert_manager(alert_order_ref, duplicate_of=_payload_client_request_id(payload))
         return _resume_committed_sale(existing.ref)
 
     # Fora da transação, e a ordem importa: os callbacks de ``on_commit`` do
@@ -464,6 +514,10 @@ def close_sale(
             "order_ref": result.order_ref, "total_q": int(result.total_q),
         })
         logger.info("pos_close_tab order=%s tab=%s session=%s total=%s", result.order_ref, tab_ref, session.session_key, result.total_q)
+        if leftover_tab is not None:
+            logger.info("pos_offline_tab_left_open order=%s tab=%s session=%s", result.order_ref, tab_ref, leftover_tab.session_key)
+        if offline_at is not None:
+            pos_offline_sale.alert_manager(result.order_ref)
         return _resume_committed_sale(result.order_ref)
     except Exception as exc:
         from shopman.shop.services.pos_sale_recovery import _as_error
@@ -697,12 +751,21 @@ def _commit_sale_session(
     operator_username: str,
     direct_checkout: bool,
     approved_by: str = "",
+    priced_at=None,
+    tab_plan=None,
 ):
     """Troca o conteúdo da sessão pelo carrinho do PDV e a commita. Roda sob a trava.
 
     ``approved_by`` é o gerente que o ``close_sale`` VERIFICOU nesta request — a única
     assinatura que pode ir para a linha do desconto.
+
+    ``priced_at`` (venda sem conexão, ``pos_offline_sale``): o kernel precifica na
+    hora da cobrança. Se a conta dele não bater com o total cobrado, a sessão é
+    regravada com os preços cobrados (política ``external``, sem os modifiers de
+    desconto), e a diferença fica em ``pos.offline.pricing``: o dinheiro já entrou.
     """
+    from shopman.shop.services import pos_offline_sale
+
     tab_ref = "" if direct_checkout else _session_tab_ref(session)
     tab_display = "" if direct_checkout else _session_tab_display(session)
     fulfillment_type = _payload_fulfillment_type(payload)
@@ -727,19 +790,49 @@ def _commit_sale_session(
             {"op": "set_data", "path": "pos.client_request_id", "value": client_request_id},
         ])
     offline = _payload_offline(payload)
+    if offline and priced_at is not None:
+        offline["priced_at"] = priced_at.isoformat()
+    if offline and tab_plan is not None:
+        offline["tab"] = tab_plan.record()
     if offline:
         # Segue para ``order.data.pos.offline`` pelo merge de ``pos`` em
         # ``_mark_tab_committed``: o pedido diz que nasceu de uma venda sem
         # conexão, quando o balcão cobrou e de quando eram os preços da tela.
         ops.append({"op": "set_data", "path": "pos.offline", "value": offline})
+    if tab_plan is not None and tab_plan.inherited_fired and direct_checkout:
+        # Linha cobrada aqui que já está na cozinha pela comanda fechada no outro
+        # dispositivo: o pedido novo não a manda de novo ao KDS.
+        from shopman.shop.adapters.kds import KDS_INHERITED_KEY
 
+        ops.append({"op": "set_data", "path": KDS_INHERITED_KEY, "value": list(tab_plan.inherited_fired)})
+
+    ctx = {"actor": actor}
+    if priced_at is not None:
+        from shopman.shop.modifiers import PRICED_AT_CTX_KEY
+
+        ctx[PRICED_AT_CTX_KEY] = priced_at
+    replay_ops = copy.deepcopy(ops) if priced_at is not None else []
     session = session_service.modify_session(
         session_key=session.session_key,
         channel_ref=channel.ref,
         ops=ops,
-        ctx={"actor": actor},
+        ctx=ctx,
         channel_config=config.to_dict(),
     )
+    if priced_at is not None:
+        charged_q = pos_offline_sale.charged_total_q(payload)
+        server_q = pos_offline_sale.session_total_q(session)
+        if server_q != charged_q:
+            session = _reprice_as_charged(
+                session, channel=channel, config=config, ops=replay_ops, ctx=ctx,
+                record={**offline, "pricing": pos_offline_sale.pricing_record(
+                    charged_q=charged_q, server_q=server_q, priced_at=priced_at,
+                )},
+            )
+            logger.info(
+                "pos_offline_charged_wins session=%s charged=%s server=%s",
+                session.session_key, charged_q, server_q,
+            )
 
     result = session_service.commit_session(
         session_key=session.session_key,
@@ -2298,6 +2391,33 @@ def reopen_recent_order_for_correction(
     data["pos_correction_reason"] = reason
     order.data = data
     order.save(update_fields=["data", "updated_at"])
+
+
+def _reprice_as_charged(
+    session: Session, *, channel: Channel, config: ChannelConfig, ops: list[dict], ctx: dict, record: dict
+) -> Session:
+    """Regrava a sessão com os preços COBRADOS (venda sem conexão, decisão D).
+
+    ``external``: o kernel não reprecifica pelo catálogo, guarda o preço que a
+    linha traz. ``modifiers: []``: nenhum desconto automático por cima (o balcão
+    não deu nenhum; desconto é uma das travas da venda sem conexão). O
+    ``pricing`` da passada anterior sai junto, para o pedido não carregar a
+    transparência de um desconto que não foi cobrado.
+    """
+    Session.objects.filter(pk=session.pk).update(pricing_policy="external", pricing={})
+    session.refresh_from_db()
+    replay = [{"op": "remove_line", "line_id": item["line_id"]} for item in (session.items or []) if item.get("line_id")]
+    replay.extend(op for op in ops if op.get("op") != "remove_line" and op.get("path") != "pos.offline")
+    replay.append({"op": "set_data", "path": "pos.offline", "value": record})
+    channel_config = config.to_dict()
+    channel_config["rules"] = {**(channel_config.get("rules") or {}), "modifiers": []}
+    return session_service.modify_session(
+        session_key=session.session_key,
+        channel_ref=channel.ref,
+        ops=replay,
+        ctx=ctx,
+        channel_config=channel_config,
+    )
 
 
 def build_session_ops(payload: dict, operator_username: str, *, approved_by: str = "") -> list[dict]:
@@ -4145,6 +4265,18 @@ def _payload_open_tab_session(*, channel_ref: str, payload: dict) -> Session | N
     if tab_ref:
         return _get_open_pos_tab_session(channel_ref=channel_ref, tab_ref=tab_ref)
     return None
+
+
+def _payload_closed_tab_session(*, channel_ref: str, payload: dict) -> Session | None:
+    """A comanda do payload que já NÃO está aberta (paga ou limpa em outro dispositivo)."""
+    session_key = _payload_tab_session_key(payload)
+    if not session_key:
+        return None
+    return (
+        Session.objects.filter(session_key=session_key, channel_ref=channel_ref)
+        .exclude(state="open")
+        .first()
+    )
 
 
 def _payload_has_tab_identity(payload: dict) -> bool:

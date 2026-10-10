@@ -30,7 +30,14 @@ derivado do spec vivo (ingress host-based: `www.nelsonboulangerie.com.br` → lo
 Nuxt, API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
 `.do/app.subdomains.yaml` (trocar `STORE_DOMAIN`). Ambos definem:
 
-- `web`: Daphne ASGI em `config.asgi:application`;
+- `web-operator` e `web-storefront`: o MESMO Django (imagem `web`, Daphne ASGI em
+  `config.asgi:application`) em dois services, divididos só pelo ingress do `api.`:
+  `/api/v1/backstage/` e o resto do host (Admin, SSE `/events/`, webhooks, menuboard)
+  vão ao `web-operator`, em instância dedicada (`apps-d-1vcpu-2gb`); `/api/v1/` (a API
+  da loja) vai ao `web-storefront`, compartilhado (`apps-s-1vcpu-1gb`). Um pico na loja
+  não tira CPU do balcão. Sessão, CSRF, `ALLOWED_HOSTS` e o fanout do SSE são do app,
+  iguais nos dois; os BFFs seguem em `https://api.<domínio>`. Trava:
+  `shopman/shop/tests/test_do_spec_django_split.py`;
 - `directive-worker`: `python manage.py process_directives --watch`;
 - `release`: job `PRE_DEPLOY` com `check --deploy`, `migration_safety` e
   migrations. O `migration_safety` roda ANTES do `migrate` e, pós-`go-live-v1`,
@@ -55,7 +62,7 @@ O deploy é por **imagens**, e o deployment é **um por run**: o workflow
 `.github/workflows/deploy-images.yml` builda no GitHub Actions só os componentes
 alterados e publica no DOCR (`registry.digitalocean.com/nelsonboulangerie/shopman`,
 tag por componente). Publicar a tag **não** dispara nada: `deploy_on_push` está
-desligado nos oito componentes de imagem do app vivo. Depois que o manifesto prova
+desligado em todos os componentes de imagem do app vivo. Depois que o manifesto prova
 que tudo foi publicado, o job `manifest` cria **um** deployment
 (`POST /v2/apps/{id}/deployments`, causa `manual`, segredo
 `DIGITALOCEAN_APP_DEPLOY_TOKEN`), espera `ACTIVE` e grava no manifesto

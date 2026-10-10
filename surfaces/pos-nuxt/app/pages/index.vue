@@ -51,7 +51,7 @@ const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
 const { attrsFor: crossAppAttrs } = useOperatorAppLink();
 const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
-const { pos, tabs, actions, pending, refresh } = await usePosTerminal();
+const { pos, tabs, actions, pending, refresh, refreshTabs } = await usePosTerminal();
 
 // MODO EDIÇÃO (WP-E6): `/?edit=<ref>` abre esta mesma tela como o editor da
 // encomenda — carrinho, grade, F7 e F8 —, com "Salvar alterações" no lugar do
@@ -246,7 +246,7 @@ const {
   cancelRecentSaleWithBadge,
   drawerLock,
   drawerOpening,
-} = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
+} = usePosSale({ pos, tabs, actions, refresh, refreshTabs, action, apiPath, requestHeaders, ordersUrl });
 
 // ── Editar a encomenda (WP-E6) ────────────────────────────────────────────
 const orderEdit = usePosOrderEdit();

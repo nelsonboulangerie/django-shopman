@@ -45,9 +45,15 @@ class _ObserveAfterCommit:
 
     def __call__(self) -> None:
         from shopman.backstage.services import shelf_outages
+        from shopman.shop.request_memo import run_at_request_end
 
         self.done = True
-        shelf_outages.observe(self.sku)
+        sku = self.sku
+        # Dentro de um request, a observação vai para DEPOIS da resposta, uma por SKU:
+        # fechar uma venda do PDV são três commits em série (reserva,
+        # confirmação, baixa) e cada um agendava a sua (ver
+        # ``request_memo.run_at_request_end``). Fora de request, roda agora.
+        run_at_request_end(("shelf_outage.observe", sku), lambda: shelf_outages.observe(sku))
 
 
 def _observe_after_commit(sku: str) -> None:

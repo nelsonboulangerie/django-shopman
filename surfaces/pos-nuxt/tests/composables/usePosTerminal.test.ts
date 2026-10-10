@@ -67,4 +67,29 @@ describe("usePosTerminal", () => {
 
     expect(result.refresh).toHaveBeenCalledTimes(1);
   });
+
+  it("releituras pedidas com uma em voo viram UMA leitura depois dela", async () => {
+    // Alpha, 10/10/2026: abrir a comanda e fechar a venda disparavam releituras
+    // inteiras seguidas; o navegador cancelava a anterior, o servidor calculava todas.
+    let release: () => void = () => {};
+    const result = asyncData({ pos: { actions: [], operators: [] }, shift: null, tabs: [] });
+    result.refresh = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
+    fetchResult.value = result;
+    const t = await usePosTerminal();
+
+    const first = t.refresh();
+    const second = t.refresh();
+    const third = t.refresh();
+    expect(result.refresh).toHaveBeenCalledTimes(1);
+    expect(second).toBe(third);
+
+    release();
+    await first;
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(result.refresh).toHaveBeenCalledTimes(2);
+    release();
+    await second;
+    expect(result.refresh).toHaveBeenCalledTimes(2);
+  });
 });

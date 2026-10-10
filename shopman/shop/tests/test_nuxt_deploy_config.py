@@ -302,9 +302,11 @@ def test_platform_probes_are_cheap_liveness_never_dependency_readiness(spec_name
     spec = yaml.safe_load((ROOT / ".do" / spec_name).read_text())
     services = {service["name"]: service for service in spec["services"]}
 
-    web = services["web"]
-    assert web["health_check"]["http_path"] == "/health/live/"
-    assert web["liveness_health_check"]["http_path"] == "/health/live/"
+    # O Django roda em dois services (mesma imagem): os dois com a liveness barata.
+    for name in ("web-operator", "web-storefront"):
+        web = services[name]
+        assert web["health_check"]["http_path"] == "/health/live/", name
+        assert web["liveness_health_check"]["http_path"] == "/health/live/", name
     # Desde a ADR-030 os apps de operador são servidos pelo service do GRUPO; o
     # probe dele é o /health/live agregado do roteador (todos os filhos de pé).
     probed = {"storefront-nuxt", *_operator_groups()}
