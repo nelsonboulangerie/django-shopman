@@ -160,7 +160,7 @@ export interface OperatorFitOptions {
 export function actionFitVars(
   actions: readonly OperatorAdaptiveLabel[],
   options: OperatorFitOptions = {},
-): Record<"--op-fit-full" | "--op-fit-short", string> {
+): Record<"--op-fit-full" | "--op-fit-short" | "--op-fit-min", string> {
   const size = options.size ?? "md";
   const gap = options.gap ?? FIT_GROUP_GAP_REM;
   const reserve = options.reserve ?? 0;
@@ -177,9 +177,22 @@ export function actionFitVars(
     actions.map((action) => buttonWidth(shortOf(action) || action.label, Boolean(action.icon), size)),
     gap,
   );
+  // O mínimo do grupo no último degrau: quem tem ícone vira o botão quadrado, quem não
+  // tem fica com o curto. É o `min-width` do contêiner numa linha que quebra
+  // (`flex-wrap`): abaixo dele o grupo desce de linha em vez de vazar.
+  const metric = FIT_SIZE_METRICS[size];
+  const least = sum(
+    actions.map((action) =>
+      action.icon
+        ? { em: 0, rem: metric.icon + metric.square * 2 + BORDER_REM * 2 }
+        : buttonWidth(shortOf(action) || action.label, false, size),
+    ),
+    gap,
+  );
   return {
     "--op-fit-full": cssLength({ em: full.em, rem: full.rem + reserve }),
     "--op-fit-short": anyIcon ? cssLength({ em: short.em, rem: short.rem + reserve }) : "0px",
+    "--op-fit-min": cssLength({ em: least.em, rem: least.rem + reserve }),
   };
 }
 

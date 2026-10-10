@@ -130,8 +130,8 @@ useOperatorShortcutMap(
       </div>
       <div
         v-if="groups.length"
-        class="op-fit-scope flex min-w-0 items-center gap-2"
-        :class="base ? 'w-full' : 'flex-1'"
+        class="op-fit-scope flex items-center gap-2"
+        :class="base ? 'w-full min-w-0' : 'min-w-(--op-fit-min) flex-1'"
         :style="fitStyle"
         data-operator-bulk-actions
       >

@@ -215,8 +215,12 @@ onMounted(() => {
       storage-key="operator-kitchen-sink"
     >
       <template #sidebar="{ collapsed }">
+        <!-- O rótulo que cabe (dono, 10/10/2026): "Buscar no catálogo" com o atalho não
+             cabe na barra lateral e cortava em reticência; o nome inteiro fica no
+             nome acessível. -->
         <NuxtDashboardSearchButton
-          label="Buscar no catálogo"
+          label="Buscar"
+          aria-label="Buscar no catálogo"
           :collapsed="collapsed"
         />
         <NuxtNavigationMenu

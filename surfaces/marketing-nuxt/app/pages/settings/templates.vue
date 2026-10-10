@@ -178,8 +178,11 @@ useHead({ title: "Modelos" });
                       label="Inativo"
                     />
                   </span>
+                  <!-- O corpo do modelo pode ser longo: duas linhas de amostra, e o
+                       texto inteiro na dica (o rótulo que cabe, dono 10/10/2026). -->
                   <span
-                    class="mt-0.5 block truncate text-sm font-normal text-muted-foreground"
+                    class="mt-0.5 line-clamp-2 break-words text-sm font-normal text-muted-foreground"
+                    :title="marketingTemplateSummary(template.body)"
                   >
                     {{ marketingTemplateSummary(template.body) }}
                   </span>

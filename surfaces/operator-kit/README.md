@@ -861,7 +861,13 @@ ação que pode ficar apertada declara um ícone.
   `shortLabel`), `OperatorBulkBar` (idem) e `OperatorTimedButton` (`short-label`). O
   `OperatorMoreMenu` e as `actions` do `OperatorPageHeader` não precisam: o item do ⋯
   quebra linha, e no celular a ação vira ícone fixo ou item do ⋯ pela regra da barra do
-  topo. Os `OperatorQuickFilters` rolam na faixa, sem cortar.
+  topo. Os `OperatorQuickFilters` rolam na faixa, sem cortar, e as abas (`NuxtTabs`,
+  pílula e sublinhada) também: o tema do kit tira o encolhimento da aba e deixa a lista
+  rolar de lado quando não cabe. O mês do `NuxtCalendar` (o botão que troca a vista)
+  quebra linha em vez de cortar.
+- **Grupo numa linha que quebra.** O `OperatorFitGroup`/a barra também publicam
+  `--op-fit-min` (todas no último degrau): numa linha com `flex-wrap`, use
+  `min-w-(--op-fit-min)` no contêiner, e o grupo desce de linha em vez de vazar.
 - **Texto do botão.** O `textContent` do botão é só o completo (o curto é conteúdo
   gerado, `::before`), então `getByRole("button", { name })` e `toHaveText` seguem
   achando o botão pelo nome inteiro.
@@ -882,10 +888,15 @@ altura da linha pode variar, o texto continua quebrando: não use a classe lá.
 **A trava.** O scanner de geometria (`visual/scanner.ts`) reprova, em toda matriz que o
 usa: texto de controle que passa da caixa ou é cortado sem reticência
 (`control-text-overflow`; reticência só com o completo na dica ou no nome acessível),
-controles sobrepostos (`control-overlap`) e texto de peça fixa que não reserva as linhas
+controles sobrepostos (`control-overlap`: só controles da mesma camada, na caixa que
+de fato aparece; o que rola por baixo de uma barra fixa é `covered-by-chrome`) e texto de
+peça fixa que não reserva as linhas
 ou corta sem o completo (`fixed-text`). O catálogo do kit (seção "Rótulo que cabe",
 `OperatorKitchenSinkFit.vue`) mostra os três degraus e os cartões de uma, duas e três
-linhas, e o spec confere degrau e altura em todos os viewports.
+linhas, e o spec confere degrau e altura em todos os viewports. Onde a trava roda na
+CI: catálogo do kit, Kitchen Sink, Compras e Gestor (a varredura inteira, por
+`captureOperatorEvidence`); Cozinha, Marketing e Produção (só a do rótulo, por
+`expectOperatorLabelsFit`, porque essas matrizes ainda não passam a varredura inteira).
 
 ## Peças de tela (fase 2)
 

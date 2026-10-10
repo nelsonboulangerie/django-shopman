@@ -185,6 +185,53 @@ describe("scanner geométrico", () => {
       expect(findings.some(({ kind }) => kind === "control-overlap")).toBe(true);
     });
 
+    it("aceita o completo no title do próprio trecho cortado", async () => {
+      setup();
+      const { span } = control("Maria Santos, retirada às 15h", rect(10, 10, 60, 32), { scroll: 160, client: 40 });
+      span.style.textOverflow = "ellipsis";
+      span.title = "Maria Santos, retirada às 15h";
+      const findings = await scanOperatorGeometry(page as never);
+      expect(findings.some(({ kind }) => kind === "control-text-overflow")).toBe(false);
+    });
+
+    it("não confunde conteúdo sob barra fixa, nem recortado pela rolagem, com sobreposição", async () => {
+      setup();
+      control("Salvar", rect(10, 760, 80, 32), { scroll: 40, client: 40 });
+      const bar = document.createElement("nav");
+      bar.style.position = "fixed";
+      document.body.append(bar);
+      const { button } = control("Início", rect(0, 752, 120, 48), { scroll: 40, client: 40 });
+      bar.append(button);
+      let findings = await scanOperatorGeometry(page as never);
+      expect(findings.some(({ kind }) => kind === "control-overlap")).toBe(false);
+
+      document.body.innerHTML = "";
+      const list = document.createElement("div");
+      list.style.overflowY = "auto";
+      list.getBoundingClientRect = () => rect(0, 0, 400, 700);
+      document.body.append(list);
+      const hidden = control("Item 30", rect(10, 720, 80, 32), { scroll: 40, client: 40 });
+      list.append(hidden.button);
+      control("Fechar", rect(0, 712, 120, 48), { scroll: 40, client: 40 });
+      findings = await scanOperatorGeometry(page as never);
+      expect(findings.some(({ kind }) => kind === "control-overlap")).toBe(false);
+    });
+
+    it("não lê painel de aba como rótulo de controle", async () => {
+      setup();
+      const panel = document.createElement("div");
+      panel.setAttribute("role", "tabpanel");
+      panel.tabIndex = 0;
+      panel.style.opacity = "1";
+      panel.textContent = "Pedidos confirmados por hora";
+      panel.getBoundingClientRect = () => rect(10, 10, 300, 200);
+      Object.defineProperty(panel, "scrollWidth", { configurable: true, value: 340 });
+      Object.defineProperty(panel, "clientWidth", { configurable: true, value: 300 });
+      document.body.append(panel);
+      const findings = await scanOperatorGeometry(page as never);
+      expect(findings.some(({ kind }) => kind === "control-text-overflow")).toBe(false);
+    });
+
     it("texto de peça fixa reserva as duas linhas e leva o completo quando corta", async () => {
       setup();
       const name = document.createElement("p");

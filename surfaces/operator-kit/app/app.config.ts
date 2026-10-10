@@ -184,6 +184,42 @@ export default defineAppConfig({
         },
       ],
     },
+    // Abas (pílula e sublinhada) são uma faixa de escolha, como os `OperatorQuickFilters`: o rótulo
+    // nunca corta em reticência ("Story no Instag…", Marketing a 390 px). Cabendo,
+    // nada muda (as abas crescem e dividem a faixa); não cabendo, a faixa rola de lado
+    // com cada aba inteira (o rótulo que cabe, dono 10/10/2026).
+    tabs: {
+      compoundVariants: [
+        {
+          variant: "pill",
+          orientation: "horizontal",
+          class: {
+            list: "overflow-x-auto overscroll-x-contain [scrollbar-width:none]",
+            trigger: "shrink-0",
+          },
+        },
+        {
+          // Na aba sublinhada a rolagem recorta o que passa da caixa da lista: o traço
+          // da aba ativa sobe para dentro dela (antes ficava 1 px sobre a borda).
+          variant: "link",
+          orientation: "horizontal",
+          class: {
+            list: "overflow-x-auto overscroll-x-contain [scrollbar-width:none]",
+            trigger: "shrink-0",
+            indicator: "bottom-0",
+          },
+        },
+      ],
+    },
+    // O mês do calendário é o botão que troca a vista: "outubro de 2026" cortava em
+    // reticência entre as setas a 390 px. Sem ícone para onde encolher, o rótulo quebra
+    // linha (o rótulo que cabe, dono 10/10/2026). Cabendo, nada muda.
+    calendar: {
+      slots: {
+        heading:
+          "[&_[data-slot=label]]:whitespace-normal [&_[data-slot=label]]:overflow-visible [&_[data-slot=label]]:text-clip",
+      },
+    },
     accordion: {
       // O rótulo do item é item flex sem `min-w-0` no Nuxt UI: um texto longo no
       // slot default empurra a seta para fora e `truncate` nunca corta. Com

@@ -69,6 +69,17 @@ describe("rótulo que cabe: as variáveis do contêiner", () => {
     expect(vars["--op-fit-short"]).toContain(`${Math.round(expectedEm * 1000) / 1000}em`);
   });
 
+  it("o mínimo do grupo é o último degrau: ícone quadrado, ou o curto sem ícone", () => {
+    const icons = actionFitVars([
+      { label: "Pausar", icon: "i-lucide-pause" },
+      { label: "Ativar", icon: "i-lucide-play" },
+    ]);
+    // md: ícone 1.25 + respiro 0.375 × 2 + borda 0.0625 × 2 = 2.125 rem cada, + gap 0.5.
+    expect(icons["--op-fit-min"]).toBe("4.75rem");
+    const text = actionFitVars([{ label: "Registrar sangria", shortLabel: "Sangria" }]);
+    expect(text["--op-fit-min"]).toContain(`${Math.round(labelWidthEm("Sangria") * 1000) / 1000}em`);
+  });
+
   it("sem nenhum ícone no grupo não há degrau só ícone: o curto vale até zero", () => {
     const vars = actionFitVars([{ label: "Registrar sangria", shortLabel: "Sangria" }]);
     expect(vars["--op-fit-short"]).toBe("0px");

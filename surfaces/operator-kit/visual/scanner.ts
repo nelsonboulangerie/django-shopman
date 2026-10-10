@@ -210,6 +210,18 @@ export async function scanOperatorGeometry(
         "[data-focus-obstruction], [data-operator-fixed-chrome]",
       ),
     ].filter(visible);
+    // Faixa que rola de lado (abas, filtros rápidos): o que está fora da tela se alcança
+    // rolando a faixa, não é controle perdido.
+    const inHorizontalScroller = (element: HTMLElement) => {
+      for (let node = element.parentElement; node; node = node.parentElement) {
+        if (node === document.body || node === document.documentElement) return false;
+        const overflowX = getComputedStyle(node).overflowX;
+        if ((overflowX === "auto" || overflowX === "scroll") && node.scrollWidth > node.clientWidth + 1) {
+          return true;
+        }
+      }
+      return false;
+    };
     for (const element of interactives) {
       const envelope =
         element.closest<HTMLElement>("[data-touch-envelope]") ?? element;
@@ -219,7 +231,8 @@ export async function scanOperatorGeometry(
       );
       const outsideHorizontal =
         !element.closest('[data-operator-overflow="horizontal"]') &&
-        (rect.left < -1 || rect.right > innerWidth + 1);
+        (rect.left < -1 || rect.right > innerWidth + 1) &&
+        !inHorizontalScroller(element);
       const outsideFixedVertical =
         fixedContext && (rect.top < -1 || rect.bottom > innerHeight + 1);
       if (outsideHorizontal || outsideFixedVertical) {
@@ -365,7 +378,28 @@ export async function scanOperatorGeometry(
     // da caixa: nem vazando (o filho mais largo que o botão), nem cortado seco
     // (scrollWidth > clientWidth sem reticência declarada). Reticência só vale com o
     // texto completo na dica ou no nome acessível.
-    for (const control of interactives) {
+    // Só controle de verdade tem rótulo: o painel de aba, a faixa de abas que rola e a
+    // região com `tabindex` são contêineres, e o que vive dentro deles é checado como
+    // controle próprio.
+    const labelControlSelector = [
+      "button",
+      "a[href]",
+      "summary",
+      "[role='button']",
+      "[role='link']",
+      "[role='tab']",
+      "[role='radio']",
+      "[role='checkbox']",
+      "[role='switch']",
+      "[role='menuitem']",
+      "[role='option']",
+    ].join(",");
+    const labelControls = interactives.filter(
+      (element) =>
+        element.matches(labelControlSelector) &&
+        !element.matches("[role='tablist'], [role='tabpanel'], [role='region'], [role='grid'], [role='listbox']"),
+    );
+    for (const control of labelControls) {
       if (control.closest("[data-clipping-allowed]")) continue;
       if (control.closest('[data-operator-overflow="horizontal"]') === control) continue;
       const box = control.getBoundingClientRect();
@@ -399,7 +433,11 @@ export async function scanOperatorGeometry(
         if (!ownText || node.clientWidth === 0) continue;
         if (node.scrollWidth > node.clientWidth + 1) {
           const ellipsis = style.textOverflow === "ellipsis";
-          if (!ellipsis || !named) {
+          // O completo pode morar no próprio trecho cortado (`title` no nome do cliente
+          // dentro de um cartão-botão), além do nome acessível do controle.
+          const nodeNamed = Boolean(node.closest<HTMLElement>("[title]")?.title) &&
+            control.contains(node.closest("[title]"));
+          if (!ellipsis || !(named || nodeNamed)) {
             add(
               "control-text-overflow",
               control,
@@ -414,24 +452,66 @@ export async function scanOperatorGeometry(
     }
 
     // Controles que se sobrepõem: um cobre o outro (rótulo que empurra o vizinho, barra
-    // que não cabe). Pai e filho não contam; o que mora em overlay aberto também não.
-    const flat = interactives.filter(
-      (element) => !element.closest("[role='dialog'], [role='menu'], [role='listbox'], [data-operator-overlap-allowed]"),
+    // que não cabe). Pai e filho não contam; o que mora em overlay aberto também não, nem
+    // o que está inerte atrás de um modal. Só se comparam controles da MESMA camada: o
+    // conteúdo que rola por baixo de uma barra fixa ou grudada é o `covered-by-chrome`,
+    // não sobreposição.
+    const flat = labelControls.filter(
+      (element) =>
+        !element.closest(
+          "[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'], [inert], [aria-hidden='true'], [data-operator-overlap-allowed]",
+        ),
     );
+    const layerOf = (element: HTMLElement) => {
+      for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+        const position = getComputedStyle(node).position;
+        if (position === "fixed" || position === "sticky") return node;
+      }
+      return null;
+    };
+    const layers = new Map(flat.map((element) => [element, layerOf(element)]));
+    // A caixa que de fato aparece: o retângulo recortado por todo ancestral que corta o
+    // que passa dele (lista que rola por baixo do rodapé não é sobreposição).
+    const shownRect = (element: HTMLElement) => {
+      const rect = element.getBoundingClientRect();
+      let { left, top, right, bottom } = rect;
+      for (let node = element.parentElement; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        const clipsX = !["", "visible"].includes(style.overflowX);
+        const clipsY = !["", "visible"].includes(style.overflowY);
+        if (!clipsX && !clipsY) continue;
+        const clip = node.getBoundingClientRect();
+        if (clipsX) {
+          left = Math.max(left, clip.left);
+          right = Math.min(right, clip.right);
+        }
+        if (clipsY) {
+          top = Math.max(top, clip.top);
+          bottom = Math.min(bottom, clip.bottom);
+        }
+      }
+      return { left, top, right, bottom };
+    };
+    const shown = new Map(flat.map((element) => [element, shownRect(element)]));
     for (let index = 0; index < flat.length; index += 1) {
       const a = flat[index]!;
-      const ra = a.getBoundingClientRect();
+      const ra = shown.get(a)!;
       for (let other = index + 1; other < flat.length; other += 1) {
         const b = flat[other]!;
         if (a.contains(b) || b.contains(a)) continue;
-        const rb = b.getBoundingClientRect();
+        if (layers.get(a) !== layers.get(b)) continue;
+        const rb = shown.get(b)!;
         const ix = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
         const iy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
         if (ix > 2 && iy > 2) {
+          const name = (element: HTMLElement) =>
+            element.getAttribute("aria-label") ||
+            element.textContent?.trim().replace(/\s+/g, " ").slice(0, 40) ||
+            element.tagName.toLowerCase();
           add(
             "control-overlap",
             b,
-            `Controles se sobrepõem em ${Math.round(ix)}×${Math.round(iy)}px.`,
+            `Controles “${name(a)}” e “${name(b)}” se sobrepõem em ${Math.round(ix)}×${Math.round(iy)}px.`,
           );
         }
       }
