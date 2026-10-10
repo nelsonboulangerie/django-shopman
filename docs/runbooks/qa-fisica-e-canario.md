@@ -126,8 +126,8 @@ G1.3). Combine com o gerente.
 
 ## Folha 2 · Balcão (PDV)
 
-Quem faz: o operador do caixa no PC do balcão. Onde houver tablet de balcão, repita os
-passos marcados com 📱 nele.
+Quem faz: o operador do caixa no PC do balcão. Onde houver tablet de balcão, repita nele
+B2, B5 e B8 (no tablet a gaveta não abre sozinha: ver Folha 5, P2.5).
 
 ### B1. Entrar e abrir o caixa
 
