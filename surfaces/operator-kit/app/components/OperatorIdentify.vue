@@ -148,10 +148,6 @@ function submit() {
     pin: pin.value,
   });
 }
-function replacePin(values: string[]) {
-  clear();
-  for (const value of values) if (/^[0-9]$/.test(value)) pressDigit(value);
-}
 
 /** Para o pai limpar entre aberturas sem conhecer o estado interno. */
 function reset(keepPicked = false) {
@@ -165,17 +161,21 @@ defineExpose({ reset });
 </script>
 
 <template>
-  <div ref="root" class="grid w-full gap-3">
+  <div ref="root" class="grid w-full gap-4">
     <!-- Escolher quem é -->
     <template v-if="hasList && !picked">
       <p class="text-center text-sm text-muted-foreground">{{ prompt }}</p>
       <div class="grid grid-cols-2 gap-2" role="group" :aria-label="prompt">
+        <!-- Alvo de dedo (`xl`), e o nome inteiro: nome não se corta, quebra
+             linha ("Elaine Cristina Souza" a 390 px). -->
         <NuxtButton
           v-for="(person, index) in people"
           :key="person.username"
           block
           color="neutral"
           variant="outline"
+          size="xl"
+          class="h-auto min-h-12 whitespace-normal"
           :aria-keyshortcuts="
             index < numberedCount ? String(index + 1) : undefined
           "
@@ -186,7 +186,7 @@ defineExpose({ reset });
             :value="String(index + 1)"
             aria-hidden="true"
           />
-          <span class="min-w-0 truncate">{{ person.name }}</span>
+          <span class="min-w-0 text-balance [overflow-wrap:anywhere]">{{ person.name }}</span>
         </NuxtButton>
       </div>
       <p v-if="numberedCount" class="text-center text-xs text-muted-foreground">
@@ -204,77 +204,39 @@ defineExpose({ reset });
 
     <!-- PIN -->
     <template v-if="showPad">
-      <div v-if="picked" class="grid gap-1">
-        <div>
-          <NuxtButton
-            color="neutral"
-            variant="link"
-            icon="i-lucide-chevron-left"
-            :label="changeLabel"
-            @click="unpick"
-          />
-        </div>
-        <p class="text-center text-sm font-semibold">{{ picked.name }}</p>
+      <!-- Quem foi escolhido, no centro, e o voltar logo abaixo do nome: o
+           gesto fica junto da coisa que ele troca. -->
+      <div v-if="picked" class="grid justify-items-center gap-1">
+        <p class="text-base font-semibold" data-operator-identify-picked>
+          {{ picked.name }}
+        </p>
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-chevron-left"
+          :label="changeLabel"
+          @click="unpick"
+        />
       </div>
       <NuxtInput
         v-else-if="allowTypedName"
         v-model="typedName"
+        class="w-full"
         :placeholder="nameLabel"
         :aria-label="nameLabel"
         autocomplete="off"
         size="xl"
       />
 
-      <NuxtAlert v-if="error" color="error" variant="subtle" :title="error" />
-
-      <NuxtPinInput
-        :model-value="pin.split('')"
-        :length="8"
-        mask
-        size="xl"
-        aria-live="polite"
-        :aria-label="`${pin.length} dígitos`"
-        @update:model-value="replacePin"
+      <OperatorPinPad
+        :pin="pin"
+        :error="error"
+        :can-submit="canSubmit"
+        :busy="busy"
+        @digit="pressDigit"
+        @backspace="backspace"
+        @submit="submit"
       />
-
-      <!-- `touch-manipulation` desliga o double-tap-zoom do browser nos botões:
-           sem ele, dois toques rápidos no mesmo dígito viram gesto de zoom e o
-           clique some — o pad tem que aguentar dedo apressado. Digitar nunca
-           desabilita (nem durante verificação): só o CONFIRMAR trava, porque
-           o que não pode duplicar é a submissão, não o dígito. -->
-      <div class="grid grid-cols-3 gap-2">
-        <NuxtButton
-          v-for="d in ['1', '2', '3', '4', '5', '6', '7', '8', '9']"
-          :key="d"
-          color="neutral"
-          variant="outline"
-          size="xl"
-          :label="d"
-          @click="pressDigit(d)"
-        />
-        <NuxtButton
-          color="neutral"
-          variant="outline"
-          size="xl"
-          icon="i-lucide-delete"
-          aria-label="Apagar"
-          @click="backspace"
-        />
-        <NuxtButton
-          color="neutral"
-          variant="outline"
-          size="xl"
-          label="0"
-          @click="pressDigit('0')"
-        />
-        <NuxtButton
-          size="xl"
-          icon="i-lucide-check"
-          aria-label="Confirmar"
-          :disabled="!canSubmit || busy"
-          @click="submit"
-        />
-      </div>
 
       <!-- O crachá segue valendo aqui: a frase existe para o operador saber que
            não precisa terminar de digitar se estiver com ele no pescoço. -->

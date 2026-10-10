@@ -148,7 +148,10 @@ async function submitForcedChange(payload: {
     tabindex="-1"
     class="fixed inset-0 outline-none z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
   >
-    <NuxtCard class="w-full max-w-md">
+    <!-- Largura do cartão = a do conteúdo (a lista em duas colunas e o
+         teclado), não a da tela: num monitor largo o cartão não esticava as
+         teclas, mas sobrava borda vazia em volta delas. -->
+    <NuxtCard class="w-full max-w-sm" :ui="{ body: 'grid gap-5' }">
       <!-- Forced change: manager reset the operator's PIN; rotate before operating. -->
       <OperatorPinChange
         v-if="mustChange && operator"
@@ -174,7 +177,6 @@ async function submitForcedChange(payload: {
            diz o que acontece e só age depois do PIN. -->
       <template v-else-if="lostBadge">
         <NuxtAlert
-          class="mb-4"
           color="warning"
           variant="subtle"
           icon="i-lucide-badge-x"
@@ -194,13 +196,14 @@ async function submitForcedChange(payload: {
           @pin="submitLostBadge"
         />
 
-        <NuxtButton
-          block
-          color="neutral"
-          variant="ghost"
-          label="Cancelar"
-          @click="lostBadge = false"
-        />
+        <div class="flex justify-center">
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            label="Cancelar"
+            @click="lostBadge = false"
+          />
+        </div>
       </template>
 
       <template v-else>
@@ -212,19 +215,16 @@ async function submitForcedChange(payload: {
 
                aqui         → você ASSUME o balcão (a sessão troca)
                autorização  → você CONTINUA quem era (o gerente só assina) -->
-        <!-- O título é o cabeçalho da tela de bloqueio (h2, como no `main`): o Alert
-             desenha, o leitor de tela navega por ele. -->
-        <NuxtAlert
-          class="mb-4"
-          color="neutral"
-          variant="subtle"
-          icon="i-lucide-lock"
-          description="Você assume o balcão."
-        >
-          <template #title>
-            <h2>Identifique-se para operar</h2>
-          </template>
-        </NuxtAlert>
+        <!-- O título é o cabeçalho da tela de bloqueio (h2): o leitor de tela
+             navega por ele. O mesmo desenho do cabeçalho do login do operador
+             (`OperatorLoginForm`): o cadeado no centro, título e uma linha. -->
+        <header class="grid justify-items-center gap-3 text-center">
+          <NuxtAvatar size="3xl" icon="i-lucide-lock" alt="" />
+          <div class="grid gap-1">
+            <h2 class="text-lg font-semibold">Identifique-se para operar</h2>
+            <p class="text-sm text-muted-foreground">Você assume o balcão.</p>
+          </div>
+        </header>
 
         <NuxtEmpty
           v-if="!eligible.length"
@@ -250,17 +250,17 @@ async function submitForcedChange(payload: {
           <template #footer>
             <!-- Discreto, mas não escondido: quem perdeu o crachá precisa achar
                  sozinho, então é texto legível ao lado do irmão, e não um menu. -->
-            <div class="flex items-center justify-center gap-4">
+            <div class="flex flex-wrap items-center justify-center gap-2">
               <NuxtButton
                 color="neutral"
-                variant="link"
+                variant="ghost"
                 icon="i-lucide-key-round"
                 label="Trocar meu PIN"
                 @click="startChange"
               />
               <NuxtButton
                 color="neutral"
-                variant="link"
+                variant="ghost"
                 icon="i-lucide-badge-x"
                 label="Perdi meu crachá"
                 @click="lostBadge = true"

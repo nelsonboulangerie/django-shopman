@@ -108,7 +108,7 @@ function confirmTyped() {
             :key="tab.ref"
             color="neutral"
             variant="outline"
-            class="grid gap-1 px-3 py-2 text-left font-normal"
+            class="justify-normal grid gap-1 px-3 py-2 text-left font-normal"
             :class="tab.state === 'in_use' ? 'bg-warning/10' : ''"
             :disabled="busy || !canAssociate(tab)"
             @click="selectTab(tab)"
