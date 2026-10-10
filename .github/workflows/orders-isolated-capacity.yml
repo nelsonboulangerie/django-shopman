@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 35
     services:
       postgres:
-        image: postgres:16
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_USER: orders_lab
           POSTGRES_PASSWORD: orders_lab
@@ -43,7 +43,7 @@ jobs:
           --health-cmd "pg_isready -U orders_lab -d orders_perf_lab"
           --health-interval 5s --health-timeout 5s --health-retries 12
       redis:
-        image: valkey/valkey:8
+        image: public.ecr.aws/valkey/valkey:8
         ports: ["56389:6379"]
         options: >-
           --health-cmd "valkey-cli ping"

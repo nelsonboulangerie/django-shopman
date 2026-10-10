@@ -23,6 +23,7 @@ import {
 import { onMounted, onBeforeUnmount } from "vue";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import type { CancellationReason } from "~/types/orders";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
@@ -150,6 +151,11 @@ function onUndo() {
   if (undo.value?.action === "undo_handoff") undoHandoff();
   else undoReady();
 }
+// A saída tocada, ainda na janela: o Desfazer ocupa o lugar do botão que a fez (o
+// primário do cabeçalho na mesa, a ação na base no celular), com o fundo que esvazia.
+const handoffUndo = computed(() =>
+  undo.value?.kind === "handoff" && undo.value.canUndo ? undo.value : null,
+);
 
 const notes = ref("");
 const notesBase = ref("");
@@ -596,6 +602,17 @@ const rejectThumb = computed(() =>
     : undefined,
 );
 const thumbAction = computed(() => {
+  const h = handoffUndo.value;
+  // A saída tocada: a MESMA ação na base, só com o texto trocado e o prazo.
+  if (h)
+    return {
+      label: "Desfazer",
+      icon: "i-lucide-undo-2",
+      ariaLabel: `Desfazer: ${h.label}`,
+      disabled: busy.value,
+      timed: { until: h.untilIso, since: h.sinceIso || undefined },
+      onSelect: onUndo,
+    };
   const p = primary.value;
   // Sem ação primária, o "Recusar" é a ação do momento.
   if (!p) return rejectThumb.value ?? null;
@@ -802,8 +819,21 @@ const outside = useOutsideStore(
           data-action="reject"
           @click="openDialog('reject')"
         />
+        <!-- A saída tocada: o Desfazer mora no MESMO botão (dono, 09/10/2026), o
+             primário da barra, com o fundo que esvazia atrás do texto. -->
+        <OperatorTimedButton
+          v-if="handoffUndo"
+          :until="handoffUndo.untilIso"
+          :since="handoffUndo.sinceIso || undefined"
+          label="Desfazer"
+          icon="i-lucide-undo-2"
+          :disabled="busy"
+          :loading="busy"
+          data-undo-button
+          @click="onUndo()"
+        />
         <NuxtButton
-          v-if="primary"
+          v-else-if="primary"
           type="button"
           :icon="primary.icon.replace('lucide:', 'i-lucide-')"
           :label="primary.label"
@@ -852,20 +882,16 @@ const outside = useOutsideStore(
         icon="i-lucide-map-pin"
         title="Usar a localização deste dispositivo?"
         description="Fora da loja, o Gestor pode mostrar somente o que pede decisão."
-        :actions="[
+        :actions="alertActions('info', [
           {
             label: 'Permitir',
-            color: 'info',
-            variant: 'outline',
             onClick: () => outside.allow(),
           },
           {
             label: 'Agora não',
-            color: 'info',
-            variant: 'outline',
             onClick: () => outside.decline(),
           },
-        ]"
+        ])"
         data-outside-consent
       />
       <NuxtAlert
@@ -875,14 +901,12 @@ const outside = useOutsideStore(
         icon="i-lucide-map-pin-off"
         title="Você está fora da loja"
         description="Mostrando somente o que pede decisão."
-        :actions="[
+        :actions="alertActions('info', [
           {
             label: 'Ver tudo',
-            color: 'info',
-            variant: 'outline',
             onClick: () => outside.showAll(),
           },
-        ]"
+        ])"
         data-outside-band
       />
 
@@ -986,36 +1010,20 @@ const outside = useOutsideStore(
                 [undo.detail, undo.alreadyOut].filter(Boolean).join(' · ')
               "
               :actions="
-                undo.canUndo && undo.kind !== 'handoff'
+                alertActions('success', undo.canUndo && undo.kind !== 'handoff'
                   ? [
                       {
                         label: 'Desfazer',
-                        color: 'success',
-                        variant: 'outline',
                         disabled: busy,
                         onClick: () => onUndo(),
                       },
                     ]
-                  : []
+                  : [])
               "
               :data-undo="undo.kind"
             >
-              <!-- A saída tocada: o tempo mora no próprio Desfazer (o fundo esvazia
-                   até a janela fechar), como no cartão. -->
-              <template v-if="undo.canUndo && undo.kind === 'handoff'" #actions>
-                <OperatorTimedButton
-                  :until="undo.untilIso"
-                  :since="undo.sinceIso || undefined"
-                  label="Desfazer"
-                  icon="i-lucide-undo-2"
-                  color="success"
-                  variant="outline"
-                  :disabled="busy"
-                  :loading="busy"
-                  data-undo-button
-                  @click="onUndo()"
-                />
-              </template>
+              <!-- A saída tocada: o aviso diz o fato; o Desfazer mora no botão que a
+                   fez (o primário do cabeçalho, a ação na base no celular). -->
             </NuxtAlert>
             <NuxtAlert
               v-if="
@@ -1093,20 +1101,16 @@ const outside = useOutsideStore(
                 variant="subtle"
                 title="A nota mudou enquanto você escrevia"
                 :description="`Seu texto foi preservado. A nota gravada é: ${order.kitchen_note || '(vazia)'}`"
-                :actions="[
+                :actions="alertActions('warning', [
                   {
                     label: 'Manter meu texto',
-                    color: 'warning',
-                    variant: 'outline',
                     onClick: () => acceptLatestNotesBase(),
                   },
                   {
                     label: 'Usar a nota gravada',
-                    color: 'warning',
-                    variant: 'outline',
                     onClick: () => useLatestNotes(),
                   },
-                ]"
+                ])"
               />
               <NuxtAlert
                 v-if="mutationError"
@@ -1189,14 +1193,12 @@ const outside = useOutsideStore(
             variant="subtle"
             title="O pedido ou turno mudou"
             :description="`Confira o contexto atual: ${settleAction?.confirmation.description || ''}`"
-            :actions="[
+            :actions="alertActions('warning', [
               {
                 label: 'Conferir e manter os valores digitados',
-                color: 'warning',
-                variant: 'outline',
                 onClick: () => reviewSettleCustody(),
               },
-            ]"
+            ])"
           />
           <NuxtFormField label="Valor recebido">
             <NuxtInput

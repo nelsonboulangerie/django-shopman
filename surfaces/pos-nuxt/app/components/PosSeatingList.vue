@@ -35,11 +35,14 @@ function areaLine(area: AreaSummary) {
     <section class="flex flex-col gap-2" aria-label="Adicionar mesa">
       <p class="op-eyebrow text-muted-foreground">Adicionar em {{ activeArea || "Sem área" }}</p>
       <div class="grid grid-cols-4 gap-2">
-        <button
+        <NuxtButton
           v-for="shape in SHAPES"
           :key="shape.value"
-          type="button"
-          class="flex h-16 flex-col items-center justify-center gap-1 rounded-lg border border-border bg-card op-micro font-semibold"
+          size="xl"
+          color="neutral"
+          variant="outline"
+          class="h-16 flex-col justify-center gap-1 px-1"
+          :aria-label="`Pôr mesa ${shape.label.toLowerCase()} em ${activeArea || 'Sem área'}`"
           :data-seating-add="shape.value"
           @click="emit('add', shape.value, activeArea === 'Sem área' ? '' : activeArea)"
         >
@@ -54,28 +57,33 @@ function areaLine(area: AreaSummary) {
             aria-hidden="true"
           />
           {{ shape.label }}
-        </button>
+        </NuxtButton>
       </div>
     </section>
 
     <section v-for="group in groups" :key="group.area.name" class="flex flex-col gap-2" :aria-label="group.area.name">
-      <button
-        type="button"
-        class="flex min-h-control items-baseline gap-2 text-left"
+      <NuxtButton
+        color="neutral"
+        variant="ghost"
+        active-color="primary"
+        :active="activeArea === group.area.name"
+        class="-mx-2.5 items-baseline gap-2 self-start text-left"
         :aria-pressed="activeArea === group.area.name"
         @click="activeArea = group.area.name"
       >
-        <span class="op-heading" :class="activeArea === group.area.name ? 'text-primary' : ''">{{ group.area.name }}</span>
-        <span class="op-micro text-muted-foreground tabular-nums">{{ areaLine(group.area) }}</span>
-      </button>
+        <span class="op-heading">{{ group.area.name }}</span>
+        <span class="op-micro font-normal text-muted-foreground tabular-nums">{{ areaLine(group.area) }}</span>
+      </NuxtButton>
       <p v-if="!group.spots.length" class="rounded-lg border border-dashed border-border p-3 op-micro text-muted-foreground">
         Área nova, ainda sem mesa. Toque numa forma acima para pôr a primeira.
       </p>
       <ul v-else class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
         <li v-for="spot in group.spots" :key="spot.key">
-          <button
-            type="button"
-            class="flex min-h-14 w-full items-center gap-3 px-3 py-2 text-left"
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            block
+            class="min-h-14 justify-start gap-3 rounded-none px-3 py-2 text-left font-normal"
             :data-seating-row="spot.key"
             @click="emit('select', spot.key)"
           >
@@ -95,7 +103,7 @@ function areaLine(area: AreaSummary) {
             </span>
             <span v-if="changedKeys.has(spot.key)" class="size-2 shrink-0 rounded-full bg-primary" aria-label="mudou, falta salvar" />
             <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          </button>
+          </NuxtButton>
         </li>
       </ul>
     </section>

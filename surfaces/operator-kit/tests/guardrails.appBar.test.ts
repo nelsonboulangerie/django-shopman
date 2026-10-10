@@ -80,14 +80,7 @@ describe("guardrail do cabeçalho de seções", () => {
   // e passa as seções para o rail da suíte (tablet e desktop) e para a barra do polegar
   // (celular), as duas peças da layer. O Gestor é o piloto; quem migrar entra aqui.
   it("os que migraram para o rail da suíte usam as duas peças da layer", () => {
-    const migrados = [
-      // V4-MKT: a segunda linha de Ajustes do Marketing (Campanhas, Modelos, Ofertas e
-      // cupons, Plataformas) mora em `MarketingSettingsNav.vue`, na linha de recortes
-      // do `OperatorPageHeader`; ela não é barra de seções do app.
-      "marketing-nuxt/app/components/MarketingNav.vue",
-      // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
-      // `current` e devolvem `select`.
-      "purchase-nuxt/app/components/PurchaseNav.vue",
+    const migrados: string[] = [
     ];
     for (const file of migrados) {
       const source = readFileSync(join(SURFACES, file), "utf8");
@@ -116,6 +109,14 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(bi).not.toContain("<BiNav");
     expect(bi).not.toMatch(/data-suite=/);
 
+    // Fase 2 (onda do Marketing): o Marketing segue o Gestor. As sub-seções de Ajustes
+    // moram em `MarketingSettingsNav.vue`, na faixa esquerda da toolbar.
+    const marketing = readFileSync(join(SURFACES, "marketing-nuxt/app/app.vue"), "utf8");
+    expect(marketing).toContain("<OperatorSuiteShell");
+    expect(marketing).toContain(':sections="sections"');
+    expect(marketing).not.toContain("<MarketingNav");
+    expect(marketing).not.toMatch(/data-suite=/);
+
     // Fase 2: a Produção segue o Gestor e o B.I. (sem `ProductionNav`); o Letreiro
     // (`/board`, TV) fica fora do shell, em casca própria sem navegação.
     const production = readFileSync(join(SURFACES, "production-nuxt/app/app.vue"), "utf8");
@@ -123,6 +124,13 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(production).toContain(':sections="sections"');
     expect(production).not.toContain("<ProductionNav");
     expect(production).toContain("data-production-kiosk");
+
+    // Fase 2 (onda do Compras, 09/10/2026): o Compras entrou no shell; cada seção é rota.
+    const purchase = readFileSync(join(SURFACES, "purchase-nuxt/app/app.vue"), "utf8");
+    expect(purchase).toContain("<OperatorSuiteShell");
+    expect(purchase).toContain(':sections="sections"');
+    expect(purchase).not.toContain("<PurchaseNav");
+    expect(purchase).not.toMatch(/data-suite=/);
 
     // Fase 2, onda da Cozinha: as estações pelo nome numa lista só (`where` separa a
     // ordem da barra lateral da ordem da barra inferior), sem adaptador de navegação.
@@ -147,9 +155,7 @@ describe("guardrail do cabeçalho de seções", () => {
 
 // V6-KIT (auditoria v4, 04/10/2026): o chrome da suíte é UM em todo app. Cada trava
 // abaixo nasceu de uma divergência medida que pode voltar.
-const NAVS = [
-  "marketing-nuxt/app/components/MarketingNav.vue",
-  "purchase-nuxt/app/components/PurchaseNav.vue",
+const NAVS: string[] = [
 ];
 const KIT = (name: string) =>
   readFileSync(join(SURFACES, "operator-kit/app/components", name), "utf8");

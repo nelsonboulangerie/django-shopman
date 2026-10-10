@@ -10,28 +10,19 @@
 //    `data-receipt-field`, a pendência vira um clique que não faz nada;
 // 3. **conferir FECHA.** É o gesto que devolve o operador à lista, onde a linha
 //    acabou de mudar de cor.
-import { computed, nextTick } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ReceiptLineSheet from "../../app/components/ReceiptLineSheet.vue";
 import ReceiptField from "../../app/components/ReceiptField.vue";
-import UiSheet from "../../../operator-kit/app/components/Ui/Sheet/Sheet.vue";
-import UiSheetContent from "../../../operator-kit/app/components/Ui/Sheet/Content.vue";
-import UiSheetPortal from "../../../operator-kit/app/components/Ui/Sheet/Portal.vue";
-import UiSheetOverlay from "../../../operator-kit/app/components/Ui/Sheet/Overlay.vue";
-import UiSheetHeader from "../../../operator-kit/app/components/Ui/Sheet/Header.vue";
-import UiSheetFooter from "../../../operator-kit/app/components/Ui/Sheet/Footer.vue";
-import UiSheetTitle from "../../../operator-kit/app/components/Ui/Sheet/Title.vue";
-import UiSheetDescription from "../../../operator-kit/app/components/Ui/Sheet/Description.vue";
-import UiSheetClose from "../../../operator-kit/app/components/Ui/Sheet/Close.vue";
-import UiSheetX from "../../../operator-kit/app/components/Ui/Sheet/X.vue";
 import { receiptFieldSelector } from "../../app/utils/receiptFocus";
 import { receiptLinePreview } from "../../app/presentation/purchase";
 import type { Material, ReceiptLine } from "../../app/types/purchase";
 
 // Auto-imports do Nuxt que o SFC usa como global (sem runtime Nuxt aqui).
 vi.stubGlobal("computed", computed);
+vi.stubGlobal("useCoarsePointer", () => ref(false));
 
 const ovos: Material = {
   sku: "OVOS",
@@ -65,7 +56,7 @@ function previewOf(patch: Partial<ReceiptLine> = {}) {
   return receiptLinePreview(lineOf(patch), "invoice", [ovos], [])!;
 }
 
-function mountSheet(patch: Partial<ReceiptLine> = {}, open = true) {
+function mountSheet(patch: Partial<ReceiptLine> = {}, open = true, extra: { docked?: boolean } = {}) {
   return mount(ReceiptLineSheet, {
     props: {
       open,
@@ -73,22 +64,12 @@ function mountSheet(patch: Partial<ReceiptLine> = {}, open = true) {
       materials: [ovos],
       conversions: [],
       stockAfter: 18,
+      ...extra,
     },
+    slots: { nav: '<nav data-test-record-nav>Item 2 de 5</nav>' },
     global: {
-      components: {
-        UiSheet,
-        UiSheetContent,
-        UiSheetPortal,
-        UiSheetOverlay,
-        UiSheetHeader,
-        UiSheetFooter,
-        UiSheetTitle,
-        UiSheetDescription,
-        UiSheetClose,
-        UiSheetX,
-        ReceiptField,
-      },
-      stubs: { Icon: true, UiSelect: true, ReceiptConversion: true, ReceiptDifference: true },
+      components: { ReceiptField },
+      stubs: { Icon: true, OperatorDayPicker: true, ReceiptConversion: true, ReceiptDifference: true },
     },
     attachTo: document.body,
   });
@@ -169,6 +150,47 @@ describe("ReceiptLineSheet — a gaveta do item", () => {
     const header = document.body.querySelector('[data-slot="sheet-header"]')!;
     expect(header.textContent).toContain("Informe a validade");
     expect(header.textContent).toContain("Pendente");
+  });
+
+  it("o ir e vir entre itens é da página: o slot `nav` mora no cabeçalho, nos dois jeitos", async () => {
+    for (const docked of [false, true]) {
+      mountSheet({}, true, { docked });
+      await settle();
+
+      const header = document.body.querySelector('[data-slot="sheet-header"]')!;
+      expect(header.querySelector("[data-test-record-nav]")?.textContent).toBe("Item 2 de 5");
+      document.body.innerHTML = "";
+    }
+  });
+
+  it("por cima, Fechar fecha a gaveta; encaixada, não há Fechar", async () => {
+    const wrapper = mountSheet();
+    await settle();
+
+    document.querySelector<HTMLButtonElement>("[data-receipt-sheet-close]")!.click();
+    await nextTick();
+    expect(wrapper.emitted("update:open")?.at(-1)).toEqual([false]);
+    document.body.innerHTML = "";
+
+    mountSheet({}, true, { docked: true });
+    await settle();
+    expect(document.querySelector("[data-receipt-sheet-docked]")).not.toBeNull();
+    expect(document.querySelector("[data-receipt-sheet-close]")).toBeNull();
+  });
+
+  it("o numérico escreve no campo ativo, e o −1/+1 mexe na quantidade", async () => {
+    const wrapper = mountSheet();
+    await settle();
+
+    document.querySelector<HTMLButtonElement>('[aria-label="Um a mais"]')!.click();
+    await nextTick();
+    expect(wrapper.emitted("update")?.at(-1)).toEqual([{ purchaseQty: 3 }]);
+
+    document.querySelector<HTMLButtonElement>("[data-sheet-cost-field]")!.click();
+    await nextTick();
+    document.querySelector<HTMLButtonElement>('[aria-label="Dígito 7"]')!.click();
+    await nextTick();
+    expect(wrapper.emitted("update")?.at(-1)).toEqual([{ costInput: "7" }]);
   });
 
   it("gaveta fechada não monta formulário nenhum", async () => {

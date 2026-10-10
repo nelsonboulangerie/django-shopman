@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  HISTORY_FILTERS,
+  HISTORY_FILTER_ALL,
+  historyActiveFilters,
+  historyFilterQueryValue,
+  historyFilterValue,
   historyActorLabel,
   historyAnnouncementId,
   historyHref,
@@ -93,5 +98,51 @@ describe("apresentação do histórico canônico", () => {
     expect(historyAnnouncementId("campaign:42")).toBeNull();
     expect(historyHref("announcement:42")).toBe("/announcements/42");
     expect(historyHref("announcement:0")).toBe("/history");
+  });
+});
+
+describe("recortes de Enviados", () => {
+  it("são os quatro de hoje, cada um com um 'sem recorte' que o Select aceita", () => {
+    expect(HISTORY_FILTERS.map((filter) => filter.label)).toEqual([
+      "Situação",
+      "Plataforma",
+      "Criado em",
+      "Origem da decisão",
+    ]);
+    for (const filter of HISTORY_FILTERS) {
+      // O Select do Nuxt UI (Reka) recusa item de valor vazio.
+      expect(filter.options.every((option) => option.value !== "")).toBe(true);
+      expect(filter.options[0]!.value).toBe(HISTORY_FILTER_ALL);
+    }
+    expect(
+      HISTORY_FILTERS.find((filter) => filter.name === "period")!.options.map(
+        (option) => option.value,
+      ),
+    ).toEqual(["all", "today", "7d", "30d"]);
+  });
+
+  it("vai e volta da URL sem mudar o contrato do backend", () => {
+    expect(historyFilterValue("")).toBe("all");
+    expect(historyFilterValue(undefined)).toBe("all");
+    expect(historyFilterValue("7d")).toBe("7d");
+    expect(historyFilterQueryValue("all")).toBe("");
+    expect(historyFilterQueryValue("instagram")).toBe("instagram");
+  });
+
+  it("vira um chip por recorte fora do padrão, com o nome do recorte", () => {
+    expect(historyActiveFilters({ period: "all" })).toEqual([]);
+    expect(
+      historyActiveFilters({
+        outcome: "",
+        platform: "instagram",
+        period: "7d",
+        actor: "automation",
+      }),
+    ).toEqual([
+      { name: "platform", label: "Plataforma: Instagram" },
+      { name: "period", label: "Criado em: Últimos 7 dias" },
+      { name: "actor", label: "Origem da decisão: Automação" },
+    ]);
+    expect(historyActiveFilters({ outcome: "desconhecido" })).toEqual([]);
   });
 });

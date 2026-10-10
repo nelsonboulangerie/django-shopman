@@ -25,32 +25,31 @@ const live = useMarketingLiveStatus({
 
 const brokenImages = ref(new Set<string>());
 
+// O ⋯ do cabeçalho: os links de hoje e "Atualizar" (tecla R).
+const headerActions = [
+  { label: "Enviados", icon: "i-lucide-history", to: "/history" },
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
+];
 onKeyStroke(["r", "R"], (event) => {
   const target = event.target as HTMLElement | null;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
   void refresh();
 });
-const MENU = [
-  { key: "history", label: "Histórico de disparos", icon: "lucide:history", to: "/history" },
-  { key: "refresh", label: "Atualizar", icon: "lucide:refresh-cw", shortcut: "R" },
-];
-function onMenu(key: string) {
-  if (key === "refresh") void refresh();
-}
 
 useHead({ title: "Agendados" });
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-marketing-scheduled>
-    <MarketingPageHeader title="Agendados" phone-hides-actions>
-      <template #actions>
-        <MarketingPageMenu heading="Agendados" :items="MENU" @select="onMenu" />
-      </template>
+    <OperatorPageHeader
+      title="Agendados"
+      :actions="headerActions"
+      actions-label="Mais ações de Agendados"
+    >
       <template #status>
         <!-- No celular o kit desce o estado para a segunda linha da barra (README "Barra
-             do topo no celular"): ele não disputa mais a largura com o título. -->
+             do topo no celular"): ele não disputa a largura com o título. -->
         <span class="flex min-w-0" data-marketing-live>
           <OperatorLiveStatus
             :tone="live.tone"
@@ -60,101 +59,111 @@ useHead({ title: "Agendados" });
           />
         </span>
       </template>
-    </MarketingPageHeader>
+    </OperatorPageHeader>
 
-    <div class="mx-auto flex w-full max-w-3xl flex-col gap-2.5 px-4 pt-3 pb-5 sm:px-6">
-      <p class="flex min-h-8 items-center text-[14px] text-muted-foreground" role="status" :aria-busy="loading">
-        {{ scheduledHeadline(scheduled.length) }}
-      </p>
-
-      <div
-        v-if="error && !queue"
-        class="rounded-[14px] border border-destructive/30 bg-destructive/5 p-4"
-        role="alert"
-      >
-        <p class="font-semibold">Os agendados não carregaram</p>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Isso não quer dizer que nada está agendado. Atualize antes de concluir.
-        </p>
-      </div>
-
-      <ol v-else-if="scheduled.length" class="flex flex-col gap-2.5">
-        <li
-          v-for="item in scheduled"
-          :key="item.ref"
-          :data-scheduled="item.ref"
-          class="flex flex-wrap items-center gap-3 rounded-[14px] border border-border bg-card p-3"
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <div class="mx-auto flex w-full max-w-3xl flex-col gap-3">
+        <p
+          v-if="queue"
+          class="flex min-h-8 items-center text-sm text-muted-foreground"
+          role="status"
+          :aria-busy="loading"
+          data-scheduled-headline
         >
-          <img
-            v-if="item.image_url && !brokenImages.has(item.ref)"
-            :src="item.image_url"
-            alt=""
-            class="size-[60px] shrink-0 rounded-lg object-cover"
-            loading="lazy"
-            @error="brokenImages = new Set([...brokenImages, item.ref])"
-          >
-          <span
-            v-else
-            class="grid size-[60px] shrink-0 place-items-center rounded-lg bg-[color-mix(in_oklab,var(--app-color,var(--primary))_14%,transparent)] text-[var(--app-color,var(--primary))]"
-            aria-hidden="true"
-          >
-            <Icon :name="decisionIcon(item.trigger)" class="size-7" />
-          </span>
-          <div class="min-w-0 flex-1">
-            <h2 class="break-words text-[16px] font-semibold leading-snug">
-              <NuxtLink :to="item.href" class="hover:underline">{{ decisionTitle(item) }}</NuxtLink>
-            </h2>
-            <p class="mt-0.5 text-[14px] font-medium tnum">
-              {{
-                departureLabel(
-                  item.scheduled_for,
-                  item.platform_refs,
-                  shopTimezone,
-                  nowMs,
-                )
-              }}
-            </p>
-            <p class="mt-0.5 break-words text-[13px] leading-snug text-muted-foreground">
-              {{ destinationsLine(item.platform_refs, item.reach) }}
-            </p>
-          </div>
-          <div class="flex w-full gap-2 sm:w-auto">
-            <UiButton
-              :to="{ path: item.href, query: { action: 'reschedule_announcement' }, hash: '#result' }"
-              variant="outline"
-              class="h-12 flex-1 rounded-xl px-4 text-[15px] font-semibold sm:flex-none"
-              :aria-label="`Reagendar: ${decisionTitle(item)}`"
-              data-scheduled-reschedule
-            >
-              Reagendar
-            </UiButton>
-            <UiButton
-              :to="{ path: item.href, query: { action: 'cancel_announcement' }, hash: '#result' }"
-              variant="outline"
-              class="h-12 flex-1 rounded-xl px-4 text-[15px] font-semibold sm:flex-none"
-              :aria-label="`Cancelar antes de começar: ${decisionTitle(item)}`"
-              data-scheduled-cancel
-            >
-              Cancelar
-            </UiButton>
-          </div>
-        </li>
-      </ol>
-
-      <div
-        v-else-if="queue"
-        class="rounded-[14px] border border-dashed border-border bg-card/50 px-6 py-10 text-center"
-      >
-        <Icon
-          name="lucide:calendar"
-          class="mx-auto size-8 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <p class="mt-2 font-semibold">Nenhum anúncio agendado</p>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Ao aprovar com hora marcada, o anúncio espera aqui até a hora chegar.
+          {{ scheduledHeadline(scheduled.length) }}
         </p>
+
+        <OperatorScreenState
+          v-if="error && !queue"
+          state="error"
+          what="os agendados"
+          description="Isso não quer dizer que nada está agendado. Atualize antes de concluir."
+          @retry="refresh()"
+        />
+
+        <OperatorScreenState
+          v-else-if="loading && !queue"
+          state="loading"
+          what="os agendados"
+        />
+
+        <ol v-else-if="scheduled.length" class="flex flex-col gap-3">
+          <li
+            v-for="item in scheduled"
+            :key="item.ref"
+            :data-scheduled="item.ref"
+          >
+            <NuxtCard class="*:data-[slot=body]:p-3">
+              <div class="flex flex-wrap items-center gap-3">
+                <img
+                  v-if="item.image_url && !brokenImages.has(item.ref)"
+                  :src="item.image_url"
+                  alt=""
+                  class="size-15 shrink-0 rounded-lg object-cover"
+                  loading="lazy"
+                  @error="brokenImages = new Set([...brokenImages, item.ref])"
+                >
+                <span
+                  v-else
+                  class="grid size-15 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"
+                  aria-hidden="true"
+                >
+                  <Icon :name="decisionIcon(item.trigger)" class="size-7" />
+                </span>
+                <div class="min-w-0 flex-1">
+                  <h2 class="break-words text-base font-semibold leading-snug">
+                    <NuxtLink :to="item.href" class="hover:underline">{{ decisionTitle(item) }}</NuxtLink>
+                  </h2>
+                  <p class="mt-0.5 text-sm font-medium tnum">
+                    {{
+                      departureLabel(
+                        item.scheduled_for,
+                        item.platform_refs,
+                        shopTimezone,
+                        nowMs,
+                      )
+                    }}
+                  </p>
+                  <p class="mt-0.5 break-words text-sm leading-snug text-muted-foreground">
+                    {{ destinationsLine(item.platform_refs, item.reach) }}
+                  </p>
+                </div>
+                <div class="flex w-full gap-2 sm:w-auto">
+                  <NuxtButton
+                    :to="{ path: item.href, query: { action: 'reschedule_announcement' }, hash: '#result' }"
+                    label="Reagendar"
+                    icon="i-lucide-calendar-clock"
+                    color="neutral"
+                    variant="outline"
+                    class="flex-1 justify-center sm:flex-none"
+                    :aria-label="`Reagendar: ${decisionTitle(item)}`"
+                    data-scheduled-reschedule
+                  />
+                  <NuxtButton
+                    :to="{ path: item.href, query: { action: 'cancel_announcement' }, hash: '#result' }"
+                    label="Cancelar"
+                    icon="i-lucide-x"
+                    color="neutral"
+                    variant="outline"
+                    class="flex-1 justify-center sm:flex-none"
+                    :aria-label="`Cancelar antes de começar: ${decisionTitle(item)}`"
+                    data-scheduled-cancel
+                  />
+                </div>
+              </div>
+            </NuxtCard>
+          </li>
+        </ol>
+
+        <OperatorScreenState
+          v-else-if="queue"
+          state="empty"
+          icon="i-lucide-calendar"
+          title="Nenhum anúncio agendado agora."
+          description="Ao aprovar com hora marcada, o anúncio espera aqui até a hora chegar."
+          data-scheduled-empty
+        />
       </div>
-    </div>
+    </section>
   </main>
 </template>

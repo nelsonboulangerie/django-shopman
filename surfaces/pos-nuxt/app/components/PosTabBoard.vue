@@ -178,18 +178,19 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
     </p>
     <p v-else-if="!cards.length" class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
       Nenhuma comanda em uso agora.
-      <button type="button" class="font-medium underline underline-offset-4" @click="tabFilter = 'all'">Ver todas</button>
+      <NuxtButton color="neutral" variant="ghost" class="px-1 font-medium underline underline-offset-4" @click="tabFilter = 'all'">Ver todas</NuxtButton>
     </p>
     <div
       v-else
       class="max-h-[72vh] content-start overflow-y-auto pr-1 md:max-h-none md:min-h-0 md:flex-1"
       :class="tabView === 'grid' ? 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' : 'grid gap-2'"
     >
-      <button
+      <NuxtButton
         v-for="{ tab, view } in cards"
         :key="view.ref"
-        type="button"
-        class="flex h-[5.5rem] flex-col gap-0.5 overflow-hidden rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent"
+        color="neutral"
+        variant="ghost"
+        class="flex h-[5.5rem] flex-col gap-0.5 overflow-hidden rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent items-stretch justify-start font-normal"
         :class="cardTone(view)"
         @click="activateTab(tab)"
       >
@@ -221,7 +222,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         >
           {{ view.summary }}
         </span>
-      </button>
+      </NuxtButton>
     </div>
   </section>
 </template>

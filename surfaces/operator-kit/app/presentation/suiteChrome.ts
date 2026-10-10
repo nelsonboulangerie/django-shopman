@@ -7,6 +7,7 @@
 // e no desktop, barra de seções embaixo no tablet em pé e no celular (até 4 + Mais),
 // Alt 1…9 em todo app, impresso no desktop.
 import type { OperatorSection } from "./appBar";
+import { countChipDotProps, countChipProps, type CountChipColor } from "./countChip";
 
 /**
  * Onde o rail existe: tablet DEITADO (a partir de 768px) e qualquer tela de 1024px para
@@ -43,7 +44,7 @@ export const SUITE_RAIL_NEXT: Readonly<Record<SuiteRailState, { label: string; i
   hidden: { label: "Mostrar a barra lateral", icon: "i-lucide-panel-left-open" },
 };
 
-export type RailSignalColor = "success" | "warning" | "error";
+export type RailSignalColor = CountChipColor;
 
 /** O sinal de um item do rail: um ponto de estado ou um número. */
 export interface RailSignal {
@@ -67,13 +68,14 @@ export function sectionRailSignal(section: OperatorSection): RailSignal | undefi
 }
 
 /**
- * As props do Chip: o ponto no tamanho padrão do NavigationMenu; o número no `4xl` do
- * kit (o `3xl` não lê dois dígitos), `inset: false` (centrado no canto, sem cobrir o
- * ícone) e "99+" acima de 99.
+ * As props do Chip no CANTO do ícone (barra compactada, barra inferior): o ponto no
+ * tamanho padrão do NavigationMenu; o número é o chip de contagem da suíte
+ * (`countChipProps`: `4xl`, `inset: false`, "99+" acima de 99). Na barra aberta, o
+ * mesmo chip vai no fluxo, por `OperatorCountChip`.
  */
-export function railSignalChip(signal: RailSignal): { color: RailSignalColor; text?: string; size?: "4xl"; inset?: boolean } {
-  if (signal.count === undefined) return { color: signal.color };
-  return { color: signal.color, text: signal.count > 99 ? "99+" : String(signal.count), size: "4xl", inset: false };
+export function railSignalChip(signal: RailSignal): { color: RailSignalColor; text?: string; size?: "4xl"; inset?: boolean; ui: { base: string } } {
+  if (signal.count === undefined) return countChipDotProps(signal.color);
+  return countChipProps(signal.count, signal.color);
 }
 
 /**
@@ -170,11 +172,16 @@ export function phoneBarLayout(sections: readonly OperatorSection[], max = PHONE
  *   não;
  * - app que não declara: as primeiras seções, até 4, e "Mais" quando sobra;
  * - menos de 3 vagas é erro de configuração (`quickBarProblems`), salvo o app que tem
- *   menos de 3 seções ao todo, ou a exceção declarada com motivo.
+ *   menos de 3 seções ao todo, ou a exceção declarada com motivo;
+ * - com 2 vagas, mostra as 2; com UMA vaga só, a barra não aparece (`shown: false`): o
+ *   ☰ já leva ao menu completo, e um item sozinho embaixo é ruído (a Central, com
+ *   "Início" só).
  */
 export const QUICK_BAR_MIN = 3;
 export const QUICK_BAR_MAX = 5;
 export const QUICK_BAR_DEFAULT = 4;
+/** Abaixo disto (uma vaga só) a barra inferior não aparece. */
+export const QUICK_BAR_SHOWN_MIN = 2;
 
 export interface QuickBarLayout {
   /** As seções da barra, na ordem da lista. */
@@ -183,13 +190,16 @@ export interface QuickBarLayout {
   more: boolean;
   /** As seções que ficaram só na gaveta. */
   overflow: OperatorSection[];
+  /** A barra aparece: duas vagas ou mais (seções + "Mais"). Uma vaga só é ruído. */
+  shown: boolean;
 }
 
 export function quickBarLayout(sections: readonly OperatorSection[]): QuickBarLayout {
   const declared = sections.filter((section) => section.quick);
   const items = (declared.length ? declared : sections.slice(0, QUICK_BAR_DEFAULT)).slice(0, QUICK_BAR_MAX);
   const overflow = sections.filter((section) => !items.includes(section));
-  return { items, more: items.length < QUICK_BAR_MAX && overflow.length > 0, overflow };
+  const more = items.length < QUICK_BAR_MAX && overflow.length > 0;
+  return { items, more, overflow, shown: items.length + (more ? 1 : 0) >= QUICK_BAR_SHOWN_MIN };
 }
 
 /**

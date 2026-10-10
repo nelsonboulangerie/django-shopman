@@ -3,6 +3,7 @@ import type {
   CatalogBindingReviewProjection,
   CatalogReviewItem,
 } from "~/generated/ordersContract";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 const props = defineProps<{
   board: CatalogBindingReviewProjection;
   busy: boolean;
@@ -213,15 +214,13 @@ function acceptCurrent(item: CatalogReviewItem) {
             variant="subtle"
             title="O vínculo mudou desde sua seleção"
             description="Confira a associação atual antes de continuar."
-            :actions="[
+            :actions="alertActions('warning', [
               {
                 label: 'Revisar com os dados atuais',
-                color: 'warning',
-                variant: 'outline',
                 disabled: busy || stale,
                 onClick: () => acceptCurrent(item),
               },
-            ]"
+            ])"
           />
           <NuxtButton
             v-if="drafts[item.item_id]?.sku && !drafts[item.item_id]?.reviewing"
@@ -235,15 +234,13 @@ function acceptCurrent(item: CatalogReviewItem) {
             variant="subtle"
             title="Confirmar vínculo local"
             :description="`Associar ${item.name || item.item_id} a ${nameFor(drafts[item.item_id]!.sku)} (${drafts[item.item_id]!.sku}). Confirma apenas a identidade. Não copia fotos, preços ou descrições e não envia alterações à plataforma.`"
-            :actions="[
+            :actions="alertActions('info', [
               {
                 label: 'Confirmar vínculo local',
-                color: 'info',
-                variant: 'outline',
                 disabled: busy || stale || changed(item) || !item.can_bind,
                 onClick: () => save(item),
               },
-            ]"
+            ])"
           />
         </div>
       </div>

@@ -197,11 +197,13 @@ defineExpose({ filled, totalQ, touched: computed(() => (props.mode === "total" ?
 
     <div class="grid grid-cols-4 gap-2" data-drawer-numpad>
       <template v-for="(row, rowIndex) in [[1, 2, 3], [4, 5, 6], [7, 8, 9], ['plus', 0, 'back']]" :key="rowIndex">
-        <button
+        <NuxtButton
           v-for="key in row"
           :key="String(key)"
-          type="button"
-          class="h-16 rounded-lg border text-3xl font-medium tnum transition hover:bg-muted active:bg-muted disabled:opacity-40"
+          size="xl"
+          color="neutral"
+          variant="ghost"
+          class="h-16 rounded-lg border text-3xl font-medium tnum transition hover:bg-muted active:bg-muted disabled:opacity-40 justify-center"
           :class="key === 'plus' ? 'border-transparent bg-secondary text-base font-semibold' : 'border-border bg-card'"
           :disabled="disabled || (key === 'plus' && mode === 'total')"
           :aria-label="typeof key === 'number' ? `Dígito ${key}` : key === 'back' ? 'Apagar último dígito' : 'Mais um'"
@@ -209,35 +211,43 @@ defineExpose({ filled, totalQ, touched: computed(() => (props.mode === "total" ?
         >
           <Icon v-if="key === 'back'" name="lucide:delete" class="mx-auto size-6" />
           <template v-else>{{ key === "plus" ? "+1" : key }}</template>
-        </button>
-        <button
+        </NuxtButton>
+        <NuxtButton
           v-if="rowIndex === 0"
-          type="button"
+          size="xl"
+          color="neutral"
+          variant="ghost"
           class="inline-flex h-16 items-center justify-center gap-1.5 rounded-lg bg-secondary op-label font-semibold transition disabled:opacity-40"
           :disabled="disabled || mode === 'total'"
           @click="step(-1)"
-        ><Icon name="lucide:arrow-up" class="size-4" />Anterior</button>
-        <button
+        ><Icon name="lucide:arrow-up" class="size-4" />Anterior</NuxtButton>
+        <NuxtButton
           v-else-if="rowIndex === 1"
-          type="button"
+          size="xl"
+          color="neutral"
+          variant="ghost"
           class="inline-flex h-16 items-center justify-center gap-1.5 rounded-lg bg-secondary op-label font-semibold transition disabled:opacity-40"
           :disabled="disabled || mode === 'total'"
           @click="step(1)"
-        ><Icon name="lucide:arrow-down" class="size-4" />Próxima</button>
-        <button
+        ><Icon name="lucide:arrow-down" class="size-4" />Próxima</NuxtButton>
+        <NuxtButton
           v-else-if="rowIndex === 2"
-          type="button"
+          size="xl"
+          color="neutral"
+          variant="ghost"
           class="inline-flex h-16 items-center justify-center rounded-lg bg-secondary op-label font-semibold transition disabled:opacity-40"
           :disabled="disabled"
           @click="clear"
-        >Limpar</button>
-        <button
+        >Limpar</NuxtButton>
+        <NuxtButton
           v-else
-          type="button"
+          size="xl"
+          color="neutral"
+          variant="ghost"
           class="inline-flex h-16 items-center justify-center gap-1.5 rounded-lg bg-secondary op-label font-semibold transition disabled:opacity-40"
           :disabled="disabled"
           @click="emit('note')"
-        ><Icon name="lucide:message-square-text" class="size-4" />Observação</button>
+        ><Icon name="lucide:message-square-text" class="size-4" />Observação</NuxtButton>
       </template>
     </div>
   </div>

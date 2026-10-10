@@ -47,6 +47,14 @@ function clearFilters() {
   onlyWithDraft.value = false;
   onlyFavorites.value = false;
 }
+const ALL_KINDS = "__all__";
+const kindItems = computed(() => [{ value: ALL_KINDS, label: "Todas" }, ...kinds.value]);
+const kindChoice = computed({
+  get: () => kind.value || ALL_KINDS,
+  set: (value: string) => {
+    kind.value = value === ALL_KINDS ? "" : value;
+  },
+});
 </script>
 
 <template>
@@ -78,40 +86,15 @@ function clearFilters() {
 
     <section v-else class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <div
+        <!-- O tipo é escolha de uma lista que cresce com o cadastro: `NuxtSelect`. -->
+        <NuxtSelect
           v-if="kinds.length"
-          class="flex flex-wrap items-center gap-1 rounded-md border bg-background p-0.5"
-          role="group"
+          v-model="kindChoice"
+          :items="kindItems"
+          value-key="value"
+          class="w-48"
           aria-label="Tipo de receita"
-        >
-          <!-- Filtro segmentado e compacto; o estado ativo pertence ao conjunto, não a botões independentes. -->
-          <button
-            type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              kind === '' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-pressed="kind === ''"
-            @click="kind = ''"
-          >
-            Todas
-          </button>
-          <button
-            v-for="option in kinds"
-            :key="option.value"
-            type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
-              kind === option.value
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-pressed="kind === option.value"
-            @click="kind = option.value"
-          >
-            {{ option.label }}
-          </button>
-        </div>
+        />
 
         <div class="ml-auto flex flex-wrap items-center gap-3">
           <UiCheckbox v-model="onlyFavorites" label="Favoritas" class="text-muted-foreground" />

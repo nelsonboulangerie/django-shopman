@@ -38,9 +38,10 @@ const badgeClass = computed(() => {
 </script>
 
 <template>
-  <button
-    type="button"
-    class="relative flex min-h-28 w-full flex-col gap-2 rounded-md border p-4 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+  <NuxtButton
+    color="neutral"
+    variant="ghost"
+    class="relative flex min-h-28 w-full flex-col gap-2 rounded-md border p-4 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 items-stretch font-normal"
     :class="cardClass"
     :disabled="tile.disabled"
     :data-session-tile="tile.key"
@@ -62,5 +63,5 @@ const badgeClass = computed(() => {
       <span class="block text-sm font-semibold leading-tight">{{ tile.label }}</span>
       <span class="block text-xs" :class="descriptionClass">{{ tile.description }}</span>
     </span>
-  </button>
+  </NuxtButton>
 </template>

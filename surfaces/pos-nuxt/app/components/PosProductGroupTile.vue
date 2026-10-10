@@ -33,9 +33,10 @@ function choose(product: POSProductProjection) {
 <template>
   <!-- Cartão de escolha no desenho do tile da v4: a mesma faixa de 92 px, a pílula
        "N opções" e a sombra de pilha que diz "tem mais de um aqui". -->
-  <button
-    type="button"
-    class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground shadow-[4px_4px_0_-1px_var(--card),4px_4px_0_0_var(--border)] transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0"
+  <NuxtButton
+    color="neutral"
+    variant="ghost"
+    class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground shadow-[4px_4px_0_-1px_var(--card),4px_4px_0_0_var(--border)] transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0 items-stretch gap-0 p-0 font-normal"
     :class="qty > 0 ? 'border-primary' : 'border-border'"
     :disabled="group.allBlocked"
     :aria-label="`${group.name}: escolher entre ${group.options.length} opções`"
@@ -75,7 +76,7 @@ function choose(product: POSProductProjection) {
         </span>
       </span>
     </div>
-  </button>
+  </NuxtButton>
 
   <UiDialog v-model:open="open">
     <UiDialogContent class="sm:max-w-2xl" data-pos-choice-group-dialog>

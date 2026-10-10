@@ -168,6 +168,88 @@ if (SALE) {
     actions: [],
   });
 }
+// O caixa do cenário da venda: turno aberto, que audita, com uma pendência de cada
+// natureza, para a Sessão de caixa, o Fim do dia e o Relatório terem o que mostrar.
+// `MOCK_DAY_CLOSED=1` serve o dia já fechado (o quadro do dia, com as tabelas).
+const DAY_CLOSED = process.env.MOCK_DAY_CLOSED === "1";
+if (SALE) {
+  pos.checkout.capabilities.cash_management = {
+    enabled: true,
+    movement_kinds: ["sangria", "suprimento"],
+    movement_reasons: { sangria: ["Cofre", "Pagamento a fornecedor"], suprimento: ["Troco do cofre"] },
+    change_denominations: [
+      { q: 1000, label: "10", shape: "note" }, { q: 500, label: "5", shape: "note" },
+      { q: 100, label: "1", shape: "coin" }, { q: 50, label: "0,50", shape: "coin" },
+    ],
+  };
+  pos.cash_runtime = {
+    has_open_shift: true, shift_id: 31, terminal_ref: "CAIXA-1", terminal_label: "Caixa 1",
+    operator_username: "ana", opened_at: "2026-09-29T07:02:00-03:00", status: "open",
+    can_audit_cash: true, default_float_q: 20000, default_float_display: "R$ 200,00",
+    pending_change_requests: [
+      { ref: "CR-1", amount_q: 10000, amount_display: "R$ 100,00", denominations: [1000, 500], note: "", requested_by: "Ana", requested_at: "2026-09-29T10:12:00-03:00" },
+    ],
+    pending_cash_refunds: [],
+    pending_card_machine_refunds: [],
+    account_balances: [
+      { customer_ref: "C-9", customer_name: "Carlos Mendes", balance_q: 4200, balance_display: "R$ 42,00", intents: 2, oldest_at: "" },
+    ],
+  };
+}
+const reading = (overrides = {}) => ({
+  shift_id: 31, status: "open", terminal_ref: "CAIXA-1", terminal_label: "Caixa 1", operator: "Ana",
+  opened_at: "2026-09-29T07:02:00-03:00", closed_at: "", opening_amount_q: 20000, opening_amount_display: "200,00",
+  counted_amount_q: null, counted_amount_display: "",
+  movements: [
+    { entry_id: 91, kind: "sangria", kind_label: "Saída de caixa", amount_q: 30000, amount_display: "300,00", reason: "Cofre", created_by: "Ana", created_at: "" },
+    { entry_id: 92, kind: "suprimento", kind_label: "Entrada de caixa", amount_q: 5000, amount_display: "50,00", reason: "Troco do cofre", created_by: "Ana", created_at: "" },
+  ],
+  movements_in_q: 5000, movements_in_display: "50,00", movements_out_q: 30000, movements_out_display: "300,00",
+  sales_count: 42, sales_total_q: 186450, sales_total_display: "1.864,50",
+  sales_by_method: [
+    { method: "cash", method_label: "Dinheiro", orders_count: 18, amount_q: 61200, amount_display: "612,00" },
+    { method: "pix", method_label: "Pix", orders_count: 15, amount_q: 70350, amount_display: "703,50" },
+    { method: "card", method_label: "Cartão", orders_count: 9, amount_q: 54900, amount_display: "549,00" },
+  ],
+  notes: "",
+  ...overrides,
+});
+const cashReport = {
+  date: "2026-09-29", date_display: "29/09/2026", has_open_shift: true,
+  x_reading: reading(),
+  z_readings: [reading({ shift_id: 30, status: "closed", operator: "Bruno", opened_at: "2026-09-28T13:00:00-03:00", closed_at: "2026-09-28T21:04:00-03:00", counted_amount_q: 48210, counted_amount_display: "482,10", movements: [], notes: "Nota de 50 rasgada separada." })],
+  has_closed_shifts: true,
+  day_totals: {
+    shifts_count: 1, sales_count: 37, sales_total_q: 151230, sales_total_display: "1.512,30",
+    counted_total_q: 48210, counted_total_display: "482,10",
+    sales_by_method: [
+      { method: "cash", method_label: "Dinheiro", orders_count: 16, amount_q: 48210, amount_display: "482,10" },
+      { method: "pix", method_label: "Pix", orders_count: 21, amount_q: 103020, amount_display: "1.030,20" },
+    ],
+  },
+};
+const dayClosing = {
+  today: "2026-09-29", today_display: "29/09", operator_display: "Ana · gerência",
+  items: [
+    ["BAGUETE", "Baguete tradicional", "keep"], ["BRIOCHE", "Brioche de manteiga", "mixed"],
+    ["CROISSANT", "Croissant", "expired"], ["PAIN-CHOC", "Pain au chocolat", "expired"], ["PAO-FRANCES", "Pão francês", "keep"],
+  ].map(([sku, name, classification]) => ({ sku, name, classification })),
+  has_items: true, already_closed: DAY_CLOSED,
+  existing_closing_display: DAY_CLOSED ? "Fechado às 19:40 por Ana" : "",
+  production_summary: DAY_CLOSED ? {
+    CROISSANT: { recipe_ref: "r-cro", output_sku: "CROISSANT", planned: 120, finished: 118, loss: 2 },
+    BAGUETE: { recipe_ref: "r-bag", output_sku: "BAGUETE", planned: 60, finished: 60, loss: 0 },
+  } : undefined,
+  reconciliation_errors: DAY_CLOSED ? [{ sku: "PAIN-CHOC", sold_qty: 40, available_qty: 37, deficit_qty: 3 }] : [],
+  pending_production: [{
+    ref: "WO-042", output_sku: "BAGUETE", recipe_name: "Baguete", status: "started", status_label: "Iniciada",
+    quantity: "80", target_date: "2026-09-28", target_date_display: "28/09", is_overdue: true,
+  }],
+  has_pending_production: true,
+  upcoming_preorders: [{ date: "2026-09-30", date_display: "30/09", orders_count: 3 }, { date: "2026-10-01", date_display: "01/10", orders_count: 1 }],
+  has_upcoming_preorders: true,
+  pending_episodes: [], episode_options: [], has_pending_episodes: false,
+};
 const SALE_ITEMS = [
   { line_id: "L-aaaa0001", sku: "CROISSANT", name: "Croissant", price_q: 1150, qty: 2, notes: "" },
   { line_id: "L-aaaa0002", sku: "PAIN-CHOC", name: "Pain au chocolat", price_q: 1290, qty: 1, notes: "" },
@@ -272,6 +354,78 @@ const preorderDetail = {
   cancellation_presets: [],
 };
 
+// PDV › Ajustes (`/api/v1/backstage/pos/settings/`): as quatro abas leem a mesma
+// resposta. Sem ela o mock devolvia `{}` e Impressoras caía em erro de página.
+const settings = {
+  terminal_ref: "CAIXA-1",
+  terminal_label: "Caixa 1",
+  printers: [
+    { terminal_ref: "CAIXA-1", label: "Caixa 1", location: "Balcão", roll_width_mm: 80, cut_mode: "partial", stations: ["Bebidas"] },
+    { terminal_ref: "CAIXA-2", label: "Caixa 2", location: "Salão", roll_width_mm: 58, cut_mode: "full", stations: [] },
+  ],
+  roll_widths: [58, 80],
+  cut_modes: [
+    { value: "partial", label: "Parcial" },
+    { value: "full", label: "Total" },
+    { value: "none", label: "Sem corte" },
+  ],
+  card_machines: [
+    { ref: "MAQ-1", label: "Maquininha 1", identification: "SN 0041", active: true, with_order: "" },
+    { ref: "MAQ-2", label: "Maquininha 2", identification: "SN 0042", active: true, with_order: "1043" },
+    { ref: "MAQ-3", label: "Maquininha 3", identification: "SN 0043", active: false, with_order: "" },
+  ],
+  kitchen_stations: [
+    { ref: "forno", name: "Forno", type: "prep", type_label: "Preparo", collections: ["Salgados"], print_terminal: "", auto_fire: true },
+    { ref: "bebidas", name: "Bebidas", type: "prep", type_label: "Preparo", collections: ["Cafés", "Sucos"], print_terminal: "Caixa 1", auto_fire: false },
+  ],
+  shortcuts: {
+    favorite_collection_refs: ["cafes", "paes"],
+    collections: [
+      { ref: "cafes", name: "Cafés" },
+      { ref: "paes", name: "Pães" },
+      { ref: "doces", name: "Doces" },
+      { ref: "salgados", name: "Salgados" },
+      { ref: "sucos", name: "Sucos" },
+    ],
+  },
+};
+
+// PDV › Ajustes › Salão (`/api/v1/backstage/pos/seating/`): duas áreas, uma mesa extra.
+const seatingSpot = (ref, label, area, shape, seats, x, y, counts = true) => ({
+  ref, label, short_label: "", area, kind: "table", shape, seats, counts_in_capacity: counts,
+  plan_x: x, plan_y: y, rotation: 0, since: null, since_label: "sempre", born_today: false,
+});
+const seating = {
+  today: "2026-09-29",
+  today_label: "29/09",
+  revision: "rev-salao-1",
+  spots: [
+    seatingSpot("M1", "Mesa 1", "Salão", "round", 2, 80, 80),
+    seatingSpot("M2", "Mesa 2", "Salão", "square", 4, 220, 80),
+    seatingSpot("M3", "Mesa 3", "Salão", "long", 6, 380, 80),
+    seatingSpot("M4", "Mesa 4", "Varanda", "square", 4, 80, 260),
+    seatingSpot("M5", "Mesa 5", "Varanda", "round", 2, 220, 260, false),
+    seatingSpot("B1", "Banqueta 1", "Balcão", "stool", 1, 380, 260),
+  ],
+  totals: { capacity_seats: 17, capacity_spots: 5, extra_seats: 2 },
+  shapes: [
+    { value: "round", label: "Redonda" },
+    { value: "square", label: "Quadrada" },
+    { value: "long", label: "Comprida" },
+    { value: "stool", label: "Banqueta" },
+  ],
+  max_seats: 12,
+  history: [
+    { id: 1, at: "2026-09-28T10:00:00Z", at_label: "28/09 10:00", who: "Ana", ref: "M5", action: "update", summary: "Mesa 5 virou extra de dia cheio", before: null, after: null },
+  ],
+  open_tabs: { M2: { session_key: "s-12", tab_ref: "12", tab_display: "Comanda 12" } },
+  fixtures: [],
+  fixture_kinds: [
+    { value: "showcase", label: "Vitrine e caixa" },
+    { value: "entrance", label: "Entrada" },
+  ],
+};
+
 createServer((req, res) => {
   const url = new URL(req.url || "/", `http://127.0.0.1:${port}`);
   const path = url.pathname;
@@ -288,6 +442,14 @@ createServer((req, res) => {
   }
   if (path === "/api/v1/backstage/pos/") {
     send(res, 200, { pos, shift: null, tabs: TABS, operator: { id: 7, name: "Ana" } });
+    return;
+  }
+  if (SALE && path === "/api/v1/backstage/closing/") {
+    send(res, 200, { closing: dayClosing });
+    return;
+  }
+  if (SALE && path === "/api/v1/backstage/pos/cash/report/") {
+    send(res, 200, { report: cashReport });
     return;
   }
   if (SALE) {
@@ -344,6 +506,14 @@ createServer((req, res) => {
   }
   if (path === "/api/v1/backstage/pos/preorders/") {
     send(res, 200, preorderList);
+    return;
+  }
+  if (path === "/api/v1/backstage/pos/settings/") {
+    send(res, 200, settings);
+    return;
+  }
+  if (path === "/api/v1/backstage/pos/seating/") {
+    send(res, 200, seating);
     return;
   }
   if (path.includes("/events/")) {
