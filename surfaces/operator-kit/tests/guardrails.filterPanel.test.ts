@@ -10,7 +10,13 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 //    ("+ Filtro" com um popover por campo) saiu do Gestor em 09/10/2026.
 // 2. Toda tela que guarda favorito existe no registro do servidor
 //    (`shopman/backstage/api/saved_views.py`, `SCREENS`): uma tela nova que esquecesse
-//    de se registrar mostraria "Salvar como favorito" e receberia 400 ao salvar.
+//    de se registrar mostraria "Salvar como favorito" e receberia 400 ao salvar. Vale
+//    também para a faixa de filtros rápidos (`OperatorQuickFilters`), que lê os
+//    favoritos fixados da mesma tela.
+// 3. O recorte de todo dia é UM toque, com contagem (dono, P1 de 02/10/2026): filtro
+//    rápido declarado no painel (`:quick`) só existe ao lado da faixa
+//    (`OperatorQuickFilters`) na mesma tela. Escondido só no painel são dois toques e
+//    nenhuma contagem: foi a regressão das Encomendas do PDV (#1610).
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const repoDir = resolve(surfacesDir, "..");
@@ -60,7 +66,7 @@ describe("painel de filtros único", () => {
     for (const app of [...OPERATOR_SURFACES, "operator-kit"]) {
       for (const file of vueAndTs(join(surfacesDir, app, "app"))) {
         const source = readFileSync(file, "utf8");
-        for (const match of source.matchAll(/<OperatorFilterPanel\b[\s\S]*?\/>/g)) {
+        for (const match of source.matchAll(/<(?:OperatorFilterPanel|OperatorQuickFilters)\b[\s\S]*?\/>/g)) {
           const surface = match[0].match(/\bsurface="([a-z]+)"/)?.[1];
           const screen = match[0].match(/\bscreen="([a-z_]+)"/)?.[1];
           if (surface && screen) used.add(`${surface}/${screen}`);
@@ -72,5 +78,18 @@ describe("painel de filtros único", () => {
     }
     expect(used.size).toBeGreaterThanOrEqual(5);
     expect([...used].filter((key) => !registry.has(key))).toEqual([]);
+  });
+
+  it("filtro rápido no painel só ao lado da faixa de filtros rápidos", () => {
+    const offenders: string[] = [];
+    for (const app of OPERATOR_SURFACES) {
+      for (const file of vueAndTs(join(surfacesDir, app, "app"))) {
+        if (!file.endsWith(".vue")) continue;
+        const source = readFileSync(file, "utf8");
+        const hidden = [...source.matchAll(/<OperatorFilterPanel\b[\s\S]*?\/>/g)].some((match) => /\s:quick=/.test(match[0]));
+        if (hidden && !/<OperatorQuickFilters\b/.test(source)) offenders.push(relative(surfacesDir, file));
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

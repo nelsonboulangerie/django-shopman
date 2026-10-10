@@ -515,7 +515,8 @@ os botões, abas e recortes usavam ("Todos 7", "Entrega 3", "Atrasados").
 - **Contraste com o pai** (coordenação, 09/10/2026): círculo × fundo do pai ≥ 3:1 e
   número × círculo AA, nos dois temas. Sobre pai PREENCHIDO de cor próxima o chip
   **inverte**: círculo na cor do texto do pai, número na cor do fundo do pai, mesmo
-  tamanho e forma. Inverte na aba ativa preenchida (`NuxtTabs` `pill`, nos dois temas)
+  tamanho e forma. Inverte na aba ativa preenchida (`NuxtTabs` `pill`, nos dois temas),
+  no botão ligado (`aria-pressed="true"`, o `solid` primário do ativo da suíte)
   e na barra lateral clara (latão); nos demais pais fica o âmbar. A inversão sai do
   próprio pai pelo CSS (`COUNT_CHIP_INVERT_CLASSES`, aba ativa do Nuxt UI e escopo
   `.bg-rail`), sem prop nem `:ui` por tela; a tabela `COUNT_CHIP_INVERTED_ON` é medida
@@ -1245,6 +1246,48 @@ são os do cabeçalho (`active-filters`).
 - Trava: `guardrails.filterPanel.test.ts` (nenhum `FilterBar` no Gestor; toda tela
   que guarda favorito está no registro do servidor).
 
+### Filtros rápidos (`OperatorQuickFilters` + `#filters-primary`)
+
+O recorte de todo dia é UM toque, com a contagem ao lado (dono, P1 de 02/10/2026).
+Filtro rápido é navegação secundária: mora na toolbar do `OperatorPageHeader`, à
+esquerda (`#filters-primary`), e o `OperatorFilterPanel` segue sendo o lugar dos filtros
+completos. Itens como dados `{ key, label, count?, icon?, to?, disabled? }`; três
+jeitos, pela forma dos itens:
+
+| jeito | quando | base | teclado e papel |
+|---|---|---|---|
+| sub-seção | todo item com `to` | `NuxtTabs` que navegam; a ativa é a da rota | `tablist`; setas andam, Enter abre |
+| um recorte | `v-model` com uma chave | `NuxtTabs` `pill` | `tablist`; setas trocam |
+| vários | `v-model` com várias, `multiple` | `NuxtButton` `outline`; ligado é `active` com `QUICK_ACTIVE` (`solid` primário) e `aria-pressed` | `toolbar`; setas andam, Enter/Espaço ligam |
+
+```vue
+<template #filters-primary>
+  <OperatorQuickFilters
+    v-model="recortes" :items="quickItems" multiple label="Recortes das encomendas"
+    surface="pos" screen="preorders" :query="panelQuery" @apply="applyFavorite"
+  />
+</template>
+```
+
+- **Um ativo só na suíte** (coordenação, 09/10/2026): o recorte ligado é `solid`
+  primário (`QUICK_ACTIVE`), o mesmo peso da aba dourada do modo de um recorte; o
+  desligado é `outline` (o favorito fixado, `ghost`). O `soft` primário de antes ficava
+  quase igual ao `outline` e deixava dúvida sobre o que estava ligado; a régua é
+  `tests/countChipContrast.test.ts` (ligado × desligado ≥ 3:1 nos dois temas).
+- A contagem é o `OperatorCountChip` (zero não aparece); na aba ativa preenchida e no
+  botão ligado (`aria-pressed="true"`) ele inverte sozinho.
+- **Favoritos fixados** (`surface`/`screen`, os mesmos do painel) entram no FIM da
+  faixa, com a estrela; tocar emite `apply` com o recorte inteiro do favorito, e o
+  ativo é o que bate com `query`.
+- **Celular:** até 4 opções rolam na faixa sem cortar rótulo; mais que isso viram um
+  `NuxtSelect` (`phone-max`). Favorito fixado não vira aba no celular quando as abas já
+  não cabem: ele está no topo do painel. As duas formas existem e a régua é CSS.
+- O recorte rápido ligado aparece também como chip removível (`active-filters` do
+  cabeçalho, chips do painel na mesa).
+- Trava: `guardrails.filterPanel.test.ts` (filtro rápido declarado no painel, `:quick`,
+  só existe ao lado da faixa na mesma tela; favorito de faixa e de painel só em tela
+  registrada no servidor).
+
 ### Barra de seleção (`OperatorBulkBar` + `#selection` do `OperatorPageHeader`)
 
 Uma por tela, desenhada pela mesma peça em dois lugares (dono, 09/10/2026):
@@ -1404,6 +1447,10 @@ Contrato:
   operador.
 - `prefers-reduced-motion`: a dica fica **parada**, não some — e o toque salta para o
   fim de uma vez, sem deslizar.
+- **Nunca por cima de overlay.** Os overlays do Nuxt UI (gaveta, popover, modal) não
+  têm z-index e valem pela ordem no DOM; com `z-30` a dica passava por cima do painel de
+  filtros aberto no celular. Com qualquer diálogo aberto (`role=dialog` +
+  `data-state=open`) ela some, por CSS (`body:has(...)`).
 
 ⚠️ O `BottomSheet` do storefront ainda tem a versão antiga inline. Migrá-lo pede um
 tom de degradê por superfície (`card`/`muted`) e marcar o rodapé do sheet como
