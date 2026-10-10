@@ -2,7 +2,7 @@ import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 
 // Matriz visual do B.I. Backend hermético (leituras GRAVADAS do Django com o seed,
 // sem Django vivo) e o app com SSR, como roda no ar: o B.I. não tem modo client-only.
-// Portas próprias para não colidir com a matriz do Gestor (33014/38793).
+// Portas próprias para não colidir com as outras matrizes (o Gestor usa portas livres).
 // Procedimento de regravação das fixtures: tests/visual/README.md.
 
 const appPort = 33017;

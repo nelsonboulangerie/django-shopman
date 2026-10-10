@@ -43,8 +43,11 @@ export type QuickFiltersMode = "route" | "single" | "multiple";
  */
 export const QUICK_ACTIVE = { color: "primary", variant: "solid" } as const;
 
-/** Até quantas opções a faixa rola no celular; acima disso vira `NuxtSelect`. */
-export const QUICK_FILTERS_PHONE_MAX = 4;
+/**
+ * Até quantas opções a faixa rola no celular; acima disso vira `NuxtSelect`.
+ * WP-FASE2-UX-OPERADOR §11: mais de 3 opções no celular viram lista.
+ */
+export const QUICK_FILTERS_PHONE_MAX = 3;
 
 export function quickFiltersMode(items: readonly QuickFilterItem[], multiple = false): QuickFiltersMode {
   if (items.length > 0 && items.every((item) => Boolean(item.to))) return "route";

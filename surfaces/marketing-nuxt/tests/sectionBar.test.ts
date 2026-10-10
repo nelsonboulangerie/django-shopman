@@ -84,8 +84,9 @@ describe("seções do Marketing", () => {
     const nav = read("../app/components/MarketingSettingsNav.vue");
     expect(nav).toContain("<OperatorQuickFilters");
     expect(nav).toContain("to: section.to");
-    // Quatro opções: no celular, lista (seção 11: mais de 3 vira `NuxtSelect`).
-    expect(nav).toContain(':phone-max="3"');
+    // Quatro opções: no celular, lista (seção 11: mais de 3 vira `NuxtSelect`), pela
+    // régua do kit, sem teto avulso na tela.
+    expect(nav).not.toContain("phone-max");
     expect(nav).not.toContain("<NuxtTabs");
     expect(nav).not.toContain("useMediaQuery");
   });
