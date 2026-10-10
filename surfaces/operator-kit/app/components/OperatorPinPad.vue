@@ -87,19 +87,32 @@ function onKeydown(event: KeyboardEvent) {
   } else if (event.key === "Enter" && props.canSubmit && !props.busy) {
     event.preventDefault();
     submit();
+  } else {
+    return;
   }
+  event.stopPropagation();
 }
 
+// O teclado físico vale DENTRO da moldura modal onde a peça mora (o overlay da
+// trava, que toma o foco ao subir, ou o diálogo), nunca no documento: atalho
+// global é infraestrutura do kit (`useOperatorShortcutMap`), e o que se digita
+// aqui não pode chegar à tela de baixo.
+const root = ref<HTMLElement | null>(null);
+let frame: HTMLElement | null = null;
+
 onMounted(() => {
-  if (props.keyboard) document.addEventListener("keydown", onKeydown);
+  if (!props.keyboard || !root.value) return;
+  frame = root.value.closest<HTMLElement>("[data-operator-lock], [role='dialog']") ?? root.value;
+  frame.addEventListener("keydown", onKeydown);
 });
 onBeforeUnmount(() => {
-  document.removeEventListener("keydown", onKeydown);
+  frame?.removeEventListener("keydown", onKeydown);
+  frame = null;
 });
 </script>
 
 <template>
-  <div class="grid w-full justify-items-center gap-4" data-operator-pin-pad>
+  <div ref="root" class="grid w-full justify-items-center gap-4" data-operator-pin-pad>
     <div class="grid justify-items-center gap-2">
       <p v-if="label" class="text-sm font-medium text-muted-foreground">
         {{ label }}

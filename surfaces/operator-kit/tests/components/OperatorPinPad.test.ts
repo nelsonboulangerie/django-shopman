@@ -75,17 +75,38 @@ describe("OperatorPinPad", () => {
 
   it("sem `keyboard`, não ouve o teclado físico (quem chama já captura)", async () => {
     const wrapper = await mount({ pin: "" });
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "5", bubbles: true }));
+    wrapper.element.dispatchEvent(new KeyboardEvent("keydown", { key: "5", bubbles: true }));
     expect(wrapper.emitted("digit")).toBeUndefined();
   });
 
   it("com `keyboard`, dígito, Backspace e Enter do teclado físico valem", async () => {
     const wrapper = await mount({ pin: "1234", canSubmit: true, keyboard: true });
     for (const key of ["5", "Backspace", "Enter"]) {
-      document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      wrapper.element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
     }
     expect(wrapper.emitted("digit")).toEqual([["5"]]);
     expect(wrapper.emitted("backspace")).toHaveLength(1);
     expect(wrapper.emitted("submit")).toHaveLength(1);
+  });
+});
+
+describe("OperatorPinPad dentro da moldura da trava", () => {
+  it("ouve o teclado na moldura (o overlay com o foco), não no documento", async () => {
+    const frame = document.createElement("div");
+    frame.setAttribute("data-operator-lock", "");
+    frame.tabIndex = -1;
+    document.body.appendChild(frame);
+    mounted = await mountSuspended(OperatorPinPad, {
+      props: { pin: "", keyboard: true },
+      attachTo: frame,
+      global: { stubs: { Icon: true } },
+    });
+    const outside = new KeyboardEvent("keydown", { key: "3", bubbles: true, cancelable: true });
+    document.body.dispatchEvent(outside);
+    expect(mounted.emitted("digit")).toBeUndefined();
+    const inside = new KeyboardEvent("keydown", { key: "3", bubbles: true, cancelable: true });
+    frame.dispatchEvent(inside);
+    expect(mounted.emitted("digit")).toEqual([["3"]]);
+    expect(inside.defaultPrevented).toBe(true);
   });
 });
