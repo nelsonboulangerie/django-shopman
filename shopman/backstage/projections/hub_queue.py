@@ -736,8 +736,10 @@ def collect_hub_queue(
     urls: dict[str, str],
     labels: dict[str, str],
     now: datetime | None = None,
-) -> tuple[HubQueueProjection, dict[str, HubAppStatusProjection]]:
-    """A fila das filas de ``user`` e a linha de estado de cada app que ele abre.
+) -> tuple[HubQueueProjection, dict[str, HubAppStatusProjection], dict[str, HubQueueItemProjection]]:
+    """A fila das filas de ``user``, a linha de estado de cada app que ele abre e a
+    pendência mais urgente de cada app (a ação direta da linha do app na Central; tirada
+    da fila inteira, não só dos itens em foco).
 
     ``urls`` e ``labels`` vêm do registro da Central: só entra item de app que o operador
     pode abrir E que tem URL configurada.
@@ -759,6 +761,9 @@ def collect_hub_queue(
 
     ordered = sorted(out.items, key=lambda item: (item.slack_seconds, item.waiting_since or item.due_at, item.key))
     focus = tuple(ordered[:FOCUS_LIMIT])
+    most_urgent: dict[str, HubQueueItemProjection] = {}
+    for item in ordered:
+        most_urgent.setdefault(item.app, item)
     return (
         HubQueueProjection(
             items=focus,
@@ -767,4 +772,5 @@ def collect_hub_queue(
             server_now=_iso(now),
         ),
         out.statuses,
+        most_urgent,
     )

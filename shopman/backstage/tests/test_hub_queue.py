@@ -1,4 +1,4 @@
-"""Precisa de você: a fila das filas da Central (UX-H1, SUITE-UX §4.1 e §6).
+"""A fila das filas da Central (UX-H1, SUITE-UX §4.1 e §6) e a pendência de cada app.
 
 O que se trava aqui:
 
@@ -9,7 +9,8 @@ O que se trava aqui:
 - app sem URL configurada não gera item (nunca gesto para link morto);
 - o excedente vira número ("+N"), nunca paginação;
 - uma fonte que quebra não derruba a Central;
-- a linha de estado de cada bloco concorda com a fila.
+- a linha de estado de cada bloco concorda com a fila;
+- cada app carrega a sua pendência mais urgente (``next_item``), tirada da fila inteira.
 """
 
 from __future__ import annotations
@@ -344,6 +345,27 @@ def test_excedente_vira_numero_nunca_pagina(client):
     assert len(queue["items"]) == hub_queue.FOCUS_LIMIT
     assert queue["total_count"] == hub_queue.FOCUS_LIMIT + 2
     assert queue["more_count"] == 2
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_cada_app_carrega_a_sua_pendencia_mais_urgente_mesmo_fora_do_foco(client):
+    """A linha do app na Central traz a pendência mais urgente DELE (dono, 09/10/2026:
+    "Precisa de você" saiu). Ela vem da fila inteira: a Cozinha com o único item atrás de
+    seis pedidos mais urgentes ainda mostra o seu."""
+    for index in range(hub_queue.FOCUS_LIMIT):
+        _order_to_accept(f"WEB-20261003-U{index:02d}", minutes_ago=30 + index)
+    _late_ticket(minutes_ago=11)  # 1 min além da meta: atrás dos pedidos de 30+ min
+    admin = User.objects.create_superuser("hub-q-next", "a@b.c", "pw")
+
+    hub = _hub(client, admin)
+    tiles = {tile["ref"]: tile for tile in hub["tiles"]}
+
+    assert all(item["app"] == "gestor" for item in hub["queue"]["items"])
+    assert tiles["kds"]["next_item"]["kind"] == "ticket_late"
+    assert tiles["kds"]["next_item"]["url"] == "https://kds.example.test/forno"
+    # A mais urgente do Gestor é o pedido que espera há mais tempo.
+    assert tiles["gestor"]["next_item"]["url"].endswith("WEB-20261003-U05")
+    assert tiles["bi"]["next_item"] is None
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)

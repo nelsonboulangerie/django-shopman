@@ -68,7 +68,7 @@ const props = withDefaults(
     /** Rótulo fino acima do código (celular: "Agora"). */
     eyebrow?: string;
     /** Celular: o ato do ticket em foco mora na ação na base (`OperatorActionBar`, na
-     *  página). O card só mostra o Desfazer, que fica onde o card está. */
+     *  página), o Desfazer inclusive, no mesmo botão do Pronto. O card não tem botão. */
     actionInBar?: boolean;
   }>(),
   {

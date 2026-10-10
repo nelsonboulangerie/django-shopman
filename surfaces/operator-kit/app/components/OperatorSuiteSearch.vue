@@ -37,7 +37,7 @@ const props = withDefaults(
     placeholder?: string;
     screenLabel?: string;
     screenCount?: number | null;
-    variant?: "header" | "hero" | "hotkey";
+    variant?: "header" | "hotkey";
     ariaLabel?: string;
   }>(),
   {
@@ -271,7 +271,7 @@ defineExpose({ focus: openSearch, open: openSearch });
 
 <template>
   <div
-    :class="variant === 'hero' ? 'w-full md:w-[34rem]' : variant === 'hotkey' ? 'contents' : 'w-full md:w-fit'"
+    :class="variant === 'hotkey' ? 'contents' : 'w-full md:w-fit'"
     data-suite-search
     :data-suite-search-variant="variant"
   >
@@ -280,12 +280,11 @@ defineExpose({ focus: openSearch, open: openSearch });
     <div v-if="variant !== 'hotkey'" class="contents" @click.capture.stop="openSearch">
       <NuxtDashboardSearchButton
         class="w-full suite-page:min-h-control"
-        :size="variant === 'hero' ? 'xl' : 'md'"
+        size="md"
         :label="modelValue || placeholder"
         :aria-label="label"
-        :kbds="variant === 'hero' ? ['/', 'meta', 'k'] : ['/']"
+        :kbds="['/']"
         data-suite-search-input
-        :data-suite-search-phone-trigger="variant === 'hero' ? '' : undefined"
       />
     </div>
 

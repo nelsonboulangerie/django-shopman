@@ -37,6 +37,21 @@ export function hintScrollBehavior(reducedMotion: boolean): ScrollBehavior {
   return reducedMotion ? "auto" : "smooth";
 }
 
+// A ALTURA DA DICA (o degradê, `h-16`). É também o quanto de conteúdo ela cobre.
+//
+// ⚠️ RESTO MENOR QUE A DICA NÃO GANHA DICA. Na Central a 390 px (onda da
+// Central, 09/10/2026) a lista passava da dobra por 45 px: a dica aparecia, e a
+// seta caía em cima do texto do rodapé ("Avisos neste dispositivo: …"), que era
+// justamente o resto. Uma dica que cobre mais do que esconde não avisa, atrapalha.
+// O fim conta como alcançado quando o que falta cabe sob a própria dica.
+export const HINT_REACH = 64;
+
+// O fim do conteúdo já apareceu: o topo do sentinela está na linha de baixo da
+// área visível (descontado o que flutua na base) ou até `HINT_REACH` abaixo dela.
+export function endReached(sentinelTop: number, visibleBottom: number): boolean {
+  return sentinelTop <= visibleBottom + HINT_REACH;
+}
+
 // A dica existe enquanto o FIM do conteúdo não apareceu. Nada de calcular
 // posição de rolagem: quem responde é um sentinela no fim, observado.
 export function shouldHint(endReached: boolean, enabled = true): boolean {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { markPwaUpdateApplied } from "../utils/pwaUpdateReport";
+import { alertActions } from "../utils/alertActions";
 
 const pwa = usePwaUpdate();
 const updating = ref(false);
@@ -25,8 +26,6 @@ async function update() {
 const actions = computed(() => [
   {
     label: updating.value ? "Atualizando…" : "Atualizar agora",
-    color: "info" as const,
-    variant: "outline" as const,
     loading: updating.value,
     onClick: update,
   },
@@ -42,7 +41,7 @@ const actions = computed(() => [
     icon="i-lucide-refresh-cw"
     title="Nova versão disponível"
     description="A tela será recarregada para aplicar as melhorias mais recentes."
-    :actions="actions"
+    :actions="alertActions('info', actions)"
     data-operator-pwa-update
   />
 </template>

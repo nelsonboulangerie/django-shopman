@@ -110,7 +110,9 @@ function elementChildren(
 
 /**
  * Um botão dentro do slot de ações do Alert não é hierarquia independente:
- * ele repete a cor semântica do aviso e usa sempre a variante outline. A
+ * ele repete a cor semântica do aviso, `solid` na principal e `outline` na
+ * secundária (dono, 09/10/2026). As `:actions` passam por `alertActions`, que
+ * tira a cor e a variante do aviso (a trava do kit confere a cor do argumento). A
  * auditoria usa o AST do template para não confundir botões vizinhos nem parar
  * em `>` dentro de expressões Vue.
  */
@@ -133,40 +135,11 @@ function alertActionViolations(): string[] {
       const actionsProp = elementProp(alert, "actions");
 
       if (actionsProp?.type === NodeTypes.DIRECTIVE) {
-        const raw = actionsProp.exp?.loc.source ?? "";
-        const labels = [...raw.matchAll(/\blabel\s*:/g)].length;
-        const variants = [
-          ...raw.matchAll(/\bvariant\s*:\s*["']([^"']+)["']/g),
-        ].map((match) => match[1]);
-        const colors = [...raw.matchAll(/\bcolor\s*:\s*["']([^"']+)["']/g)].map(
-          (match) => match[1],
-        );
-
-        if (labels && variants.length !== labels) {
-          failures.push(`${file}:${alert.loc.start.line}: ação sem variant`);
-        }
-        for (const variant of variants) {
-          if (variant !== "outline") {
-            failures.push(
-              `${file}:${alert.loc.start.line}: variant ${variant}`,
-            );
-          }
-        }
-        if (
-          colorProp?.type === NodeTypes.ATTRIBUTE &&
-          labels &&
-          colors.length !== labels
-        ) {
-          failures.push(`${file}:${alert.loc.start.line}: ação sem color`);
-        }
-        if (colorProp?.type === NodeTypes.ATTRIBUTE) {
-          for (const color of colors) {
-            if (color !== alertColor) {
-              failures.push(
-                `${file}:${alert.loc.start.line}: ${color} em Alert ${alertColor}`,
-              );
-            }
-          }
+        const raw = (actionsProp.exp?.loc.source ?? "").trim();
+        if (!raw.startsWith("alertActions(")) {
+          failures.push(
+            `${file}:${alert.loc.start.line}: ações sem alertActions`,
+          );
         }
       }
 
@@ -177,10 +150,10 @@ function alertActionViolations(): string[] {
           const color = elementProp(node, "color");
           if (
             variant?.type !== NodeTypes.ATTRIBUTE ||
-            variant.value?.content !== "outline"
+            !["solid", "outline"].includes(variant.value?.content ?? "")
           ) {
             failures.push(
-              `${file}:${node.loc.start.line}: botão de Alert não outline`,
+              `${file}:${node.loc.start.line}: botão de Alert nem solid nem outline`,
             );
           }
           if (!color) {
@@ -251,8 +224,11 @@ describe("Gestor canônico em Nuxt UI", () => {
     // 08/10/2026, PR #1544), no `OperatorQuickBar`. O ⋯ único (`OperatorMoreMenu`,
     // fase 2) e a ação na base (`OperatorActionBar`) trocam o corte do rótulo pela
     // quebra de linha: texto da casa não se corta. A tabela da suíte (`OperatorTable`)
-    // guarda ali a densidade (compacta ou confortável): o único `:ui` de tabela.
+    // guarda ali a densidade (compacta ou confortável): o único `:ui` de tabela. O aviso
+    // da tela (`OperatorPageHeader`) põe a descrição na cor plena: o `opacity-90` oficial
+    // reprova o AA (4,24:1 no `warning`), e no tema repintaria toda consumidora.
     const kitPieceUi = new Set([
+      "operator-kit/OperatorPageHeader.vue",
       "operator-kit/OperatorQuickBar.vue",
       "operator-kit/OperatorMoreMenu.vue",
       "operator-kit/OperatorActionBar.vue",
@@ -492,8 +468,8 @@ describe("Gestor canônico em Nuxt UI", () => {
         ),
         "utf8",
       );
-      expect(notice).toContain('color: "info" as const');
-      expect(notice).toContain('variant: "outline" as const');
+      // A cor e a variante saem do aviso (`alertActions`, dono 09/10/2026).
+      expect(notice).toContain(":actions=\"alertActions('info', actions)\"");
     }
     const alerts = runtimeSources.flatMap(({ file, source }) =>
       [...source.matchAll(/<NuxtAlert\b[^>]*>/gs)].map(([tag]) => ({
@@ -514,13 +490,11 @@ describe("Gestor canônico em Nuxt UI", () => {
       ),
     ];
     for (const source of infoActionSources) {
-      expect(source).toMatch(
-        /color: ['"]info['"][\s\S]{0,80}variant: ['"]outline['"]/,
-      );
+      expect(source).toContain("alertActions('info', [");
     }
   });
 
-  it("faz toda ação de Alert repetir sua cor semântica em outline", () => {
+  it("faz toda ação de Alert repetir sua cor semântica (solid ou outline)", () => {
     expect(alertActionViolations()).toEqual([]);
   });
 
@@ -657,7 +631,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(shortcuts).not.toContain("<NuxtCard");
   });
 
-  it("mantém as ações dos avisos outline e na cor semântica do Alert", () => {
+  it("mantém as ações dos avisos na cor semântica do Alert", () => {
     const inbox = readFileSync(
       new URL(
         "../../operator-kit/app/components/OperatorInbox.vue",
@@ -669,8 +643,10 @@ describe("Gestor canônico em Nuxt UI", () => {
       ...inbox.matchAll(/<template #actions\b[^>]*>([\s\S]*?)<\/template>/g),
     ].map((match) => match[1]!);
     expect(actionSlots.length).toBeGreaterThanOrEqual(4);
+    // A principal é `solid` na cor do aviso; a secundária ("Visto", "Marcar como
+    // lida") é `outline` (dono, 09/10/2026).
     for (const slot of actionSlots) {
-      expect(slot).toContain('variant="outline"');
+      expect(slot).toMatch(/variant="(?:solid|outline)"/);
       expect(slot).not.toMatch(/variant="(?:link|ghost)"/);
     }
     expect(inbox).toContain(':color="alertColor(alert.tone)"');
@@ -679,7 +655,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(inbox).toContain(
       ":color=\"isHighlighted(item) ? 'warning' : 'neutral'\"",
     );
-    expect(inbox.match(/variant="outline"/g)?.length).toBeGreaterThanOrEqual(5);
+    expect(inbox.match(/variant="solid"/g)?.length).toBeGreaterThanOrEqual(4);
   });
 
   it("padroniza os metadados dos cards de consciência da fila", () => {

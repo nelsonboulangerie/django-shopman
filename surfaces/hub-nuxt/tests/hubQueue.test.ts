@@ -1,25 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  QUEUE_EMPTY_COPY,
-  QUEUE_HINT_COPY,
   countdownLabel,
   durationLabel,
+  nextItemMeta,
   queueActionAriaLabel,
-  queueCount,
-  queueDetailLine,
   queueDueText,
-  queueMoreLabel,
-  queuePhoneLine,
   queueTimeLabel,
-  PHONE_QUEUE_ROWS,
   serverClockOffset,
-  tileForItem,
+  tilesByPendency,
   tileStatus,
 } from "../app/presentation/hub";
 import type { HubQueueItemProjection, HubTileProjection } from "../app/types/hub";
 
-// Precisa de você (UX-H1): a Central conta o tempo de cada item aqui, a partir dos
+// A pendência de cada app (UX-H1; a seção "Precisa de você" saiu em 09/10/2026): a
+// Central conta o tempo de cada item aqui, a partir dos
 // instantes que o Django manda, com um relógio que anda a cada segundo.
 
 const NOW = Date.parse("2026-10-03T10:00:00-03:00");
@@ -55,10 +50,11 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
   status_attention: "",
   status_summary: "",
   status_positive: "",
+  next_item: null,
   ...over,
 });
 
-describe("Precisa de você: o tempo de cada item", () => {
+describe("a pendência: o tempo de cada item", () => {
   it("duração sem segundos: minutos, depois horas com minutos de dois dígitos", () => {
     expect(durationLabel(59)).toBe("0 min");
     expect(durationLabel(14 * 60 + 30)).toBe("14 min");
@@ -92,17 +88,18 @@ describe("Precisa de você: o tempo de cada item", () => {
     expect(queueDueText(order, NOW + 60_000)).toBe("aceita sozinho em 1:40");
     // Vencida, a contagem some: o que ela anunciava já aconteceu.
     expect(queueDueText(order, NOW + 200_000)).toBe("");
-    expect(queueDetailLine(order, NOW)).toBe("iFood · Ana Ferreira · R$ 58,40 · aceita sozinho em 2:40");
+    expect(nextItemMeta(order, NOW)).toBe("aceita sozinho em 2:40");
   });
 
   it("prazo de relógio entra na frase com a hora da loja", () => {
     const pickup = item({ due_label: "retira às", due_style: "clock", due_clock: "10:30", detail: "6x Croissant" });
     expect(queueDueText(pickup, NOW)).toBe("retira às 10:30");
-    expect(queueDetailLine(pickup, NOW)).toBe("6x Croissant · retira às 10:30");
+    expect(nextItemMeta(pickup, NOW)).toBe("retira às 10:30");
   });
 
   it("item sem prazo mostra só o essencial da decisão", () => {
-    expect(queueDetailLine(item(), NOW)).toBe("iFood · Ana Ferreira · R$ 58,40");
+    // Sem prazo, a linha miúda diz há quanto espera.
+    expect(nextItemMeta(item(), NOW)).toBe("há 2 min");
   });
 
   it("conta pela hora do servidor: o relógio errado do dispositivo não muda a idade", () => {
@@ -113,32 +110,22 @@ describe("Precisa de você: o tempo de cada item", () => {
   });
 });
 
-describe("Precisa de você: a seção", () => {
+describe("a pendência na linha do app", () => {
   it("o gesto tem nome acessível com o objeto, não só o verbo", () => {
     expect(queueActionAriaLabel(item())).toBe("Abrir pedido: Pedido K7Q2 para aceitar");
   });
 
-  it("o excedente vira número, nunca página", () => {
-    expect(queueMoreLabel(0)).toBe("");
-    expect(queueMoreLabel(1)).toBe("Mais 1 esperando nos apps abaixo.");
-    expect(queueMoreLabel(4)).toBe("Mais 4 esperando nos apps abaixo.");
-  });
-
-  it("conta o total (em foco e excedente) e tolera fila ausente", () => {
-    expect(queueCount({ items: [], total_count: 8, more_count: 2, server_now: "" })).toBe(8);
-    expect(queueCount(null)).toBe(0);
-  });
-
-  it("acha o bloco do app de destino para o ícone da linha", () => {
-    const tiles = [tile(), tile({ ref: "kds", label: "Cozinha" })];
-    expect(tileForItem(tiles, { app: "kds" })?.label).toBe("Cozinha");
-    expect(tileForItem(tiles, { app: "marketing" })).toBeNull();
-  });
-
-  it("a copy fixa da seção não usa travessão", () => {
-    for (const text of [QUEUE_EMPTY_COPY, QUEUE_HINT_COPY, queueMoreLabel(3)]) {
-      expect(text).not.toMatch(/[—–]/);
-    }
+  it("os apps com pendência sobem, cada grupo na ordem de sempre", () => {
+    const tiles = [
+      tile({ ref: "pos", label: "PDV" }),
+      tile({ ref: "kds", label: "Cozinha", next_item: item({ app: "kds", slack_seconds: 300 }) }),
+      tile({ ref: "gestor", next_item: item({ slack_seconds: -60 }) }),
+      tile({ ref: "bi", label: "B.I." }),
+    ];
+    // Estável: a Cozinha vem antes do Gestor (a ordem do registro), mesmo com o pedido
+    // do Gestor mais urgente; a lista não pula quando a urgência muda.
+    expect(tilesByPendency(tiles).map((t) => t.ref)).toEqual(["kds", "gestor", "pos", "bi"]);
+    expect(tilesByPendency([tile({ ref: "pos" }), tile({ ref: "bi" })]).map((t) => t.ref)).toEqual(["pos", "bi"]);
   });
 });
 
@@ -172,18 +159,15 @@ describe("a linha de estado do bloco do app", () => {
   });
 });
 
-// Central no celular (v3 `depois-hub-celular`, auditoria H03): linhas finas, até 3, o
-// selo da Central só como identidade, apps como linhas de 62px com chevron.
+// Central no celular (v3 `depois-hub-celular`, auditoria H03): o selo da Central só como
+// identidade, apps como linhas de 62px com chevron, a pendência sob a linha do app.
 describe("Central no celular", () => {
-  it("a linha fina diz o app e há quanto espera, numa linha", () => {
-    expect(queuePhoneLine(item({ waiting_since: at(-14 * 60) }), NOW)).toBe("Gestor de pedidos · há 14 min");
-    expect(PHONE_QUEUE_ROWS).toBe(3);
-  });
-
   it("o desenho do celular não volta a ser cartão alto com botão largo", async () => {
     const { readFileSync } = await import("node:fs");
     const app = readFileSync(new URL("../app/app.vue", import.meta.url), "utf8");
-    expect(app).toContain("data-hub-queue-phone");
+    // "Precisa de você" saiu (dono, 09/10/2026): a pendência mora na linha do app.
+    expect(app).not.toContain("data-hub-queue");
+    expect(app).toContain("data-hub-app-next-action");
     expect(app).toContain("data-hub-apps-phone");
     expect(app).toContain("min-h-[62px]");
     expect(app).toContain("data-hub-seal");
