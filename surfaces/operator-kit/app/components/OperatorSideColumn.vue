@@ -8,8 +8,10 @@
 // `docked = false` (abaixo do desktop, quando a coluna vira folha ou some): o
 // conteúdo da coluna sai num `<aside>` simples, no fluxo, sem alça. O app decide.
 //
-// O tom do rail (`app.config`, `dashboardSidebar`) é só da barra da ESQUERDA: esta
-// coluna fala com os tokens da tela.
+// O `app.config` do kit pinta TODA `dashboardSidebar` com o tom do rail (fundo e
+// tokens de texto, primária e borda redefinidos). Esta coluna é conteúdo, não rail:
+// ela devolve cada token redefinido ao valor herdado da tela (`inherit`), sem mexer
+// no tema compartilhado (que repintaria as baselines de todas as consumidoras).
 const props = withDefaults(
   defineProps<{
     /** Chave do grupo (cookie). Uma por tela. */
@@ -28,8 +30,24 @@ const props = withDefaults(
   { docked: true, columnAttrs: () => ({}) },
 );
 
+// Os mesmos tokens do `RAIL_SCOPE` do `app.config`, de volta ao da tela.
+const SCREEN_TOKENS = [
+  "bg-card text-default",
+  "[--ui-text:inherit]",
+  "[--ui-text-muted:inherit]",
+  "[--ui-text-dimmed:inherit]",
+  "[--ui-text-toned:inherit]",
+  "[--ui-text-highlighted:inherit]",
+  "[--primary:inherit]",
+  "[--ui-primary:inherit]",
+  "[--primary-ink:inherit]",
+  "[--ui-bg-elevated:inherit]",
+  "[--ui-bg:inherit]",
+  "[--ui-border:inherit]",
+].join(" ");
+
 const COLUMN_UI = {
-  root: "h-full min-h-0 border-s border-default bg-card",
+  root: `h-full min-h-0 border-s border-default ${SCREEN_TOKENS}`,
   body: "gap-0 overflow-hidden p-0",
   // A coluna pinta por cima da borda; a alça fica acima dela para ser alcançável.
   handle: "z-40",
