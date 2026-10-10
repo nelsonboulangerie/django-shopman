@@ -154,7 +154,7 @@ async function submitForcedChange(payload: {
     ref="overlay"
     data-operator-lock
     tabindex="-1"
-    class="fixed inset-0 outline-none z-[100] grid place-items-center overflow-y-auto bg-background/95 p-4 backdrop-blur-sm"
+    class="fixed inset-0 top-[var(--operator-offline-inset,0px)] outline-none z-[100] grid place-items-center overflow-y-auto bg-background/95 p-4 backdrop-blur-sm"
   >
     <!-- O cartão tem a largura do teclado: a lista de nomes, o campo do PIN, o
          teclado e os avisos são UMA coluna e batem borda com borda (dono,

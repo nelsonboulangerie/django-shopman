@@ -65,6 +65,9 @@ const activeFilters = computed(() =>
 
 <template>
   <OperatorAppRoot>
+    <!-- A faixa "Sem conexão" do kit: `tests/catalog/offline-banner.spec.ts` mede que,
+         com ela no topo, nenhum controle desta bancada fica por baixo. -->
+    <OfflineBanner />
     <OperatorSuiteShell
       storage-key="kit-phone-header"
       :sections="sections"
