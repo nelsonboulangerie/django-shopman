@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import { isSuiteScreenLabel } from "../app/presentation/suiteSearch";
 import { DEPLOYED_OPERATOR_SURFACES } from "./support/surfaceRegistry";
 
 // Busca da suíte: trava de forma (V6-BUSCA; T-10, T-11, H01, H03 das auditorias v4).
@@ -117,5 +118,26 @@ describe("busca da suíte (V6-BUSCA)", () => {
     expect(template).not.toMatch(/<Nuxt(?:Modal|Tabs|CommandPalette)\b/);
     // O atalho próprio do DashboardSearch fica desligado: as teclas são do kit.
     expect(template).toMatch(/shortcut=""/);
+  });
+  it("o rótulo da tela diz o artigo: \"filtrando <o|a|os|as> <nome>\" (vira do/da/dos/das)", () => {
+    // "Tirar o filtro “x” de as campanhas" saía porque a frase colava "de" no rótulo. A
+    // contração vem do artigo que a tela escreve; rótulo sem artigo não tem como contrair.
+    const offenders: string[] = [];
+    const apps = [...DEPLOYED_OPERATOR_SURFACES, "operator-kit"];
+    for (const app of apps) {
+      const files = app === "operator-kit" ? vueFiles(join(kitDir, "app")) : vueFiles(join(surfacesDir, app, "app"));
+      for (const path of files) {
+        const source = readFileSync(path, "utf8");
+        // `screen-label` vai direto ao OperatorSuiteSearch; no Produção, `search-label`
+        // do ProductionHeader é repassado como `screen-label`.
+        const literal = path.endsWith("RecipeHeader.vue") || /recipes\/index\.vue$/.test(path)
+          ? /\sscreen-label="([^"]*)"/g
+          : /\s(?:screen|search)-label="([^"]*)"/g;
+        for (const match of source.matchAll(literal)) {
+          if (!isSuiteScreenLabel(match[1]!)) offenders.push(`${relative(surfacesDir, path)}: ${match[1]}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

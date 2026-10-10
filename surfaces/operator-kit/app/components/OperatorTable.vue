@@ -11,6 +11,8 @@
 //   no celular por CSS.
 // - Carregando, vazio e erro pelo `OperatorScreenState`, com a frase única da suíte.
 // - O `:ui` da tabela mora AQUI (a densidade), nunca na tela.
+// - Dentro de outro cartão (`in-card`, o quadro de leitura do B.I.), o cartão da tabela é
+//   `soft` e o vazio e o carregando perdem a moldura: nunca cartão `outline` em cartão.
 //
 // Toda célula quebra (`whitespace-normal`): texto da casa nunca é cortado.
 import type { TableColumn, TableRow } from "@nuxt/ui";
@@ -67,6 +69,8 @@ const props = withDefaults(
     emptyTitle?: string;
     emptyDescription?: string;
     emptyIcon?: string;
+    /** A tabela mora dentro de outro cartão (o `OperatorReadingCard`): cartão `soft`, vazio sem moldura. */
+    inCard?: boolean;
   }>(),
   {
     viewKey: "",
@@ -85,6 +89,7 @@ const props = withDefaults(
     emptyTitle: "",
     emptyDescription: "",
     emptyIcon: "i-lucide-inbox",
+    inCard: false,
   },
 );
 
@@ -207,10 +212,11 @@ const select = computed(() =>
       :description="errorDescription"
       @retry="emit('retry')"
     />
-    <OperatorScreenState v-if="loading && !hasRows" state="loading" :what="what" />
+    <OperatorScreenState v-if="loading && !hasRows" state="loading" :what="what" :in-card="inCard" />
     <!-- Com `fill`, o cartão é uma grade de uma linha para a tabela rolar por dentro. -->
     <NuxtCard
       v-else-if="hasRows"
+      :variant="inCard ? 'soft' : 'outline'"
       class="min-w-0"
       :class="fill ? 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]' : ''"
     >
@@ -298,6 +304,7 @@ const select = computed(() =>
     <OperatorScreenState
       v-else-if="!error"
       state="empty"
+      :in-card="inCard"
       :icon="emptyIcon"
       :title="emptyTitle"
       :description="emptyDescription"

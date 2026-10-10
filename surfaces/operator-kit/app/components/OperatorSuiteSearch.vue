@@ -187,7 +187,7 @@ const levelGroups = computed(() => {
   const out: Record<string, unknown>[] = [];
 
   if (hasScreen.value) {
-    const target = suiteScreenTarget(props.screenLabel);
+    const { target, from } = suiteScreenTarget(props.screenLabel);
     const items: Record<string, unknown>[] = [];
     if (typed)
       items.push({
@@ -201,7 +201,7 @@ const levelGroups = computed(() => {
       });
     if (props.modelValue)
       items.push({
-        label: `Tirar o filtro “${props.modelValue}” de ${target}`,
+        label: `Tirar o filtro “${props.modelValue}” ${from}`,
         icon: "i-lucide-filter-x",
         "data-suite-search-screen": "clear",
         onSelect: () => {

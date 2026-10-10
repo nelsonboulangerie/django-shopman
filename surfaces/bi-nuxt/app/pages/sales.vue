@@ -106,17 +106,18 @@ const weekdayCsv = computed(() => readingChartCsv("Dia da semana", ORDERS_SERIES
 const hourSeries = ORDERS_SERIES.map((item) => ({ ...item, tone: "info" as const }));
 const weekdaySeries = ORDERS_SERIES.map((item) => ({ ...item, tone: "success" as const }));
 
-// Por canal: NuxtTable, a parte do faturamento num NuxtProgress na célula.
+// Por canal: OperatorTable (`in-card`, ordena pelo cabeçalho), a parte do faturamento num NuxtProgress na célula.
 const channelRows = computed(() => (report.value ? toChannelRows(report.value) : []));
 const channelMax = computed(() => Math.max(1, ...channelRows.value.map((row) => row.revenue_q)));
 const topChannel = computed(() => channelRows.value[0] ?? null);
 const channelColumns = [
-  { accessorKey: "name", header: "Canal", meta: { class: { td: "whitespace-normal font-medium text-highlighted" } } },
+  { accessorKey: "name", header: "Canal", enableSorting: true, meta: { class: { td: "whitespace-normal font-medium text-highlighted" } } },
   // No celular os pedidos descem para baixo do nome do canal (a coluna sai).
-  { accessorKey: "orders", header: "Pedidos", meta: { class: { th: "text-right max-sm:hidden", td: "text-right tnum max-sm:hidden" } } },
-  { accessorKey: "revenue_q", header: "Faturamento", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  { accessorKey: "orders", header: "Pedidos", enableSorting: true, meta: { class: { th: "text-right max-sm:hidden", td: "text-right tnum max-sm:hidden" } } },
+  { accessorKey: "revenue_q", header: "Faturamento", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
   // No celular a barra sai e a parte fica só em número (a tabela inteira caber na tela).
-  { accessorKey: "share", header: "Parte", meta: { class: { th: "text-right sm:w-32", td: "sm:w-32" } } },
+  // A parte é texto ("42%"): ordena pelo faturamento, que é o mesmo ranking.
+  { id: "share", accessorFn: (row: { revenue_q: number }) => row.revenue_q, header: "Parte", enableSorting: true, meta: { class: { th: "text-right sm:w-32", td: "sm:w-32" } } },
 ];
 const channelCsv = computed(() => ({
   header: ["Canal", "Pedidos", "Faturamento (R$)", "Parte"],
@@ -126,9 +127,9 @@ const channelCsv = computed(() => ({
 // Top produtos: a parte é um NuxtProgress contra o maior. No celular a coluna da barra
 // sai (a tabela inteira caber na tela vale mais; a parte segue no CSV e no nome da barra).
 const topColumns = [
-  { accessorKey: "name", header: "Produto", meta: { class: { td: "whitespace-normal font-medium text-highlighted" } } },
-  { id: "qty", header: "Qtd", meta: { class: { th: "text-right", td: "text-right tnum" } } },
-  { id: "revenue", header: "Faturamento", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  { accessorKey: "name", header: "Produto", enableSorting: true, meta: { class: { td: "whitespace-normal font-medium text-highlighted" } } },
+  { id: "qty", accessorFn: (row: { qty: string | number }) => Number(row.qty), header: "Qtd", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  { id: "revenue", accessorFn: (row: { revenue_q: number }) => row.revenue_q, header: "Faturamento", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
   { id: "share", header: "Parte", meta: { class: { th: "w-28 max-sm:hidden", td: "w-28 max-sm:hidden" } } },
 ];
 const topMax = computed(() => Math.max(1, ...(report.value?.top_skus ?? []).map((row) => row.revenue_q)));
@@ -343,12 +344,14 @@ const activeFilters = computed(() => {
             data-bi-by-channel
             data-focus-target="by-channel"
           >
-            <NuxtTable
-              v-if="channelRows.length"
+            <OperatorTable
+              in-card
               :data="channelRows"
               :columns="channelColumns"
-              :get-row-id="(row) => row.ref"
+              :row-key="(row) => row.ref"
               caption="Faturamento por canal"
+              empty-icon="i-lucide-store"
+              empty-title="Sem vendas no período"
             >
               <template #name-cell="{ row }">
                 <span class="inline-flex items-center gap-2" :data-bi-channel-row="row.original.ref">
@@ -372,16 +375,17 @@ const activeFilters = computed(() => {
                   <span class="ms-auto text-right text-xs tnum text-muted">{{ row.original.share }}</span>
                 </span>
               </template>
-            </NuxtTable>
-            <NuxtEmpty v-else icon="i-lucide-store" title="Sem vendas no período" variant="naked" />
+            </OperatorTable>
           </OperatorReadingCard>
           <OperatorReadingCard title="Top produtos" description="Por faturamento no período" :csv="topCsv">
-            <NuxtTable
-              v-if="report.top_skus.length"
+            <OperatorTable
+              in-card
               :data="report.top_skus"
               :columns="topColumns"
-              :get-row-id="(row) => row.sku"
+              :row-key="(row) => row.sku"
               caption="Top produtos por faturamento"
+              empty-icon="i-lucide-package"
+              empty-title="Sem vendas no período"
               data-bi-top-products
             >
               <template #qty-cell="{ row }">{{ formatQty(row.original.qty) }}</template>
@@ -394,8 +398,7 @@ const activeFilters = computed(() => {
                   :aria-label="`${sharePercent(row.original.revenue_q, topTotal)} do faturamento`"
                 />
               </template>
-            </NuxtTable>
-            <NuxtEmpty v-else icon="i-lucide-package" title="Sem vendas no período" variant="naked" />
+            </OperatorTable>
           </OperatorReadingCard>
         </div>
       </template>

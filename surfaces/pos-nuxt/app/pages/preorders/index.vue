@@ -387,7 +387,7 @@ function refreshAll() {
         v-model="typed"
         :placeholder="SEARCH_PLACEHOLDER"
         :aria-label="SEARCH_LABEL"
-        screen-label="Procurando encomendas em aberto de qualquer data."
+        screen-label="filtrando as encomendas"
         :screen-count="resultCount"
         data-preorders-search
       />

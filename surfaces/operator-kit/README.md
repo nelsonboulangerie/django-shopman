@@ -1192,6 +1192,9 @@ ganha o respiro da confortável).
 - `fill`: a tabela ocupa a altura que sobra e rola por dentro, com o cabeçalho preso (a
   matriz do Catálogo). `row-class` dá à tela a classe da linha (arrastar); `active-key`
   marca o registro aberto ao lado.
+- `in-card`: a tabela mora dentro de outro cartão (o `OperatorReadingCard` do B.I.). O
+  cartão da tabela vira `soft` e o vazio e o carregando perdem a moldura: nunca cartão
+  `outline` dentro de cartão.
 - **A célula quebra** (`whitespace-normal`): texto da casa nunca é cortado. Número e ação
   que não devem quebrar dizem isso na própria célula (`whitespace-nowrap`, `min-w-max`).
 - **Sem `:ui` na tela**: a densidade é o único `:ui` da tabela e mora no componente
@@ -1301,8 +1304,10 @@ Os níveis são os GRUPOS do painel, em ordem fixa (`preserve-group-order`):
 
 1. **Nesta tela** (só onde a tela filtra a própria lista e passa o `v-model` no
    `#search`): "Filtrar o quadro por “maria”" vira o recorte da tela; com a tela já
-   filtrada, "Tirar o filtro “maria” de o quadro". O alvo sai do `screen-label`
-   ("filtrando o quadro" → "o quadro").
+   filtrada, "Tirar o filtro “maria” do quadro". O alvo sai do `screen-label`, sempre na
+   forma "filtrando <o|a|os|as> <nome>": o artigo que a tela escreve decide a contração
+   (do/da/dos/das), nunca a terminação do nome. A trava
+   `guardrails.suiteSearch.test.ts` reprova rótulo fora da forma.
 2. **No app (Gestor)**: o que a suíte achou no app atual.
 3. **Na suíte**: o que achou nos outros apps (`GET /api/v1/backstage/search/?q=`,
    projeção `shopman/backstage/projections/suite_search.py`), cada um com o tipo ao lado

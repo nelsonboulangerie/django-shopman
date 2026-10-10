@@ -8,7 +8,7 @@
 // gramática inteira, duas dezenas) são `NuxtSelectMenu` com busca; Dimensão e
 // Cruzamento (as poucas dimensões da métrica escolhida) são `NuxtSelect`. O resultado é
 // o quadro do kit (`OperatorReadingCard`, com "Exportar CSV deste quadro"): a série no
-// tempo é o `OperatorReadingChart`; ranking e cruzamento são `NuxtTable`.
+// tempo é o `OperatorReadingChart`; ranking e cruzamento são `OperatorTable` (`in-card`, ordena pelo cabeçalho).
 import { useMediaQuery } from "@vueuse/core";
 import { readingMoneyFormat } from "../../../operator-kit/app/presentation/readingChart";
 
@@ -193,16 +193,16 @@ const rankingRows = computed(() => {
 });
 const rankingMax = computed(() => Math.max(...rankingRows.value.map((row) => Math.abs(row.value)), 1));
 const rankingColumns = computed(() => [
-  { accessorKey: "label", header: report.value?.dimension_label ?? "" },
+  { accessorKey: "label", header: report.value?.dimension_label ?? "", enableSorting: true },
   { id: "bar", header: "", meta: { class: { th: "w-2/5 max-sm:hidden", td: "w-2/5 max-sm:hidden" } } },
-  { id: "value", header: report.value?.metric_label ?? "", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  { accessorKey: "value", header: report.value?.metric_label ?? "", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
 ]);
 
 // Cruzamento de duas dimensões: os cabeçalhos são os nomes que o servidor manda.
 const crossColumns = computed(() => [
-  { accessorKey: "label", header: report.value?.dimension_label ?? "", meta: { class: { td: "font-medium" } } },
-  { accessorKey: "label2", header: report.value?.dimension2_label ?? "" },
-  { id: "value", header: report.value?.metric_label ?? "", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+  { accessorKey: "label", header: report.value?.dimension_label ?? "", enableSorting: true, meta: { class: { td: "font-medium" } } },
+  { accessorKey: "label2", header: report.value?.dimension2_label ?? "", enableSorting: true },
+  { accessorKey: "value", header: report.value?.metric_label ?? "", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
 ]);
 
 const emptyDescription = "Troque o período, a métrica ou a dimensão.";
@@ -380,12 +380,16 @@ const errorActions = computed(() => [
           empty-title="Nada no período para esse corte"
           :empty-description="emptyDescription"
         />
-        <NuxtTable
+        <OperatorTable
           v-else-if="!report.dimension2"
+          in-card
           :data="rankingRows"
           :columns="rankingColumns"
-          :get-row-id="(row) => row.key"
+          :row-key="(row) => row.key"
           :caption="resultTitle"
+          empty-icon="i-lucide-chart-no-axes-column"
+          empty-title="Nada no período para esse corte"
+          :empty-description="emptyDescription"
           data-bi-explore-ranking
         >
           <template #bar-cell="{ row }">
@@ -396,33 +400,21 @@ const errorActions = computed(() => [
             />
           </template>
           <template #value-cell="{ row }">{{ formatValue(row.original.value) }}</template>
-          <template #empty>
-            <NuxtEmpty
-              variant="naked"
-              icon="i-lucide-chart-no-axes-column"
-              title="Nada no período para esse corte"
-              :description="emptyDescription"
-            />
-          </template>
-        </NuxtTable>
-        <NuxtTable
+        </OperatorTable>
+        <OperatorTable
           v-else
+          in-card
           :data="report.rows"
           :columns="crossColumns"
-          :get-row-id="(row) => `${row.key}|${row.key2}`"
+          :row-key="(row) => `${row.key}|${row.key2}`"
           :caption="resultTitle"
+          empty-icon="i-lucide-chart-no-axes-column"
+          empty-title="Nada no período para esse cruzamento"
+          :empty-description="emptyDescription"
           data-bi-explore-cross
         >
           <template #value-cell="{ row }">{{ formatValue(row.original.value) }}</template>
-          <template #empty>
-            <NuxtEmpty
-              variant="naked"
-              icon="i-lucide-chart-no-axes-column"
-              title="Nada no período para esse cruzamento"
-              :description="emptyDescription"
-            />
-          </template>
-        </NuxtTable>
+        </OperatorTable>
       </OperatorReadingCard>
     </main>
   </div>
