@@ -97,7 +97,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             "WhatsApp externo inerte (trava dev/seed): %s -> %s",
             template, recipient,
         )
-        return True
+        return False  # inerte não é entrega: a cadeia segue (ver _external)
 
     ctx = context or {}
     to = _to_number(recipient)

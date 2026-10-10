@@ -11,7 +11,7 @@ it("balcão esconde entrega e data; modo encomenda emite intenção sem apagar i
   }, global: { stubs: { PosCustomerModal: true } } });
   expect(w.text()).not.toContain("Retirada");
   expect(w.text()).not.toContain("Para hoje");
-  const modeButton = (label: string) => w.findAll("button").find((b) => b.text() === label)!;
+  const modeButton = (label: string) => w.findAll("button").find((b) => b.find(".sr-only").exists() && b.find(".sr-only").text() === label)!;
   // O modo ligado é o `solid` da suíte (marca `data-pos-sales-mode-active`) e diz isso ao leitor de tela; o outro não.
   expect(modeButton("Balcão").attributes("aria-pressed")).toBe("true");
   expect(modeButton("Balcão").attributes("data-pos-sales-mode-active")).toBeDefined();

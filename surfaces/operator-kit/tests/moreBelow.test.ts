@@ -62,3 +62,14 @@ describe('tem mais abaixo — nunca por cima de overlay', () => {
     expect(source).toContain('[body:has([role=dialog][data-state=open])_&]:hidden')
   })
 })
+
+describe("Tem mais abaixo contida (coluna que rola)", () => {
+  it("qualquer resto ganha dica: a linha cortada sob o bloco de ação não parece o fim", async () => {
+    const { endReached, CONTAINED_HINT_REACH, HINT_REACH } = await import("../app/presentation/moreBelow");
+    expect(CONTAINED_HINT_REACH).toBe(0);
+    // Fim 30 px abaixo da borda do contêiner: na janela não ganha dica, na coluna ganha.
+    expect(endReached(530, 500, HINT_REACH)).toBe(true);
+    expect(endReached(530, 500, CONTAINED_HINT_REACH)).toBe(false);
+    expect(endReached(500, 500, CONTAINED_HINT_REACH)).toBe(true);
+  });
+});

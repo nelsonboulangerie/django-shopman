@@ -91,7 +91,17 @@ def _from_shop_integrations(adapter_type: str, method=None):
         else:
             return _resolve_module(value), True
     except Exception:
-        logger.debug("_from_shop_integrations: DB lookup failed for %s", adapter_type, exc_info=True)
+        logger.error(
+            "get_adapter.shop_integrations_unreadable adapter_type=%s method=%s: "
+            "a escolha do Admin foi ignorada e o adapter do settings assumiu",
+            adapter_type,
+            method,
+            exc_info=True,
+        )
+        # A escolha do gestor em ``Shop.integrations`` tem prioridade máxima, e
+        # perdê-la é trocar de gateway/emissor sem ninguém saber. Seguimos para
+        # o settings (o adapter do deploy), mas em ERROR, que chega ao Sentry:
+        # degradação de configuração de dinheiro nunca é ``debug``.
         return None, False
 
 

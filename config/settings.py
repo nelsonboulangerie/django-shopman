@@ -1974,6 +1974,19 @@ SHOPMAN_EFI = {
     "pix_key": os.environ.get("EFI_PIX_KEY", ""),
 }
 
+# Ambiente de cobrança (Efí) e fiscal (Focus) é decisão EXPLÍCITA do spec de
+# deploy. Os defaults acima (`EFI_SANDBOX=true`, `homologacao`) continuam
+# servindo o dev local e o staging, mas em produção a omissão não pode virar
+# política: Pix que cobra num gateway que não recebe e NFC-e que não existe no
+# SEFAZ, os dois calados. Esta lista diz quais das duas variáveis o ambiente
+# NÃO declarou; o `SHOPMAN_E026` reprova o deploy de produção enquanto ela não
+# estiver vazia (shopman/shop/checks.py). Vazio conta como não declarado.
+SHOPMAN_UNDECLARED_PROVIDER_ENVIRONMENTS = tuple(
+    name
+    for name in ("EFI_SANDBOX", "FOCUS_NFE_ENVIRONMENT")
+    if not os.environ.get(name, "").strip()
+)
+
 SHOPMAN_EFI_WEBHOOK = {
     # Shared secret between EFI dashboard and this service. MUST be set in
     # every environment — including local dev — because webhook authentication

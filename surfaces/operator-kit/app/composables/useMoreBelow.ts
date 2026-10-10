@@ -1,5 +1,5 @@
 import { measureBottomObstruction } from "./useNextFocus"
-import { HINT_REACH, endReached as fimAlcancado, hintOffset, shouldHint } from "../presentation/moreBelow"
+import { CONTAINED_HINT_REACH, HINT_REACH, endReached as fimAlcancado, hintOffset, shouldHint } from "../presentation/moreBelow"
 import { FOCUS_OBSTRUCTION_ATTRIBUTE } from "../presentation/nextFocus"
 
 /**
@@ -18,7 +18,26 @@ import { FOCUS_OBSTRUCTION_ATTRIBUTE } from "../presentation/nextFocus"
  * carrega `scroll-margin-bottom` igual ao obstáculo, o fim para ACIMA do card,
  * não atrás dele.
  */
-export function useMoreBelow() {
+export interface UseMoreBelowOptions {
+  /**
+   * A dica mora DENTRO de um contêiner que rola (uma coluna lateral), não na janela.
+   * A área observada é a do contêiner: o que flutua fora dele (o bloco de ação e o pé
+   * da comanda) já está fora da área por construção, sem medida de obstrução.
+   */
+  contained?: boolean;
+}
+
+/** O ancestral que rola (o contêiner da dica contida). */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(node).overflowY)) return node;
+  }
+  return null;
+}
+
+export function useMoreBelow(options: UseMoreBelowOptions = {}) {
+  const contained = Boolean(options.contained);
+  const reach = contained ? CONTAINED_HINT_REACH : HINT_REACH;
   const sentinel = ref<HTMLElement | null>(null);
   const endReached = ref(true);
   const obstruction = ref(0);
@@ -38,6 +57,17 @@ export function useMoreBelow() {
     observer?.disconnect();
     observer = null;
     if (!import.meta.client || !el || typeof IntersectionObserver !== "function") return;
+    if (contained) {
+      const root = scrollParent(el);
+      observer = new IntersectionObserver(entries => {
+        const entry = entries[entries.length - 1];
+        if (!entry) return;
+        const limite = entry.rootBounds?.bottom ?? root?.getBoundingClientRect().bottom ?? window.innerHeight;
+        chegouAoFim(entry.boundingClientRect.top, limite);
+      }, { root, threshold: [0, 1] });
+      observer.observe(el);
+      return;
+    }
     const recuo = Math.round(Math.max(0, obstaculo));
     observer = new IntersectionObserver(entries => {
       const entry = entries[entries.length - 1];
@@ -59,7 +89,7 @@ export function useMoreBelow() {
 
   /** O fim chegou quando o sentinela está na linha de baixo da área visível, ou a menos de uma dica dela. */
   function chegouAoFim (topoDoSentinela: number, limite: number) {
-    endReached.value = fimAlcancado(topoDoSentinela, limite);
+    endReached.value = fimAlcancado(topoDoSentinela, limite, reach);
   }
 
   // ⚠️ SALTO NÃO DISPARA OBSERVADOR. O IntersectionObserver só avisa quando o
@@ -72,11 +102,21 @@ export function useMoreBelow() {
   function reavaliar () {
     const el = sentinel.value;
     if (!el) return;
+    if (contained) {
+      const root = scrollParent(el);
+      chegouAoFim(el.getBoundingClientRect().top, root?.getBoundingClientRect().bottom ?? window.innerHeight);
+      return;
+    }
     chegouAoFim(el.getBoundingClientRect().top, window.innerHeight - obstruction.value);
   }
 
   function measure() {
     if (!import.meta.client) return;
+    if (contained) {
+      // A coluna muda de altura sem a janela mexer (o bloco de ação abre e fecha).
+      reavaliar();
+      return;
+    }
     const medido = measureBottomObstruction();
     if (Math.abs(medido - obstruction.value) < 1) return;
     obstruction.value = medido;
@@ -128,8 +168,17 @@ export function useMoreBelow() {
     });
   }
   useEventListener(() => (import.meta.client ? document : null), 'scroll', reavaliarNoQuadro, { capture: true, passive: true });
+  let containerSize: ResizeObserver | null = null;
   onMounted(() => {
     measure();
+    if (contained) {
+      const root = scrollParent(sentinel.value);
+      if (root && typeof ResizeObserver === "function") {
+        containerSize = new ResizeObserver(() => reavaliar());
+        containerSize.observe(root);
+      }
+      return;
+    }
     watchObstructionSizes();
   });
   onBeforeUnmount(() => {
@@ -138,6 +187,8 @@ export function useMoreBelow() {
     observer = null;
     obstructionSizes?.disconnect();
     obstructionSizes = null;
+    containerSize?.disconnect();
+    containerSize = null;
   });
 
   return { sentinel, visible, offset, measure, scrollToEnd };

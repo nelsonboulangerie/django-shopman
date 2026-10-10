@@ -192,7 +192,7 @@ function onSearchEscape() {
 </script>
 
 <template>
-  <section class="flex h-full min-h-0 flex-col gap-2.5">
+  <section class="@container flex h-full min-h-0 flex-col gap-2.5">
     <!-- Busca + densidade (v4): a busca é o instrumento do balcão (44 px, Enter
          adiciona, F3 ou / focam); a densidade é um seletor segmentado à vista. -->
     <div class="flex shrink-0 items-center gap-2">
@@ -236,7 +236,8 @@ function onSearchEscape() {
           @click="setDensity(opt.key)"
         >
           <Icon :name="opt.icon" class="size-4 shrink-0" aria-hidden="true" />
-          <span v-if="density === opt.key" class="max-xl:sr-only">{{ opt.label }}</span>
+          <span v-if="density === opt.key" class="sr-only">{{ opt.label }}</span>
+          <span v-if="density === opt.key" class="hidden @min-[48rem]:inline" aria-hidden="true">{{ opt.label }}</span>
         </NuxtButton>
       </NuxtFieldGroup>
     </div>
@@ -271,7 +272,11 @@ function onSearchEscape() {
     <!-- Coleções em chips (v4): 32 px no balcão, 48 px no toque com "Favoritos"
          primeiro. Ocultar indisponíveis é preferência deste dispositivo e mora no fim
          da fila (a v4 não tem o olho ao lado da busca). -->
-    <div class="-mx-1 flex shrink-0 overflow-x-auto px-1 pb-1 no-scrollbar" :class="coarsePointer ? 'gap-2' : 'gap-1'">
+    <!-- As coleções rolam na faixa (com o esmaecer na borda dizendo que há mais); o
+         "Ocultar indisponíveis" fica FORA dela, sempre à vista, e vira só o olho
+         quando a área de produtos estreita. -->
+    <div class="flex shrink-0 items-start" :class="coarsePointer ? 'gap-2' : 'gap-1'">
+    <div class="-mx-1 flex min-w-0 flex-1 overflow-x-auto px-1 pb-1 no-scrollbar [mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)]" :class="coarsePointer ? 'gap-2' : 'gap-1'" data-pos-collections>
       <NuxtButton
         v-if="coarsePointer && favoriteRefs.length"
         size="xl"
@@ -324,6 +329,8 @@ function onSearchEscape() {
         />
         {{ collection.name }}
       </NuxtButton>
+      <span class="w-4 shrink-0" aria-hidden="true" />
+    </div>
       <NuxtButton
         :size="coarsePointer ? 'xl' : 'md'"
         color="neutral"
@@ -339,7 +346,8 @@ function onSearchEscape() {
         @click="setHideUnavailable(!hideUnavailable)"
       >
         <Icon :name="hideUnavailable ? 'lucide:eye-off' : 'lucide:eye'" class="size-3.5" aria-hidden="true" />
-        {{ hideUnavailable ? `Indisponíveis ocultos${hiddenCount ? ` (${hiddenCount})` : ""}` : "Ocultar indisponíveis" }}
+        <span class="hidden @min-[52rem]:inline" aria-hidden="true">{{ hideUnavailable ? `Indisponíveis ocultos${hiddenCount ? ` (${hiddenCount})` : ""}` : "Ocultar indisponíveis" }}</span>
+        <span v-if="hideUnavailable && hiddenCount" class="tnum @min-[52rem]:hidden" aria-hidden="true">{{ hiddenCount }}</span>
       </NuxtButton>
     </div>
 

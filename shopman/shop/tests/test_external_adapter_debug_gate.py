@@ -3,9 +3,10 @@
 Regressão: rodar ``seed --flush`` disparava POSTs reais ao Comtele porque as
 credenciais reais vivem no ambiente e ``is_available()`` do adapter SMS
 retornava True. A trava (``shopman.shop.adapters._external.inert``) mantém
-SMS/WhatsApp/OTP inertes em DEBUG sem opt-in — e ``suppress()`` (ativado pelo
+SMS/WhatsApp/OTP inertes em DEBUG sem opt-in, e ``suppress()`` (ativado pelo
 seed) os mantém inertes em QUALQUER ambiente, porque dado sintético nunca
-notifica gente de verdade.
+notifica gente de verdade. Inerte devolve FALHA, nunca entrega (item 15 de
+docs/plans/fallbacks-perigosos-go-live.md).
 """
 
 from __future__ import annotations
@@ -46,11 +47,12 @@ def _boom(*args, **kwargs):
 
 
 @override_settings(DEBUG=True, SHOPMAN_SMS=COMTELE)
-def test_sms_inert_in_debug_makes_no_call_and_reports_delivered():
+def test_sms_inert_in_debug_makes_no_call_and_never_reports_delivery():
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=_boom):
         # Configurado (is_available True), mas em DEBUG não deve chamar a rede.
         assert notification_sms.is_available() is True
-        assert notification_sms.send("+5543999990001", "order_accepted", {}) is True
+        # Inerte não é entrega: False faz a cadeia seguir (console em dev).
+        assert notification_sms.send("+5543999990001", "order_accepted", {}) is False
 
 
 @override_settings(DEBUG=True, SHOPMAN_SMS=COMTELE, SHOPMAN_SMS_ALLOW_IN_DEBUG=True)
@@ -98,13 +100,13 @@ def test_sms_sends_for_real_outside_debug():
 @override_settings(DEBUG=True, SHOPMAN_MANYCHAT=MANYCHAT)
 def test_manychat_inert_in_debug():
     with patch("shopman.shop.adapters.notification_manychat.urlopen", side_effect=_boom):
-        assert notification_manychat.send("5543999990001", "order_accepted", {}) is True
+        assert notification_manychat.send("5543999990001", "order_accepted", {}) is False
 
 
 @override_settings(DEBUG=True, SHOPMAN_WHATSAPP=WHATSAPP)
 def test_whatsapp_inert_in_debug():
     with patch("shopman.shop.adapters.notification_whatsapp.urlopen", side_effect=_boom):
-        assert notification_whatsapp.send("5543999990001", "order_accepted", {}) is True
+        assert notification_whatsapp.send("5543999990001", "order_accepted", {}) is False
 
 
 # ── OTP por SMS: inerte cai para o próximo sender (console) ──────────
@@ -141,14 +143,14 @@ def test_suppress_blocks_external_even_outside_debug(monkeypatch):
     e nenhum adapter externo pode disparar — sem opt-out."""
     monkeypatch.setattr(_external, "_suppressed_reason", "seed")
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=_boom):
-        assert notification_sms.send("+5543999990001", "order_accepted", {}) is True
+        assert notification_sms.send("+5543999990001", "order_accepted", {}) is False
 
 
 @override_settings(DEBUG=False, SHOPMAN_SMS=COMTELE, SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG=True)
 def test_suppress_has_no_opt_out(monkeypatch):
     monkeypatch.setattr(_external, "_suppressed_reason", "seed")
     with patch("shopman.shop.adapters.notification_sms.urlopen", side_effect=_boom):
-        assert notification_sms.send("+5543999990001", "order_accepted", {}) is True
+        assert notification_sms.send("+5543999990001", "order_accepted", {}) is False
 
 
 # ── Seed não faz nenhuma chamada externa (qualquer ambiente) ────────
