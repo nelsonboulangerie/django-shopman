@@ -618,8 +618,9 @@ createServer((req, res) => {
           const units = Number(quantities[item.line_id] || 0);
           const sent = Number(item.fired_qty ?? item.qty);
           if (units > 0 && units < sent) return { ...item, fired_qty: sent - units };
-          const { fired: _f, fired_qty: _q, kitchen_status: _s, kitchen_tickets: _t, ...rest } = item;
-          return { ...rest, fired: false };
+          const rest = { ...item, fired: false };
+          for (const key of ["fired_qty", "kitchen_status", "kitchen_tickets"]) delete rest[key];
+          return rest;
         });
         SAVED_ITEMS.set(ref, items);
         send(res, 200, { ok: true, cancelled: 1, trimmed: 0, fired_lines: [], tab: { ...tabPayload(ref), items } });
