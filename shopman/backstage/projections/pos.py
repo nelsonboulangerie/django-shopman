@@ -840,25 +840,38 @@ def _manager_cards(operator=None) -> tuple[dict, ...]:
 
 
 def build_pos_shift_summary(*, channel_ref: str = POS_CHANNEL_REF) -> POSShiftSummaryProjection:
-    """Build today's shift summary for the POS."""
-    from django.db.models import Sum
+    """Build today's shift summary for the POS.
+
+    UMA leitura das vendas do dia, só com as colunas que o resumo usa. Eram
+    quatro (contagem, soma, a lista inteira com o ``snapshot`` de cada pedido e a
+    última venda) sobre ``created_at__date``, que converte cada linha para o fuso
+    antes de comparar e por isso não usa o índice de ``created_at``: a tabela
+    inteira era varrida a cada leitura da projeção do PDV, e a projeção é relida a
+    cada aviso de comanda.
+    """
+    from datetime import datetime, time, timedelta
+
     from django.utils import timezone
     from shopman.orderman.models import Order
 
     today = timezone.localdate()
-    qs = Order.objects.filter(
-        channel_ref=channel_ref,
-        created_at__date=today,
-    ).exclude(status="cancelled")
+    start = timezone.make_aware(datetime.combine(today, time.min))
+    end = timezone.make_aware(datetime.combine(today + timedelta(days=1), time.min))
+    rows = list(
+        Order.objects.filter(channel_ref=channel_ref, created_at__gte=start, created_at__lt=end)
+        .exclude(status="cancelled")
+        .order_by("created_at", "pk")
+        .values_list("ref", "total_q", "data")
+    )
 
-    shift_count = qs.count()
-    shift_total_q = qs.aggregate(t=Sum("total_q"))["t"] or 0
+    shift_count = len(rows)
+    shift_total_q = sum(int(total_q or 0) for _ref, total_q, _data in rows)
     pickup_count = 0
     delivery_count = 0
     cod_pending_count = 0
     cod_pending_q = 0
-    for order in qs:
-        data = order.data or {}
+    for _ref, total_q, data in rows:
+        data = data or {}
         if data.get("fulfillment_type") == "delivery":
             delivery_count += 1
         else:
@@ -866,17 +879,17 @@ def build_pos_shift_summary(*, channel_ref: str = POS_CHANNEL_REF) -> POSShiftSu
         payment = data.get("payment") or {}
         if payment.get("collection") == "on_delivery" and not payment.get("cod_settled_at"):
             cod_pending_count += 1
-            cod_pending_q += int(order.total_q or 0)
+            cod_pending_q += int(total_q or 0)
 
-    last_order = qs.order_by("-created_at").first()
+    last_ref, last_total_q = (rows[-1][0], rows[-1][1]) if rows else ("", None)
 
     return POSShiftSummaryProjection(
         count=shift_count,
         total_display=format_money(shift_total_q),
         pickup_count=pickup_count,
         delivery_count=delivery_count,
-        last_ref=last_order.ref if last_order else "",
-        last_total_display=format_money(last_order.total_q) if last_order else "",
+        last_ref=last_ref,
+        last_total_display=format_money(last_total_q) if rows else "",
         cod_pending_count=cod_pending_count,
         cod_pending_display=format_money(cod_pending_q),
     )
@@ -897,7 +910,7 @@ def build_pos_tabs(
         for session in Session.objects.filter(
             channel_ref=channel_ref,
             state="open",
-        ).filter(handle_type="pos_tab")
+        ).filter(handle_type="pos_tab").prefetch_related("session_items")
     }
     sessions.update({
         str((session.data or {}).get("tab_ref") or "").strip(): session
@@ -905,7 +918,7 @@ def build_pos_tabs(
             channel_ref=channel_ref,
             state="open",
             data__has_key="tab_ref",
-        )
+        ).prefetch_related("session_items")
     })
     sessions = {ref: session for ref, session in sessions.items() if ref}
 

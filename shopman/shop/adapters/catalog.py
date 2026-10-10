@@ -88,15 +88,18 @@ def listing_exists(listing_ref: str) -> bool:
 
 
 def bulk_sku_to_collection_id(skus: list[str]) -> dict[str, int]:
-    """Mapa sku → collection_id (primary) para múltiplos SKUs."""
+    """Mapa sku → collection_id (primary) para múltiplos SKUs, numa consulta só.
+
+    Lia ``ci.product.sku`` de cada linha sem trazer o produto junto: uma ida ao
+    banco por SKU. A projeção do PDV pergunta pelo catálogo inteiro (o "vai à
+    cozinha" de cada produto) e pagava ~120 consultas a cada leitura.
+    """
     from shopman.offerman.models import CollectionItem
 
-    result: dict[str, int] = {}
-    for ci in CollectionItem.objects.filter(
-        product__sku__in=skus, is_primary=True,
-    ).select_related("collection"):
-        result[ci.product.sku] = ci.collection_id
-    return result
+    return dict(
+        CollectionItem.objects.filter(product__sku__in=skus, is_primary=True)
+        .values_list("product__sku", "collection_id")
+    )
 
 
 def find_substitutes(sku: str, limit: int = 8) -> list:

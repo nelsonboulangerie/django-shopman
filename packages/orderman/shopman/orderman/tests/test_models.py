@@ -389,3 +389,23 @@ class TestSessionItemsReadOnly(TestCase):
 
         assert len(self.session.items) == 1
         assert self.session.items[0]["sku"] == "NEW"
+
+    def test_items_from_prefetch_skip_the_database_and_keep_line_order(self):
+        """Quem leu várias sessões com prefetch não volta ao banco por sessão."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.session.update_items([
+            {"line_id": "L-1", "sku": "C", "qty": 1, "unit_price_q": 100},
+            {"line_id": "L-2", "sku": "A", "qty": 2, "unit_price_q": 200},
+            {"line_id": "L-3", "sku": "B", "qty": 3, "unit_price_q": 300},
+        ])
+        expected = Session.objects.get(pk=self.session.pk).items
+
+        prefetched = Session.objects.prefetch_related("session_items").get(pk=self.session.pk)
+        with CaptureQueriesContext(connection) as ctx:
+            items = prefetched.items
+
+        assert len(ctx.captured_queries) == 0
+        assert items == expected
+        assert [item["line_id"] for item in items] == ["L-1", "L-2", "L-3"]
