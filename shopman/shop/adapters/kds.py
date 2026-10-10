@@ -81,7 +81,9 @@ def carry_lines_to_session(*, from_session_key: str, to_session_key: str, line_m
       O ticket do destino nasce por ``bulk_create`` de propósito: não é pedido
       novo, é o mesmo prato mudando de mesa, então não reimprime a Via Cozinha
       nem apita "pedido novo" na estação (os dois só reagem a ``post_save``); a
-      tela recebe o evento de atualização, como o do ticket que encolheu.
+      tela recebe o evento de atualização, como o do ticket que encolheu, e o
+      card diz de que comanda o prato veio (``known_ref``), com o aviso de
+      mudança, até a estação dar Visto.
 
     O ticket cancelado fica na origem: é comprovante de um fato que já foi.
     Pré-condição: o chamador segura o lock das duas sessões (ordem global
@@ -131,6 +133,9 @@ def carry_lines_to_session(*, from_session_key: str, to_session_key: str, line_m
                 completed_via=ticket.completed_via,
                 seen_at=ticket.seen_at,
                 seen_by=ticket.seen_by,
+                # O nome com que a cozinha conhece o prato: o card do destino diz
+                # "Era a comanda <origem>" até alguém dar Visto (dono, 10/10/2026).
+                known_ref=ticket.known_ref,
             )
             (twin,) = KDSTicket.objects.bulk_create([twin])
             # ``auto_now_add`` sobrescreve no insert: a hora do envio é a da origem.
