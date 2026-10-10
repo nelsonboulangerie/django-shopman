@@ -149,6 +149,9 @@ describe("OrderCard — o sistema fez · desfazer", () => {
     const undo = w.get("[data-undo-button]");
     expect(undo.text()).toBe("Desfazer");
     expect(undo.attributes("aria-describedby")).toBeTruthy();
+    // O MESMO botão da saída tocada (dono, 09/10/2026): o primário sólido, só o texto muda.
+    expect(undo.attributes("color")).toBe("primary");
+    expect(undo.attributes("variant")).toBe("solid");
     // A janela é de 5 s e já correram 2: o fundo continua de onde ela está.
     const fill = w.get("[data-timed-fill]").attributes("style");
     expect(fill).toContain("animation-duration: 5000ms");

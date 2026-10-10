@@ -56,63 +56,64 @@ function value(field: string, value: unknown): string {
 </script>
 
 <template>
-  <section
-    v-if="state"
-    class="rounded-lg border px-3 py-2.5 text-sm"
-    :class="state === 'conflict'
-      ? 'border-warning/50 bg-warning/5'
-      : 'border-emerald-600/30 bg-emerald-500/5'"
-    :role="state === 'conflict' ? 'alert' : 'status'"
+  <!-- O aviso do rascunho, no NuxtAlert do conjunto mínimo: o conflito pede um gesto
+       (warning, com as duas saídas na cor dele); o salvo só conta o fato (success). -->
+  <NuxtAlert
+    v-if="state === 'conflict'"
+    color="warning"
+    variant="subtle"
+    icon="i-lucide-git-compare"
+    title="Este conteúdo também mudou em outra sessão."
+    role="alert"
     aria-live="polite"
+    data-draft-recovery="conflict"
   >
-    <template v-if="state === 'conflict'">
-      <p class="font-semibold">Este conteúdo também mudou em outra sessão.</p>
-      <p class="mt-0.5 text-xs text-muted-foreground">
-        Seu rascunho está guardado. Compare somente os campos em conflito:
-      </p>
+    <template #description>
+      <p>Seu rascunho está guardado. Compare somente os campos em conflito:</p>
       <dl class="mt-2 space-y-2">
-        <div v-for="conflict in conflicts" :key="conflict.field" class="rounded bg-background/80 p-2">
+        <div v-for="conflict in conflicts" :key="conflict.field" class="rounded-md bg-default/80 p-2">
           <dt class="text-xs font-semibold">{{ label(conflict.field) }}</dt>
           <dd class="mt-1 text-xs"><strong>Versão atual:</strong> {{ value(conflict.field, conflict.current) }}</dd>
           <dd class="mt-0.5 text-xs"><strong>Seu rascunho:</strong> {{ value(conflict.field, conflict.draft) }}</dd>
         </div>
       </dl>
-      <div class="mt-2 flex flex-wrap gap-2">
-        <UiButton
-          type="button"
-          size="sm"
-          @click="$emit('keepLocal')"
-        >
-          Manter minhas mudanças
-        </UiButton>
-        <UiButton
-          type="button"
-          variant="outline"
-          size="sm"
-          @click="$emit('keepServer')"
-        >
-          Usar a versão atual nos conflitos
-        </UiButton>
-      </div>
     </template>
-    <template v-else>
-      <div class="flex items-center gap-2">
-        <Icon name="lucide:cloud-check" class="size-4 text-emerald-700" />
-        <p class="min-w-0 flex-1 text-xs">
-          <template v-if="state === 'restored'">Rascunho restaurado</template>
-          <template v-else-if="state === 'rebased'">Rascunho combinado com a versão atual</template>
-          <template v-else>Rascunho salvo neste dispositivo</template><template v-if="savedTime"> às {{ savedTime }}</template>.
-        </p>
-        <UiButton
-          type="button"
-          variant="link"
-          size="sm"
-          class="shrink-0"
-          @click="$emit('discard')"
-        >
-          Descartar
-        </UiButton>
-      </div>
+    <template #actions>
+      <NuxtButton
+        color="warning"
+        variant="outline"
+        label="Manter minhas mudanças"
+        @click="$emit('keepLocal')"
+      />
+      <NuxtButton
+        color="warning"
+        variant="outline"
+        label="Usar a versão atual nos conflitos"
+        @click="$emit('keepServer')"
+      />
     </template>
-  </section>
+  </NuxtAlert>
+  <NuxtAlert
+    v-else-if="state"
+    color="success"
+    variant="subtle"
+    icon="i-lucide-cloud-check"
+    role="status"
+    aria-live="polite"
+    :data-draft-recovery="state"
+  >
+    <template #title>
+      <template v-if="state === 'restored'">Rascunho restaurado</template>
+      <template v-else-if="state === 'rebased'">Rascunho combinado com a versão atual</template>
+      <template v-else>Rascunho salvo neste dispositivo</template><template v-if="savedTime"> às {{ savedTime }}</template>.
+    </template>
+    <template #actions>
+      <NuxtButton
+        color="success"
+        variant="outline"
+        label="Descartar"
+        @click="$emit('discard')"
+      />
+    </template>
+  </NuxtAlert>
 </template>

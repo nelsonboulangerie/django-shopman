@@ -160,10 +160,10 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     expect(wrapper.text()).not.toContain("Texto exclusivo do WhatsApp");
     expect(wrapper.text()).not.toContain("available_qty");
 
-    await wrapper.find("[data-platform='whatsapp']").trigger("mousedown", {
-      button: 0,
-      ctrlKey: false,
-    });
+    await wrapper
+      .findAll('[role="tab"]')
+      .find((tab) => tab.text() === "WhatsApp")!
+      .trigger("click");
     expect(wrapper.text()).toContain("Texto exclusivo do WhatsApp");
     expect(wrapper.text()).not.toContain("Texto exclusivo do Instagram");
     wrapper.unmount();
@@ -249,7 +249,7 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     const error = wrapper.get("[data-testid='preview-error']");
     expect(error.text()).toContain("Corrija a imagem para gerar a prévia");
     expect(error.text()).toContain("Corrigir imagem nos modelos");
-    expect(error.get("button").attributes("to")).toBe("/templates");
+    expect(error.get("button").attributes("to")).toBe("/settings/templates");
     wrapper.unmount();
   });
 

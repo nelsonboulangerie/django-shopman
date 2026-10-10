@@ -13,7 +13,6 @@
 // Teclado: Ctrl S salva, Ctrl Z desfaz, Ctrl Shift Z refaz, setas movem a mesa
 // escolhida (Shift move de 1 em 1), Del tira do salão, Esc solta a escolha.
 import { useEventListener } from "@vueuse/core";
-import { toast } from "vue-sonner";
 
 import {
   GRID,
@@ -27,17 +26,9 @@ import type { SpotShape } from "~/types/seating";
 
 useHead({ title: "Salão" });
 
-const { pos, tabs, pending: posPending, refresh: refreshPos } = await usePosTerminal();
-const { operator: activeOperator, lock } = useOperatorLock("cashman.operate_pos");
+const { tabs } = await usePosTerminal();
 const seating = usePosSeating();
 const confirm = useConfirm();
-
-const customerDisplayWindow = useCustomerDisplayWindow();
-function openCustomerDisplay() {
-  if (!customerDisplayWindow.open()) toast.error("O navegador bloqueou a Tela do Cliente.", {
-    description: "Permita pop-ups para este site e tente novamente.",
-  });
-}
 
 // Celular x tablet x computador: só no navegador. Até montar, o servidor desenha a
 // planta (tablet e computador); o celular troca para a lista ao montar.
@@ -264,22 +255,8 @@ const saveHint = "vale a partir de hoje; o passado não muda";
 </script>
 
 <template>
-  <main class="flex min-h-dvh flex-col bg-background text-foreground md:h-[100dvh] md:min-h-0 md:flex-row md:overflow-hidden">
-    <PosFunctionRail
-      v-if="pos"
-      :pos="pos"
-      :has-open-cash-session="pos.has_open_cash_session"
-      :operator-name="activeOperator?.name || ''"
-      :pending="posPending"
-      view="settings"
-      @board="navigateTo('/')"
-      @cash="navigateTo('/session')"
-      @display="openCustomerDisplay"
-      @lock="lock()"
-      @refresh="refreshPos()"
-    />
-
-    <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
+  <main class="flex min-h-0 flex-1 flex-col" data-seating-screen>
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <OperatorPageHeader title="Salão">
         <template v-if="!isPhone" #lead>
           <span class="hidden items-center gap-1 op-label text-muted-foreground md:inline-flex" data-seating-crumb>
@@ -366,7 +343,7 @@ const saveHint = "vale a partir de hoje; o passado não muda";
             </UiPopoverContent>
           </UiPopover>
         </template>
-        <template #below>
+        <template #filters-primary>
           <PosSettingsTabs />
         </template>
       </OperatorPageHeader>
@@ -533,7 +510,6 @@ const saveHint = "vale a partir de hoje; o passado não muda";
         </footer>
       </template>
 
-      <PosFunctionRail place="bar" :operator-name="activeOperator?.name || ''" @board="navigateTo('/')" @cash="navigateTo('/session')" @display="openCustomerDisplay" @lock="lock()" />
     </div>
 
     <PosSeatingHistory v-model:open="historyOpen" :entries="seating.data.value?.history ?? []" />

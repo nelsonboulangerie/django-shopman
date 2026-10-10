@@ -84,7 +84,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "marketing", categories: ["campaign"] },
       shortcuts: [
-        { name: "Campanhas", shortName: "Campanhas", url: "/campaigns" },
+        { name: "Campanhas", shortName: "Campanhas", url: "/settings/campaigns" },
       ],
     }),
     "@nuxtjs/color-mode",

@@ -103,14 +103,15 @@ function confirm() {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="(value) => emit('update:open', value)">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" data-preorder-reschedule-dialog>
-      <UiDialogHeader>
-        <UiDialogTitle>Reagendar a encomenda de {{ customerName }}</UiDialogTitle>
-        <UiDialogDescription>Combinado hoje: {{ currentLabel }}. Escolha o novo dia e, se quiser, o horário.</UiDialogDescription>
-      </UiDialogHeader>
-
-      <form class="grid gap-4" @submit.prevent="confirm">
+  <NuxtModal
+    :open="open"
+    :title="`Reagendar a encomenda de ${customerName}`"
+    :description="`Combinado hoje: ${currentLabel}. Escolha o novo dia e, se quiser, o horário.`"
+    :ui="{ content: 'sm:max-w-lg' }"
+    @update:open="(value: boolean) => emit('update:open', value)"
+  >
+    <template #body>
+      <form class="grid gap-4" data-preorder-reschedule-dialog @submit.prevent="confirm">
         <!-- O mesmo seletor da venda: o limite de dias da casa, a janela
              impossível apagada com o motivo e o aviso quando a janela combinada
              não cabe mais no preparo destes itens. -->
@@ -130,18 +131,27 @@ function confirm() {
           @update:time-slot="slot = $event"
         />
 
-        <label class="grid gap-1.5">
-          <span class="text-sm font-medium">Motivo (opcional)</span>
-          <UiInput v-model="reason" autocomplete="off" class="h-8 text-base" :maxlength="500" data-preorder-reschedule-reason />
-        </label>
+        <NuxtFormField label="Motivo (opcional)">
+          <NuxtInput
+            v-model="reason"
+            class="w-full"
+            autocomplete="off"
+            :maxlength="500"
+            data-preorder-reschedule-reason
+          />
+        </NuxtFormField>
 
-        <UiDialogFooter>
-          <UiButton type="button" variant="outline" @click="emit('update:open', false)">Voltar</UiButton>
-          <UiButton type="submit" :disabled="busy || !changed" :loading="busy" data-preorder-reschedule-confirm>
-            {{ rescheduleConfirmLabel(target) }}
-          </UiButton>
-        </UiDialogFooter>
+        <div class="flex justify-end gap-2">
+          <NuxtButton type="button" color="neutral" variant="outline" label="Voltar" @click="emit('update:open', false)" />
+          <NuxtButton
+            type="submit"
+            :disabled="busy || !changed"
+            :loading="busy"
+            :label="rescheduleConfirmLabel(target)"
+            data-preorder-reschedule-confirm
+          />
+        </div>
       </form>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+  </NuxtModal>
 </template>

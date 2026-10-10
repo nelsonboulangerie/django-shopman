@@ -3,43 +3,36 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-// A tela do cliente é função do BALCÃO, e mora no rail — alcançável de qualquer tela.
-// Antes ela só existia no cabeçalho da antessala de caixa: fechada a janela sem
-// querer no meio do turno, não havia caminho de volta de dentro da venda.
+// A tela do cliente é função do BALCÃO, e mora na barra lateral — alcançável de
+// qualquer tela. Antes ela só existia no cabeçalho da antessala de caixa: fechada a
+// janela sem querer no meio do turno, não havia caminho de volta de dentro da venda.
 //
-// Este é um teste de VARREDURA: ele exige que toda tela que monta o rail saiba
-// responder ao item, e que ninguém ressuscite o botão duplicado no cabeçalho.
+// Fase 2: a navegação é a do shell da suíte, montada UMA vez (`PosOperatorShell` +
+// `usePosShell`). A varredura exige que a abertura more lá, pela peça compartilhada,
+// e que nenhuma tela ressuscite o botão próprio.
 const here = dirname(fileURLToPath(import.meta.url));
 const app = (...parts: string[]) => resolve(here, "..", "app", ...parts);
 
-const RAIL = readFileSync(app("components", "PosFunctionRail.vue"), "utf8");
-// Camada da suíte (V4-PDV): as seções do rail saem de `presentation/sections`.
 const SECTIONS = readFileSync(app("presentation", "sections.ts"), "utf8");
-const SCREENS = ["pages/index.vue", "pages/session/index.vue"] as const;
+const SHELL = readFileSync(app("composables", "usePosShell.ts"), "utf8");
+const SCREENS = ["pages/index.vue", "pages/session/index.vue", "components/PosPreordersShell.vue", "components/PosSettingsShell.vue", "pages/settings/seating.vue"] as const;
 
-describe("tela do cliente no rail do PDV", () => {
-  it("o rail oferece o item e emite o evento próprio", () => {
+describe("tela do cliente na barra lateral do PDV", () => {
+  it("a seção existe só na barra lateral, e o shell a abre pela peça compartilhada", () => {
     expect(SECTIONS).toContain('label: "Tela do cliente"');
     expect(SECTIONS).toContain('key: "display"');
-    expect(RAIL).toMatch(/emit\(["']display["']\)/);
-    expect(RAIL).toMatch(/display:\s*\[\];/);
+    expect(SHELL).toContain('key === "display"');
+    // A abertura é a peça compartilhada, nunca um window.open copiado: é ela que leva
+    // a sonda de versão junto.
+    expect(SHELL).toContain("useCustomerDisplayWindow()");
+    expect(SHELL).not.toMatch(/window\.open\(\s*["']\/display/);
   });
 
-  it("toda tela que monta o rail responde ao item", () => {
+  it("nenhuma tela tem botão próprio para a Tela do cliente: uma ação, um lugar", () => {
     for (const screen of SCREENS) {
       const source = readFileSync(app(...screen.split("/")), "utf8");
-      expect(source, screen).toContain("<PosFunctionRail");
-      expect(source, screen).toContain('@display="openCustomerDisplay"');
-      // A abertura é a peça compartilhada, nunca um window.open copiado por tela:
-      // é ela que leva a sonda de versão junto.
-      expect(source, screen).toContain("useCustomerDisplayWindow()");
-      expect(source, screen).not.toMatch(/window\.open\(\s*["']\/display/);
+      expect(source, screen).not.toContain("openCustomerDisplay");
+      expect(source, screen).not.toContain("useCustomerDisplayWindow");
     }
-  });
-
-  it("o botão do cabeçalho da antessala não volta: uma ação, um lugar", () => {
-    const session = readFileSync(app("pages", "session", "index.vue"), "utf8");
-    const header = session.slice(session.indexOf("<header"), session.indexOf("</header>"));
-    expect(header).not.toContain("openCustomerDisplay");
   });
 });

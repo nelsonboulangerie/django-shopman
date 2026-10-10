@@ -151,6 +151,11 @@ function onUndo() {
   if (undo.value?.action === "undo_handoff") undoHandoff();
   else undoReady();
 }
+// A saída tocada, ainda na janela: o Desfazer ocupa o lugar do botão que a fez (o
+// primário do cabeçalho na mesa, a ação na base no celular), com o fundo que esvazia.
+const handoffUndo = computed(() =>
+  undo.value?.kind === "handoff" && undo.value.canUndo ? undo.value : null,
+);
 
 const notes = ref("");
 const notesBase = ref("");
@@ -597,6 +602,17 @@ const rejectThumb = computed(() =>
     : undefined,
 );
 const thumbAction = computed(() => {
+  const h = handoffUndo.value;
+  // A saída tocada: a MESMA ação na base, só com o texto trocado e o prazo.
+  if (h)
+    return {
+      label: "Desfazer",
+      icon: "i-lucide-undo-2",
+      ariaLabel: `Desfazer: ${h.label}`,
+      disabled: busy.value,
+      timed: { until: h.untilIso, since: h.sinceIso || undefined },
+      onSelect: onUndo,
+    };
   const p = primary.value;
   // Sem ação primária, o "Recusar" é a ação do momento.
   if (!p) return rejectThumb.value ?? null;
@@ -803,8 +819,21 @@ const outside = useOutsideStore(
           data-action="reject"
           @click="openDialog('reject')"
         />
+        <!-- A saída tocada: o Desfazer mora no MESMO botão (dono, 09/10/2026), o
+             primário da barra, com o fundo que esvazia atrás do texto. -->
+        <OperatorTimedButton
+          v-if="handoffUndo"
+          :until="handoffUndo.untilIso"
+          :since="handoffUndo.sinceIso || undefined"
+          label="Desfazer"
+          icon="i-lucide-undo-2"
+          :disabled="busy"
+          :loading="busy"
+          data-undo-button
+          @click="onUndo()"
+        />
         <NuxtButton
-          v-if="primary"
+          v-else-if="primary"
           type="button"
           :icon="primary.icon.replace('lucide:', 'i-lucide-')"
           :label="primary.label"
@@ -993,22 +1022,8 @@ const outside = useOutsideStore(
               "
               :data-undo="undo.kind"
             >
-              <!-- A saída tocada: o tempo mora no próprio Desfazer (o fundo esvazia
-                   até a janela fechar), como no cartão. -->
-              <template v-if="undo.canUndo && undo.kind === 'handoff'" #actions>
-                <OperatorTimedButton
-                  :until="undo.untilIso"
-                  :since="undo.sinceIso || undefined"
-                  label="Desfazer"
-                  icon="i-lucide-undo-2"
-                  color="success"
-                  variant="solid"
-                  :disabled="busy"
-                  :loading="busy"
-                  data-undo-button
-                  @click="onUndo()"
-                />
-              </template>
+              <!-- A saída tocada: o aviso diz o fato; o Desfazer mora no botão que a
+                   fez (o primário do cabeçalho, a ação na base no celular). -->
             </NuxtAlert>
             <NuxtAlert
               v-if="

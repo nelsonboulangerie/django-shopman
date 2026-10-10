@@ -149,11 +149,11 @@ def test_material_and_supplier_open_the_purchase_base(client):
     search = _search(client, _admin(), "man")
     [material] = _group(search, "materials")
     assert material["app"] == "purchase"
-    assert material["url"] == "https://compras.example.test/?view=base&material=MANTEIGA-82"
+    assert material["url"] == "https://compras.example.test/base/materials/MANTEIGA-82"
     search = _search(client, _admin(), "anaconda")
     [supplier] = _group(search, "suppliers")
     assert supplier["title"] == "Moinho Anaconda"
-    assert supplier["url"] == "https://compras.example.test/?view=base&supplier=MOINHO-ANACONDA"
+    assert supplier["url"] == "https://compras.example.test/base/suppliers/MOINHO-ANACONDA"
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
@@ -179,7 +179,7 @@ def test_campaign_opens_the_marketing_campaigns(client):
     Campaign.objects.create(name="Fornada de pães", trigger="production_finished", template=template)
     [campaign] = _group(_search(client, _admin(), "fornada"), "campaigns")
     assert campaign["app"] == "marketing"
-    assert campaign["url"] == "https://mkt.example.test/campaigns?q=Fornada+de+p%C3%A3es"
+    assert campaign["url"] == "https://mkt.example.test/settings/campaigns?q=Fornada+de+p%C3%A3es"
     assert campaign["detail"] == "campanha · ligada"
 
 

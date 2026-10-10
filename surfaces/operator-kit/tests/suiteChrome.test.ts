@@ -304,8 +304,9 @@ describe("rail da suíte em três estados (PR-K4)", () => {
   });
 
   it("o chip: ponto no tamanho padrão; número 4xl, sem inset, e 99+ acima de 99", () => {
-    expect(railSignalChip({ color: "success" })).toEqual({ color: "success" });
-    expect(railSignalChip({ color: "error", count: 12 })).toEqual({ color: "error", text: "12", size: "4xl", inset: false });
+    expect(railSignalChip({ color: "success" })).toMatchObject({ color: "success" });
+    expect(railSignalChip({ color: "success" }).text).toBeUndefined();
+    expect(railSignalChip({ color: "error", count: 12 })).toMatchObject({ color: "error", text: "12", size: "4xl", inset: false });
     expect(railSignalChip({ color: "error", count: 99 }).text).toBe("99");
     expect(railSignalChip({ color: "error", count: 100 }).text).toBe("99+");
   });

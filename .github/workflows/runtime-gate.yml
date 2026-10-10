@@ -544,8 +544,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Base e frontend do Dockerfile vêm de espelho público da MESMA imagem oficial:
+      # o pull anônimo do Docker Hub cai com 429/504 e travava a fila (09/10/2026).
+      # O deploy (deploy-images.yml, App Platform) não passa estes args e segue no default.
       - name: Build deploy image
-        run: docker build --tag django-shopman:ci .
+        run: >-
+          docker build --tag django-shopman:ci
+          --build-arg PYTHON_IMAGE=public.ecr.aws/docker/library/python:3.12-slim
+          --build-arg BUILDKIT_SYNTAX=mirror.gcr.io/docker/dockerfile:1
+          .
 
       # `docker build` prova que o COPY não falha, NÃO que o arquivo caiu onde o
       # código procura. O Admin serve o agente do balcão a partir de
@@ -576,7 +583,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine
         env:
           POSTGRES_DB: shopman
           POSTGRES_USER: shopman
@@ -589,7 +596,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       redis:
-        image: redis:7-alpine
+        image: public.ecr.aws/docker/library/redis:7-alpine
         ports:
           - "6379:6379"
         options: >-
