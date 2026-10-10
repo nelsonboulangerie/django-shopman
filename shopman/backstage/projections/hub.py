@@ -36,6 +36,7 @@ from shopman.backstage.permissions import (
     is_superuser,
 )
 from shopman.backstage.projections.hub_queue import (
+    HubQueueCollection,
     HubQueueItemProjection,
     HubQueueProjection,
     collect_hub_queue,
@@ -66,7 +67,7 @@ class HubTileProjection:
     icon: str  # nome Lucide (ícone forte da superfície, DS §6)
     url: str
     kind: str  # "launch" (superfície de operador, mesma aba) | "external" (fora da zona, nova aba)
-    #: A linha de estado do bloco, que concorda com a fila "Precisa de você" (UX-H1).
+    #: A linha de estado do bloco, que concorda com a fila (UX-H1).
     #: ``status_attention`` é o que pede alguém ("1 para aceitar"); ``status_summary`` é o
     #: resto, calmo ("11 ativos"). Vazios quando o app não tem fonte de estado.
     status_attention: str = ""
@@ -84,7 +85,8 @@ class HubTileProjection:
 class OperatorHubProjection:
     operator_name: str
     tiles: tuple[HubTileProjection, ...]
-    #: "Precisa de você": a soma das filas dos papéis do operador (`projections/hub_queue.py`).
+    #: A soma das filas dos papéis do operador (`projections/hub_queue.py`): quantas
+    #: pendências e o relógio do servidor. Os itens vão na linha de cada app (``next_item``).
     queue: HubQueueProjection
     #: O nome inteiro da casa (``Shop.name``, "Nelson Boulangerie"), para a assinatura
     #: "Shopman · Nelson Boulangerie" da Central (prévia v4). O nome curto é do PWA.
@@ -99,8 +101,8 @@ class _AppSpec:
     icon: str
     kind: str
     can_access: Callable[[object], bool]
-    #: Nome curto, onde o inteiro não cabe ao lado de outra coisa (a coluna do app na fila
-    #: "Precisa de você"). Vazio = o próprio ``label``. Espelha ``shortLabel`` de
+    #: Nome curto, onde o inteiro não cabe ao lado de outra coisa (o ``app_label`` dos
+    #: itens da fila). Vazio = o próprio ``label``. Espelha ``shortLabel`` de
     #: ``app-identity.json`` (o mesmo teste de identidade compara os dois).
     short_label: str = ""
 
@@ -200,17 +202,28 @@ def _operator_name(user) -> str:
     return full or getattr(user, "username", "") or "Operador"
 
 
-def build_operator_hub(user) -> OperatorHubProjection:
-    """Monta a Central para `user`: APENAS os tiles que ele pode acessar, e a fila
-    "Precisa de você" com os itens em que ele pode agir."""
+def _visible_specs(user) -> tuple[dict[str, str], list[_AppSpec]]:
     urls = _surface_urls()
-    visible = [spec for spec in _REGISTRY if spec.can_access(user) and urls.get(spec.ref)]
-    # Só app que o operador abre entra na fila: o item leva para dentro dele.
-    queue, statuses, most_urgent = collect_hub_queue(
+    return urls, [spec for spec in _REGISTRY if spec.can_access(user) and urls.get(spec.ref)]
+
+
+def collect_operator_queue(user) -> HubQueueCollection:
+    """A fila das filas de ``user`` no recorte da Central: só app que ele abre e que tem
+    URL configurada entra (o item leva para dentro dele)."""
+    urls, visible = _visible_specs(user)
+    return collect_hub_queue(
         user,
         urls={spec.ref: urls[spec.ref] for spec in visible},
         labels={spec.ref: spec.queue_label for spec in visible},
     )
+
+
+def build_operator_hub(user) -> OperatorHubProjection:
+    """Monta a Central para `user`: APENAS os tiles que ele pode acessar, cada um com a
+    sua linha de estado e a pendência mais urgente em que ele pode agir."""
+    urls, visible = _visible_specs(user)
+    collected = collect_operator_queue(user)
+    statuses, most_urgent = collected.statuses, collected.most_urgent
     tiles = tuple(
         HubTileProjection(
             ref=spec.ref,
@@ -227,7 +240,7 @@ def build_operator_hub(user) -> OperatorHubProjection:
         for spec in visible
     )
     return OperatorHubProjection(
-        operator_name=_operator_name(user), tiles=tiles, queue=queue, shop_name=_shop_name()
+        operator_name=_operator_name(user), tiles=tiles, queue=collected.queue, shop_name=_shop_name()
     )
 
 

@@ -61,12 +61,7 @@ const HUB = {
       { ref: "loja", label: "Loja online", description: "Abrir a loja do cliente", icon: "store", url: "/admin/shop/shop/", kind: "external", status_attention: "", status_summary: "", next_item: null },
     ],
     queue: {
-      items: [
-        ORDER_ITEM,
-        PRODUCTION_ITEM,
-      ],
       total_count: 4,
-      more_count: 2,
       server_now: new Date().toISOString(),
     },
   },

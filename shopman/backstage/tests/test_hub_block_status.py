@@ -256,7 +256,8 @@ def test_a_fila_usa_o_nome_curto_do_app(client):
 
     hub = client.get(reverse("api-backstage-hub")).json()["hub"]
 
-    item = next(item for item in hub["queue"]["items"] if item["key"] == f"gestor:order:{order.ref}")
+    item = next(tile for tile in hub["tiles"] if tile["ref"] == "gestor")["next_item"]
+    assert item["key"] == f"gestor:order:{order.ref}"
     assert item["app_label"] == "Gestor"
     # O bloco continua com o nome inteiro.
     assert next(tile for tile in hub["tiles"] if tile["ref"] == "gestor")["label"] == "Gestor de pedidos"

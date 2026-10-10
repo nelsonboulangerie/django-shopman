@@ -26,8 +26,7 @@ export interface HubTileProjection {
 
 /**
  * Uma pendência (`projections/hub_queue.py`): o item exato de uma fila, com o gesto que abre
- * o lugar exato no app certo. Já vem filtrado por permissão e ordenado
- * por urgência entre apps.
+ * o lugar exato no app certo. Já vem filtrado por permissão; é a mais urgente do app.
  */
 export interface HubQueueItemProjection {
   key: string;
@@ -55,12 +54,10 @@ export interface HubQueueItemProjection {
   slack_seconds: number;
 }
 
+/** A fila das filas resumida: os itens vão na linha de cada app (`next_item`). */
 export interface HubQueueProjection {
-  /** Os itens em foco (no máximo 6). */
-  items: HubQueueItemProjection[];
+  /** Quantas pendências o operador tem, somando todos os apps. */
   total_count: number;
-  /** O excedente, que vira número ("+N"); a fila nunca pagina. */
-  more_count: number;
   /** A hora do servidor quando a fila foi montada (ISO), para contar o tempo sem depender do relógio do dispositivo. */
   server_now: string;
 }

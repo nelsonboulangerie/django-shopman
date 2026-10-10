@@ -21,6 +21,10 @@ no máximo 6; `total_count`; `more_count`, o "+N"; `server_now`) e, em cada tile
 e `status_summary`. Cada item: `app`, `kind`, `title`, `detail`, `waiting_since`, `due_at`,
 `due_label`/`due_style`/`due_clock`, `time_mode`, `attention`, `action_label`, `url`.
 
+> Atualização 10/10/2026: com a saída de "Precisa de você" (dono, 09/10), `hub.queue` passou a
+> trazer só `total_count` e `server_now`; `items`, `more_count` e o limite de 6 saíram do
+> contrato. Cada item agora chega só pela linha do app, em `tile.next_item`.
+
 Fontes (todas já existiam; nenhuma regra nova):
 
 | app | item exato | fonte | gesto (URL) |
