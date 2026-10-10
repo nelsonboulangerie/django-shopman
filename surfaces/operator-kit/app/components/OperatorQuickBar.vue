@@ -2,7 +2,8 @@
 // A barra inferior do celular no shell da suíte: o menu RÁPIDO (dono, 08/10/2026,
 // PR #1544). A gaveta (☰, a barra lateral) é o menu completo; aqui ficam de 3 a 5
 // vagas, pela regra única de `quickBarLayout` (`suiteChrome.ts`), e uma delas vira
-// "Mais" (abre a gaveta) só quando sobra seção.
+// "Mais" (abre a gaveta) só quando sobra seção. Com uma vaga só, a barra não aparece
+// (`layout.shown`): o ☰ já dá o menu completo, e um item sozinho embaixo é ruído.
 //
 // O desenho é o exemplo oficial "With bottom tab bar" do NavigationMenu
 // (https://ui.nuxt.com/docs/components/navigation-menu#with-bottom-tab-bar): ícone em
@@ -64,6 +65,7 @@ const items = computed(() => [
   <!-- O NavigationMenu já é o `<nav>` (com o nome); este invólucro só fixa, guarda a
        área segura e some do `lg` para cima, onde a barra lateral está na tela. -->
   <div
+    v-if="layout.shown"
     class="shrink-0 bg-default pb-[env(safe-area-inset-bottom)] lg:hidden print:hidden"
     data-operator-suite-tabs
     data-focus-obstruction

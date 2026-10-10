@@ -29,6 +29,7 @@ import {
   exploreResultDescription,
   scenarioMenuItems,
 } from "~/presentation/explore";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const { config, report, freshness, pending, error, errorDetail, refresh, apply } = useBiExplore();
 const { views, save, toggleFavorite, remove } = useBiViews();
@@ -209,8 +210,6 @@ const errorActions = computed(() => [
   {
     label: "Tentar de novo",
     icon: "i-lucide-refresh-cw",
-    color: "error" as const,
-    variant: "outline" as const,
     onClick: () => void refresh(),
   },
 ]);
@@ -349,7 +348,7 @@ const errorActions = computed(() => [
         variant="subtle"
         icon="i-lucide-circle-alert"
         :title="errorDetail || 'Não deu para carregar o cruzamento.'"
-        :actions="errorActions"
+        :actions="alertActions('error', errorActions)"
         orientation="horizontal"
         role="alert"
         data-bi-explore-error

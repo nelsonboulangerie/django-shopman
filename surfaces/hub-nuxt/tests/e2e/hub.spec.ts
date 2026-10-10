@@ -26,29 +26,26 @@ test.describe("Central — launcher", () => {
     await expect(storeLink).toHaveAttribute("target", "_blank");
   });
 
-  test("Precisa de você vem no topo, com o gesto que abre o lugar exato", async ({ page }) => {
+  test("a pendência mora na linha do app e leva ao item exato; apps com pendência sobem", async ({ page }) => {
     await page.goto("/");
 
-    await expect(page.getByRole("heading", { name: /Precisa de você/i })).toBeVisible();
+    // "Precisa de você" saiu (dono, 09/10/2026).
+    await expect(page.getByRole("heading", { name: /Precisa de você/i })).toHaveCount(0);
     const action = page.getByRole("link", { name: "Abrir pedido: Pedido K7Q2 para aceitar" });
     await expect(action).toHaveAttribute("href", "http://127.0.0.1:3004/WEB-20261003-K7Q2");
     // Botão da suíte (`md`, 32 px; conjunto mínimo da fase 2).
     const box = await action.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(32);
-    await expect(page.getByText("Mais 2 esperando nos apps abaixo.")).toBeVisible();
-    // A linha de estado do bloco concorda com a fila.
+    await expect(page.getByRole("link", { name: "Resolver no contexto: Produção sem insumo suficiente" })).toBeVisible();
+    // Os apps com pendência primeiro, na ordem do registro entre si.
+    const titles = await page.locator("[data-tile-title]:visible").allInnerTexts();
+    expect(titles.map((title) => title.trim())).toEqual(["Gestor de Pedidos", "Produção", "PDV", "Compras", "Loja online"]);
+    // A linha de estado continua dizendo o que pede alguém.
     await expect(page.getByText("1 para aceitar").filter({ visible: true })).toBeVisible();
   });
 
-  test("o gesto longo não alarga o botão, e o estado bom acende o ponto verde", async ({ page }) => {
+  test("o estado bom acende o ponto verde", async ({ page }) => {
     await page.goto("/");
-
-    const widths = await page.locator("[data-hub-queue-action]:visible").evaluateAll(nodes =>
-      nodes.map(node => Math.round(node.getBoundingClientRect().width)),
-    );
-    expect(widths.length).toBe(2);
-    expect(new Set(widths).size, "todos os gestos com a mesma largura").toBe(1);
-    await expect(page.getByRole("link", { name: "Resolver no contexto: Produção sem insumo suficiente" })).toBeVisible();
 
     // O link do cartão cobre o cartão e leva a linha de estado no nome acessível.
     const pdv = page.getByRole("link", { name: /PDV/i });

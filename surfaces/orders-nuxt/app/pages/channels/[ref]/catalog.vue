@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { realtimeIndicator } from "~/presentation/board";
+import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
@@ -174,14 +175,12 @@ const phoneHeaderActions = computed(() => [
             ? 'Exibindo a última leitura disponível; a gravação está bloqueada.'
             : 'Tente novamente para consultar os inventários.'
         "
-        :actions="[
+        :actions="alertActions('error', [
           {
             label: 'Tentar de novo',
-            color: 'error',
-            variant: 'outline',
             onClick: () => refresh(),
           },
-        ]"
+        ])"
       />
       <NuxtSkeleton
         v-if="pending && !board"
