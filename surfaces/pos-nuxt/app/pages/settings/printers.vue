@@ -26,13 +26,16 @@ function save(printer: PosPrinterSetting) {
 
 <template>
   <PosSettingsShell title="Impressoras" subtitle="rolo e corte de cada balcão">
-    <div v-if="settings.error.value && !settings.data.value" class="flex flex-wrap items-center gap-3 rounded-xl border border-dashed p-4">
-      <p class="min-w-0 flex-1 op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler as impressoras. Confira a conexão e tente de novo.") }}</p>
-      <UiButton variant="outline" @click="settings.refresh()">Tentar de novo</UiButton>
-    </div>
-    <p v-else-if="!settings.data.value" class="op-body text-muted-foreground">Lendo as impressoras…</p>
+    <OperatorScreenState v-if="settings.error.value && !settings.data.value" state="error" what="as impressoras" @retry="settings.refresh()" />
+    <OperatorScreenState v-else-if="!settings.data.value" state="loading" what="as impressoras" />
     <template v-else>
-      <p v-if="!settings.data.value.printers.length" class="rounded-xl border border-dashed p-6 text-center op-body text-muted-foreground">Nenhum terminal ativo. Cadastre o terminal no Admin.</p>
+      <OperatorScreenState
+        v-if="!settings.data.value.printers.length"
+        state="empty"
+        icon="i-lucide-printer"
+        title="Nenhum terminal ativo."
+        description="Cadastre o terminal no Admin."
+      />
       <section
         v-for="printer in settings.data.value.printers"
         :key="printer.terminal_ref"
@@ -51,35 +54,48 @@ function save(printer: PosPrinterSetting) {
         <div class="grid gap-4 sm:grid-cols-2">
           <fieldset class="grid gap-2">
             <legend class="mb-1 op-label text-muted-foreground">Largura do rolo</legend>
-            <div class="inline-flex h-8 items-center gap-1 rounded-md bg-secondary p-1" role="group">
-              <button
+            <NuxtFieldGroup class="w-full" data-settings-roll>
+              <NuxtButton
                 v-for="width in settings.data.value.roll_widths"
                 :key="width"
-                type="button"
-                class="h-full flex-1 rounded px-3 op-label transition"
-                :class="drafts[printer.terminal_ref]?.roll === width ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
+                color="neutral"
+                variant="outline"
+                active-color="primary"
+                active-variant="solid"
+                :active="drafts[printer.terminal_ref]?.roll === width"
                 :aria-pressed="drafts[printer.terminal_ref]?.roll === width"
+                class="flex-1 justify-center"
+                :label="`${width} mm`"
                 @click="drafts[printer.terminal_ref]!.roll = width"
-              >{{ width }} mm</button>
-            </div>
+              />
+            </NuxtFieldGroup>
           </fieldset>
           <fieldset class="grid gap-2">
             <legend class="mb-1 op-label text-muted-foreground">Corte do papel</legend>
-            <div class="inline-flex h-8 items-center gap-1 rounded-md bg-secondary p-1" role="group">
-              <button
+            <NuxtFieldGroup class="w-full" data-settings-cut>
+              <NuxtButton
                 v-for="mode in settings.data.value.cut_modes"
                 :key="mode.value"
-                type="button"
-                class="h-full flex-1 rounded px-3 op-label transition"
-                :class="drafts[printer.terminal_ref]?.cut === mode.value ? 'bg-card font-semibold shadow-sm' : 'text-muted-foreground'"
+                color="neutral"
+                variant="outline"
+                active-color="primary"
+                active-variant="solid"
+                :active="drafts[printer.terminal_ref]?.cut === mode.value"
                 :aria-pressed="drafts[printer.terminal_ref]?.cut === mode.value"
+                class="flex-1 justify-center"
+                :label="mode.label"
                 @click="drafts[printer.terminal_ref]!.cut = mode.value"
-              >{{ mode.label }}</button>
-            </div>
+              />
+            </NuxtFieldGroup>
           </fieldset>
         </div>
         <div class="flex justify-end">
-          <UiButton :disabled="!changed(printer) || settings.saving.value === 'printer'" @click="save(printer)">Gravar impressora</UiButton>
+          <NuxtButton
+            label="Gravar impressora"
+            :loading="settings.saving.value === 'printer'"
+            :disabled="!changed(printer) || settings.saving.value === 'printer'"
+            @click="save(printer)"
+          />
         </div>
       </section>
     </template>

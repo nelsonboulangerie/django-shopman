@@ -98,25 +98,27 @@ function pickDate(iso: string) {
     <div class="grid gap-2">
       <div class="flex items-baseline justify-between gap-2">
         <span class="text-sm font-medium">Horário</span>
-        <button
+        <NuxtButton
           v-if="timeSlot"
-          type="button"
-          class="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          color="neutral"
+          variant="ghost"
+          class="px-1 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
           @click="emit('update:timeSlot', '')"
         >
           A combinar
-        </button>
+        </NuxtButton>
       </div>
 
       <!-- A janela impossível APARECE, desabilitada, com o motivo. Sumir com ela
            deixa o operador sem resposta para "e às 9h não dá?", e ele acaba
            prometendo por fora do sistema. -->
       <div v-if="windows.length" class="grid gap-1.5 sm:grid-cols-2">
-        <button
+        <NuxtButton
           v-for="option in windows"
           :key="option.ref"
-          type="button"
-          class="rounded-md border px-3 py-2 text-left text-sm transition"
+          color="neutral"
+          variant="ghost"
+          class="rounded-md border px-3 py-2 text-left text-sm transition flex-col items-start gap-0 font-normal"
           :class="[
             option.enabled === false ? 'cursor-not-allowed border-dashed opacity-50' : 'hover:bg-accent',
             timeSlot === option.ref ? 'border-primary bg-primary/5 font-semibold' : 'border-border',
@@ -130,7 +132,7 @@ function pickDate(iso: string) {
           <span v-if="option.enabled === false && option.reason" class="block text-xs opacity-80">
             {{ option.reason }}
           </span>
-        </button>
+        </NuxtButton>
       </div>
       <p v-else class="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
         {{ emptyMessage }}

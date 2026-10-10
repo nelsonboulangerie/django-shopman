@@ -445,6 +445,30 @@ describe("QcCloseScreen — classificação por grau", () => {
     expect(nativeConfirm).not.toHaveBeenCalled();
   });
 
+  it("expõe o que foi digitado para a página segurar o ‹ › entre lotes", async () => {
+    const wrapper = mountQc();
+    const screen = wrapper.vm as unknown as {
+      isDirty: boolean;
+      confirmDiscardChanges: (action: "leave" | "switch") => Promise<boolean>;
+    };
+    expect(screen.isDirty).toBe(false);
+    await expect(screen.confirmDiscardChanges("switch")).resolves.toBe(true);
+    expect(confirmDiscard).not.toHaveBeenCalled();
+
+    await buttonByText(wrapper, "Razoável")!.trigger("click");
+    await enter(wrapper, "5");
+    expect(screen.isDirty).toBe(true);
+    confirmDiscard.mockResolvedValue(false);
+    await expect(screen.confirmDiscardChanges("switch")).resolves.toBe(false);
+    expect(confirmDiscard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Descartar as quantidades e os motivos informados?",
+        confirmLabel: "Descartar e trocar de lote",
+      }),
+    );
+    wrapper.unmount();
+  });
+
   it("desabilita o numpad enquanto Normal é apenas o saldo automático", () => {
     const wrapper = mountQc();
 

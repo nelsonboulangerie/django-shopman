@@ -82,7 +82,7 @@ onBeforeUnmount(() => {
 
 // O Nuxt renderiza o error.vue NO LUGAR do app.vue: o template do título tem
 // que ser instalado aqui também, senão a janela perde o nome do app.
-useOperatorWindowTitle();
+const { label: appLabel } = useOperatorWindowTitle();
 useHead({ title: presentation.value.title });
 
 // As saídas da tela de erro, no conjunto mínimo: voltar à casa (secundária) e tentar de
@@ -110,6 +110,9 @@ const errorActions = computed(() => [
 <template>
   <!-- Sem o shell da suíte: o Nuxt desenha esta página NO LUGAR do app.vue. -->
   <main class="grid min-h-screen place-items-center bg-background p-4 text-foreground">
+    <!-- O `NuxtEmpty` só desenha `h2`: o `h1` da página é o nome do app (para o leitor
+         de tela, que navega por título), e o erro fica abaixo dele. -->
+    <h1 v-if="appLabel" class="sr-only">{{ appLabel }}</h1>
     <NuxtEmpty
       class="w-full max-w-md"
       :icon="presentation.icon"

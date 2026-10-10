@@ -38,9 +38,10 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
   <!-- Tile da v4 (`pos-sale4.html`): faixa de 92 px na cor da coleção com o ícone e o
        SKU, nome e preço embaixo. Com foto, a foto ocupa a faixa; se ela não carregar,
        volta o desenho da coleção (antes ficava o texto alternativo quebrado). -->
-  <button
-    type="button"
-    class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0"
+  <NuxtButton
+    color="neutral"
+    variant="ghost"
+    class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0 items-stretch gap-0 p-0 font-normal"
     :class="[
       qty > 0 ? 'border-primary' : 'border-border',
       opensChoice ? 'shadow-[4px_4px_0_-1px_var(--card),4px_4px_0_0_var(--border)]' : '',
@@ -105,5 +106,5 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
         </span>
       </span>
     </div>
-  </button>
+  </NuxtButton>
 </template>

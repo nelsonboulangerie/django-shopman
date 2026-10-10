@@ -58,7 +58,7 @@ export const PREP_TICKETS = [
     timer_class: "timer-warning",
     status: "in_progress",
     status_label: "Em preparo",
-    kitchen_note: "Alergia a castanhas — separar utensílios.",
+    kitchen_note: "Alergia a castanhas: separar utensílios.",
     customer_note: "Pão bem tostado, por favor.",
     items: [
       item("1", "Sanduíche de presunto cru e brie no pão de fermentação natural", {
@@ -109,7 +109,7 @@ export const PREP_TICKETS = [
     fulfillment_icon: "local_shipping",
     elapsed_seconds: 90,
     test_order_label: "Pedido de teste do iFood",
-    items: [item("1", "Baguete tradicional — NÃO ENTREGAR")],
+    items: [item("1", "Baguete tradicional (NÃO ENTREGAR)")],
   }),
 ];
 

@@ -198,15 +198,16 @@ onBeforeUnmount(() => {
       aria-label="Clientes encontrados"
       class="grid max-h-56 gap-0.5 overflow-auto rounded-md border p-1"
     >
-      <button
+      <NuxtButton
         v-for="(result, index) in results"
-        :id="optionId(index)"
         :key="result.ref"
-        type="button"
+        color="neutral"
+        variant="ghost"
+        :id="optionId(index)"
         role="option"
         :aria-selected="index === highlighted"
         :disabled="busy"
-        class="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left transition hover:bg-accent"
+        class="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left transition hover:bg-accent font-normal"
         :class="index === highlighted ? 'bg-accent' : ''"
         @mousemove="highlighted = index"
         @click="pick(result)"
@@ -219,7 +220,7 @@ onBeforeUnmount(() => {
           <OperatorKbd v-if="index === highlighted"  aria-hidden="true">Enter</OperatorKbd>
           <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
         </span>
-      </button>
+      </NuxtButton>
     </div>
     <!-- SEM RESULTADO: o que fazer agora vira BOTÃO, com o resultado no rótulo.
          O `<kbd>` é affordance da mesma ação — a tecla nunca promete outra

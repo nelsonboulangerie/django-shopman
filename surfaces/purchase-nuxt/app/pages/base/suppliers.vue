@@ -81,7 +81,7 @@ const headerActions = [
         />
       </template>
       <template #filters-primary>
-        <PurchaseBaseSections current="suppliers" :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
+        <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
       </template>
       <template #filters>
         <OperatorTableView table-key="purchase-suppliers" />

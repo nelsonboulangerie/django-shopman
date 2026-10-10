@@ -488,7 +488,8 @@ border bg-card` (3), pontos de estado `size-[7px] rounded-full` (2) · (e) 19 ·
 ### 2.8 Mock visual
 
 `tests/e2e/mockBackend.mjs` (88, :8797): devolve `{hub}` com 5 tiles e 2 itens de fila
-(`total_count 4`, `more_count 2`) e `{}` para todo o resto. Build de produção:
+(`total_count 4`, `more_count 2`; desde 10/10/2026 a fila só traz `total_count` e
+`server_now`, e os itens vão em `tile.next_item`) e `{}` para todo o resto. Build de produção:
 `playwright.config.ts:19-37` (`nuxt build && node .output/server/index.mjs` :3001,
 `NUXT_DJANGO_BASE_URL` → :8797). Lacunas: `/operator/session/` responde `{}` (sem
 operador, sem posto, sem trava: estados 2, 3, 20 sem fixture); nenhum estado de falha

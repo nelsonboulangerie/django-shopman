@@ -91,8 +91,9 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
     <nav aria-label="Etapas da encomenda">
       <ol class="grid gap-1 rounded-lg border bg-muted/30 p-1" :style="{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }">
         <li v-for="(step, index) in steps" :key="step.key">
-          <button
-            type="button"
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
             data-order-step-nav
             class="flex min-h-8 w-full items-center justify-center gap-2 rounded-md px-2 text-xs font-medium transition sm:justify-start"
             :class="step.key === current ? 'bg-background text-foreground shadow-sm' : step.ready ? 'text-success' : 'text-muted-foreground'"
@@ -109,7 +110,7 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
               <template v-else>{{ index + 1 }}</template>
             </span>
             <span class="hidden truncate text-left sm:inline">{{ step.label }}</span>
-          </button>
+          </NuxtButton>
         </li>
       </ol>
     </nav>

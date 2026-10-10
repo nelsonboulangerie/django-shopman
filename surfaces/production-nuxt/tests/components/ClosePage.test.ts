@@ -75,6 +75,9 @@ function order(
 function installGlobals() {
   vi.stubGlobal("computed", computed);
   vi.stubGlobal("ref", ref);
+  vi.stubGlobal("onBeforeRouteUpdate", (guard: RouteGuard) => {
+    routeGuard = guard;
+  });
   vi.stubGlobal("watch", watch);
   vi.stubGlobal("onMounted", onMounted);
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
@@ -195,11 +198,18 @@ const OperatorRecordNavStub = {
   props: ["trail", "current", "to", "previousLabel", "nextLabel"],
   template: "<nav data-record-nav />",
 };
-// A tela de fechamento é auto-importada pelo Nuxt; aqui, um stub com nome e props.
+// A tela de fechamento é auto-importada pelo Nuxt; aqui, um stub com nome e props, e
+// a pergunta de descarte que a tela expõe para a página.
+type RouteGuard = (to: { query: Record<string, string> }) => boolean | Promise<boolean>;
+let routeGuard: RouteGuard | null = null;
+const confirmDiscardChanges = vi.fn(async (_action: "leave" | "switch") => true);
 const QcCloseScreenStub = {
   name: "QcCloseScreen",
   props: ["title", "subtitle", "planned", "started", "grades", "defects", "submitting"],
   emits: ["back", "confirm"],
+  setup(_props: unknown, { expose }: { expose: (exposed: Record<string, unknown>) => void }) {
+    expose({ confirmDiscardChanges });
+  },
   template: "<section data-qc-screen />",
 };
 const mountPage = () => {
@@ -306,6 +316,22 @@ describe("Fechamento — o lote mora na URL", () => {
     orders.value = [...orders.value, order(5, "Pão de forma")];
     await flushPromises();
     expect(remember).not.toHaveBeenCalled();
+  });
+
+  it("o ‹ › para outro lote pergunta antes de descartar o que foi digitado", async () => {
+    route.query = { lot: "1" };
+    mountPage();
+    await flushPromises();
+    expect(routeGuard).not.toBeNull();
+
+    confirmDiscardChanges.mockResolvedValueOnce(false);
+    await expect(routeGuard!({ query: { lot: "4" } })).resolves.toBe(false);
+    expect(confirmDiscardChanges).toHaveBeenLastCalledWith("switch");
+
+    // Sair para o painel (sem lote) não pergunta aqui: o voltar já perguntou na tela.
+    confirmDiscardChanges.mockClear();
+    expect(await routeGuard!({ query: {} })).toBe(true);
+    expect(confirmDiscardChanges).not.toHaveBeenCalled();
   });
 
   it("voltar sai do lote substituindo a entrada dele no histórico", async () => {
