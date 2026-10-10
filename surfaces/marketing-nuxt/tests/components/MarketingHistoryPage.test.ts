@@ -4,8 +4,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import HistoryPage from "~/pages/history.vue";
 import OperatorScreenState from "../../../operator-kit/app/components/OperatorScreenState.vue";
 
-// Enviados na fase 2: os quatro recortes viram `NuxtSelect` rotulados no `#filters` do
-// cabeçalho (no celular, o painel "Filtros"), cada recorte fora do padrão vira chip
+// Enviados na fase 2: os quatro recortes moram no painel de filtros único da suíte
+// (`OperatorFilterPanel`, com os favoritos), cada recorte fora do padrão vira chip
 // removível, e o erro com lista na tela mantém as linhas e diz isso.
 const filters = ref<Record<string, string>>({ period: "all" });
 const announcements = ref<unknown[]>([]);
@@ -14,6 +14,7 @@ const loadMoreError = ref<unknown>(null);
 const loading = ref(false);
 const hasMore = ref(false);
 const setFilter = vi.fn();
+const replaceFilters = vi.fn();
 const clearFilters = vi.fn();
 const refresh = vi.fn();
 const loadMore = vi.fn();
@@ -33,7 +34,14 @@ const announcement = {
 const HeaderStub = {
   props: ["title", "actions", "actionsLabel", "activeFilters", "clearFilters", "alerts"],
   template:
-    '<header><h1>{{ title }}</h1><slot name="status" /><div data-filters><slot name="filters" /></div><slot name="filters-end" /></header>',
+    '<header><h1>{{ title }}</h1><slot name="status" /><div data-filters><slot name="filters" /><slot name="filter-panel" /></div><slot name="filters-end" /></header>',
+};
+
+const PanelStub = {
+  name: "OperatorFilterPanel",
+  props: ["modelValue", "dimensions", "surface", "screen"],
+  emits: ["update:modelValue"],
+  template: "<div data-panel />",
 };
 
 beforeAll(() => {
@@ -66,6 +74,7 @@ beforeAll(() => {
       loadMore,
       refresh,
       setFilter,
+      replaceFilters,
       clearFilters,
     }),
   });
@@ -78,7 +87,7 @@ beforeEach(() => {
   loadMoreError.value = null;
   loading.value = false;
   hasMore.value = false;
-  for (const fn of [setFilter, clearFilters, refresh, loadMore]) fn.mockReset();
+  for (const fn of [setFilter, replaceFilters, clearFilters, refresh, loadMore]) fn.mockReset();
 });
 
 function render() {
@@ -90,30 +99,32 @@ function render() {
         NuxtLink: RouterLinkStub,
         OperatorLiveStatus: true,
         OperatorPageHeader: HeaderStub,
+        OperatorFilterPanel: PanelStub,
       },
     },
   });
 }
 
 describe("Enviados", () => {
-  it("põe os quatro recortes como Select rotulado, e a escolha vai para a URL", async () => {
+  it("põe os quatro recortes no painel de filtros, com os favoritos de Enviados", async () => {
+    filters.value = { period: "7d", platform: "instagram" };
     const wrapper = render();
-    const fields = wrapper.findAll("[data-filters] [data-history-chip]");
-    const selects = wrapper.findAll("[data-filters] select");
+    const panel = wrapper.getComponent(PanelStub);
 
-    expect(selects).toHaveLength(4);
-    expect(fields.map((field) => field.get("span").text())).toEqual([
+    expect(wrapper.find("[data-filters] select").exists()).toBe(false);
+    expect(panel.props("surface")).toBe("marketing");
+    expect(panel.props("screen")).toBe("history");
+    expect((panel.props("dimensions") as Array<{ label: string }>).map((d) => d.label)).toEqual([
       "Situação",
       "Plataforma",
       "Criado em",
       "Origem da decisão",
     ]);
-    expect(wrapper.find("[data-filters] button").exists()).toBe(false);
+    expect(panel.props("modelValue")).toEqual({ platform: ["instagram"], period: ["7d"] });
 
-    await selects[2]!.setValue("7d");
-    expect(setFilter).toHaveBeenCalledWith("period", "7d");
-    await selects[1]!.setValue("all");
-    expect(setFilter).toHaveBeenLastCalledWith("platform", "");
+    // Um favorito (ou o painel) troca os quatro de uma vez.
+    panel.vm.$emit("update:modelValue", { outcome: ["unknown"] });
+    expect(replaceFilters).toHaveBeenCalledWith({ outcome: "unknown", platform: "", period: "", actor: "" });
   });
 
   it("mostra cada recorte fora do padrão como chip removível, e Limpar limpa todos", () => {

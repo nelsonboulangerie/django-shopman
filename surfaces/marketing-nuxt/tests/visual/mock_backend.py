@@ -667,6 +667,10 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
             return
+        # Os favoritos do painel de filtros (Enviados, Campanhas): nenhum na matriz.
+        if path == "/api/v1/backstage/saved-views/":
+            self._send(200, {"views": []})
+            return
         if path == "/api/v1/backstage/marketing/":
             if scenario == "login-expired":
                 self._send(401, {"detail": "Sua sessão terminou."})

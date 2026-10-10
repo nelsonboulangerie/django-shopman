@@ -4,6 +4,8 @@
 // linhas já chegam prontas de tela (qty_*, yield_rate, duration pré-formatados)
 // — esta camada só deriva rótulos, a query dos filtros e o link do CSV.
 
+import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
+
 export type ReportKind =
   "history" | "operator_productivity" | "recipe_waste" | "quality";
 export type ReportSort =
@@ -85,4 +87,60 @@ export function reportDateError(dateFrom: string, dateTo: string): string {
 export function capacityLabel(capacityPercent: number | null): string {
   if (capacityPercent === null || capacityPercent === undefined) return "";
   return `${capacityPercent}%`;
+}
+
+// ── O painel de filtros (fase 2, `OperatorFilterPanel`) ─────────────────────
+// Ficha técnica, posto e operador são os recortes do painel; o período mora na Data
+// dele. A ordenação não é recorte: fica ao lado, no seletor dela.
+
+/** Os períodos que o relatório oferece (a API aceita até 93 dias). */
+export const REPORT_PERIOD_PRESETS = ["day", "week", "month", "7d", "28d"] as const;
+
+type ReportRecortes = Pick<ReportFiltersQuery, "recipe_ref" | "position_ref" | "operator_ref">;
+
+const REPORT_DIMENSION_KEYS: Record<string, keyof ReportRecortes> = {
+  recipe: "recipe_ref",
+  position: "position_ref",
+  operator: "operator_ref",
+};
+
+/** As dimensões do painel: ficha técnica e posto (lista), operador (texto digitado). */
+export function reportDimensions(
+  recipes: readonly { ref: string; name: string }[],
+  positions: readonly { ref: string; name: string }[],
+): FilterDimension[] {
+  return [
+    {
+      id: "recipe",
+      label: "Ficha técnica",
+      type: "single-select",
+      options: recipes.map((recipe) => ({ value: recipe.ref, label: recipe.name })),
+    },
+    {
+      id: "position",
+      label: "Posto",
+      type: "single-select",
+      options: positions.map((position) => ({ value: position.ref, label: position.name })),
+    },
+    { id: "operator", label: "Operador", type: "text", options: [], placeholder: "Nome ou usuário" },
+  ];
+}
+
+/** Os recortes do rascunho na forma do painel (vazio não é recorte). */
+export function reportPanelFilters(draft: ReportRecortes): ActiveFilters {
+  const out: ActiveFilters = {};
+  for (const [id, key] of Object.entries(REPORT_DIMENSION_KEYS)) {
+    const value = draft[key].trim();
+    if (value) out[id] = [value];
+  }
+  return out;
+}
+
+/** O recorte do painel (ou de um favorito) de volta para o rascunho: os três de uma vez. */
+export function reportRecortesFromPanel(active: ActiveFilters): ReportRecortes {
+  return {
+    recipe_ref: active.recipe?.[0] ?? "",
+    position_ref: active.position?.[0] ?? "",
+    operator_ref: active.operator?.[0] ?? "",
+  };
 }

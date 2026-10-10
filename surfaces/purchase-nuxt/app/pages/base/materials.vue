@@ -6,12 +6,21 @@
 import type { EnrichedMaterial } from "~/types/purchase";
 import { coverageLabel, formatMoney, formatQty, formatStockOnHand, skuRoleBadges } from "~/presentation/purchase";
 import { MATERIALS_TRAIL, baseSectionPath, materialPath, urgentLabel } from "~/presentation/purchaseSections";
-import { TONE_BADGE, TONE_LABEL, TONE_RANK, plural } from "~/presentation/purchaseUi";
+import {
+  MATERIAL_ATTENTION_TONES,
+  TONE_BADGE,
+  TONE_LABEL,
+  TONE_RANK,
+  isAttentionRecorte,
+  materialDimensions,
+  plural,
+} from "~/presentation/purchaseUi";
+import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 
 const route = useRoute();
 const {
   query,
-  onlyAlerts,
+  materialFilters,
   materials,
   suppliers,
   enrichedMaterials,
@@ -80,9 +89,31 @@ watch(
   { immediate: true },
 );
 
-const attentionCount = computed(() => enrichedMaterials.value.filter((material) => material.tone !== "ok").length);
+// O painel de filtros único da suíte (Situação e Categoria, com os favoritos da pessoa)
+// e, na mesa, o filtro rápido "Pedem atenção" (a Situação em Comprar ou Revisar).
+const dimensions = computed(() => materialDimensions(enrichedMaterials.value));
+const quickItems = computed(() => [
+  {
+    key: "attention",
+    label: "Pedem atenção",
+    icon: "i-lucide-triangle-alert",
+    count: enrichedMaterials.value.filter((material) => material.tone !== "ok").length,
+  },
+]);
+const quickModel = computed<string[]>({
+  get: () => (isAttentionRecorte(materialFilters.value) ? ["attention"] : []),
+  set: (keys) => {
+    const next = { ...materialFilters.value };
+    delete next.tone;
+    if (keys.includes("attention")) next.tone = [...MATERIAL_ATTENTION_TONES];
+    materialFilters.value = next;
+  },
+});
+// Os chips do cabeçalho no celular (na mesa, os do painel, ao lado do botão).
 const activeFilters = computed(() =>
-  onlyAlerts.value ? [{ key: "attention", label: "Pedem atenção", remove: () => (onlyAlerts.value = false) }] : [],
+  filterBarActiveFilters(dimensions.value, materialFilters.value, (next) => {
+    materialFilters.value = next;
+  }),
 );
 
 // O que a Base precisa que a pessoa saiba agora, cada aviso levando aonde se resolve.
@@ -151,6 +182,7 @@ const saveLabel = computed(() =>
       actions-label="Mais ações da Base"
       :alerts="alerts"
       :active-filters="activeFilters"
+      desk-only-filters
     >
       <template #status>
         <PurchaseReadStatus />
@@ -178,18 +210,24 @@ const saveLabel = computed(() =>
       <template #filters-primary>
         <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
       </template>
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="materialFilters"
+          :dimensions="dimensions"
+          surface="purchase"
+          screen="materials"
+          data-base-filters
+        />
+      </template>
+      <!-- Na mesa: os filtros rápidos e a forma da tabela. No celular, os rápidos moram no
+           painel (Situação) e a forma sai (as colunas de apoio já somem). -->
       <template #filters>
-        <NuxtButton
-          icon="i-lucide-triangle-alert"
-          :label="`Pedem atenção (${attentionCount})`"
-          color="neutral"
-          variant="outline"
-          :active="onlyAlerts"
-          active-variant="solid"
-          active-color="primary"
-          :aria-pressed="onlyAlerts"
+        <OperatorQuickFilters
+          v-model="quickModel"
+          :items="quickItems"
+          multiple
+          label="Insumos que pedem atenção"
           data-base-attention
-          @click="onlyAlerts = !onlyAlerts"
         />
         <OperatorTableView table-key="purchase-materials" />
       </template>
@@ -212,7 +250,7 @@ const saveLabel = computed(() =>
             view-key="purchase-materials"
             caption="Insumos da Base"
             empty-icon="i-lucide-package-search"
-            :empty-title="!materials.length ? 'Nenhum insumo cadastrado na Base.' : query.trim() ? `Nenhum insumo com “${query.trim()}”.` : 'Nenhum insumo pede atenção.'"
+            :empty-title="!materials.length ? 'Nenhum insumo cadastrado na Base.' : query.trim() ? `Nenhum insumo com “${query.trim()}”.` : 'Nenhum insumo neste recorte.'"
             data-base-table
           >
             <template #name-cell="{ row }">

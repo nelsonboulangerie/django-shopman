@@ -19,6 +19,8 @@ import type {
   SupplierMaterialCost,
 } from "~/types/purchase";
 import { PURCHASE_API_ENDPOINTS, usePurchaseApi } from "~/composables/usePurchaseApi";
+import { matchesMaterialFilters } from "~/presentation/purchaseUi";
+import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import {
   costBatchLineErrors as buildCostBatchLineErrors,
   costBatchPayload as buildCostBatchPayload,
@@ -86,7 +88,9 @@ export function usePurchaseDesk() {
   const view = useState<PurchaseView>("purchase-view", () => "panel");
   const baseView = useState<PurchaseBaseView>("purchase-base-view", () => "materials");
   const query = useState("purchase-query", () => "");
-  const onlyAlerts = useState("purchase-only-alerts", () => false);
+  // O recorte de Base · Insumos (o painel de filtros): mora no estado da sessão, não na
+  // URL, porque abrir o insumo ao lado troca a rota e o recorte precisa ficar.
+  const materialFilters = useState<ActiveFilters>("purchase-material-filters", () => ({}));
   const selectedMaterialSku = useState("purchase-selected-material", () => "");
   const selectedSupplierRef = useState("purchase-selected-supplier", () => "");
   const noteMaterialSku = useState("purchase-note-material", () => "");
@@ -194,8 +198,7 @@ export function usePurchaseDesk() {
         material.sku.toLowerCase().includes(term) ||
         material.name.toLowerCase().includes(term) ||
         material.category.toLowerCase().includes(term);
-      const alertMatch = !onlyAlerts.value || material.tone !== "ok";
-      return matches && alertMatch;
+      return matches && matchesMaterialFilters(material, materialFilters.value);
     });
   });
 
@@ -1189,7 +1192,7 @@ export function usePurchaseDesk() {
     view,
     baseView,
     query,
-    onlyAlerts,
+    materialFilters,
     selectedMaterialSku,
     selectedSupplierRef,
     noteMaterialSku,

@@ -147,6 +147,21 @@ export function useCampaignHistory() {
     await router.replace({ query });
   }
 
+  /** Os quatro recortes de uma vez (o painel de filtros e o favorito trocam vários). */
+  async function replaceFilters(
+    values: Partial<Record<MarketingHistoryFilterName, string>>,
+  ) {
+    const query = Object.fromEntries(
+      Object.entries(route.query).filter(
+        ([key]) => key !== "cursor" && !(key in values),
+      ),
+    );
+    for (const [name, value] of Object.entries(values)) {
+      if (value && !(name === "period" && value === "all")) query[name] = value;
+    }
+    await router.replace({ query });
+  }
+
   async function clearFilters() {
     const historyKeys = new Set([
       "outcome",
@@ -175,6 +190,7 @@ export function useCampaignHistory() {
     loadMore,
     refresh,
     setFilter,
+    replaceFilters,
     clearFilters,
   };
 }

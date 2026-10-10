@@ -128,6 +128,14 @@ SCREENS: dict[tuple[str, str], Screen] = {
     # As Encomendas do PDV: o balcão as lê (a lista pede também `shop.manage_orders`,
     # que o grupo Caixa tem; o favorito é do balcão).
     ("pos", "preorders"): Screen("cashman.operate_pos", screen_query),
+    # Marketing: Enviados e Campanhas são leitura do cockpit (a mesma `view_marketing`
+    # que abre as duas listas na API).
+    ("marketing", "history"): Screen("shop.view_marketing", screen_query),
+    ("marketing", "campaigns"): Screen("shop.view_marketing", screen_query),
+    # Relatórios da Produção: a perm fina de gestor (`can_view_reports`).
+    ("production", "reports"): Screen("backstage.view_production_reports", screen_query),
+    # Compras, Base · Insumos: quem opera as compras.
+    ("purchase", "materials"): Screen("backstage.operate_purchase", screen_query),
 }
 
 

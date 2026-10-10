@@ -161,6 +161,40 @@ def test_pos_preorders_keeps_favorites_for_the_counter(client, gestor):
     assert client.get(url, preorders).status_code == 403
 
 
+@pytest.mark.parametrize(
+    ("surface", "screen", "permission", "query"),
+    [
+        ("marketing", "history", "shop.view_marketing", {"filters": {"outcome": ["unknown"], "period": ["7d"]}}),
+        ("marketing", "campaigns", "shop.view_marketing", {"filters": {"state": ["active"], "platform": ["whatsapp"]}}),
+        (
+            "production",
+            "reports",
+            "backstage.view_production_reports",
+            {"filters": {"recipe": ["baguete"], "operator": ["ana"]}, "period": {"preset": "28d"}},
+        ),
+        ("purchase", "materials", "backstage.operate_purchase", {"filters": {"tone": ["urgent", "watch"]}}),
+    ],
+)
+@pytest.mark.django_db
+def test_list_screens_of_the_suite_keep_favorites_under_their_own_permission(
+    client, gestor, surface, screen, permission, query
+):
+    """Enviados, Campanhas, Relatórios da Produção e Insumos do Compras guardam favorito
+    com a permissão de quem lê a tela; quem não a tem não guarda."""
+    url = reverse(LIST)
+    target = {"surface": surface, "screen": screen}
+    reader = _user(f"leitor-{surface}-{screen}", permission)
+    client.force_login(reader)
+    saved = client.post(url, {**target, "name": "Meu recorte", "query": query, "pinned": True}, content_type="application/json")
+    assert saved.status_code == 200, saved.content
+    views = client.get(url, target).json()["views"]
+    assert [(view["name"], view["pinned"], view["query"]["filters"]) for view in views] == [
+        ("Meu recorte", True, query["filters"])
+    ]
+    client.force_login(gestor)
+    assert client.get(url, target).status_code == 403
+
+
 @pytest.mark.django_db
 def test_someone_elses_favorite_does_not_exist(client, gestor):
     client.force_login(gestor)

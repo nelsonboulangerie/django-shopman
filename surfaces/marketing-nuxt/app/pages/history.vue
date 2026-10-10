@@ -1,22 +1,21 @@
 <script setup lang="ts">
 // Enviados: o que já saiu (ou tentou sair), do mais novo ao mais antigo, com o resultado
-// por plataforma. Os quatro recortes de hoje (Situação, Plataforma, Criado em, Origem da
-// decisão) são `NuxtSelect` rotulados no `#filters` do cabeçalho: na mesa ficam na linha,
-// no celular vão para o painel "Filtros" (WP-FASE2, "Período nas listas mora no painel").
-// Os valores e a URL são os de `useCampaignHistory`.
+// por plataforma. Os quatro recortes (Situação, Plataforma, Criado em, Origem da decisão)
+// moram no painel de filtros único da suíte (`OperatorFilterPanel`, com os favoritos da
+// pessoa): na mesa, chips ao lado do botão; no celular, os chips do cabeçalho. Os valores
+// e a URL são os de `useCampaignHistory`.
 import { choiceLabels, formatCount } from "~/presentation/campaign";
 import {
-  HISTORY_FILTERS,
   historyActiveFilters,
   historyActorLabel,
-  historyFilterQueryValue,
-  historyFilterValue,
+  historyDimensions,
+  historyFiltersFromPanel,
   historyHref,
   historyLinkLabel,
   historyOccurredAt,
   historySubject,
+  historyPanelFilters,
   historyWhen,
-  type HistoryFilterName,
 } from "~/presentation/marketingHistory";
 import {
   deliveryCountItems,
@@ -27,6 +26,7 @@ import {
   platformSwitchedOff,
 } from "~/presentation/marketingResult";
 import type { AnnouncementProjectionV2 } from "~/types/campaign";
+import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 type PlatformDelivery = AnnouncementProjectionV2["delivery"]["platforms"][number];
@@ -64,6 +64,7 @@ const {
   loadMore,
   refresh,
   setFilter,
+  replaceFilters,
   clearFilters,
 } = useCampaignHistory();
 // O assunto diz o NOME do produto, não o SKU: o rótulo mora em `options.products`.
@@ -84,9 +85,13 @@ function state(announcement: AnnouncementProjectionV2) {
   return deliveryStatePresentation(announcement.delivery.state, announcement.state);
 }
 
-function changeFilter(name: HistoryFilterName, value: unknown) {
-  void setFilter(name, historyFilterQueryValue(String(value ?? "")));
-}
+// O painel de filtros lê e grava o mesmo recorte da URL; aplicar um favorito troca os
+// quatro de uma vez.
+const dimensions = historyDimensions();
+const panelFilters = computed<ActiveFilters>({
+  get: () => historyPanelFilters(filters.value),
+  set: (next) => void replaceFilters(historyFiltersFromPanel(next)),
+});
 
 // Um chip removível por recorte fora do padrão ("Criado em: Últimos 7 dias").
 const activeFilters = computed(() =>
@@ -165,23 +170,14 @@ useHead({ title: "Enviados" });
           <OperatorLiveStatus :tone="live.tone" :time="live.time" :label="live.label" :detail="live.detail" />
         </span>
       </template>
-      <template #filters>
-        <NuxtFormField
-          v-for="filter in HISTORY_FILTERS"
-          :key="filter.name"
-          :label="filter.label"
-          orientation="horizontal"
-          class="gap-2"
-          :data-history-chip="filter.name"
-        >
-          <NuxtSelect
-            :model-value="historyFilterValue(filters[filter.name])"
-            :items="filter.options"
-            class="min-w-40"
-            :data-history-filter="filter.name"
-            @update:model-value="changeFilter(filter.name, $event)"
-          />
-        </NuxtFormField>
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="dimensions"
+          surface="marketing"
+          screen="history"
+          data-history-filters
+        />
       </template>
       <template v-if="announcements.length" #filters-end>
         <span
