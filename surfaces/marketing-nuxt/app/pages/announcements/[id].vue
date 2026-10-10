@@ -41,6 +41,7 @@ import { clockLabel, decisionTitle, remainingLabel } from "~/presentation/decisi
 import type { DecisionItem } from "~/types/decisions";
 import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
 import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
+import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 
 const route = useRoute();
 const pk = computed(() => Number(route.params.id));
@@ -515,23 +516,19 @@ useHead({ title: "Anúncio" });
           role="status"
           title="Sua sessão voltou. A decisão não foi enviada."
           description="Seu texto e sua escolha estão guardados. Retome para confirmar de novo."
-          :actions="[
+          :actions="alertActions('warning', [
             {
               label: confirmingDecision ? 'Retomando…' : 'Retomar e reconfirmar',
-              color: 'warning',
-              variant: 'outline',
               loading: confirmingDecision,
               disabled: confirmingDecision,
               onClick: resumeServerDecision,
             },
             {
               label: 'Agora não',
-              color: 'warning',
-              variant: 'outline',
               disabled: confirmingDecision,
               onClick: cancelServerDecision,
             },
-          ]"
+          ])"
           data-review-reauthentication
         />
         <NuxtAlert
@@ -548,17 +545,15 @@ useHead({ title: "Anúncio" });
           variant="subtle"
           :icon="decisionNotice.icon"
           :title="decisionNotice.title"
-          :actions="trackingExhausted && !trackingDelivery
+          :actions="alertActions(OUTCOME_COLOR[decisionNotice.tone], trackingExhausted && !trackingDelivery
             ? [
               {
                 label: 'Atualizar',
                 icon: 'i-lucide-refresh-cw',
-                color: OUTCOME_COLOR[decisionNotice.tone],
-                variant: 'outline',
                 onClick: trackDeliveryUntilSettled,
               },
             ]
-            : []"
+            : [])"
           role="status"
           tabindex="-1"
           class="scroll-mt-4 outline-none"

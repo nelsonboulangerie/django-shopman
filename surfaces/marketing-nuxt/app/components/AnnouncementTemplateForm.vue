@@ -16,6 +16,7 @@ import {
   googleBusinessEdits,
   googleBusinessOptions,
 } from "~/presentation/googleBusinessPost";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   template: AnnouncementTemplate | null; // null = criando
@@ -376,15 +377,13 @@ function submit() {
         variant="subtle"
         icon="i-lucide-image-off"
         title="Campanhas que incluírem Instagram ficarão bloqueadas: o formato escolhido exige uma imagem."
-        :actions="[
+        :actions="alertActions('warning', [
           {
             label: 'Usar a foto do produto',
-            color: 'warning',
-            variant: 'outline',
             size: 'md',
             onClick: () => (imageSource = 'product'),
           },
-        ]"
+        ])"
       />
       <p
         v-else-if="imageSource === 'product' && instagramNeedsMedia"
@@ -411,15 +410,13 @@ function submit() {
         icon="i-lucide-cloud-off"
         title="Não foi possível carregar os formatos que o Shopman consegue publicar."
         description="Atualize os formatos; este modelo não será salvo no escuro."
-        :actions="[
+        :actions="alertActions('error', [
           {
             label: 'Atualizar os formatos',
-            color: 'error',
-            variant: 'outline',
             size: 'md',
             onClick: () => emit('reload'),
           },
-        ]"
+        ])"
       />
       <PlatformCompositionEditor
         v-for="capability in platformCapabilities"

@@ -27,6 +27,7 @@ import {
   platformSwitchedOff,
 } from "~/presentation/marketingResult";
 import type { AnnouncementProjectionV2 } from "~/types/campaign";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 type PlatformDelivery = AnnouncementProjectionV2["delivery"]["platforms"][number];
 
@@ -336,15 +337,13 @@ useHead({ title: "Enviados" });
               icon="i-lucide-circle-alert"
               title="Não foi possível carregar a próxima página."
               :description="`Os ${announcements.length} resultados acima e os seus filtros continuam na tela.`"
-              :actions="[
+              :actions="alertActions('error', [
                 {
                   label: 'Tentar de novo',
-                  color: 'error',
-                  variant: 'outline',
                   size: 'md',
                   onClick: () => void loadMore(),
                 },
-              ]"
+              ])"
               role="alert"
             />
           </div>

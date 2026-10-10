@@ -5,6 +5,7 @@ import {
   googleSceneDetails,
   scenesFromDraftArtifacts,
 } from "~/presentation/simulatedPreview";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   body: string;
@@ -385,7 +386,7 @@ const simulatedScenes = computed(() =>
       color="error"
       variant="subtle"
       :title="problem.title"
-      :actions="problemActions"
+      :actions="alertActions('error', problemActions ?? [])"
     >
       <template #description>
         <p>{{ problem.detail }}</p>
@@ -621,9 +622,9 @@ const simulatedScenes = computed(() =>
       color="warning"
       variant="subtle"
       title="A resposta não trouxe a plataforma escolhida."
-      :actions="[
-        { label: 'Tentar de novo', color: 'warning', variant: 'outline', onClick: retry },
-      ]"
+      :actions="alertActions('warning', [
+        { label: 'Tentar de novo', onClick: retry },
+      ])"
     />
   </aside>
 </template>

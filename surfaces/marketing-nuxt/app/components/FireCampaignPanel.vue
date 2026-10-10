@@ -37,6 +37,7 @@ import type {
   Choice,
   ChosenAudience,
 } from "~/types/campaign";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   rule: Campaign | null;
@@ -442,7 +443,7 @@ watch(
         icon="i-lucide-users"
         title="Esta campanha não tem público salvo."
         description="Escolha o público agora, para este disparo, ou edite a campanha para dar um público a ela."
-        :actions="savedAudienceActions"
+        :actions="alertActions('warning', savedAudienceActions ?? [])"
       />
     </template>
 
@@ -536,7 +537,7 @@ watch(
           color="warning"
           variant="subtle"
           title="Não foi possível conferir o público. O disparo está bloqueado."
-          :actions="countFailedActions"
+          :actions="alertActions('warning', countFailedActions ?? [])"
         />
 
         <!-- As parcelas contam a história que o total sozinho esconde: com "todas", o

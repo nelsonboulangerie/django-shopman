@@ -19,6 +19,7 @@ import {
 } from "~/composables/useMarketingDraft";
 import { preserveMarketingReceipt } from "~/utils/marketingReceipt";
 import { splitByGrandeza } from "~/presentation/marketingCounters";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = withDefaults(defineProps<{ experience?: "current" | "v2" }>(), {
   experience: "current",
@@ -210,24 +211,20 @@ useHead(() => ({
           icon="i-lucide-log-in"
           title="Sua sessão voltou. A decisão não foi enviada."
           description="Seu texto e sua escolha estão guardados. Retome para confirmar de novo."
-          :actions="[
+          :actions="alertActions('warning', [
             {
               label: confirmingDecision ? 'Retomando…' : 'Retomar e reconfirmar',
-              color: 'warning',
-              variant: 'outline',
               size: 'md',
               loading: confirmingDecision,
               onClick: () => void resumeServerDecision(),
             },
             {
               label: 'Agora não',
-              color: 'warning',
-              variant: 'outline',
               size: 'md',
               disabled: confirmingDecision,
               onClick: () => cancelDecision(),
             },
-          ]"
+          ])"
           role="status"
         />
         <NuxtAlert
@@ -246,15 +243,13 @@ useHead(() => ({
           icon="i-lucide-clock-alert"
           :title="freshnessTitle"
           description="Atualize antes de decidir pelos números abaixo. Se algo mudou, a decisão é recusada e nada é disparado."
-          :actions="[
+          :actions="alertActions('warning', [
             {
               label: 'Atualizar',
-              color: 'warning',
-              variant: 'outline',
               size: 'md',
               onClick: () => void refresh(),
             },
-          ]"
+          ])"
           role="status"
           aria-label="Atualidade dos dados"
         />
@@ -275,16 +270,14 @@ useHead(() => ({
             variant="subtle"
             :icon="limit.blocking ? 'i-lucide-circle-slash' : 'i-lucide-triangle-alert'"
             :title="limit.title"
-            :actions="[
+            :actions="alertActions(limit.blocking ? 'error' : 'warning', [
               {
                 label: 'Ver em Plataformas',
                 to: { path: '/settings/platforms' },
                 trailingIcon: 'i-lucide-arrow-right',
-                color: limit.blocking ? 'error' : 'warning',
-                variant: 'outline',
                 size: 'md',
               },
-            ]"
+            ])"
             role="status"
           >
             <template #description>

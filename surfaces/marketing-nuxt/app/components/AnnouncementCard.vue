@@ -44,6 +44,7 @@ import {
 } from "~/presentation/googleBusinessPost";
 import type { GoogleBusinessOptions } from "~/presentation/googleBusinessPost";
 import { useFileDialog } from "@vueuse/core";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   announcement: Announcement;
@@ -843,9 +844,9 @@ defineExpose({
         :color="readinessSummary.tone === 'blocked' ? 'error' : 'warning'"
         variant="subtle"
         :description="readinessSummary.text"
-        :actions="readinessSummary.link
-          ? [{ label: 'Ver em Ajustes › Plataformas', to: '/settings/platforms', color: readinessSummary.tone === 'blocked' ? 'error' : 'warning', variant: 'outline' }]
-          : []"
+        :actions="alertActions(readinessSummary.tone === 'blocked' ? 'error' : 'warning', readinessSummary.link
+          ? [{ label: 'Ver em Ajustes › Plataformas', to: '/settings/platforms' }]
+          : [])"
         role="status"
         data-review-readiness
       />
@@ -951,9 +952,9 @@ defineExpose({
             variant="subtle"
             role="alert"
             :title="scheduleResolution.detail"
-            :actions="scheduleResolution.nextAllowedLocal
-              ? [{ label: 'Usar o próximo horário permitido', color: 'error', variant: 'outline', onClick: useNextAllowedTime }]
-              : []"
+            :actions="alertActions('error', scheduleResolution.nextAllowedLocal
+              ? [{ label: 'Usar o próximo horário permitido', onClick: useNextAllowedTime }]
+              : [])"
           />
           <NuxtRadioGroup
             v-if="scheduleResolution.problem === 'ambiguous'"
@@ -977,7 +978,7 @@ defineExpose({
       variant="subtle"
       role="alert"
       title="O prazo deste anúncio venceu: preço e estoque já podem ter mudado."
-      :actions="[{ label: 'Preparar um disparo novo em Campanhas', to: '/settings/campaigns', color: 'error', variant: 'outline' }]"
+      :actions="alertActions('error', [{ label: 'Preparar um disparo novo em Campanhas', to: '/settings/campaigns' }])"
     />
 
     <!-- A decisão no painel (fora da página da revisão), em fluxo no fim do cartão.

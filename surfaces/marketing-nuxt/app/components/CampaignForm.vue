@@ -29,6 +29,7 @@ import {
   scheduleSummary,
 } from "~/utils/marketingSchedule";
 import type { ScheduleFold } from "~/utils/marketingSchedule";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   rule: Campaign | null; // null = criando
@@ -925,15 +926,13 @@ function submit() {
           variant="subtle"
           title="Nenhum modelo cadastrado ainda."
           description="Crie o primeiro modelo antes de criar a campanha."
-          :actions="[
+          :actions="alertActions('info', [
             {
               label: 'Criar o primeiro modelo',
               to: '/settings/templates',
-              color: 'info',
-              variant: 'outline',
               size: 'md',
             },
-          ]"
+          ])"
         />
       </div>
     </div>
@@ -1140,19 +1139,17 @@ function submit() {
             ? 'A campanha pode ser salva assim mesmo.'
             : undefined
         "
-        :actions="
+        :actions="alertActions(note.tone === 'blocked' ? 'error' : 'warning',
           note.tone !== 'limited'
             ? [
                 {
                   label: 'Ver em Plataformas',
                   to: { path: '/settings/platforms' },
-                  color: note.tone === 'blocked' ? 'error' : 'warning',
-                  variant: 'outline',
-                  size: 'md',
+                  size: 'md' as const,
                 },
               ]
             : []
-        "
+        )"
       />
       <p class="text-xs text-muted-foreground">
         Instagram, Facebook e Google criam uma postagem pública por plataforma.

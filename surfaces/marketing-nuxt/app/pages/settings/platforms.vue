@@ -10,6 +10,7 @@
 import { platformIcon } from "~/presentation/campaign";
 import { canaryText } from "~/presentation/platformReadiness";
 import { receiptStateLabel } from "~/presentation/marketingResult";
+import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 
 const { platforms, loading, error, load: loadPlatforms } = usePlatforms();
 const route = useRoute();
@@ -539,16 +540,14 @@ useHead({ title: "Plataformas" });
               icon="i-lucide-cloud-off"
               title="Não foi possível consultar os modelos agora"
               :description="catalogUnavailableDescription"
-              :actions="[
+              :actions="alertActions('warning', [
                 {
                   label: 'Atualizar',
                   icon: 'i-lucide-refresh-cw',
-                  color: 'warning',
-                  variant: 'outline',
                   size: 'md',
                   onClick: onVerifyCatalog,
                 },
-              ]"
+              ])"
             />
 
             <!-- ⚠️ Era um cartão POR modelo. A conta do ManyChat não tem teto: com
@@ -721,15 +720,13 @@ useHead({ title: "Plataformas" });
                 variant="subtle"
                 icon="i-lucide-triangle-alert"
                 title="Este aviso precisa estar ativo e ligado a um modelo aprovado antes do teste."
-                :actions="[
+                :actions="alertActions('warning', [
                   {
                     label: 'Ligar este aviso a um modelo',
-                    color: 'warning',
-                    variant: 'outline',
                     size: 'md',
                     onClick: () => (selectedNotificationEvent = testEvent),
                   },
-                ]"
+                ])"
               />
               <NuxtFormField label="Número verificado">
                 <NuxtSelectMenu
