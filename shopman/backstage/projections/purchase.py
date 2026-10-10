@@ -23,7 +23,7 @@ from shopman.shop.services.sku_records import SkuRoles, sku_roles_map
 
 logger = logging.getLogger(__name__)
 
-REQUEST_STATUSES = {"review", "approved", "sent"}
+REQUEST_STATUSES = {"review", "sent"}
 
 
 @dataclass(frozen=True)

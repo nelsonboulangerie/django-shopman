@@ -601,32 +601,27 @@ def _marketing_status(user, base: str, label: str, now: datetime, out: _Collecte
 
 
 def _purchase_status(user, base: str, label: str, now: datetime, out: _Collected) -> None:
-    """Compras: pedido pronto para enviar (pede alguém) e pedido enviado ao fornecedor.
+    """Compras: pedido enviado ao fornecedor e ainda aguardando entrega.
 
     A mesma marca que o quadro do Compras lê (``metadata.purchase.request_status``):
-    ``approved`` é "Pronto" (falta enviar), ``sent`` é "Enviado". Um pedido é um
-    ``request_ref``; insumo enviado sem ``request_ref`` conta como um pedido.
+    ``sent`` é o pedido em aberto, que o recebimento ou o cancelamento encerram. Um
+    pedido é um ``request_ref``; insumo enviado sem ``request_ref`` conta como um pedido.
     """
     from django.apps import apps
 
     from shopman.backstage.projections.purchase import _purchase_meta, _purchase_request_status
 
     Material = apps.get_model("buyman", "Material")
-    to_send = 0
     on_the_way: set[str] = set()
     for material in Material.objects.filter(is_active=True).only("sku", "metadata"):
-        status = _purchase_request_status(material)
-        if status == "approved":
-            to_send += 1
-        elif status == "sent":
+        if _purchase_request_status(material) == "sent":
             ref = str(_purchase_meta(material).get("request_ref") or "").strip()
             on_the_way.add(ref or f"sku:{material.sku}")
     out.statuses["purchase"] = HubAppStatusProjection(
-        attention=_plural(to_send, "pedido para enviar", "pedidos para enviar") if to_send else "",
         # Todo bloco tem estado (prévia v4): sem pedido, o estado calmo diz isso.
         summary=_plural(len(on_the_way), "pedido a caminho", "pedidos a caminho")
         if on_the_way
-        else ("" if to_send else "Nenhum pedido em andamento"),
+        else "Nenhum pedido em andamento",
     )
 
 

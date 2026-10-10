@@ -170,7 +170,7 @@ export function purchaseFixture() {
     suppliers: suppliers(),
     conversions: conversions(),
     costs: costs(),
-    purchaseRequestStatuses: { "MANTEIGA-82": "approved" },
+    purchaseRequestStatuses: { "MANTEIGA-82": "sent" },
     activeReceipt: { ...BLANK_RECEIPT },
     receiptHistory: history(),
   };

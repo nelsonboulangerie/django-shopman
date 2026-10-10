@@ -33,8 +33,8 @@ Endpoints:
 - `POST /api/v1/backstage/purchase/receipts/scan-invoice/` -> validate QR/barcode/chave NF and create a receipt draft.
 - `POST /api/v1/backstage/purchase/receipts/confirm/` -> confirm stock entry with conversions, validity, costs, and BUY ledger moves.
 - `POST /api/v1/backstage/purchase/receipts/reject/` -> record a supplier delivery refusal/return as an internal `notification.send`, without stock movement.
-- `POST /api/v1/backstage/purchase/requests/<material_sku>/approve/` -> approve a purchase request.
-- `POST /api/v1/backstage/purchase/requests/<material_sku>/send/` -> queue `notification.send` to the supplier channel and mark the request as sent.
+- `POST /api/v1/backstage/purchase/requests/<material_sku>/send/` -> queue `notification.send` to the supplier channel and mark the request as sent (awaiting delivery). Refused with 409 while a request is open.
+- `POST /api/v1/backstage/purchase/requests/<material_sku>/cancel/` -> clear the open request so the material can be ordered again. The supplier is not notified. Confirming a receipt of the material also closes it.
 - `POST /api/v1/backstage/purchase/costs/` -> record an observed cost/conversion from an operational flow.
 
 Supplier dispatch uses Buyman data without extending Core: `Supplier.email`,

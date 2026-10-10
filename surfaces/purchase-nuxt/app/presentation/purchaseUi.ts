@@ -22,14 +22,12 @@ export const TONE_RANK: Record<MaterialTone, number> = { urgent: 0, watch: 1, ok
 
 export const REQUEST_BADGE: Record<PurchaseRequestStatus, BadgeColor> = {
   review: "warning",
-  approved: "info",
-  sent: "success",
+  sent: "info",
 };
 
 export const REQUEST_LABEL: Record<PurchaseRequestStatus, string> = {
   review: "Revisar",
-  approved: "Pronto para enviar",
-  sent: "Enviado",
+  sent: "Aguardando entrega",
 };
 
 /** "1 insumo", "3 insumos". */

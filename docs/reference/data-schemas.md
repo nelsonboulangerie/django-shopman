@@ -1705,8 +1705,8 @@ achata `metadata` com `metadata["purchase"]` (a forma aninhada vence).
 | `purchase.category` | `str` | seed/admin | projection do Compras (aba Base, Contagem) | Agrupador da tela. Ausente = "Insumos". |
 | `purchase.min_stock` | `str` decimal | `set_min_stock` (`backstage/services/purchase.py`), seed/admin | `_material_projection` | **Estoque mínimo declarado.** Sem ele o alvo de reposição cai para `daily_use * replenish_at`, que é **zero quando não há consumo medido** — e aí `suggestedQty` é zero para sempre e o insumo nunca vira pedido. Declarar o mínimo é o que destrava o insumo sem histórico de produção. Apagar a chave (não gravar `0`) devolve o insumo ao cálculo por consumo. Aceita `minStock` na leitura, por compatibilidade de entrada. |
 | `purchase.eans` | `list[str]` (GTIN-8/12/13/14, dígito verificador conferido) | `_learn_material_eans` em `confirm_receipt` (`backstage/services/purchase.py`): o EAN lido na embalagem (`scannedEan` da linha, "Ler EAN") e os da nota (`invoiceEan`, `invoicePackageEan`) de toda linha confirmada | `_material_projection` (`eans`); "Ler EAN" do Receber (`presentation/scanning.ts`) | **Os códigos de barras que já chegaram com este insumo e foram conferidos.** Só acrescenta (sem duplicar, na ordem em que apareceram); quem confirma o item é a fonte. É o que permite à câmera do recebimento achar o item da caixa sem a nota dizer. |
-| `purchase.request_status` | `str` | `set_purchase_request_status` | projection (`purchaseRequestStatuses`) | `review` \| `approved` \| `sent`. Não há model de solicitação: o estado mora aqui. |
-| `purchase.request_status_at` | `str` ISO 8601 | `set_purchase_request_status` | auditoria | Quando o status mudou. |
+| `purchase.request_status` | `str` | `send_purchase_request` | projection (`purchaseRequestStatuses`) | Só `sent` ("Aguardando entrega"): pedido em aberto, e enquanto ele existe o insumo não é pedido de novo (409 `purchase_request_open`). Ausente = `review`. Não há model de solicitação: o estado mora aqui. **Encerrado** pelo recebimento do insumo (`confirm_receipt`) ou por `cancel_purchase_request`, que apagam TODAS as chaves `purchase.request_*` — pedido encerrado não deixa resto no metadata; o despacho segue registrado na directive `notification.send`. |
+| `purchase.request_status_at` | `str` ISO 8601 | `send_purchase_request` | auditoria | Quando o pedido foi enviado. |
 | `purchase.request_ref` | `str` | `_queue_supplier_purchase_request` | auditoria | Ref da solicitação despachada ao fornecedor. |
 | `purchase.request_supplier_ref` | `str` ref | `_queue_supplier_purchase_request` | auditoria | Fornecedor que recebeu o pedido (`Supplier.ref`). |
 | `purchase.request_channel` | `str` | `_queue_supplier_purchase_request` | auditoria | Canal do despacho (`email`/`sms`/`whatsapp`/`console`). |
@@ -2404,8 +2404,8 @@ volumes antes de conferir item a item; a contagem sobrevive à troca de disposit
 
 O lado do insumo (`buyman.Material.metadata`) tem as chaves de leitura do mesmo
 scan (`invoice_codes`, `gtins` e afins em `MATERIAL_CODE_KEYS`) e o estado do
-pedido de reposição (`purchase.request_status*`, escrito por
-`set_purchase_request_status`).
+pedido de reposição (`purchase.request_*`, escrito por
+`send_purchase_request` e apagado no recebimento ou no cancelamento).
 
 ### `stockman.Move.metadata` — o recebimento de Compras
 

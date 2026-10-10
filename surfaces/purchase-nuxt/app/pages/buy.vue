@@ -13,6 +13,7 @@ const {
   actionPending,
   purchaseRequestStatus,
   sendPurchaseRequest,
+  cancelPurchaseRequest,
   selectMaterial,
   noteMaterialSku,
   noteSupplierRef,
@@ -106,13 +107,31 @@ async function send(sku: string) {
                   block
                   @click="openQuoteFor(row.material, row.supplier?.ref)"
                 />
-                <NuxtButton
-                  :label="purchaseRequestStatus(row.material.sku) === 'sent' ? 'Pedido enviado' : 'Enviar pedido'"
-                  block
-                  :loading="sendingSku === row.material.sku"
-                  :disabled="readonlyFallback || purchaseRequestStatus(row.material.sku) === 'sent' || actionPending"
-                  @click="send(row.material.sku)"
-                />
+                <!-- O recebimento fecha o pedido; Cancelar é para o pedido que não vai chegar.
+                     O rótulo que cabe: a 320 px a meia coluna não leva "Cancelar pedido". -->
+                <div class="op-fit-scope min-w-0">
+                  <OperatorButton
+                    v-if="purchaseRequestStatus(row.material.sku) === 'sent'"
+                    label="Cancelar pedido"
+                    short-label="Cancelar"
+                    icon="i-lucide-x"
+                    color="neutral"
+                    variant="outline"
+                    block
+                    :disabled="readonlyFallback || actionPending"
+                    @click="cancelPurchaseRequest(row.material.sku, row.material.name)"
+                  />
+                  <OperatorButton
+                    v-else
+                    label="Enviar pedido"
+                    short-label="Enviar"
+                    icon="i-lucide-send"
+                    block
+                    :loading="sendingSku === row.material.sku"
+                    :disabled="readonlyFallback || actionPending"
+                    @click="send(row.material.sku)"
+                  />
+                </div>
               </div>
             </NuxtCard>
           </div>

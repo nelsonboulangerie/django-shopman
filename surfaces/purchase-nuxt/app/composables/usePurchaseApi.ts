@@ -34,10 +34,10 @@ export const PURCHASE_API_ENDPOINTS = {
   declareConversion: `${PURCHASE_API_BASE}conversions/`,
   count: `${PURCHASE_API_BASE}count/`,
   countConfirm: `${PURCHASE_API_BASE}count/confirm/`,
-  requestApprove: (materialSku: string) =>
-    `${PURCHASE_API_BASE}requests/${encodeURIComponent(materialSku)}/approve/`,
   requestSend: (materialSku: string) =>
     `${PURCHASE_API_BASE}requests/${encodeURIComponent(materialSku)}/send/`,
+  requestCancel: (materialSku: string) =>
+    `${PURCHASE_API_BASE}requests/${encodeURIComponent(materialSku)}/cancel/`,
 } as const;
 
 type FetchOptions = {
@@ -88,16 +88,16 @@ export function usePurchaseApi() {
     });
   }
 
-  async function approveRequest(payload: PurchaseRequestActionPayload) {
-    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.requestApprove(payload.materialSku), {
+  async function sendRequest(payload: PurchaseRequestActionPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.requestSend(payload.materialSku), {
       ...fetchOptions(),
       method: "POST",
       body: payload,
     });
   }
 
-  async function sendRequest(payload: PurchaseRequestActionPayload) {
-    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.requestSend(payload.materialSku), {
+  async function cancelRequest(payload: PurchaseRequestActionPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.requestCancel(payload.materialSku), {
       ...fetchOptions(),
       method: "POST",
       body: payload,
@@ -171,8 +171,8 @@ export function usePurchaseApi() {
     confirmReceipt,
     rejectReceipt,
     saveReceiptVolumes,
-    approveRequest,
     sendRequest,
+    cancelRequest,
     upsertCost,
     upsertCostBatch,
     setMinStock,
