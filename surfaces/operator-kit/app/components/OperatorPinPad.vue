@@ -67,6 +67,23 @@ const spoken = computed(() =>
     : `PIN de no mínimo ${PIN_MIN_DIGITS} dígitos`,
 );
 
+// A recusa (PIN errado) se dispensa: no X, ou voltando a digitar.
+const errorDismissed = ref(false);
+watch(
+  () => props.error,
+  () => {
+    errorDismissed.value = false;
+  },
+);
+watch(
+  () => props.pin,
+  (next) => {
+    if (next.length > 0) errorDismissed.value = true;
+  },
+);
+
+const showError = computed(() => Boolean(props.error) && !errorDismissed.value);
+
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
 
 function submit() {
@@ -112,9 +129,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="grid w-full justify-items-center gap-4" data-operator-pin-pad>
-    <div class="grid justify-items-center gap-2">
-      <p v-if="label" class="text-sm font-medium text-muted-foreground">
+  <div ref="root" class="grid w-full min-w-0 gap-4" data-operator-pin-pad>
+    <!-- Uma coluna só, da largura de quem chama: o campo, o aviso e o teclado
+         batem borda com borda (dono, 10/10/2026). As casas dividem a largura do
+         teclado, e a casa tem a altura da tecla. -->
+    <div class="grid min-w-0 gap-2">
+      <p v-if="label" class="text-center text-sm font-medium text-muted-foreground">
         {{ label }}
       </p>
       <!-- Só mostra (`disabled`), com a cor plena: o campo não é o lugar de
@@ -126,33 +146,34 @@ onBeforeUnmount(() => {
         :length="slots"
         disabled
         size="xl"
-        :color="error ? 'error' : 'neutral'"
-        :highlight="Boolean(error)"
+        :color="showError ? 'error' : 'neutral'"
+        :highlight="showError"
         role="group"
         :aria-label="fieldName"
         :ui="{
-          root: 'justify-center gap-2',
-          base: 'size-12 text-base disabled:cursor-default disabled:opacity-100',
+          root: 'flex w-full gap-2',
+          base: 'size-auto h-14 w-0 min-w-0 flex-1 text-base disabled:cursor-default disabled:opacity-100',
         }"
         data-operator-pin-field
       />
       <span class="sr-only" aria-live="polite">{{ spoken }}</span>
+      <!-- A recusa se dispensa no X, e some sozinha quando se volta a digitar. -->
       <NuxtAlert
-        v-if="error"
-        class="w-full"
+        v-if="showError"
         color="error"
         variant="subtle"
         icon="i-lucide-circle-alert"
         :title="error"
+        close
+        @update:open="errorDismissed = true"
       />
     </div>
 
-    <!-- Tecla do tamanho do dedo, não da largura do cartão: a grade tem largura
-         própria e o número fica no meio da tecla. `touch-manipulation` desliga o
+    <!-- Tecla do tamanho do dedo, com o número no meio. `touch-manipulation` desliga o
          double-tap-zoom: dois toques rápidos no mesmo dígito não viram zoom.
          Digitar nunca desabilita (nem durante a verificação): só o CONFIRMAR
          trava, porque o que não pode duplicar é a submissão, não o dígito. -->
-    <div class="grid w-full max-w-72 grid-cols-3 gap-2 touch-manipulation">
+    <div class="grid grid-cols-3 gap-2 touch-manipulation">
       <NuxtButton
         v-for="d in KEYS"
         :key="d"

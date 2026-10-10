@@ -104,7 +104,7 @@ const shownError = computed(() => localError.value || props.error || "");
         <p class="text-sm text-muted-foreground">
           {{
             forced
-              ? "O gerente resetou seu PIN. Digite o PIN temporário e escolha um novo antes de operar."
+              ? "O gerente redefiniu seu PIN. Digite o PIN temporário e escolha um novo antes de operar."
               : `${operatorName}, informe o PIN atual e escolha um novo.`
           }}
         </p>

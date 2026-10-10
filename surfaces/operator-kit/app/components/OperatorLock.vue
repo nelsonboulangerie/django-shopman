@@ -94,6 +94,14 @@ async function onPin(payload: {
   if (!ok) identify.value?.reset(true);
 }
 
+// As duas portas do rodapé da trava, só texto: discretas, e o nome inteiro cabe
+// na coluna do teclado. Apertou, "Trocar meu PIN" cai para o curto da própria
+// ação; sem ícone, o último texto quebra linha em vez de virar símbolo mudo.
+const footerActions = [
+  { label: "Trocar meu PIN", shortLabel: "Trocar PIN" },
+  { label: "Perdi meu crachá" },
+] as const;
+
 function startChange() {
   changing.value = true;
 }
@@ -148,10 +156,10 @@ async function submitForcedChange(payload: {
     tabindex="-1"
     class="fixed inset-0 outline-none z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
   >
-    <!-- Largura do cartão = a do conteúdo (a lista em duas colunas e o
-         teclado), não a da tela: num monitor largo o cartão não esticava as
-         teclas, mas sobrava borda vazia em volta delas. -->
-    <NuxtCard class="w-full max-w-sm">
+    <!-- O cartão tem a largura do teclado: a lista de nomes, o campo do PIN, o
+         teclado e os avisos são UMA coluna e batem borda com borda (dono,
+         10/10/2026). -->
+    <NuxtCard class="w-full max-w-xs">
       <div class="grid gap-5">
       <!-- Forced change: manager reset the operator's PIN; rotate before operating. -->
       <OperatorPinChange
@@ -227,8 +235,10 @@ async function submitForcedChange(payload: {
           </div>
         </header>
 
+        <!-- Dentro do cartão, `soft`: sem borda (cartão dentro de cartão, dono 08/10). -->
         <NuxtEmpty
           v-if="!eligible.length"
+          variant="soft"
           icon="i-lucide-user-x"
           title="Nenhum operador habilitado para esta tela"
         />
@@ -251,22 +261,22 @@ async function submitForcedChange(payload: {
           <template #footer>
             <!-- Discreto, mas não escondido: quem perdeu o crachá precisa achar
                  sozinho, então é texto legível ao lado do irmão, e não um menu. -->
-            <div class="flex flex-wrap items-center justify-center gap-2">
-              <NuxtButton
+            <!-- Uma linha no meio da coluna, cada uma do tamanho do próprio nome
+                 (rótulo que cabe: apertou, cai para o curto; não coube, desce). -->
+            <OperatorFitGroup :actions="footerActions" class="flex flex-wrap justify-center gap-2">
+              <OperatorButton
                 color="neutral"
                 variant="ghost"
-                icon="i-lucide-key-round"
-                label="Trocar meu PIN"
+                v-bind="footerActions[0]"
                 @click="startChange"
               />
-              <NuxtButton
+              <OperatorButton
                 color="neutral"
                 variant="ghost"
-                icon="i-lucide-badge-x"
-                label="Perdi meu crachá"
+                v-bind="footerActions[1]"
                 @click="lostBadge = true"
               />
-            </div>
+            </OperatorFitGroup>
           </template>
         </OperatorIdentify>
       </template>

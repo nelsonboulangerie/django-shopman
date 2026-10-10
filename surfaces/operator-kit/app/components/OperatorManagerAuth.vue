@@ -104,13 +104,15 @@ function onBadge(token: string) {
        desta tela. Numa div interna o seletor nunca casava.
        Camada 3, cromática: a borda de aviso (`class` oficial do Modal, que vai para o
        conteúdo) é a mais fraca das três e nunca anda sozinha. Quem carrega o sentido
-       é o texto (camada 1) e o modal com a venda visível atrás (camada 2). -->
+       é o texto (camada 1) e o modal com a venda visível atrás (camada 2).
+       Largura do diálogo = a do teclado do PIN (`sm:max-w-sm`): o aviso, a lista,
+       o campo e as teclas batem borda com borda, sem tecla esticada. -->
   <NuxtModal
     :open="open"
     :title="title"
     :description="reason"
     :content="dialogContent"
-    class="border border-warning/50"
+    class="border border-warning/50 sm:max-w-sm"
     @update:open="(value: boolean) => emit('update:open', value)"
   >
     <template #body>

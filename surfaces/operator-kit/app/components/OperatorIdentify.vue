@@ -166,8 +166,11 @@ defineExpose({ reset });
     <template v-if="hasList && !picked">
       <p class="text-center text-sm text-muted-foreground">{{ prompt }}</p>
       <div class="grid grid-cols-2 gap-2" role="group" :aria-label="prompt">
-        <!-- Alvo de dedo (`xl`), e o nome inteiro: nome não se corta, quebra
-             linha ("Elaine Cristina Souza" a 390 px). -->
+        <!-- Alvo de dedo (`xl`), todos da MESMA altura (dono, 10/10/2026: irmãos
+             nunca com alturas diferentes): o nome reserva duas linhas e o que
+             passar de duas corta com reticências, com o nome inteiro na dica e no
+             nome acessível. É lista: o número e o nome começam à esquerda
+             (`justify-start`, a exceção declarada do botão centrado). -->
         <NuxtButton
           v-for="(person, index) in people"
           :key="person.username"
@@ -175,7 +178,9 @@ defineExpose({ reset });
           color="neutral"
           variant="outline"
           size="xl"
-          class="h-auto min-h-12 whitespace-normal"
+          class="h-auto justify-start py-2"
+          :title="person.name"
+          :aria-label="person.name"
           :aria-keyshortcuts="
             index < numberedCount ? String(index + 1) : undefined
           "
@@ -186,7 +191,9 @@ defineExpose({ reset });
             :value="String(index + 1)"
             aria-hidden="true"
           />
-          <span class="min-w-0 text-balance [overflow-wrap:anywhere]">{{ person.name }}</span>
+          <span class="grid h-[2lh] min-w-0 items-center text-start">
+            <span class="line-clamp-2 [overflow-wrap:anywhere]">{{ person.name }}</span>
+          </span>
         </NuxtButton>
       </div>
       <p v-if="numberedCount" class="text-center text-xs text-muted-foreground">
