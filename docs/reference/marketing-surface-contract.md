@@ -140,39 +140,43 @@ a linha "+N agendados hoje · M campanhas ligadas". A fila não decide nada: a r
 do anúncio revalida as Actions do operador.
 
 O sino deixou de ter lista própria: é um link para `/` que diz quantas decisões
-esperam. Ele mora na barra de 56px do celular; do tablet para cima o selo de Decisões
-no rail faz o papel dele. A caixa pessoal (SSE `/sse/notifications` e poll de 60 s, que
+esperam. Ele mora na barra do topo onde a barra lateral não está (celular e tablet); na
+mesa o selo de Decisões na barra lateral faz o papel dele. A caixa pessoal (SSE `/sse/notifications` e poll de 60 s, que
 só invalidam; a fila refaz o fetch) tem um dono só, o `MarketingInboxLive`, montado
 uma vez no shell em qualquer largura, que também registra os avisos como vistos quando
 a fila está na tela. O push continua abrindo `/announcements/:id#review`, que é o
 "Revisar" do cartão daquele anúncio.
 
-Seções de operação: **Decisões** (`/`), **Agendados** (`/scheduled`), **Enviados**
-(`/history`) e **Ajustes** (`/campaigns`). Ajustes entra por um item só e tem as
-próprias seções numa segunda linha, na linha de recortes do cabeçalho de cada tela de
-Ajustes, cada uma com rota própria: Campanhas (`/campaigns`), Modelos (`/templates`),
-Ofertas e cupons (`/offers`) e Plataformas (`/platforms`). Desde o V4-MKT o Marketing
-veste a camada visual da suíte (`data-suite="v3"`): do tablet para cima as seções moram
-no rail da suíte (Decisões, Agendados e Enviados em cima, Ajustes no pé); no celular, na
-barra do polegar do kit. Cada tela abre com o cabeçalho de uma linha do kit
-(`MarketingPageHeader` sobre `OperatorPageHeader`), com o "ao vivo" discreto nas telas
-de fila; no celular a barra de 56px leva o sino e o menu do operador (tema, giro e
-Bloquear).
+Seções de operação: **Decisões** (`/`), **Agendados** (`/scheduled`) e **Enviados**
+(`/history`); **Ajustes** (`/settings`) entra por um item só, no pé da barra lateral, e é
+a página que lista as quatro sub-seções, cada uma com rota própria embaixo dela:
+Campanhas (`/settings/campaigns`), Modelos (`/settings/templates`), Ofertas e cupons
+(`/settings/offers`) e Plataformas (`/settings/platforms`). Dentro de uma sub-seção, a
+faixa esquerda da toolbar (`MarketingSettingsNav`: abas na mesa, lista de escolha no
+celular) leva às outras três sem voltar. Desde a fase 2 (WP-FASE2-UX-OPERADOR) o Marketing
+mora no shell da suíte, o mesmo do Gestor (`OperatorSuiteShell`): na mesa, a barra
+lateral em três estados (aberta, compacta, oculta) com Decisões, Agendados e Enviados em
+cima e Ajustes no pé; abaixo de `lg`, a gaveta pelo ☰ (o menu completo) e a barra
+inferior com as quatro seções. Cada tela abre com o `OperatorPageHeader` do kit: título,
+busca, a ação primária da tela e o ⋯ "Mais ações" (as ações como dados; "Atualizar" com a
+tecla R mora ali), o "ao vivo" no estado da barra, os recortes na toolbar e o aviso da
+tela no lugar declarado (`alerts`).
 
 O workspace V2 (`/v2`, com o panorama em `area=today`) e a prévia estática
 `/marketing-v2-preview/` saíram na V6-MKT: pré-go-live é zero legado e sem
 redirecionamento. As capacidades que moravam nele vivem nas rotas de Ajustes acima.
-`/offers` cria oferta e cupom e leva "Criar campanha com esta oferta" para
-`/campaigns?new=1&offer=<ref>`.
+`/settings/offers` cria oferta e cupom e leva "Criar campanha com esta oferta" para
+`/settings/campaigns?new=1&offer=<ref>`.
 
 ### A revisão e o selo (V6-MKT)
 
-A revisão do anúncio (`/announcements/:id`) ocupa a tela inteira (`fullscreen` na
-página: a barra do polegar some) e segue a v4: foto grande com "Tirar outra" (upload
+A revisão do anúncio (`/announcements/:id`) segue a v4: foto grande com "Tirar outra" (upload
 re-encodado pelo servidor em `marketing/announcements/<id>/photo/`, e a aprovação só
 aceita uma foto que veio dessa revisão), contador de caracteres contra o limite da
-plataforma, uma linha por plataforma com interruptor, "Quando" (agora ou agendar) e um
-pé fixo com Recusar e Continuar. O selo confirma com a **digital do dispositivo**
+plataforma, uma linha por plataforma com interruptor, "Quando" (agora ou agendar) e a
+decisão, Recusar e Continuar: abaixo de `lg` na ação na base do kit
+(`OperatorActionBar`, flutuando acima da barra inferior, com o motivo escrito quando
+Continuar não pode), na mesa na barra do topo. O selo confirma com a **digital do dispositivo**
 (WebAuthn, `security/device/*`), que vale só para a confirmação para a qual foi pedida
 e dispensa a frase digitada e a senha; "Usar o meu código" mantém a frase e a senha ou
 o autenticador como alternativa. Acima do limiar de dupla confirmação, "Pedir a
@@ -209,13 +213,14 @@ e nenhuma plataforma recebe conteúdo no `fire`.
 <!-- marketing-ui-routes:start -->
 - `/`
 - `/announcements/:id`
-- `/campaigns`
 - `/history`
-- `/offers`
-- `/platforms`
 - `/scheduled`
 - `/second-control/:ref`
-- `/templates`
+- `/settings`
+- `/settings/campaigns`
+- `/settings/offers`
+- `/settings/platforms`
+- `/settings/templates`
 <!-- marketing-ui-routes:end -->
 
 Rotas de infraestrutura: `/api/v1/**` é o BFF same-origin, `/sse/notifications`

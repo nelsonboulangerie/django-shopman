@@ -3,7 +3,6 @@ import { computed, ref } from "vue";
 import { beforeAll, describe, expect, it } from "vitest";
 import MarketingOfferForm from "~/components/MarketingOfferForm.vue";
 import type { MarketingOfferOptions } from "~/types/campaign";
-import { UiNativeSelectStub } from "../support/nativeUiStubs";
 
 beforeAll(() => Object.assign(globalThis, { computed, ref }));
 
@@ -27,7 +26,6 @@ function form(kind: "offer" | "coupon" = "offer") {
   return mount(MarketingOfferForm, {
     props: { kind, options },
     global: {
-      components: { UiNativeSelect: UiNativeSelectStub },
       stubs: { Icon: true },
     },
   });

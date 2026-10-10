@@ -179,7 +179,7 @@ def test_campaign_opens_the_marketing_campaigns(client):
     Campaign.objects.create(name="Fornada de pães", trigger="production_finished", template=template)
     [campaign] = _group(_search(client, _admin(), "fornada"), "campaigns")
     assert campaign["app"] == "marketing"
-    assert campaign["url"] == "https://mkt.example.test/campaigns?q=Fornada+de+p%C3%A3es"
+    assert campaign["url"] == "https://mkt.example.test/settings/campaigns?q=Fornada+de+p%C3%A3es"
     assert campaign["detail"] == "campanha · ligada"
 
 
