@@ -6,6 +6,40 @@ export function usePosTabsState() {
 }
 
 /**
+ * Uma releitura inteira da Projection por vez, e no máximo uma na fila.
+ *
+ * A leitura inteira (catálogo com disponibilidade, turno, operadores) custa
+ * segundos de CPU no servidor do alpha (1 vCPU). O `useFetch` deduplica do lado
+ * do navegador cancelando o pedido anterior, mas o servidor calcula os dois: no
+ * alpha (10/10/2026) três releituras seguidas depois de abrir a comanda e de
+ * fechar a venda disputavam a CPU com a revisão e o fechamento. Quem pede durante
+ * uma leitura em voo ganha UMA leitura nova logo depois dela (que enxerga o que
+ * ele acabou de gravar), dividida com todos que pedirem até ela começar.
+ *
+ * Só no navegador: no servidor o módulo é compartilhado entre requests.
+ */
+let refreshInFlight: Promise<void> | null = null;
+let refreshQueued: Promise<void> | null = null;
+export function coalescePosRefresh(run: () => Promise<void>): Promise<void> {
+  if (!import.meta.client) return run();
+  if (!refreshInFlight) {
+    refreshInFlight = Promise.resolve(run()).finally(() => {
+      refreshInFlight = null;
+    });
+    return refreshInFlight;
+  }
+  if (!refreshQueued) {
+    refreshQueued = refreshInFlight
+      .catch(() => {})
+      .then(() => {
+        refreshQueued = null;
+        return coalescePosRefresh(run);
+      });
+  }
+  return refreshQueued;
+}
+
+/**
  * Read-side of the POS terminal: the single fetch of the serialized Projection
  * (`{ pos, shift, tabs, operator }`) plus the slices screens consume.
  *
@@ -28,10 +62,11 @@ export async function usePosTerminal() {
   // Antes do `await`: depois dele o contexto do Nuxt já não está garantido.
   const sharedTabs = usePosTabsState();
 
-  const { data, pending, error, refresh } = await useFetch<POSResponse>(
+  const { data, pending, error, refresh: fetchAgain } = await useFetch<POSResponse>(
     () => apiPath("/api/v1/backstage/pos/"),
     { credentials: "include", headers: requestHeaders },
   );
+  const refresh = () => coalescePosRefresh(() => fetchAgain());
 
   watch(error, (value) => { if (value) flagIfStationLocked(value); }, { immediate: true });
 

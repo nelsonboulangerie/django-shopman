@@ -181,6 +181,8 @@ interface PosSaleDeps {
   tabs: ComputedRef<POSTabProjection[]>;
   actions: ComputedRef<Action[]>;
   refresh: () => Promise<void>;
+  /** Relê só o quadro de comandas (`?only=tabs`); sem ele, a releitura inteira. */
+  refreshTabs?: () => Promise<void>;
   /** Command transport (REST + Action) — created in the shell setup. */
   action: {
     call: <T = unknown>(
@@ -206,6 +208,7 @@ interface PosSaleDeps {
  */
 export function usePosSale(deps: PosSaleDeps) {
   const { pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl } = deps;
+  const refreshTabs = deps.refreshTabs ?? refresh;
 
   // O momento mais comum de abrir a gaveta é dar troco. Antes o único jeito era
   // a chave física — ou o gancho "abrir ao imprimir" do driver, que só dispara
@@ -1769,7 +1772,10 @@ export function usePosSale(deps: PosSaleDeps) {
         if (options.salesMode && !(payload.items || []).length) setSalesMode(options.salesMode);
       }
       tabInput.value = "";
-      await refresh();
+      // Abrir a comanda muda o QUADRO (ela passa a estar em uso), não o catálogo,
+      // o turno nem os operadores. A releitura inteira aqui custava 2,6 s de CPU
+      // no alpha e disputava com a revisão do total que a tela pede em seguida.
+      await refreshTabs();
     } catch (error) {
       serverError.value = httpErrorMessage(error, "Não foi possível abrir a comanda. Confira a referência ou escolha uma no quadro.");
     } finally {
