@@ -3,7 +3,6 @@ import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import MarketingCommandConfirmationDialog from "~/components/MarketingCommandConfirmationDialog.vue";
 
-const SlotStub = defineComponent({ template: "<div><slot /></div>" });
 // A prévia em tamanho real é sobreposição: aqui ela vira um dublê que só publica os
 // retratos que recebeu, para que o teste possa dizer DE ONDE eles saíram.
 const simulatedPreviewScenes: unknown[][] = [];
@@ -13,10 +12,6 @@ const SimulatedPreviewStub = defineComponent({
     simulatedPreviewScenes.push(props.scenes);
     return () => null;
   },
-});
-const DialogStub = defineComponent({
-  props: { open: Boolean },
-  template: '<div v-if="open"><slot /></div>',
 });
 
 /** O selo (v4): uma linha por destino, o nome e a grandeza em colunas. */
@@ -80,12 +75,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -150,12 +139,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -198,12 +181,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -244,12 +221,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -294,12 +265,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -349,12 +314,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -408,12 +367,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -483,12 +436,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -545,16 +492,58 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
 
     expect(simulatedPreviewScenes.at(-1)).toEqual([]);
+  });
+
+  it("o autenticador digita casa a casa e o comando leva o código inteiro", async () => {
+    const wrapper = mount(MarketingCommandConfirmationDialog, {
+      props: {
+        command: {
+          announcementId: 42,
+          action: "approve",
+          body: { base_version: 3, publish_mode: "now" },
+          href: "/api/v1/backstage/marketing/announcements/42/approve/",
+          ownerRef: "operator:1",
+          idempotencyKey: "key",
+          challenge: {
+            token: "token",
+            ref: "challenge-totp",
+            expires_at: "2026-09-09T21:00:00-03:00",
+            mode: "typed",
+            step_up: "totp",
+            dual_control: false,
+            typed_phrase: "",
+            consequence: "publishes_now_to_eligible_audience",
+            resource_ref: "announcement:42",
+            base_version: 3,
+            audience_count: 12,
+            platforms: ["instagram"],
+            scheduled_for: null,
+          },
+        },
+        shopTimezone: "America/Sao_Paulo",
+      },
+      global: {
+        stubs: { AnnouncementSimulatedPreview: SimulatedPreviewStub },
+      },
+    });
+
+    const confirm = wrapper.get("[data-seal-confirm]");
+    expect((confirm.element as HTMLButtonElement).disabled).toBe(true);
+    const digits = wrapper.findAll('#decision-credential input[aria-label^="Dígito"]');
+    expect(digits).toHaveLength(6);
+    for (const [index, digit] of Array.from("123456").entries()) {
+      await digits[index]!.setValue(digit);
+    }
+    expect((confirm.element as HTMLButtonElement).disabled).toBe(false);
+    await confirm.trigger("click");
+    expect(wrapper.emitted("confirm")![0]![0]).toMatchObject({
+      credential: "123456",
+      typedConfirmation: "",
+    });
   });
 });

@@ -14,12 +14,18 @@ const props = defineProps<{
 }>();
 
 const composition = defineModel<Record<string, unknown>>({ required: true });
+const open = ref(false);
+const deliveryLabel = computed(() =>
+  props.capability.delivery_kind === "direct_message"
+    ? "Mensagem direta"
+    : "Publicação pública",
+);
 
 const formatOptions = computed(() =>
   props.capability.formats.map((format) => ({
     value: format.ref,
     label: format.label,
-    hint: format.media_required ? "Exige imagem pública." : undefined,
+    description: format.media_required ? "Exige imagem pública." : undefined,
   })),
 );
 const selectedFormat = computed(() => {
@@ -109,81 +115,76 @@ function updateFormat(value: string) {
 </script>
 
 <template>
-  <details
-    class="space-y-4 rounded-lg border border-border bg-card p-4"
-    :data-testid="`composition-${capability.platform}`"
-  >
-    <summary class="cursor-pointer list-none">
-      <span class="flex items-center gap-2">
-        <strong class="text-sm">{{ capability.label }}</strong>
-        <span
-          v-if="hasExplicitComposition"
-          class="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
-        >
-          Adaptada
-        </span>
-        <Icon
-          name="lucide:chevron-down"
-          class="ml-auto size-4 text-muted-foreground"
-        />
-      </span>
-      <span class="mt-1 block text-xs text-muted-foreground">
-        {{
-          capability.delivery_kind === "direct_message"
-            ? "Mensagem direta"
-            : "Publicação pública"
-        }}
-        · {{ selectedFormatLabel }}
-      </span>
-    </summary>
-
-    <div class="mt-4 space-y-4 border-t border-border pt-4">
-      <GoogleBusinessPostOptions
-        v-if="isGoogle"
-        v-model="googleOptions"
-        :id-prefix="providerIdPrefix"
-        :has-link="hasLink"
-      />
-
-      <div v-else-if="capability.formats.length > 1">
-        <p class="mb-1 text-xs font-medium text-muted-foreground">Formato</p>
-        <UiRadioGroup
-          :model-value="selectedFormat"
-          :label="`Formato em ${capability.label}`"
-          :options="formatOptions"
-          class="sm:grid-flow-col sm:auto-cols-fr"
-          @update:model-value="updateFormat(String($event))"
-        />
-      </div>
-
-      <div>
-        <label
-          :for="`${idPrefix}-body`"
-          class="mb-1 block text-xs font-medium text-muted-foreground"
-        >
-          Texto só para {{ capability.label }} (opcional)
-        </label>
-        <UiTextarea
-          :id="`${idPrefix}-body`"
-          :model-value="bodyOverride"
-          :rows="3"
-          class="resize-y"
-          :placeholder="baseBody || 'Usa o texto comum quando ficar vazio.'"
-          @update:model-value="updateField('body', String($event ?? ''))"
-        />
-        <p class="mt-1 text-xs text-muted-foreground">
-          Vazio usa o texto comum. A adaptação fica explícita e salva somente
-          para este destino.
-        </p>
-      </div>
-
-      <p
-        v-if="capability.delivery_kind === 'direct_message'"
-        class="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground"
+  <!-- Cada destino é uma exceção que se abre só quando precisa: fechado, diz o formato;
+       aberto, mostra o formato e o texto próprio. O conteúdo fica montado fechado
+       (`unmount-on-hide` falso), para o rascunho e os campos não sumirem do DOM. -->
+  <NuxtCard :data-testid="`composition-${capability.platform}`">
+    <NuxtCollapsible v-model:open="open" :unmount-on-hide="false">
+      <NuxtButton
+        color="neutral"
+        variant="ghost"
+        block
+        :trailing-icon="open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+        class="justify-start text-left"
+        data-composition-toggle
       >
-        Modelo, variáveis e botões aprovados são definidos na conexão da
-        plataforma; esta composição não inventa opções fora desse contrato.
-      </p>
-    </div>
-  </details>
+        <span class="min-w-0 flex-1">
+          <span class="flex flex-wrap items-center gap-2">
+            <span class="text-sm font-semibold">{{ capability.label }}</span>
+            <NuxtBadge
+              v-if="hasExplicitComposition"
+              color="primary"
+              label="Adaptada"
+            />
+          </span>
+          <span class="mt-0.5 block text-xs font-normal text-muted-foreground">
+            {{ deliveryLabel }} · {{ selectedFormatLabel }}
+          </span>
+        </span>
+      </NuxtButton>
+
+      <template #content>
+        <div class="mt-3 space-y-4 border-t border-default pt-4">
+          <GoogleBusinessPostOptions
+            v-if="isGoogle"
+            v-model="googleOptions"
+            :id-prefix="providerIdPrefix"
+            :has-link="hasLink"
+          />
+
+          <NuxtRadioGroup
+            v-else-if="capability.formats.length > 1"
+            :model-value="selectedFormat"
+            legend="Formato"
+            :aria-label="`Formato em ${capability.label}`"
+            :items="formatOptions"
+            @update:model-value="updateFormat(String($event))"
+          />
+
+          <NuxtFormField
+            :label="`Texto só para ${capability.label} (opcional)`"
+            help="Vazio usa o texto comum. A adaptação fica explícita e salva somente para este destino."
+          >
+            <NuxtTextarea
+              :id="`${idPrefix}-body`"
+              :model-value="bodyOverride"
+              :rows="3"
+              autoresize
+              class="w-full"
+              :placeholder="baseBody || 'Usa o texto comum quando ficar vazio.'"
+              @update:model-value="updateField('body', String($event ?? ''))"
+            />
+          </NuxtFormField>
+
+          <p
+            v-if="capability.delivery_kind === 'direct_message'"
+            class="text-xs text-muted-foreground"
+          >
+            Modelo, variáveis e botões aprovados são definidos na conexão da
+            plataforma; esta composição não inventa opções fora desse contrato.
+          </p>
+        </div>
+      </template>
+    </NuxtCollapsible>
+  </NuxtCard>
 </template>

@@ -8,32 +8,24 @@ import { beforeAll, describe, expect, it } from "vitest";
 import AnnouncementSimulatedPreview from "~/components/AnnouncementSimulatedPreview.vue";
 import { simulatedScenes } from "~/presentation/simulatedPreview";
 
-const SlotStub = defineComponent({ template: "<div><slot /></div>" });
-// O dublê global de UiButton declara `variant` mas não `size`. Este devolve o tamanho
-// pedido, para que o teste possa dizer QUAL variante foi escolhida. Os pixels são de
-// `Ui/Button.vue`, onde `icon` vale `size-11` — 44px.
-const SizedButtonStub = defineComponent({
-  inheritAttrs: false,
-  props: { size: { type: String, default: "default" } },
-  setup(props, { attrs, slots }) {
-    return () =>
-      h(
-        "button",
-        { ...attrs, type: "button", "data-size": props.size },
-        slots.default?.(),
-      );
-  },
-});
-// O `UiDialog` real é o DialogRoot da reka-ui, que segura o `open`. O dublê guarda o
-// mesmo contrato de v-model e monta o conteúdo só quando está aberto.
-const DialogStub = defineComponent({
-  props: { open: Boolean },
+// O `NuxtModal` real é o DialogRoot da reka-ui, que segura o `open` e desenha o gatilho
+// (slot padrão). O dublê guarda o mesmo contrato: o gatilho sempre, o corpo só aberto.
+const ModalStub = defineComponent({
+  props: { open: Boolean, title: String, description: String },
   emits: ["update:open"],
-  template: `
-    <div>
-      <div @click="$emit('update:open', true)"><slot name="default" /></div>
-    </div>
-  `,
+  setup(props, { emit, slots }) {
+    return () =>
+      h("div", [
+        h("div", { onClick: () => emit("update:open", true) }, slots.default?.()),
+        props.open
+          ? h("div", { role: "dialog" }, [
+              props.title ? h("h2", props.title) : null,
+              props.description ? h("p", props.description) : null,
+              slots.body?.(),
+            ])
+          : null,
+      ]);
+  },
 });
 
 beforeAll(() => {
@@ -53,24 +45,18 @@ function content(over: Record<string, unknown> = {}) {
 function mountPreview(scenes: ReturnType<typeof simulatedScenes>) {
   return mount(AnnouncementSimulatedPreview, {
     props: { scenes },
-    global: {
-      stubs: {
-        UiButton: SizedButtonStub,
-        UiDialog: DialogStub,
-        UiDialogTrigger: SlotStub,
-        UiDialogContent: SlotStub,
-        UiDialogHeader: SlotStub,
-        UiDialogTitle: SlotStub,
-        UiDialogDescription: SlotStub,
-        UiDialogClose: SlotStub,
-        Icon: true,
-      },
-    },
+    global: { stubs: { NuxtModal: ModalStub, Icon: true } },
   });
 }
 
+async function openPreview(scenes: ReturnType<typeof simulatedScenes>) {
+  const wrapper = mountPreview(scenes);
+  await wrapper.get('[data-testid="open-simulated-preview"]').trigger("click");
+  return wrapper;
+}
+
 describe("AnnouncementSimulatedPreview", () => {
-  it("o botão só de ícone tem nome de verdade e alvo de toque de 44px", () => {
+  it("o botão só de ícone tem nome de verdade e é quadrado, do conjunto mínimo", () => {
     const wrapper = mountPreview(
       simulatedScenes([
         {
@@ -86,8 +72,9 @@ describe("AnnouncementSimulatedPreview", () => {
     expect(trigger.attributes("aria-label")).toBe(
       "Ver a prévia em tamanho real",
     );
-    // `icon` é `size-11` em `Ui/Button.vue`: 44px, o alvo de toque da casa.
-    expect(trigger.attributes("data-size")).toBe("icon");
+    // Botão só de ícone é `square` (conjunto mínimo da suíte), no tamanho padrão.
+    expect(trigger.attributes("square")).toBeDefined();
+    expect(trigger.get("[data-icon]").attributes("data-icon")).toBe("i-lucide-eye");
   });
 
   it("sem retrato nenhum, o olho não aparece", () => {
@@ -99,7 +86,7 @@ describe("AnnouncementSimulatedPreview", () => {
 
   it("um botão por formato, e a aba diz qual está aberta", async () => {
     const shared = content();
-    const wrapper = mountPreview(
+    const wrapper = await openPreview(
       simulatedScenes([
         {
           platform: "instagram",
@@ -128,15 +115,12 @@ describe("AnnouncementSimulatedPreview", () => {
       "Feed no Facebook",
       "Mensagem no WhatsApp",
     ]);
-    // Duas colunas iguais; o ímpar que sobra ocupa a linha inteira em vez de ficar
-    // solto na metade da tela.
-    expect(tabs[2]?.classes()).toContain("col-span-2");
     expect(tabs[0]?.attributes("aria-selected")).toBe("true");
     expect(wrapper.get('[role="tabpanel"]').attributes("data-scene-kind")).toBe(
       "story",
     );
 
-    await tabs[2]?.trigger("mousedown", { button: 0, ctrlKey: false });
+    await tabs[2]?.trigger("click");
     expect(wrapper.get('[role="tabpanel"]').attributes("data-scene-kind")).toBe(
       "whatsapp_message",
     );
@@ -146,8 +130,8 @@ describe("AnnouncementSimulatedPreview", () => {
     );
   });
 
-  it("o Story avisa que o texto do rascunho não é sobreposto — sem começar pela negativa", () => {
-    const wrapper = mountPreview(
+  it("o Story avisa que o texto do rascunho não é sobreposto — sem começar pela negativa", async () => {
+    const wrapper = await openPreview(
       simulatedScenes([
         {
           platform: "instagram",
@@ -163,8 +147,8 @@ describe("AnnouncementSimulatedPreview", () => {
     expect(note).toContain("sobre a imagem aparece só o que já estiver na arte");
   });
 
-  it("o retrato sem foto diz o que vai acontecer, no formato certo", () => {
-    const wrapper = mountPreview(
+  it("o retrato sem foto diz o que vai acontecer, no formato certo", async () => {
+    const wrapper = await openPreview(
       simulatedScenes([
         {
           platform: "facebook",

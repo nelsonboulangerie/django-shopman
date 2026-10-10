@@ -67,7 +67,6 @@ const CEILING: Record<string, Partial<Record<Rule, number>>> = {
     buttonSize: 1,
     buttonVariant: 1,
   },
-  "marketing-nuxt": { arbitraryTextSize: 63 },
   "pos-nuxt": { arbitraryTextSize: 7 },
   "production-nuxt": { arbitraryTextSize: 8 },
 };

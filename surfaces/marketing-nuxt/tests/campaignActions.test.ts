@@ -29,7 +29,7 @@ const editAction = {
   priority: "primary",
   enabled: true,
   reason: "",
-  href: "/campaigns#campaign-3",
+  href: "/settings/campaigns#campaign-3",
   method: "GET",
   payload_schema: "",
   idempotency: "none",
