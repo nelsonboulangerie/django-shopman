@@ -1,4 +1,4 @@
-"""Observabilidade de baixo custo para a projeção do cardápio.
+"""Observabilidade de baixo custo: ``Server-Timing`` das leituras da loja e das idas do PDV.
 
 Dois tipos de estágio no ``Server-Timing``:
 
@@ -206,22 +206,27 @@ def capture_catalog_timing() -> Iterator[CatalogTiming]:
 
 
 class ServerTimingMixin:
-    """Carimba ``Server-Timing`` numa view de leitura, no MESMO formato do cardápio.
+    """Carimba ``Server-Timing`` numa view, no MESMO formato do cardápio.
 
     O valor do header é ser comparável entre rotas: por isso reusa
     ``capture_catalog_timing`` e os nomes de ``CatalogTiming``, sem formato
     próprio. ``projection`` é a view inteira; ``availability`` e
     ``personalization`` aparecem quando a view passa por ``build_catalog`` (a
     home passa); ``db`` é a soma do SQL do request; ``connect``, ``cache`` e
-    ``gc`` são o custo fixo (ver o docstring do módulo). Só leitura (GET/HEAD):
-    mutação não é o que este header mede.
+    ``gc`` são o custo fixo (ver o docstring do módulo).
+
+    ``server_timing_methods`` diz o que se mede: leitura (GET/HEAD) por padrão.
+    As idas do PDV que o operador espera (salvar e revisar, fechar a venda)
+    acrescentam ``POST``, porque é nelas que está o tempo do balcão.
 
     Não use em view que já abre a própria captura (cardápio, Continuum): a
     captura aninhada contaria o SQL duas vezes.
     """
 
+    server_timing_methods: tuple[str, ...] = ("GET", "HEAD")
+
     def dispatch(self, request, *args, **kwargs):
-        if request.method not in ("GET", "HEAD"):
+        if request.method not in self.server_timing_methods:
             return super().dispatch(request, *args, **kwargs)
         with capture_catalog_timing() as timing:
             with catalog_stage("projection"):

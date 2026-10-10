@@ -48,6 +48,10 @@ export const DJANGO_OPERATIONAL_RESPONSE_HEADERS = [
   "x-ratelimit-limit",
   "x-ratelimit-remaining",
   "x-ratelimit-reset",
+  // Tempo do servidor por estágio (SQL, abrir conexão, cache, GC), no formato do
+  // cardápio. Só números, sem dado de ninguém: é o que deixa medir no navegador,
+  // em produção, onde vai o tempo das idas do PDV (salvar, revisar, fechar).
+  "server-timing",
 ] as const;
 
 export function isSafeDjangoLocation(location: string): boolean {

@@ -213,6 +213,7 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
         "ratelimit-limit",
         "ratelimit-remaining",
         "ratelimit-reset",
+        "server-timing",
       ]),
     );
     expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).not.toContain("cache-control");

@@ -6,6 +6,11 @@ from django.http import HttpResponse, HttpResponseNotModified
 from django.utils.http import parse_etags
 from django.views import View
 
+from shopman.shop.observability import (
+    capture_catalog_timing,
+    catalog_stage,
+    log_catalog_observation,
+)
 from shopman.storefront.api.public_cache import carries_credentials
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import (
@@ -16,11 +21,6 @@ from shopman.storefront.continuum import (
     limits,
     rendered_message,
     validate_message_limits,
-)
-from shopman.storefront.observability import (
-    capture_catalog_timing,
-    catalog_stage,
-    log_catalog_observation,
 )
 
 
