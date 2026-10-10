@@ -67,7 +67,7 @@ function areaLine(area: AreaSummary) {
         variant="ghost"
         active-color="primary"
         :active="activeArea === group.area.name"
-        class="-mx-2.5 items-baseline gap-2 self-start text-left"
+        class="justify-start -mx-2.5 items-baseline gap-2 self-start text-left"
         :aria-pressed="activeArea === group.area.name"
         @click="activeArea = group.area.name"
       >

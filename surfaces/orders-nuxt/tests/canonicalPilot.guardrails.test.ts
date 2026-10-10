@@ -241,6 +241,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       // Os filtros rápidos (fase 2, K4): a faixa rola no celular e o rótulo da aba não
       // se corta nem estica (as abas do Nuxt UI crescem e truncam por padrão).
       "operator-kit/OperatorQuickFilters.vue",
+      // O PIN da suíte (dono, 10/10/2026): o campo só mostra (casas sem a opacidade
+      // de desabilitado, bolinha do tamanho do texto) e fica no centro.
+      "operator-kit/OperatorPinPad.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),

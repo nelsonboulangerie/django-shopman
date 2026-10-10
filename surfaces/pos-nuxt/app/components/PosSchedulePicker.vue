@@ -118,7 +118,7 @@ function pickDate(iso: string) {
           :key="option.ref"
           color="neutral"
           variant="ghost"
-          class="rounded-md border px-3 py-2 text-left text-sm transition flex-col items-start gap-0 font-normal"
+          class="justify-start rounded-md border px-3 py-2 text-left text-sm transition flex-col items-start gap-0 font-normal"
           :class="[
             option.enabled === false ? 'cursor-not-allowed border-dashed opacity-50' : 'hover:bg-accent',
             timeSlot === option.ref ? 'border-primary bg-primary/5 font-semibold' : 'border-border',

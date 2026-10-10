@@ -91,6 +91,7 @@ function glyphClass(shape: SpotShape) {
         :key="fixture.kind"
         color="neutral"
         variant="ghost"
+        class="justify-start"
         :icon="fixture.icon"
         :label="fixture.label"
         :aria-label="`Pôr ${fixture.label.toLowerCase()} na planta`"
@@ -136,7 +137,7 @@ function glyphClass(shape: SpotShape) {
         variant="ghost"
         active-color="primary" active-variant="solid"
         :active="activeArea === area.name"
-        class="gap-2 text-left"
+        class="justify-start gap-2 text-left"
         :aria-pressed="activeArea === area.name"
         :aria-label="areaAria(area)"
         data-seating-area-row
