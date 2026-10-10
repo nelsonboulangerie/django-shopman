@@ -123,43 +123,48 @@ class ModifyService:
                 },
             )
 
-        # 2. Apply ops
-        items = list(session.items)
-        data = dict(session.data)
-
-        for op in ops:
-            items, data = ModifyService._apply_op(items, data, op, session)
-
-        session.update_items(items)
-        session.data = data
-
-        # 3. Run modifiers (filtered by channel config)
         rules = (channel_config or {}).get("rules", {})
-        allowed_modifiers = rules.get("modifiers")  # None = run all, [] = none
 
-        # Infrastructure modifiers (pricing.*) always run
-        INFRA_PREFIXES = ("pricing.",)
+        # 2–4 com as linhas gravadas UMA vez, no fim: as ops e cada modifier
+        # reescreviam a mesma linha (preço do cliente → preço do backend →
+        # desconto), duas ou três gravações por linha a cada salvar.
+        with session.deferred_item_writes():
+            # 2. Apply ops
+            items = list(session.items)
+            data = dict(session.data)
 
-        for modifier in registry.get_modifiers():
-            code = getattr(modifier, "code", "")
-            is_infra = any(code.startswith(p) for p in INFRA_PREFIXES)
-            if is_infra:
-                modifier.apply(channel=channel, session=session, ctx=ctx)
-            elif allowed_modifiers is None:
-                # No rules.modifiers key → run all (backward compat)
-                modifier.apply(channel=channel, session=session, ctx=ctx)
-            elif code in allowed_modifiers:
-                modifier.apply(channel=channel, session=session, ctx=ctx)
+            for op in ops:
+                items, data = ModifyService._apply_op(items, data, op, session)
 
-        # 4. Run validators (stage="draft", filtered by channel config)
-        allowed_validators = rules.get("validators")  # None = run all, [] = none
+            session.update_items(items)
+            session.data = data
 
-        for validator in registry.get_validators(stage="draft"):
-            code = getattr(validator, "code", "")
-            if allowed_validators is None:
-                validator.validate(channel=channel, session=session, ctx=ctx)
-            elif code in allowed_validators:
-                validator.validate(channel=channel, session=session, ctx=ctx)
+            # 3. Run modifiers (filtered by channel config)
+            allowed_modifiers = rules.get("modifiers")  # None = run all, [] = none
+
+            # Infrastructure modifiers (pricing.*) always run
+            INFRA_PREFIXES = ("pricing.",)
+
+            for modifier in registry.get_modifiers():
+                code = getattr(modifier, "code", "")
+                is_infra = any(code.startswith(p) for p in INFRA_PREFIXES)
+                if is_infra:
+                    modifier.apply(channel=channel, session=session, ctx=ctx)
+                elif allowed_modifiers is None:
+                    # No rules.modifiers key → run all (backward compat)
+                    modifier.apply(channel=channel, session=session, ctx=ctx)
+                elif code in allowed_modifiers:
+                    modifier.apply(channel=channel, session=session, ctx=ctx)
+
+            # 4. Run validators (stage="draft", filtered by channel config)
+            allowed_validators = rules.get("validators")  # None = run all, [] = none
+
+            for validator in registry.get_validators(stage="draft"):
+                code = getattr(validator, "code", "")
+                if allowed_validators is None:
+                    validator.validate(channel=channel, session=session, ctx=ctx)
+                elif code in allowed_validators:
+                    validator.validate(channel=channel, session=session, ctx=ctx)
 
         # 5. Increment rev
         session.rev += 1

@@ -214,3 +214,23 @@ def test_get_prices_responde_o_mesmo_que_get_price(vitrine_variada):
     for qty in (Decimal(1), Decimal(10)):
         um_a_um = {sku: backend.get_price(sku, canal, qty=qty) for sku in skus}
         assert backend.get_prices(skus, canal, qty=qty) == um_a_um
+
+
+def test_get_line_prices_responde_o_mesmo_que_get_price(vitrine_variada):
+    """O salvar reprecifica todas as linhas em lote: mesma cascata, linha a linha."""
+    from types import SimpleNamespace
+
+    from shopman.shop.handlers.pricing import OffermanPricingBackend
+
+    vip = Listing.objects.create(ref="vip", name="VIP", is_active=True)
+    ListingItem.objects.create(listing=vip, product=Product.objects.get(sku="P01"), price_q=700)
+    ListingItem.objects.create(
+        listing=vip, product=Product.objects.get(sku="FAIXAS"), price_q=600, min_qty=Decimal("5"),
+    )
+    backend = OffermanPricingBackend()
+    canal = Channel.objects.get(ref="pdv")
+    linhas = [(sku, qty) for sku in [*CASOS, ""] for qty in (Decimal(1), Decimal(5), Decimal(10))]
+    for customer in (None, SimpleNamespace(price_tier=SimpleNamespace(listing_ref="vip"))):
+        kwargs = {"customer": customer} if customer is not None else {}
+        um_a_um = [backend.get_price(sku, canal, qty=qty, **kwargs) for sku, qty in linhas]
+        assert backend.get_line_prices(linhas, canal, customer=customer) == um_a_um

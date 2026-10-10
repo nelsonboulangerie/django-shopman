@@ -285,24 +285,30 @@ def _audit_item_index(items: list[dict]) -> dict:
 
 
 def _audit_line_diff(session: Session, *, before: list[dict], after: list[dict], actor: str) -> None:
-    """Emit add/remove/qty events for the net change between two item snapshots."""
+    """Emit add/remove/qty events for the net change between two item snapshots.
+
+    Todos numa escrita só (``emit_events``), na mesma ordem de antes: salvar dez
+    linhas novas custava setenta idas ao banco só de trilha.
+    """
     old = _audit_item_index(before)
     new = _audit_item_index(after)
+    events: list[tuple[str, dict]] = []
     for key, item in new.items():
         if key not in old:
-            session.emit_event("line_added", actor=actor, payload={
+            events.append(("line_added", {
                 "sku": item.get("sku"), "name": item.get("name"), "qty": _audit_qty(item),
-            })
+            }))
         elif _audit_qty(item) != _audit_qty(old[key]):
-            session.emit_event("qty_changed", actor=actor, payload={
+            events.append(("qty_changed", {
                 "sku": item.get("sku"), "name": item.get("name"),
                 "qty_before": _audit_qty(old[key]), "qty_after": _audit_qty(item),
-            })
+            }))
     for key, item in old.items():
         if key not in new:
-            session.emit_event("line_removed", actor=actor, payload={
+            events.append(("line_removed", {
                 "sku": item.get("sku"), "name": item.get("name"), "qty": _audit_qty(item),
-            })
+            }))
+    session.emit_events(events, actor=actor)
 
 
 def close_sale(

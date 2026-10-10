@@ -76,6 +76,49 @@ class OffermanPricingBackend:
                 prices[sku] = base.get(sku)
         return prices
 
+    def get_line_prices(self, lines: list[tuple[str, Any]], channel: Any, customer=None) -> list[int | None]:
+        """``get_price`` de cada ``(sku, qty)``, com as vitrines e o preço base lidos uma vez.
+
+        A mesma cascata, linha a linha (faixa do cliente → vitrine do canal → preço
+        base) e a mesma faixa por quantidade; só a leitura muda. O salvar da
+        comanda reprecifica todas as linhas a cada vez, e eram duas idas ao banco
+        por linha. Sem as leituras em lote no adapter, cai no ``get_price``.
+        """
+        catalog = get_adapter("catalog")
+        bulk_tiers = getattr(catalog, "bulk_listing_tiers", None)
+        bulk_base = getattr(catalog, "bulk_product_base_prices", None)
+        if bulk_tiers is None or bulk_base is None:
+            kwargs = {"customer": customer} if customer is not None else {}
+            return [self.get_price(sku, channel, qty=qty, **kwargs) for sku, qty in lines]
+
+        skus = list(dict.fromkeys(sku for sku, _qty in lines))
+        customer_listing = None
+        if customer and getattr(customer, "price_tier", None):
+            customer_listing = getattr(customer.price_tier, "listing_ref", None) or None
+        channel_listing = (getattr(channel, "ref", None) if channel else None) or None
+        customer_tiers = bulk_tiers(skus, customer_listing) if customer_listing else {}
+        channel_tiers = bulk_tiers(skus, channel_listing) if channel_listing else {}
+        base: dict[str, int] | None = None
+
+        prices: list[int | None] = []
+        for sku, qty in lines:
+            price = None
+            for tiers in (customer_tiers, channel_tiers):
+                item = next((t for t in tiers.get(sku) or [] if t["min_qty"] <= qty), None)
+                if item and item.get("is_sellable"):
+                    price = item["price_q"]
+                    break
+            if price is None:
+                if base is None:
+                    try:
+                        base = bulk_base(skus)
+                    except Exception:
+                        logger.debug("pricing.get_line_prices degraded; using fallback", exc_info=True)
+                        base = {}
+                price = base.get(sku)
+            prices.append(price)
+        return prices
+
     def _get_listing_item(self, catalog, listing_ref, sku, qty=1):
         """Find the tier with highest min_qty <= qty."""
         tiers = catalog.find_listing_tiers(sku, listing_ref)
@@ -108,7 +151,16 @@ class ItemPricingModifier:
         option_products = (
             _products_with_line_options(items) if session.pricing_policy == "internal" else {}
         )
-        for item in items:
+        # As faixas e o preço base de todas as linhas numa leitura (a cascata é a
+        # mesma do ``get_price``; ver ``get_line_prices``).
+        line_prices = None
+        if session.pricing_policy == "internal" and hasattr(self.backend, "get_line_prices"):
+            line_prices = self.backend.get_line_prices(
+                [(item["sku"], max(Decimal("1"), Decimal(str(item.get("qty", 1) or 1)))) for item in items],
+                channel,
+                customer=customer,
+            )
+        for index, item in enumerate(items):
             sku = item["sku"]
 
             # ⚠️ Havia aqui um ramo que CONGELAVA a linha: com
@@ -125,10 +177,13 @@ class ItemPricingModifier:
                 # e nenhuma faixa casava: o listing do canal era pulado e o
                 # queijo saía pelo preço base. Menos de uma unidade é a 1ª faixa.
                 qty_val = max(Decimal("1"), Decimal(str(item.get("qty", 1) or 1)))
-                kwargs = {"qty": qty_val}
-                if customer is not None:
-                    kwargs["customer"] = customer
-                price = self.backend.get_price(sku, channel, **kwargs)
+                if line_prices is not None:
+                    price = line_prices[index]
+                else:
+                    kwargs = {"qty": qty_val}
+                    if customer is not None:
+                        kwargs["customer"] = customer
+                    price = self.backend.get_price(sku, channel, **kwargs)
                 if price is not None and sku in option_products:
                     # Escolhas no produto: o preço da linha é o do produto MAIS as
                     # opções, relidas pelo ``ref`` no catálogo de agora (o cliente

@@ -102,3 +102,47 @@ class SessionEventTests(TestCase):
         session.emit_event("line_removed", actor="op", payload={"sku": "X"})
         session.delete()
         self.assertEqual(SessionEvent.objects.filter(session_key="S-DEL").count(), 1)
+
+    def test_emit_events_appends_in_order_with_consecutive_seq_in_one_write(self) -> None:
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        session = self._session("S-BATCH")
+        session.emit_event("opened", actor="op")
+        events = [("line_added", {"sku": f"P{i}", "qty": i}) for i in range(10)]
+        with CaptureQueriesContext(connection) as ctx:
+            created = session.emit_events(events, actor="op")
+
+        self.assertEqual([e.seq for e in created], list(range(1, 11)))
+        stored = list(
+            SessionEvent.objects.filter(session_key="S-BATCH").order_by("seq").values_list("seq", "type", "payload")
+        )
+        self.assertEqual([row[0] for row in stored], list(range(11)))
+        self.assertEqual([row[2]["sku"] for row in stored[1:]], [f"P{i}" for i in range(10)])
+        inserts = [q for q in ctx.captured_queries if q["sql"].lstrip().upper().startswith("INSERT")]
+        self.assertEqual(len(inserts), 1)
+        self.assertLessEqual(len(ctx.captured_queries), 8)
+
+    def test_emit_events_with_nothing_writes_nothing(self) -> None:
+        session = self._session("S-EMPTY")
+        self.assertEqual(session.emit_events([], actor="op"), [])
+        self.assertFalse(SessionEvent.objects.filter(session_key="S-EMPTY").exists())
+
+    def test_emit_events_recovers_from_real_seq_collision(self) -> None:
+        from django.db.models import QuerySet
+
+        session = self._session("S-BATCH-RACE")
+        session.emit_event("e0", actor="op")  # seq 0 real
+        real_aggregate = QuerySet.aggregate
+        state = {"n": 0}
+
+        def stale_once(self_qs, *a, **k):
+            state["n"] += 1
+            if state["n"] == 1:
+                return {"m": -1}  # stale → o lote começaria em 0, que já existe
+            return real_aggregate(self_qs, *a, **k)
+
+        with patch.object(QuerySet, "aggregate", autospec=True, side_effect=stale_once):
+            created = session.emit_events([("a", {}), ("b", {})], actor="op")
+
+        self.assertEqual([e.seq for e in created], [1, 2])
