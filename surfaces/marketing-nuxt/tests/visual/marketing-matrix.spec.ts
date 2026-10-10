@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { expectOperatorLabelsFit } from "../../../operator-kit/visual/playwright";
+
 type Viewport = { width: number; height: number; label: string };
 type Theme = "light" | "dark";
 
@@ -70,6 +72,8 @@ async function expectStableScreenshot(
     maxDiffPixelRatio?: number;
   } = {},
 ) {
+  // O rótulo que cabe (dono, 10/10/2026): nenhum texto de botão vaza ou corta.
+  await expectOperatorLabelsFit(page, `${name} ${viewport.label} ${theme}`);
   await expect(page).toHaveScreenshot(
     [`${name}__${viewport.label}__${theme}.png`],
     {

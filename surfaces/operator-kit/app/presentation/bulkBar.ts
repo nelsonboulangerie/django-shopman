@@ -11,6 +11,12 @@
 export interface OperatorBulkAction {
   /** Verbo e, quando couber, quantos: "Pausar", "Aceitar 3". */
   label: string;
+  /**
+   * O curto, escrito por quem conhece a ação, para quando o completo não cabe
+   * ("Cozinha" para "Enviar à cozinha"). Abaixo dele, com `icon`, só o ícone. Ver
+   * `actionLabel.ts` e o README ("Rótulo que cabe").
+   */
+  shortLabel?: string;
   icon?: string;
   disabled?: boolean;
   /** Por que não pode (com `disabled`): vira a dica e o nome acessível. */

@@ -50,6 +50,11 @@ const activeSupplierItems = computed(() =>
 );
 const supplierItems = computed(() => suppliers.value.map((supplier) => ({ label: supplier.displayName, value: supplier.ref })));
 const materialItems = computed(() => materials.value.map((material) => ({ label: material.name, value: material.sku })));
+// O nome escolhido pode passar da largura do campo: a reticência leva o completo na
+// dica (o rótulo que cabe, dono 10/10/2026).
+const noteMaterialName = computed(
+  () => materials.value.find((material) => material.sku === noteMaterialSku.value)?.name || undefined,
+);
 // `NuxtSelect` não aceita valor vazio num item: a unidade-base vai como sentinela e
 // volta vazia para o rascunho (sem conversão).
 const BASE_UNIT = "__base__";
@@ -92,6 +97,10 @@ const batchEmptyTitle = computed(() => {
   return "Nenhum insumo ativo na Base.";
 });
 
+const quoteActions = [
+  { label: "Salvar custo", shortLabel: "Salvar", icon: "i-lucide-save" },
+  { label: "Salvar como padrão", shortLabel: "Padrão", icon: "i-lucide-star" },
+] as const;
 const quoteDisabled = computed(() => !notePreview.value || !noteMaterialSku.value || !noteSupplierRef.value);
 const savingBatch = ref(false);
 async function onSaveBatch() {
@@ -249,6 +258,7 @@ async function onPrefer(cost: SupplierMaterialCost) {
                   <NuxtSelectMenu
                     v-model="noteMaterialSku"
                     :items="materialItems"
+                    :title="noteMaterialName"
                     value-key="value"
                     placeholder="Escolher o insumo"
                     :search-input="{ autofocus: !touch, placeholder: 'Buscar insumo' }"
@@ -278,9 +288,11 @@ async function onPrefer(cost: SupplierMaterialCost) {
                     <template v-else>R$ 0,00</template>
                   </p>
                 </NuxtCard>
-                <div class="grid grid-cols-2 gap-2">
-                  <NuxtButton
-                    label="Salvar custo"
+                <!-- O rótulo que cabe (dono, 10/10/2026): na coluna estreita os dois
+                     viram "Salvar" e "Padrão", e no limite só o ícone, com o nome na dica. -->
+                <OperatorFitGroup :actions="quoteActions" class="grid w-full grid-cols-2 gap-2">
+                  <OperatorButton
+                    v-bind="quoteActions[0]"
                     color="neutral"
                     variant="outline"
                     block
@@ -288,14 +300,14 @@ async function onPrefer(cost: SupplierMaterialCost) {
                     :disabled="readonlyFallback || quoteDisabled || actionPending"
                     @click="onSaveQuote(false)"
                   />
-                  <NuxtButton
-                    label="Salvar como padrão"
+                  <OperatorButton
+                    v-bind="quoteActions[1]"
                     block
                     :loading="savingQuote === 'preferred'"
                     :disabled="readonlyFallback || quoteDisabled || actionPending"
                     @click="onSaveQuote(true)"
                   />
-                </div>
+                </OperatorFitGroup>
               </div>
             </NuxtCard>
           </section>

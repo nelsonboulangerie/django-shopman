@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { Page, PlaywrightTestConfig, TestInfo } from "@playwright/test";
 
 import { selectedOperatorViewports, type OperatorVisualViewport } from "./matrix";
-import { scanOperatorGeometry, type OperatorGeometryFinding } from "./scanner";
+import { OPERATOR_LABEL_FINDINGS, scanOperatorGeometry, type OperatorGeometryFinding } from "./scanner";
 
 const visualRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -108,4 +108,20 @@ export async function captureOperatorEvidence(
     throw new Error(blocking.map((finding) => `${finding.kind} ${finding.selector}: ${finding.message}`).join("\n"));
   }
   return { screenshot, findings };
+}
+
+/**
+ * A trava do rótulo que cabe para as matrizes que ainda não passam a varredura de
+ * geometria inteira (Marketing, Produção, Cozinha): só texto de controle que vaza ou
+ * corta, controles sobrepostos e texto de peça fixa. Reprova com a lista do que achou.
+ */
+export async function expectOperatorLabelsFit(page: Page, context = "") {
+  await page.evaluate(() => document.fonts.ready);
+  const findings = await scanOperatorGeometry(page, { only: OPERATOR_LABEL_FINDINGS });
+  if (findings.length) {
+    throw new Error(
+      `${context ? `${context}: ` : ""}rótulo que não cabe\n` +
+        findings.map((finding) => `${finding.kind} ${finding.selector}: ${finding.message}`).join("\n"),
+    );
+  }
 }

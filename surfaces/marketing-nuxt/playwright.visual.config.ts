@@ -1,7 +1,8 @@
 import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 
-const appPort = 3010;
-const backendPort = 9011;
+// As variáveis existem para quem roda em paralelo numa faixa de portas própria.
+const appPort = Number(process.env.MARKETING_VISUAL_APP_PORT || 3010);
+const backendPort = Number(process.env.MARKETING_VISUAL_BACKEND_PORT || 9011);
 
 export default defineOperatorVisualConfig({
   app: "marketing-nuxt",

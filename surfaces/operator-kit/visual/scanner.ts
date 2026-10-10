@@ -5,6 +5,9 @@ export type OperatorGeometryFindingKind =
   | "outside-viewport"
   | "covered-by-chrome"
   | "text-clipping"
+  | "control-text-overflow"
+  | "control-overlap"
+  | "fixed-text"
   | "focus-clipping"
   | "overlay-layer"
   | "touch-target"
@@ -21,16 +24,27 @@ export interface OperatorGeometryFinding {
 }
 
 export interface OperatorGeometryOptions {
+  /** Só estes tipos de achado (as matrizes que ainda não passam a varredura inteira
+   *  ligam só a trava do rótulo, `OPERATOR_LABEL_FINDINGS`). */
+  only?: readonly OperatorGeometryFindingKind[];
   touch?: boolean;
   minTouchTarget?: number;
   minTargetSpacing?: number;
 }
 
+/** A trava do rótulo que cabe (dono, 10/10/2026): texto de controle que vaza ou corta,
+ *  controles sobrepostos e texto de peça fixa que não reserva as linhas. */
+export const OPERATOR_LABEL_FINDINGS: readonly OperatorGeometryFindingKind[] = [
+  "control-text-overflow",
+  "control-overlap",
+  "fixed-text",
+];
+
 export async function scanOperatorGeometry(
   page: Page,
   options: OperatorGeometryOptions = {},
 ): Promise<OperatorGeometryFinding[]> {
-  return page.evaluate((input) => {
+  const findings = await page.evaluate((input) => {
     const findings: OperatorGeometryFinding[] = [];
     // Alvo de toque = altura `md` (32 px, o `--spacing-control`), decisão do dono de
     // 09/10/2026: campos e botões em 32 px em todos os apps, inclusive no toque.
@@ -196,6 +210,18 @@ export async function scanOperatorGeometry(
         "[data-focus-obstruction], [data-operator-fixed-chrome]",
       ),
     ].filter(visible);
+    // Faixa que rola de lado (abas, filtros rápidos): o que está fora da tela se alcança
+    // rolando a faixa, não é controle perdido.
+    const inHorizontalScroller = (element: HTMLElement) => {
+      for (let node = element.parentElement; node; node = node.parentElement) {
+        if (node === document.body || node === document.documentElement) return false;
+        const overflowX = getComputedStyle(node).overflowX;
+        if ((overflowX === "auto" || overflowX === "scroll") && node.scrollWidth > node.clientWidth + 1) {
+          return true;
+        }
+      }
+      return false;
+    };
     for (const element of interactives) {
       const envelope =
         element.closest<HTMLElement>("[data-touch-envelope]") ?? element;
@@ -205,7 +231,8 @@ export async function scanOperatorGeometry(
       );
       const outsideHorizontal =
         !element.closest('[data-operator-overflow="horizontal"]') &&
-        (rect.left < -1 || rect.right > innerWidth + 1);
+        (rect.left < -1 || rect.right > innerWidth + 1) &&
+        !inHorizontalScroller(element);
       const outsideFixedVertical =
         fixedContext && (rect.top < -1 || rect.bottom > innerHeight + 1);
       if (outsideHorizontal || outsideFixedVertical) {
@@ -347,6 +374,177 @@ export async function scanOperatorGeometry(
       }
     }
 
+    // O rótulo que cabe (dono, 10/10/2026). Dentro de um controle, nenhum texto passa
+    // da caixa: nem vazando (o filho mais largo que o botão), nem cortado seco
+    // (scrollWidth > clientWidth sem reticência declarada). Reticência só vale com o
+    // texto completo na dica ou no nome acessível.
+    // Só controle de verdade tem rótulo: o painel de aba, a faixa de abas que rola e a
+    // região com `tabindex` são contêineres, e o que vive dentro deles é checado como
+    // controle próprio.
+    const labelControlSelector = [
+      "button",
+      "a[href]",
+      "summary",
+      "[role='button']",
+      "[role='link']",
+      "[role='tab']",
+      "[role='radio']",
+      "[role='checkbox']",
+      "[role='switch']",
+      "[role='menuitem']",
+      "[role='option']",
+    ].join(",");
+    const labelControls = interactives.filter(
+      (element) =>
+        element.matches(labelControlSelector) &&
+        !element.matches("[role='tablist'], [role='tabpanel'], [role='region'], [role='grid'], [role='listbox']"),
+    );
+    for (const control of labelControls) {
+      if (control.closest("[data-clipping-allowed]")) continue;
+      if (control.closest('[data-operator-overflow="horizontal"]') === control) continue;
+      const box = control.getBoundingClientRect();
+      const named =
+        Boolean(control.title) || Boolean(control.getAttribute("aria-label"));
+      const label =
+        control.getAttribute("aria-label") ||
+        control.textContent?.trim().replace(/\s+/g, " ").slice(0, 60) ||
+        "sem nome";
+      for (const node of [control, ...control.querySelectorAll<HTMLElement>("*")]) {
+        if (node !== control && !visible(node)) continue;
+        if (node.matches("svg, svg *, img, input, textarea, select")) continue;
+        const style = getComputedStyle(node);
+        if (style.position === "absolute" || style.position === "fixed") continue;
+        const rect = node.getBoundingClientRect();
+        if (
+          node !== control &&
+          rect.width > 0 &&
+          (rect.right > box.right + 1 || rect.left < box.left - 1)
+        ) {
+          add(
+            "control-text-overflow",
+            control,
+            `Texto do controle “${label}” passa da caixa (${Math.round(rect.width)}px num controle de ${Math.round(box.width)}px).`,
+          );
+          break;
+        }
+        const ownText = [...node.childNodes].some(
+          (child) => child.nodeType === Node.TEXT_NODE && child.textContent?.trim(),
+        ) || (node.dataset.opFitShort !== undefined);
+        if (!ownText || node.clientWidth === 0) continue;
+        if (node.scrollWidth > node.clientWidth + 1) {
+          const ellipsis = style.textOverflow === "ellipsis";
+          // O completo pode morar no próprio trecho cortado (`title` no nome do cliente
+          // dentro de um cartão-botão), além do nome acessível do controle.
+          const nodeNamed = Boolean(node.closest<HTMLElement>("[title]")?.title) &&
+            control.contains(node.closest("[title]"));
+          if (!ellipsis || !(named || nodeNamed)) {
+            add(
+              "control-text-overflow",
+              control,
+              ellipsis
+                ? `Rótulo “${label}” termina em reticência sem o texto completo na dica ou no nome acessível.`
+                : `Rótulo “${label}” cortado sem reticência (${node.scrollWidth}px de texto em ${node.clientWidth}px).`,
+            );
+            break;
+          }
+        }
+      }
+    }
+
+    // Controles que se sobrepõem: um cobre o outro (rótulo que empurra o vizinho, barra
+    // que não cabe). Pai e filho não contam; o que mora em overlay aberto também não, nem
+    // o que está inerte atrás de um modal. Só se comparam controles da MESMA camada: o
+    // conteúdo que rola por baixo de uma barra fixa ou grudada é o `covered-by-chrome`,
+    // não sobreposição.
+    const flat = labelControls.filter(
+      (element) =>
+        !element.closest(
+          "[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'], [inert], [aria-hidden='true'], [data-operator-overlap-allowed]",
+        ),
+    );
+    const layerOf = (element: HTMLElement) => {
+      for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+        const position = getComputedStyle(node).position;
+        if (position === "fixed" || position === "sticky") return node;
+      }
+      return null;
+    };
+    const layers = new Map(flat.map((element) => [element, layerOf(element)]));
+    // A caixa que de fato aparece: o retângulo recortado por todo ancestral que corta o
+    // que passa dele (lista que rola por baixo do rodapé não é sobreposição).
+    const shownRect = (element: HTMLElement) => {
+      const rect = element.getBoundingClientRect();
+      let { left, top, right, bottom } = rect;
+      for (let node = element.parentElement; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        const clipsX = !["", "visible"].includes(style.overflowX);
+        const clipsY = !["", "visible"].includes(style.overflowY);
+        if (!clipsX && !clipsY) continue;
+        const clip = node.getBoundingClientRect();
+        if (clipsX) {
+          left = Math.max(left, clip.left);
+          right = Math.min(right, clip.right);
+        }
+        if (clipsY) {
+          top = Math.max(top, clip.top);
+          bottom = Math.min(bottom, clip.bottom);
+        }
+      }
+      return { left, top, right, bottom };
+    };
+    const shown = new Map(flat.map((element) => [element, shownRect(element)]));
+    for (let index = 0; index < flat.length; index += 1) {
+      const a = flat[index]!;
+      const ra = shown.get(a)!;
+      for (let other = index + 1; other < flat.length; other += 1) {
+        const b = flat[other]!;
+        if (a.contains(b) || b.contains(a)) continue;
+        if (layers.get(a) !== layers.get(b)) continue;
+        const rb = shown.get(b)!;
+        const ix = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+        const iy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+        if (ix > 2 && iy > 2) {
+          const name = (element: HTMLElement) =>
+            element.getAttribute("aria-label") ||
+            element.textContent?.trim().replace(/\s+/g, " ").slice(0, 40) ||
+            element.tagName.toLowerCase();
+          add(
+            "control-overlap",
+            b,
+            `Controles “${name(a)}” e “${name(b)}” se sobrepõem em ${Math.round(ix)}×${Math.round(iy)}px.`,
+          );
+        }
+      }
+    }
+
+    // Texto de peça fixa (`op-fixed-lines`): reserva sempre as linhas declaradas
+    // (o cartão não muda de altura com 1, 2 ou 3 linhas) e, cortado, leva o texto
+    // completo na dica ou no nome acessível.
+    for (const element of document.querySelectorAll<HTMLElement>(".op-fixed-lines")) {
+      if (!visible(element)) continue;
+      const style = getComputedStyle(element);
+      const lines = Number(style.getPropertyValue("--op-lines")) || 2;
+      const lineHeight = Number.parseFloat(style.lineHeight);
+      if (Number.isFinite(lineHeight) && Math.abs(element.clientHeight - lines * lineHeight) > 1.5) {
+        add(
+          "fixed-text",
+          element,
+          `Texto de peça fixa mede ${element.clientHeight}px; reserva ${lines} linhas de ${lineHeight}px.`,
+        );
+      }
+      if (
+        element.scrollHeight > element.clientHeight + 1 &&
+        !element.title &&
+        !element.getAttribute("aria-label")
+      ) {
+        add(
+          "fixed-text",
+          element,
+          "Texto de peça fixa cortado sem o completo na dica ou no nome acessível.",
+        );
+      }
+    }
+
     for (const overlay of document.querySelectorAll<HTMLElement>(
       "[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']",
     )) {
@@ -407,4 +605,6 @@ export async function scanOperatorGeometry(
     }
     return findings;
   }, options);
+  const only = options.only ? new Set(options.only) : null;
+  return only ? findings.filter((finding) => only.has(finding.kind)) : findings;
 }
