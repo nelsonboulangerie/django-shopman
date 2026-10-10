@@ -17,7 +17,7 @@ test("o desktop abre na Fila, por urgência, com a coluna de consciência", asyn
   await expect(items.nth(1).locator("[data-queue-goal]")).toHaveText("meta 5");
   // O resto vira contagem com nome (sem "+N" somando grandezas); o agregado, o que o
   // sistema fez e o cardápio ao lado.
-  await expect(queue.locator("[data-queue-rest]")).toContainText("você");
+  await expect(queue.locator("[data-queue-rest]")).toContainText("Seguem sozinhos: 1 na cozinha");
   await expect(queue.locator("[data-queue-rest]")).not.toContainText("+");
   await expect(queue.locator("[data-queue-progress]")).toContainText("Na Cozinha");
   await expect(queue.locator("[data-queue-system]")).toContainText("Aceito · prazo de confirmação");
@@ -36,9 +36,13 @@ test("L abre a Lista e G volta para a Grade", async ({ page }) => {
   await expect(page.locator("[data-supervision-table]")).toBeVisible();
 });
 
-test("tablet em pé segue com as colunas (a Fila é do desktop)", async ({ page }) => {
+test("tablet em pé segue com o quadro em abas (a Fila é do desktop)", async ({ page }) => {
+  // Três colunas de ~240 px cortavam selo e prazo do cartão: abaixo do lg o quadro usa
+  // as abas do celular, uma etapa por vez (74932fb8f, 07/10/2026).
   await page.setViewportSize({ width: 820, height: 1180 });
   await page.goto("/");
-  await expect(page.locator("[data-board-columns]")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Preparo 3" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Ana · Loja online", { exact: true })).toBeVisible();
+  await expect(page.locator("[data-board-columns]")).toHaveCount(0);
   await expect(page.locator("[data-queue-view]")).toHaveCount(0);
 });

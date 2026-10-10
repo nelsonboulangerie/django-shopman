@@ -222,6 +222,14 @@ jobs:
         if: matrix.app == 'purchase-nuxt' || matrix.app == 'kds-nuxt' || matrix.app == 'orders-nuxt'
         run: npm run test:visual
 
+      # A e2e do Gestor (mock hermético + build de produção): Fila, quadro, Lista, busca,
+      # iFood e alvos. Ficava fora de todo job e apodreceu em silêncio: o mock não dizia
+      # `authorized: true`, o app abria na recusa de acesso e os 12 testes estavam
+      # vermelhos sem ninguém ver (10/10/2026).
+      - name: Gestor e2e (mock autorizado)
+        if: matrix.app == 'orders-nuxt'
+        run: npm run test:e2e
+
       # A trava de geometria da Venda do PDV (PR #1636): a comanda de altura inteira,
       # nenhum texto cortado e o total inteiro em 1280/1366/1440/1920, claro e escuro.
       # Sem baseline de pixel: roda com o Chromium que estiver no runner.
