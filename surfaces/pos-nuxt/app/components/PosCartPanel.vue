@@ -1784,7 +1784,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           <span class="flex-1" />
           <span v-if="totalShown" class="ml-auto flex shrink-0 flex-col items-end leading-none" data-pos-primary-total :data-total-state="total.status">
             <span class="op-micro opacity-80 whitespace-nowrap">{{ total.status === "offline" ? "total sem conexão" : "total" }}</span>
-            <span v-if="totalConfirmed" class="text-2xl leading-8 font-semibold whitespace-nowrap tnum @min-[24rem]:text-3xl" data-pos-primary-total-value>{{ totalText }}</span>
+            <span v-if="totalConfirmed" class="text-xl leading-8 font-semibold whitespace-nowrap tnum @min-[24rem]:text-3xl" data-pos-primary-total-value>{{ totalText }}</span>
             <span v-else class="text-base leading-8 font-medium whitespace-nowrap opacity-80">{{ totalText }}</span>
           </span>
         </NuxtButton>
