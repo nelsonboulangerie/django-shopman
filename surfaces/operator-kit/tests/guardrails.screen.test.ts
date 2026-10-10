@@ -34,7 +34,9 @@ const CEILING: Record<string, number> = {
   "marketing-nuxt": 1,
   "pos-nuxt": 7,
   "production-nuxt": 1,
-  "purchase-nuxt": 3,
+  // Compras (fase 2): a régua é o `useScreen()`; sobra o ponteiro grosso
+  // (`useCoarsePointer`), que não é largura: decide o foco da busca da lista longa.
+  "purchase-nuxt": 1,
 };
 
 function sourceFiles(dir: string): string[] {

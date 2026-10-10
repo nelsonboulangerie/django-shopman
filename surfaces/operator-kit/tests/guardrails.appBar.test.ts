@@ -85,9 +85,6 @@ describe("guardrail do cabeçalho de seções", () => {
       // cupons, Plataformas) mora em `MarketingSettingsNav.vue`, na linha de recortes
       // do `OperatorPageHeader`; ela não é barra de seções do app.
       "marketing-nuxt/app/components/MarketingNav.vue",
-      // V4-COMPRAS: as seções do Compras são estado (não rotas); as duas peças recebem
-      // `current` e devolvem `select`.
-      "purchase-nuxt/app/components/PurchaseNav.vue",
     ];
     for (const file of migrados) {
       const source = readFileSync(join(SURFACES, file), "utf8");
@@ -124,6 +121,13 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(production).not.toContain("<ProductionNav");
     expect(production).toContain("data-production-kiosk");
 
+    // Fase 2 (onda do Compras, 09/10/2026): o Compras entrou no shell; cada seção é rota.
+    const purchase = readFileSync(join(SURFACES, "purchase-nuxt/app/app.vue"), "utf8");
+    expect(purchase).toContain("<OperatorSuiteShell");
+    expect(purchase).toContain(':sections="sections"');
+    expect(purchase).not.toContain("<PurchaseNav");
+    expect(purchase).not.toMatch(/data-suite=/);
+
     // Fase 2, onda da Cozinha: as estações pelo nome numa lista só (`where` separa a
     // ordem da barra lateral da ordem da barra inferior), sem adaptador de navegação.
     // A pele `data-suite` sobra só no Painel de retirada, tela do cliente fora do shell.
@@ -149,7 +153,6 @@ describe("guardrail do cabeçalho de seções", () => {
 // abaixo nasceu de uma divergência medida que pode voltar.
 const NAVS = [
   "marketing-nuxt/app/components/MarketingNav.vue",
-  "purchase-nuxt/app/components/PurchaseNav.vue",
 ];
 const KIT = (name: string) =>
   readFileSync(join(SURFACES, "operator-kit/app/components", name), "utf8");
