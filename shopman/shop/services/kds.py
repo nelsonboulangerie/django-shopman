@@ -218,7 +218,7 @@ def _fire_lines_locked(*, session_key: str, lines: list[dict], get_adapter, kds_
     catchall_map = defaultdict(list)
 
     for inst in instances:
-        col_ids = set(inst.collections.values_list("id", flat=True))
+        col_ids = {collection.pk for collection in inst.collections.all()}  # usa o prefetch
         if not col_ids:
             catchall_map[inst.type].append(inst)
         else:
@@ -325,7 +325,7 @@ def kitchen_routes_for_skus(skus: list[str]) -> dict[str, dict]:
     type_col_map = defaultdict(list)
     catchall_map = defaultdict(list)
     for inst in instances:
-        col_ids = set(inst.collections.values_list("id", flat=True))
+        col_ids = {collection.pk for collection in inst.collections.all()}  # usa o prefetch
         if not col_ids:
             catchall_map[inst.type].append(inst)
         else:
@@ -390,7 +390,7 @@ def preview_order_for_instance(order, instance) -> list[dict]:
     type_col_map = defaultdict(list)
     catchall_map = defaultdict(list)
     for candidate in instances:
-        collection_ids = set(candidate.collections.values_list("id", flat=True))
+        collection_ids = {collection.pk for collection in candidate.collections.all()}  # usa o prefetch
         if collection_ids:
             for collection_id in collection_ids:
                 type_col_map[(candidate.type, collection_id)].append(candidate)

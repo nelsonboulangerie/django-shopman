@@ -312,10 +312,12 @@ class Session(models.Model):
     # ------------------------------------------------------------------ internal
 
     def _load_items_from_lines(self) -> list[dict]:
-        payload: list[dict] = []
-        for item in self.session_items.order_by("id"):
-            payload.append(item.to_payload())
-        return payload
+        # Quem leu várias sessões com ``prefetch_related("session_items")`` já tem
+        # as linhas na mão: o ``order_by`` abaixo ignoraria o prefetch e voltaria
+        # ao banco uma vez por sessão (o quadro de comandas do PDV, por exemplo).
+        prefetched = getattr(self, "_prefetched_objects_cache", {}).get("session_items")
+        lines = sorted(prefetched, key=lambda item: item.pk) if prefetched is not None else self.session_items.order_by("id")
+        return [item.to_payload() for item in lines]
 
     def _normalize_items(self, items: list[dict]) -> list[dict]:
         normalized: list[dict] = []
