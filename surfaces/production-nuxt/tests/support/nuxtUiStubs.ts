@@ -314,7 +314,11 @@ export const NuxtTabsStub = defineComponent({
               disabled: Boolean(item.disabled),
               onClick: () => emit("update:modelValue", value),
             },
-            [String(item.label ?? ""), item.badge !== undefined ? ` ${String(item.badge)}` : ""],
+            [
+              String(item.label ?? ""),
+              // A contagem chega pelo `#trailing` (OperatorCountChip), como na aba real.
+              slots.trailing ? [" ", slots.trailing({ item, index })] : "",
+            ],
           );
         }),
         slots.default?.(),
@@ -365,6 +369,15 @@ function menuStub(name: string) {
 export const NuxtDropdownMenuStub = menuStub("NuxtDropdownMenu");
 export const NuxtContextMenuStub = menuStub("NuxtContextMenu");
 
+/** `OperatorCountChip` do kit: o número, e nada quando é zero (o chip some no zero). */
+export const OperatorCountChipStub = defineComponent({
+  name: "OperatorCountChip",
+  props: { count: { type: Number, default: 0 } },
+  setup(props) {
+    return () => (props.count > 0 ? h("span", { "data-count-chip": "" }, String(props.count)) : null);
+  },
+});
+
 /** Tudo de uma vez, para espalhar no `stubs` do teste. */
 export const nuxtUiStubs = {
   NuxtButton: NuxtButtonStub,
@@ -381,4 +394,5 @@ export const nuxtUiStubs = {
   NuxtTabs: NuxtTabsStub,
   NuxtDropdownMenu: NuxtDropdownMenuStub,
   NuxtContextMenu: NuxtContextMenuStub,
+  OperatorCountChip: OperatorCountChipStub,
 };

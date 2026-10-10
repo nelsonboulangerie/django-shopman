@@ -60,8 +60,8 @@ const pendingCount = computed(
   () => gate.value.clean.length + gate.value.exceptions.length,
 );
 const viewTabs = computed(() => [
-  { value: "pending", label: "Para confirmar", badge: pendingCount.value },
-  { value: "reviewed", label: "Confirmados", badge: gate.value.reviewed.length },
+  { value: "pending", label: "Para confirmar", count: pendingCount.value },
+  { value: "reviewed", label: "Confirmados", count: gate.value.reviewed.length },
 ]);
 const summary = computed(() => cleanSummary(gate.value.clean));
 const closers = computed(() => closersSummary(gate.value.clean));
@@ -129,7 +129,9 @@ function closedLine(order: QCOrderCardProjection): string {
       variant="pill"
       class="w-full sm:w-auto sm:justify-self-end"
       aria-label="Lotes da Qualidade"
-    />
+    >
+      <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+    </NuxtTabs>
 
     <div
       v-if="view === 'pending'"

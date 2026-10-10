@@ -849,14 +849,14 @@ const planFilterTabs = computed(() =>
   PLAN_FILTERS.map((filter) => ({
     value: filter.key,
     label: filter.label,
-    badge: planGroups.value.counts[filter.key],
+    count: planGroups.value.counts[filter.key],
   })),
 );
 const openFilterTabs = computed(() =>
   OPEN_FILTERS.map((filter) => ({
     value: filter.key,
     label: filter.label,
-    badge: openGroups.value.counts[filter.key],
+    count: openGroups.value.counts[filter.key],
   })),
 );
 
@@ -1150,7 +1150,9 @@ const startedDescription = computed(() => {
           aria-label="Recorte do Planejamento"
           data-plan-filters
           @update:model-value="(value: string | number) => (planFilter = value as PlanFilter)"
-        />
+       >
+          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+        </NuxtTabs>
         <NuxtTabs
           v-else
           :model-value="openFilter"
@@ -1160,7 +1162,9 @@ const startedDescription = computed(() => {
           aria-label="Recorte da Abertura"
           data-open-filters
           @update:model-value="(value: string | number) => (openFilter = value as OpenFilter)"
-        />
+       >
+          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+        </NuxtTabs>
         <NuxtSelect
           v-if="baseOptions.length"
           v-model="baseModel"
