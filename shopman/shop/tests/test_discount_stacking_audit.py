@@ -14,8 +14,9 @@ Invariants under test:
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core.cache import cache
 from django.test import TestCase
@@ -29,14 +30,21 @@ from shopman.shop.models import Channel, RuleConfig
 
 
 def _wide_window_params(discount_percent: int) -> dict:
-    """Happy-hour params whose [start, end) window always contains 'now'."""
+    """Happy-hour params whose [start, end) window always contains 'now'.
+
+    Perto da meia-noite a janela atravessa a virada (``start > end``), e o
+    modificador a entende assim. O atalho antigo (``00:00–23:59``) deixava o
+    último minuto do dia de fora e reprovava a suíte às 23:59 de Brasília.
+    """
     now = timezone.localtime()
     start = (now - timedelta(hours=1)).strftime("%H:%M")
     end = (now + timedelta(hours=1)).strftime("%H:%M")
-    # Guard against midnight wrap making start > end (window would be empty).
-    if start > end:
-        start, end = "00:00", "23:59"
     return {"discount_percent": discount_percent, "start": start, "end": end}
+
+
+# Os dois lados da meia-noite de Brasília (UTC-3), onde a CI reprovou em 10/10/2026.
+VIRADA_ANTES = datetime(2026, 10, 10, 2, 59, 30, tzinfo=UTC)  # 23:59:30 local
+VIRADA_DEPOIS = datetime(2026, 10, 10, 3, 1, tzinfo=UTC)  # 00:01 local
 
 
 class DiscountStackingAuditTests(TestCase):
@@ -226,6 +234,38 @@ class DiscountStackingAuditTests(TestCase):
         pricing = session.pricing or {}
         self.assertNotIn(self.product.sku, [d.get("sku") for d in (pricing.get("discount") or {}).get("items", [])])
         self.assertEqual((pricing.get("happy_hour") or {}).get("total_discount_q"), 400)
+
+    def test_flat_discount_wins_on_both_sides_of_midnight(self) -> None:
+        for instant in (VIRADA_ANTES, VIRADA_DEPOIS):
+            with self.subTest(instant=instant), patch("django.utils.timezone.now", return_value=instant):
+                Session.objects.all().delete()
+                RuleConfig.objects.all().delete()
+                from shopman.shop.models import Promotion
+
+                Promotion.objects.all().delete()
+                self.test_flat_discount_wins_when_bigger_than_existing()
+
+    def test_happy_hour_window_crossing_midnight(self) -> None:
+        # Janela 23:00–01:00 configurada no Admin: vale dos dois lados da virada
+        # e não vale fora dela. Badge da loja e modificador leem a mesma regra.
+        from shopman.shop.projections.storefront_context import happy_hour_state
+
+        RuleConfig.objects.create(
+            ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
+            label="Happy Hour", params={"discount_percent": 40, "start": "23:00", "end": "01:00"},
+            enabled=True,
+        )
+        fora = datetime(2026, 10, 10, 4, 30, tzinfo=UTC)  # 01:30 local
+        for instant, esperado in ((VIRADA_ANTES, 600), (VIRADA_DEPOIS, 600), (fora, 1000)):
+            with self.subTest(instant=instant), patch("django.utils.timezone.now", return_value=instant):
+                cache.clear()
+                key = self._open_session()
+                session = ModifyService.modify_session(
+                    session_key=key, channel_ref="web",
+                    ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1, "unit_price_q": 1000}],
+                )
+                self.assertEqual(self._line(session)["unit_price_q"], esperado)
+                self.assertEqual(happy_hour_state()["active"], esperado == 600)
 
     # ── HOLE 5: manual order-level discount residue lost on a skipped tail ───
     def test_manual_discount_residue_not_swallowed_by_fee_line(self) -> None:

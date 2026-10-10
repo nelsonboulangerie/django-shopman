@@ -73,6 +73,17 @@ def _parse_time(raw: str | None, fallback: str) -> time:
         return time(h, m)
 
 
+def in_time_window(start: time, end: time, now: time) -> bool:
+    """``now`` cai em ``[start, end)``; janela com ``start > end`` atravessa a meia-noite.
+
+    Um Happy Hour 23:00–01:00 vale das 23:00 à 00:59. Sem o ramo da virada, a
+    comparação simples nunca é verdadeira e a regra some em silêncio.
+    """
+    if start <= end:
+        return start <= now < end
+    return now >= start or now < end
+
+
 # ── "Maior desconto ganha" — árbitro por-linha ─────────────────────────────
 # ``modifiers_applied`` NÃO sobrevive ao ``Session._normalize_items`` (só ``meta``
 # e ``unit_price_q`` persistem). Então o desconto vencedor da linha é registrado em
@@ -507,7 +518,7 @@ class TimeWindowDiscountModifier:
         end = _parse_time(params.get("end"), DEFAULT_TIME_WINDOW_END)
 
         now = timezone.localtime().time()
-        if not (start <= now < end):
+        if not in_time_window(start, end, now):
             # Fora da janela: limpa transparência residual de uma passagem anterior.
             pricing = session.pricing or {}
             if pricing.pop("happy_hour", None) is not None:
