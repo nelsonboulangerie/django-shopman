@@ -62,9 +62,11 @@ export interface OfflineSaleInputs {
  * entrega dependem de agenda, taxa e cliente; desconto passa por autorização de
  * gerente, que é conferida no servidor; Pix, cartão online e link são cobranças
  * da rede. A comanda NÃO está na lista: a aberta antes da queda fecha com a
- * revisão que a tela conhecia (se outro dispositivo a mudou, o reenvio volta
- * `tab_revision_conflict` e a venda fica na lista com o motivo), e a aberta sem
- * conexão vira venda de balcão direta.
+ * revisão que a tela conhecia (se outro dispositivo a mudou, o servidor fecha só
+ * as linhas cobradas aqui e o resto segue aberto na comanda; se ela já foi paga,
+ * não cobra de novo e só registra ao gerente: decisão C do dono, 10/10/2026), e
+ * a aberta sem conexão vira
+ * venda de balcão direta.
  */
 export function offlineSaleBlockers(input: OfflineSaleInputs): string[] {
   const blockers: string[] = [];
