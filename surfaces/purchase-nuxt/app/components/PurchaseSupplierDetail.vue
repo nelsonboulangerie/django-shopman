@@ -4,6 +4,7 @@
 import type { Material, Supplier, SupplierMaterialCost } from "~/types/purchase";
 import { costPerBaseUnitQ, formatMoney, formatShortDate, isApproximateCost, purchaseUnitLabel } from "~/presentation/purchase";
 import { materialPath } from "~/presentation/purchaseSections";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{ supplier: Supplier }>();
 const { costs, materials, conversions } = usePurchaseDesk();
@@ -68,7 +69,7 @@ const portfolio = computed(() =>
         color="warning"
         :title="supplier.contact ? `Sem contato comercial: o pedido de compra vai para a central (${supplier.contact}).` : 'Sem contato e sem central: o pedido de compra não tem para onde ir.'"
         description="Contatos se cadastram no Admin."
-        :actions="[{ label: 'Cadastrar contato no Admin', color: 'warning', variant: 'outline', to: adminUrl, target: '_blank' }]"
+        :actions="alertActions('warning', [{ label: 'Cadastrar contato no Admin', to: adminUrl, target: '_blank' }])"
       />
       <p v-else class="mt-1 text-xs text-muted">
         O pedido de compra vai para <span class="font-semibold text-default">{{ supplier.orderContactName }}</span>. Contatos se cadastram no Admin.

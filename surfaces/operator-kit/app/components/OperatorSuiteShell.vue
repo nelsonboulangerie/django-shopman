@@ -51,6 +51,11 @@ const props = defineProps<{
   label: string;
   current?: string;
   operatorName?: string;
+  /**
+   * Variante "início": o shell da própria Central. O selo do topo da barra lateral (e
+   * da gaveta) é só identidade, sem "voltar à Central" apontando para ela mesma.
+   */
+  home?: boolean;
 }>();
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
@@ -246,7 +251,7 @@ function menuDotSize(size: string): ChipProps["size"] {
           class="flex w-full items-center gap-2"
           :class="isCollapsed ? 'justify-center' : ''"
         >
-          <OperatorAppSeal placement="rail" />
+          <OperatorAppSeal placement="rail" :home="home" />
           <span v-if="!isCollapsed && appLabel" class="font-semibold">{{
             appLabel
           }}</span>

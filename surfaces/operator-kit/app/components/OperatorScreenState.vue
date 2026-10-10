@@ -20,6 +20,7 @@ import {
   screenStateCopy,
   type OperatorScreenStateKind,
 } from "../presentation/screenState";
+import { alertActions } from "../utils/alertActions";
 
 const props = withDefaults(
   defineProps<{
@@ -57,9 +58,6 @@ const retryActions = computed(() => [
   {
     label: SCREEN_STATE_RETRY_LABEL,
     icon: "i-lucide-refresh-cw",
-    color: "error" as const,
-    variant: "outline" as const,
-    size: "md" as const,
     onClick: () => emit("retry"),
   },
 ]);
@@ -92,7 +90,7 @@ const retryActions = computed(() => [
     orientation="horizontal"
     :title="title"
     :description="description || undefined"
-    :actions="retryActions"
+    :actions="alertActions('error', retryActions)"
     role="alert"
     data-operator-screen-state="error"
   />

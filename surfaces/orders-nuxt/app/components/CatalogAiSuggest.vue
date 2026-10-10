@@ -11,6 +11,7 @@
 // é o Salvar. Presentacional — o pai passa `assist` (do useCatalogMatrix) e o
 // estado de ocupado.
 import type { AssistableField } from "~/types/catalog";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   sku: string | null;
@@ -93,22 +94,18 @@ onBeforeUnmount(() => {
           ? `Texto atual: ${current}\n\nSugestão: ${suggestion}`
           : suggestion
       "
-      :actions="[
+      :actions="alertActions('info', [
         {
           label: 'Aceitar',
-          color: 'info',
-          variant: 'outline',
           onClick: () => onAccept(),
         },
         {
           label: 'Descartar',
-          color: 'info',
-          variant: 'outline',
           onClick: () => {
             suggestion = '';
           },
         },
-      ]"
+      ])"
     />
   </NuxtFormField>
 </template>

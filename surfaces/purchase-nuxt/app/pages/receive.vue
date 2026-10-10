@@ -27,6 +27,7 @@ import { RECEIPT_LINES_TRAIL } from "~/presentation/purchaseSections";
 import { plural } from "~/presentation/purchaseUi";
 import { RECEIPT_LINE_STATUS_COLOR, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
 import { FLASH_RING, receiptFieldSelector, waitForElement } from "~/utils/receiptFocus";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const route = useRoute();
 const router = useRouter();
@@ -823,16 +824,14 @@ const thumbAction = computed(() => {
               :icon="receiptOutcome.kind === 'confirmed' ? 'i-lucide-check-check' : 'i-lucide-undo-2'"
               :title="receiptOutcome.kind === 'confirmed' ? 'Entrada confirmada no estoque' : 'Devolução registrada'"
               :description="`${receiptOutcomeSummary(receiptOutcome)} · ${receiptOutcome.at}`"
-              :actions="[
+              :actions="alertActions(receiptOutcome.kind === 'confirmed' ? 'success' : 'warning', [
                 {
                   label: receiptOutcome.mode === 'manual' ? 'Lançar outra entrada' : 'Escanear outra NF',
                   icon: receiptOutcome.mode === 'manual' ? 'i-lucide-clipboard-pen-line' : 'i-lucide-scan-line',
-                  color: receiptOutcome.kind === 'confirmed' ? 'success' : 'warning',
-                  variant: 'outline',
                   disabled: readonlyFallback || actionPending,
                   onClick: startNextReceipt,
                 },
-              ]"
+              ])"
               close
               data-receipt-outcome
               aria-live="polite"

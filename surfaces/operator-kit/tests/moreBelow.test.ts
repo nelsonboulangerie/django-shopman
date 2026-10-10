@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { HINT_GAP, hintMotionClass, hintOffset, hintScrollBehavior, shouldHint } from "../app/presentation/moreBelow";
+import { HINT_GAP, HINT_REACH, endReached, hintMotionClass, hintOffset, hintScrollBehavior, shouldHint } from "../app/presentation/moreBelow";
 
 // Regra pura da dica "tem mais abaixo" (sem DOM). O comportamento de observar
 // o fim do conteúdo vive no composable e é testado em tests/composables.
@@ -33,6 +33,17 @@ describe('tem mais abaixo — regra pura', () => {
   it('menos movimento tira a animação, não a dica', () => {
     expect(hintMotionClass(false)).toContain('animate-bounce')
     expect(hintMotionClass(true)).toBe('')
+  })
+
+  // Central a 390: a lista passava da dobra por 45 px e a seta cobria o texto do
+  // rodapé, que era o próprio resto. Resto que cabe sob a dica não ganha dica.
+  it('resto menor que a dica não ganha dica: a seta não cobre o fim', () => {
+    expect(HINT_REACH).toBe(64)
+    // linha de baixo da área visível em 779; o sentinela 45 px abaixo.
+    expect(endReached(824, 779)).toBe(true)
+    expect(endReached(779 + HINT_REACH, 779)).toBe(true)
+    expect(endReached(779 + HINT_REACH + 1, 779)).toBe(false)
+    expect(endReached(300, 779)).toBe(true)
   })
 
   it('a dica existe enquanto o fim do conteúdo não apareceu', () => {
