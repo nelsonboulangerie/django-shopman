@@ -511,7 +511,7 @@ const sheetFirePrimary = computed(() => Boolean(props.sheet && fireBar.value.vis
 // molde (`DefineTicketBody` / `ReuseTicketBody`).
 const [DefineTicketBody, ReuseTicketBody] = createReusableTemplate();
 const [DefineFireButton, ReuseFireButton] = createReusableTemplate();
-const [DefineControlGrid, ReuseControlGrid] = createReusableTemplate<{ rows: ControlCell[][]; block: "line" | "tab" }>();
+const [DefineControlGrid, ReuseControlGrid] = createReusableTemplate<{ rows: ControlCell[][]; block: "line" | "marked" | "tab" }>();
 // O estado da cozinha em palavra (o que falta e o que já foi), no lugar do botão
 // apagado de quando não há nada a enviar.
 // A GRADE DE CONTROLES DA COMANDA (dono, 10/10): duas colunas de mesma largura,
