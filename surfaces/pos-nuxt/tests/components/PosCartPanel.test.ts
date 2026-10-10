@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, describe, expect, it } from "vitest";
 import { enableAutoUnmount } from "@vue/test-utils";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
@@ -864,5 +868,41 @@ describe("PosCartPanel — sem desconto nem observação de item quando não gra
     await openDiscount(wrapper);
     expect(wrapper.findAll("button").map((b) => b.text().trim())).toEqual(expect.arrayContaining(["Em %", "Em R$"]));
     expect(wrapper.find("[data-line-adjustments-blocked]").exists()).toBe(false);
+  });
+});
+
+describe("PosCartPanel — F10 com linhas marcadas", () => {
+  // O botão "Transferir" da seleção anuncia F10; o F10 global da página pergunta
+  // ao painel primeiro (`moveSelection`) e só abre o diálogo vazio sem marcas.
+  type Exposed = { moveSelection: () => boolean };
+
+  it("com marcas, leva as marcadas ao diálogo, como o botão", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await wrapper.find('[aria-label="Iniciar seleção"]').trigger("click");
+    await wrapper.find('[data-item-select="L-CAFE"]').trigger("click");
+    expect((wrapper.vm as unknown as Exposed).moveSelection()).toBe(true);
+    expect(wrapper.emitted("move")?.[0]).toEqual([["L-CAFE"]]);
+  });
+
+  it("sem marcas, devolve false e não emite: a página abre o diálogo vazio", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    expect((wrapper.vm as unknown as Exposed).moveSelection()).toBe(false);
+    expect(wrapper.emitted("move")).toBeUndefined();
+  });
+
+  it("sem comanda aberta, não toma o F10 para si", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ hasOpenTab: false }) });
+    await wrapper.find('[aria-label="Iniciar seleção"]').trigger("click");
+    await wrapper.find('[data-item-select="L-CAFE"]').trigger("click");
+    expect((wrapper.vm as unknown as Exposed).moveSelection()).toBe(false);
+    expect(wrapper.emitted("move")).toBeUndefined();
+  });
+
+  it("a página pergunta ao painel antes de abrir o diálogo vazio", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const page = readFileSync(resolve(here, "../../app/pages/index.vue"), "utf8");
+    const f10 = page.slice(page.indexOf('case "F10":'), page.indexOf('case "Enter":'));
+    expect(f10).toContain("cartPanelRef.value?.moveSelection()");
+    expect(page).toMatch(/<PosCartPanel\s+ref="cartPanelRef"/);
   });
 });

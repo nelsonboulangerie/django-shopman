@@ -921,8 +921,9 @@ const paymentWorkspaceRef = ref<{
 const { open: shortcutsHelpOpen } = useOperatorShortcuts();
 provideOperatorShortcuts(POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION);
 // Transferir a partir do modo seleção da comanda (v4): o diálogo nasce com as linhas
-// marcadas. Pelo F10 (toda a venda) ele nasce vazio, como sempre.
+// marcadas, pelo botão ou pelo F10 que ele anuncia. Sem marcas, o F10 abre vazio.
 const movePreselected = ref<string[]>([]);
+const cartPanelRef = ref<{ moveSelection: () => boolean } | null>(null);
 function openMoveWith(lineIds?: string[]) {
   movePreselected.value = lineIds ?? [];
   void openMoveDialog();
@@ -1144,7 +1145,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
     case "F10":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openSplit();
-      else if (inSaleView.value && cart.items.length && !editing.value) openMoveWith();
+      else if (inSaleView.value && cart.items.length && !editing.value && !cartPanelRef.value?.moveSelection()) openMoveWith();
       return;
     case "Enter":
       // Total coberto + review fresca → Enter valida, pelo MESMO caminho do
@@ -1564,6 +1565,7 @@ onBeforeUnmount(() => {
     >
         <div class="min-h-0 flex-1 md:overflow-hidden">
           <PosCartPanel
+            ref="cartPanelRef"
             :sheet="ticketAsSheet"
             :tab-title="hasOpenTab ? tabTitleView(cart.tabDisplay, cart.tabNumber).title : ''"
             :kitchen-stations="kitchenStations"
