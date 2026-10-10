@@ -726,6 +726,12 @@ def _commit_sale_session(
             {"op": "set_data", "path": "client_request_id", "value": client_request_id},
             {"op": "set_data", "path": "pos.client_request_id", "value": client_request_id},
         ])
+    offline = _payload_offline(payload)
+    if offline:
+        # Segue para ``order.data.pos.offline`` pelo merge de ``pos`` em
+        # ``_mark_tab_committed``: o pedido diz que nasceu de uma venda sem
+        # conexão, quando o balcão cobrou e de quando eram os preços da tela.
+        ops.append({"op": "set_data", "path": "pos.offline", "value": offline})
 
     session = session_service.modify_session(
         session_key=session.session_key,
@@ -4251,6 +4257,18 @@ def _mark_tab_committed(
 
     order.data = order_data
     order.save(update_fields=["data"])
+
+
+def _payload_offline(payload: dict) -> dict:
+    """``{captured_at, prices_at}`` da venda que esperou na fila do PDV, ou ``{}``."""
+    captured_at = str(payload.get("offline_captured_at") or "").strip()
+    if not captured_at:
+        return {}
+    offline = {"captured_at": captured_at}
+    prices_at = str(payload.get("offline_prices_at") or "").strip()
+    if prices_at:
+        offline["prices_at"] = prices_at
+    return offline
 
 
 def _payload_client_request_id(payload: dict) -> str:

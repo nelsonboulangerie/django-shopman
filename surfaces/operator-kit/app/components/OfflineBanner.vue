@@ -24,7 +24,7 @@ const show = computed(() => mounted.value && isOnline.value === false);
     <NuxtBanner
       color="warning"
       icon="i-lucide-wifi-off"
-      title="Sem conexão — tentando reconectar…"
+      title="Sem conexão. Tentando reconectar…"
       data-operator-offline-banner
     />
   </div>
