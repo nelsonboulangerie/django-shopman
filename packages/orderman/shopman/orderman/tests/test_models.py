@@ -409,3 +409,59 @@ class TestSessionItemsReadOnly(TestCase):
         assert len(ctx.captured_queries) == 0
         assert items == expected
         assert [item["line_id"] for item in items] == ["L-1", "L-2", "L-3"]
+
+@pytest.mark.django_db
+class TestDeferredItemWrites(TestCase):
+    """O pipeline do ModifyService grava as linhas uma vez, no fim, não a cada modifier."""
+
+    def setUp(self):
+        self.session = Session.objects.create(session_key="DEF-001", channel_ref="pos")
+        self.session.update_items([
+            {"line_id": "L-1", "sku": "A", "qty": 1, "unit_price_q": 100},
+            {"line_id": "L-2", "sku": "B", "qty": 1, "unit_price_q": 200},
+        ])
+
+    def _writes(self, ctx):
+        return [q["sql"] for q in ctx.captured_queries
+                if q["sql"].lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))]
+
+    def test_intermediate_states_stay_in_cache_and_the_end_result_is_written_once(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as ctx:
+            with self.session.deferred_item_writes():
+                self.session.update_items([
+                    {"line_id": "L-1", "sku": "A", "qty": 1, "unit_price_q": 999},  # vai e volta
+                    {"line_id": "L-2", "sku": "B", "qty": 3, "unit_price_q": 200},
+                    {"line_id": "L-3", "sku": "C", "qty": 1, "unit_price_q": 300},
+                ])
+                assert [i["line_id"] for i in self.session.items] == ["L-1", "L-2", "L-3"]
+                assert Session.objects.get(pk=self.session.pk).items[1]["qty"] == 1  # nada gravado ainda
+                self.session.update_items([
+                    {"line_id": "L-1", "sku": "A", "qty": 1, "unit_price_q": 100},
+                    {"line_id": "L-2", "sku": "B", "qty": 3, "unit_price_q": 200},
+                    {"line_id": "L-3", "sku": "C", "qty": 1, "unit_price_q": 300},
+                ])
+
+        fresh = Session.objects.get(pk=self.session.pk).items
+        assert [(i["line_id"], int(i["qty"]), i["unit_price_q"]) for i in fresh] == [
+            ("L-1", 1, 100), ("L-2", 3, 200), ("L-3", 1, 300),
+        ]
+        # L-1 terminou igual (nenhuma escrita), L-2 mudou (uma), L-3 é nova (uma).
+        assert len(self._writes(ctx)) == 2
+
+    def test_error_inside_the_block_writes_nothing(self):
+        with pytest.raises(RuntimeError):
+            with self.session.deferred_item_writes():
+                self.session.update_items([{"line_id": "L-9", "sku": "Z", "qty": 1, "unit_price_q": 1}])
+                raise RuntimeError("modifier falhou")
+
+        assert [i["line_id"] for i in Session.objects.get(pk=self.session.pk).items] == ["L-1", "L-2"]
+        assert [i["line_id"] for i in self.session.items] == ["L-1", "L-2"]
+
+    def test_refresh_inside_the_block_writes_the_pending_change_first(self):
+        with self.session.deferred_item_writes():
+            self.session.update_items([{"line_id": "L-1", "sku": "A", "qty": 5, "unit_price_q": 100}])
+            self.session.refresh_from_db()
+            assert [(i["line_id"], int(i["qty"])) for i in self.session.items] == [("L-1", 5)]

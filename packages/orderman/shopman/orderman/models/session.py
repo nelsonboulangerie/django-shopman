@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import contextmanager
 from decimal import Decimal
 
 from django.core.serializers.json import DjangoJSONEncoder
@@ -237,18 +238,69 @@ class Session(models.Model):
         return copy.deepcopy(getattr(self, "_items_cache", []))
 
     def update_items(self, items: list[dict]) -> None:
-        """Normaliza e persiste items imediatamente."""
+        """Normaliza e persiste items imediatamente.
+
+        Dentro de ``deferred_item_writes()`` a persistência espera o fim do bloco
+        (o cache já responde com a lista normalizada).
+        """
         normalized = self._normalize_items(items or [])
+        if getattr(self, "_defer_item_writes", False):
+            self._items_cache = normalized
+            self._items_dirty = True
+            return
         self._persist_items(normalized)
         self._items_cache = normalized
 
+    @contextmanager
+    def deferred_item_writes(self):
+        """Grava as linhas UMA vez no fim do bloco, não a cada ``update_items``.
+
+        O ``ModifyService`` aplica as ops e depois roda cada modifier (preço,
+        descontos, taxa), e cada um chamava ``update_items``: a mesma linha era
+        gravada duas ou três vezes por salvar, mesmo quando o resultado final era
+        igual ao que já estava no banco. Aqui o estado intermediário fica só no
+        cache, e o banco recebe a diferença entre o que tinha e o resultado final.
+
+        Erro dentro do bloco: nada é gravado (o cache volta a ler do banco). Fora
+        de transação, o bloco abre uma, para a gravação ser tudo-ou-nada.
+        """
+        if getattr(self, "_defer_item_writes", False):
+            yield self
+            return
+        self._defer_item_writes = True
+        self._items_dirty = False
+        try:
+            yield self
+        except BaseException:
+            self._defer_item_writes = False
+            if self._items_dirty:
+                self._items_dirty = False
+                self.invalidate_items_cache()
+            raise
+        self._defer_item_writes = False
+        self._flush_deferred_items()
+
+    def _flush_deferred_items(self) -> None:
+        if getattr(self, "_items_dirty", False):
+            self._items_dirty = False
+            with transaction.atomic():
+                self._persist_items(self._items_cache)
+
     def invalidate_items_cache(self) -> None:
+        if getattr(self, "_defer_item_writes", False) and getattr(self, "_items_dirty", False):
+            # O cache É a escrita pendente: descartá-lo perderia a mudança.
+            return
         if hasattr(self, "_items_cache"):
             delattr(self, "_items_cache")
 
     def refresh_from_db(self, *args, **kwargs):
+        if getattr(self, "_defer_item_writes", False):
+            # Reler do banco no meio do bloco: o pendente vai antes, para a
+            # leitura ver o que o próprio bloco já decidiu.
+            self._flush_deferred_items()
         super().refresh_from_db(*args, **kwargs)
-        self.invalidate_items_cache()
+        if hasattr(self, "_items_cache"):
+            delattr(self, "_items_cache")
 
     @property
     def is_anonymized(self) -> bool:
@@ -344,6 +396,7 @@ class Session(models.Model):
     def _persist_items(self, items: list[dict]) -> None:
         existing = {si.line_id: si for si in self.session_items.all()}
         seen: set[str] = set()
+        new_lines: list[SessionItem] = []
         for item in items:
             line_id = item["line_id"]
             seen.add(line_id)
@@ -358,7 +411,11 @@ class Session(models.Model):
                 if updated_fields:
                     session_item.save(update_fields=updated_fields)
             else:
-                SessionItem.objects.create(session=self, line_id=line_id, **defaults)
+                new_lines.append(SessionItem(session=self, line_id=line_id, **defaults))
+        if new_lines:
+            # Uma escrita para as linhas novas, na ordem da lista (o id crescente
+            # é a ordem em que ``items`` as devolve).
+            SessionItem.objects.bulk_create(new_lines)
 
         for line_id, session_item in existing.items():
             if line_id not in seen:
@@ -391,38 +448,59 @@ class Session(models.Model):
         same ``session_key``. The model is intentionally opinion-free
         (``type`` is a plain string); the action vocabulary belongs to callers.
         """
+        return self.emit_events([(event_type, payload)], actor=actor)[0]
+
+    def emit_events(self, events: list[tuple[str, dict | None]], actor: str = "system") -> list[SessionEvent]:
+        """Vários eventos de uma vez, em ordem, com ``seq`` consecutivos.
+
+        Mesmas regras de ``emit_event`` (carimbo do dispositivo, recusa de dado
+        pessoal em sessão anonimizada, ``seq`` monotônico), com uma trava da
+        sessão e uma escrita para todos. Existe porque o salvar da comanda emite
+        um evento por linha mudada, e cada um custava sete idas ao banco.
+        """
         from shopman.orderman.exceptions import SessionError
 
-        from ._sequenced_event import create_sequenced_event
+        from ._sequenced_event import create_sequenced_events
 
+        if not events:
+            return []
         # O dispositivo que agiu, carimbado pelo escritor único e não pelos
         # chamadores (ver ``shopman.utils.acting_device``).
-        event_payload = acting_device.stamp(payload) if isinstance(payload, dict) or payload is None else payload
+        stamped = [
+            (event_type, acting_device.stamp(payload) if isinstance(payload, dict) or payload is None else payload)
+            for event_type, payload in events
+        ]
         with transaction.atomic():
             persisted = type(self).objects.select_for_update().get(pk=self.pk)
             if persisted.is_anonymized:
-                personal = False
-                if isinstance(event_payload, dict):
-                    personal = bool(PERSONAL_SESSION_EVENT_KEYS.intersection(event_payload))
-                    for container, personal_keys in PERSONAL_SESSION_EVENT_NESTED_KEYS.items():
-                        nested = event_payload.get(container)
-                        personal = personal or (
-                            isinstance(nested, dict) and bool(personal_keys.intersection(nested))
+                for _event_type, event_payload in stamped:
+                    personal = False
+                    if isinstance(event_payload, dict):
+                        personal = bool(PERSONAL_SESSION_EVENT_KEYS.intersection(event_payload))
+                        for container, personal_keys in PERSONAL_SESSION_EVENT_NESTED_KEYS.items():
+                            nested = event_payload.get(container)
+                            personal = personal or (
+                                isinstance(nested, dict) and bool(personal_keys.intersection(nested))
+                            )
+                    if personal:
+                        raise SessionError(
+                            code="session_anonymized",
+                            message="Esta sessão foi anonimizada e não aceita eventos pessoais.",
+                            context={"session_key": persisted.session_key},
                         )
-                if personal:
-                    raise SessionError(
-                        code="session_anonymized",
-                        message="Esta sessão foi anonimizada e não aceita eventos pessoais.",
-                        context={"session_key": persisted.session_key},
-                    )
 
-            return create_sequenced_event(
+            return create_sequenced_events(
                 model=SessionEvent,
                 scope={"session_key": persisted.session_key},
-                session_key=persisted.session_key,
-                type=event_type,
-                actor=actor,
-                payload=event_payload,
+                rows=[
+                    {
+                        "session_key": persisted.session_key,
+                        "type": event_type,
+                        "actor": actor,
+                        "payload": event_payload,
+                    }
+                    for event_type, event_payload in stamped
+                ],
             )
 
 

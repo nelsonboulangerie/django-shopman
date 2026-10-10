@@ -6,13 +6,16 @@ from shopman.shop.services import pos as pos_service
 
 
 class _StubSession:
-    """Captures emit_event calls without touching the DB."""
+    """Captures emitted events without touching the DB (one batch per diff)."""
 
     def __init__(self) -> None:
         self.events: list[dict] = []
+        self.batches = 0
 
-    def emit_event(self, event_type: str, actor: str = "system", payload: dict | None = None):
-        self.events.append({"type": event_type, "actor": actor, "payload": payload or {}})
+    def emit_events(self, events, actor: str = "system"):
+        self.batches += 1
+        for event_type, payload in events:
+            self.events.append({"type": event_type, "actor": actor, "payload": payload or {}})
 
 
 class TestAuditQty:

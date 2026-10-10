@@ -164,5 +164,5 @@ def test_o_total_numa_ida_tem_teto_de_consultas(balcao):
     assert len(ctx.captured_queries) <= TETO_SALVAR_E_REVISAR_SEM_MUDANCA
 
 
-TETO_SALVAR_E_REVISAR = 180
-TETO_SALVAR_E_REVISAR_SEM_MUDANCA = 105
+TETO_SALVAR_E_REVISAR = 80
+TETO_SALVAR_E_REVISAR_SEM_MUDANCA = 68
