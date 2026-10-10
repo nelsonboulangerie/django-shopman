@@ -9,7 +9,8 @@
 //
 // Na coluna estreita da semana o nome guarda pelo menos 5rem (7rem antes do botão
 // "Mudar de dia" ao lado): o dinheiro quebra
-// a linha antes de esmagar quem é. Três pilhas lado a lado (janela, quem,
+// a linha antes de esmagar quem é. Texto da casa nunca se corta (regra do kit): o
+// nome, o recebimento e os itens quebram linha. Três pilhas lado a lado (janela, quem,
 // dinheiro), e não uma grade de duas linhas, para o dinheiro que quebra não
 // afastar o nome da linha de baixo.
 //
@@ -86,12 +87,12 @@ const pills = computed(() => phoneCardPills(props.card));
       </span>
       <span class="grid min-w-0 flex-1 gap-1 md:hidden" data-preorder-phone>
         <span class="flex items-baseline gap-2">
-          <span class="min-w-0 flex-1 truncate op-label font-semibold">{{ card.customer_name || card.ref }}</span>
+          <span class="min-w-0 flex-1 break-words op-label font-semibold" data-preorder-name>{{ card.customer_name || card.ref }}</span>
           <span class="shrink-0 op-label font-semibold tnum">{{ card.total_display }}</span>
         </span>
-        <span class="flex min-w-0 items-center gap-1 op-micro text-muted-foreground">
+        <span class="flex min-w-0 items-start gap-1 op-micro text-muted-foreground">
           <Icon :name="fulfillmentIcon(card.fulfillment_type)" class="size-3.5 shrink-0" aria-hidden="true" />
-          <span class="truncate">{{ [card.fulfillment_label, card.items_summary].filter(Boolean).join(" · ") }}</span>
+          <span class="min-w-0 break-words">{{ [card.fulfillment_label, card.items_summary].filter(Boolean).join(" · ") }}</span>
         </span>
         <span class="flex flex-wrap gap-1">
           <span
@@ -118,7 +119,7 @@ const pills = computed(() => phoneCardPills(props.card));
       </span>
       <!-- Quem, e embaixo o número, o canal, o recebimento e os itens. -->
       <span class="grid min-w-20 flex-1 basis-0 gap-0.5 max-md:hidden">
-        <p class="truncate text-sm font-medium" :title="customerLine(card)">{{ customerLine(card) }}</p>
+        <p class="break-words text-sm font-medium" data-preorder-name>{{ customerLine(card) }}</p>
         <p class="text-xs text-muted-foreground">{{ detailLine }}</p>
       </span>
       <!-- O dinheiro, e embaixo o que ele não diz: o selo e a Via impressa. -->

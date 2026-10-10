@@ -513,7 +513,8 @@ os botões, abas e recortes usavam ("Todos 7", "Entrega 3", "Atrasados").
 - **Contraste com o pai** (coordenação, 09/10/2026): círculo × fundo do pai ≥ 3:1 e
   número × círculo AA, nos dois temas. Sobre pai PREENCHIDO de cor próxima o chip
   **inverte**: círculo na cor do texto do pai, número na cor do fundo do pai, mesmo
-  tamanho e forma. Inverte na aba ativa preenchida (`NuxtTabs` `pill`, nos dois temas)
+  tamanho e forma. Inverte na aba ativa preenchida (`NuxtTabs` `pill`, nos dois temas),
+  no botão ligado (`aria-pressed="true"`, o `solid` primário do ativo da suíte)
   e na barra lateral clara (latão); nos demais pais fica o âmbar. A inversão sai do
   próprio pai pelo CSS (`COUNT_CHIP_INVERT_CLASSES`, aba ativa do Nuxt UI e escopo
   `.bg-rail`), sem prop nem `:ui` por tela; a tabela `COUNT_CHIP_INVERTED_ON` é medida
@@ -1223,7 +1224,7 @@ jeitos, pela forma dos itens:
 |---|---|---|---|
 | sub-seção | todo item com `to` | `NuxtTabs` que navegam; a ativa é a da rota | `tablist`; setas andam, Enter abre |
 | um recorte | `v-model` com uma chave | `NuxtTabs` `pill` | `tablist`; setas trocam |
-| vários | `v-model` com várias, `multiple` | `NuxtButton` com `active` (`soft` primário) e `aria-pressed` | `toolbar`; setas andam, Enter/Espaço ligam |
+| vários | `v-model` com várias, `multiple` | `NuxtButton` `outline`; ligado é `active` com `QUICK_ACTIVE` (`solid` primário) e `aria-pressed` | `toolbar`; setas andam, Enter/Espaço ligam |
 
 ```vue
 <template #filters-primary>
@@ -1234,8 +1235,13 @@ jeitos, pela forma dos itens:
 </template>
 ```
 
-- A contagem é o `OperatorCountChip` (zero não aparece); na aba ativa preenchida ele
-  inverte sozinho.
+- **Um ativo só na suíte** (coordenação, 09/10/2026): o recorte ligado é `solid`
+  primário (`QUICK_ACTIVE`), o mesmo peso da aba dourada do modo de um recorte; o
+  desligado é `outline` (o favorito fixado, `ghost`). O `soft` primário de antes ficava
+  quase igual ao `outline` e deixava dúvida sobre o que estava ligado; a régua é
+  `tests/countChipContrast.test.ts` (ligado × desligado ≥ 3:1 nos dois temas).
+- A contagem é o `OperatorCountChip` (zero não aparece); na aba ativa preenchida e no
+  botão ligado (`aria-pressed="true"`) ele inverte sozinho.
 - **Favoritos fixados** (`surface`/`screen`, os mesmos do painel) entram no FIM da
   faixa, com a estrela; tocar emite `apply` com o recorte inteiro do favorito, e o
   ativo é o que bate com `query`.

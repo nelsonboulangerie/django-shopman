@@ -125,6 +125,10 @@ describe("OperatorQuickFilters (vários recortes)", () => {
     const pickup = () => mounted!.find("[data-quick-filter-item=pickup]");
     expect(pickup().attributes("aria-pressed")).toBe("true");
     expect(pickup().attributes("data-quick-filter-active")).toBe("");
+    // ligado é o ativo da suíte (solid primário); desligado, outline
+    expect(pickup().classes()).toContain("bg-primary");
+    expect(mounted.find("[data-quick-filter-item=to_receive]").classes()).not.toContain("bg-primary");
+    expect(mounted.find("[data-quick-filter-item=to_receive]").classes().join(" ")).toContain("ring");
     await mounted.find("[data-quick-filter-item=to_receive]").trigger("click");
     expect(value.value).toEqual(["to_receive", "pickup"]);
     await pickup().trigger("click");

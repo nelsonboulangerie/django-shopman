@@ -10,11 +10,12 @@
 //   single    (`v-model` com uma chave)  `NuxtTabs` `pill`: um recorte de cada vez,
 //             setas trocam (o padrão das abas).
 //   multiple  (`v-model` com várias)  botões que ligam e desligam (`aria-pressed`) num
-//             `toolbar`: setas andam, Enter/Espaço ligam. Ligado é o ativo canônico do
-//             `NuxtButton` (`active`, `soft` primário), o mesmo do chip do recorte.
+//             `toolbar`: setas andam, Enter/Espaço ligam. Ligado é o ativo da suíte
+//             (`QUICK_ACTIVE`: `solid` primário), o mesmo peso da aba dourada do modo
+//             de um recorte; desligado é `outline`. Um ativo só na suíte.
 //
-// A contagem é o `OperatorCountChip` (zero não aparece); na aba ativa preenchida ele
-// inverte sozinho (`COUNT_CHIP_INVERTED_ON.tabActive`).
+// A contagem é o `OperatorCountChip` (zero não aparece); na aba ativa preenchida e no
+// botão ligado ele inverte sozinho (`COUNT_CHIP_INVERTED_ON.tabActive` e `.pressed`).
 //
 // Favoritos fixados (os `SavedView` com `pinned` da mesma `surface`/`screen` do painel)
 // entram no FIM da faixa, com a estrela; tocar aplica o recorte inteiro (`apply`).
@@ -27,6 +28,7 @@ import { computed, ref } from "vue";
 import { useSavedViews } from "../composables/useSavedViews";
 import { sameQuery, type FilterPanelQuery } from "../presentation/filterPanel";
 import {
+  QUICK_ACTIVE,
   QUICK_FILTERS_PHONE_MAX,
   collapsesOnPhone,
   isQuickActive,
@@ -186,8 +188,8 @@ const favoritesClass = computed(() =>
           color="neutral"
           variant="outline"
           :active="isQuickActive(model, item.key)"
-          active-color="primary"
-          active-variant="soft"
+          :active-color="QUICK_ACTIVE.color"
+          :active-variant="QUICK_ACTIVE.variant"
           :disabled="item.disabled"
           :aria-pressed="isQuickActive(model, item.key)"
           :tabindex="item.key === rovingKey ? 0 : -1"
@@ -219,8 +221,8 @@ const favoritesClass = computed(() =>
           color="neutral"
           variant="ghost"
           :active="favoriteOn(view)"
-          active-color="primary"
-          active-variant="soft"
+          :active-color="QUICK_ACTIVE.color"
+          :active-variant="QUICK_ACTIVE.variant"
           :aria-pressed="favoriteOn(view)"
           :data-quick-filter-favorite="view.id"
           @click="emit('apply', view.query)"

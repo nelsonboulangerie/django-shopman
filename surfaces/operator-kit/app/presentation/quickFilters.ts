@@ -34,6 +34,15 @@ export interface QuickFilterItem {
 
 export type QuickFiltersMode = "route" | "single" | "multiple";
 
+/**
+ * O ativo da suíte para o que liga e desliga (recorte de `multiple`, favorito fixado):
+ * `solid` primário, o mesmo peso da aba dourada do modo de um recorte. O desligado é
+ * `outline` (favorito: `ghost`). O `soft` primário ficava quase igual ao `outline` e a
+ * tela deixava dúvida sobre o que estava ligado (coordenação, 09/10/2026). O
+ * `OperatorCountChip` inverte no ligado (`COUNT_CHIP_INVERTED_ON.pressed`).
+ */
+export const QUICK_ACTIVE = { color: "primary", variant: "solid" } as const;
+
 /** Até quantas opções a faixa rola no celular; acima disso vira `NuxtSelect`. */
 export const QUICK_FILTERS_PHONE_MAX = 4;
 

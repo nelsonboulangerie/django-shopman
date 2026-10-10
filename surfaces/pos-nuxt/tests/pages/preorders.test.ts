@@ -640,6 +640,16 @@ describe("Encomendas — a semana no centro", () => {
     expect(grid.find('[data-preorder="NB-7"]').attributes("href")).toBe("/preorders/NB-7");
   });
 
+  it("o nome de quem encomendou nunca se corta: quebra linha na coluna estreita", async () => {
+    const wrapper = await mount(PreordersPage);
+    const names = wrapper.find("[data-week-grid]").findAll("[data-preorder-name]");
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(name.classes()).not.toContain("truncate");
+      expect(name.classes()).toContain("break-words");
+    }
+  });
+
   it("hoje tem destaque e diz o dia da semana, com 'Hoje' uma vez só", async () => {
     const wrapper = await mount(PreordersPage);
     const opens = wrapper.find("[data-week-grid]").findAll("[data-week-day-open]");

@@ -2,15 +2,37 @@ import { createServer } from "node:http";
 
 const port = Number(process.env.MOCK_PORT || 38792);
 
+// O DIA do mock. A prévia roda no relógio de verdade (o Período da tela parte da data
+// do dispositivo, e o mock tem de responder pelo mesmo período: "Semana · 05/10 a
+// 11/10" com os cartões de 28/09 mentia). Os retratos fixam o dia (`MOCK_TODAY` no
+// `playwright.visual.config.ts`, com o relógio do navegador parado no mesmo dia).
+const localIso = (date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const TODAY = /^\d{4}-\d{2}-\d{2}$/.test(process.env.MOCK_TODAY || "") ? process.env.MOCK_TODAY : localIso(new Date());
+const dateOf = (iso) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d, 12);
+};
+const addDays = (iso, n) => {
+  const date = dateOf(iso);
+  date.setDate(date.getDate() + n);
+  return localIso(date);
+};
+const mondayOf = (iso) => addDays(iso, -((dateOf(iso).getDay() + 6) % 7));
+const ddmm = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const TOMORROW = addDays(TODAY, 1);
+
 const card = (overrides = {}) => ({
   ref: "NB-1042",
-  channel_display_id: "1042",
+  // Só o iFood tem número de canal, e só quando o ref não o carrega
+  // (`_channel_display_id`): na loja online é vazio, senão a linha diria "iFood #1042".
+  channel_display_id: "",
   customer_name: "Ana Souza",
   channel_ref: "web",
   channel_label: "Loja online",
   fulfillment_type: "pickup",
   fulfillment_label: "Retirada",
-  commitment_date: "2026-09-29",
+  commitment_date: TODAY,
   commitment_date_display: "hoje",
   window_label: "12h às 13h",
   window_start: "12:00",
@@ -54,7 +76,7 @@ const orders = [
     channel_label: "iFood",
     fulfillment_type: "delivery",
     fulfillment_label: "Entrega",
-    commitment_date: "2026-09-30",
+    commitment_date: TOMORROW,
     commitment_date_display: "amanhã",
     window_label: "11h às 12h",
     window_start: "11:00",
@@ -69,39 +91,62 @@ const orders = [
   }),
 ];
 
-const days = ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]
-  .map((date, index) => {
-    const dayOrders = index === 1 ? orders.slice(0, 2) : index === 2 ? orders.slice(2) : [];
+// O período pedido, como o servidor lê (`parse_range`): `?week=2026-W41` (a semana ISO,
+// de segunda a domingo) ou `date_from`/`date_to`; sem nada, a semana de hoje.
+function weekMonday(raw) {
+  const match = /^(\d{4})-W(\d{2})$/.exec(raw || "");
+  if (!match) return "";
+  const jan4 = localIso(new Date(Number(match[1]), 0, 4, 12));
+  return addDays(mondayOf(jan4), (Number(match[2]) - 1) * 7);
+}
+function requestedRange(params) {
+  const monday = weekMonday(params.get("week"));
+  if (monday) return [monday, addDays(monday, 6)];
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  const from = params.get("date_from");
+  const to = params.get("date_to");
+  if (iso.test(from || "")) return [from, iso.test(to || "") && to >= from ? to : from];
+  return [mondayOf(TODAY), addDays(mondayOf(TODAY), 6)];
+}
+const WEEKDAYS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+function preorderList(params) {
+  const [dateFrom, dateTo] = requestedRange(params);
+  const days = [];
+  for (let date = dateFrom; date <= dateTo && days.length < 62; date = addDays(date, 1)) {
+    const dayOrders = orders.filter((order) => order.commitment_date === date);
     const total = dayOrders.reduce((sum, item) => sum + item.total_q, 0);
     const receive = dayOrders.reduce((sum, item) => sum + (item.balance_q || 0), 0);
-    return {
+    days.push({
       date,
       date_display: date,
-      weekday_display: ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"][index],
-      day_display: ["28/09", "29/09", "30/09", "01/10", "02/10", "03/10", "04/10"][index],
-      is_today: index === 1,
+      weekday_display: WEEKDAYS[dateOf(date).getDay()],
+      day_display: ddmm(date),
+      is_today: date === TODAY,
       orders_count: dayOrders.length,
       total_q: total,
-      total_display: `R$ ${(total / 100).toFixed(2).replace(".", ",")}`,
+      total_display: brl(total),
       to_receive_q: receive,
-      to_receive_display: `R$ ${(receive / 100).toFixed(2).replace(".", ",")}`,
+      to_receive_display: brl(receive),
       orders: dayOrders,
-    };
-  });
-
-const preorderList = {
-  ok: true,
-  date_from: "2026-09-28",
-  date_to: "2026-10-04",
-  today: "2026-09-29",
-  max_batch: 200,
-  count: orders.length,
-  total_q: 26900,
-  total_display: "R$ 269,00",
-  to_receive_q: 8600,
-  to_receive_display: "R$ 86,00",
-  days,
-};
+    });
+  }
+  const shown = days.flatMap((day) => day.orders);
+  const total = shown.reduce((sum, item) => sum + item.total_q, 0);
+  const receive = shown.reduce((sum, item) => sum + (item.balance_q || 0), 0);
+  return {
+    ok: true,
+    date_from: dateFrom,
+    date_to: dateTo,
+    today: TODAY,
+    max_batch: 200,
+    count: shown.length,
+    total_q: total,
+    total_display: brl(total),
+    to_receive_q: receive,
+    to_receive_display: brl(receive),
+    days,
+  };
+}
 
 const pos = {
   products: [],
@@ -252,7 +297,7 @@ const preorderDetail = {
     qty: "1", unit_price_display: "R$ 7,00", total_display: "R$ 7,00",
   })),
   customer_note: "Sem açúcar no suco, por favor.", kitchen_note: "", timeline: [
-    { event_type: "created", label: "Pedido criado", timestamp_display: "29/09 às 09:12", actor: "Loja online", detail: "" },
+    { event_type: "created", label: "Pedido criado", timestamp_display: `${ddmm(TODAY)} às 09:12`, actor: "Loja online", detail: "" },
   ],
   counter: {
     card: card(), ticket_printed: false, revision: "rev-1", actor_id: 7,
@@ -261,7 +306,7 @@ const preorderDetail = {
       suggested_method: "cash", block_reason: "", digital_charge_notice: "",
     },
     cancel: { allowed: true, requires_approval: false, block_reason: "" },
-    reschedule: { allowed: true, block_reason: "", date: "2026-09-29", slot: "slot-12", skus: ["SKU-0"], revision: "rev-s" },
+    reschedule: { allowed: true, block_reason: "", date: TODAY, slot: "slot-12", skus: ["SKU-0"], revision: "rev-s" },
     edit: { allowed: true, block_reason: "", cancel_and_redo: false, revision: "rev-e" },
   },
   managers: [],
@@ -305,7 +350,7 @@ createServer((req, res) => {
     send(res, 200, {
       ok: true,
       query: url.searchParams.get("q") || "Ana",
-      today: "2026-09-29",
+      today: TODAY,
       include_completed: false,
       completed_days: 30,
       open_count: 1,
@@ -317,11 +362,11 @@ createServer((req, res) => {
   }
   // O detalhe de uma encomenda (S5: o painel do Balcão nos cinco tamanhos).
   if (path === "/api/v1/backstage/pos/preorders/NB-1042/") {
-    send(res, 200, { order: preorderDetail, generated_at: "2026-09-29T12:00:00Z", contract_version: 1 });
+    send(res, 200, { order: preorderDetail, generated_at: `${TODAY}T12:00:00Z`, contract_version: 1 });
     return;
   }
   if (path === "/api/v1/backstage/pos/preorders/") {
-    send(res, 200, preorderList);
+    send(res, 200, preorderList(url.searchParams));
     return;
   }
   // Os favoritos do balcão: na prévia (`sale`), um fixado no fim da faixa de filtros
