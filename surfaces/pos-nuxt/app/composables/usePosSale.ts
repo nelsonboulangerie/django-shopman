@@ -1465,6 +1465,40 @@ export function usePosSale(deps: PosSaleDeps) {
     });
   }
 
+  /**
+   * MAIS numa linha que JÁ FOI À COZINHA (o + do editor, ou um número maior digitado):
+   * as unidades novas vão numa linha a enviar, nunca na linha enviada (o servidor
+   * deduplica por `line_id`, e a unidade nova não chegaria ao KDS). Soma na linha irmã
+   * ainda não enviada (mesmo produto, mesmas escolhas) quando existe; senão cria uma.
+   * Devolve o `line_id` da linha que recebeu as unidades.
+   */
+  function addLineLike(lineId: string, qty = 1): string {
+    if (!canUseCart.value || orderSetupPending.value) return "";
+    const source = cart.items.find((item) => item.line_id === lineId);
+    if (!source || source.weighed || qty <= 0) return "";
+    invalidateReview();
+    checkoutMode.value = false;
+    const signature = optionsSignature(source.options);
+    const sibling = cart.items.find(
+      (item) => item.sku === source.sku && !item.fired && !item.weighed && optionsSignature(item.options) === signature,
+    );
+    if (sibling) {
+      sibling.qty += qty;
+      return sibling.line_id;
+    }
+    const line: POSCartItem = {
+      line_id: newLineId(),
+      sku: source.sku,
+      name: source.name,
+      price_q: source.price_q,
+      qty,
+      ...(source.options?.length ? { options: source.options.map((option) => ({ ...option })) } : {}),
+      notes: "",
+    };
+    cart.items.push(line);
+    return line.line_id;
+  }
+
   function setQty(lineId: string, qty: number) {
     if (!canUseCart.value || orderSetupPending.value) return;
     invalidateReview();
@@ -3534,6 +3568,46 @@ export function usePosSale(deps: PosSaleDeps) {
     await refresh();
   }
 
+  /**
+   * LINHA JÁ NA COZINHA QUE SAIU OU DIMINUIU NA CONTA (decisão do dono, 10/10/2026):
+   * cancela na cozinha pelo caminho canônico, o mesmo "cancelar envio" (`unfire_tab`).
+   * Primeiro grava a conta (o servidor passa a ter a quantidade nova, ou não ter a
+   * linha), depois pede o cancelamento: a linha inteira, ou só `units` dela
+   * (`quantities`, o servidor cancela a diferença e a linha segue enviada). Devolve se
+   * a cozinha recebeu; quem chamou diz isso em palavra.
+   */
+  async function cancelLinesInKitchen(entries: Array<{ lineId: string; units?: number }>): Promise<boolean> {
+    const targets = entries.filter((entry) => entry.lineId);
+    if (!cart.tabSessionKey || !targets.length) return false;
+    serverError.value = "";
+    firing.value = true;
+    try {
+      await persistTab(true);
+      const quantities = Object.fromEntries(
+        targets.filter((entry) => entry.units && entry.units > 0).map((entry) => [entry.lineId, entry.units]),
+      );
+      const response = await action.call<{ tab: POSTabPayload | null }>(
+        actionHref(actions.value, "unfire_tab", "/api/v1/backstage/pos/tabs/unfire/"),
+        {
+          body: {
+            session_key: cart.tabSessionKey,
+            expected_revision: cart.expectedRevision,
+            line_ids: targets.map((entry) => entry.lineId),
+            ...(Object.keys(quantities).length ? { quantities } : {}),
+          },
+        },
+      );
+      if (response.tab) await setFromTabPayload(response.tab);
+      await refresh();
+      return true;
+    } catch (error) {
+      serverError.value = `${httpErrorMessage(error, "A cozinha não recebeu o cancelamento.")} Avise a cozinha de voz.`;
+      return false;
+    } finally {
+      firing.value = false;
+    }
+  }
+
   async function unfireTab(lineId: string) {
     if (!cart.tabSessionKey || !lineId) return;
     serverError.value = "";
@@ -3880,6 +3954,8 @@ export function usePosSale(deps: PosSaleDeps) {
     lineQty,
     addProduct,
     setQty,
+    addLineLike,
+    cancelLinesInKitchen,
     restoreItem,
     setLineNotes,
     setLineDiscount,

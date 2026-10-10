@@ -38,7 +38,7 @@ describe("tela de venda em modo edição", () => {
   it("não dispara cozinha, não transfere, não vai ao quadro e não vira balcão", () => {
     expect(page).toContain('resolveAffordance(editing.value ? [] : actions.value, "fire_tab")');
     expect(page).toContain(':hide-move="editing"');
-    expect(page).toContain("cart.items.length && !editing.value) fireTab();");
+    expect(page).toContain("cart.items.length && !editing.value && !cartPanelRef.value?.fireSelection()) fireTab();");
     expect(page).toContain("if (editing.value) return; // a edição sai por Salvar ou Descartar");
     expect(page).toContain("Na edição, a encomenda continua encomenda.");
   });

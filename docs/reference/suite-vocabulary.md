@@ -59,7 +59,7 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **Finalizar** | o último passo do Fechamento, e só ele. O caminho antes continua em *Confirmar* | 18/09 | — |
 | **Saída** | a estação do **KDS** por onde o pedido pronto sai (entregar no balcão, despachar a entrega). A mesma palavra em dois apps mandava gente para a tela errada; desde 03/10 a tela de fechamento de lote da Produção se chama **Fechamento**, e *Expedição* é só o posto da saída dos pedidos (`workstation_vocabulary.py`). O `type` gravado continua `expedition` (identificador), e a estação do seed passou de `expedicao` para `saida` por migração (`backstage.0076`), com redirect do endereço antigo no kds-nuxt | 26/09 | — |
 | **estação** (navegação da Cozinha) | cada item da navegação da Cozinha é uma estação da casa pelo NOME do cadastro (Cafés, Lanches, Encomendas), levando à sua bancada (`/<ref>`), com "Estação · N pendências"; a lista vem do índice do servidor. A **Saída** leva ao Gestor. O título da bancada é o nome da estação. ⛔ item ou título genérico *Preparo*: estação é um posto específico, não existe estação chamada "Preparo" | 09/10 | `kds-nuxt/tests/sections.test.ts` + `useKdsShell.test.ts` |
-| **dividir · transferir · juntar** | os três atos da comanda. *Mesclar* fora, por técnico demais | 18/09 | `presentation/moveLines.ts` |
+| **transferir · juntar** | os atos da comanda (dono, 10/10/2026). *Transferir* embute a comanda nova (o que se chamava *dividir* ou *separar*) e o diálogo se chama "Transferir itens", com o destino nos botões (Outra comanda · Comanda nova · Juntar comandas). **Dividir conta** é só pagar em partes, no Pagamento; ícones distintos (`arrow-right-left` × `split`). ⛔ *Separar*; ⛔ *dividir* para mover itens. *Mesclar* fora, por técnico demais | 10/10 | `presentation/moveLines.ts`, `tests/ticketColumn.test.ts` |
 | **item = unidade** | nunca linha, em nenhuma superfície | deliberado antes, reafirmado 18/09 | — |
 | **Abertura · Fechamento · Qualidade** | as abas do ciclo do lote na Produção (`/`, `/close`, `/quality`), depois de Planejamento e Preparação. Status Planejada · Aberta · Fechada · Cancelada (fonte única: `WorkOrder.Status`); quantidades planejado · previsto · realizado; indicadores perda e aproveitamento. ⛔ *Produzido* como rótulo de `started` ou `finished`; ⛔ *Estornar* para o `void` (é *Cancelar*); ⛔ *Rendimento* como KPI (fica com a ficha e a massa). Fora da Produção, qualificar: *abertura de lote*, *fechamento de lote*. Não mexe na abertura e no fechamento do caixa nem na Saída do KDS | 03/10 | trava: `production-nuxt/tests/lifecycleVocabulary.test.ts` + `test_vocabulario_abertura_fechamento.py` |
 | **Iniciar preparo** (Fila do Gestor) | fica para o pedido sem estação: é esse gesto que cria os tickets do KDS. Nada muda no código | 04/10 | — |
@@ -175,7 +175,8 @@ a tela de previsão do B.I.
 |---|---|
 | **validar** | cobra, chuta a gaveta, manda à cozinha e emite a NFC-e (na encomenda paga antes, só o recibo: a nota sai na retirada ou na entrega). ⛔ Fica assim por decisão do dono (precedente Odoo) — e nenhuma frase da tela pode chamar isso de *finalizar* |
 | **enviar à cozinha** | manda os itens para o KDS |
-| **transferir · dividir · juntar** | os três atos da comanda |
+| **transferir · juntar** | os atos da comanda (transferir para outra comanda ou para uma nova; juntar leva tudo e libera esta) |
+| **dividir conta** | pagar em partes, no Pagamento (nunca mover itens) |
 | **liberar** | devolve a comanda ao balcão |
 | **fechar caixa** | encerra o turno de custódia |
 

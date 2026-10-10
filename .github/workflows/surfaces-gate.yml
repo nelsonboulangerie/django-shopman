@@ -222,6 +222,17 @@ jobs:
         if: matrix.app == 'purchase-nuxt' || matrix.app == 'kds-nuxt' || matrix.app == 'orders-nuxt'
         run: npm run test:visual
 
+      # A trava de geometria da Venda do PDV (PR #1636): a comanda de altura inteira,
+      # nenhum texto cortado e o total inteiro em 1280/1366/1440/1920, claro e escuro.
+      # Sem baseline de pixel: roda com o Chromium que estiver no runner.
+      - name: Install Chromium for the PDV sale geometry
+        if: matrix.app == 'pos-nuxt'
+        run: npx playwright install chromium
+
+      - name: PDV sale geometry (comanda de altura inteira, nada corta)
+        if: matrix.app == 'pos-nuxt'
+        run: npm run test:geometry
+
       - name: Upload shared operator evidence
         if: always() && matrix.app == 'operator-kit'
         uses: actions/upload-artifact@v7

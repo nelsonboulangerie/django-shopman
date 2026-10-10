@@ -16,14 +16,19 @@
 // compara a largura dele com a que precisa (`presentation/actionLabel.ts`, calculada a
 // partir do texto, igual no servidor e no cliente: sem flash, sem medir em JS).
 //
+// A tecla do atalho (`shortcut`, "F9") é a PRIMEIRA a cair: o verbo fica, a tecla sai
+// (`shortcutFitStyle`). O que mais vai ao lado do rótulo (uma contagem) vem no slot
+// `trailing` e entra na conta do grupo pelo `reserve`.
+//
 // Sozinho no contêiner, o botão calcula a própria necessidade. Dentro de um
 // `OperatorFitGroup` (ou de uma barra do kit) ele usa a do grupo, e todas as ações da
 // barra trocam juntas.
 import { computed, inject, useAttrs } from "vue";
 
 import OperatorFitLabel from "./OperatorFitLabel.vue";
+import OperatorKbd from "./OperatorKbd.vue";
 
-import { actionFitAttrs, type OperatorFitSize } from "../presentation/actionLabel";
+import { actionFitAttrs, shortcutFitStyle, type OperatorFitSize } from "../presentation/actionLabel";
 import { OPERATOR_FIT_GROUP } from "../presentation/fitGroup";
 
 defineOptions({ inheritAttrs: false });
@@ -36,6 +41,8 @@ const props = withDefaults(
     shortLabel?: string;
     icon?: string;
     trailingIcon?: string;
+    /** A tecla do atalho ("F9"), a primeira a cair quando o espaço aperta. */
+    shortcut?: string;
     /** Nome acessível mais longo que o rótulo ("Desfazer o Pronto do 0131"). */
     ariaLabel?: string;
     size?: OperatorFitSize;
@@ -53,6 +60,7 @@ const props = withDefaults(
     shortLabel: undefined,
     icon: undefined,
     trailingIcon: undefined,
+    shortcut: undefined,
     ariaLabel: undefined,
     size: "md",
     color: "primary",
@@ -73,6 +81,7 @@ const attrs = useAttrs();
 const fit = computed(() => actionFitAttrs(props, { size: props.size, grouped }));
 // O que quem chama passa (`title` com o motivo, `class`, `data-*`) vence; o `style`
 // soma (as variáveis do encaixe e o estilo de quem chama).
+const shortcutStyle = computed(() => (props.shortcut ? shortcutFitStyle(props.shortcut, props.size) : undefined));
 const bound = computed(() => ({
   ...fit.value,
   ...attrs,
@@ -97,8 +106,15 @@ const bound = computed(() => ({
     :trailing-icon="trailingIcon"
   >
     <OperatorFitLabel :label="label" :short-label="shortLabel" :icon="icon" />
-    <template v-if="$slots.trailing" #trailing>
+    <template v-if="$slots.trailing || shortcut" #trailing>
       <slot name="trailing" />
+      <span
+        v-if="shortcut"
+        class="inline-flex shrink-0 overflow-hidden"
+        :style="shortcutStyle"
+        aria-hidden="true"
+        data-op-fit-key
+      ><OperatorKbd>{{ shortcut }}</OperatorKbd></span>
     </template>
   </NuxtButton>
 </template>

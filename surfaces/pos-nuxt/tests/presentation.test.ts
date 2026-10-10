@@ -860,11 +860,11 @@ describe("presentation/managerAuth — o que se assina e quem assina", () => {
 describe("presentation/moveLines — move modes, gate & payload", () => {
   it("offers modes driven by the tab_manipulation capability", () => {
     expect(availableMoveModes({ allows_split: true, allows_transfer: true, allows_merge: true }).map((m) => m.ref))
-      .toEqual(["split", "transfer", "merge"]);
+      .toEqual(["transfer", "split", "merge"]);
     expect(availableMoveModes({ allows_split: true, allows_transfer: false, allows_merge: true }).map((m) => m.ref))
       .toEqual(["split", "merge"]);
     // Absent capability is defensive: offer all three so the dialog still works.
-    expect(availableMoveModes(null).map((m) => m.ref)).toEqual(["split", "transfer", "merge"]);
+    expect(availableMoveModes(null).map((m) => m.ref)).toEqual(["transfer", "split", "merge"]);
   });
 
   it("flags price-freezing from the capability, defaulting to true", () => {

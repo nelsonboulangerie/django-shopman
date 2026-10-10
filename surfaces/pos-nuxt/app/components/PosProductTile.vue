@@ -89,9 +89,17 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
     </div>
 
     <div class="flex min-w-0 flex-col gap-0.5 px-3 py-2">
-      <!-- Nome longo (a mercearia: "Creme de Parmesão Kraeuterkaese Pomerode
-           90g") corta numa linha; o nome inteiro fica no `title`. -->
-      <p class="truncate op-label font-semibold" :class="inert ? 'text-muted-foreground' : ''" :title="product.name">{{ product.name }}</p>
+      <!-- O nome RESERVA duas linhas (dono, 10/10; `op-fixed-lines` do kit): o cartão tem a mesma altura com
+           uma ou duas, e o desenho da grade não deforma. Da terceira em diante corta
+           com reticências (a mercearia: "Creme de Parmesão Kraeuterkaese Pomerode
+           90g"); o nome inteiro fica no `title`, e o nome acessível do cartão lê o texto todo
+           (o corte é só visual). -->
+      <p
+        class="op-fixed-lines op-label leading-tight font-semibold"
+        :class="inert ? 'text-muted-foreground' : ''"
+        :title="product.name"
+        data-pos-product-name
+      >{{ product.name }}</p>
       <span class="flex min-w-0 items-center justify-between gap-1.5">
         <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
         <!-- Esgotado: a pílula ao lado do preço; o tile fica visível porém inerte

@@ -35,6 +35,10 @@ const CEILING: Record<string, { max: number; reason: string; arriving?: string }
     max: 1,
     reason: "a barra do polegar dos apps ainda fora do shell (é a barra de base)",
   },
+  "operator-kit/app/components/MoreBelow.vue": {
+    max: 1,
+    reason: "a dica \"Tem mais abaixo\" contida numa coluna que rola (comanda do PDV): grudada na base do contêiner, altura zero, não é ação",
+  },
   "operator-kit/app/components/OperatorPwaRuntime.vue": {
     max: 1,
     reason: "o aviso de versão nova do app instalado, acima da barra inferior",
