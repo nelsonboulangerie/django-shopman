@@ -11,9 +11,12 @@
 // ato na base (`OperatorActionBar`, "Pronto W07"), deslizar a linha para Pronto (F7) e
 // ver o pedido, desfazer e reabrir no toque longo.
 //
-// Os avisos da tela (cancelamento, pedido novo tocando, som bloqueado) moram no
-// `alerts` do cabeçalho, cada um com a ação que o resolve; o estado da leitura
-// (carregando, erro, sem conexão, vazio) é o `OperatorScreenState` do kit.
+// Os avisos da tela (pedido novo tocando, som bloqueado) moram no `alerts` do
+// cabeçalho, cada um com a ação que o resolve; o estado da leitura (carregando, erro,
+// sem conexão, vazio) é o `OperatorScreenState` do kit. A MUDANÇA num pedido que já
+// estava na cozinha (item cancelado, outra quantidade, observação nova, outro nome,
+// pedido inteiro cancelado) mora no PRÓPRIO card, vermelho e no topo da grade, até
+// alguém dar ciência nele (dono, 10/10/2026: "jamais silenciosamente").
 //
 // O quadro é sempre o de HOJE (nota 2: a prévia de outra data foi para a Produção/
 // Encomendas). Densidade e som são da estação provisionada (nota 1, Ajustes).
@@ -23,7 +26,6 @@ import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   boardFilterCounts,
-  cancelledAlert,
   elapsedLabel,
   focusGrid,
   focusSlice,
@@ -36,6 +38,7 @@ import {
   splitRef,
   ticketAction,
   ticketOverline,
+  hasChanges,
   type KDSBoardFilter,
 } from "~/presentation/board";
 
@@ -61,7 +64,7 @@ const {
   undoFinish,
   finishUntil,
   recall,
-  acknowledge,
+  acknowledgeChange,
   declareVolumes,
   volumesBusy,
 } = useKdsBoard(stationRef.value);
@@ -179,9 +182,17 @@ function matchesQuery(card: KDSTicketProjection, q: string): boolean {
 }
 const tickets = computed(() => view.value?.cards ?? []);
 const filterCounts = computed(() => boardFilterCounts(tickets.value));
+// O que pede ciência (mudou, ou caiu inteiro) fica SEMPRE na grade, no topo: busca e
+// recorte não escondem um alarme.
 const filteredCards = computed(() => {
   const q = query.value.trim().toLowerCase();
-  return tickets.value.filter((card) => matchesBoardFilter(card, filter.value) && (!q || matchesQuery(card, q)));
+  const cancelled = view.value?.cancelled ?? [];
+  return [
+    ...cancelled,
+    ...tickets.value.filter(
+      (card) => hasChanges(card) || (matchesBoardFilter(card, filter.value) && (!q || matchesQuery(card, q))),
+    ),
+  ];
 });
 watch(filterCounts, (counts) => {
   if (filter.value !== "all" && counts[filter.value] === 0) filter.value = "all";
@@ -249,8 +260,9 @@ const gridStyle = computed(() => ({
 const positions = computed(() => {
   const map = new Map<number, string>();
   if (query.value.trim() || filter.value !== "all" || !view.value) return map;
+  // O que mudou não é posição na fila: diz "Mudou" na pílula e pede ciência antes.
   view.value.cards
-    .filter((card) => !view.value!.finishingPks.has(card.pk))
+    .filter((card) => !view.value!.finishingPks.has(card.pk) && !hasChanges(card))
     .forEach((card, index) => map.set(card.pk, queuePositionLabel(index)));
   return map;
 });
@@ -285,25 +297,13 @@ const attentionTitle = computed(() => {
   if (codes.length === 1) return `Pedido novo ${codes[0]}`;
   return `${codes.length} pedidos novos: ${codes.slice(0, 3).join(", ")}${codes.length > 3 ? "…" : ""}`;
 });
-const activeRefs = computed(() => new Set(tickets.value.map((card) => card.order_ref)));
-
-// Os avisos da tela, na ordem da gravidade: o cancelamento (trava o Pronto e diz o que
-// não preparar), o pedido novo que está tocando e o som que o navegador bloqueou. O
-// primeiro aparece inteiro; os outros ficam em "e mais N" (regra do kit).
+// Os avisos da tela, na ordem da gravidade: o pedido novo que está tocando e o som que
+// o navegador bloqueou. O primeiro aparece inteiro; os outros ficam em "e mais N" (regra
+// do kit). A mudança e o cancelamento não moram aqui: moram no card afetado.
 const screenAlerts = computed<OperatorScreenAlert[]>(() => {
   const current = view.value;
   if (!current || notHere.value) return [];
-  const alerts: OperatorScreenAlert[] = current.cancelled.map((cancelled) => {
-    const copy = cancelledAlert(cancelled, activeRefs.value);
-    return {
-      id: `cancelled-${cancelled.pk}`,
-      color: "error",
-      icon: "i-lucide-ban",
-      title: copy.title,
-      description: copy.description,
-      action: { label: "Recebi o cancelamento", onSelect: () => void acknowledge(cancelled.pk) },
-    };
-  });
+  const alerts: OperatorScreenAlert[] = [];
   if (attentionPending.value) {
     alerts.push({
       id: "attention",
@@ -405,10 +405,16 @@ const phoneAction = computed<OperatorActionBarAction | null>(() => {
   const code = splitRef(card.order_ref).code;
   const action = ticketAction(card, {
     armed: barArmed.value,
-    blocked: current.blockedRefs.has(card.order_ref),
     finishing: current.finishingPks.has(card.pk),
   });
   switch (action.kind) {
+    case "seen":
+      return {
+        label: `${action.label} ${code}`,
+        icon: "i-lucide-eye",
+        color: "error",
+        onSelect: () => void acknowledgeChange(card.pk),
+      };
     case "start":
       return { label: `Iniciar ${code}`, icon: "i-lucide-play", onSelect: () => void start(card.pk) };
     case "finish":
@@ -417,13 +423,6 @@ const phoneAction = computed<OperatorActionBarAction | null>(() => {
         icon: "i-lucide-check",
         disabled: !action.enabled,
         onSelect: () => void finish(card.pk),
-      };
-    case "blocked":
-      return {
-        label: `Pronto ${code}`,
-        icon: "i-lucide-ban",
-        disabled: true,
-        reason: "Item cancelado neste pedido. Toque em Recebi o cancelamento, no aviso do topo.",
       };
     case "locked":
       return {
@@ -486,13 +485,6 @@ onMounted(() => {
   });
 });
 
-// Toque num pedido travado por item cancelado: o card já diz o que fazer; o aviso
-// repete PARA ONDE ir. O gesto se chama "Recebi o cancelamento".
-function warnBlocked() {
-  useSonner.error(
-    "Este pedido tem item cancelado. Toque em Recebi o cancelamento, no aviso vermelho do topo, para poder marcar Pronto.",
-  );
-}
 // Toque no Pronto travado pelo pagamento: o motivo, com as palavras do servidor.
 function warnLocked(pk: number) {
   const card = tickets.value.find((c) => c.pk === pk);
@@ -579,7 +571,7 @@ function clearSearchAndFilter() {
 
         <!-- vazio: estação zerada, estado calmo (omotenashi) -->
         <OperatorScreenState
-          v-if="!view.cards.length"
+          v-if="!view.cards.length && !view.cancelled.length"
           state="empty"
           icon="i-lucide-coffee"
           title="Tudo em dia"
@@ -616,7 +608,6 @@ function clearSearchAndFilter() {
             :cards="filteredCards"
             :focus-pk="phoneFocus?.pk ?? null"
             :next-pk="query ? null : view.nextPk"
-            :blocked-refs="view.blockedRefs"
             :addition-pks="view.additionPks"
             :finishing-pks="view.finishingPks"
             :finish-until="finishUntil"
@@ -627,6 +618,7 @@ function clearSearchAndFilter() {
             @open="(pk) => (openTicketPk = pk)"
             @undo="(pk) => undoFinish(pk)"
             @finish="(pk) => finish(pk)"
+            @seen="(pk) => acknowledgeChange(pk)"
             @hold="onHold"
           />
 
@@ -646,7 +638,6 @@ function clearSearchAndFilter() {
                     :density="density"
                     :eyebrow="positions.get(card.pk) ?? ''"
                     :next="!query && filter === 'all' && card.pk === view.nextPk"
-                    :blocked="view.blockedRefs.has(card.order_ref)"
                     :addition="view.additionPks.has(card.pk)"
                     :finishing="view.finishingPks.has(card.pk)"
                     :finish-until="finishUntil.get(card.pk)"
@@ -654,7 +645,7 @@ function clearSearchAndFilter() {
                     @start="start(card.pk)"
                     @finish="finish(card.pk)"
                     @undo="undoFinish(card.pk)"
-                    @blocked="warnBlocked"
+                    @seen="acknowledgeChange(card.pk)"
                     @locked="warnLocked(card.pk)"
                   />
                 </div>
