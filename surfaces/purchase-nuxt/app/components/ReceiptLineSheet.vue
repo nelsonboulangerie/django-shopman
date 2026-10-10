@@ -152,6 +152,11 @@ const materialItems = computed(() =>
     keywords: material.category,
   })),
 );
+// O nome escolhido pode passar da largura do campo: a reticência leva o completo na
+// dica (o rótulo que cabe, dono 10/10/2026).
+const materialName = computed(
+  () => props.materials.find((material) => material.sku === props.preview?.line.materialSku)?.name || undefined,
+);
 // No toque, a busca não pega o foco ao abrir: o teclado virtual só sobe quando a
 // pessoa toca na busca.
 const touch = useCoarsePointer();
@@ -268,6 +273,7 @@ function onCheck(checked: boolean) {
                 value-key="value"
                 :filter-fields="['label', 'description', 'keywords']"
                 :model-value="preview.line.materialSku || undefined"
+                :title="materialName"
                 :search-input="materialSearch"
                 placeholder="Escolher item"
                 data-receipt-material-select

@@ -467,8 +467,11 @@ useHead({ title: "Plataformas" });
                       label="Sem uso"
                     />
                   </span>
+                  <!-- Em lista o texto quebra linha (o rótulo que cabe, dono
+                       10/10/2026): cortado, "Uma postagem pública na plataforma; não
+                       envia…" escondia justamente o que a linha explica. -->
                   <span
-                    class="mt-0.5 block truncate text-sm font-normal text-muted-foreground"
+                    class="mt-0.5 block break-words text-sm font-normal text-muted-foreground"
                   >
                     {{ summaryFor(platform) }}
                   </span>

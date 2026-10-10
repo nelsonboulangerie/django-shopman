@@ -48,6 +48,10 @@ const emit = defineEmits<{
 }>();
 
 const readback = computed(() => orderReadback(props.result));
+// SEM CONEXÃO: a venda está guardada no dispositivo, não no servidor. Não há
+// pedido para cancelar nem nota para imprimir ainda; a tela diz isso, e a lista
+// das vendas guardadas (aviso do cabeçalho) acompanha o envio.
+const offline = computed(() => Boolean(props.result.offline));
 const title = computed(() => props.result.salesMode === "order"
   ? paymentFailed(props.result.payment) ? "Encomenda registrada, cobrança não criada" : "Encomenda registrada"
   : saleResultTitle(props.result.receipt.customerName, props.result.payment, props.pixStatus));
@@ -136,10 +140,37 @@ function onNewSale() {
       </div>
       <h2 class="text-3xl font-semibold tracking-tight">{{ title }}</h2>
       <p class="text-sm text-muted-foreground">
-        Pedido <span class="font-mono">{{ result.orderRef }}</span>
+        <template v-if="offline">{{ result.orderRef }}</template>
+        <template v-else>Pedido <span class="font-mono">{{ result.orderRef }}</span></template>
         <template v-if="result.receipt.tabDisplay"> · Comanda {{ result.receipt.tabDisplay }}</template>
         · {{ result.receipt.totalDisplay }}
       </p>
+    </div>
+
+    <!-- VENDA GUARDADA SEM CONEXÃO: o que ela é e o que vai acontecer com ela. -->
+    <div
+      v-if="offline"
+      class="grid w-full max-w-md gap-1 rounded-md border p-4 text-left"
+      :class="result.offline?.sentOrderRef ? 'border-border bg-card' : 'border-warning/40 bg-warning/5'"
+      role="status"
+      data-sale-result-offline
+    >
+      <template v-if="result.offline?.sentOrderRef">
+        <p class="flex items-center gap-2 text-sm font-semibold" data-sale-result-offline-sent>
+          <Icon name="lucide:circle-check" class="size-4 shrink-0 text-success" aria-hidden="true" />
+          Enviada: pedido <span class="font-mono">{{ result.offline.sentOrderRef }}</span>
+        </p>
+        <p class="text-sm text-muted-foreground">A nota fiscal segue o caminho de sempre.</p>
+      </template>
+      <template v-else>
+        <p class="flex items-center gap-2 text-sm font-semibold">
+          <Icon name="lucide:wifi-off" class="size-4 shrink-0" aria-hidden="true" />
+          Venda guardada neste dispositivo
+        </p>
+        <p class="text-sm text-muted-foreground">
+          É enviada sozinha quando a conexão voltar. A nota fiscal sai depois do envio.
+        </p>
+      </template>
     </div>
 
     <!-- LEITURA DE VOLTA da encomenda: como e quando, ditos em voz alta antes
@@ -309,7 +340,7 @@ function onNewSale() {
         <!-- Cancelar é EXCEÇÃO, não fluxo: entrada discreta que abre a
              confirmação destrutiva com desafio de PIN gerencial. -->
         <UiButton
-          v-if="canCancel"
+          v-if="canCancel && !offline"
           variant="ghost"
           size="sm"
           class="gap-1.5 text-muted-foreground hover:text-destructive"

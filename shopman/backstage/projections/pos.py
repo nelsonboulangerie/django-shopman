@@ -1318,6 +1318,9 @@ def _pos_actions() -> tuple[Action, ...]:
                     "manual_discount",
                     "manager_approval",
                     "client_request_id",
+                    # A venda que esperou na fila do PDV sem conexão (só registro).
+                    "offline_captured_at",
+                    "offline_prices_at",
                 ],
             },
             idempotency="required",

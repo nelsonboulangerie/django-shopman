@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { expectOperatorLabelsFit } from "../../../operator-kit/visual/playwright";
+
 // Matriz da Cozinha (fase 2): as três telas na carga direta, a 390 (celular de toque)
 // e a 1280 (mesa), nos dois temas. Cada caso confere que a tela abre sem erro de
 // página e sem aviso de hidratação, e anexa a captura ao relatório. Sem
@@ -85,6 +87,8 @@ for (const viewport of VIEWPORTS) {
           expect(response?.status()).toBeLessThan(500);
           if (route.heading) await expect(page.getByRole("heading", { name: route.heading }).first()).toBeVisible();
           await page.waitForLoadState("networkidle");
+          // O rótulo que cabe (dono, 10/10/2026): nenhum texto de botão vaza ou corta.
+          await expectOperatorLabelsFit(page, `${route.id} ${viewport.id} ${theme}`);
           await testInfo.attach(`${route.id}-${viewport.id}-${theme}`, {
             body: await page.screenshot(),
             contentType: "image/png",

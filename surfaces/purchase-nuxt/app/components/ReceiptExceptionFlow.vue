@@ -345,17 +345,20 @@ const matchedNames = computed(() => props.view.matched.map((preview) => receiptL
             <!-- Rótulo no slot: o do Nuxt UI corta ("Ler da emba…") a 390 px. -->
             <span class="text-sm font-medium">Ler da embalagem</span>
           </NuxtButton>
-          <NuxtButton
-            v-if="!otherDateOpen"
-            size="xl"
-            variant="outline"
-            color="neutral"
-            block
-            icon="i-lucide-calendar"
-            label="Outra data"
-            class="justify-start"
-            @click="otherDateOpen = true"
-          />
+          <!-- O rótulo que cabe (dono, 10/10/2026): a 320 px a meia coluna não cabe
+               "Outra data" ao lado do calendário; vira só o ícone, com o nome na dica. -->
+          <div v-if="!otherDateOpen" class="op-fit-scope">
+            <OperatorButton
+              size="xl"
+              variant="outline"
+              color="neutral"
+              block
+              icon="i-lucide-calendar"
+              label="Outra data"
+              class="justify-start"
+              @click="otherDateOpen = true"
+            />
+          </div>
           <OperatorDayPicker v-else v-model="otherDate" class="col-span-2" :today="todayIso" label="Validade" />
         </div>
         <p class="mt-2 text-sm text-muted-foreground">Um toque grava e passa para o próximo.</p>

@@ -843,6 +843,10 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
   }
   return list;
 });
+// A VENDA SEM CONEXÃO: a fila de vendas guardadas e a lista que o aviso abre.
+const offlineSales = usePosOfflineSales();
+const offlineSalesOpen = ref(false);
+
 // Avisos da tela no lugar da suíte (`alerts` do cabeçalho), cada um com a saída.
 const screenAlerts = computed<OperatorScreenAlert[]>(() => {
   const list: OperatorScreenAlert[] = [];
@@ -857,6 +861,18 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
       action: hasExits
         ? { label: "Conferir a venda", onSelect: () => openUncertainCloseRecovery() }
         : { label: "Conferir últimas vendas", onSelect: () => { recentSalesOpen.value = true; } },
+    });
+  }
+  // Depois da trava contra cobrança dupla, que é a mais grave.
+  const offline = offlineSales.alert.value;
+  if (offline) {
+    list.push({
+      id: "offline-sales",
+      color: offline.color,
+      icon: offline.color === "warning" ? "i-lucide-wifi-off" : undefined,
+      title: offline.title,
+      description: offline.description,
+      action: { label: offline.actionLabel, onSelect: () => { offlineSalesOpen.value = true; } },
     });
   }
   if (inSaleView.value && tabConflict.value) {
@@ -1745,6 +1761,17 @@ onBeforeUnmount(() => {
       @update:open="(value) => { if (!value) drawerLock.backToLock(); }"
       @authorize="drawerLock.unlock"
       @authorize-badge="drawerLock.unlockWithBadge"
+    />
+
+    <PosOfflineSalesDialog
+      v-model:open="offlineSalesOpen"
+      :online="offlineSales.isOnline.value !== false"
+      :sales="offlineSales.sales.value"
+      :sending="offlineSales.sending.value"
+      :durable="offlineSales.durable.value"
+      @send-now="offlineSales.flush()"
+      @retry="(id: string) => offlineSales.retry(id)"
+      @send-with-server-total="(id: string) => offlineSales.sendWithServerTotal(id)"
     />
 
     <PosCancelSaleDialog

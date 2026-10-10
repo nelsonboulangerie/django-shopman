@@ -26,6 +26,12 @@ export interface OperatorActionBarTimed {
 export interface OperatorActionBarAction {
   /** Verbo e alvo: "Iniciar preparo", "Conferir o próximo". */
   label: string;
+  /**
+   * O curto, escrito por quem conhece a ação, para quando o completo não cabe
+   * ("Cozinha" para "Enviar à cozinha"). Abaixo dele, com `icon`, só o ícone. Ver
+   * `actionLabel.ts` e o README ("Rótulo que cabe").
+   */
+  shortLabel?: string;
   icon?: string;
   to?: string;
   loading?: boolean;

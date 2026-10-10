@@ -5,6 +5,7 @@ import type { PrintOutcome } from "~/composables/useCounterAgent";
 import type { Action, POSCashManagementCapability, POSProjection } from "~/types/pos";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { actionHref } from "~/utils/posIntent";
+import { cashCloseBlockedByQueue } from "~/presentation/offlineSales";
 
 interface CashSessionDeps {
   pos: ComputedRef<POSProjection | null>;
@@ -144,7 +145,19 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     );
   }
 
+  // A fila de vendas sem conexão barra o fechamento (`blocks_close_when_offline_
+  // queue_pending` do contrato): fechar o turno com venda que ainda não chegou
+  // ao servidor deixaria essa venda sem turno onde entrar.
+  const offlineSales = usePosOfflineSales();
+
   function closeCashShift(payload: { amount: string; notes: string }): Promise<boolean> {
+    const blocked = cashManagement.value?.blocks_close_when_offline_queue_pending === false
+      ? ""
+      : cashCloseBlockedByQueue(offlineSales.unsentCount.value);
+    if (blocked) {
+      toast.error(blocked);
+      return Promise.resolve(false);
+    }
     return run(
       actionHref(actions.value, "close_cash_shift", "/api/v1/backstage/pos/cash/close/"),
       { closing_amount: payload.amount || "0", notes: payload.notes },
