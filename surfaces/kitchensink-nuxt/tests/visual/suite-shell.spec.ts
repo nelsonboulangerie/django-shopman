@@ -61,14 +61,9 @@ test("mesa: barra lateral na tela, sem barra inferior e sem ação na base", asy
   await expect(page.locator("[data-suite-base-action]")).toBeHidden();
   await expect(page.locator("[data-suite-swipe] [data-swipe-row]")).toHaveCount(3);
   await expect(page.locator("[data-suite-stacked-chart] [data-operator-reading-plot] svg").first()).toBeVisible();
-  // Duas faltas do KIT, fora do alcance desta página (o kit não muda nesta onda; estão
-  // no relatório da onda da Central e do Kitchen Sink): a descrição do aviso `warning`
-  // do `OperatorPageHeader` fica em 4,24:1 (o `opacity-90` do NuxtAlert sobre o fundo
-  // pré-composto), e a toolbar do cabeçalho mora fora de um landmark (`region`).
-  const accessibility = await new AxeBuilder({ page })
-    .exclude("[data-page-header-alerts]")
-    .disableRules(["region"])
-    .analyze();
+  // Sem exclusão: o aviso do cabeçalho (descrição na cor plena, AA) e as toolbars (no
+  // landmark do cabeçalho) entram na varredura inteira.
+  const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });
 

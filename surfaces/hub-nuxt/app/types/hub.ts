@@ -17,11 +17,16 @@ export interface HubTileProjection {
   status_summary: string;
   /** O estado bom e sabido ("Caixa aberto", "Aberta"): ponto verde quando nada pede alguém. */
   status_positive: string;
+  /**
+   * A pendência mais urgente deste app para este operador, com o link que leva ao item, ou
+   * `null`. É a ação direta da linha do app; os apps com pendência vêm primeiro.
+   */
+  next_item: HubQueueItemProjection | null;
 }
 
 /**
- * Um item de "Precisa de você" (`projections/hub_queue.py`): o item exato de uma fila, com
- * o gesto que abre o lugar exato no app certo. Já vem filtrado por permissão e ordenado
+ * Uma pendência (`projections/hub_queue.py`): o item exato de uma fila, com o gesto que abre
+ * o lugar exato no app certo. Já vem filtrado por permissão e ordenado
  * por urgência entre apps.
  */
 export interface HubQueueItemProjection {

@@ -1,30 +1,33 @@
 <script setup lang="ts">
-// Busca transversal da suíte. A interação e a aparência são dos componentes
-// canônicos DashboardSearchButton, Modal, Tabs e CommandPalette do Nuxt UI.
+// Busca da suíte em níveis (WP-FASE2-UX-OPERADOR, K6; dono, 09/10/2026: "busca em
+// níveis no canônico"). O botão é o `NuxtDashboardSearchButton` e o painel é o
+// `NuxtDashboardSearch` oficial (o `Modal` + `CommandPalette` do Nuxt UI): teclado,
+// grupos e tela cheia no celular vêm dele. Esta peça só diz O QUE aparece:
+//
+//   1. Nesta tela: "Filtrar o histórico por “maria”" vira o recorte da tela (o
+//      `v-model`); com a tela já filtrada, "Tirar o filtro “maria”".
+//   2. No app: o que a suíte achou no app atual.
+//   3. Na suíte: o que achou nos outros apps.
+//
+// Os grupos ficam nesta ordem sempre (`preserve-group-order`). Digitar não mexe na tela:
+// o recorte entra quando a pessoa escolhe "Filtrar … por …", e Esc fecha sem mudar nada.
+// Teclas: `/` fora de campo e Ctrl K (⌘K) em qualquer lugar abrem, pela infraestrutura de
+// atalhos do kit (`SUITE_SEARCH_SHORTCUTS`); o atalho próprio do `DashboardSearch` fica
+// desligado para não abrir duas vezes.
 import { useScreen } from "../composables/useScreen";
-import {
-  computed,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  watch,
-} from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { OPERATOR_APPS, type OperatorAppRef } from "../../appIdentity";
 import {
   SUITE_SEARCH_COPY as COPY,
-  appCount,
-  groupsForScope,
-  groupsForType,
+  normalizeSuiteQuery,
   suiteEmptyCopy,
+  suiteLevels,
   suiteQueryReady,
   suiteResultLabel,
-  suiteScopes,
-  suiteTotal,
+  suiteScreenTarget,
   surfaceRefForKitApp,
   type SuiteSearchResult,
-  type SuiteSearchScope,
 } from "../presentation/suiteSearch";
 import { SUITE_SEARCH_SHORTCUTS } from "../shortcuts/suiteShortcuts";
 
@@ -34,7 +37,7 @@ const props = withDefaults(
     placeholder?: string;
     screenLabel?: string;
     screenCount?: number | null;
-    variant?: "header" | "hero" | "hotkey";
+    variant?: "header" | "hotkey";
     ariaLabel?: string;
   }>(),
   {
@@ -54,27 +57,14 @@ const config = useRuntimeConfig().public as {
 const appRef = surfaceRefForKitApp(config.operatorPwa?.app);
 const hasScreen = computed(() => props.modelValue !== undefined);
 const label = computed(() => props.ariaLabel || props.placeholder);
-const text = ref(props.modelValue ?? "");
-watch(
-  () => props.modelValue,
-  (value) => {
-    if (value !== undefined && value !== text.value) text.value = value;
-  },
-);
 
 const { belowMd: isPhone } = useScreen();
 const dialogOpen = ref(false);
-const scopes = computed(() =>
-  suiteScopes({ hasScreen: hasScreen.value, appRef }),
-);
-const scope = ref<SuiteSearchScope>(scopes.value[0]!);
-watch(scopes, (next) => {
-  if (!next.includes(scope.value)) scope.value = next[0]!;
-});
-const typeFilter = ref("");
+// O termo do painel é do painel: a tela só muda quando a pessoa escolhe o recorte.
+const term = ref(props.modelValue ?? "");
 
 const { groups, apps, status, retry } = useSuiteSearchResults(
-  text,
+  term,
   computed(() => dialogOpen.value),
 );
 const kitIdentity = OPERATOR_APPS[config.operatorPwa?.app as OperatorAppRef];
@@ -85,33 +75,13 @@ const appLabel = computed(
     kitIdentity?.label ||
     "App",
 );
-const ready = computed(() => suiteQueryReady(text.value));
-const scopedGroups = computed(() =>
-  groupsForScope(groups.value, scope.value, appRef),
-);
-const visibleGroups = computed(() =>
-  groupsForType(scopedGroups.value, typeFilter.value),
-);
-const counts = computed<Record<SuiteSearchScope, number | null>>(() => ({
-  screen: props.screenCount,
-  app:
-    ready.value && status.value === "ready"
-      ? appCount(apps.value, appRef)
-      : null,
-  suite:
-    ready.value && status.value === "ready" ? suiteTotal(groups.value) : null,
-}));
+const ready = computed(() => suiteQueryReady(term.value));
 
-function scopeLabel(value: SuiteSearchScope): string {
-  if (value === "screen") return COPY.screenScope;
-  if (value === "app") return appLabel.value;
-  return COPY.suiteScope;
-}
-function setText(value: string) {
-  text.value = value;
+function applyScreen(value: string) {
   if (hasScreen.value) emit("update:modelValue", value);
 }
 function openSearch() {
+  term.value = props.modelValue ?? "";
   dialogOpen.value = true;
 }
 function closeDialog() {
@@ -127,9 +97,7 @@ function linkFor(result: SuiteSearchResult) {
 const { isOwner } = useSuiteSearchOwnership();
 const searchCommands =
   props.variant === "hotkey"
-    ? SUITE_SEARCH_SHORTCUTS.filter(
-        (command) => command.id !== "suite.search.slash",
-      )
+    ? SUITE_SEARCH_SHORTCUTS.filter((command) => command.id !== "suite.search.slash")
     : SUITE_SEARCH_SHORTCUTS;
 useOperatorShortcutMap(
   searchCommands,
@@ -161,25 +129,19 @@ const video = ref<HTMLVideoElement | null>(null);
 let stream: MediaStream | null = null;
 let scanTimer: ReturnType<typeof setTimeout> | null = null;
 onMounted(() => {
-  cameraSupported.value =
-    "BarcodeDetector" in window &&
-    Boolean(navigator.mediaDevices?.getUserMedia);
+  cameraSupported.value = "BarcodeDetector" in window && Boolean(navigator.mediaDevices?.getUserMedia);
 });
 async function startCamera() {
   cameraError.value = "";
   cameraOpen.value = true;
   cameraStarting.value = true;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" },
-    });
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
     await nextTick();
     if (!video.value) return;
     video.value.srcObject = stream;
     await video.value.play();
-    const DetectorClass = (
-      window as unknown as { BarcodeDetector: new () => Detector }
-    ).BarcodeDetector;
+    const DetectorClass = (window as unknown as { BarcodeDetector: new () => Detector }).BarcodeDetector;
     const detector = new DetectorClass();
     const scan = async () => {
       if (!cameraOpen.value || !video.value) return;
@@ -187,7 +149,7 @@ async function startCamera() {
         const [code] = await detector.detect(video.value);
         if (code?.rawValue) {
           navigator.vibrate?.(40);
-          setText(code.rawValue.trim());
+          term.value = code.rawValue.trim();
           stopCamera();
           return;
         }
@@ -213,229 +175,156 @@ function stopCamera(close = true) {
 }
 onBeforeUnmount(stopCamera);
 
-const emptyCopy = computed(() =>
-  suiteEmptyCopy(text.value, scope.value, appLabel.value),
-);
-const typeChips = computed(() =>
-  scopedGroups.value.map((group) => ({
-    type: group.type,
-    label: group.label,
-    count: group.results.length,
-  })),
-);
-const scopeItems = computed(() =>
-  scopes.value.map((value) => ({
-    value,
-    label:
-      counts.value[value] === null
-        ? scopeLabel(value)
-        : `${scopeLabel(value)} · ${counts.value[value]}`,
-    "data-suite-search-scope": value,
-  })),
-);
-const typeItems = computed(() => [
-  { value: "", label: "Todos" },
-  ...typeChips.value.map((chip) => ({
-    value: chip.type,
-    label: `${chip.label} · ${chip.count}`,
-    "data-suite-search-type": chip.type,
-  })),
-]);
-const commandGroups = computed(() =>
-  visibleGroups.value.map((group) => ({
-    id: group.type,
-    label: group.label,
-    ignoreFilter: true,
-    items: group.results.map((result) => ({
-      id: result.key,
-      label: result.title,
-      description: [result.place, result.detail].filter(Boolean).join(" · "),
-      icon: `i-lucide-${result.icon}`,
-      to: result.url,
-      target: linkFor(result).target,
-      rel: linkFor(result).rel,
-      "aria-label": suiteResultLabel(result),
-      "data-suite-search-result": "",
-      "data-type": result.type,
-      onSelect: () => closeDialog(),
-    })),
-  })),
-);
+const keepOpen = (fn: () => void) => (event: Event) => {
+  event.preventDefault();
+  fn();
+};
+
+// Os três níveis, em ordem fixa. O estado da suíte (falta letra, buscando, falhou,
+// nada) mora como item desligado no fim, para não sumir atrás do recorte da tela.
+const levelGroups = computed(() => {
+  const typed = normalizeSuiteQuery(term.value);
+  const out: Record<string, unknown>[] = [];
+
+  if (hasScreen.value) {
+    const target = suiteScreenTarget(props.screenLabel);
+    const items: Record<string, unknown>[] = [];
+    if (typed)
+      items.push({
+        label: `Filtrar ${target} por “${typed}”`,
+        icon: "i-lucide-list-filter",
+        "data-suite-search-screen": "apply",
+        onSelect: () => {
+          applyScreen(typed);
+          closeDialog();
+        },
+      });
+    if (props.modelValue)
+      items.push({
+        label: `Tirar o filtro “${props.modelValue}” de ${target}`,
+        icon: "i-lucide-filter-x",
+        "data-suite-search-screen": "clear",
+        onSelect: () => {
+          applyScreen("");
+          closeDialog();
+        },
+      });
+    if (items.length) out.push({ id: "screen", label: COPY.screenSection, ignoreFilter: true, items });
+  }
+
+  const levels = suiteLevels(groups.value, appRef);
+  const resultItem = (result: SuiteSearchResult, typeLabel: string) => ({
+    id: result.key,
+    label: result.title,
+    description: [result.place, result.detail].filter(Boolean).join(" · "),
+    suffix: typeLabel,
+    icon: `i-lucide-${result.icon}`,
+    to: result.url,
+    target: linkFor(result).target,
+    rel: linkFor(result).rel,
+    "aria-label": suiteResultLabel(result),
+    "data-suite-search-result": "",
+    "data-type": result.type,
+    onSelect: () => closeDialog(),
+  });
+  if (appRef && levels.app.length)
+    out.push({
+      id: "app",
+      label: `${COPY.appSection} (${appLabel.value})`,
+      ignoreFilter: true,
+      items: levels.app.map(({ result, typeLabel }) => resultItem(result, typeLabel)),
+    });
+
+  const state: Record<string, unknown>[] = [];
+  if (!ready.value) state.push({ label: COPY.typeMore, icon: "i-lucide-info", disabled: true, "data-suite-search-hint": "" });
+  else if (status.value === "error")
+    state.push({
+      label: hasScreen.value ? COPY.failed : COPY.failedNoScreen,
+      description: COPY.retry,
+      icon: "i-lucide-circle-alert",
+      color: "error",
+      "data-suite-search-error": "",
+      onSelect: keepOpen(retry),
+    });
+  else if (status.value === "loading") state.push({ label: COPY.searching, icon: "i-lucide-loader", disabled: true });
+  else if (status.value === "ready" && !levels.app.length && !levels.suite.length)
+    state.push({ label: suiteEmptyCopy(term.value, "suite", appLabel.value), icon: "i-lucide-search-x", disabled: true, "data-suite-search-empty": "" });
+  if (levels.suite.length || state.length)
+    out.push({
+      id: "suite",
+      label: COPY.suiteSection,
+      ignoreFilter: true,
+      items: [...levels.suite.map(({ result, typeLabel }) => resultItem(result, typeLabel)), ...state],
+    });
+  return out;
+});
+
+// Texto da casa não se corta: o rótulo e a descrição do item quebram linha em vez do
+// corte com reticências do oficial ("O filtro desta tela c…"). Uma vez aqui.
+const SEARCH_UI = {
+  itemLabel: "whitespace-normal text-clip",
+  itemDescription: "whitespace-normal text-clip",
+};
 
 defineExpose({ focus: openSearch, open: openSearch });
 </script>
 
 <template>
   <div
-    :class="
-      variant === 'hero'
-        ? 'w-full md:w-[34rem]'
-        : variant === 'hotkey'
-          ? 'contents'
-          : 'w-full md:w-fit'
-    "
+    :class="variant === 'hotkey' ? 'contents' : 'w-full md:w-fit'"
     data-suite-search
     :data-suite-search-variant="variant"
   >
-    <NuxtDashboardSearchButton
-      v-if="variant !== 'hotkey'"
-      class="w-full suite-page:min-h-control"
-      :size="variant === 'hero' ? 'xl' : 'md'"
-      :label="text || placeholder"
-      :aria-label="label"
-      :kbds="variant === 'hero' ? ['/', 'meta', 'k'] : ['/']"
-      data-suite-search-input
-      :data-suite-search-phone-trigger="variant === 'hero' ? '' : undefined"
-      @click="openSearch"
-    />
+    <!-- O clique é desta busca: o `toggleSearch` do grupo do Dashboard abriria TODAS as
+         `NuxtDashboardSearch` montadas (e fecharia a que acabou de abrir). -->
+    <div v-if="variant !== 'hotkey'" class="contents" @click.capture.stop="openSearch">
+      <NuxtDashboardSearchButton
+        class="w-full suite-page:min-h-control"
+        size="md"
+        :label="modelValue || placeholder"
+        :aria-label="label"
+        :kbds="['/']"
+        data-suite-search-input
+      />
+    </div>
 
-    <NuxtModal
+    <NuxtDashboardSearch
+      v-model:search-term="term"
       :open="dialogOpen"
+      :groups="levelGroups as never"
       :fullscreen="isPhone"
+      :color-mode="false"
+      shortcut=""
+      :loading="status === 'loading'"
+      :placeholder="placeholder"
       :title="label"
       description="Busque nesta tela, neste app ou em toda a suíte."
-      @update:open="(value) => (value ? openSearch() : closeDialog())"
+      preserve-group-order
+      :ui="SEARCH_UI"
+      data-suite-search-panel
+      @update:open="(value: boolean) => (value ? openSearch() : closeDialog())"
     >
-      <template #body>
-        <div class="grid gap-3" data-suite-search-dialog>
-          <NuxtTabs
-            v-model="scope"
-            :items="scopeItems"
-            :content="false"
-            variant="pill"
-            aria-label="Alcance da busca"
-            data-suite-search-scopes
-          />
-          <NuxtTabs
-            v-if="typeItems.length > 1"
-            v-model="typeFilter"
-            :items="typeItems"
-            :content="false"
-            variant="link"
-            aria-label="Tipo de resultado"
-            data-suite-search-chips
-          />
-
+      <!-- O pé só existe onde há câmera: o leitor de código (QR do pedido, EAN do insumo). -->
+      <template v-if="cameraSupported" #footer>
+        <div class="grid gap-2" data-suite-search-camera-row>
           <NuxtButton
-            v-if="cameraSupported && !cameraOpen"
+            v-if="!cameraOpen"
             color="neutral"
             variant="outline"
             icon="i-lucide-scan-line"
             :label="COPY.camera"
             :loading="cameraStarting"
             data-suite-search-camera
-            data-suite-search-camera-row
             @click="startCamera"
           />
-          <NuxtCard
-            v-if="cameraOpen"
-            variant="soft"
-            data-suite-search-camera-view
-          >
-            <video
-              ref="video"
-              class="aspect-[4/3] w-full bg-black object-cover"
-              muted
-              playsinline
-            />
-            <template #footer>
-              <div class="grid gap-2">
-                <p class="text-sm text-muted-foreground">
-                  {{ COPY.cameraAim }}
-                </p>
-                <NuxtButton
-                  block
-                  color="neutral"
-                  variant="outline"
-                  :label="COPY.cameraClose"
-                  @click="stopCamera()"
-                />
-              </div>
-            </template>
-          </NuxtCard>
-          <NuxtAlert
-            v-if="cameraError"
-            color="warning"
-            variant="subtle"
-            :title="cameraError"
-          />
-
-          <NuxtAlert
-            v-if="scope === 'screen' && text"
-            color="neutral"
-            variant="subtle"
-            :title="
-              screenCount === null
-                ? `A tela está filtrada por “${text.trim()}”.`
-                : `${screenCount === 1 ? '1 na tela' : `${screenCount} na tela`} com “${text.trim()}”.`
-            "
-            :description="screenLabel || undefined"
-            data-suite-search-screen-line
-          >
-            <template #actions
-              ><NuxtButton
-                color="neutral"
-                variant="outline"
-                label="Ver na tela"
-                @click="closeDialog"
-            /></template>
-          </NuxtAlert>
-
-          <NuxtCommandPalette
-            :search-term="text"
-            :groups="commandGroups"
-            :loading="status === 'loading'"
-            :input="{
-              placeholder: isPhone ? 'Buscar em toda a suíte' : placeholder,
-            }"
-            :aria-label="label"
-            preserve-group-order
-            data-suite-search-panel
-            @update:search-term="setText"
-          >
-            <template #empty>
-              <!-- O #empty do CommandPalette centraliza o texto; o Alert volta ao início. -->
-              <NuxtAlert
-                v-if="!ready"
-                class="text-start"
-                color="neutral"
-                variant="subtle"
-                icon="i-lucide-info"
-                :title="COPY.typeMore"
-                data-suite-search-hint
-              />
-              <NuxtAlert
-                v-else-if="status === 'error'"
-                class="text-start"
-                color="error"
-                variant="subtle"
-                icon="i-lucide-circle-alert"
-                :title="hasScreen ? COPY.failed : COPY.failedNoScreen"
-                :actions="[
-                  {
-                    label: COPY.retry,
-                    color: 'error',
-                    variant: 'outline',
-                    onClick: retry,
-                  },
-                ]"
-                data-suite-search-error
-              />
-              <NuxtEmpty
-                v-else-if="status === 'loading'"
-                loading
-                :title="COPY.searching"
-              />
-              <NuxtEmpty
-                v-else
-                icon="i-lucide-search-x"
-                :title="emptyCopy"
-                data-suite-search-empty
-              />
-            </template>
-          </NuxtCommandPalette>
+          <template v-if="cameraOpen">
+            <video ref="video" class="aspect-[4/3] w-full rounded-md bg-black object-cover" muted playsinline />
+            <p class="text-sm text-muted">{{ COPY.cameraAim }}</p>
+            <NuxtButton block color="neutral" variant="outline" :label="COPY.cameraClose" @click="stopCamera()" />
+          </template>
+          <NuxtAlert v-if="cameraError" color="warning" variant="subtle" :title="cameraError" />
         </div>
       </template>
-    </NuxtModal>
+    </NuxtDashboardSearch>
   </div>
 </template>

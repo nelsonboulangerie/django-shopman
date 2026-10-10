@@ -42,6 +42,7 @@ import type {
   SurfaceCellProjection,
   SurfaceProjection,
 } from "~/types/catalog";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const collectionRef = ref("");
 const {
@@ -1322,14 +1323,12 @@ useHead({ title: "Catálogo" });
         icon="i-lucide-tags"
         :title="vocation.headline"
         :description="vocation.names"
-        :actions="[
+        :actions="alertActions('info', [
           {
             label: 'Classificar',
-            color: 'info',
-            variant: 'outline',
             onClick: classifyVocation,
           },
-        ]"
+        ])"
         data-testid="vocation-notice"
       />
       <NuxtAlert
@@ -1819,14 +1818,12 @@ useHead({ title: "Catálogo" });
                             variant="subtle"
                             title="O preço mudou"
                             :description="`Agora: ${cell.price_display}. Seu valor digitado foi mantido.`"
-                            :actions="[
+                            :actions="alertActions('warning', [
                               {
                                 label: 'Conferir e manter meu preço',
-                                color: 'warning',
-                                variant: 'outline',
                                 onClick: () => keepPrice(cell),
                               },
-                            ]"
+                            ])"
                           />
                           <div class="flex justify-end gap-2">
                             <NuxtButton

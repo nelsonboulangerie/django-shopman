@@ -133,6 +133,22 @@ for (const viewport of VIEWPORTS) {
           await expect(page.locator("[data-kds-grid]")).toBeHidden();
           await expect(page.locator("[data-kds-phone-queue]")).toBeVisible();
         });
+
+        test("bancada: no Pronto a barra fica a mesma, e só o botão vira Desfazer", async ({ page }) => {
+          // Dono, 09/10/2026: a barra de ação não some nem se troca no estado de prazo.
+          await page.goto("/bancada");
+          const action = page.locator("[data-operator-action-bar-action]");
+          await expect(action).toContainText(/Pronto \d+/);
+          const label = (await action.innerText()).trim();
+          const code = label.replace(/^Pronto\s+/, "");
+          await action.click();
+          await expect(action).toContainText(`Desfazer ${code}`);
+          await expect(page.locator("[data-operator-action-bar]")).toBeVisible();
+          await expect(page.locator("[data-kds-phone-queue] [data-kds-action]")).toHaveCount(0);
+          // Desfazer dentro da janela: o Pronto volta e nada sai para o servidor.
+          await action.click();
+          await expect(action).toContainText(label);
+        });
       }
     });
   }
