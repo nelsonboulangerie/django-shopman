@@ -13,7 +13,7 @@
 //   - Só no toque. Mouse não desliza (no desktop as mesmas ações moram no ⋯ e nos
 //     botões do cartão), e o eixo se decide no começo: rolar nunca vira deslize.
 //   - Nunca a única porta. O ato do `commit` e de cada `action` existe também num
-//     botão visível do conteúdo (ou no polegar, `OperatorThumbAction`). Por isso a
+//     botão visível do conteúdo (ou na ação da base, `OperatorActionBar`). Por isso a
 //     camada de trás é `aria-hidden` e quem usa teclado ou leitor de tela segue
 //     pelos botões, sem perder nada.
 //   - Redução de movimento: a linha acompanha o dedo (é o próprio gesto), mas não

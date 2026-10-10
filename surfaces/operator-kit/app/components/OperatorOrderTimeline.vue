@@ -33,10 +33,11 @@ function submitComment() {
 </script>
 
 <template>
+  <!-- Sem cabeçalho destacado (conjunto mínimo): o título é a primeira linha do
+       corpo. O rodapé fica, porque é necessário: separa a entrada do histórico já
+       confirmado. -->
   <NuxtCard data-order-timeline>
-    <template #header
-      ><h2 class="op-title">{{ title }}</h2></template
-    >
+    <h2 class="pb-3 op-title">{{ title }}</h2>
     <NuxtTimeline
       v-if="order.timeline.length"
       :items="
