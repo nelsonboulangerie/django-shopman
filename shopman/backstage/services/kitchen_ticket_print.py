@@ -265,8 +265,12 @@ def enqueue(ticket_pk: int, *, created: bool = True):
 
     problem = ""
     with transaction.atomic():
+        # ``of=("self",)``: a trava é do ticket (uma via por momento). O
+        # ``print_terminal`` da estação é FK anulável, e o PostgreSQL recusa
+        # ``FOR UPDATE`` no lado anulável do OUTER JOIN que o ``select_related``
+        # monta; sem isto a Via Cozinha caía no alpha (mesma classe do #1640).
         ticket = (
-            KDSTicket.objects.select_for_update()
+            KDSTicket.objects.select_for_update(of=("self",))
             .select_related("kds_instance", "kds_instance__print_terminal")
             .filter(pk=ticket_pk)
             .first()
