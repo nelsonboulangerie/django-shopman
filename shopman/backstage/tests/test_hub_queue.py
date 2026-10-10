@@ -7,7 +7,7 @@ O que se trava aqui:
 - permissão é por item: quem não pode agir no app não vê o item dele, nem o anúncio quem
   só vê o Marketing sem poder aprovar;
 - app sem URL configurada não gera item (nunca gesto para link morto);
-- o excedente vira número ("+N"), nunca paginação;
+- a fila inteira vira só ``total_count`` no JSON (os itens vão na linha de cada app);
 - uma fonte que quebra não derruba a Central;
 - a linha de estado de cada bloco concorda com a fila;
 - cada app carrega a sua pendência mais urgente (``next_item``), tirada da fila inteira.
@@ -15,6 +15,8 @@ O que se trava aqui:
 
 from __future__ import annotations
 
+import logging
+from dataclasses import asdict
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 
@@ -27,7 +29,7 @@ from shopman.craftsman.models import Recipe, WorkOrder
 from shopman.orderman.models import Order
 
 from shopman.backstage.models import KDSInstance, KDSTicket, OperatorAlert
-from shopman.backstage.projections import hub_queue
+from shopman.backstage.projections import hub, hub_queue
 from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate
 
 pytestmark = pytest.mark.django_db
@@ -60,6 +62,11 @@ def _hub(client, user) -> dict:
     response = client.get(reverse("api-backstage-hub"))
     assert response.status_code == 200
     return response.json()["hub"]
+
+
+def _queue_items(user) -> list[dict]:
+    """A fila inteira, ordenada, no mesmo recorte da Central (interna: não viaja no JSON)."""
+    return [asdict(item) for item in hub.collect_operator_queue(user).items]
 
 
 def _order_to_accept(ref: str = "WEB-20261003-K7Q2", *, minutes_ago: int = 1) -> Order:
@@ -159,7 +166,7 @@ def test_superuser_ve_o_item_exato_de_cada_fila_com_o_gesto_do_lugar_certo(clien
     admin = User.objects.create_superuser("hub-q-admin", "a@b.c", "pw")
 
     queue = _hub(client, admin)["queue"]
-    by_kind = {item["kind"]: item for item in queue["items"]}
+    by_kind = {item["kind"]: item for item in _queue_items(admin)}
 
     order = by_kind["order_to_accept"]
     assert order["title"] == "Pedido K7Q2 para aceitar"
@@ -193,8 +200,7 @@ def test_superuser_ve_o_item_exato_de_cada_fila_com_o_gesto_do_lugar_certo(clien
     assert preorder["url"] == "https://pdv.example.test/preorders/WEB-20261003-ENC1"
     assert preorder["due_label"] == "retira às"
 
-    assert queue["total_count"] == 5
-    assert queue["more_count"] == 0
+    assert queue == {"total_count": 5, "server_now": queue["server_now"]}
     assert queue["server_now"]
 
 
@@ -205,7 +211,7 @@ def test_a_ordem_e_por_urgencia_entre_apps(client):
     _late_ticket(minutes_ago=25)
     admin = User.objects.create_superuser("hub-q-ordem", "a@b.c", "pw")
 
-    kinds = [item["kind"] for item in _hub(client, admin)["queue"]["items"]]
+    kinds = [item["kind"] for item in _queue_items(admin)]
 
     assert kinds.index("ticket_late") < kinds.index("order_to_accept")
 
@@ -223,7 +229,7 @@ def test_pedido_com_prazo_de_confirmacao_mostra_quando_aceita_sozinho(client):
     )
     admin = User.objects.create_superuser("hub-q-prazo", "a@b.c", "pw")
 
-    item = _hub(client, admin)["queue"]["items"][0]
+    item = _queue_items(admin)[0]
 
     assert item["due_label"] == "aceita sozinho em"
     assert item["due_style"] == "countdown"
@@ -241,11 +247,10 @@ def test_operador_sem_acesso_ao_app_nao_ve_o_item_dele(client):
     _pending_announcement()
     gestor = _operator("hub-q-gestor", ("shop", "manage_orders"))
 
-    hub = _hub(client, gestor)
-    apps = {item["app"] for item in hub["queue"]["items"]}
+    apps = {item["app"] for item in _queue_items(gestor)}
 
     assert apps == {"gestor"}
-    assert [tile["ref"] for tile in hub["tiles"]] == ["gestor"]
+    assert [tile["ref"] for tile in _hub(client, gestor)["tiles"]] == ["gestor"]
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
@@ -254,7 +259,7 @@ def test_cozinheiro_ve_so_o_pedido_atrasado_da_cozinha(client):
     _late_ticket()
     cozinheiro = _operator("hub-q-cozinha", ("backstage", "operate_kds"))
 
-    items = _hub(client, cozinheiro)["queue"]["items"]
+    items = _queue_items(cozinheiro)
 
     assert [item["kind"] for item in items] == ["ticket_late"]
 
@@ -272,9 +277,9 @@ def test_quem_so_ve_o_marketing_nao_recebe_anuncio_para_decidir(client):
 
     leitor_hub = _hub(client, leitor)
     assert [tile["ref"] for tile in leitor_hub["tiles"]] == ["marketing"]
-    assert leitor_hub["queue"]["items"] == []
+    assert _queue_items(leitor) == []
 
-    assert [item["kind"] for item in _hub(client, decisor)["queue"]["items"]] == ["announcement_review"]
+    assert [item["kind"] for item in _queue_items(decisor)] == ["announcement_review"]
 
 
 @override_settings(SHOPMAN_SURFACE_URLS={k: v for k, v in SURFACE_URLS.items() if k != "kds"})
@@ -282,7 +287,7 @@ def test_app_sem_url_nao_gera_item(client):
     _late_ticket()
     admin = User.objects.create_superuser("hub-q-sem-url", "a@b.c", "pw")
 
-    kinds = {item["kind"] for item in _hub(client, admin)["queue"]["items"]}
+    kinds = {item["kind"] for item in _queue_items(admin)}
 
     assert "ticket_late" not in kinds
 
@@ -308,7 +313,7 @@ def test_aviso_nao_visto_de_pedido_leva_ao_pedido_no_gestor(client):
     gestor = _operator("hub-q-aviso", ("shop", "manage_orders"))
 
     hub = _hub(client, gestor)
-    alerts = [item for item in hub["queue"]["items"] if item["kind"] == "alert"]
+    alerts = [item for item in _queue_items(gestor) if item["kind"] == "alert"]
 
     assert len(alerts) == 1
     assert alerts[0]["key"] == f"gestor:alert:{alert.pk}"
@@ -328,23 +333,24 @@ def test_aviso_de_pedido_nao_chega_a_quem_so_opera_a_producao(client):
     )
     padeiro = _operator("hub-q-padeiro", ("backstage", "operate_production"))
 
-    assert _hub(client, padeiro)["queue"]["items"] == []
+    assert _queue_items(padeiro) == []
 
 
-# ── Excedente, falha isolada, linha de estado ─────────────────────────────────
+# ── Contagem, falha isolada, linha de estado ──────────────────────────────────
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
-def test_excedente_vira_numero_nunca_pagina(client):
-    for index in range(hub_queue.FOCUS_LIMIT + 2):
+def test_a_fila_inteira_vira_so_a_contagem_no_json(client):
+    """A Central não lista a fila (dono, 09/10/2026: "Precisa de você" saiu): o JSON leva
+    só quantas pendências há, e o item de cada app vai em ``next_item``."""
+    for index in range(8):
         _order_to_accept(f"WEB-20261003-P{index:02d}")
     admin = User.objects.create_superuser("hub-q-mais", "a@b.c", "pw")
 
     queue = _hub(client, admin)["queue"]
 
-    assert len(queue["items"]) == hub_queue.FOCUS_LIMIT
-    assert queue["total_count"] == hub_queue.FOCUS_LIMIT + 2
-    assert queue["more_count"] == 2
+    assert set(queue) == {"total_count", "server_now"}
+    assert queue["total_count"] == 8 == len(_queue_items(admin))
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
@@ -352,7 +358,7 @@ def test_cada_app_carrega_a_sua_pendencia_mais_urgente_mesmo_fora_do_foco(client
     """A linha do app na Central traz a pendência mais urgente DELE (dono, 09/10/2026:
     "Precisa de você" saiu). Ela vem da fila inteira: a Cozinha com o único item atrás de
     seis pedidos mais urgentes ainda mostra o seu."""
-    for index in range(hub_queue.FOCUS_LIMIT):
+    for index in range(6):
         _order_to_accept(f"WEB-20261003-U{index:02d}", minutes_ago=30 + index)
     _late_ticket(minutes_ago=11)  # 1 min além da meta: atrás dos pedidos de 30+ min
     admin = User.objects.create_superuser("hub-q-next", "a@b.c", "pw")
@@ -360,7 +366,7 @@ def test_cada_app_carrega_a_sua_pendencia_mais_urgente_mesmo_fora_do_foco(client
     hub = _hub(client, admin)
     tiles = {tile["ref"]: tile for tile in hub["tiles"]}
 
-    assert all(item["app"] == "gestor" for item in hub["queue"]["items"])
+    assert [item["app"] for item in _queue_items(admin)][:6] == ["gestor"] * 6
     assert tiles["kds"]["next_item"]["kind"] == "ticket_late"
     assert tiles["kds"]["next_item"]["url"] == "https://kds.example.test/forno"
     # A mais urgente do Gestor é o pedido que espera há mais tempo.
@@ -383,9 +389,17 @@ def test_uma_fonte_que_quebra_nao_derruba_a_central(client, monkeypatch, caplog)
     )
     admin = User.objects.create_superuser("hub-q-falha", "a@b.c", "pw")
 
-    queue = _hub(client, admin)["queue"]
+    # O logger "shopman" tem propagate=False (config/settings.py): o handler do caplog,
+    # na raiz, só vê o aviso se for anexado direto no logger da fila.
+    queue_logger = logging.getLogger(hub_queue.__name__)
+    queue_logger.addHandler(caplog.handler)
+    try:
+        _hub(client, admin)  # a Central responde 200 mesmo com a fonte quebrada
+        kinds = [item["kind"] for item in _queue_items(admin)]
+    finally:
+        queue_logger.removeHandler(caplog.handler)
 
-    assert [item["kind"] for item in queue["items"]] == ["order_to_accept"]
+    assert kinds == ["order_to_accept"]
     assert "hub_queue.source_failed app=kds" in caplog.text
 
 
@@ -417,7 +431,7 @@ def test_staff_sem_app_recebe_fila_vazia(client):
 
     queue = _hub(client, plain)["queue"]
 
-    assert queue["items"] == [] and queue["total_count"] == 0
+    assert _queue_items(plain) == [] and queue["total_count"] == 0
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
@@ -433,7 +447,7 @@ def test_aviso_de_lote_nunca_vira_abrir_o_pedido_no_gestor(client):
     gerente = _operator("hub-q-gerente", ("shop", "manage_orders"), ("shop", "manage_production"))
     padeiro = _operator("hub-q-padeiro-2", ("backstage", "operate_production"), ("shop", "manage_production"))
 
-    assert _hub(client, gerente)["queue"]["items"] == []
-    items = _hub(client, padeiro)["queue"]["items"]
+    assert _queue_items(gerente) == []
+    items = _queue_items(padeiro)
     assert [item["app"] for item in items] == ["production"]
     assert items[0]["url"].startswith("https://prod.example.test/plan?q=WO-001")
