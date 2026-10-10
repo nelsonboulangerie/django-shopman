@@ -27,6 +27,7 @@ import { RECEIPT_LINES_TRAIL } from "~/presentation/purchaseSections";
 import { plural } from "~/presentation/purchaseUi";
 import { RECEIPT_LINE_STATUS_COLOR, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
 import { FLASH_RING, receiptFieldSelector, waitForElement } from "~/utils/receiptFocus";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const route = useRoute();
 const router = useRouter();
