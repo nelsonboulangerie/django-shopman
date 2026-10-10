@@ -93,6 +93,7 @@ const working = computed(() => workingOrders(props.cards, props.nowMs));
 const workingCount = computed(
   () => working.value.kitchen.length + working.value.road.length,
 );
+const ACCORDION_TRIGGER_FOCUS_INSIDE = "focus-visible:-outline-offset-3";
 function accordionItems(orders: ReturnType<typeof workingOrders>["kitchen"]) {
   return orders.map((order) => ({
     value: order.card.ref,
@@ -103,6 +104,11 @@ function accordionItems(orders: ReturnType<typeof workingOrders>["kitchen"]) {
     age: order.ageLabel,
     items: order.card.items_summary,
     stations: order.stations,
+    // O anel de foco do gatilho desenha para dentro: a lista emoldurada (cartão com
+    // `overflow-hidden`) cortava o anel de fora na primeira e na última linha
+    // (matriz de geometria do Gestor, 10/10/2026). No item, não no tema do kit: o
+    // tema é herdado pelas baselines das consumidoras.
+    ui: { trigger: ACCORDION_TRIGGER_FOCUS_INSIDE },
   }));
 }
 const workingGroups = computed(() => {
