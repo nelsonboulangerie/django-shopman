@@ -6,7 +6,8 @@
 // de `/settings`). A tela a põe no `#filters-primary` do `OperatorPageHeader`.
 //
 // É o `OperatorQuickFilters` do kit no modo de rota (todo item com `to`): a ativa é a
-// da rota de agora, e a régua do celular é a do kit, igual em toda a suíte.
+// da rota de agora. No celular, sub-seção com mais de 3 opções vira lista (seção 11):
+// `phone-max` 3, e as quatro de Ajustes viram o `NuxtSelect` do kit.
 const { settingsSections } = useMarketingSections();
 
 const items = computed(() =>
@@ -21,6 +22,6 @@ const items = computed(() =>
 
 <template>
   <nav class="flex min-w-0" aria-label="Seções de Ajustes" data-marketing-settings-nav>
-    <OperatorQuickFilters :items="items" label="Seções de Ajustes" />
+    <OperatorQuickFilters :items="items" label="Seções de Ajustes" :phone-max="3" />
   </nav>
 </template>

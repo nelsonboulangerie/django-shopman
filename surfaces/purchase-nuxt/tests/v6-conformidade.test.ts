@@ -79,6 +79,8 @@ describe("C02/C04/C05/C06: a Base (fase 2)", () => {
     const sections = app("components/PurchaseBaseSections.vue");
     expect(sections).toContain("<OperatorQuickFilters");
     expect(sections).toContain("to: section.to");
+    // Quatro opções: no celular, lista (seção 11: mais de 3 vira `NuxtSelect`).
+    expect(sections).toContain(':phone-max="3"');
     expect(sections).not.toContain("<NuxtTabs");
     expect(sections).not.toContain("<NuxtSelect");
   });
