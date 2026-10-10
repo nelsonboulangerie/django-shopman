@@ -758,8 +758,8 @@ a toolbar do cabeçalho é **uma linha só, de altura fixa**:
 - `clear-filters` faz o "Limpar"; sem ele, o kit remove cada recorte ativo.
   `filterBarActiveFilters(dimensions, filtros, atualizar)` converte os campos da
   `FilterBar` em recortes ativos.
-- Aba ou segmentado com mais de 4 opções vira `NuxtSelect` no celular (a Coleção do
-  Catálogo); com até 4, rola na horizontal, sem cortar rótulo.
+- Aba ou segmentado com mais de 3 opções vira `NuxtSelect` no celular (a Coleção do
+  Catálogo); com até 3, rola na horizontal, sem cortar rótulo.
 - Ação não é filtro: "Atualizar", "Exportar", "Admin" vão para as `actions` da barra,
   nunca para o painel "Filtros".
 - Os apps ainda fora do shell seguem com a linha de sempre (`row`) até a onda de cada um;
@@ -1290,8 +1290,8 @@ jeitos, pela forma dos itens:
 - **Favoritos fixados** (`surface`/`screen`, os mesmos do painel) entram no FIM da
   faixa, com a estrela; tocar emite `apply` com o recorte inteiro do favorito, e o
   ativo é o que bate com `query`.
-- **Celular:** até 4 opções rolam na faixa sem cortar rótulo; mais que isso viram um
-  `NuxtSelect` (`phone-max`). Favorito fixado não vira aba no celular quando as abas já
+- **Celular:** até 3 opções rolam na faixa sem cortar rótulo; mais que isso viram um
+  `NuxtSelect` (WP-FASE2-UX-OPERADOR §11; `phone-max` só para exceção declarada). Favorito fixado não vira aba no celular quando as abas já
   não cabem: ele está no topo do painel. As duas formas existem e a régua é CSS.
 - O recorte rápido ligado aparece também como chip removível (`active-filters` do
   cabeçalho, chips do painel na mesa).

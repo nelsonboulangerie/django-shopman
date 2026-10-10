@@ -5,6 +5,7 @@ import { defineComponent, h, nextTick, ref } from "vue";
 import OperatorQuickFilters from "../../app/components/OperatorQuickFilters.vue";
 import {
   collapsesOnPhone,
+  QUICK_FILTERS_PHONE_MAX,
   nextQuickIndex,
   quickFiltersMode,
   routeActiveKey,
@@ -82,9 +83,10 @@ describe("as decisões puras da faixa", () => {
     expect(nextQuickIndex(items, 0, Infinity)).toBe(2);
   });
 
-  it("até 4 rolam no celular; mais que isso viram seletor", () => {
-    expect(collapsesOnPhone(RECORTES)).toBe(false);
-    expect(collapsesOnPhone([...RECORTES, { key: "x", label: "X" }])).toBe(true);
+  it("até 3 rolam no celular; mais que isso viram seletor (WP-FASE2 §11)", () => {
+    expect(QUICK_FILTERS_PHONE_MAX).toBe(3);
+    expect(collapsesOnPhone(RECORTES.slice(0, 3))).toBe(false);
+    expect(collapsesOnPhone(RECORTES)).toBe(true);
   });
 });
 
@@ -204,13 +206,13 @@ describe("OperatorQuickFilters (sub-seções)", () => {
 });
 
 describe("OperatorQuickFilters (celular)", () => {
-  it("com mais de 4 opções a faixa sai do celular e entra um seletor; com até 4, não", async () => {
-    const many = host([], { multiple: true, items: [...RECORTES, { key: "paid", label: "Pagas", count: 1 }] });
+  it("com mais de 3 opções a faixa sai do celular e entra um seletor; com até 3, não", async () => {
+    const many = host([], { multiple: true });
     mounted = await mountSuspended(many.Host);
     expect(mounted.find("[data-quick-filters-select]").exists()).toBe(true);
     expect(mounted.find("[data-quick-filters-strip]").element.parentElement?.className).toContain("max-sm:hidden");
     mounted.unmount();
-    const few = host([], { multiple: true });
+    const few = host([], { multiple: true, items: RECORTES.slice(0, 3) });
     mounted = await mountSuspended(few.Host);
     expect(mounted.find("[data-quick-filters-select]").exists()).toBe(false);
     expect(mounted.find("[data-quick-filters-strip]").element.parentElement?.className).not.toContain("max-sm:hidden");

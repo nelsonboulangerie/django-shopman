@@ -180,7 +180,11 @@ export default defineAppConfig({
       // slot default empurra a seta para fora e `truncate` nunca corta. Com
       // `min-w-0 flex-1` o rótulo cede espaço e a seta fica na borda (Em andamento
       // do Gestor, dono, 08/10/2026: a linha da situação trunca).
-      slots: { label: "min-w-0 flex-1" },
+      //
+      // O anel de foco do gatilho desenha para dentro: o Accordion mora numa lista
+      // emoldurada (cartão com `overflow-hidden`) e o anel de fora era cortado na
+      // primeira e na última linha (matriz de geometria do Gestor, 10/10/2026).
+      slots: { label: "min-w-0 flex-1", trigger: "focus-visible:-outline-offset-3" },
     },
     // Cartão: o de topo é `outline` (default); cartão dentro de outro cartão é
     // `soft` (só fundo, sem borda dupla), escrito na chamada (dono, 08/10/2026).

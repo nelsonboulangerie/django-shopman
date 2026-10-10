@@ -1573,10 +1573,14 @@ function printQueue() {
           data-fulfillment-filters
           @update:model-value="pickFulfillment(String($event))"
         />
+        <!-- Na Fila entre o `lg` e o `xl` a linha leva os recortes da fila, os de
+             entrega e o "Filtros": o canal fica só no painel (que tem a dimensão
+             "Canal" do `md` para cima), em vez de sair da tela na rolagem da faixa. -->
         <NuxtSelect
           v-if="channels.length"
           v-model="channel"
           :items="channelItems"
+          :class="view === 'queue' ? 'lg:max-xl:hidden' : ''"
           aria-label="Canal"
           data-channel-picker
         />

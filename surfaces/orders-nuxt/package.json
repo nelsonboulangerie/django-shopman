@@ -15,6 +15,7 @@
     "test:component": "vitest run --project component",
     "test:e2e": "playwright test",
     "test:ssr": "playwright test -c playwright.ssr.config.ts",
+    "test:visual": "playwright test -c playwright.visual.config.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "pwa:assets": "node ../operator-kit/scripts/generate-pwa-assets.mjs --app=orders --out=public/pwa",

@@ -11,8 +11,9 @@ import { selectedOperatorViewports } from "../../../operator-kit/visual/matrix";
 // A espera é pela RESPOSTA do board (não por um card): no celular o board mostra
 // uma zona por vez e no vazio não há card nenhum.
 
-const BACKEND =
-  "http://127.0.0.1:" + (process.env.ORDERS_VISUAL_BACKEND_PORT || "38793");
+// A porta do mock é a que o config escolheu (variável ou porta livre) e gravou no
+// ambiente dos workers.
+const BACKEND = "http://127.0.0.1:" + process.env.ORDERS_VISUAL_BACKEND_PORT;
 
 const STATES = [
   { scenario: "normal", state: "normal" },

@@ -255,7 +255,7 @@ function switchHint(row: {
             <NuxtLink
               v-if="canOpen"
               :to="`/${item.card.ref}`"
-              class="block op-figure leading-none hover:underline"
+              class="-my-1 block min-w-8 py-1 op-figure leading-none hover:underline"
               :aria-label="`Abrir pedido ${item.card.ref}`"
               >{{ splitRef(item.card.ref).code }}</NuxtLink
             >
@@ -796,7 +796,7 @@ function switchHint(row: {
           <NuxtLink
             v-if="awareness?.can_open_channels"
             :to="row.focus_path"
-            class="min-w-0 flex-1 op-body hover:underline"
+            class="-my-1.5 min-w-0 flex-1 py-1.5 op-body hover:underline"
             :title="`Abrir ${row.name} em Canais`"
           >
             {{ row.name }} {{ row.active ? "ligado" : "desligado" }}

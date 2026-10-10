@@ -697,7 +697,6 @@ function nuxtIcon(icon: string): string {
           <NuxtButton
             :color="notice.color"
             variant="soft"
-            size="xs"
             :icon="notice.icon"
             :label="notice.label"
             :data-card-notice="notice.key"
