@@ -1172,127 +1172,133 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-pos-sale-screen>
-    <OperatorPageHeader
-      v-if="pos"
-      :title="saleHeaderTitle"
-      :actions="headerActions"
-      :actions-label="saleOpen ? 'Mais ações da comanda' : 'Mais ações'"
-      :alerts="screenAlerts"
-      data-pos-context-header
-    >
-      <!-- A busca da suíte na Venda: o campo e o `/` são do produto (F3), então a suíte
-           abre no Ctrl K, num diálogo, sem um segundo campo na tela. -->
-      <template #search>
-        <OperatorSuiteSearch variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
-      </template>
-      <template v-if="inSaleView && !editing && !result" #lead>
-        <NuxtButton
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-arrow-left"
-          square
-          :aria-label="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
-          :title="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
-          data-pos-back
-          @click="checkoutMode ? (checkoutMode = false) : goToTabs()"
-        />
-      </template>
-      <template #status>
-        <OperatorLiveStatus
-          :tone="liveStatus.view.value.tone"
-          :time="liveStatus.time.value"
-          :label="liveStatus.view.value.label"
-          :detail="liveStatus.view.value.detail"
-        />
-        <NuxtBadge
-          v-if="inSaleView && !checkoutMode && unsaved"
-          color="warning"
-          icon="i-lucide-cloud-off"
-          label="Não salvo"
-          role="status"
-          :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
-          data-pos-unsaved
-        />
-        <!-- PIX pendente que saiu da tela de resultado: o selo segue, com o polling por
-             baixo até resolver ou expirar (aí vira aviso passageiro). -->
-        <NuxtBadge
-          v-if="pendingPixOrderRef"
-          color="info"
-          icon="i-lucide-loader-circle"
-          role="status"
-          :title="`Pix do pedido ${pendingPixOrderRef} aguardando confirmação`"
-          data-pos-pix-pending
-        >Pix aguardando · {{ pendingPixOrderRef }}</NuxtBadge>
-      </template>
-      <!-- A BARRA DA VENDA (carta branca do PDV, WP-FASE2 §7): cliente, recebimento e
-           quando, os fatos do PEDIDO, no lugar da toolbar enquanto a comanda está aberta,
-           e seguem durante o checkout (só leitura). -->
-      <template v-if="inSaleView && !result" #below>
-        <div class="flex min-h-12 items-center gap-2 overflow-x-auto border-b border-default px-3 py-1.5 no-scrollbar" data-pos-sale-bar>
-          <PosTabHeader
-            ref="tabHeaderRef"
-            v-model:customer-name="cart.customerName"
-            v-model:customer-phone="cart.customerPhone"
-            v-model:customer-tax-id="cart.customerTaxId"
-            v-model:customer-email="cart.customerEmail"
-            class="min-w-0 flex-1"
-            :tab-display="cart.tabDisplay"
-            :tab-number="cart.tabNumber"
-            :opened-at="cart.tabOpenedAt"
-            :seating-spots="pos.seating_spots || []"
-            :seating-spot-ref="cart.tabSeatingSpot"
-            :occupied-spot-refs="tabs.filter((tab) => tab.seating_spot_ref && tab.ref !== cart.tabRef).map((tab) => tab.seating_spot_ref!)"
-            :sales-mode="cart.salesMode"
-            :has-open-tab="hasOpenTab"
-            :can-rename="canRenameTab"
-            :customer-lookup="customerLookup"
-            :lookup-busy="lookupBusy"
-            :search-results="customerSearchResults"
-            :search-busy="customerSearchBusy"
-            :customer-resolved-new="customerResolvedNew"
-            :new-customer-prefs="pendingCustomerPrefs"
-            :customer-decision="customerDecision"
-            :customer-merge-busy="customerMergeBusy"
-            :customer-release-busy="customerReleaseBusy"
-            :read-only="checkoutMode"
-            :fulfillment-type="cart.fulfillmentType"
-            :fulfillment-label="fulfillmentChipLabel"
-            :schedule-label="scheduleChipLabel"
-            :scheduled="scheduleChipActive"
-            :has-fired-items="cart.items.some((item) => item.fired)"
-            :customer-required="customerRequiredForSchedule"
-            :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
-            :schedule-conflict="scheduleChipConflict"
-            :schedule-conflict-reason="scheduleConflictReason"
-            :loading="busy"
-            @sales-mode-change="requestSalesMode"
-            @customer-closed="focusOrderEntry"
-            @customer-locked="notifyCustomerLocked"
-            @rename="(ref: string, spot?: string) => { if (!editing) void renameTab(ref, spot); }"
-            @clear="clearOrDiscard"
-            @clear-customer="clearCustomer"
-            @lookup-customer="lookupCustomer"
-            @resolve-customer="(done) => { void resolveCustomer().then(done) }"
-            @decision-confirm="confirmCustomerDecision"
-            @decision-cancel="cancelCustomerDecision"
-            @decision-merge="mergeConflictCustomers"
-            @decision-release="releaseConflictContact"
-            @decision-pick="pickConflictCandidate"
-            @search="searchCustomers"
-            @select-result="selectCustomerResult"
-            @apply-customer-favorite="applyCustomerFavorite"
-            @apply-preference="applyCustomerPreference"
-            @repeat-customer-last-order="repeatCustomerLastOrder"
-            @open-fulfillment="openFulfillmentHere"
-            @open-schedule="openScheduleHere"
-            @open-customer="paymentWorkspaceRef?.openCustomer()"
+    <!-- A COMANDA OCUPA A ALTURA INTEIRA (dono, 10/10, exceção do PDV): na mesa, a
+         coluna da direita vai de cima a baixo como a barra lateral, e o cabeçalho, a
+         barra da venda e os filtros moram só na largura entre as duas. Abaixo do `lg`
+         a comanda é a folha de baixo e o cabeçalho volta a ser a primeira faixa. -->
+    <div class="flex min-h-0 flex-1 max-lg:flex-col" data-pos-sale-layout>
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-pos-work-column>
+      <OperatorPageHeader
+        v-if="pos"
+        :title="saleHeaderTitle"
+        :actions="headerActions"
+        :actions-label="saleOpen ? 'Mais ações da comanda' : 'Mais ações'"
+        :alerts="screenAlerts"
+        data-pos-context-header
+      >
+        <!-- A busca da suíte na Venda: o campo e o `/` são do produto (F3), então a suíte
+             abre no Ctrl K, num diálogo, sem um segundo campo na tela. -->
+        <template #search>
+          <OperatorSuiteSearch variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
+        </template>
+        <template v-if="inSaleView && !editing && !result" #lead>
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            square
+            :aria-label="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
+            :title="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
+            data-pos-back
+            @click="checkoutMode ? (checkoutMode = false) : goToTabs()"
           />
-        </div>
-      </template>
-    </OperatorPageHeader>
-
-    <div class="flex min-h-0 flex-1 max-lg:flex-col">
-    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        </template>
+        <template #status>
+          <OperatorLiveStatus
+            :tone="liveStatus.view.value.tone"
+            :time="liveStatus.time.value"
+            :label="liveStatus.view.value.label"
+            :detail="liveStatus.view.value.detail"
+          />
+          <NuxtBadge
+            v-if="inSaleView && !checkoutMode && unsaved"
+            color="warning"
+            icon="i-lucide-cloud-off"
+            label="Não salvo"
+            role="status"
+            :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
+            data-pos-unsaved
+          />
+          <!-- PIX pendente que saiu da tela de resultado: o selo segue, com o polling por
+               baixo até resolver ou expirar (aí vira aviso passageiro). -->
+          <NuxtBadge
+            v-if="pendingPixOrderRef"
+            color="info"
+            icon="i-lucide-loader-circle"
+            role="status"
+            :title="`Pix do pedido ${pendingPixOrderRef} aguardando confirmação`"
+            data-pos-pix-pending
+          >Pix aguardando · {{ pendingPixOrderRef }}</NuxtBadge>
+        </template>
+        <!-- A BARRA DA VENDA (carta branca do PDV, WP-FASE2 §7): cliente, recebimento e
+             quando, os fatos do PEDIDO, no lugar da toolbar enquanto a comanda está aberta,
+             e seguem durante o checkout (só leitura). -->
+        <template v-if="inSaleView && !result" #below>
+          <!-- `@container`: os chips da barra trocam rótulo por ícone (e somem as teclas)
+               pela largura DESTA barra, não da janela: ela mora entre a barra lateral
+               e a comanda, e a largura dela muda com as duas. -->
+          <div class="@container flex min-h-12 items-center gap-2 overflow-x-auto border-b border-default px-3 py-1.5 no-scrollbar" data-pos-sale-bar>
+            <PosTabHeader
+              ref="tabHeaderRef"
+              v-model:customer-name="cart.customerName"
+              v-model:customer-phone="cart.customerPhone"
+              v-model:customer-tax-id="cart.customerTaxId"
+              v-model:customer-email="cart.customerEmail"
+              class="min-w-0 flex-1"
+              :tab-display="cart.tabDisplay"
+              :tab-number="cart.tabNumber"
+              :opened-at="cart.tabOpenedAt"
+              :seating-spots="pos.seating_spots || []"
+              :seating-spot-ref="cart.tabSeatingSpot"
+              :occupied-spot-refs="tabs.filter((tab) => tab.seating_spot_ref && tab.ref !== cart.tabRef).map((tab) => tab.seating_spot_ref!)"
+              :sales-mode="cart.salesMode"
+              :has-open-tab="hasOpenTab"
+              :can-rename="canRenameTab"
+              :customer-lookup="customerLookup"
+              :lookup-busy="lookupBusy"
+              :search-results="customerSearchResults"
+              :search-busy="customerSearchBusy"
+              :customer-resolved-new="customerResolvedNew"
+              :new-customer-prefs="pendingCustomerPrefs"
+              :customer-decision="customerDecision"
+              :customer-merge-busy="customerMergeBusy"
+              :customer-release-busy="customerReleaseBusy"
+              :read-only="checkoutMode"
+              :fulfillment-type="cart.fulfillmentType"
+              :fulfillment-label="fulfillmentChipLabel"
+              :schedule-label="scheduleChipLabel"
+              :scheduled="scheduleChipActive"
+              :has-fired-items="cart.items.some((item) => item.fired)"
+              :customer-required="customerRequiredForSchedule"
+              :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
+              :schedule-conflict="scheduleChipConflict"
+              :schedule-conflict-reason="scheduleConflictReason"
+              :loading="busy"
+              @sales-mode-change="requestSalesMode"
+              @customer-closed="focusOrderEntry"
+              @customer-locked="notifyCustomerLocked"
+              @rename="(ref: string, spot?: string) => { if (!editing) void renameTab(ref, spot); }"
+              @clear="clearOrDiscard"
+              @clear-customer="clearCustomer"
+              @lookup-customer="lookupCustomer"
+              @resolve-customer="(done) => { void resolveCustomer().then(done) }"
+              @decision-confirm="confirmCustomerDecision"
+              @decision-cancel="cancelCustomerDecision"
+              @decision-merge="mergeConflictCustomers"
+              @decision-release="releaseConflictContact"
+              @decision-pick="pickConflictCandidate"
+              @search="searchCustomers"
+              @select-result="selectCustomerResult"
+              @apply-customer-favorite="applyCustomerFavorite"
+              @apply-preference="applyCustomerPreference"
+              @repeat-customer-last-order="repeatCustomerLastOrder"
+              @open-fulfillment="openFulfillmentHere"
+              @open-schedule="openScheduleHere"
+              @open-customer="paymentWorkspaceRef?.openCustomer()"
+            />
+          </div>
+        </template>
+      </OperatorPageHeader>
 
       <!-- Abaixo do desktop a comanda é a folha de baixo: a grade ganha o respiro dela. -->
       <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-3 pt-2.5 pb-3 max-md:overflow-x-clip max-md:overflow-y-auto md:overflow-hidden">
