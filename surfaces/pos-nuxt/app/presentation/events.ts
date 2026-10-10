@@ -7,6 +7,16 @@
 export type PosRealtimeState = "connecting" | "live" | "polling";
 
 /**
+ * O que reler quando um stream avisa. O aviso de COMANDA (`/sse/tabs`) muda só o
+ * quadro de comandas, e chega a todas as estações a cada salvar de qualquer
+ * balcão: reler a projeção inteira nele enchia o servidor. O resto (caixa, poll,
+ * volta à aba) relê tudo.
+ */
+export function refreshScopeForChannel(path: string | undefined): "tabs" | "all" {
+  return path === "/sse/tabs" ? "tabs" : "all";
+}
+
+/**
  * O poll é FALLBACK em cadência calma, não um segundo canal: com o SSE vivo, o
  * tick não refaz nada (o push já refez). Ele só carrega a tela quando o stream
  * não está de pé — proxy sem streaming, 403 na conexão, rede que caiu.

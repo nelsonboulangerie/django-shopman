@@ -17,12 +17,13 @@
 // decisão em `app.vue`. Nada aqui deve voltar a conhecer o display: se uma regra
 // precisa de "menos na tela do cliente", o lugar dela não é este arquivo.
 //
+import { refreshScopeForChannel } from "~/presentation/events";
 import { posCorridorRoute } from "~/presentation/sections";
 
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco — o tablet do
 // balcão que dormiu não fica com dados velhos. O <OfflineBanner> (auto-import do kit)
 // dá o aviso calmo enquanto offline.
-const { pos, refresh } = await usePosTerminal();
+const { pos, refresh, refreshTabs } = await usePosTerminal();
 const { onReconnect } = useConnectivity();
 onReconnect(() => refresh());
 
@@ -46,7 +47,12 @@ const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession
 // O SSE só conecta com a estação identificada e desbloqueada (F3): no gate
 // (login/lock) os canais são negados e o EventSource entraria no ciclo de
 // reconexão com 400 — quem garante a tela ali é o poll de fallback.
-const { realtime } = usePosEvents(() => refresh(), { enabled: () => canIdentify.value && !locked.value });
+// O aviso de comanda relê só o quadro (`refreshTabs`); o do caixa, o poll e a
+// volta à aba relêem a projeção inteira.
+const { realtime } = usePosEvents(
+  (channel) => (refreshScopeForChannel(channel?.path) === "tabs" ? refreshTabs() : refresh()),
+  { enabled: () => canIdentify.value && !locked.value },
+);
 // O "ao vivo" dos cabeçalhos (camada da suíte) lê daqui: o estado do push e a hora
 // da última leitura da Projection.
 const live = usePosLiveState();
