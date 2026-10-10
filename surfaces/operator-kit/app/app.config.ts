@@ -129,13 +129,22 @@ export default defineAppConfig({
     // `primary` e `neutral` estão fora do conjunto, mas ainda têm uso no próprio kit
     // (1 e 6 escritos, mais os ligados do OperatorInbox, contados em 08/10 depois de o
     // Gestor zerar os seus); ficam até a migração desses avisos e morrem com ela.
+    //
+    // Descrição na cor plena em todo aviso (dono, 10/10/2026: "aplica em todos"). O
+    // oficial a desenha com `opacity-90` e, sobre o fundo pré-composto, 5 de 10
+    // combinações ficavam abaixo do AA (success/warning/error no claro, info/error no
+    // escuro; 4,24:1 no `warning`). Na cor plena todas passam de 4,9:1. Mescla com o
+    // default: o `text-sm` fica. O `primary` ainda ficaria abaixo no claro (latão
+    // sobre latão a 10%, 4,35:1) e usa a tinta `--primary-ink`, como o Badge e o
+    // Button `soft`. A trava é `tests/alertContrast.test.ts`.
     alert: {
+      slots: { description: "opacity-100" },
       compoundVariants: [
         {
           color: "primary",
           variant: "subtle",
           class: {
-            root: "bg-[color-mix(in_srgb,var(--primary)_10%,var(--card))]",
+            root: "bg-[color-mix(in_srgb,var(--primary)_10%,var(--card))] text-(--primary-ink)",
           },
         },
         {
