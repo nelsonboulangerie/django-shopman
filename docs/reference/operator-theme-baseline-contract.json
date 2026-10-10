@@ -22,7 +22,7 @@
       "baselines": "surfaces/pos-nuxt/tests/visual/baselines"
     }
   ],
-  "themeFingerprint": "sha256:7f563869b1b511d3bdb59bf1c5687ae63f3ef5ceda534891d41a3df1f03db958",
+  "themeFingerprint": "sha256:93f7bedd03189808ed1ee47bb3b0899c06e18ab2c86141b65c08b4e63104b425",
   "acceptedOn": "2026-10-10",
   "owner": "Pablo Valentini",
   "note": "Aceite do dono (Pablo Valentini, 10/10/2026, regra do rótulo que cabe: \"rótulo de ação completo, curto escrito à mão, só ícone; texto de peça fixa reserva 2 linhas\"), PR #1637: operator-fit.css entra no tema; abas (pílula e sublinhada) rolam de lado em vez de cortar em reticência; o mês do calendário quebra linha. Muda só onde o rótulo não cabia: as 4 baselines da prévia simulada do Marketing a 390 px, promovidas da CI no mesmo PR (o PDV não tem job visual na CI e não tem aba cortada). Aceite anterior (10/10/2026, \"1) aplica em todos\"): descrição do Alert à cor plena."
