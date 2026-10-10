@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
+import { expectOperatorLabelsFit } from "../../../operator-kit/visual/playwright";
+
 // Alvo mínimo = altura `md` (32 px), decisão do dono de 09/10/2026; acima do piso
 // WCAG 2.2 AA (2.5.8, 24 px).
 const MIN_TARGET = 32;
@@ -168,6 +170,8 @@ for (const route of criticalRoutes) {
     await expect(page.locator("main")).toBeVisible();
     await expectNoAxeViolations(page, `${route.path} ${project}`);
     await expectNoPageOverflow(page, `${route.path} ${project}`);
+    // O rótulo que cabe (dono, 10/10/2026): nenhum texto de botão vaza ou corta.
+    await expectOperatorLabelsFit(page, `${route.path} ${project}`);
     if (testInfo.project.metadata.touchTargets) {
       await expectTouchTargets(page, `${route.path} ${project}`);
     }

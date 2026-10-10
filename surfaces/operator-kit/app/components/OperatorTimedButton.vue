@@ -37,7 +37,12 @@
 // Imports explícitos (nenhum auto-import do Nuxt): a peça é SFC puro, e os harnesses
 // sem runtime Nuxt dos apps a montam de verdade.
 import { usePreferredReducedMotion } from "@vueuse/core";
-import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
+import { computed, inject, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
+
+import OperatorFitLabel from "./OperatorFitLabel.vue";
+
+import { actionFitAttrs } from "../presentation/actionLabel";
+import { OPERATOR_FIT_GROUP } from "../presentation/fitGroup";
 import {
   clockOffsetMs,
   remainingSeconds,
@@ -52,6 +57,8 @@ defineOptions({ inheritAttrs: false });
 const props = withDefaults(
   defineProps<{
     label: string;
+    /** O curto que a ação escreveu, para quando o completo não cabe ("Desfazer"). */
+    shortLabel?: string;
     /** Fim da janela (epoch em ms ou ISO). */
     until: Instant;
     /** Começo da janela (epoch em ms ou ISO). */
@@ -80,6 +87,7 @@ const props = withDefaults(
     fillTint?: "inverted" | "page";
   }>(),
   {
+    shortLabel: undefined,
     since: undefined,
     duration: undefined,
     serverNow: undefined,
@@ -96,6 +104,16 @@ const props = withDefaults(
   },
 );
 const emit = defineEmits<{ click: [event: MouseEvent]; expire: [] }>();
+
+// O rótulo que cabe (`operator-fit.css`): o mesmo do `OperatorButton`. Dentro de uma
+// barra do kit, a necessidade é a do grupo.
+const fitGrouped = inject(OPERATOR_FIT_GROUP, false);
+const fit = computed(() =>
+  actionFitAttrs(
+    { label: props.label, shortLabel: props.shortLabel, icon: props.icon },
+    { size: props.size, grouped: fitGrouped },
+  ),
+);
 
 const motion = usePreferredReducedMotion();
 const reduced = computed(() => props.reducedMotion || motion.value === "reduce");
@@ -248,7 +266,7 @@ const fillClass = computed(() => {
   >
     <NuxtButton
       v-if="!hidden"
-      v-bind="$attrs"
+      v-bind="{ ...fit, ...$attrs }"
       :color="color"
       :variant="variant"
       :size="size"
@@ -276,7 +294,7 @@ const fillClass = computed(() => {
         :style="fillStyle"
         data-timed-fill
       />
-      <span>{{ label }}</span>
+      <OperatorFitLabel :label="label" :short-label="shortLabel" :icon="icon" />
       <span v-if="showCount" aria-hidden="true" class="opacity-75" data-timed-count>{{ seconds }} s</span>
     </NuxtButton>
     <span :id="descriptionId" class="sr-only" data-timed-description>{{ description }}</span>

@@ -34,11 +34,14 @@
 //     0131" vira "Desfazer 0131") e ganha o fundo que esvazia (`OperatorTimedButton`).
 //     Ao fim do prazo o botão fica desligado no lugar até quem chama trocar a ação: a
 //     barra nunca perde a ação no meio do gesto.
-import { computed, useId } from "vue";
+import { computed, provide, useId } from "vue";
 
+import OperatorButton from "./OperatorButton.vue";
 import OperatorTimedButton from "./OperatorTimedButton.vue";
 
 import { actionDataAttributes, type OperatorActionBarAction } from "../presentation/actionBar";
+import { actionFitVars } from "../presentation/actionLabel";
+import { OPERATOR_FIT_GROUP } from "../presentation/fitGroup";
 
 const props = withDefaults(
   defineProps<{
@@ -62,8 +65,16 @@ const reason = computed(() =>
 
 const reasonId = useId();
 
-// Texto da casa não se corta: o rótulo do botão quebra linha em vez de "Iniciar
-// prep…" (o oficial leva `truncate`). Uma vez aqui, nunca na tela.
+// O rótulo que cabe (dono, 10/10/2026): a linha das ações é o contêiner, e as duas
+// trocam juntas de degrau (completo, o curto que a ação escreveu, só o ícone). A conta
+// mora em `presentation/actionLabel.ts`.
+provide(OPERATOR_FIT_GROUP, true);
+const fitStyle = computed(() =>
+  actionFitVars(props.secondary ? [props.secondary, props.action] : [props.action], { size: "xl" }),
+);
+
+// Texto da casa não se corta: sem curto nem ícone, o rótulo quebra linha em vez de
+// "Iniciar prep…" (`OperatorFitLabel`). Uma vez aqui, nunca na tela.
 const BUTTON_UI = { label: "text-clip whitespace-normal text-center" };
 // A segunda ação no contorno da superfície invertida: texto e contorno na cor do texto
 // invertido (o contorno neutro do tema some no escuro). Mora aqui, uma vez.
@@ -101,14 +112,20 @@ function run(action: OperatorActionBarAction, event: Event) {
           contextValue
         }}</span>
       </div>
-      <div class="flex w-full items-center gap-2">
-        <NuxtButton
+      <div
+        class="op-fit-scope flex w-full items-center gap-2"
+        :style="fitStyle"
+        data-operator-action-bar-row
+      >
+        <OperatorButton
           v-if="secondary"
           size="xl"
           variant="outline"
           color="neutral"
           :icon="secondary.icon"
           :label="secondary.label"
+          :short-label="secondary.shortLabel"
+          :aria-label="secondary.ariaLabel"
           :to="secondary.to"
           :loading="secondary.loading"
           :disabled="secondary.disabled"
@@ -120,6 +137,7 @@ function run(action: OperatorActionBarAction, event: Event) {
         <OperatorTimedButton
           v-if="action.timed"
           :label="action.label"
+          :short-label="action.shortLabel"
           :until="action.timed.until"
           :since="action.timed.since"
           :duration="action.timed.duration"
@@ -141,14 +159,16 @@ function run(action: OperatorActionBarAction, event: Event) {
           @click="run(action, $event)"
           @expire="action.timed.onExpire?.()"
         />
-        <NuxtButton
+        <OperatorButton
           v-else
           size="xl"
           block
           class="min-w-0 flex-1"
           color="primary"
+          variant="solid"
           :icon="action.icon"
           :label="action.label"
+          :short-label="action.shortLabel"
           :to="action.to"
           :loading="action.loading"
           :disabled="action.disabled"

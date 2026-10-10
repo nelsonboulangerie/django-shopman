@@ -822,6 +822,87 @@ remenda pelo DOM: o PIN do kit já dá o nome do campo inteiro (o `NuxtFormField
 `OperatorPinChange`, o `aria-label` do grupo no `OperatorIdentify`). Quando o `reka-ui` aceitar o rótulo, ele entra
 aqui, uma vez.
 
+### Rótulo que cabe (`OperatorButton`, `OperatorFitGroup`, `op-fixed-lines`)
+
+Pedido do dono (10/10/2026): copy de botão estourando em vários apps. Um tratamento
+só na suíte, sem exceção por tela.
+
+**Ação (botão).** O rótulo se adapta ao espaço nesta ordem:
+
+1. o rótulo completo ("Enviar à cozinha");
+2. o rótulo curto **declarado pela própria ação** (`short-label`, "Cozinha"). Quem
+   conhece a ação escreve o curto: o código nunca abrevia sozinho, e o curto segue a copy
+   da casa (inequívoco, vocabulário de `docs/reference/suite-vocabulary.md`, sem travessão);
+3. só o ícone, com o rótulo completo no nome acessível (`aria-label`) e na dica (`title`).
+
+Nunca cortar no meio sem reticências, nunca vazar do botão, nunca empurrar a barra para
+fora. Ação sem ícone não tem o degrau 3: o último texto fica e quebra linha. Por isso toda
+ação que pode ficar apertada declara um ícone.
+
+```vue
+<!-- Sozinho: o contêiner mais próximo é quem decide (aqui, a coluna). -->
+<div class="op-fit-scope">
+  <OperatorButton label="Enviar à cozinha" short-label="Cozinha" icon="i-lucide-chef-hat" />
+</div>
+
+<!-- Várias ações na mesma barra: trocam de degrau juntas. -->
+<OperatorFitGroup :actions="acoes" class="flex items-center gap-2">
+  <OperatorButton v-for="acao in acoes" :key="acao.label" v-bind="acao" />
+</OperatorFitGroup>
+```
+
+- **A troca é pelo espaço do CONTÊINER, não da tela, e é CSS.** O contêiner declara
+  `container-type: inline-size` (`op-fit-scope`, ou o `@container` do Tailwind) e o CSS
+  (`assets/css/operator-fit.css`) compara `100cqi` com a largura que a ação precisa
+  (`--op-fit-full`, `--op-fit-short`). Essa largura sai de `presentation/actionLabel.ts`,
+  calculada do texto com as larguras de glifo da Instrument Sans, igual no servidor e no
+  cliente: nada de `window.innerWidth`, nada de medir depois de montar, nenhum flash.
+- **O contêiner precisa ter largura dada pelo layout** (`w-full`, `flex-1`, coluna de
+  grade): a contenção de tamanho zera a largura que viria do conteúdo. Sem contêiner
+  declarado, o navegador compara com a viewport.
+- **Uma barra é um grupo.** `OperatorFitGroup` soma as ações e os espaços entre elas e as
+  troca juntas, para a barra nunca misturar "Enviar à cozinha" com um ícone solto. As
+  barras do kit já fazem isso por dentro: `OperatorActionBar` (as ações aceitam
+  `shortLabel`), `OperatorBulkBar` (idem) e `OperatorTimedButton` (`short-label`). O
+  `OperatorMoreMenu` e as `actions` do `OperatorPageHeader` não precisam: o item do ⋯
+  quebra linha, e no celular a ação vira ícone fixo ou item do ⋯ pela regra da barra do
+  topo. Os `OperatorQuickFilters` rolam na faixa, sem cortar, e as abas (`NuxtTabs`,
+  pílula e sublinhada) também: o tema do kit tira o encolhimento da aba e deixa a lista
+  rolar de lado quando não cabe. O mês do `NuxtCalendar` (o botão que troca a vista)
+  quebra linha em vez de cortar.
+- **Grupo numa linha que quebra.** O `OperatorFitGroup`/a barra também publicam
+  `--op-fit-min` (todas no último degrau): numa linha com `flex-wrap`, use
+  `min-w-(--op-fit-min)` no contêiner, e o grupo desce de linha em vez de vazar.
+- **Texto do botão.** O `textContent` do botão é só o completo (o curto é conteúdo
+  gerado, `::before`), então `getByRole("button", { name })` e `toHaveText` seguem
+  achando o botão pelo nome inteiro.
+- O `:ui` mora uma vez na peça; quem chama passa cor, variante e tamanho do conjunto
+  mínimo, e o `title` de quem chama (o motivo de uma ação desligada) vence a dica.
+
+**Texto que não é ação, em peça de tamanho fixo** (refinamento do dono, 10/10/2026):
+cartão de produto, linha de grade, tile. O nome **reserva sempre a altura de duas
+linhas** (`op-fixed-lines`), para o cartão não mudar de tamanho nem deformar com uma ou
+duas, e passando de duas **trunca com reticências**, com o texto completo no `title` e no
+nome acessível. `--op-lines` muda o número de linhas. Em lista e tabela de leitura, onde a
+altura da linha pode variar, o texto continua quebrando: não use a classe lá.
+
+```vue
+<p class="op-fixed-lines" :title="produto.nome">{{ produto.nome }}</p>
+```
+
+**A trava.** O scanner de geometria (`visual/scanner.ts`) reprova, em toda matriz que o
+usa: texto de controle que passa da caixa ou é cortado sem reticência
+(`control-text-overflow`; reticência só com o completo na dica ou no nome acessível),
+controles sobrepostos (`control-overlap`: só controles da mesma camada, na caixa que
+de fato aparece; o que rola por baixo de uma barra fixa é `covered-by-chrome`) e texto de
+peça fixa que não reserva as linhas
+ou corta sem o completo (`fixed-text`). O catálogo do kit (seção "Rótulo que cabe",
+`OperatorKitchenSinkFit.vue`) mostra os três degraus e os cartões de uma, duas e três
+linhas, e o spec confere degrau e altura em todos os viewports. Onde a trava roda na
+CI: catálogo do kit, Kitchen Sink, Compras e Gestor (a varredura inteira, por
+`captureOperatorEvidence`); Cozinha, Marketing e Produção (só a do rótulo, por
+`expectOperatorLabelsFit`, porque essas matrizes ainda não passam a varredura inteira).
+
 ## Peças de tela (fase 2)
 
 As atividades comuns do operador, uma peça para cada uma

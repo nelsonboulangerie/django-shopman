@@ -5,6 +5,10 @@ import { defineConfig, devices } from "@playwright/test";
 // corte do menuboard paralelo. Build com baseURL '/' (produção usa '/'). Login efetivo,
 // lock (Opção C) e ações reais rodam contra o Django real (reviewer local) — ver
 // tests/e2e/README.
+// As variáveis existem para quem roda em paralelo numa faixa de portas própria.
+const appPort = Number(process.env.PRODUCTION_E2E_APP_PORT || 3105);
+const backendPort = Number(process.env.PRODUCTION_E2E_BACKEND_PORT || 8797);
+
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: "**/*.spec.ts",
@@ -18,7 +22,7 @@ export default defineConfig({
   use: {
     // Porta de e2e dedicada (3105), distinta do dev server (3005) — o build de produção do
     // e2e sobe aqui e aponta ao mock, sem colidir/reusar um dev server aberto em :3005.
-    baseURL: "http://127.0.0.1:3105",
+    baseURL: `http://127.0.0.1:${appPort}`,
     bypassCSP: true,
     colorScheme: "light",
     locale: "pt-BR",
@@ -89,23 +93,24 @@ export default defineConfig({
   webServer: [
     {
       command: "node tests/e2e/mockBackend.mjs",
-      port: 8797,
+      port: backendPort,
+      env: { MOCK_PORT: String(backendPort) },
       reuseExistingServer: !process.env.CI,
     },
     {
       command: "nuxt build && node .output/server/index.mjs",
-      port: 3105,
+      port: appPort,
       reuseExistingServer: !process.env.CI,
       timeout: 240_000,
       env: {
         NUXT_APP_BASE_URL: "/",
-        NUXT_DJANGO_BASE_URL: "http://127.0.0.1:8797",
+        NUXT_DJANGO_BASE_URL: `http://127.0.0.1:${backendPort}`,
         // Exceção deliberada e testável: Nuxt build usa NODE_ENV=production, mas
         // somente o harness E2E pode falar com upstream HTTP local.
         SHOPMAN_ENVIRONMENT: "test",
         SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "1",
         HOST: "127.0.0.1",
-        PORT: "3105",
+        PORT: String(appPort),
       },
     },
   ],

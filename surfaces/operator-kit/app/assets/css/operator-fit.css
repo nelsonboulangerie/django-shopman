@@ -1,0 +1,124 @@
+/* ============================================================================
+   ENCAIXE DE TEXTO — rótulo de ação que se adapta ao espaço e texto de peça fixa
+   (dono, 10/10/2026: copy de botão estourando em vários apps). Política única da
+   suíte; a conta mora em `app/presentation/actionLabel.ts`, a peça em
+   `OperatorButton.vue`, a regra escrita no README ("Rótulo que cabe").
+
+   AÇÃO (botão): (1) rótulo completo; (2) o curto declarado pela ação
+   (`shortLabel`); (3) só o ícone, com o completo no nome acessível e na dica.
+   A troca é pelo espaço do CONTÊINER: `100cqi` é a largura do contêiner mais
+   próximo (`op-fit-scope` ou `@container`), comparada com a largura que a ação
+   precisa (`--op-fit-full`, `--op-fit-short`, calculadas a partir do texto no
+   servidor). Nada roda em JS, nada troca depois de hidratar.
+
+   Cada degrau é uma faixa: o texto visível tem `max-width` aberto (100vw) dentro
+   da faixa e zero fora dela. A multiplicação por 100000 transforma a diferença
+   de larguras num degrau seco (o "Holy Albatross" com unidades de contêiner).
+   Sem contêiner declarado, o navegador usa a viewport (o `cqi` vira `svi`).
+   ============================================================================ */
+
+.op-fit-scope {
+  container-type: inline-size;
+}
+
+[data-op-fit] {
+  --op-fit-gap: 0.375rem;
+  --op-fit-pad: 0.625rem;
+  --op-fit-pad-icon: 0.375rem;
+  min-width: 0;
+}
+[data-op-fit="xs"] {
+  --op-fit-gap: 0.25rem;
+  --op-fit-pad: 0.5rem;
+  --op-fit-pad-icon: 0.25rem;
+}
+[data-op-fit="lg"],
+[data-op-fit="xl"] {
+  --op-fit-gap: 0.5rem;
+  --op-fit-pad: 0.75rem;
+  --op-fit-pad-icon: 0.5rem;
+}
+
+/* Degrau 3, só ícone: o botão fica quadrado (o respiro do `square` do Nuxt UI) e o
+   espaço entre ícone e texto some junto com o texto. */
+[data-op-fit][data-op-fit-icon] {
+  padding-inline: clamp(
+    var(--op-fit-pad-icon),
+    calc(var(--op-fit-pad-icon) + (100cqi - var(--op-fit-short)) * 100000),
+    var(--op-fit-pad)
+  );
+}
+[data-op-fit][data-op-fit-icon] .op-fit-label {
+  margin-inline-start: clamp(
+    calc(var(--op-fit-gap) * -1),
+    calc((100cqi - var(--op-fit-short)) * 100000),
+    0px
+  );
+}
+
+.op-fit-label {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.op-fit-text {
+  min-width: 0;
+  overflow: hidden;
+  /* Última defesa, se a conta errar para menos (fonte de reserva inesperada): a
+     reticência, com o completo na dica e no nome acessível. Nunca o corte seco. */
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* O curto é conteúdo gerado: o `textContent` do botão fica sendo só o completo, e o
+   nome acessível é o `aria-label` (o completo). */
+.op-fit-text[data-op-fit-short]::before {
+  content: attr(data-op-fit-short);
+}
+/* Degrau 1: o completo, enquanto cabe. */
+.op-fit-text[data-op-fit-variant="full"] {
+  max-width: clamp(0px, calc((100cqi - var(--op-fit-full)) * 100000), 100vw);
+}
+/* Degrau 2: o curto, entre o limite do curto e o do completo. */
+.op-fit-text[data-op-fit-variant="short"] {
+  max-width: min(
+    clamp(0px, calc((100cqi - var(--op-fit-short)) * 100000), 100vw),
+    clamp(0px, calc((var(--op-fit-full) - 100cqi + 0.01px) * 100000), 100vw)
+  );
+}
+/* Ação sem curto: um texto só, até o limite do ícone. */
+.op-fit-text[data-op-fit-variant="only"] {
+  max-width: clamp(0px, calc((100cqi - var(--op-fit-short)) * 100000), 100vw);
+}
+/* Ação sem ícone não tem degrau 3: o último texto fica e quebra linha. */
+.op-fit-text[data-op-fit-last][data-op-fit-variant="short"] {
+  max-width: clamp(0px, calc((var(--op-fit-full) - 100cqi + 0.01px) * 100000), 100vw);
+  white-space: normal;
+  text-overflow: clip;
+  text-align: center;
+}
+.op-fit-text[data-op-fit-last][data-op-fit-variant="only"] {
+  max-width: none;
+  white-space: normal;
+  text-overflow: clip;
+  text-align: center;
+}
+
+/* ============================================================================
+   TEXTO QUE NÃO É AÇÃO, EM PEÇA DE TAMANHO FIXO (dono, 10/10/2026): cartão de
+   produto, linha de grade, tile. O nome RESERVA sempre a altura de duas linhas
+   (o cartão não muda de tamanho nem deforma com uma ou duas), e passando de duas
+   TRUNCA com reticências. O texto completo vai no `title` e no nome acessível
+   (a trava de geometria reprova o corte sem eles). Em lista e tabela de leitura,
+   onde a linha pode crescer, o texto continua quebrando: não use esta classe lá.
+   `--op-lines` muda o número de linhas (padrão 2).
+   ============================================================================ */
+.op-fixed-lines {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--op-lines, 2);
+  line-clamp: var(--op-lines, 2);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  height: calc(var(--op-lines, 2) * 1lh);
+}
