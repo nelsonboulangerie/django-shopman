@@ -35,13 +35,16 @@ function save() {
 <template>
   <PosSettingsShell title="Atalhos de venda" subtitle="as coleções que abrem a venda">
     <template #actions>
-      <UiButton :disabled="!changed || settings.saving.value === 'shortcuts'" data-settings-shortcuts-save @click="save">Gravar atalhos</UiButton>
+      <NuxtButton
+        label="Gravar atalhos"
+        :loading="settings.saving.value === 'shortcuts'"
+        :disabled="!changed || settings.saving.value === 'shortcuts'"
+        data-settings-shortcuts-save
+        @click="save"
+      />
     </template>
-    <div v-if="settings.error.value && !settings.data.value" class="flex flex-wrap items-center gap-3 rounded-xl border border-dashed p-4">
-      <p class="min-w-0 flex-1 op-body text-muted-foreground">{{ httpErrorMessage(settings.error.value, "Não deu para ler os atalhos. Confira a conexão e tente de novo.") }}</p>
-      <UiButton variant="outline" @click="settings.refresh()">Tentar de novo</UiButton>
-    </div>
-    <p v-else-if="!settings.data.value" class="op-body text-muted-foreground">Lendo os atalhos…</p>
+    <OperatorScreenState v-if="settings.error.value && !settings.data.value" state="error" what="os atalhos" @retry="settings.refresh()" />
+    <OperatorScreenState v-else-if="!settings.data.value" state="loading" what="os atalhos" />
     <template v-else>
       <p class="op-body text-muted-foreground">
         Valem para <b class="text-foreground">{{ settings.data.value.terminal_label || "este terminal" }}</b>: as favoritas vêm primeiro nos chips da venda e, no tablet, formam o chip "Favoritos".
@@ -53,27 +56,28 @@ function save() {
           <li v-for="(ref, index) in chosen" :key="ref" class="flex items-center gap-2 rounded-md bg-secondary px-3 py-1.5" :data-settings-shortcut="ref">
             <Icon name="lucide:star" class="size-4 text-primary" aria-hidden="true" />
             <span class="min-w-0 flex-1 truncate op-label font-semibold">{{ nameOf(ref) }}</span>
-            <button type="button" class="grid size-9 place-items-center rounded-md hover:bg-accent disabled:opacity-30" :disabled="index === 0" :aria-label="`Subir ${nameOf(ref)}`" @click="move(index, -1)"><Icon name="lucide:arrow-up" class="size-4" /></button>
-            <button type="button" class="grid size-9 place-items-center rounded-md hover:bg-accent disabled:opacity-30" :disabled="index === chosen.length - 1" :aria-label="`Descer ${nameOf(ref)}`" @click="move(index, 1)"><Icon name="lucide:arrow-down" class="size-4" /></button>
-            <button type="button" class="grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-accent" :aria-label="`Tirar ${nameOf(ref)}`" @click="toggle(ref)"><Icon name="lucide:x" class="size-4" /></button>
+            <NuxtButton icon="i-lucide-arrow-up" color="neutral" variant="ghost" square :disabled="index === 0" :aria-label="`Subir ${nameOf(ref)}`" @click="move(index, -1)" />
+            <NuxtButton icon="i-lucide-arrow-down" color="neutral" variant="ghost" square :disabled="index === chosen.length - 1" :aria-label="`Descer ${nameOf(ref)}`" @click="move(index, 1)" />
+            <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square :aria-label="`Tirar ${nameOf(ref)}`" @click="toggle(ref)" />
           </li>
         </ol>
       </section>
       <section class="grid gap-2">
         <h2 class="op-label text-muted-foreground">Coleções</h2>
         <div class="flex flex-wrap gap-2">
-          <button
+          <NuxtButton
             v-for="collection in collections"
             :key="collection.ref"
-            type="button"
-            class="inline-flex h-8 items-center gap-1.5 rounded-full border px-3.5 op-label transition"
-            :class="chosen.includes(collection.ref) ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
+            color="neutral"
+            variant="outline"
+            active-color="primary"
+            active-variant="solid"
+            :active="chosen.includes(collection.ref)"
             :aria-pressed="chosen.includes(collection.ref)"
+            :leading-icon="chosen.includes(collection.ref) ? 'i-lucide-check' : undefined"
+            :label="collection.name"
             @click="toggle(collection.ref)"
-          >
-            <Icon v-if="chosen.includes(collection.ref)" name="lucide:check" class="size-4 text-primary" aria-hidden="true" />
-            {{ collection.name }}
-          </button>
+          />
         </div>
       </section>
     </template>

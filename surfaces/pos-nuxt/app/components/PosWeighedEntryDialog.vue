@@ -174,28 +174,30 @@ const segmentClass = (active: boolean) => (active ? "border-primary bg-primary/5
             role="radiogroup"
             aria-label="O que digitar"
           >
-            <button
-              type="button"
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
               role="radio"
               :aria-checked="kind === 'label'"
-              class="h-8 min-w-0 rounded-md border text-sm font-medium"
+              class="h-8 min-w-0 rounded-md border text-sm font-medium justify-center"
               :class="segmentClass(kind === 'label')"
               @mousedown.prevent
               @click="setKind('label')"
             >
               Valor da etiqueta
-            </button>
-            <button
-              type="button"
+            </NuxtButton>
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
               role="radio"
               :aria-checked="kind === 'weight'"
-              class="h-8 min-w-0 rounded-md border text-sm font-medium"
+              class="h-8 min-w-0 rounded-md border text-sm font-medium justify-center"
               :class="segmentClass(kind === 'weight')"
               @mousedown.prevent
               @click="setKind('weight')"
             >
               Peso
-            </button>
+            </NuxtButton>
           </div>
 
           <label data-focus-target="weighed-entry" class="grid min-w-0 gap-1 text-sm">

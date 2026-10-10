@@ -241,12 +241,8 @@ function spotAria(spot: DraftSpot) {
               <span class="absolute top-full left-1/2 -translate-x-1/2 bg-background px-1 op-micro whitespace-nowrap text-muted-foreground">{{ fixture.label }}</span>
             </div>
             <div v-if="selectedFixture === fixture.kind" class="absolute -top-11 left-1/2 flex -translate-x-1/2 gap-1 rounded-md border border-border bg-card p-1 shadow" @pointerdown.stop>
-              <button type="button" class="grid size-8 place-items-center rounded hover:bg-accent" :aria-label="`Girar ${fixture.label}`" @click.stop="emit('rotateFixture', fixture.kind)">
-                <Icon name="lucide:rotate-cw" class="size-4" />
-              </button>
-              <button type="button" class="grid size-8 place-items-center rounded text-destructive hover:bg-destructive/10" :aria-label="`Tirar ${fixture.label} da planta`" @click.stop="emit('removeFixture', fixture.kind); selectedFixture = null">
-                <Icon name="lucide:trash-2" class="size-4" />
-              </button>
+              <NuxtButton icon="i-lucide-rotate-cw" color="neutral" variant="ghost" square :aria-label="`Girar ${fixture.label}`" @click.stop="emit('rotateFixture', fixture.kind)" />
+              <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square :aria-label="`Tirar ${fixture.label} da planta`" @click.stop="emit('removeFixture', fixture.kind); selectedFixture = null" />
             </div>
           </div>
 
@@ -325,17 +321,21 @@ function spotAria(spot: DraftSpot) {
               <span class="absolute -bottom-[5px] -left-[5px] size-2.5 rounded-sm border-2 border-primary bg-card" aria-hidden="true" />
               <span class="absolute -right-[5px] -bottom-[5px] size-2.5 rounded-sm border-2 border-primary bg-card" aria-hidden="true" />
               <span class="absolute left-1/2 -top-[31px] h-3 w-px bg-primary" aria-hidden="true" />
-              <button
-                type="button"
-                class="absolute left-1/2 -top-[55px] grid size-6 -translate-x-1/2 place-items-center rounded-full border-2 border-primary bg-card text-primary before:absolute before:-inset-2.5 before:content-['']"
+              <!-- A alça de girar da planta: um círculo de 24 px colado na mesa, com a
+                   área de toque ampliada pelo `before` (44 px). -->
+              <NuxtButton
+                icon="i-lucide-rotate-cw"
+                color="neutral"
+                variant="outline"
+                square
+                class="absolute left-1/2 -top-[55px] size-6 -translate-x-1/2 justify-center rounded-full p-0 text-primary ring-2 ring-primary before:absolute before:-inset-2.5 before:content-['']"
+                :ui="{ leadingIcon: 'size-3.5' }"
                 :aria-label="`Girar ${spot.label} 90 graus`"
                 title="Girar 90°"
                 data-seating-rotate
                 @pointerdown.stop
                 @click.stop="emit('rotate', spot.key)"
-              >
-                <Icon name="lucide:rotate-cw" class="size-3.5" aria-hidden="true" />
-              </button>
+              />
             </template>
           </div>
 
