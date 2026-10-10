@@ -16,6 +16,7 @@ import type {
 } from "~/generated/kdsContract";
 
 export type {
+  KDSChangeProjection,
   KDSCustomerOrderProjection,
   KDSCustomerStatusProjection,
   KDSInstanceSummaryProjection,
@@ -23,6 +24,9 @@ export type {
 } from "~/generated/kdsContract";
 
 export type KDSTimerClass = "timer-ok" | "timer-warning" | "timer-late";
+
+/** O que mudou no pedido que já estava na cozinha (``KDSChangeProjection.kind``). */
+export type KDSChangeKind = "cancelled" | "qty" | "note" | "resent" | "moved";
 
 export interface KDSTicketProjection extends KDSTicketContract {
   timer_class: KDSTimerClass;

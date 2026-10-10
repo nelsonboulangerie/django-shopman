@@ -31,8 +31,12 @@ import {
   restSummary,
   boardFilterCounts,
   matchesBoardFilter,
-  cancelledAlert,
   queueLine,
+  alarmsFirst,
+  cancelledHeadline,
+  changeAckLabel,
+  changeIcon,
+  needsAcknowledgement,
 } from "../app/presentation/board";
 import type { KDSBoardProjection, KDSTicketProjection } from "../app/types/kds";
 
@@ -76,6 +80,8 @@ const ticket = (
   is_preorder: false,
   due_time_display: "",
   seen: false,
+  changes: [],
+  change_ticket_pks: [],
   ...over,
 });
 
@@ -103,7 +109,6 @@ describe("kds board presentation", () => {
     expect(view.cards).toHaveLength(2);
     expect(view.cancelled).toHaveLength(1);
     expect(view.total).toBe(2);
-    expect(view.blockedRefs.has("PDV-1")).toBe(true);
     // Densidade e som vêm da estação provisionada (v4 nota 1).
     expect(view.density).toBe("roomy");
     expect(view.soundEnabled).toBe(false);
@@ -330,7 +335,7 @@ it("soma quantidades decimais sem concatenar strings nem arredondar unidades", (
 });
 
 describe("o botão do card", () => {
-  const armed = { armed: true, blocked: false };
+  const armed = { armed: true };
 
   it("o rótulo é o ATO, e ele muda com o estado do pedido", () => {
     expect(ticketAction(ticket({ status: "pending" }), armed)).toMatchObject({
@@ -346,21 +351,27 @@ describe("o botão do card", () => {
   });
 
   it("recém-iniciado ainda não aceita o Pronto: o rótulo não pisca, só o toque não passa", () => {
-    const justStarted = ticketAction(ticket({ status: "in_progress" }), {
-      armed: false,
-      blocked: false,
-    });
+    const justStarted = ticketAction(ticket({ status: "in_progress" }), { armed: false });
     expect(justStarted.kind).toBe("finish");
     expect(justStarted.label).toBe("Pronto");
     expect(justStarted.enabled).toBe(false);
   });
 
-  it("item cancelado trava o Pronto e diz PARA ONDE ir, mas não trava o iniciar", () => {
-    const blocked = { armed: true, blocked: true };
-    const stuck = ticketAction(ticket({ status: "in_progress" }), blocked);
-    expect(stuck.kind).toBe("blocked");
-    expect(stuck.label).toContain("aviso no topo");
-    expect(ticketAction(ticket({ status: "pending" }), blocked).kind).toBe("start");
+  it("pedido que mudou: o único ato é a ciência, antes de iniciar ou dar Pronto", () => {
+    const cancelledItem = [{ kind: "cancelled", text: "Cancelado: 1× Croissant" }];
+    const qty = [{ kind: "qty", text: "Pão de queijo: agora 1, eram 3" }];
+    for (const status of ["pending", "in_progress"]) {
+      expect(ticketAction(ticket({ status, changes: cancelledItem }), armed)).toMatchObject({
+        kind: "seen",
+        label: "Recebi o cancelamento",
+        enabled: true,
+      });
+      expect(ticketAction(ticket({ status, changes: qty }), armed)).toMatchObject({ kind: "seen", label: "Visto" });
+    }
+    // O pedido que caiu inteiro: a mesma ciência, com o nome do cancelamento.
+    expect(ticketAction(ticket({ status: "cancelled", is_cancelled: true }), armed).label).toBe("Recebi o cancelamento");
+    // No celular a base leva o código junto.
+    expect(thumbActionLabel(ticketAction(ticket({ changes: qty }), armed), "W07")).toBe("Visto W07");
   });
 
   it("dentro da janela, o botão é o Desfazer — e ele ganha de qualquer outro estado", () => {
@@ -368,9 +379,8 @@ describe("o botão do card", () => {
       ticketAction(ticket({ status: "in_progress" }), { ...armed, finishing: true }),
     ).toMatchObject({ kind: "undo", label: "Desfazer", enabled: true });
     expect(
-      ticketAction(ticket({ status: "in_progress" }), {
+      ticketAction(ticket({ status: "in_progress", changes: [{ kind: "qty", text: "x" }] }), {
         armed: true,
-        blocked: true,
         finishing: true,
       }).kind,
     ).toBe("undo");
@@ -381,10 +391,11 @@ describe("o botão do card", () => {
     const locked = ticketAction(ticket({ status: "in_progress", ...unpaid }), armed);
     expect(locked).toMatchObject({ kind: "locked", label: "Pronto", icon: "lucide:lock", enabled: true });
     expect(ticketAction(ticket({ status: "pending", ...unpaid }), armed).kind).toBe("start");
-    // O cancelamento fala primeiro (é a cozinha que destrava), e o Desfazer ganha de tudo.
-    expect(ticketAction(ticket({ status: "in_progress", ...unpaid }), { armed: true, blocked: true }).kind).toBe("blocked");
+    // A mudança fala primeiro (é a cozinha que dá ciência), e o Desfazer ganha de tudo.
+    const changed = { ...unpaid, changes: [{ kind: "cancelled", text: "Cancelado: 1× Croque" }] };
+    expect(ticketAction(ticket({ status: "in_progress", ...changed }), armed).kind).toBe("seen");
     expect(
-      ticketAction(ticket({ status: "in_progress", ...unpaid }), { armed: true, blocked: false, finishing: true }).kind,
+      ticketAction(ticket({ status: "in_progress", ...unpaid }), { armed: true, finishing: true }).kind,
     ).toBe("undo");
   });
 
@@ -488,17 +499,38 @@ describe("a fila do cozinheiro (v4: 4 a 6 em foco, o resto vira +N)", () => {
     expect(cards.filter((c) => matchesBoardFilter(c, "late")).map((c) => c.pk)).toEqual([2]);
   });
 
-  it("cancelamento: item que saiu de pedido que continua x pedido inteiro", () => {
-    const cancelled = ticket({
-      order_ref: "F22",
-      cancelled_at_display: "22:01",
-      items: [{ sku: "A", name: "Croque", qty: 1, notes: "", stock_warning: "" }],
-    });
-    expect(cancelledAlert(cancelled, new Set(["F22"]))).toEqual({
-      title: "Pedido F22: item cancelado às 22:01. O resto continua.",
-      description: "Não preparar: 1× Croque.",
-    });
-    expect(cancelledAlert(cancelled, new Set()).title).toBe("Pedido F22 cancelado às 22:01.");
+  it("mudança com alarde: o que pede ciência vem antes da fila, e diz o que é", () => {
+    const changed = ticket({ pk: 9, changes: [{ kind: "note", text: "Observação nova em Tapioca: sem glúten" }] });
+    const cancelled = ticket({ pk: 8, status: "cancelled", is_cancelled: true, cancelled_at_display: "22:01" });
+    const ordered = alarmsFirst([ticket({ pk: 1 }), changed, ticket({ pk: 2 }), cancelled]);
+    expect(ordered.map((card) => card.pk)).toEqual([9, 8, 1, 2]);
+    expect(needsAcknowledgement(ticket())).toBe(false);
+    expect(cancelledHeadline(cancelled)).toBe("Pedido cancelado às 22:01. Não preparar.");
+    expect(cancelledHeadline(ticket({ cancelled_at_display: "" }))).toBe("Pedido cancelado. Não preparar.");
+    expect(changeAckLabel({ changes: [{ kind: "moved", text: "Era a comanda Mesa 5" }] })).toBe("Visto");
+    expect(changeIcon("cancelled")).toBe("lucide:ban");
+    expect(changeIcon("qty")).toBe("lucide:hash");
+    expect(changeIcon("desconhecido")).toBe("lucide:triangle-alert");
+    // A pílula segue dizendo o estado do preparo; o cancelado inteiro não tem pílula.
+    expect(ticketPill(changed, {})?.label).toBe("Em preparo");
+    expect(ticketPill(cancelled, {})).toBeNull();
+  });
+
+  it("o que mudou não é o PRÓXIMO da fila: o próximo é o primeiro que é trabalho", () => {
+    const board: KDSBoardProjection = {
+      instance_ref: "cafes",
+      instance_name: "Cafés",
+      instance_type: "prep",
+      tickets: [ticket({ pk: 1, elapsed_seconds: 900 }), ticket({ pk: 2, changes: [{ kind: "qty", text: "x" }] })],
+      counts: { total: 2, pending: 0, in_progress: 2 },
+      cancelled_tickets: [],
+      recent_done: [],
+      density: "cozy",
+      sound_enabled: true,
+    };
+    const view = boardView(board);
+    expect(view.cards.map((card) => card.pk)).toEqual([2, 1]);
+    expect(view.nextPk).toBe(1);
   });
 
   it("a linha compacta do celular: o primeiro item e quantos mais", () => {

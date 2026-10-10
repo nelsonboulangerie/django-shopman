@@ -62,6 +62,8 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     is_preorder: false,
     due_time_display: "",
     seen: false,
+    changes: [],
+    change_ticket_pks: [],
     ...over,
   };
 }
@@ -220,14 +222,58 @@ describe("KdsTicketCard — os dois gestos", () => {
     expect(w.emitted("finish")).toHaveLength(1);
   });
 
-  it("item cancelado: o botão diz PARA ONDE ir e emite blocked, nunca finish", async () => {
-    const w = mountCard({ ticket: ticket({ status: "in_progress" }), blocked: true });
+  it("item cancelado: o card diz o que saiu e o botão é a ciência, nunca o Pronto", async () => {
+    const w = mountCard({
+      ticket: ticket({
+        status: "in_progress",
+        changes: [{ kind: "cancelled", text: "Cancelado: 1× Croissant" }],
+        change_ticket_pks: [31],
+      }),
+    });
+    expect(w.get("[data-kds-changes]").text()).toContain("Cancelado: 1× Croissant");
+    expect(w.get("[data-kds-alarm-eyebrow]").text()).toBe("Mudou");
     const action = w.get("button[data-kds-action]");
-    expect(action.text()).toContain("Item cancelado");
-    expect(action.text()).toContain("aviso no topo");
+    expect(action.text()).toBe("Recebi o cancelamento");
+    // Na cor do aviso (D8): vermelho sólido.
+    expect(action.attributes("data-color")).toBe("error");
+    expect(action.attributes("data-variant")).toBe("solid");
     await action.trigger("click");
-    expect(w.emitted("blocked")).toHaveLength(1);
+    expect(w.emitted("seen")).toHaveLength(1);
     expect(w.emitted("finish")).toBeUndefined();
+  });
+
+  it("quantidade, observação e nome: uma linha por mudança, e o gesto é Visto", () => {
+    const w = mountCard({
+      ticket: ticket({
+        status: "pending",
+        changes: [
+          { kind: "moved", text: "Era a comanda Mesa 5" },
+          { kind: "qty", text: "Pão de queijo: agora 1, eram 3" },
+          { kind: "note", text: "Observação nova em Tapioca: sem glúten" },
+        ],
+      }),
+    });
+    const lines = w.findAll("[data-kds-change]").map((line) => [line.attributes("data-kds-change"), line.text()]);
+    expect(lines).toEqual([
+      ["moved", "Era a comanda Mesa 5"],
+      ["qty", "Pão de queijo: agora 1, eram 3"],
+      ["note", "Observação nova em Tapioca: sem glúten"],
+    ]);
+    expect(w.get("button[data-kds-action]").text()).toBe("Visto");
+    expect(w.get("article").classes()).toContain("border-destructive");
+  });
+
+  it("pedido cancelado inteiro: itens riscados, Não preparar, sem relógio e sem abrir detalhe", () => {
+    const w = mountCard({
+      ticket: ticket({ status: "cancelled", is_cancelled: true, cancelled_at_display: "22:01" }),
+    });
+    expect(w.get("[data-kds-changes]").text()).toBe("Pedido cancelado às 22:01. Não preparar.");
+    expect(w.get("ul").classes()).toContain("line-through");
+    expect(w.get("[data-kds-alarm-eyebrow]").text()).toBe("Cancelado");
+    expect(w.find("[data-kds-pill]").exists()).toBe(false);
+    expect(w.find("[data-kds-open]").exists()).toBe(false);
+    expect(w.text()).not.toContain("lucide:timer");
+    expect(w.get("button[data-kds-action]").text()).toBe("Recebi o cancelamento");
   });
 
   it("a área de leitura abre o detalhe e NUNCA dispara o ato", async () => {
@@ -275,10 +321,9 @@ describe("KdsTicketCard — o Desfazer mora no card", () => {
     expect(w.find("[data-kds-open]").exists()).toBe(false);
   });
 
-  it("o Desfazer ganha até de um pedido travado por cancelamento", async () => {
+  it("o Desfazer ganha até de um pedido que mudou", async () => {
     const w = mountCard({
-      ticket: ticket({ status: "in_progress" }),
-      blocked: true,
+      ticket: ticket({ status: "in_progress", changes: [{ kind: "qty", text: "x" }] }),
       finishing: true,
     });
     expect(w.get("button[data-kds-action]").text()).toContain("Desfazer");

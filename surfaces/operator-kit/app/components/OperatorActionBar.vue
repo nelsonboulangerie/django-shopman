@@ -164,7 +164,7 @@ function run(action: OperatorActionBarAction, event: Event) {
           size="xl"
           block
           class="min-w-0 flex-1"
-          color="primary"
+          :color="action.color ?? 'primary'"
           variant="solid"
           :icon="action.icon"
           :label="action.label"

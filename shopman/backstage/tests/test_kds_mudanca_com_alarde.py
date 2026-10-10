@@ -139,8 +139,13 @@ class KDSChangesAreLoudTests(TestCase):
         self._unfire(key, ["L-B"])
         self._fire(key, ["L-B"])
 
-        changes = [(c.kind, c.text) for t in self._board().tickets for c in t.changes]
-        self.assertEqual(changes, [("qty", "FIRE-B: agora 1, eram 3")])
+        cards = [t for t in self._board().tickets if t.changes]
+        self.assertEqual([(c.kind, c.text) for t in cards for c in t.changes], [("qty", "FIRE-B: agora 1, eram 3")])
+        # A linha volta num ticket novo: o Visto da mudança também é o Visto do pedido novo.
+        [card] = cards
+        self.assertFalse(card.seen)
+        self._seen(card)
+        self.assertTrue(next(t for t in self._board().tickets if t.pk == card.pk).seen)
 
     def test_new_note_says_which_note(self) -> None:
         key = self._fired_tab()

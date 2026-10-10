@@ -12,7 +12,7 @@
 // Densidade e som também são da estação (nota 1): o cadastro guarda, e os Ajustes
 // gravam lá (`useKdsStationSettings`).
 import type { KDSBoardProjection, KDSBoardResponse, KDSTicketProjection } from "~/types/kds";
-import { boardView, KDS_UNDO_WINDOW_MS, type KDSBoardView } from "~/presentation/board";
+import { boardView, hasChanges, KDS_UNDO_WINDOW_MS, type KDSBoardView } from "~/presentation/board";
 import { openResilientEventSource, type ResilientEventSource } from "../../../operator-kit/app/utils/resilientEventSource";
 
 /**
@@ -50,13 +50,55 @@ export const KDS_ALERT = {
   ],
 };
 
-/** Os avisos que pedem atenção agora: ticket aberto ou cancelado que ninguém da
- *  estação viu (`seen` vem do servidor). */
+/**
+ * O aviso de MUDANÇA no que já estava na cozinha (dono, 10/10/2026: "com alarde, a
+ * cada mudança"). Não é figura nova: é a do Gestor, a que o dono escolheu para
+ * "atenção, vem informação" (fá → dó, descendo), na voz da casa. A fanfarra sobe e
+ * comemora pedido novo; esta desce e pede atenção, então dá para saber pelo ouvido
+ * se entrou trabalho ou se algo mudou. Curta (~2 s) e insiste como o pedido novo,
+ * até alguém dar a ciência no card.
+ */
+export const KDS_CHANGE_ALERT = {
+  notes: [
+    { f: 698.46, t: 0, d: 1.5 },
+    { f: 523.25, t: 0.28, d: 1.9 },
+  ],
+};
+
+/** Os pedidos novos que pedem atenção agora: ticket aberto que ninguém da estação
+ *  viu (`seen` vem do servidor). O que mudou toca o aviso de mudança, não este. */
 export function kdsAttentionIds(current: KDSBoardView): string[] {
+  return current.cards
+    .filter((card) => !card.seen && !hasChanges(card) && !current.finishingPks.has(card.pk))
+    .map((card) => `active:${card.pk}`)
+    .sort();
+}
+
+/** As mudanças sem ciência na tela: cada uma tem identidade própria (o card e os
+ *  cancelados que ela resume), para que uma mudança NOVA no mesmo card toque de novo. */
+export function kdsChangeIds(current: KDSBoardView): string[] {
   return [
-    ...current.cards.filter((card) => !card.seen && !current.finishingPks.has(card.pk)).map((card) => `active:${card.pk}`),
-    ...current.cancelled.filter((card) => !card.seen).map((card) => `cancelled:${card.pk}`),
+    ...current.cards
+      .filter(hasChanges)
+      .map((card) => `change:${card.pk}:${card.change_ticket_pks.join(".")}:${card.changes.length}`),
+    ...current.cancelled.map((card) => `cancelled:${card.pk}`),
   ].sort();
+}
+
+/** A mesma régua do pedido novo, para as mudanças: toca o que ainda não anunciou,
+ *  cala quando não sobra nenhuma sem ciência. */
+export function kdsChangeDecision(
+  current: KDSBoardView,
+  previousSignature: string,
+): { signature: string; shouldAlert: boolean; shouldStop: boolean } {
+  const ids = kdsChangeIds(current);
+  const signature = ids.join("|");
+  const announced = new Set(previousSignature ? previousSignature.split("|") : []);
+  return {
+    signature,
+    shouldAlert: signature !== previousSignature && ids.some((id) => !announced.has(id)),
+    shouldStop: ids.length === 0,
+  };
 }
 
 /** Tocar ou calar. Toca quando aparece um aviso que esta tela ainda não anunciou;
@@ -124,6 +166,9 @@ export function useKdsBoard(stationRef: string) {
     `kds_sound_${stationRef}`,
     KDS_ALERT,
   );
+  // O aviso de mudança: a mesma chave de som (ligar e desligar valem para os dois).
+  const changeSound = useAlertSound(`kds_sound_${stationRef}`, KDS_CHANGE_ALERT);
+  let lastChangeSignature = "";
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let source: ResilientEventSource | null = null;
   let attentionReady = false;
@@ -143,6 +188,7 @@ export function useKdsBoard(stationRef: string) {
     (enabled) => {
       if (enabled === undefined) return;
       soundOn.value = enabled;
+      changeSound.soundOn.value = enabled;
     },
     { immediate: true },
   );
@@ -159,6 +205,13 @@ export function useKdsBoard(stationRef: string) {
 
   function alertForUnseenWork(current: KDSBoardView) {
     if (!attentionReady || !import.meta.client) return;
+    const change = kdsChangeDecision(current, lastChangeSignature);
+    lastChangeSignature = change.signature;
+    if (change.shouldStop) changeSound.stopAlert();
+    if (change.shouldAlert) {
+      changeSound.startAlert();
+      vibrate();
+    }
     const decision = kdsAttentionDecision(current, lastAttentionSignature);
     lastAttentionSignature = decision.signature;
     attentionKeys.value = decision.signature ? decision.signature.split("|") : [];
@@ -175,8 +228,7 @@ export function useKdsBoard(stationRef: string) {
     const keys = [...attentionKeys.value];
     if (!keys.length) return;
     const pks = keys.map((key) => Number(key.split(":")[1])).filter((pk) => Number.isInteger(pk));
-    const lists = [data.value?.board?.tickets ?? [], data.value?.board?.cancelled_tickets ?? []];
-    for (const list of lists) for (const card of list) if (pks.includes(card.pk)) card.seen = true;
+    for (const card of data.value?.board?.tickets ?? []) if (pks.includes(card.pk)) card.seen = true;
     attentionKeys.value = [];
     stopAlert();
     postProxy(`/api/v1/backstage/kds/${encodeURIComponent(stationRef)}/seen/`, {
@@ -191,6 +243,7 @@ export function useKdsBoard(stationRef: string) {
   }
 
   async function activateAttentionSound() {
+    await changeSound.primeAudio();
     await activateSound();
   }
 
@@ -380,6 +433,34 @@ export function useKdsBoard(stationRef: string) {
     removeFrom(() => data.value?.board?.cancelled_tickets, pk, `/api/v1/backstage/kds/tickets/${pk}/acknowledge/`);
   };
 
+  // A ciência da mudança (dono, 10/10/2026). No card cancelado inteiro é o
+  // "Recebi o cancelamento" de sempre (o card sai). No card vivo, o servidor dá baixa
+  // nos cancelados que ele resumia e grava o nome que a tela mostrava: só o que a tela
+  // mostrou, para uma mudança que chegou depois continuar pedindo ciência. Otimista:
+  // a caixa vermelha some na hora e volta, com aviso, se o servidor recusar.
+  function acknowledgeChange(pk: number) {
+    if (data.value?.board?.cancelled_tickets?.some((card) => card.pk === pk)) {
+      acknowledge(pk);
+      return;
+    }
+    const card = findTicket(pk);
+    if (!card || !hasChanges(card)) return;
+    const before = { changes: card.changes, change_ticket_pks: card.change_ticket_pks, seen: card.seen };
+    card.changes = [];
+    card.change_ticket_pks = [];
+    card.seen = true;
+    enqueue(`/api/v1/backstage/kds/tickets/${pk}/changes/seen/`, {
+      cancelled_pks: [...before.change_ticket_pks],
+      seen_ref: card.order_ref,
+    })
+      .then(() => scheduleReconcile())
+      .catch((err) => {
+        Object.assign(card, before);
+        useSonner.error(httpErrorMessage(err, "Não deu para registrar a ciência. Tente de novo."));
+        refresh();
+      });
+  }
+
   // Volumes: quem embalou declara, onde estiver (dono, 04/10/2026). A MESMA porta do
   // Gestor (`orders/<ref>/volumes/`, protocolo de intenção: quem age, a base lida e a
   // chave da tentativa), com `surface: "kds"` para o histórico dizer de onde veio.
@@ -439,6 +520,7 @@ export function useKdsBoard(stationRef: string) {
     undoFinish,
     recall,
     acknowledge,
+    acknowledgeChange,
     declareVolumes,
     volumesBusy,
   };

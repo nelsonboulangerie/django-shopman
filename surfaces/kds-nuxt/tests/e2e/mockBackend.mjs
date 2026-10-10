@@ -76,6 +76,10 @@ const server = createServer((req, res) => {
 
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
   if (preview) {
+    if (req.method === "POST" && url.startsWith("/__preview/reset")) {
+      preview.reset();
+      return json(res, 200, {});
+    }
     if (req.method === "POST" && preview.write(url)) return json(res, 200, {});
     const station = url.match(/\/kds\/([^/?]+)\/?(\?|$)/);
     if (station && station[1] !== "cliente") return json(res, 200, preview.board(station[1]));
