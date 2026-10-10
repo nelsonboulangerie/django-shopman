@@ -91,7 +91,7 @@ test("operador entra e alcança os três postos de trabalho sem redigitação", 
   await expect(editor).toBeHidden();
 
   // No celular as sub-seções de Ajustes são uma lista (NuxtSelect).
-  await page.getByRole("combobox", { name: "Seção de Ajustes" }).click();
+  await page.getByRole("combobox", { name: "Seções de Ajustes" }).click();
   await page.getByRole("option", { name: "Plataformas", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/platforms$/);
   await expect(
@@ -169,7 +169,7 @@ test("Ajustes tem as próprias seções, uma rota por lugar", async ({
   // No celular (mais de 3 opções) as sub-seções são uma lista com a atual escolhida.
   const settings = page.getByRole("navigation", { name: "Seções de Ajustes" });
   await expect(
-    settings.getByRole("combobox", { name: "Seção de Ajustes" }),
+    settings.getByRole("combobox", { name: "Seções de Ajustes" }),
   ).toContainText("Ofertas e cupons");
   // Do `sm` para cima viram abas, e cada aba muda a rota.
   await page.setViewportSize({ width: 1280, height: 900 });

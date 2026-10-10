@@ -49,7 +49,7 @@ const quantityFormatter = new Intl.NumberFormat("pt-BR", {
 });
 
 export function formatMoney(cents: number | null | undefined): string {
-  if (cents === null || cents === undefined || Number.isNaN(cents)) return "—";
+  if (cents === null || cents === undefined || Number.isNaN(cents)) return "sem valor";
   return moneyFormatter.format(cents / 100);
 }
 
@@ -76,7 +76,7 @@ export function parseMoneyInput(value: string): number {
 }
 
 export function formatQty(value: number, unit: string): string {
-  if (!Number.isFinite(value)) return "—";
+  if (!Number.isFinite(value)) return "sem quantidade";
   return `${quantityFormatter.format(value)} ${unit}`;
 }
 
@@ -115,19 +115,19 @@ export function formatFactor(value: number, unit: string, approximate = false): 
 const shortDateFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" });
 
 /**
- * Data curta (dd/mm) para carimbo de tela — "—" quando não há data.
+ * Data curta (dd/mm) para carimbo de tela; "sem data" quando não há data.
  *
  * `Intl.DateTimeFormat.format()` **lança** `RangeError: Invalid time value`
  * diante de um Invalid Date, em vez de devolver texto. Como a projeção manda
  * `lastDeliveryAt: ""` para todo fornecedor que ainda não entregou, formatar
  * sem checar derrubava o render inteiro da aba Fornecedores. Ausência de data é
- * um estado normal do domínio, não um erro: ela vira travessão, não exceção.
+ * um estado normal do domínio, não um erro: ela vira texto, não exceção.
  */
 export function formatShortDate(value: string | null | undefined): string {
   const text = (value ?? "").trim();
-  if (!text) return "—";
+  if (!text) return "sem data";
   const parsed = new Date(`${text}T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) return "—";
+  if (Number.isNaN(parsed.getTime())) return "sem data";
   return shortDateFormatter.format(parsed);
 }
 
@@ -860,7 +860,7 @@ export function countConfirmPayload(rows: CountRow[]) {
 }
 
 export function formatQtyDiff(diff: number, unit: string): string {
-  if (diff === 0) return "—";
+  if (diff === 0) return "sem diferença";
   const sign = diff > 0 ? "+" : "−";
   return `${sign}${quantityFormatter.format(Math.abs(diff))} ${unit}`;
 }

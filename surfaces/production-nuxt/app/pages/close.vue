@@ -102,6 +102,16 @@ function lotLocation(lot: string) {
   return { path: "/close", query: closeQuery(lot) };
 }
 
+// Andar para outro lote (o ‹ › do `OperatorRecordNav`, ou o atalho) troca a tela
+// inteira: com quantidades ou motivos digitados, pergunta antes de descartar. O
+// voltar já pergunta dentro da tela, e sair para o painel (lote vazio) não passa aqui.
+const closeScreen = ref<{ confirmDiscardChanges: (action: "leave" | "switch") => Promise<boolean> } | null>(null);
+onBeforeRouteUpdate(async (to) => {
+  const target = typeof to.query.lot === "string" ? to.query.lot : "";
+  if (!target || target === routeLot.value || !closeScreen.value?.confirmDiscardChanges) return true;
+  return closeScreen.value.confirmDiscardChanges("switch");
+});
+
 const matches = (order: QCOrderCardProjection) => {
   const q = query.value.trim().toLowerCase();
   if (!q) return true;
@@ -605,6 +615,7 @@ function onTimerKeydown(event: KeyboardEvent) {
     <!-- Tela de fechamento. -->
     <QcCloseScreen
       v-if="(selectedOrder || selectedRecipe) && kiosk"
+      ref="closeScreen"
       :key="selectedOrder?.pk ?? `recipe-${selectedRecipe?.pk}`"
       :title="screenTitle"
       :subtitle="screenSubtitle"

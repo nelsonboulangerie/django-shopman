@@ -72,6 +72,7 @@ const correctQuality = vi.fn(async () => ({ ok: true }));
 function installGlobals(hash = "") {
   vi.stubGlobal("computed", computed);
   vi.stubGlobal("ref", ref);
+  vi.stubGlobal("onBeforeRouteUpdate", () => {});
   vi.stubGlobal("watch", watch);
   vi.stubGlobal("onMounted", onMounted);
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);

@@ -432,21 +432,23 @@ const stateCounts = computed(() => ({
 }));
 const STATE_LABELS = { active: "Ligadas", inactive: "Desligadas" } as const;
 const stateItems = computed(() => [
-  { label: "Todas", value: "all", count: stateCounts.value.all },
-  { label: STATE_LABELS.active, value: "active", count: stateCounts.value.active },
+  { label: "Todas", key: "all", count: stateCounts.value.all },
+  { label: STATE_LABELS.active, key: "active", count: stateCounts.value.active },
   {
     label: STATE_LABELS.inactive,
-    value: "inactive",
+    key: "inactive",
     count: stateCounts.value.inactive,
   },
 ]);
-const stateChoice = computed({
+const stateChoice = computed<string | string[] | undefined>({
   get: () => stateFilter.value || "all",
-  set: (next: string) =>
+  set: (value) => {
+    const next = Array.isArray(value) ? value[0] : value;
     void replaceListQuery({
       state: next === "active" || next === "inactive" ? next : undefined,
       page: undefined,
-    }),
+    });
+  },
 });
 const platformLabel = computed(
   () =>
@@ -624,17 +626,11 @@ useHead({ title: "Campanhas" });
         <MarketingSettingsNav />
       </template>
       <template #filters>
-        <NuxtTabs
+        <OperatorQuickFilters
           v-model="stateChoice"
           :items="stateItems"
-          :content="false"
-          variant="pill"
-          aria-label="Situação das campanhas"
-        >
-          <template #trailing="{ item }">
-            <OperatorCountChip :count="item.count" />
-          </template>
-        </NuxtTabs>
+          label="Situação das campanhas"
+        />
         <NuxtSelect
           v-model="platformChoice"
           :items="platformItems"

@@ -176,7 +176,7 @@ const saveLabel = computed(() =>
         </div>
       </template>
       <template #filters-primary>
-        <PurchaseBaseSections current="materials" :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
+        <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
       </template>
       <template #filters>
         <NuxtButton
@@ -185,7 +185,7 @@ const saveLabel = computed(() =>
           color="neutral"
           variant="outline"
           :active="onlyAlerts"
-          active-variant="soft"
+          active-variant="solid"
           active-color="primary"
           :aria-pressed="onlyAlerts"
           data-base-attention
