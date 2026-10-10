@@ -207,3 +207,59 @@ describe("PosCartPanel — a grade de controles da comanda", () => {
     expect(offline.find("[data-pos-primary-total-value]").text()).toContain(formatBRL(1100));
   });
 });
+
+// UM PADRÃO PARA EDITAR UMA LINHA (dono, 10/10): desconto e observação abrem no bloco
+// do editor, no lugar da grade, e terminam em Cancelar ou Aplicar. Sem modal.
+describe("PosCartPanel — a edição da linha é sempre no editor", () => {
+  it("observação: escrita no editor, Aplicar grava, sem modal", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await wrapper.find("[data-pos-line-note]").trigger("click");
+    expect(wrapper.find("[data-pos-controls-block='line']").exists()).toBe(false);
+    const panel = wrapper.find("[data-pos-note-panel]");
+    expect(panel.exists()).toBe(true);
+    expect(document.body.querySelector("[data-pos-note-dialog]")).toBeNull();
+    await panel.find("textarea").setValue("Sem cebola");
+    await panel.find("[data-pos-edit-apply]").trigger("click");
+    expect(wrapper.emitted("setNotes")?.[0]).toEqual(["L-CAFE", "Sem cebola"]);
+    expect(wrapper.find("[data-pos-note-panel]").exists()).toBe(false);
+  });
+
+  it("observação: Cancelar devolve a grade sem gravar", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await wrapper.find("[data-pos-line-note]").trigger("click");
+    await wrapper.find("[data-pos-note-panel] textarea").setValue("x");
+    await wrapper.find("[data-pos-edit-cancel]").trigger("click");
+    expect(wrapper.emitted("setNotes")).toBeUndefined();
+    expect(wrapper.find("[data-pos-controls-block='line']").exists()).toBe(true);
+  });
+
+  it("desconto: formato em duas colunas, rascunho até Aplicar; Cancelar não grava", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await wrapper.find("[data-pos-line-discount]").trigger("click");
+    const panel = wrapper.find("[data-pos-discount-panel]");
+    expect(panel.exists()).toBe(true);
+    expect(wrapper.find("[data-pos-controls-block='line']").exists()).toBe(false);
+    await wrapper.find('[aria-label="Dígito 5"]').trigger("click");
+    await wrapper.find("[data-pos-edit-cancel]").trigger("click");
+    expect(wrapper.emitted("setDiscount")).toBeUndefined();
+    await wrapper.find("[data-pos-line-discount]").trigger("click");
+    await wrapper.find('[aria-label="Dígito 5"]').trigger("click");
+    await wrapper.find("[data-pos-edit-apply]").trigger("click");
+    expect(wrapper.emitted("setDiscount")?.[0]?.slice(0, 2)).toEqual(["L-CAFE", 5]);
+  });
+
+  it("a dica do teclado diz o que as teclas fazem agora", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    expect(wrapper.find("[data-pos-keyboard-hint]").text()).toContain("Digite a quantidade");
+    await wrapper.find("[data-pos-line-discount]").trigger("click");
+    expect(wrapper.find("[data-pos-keyboard-hint]").text()).toContain("Enter aplica");
+  });
+
+  it("seleção: as ações nas marcadas moram no bloco de baixo, em grade, não no cabeçalho", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await wrapper.find("[data-pos-select-lines]").trigger("click");
+    await wrapper.find('[aria-label="Selecionar Pão"]').trigger("click");
+    expect(wrapper.find("[data-pos-selection-bar] button[title='Remover as linhas marcadas']").exists()).toBe(false);
+    expect(wrapper.find("[data-pos-batch-actions] [data-pos-batch-cell='remove']").exists()).toBe(true);
+  });
+});

@@ -291,6 +291,9 @@ describe("PosCartPanel — duas linhas do MESMO produto", () => {
     await openDiscount(wrapper);
     const um = wrapper.find('[aria-label="Dígito 1"]');
     await um!.trigger("click");
+    // Na mesa o desconto é rascunho: vale no Aplicar (Enter).
+    expect(wrapper.emitted("setDiscount")).toBeUndefined();
+    await wrapper.find("[data-pos-edit-apply]").trigger("click");
     const emitted = wrapper.emitted("setDiscount") as unknown[][] | undefined;
     expect(emitted?.length).toBe(1);
     expect(emitted?.[0]?.[0]).toBe("L-cha-1");
@@ -718,6 +721,7 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
       .find((b) => b.text().trim() === "Em R$")!;
     await mode.trigger("click");
     await wrapper.find('[aria-label="Dígito 2"]').trigger("click");
+    await wrapper.find("[data-pos-edit-apply]").trigger("click");
     expect(wrapper.emitted("setDiscount")).toEqual([
       ["L-PAO", 2, "cortesia", "fixed"],
       ["L-CAFE", 2, "cortesia", "fixed"],

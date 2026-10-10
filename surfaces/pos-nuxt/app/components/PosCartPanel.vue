@@ -384,7 +384,6 @@ const sheetFirePrimary = computed(() => Boolean(props.sheet && fireBar.value.vis
 const [DefineTicketBody, ReuseTicketBody] = createReusableTemplate();
 const [DefineFireButton, ReuseFireButton] = createReusableTemplate();
 const [DefineControlGrid, ReuseControlGrid] = createReusableTemplate<{ rows: ControlCell[][]; block: "line" | "tab" }>();
-const [DefineAutoFire, ReuseAutoFire] = createReusableTemplate();
 // O estado da cozinha em palavra (o que falta e o que já foi), no lugar do botão
 // apagado de quando não há nada a enviar.
 // A GRADE DE CONTROLES DA COMANDA (dono, 10/10): duas colunas de mesma largura,
@@ -402,7 +401,33 @@ const lineRows = computed<ControlCell[][]>(() => {
   if (!lineControlsInGrid.value) return [];
   return lineAdjustmentsBlocked.value ? [["qty", "remove"]] : [["qty", "remove"], ["discount", "note"]];
 });
+// A edição em curso da linha (o desconto ou a observação) toma o lugar da grade.
+const lineEditing = computed<"discount" | "note" | "">(() => {
+  if (noteDraft.value) return "note";
+  if (discountOpen.value && !lineAdjustmentsBlocked.value) return "discount";
+  return "";
+});
+// A dica do teclado diz o que as teclas fazem AGORA.
+const keyboardHint = computed<string[]>(() => {
+  if (lineEditing.value === "discount") return ["Digite o desconto", "Enter aplica", "Esc cancela"];
+  if (lineEditing.value === "note") return ["Enter aplica", "Shift Enter quebra a linha", "Esc cancela"];
+  return ["Digite a quantidade", "Del remove", "↑↓ troca a linha"];
+});
+// A SELEÇÃO age no mesmo bloco do editor: as ações nas linhas marcadas, em grade.
+const batchRows = computed<BatchCell[][]>(() => {
+  const cells: BatchCell[] = [];
+  if (canMove.value && props.hasOpenTab) cells.push("move");
+  if (!lineAdjustmentsBlocked.value) cells.push("discount");
+  cells.push("remove");
+  if (props.fireAction.present && selection.value.canFire) cells.push("fire");
+  if (selection.value.canUnfire && props.unfireAction.present) cells.push("unfire");
+  const rows: BatchCell[][] = [];
+  for (let i = 0; i < cells.length; i += 2) rows.push(cells.slice(i, i + 2));
+  return rows;
+});
+type BatchCell = "move" | "discount" | "remove" | "fire" | "unfire";
 const tabRows = computed<ControlCell[][]>(() => {
+  if (batchMode.value) return [];
   const row: ControlCell[] = [];
   if (fireBar.value.visible) row.push("fire");
   if (canSplit.value) row.push("split");
@@ -411,7 +436,6 @@ const tabRows = computed<ControlCell[][]>(() => {
 // O rótulo que cabe (`OperatorButton`/`OperatorFitGroup` do kit): as ações da grade
 // com o curto escrito à mão; o que vai ao lado do rótulo (contagem, tecla) entra na
 // conta pelo `reserve` do grupo, em rem.
-const KBD_RESERVE_REM = 2.25;
 const COUNT_RESERVE_REM = 2;
 const REMOVE_FIT = { label: "Remover", icon: "i-lucide-trash-2" } as const;
 const fireFit = computed(() => ({
@@ -419,24 +443,11 @@ const fireFit = computed(() => ({
   shortLabel: fireBar.value.unfired ? "Enviar" : undefined,
   icon: props.firing ? undefined : "i-lucide-chef-hat",
 }));
-const fireReserve = computed(() =>
-  fireBar.value.unfired ? COUNT_RESERVE_REM + (coarsePointer.value ? 0 : KBD_RESERVE_REM) : 0,
-);
-const ICON_BUTTON_REM = 2.375;
-const batchFitActions = computed(() => [
-  ...(canMove.value && props.hasOpenTab && selection.value.count ? [{ label: "Transferir", icon: "i-lucide-split" }] : []),
-  ...(!lineAdjustmentsBlocked.value ? [{ label: "Desconto", icon: "i-lucide-percent" }] : []),
-  { label: "Remover", icon: "i-lucide-trash-2" },
-]);
-const batchReserve = computed(() =>
-  (canMove.value && props.hasOpenTab && selection.value.count && !coarsePointer.value ? KBD_RESERVE_REM : 0)
-  + (props.fireAction.present && selection.value.canFire ? ICON_BUTTON_REM : 0)
-  + (selection.value.canUnfire && props.unfireAction.present ? ICON_BUTTON_REM : 0),
-);
+const fireReserve = computed(() => (fireBar.value.unfired ? COUNT_RESERVE_REM : 0));
 const kitchenStateText = computed(() => {
   const { unfired, fired } = fireBar.value;
   const parts: string[] = [];
-  if (unfired) parts.push(`${unfired} ${unfired === 1 ? "item" : "itens"} a enviar`);
+  if (unfired) parts.push(`${unfired} a enviar`);
   if (fired) parts.push(`${fired} na cozinha`);
   return parts.join(" · ");
 });
@@ -523,6 +534,22 @@ function toggleDiscount() {
   if (discountOpen.value && !inDiscountMode.value) setMode(activeItem.value?.discount?.type === "fixed" ? "disc_brl" : "disc");
   if (!discountOpen.value && !selectMode.value) setMode("qty");
 }
+// EDITAR UMA LINHA É SEMPRE NO MESMO LUGAR (dono, 10/10): o desconto e a observação
+// abrem no bloco do editor, no lugar da grade, e terminam em Cancelar ou Aplicar. Na
+// mesa (mouse e teclado) o desconto é um RASCUNHO: o número e o motivo só valem no
+// Aplicar (Enter); Cancelar (Esc) devolve a linha como estava. No toque, o numérico
+// do editor de toque segue gravando a cada tecla (um instrumento só, "Pronto" fecha).
+const discountDraft = computed(() => !touchEditor.value);
+function applyDiscount() {
+  commitDiscount();
+  discountOpen.value = false;
+  if (!selectMode.value) setMode("qty");
+}
+function cancelDiscount() {
+  discountOpen.value = false;
+  if (!selectMode.value) setMode("qty");
+  else syncBufferToMode();
+}
 // Na célula estreita o desconto vigente diz só o valor ("10%"), com o ícone.
 const discountShortLabel = computed(() => {
   const discount = activeItem.value?.discount;
@@ -581,27 +608,47 @@ function setMode(mode: "qty" | "disc" | "disc_brl") {
   numpadMode.value = mode;
 }
 
-// Observação da linha (Odoo Note): diálogo simples de texto para a linha ativa.
-// O dado já existia (POSCartItem.notes, intent, KDS) — só faltava quem editasse.
-const noteDialog = ref<{ lineId: string; name: string; text: string } | null>(
-  null,
-);
+// Observação da linha (Odoo Note): o texto da linha ativa, escrito NO EDITOR (o mesmo
+// lugar do desconto), com Cancelar ou Aplicar. Enter aplica; Shift Enter quebra a linha.
+// O dado já existia (POSCartItem.notes, intent, KDS).
+const noteDraft = ref<{ lineId: string; name: string; text: string } | null>(null);
+const noteField = ref<{ textareaRef?: HTMLTextAreaElement; $el?: HTMLElement } | null>(null);
 function openNoteDialog() {
   if (lineAdjustmentsBlocked.value) return;
   const item = activeItem.value;
   if (!item) return;
-  noteDialog.value = {
-    lineId: item.line_id,
-    name: item.name,
-    text: item.notes || "",
-  };
+  discountOpen.value = false;
+  if (inDiscountMode.value && !selectMode.value) setMode("qty");
+  editorClosed.value = false;
+  noteDraft.value = { lineId: item.line_id, name: item.name, text: item.notes || "" };
+  void nextTick(() => {
+    const field = noteField.value?.textareaRef || noteField.value?.$el?.querySelector?.("textarea");
+    field?.focus();
+  });
 }
 function saveNote() {
-  const dialog = noteDialog.value;
-  noteDialog.value = null;
-  if (!dialog) return;
-  emit("setNotes", dialog.lineId, dialog.text.trim());
+  const draft = noteDraft.value;
+  noteDraft.value = null;
+  if (!draft) return;
+  emit("setNotes", draft.lineId, draft.text.trim());
 }
+function cancelNote() {
+  noteDraft.value = null;
+}
+function onNoteKeydown(event: KeyboardEvent) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    saveNote();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    cancelNote();
+  }
+}
+// Trocar de linha fecha a edição que estava aberta (nada fica pendurado em outra linha).
+watch(activeLineId, () => {
+  if (noteDraft.value && noteDraft.value.lineId !== activeLineId.value) noteDraft.value = null;
+});
 
 // Remover item PERGUNTA, sempre. Já foi "direto com Desfazer", e o balcão
 // discordou: o gesto que mais remove é o backspace zerando a quantidade, e ali
@@ -745,7 +792,7 @@ function onDigit(digit: string) {
     }
     numpadBuffer.value = entry + digit;
     numpadFresh.value = false;
-    commitDiscount();
+    if (!discountDraft.value) commitDiscount();
     return;
   }
   numpadBuffer.value = pushDigit(numpadBuffer.value, digit, {
@@ -754,7 +801,7 @@ function onDigit(digit: string) {
   });
   numpadFresh.value = false;
   if (numpadMode.value === "qty") commitQty();
-  else commitDiscount();
+  else if (!discountDraft.value) commitDiscount();
 }
 
 // A tecla de vírgula existe só no desconto em R$: o teclado compartilhado é
@@ -766,7 +813,7 @@ function onComma() {
   if (!entry.includes(",")) entry += ",";
   numpadBuffer.value = entry;
   numpadFresh.value = false;
-  commitDiscount();
+  if (!discountDraft.value) commitDiscount();
 }
 
 function onBackspace() {
@@ -778,13 +825,13 @@ function onBackspace() {
       -1,
     );
     numpadFresh.value = false;
-    commitDiscount();
+    if (!discountDraft.value) commitDiscount();
     return;
   }
   numpadBuffer.value = popDigit(numpadBuffer.value);
   numpadFresh.value = false;
   if (numpadMode.value === "qty") commitQty();
-  else commitDiscount();
+  else if (!discountDraft.value) commitDiscount();
 }
 
 // Entering multi-select switches the numpad to its discount (batch) mode, since
@@ -835,6 +882,13 @@ function onWindowKeydown(event: KeyboardEvent) {
       target.tagName === "SELECT" ||
       target.isContentEditable);
   if (editing || !props.items.length || !activeLineId.value) return;
+  if (discountOpen.value && discountDraft.value && (event.key === "Enter" || event.key === "Escape")) {
+    // O desconto em rascunho: Enter aplica, Esc cancela (a dica do editor diz isso).
+    event.preventDefault();
+    if (event.key === "Enter") applyDiscount();
+    else cancelDiscount();
+    return;
+  }
   if (event.key >= "0" && event.key <= "9") {
     event.preventDefault();
     revealForKeyboard();
@@ -1021,8 +1075,8 @@ defineExpose({ focusItem, onDigit, onBackspace });
        contorno primário; o sólido é do Pagamento. Com tudo enviado, quem diz é o
        estado em palavra ("11 na cozinha"), não um botão apagado. -->
   <DefineFireButton>
-    <!-- O grupo do kit é o contêiner: o rótulo (completo, "Enviar" ou só o ícone)
-         conta com a contagem e o F9 que vão ao lado (`reserve`). -->
+    <!-- O grupo do kit é o contêiner: o rótulo conta com a contagem ao lado
+         (`reserve`). Quando aperta, o F9 cai primeiro; o verbo fica ("Enviar 5"). -->
     <OperatorFitGroup :actions="[fireFit]" :size="controlSize" :reserve="fireReserve" class="h-full w-full">
       <OperatorButton
         v-bind="fireFit"
@@ -1034,6 +1088,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         class="h-full justify-center bg-default font-semibold"
         :disabled="fireBar.disabled || firing"
         :aria-busy="firing || undefined"
+        :shortcut="coarsePointer || !fireBar.unfired ? undefined : 'F9'"
         aria-keyshortcuts="F9"
         :title="`${fireBar.label} as linhas novas (F9)`"
         data-pos-fire
@@ -1044,29 +1099,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
             :count="fireBar.unfired"
             :aria-label="`${fireBar.unfired} ${fireBar.unfired === 1 ? 'item' : 'itens'} a enviar`"
           />
-          <OperatorKbd v-if="!coarsePointer" aria-hidden="true">F9</OperatorKbd>
         </template>
       </OperatorButton>
     </OperatorFitGroup>
   </DefineFireButton>
-  <!-- ENVIO AUTOMÁTICO, dito em palavra ("ligado"/"desligado"). O interruptor é por
-       estação (decisão do dono) e mora em Ajustes › Envio à cozinha; o toque leva lá. -->
-  <DefineAutoFire>
-    <NuxtButton
-      color="neutral"
-      variant="ghost"
-      class="h-auto min-h-6 justify-start gap-1.5 px-0 py-0.5 text-left op-micro font-normal whitespace-normal text-muted-foreground hover:bg-transparent hover:text-foreground"
-      :title="autoFire ? 'Envio automático ligado na estação destes itens (Ajustes › Envio à cozinha)' : 'Envio automático desligado (Ajustes › Envio à cozinha)'"
-      data-pos-auto-fire
-      :data-auto-fire="autoFire ? 'on' : 'off'"
-      @click="$emit('autoFireSettings')"
-    >
-      <span class="relative inline-flex h-3.5 w-6 shrink-0 rounded-full transition" :class="autoFire ? 'bg-primary' : 'bg-muted-foreground/30'" aria-hidden="true">
-        <span class="absolute top-0.5 size-2.5 rounded-full bg-card shadow transition-all" :class="autoFire ? 'left-3' : 'left-0.5'" />
-      </span>
-      <span>Envio automático: {{ autoFire ? "ligado" : "desligado" }}</span>
-    </NuxtButton>
-  </DefineAutoFire>
   <!-- A GRADE DE CONTROLES (dono, 10/10): duas colunas de mesma largura, bordas e
        alturas batendo. Cada célula é um `@container`: o rótulo cabe na largura DELA
        (completo, curto escrito à mão ou só o ícone), nunca corta. -->
@@ -1130,13 +1166,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
               />
             </NuxtFieldGroup>
           </template>
-          <OperatorFitGroup
-            v-else-if="cell === 'remove' && activeItem"
-            :actions="[REMOVE_FIT]"
-            :size="controlSize"
-            :reserve="coarsePointer ? 0 : KBD_RESERVE_REM"
-            class="h-full w-full"
-          >
+          <div v-else-if="cell === 'remove' && activeItem" class="op-fit-scope h-full w-full">
             <OperatorButton
               v-bind="REMOVE_FIT"
               :size="controlSize"
@@ -1144,17 +1174,14 @@ defineExpose({ focusItem, onDigit, onBackspace });
               variant="outline"
               block
               class="h-full justify-center bg-default font-semibold"
+              :shortcut="coarsePointer ? undefined : 'Del'"
               aria-keyshortcuts="Delete"
               title="Remover (Del), com confirmação e desfazer"
               :disabled="mutationBusy"
               data-pos-line-remove
               @click="askRemove(activeItem.line_id)"
-            >
-              <template v-if="!coarsePointer" #trailing>
-                <OperatorKbd aria-hidden="true">Del</OperatorKbd>
-              </template>
-            </OperatorButton>
-          </OperatorFitGroup>
+            />
+          </div>
           <ReuseFireButton v-else-if="cell === 'fire'" />
           <OperatorButton
             v-else-if="cell === 'discount' && activeItem"
@@ -1214,57 +1241,75 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <header
         v-if="!batchMode"
         class="shrink-0 border-b border-border"
+        :class="sheet ? '' : 'h-16'"
         data-pos-ticket-header
       >
-        <div class="flex min-h-14 items-center gap-2 py-1.5 pr-2 pl-3.5">
-          <div class="min-w-0 flex-1">
-            <h3 v-if="sheet" class="op-title tnum [overflow-wrap:anywhere]" data-pos-sheet-title>{{ tabTitle ? `${tabTitle} · ` : "" }}{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
-            <div v-else class="flex flex-wrap items-baseline gap-x-1.5">
-              <h3 class="op-title tnum" data-pos-ticket-count>{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
-              <span v-if="items.length" class="op-micro text-muted-foreground tnum">em {{ items.length }} {{ items.length === 1 ? "linha" : "linhas" }}</span>
+        <!-- A MESMA ALTURA da barra do topo da venda (h-16): as duas divisórias de baixo
+             correm na mesma linha (dono, 10/10). Duas linhas: o que a comanda é (e o
+             Selecionar) e o estado da cozinha dito em palavra. -->
+        <div class="flex h-full flex-col justify-center gap-0.5 pr-2 pl-3.5" :class="sheet ? 'min-h-14 py-1.5' : ''">
+          <div class="flex items-center gap-2">
+            <div class="min-w-0 flex-1">
+              <h3 v-if="sheet" class="op-title tnum [overflow-wrap:anywhere]" data-pos-sheet-title>{{ tabTitle ? `${tabTitle} · ` : "" }}{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
+              <div v-else class="flex items-baseline gap-x-1.5 whitespace-nowrap">
+                <h3 class="op-title tnum" data-pos-ticket-count>{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
+                <span v-if="items.length" class="op-micro text-muted-foreground tnum">em {{ items.length }} {{ items.length === 1 ? "linha" : "linhas" }}</span>
+              </div>
             </div>
-            <!-- O estado da cozinha, dito em palavra: o que falta, o que já foi, e se o
-                 envio automático está ligado. Lê-se aqui; age-se no pé. -->
-            <p v-if="fireBar.visible && kitchenStateText" class="mt-0.5 flex flex-wrap items-center gap-x-1.5 op-micro text-muted-foreground" data-pos-kitchen-state>
-              <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" aria-hidden="true" />
-              <span>{{ kitchenStateText }}</span>
-            </p>
-            <ReuseAutoFire v-if="fireBar.visible && !sheet" />
+            <NuxtButton
+              ref="listEntry"
+              :size="controlSize"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-list-checks"
+              class="shrink-0"
+              aria-keyshortcuts="Alt+s"
+              title="Selecionar linhas (Alt S): transferir, descontar e remover várias"
+              data-pos-select-lines
+              @click="toggleBatchMode"
+            >
+              Selecionar
+            </NuxtButton>
+            <NuxtButton
+              v-if="sheet"
+              size="xl"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-chevron-down"
+              square
+              class="shrink-0"
+              aria-label="Recolher a comanda"
+              @click="sheetOpen = false"
+            />
           </div>
-          <NuxtButton
-            ref="listEntry"
-            :size="controlSize"
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-list-checks"
-            class="shrink-0"
-            aria-keyshortcuts="Alt+s"
-            title="Selecionar linhas (Alt S): transferir, descontar e remover várias"
-            data-pos-select-lines
-            @click="toggleBatchMode"
-          >
-            Selecionar
-          </NuxtButton>
-          <NuxtButton
-            v-if="sheet"
-            size="xl"
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-chevron-down"
-            square
-            class="shrink-0"
-            aria-label="Recolher a comanda"
-            @click="sheetOpen = false"
-          />
+          <!-- O estado da cozinha, numa linha discreta: o que falta, o que já foi e o
+               envio automático (o ajuste mora em Ajustes › Envio à cozinha; o toque no
+               texto leva lá). Na coluna estreita, o curto escrito à mão. -->
+          <p v-if="fireBar.visible" class="flex items-center gap-x-1.5 op-micro whitespace-nowrap text-muted-foreground" data-pos-kitchen-state>
+            <Icon name="lucide:chef-hat" class="size-3.5 shrink-0" aria-hidden="true" />
+            <span v-if="kitchenStateText">{{ kitchenStateText }}</span>
+            <template v-if="!sheet">
+              <span v-if="kitchenStateText" aria-hidden="true">·</span>
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                class="h-auto min-h-0 rounded-sm p-0 op-micro font-normal text-muted-foreground underline-offset-2 hover:bg-transparent hover:text-foreground hover:underline"
+                :title="autoFire ? 'Envio automático ligado na estação destes itens (Ajustes › Envio à cozinha)' : 'Envio automático desligado (Ajustes › Envio à cozinha)'"
+                :aria-label="`envio automático: ${autoFire ? 'ligado' : 'desligado'}`"
+                data-pos-auto-fire
+                :data-auto-fire="autoFire ? 'on' : 'off'"
+                @click="$emit('autoFireSettings')"
+              ><span class="hidden @min-[24rem]:inline">envio automático: {{ autoFire ? "ligado" : "desligado" }}</span><span class="@min-[24rem]:hidden">automático {{ autoFire ? "ligado" : "desligado" }}</span></NuxtButton>
+            </template>
+          </p>
         </div>
       </header>
 
-      <!-- Modo seleção (Alt S): o cabeçalho da comanda vira a barra do lote, numa faixa
-           só (v4 `pos-sale4.html` pino 6): "× 2 selecionadas · Transferir F10 ·
-           Desconto · Remover". Enviar só as marcadas e desfazer o envio continuam,
-           como ícones na mesma faixa (o F9 envia todas as novas). -->
+      <!-- Modo seleção (Alt S): o cabeçalho diz o que está marcado, e só. As ações nas
+           linhas marcadas moram no MESMO lugar das ações da linha (o bloco acima do
+           pé), em grade, com rótulo: a faixa de cima não espreme ícones. -->
       <template v-else>
-        <header class="flex min-h-14 shrink-0 items-center gap-1.5 border-b border-border bg-primary/10 px-2 py-1.5" data-pos-selection-bar>
+        <header class="flex shrink-0 items-center gap-2 border-b border-border bg-primary/10 px-2" :class="sheet ? 'min-h-14 py-1.5' : 'h-16'" data-pos-selection-bar>
           <NuxtButton
             :size="controlSize"
             color="neutral"
@@ -1276,91 +1321,9 @@ defineExpose({ focusItem, onDigit, onBackspace });
             title="Sair da seleção (Esc)"
             @click="toggleBatchMode"
           />
-          <p class="shrink-0 op-title whitespace-nowrap tnum">
-            {{ selection.count ? `${selection.count} ${selection.count === 1 ? "selecionada" : "selecionadas"}` : "Toque nas linhas" }}
+          <p class="min-w-0 flex-1 op-label font-semibold tnum">
+            {{ selection.count ? `${selection.count} ${selection.count === 1 ? "selecionada" : "selecionadas"}` : "Toque nas linhas para marcar" }}
           </p>
-          <!-- As ações do lote são um grupo do kit (`OperatorFitGroup`): medem a sobra
-               DESTA faixa e trocam de degrau juntas (rótulo inteiro, senão o ícone, com o
-               nome no `title` e no leitor de tela). Os botões só de ícone e o F10 entram
-               na conta pelo `reserve`. -->
-          <OperatorFitGroup
-            :actions="batchFitActions"
-            :size="controlSize"
-            :gap="0.375"
-            :reserve="batchReserve"
-            class="flex flex-1 items-center justify-end gap-1.5"
-          >
-          <OperatorButton
-            v-if="canMove && hasOpenTab && selection.count"
-            label="Transferir"
-            icon="i-lucide-split"
-            :size="controlSize"
-            color="neutral"
-            variant="outline"
-            class="shrink-0 font-semibold"
-            :disabled="loading"
-            title="Transferir as linhas marcadas para outra comanda (F10)"
-            @click="$emit('move', selection.lineIds)"
-          >
-            <template v-if="!coarsePointer" #trailing>
-              <OperatorKbd aria-hidden="true">F10</OperatorKbd>
-            </template>
-          </OperatorButton>
-          <OperatorButton
-            v-if="!lineAdjustmentsBlocked"
-            label="Desconto"
-            icon="i-lucide-percent"
-            :size="controlSize"
-            color="neutral"
-            variant="outline"
-            active-color="primary"
-            active-variant="solid"
-            :active="discountOpen"
-            class="shrink-0"
-            :aria-pressed="discountOpen"
-            :disabled="!selection.count"
-            title="Desconto nas linhas marcadas"
-            @click="toggleDiscount"
-          />
-          <OperatorButton
-            label="Remover"
-            icon="i-lucide-trash-2"
-            :size="controlSize"
-            color="error"
-            variant="outline"
-            class="shrink-0"
-            :disabled="mutationBusy || !selection.count"
-            title="Remover as linhas marcadas"
-            @click="batchRemove"
-          />
-          <NuxtButton
-            v-if="fireAction.present && selection.canFire"
-            :size="controlSize"
-            color="primary"
-            variant="outline"
-            icon="i-lucide-chef-hat"
-            square
-            class="shrink-0"
-            :disabled="mutationBusy || firing || !fireAction.enabled"
-            :aria-label="`Enviar à cozinha só as marcadas`"
-            title="Enviar à cozinha só as marcadas"
-            data-pos-batch-fire
-            @click="batchFire"
-          />
-          <NuxtButton
-            v-if="selection.canUnfire && unfireAction.present"
-            :size="controlSize"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-undo-2"
-            square
-            class="shrink-0"
-            :disabled="mutationBusy || firing || !unfireAction.enabled"
-            :aria-label="unfireAction.label || 'Cancelar envio à cozinha'"
-            :title="unfireAction.label || 'Cancelar envio à cozinha'"
-            @click="batchUnfire"
-          />
-          </OperatorFitGroup>
         </header>
       </template>
 
@@ -1555,19 +1518,23 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </ul>
       </div>
 
-      <!-- EDITOR DA LINHA, sob demanda (v4): colado no pé da lista, borda primária em
-           cima. Clicar (ou ↑↓) numa linha abre o editor DELA; Fechar (Esc) devolve a
-           lista inteira. Com a seleção ligada, o mesmo lugar recebe o desconto do lote. -->
+      <!-- O BLOCO DE AÇÃO (dono, 10/10): colado no pé da lista, borda primária em cima.
+           Um lugar só para AGIR sobre linhas: a linha aberta no editor (↑↓, clique) ou
+           as linhas marcadas na seleção. Cabeçalho (o que se edita e a dica do teclado
+           do momento), uma divisória, e os controles em grade de duas colunas iguais.
+           Desconto e observação abrem AQUI, no lugar da grade, e terminam em Cancelar
+           ou Aplicar: nada de modal para ajuste de linha. -->
       <section
-        v-if="editorVisible || (batchMode && discountOpen)"
-        class="shrink-0 border-t-2 border-primary bg-card px-3 pt-2 pb-2.5 shadow-[0_-10px_24px_rgb(0_0_0/.10)]"
+        v-if="editorVisible || batchMode"
+        class="shrink-0 border-t-2 border-primary bg-card px-3 pt-2 shadow-[0_-10px_24px_rgb(0_0_0/.10)]"
+        :class="batchMode ? 'pb-3' : 'pb-2'"
         aria-label="Console do item"
         data-pos-line-editor
       >
         <!-- TOQUE (v4 tablet b): um instrumento só. A caixa grande mostra o número; o
              numérico 3×4 escreve nele; a coluna à direita tem Desconto, Observação,
              Remover e Pronto. -->
-        <template v-if="touchEditor && activeItem">
+        <template v-if="touchEditor && activeItem && lineEditing !== 'note'">
           <div class="flex items-center gap-3" data-pos-touch-editor>
             <p class="min-w-0 flex-1 truncate op-label text-muted-foreground">
               <template v-if="inDiscountMode">Desconto em <b class="font-semibold text-foreground">{{ activeItem.name }}</b></template>
@@ -1593,14 +1560,12 @@ defineExpose({ focusItem, onDigit, onBackspace });
             />
           </p>
         </template>
-        <!-- MOUSE E TECLADO (dono, 10/10): o cabeçalho do editor (o que se edita, o ×
-             e a dica do teclado, discreta, logo abaixo) e a GRADE de controles, duas
-             colunas iguais: quantidade | Remover; Enviar à cozinha | Desconto;
-             Dividir | Observação. -->
-        <template v-else-if="lineControlsInGrid && activeItem">
+        <!-- O CABEÇALHO do bloco: o que se edita (ou o que está marcado) e a dica do
+             teclado do MOMENTO. A divisória separa a leitura dos controles. -->
+        <template v-if="(lineControlsInGrid || lineEditing === 'note') && activeItem">
           <div class="flex items-start gap-2">
             <p class="min-w-0 flex-1 pt-1 op-label [overflow-wrap:anywhere]" data-pos-line-editor-title>
-              <span class="text-muted-foreground">Editando </span>
+              <span class="text-muted-foreground">{{ lineEditing === "discount" ? "Desconto em " : lineEditing === "note" ? "Observação em " : "Editando " }}</span>
               <b class="font-semibold text-foreground">{{ activeItem.name }}</b>
               <span class="whitespace-nowrap text-muted-foreground tnum"> · {{ formatBRL(unitChargedQ(activeItem)) }}{{ isWeighedLine(activeItem) ? "/kg" : " cada" }}</span>
             </p>
@@ -1617,77 +1582,222 @@ defineExpose({ focusItem, onDigit, onBackspace });
               @click="closeEditor"
             />
           </div>
-          <!-- A dica do teclado é do editor: mora sob o título dele, nunca solta no pé. -->
           <p
             v-if="!coarsePointer && !sheet"
             class="-mt-0.5 flex flex-wrap items-center gap-x-1.5 op-micro text-muted-foreground"
             data-pos-keyboard-hint
           >
-            <span>Digite a quantidade</span><span aria-hidden="true">·</span><span>Del remove</span><span aria-hidden="true">·</span><span>↑↓ troca a linha</span>
+            <template v-for="(part, index) in keyboardHint" :key="part">
+              <span v-if="index" aria-hidden="true">·</span><span>{{ part }}</span>
+            </template>
           </p>
-          <div class="mt-2.5">
-            <ReuseControlGrid :rows="lineRows" block="line" />
-          </div>
-          <p v-if="activeAuthorship || lineKitchenState(activeItem) === 'fired_cancellable'" class="mt-1.5 flex flex-wrap items-center gap-x-2 op-micro text-muted-foreground" data-pos-line-authorship>
-            <span class="min-w-0 flex-1">{{ activeAuthorship }}</span>
-            <NuxtButton
-              v-if="lineKitchenState(activeItem) === 'fired_cancellable'"
-              color="primary"
-              variant="ghost"
-              class="shrink-0"
-              :disabled="mutationBusy || firing || !unfireAction.enabled"
-              :label="unfireAction.label"
-              @click="$emit('unfire', activeItem.line_id)"
-            />
-          </p>
+          <div class="-mx-3 my-2 border-t border-border" aria-hidden="true" data-pos-editor-divider />
         </template>
-        <!-- Desconto (da linha ou do lote): formato, valor e motivo. O numérico da tela
-             aparece aqui e, nos dispositivos de toque, também para a quantidade. -->
-        <div v-if="discountOpen && !lineAdjustmentsBlocked" class="mt-2 grid gap-2" data-pos-discount-panel>
-          <div class="flex items-center gap-2">
-            <div class="inline-flex shrink-0 items-center gap-1" role="group" aria-label="Formato do desconto">
+        <template v-else-if="batchMode">
+          <p class="op-micro text-muted-foreground" data-pos-batch-hint>
+            {{ selection.count ? "Ações nas linhas marcadas" : "Marque as linhas na lista para agir em várias de uma vez" }}
+          </p>
+          <div class="-mx-3 my-2 border-t border-border" aria-hidden="true" data-pos-editor-divider />
+        </template>
+
+        <!-- OBSERVAÇÃO: escrita aqui mesmo (Enter aplica, Esc cancela). -->
+        <div v-if="lineEditing === 'note' && noteDraft" class="grid grid-cols-2 gap-2" data-pos-note-panel>
+          <NuxtTextarea
+            ref="noteField"
+            v-model="noteDraft.text"
+            class="col-span-2"
+            :rows="2"
+            autoresize
+            placeholder="Ex.: sem cebola, bem passado"
+            aria-label="Observação da linha"
+            data-pos-note-text
+            @keydown="onNoteKeydown"
+          />
+          <p class="col-span-2 -mt-1 op-micro text-muted-foreground">A observação sai junto com o item para a cozinha.</p>
+          <NuxtButton :size="controlSize" color="neutral" variant="outline" block class="justify-center" label="Cancelar" data-pos-edit-cancel @click="cancelNote" />
+          <NuxtButton :size="controlSize" color="primary" block class="justify-center" label="Aplicar" data-pos-edit-apply @click="saveNote" />
+        </div>
+
+        <!-- DESCONTO (da linha ou das marcadas): o formato ocupa as duas colunas da
+             grade, o valor dito por extenso, o numérico, o motivo, e Cancelar/Aplicar. -->
+        <div v-else-if="lineEditing === 'discount'" class="grid grid-cols-2 gap-2" data-pos-discount-panel>
+          <NuxtButton
+            v-for="mode in discountModes"
+            :key="mode.ref"
+            :size="controlSize"
+            color="neutral"
+            variant="outline"
+            active-color="primary"
+            active-variant="solid"
+            block
+            class="justify-center"
+            :active="numpadMode === mode.ref"
+            :aria-pressed="numpadMode === mode.ref"
+            :disabled="mutationBusy"
+            :label="mode.label"
+            @click="chooseMode(mode.ref)"
+          />
+          <p class="col-span-2 flex items-baseline justify-between gap-2 op-label text-muted-foreground" data-pos-discount-value>
+            <span>{{
+              selectMode
+                ? `Desconto em ${selection.units} ${selection.units === 1 ? "item" : "itens"}`
+                : numpadMode === "disc_brl"
+                  ? "Desconto por unidade"
+                  : "Desconto percentual"
+            }}</span>
+            <strong class="op-title text-foreground tnum">{{
+              numpadMode === "disc_brl"
+                ? `R$ ${numpadBuffer || "0"}`
+                : `${numpadBuffer || "0"}%`
+            }}</strong>
+          </p>
+            <div v-if="numpadVisible" class="col-span-2 grid grid-cols-3 gap-1.5" data-pos-line-numpad>
               <NuxtButton
-                v-for="mode in discountModes"
-                :key="mode.ref"
-                :size="controlSize"
-                color="neutral"
+                v-for="key in [1, 2, 3, 4, 5, 6, 7, 8, 9, 'decimal', 0, 'back']"
+                :key="key"
+                :color="key === 'back' ? 'error' : 'neutral'"
                 variant="outline"
-                active-color="primary"
-                active-variant="solid"
-                :active="numpadMode === mode.ref"
-                :aria-pressed="numpadMode === mode.ref"
-                :disabled="mutationBusy"
-                :label="mode.label"
-                @click="chooseMode(mode.ref)"
+                class="justify-center op-title"
+                :aria-label="
+                  typeof key === 'number'
+                    ? 'Dígito ' + key
+                    : key === 'back'
+                      ? 'Apagar último dígito'
+                      : 'Vírgula'
+                "
+                :disabled="
+                  mutationBusy ||
+                  !numpadCanType ||
+                  (key === 'decimal' && numpadMode !== 'disc_brl')
+                "
+                :label="typeof key === 'number' ? String(key) : key === 'back' ? '⌫' : ','"
+                @click="
+                  typeof key === 'number'
+                    ? onDigit(String(key))
+                    : key === 'back'
+                      ? onBackspace()
+                      : onComma()
+                "
               />
             </div>
-            <p class="min-w-0 flex-1 truncate text-right op-micro text-muted-foreground">
-              {{
-                selectMode
-                  ? `Desconto em ${selection.units} itens`
-                  : numpadMode === "disc_brl"
-                    ? "Desconto por unidade"
-                    : "Desconto percentual"
-              }}:
-              <strong class="op-title text-foreground tnum">{{
-                numpadMode === "disc_brl"
-                  ? `R$ ${numpadBuffer || "0"}`
-                  : `${numpadBuffer || "0"}%`
-              }}</strong>
-            </p>
-          </div>
           <NuxtSelect
             :model-value="discountReason || undefined"
             :items="reasonOptions.map((reason) => ({ label: reason.label, value: reason.ref }))"
             aria-label="Motivo do desconto"
             :disabled="mutationBusy"
-            class="w-full"
+            class="col-span-2 w-full"
             data-pos-discount-reason
-            @update:model-value="(value) => { discountReason = String(value ?? ''); commitDiscount(); }"
+            @update:model-value="(value) => { discountReason = String(value ?? ''); if (!discountDraft) commitDiscount(); }"
           />
+          <template v-if="discountDraft">
+            <NuxtButton :size="controlSize" color="neutral" variant="outline" block class="justify-center" label="Cancelar" data-pos-edit-cancel @click="cancelDiscount" />
+            <NuxtButton :size="controlSize" color="primary" block class="justify-center" label="Aplicar" :disabled="mutationBusy || !discountTargets.length" data-pos-edit-apply @click="applyDiscount" />
+          </template>
         </div>
 
-        <div v-if="touchEditor && activeItem" class="mt-2 grid grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.6fr)] gap-2" data-pos-line-numpad>
+        <!-- A GRADE da linha aberta (quantidade | Remover; Desconto | Observação). -->
+        <ReuseControlGrid v-else-if="lineControlsInGrid && activeItem" :rows="lineRows" block="line" />
+
+        <!-- A GRADE das marcadas (Transferir | Desconto; Remover | Enviar…). -->
+        <div v-else-if="batchMode && selection.count" class="grid grid-cols-2 gap-2" data-pos-batch-actions>
+          <template v-for="(row, rowIndex) in batchRows" :key="rowIndex">
+            <div
+              v-for="cell in row"
+              :key="cell"
+              class="op-fit-scope min-w-0"
+              :class="row.length === 1 ? 'col-span-2' : ''"
+              :data-pos-batch-cell="cell"
+            >
+              <OperatorButton
+                v-if="cell === 'move'"
+                label="Transferir"
+                icon="i-lucide-split"
+                :size="controlSize"
+                color="neutral"
+                variant="outline"
+                block
+                class="h-full justify-center"
+                :shortcut="coarsePointer ? undefined : 'F10'"
+                :disabled="loading"
+                title="Transferir as linhas marcadas para outra comanda (F10)"
+                @click="$emit('move', selection.lineIds)"
+              />
+              <OperatorButton
+                v-else-if="cell === 'discount'"
+                label="Desconto"
+                icon="i-lucide-percent"
+                :size="controlSize"
+                color="neutral"
+                variant="outline"
+                block
+                class="h-full justify-center"
+                :disabled="!selection.count"
+                title="Desconto nas linhas marcadas"
+                @click="toggleDiscount"
+              />
+              <OperatorButton
+                v-else-if="cell === 'remove'"
+                label="Remover"
+                icon="i-lucide-trash-2"
+                :size="controlSize"
+                color="error"
+                variant="outline"
+                block
+                class="h-full justify-center bg-default font-semibold"
+                :disabled="mutationBusy || !selection.count"
+                title="Remover as linhas marcadas"
+                @click="batchRemove"
+              />
+              <OperatorButton
+                v-else-if="cell === 'fire'"
+                label="Enviar à cozinha"
+                short-label="Enviar"
+                icon="i-lucide-chef-hat"
+                :size="controlSize"
+                color="primary"
+                variant="outline"
+                block
+                class="h-full justify-center bg-default font-semibold"
+                :disabled="mutationBusy || firing || !fireAction.enabled"
+                title="Enviar à cozinha só as marcadas"
+                data-pos-batch-fire
+                @click="batchFire"
+              />
+              <OperatorButton
+                v-else-if="cell === 'unfire'"
+                :label="unfireAction.label || 'Cancelar envio à cozinha'"
+                short-label="Cancelar envio"
+                icon="i-lucide-undo-2"
+                :size="controlSize"
+                color="neutral"
+                variant="outline"
+                block
+                class="h-full justify-center"
+                :disabled="mutationBusy || firing || !unfireAction.enabled"
+                @click="batchUnfire"
+              />
+            </div>
+          </template>
+        </div>
+
+        <p
+          v-if="lineControlsInGrid && activeItem && !lineEditing && (activeAuthorship || lineKitchenState(activeItem) === 'fired_cancellable')"
+          class="mt-1.5 flex flex-wrap items-center gap-x-2 op-micro text-muted-foreground"
+          data-pos-line-authorship
+        >
+          <span class="min-w-0 flex-1">{{ activeAuthorship }}</span>
+          <NuxtButton
+            v-if="lineKitchenState(activeItem) === 'fired_cancellable'"
+            color="primary"
+            variant="ghost"
+            class="shrink-0"
+            :disabled="mutationBusy || firing || !unfireAction.enabled"
+            :label="unfireAction.label"
+            @click="$emit('unfire', activeItem.line_id)"
+          />
+        </p>
+
+        <div v-if="touchEditor && activeItem && lineEditing !== 'note'" class="mt-2 grid grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.6fr)] gap-2" data-pos-line-numpad>
           <template v-for="(row, rowIndex) in [[1, 2, 3], [4, 5, 6], [7, 8, 9], ['decimal', 0, 'back']]" :key="rowIndex">
             <!-- O numérico do toque é xl com a altura de tecla (h-14/h-16): a mesma
                  exceção de altura do numérico do Pagamento, alvo de polegar. -->
@@ -1757,36 +1867,6 @@ defineExpose({ focusItem, onDigit, onBackspace });
             >Pronto</NuxtButton>
           </template>
         </div>
-        <div v-if="numpadVisible" class="mt-2 grid grid-cols-3 gap-1.5" data-pos-line-numpad>
-          <NuxtButton
-            v-for="key in [1, 2, 3, 4, 5, 6, 7, 8, 9, 'decimal', 0, 'back']"
-            :key="key"
-            :color="key === 'back' ? 'error' : 'neutral'"
-            variant="outline"
-            class="justify-center op-title"
-            :aria-label="
-              typeof key === 'number'
-                ? 'Dígito ' + key
-                : key === 'back'
-                  ? 'Apagar último dígito'
-                  : 'Vírgula'
-            "
-            :disabled="
-              mutationBusy ||
-              !numpadCanType ||
-              (key === 'decimal' && numpadMode !== 'disc_brl')
-            "
-            :label="typeof key === 'number' ? String(key) : key === 'back' ? '⌫' : ','"
-            @click="
-              typeof key === 'number'
-                ? onDigit(String(key))
-                : key === 'back'
-                  ? onBackspace()
-                  : onComma()
-            "
-          />
-        </div>
-
         <p
           v-if="lineAdjustmentsBlockedReason"
           class="mt-2 flex items-start gap-1.5 op-micro text-muted-foreground"
@@ -1856,9 +1936,15 @@ defineExpose({ focusItem, onDigit, onBackspace });
           </NuxtButton>
         </div>
       </div>
-      <div v-else class="grid shrink-0 gap-2.5 border-t border-border p-3" data-pos-ticket-foot>
-        <!-- O bloco da COMANDA, sempre aqui, logo acima do Pagamento: o separador
-             discreto do bloco da linha é a borda de cima deste pé. -->
+      <div
+        v-else
+        class="grid shrink-0 gap-2.5 px-3 pb-3"
+        :class="editorVisible ? 'pt-0' : 'border-t border-border pt-3'"
+        data-pos-ticket-foot
+      >
+        <!-- O bloco da COMANDA, sempre aqui, logo acima do Pagamento (não pula quando o
+             editor abre ou fecha). Com o editor aberto, ele continua a grade de cima,
+             sem divisória: é o mesmo conjunto de controles. -->
         <ReuseControlGrid v-if="tabRows.length" :rows="tabRows" block="tab" />
         <!-- PAGAMENTO (dono, 10/10, refeito): uma linha só. À esquerda o gesto (ícone,
              rótulo, F4 discreto); à direita o total, grande, sem rótulo empilhado em
@@ -1953,30 +2039,6 @@ defineExpose({ focusItem, onDigit, onBackspace });
   >
     <ReuseTicketBody />
   </div>
-  <NuxtModal
-    :open="!!noteDialog"
-    :title="`Observação · ${noteDialog?.name ?? ''}`"
-    description="A observação sai junto com o item para a cozinha."
-    :ui="{ content: 'sm:max-w-sm' }"
-    data-pos-note-dialog
-    @update:open="(value: boolean) => { if (!value) noteDialog = null; }"
-  >
-    <template #body>
-      <UiTextarea
-        v-if="noteDialog"
-        v-model="noteDialog.text"
-        :rows="3"
-        placeholder="Ex: sem cebola, bem passado"
-        autofocus
-      />
-    </template>
-    <template #footer>
-      <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="noteDialog = null" />
-        <NuxtButton color="primary" label="Salvar observação" @click="saveNote" />
-      </div>
-    </template>
-  </NuxtModal>
 
   <NuxtModal
     :open="!!confirmAction"

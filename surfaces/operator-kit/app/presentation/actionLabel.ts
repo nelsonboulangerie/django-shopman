@@ -227,3 +227,21 @@ export function adaptiveTitle(action: OperatorAdaptiveLabel & { ariaLabel?: stri
   if (!isAdaptive(action)) return undefined;
   return action.ariaLabel || action.label;
 }
+
+/**
+ * A TECLA DO ATALHO é a primeira a cair (dono, 10/10/2026: "o verbo antes da tecla").
+ * Com espaço para o rótulo completo E a tecla, os dois; abaixo disso a tecla some e o
+ * rótulo segue a escada de sempre (completo, curto, ícone). A tecla não entra na conta
+ * dos degraus do rótulo: ela usa o limite do completo (`--op-fit-full`, do botão ou do
+ * grupo) mais a própria largura. Estilo em linha, como o resto da conta: nada roda em JS.
+ */
+export function shortcutFitStyle(shortcut: string, size: OperatorFitSize = "md"): Record<string, string> {
+  // O `OperatorKbd`: `text-xs` mono (~0,45 rem por caractere), `px-1.5`, mínimo `min-w-5`.
+  const key = Math.max(1.25, shortcut.length * 0.45 + 0.75) + BORDER_REM * 2;
+  const gap = FIT_SIZE_METRICS[size].gap;
+  const limit = `(var(--op-fit-full, 0px) + ${round(key + gap)}rem)`;
+  return {
+    "max-width": `clamp(0px, calc((100cqi - ${limit}) * 100000), 100vw)`,
+    "margin-inline-start": `clamp(${round(-gap)}rem, calc((100cqi - ${limit}) * 100000), 0px)`,
+  };
+}

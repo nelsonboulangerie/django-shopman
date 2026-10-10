@@ -12,7 +12,8 @@ export default defineConfig({
   testDir: "./tests/geometry",
   testMatch: "**/*.spec.ts",
   outputDir: "./test-results/geometry",
-  timeout: 60_000,
+  // O primeiro teste paga a compilação do `nuxt dev` a frio.
+  timeout: 120_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
   retries: 0,

@@ -26,6 +26,16 @@ interface Problem {
 const TICKET_REM = { min: 22, default: 25, max: 32 } as const;
 type TicketWidth = keyof typeof TICKET_REM;
 
+/** A divisória de baixo do cabeçalho da comanda corre na MESMA linha da barra do topo
+ *  da venda (dono, 10/10: o degrau de poucos pixels é desalinhamento barato). */
+async function headerStep(page: Page, ticketHeader: string) {
+  return page.evaluate((selector) => {
+    const top = document.querySelector("[data-pos-context-header] > [data-operator-page-header]")!.getBoundingClientRect().bottom;
+    const ticket = document.querySelector(selector)!.getBoundingClientRect().bottom;
+    return Math.abs(top - ticket);
+  }, ticketHeader);
+}
+
 /** Abre a comanda cheia (13) e, por padrão, deixa uma linha em edição. */
 async function openFullTab(
   page: Page,
@@ -170,6 +180,7 @@ for (const { scheme, size, width } of CASES) {
         expect(header.x + header.width, band).toBeLessThanOrEqual(box.x + 1);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      expect(await headerStep(page, "[data-pos-ticket-header]")).toBeLessThanOrEqual(0.5);
 
       // O total confirmado: inteiro, dentro do botão do Pagamento.
       const total = page.locator("[data-pos-primary-total-value]");
@@ -209,6 +220,7 @@ for (const { scheme, size, width } of CASES) {
       await page.locator("[data-pos-ticket-column] [data-item-select]").nth(1).click();
       await page.locator("[data-pos-ticket-column] [data-item-select]").nth(2).click();
       await expect(page.locator("[data-pos-selection-bar]")).toContainText("2 selecionadas");
+      expect(await headerStep(page, "[data-pos-selection-bar]")).toBeLessThanOrEqual(0.5);
       expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
     });
   }
@@ -270,5 +282,47 @@ test("cartões de produto: a mesma altura com nome de 1, 2 ou 3+ linhas", async 
     const long = report.lines.find((line) => line.name?.startsWith("Croque Monsieur"))!;
     expect(long.title).toBe("Croque Monsieur com salada verde e molho de mostarda Dijon");
     if (long.rows > 2) expect(long.clamped).toBe(true);
+  }
+});
+
+// A EDIÇÃO DA LINHA no editor (dono, 10/10): desconto e observação no lugar da grade,
+// com Cancelar/Aplicar; o formato do desconto e os botões batem com as colunas.
+for (const width of ["min", "max"] as const) {
+  test(`edição da linha no editor (coluna ${width}): desconto e observação cabem e alinham`, async ({ page }) => {
+    await openFullTab(page, { width: 1280, height: 720 }, "light", width);
+    await page.locator("[data-pos-line-discount]").click();
+    await page.keyboard.press("1");
+    await expect(page.locator("[data-pos-discount-panel]")).toBeVisible();
+    const aligned = await page.evaluate(() => {
+      const panel = document.querySelector("[data-pos-discount-panel]")!.getBoundingClientRect();
+      const pay = document.querySelector("[data-pos-primary]")!.getBoundingClientRect();
+      const buttons = [...document.querySelectorAll<HTMLElement>("[data-pos-discount-panel] > button")].map((b) => b.getBoundingClientRect());
+      return {
+        panelEdges: [Math.round(panel.left), Math.round(panel.right)],
+        payEdges: [Math.round(pay.left), Math.round(pay.right)],
+        firstRowWidths: [...new Set(buttons.slice(0, 2).map((r) => Math.round(r.width)))].length,
+      };
+    });
+    expect(aligned.panelEdges).toEqual(aligned.payEdges);
+    expect(aligned.firstRowWidths).toBe(1);
+    expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-pos-discount-panel]")).toHaveCount(0);
+
+    await page.locator("[data-pos-line-note]").click();
+    await expect(page.locator("[data-pos-note-panel] textarea")).toBeFocused();
+    expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-pos-note-panel]")).toHaveCount(0);
+  });
+}
+
+test("cabeçalho da comanda alinhado com a barra do topo também na comanda curta", async ({ page }) => {
+  for (const size of SIZES) {
+    await page.setViewportSize(size);
+    await page.goto("/");
+    await page.getByRole("button", { name: /#14/ }).first().click();
+    await expect(page.locator("[data-pos-ticket-header]")).toBeVisible();
+    expect(await headerStep(page, "[data-pos-ticket-header]"), `${size.width}`).toBeLessThanOrEqual(0.5);
   }
 });

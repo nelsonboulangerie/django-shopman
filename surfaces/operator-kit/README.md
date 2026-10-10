@@ -870,6 +870,10 @@ ação que pode ficar apertada declara um ícone.
   pílula e sublinhada) também: o tema do kit tira o encolhimento da aba e deixa a lista
   rolar de lado quando não cabe. O mês do `NuxtCalendar` (o botão que troca a vista)
   quebra linha em vez de cortar.
+- **A tecla cai primeiro.** `shortcut="F9"` desenha a tecla ao lado do rótulo e ela é
+  a primeira a sair quando o espaço aperta (o limite dela é o do completo mais a largura
+  da tecla): o verbo fica, a tecla vai. Contagem ao lado do rótulo vem no slot
+  `trailing` e entra na conta pelo `reserve` do `OperatorFitGroup`.
 - **Grupo numa linha que quebra.** O `OperatorFitGroup`/a barra também publicam
   `--op-fit-min` (todas no último degrau): numa linha com `flex-wrap`, use
   `min-w-(--op-fit-min)` no contêiner, e o grupo desce de linha em vez de vazar.
