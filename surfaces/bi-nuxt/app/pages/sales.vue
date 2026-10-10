@@ -12,6 +12,7 @@
 // recortam TODOS os quadros. Os dois moram na URL (`?compare=`, `?channel=`), junto da
 // janela: o link colado abre o mesmo recorte.
 import { readingChartCsv, readingMoneyFormat } from "../../../operator-kit/app/presentation/readingChart";
+import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
 import type { BISalesReport } from "~/types/bi";
 import {
   SALES_COMPARE_LABELS,
@@ -151,16 +152,21 @@ function scrollToChannels() {
   reveal("by-channel");
 }
 
-// Recorte por canal: NuxtTabs em pílula, como os recortes do Gestor. `all` é o valor do
-// "Todos": as Tabs não aceitam valor vazio, e a URL continua sem `?channel=`.
-const channelTabs = computed(() => [
-  { value: "all", label: "Todos os canais" },
+// Recorte por canal: os filtros rápidos da suíte (`OperatorQuickFilters`), um de cada
+// vez. `all` é a chave do "Todos" e a URL continua sem `?channel=`. No celular, com mais
+// canais que cabem, a própria peça vira seletor.
+const channelTabs = computed<QuickFilterItem[]>(() => [
+  { key: "all", label: "Todos os canais" },
   ...(report.value?.channels ?? []).map((option) => ({
-    value: option.ref,
+    key: option.ref,
     label: option.name,
     icon: channelIcon(option.kind),
   })),
 ]);
+const channelPick = computed<string>({
+  get: () => report.value?.channel || "all",
+  set: (value) => pickChannel(value),
+});
 function pickChannel(value: string | number) {
   setQuery("channel", value === "all" ? "" : String(value), "");
 }
@@ -168,7 +174,7 @@ function pickChannel(value: string | number) {
 const activeFilters = computed(() => {
   const channel = report.value?.channel;
   if (!channel || channel === "all") return [];
-  const label = channelTabs.value.find((tab) => tab.value === channel)?.label ?? channel;
+  const label = channelTabs.value.find((tab) => tab.key === channel)?.label ?? channel;
   return [{ key: "channel", label: `Canal: ${label}`, remove: () => pickChannel("all") }];
 });
 
@@ -177,8 +183,8 @@ const activeFilters = computed(() => {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Quanto vendemos?" :actions="readingActions" :actions-label="readingLabel" :active-filters="activeFilters">
-      <!-- Celular (regra da toolbar do kit): período e frescor na linha; comparar e canal
-           no painel "Filtros", com o canal escolhido como chip removível. -->
+      <!-- Período e o recorte por canal (filtro rápido) na linha; comparar no painel
+           "Filtros". O canal escolhido também vira chip removível. -->
       <template #filters-primary>
         <OperatorPeriodPicker
           v-model="selection"
@@ -191,27 +197,12 @@ const activeFilters = computed(() => {
           align="start"
           label="Período de análise"
         />
+        <OperatorQuickFilters v-if="report" v-model="channelPick" :items="channelTabs" label="Recorte por canal" data-bi-channel-tabs />
       </template>
       <template #filters>
         <NuxtFormField v-if="report" label="Comparar com" :help="compareCaption" orientation="horizontal" data-bi-sales-compare>
           <NuxtSelect :model-value="compare" :items="compareItems" class="min-w-48" @update:model-value="pickCompare" />
         </NuxtFormField>
-        <!-- No celular as abas não cabem numa linha (cortavam o último canal): a mesma
-             escolha vira lista curta. Do `sm` para cima, as abas em pílula. -->
-        <NuxtFormField v-if="report" label="Canal" orientation="horizontal" class="sm:hidden">
-          <NuxtSelect :model-value="report.channel || 'all'" :items="channelTabs" class="min-w-48" @update:model-value="pickChannel" />
-        </NuxtFormField>
-        <NuxtTabs
-          v-if="report"
-          class="max-sm:hidden"
-          :model-value="report.channel || 'all'"
-          :items="channelTabs"
-          :content="false"
-          variant="pill"
-          aria-label="Recorte por canal"
-          data-bi-channel-tabs
-          @update:model-value="pickChannel"
-        />
       </template>
       <template #filters-end>
         <ClientOnly>
