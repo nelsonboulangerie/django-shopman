@@ -149,7 +149,7 @@ fecha agora. Pix e cartão online seguem com a trava de sempre.
 
 Regra do dono: total que pode mudar não aparece como final. Sem conexão o total é a soma da tela
 pela última leitura de preços, e a tela diz isso: o botão mostra "total sem conexão R$ 11,50" e o
-Pagamento mostra "Sem conexão: total pelos preços das 10:06. A venda é enviada quando a conexão
+Pagamento mostra "Total pelos preços das 10:06. A venda é enviada quando a conexão
 voltar." O número só existe para a venda que passa nas travas (sem desconto, sem taxa, sem
 entrega), em que a conta da tela é a mesma que o servidor confere. É provisório na redação, e é
 a **pergunta 1**.
@@ -200,9 +200,11 @@ PC Windows ligado no nobreak, ativação com o suporte da Focus e confirmação 
 
 ## 7. O que a tela diz
 
+- Um lugar por informação (10/10/2026): o estado ("Sem conexão") é da faixa do kit, no topo de
+  toda tela; o selo do cabeçalho sai sem rede, e o aviso e a nota do total dizem só o que é do PDV.
 - Aviso do cabeçalho (`alerts`, sempre com ação que abre a lista "Vendas sem conexão"):
-  - sem rede, sem fila: "Sem conexão. O balcão continua vendendo." / ação "O que funciona agora";
-  - sem rede, com fila: "Sem conexão. 2 vendas esperando envio." / "Ver vendas guardadas";
+  - sem rede, sem fila: "O balcão continua vendendo." / ação "O que funciona agora";
+  - sem rede, com fila: "2 vendas esperando envio." / "Ver vendas guardadas";
   - com rede, enviando: "Enviando 2 vendas guardadas…";
   - recusa: "1 venda guardada não entrou. Cada uma diz por quê. O caixa só fecha depois de resolver." / "Resolver".
 - Tela de resultado: "Venda guardada neste dispositivo. É enviada sozinha quando a

@@ -180,10 +180,10 @@ B2, B5 e B8 (no tablet a gaveta não abre sozinha: ver Folha 5, P2.5).
 Combine com o gerente. **Desligue a rede do balcão** (tirar o cabo do PC ou desligar o
 Wi-Fi do PC; se o roteador for de toda a loja, avise a cozinha antes). Cronometre.
 
-- [ ] ★ **B8.1** **Confira** em até 5 s: faixa "Sem conexão…" no topo, que **não** cobre nenhum botão; e o aviso "Sem conexão. O balcão continua vendendo."
+- [ ] ★ **B8.1** **Confira** em até 5 s: faixa "Sem conexão…" no topo, que **não** cobre nenhum botão; logo abaixo, o aviso "O balcão continua vendendo." ("Sem conexão" aparece **uma** vez, na faixa)
 - [ ] ★ **B8.2** Tocar em **O que funciona agora**. **Confira:** a lista diz dinheiro e maquininha sim; Pix, entrega, encomenda e desconto não.
 - [ ] ★ **B8.3** Fazer uma venda em **dinheiro**. **Confira:** a gaveta abre (PC do balcão), o recibo sai pela impressão do navegador, e a tela diz "Venda guardada neste dispositivo."
-- [ ] ★ **B8.4** Fazer uma venda na **maquininha**. **Confira:** o aviso passa a "Sem conexão. 2 vendas esperando envio."
+- [ ] ★ **B8.4** Fazer uma venda na **maquininha**. **Confira:** o aviso passa a "2 vendas esperando envio."
 - [ ] **B8.5** Tentar **Pix**. **Confira:** "Pix precisa de conexão. Receba em dinheiro ou na maquininha."
 - [ ] **B8.6** Tentar dar um **desconto**. **Confira:** o PDV recusa e diz que precisa de conexão.
 - [ ] **B8.7** Tentar **Fechar o caixa**. **Confira:** "N vendas feitas sem conexão ainda não foram enviadas. Envie antes de fechar o caixa."

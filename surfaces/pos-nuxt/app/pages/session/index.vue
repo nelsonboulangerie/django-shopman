@@ -581,6 +581,7 @@ async function confirmClose() {
       <OperatorPageHeader title="Sessão de caixa" :actions="headerActions" actions-label="Mais ações do caixa">
         <template #status>
           <OperatorLiveStatus
+            v-if="liveStatus.view.value"
             :tone="liveStatus.view.value.tone"
             :time="liveStatus.time.value"
             :label="liveStatus.view.value.label"

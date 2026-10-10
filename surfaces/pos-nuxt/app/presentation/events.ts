@@ -37,19 +37,20 @@ export function shouldConnectSse(enabled: boolean | undefined): boolean {
 
 /** O "ao vivo" discreto do cabeçalho (kit `OperatorLiveStatus`), lido do estado real. */
 export interface PosLiveStatusView {
-  tone: "live" | "calm" | "off";
+  tone: "live" | "calm";
   label: string;
   detail: string;
 }
 
 /**
- * Sem rede: vermelho, por extenso. Com o push vivo: só o ponto e a hora. Enquanto o
- * push não conecta, a tela segue certa pelo poll calmo de 60 s, e é isso que se diz.
+ * Com o push vivo: só o ponto e a hora. Enquanto o push não conecta, a tela segue
+ * certa pelo poll calmo de 60 s, e é isso que se diz. SEM REDE O SELO SAI (`null`):
+ * quem diz o estado é a faixa "Sem conexão" do kit, no topo de toda tela. O selo
+ * repetia a faixa, e com o aviso da tela o PDV dizia "Sem conexão" três vezes
+ * (WP-PDV-SEM-CONEXAO, 10/10/2026).
  */
-export function posLiveStatus(input: { online: boolean; realtime: PosRealtimeState }): PosLiveStatusView {
-  if (!input.online) {
-    return { tone: "off", label: "Sem conexão", detail: "A tela mostra a última leitura e volta sozinha quando a rede voltar" };
-  }
+export function posLiveStatus(input: { online: boolean; realtime: PosRealtimeState }): PosLiveStatusView | null {
+  if (!input.online) return null;
   if (input.realtime === "live") {
     return { tone: "live", label: "Ao vivo", detail: "Mudanças de outras estações chegam na hora" };
   }

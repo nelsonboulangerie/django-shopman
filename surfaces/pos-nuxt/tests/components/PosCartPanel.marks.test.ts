@@ -280,7 +280,7 @@ describe("PosCartPanel — sem conexão", () => {
     expect(wrapper.find("[data-pos-kitchen-offline]").text()).toContain("cozinha sem conexão");
     expect(wrapper.find("[data-pos-fire]").attributes("disabled")).toBeDefined();
     expect(wrapper.find("[data-pos-line-discount]").attributes("disabled")).toBeDefined();
-    expect(wrapper.find("[data-pos-block-offline]").text()).toContain("desconto volta com a conexão");
+    expect(wrapper.find("[data-pos-block-offline]").text()).toContain("Desconto volta com a conexão.");
     expect(wrapper.find("[data-pos-line-note]").attributes("disabled")).toBeUndefined();
     expect(wrapper.find('[aria-label="Aumentar"]').attributes("disabled")).toBeUndefined();
   });

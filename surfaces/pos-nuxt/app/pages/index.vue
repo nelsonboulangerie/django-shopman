@@ -1262,6 +1262,7 @@ onBeforeUnmount(() => {
         </template>
         <template #status>
           <OperatorLiveStatus
+            v-if="liveStatus.view.value"
             :tone="liveStatus.view.value.tone"
             :time="liveStatus.time.value"
             :label="liveStatus.view.value.label"

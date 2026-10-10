@@ -179,11 +179,11 @@ export function offlineSaleReview(input: {
   };
 }
 
-/** A nota que acompanha o total sem conexão. */
+/** A nota que acompanha o total sem conexão (o estado, a faixa do kit já diz). */
 export function offlineTotalNote(pricesClock: string): string {
   return pricesClock
-    ? `Sem conexão: total pelos preços das ${pricesClock}. A venda é enviada quando a conexão voltar.`
-    : "Sem conexão: total pelos preços da última leitura. A venda é enviada quando a conexão voltar.";
+    ? `Total pelos preços das ${pricesClock}. A venda é enviada quando a conexão voltar.`
+    : "Total pelos preços da última leitura. A venda é enviada quando a conexão voltar.";
 }
 
 /** Como o reenvio de UMA venda terminou. */
@@ -244,7 +244,9 @@ export interface OfflineQueueAlert {
 
 /**
  * O aviso do cabeçalho. Sempre acionável: a ação abre a lista das vendas
- * guardadas, que diz o que cada uma espera.
+ * guardadas, que diz o que cada uma espera. Sem rede ele não abre com "Sem
+ * conexão": a faixa do kit já diz o estado logo acima, e o aviso diz só o que é
+ * do PDV (o balcão segue vendendo, as vendas guardadas).
  */
 export function offlineQueueAlert(input: {
   online: boolean;
@@ -265,8 +267,8 @@ export function offlineQueueAlert(input: {
     return {
       color: "warning",
       title: pending
-        ? `Sem conexão. ${pending === 1 ? "1 venda esperando envio." : `${pending} vendas esperando envio.`}`
-        : "Sem conexão. O balcão continua vendendo.",
+        ? (pending === 1 ? "1 venda esperando envio." : `${pending} vendas esperando envio.`)
+        : "O balcão continua vendendo.",
       description: pending
         ? "Elas seguem sozinhas quando a conexão voltar. Não limpe os dados do navegador."
         : "Em dinheiro e na maquininha. Pix, entrega, encomenda e desconto esperam a conexão.",

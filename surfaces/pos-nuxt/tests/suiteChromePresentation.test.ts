@@ -8,13 +8,13 @@ import type { POSProductProjection } from "../app/types/pos";
 
 describe("ao vivo do cabeçalho do PDV", () => {
   it("com o push vivo, só o ponto e a hora", () => {
-    expect(posLiveStatus({ online: true, realtime: "live" }).tone).toBe("live");
+    expect(posLiveStatus({ online: true, realtime: "live" })?.tone).toBe("live");
   });
 
-  it("sem o push, diz a cadência calma; sem rede, diz por extenso", () => {
+  it("sem o push, diz a cadência calma; sem rede, o selo sai (a faixa do kit diz)", () => {
     expect(posLiveStatus({ online: true, realtime: "polling" })).toMatchObject({ tone: "calm", label: "Atualiza sozinho a cada 60 s" });
-    expect(posLiveStatus({ online: true, realtime: "connecting" }).tone).toBe("calm");
-    expect(posLiveStatus({ online: false, realtime: "live" })).toMatchObject({ tone: "off", label: "Sem conexão" });
+    expect(posLiveStatus({ online: true, realtime: "connecting" })?.tone).toBe("calm");
+    expect(posLiveStatus({ online: false, realtime: "live" })).toBeNull();
   });
 });
 

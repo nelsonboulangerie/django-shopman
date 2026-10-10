@@ -39,7 +39,7 @@ const pendingCount = computed(() => props.sales.filter((sale) => sale.status ===
   <NuxtModal
     :open="open"
     title="Vendas sem conexão"
-    :description="online ? 'As vendas guardadas são enviadas sozinhas.' : 'Sem conexão. O balcão continua vendendo neste dispositivo.'"
+    :description="online ? 'As vendas guardadas são enviadas sozinhas.' : 'O balcão continua vendendo neste dispositivo.'"
     :ui="{ content: 'sm:max-w-lg' }"
     data-pos-offline-sales
     @update:open="(value: boolean) => emit('update:open', value)"
