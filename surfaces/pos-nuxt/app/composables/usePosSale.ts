@@ -2622,22 +2622,31 @@ export function usePosSale(deps: PosSaleDeps) {
 
   // Serialize all tab persistence so the debounced autosave can never race the
   // explicit save inside checkout/fire/move (concurrent save_tab → DB lock).
+  type SavedTab = {
+    revision?: string;
+    line_authors?: Record<string, POSLineAuthorship>;
+    /** Só com `{ review: true }`: a revisão da venda, calculada logo depois do salvar. */
+    review?: POSSaleReviewProjection;
+    review_error?: { status?: number; detail?: string };
+  };
   let persistQueue: Promise<unknown> = Promise.resolve();
-  function persistTab(quiet = false): Promise<void> {
-    const run = async () => {
+  function persistTab(quiet = false, options: { review?: boolean } = {}): Promise<SavedTab | undefined> {
+    const run = async (): Promise<SavedTab | undefined> => {
       if (orderSetupPending.value && cart.items.length) {
         unsaved.value = true;
-        return;
+        return undefined;
       }
       const state = currentIntentState();
       cart.clientRequestId = state.clientRequestId;
       if (tabConflict.value) throw new Error("Confira a versão atual da comanda antes de salvar.");
       const body = buildPosSaleIntent(state, checkoutContract.value?.intent_version);
       const savedContent = JSON.stringify({ ...body, expected_revision: undefined });
-      type SavedTab = { revision?: string; line_authors?: Record<string, POSLineAuthorship> };
       let saved: SavedTab | undefined;
+      const path = actionHref(actions.value, "save_tab", "/api/v1/backstage/pos/tabs/save/");
       try {
-        saved = await action.call<SavedTab>(actionHref(actions.value, "save_tab", "/api/v1/backstage/pos/tabs/save/"), { body });
+        // `?review=1`: o servidor salva e devolve a revisão na mesma resposta (uma
+        // ida, não duas). É o caminho do Pagamento, onde o total é o que se espera.
+        saved = await action.call<SavedTab>(options.review ? `${path}${path.includes("?") ? "&" : "?"}review=1` : path, { body });
       } catch (error) {
         if ([409, 422].includes(httpError(error).status)) tabConflict.value = true;
         throw error;
@@ -2647,9 +2656,11 @@ export function usePosSale(deps: PosSaleDeps) {
       applyLineAuthors(cart.items, saved?.line_authors);
       unsaved.value = savedContent !== JSON.stringify({ ...buildCurrentIntent(), expected_revision: undefined });
       if (!quiet) await refresh();
+      return saved;
     };
-    persistQueue = persistQueue.then(run, run);
-    return persistQueue as Promise<void>;
+    const queued = persistQueue.then(run, run);
+    persistQueue = queued;
+    return queued;
   }
 
   // Retry do autosave: numa rede instável, uma comanda parada com save falho
@@ -2776,13 +2787,26 @@ export function usePosSale(deps: PosSaleDeps) {
     // persistência — era isso que fazia a tela "piscar" duas vezes no Cobrar.
     checkoutMode.value = true;
     invalidateReview();
+    // O total é a primeira coisa que o Pagamento precisa, e só ele bloqueia a
+    // cobrança. Por isso UMA ida ao servidor: com comanda, salvar e revisar na
+    // mesma resposta; sem comanda, só revisar. Eram cinco em série (salvar,
+    // reler a projeção do terminal, reabrir a comanda, reler a projeção, revisar),
+    // e no alpha isso passava de 20 s. A projeção do terminal não muda o total;
+    // e a revisão lê a comanda gravada, então não há o que recarregar antes.
+    const generation = reviewGeneration;
     try {
+      let reviewed = false;
       if (hasOpenTab.value) {
-        await persistTab();
-        await reloadCurrentTab({ preserveCheckout: true });
+        const saved = await persistTab(true, { review: true });
+        if (saved?.review && generation === reviewGeneration) {
+          review.value = saved.review;
+          reviewedGeneration = generation;
+          reviewed = true;
+        }
       }
-      const generation = reviewGeneration;
-      await reviewSale();
+      // Sem comanda, ou a revisão não veio junto (recusa no corpo): a revisão
+      // avulsa diz o motivo pelo caminho de sempre.
+      if (!reviewed && generation === reviewGeneration) await reviewSale();
       if (generation !== reviewGeneration) queueReview(0);
     } catch (error) {
       if (handleReceiptIdentityFailure(error, "review")) return;
