@@ -173,8 +173,12 @@ const phoneHeaderActions = computed(() => [
           data-customer-absorbed
         />
 
-        <NuxtCard as="article" class="lg:col-span-2" data-customer-header>
-          <template #header>
+        <NuxtCard
+          as="article"
+          class="lg:col-span-2"
+          data-customer-header
+        >
+          <div class="flex flex-col gap-3">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0">
                 <h2 class="text-xl font-semibold">{{ customer.name }}</h2>
@@ -201,33 +205,33 @@ const phoneHeaderActions = computed(() => [
                 @click="compare(null)"
               />
             </div>
-          </template>
-          <div class="space-y-3">
-            <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-              <div class="flex gap-2">
-                <dt class="text-muted-foreground">Telefone</dt>
-                <dd>{{ customer.phone_display || "Sem telefone" }}</dd>
-              </div>
-              <div class="flex gap-2">
-                <dt class="text-muted-foreground">E-mail</dt>
-                <dd>{{ customer.email || "Sem e-mail" }}</dd>
-              </div>
-              <div class="flex gap-2">
-                <dt class="text-muted-foreground">CPF</dt>
-                <dd>{{ customer.document_display || "Sem CPF" }}</dd>
-              </div>
-              <div v-if="customer.birthday_display" class="flex gap-2">
-                <dt class="text-muted-foreground">Aniversário</dt>
-                <dd>{{ customer.birthday_display }}</dd>
-              </div>
-            </dl>
-            <NuxtAlert
-              v-if="customer.notes"
-              color="info"
-              variant="subtle"
-              title="Observação"
-              :description="customer.notes"
-            />
+            <div class="space-y-3">
+              <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                <div class="flex gap-2">
+                  <dt class="text-muted-foreground">Telefone</dt>
+                  <dd>{{ customer.phone_display || "Sem telefone" }}</dd>
+                </div>
+                <div class="flex gap-2">
+                  <dt class="text-muted-foreground">E-mail</dt>
+                  <dd>{{ customer.email || "Sem e-mail" }}</dd>
+                </div>
+                <div class="flex gap-2">
+                  <dt class="text-muted-foreground">CPF</dt>
+                  <dd>{{ customer.document_display || "Sem CPF" }}</dd>
+                </div>
+                <div v-if="customer.birthday_display" class="flex gap-2">
+                  <dt class="text-muted-foreground">Aniversário</dt>
+                  <dd>{{ customer.birthday_display }}</dd>
+                </div>
+              </dl>
+              <NuxtAlert
+                v-if="customer.notes"
+                color="info"
+                variant="subtle"
+                title="Observação"
+                :description="customer.notes"
+              />
+            </div>
           </div>
         </NuxtCard>
 
@@ -238,7 +242,7 @@ const phoneHeaderActions = computed(() => [
           class="lg:col-span-2"
           data-customer-candidates
         >
-          <template #header>
+          <div class="flex flex-col gap-3">
             <div>
               <h2 class="op-title">Pode ser a mesma pessoa</h2>
               <p class="op-micro text-muted-foreground">
@@ -246,46 +250,46 @@ const phoneHeaderActions = computed(() => [
                 unificar.
               </p>
             </div>
-          </template>
-          <ul class="divide-y divide-border">
-            <li
-              v-for="candidate in customer.candidates"
-              :key="candidate.ref"
-              class="flex flex-wrap items-center justify-between gap-3 py-2"
-            >
-              <div class="min-w-0 text-sm">
-                <NuxtLink
-                  :to="`/customers/${encodeURIComponent(candidate.ref)}`"
-                  class="font-medium hover:underline"
-                  >{{ candidate.name }}</NuxtLink
-                >
-                <span class="ms-2 font-mono text-xs text-muted-foreground">{{
-                  candidate.ref
-                }}</span>
-                <p class="text-xs text-muted-foreground">
-                  <NuxtBadge
-                    color="warning"
-                    :label="candidate.reason_label"
-                  />
-                  · {{ candidate.phone_display || "sem telefone" }}
-                  <template v-if="candidate.source_label">
-                    · {{ candidate.source_label }}</template
+            <ul class="divide-y divide-border">
+              <li
+                v-for="candidate in customer.candidates"
+                :key="candidate.ref"
+                class="flex flex-wrap items-center justify-between gap-3 py-2"
+              >
+                <div class="min-w-0 text-sm">
+                  <NuxtLink
+                    :to="`/customers/${encodeURIComponent(candidate.ref)}`"
+                    class="font-medium hover:underline"
+                    >{{ candidate.name }}</NuxtLink
                   >
-                  · {{ candidate.orders_label }}
-                </p>
-              </div>
-              <NuxtButton
-                type="button"
-                label="Comparar"
-                :data-customer-compare="candidate.ref"
-                @click="compare(candidate)"
-              />
-            </li>
-          </ul>
+                  <span class="ms-2 font-mono text-xs text-muted-foreground">{{
+                    candidate.ref
+                  }}</span>
+                  <p class="text-xs text-muted-foreground">
+                    <NuxtBadge
+                      color="warning"
+                      :label="candidate.reason_label"
+                    />
+                    · {{ candidate.phone_display || "sem telefone" }}
+                    <template v-if="candidate.source_label">
+                      · {{ candidate.source_label }}</template
+                    >
+                    · {{ candidate.orders_label }}
+                  </p>
+                </div>
+                <NuxtButton
+                  type="button"
+                  label="Comparar"
+                  :data-customer-compare="candidate.ref"
+                  @click="compare(candidate)"
+                />
+              </li>
+            </ul>
+          </div>
         </NuxtCard>
 
         <NuxtCard as="article">
-          <template #header>
+          <div class="flex flex-col gap-3">
             <div>
               <h2 class="op-title">Pedidos</h2>
               <p class="op-micro text-muted-foreground">
@@ -298,56 +302,54 @@ const phoneHeaderActions = computed(() => [
                 >
               </p>
             </div>
-          </template>
-          <ul
-            v-if="customer.recent_orders.length"
-            class="divide-y divide-border text-sm"
-          >
-            <li v-for="order in customer.recent_orders" :key="order.ref">
-              <NuxtLink
-                :to="`/${encodeURIComponent(order.ref)}`"
-                class="flex flex-wrap items-center justify-between gap-2 py-1.5 hover:underline"
-              >
-                <span
-                  ><span class="font-mono text-xs">{{ order.ref }}</span> ·
-                  {{ order.channel_label }}</span
+            <ul
+              v-if="customer.recent_orders.length"
+              class="divide-y divide-border text-sm"
+            >
+              <li v-for="order in customer.recent_orders" :key="order.ref">
+                <NuxtLink
+                  :to="`/${encodeURIComponent(order.ref)}`"
+                  class="flex flex-wrap items-center justify-between gap-2 py-1.5 hover:underline"
                 >
-                <span class="text-xs text-muted-foreground"
-                  >{{ order.ordered_at_display }} · {{ order.status_label }} ·
-                  {{ order.total_display }}</span
-                >
-              </NuxtLink>
-            </li>
-          </ul>
+                  <span
+                    ><span class="font-mono text-xs">{{ order.ref }}</span> ·
+                    {{ order.channel_label }}</span
+                  >
+                  <span class="text-xs text-muted-foreground"
+                    >{{ order.ordered_at_display }} · {{ order.status_label }} ·
+                    {{ order.total_display }}</span
+                  >
+                </NuxtLink>
+              </li>
+            </ul>
+          </div>
         </NuxtCard>
 
         <NuxtCard as="article">
-          <template #header>
+          <div class="flex flex-col gap-3">
             <div>
               <h2 class="op-title">Identificadores</h2>
               <p class="op-micro text-muted-foreground">
                 As chaves pelas quais os canais reconhecem esta pessoa.
               </p>
             </div>
-          </template>
-          <ul v-if="customer.identifiers.length" class="space-y-1 text-sm">
-            <li
-              v-for="identifier in customer.identifiers"
-              :key="`${identifier.type_label}:${identifier.value}`"
-              class="flex gap-2"
-            >
-              <span class="text-muted-foreground">{{
-                identifier.type_label
-              }}</span>
-              <span class="break-all font-mono text-xs leading-5">{{
-                identifier.value
-              }}</span>
-            </li>
-          </ul>
-          <p v-else class="text-sm text-muted-foreground">
-            Nenhum identificador.
-          </p>
-          <template #footer>
+            <ul v-if="customer.identifiers.length" class="space-y-1 text-sm">
+              <li
+                v-for="identifier in customer.identifiers"
+                :key="`${identifier.type_label}:${identifier.value}`"
+                class="flex gap-2"
+              >
+                <span class="text-muted-foreground">{{
+                  identifier.type_label
+                }}</span>
+                <span class="break-all font-mono text-xs leading-5">{{
+                  identifier.value
+                }}</span>
+              </li>
+            </ul>
+            <p v-else class="text-sm text-muted-foreground">
+              Nenhum identificador.
+            </p>
             <h2 class="op-title">Endereços</h2>
             <ul v-if="customer.addresses.length" class="mt-1 space-y-1 text-sm">
               <li v-for="address in customer.addresses" :key="address">
@@ -357,7 +359,7 @@ const phoneHeaderActions = computed(() => [
             <p v-else class="mt-1 text-sm text-muted-foreground">
               Nenhum endereço salvo.
             </p>
-          </template>
+          </div>
         </NuxtCard>
       </div>
     </section>
