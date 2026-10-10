@@ -112,11 +112,24 @@ export function useDrawerOpening({ pos, actions, action, drawer }: DrawerOpening
           return;
         }
       } catch (error) {
-        if (!httpError(error).status) {
+        const status = httpError(error).status;
+        if (!status) {
           // A rede do tablet caiu no meio: não dá para saber se abriu.
           settle("uncertain", `Sem conexão para confirmar. Olhe a gaveta do ${terminalLabel.value} antes de pedir de novo.`);
           return;
         }
+        if (status < 500) {
+          // O servidor RECUSOU a leitura (pulso de outro posto, estação travada,
+          // erro do lado dele que se repete): perguntar de novo a cada segundo
+          // devolve a mesma recusa por 50 s. No alpha (10/10/2026) eram 400 em
+          // série. O pulso já saiu, então quem diz se abriu é a gaveta.
+          settle(
+            "uncertain",
+            `${httpErrorMessage(error, "Não deu para confirmar a abertura.")} Confira a gaveta do ${terminalLabel.value} antes de pedir de novo.`,
+          );
+          return;
+        }
+        // 5xx: o servidor tropeçou; a próxima volta tenta de novo, até o prazo.
       }
     }
     settle("uncertain");
