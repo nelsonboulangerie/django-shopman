@@ -60,10 +60,6 @@ const SKIP_FILES = new Set(["package.json", "package-lock.json", "tsconfig.json"
 const EXCEPTIONS: Record<string, string> = {
   // Não é copy: é o parser que RECONHECE separadores no título da janela.
   "operator-kit/app/presentation/windowTitle.ts": "regex que reconhece separadores; não é texto",
-  // Dívida com nome: o aviso de conexão aparece no retrato `global-error__offline` do
-  // Marketing, e o componente é do kit. (O Marketing inteiro saiu da lista na V6-MKT,
-  // que regrava os retratos pela CI.)
-  "operator-kit/app/components/OfflineBanner.vue": "aparece no retrato global-error__offline do Marketing",
 };
 
 function sourceFiles(dir: string, found: string[] = []): string[] {

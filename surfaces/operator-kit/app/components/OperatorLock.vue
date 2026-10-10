@@ -146,7 +146,7 @@ async function submitForcedChange(payload: {
     ref="overlay"
     data-operator-lock
     tabindex="-1"
-    class="fixed inset-0 outline-none z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
+    class="fixed inset-0 top-[var(--operator-offline-inset,0px)] outline-none z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
   >
     <NuxtCard class="w-full max-w-md">
       <!-- Forced change: manager reset the operator's PIN; rotate before operating. -->

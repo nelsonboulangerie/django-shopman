@@ -223,10 +223,13 @@ function menuDotSize(size: string): ChipProps["size"] {
 </script>
 
 <template>
+  <!-- A faixa "Sem conexão" (`OfflineBanner`) desce o shell pelo `top`; o sidebar e o
+       painel trocam o `min-h-svh` do Nuxt UI por `min-h-0` para caber no que sobra
+       (senão a barra inferior e o pé da barra lateral saem pela base). -->
   <NuxtDashboardGroup
     :storage-key="storageKey"
     unit="rem"
-    class="min-h-dvh"
+    class="top-[var(--operator-offline-inset,0px)] transition-[top] duration-200 ease-out motion-reduce:transition-none"
     data-operator-office-shell
     data-operator-suite-shell
     :data-rail-state="railState"
@@ -236,6 +239,7 @@ function menuDotSize(size: string): ChipProps["size"] {
       id="suite"
       v-model:collapsed="collapsed"
       v-model:open="drawerOpen"
+      class="min-h-0"
       collapsible
       resizable
       :collapsed-size="4"
@@ -337,7 +341,7 @@ function menuDotSize(size: string): ChipProps["size"] {
          scrollable body. Each routed page exposes a fixed header and an explicitly
          scrollable content region; another scroller here made the canonical
          DashboardNavbar and DashboardToolbar move with the page. -->
-    <NuxtDashboardPanel :id="`${storageKey}-content`">
+    <NuxtDashboardPanel :id="`${storageKey}-content`" class="min-h-0">
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
           <slot />
