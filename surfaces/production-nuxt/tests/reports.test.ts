@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   REPORT_KINDS,
+  REPORT_PERIOD_PRESETS,
   capacityLabel,
+  reportDimensions,
+  reportPanelFilters,
+  reportRecortesFromPanel,
   reportKindLabel,
   reportsCsvUrl,
   reportsQuery,
@@ -76,5 +80,32 @@ describe("capacityLabel", () => {
     expect(capacityLabel(50)).toBe("50%");
     expect(capacityLabel(0)).toBe("0%");
     expect(capacityLabel(null)).toBe("");
+  });
+});
+
+describe("painel de filtros dos relatórios", () => {
+  it("põe ficha técnica e posto como lista e o operador como texto digitado", () => {
+    const dimensions = reportDimensions(
+      [{ ref: "baguete", name: "Baguete" }],
+      [{ ref: "forno", name: "Forno" }],
+    );
+    expect(dimensions.map((d) => [d.id, d.label, d.type])).toEqual([
+      ["recipe", "Ficha técnica", "single-select"],
+      ["position", "Posto", "single-select"],
+      ["operator", "Operador", "text"],
+    ]);
+    expect(dimensions[0]!.options).toEqual([{ value: "baguete", label: "Baguete" }]);
+    expect(REPORT_PERIOD_PRESETS).toEqual(["day", "week", "month", "7d", "28d"]);
+  });
+
+  it("vai do rascunho ao painel e volta, os três recortes de uma vez", () => {
+    expect(reportPanelFilters({ recipe_ref: "", position_ref: "forno", operator_ref: "  " })).toEqual({
+      position: ["forno"],
+    });
+    expect(reportRecortesFromPanel({ recipe: ["baguete"], operator: ["ana"] })).toEqual({
+      recipe_ref: "baguete",
+      position_ref: "",
+      operator_ref: "ana",
+    });
   });
 });

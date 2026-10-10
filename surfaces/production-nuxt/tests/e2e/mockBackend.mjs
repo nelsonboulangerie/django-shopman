@@ -650,7 +650,7 @@ const server = createServer((req, res) => {
     res.setHeader("content-type", "text/csv; charset=utf-8");
     return setTimeout(() => res.end("OP;Ficha técnica\nWO-0042;Pão francês\n"), 1_000);
   }
-  if (/\/production\/reports\/?(\?|$)/.test(url) && populatedReports) {
+  if (/\/production\/reports\/?(\?|$)/.test(url) && (populatedReports || previewScenario)) {
     return json(res, 200, REPORTS);
   }
   if (/\/production\/?(\?|$)/.test(url)) return json(res, 200, longCopy ? LONG_COPY_BOARD : BOARD);

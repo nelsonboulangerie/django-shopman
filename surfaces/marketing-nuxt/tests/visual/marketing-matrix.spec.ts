@@ -663,16 +663,18 @@ test.describe("listas operacionais", () => {
     );
     // Os recortes da tela primeiro: no celular a lupa abre a busca da suíte em tela
     // cheia (modal), e o que fica atrás dela sai da árvore de acessibilidade.
-    // Abaixo de `sm` os recortes moram no painel "Filtros" (folha de baixo do kit).
-    await page.locator("[data-page-header-filters-open]").click();
+    // Abaixo de `sm` os recortes moram no painel de filtros da suíte (o ícone com o
+    // número, na linha) e os chips do cabeçalho dizem quais estão ligados.
+    const line = page.locator("[data-page-header-filter-line]");
+    await expect(line.locator("[data-operator-filter-panel-count]")).toContainText("2");
+    await expect(page.locator("[data-page-header-active-filter]")).toHaveText([
+      "Situação: Desligadas",
+      "Plataforma: Facebook",
+    ]);
+    await line.locator("[data-operator-filter-panel-open]").click();
     const filters = page.getByRole("dialog", { name: "Filtros" });
-    await expect(
-      filters.getByRole("tab", { name: /Desligadas\s*9/ }),
-    ).toHaveAttribute("aria-selected", "true");
-    await expect(
-      filters.getByRole("combobox", { name: "Plataforma" }),
-    ).toContainText("Facebook");
-    await filters.getByRole("button", { name: "Ver resultados" }).click();
+    await expect(filters.getByRole("option", { name: /Plataforma/ })).toContainText("1 escolhido");
+    await filters.getByRole("button", { name: "Pronto" }).click();
     await expect(filters).toBeHidden();
     // No celular a busca mora no ⋯ da barra do topo.
     await page.getByRole("button", { name: "Mais ações de Campanhas" }).click();

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   HISTORY_FILTERS,
-  HISTORY_FILTER_ALL,
   historyActiveFilters,
-  historyFilterQueryValue,
-  historyFilterValue,
+  historyDimensions,
+  historyFiltersFromPanel,
+  historyPanelFilters,
   historyActorLabel,
   historyAnnouncementId,
   historyHref,
@@ -102,31 +102,36 @@ describe("apresentação do histórico canônico", () => {
 });
 
 describe("recortes de Enviados", () => {
-  it("são os quatro de hoje, cada um com um 'sem recorte' que o Select aceita", () => {
-    expect(HISTORY_FILTERS.map((filter) => filter.label)).toEqual([
-      "Situação",
-      "Plataforma",
-      "Criado em",
-      "Origem da decisão",
+  it("são os quatro de hoje, cada um uma escolha única do painel de filtros", () => {
+    expect(historyDimensions().map((dimension) => [dimension.id, dimension.label, dimension.type])).toEqual([
+      ["outcome", "Situação", "single-select"],
+      ["platform", "Plataforma", "single-select"],
+      ["period", "Criado em", "single-select"],
+      ["actor", "Origem da decisão", "single-select"],
     ]);
+    // "Sem recorte" é a ausência do valor, não uma opção da lista.
     for (const filter of HISTORY_FILTERS) {
-      // O Select do Nuxt UI (Reka) recusa item de valor vazio.
-      expect(filter.options.every((option) => option.value !== "")).toBe(true);
-      expect(filter.options[0]!.value).toBe(HISTORY_FILTER_ALL);
+      expect(filter.options.every((option) => option.value !== "" && option.value !== "all")).toBe(true);
     }
     expect(
       HISTORY_FILTERS.find((filter) => filter.name === "period")!.options.map(
         (option) => option.value,
       ),
-    ).toEqual(["all", "today", "7d", "30d"]);
+    ).toEqual(["today", "7d", "30d"]);
   });
 
   it("vai e volta da URL sem mudar o contrato do backend", () => {
-    expect(historyFilterValue("")).toBe("all");
-    expect(historyFilterValue(undefined)).toBe("all");
-    expect(historyFilterValue("7d")).toBe("7d");
-    expect(historyFilterQueryValue("all")).toBe("");
-    expect(historyFilterQueryValue("instagram")).toBe("instagram");
+    expect(historyPanelFilters({ period: "all" })).toEqual({});
+    expect(historyPanelFilters({ outcome: "desconhecido", platform: "instagram", period: "7d" })).toEqual({
+      platform: ["instagram"],
+      period: ["7d"],
+    });
+    expect(historyFiltersFromPanel({ platform: ["instagram"] })).toEqual({
+      outcome: "",
+      platform: "instagram",
+      period: "",
+      actor: "",
+    });
   });
 
   it("vira um chip por recorte fora do padrão, com o nome do recorte", () => {

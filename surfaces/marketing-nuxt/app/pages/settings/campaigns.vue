@@ -27,6 +27,11 @@ import {
 } from "~/composables/useMarketingDraft";
 import { marketingThrottleMessage } from "~/utils/marketingRetry";
 import { preserveMarketingReceipt } from "~/utils/marketingReceipt";
+import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
+import type {
+  ActiveFilters,
+  FilterDimension,
+} from "../../../../operator-kit/app/types/filters";
 
 const {
   rules,
@@ -196,24 +201,6 @@ function dismissCreated() {
   void replaceListQuery({ created: undefined });
 }
 
-// A plataforma é uma lista curta e fixa: `NuxtSelect`. O item "todas" não pode ter
-// valor vazio (o SelectItem do Reka recusa), então ele tem o seu e some da URL.
-const ALL_PLATFORMS = "all";
-const platformChoice = computed({
-  get: () => platformFilter.value || ALL_PLATFORMS,
-  set: (next: string) =>
-    void replaceListQuery({
-      platform: next === ALL_PLATFORMS ? undefined : next,
-      page: 1,
-    }),
-});
-const platformItems = computed(() => [
-  { label: "Todas as plataformas", value: ALL_PLATFORMS },
-  ...platforms.value.map((platform) => ({
-    label: platform.label,
-    value: platform.value,
-  })),
-]);
 
 function clearListFilters() {
   search.value = "";
@@ -424,7 +411,8 @@ async function onSubmit(payload: Record<string, unknown>) {
     ?.focus();
 }
 
-// Os recortes da toolbar: a situação em pílulas com a contagem, a plataforma numa lista.
+// Os recortes: a situação em pílulas com a contagem (os filtros rápidos, na mesa) e,
+// no painel de filtros único da suíte, a situação e a plataforma com os favoritos.
 const stateCounts = computed(() => ({
   all: rules.value.length,
   active: rules.value.filter((rule) => rule.is_active).length,
@@ -450,37 +438,49 @@ const stateChoice = computed<string | string[] | undefined>({
     });
   },
 });
-const platformLabel = computed(
-  () =>
-    platforms.value.find((platform) => platform.value === platformFilter.value)
-      ?.label ?? platformFilter.value,
-);
-
-// Recortes ativos: o número no "Filtros" do celular e os chips removíveis.
-const activeFilters = computed(() => [
-  ...(stateFilter.value
-    ? [
-        {
-          key: "state",
-          label: STATE_LABELS[stateFilter.value],
-          remove: () => {
-            stateChoice.value = "all";
-          },
-        },
-      ]
-    : []),
-  ...(platformFilter.value
-    ? [
-        {
-          key: "platform",
-          label: `Plataforma: ${platformLabel.value}`,
-          remove: () => {
-            platformChoice.value = ALL_PLATFORMS;
-          },
-        },
-      ]
-    : []),
+const panelDimensions = computed<FilterDimension[]>(() => [
+  {
+    id: "state",
+    label: "Situação",
+    type: "single-select",
+    options: [
+      { value: "active", label: STATE_LABELS.active, count: stateCounts.value.active },
+      { value: "inactive", label: STATE_LABELS.inactive, count: stateCounts.value.inactive },
+    ],
+  },
+  {
+    id: "platform",
+    label: "Plataforma",
+    type: "single-select",
+    options: platforms.value.map((platform) => ({
+      value: platform.value,
+      label: platform.label,
+    })),
+  },
 ]);
+// O painel e o favorito trocam a situação e a plataforma de uma vez.
+const panelFilters = computed<ActiveFilters>({
+  get: () => ({
+    ...(stateFilter.value ? { state: [stateFilter.value] } : {}),
+    ...(platformFilter.value ? { platform: [platformFilter.value] } : {}),
+  }),
+  set: (next) => {
+    const state = next.state?.[0];
+    void replaceListQuery({
+      state: state === "active" || state === "inactive" ? state : undefined,
+      platform: next.platform?.[0] || undefined,
+      page: undefined,
+    });
+  },
+});
+
+// Recortes ativos: os chips removíveis do cabeçalho no celular (na mesa, os do painel,
+// ao lado do botão).
+const activeFilters = computed(() =>
+  filterBarActiveFilters(panelDimensions.value, panelFilters.value, (next) => {
+    panelFilters.value = next;
+  }),
+);
 
 const countLabel = computed(() => {
   const shown = filteredRules.value.length;
@@ -602,6 +602,7 @@ useHead({ title: "Campanhas" });
       :active-filters="activeFilters"
       :clear-filters="clearListFilters"
       :alerts="screenAlerts"
+      desk-only-filters
     >
       <template #search>
         <OperatorSuiteSearch
@@ -625,18 +626,22 @@ useHead({ title: "Campanhas" });
       <template #filters-primary>
         <MarketingSettingsNav />
       </template>
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          surface="marketing"
+          screen="campaigns"
+          data-campaign-filters
+        />
+      </template>
+      <!-- Na mesa, a situação em pílulas com a contagem (os filtros rápidos) e a forma da
+           tabela; no celular as duas moram no painel (a situação) e somem (a forma). -->
       <template #filters>
         <OperatorQuickFilters
           v-model="stateChoice"
           :items="stateItems"
           label="Situação das campanhas"
-        />
-        <NuxtSelect
-          v-model="platformChoice"
-          :items="platformItems"
-          icon="i-lucide-radio-tower"
-          aria-label="Plataforma"
-          class="min-w-48"
         />
         <OperatorTableView table-key="marketing-campaigns" />
       </template>

@@ -2,6 +2,7 @@ import type {
   AnnouncementProjectionV2,
   MarketingActionProjectionV2,
 } from "~/types/campaign";
+import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 
 const TRIGGER_LABELS: Record<
   AnnouncementProjectionV2["facts"]["trigger"],
@@ -120,24 +121,21 @@ export function historyWhen(instant: string, timeZone: string, nowMs = Date.now(
 /** Os quatro recortes de Enviados (os mesmos valores e a mesma URL de antes). */
 export type HistoryFilterName = "outcome" | "platform" | "period" | "actor";
 
-/**
- * O valor "sem recorte" de cada `NuxtSelect`. O Select do Nuxt UI (Reka) não aceita
- * item de valor vazio, então "Todas" é `all` na tela e volta a ser vazio na URL.
- */
-export const HISTORY_FILTER_ALL = "all";
-
 export interface HistoryFilter {
   name: HistoryFilterName;
   label: string;
   options: Array<{ value: string; label: string }>;
 }
 
+/**
+ * Cada recorte é uma escolha única no painel de filtros da suíte (`OperatorFilterPanel`).
+ * "Sem recorte" é a ausência do valor (some da URL), não uma opção da lista.
+ */
 export const HISTORY_FILTERS: readonly HistoryFilter[] = [
   {
     name: "outcome",
     label: "Situação",
     options: [
-      { value: HISTORY_FILTER_ALL, label: "Todas" },
       { value: "not_started", label: "Ainda não iniciada" },
       { value: "fanout_pending", label: "Preparando destinos" },
       { value: "delivering", label: "Em andamento" },
@@ -153,7 +151,6 @@ export const HISTORY_FILTERS: readonly HistoryFilter[] = [
     name: "platform",
     label: "Plataforma",
     options: [
-      { value: HISTORY_FILTER_ALL, label: "Todas" },
       { value: "instagram", label: "Instagram" },
       { value: "facebook", label: "Facebook" },
       { value: "google_business", label: "Google" },
@@ -164,7 +161,6 @@ export const HISTORY_FILTERS: readonly HistoryFilter[] = [
     name: "period",
     label: "Criado em",
     options: [
-      { value: HISTORY_FILTER_ALL, label: "Qualquer período" },
       { value: "today", label: "Hoje" },
       { value: "7d", label: "Últimos 7 dias" },
       { value: "30d", label: "Últimos 30 dias" },
@@ -174,21 +170,39 @@ export const HISTORY_FILTERS: readonly HistoryFilter[] = [
     name: "actor",
     label: "Origem da decisão",
     options: [
-      { value: HISTORY_FILTER_ALL, label: "Todas" },
       { value: "operator", label: "Pessoa" },
       { value: "automation", label: "Automação" },
     ],
   },
 ];
 
-/** O valor do `NuxtSelect` a partir do recorte da URL (vazio vira "Todas"). */
-export function historyFilterValue(current: string | undefined | null): string {
-  return current || HISTORY_FILTER_ALL;
+type HistoryFilterValues = Partial<Record<HistoryFilterName, string | undefined | null>>;
+
+/** As dimensões do painel de filtros: uma escolha única por recorte. */
+export function historyDimensions(): FilterDimension[] {
+  return HISTORY_FILTERS.map((filter) => ({
+    id: filter.name,
+    label: filter.label,
+    type: "single-select",
+    options: filter.options,
+  }));
 }
 
-/** O valor que vai para a URL (`setFilter`): "Todas" e "Qualquer período" saem dela. */
-export function historyFilterQueryValue(value: string): string {
-  return value === HISTORY_FILTER_ALL ? "" : value;
+/** O recorte de hoje na forma do painel (o "Qualquer período" do backend não é recorte). */
+export function historyPanelFilters(current: HistoryFilterValues): ActiveFilters {
+  const out: ActiveFilters = {};
+  for (const filter of HISTORY_FILTERS) {
+    const value = current[filter.name];
+    if (value && filter.options.some((option) => option.value === value)) out[filter.name] = [value];
+  }
+  return out;
+}
+
+/** O recorte do painel de volta para a URL: os quatro de uma vez (vazio sai dela). */
+export function historyFiltersFromPanel(active: ActiveFilters): Record<HistoryFilterName, string> {
+  return Object.fromEntries(
+    HISTORY_FILTERS.map((filter) => [filter.name, active[filter.name]?.[0] ?? ""]),
+  ) as Record<HistoryFilterName, string>;
 }
 
 /**
@@ -196,12 +210,10 @@ export function historyFilterQueryValue(value: string): string {
  * lista não conhece não vira chip (o composable já filtra a URL antes).
  */
 export function historyActiveFilters(
-  current: Partial<Record<HistoryFilterName, string | undefined | null>>,
+  current: HistoryFilterValues,
 ): Array<{ name: HistoryFilterName; label: string }> {
   return HISTORY_FILTERS.flatMap((filter) => {
-    const value = historyFilterValue(current[filter.name]);
-    if (value === HISTORY_FILTER_ALL) return [];
-    const option = filter.options.find((entry) => entry.value === value);
+    const option = filter.options.find((entry) => entry.value === current[filter.name]);
     return option ? [{ name: filter.name, label: `${filter.label}: ${option.label}` }] : [];
   });
 }

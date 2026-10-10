@@ -4,7 +4,8 @@
 // Três blocos, todos servidos pela API de relatórios:
 //   · Gestão do dia: aproveitamento médio, capacidade % e a tabela de atrasos;
 //   · Relatórios por período: Histórico · Produtividade · Desperdício, com
-//     filtros (datas, ficha, posto, operador) e download CSV (link direto);
+//     o painel de filtros único da suíte (`OperatorFilterPanel`: período, ficha,
+//     posto, operador e os favoritos do gestor) e download CSV (link direto);
 //   · Mapa código-cego ↔ preparo: a correlação que as telas de chão NUNCA
 //     mostram (etiquetas circulam só com o código) — aqui é a visão de gestor.
 // Sem gráficos: tabelas da suíte (`OperatorTable`) e números pré-formatados pelas
@@ -14,11 +15,20 @@ import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation
 import { isStale, isoForOffset } from "~/presentation/production";
 import {
   periodAnchor,
+  periodLabel,
   periodOfDay,
   resolvePeriod,
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
-import { REPORT_KINDS, type ReportFiltersQuery } from "~/presentation/reports";
+import {
+  REPORT_KINDS,
+  REPORT_PERIOD_PRESETS,
+  reportDimensions,
+  reportPanelFilters,
+  reportRecortesFromPanel,
+  type ReportFiltersQuery,
+} from "~/presentation/reports";
+import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 
 // ── Gestão do dia (KPIs + atrasos + mapa cego) ─────────────────────────────
 // O "Período" do kit em Dia (Tipo 2): ‹ recua um dia; o futuro não tem gestão.
@@ -64,17 +74,21 @@ const {
 } = useReportFilters(initialFilters);
 const activeKind = computed(() => filters.value.report_kind);
 
-// O intervalo do relatório é o "Período" do kit (Tipo 2) com personalizado: os
-// últimos 7 dias por padrão, ‹ › andam um período igual. Todo filtro aplica ao mudar;
-// o operador digitado espera a pessoa parar de digitar.
-const reportPeriod = ref<PeriodSelection>({ preset: "7d", from: "", to: "" });
-function changeReportPeriod(next: PeriodSelection) {
-  reportPeriod.value = next;
-  const range = resolvePeriod(next, { today: todayISO, max: todayISO });
-  filterDraft.date_from = range.date_from;
-  filterDraft.date_to = range.date_to;
-  applyFilters();
-}
+// O intervalo do relatório é a Data do painel de filtros, com "Escolher as datas": os
+// últimos 7 dias por padrão. Todo filtro aplica ao mudar; o operador digitado espera a
+// pessoa parar de digitar.
+const DEFAULT_REPORT_PERIOD: PeriodSelection = { preset: "7d", from: "", to: "" };
+const reportPeriodSelection = ref<PeriodSelection>(DEFAULT_REPORT_PERIOD);
+const reportPeriod = computed<PeriodSelection | undefined>({
+  get: () => reportPeriodSelection.value,
+  set: (next) => {
+    reportPeriodSelection.value = next ?? DEFAULT_REPORT_PERIOD;
+    const range = resolvePeriod(reportPeriodSelection.value, { today: todayISO, max: todayISO });
+    filterDraft.date_from = range.date_from;
+    filterDraft.date_to = range.date_to;
+    applyFilters();
+  },
+});
 watch(
   () => [filterDraft.recipe_ref, filterDraft.position_ref, filterDraft.sort],
   () => applyFilters(),
@@ -126,30 +140,26 @@ const reportKind = computed({
   },
 });
 
-// Listas curtas e fixas: `NuxtSelect`. A ficha técnica cresce: `NuxtSelectMenu` com busca.
-const ALL = "__all__";
-const recipeItems = computed(() => [
-  { value: ALL, label: "Todas" },
-  ...availableRecipes.value.map((recipe) => ({ value: recipe.ref, label: recipe.name })),
-]);
-const positionItems = computed(() => [
-  { value: ALL, label: "Todos" },
-  ...availablePositions.value.map((position) => ({ value: position.ref, label: position.name })),
-]);
-const recipeRef = computed({
-  get: () => filterDraft.recipe_ref || ALL,
-  set: (value: string) => {
-    filterDraft.recipe_ref = value === ALL ? "" : value;
-  },
-});
-const positionRef = computed({
-  get: () => filterDraft.position_ref || ALL,
-  set: (value: string) => {
-    filterDraft.position_ref = value === ALL ? "" : value;
-  },
+// O período à vista sempre (o chip do painel só aparece fora do padrão).
+const reportPeriodText = computed(() =>
+  periodLabel(
+    reportPeriodSelection.value,
+    resolvePeriod(reportPeriodSelection.value, { today: todayISO, max: todayISO }),
+    todayISO,
+  ),
+);
+
+// Ficha técnica, posto e operador moram no painel de filtros (a lista da ficha ganha a
+// busca sozinha quando cresce). Um favorito troca os três e o período de uma vez.
+const panelDimensions = computed(() =>
+  reportDimensions(availableRecipes.value, availablePositions.value),
+);
+const panelFilters = computed<ActiveFilters>({
+  get: () => reportPanelFilters(filterDraft),
+  set: (next) => Object.assign(filterDraft, reportRecortesFromPanel(next)),
 });
 const sortItems = computed(() => [
-  { value: "default", label: "Padrão" },
+  { value: "default", label: "Ordem padrão" },
   ...(filterDraft.report_kind === "history"
     ? [
         { value: "date_desc", label: "Data mais recente" },
@@ -161,7 +171,6 @@ const sortItems = computed(() => [
   { value: "quantity_desc", label: "Maior quantidade" },
   { value: "quantity_asc", label: "Menor quantidade" },
 ]);
-const touch = useTouchPointer();
 
 // Colunas: a chave fica (fixada); as de apoio somem no celular por CSS.
 const NUM = { class: { th: "text-right", td: "text-right tabular-nums whitespace-nowrap" } };
@@ -394,39 +403,31 @@ function refreshAll() {
         </p>
       </div>
 
-      <!-- Os filtros aplicam ao mudar: nada de "Aplicar". -->
-      <div class="mb-3 flex flex-wrap items-end gap-3" data-report-filters>
-        <NuxtFormField label="Período">
-          <OperatorPeriodPicker
-            :model-value="reportPeriod"
-            :presets="['day', 'week', 'month', '7d', '28d']"
-            custom
-            :today="todayISO"
-            :max="todayISO"
-            label="Período do relatório"
-            align="start"
-            @update:model-value="changeReportPeriod"
-          />
-        </NuxtFormField>
-        <NuxtFormField label="Ficha técnica">
-          <NuxtSelectMenu
-            v-model="recipeRef"
-            :items="recipeItems"
-            value-key="value"
-            class="w-56"
-            :search-input="{ autofocus: !touch, placeholder: 'Buscar ficha técnica' }"
-            aria-label="Ficha técnica"
-          />
-        </NuxtFormField>
-        <NuxtFormField label="Posto">
-          <NuxtSelect v-model="positionRef" :items="positionItems" value-key="value" class="w-40" aria-label="Posto" />
-        </NuxtFormField>
-        <NuxtFormField label="Operador">
-          <NuxtInput v-model="filterDraft.operator_ref" placeholder="Nome ou usuário" class="w-44" aria-label="Operador" />
-        </NuxtFormField>
-        <NuxtFormField label="Ordenar">
-          <NuxtSelect v-model="filterDraft.sort" :items="sortItems" value-key="value" class="w-48" aria-label="Ordenar" />
-        </NuxtFormField>
+      <!-- O painel de filtros único (período, ficha, posto, operador e os favoritos); os
+           recortes aplicam ao mudar, nada de "Aplicar". A ordem não é recorte: o seletor
+           dela fica ao lado. -->
+      <div class="mb-3 flex flex-wrap items-center gap-2" data-report-filters>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          v-model:period="reportPeriod"
+          :dimensions="panelDimensions"
+          :period-presets="REPORT_PERIOD_PRESETS"
+          custom-period
+          :default-period="DEFAULT_REPORT_PERIOD"
+          :today="todayISO"
+          :max="todayISO"
+          surface="production"
+          screen="reports"
+        />
+        <NuxtSelect
+          v-model="filterDraft.sort"
+          :items="sortItems"
+          value-key="value"
+          icon="i-lucide-arrow-down-up"
+          class="ms-auto w-48"
+          aria-label="Ordenar"
+          data-report-sort
+        />
         <p
           id="report-date-help"
           role="status"
@@ -434,7 +435,7 @@ function refreshAll() {
           class="basis-full text-xs"
           :class="filterError ? 'text-error' : 'text-muted-foreground'"
         >
-          {{ filterError || "Período máximo: 93 dias." }}
+          {{ filterError || `${reportPeriodText}. Período máximo: 93 dias.` }}
         </p>
       </div>
 
