@@ -20,13 +20,36 @@ export interface MoveModeOption {
   label: string;
 }
 
+// TRANSFERIR É O VERBO (dono, 10/10/2026): o diálogo é "Transferir itens", e os modos
+// são o DESTINO, não três verbos. Para outra comanda, para uma comanda nova (o que se
+// chamava "Dividir", e colidia com o "Dividir conta" do Pagamento, que é pagar em
+// partes) ou juntar a comanda inteira com outra.
 const MODE_LABELS: Record<MoveMode, string> = {
-  split: "Dividir",
-  transfer: "Transferir",
-  merge: "Juntar",
+  transfer: "Outra comanda",
+  split: "Comanda nova",
+  merge: "Juntar comandas",
 };
 
-const MODE_ORDER: MoveMode[] = ["split", "transfer", "merge"];
+const MODE_ORDER: MoveMode[] = ["transfer", "split", "merge"];
+
+/** O botão do rodapé: o verbo do ato (transferir os itens, ou juntar as comandas). */
+export function moveSubmitLabel(mode: MoveMode): string {
+  return mode === "merge" ? "Juntar" : "Transferir";
+}
+
+/** O modo com que o diálogo abre: o pedido (Juntar, do menu da comanda) se o canal o
+ *  oferece; senão outra comanda quando há para onde ir, e a comanda nova quando não há. */
+export function initialMoveMode(
+  modes: readonly MoveModeOption[],
+  requested: MoveMode | undefined,
+  hasOtherTabs: boolean,
+): MoveMode {
+  const offered = new Set(modes.map((option) => option.ref));
+  if (requested && offered.has(requested)) return requested;
+  if (hasOtherTabs && offered.has("transfer")) return "transfer";
+  if (offered.has("split")) return "split";
+  return modes[0]?.ref ?? "transfer";
+}
 
 interface TabManipulationCapability {
   allows_split?: boolean;

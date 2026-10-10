@@ -576,6 +576,55 @@ class POSFireTabTests(TestCase):
         self.assertIsNotNone(ticket.cancelled_at)
         self.assertEqual(list(cancel.fired_lines), [first_line])
 
+    def test_diminuir_cancela_na_cozinha_so_a_diferenca(self) -> None:
+        """Decisão do dono (10/10/2026): a conta diminui uma linha já enviada e a
+        cozinha recebe o cancelamento SÓ da diferença; a linha segue enviada."""
+        from shopman.backstage.projections.pos import _kitchen_status_by_line
+
+        session = self._save(self._open_tab(), [
+            {"line_id": "L-A", "sku": "FIRE-A", "name": "Fire A", "qty": 3, "unit_price_q": 1000},
+        ])
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        # O balcão grava a conta com 1 e pede o cancelamento das 2 que sobraram.
+        self._save(session.session_key, [
+            {"line_id": "L-A", "sku": "FIRE-A", "name": "Fire A", "qty": 1, "unit_price_q": 1000},
+        ])
+        result = pos_service.cancel_fired_pos_tab_lines(
+            channel_ref="pdv", session_key=session.session_key,
+            line_ids=["L-A"], quantities={"L-A": 2},
+            actor="pos:alice", operator_username="alice",
+        )
+        self.assertEqual(list(result.fired_lines), ["L-A"])
+        live = KDSTicket.objects.exclude(status="cancelled").get(session_key=session.session_key)
+        self.assertEqual([(it["line_id"], it["qty"]) for it in live.items], [("L-A", 1)])
+        receipt = KDSTicket.objects.get(session_key=session.session_key, status="cancelled")
+        self.assertEqual([(it["line_id"], it["qty"], it["partial_cancel"]) for it in receipt.items], [("L-A", 2, True)])
+        self.assertIsNone(receipt.acknowledged_at)
+        result.session.refresh_from_db()
+        self.assertEqual(result.session.data["fired_qty"], {"L-A": 1})
+        # O selo da linha segue o ticket vivo, não o comprovante da diferença.
+        self.assertEqual(_kitchen_status_by_line(session.session_key), {"L-A": "pending"})
+        item = build_open_tab(result.session)["items"][0]
+        self.assertTrue(item["fired"])
+
+    def test_diminuir_tudo_ou_mais_cancela_a_linha_inteira(self) -> None:
+        session = self._open_tab_with_two_items()
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        result = pos_service.cancel_fired_pos_tab_lines(
+            channel_ref="pdv", session_key=session.session_key,
+            line_ids=["L-A"], quantities={"L-A": 5},
+            actor="pos:alice", operator_username="alice",
+        )
+        self.assertEqual(list(result.fired_lines), ["L-B"])
+        receipt = KDSTicket.objects.get(session_key=session.session_key, status="cancelled")
+        self.assertNotIn("partial_cancel", receipt.items[0])
+
     def test_unfire_only_touches_targeted_progressive_ticket(self) -> None:
         session = self._open_tab_with_two_items()
         line_ids = sorted(it["line_id"] for it in session.items)

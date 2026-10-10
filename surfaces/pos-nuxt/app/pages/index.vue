@@ -29,6 +29,13 @@ const liveStatus = usePosLiveStatus();
 // folha de baixo. Do desktop (1024px) para cima ela segue como coluna. A régua é a do
 // kit (`useScreen`, segura para o SSR): até a hidratação, mesa; depois, a largura real.
 const { belowLg: ticketAsSheet } = useScreen();
+// A COLUNA DA COMANDA (dono, 10/10): largura ajustável pela alça do Nuxt UI, em rem.
+// O mínimo é o menor em que a grade de ações e o Pagamento cabem sem cortar; o
+// máximo deixa a área de produtos com espaço para a barra da venda em 1280.
+const TICKET_MIN_REM = 22;
+const TICKET_DEFAULT_REM = 25;
+const TICKET_MAX_REM = 32;
+
 
 const apiPath = useApiPath();
 const action = usePosAction();
@@ -185,6 +192,8 @@ const {
   addOptionsProduct,
   cancelOptionsPrompt,
   setQty,
+  addLineLike,
+  cancelLinesInKitchen,
   restoreItem,
   setLineNotes,
   setLineDiscount,
@@ -668,6 +677,14 @@ async function payOnSheet(method: string) {
   const letter = QUICK_PAYMENT_KEYS[method];
   if (letter) paymentWorkspaceRef.value?.pressMethodKey(letter);
 }
+// DIVIDIR A CONTA a partir da comanda (dono, 10/10): o mesmo modal do Pagamento
+// (decisão de 05/09: dividir é modal), aberto já no Pagamento, com o total da revisão.
+async function splitFromTicket() {
+  await prepareCheckout();
+  if (!checkoutMode.value) return;
+  await nextTick();
+  paymentWorkspaceRef.value?.openSplit();
+}
 // ENVIO AUTOMÁTICO (opcional por estação, desligado por padrão; dono, plano §13
 // item 3): a linha nova de uma estação com o interruptor ligado vai sozinha quando
 // o operador sai da comanda ou ela fica parada. Nunca no meio do lançamento, nunca
@@ -686,12 +703,16 @@ async function autoFireLeftovers() {
   await fireTab(auto.length === unfired.length ? undefined : auto);
 }
 let autoFireTimer: ReturnType<typeof setTimeout> | null = null;
+// A coluna segura o relógio enquanto há rascunho aberto (desconto, observação) ou
+// linhas marcadas: a linha não vai à cozinha no meio da observação sendo escrita.
+const autoFireHeld = ref(false);
+const autoFireSkuList = computed(() => [...autoFireSkus.value]);
 watch(
-  () => [cart.tabSessionKey, cart.items.map((item) => `${item.line_id}:${item.qty}:${item.fired ? 1 : 0}`).join("|")],
+  () => [cart.tabSessionKey, cart.items.map((item) => `${item.line_id}:${item.qty}:${item.fired ? 1 : 0}`).join("|"), autoFireHeld.value],
   () => {
     if (autoFireTimer) clearTimeout(autoFireTimer);
     autoFireTimer = null;
-    if (!autoFireSkus.value.size || !inSaleView.value) return;
+    if (!autoFireSkus.value.size || !inSaleView.value || autoFireHeld.value) return;
     autoFireTimer = setTimeout(() => { void autoFireLeftovers(); }, AUTO_FIRE_IDLE_MS);
   },
 );
@@ -838,9 +859,7 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
   }
   list.push({ label: "Últimas vendas", icon: "i-lucide-history", priority: 1, onSelect: () => { recentSalesOpen.value = true; } });
   list.push({ label: "Atualizar", icon: "i-lucide-refresh-cw", disabled: pending.value, onSelect: () => void refresh() });
-  if (saleOpen.value && hasOpenTab.value && !editing.value) {
-    list.push({ label: "Liberar comanda", icon: "i-lucide-x", color: "error", onSelect: () => tabHeaderRef.value?.askRelease() });
-  }
+  // "Liberar comanda" mora no "Comanda ⋯" do cabeçalho da coluna (uma porta por gesto).
   return list;
 });
 // A VENDA SEM CONEXÃO: a fila de vendas guardadas e a lista que o aviso abre.
@@ -923,10 +942,16 @@ provideOperatorShortcuts(POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION);
 // Transferir a partir do modo seleção da comanda (v4): o diálogo nasce com as linhas
 // marcadas, pelo botão ou pelo F10 que ele anuncia. Sem marcas, o F10 abre vazio.
 const movePreselected = ref<string[]>([]);
-const cartPanelRef = ref<{ moveSelection: () => boolean } | null>(null);
-function openMoveWith(lineIds?: string[]) {
+const moveInitialMode = ref<"transfer" | "merge" | undefined>(undefined);
+const cartPanelRef = ref<{ fireSelection: () => boolean; moveSelection: () => boolean } | null>(null);
+function openMoveWith(lineIds?: string[], mode?: "transfer" | "merge") {
   movePreselected.value = lineIds ?? [];
+  moveInitialMode.value = mode;
   void openMoveDialog();
+}
+// "Reenviar com a observação": cancela na cozinha e envia de novo só esta linha.
+async function resendLine(lineId: string) {
+  if (await unfireSelected([lineId])) await fireTab([lineId]);
 }
 
 async function gotoTabInput() {
@@ -1140,11 +1165,13 @@ function onGlobalKeydown(event: KeyboardEvent) {
     case "F9":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openDiscount();
-      else if (inSaleView.value && cart.items.length && !editing.value) fireTab();
+      // Com linhas marcadas, envia SÓ as marcadas (o botão diz "Enviar 3 marcadas").
+      else if (inSaleView.value && cart.items.length && !editing.value && !cartPanelRef.value?.fireSelection()) fireTab();
       return;
     case "F10":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openSplit();
+      // Com linhas marcadas, o diálogo nasce com elas (a tecla anunciada no Transferir).
       else if (inSaleView.value && cart.items.length && !editing.value && !cartPanelRef.value?.moveSelection()) openMoveWith();
       return;
     case "Enter":
@@ -1189,127 +1216,146 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-pos-sale-screen>
-    <OperatorPageHeader
-      v-if="pos"
-      :title="saleHeaderTitle"
-      :actions="headerActions"
-      :actions-label="saleOpen ? 'Mais ações da comanda' : 'Mais ações'"
-      :alerts="screenAlerts"
-      data-pos-context-header
+    <!-- A COMANDA OCUPA A ALTURA INTEIRA (dono, 10/10, exceção do PDV): na mesa, a
+         coluna da direita vai de cima a baixo como a barra lateral, e o cabeçalho, a
+         barra da venda e os filtros moram só na largura entre as duas. Abaixo do `lg`
+         a comanda é a folha de baixo e o cabeçalho volta a ser a primeira faixa. -->
+    <!-- A coluna da comanda é a `OperatorSideColumn` do kit (DashboardSidebar do Nuxt
+         UI do lado direito): largura AJUSTÁVEL pela alça da primitiva, mínimo e máximo
+         em rem, gravada no cookie `pos-sale-sidebar-ticket`; dois cliques voltam ao
+         padrão. Abaixo do `lg` a comanda é a folha de baixo, sem coluna. -->
+    <OperatorSideColumn
+      storage-key="pos-sale"
+      column-id="ticket"
+      :docked="!ticketAsSheet"
+      :min-size="TICKET_MIN_REM"
+      :max-size="TICKET_MAX_REM"
+      :default-size="TICKET_DEFAULT_REM"
+      :column-attrs="{ 'data-pos-ticket-column': true }"
+      data-pos-sale-layout
     >
-      <!-- A busca da suíte na Venda: o campo e o `/` são do produto (F3), então a suíte
-           abre no Ctrl K, num diálogo, sem um segundo campo na tela. -->
-      <template #search>
-        <OperatorSuiteSearch variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
-      </template>
-      <template v-if="inSaleView && !editing && !result" #lead>
-        <NuxtButton
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-arrow-left"
-          square
-          :aria-label="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
-          :title="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
-          data-pos-back
-          @click="checkoutMode ? (checkoutMode = false) : goToTabs()"
-        />
-      </template>
-      <template #status>
-        <OperatorLiveStatus
-          :tone="liveStatus.view.value.tone"
-          :time="liveStatus.time.value"
-          :label="liveStatus.view.value.label"
-          :detail="liveStatus.view.value.detail"
-        />
-        <NuxtBadge
-          v-if="inSaleView && !checkoutMode && unsaved"
-          color="warning"
-          icon="i-lucide-cloud-off"
-          label="Não salvo"
-          role="status"
-          :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
-          data-pos-unsaved
-        />
-        <!-- PIX pendente que saiu da tela de resultado: o selo segue, com o polling por
-             baixo até resolver ou expirar (aí vira aviso passageiro). -->
-        <NuxtBadge
-          v-if="pendingPixOrderRef"
-          color="info"
-          icon="i-lucide-loader-circle"
-          role="status"
-          :title="`Pix do pedido ${pendingPixOrderRef} aguardando confirmação`"
-          data-pos-pix-pending
-        >Pix aguardando · {{ pendingPixOrderRef }}</NuxtBadge>
-      </template>
-      <!-- A BARRA DA VENDA (carta branca do PDV, WP-FASE2 §7): cliente, recebimento e
-           quando, os fatos do PEDIDO, no lugar da toolbar enquanto a comanda está aberta,
-           e seguem durante o checkout (só leitura). -->
-      <template v-if="inSaleView && !result" #below>
-        <div class="flex min-h-12 items-center gap-2 overflow-x-auto border-b border-default px-3 py-1.5 no-scrollbar" data-pos-sale-bar>
-          <PosTabHeader
-            ref="tabHeaderRef"
-            v-model:customer-name="cart.customerName"
-            v-model:customer-phone="cart.customerPhone"
-            v-model:customer-tax-id="cart.customerTaxId"
-            v-model:customer-email="cart.customerEmail"
-            class="min-w-0 flex-1"
-            :tab-display="cart.tabDisplay"
-            :tab-number="cart.tabNumber"
-            :opened-at="cart.tabOpenedAt"
-            :seating-spots="pos.seating_spots || []"
-            :seating-spot-ref="cart.tabSeatingSpot"
-            :occupied-spot-refs="tabs.filter((tab) => tab.seating_spot_ref && tab.ref !== cart.tabRef).map((tab) => tab.seating_spot_ref!)"
-            :sales-mode="cart.salesMode"
-            :has-open-tab="hasOpenTab"
-            :can-rename="canRenameTab"
-            :customer-lookup="customerLookup"
-            :lookup-busy="lookupBusy"
-            :search-results="customerSearchResults"
-            :search-busy="customerSearchBusy"
-            :customer-resolved-new="customerResolvedNew"
-            :new-customer-prefs="pendingCustomerPrefs"
-            :customer-decision="customerDecision"
-            :customer-merge-busy="customerMergeBusy"
-            :customer-release-busy="customerReleaseBusy"
-            :read-only="checkoutMode"
-            :fulfillment-type="cart.fulfillmentType"
-            :fulfillment-label="fulfillmentChipLabel"
-            :schedule-label="scheduleChipLabel"
-            :scheduled="scheduleChipActive"
-            :has-fired-items="cart.items.some((item) => item.fired)"
-            :customer-required="customerRequiredForSchedule"
-            :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
-            :schedule-conflict="scheduleChipConflict"
-            :schedule-conflict-reason="scheduleConflictReason"
-            :loading="busy"
-            @sales-mode-change="requestSalesMode"
-            @customer-closed="focusOrderEntry"
-            @customer-locked="notifyCustomerLocked"
-            @rename="(ref: string, spot?: string) => { if (!editing) void renameTab(ref, spot); }"
-            @clear="clearOrDiscard"
-            @clear-customer="clearCustomer"
-            @lookup-customer="lookupCustomer"
-            @resolve-customer="(done) => { void resolveCustomer().then(done) }"
-            @decision-confirm="confirmCustomerDecision"
-            @decision-cancel="cancelCustomerDecision"
-            @decision-merge="mergeConflictCustomers"
-            @decision-release="releaseConflictContact"
-            @decision-pick="pickConflictCandidate"
-            @search="searchCustomers"
-            @select-result="selectCustomerResult"
-            @apply-customer-favorite="applyCustomerFavorite"
-            @apply-preference="applyCustomerPreference"
-            @repeat-customer-last-order="repeatCustomerLastOrder"
-            @open-fulfillment="openFulfillmentHere"
-            @open-schedule="openScheduleHere"
-            @open-customer="paymentWorkspaceRef?.openCustomer()"
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-pos-work-column>
+      <OperatorPageHeader
+        v-if="pos"
+        :title="saleHeaderTitle"
+        :actions="headerActions"
+        :actions-label="saleOpen ? 'Mais ações da comanda' : 'Mais ações'"
+        :alerts="screenAlerts"
+        data-pos-context-header
+      >
+        <!-- A busca da suíte na Venda: o campo e o `/` são do produto (F3), então a suíte
+             abre no Ctrl K, num diálogo, sem um segundo campo na tela. -->
+        <template #search>
+          <OperatorSuiteSearch variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
+        </template>
+        <template v-if="inSaleView && !editing && !result" #lead>
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            square
+            :aria-label="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
+            :title="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
+            data-pos-back
+            @click="checkoutMode ? (checkoutMode = false) : goToTabs()"
           />
-        </div>
-      </template>
-    </OperatorPageHeader>
-
-    <div class="flex min-h-0 flex-1 max-lg:flex-col">
-    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        </template>
+        <template #status>
+          <OperatorLiveStatus
+            :tone="liveStatus.view.value.tone"
+            :time="liveStatus.time.value"
+            :label="liveStatus.view.value.label"
+            :detail="liveStatus.view.value.detail"
+          />
+          <NuxtBadge
+            v-if="inSaleView && !checkoutMode && unsaved"
+            color="warning"
+            icon="i-lucide-cloud-off"
+            label="Não salvo"
+            role="status"
+            :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
+            data-pos-unsaved
+          />
+          <!-- PIX pendente que saiu da tela de resultado: o selo segue, com o polling por
+               baixo até resolver ou expirar (aí vira aviso passageiro). -->
+          <NuxtBadge
+            v-if="pendingPixOrderRef"
+            color="info"
+            icon="i-lucide-loader-circle"
+            role="status"
+            :title="`Pix do pedido ${pendingPixOrderRef} aguardando confirmação`"
+            data-pos-pix-pending
+          >Pix aguardando · {{ pendingPixOrderRef }}</NuxtBadge>
+        </template>
+        <!-- A BARRA DA VENDA (carta branca do PDV, WP-FASE2 §7): cliente, recebimento e
+             quando, os fatos do PEDIDO, no lugar da toolbar enquanto a comanda está aberta,
+             e seguem durante o checkout (só leitura). -->
+        <template v-if="inSaleView && !result" #below>
+          <!-- `@container`: os chips da barra trocam rótulo por ícone (e somem as teclas)
+               pela largura DESTA barra, não da janela: ela mora entre a barra lateral
+               e a comanda, e a largura dela muda com as duas. -->
+          <div class="@container flex min-h-12 items-center gap-2 overflow-x-auto border-b border-default px-3 py-1.5 no-scrollbar" data-pos-sale-bar>
+            <PosTabHeader
+              ref="tabHeaderRef"
+              v-model:customer-name="cart.customerName"
+              v-model:customer-phone="cart.customerPhone"
+              v-model:customer-tax-id="cart.customerTaxId"
+              v-model:customer-email="cart.customerEmail"
+              class="min-w-0 flex-1"
+              :tab-display="cart.tabDisplay"
+              :tab-number="cart.tabNumber"
+              :opened-at="cart.tabOpenedAt"
+              :seating-spots="pos.seating_spots || []"
+              :seating-spot-ref="cart.tabSeatingSpot"
+              :occupied-spot-refs="tabs.filter((tab) => tab.seating_spot_ref && tab.ref !== cart.tabRef).map((tab) => tab.seating_spot_ref!)"
+              :sales-mode="cart.salesMode"
+              :has-open-tab="hasOpenTab"
+              :can-rename="canRenameTab"
+              :customer-lookup="customerLookup"
+              :lookup-busy="lookupBusy"
+              :search-results="customerSearchResults"
+              :search-busy="customerSearchBusy"
+              :customer-resolved-new="customerResolvedNew"
+              :new-customer-prefs="pendingCustomerPrefs"
+              :customer-decision="customerDecision"
+              :customer-merge-busy="customerMergeBusy"
+              :customer-release-busy="customerReleaseBusy"
+              :read-only="checkoutMode"
+              :fulfillment-type="cart.fulfillmentType"
+              :fulfillment-label="fulfillmentChipLabel"
+              :schedule-label="scheduleChipLabel"
+              :scheduled="scheduleChipActive"
+              :has-fired-items="cart.items.some((item) => item.fired)"
+              :customer-required="customerRequiredForSchedule"
+              :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
+              :schedule-conflict="scheduleChipConflict"
+              :schedule-conflict-reason="scheduleConflictReason"
+              :loading="busy"
+              @sales-mode-change="requestSalesMode"
+              @customer-closed="focusOrderEntry"
+              @customer-locked="notifyCustomerLocked"
+              @rename="(ref: string, spot?: string) => { if (!editing) void renameTab(ref, spot); }"
+              @clear="clearOrDiscard"
+              @clear-customer="clearCustomer"
+              @lookup-customer="lookupCustomer"
+              @resolve-customer="(done) => { void resolveCustomer().then(done) }"
+              @decision-confirm="confirmCustomerDecision"
+              @decision-cancel="cancelCustomerDecision"
+              @decision-merge="mergeConflictCustomers"
+              @decision-release="releaseConflictContact"
+              @decision-pick="pickConflictCandidate"
+              @search="searchCustomers"
+              @select-result="selectCustomerResult"
+              @apply-customer-favorite="applyCustomerFavorite"
+              @apply-preference="applyCustomerPreference"
+              @repeat-customer-last-order="repeatCustomerLastOrder"
+              @open-fulfillment="openFulfillmentHere"
+              @open-schedule="openScheduleHere"
+              @open-customer="paymentWorkspaceRef?.openCustomer()"
+            />
+          </div>
+        </template>
+      </OperatorPageHeader>
 
       <!-- Abaixo do desktop a comanda é a folha de baixo: a grade ganha o respiro dela. -->
       <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-3 pt-2.5 pb-3 max-md:overflow-x-clip max-md:overflow-y-auto md:overflow-hidden">
@@ -1556,56 +1602,61 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- TICKET / COMANDA — full-height right flank (cart-direita, reaches the top
-         edge alongside the rail; on mobile it wraps below the product grid). -->
-    <aside
-      v-if="pos && inSaleView && !checkoutMode && !orderSetupPending"
-      class="relative z-30 flex shrink-0 flex-col lg:h-full lg:w-[360px] lg:border-l lg:border-border lg:bg-card xl:w-[400px]"
-      data-pos-ticket
-    >
-        <div class="min-h-0 flex-1 md:overflow-hidden">
-          <PosCartPanel
-            ref="cartPanelRef"
-            :sheet="ticketAsSheet"
-            :tab-title="hasOpenTab ? tabTitleView(cart.tabDisplay, cart.tabNumber).title : ''"
-            :kitchen-stations="kitchenStations"
-            :quick-payments="quickPayments"
-            :auto-fire="autoFireOn"
-            :items="cart.items"
-            :total="saleTotal"
-            :requires-tab="tabRequiredForCart"
-            :has-open-tab="hasOpenTab"
-            :loading="busy"
-            :saving="saving"
-            :fire-action="fireAction"
-            :unfire-action="unfireAction"
-            :firing="firing"
-            :discount-reasons="checkoutContract?.discount_reasons || []"
-            :line-adjustments-blocked-reason="editing ? ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED : undefined"
-            :primary-label="editing ? 'Salvar alterações' : undefined"
-            :primary-icon="editing ? 'lucide:save' : undefined"
-            :hide-move="editing"
-            @increment="(lineId) => setQty(lineId, lineQty(lineId) + 1)"
-            @decrement="(lineId) => setQty(lineId, lineQty(lineId) - 1)"
-            @remove="(lineId) => setQty(lineId, 0)"
-            @restore="restoreItem"
-            @set-qty="(lineId, qty) => setQty(lineId, qty)"
-            @set-notes="setLineNotes"
-            @set-discount="setLineDiscount"
-            @prepare="editing ? saveOrderEdit() : prepareCheckout()"
-            @move="openMoveWith"
-            @fire="fireTab"
-            @pay="payOnSheet"
-            @auto-fire-settings="navigateTo('/settings/kitchen')"
-            @unfire="unfireTab"
-            @fire-lines="(ids, complete) => fireTab(ids).then(complete)"
-            @unfire-lines="(ids, complete) => unfireSelected(ids).then(complete)"
-            @request-tab="requestTabAssociation('start')"
-          />
+    <!-- COMANDA: na mesa, a coluna inteira da direita (de cima a baixo, como o rail),
+         com a largura ajustável; abaixo do `lg` é a folha de baixo (o próprio
+         `PosCartPanel` em modo folha), sem coluna. -->
+    <template v-if="pos && inSaleView && !checkoutMode && !orderSetupPending" #column>
+        <div class="flex min-h-0 flex-1 flex-col md:overflow-hidden">
+            <PosCartPanel
+              ref="cartPanelRef"
+              :sheet="ticketAsSheet"
+              :tab-title="hasOpenTab ? tabTitleView(cart.tabDisplay, cart.tabNumber).title : ''"
+              :kitchen-stations="kitchenStations"
+              :quick-payments="quickPayments"
+              :auto-fire="autoFireOn"
+              :auto-fire-skus="autoFireSkuList"
+              :offline="offlineSales.isOnline.value === false"
+              :items="cart.items"
+              :total="saleTotal"
+              :requires-tab="tabRequiredForCart"
+              :has-open-tab="hasOpenTab"
+              :loading="busy"
+              :saving="saving"
+              :fire-action="fireAction"
+              :unfire-action="unfireAction"
+              :firing="firing"
+              :discount-reasons="checkoutContract?.discount_reasons || []"
+              :line-adjustments-blocked-reason="editing ? ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED : undefined"
+              :primary-label="editing ? 'Salvar alterações' : undefined"
+              :primary-icon="editing ? 'lucide:save' : undefined"
+              :hide-move="editing"
+              @increment="(lineId) => setQty(lineId, lineQty(lineId) + 1)"
+              @decrement="(lineId) => setQty(lineId, lineQty(lineId) - 1)"
+              @remove="(lineId) => setQty(lineId, 0)"
+              @restore="restoreItem"
+              @set-qty="(lineId, qty) => setQty(lineId, qty)"
+              @set-notes="setLineNotes"
+              @set-discount="setLineDiscount"
+              @prepare="editing ? saveOrderEdit() : prepareCheckout()"
+              @move="openMoveWith"
+              @add-like="(lineId, qty, done) => done(addLineLike(lineId, qty))"
+              @resend="resendLine"
+              @cancel-in-kitchen="(entries, done) => cancelLinesInKitchen(entries).then(done)"
+              @release="tabHeaderRef?.askRelease()"
+              @auto-fire-hold="(held) => { autoFireHeld = held; }"
+              @fire="fireTab"
+              @pay="payOnSheet"
+              @split="splitFromTicket"
+              @auto-fire-settings="navigateTo('/settings/kitchen')"
+              @unfire="unfireTab"
+              @fire-lines="(ids, complete) => fireTab(ids).then(complete)"
+              @unfire-lines="(ids, complete) => unfireSelected(ids).then(complete)"
+              @request-tab="requestTabAssociation('start')"
+            />
         </div>
-    </aside>
+    </template>
 
-    </div>
+    </OperatorSideColumn>
 
     <!-- RECEBIMENTO na tela de venda. É fato do PEDIDO, não do pagamento:
          entrega acrescenta taxa e depende de endereço, e perguntar isso só no
@@ -1810,6 +1861,7 @@ onBeforeUnmount(() => {
       :items="cart.items"
       :suggested-split-ref="suggestedSplitRef"
       :preselected="movePreselected"
+      :initial-mode="moveInitialMode"
       :other-tabs="otherOpenTabs"
       :capability="tabManipulation"
       :busy="busy"
