@@ -192,6 +192,32 @@ class KDSChangesAreLoudTests(TestCase):
         self.assertTrue(response.json()["renamed"])
         self.assertEqual(self._board().tickets[0].changes, ())
 
+    def test_transferred_dish_says_which_tab_it_came_from(self) -> None:
+        key = self._fired_tab()
+        target = self._fired_tab_on_another_tab()
+
+        # Transferir a comanda inteira: o ticket segue o prato (#1645) e diz de onde veio.
+        pos_service.move_pos_tab_lines(
+            channel_ref="pdv", from_session_key=key, line_ids=["L-A", "L-B"], to_session_key=target,
+            actor="pos:alice", operator_username="alice",
+        )
+        changes = sorted((c.kind, c.text) for t in self._board().tickets for c in t.changes)
+        self.assertEqual(changes, [("moved", "Era a comanda 2001")])
+
+    def test_split_dish_says_which_tab_it_came_from(self) -> None:
+        key = self._fired_tab()
+        POSTab.objects.create(ref="00002009", label="2009")
+
+        # Separar parte do ticket: o gêmeo nasce sem post_save, mas leva o nome antigo.
+        pos_service.move_pos_tab_lines(
+            channel_ref="pdv", from_session_key=key, line_ids=["L-A"], to_tab_ref="2009",
+            actor="pos:alice", operator_username="alice",
+        )
+        board = self._board()
+        by_ref = {t.order_ref: [(c.kind, c.text) for c in t.changes] for t in board.tickets}
+        self.assertEqual(by_ref["2009"], [("moved", "Era a comanda 2001")])
+        self.assertEqual(by_ref["2001"], [])
+
     def test_seen_only_clears_what_the_screen_showed(self) -> None:
         key = self._fired_tab()
         self._unfire(key, ["L-B"])
