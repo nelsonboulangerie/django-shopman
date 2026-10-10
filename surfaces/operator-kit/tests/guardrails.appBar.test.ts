@@ -124,6 +124,9 @@ describe("guardrail do cabeçalho de seções", () => {
     expect(production).toContain(':sections="sections"');
     expect(production).not.toContain("<ProductionNav");
     expect(production).toContain("data-production-kiosk");
+    // Fase 2, parte 5: os primitivos antigos saíram da Produção, e com eles a camada
+    // `suite:` que só existia para vesti-los.
+    expect(production).not.toMatch(/data-suite=/);
 
     // Fase 2 (onda do Compras, 09/10/2026): o Compras entrou no shell; cada seção é rota.
     const purchase = readFileSync(join(SURFACES, "purchase-nuxt/app/app.vue"), "utf8");

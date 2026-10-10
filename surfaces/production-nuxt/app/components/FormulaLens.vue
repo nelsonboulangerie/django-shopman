@@ -81,10 +81,12 @@ const BOM_COLUMNS = [
           <span class="text-muted-foreground">Massa total</span>
           <b class="ml-1 tabular-nums">{{ lens.total_mass_display }}</b>
         </span>
-        <UiBadge v-if="lens.standardized" variant="outline" class="px-1.5 py-0 text-xs">
-          Padrão da casa{{ lens.basis_display ? ` · ${lens.basis_display}` : "" }}
-        </UiBadge>
-        <UiBadge v-else variant="outline" class="px-1.5 py-0 text-xs text-muted-foreground">Como informada</UiBadge>
+        <NuxtBadge
+          v-if="lens.standardized"
+          color="neutral"
+          :label="`Padrão da casa${lens.basis_display ? ` · ${lens.basis_display}` : ''}`"
+        />
+        <NuxtBadge v-else color="neutral" label="Como informada" />
       </div>
 
       <!-- Avisos: calmos, nunca bloqueiam -->
@@ -166,7 +168,7 @@ const BOM_COLUMNS = [
             class="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2"
           >
             <span class="font-medium">{{ part.name || part.kind_label }}</span>
-            <UiBadge variant="outline" class="px-1.5 py-0 text-xs">{{ part.kind_label }}</UiBadge>
+            <NuxtBadge color="neutral" :label="part.kind_label" />
             <span v-if="part.flour_pct_display" class="tabular-nums text-muted-foreground">
               {{ part.flour_pct_display }} da farinha
             </span>

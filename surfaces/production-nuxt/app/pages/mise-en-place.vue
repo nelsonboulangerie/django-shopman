@@ -49,6 +49,11 @@ const {
 const weighing = useWeighing(selectedDate);
 
 const mode = ref<"insumos" | "preparos">("preparos");
+// As duas visões da mesma preparação, como abas que só trocam a lente (`:content="false"`).
+const MODE_ITEMS = [
+  { label: "Por preparo", value: "preparos" },
+  { label: "Por insumo", value: "insumos" },
+];
 
 // Tolerante a dado velho: se a atualização falhar mas já houver lista, mantém a lista
 // no ar e acende o chip de degradação (dado velho visível > tela em branco).
@@ -194,39 +199,14 @@ function refreshAll() {
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4 print:hidden">
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <div
-          class="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
-          role="group"
+        <!-- Modo: alterna duas visões da mesma preparação. -->
+        <NuxtTabs
+          v-model="mode"
+          :items="MODE_ITEMS"
+          :content="false"
+          variant="pill"
           aria-label="Modo de visualização"
-        >
-          <!-- Modo em segmento compacto: alterna duas visões da mesma preparação. -->
-          <button
-            type="button"
-            class="min-h-8 rounded-md px-4 op-label font-semibold transition"
-            :class="
-              mode === 'preparos'
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            "
-            :aria-pressed="mode === 'preparos'"
-            @click="mode = 'preparos'"
-          >
-            Por preparo
-          </button>
-          <button
-            type="button"
-            class="min-h-8 rounded-md px-4 op-label font-semibold transition"
-            :class="
-              mode === 'insumos'
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            "
-            :aria-pressed="mode === 'insumos'"
-            @click="mode = 'insumos'"
-          >
-            Por insumo
-          </button>
-        </div>
+        />
 
         <span
           v-if="mode === 'insumos' && projection?.work_order_count"
@@ -244,27 +224,25 @@ function refreshAll() {
         </span>
 
         <div class="ml-auto flex flex-wrap items-center gap-3">
-          <UiCheckbox
+          <NuxtCheckbox
             v-if="mode === 'insumos'"
             v-model="expand"
             label="Explodir até matéria-prima"
-            class="text-muted-foreground"
           />
           <template v-if="mode === 'preparos' && visibleTickets.length">
-            <UiButton
-              type="button"
+            <NuxtButton
+              icon="i-lucide-printer"
+              label="Etiquetas de pesagem"
               @click="openLabelsPreview('pesagem')"
-            >
-              <Icon name="lucide:printer" class="size-4" /> Etiquetas de pesagem
-            </UiButton>
-            <UiButton
-              type="button"
+            />
+            <NuxtButton
+              color="neutral"
               variant="outline"
+              icon="i-lucide-tag"
+              label="Identificação interna"
               title="Identificação interna: nome, data prevista e validade configurada"
               @click="openLabelsPreview('preparo')"
-            >
-              <Icon name="lucide:tag" class="size-4" /> Identificação interna
-            </UiButton>
+            />
           </template>
         </div>
       </div>
@@ -294,15 +272,14 @@ function refreshAll() {
           <p class="text-base font-medium text-foreground">
             Não foi possível carregar a lista.
           </p>
-          <UiButton
-            type="button"
+          <NuxtButton
             class="mt-1"
+            color="neutral"
             variant="outline"
-            size="sm"
+            icon="i-lucide-refresh-cw"
+            label="Tentar de novo"
             @click="refresh()"
-          >
-            <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-          </UiButton>
+          />
         </div>
 
         <div
@@ -355,7 +332,7 @@ function refreshAll() {
           >
             <template #done-header><span class="sr-only">Separado</span></template>
             <template #done-cell="{ row }">
-              <UiCheckbox
+              <NuxtCheckbox
                 :model-value="isChecked(row.original.sku)"
                 :aria-label="`Marcar ${row.original.name} como separado`"
                 @update:model-value="toggleChecked(row.original.sku)"
@@ -443,15 +420,14 @@ function refreshAll() {
           <p class="text-base font-medium text-foreground">
             Não foi possível carregar os preparos.
           </p>
-          <UiButton
-            type="button"
+          <NuxtButton
             class="mt-1"
+            color="neutral"
             variant="outline"
-            size="sm"
+            icon="i-lucide-refresh-cw"
+            label="Tentar de novo"
             @click="weighing.refresh()"
-          >
-            <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-          </UiButton>
+          />
         </div>
 
         <div
@@ -524,17 +500,16 @@ function refreshAll() {
                     </p>
                   </div>
                 </div>
-                <UiButton
-                  type="button"
+                <NuxtButton
                   class="shrink-0"
+                  color="neutral"
                   variant="outline"
-                  size="icon"
+                  icon="i-lucide-printer"
+                  square
                   :aria-label="`Abrir etiquetas de pesagem de ${ticket.name}`"
                   :title="`Conferir etiquetas de ${ticket.name}`"
                   @click="openLabelsPreview('pesagem', ticketIdentity(ticket))"
-                >
-                  <Icon name="lucide:printer" class="size-4" />
-                </UiButton>
+                />
               </header>
               <ul class="flex flex-col divide-y text-sm">
                 <li

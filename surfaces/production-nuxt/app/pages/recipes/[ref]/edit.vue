@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 // O editor do rascunho (/recipes/[ref]/edit?v=n). Rendimento, âncora, a tabela
 // editável (nome, insumo com busca, quantidade, unidade, papel), partes, etapas e
 // notas; à direita a PRÉVIA DA LENTE, recalculada pelo servidor com debounce. O
@@ -298,26 +299,25 @@ const touch = useTouchPointer();
     >
       <template #actions>
         <template v-if="draft && canEdit">
-          <UiButton
-            type="button"
+          <NuxtButton
+            color="neutral"
             variant="outline"
-            size="sm"
+            icon="i-lucide-save"
+            aria-label="Salvar rascunho"
             :disabled="busy"
             @click="save"
           >
-            <Icon name="lucide:save" class="size-4" />
             <span class="hidden sm:inline">Salvar rascunho</span>
-          </UiButton>
-          <UiButton
-            type="button"
-            size="sm"
+          </NuxtButton>
+          <NuxtButton
+            icon="i-lucide-check"
+            aria-label="Salvar e publicar"
             :disabled="busy || unmatchedCount > 0 || !entry?.output_sku"
             :title="!entry?.output_sku ? 'Associe um SKU na receita antes de publicar' : unmatchedCount ? 'Case todos os ingredientes antes de publicar' : ''"
             @click="saveAndPublish"
           >
-            <Icon name="lucide:check" class="size-4" />
             <span class="hidden sm:inline">Salvar e publicar</span>
-          </UiButton>
+          </NuxtButton>
         </template>
       </template>
     </RecipeHeader>
@@ -348,15 +348,14 @@ const touch = useTouchPointer();
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
         <p class="text-base font-medium text-foreground">Não foi possível carregar a receita.</p>
-        <UiButton
-          type="button"
+        <NuxtButton
           class="mt-1"
+          color="neutral"
           variant="outline"
-          size="sm"
+          icon="i-lucide-refresh-cw"
+          label="Tentar de novo"
           @click="refresh()"
-        >
-          <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </UiButton>
+        />
       </div>
 
       <div
@@ -368,29 +367,34 @@ const touch = useTouchPointer();
           {{ requestedNotDraft ? "Essa versão já foi publicada e não se edita." : "Sem rascunho para editar." }}
         </p>
         <p class="text-sm">Uma nova versão copia a mais recente em rascunho; a publicada continua intacta.</p>
-        <UiButton
+        <NuxtButton
           v-if="!entry.is_archived"
-          type="button"
           class="mt-1"
-          size="sm"
+          icon="i-lucide-copy-plus"
+          label="Nova versão"
           :disabled="busy"
           @click="startDraft"
-        >
-          <Icon name="lucide:copy-plus" class="size-4" /> Nova versão
-        </UiButton>
+        />
       </div>
 
       <div v-else-if="entry && draft" class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]">
         <!-- ── Editor ──────────────────────────────────────────────────── -->
         <div class="grid min-w-0 content-start gap-4">
-          <p v-if="saveError" class="rounded-md border border-destructive/30 px-3 py-2 text-sm text-destructive">{{ saveError }}</p>
+          <NuxtAlert
+            v-if="saveError"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :title="saveError"
+            :actions="alertActions('error', [{ label: 'Salvar de novo', disabled: busy, onClick: () => save() }])"
+          />
 
           <!-- Rendimento, âncora, o que mudou -->
           <div class="grid gap-3 rounded-md border bg-card p-3 sm:grid-cols-[auto_auto_1fr]">
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Rendimento
               <span class="flex items-center gap-1">
-                <UiInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-20" />
+                <NuxtInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-20" />
                 <NuxtSelect v-model="yieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" />
               </span>
             </label>
@@ -420,7 +424,7 @@ const touch = useTouchPointer();
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               O que mudou (rótulo curto)
-              <UiInput v-model="label" type="text" placeholder="Ex.: hidratação 72 → 75" />
+              <NuxtInput v-model="label" type="text" placeholder="Ex.: hidratação 72 → 75" class="w-full" />
             </label>
           </div>
 
@@ -431,15 +435,7 @@ const touch = useTouchPointer();
               <span class="text-xs tabular-nums text-muted-foreground">
                 âncora {{ gramsLabel(localAnchorTotal) }} · massa {{ gramsLabel(localTotal) }}
               </span>
-              <UiButton
-                type="button"
-                class="ml-auto"
-                variant="outline"
-                size="sm"
-                @click="add"
-              >
-                <Icon name="lucide:plus" class="size-4" /> Ingrediente
-              </UiButton>
+              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Ingrediente" @click="add" />
             </div>
             <p v-if="!formula.items.length" class="px-3 py-6 text-center text-sm text-muted-foreground">
               Nenhum ingrediente ainda. Toda a farinha entra aqui, inclusive a do levain e da autólise.
@@ -453,7 +449,7 @@ const touch = useTouchPointer();
               >
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Nome
-                  <UiInput :model-value="item.name" type="text" placeholder="Ex.: Farinha T65" @input="onItemName(index, $event)" />
+                  <NuxtInput :model-value="item.name" type="text" placeholder="Ex.: Farinha T65" class="w-full" @input="onItemName(index, $event)" />
                 </label>
                 <div class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Insumo
@@ -466,11 +462,12 @@ const touch = useTouchPointer();
                 </div>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Qtd
-                  <UiInput
-                    :model-value="item.quantity || ''"
+                  <NuxtInput
+                    :model-value="String(item.quantity || '')"
                     type="text"
                     inputmode="decimal"
-                    class="w-24 text-right tabular-nums"
+                    class="w-24"
+                    :ui="{ base: 'text-right tabular-nums' }"
                     @input="onItemQuantity(index, $event)"
                   />
                 </label>
@@ -506,8 +503,8 @@ const touch = useTouchPointer();
                 </div>
                 <label v-if="item.unit === 'un'" class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-6">
                   Gramas por unidade (sem isso a contagem fica fora da conta)
-                  <UiInput
-                    :model-value="item.grams_per_unit ?? ''"
+                  <NuxtInput
+                    :model-value="String(item.grams_per_unit ?? '')"
                     type="text"
                     inputmode="decimal"
                     class="w-28"
@@ -523,15 +520,7 @@ const touch = useTouchPointer();
             <div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
               <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Partes</p>
               <span class="text-xs text-muted-foreground">quanto da base passa por levain, autólise, embebido ou massa velha</span>
-              <UiButton
-                type="button"
-                class="ml-auto"
-                variant="outline"
-                size="sm"
-                @click="addNewPart"
-              >
-                <Icon name="lucide:plus" class="size-4" /> Parte
-              </UiButton>
+              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Parte" @click="addNewPart" />
             </div>
             <p v-if="!formula.parts.length" class="px-3 py-4 text-center text-sm text-muted-foreground">Sem partes: tudo vai direto na mistura.</p>
             <ol v-else class="divide-y">
@@ -551,7 +540,7 @@ const touch = useTouchPointer();
                   <p class="self-end pb-2 text-sm text-muted-foreground sm:col-span-2">A própria base da véspera; declara só o teto.</p>
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Teto (%)
-                    <UiInput :model-value="part.cap_pct ?? ''" type="text" inputmode="decimal" class="w-20 text-right" @input="onPartNumber(index, 'cap_pct', $event)" />
+                    <NuxtInput :model-value="String(part.cap_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'text-right' }" @input="onPartNumber(index, 'cap_pct', $event)" />
                   </label>
                 </template>
                 <template v-else>
@@ -567,12 +556,12 @@ const touch = useTouchPointer();
                   </div>
                   <label v-if="anchorIsFlour" class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Farinha (%)
-                    <UiInput :model-value="part.flour_pct ?? ''" type="text" inputmode="decimal" class="w-20 text-right" @input="onPartNumber(index, 'flour_pct', $event)" />
+                    <NuxtInput :model-value="String(part.flour_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'text-right' }" @input="onPartNumber(index, 'flour_pct', $event)" />
                   </label>
                   <label v-else class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
                     <span class="flex items-center gap-1">
-                      <UiInput :model-value="part.quantity ?? ''" type="text" inputmode="decimal" class="w-20 text-right" @input="onPartNumber(index, 'quantity', $event)" />
+                      <NuxtInput :model-value="String(part.quantity ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'text-right' }" @input="onPartNumber(index, 'quantity', $event)" />
                       <NuxtSelect
                         :model-value="part.unit ?? 'g'"
                         :items="units"
@@ -596,11 +585,11 @@ const touch = useTouchPointer();
           <div class="grid gap-3 rounded-md border bg-card p-3">
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Etapas (uma por linha)
-              <UiTextarea v-model="stepsText" :rows="6" placeholder="Autólise 40 min&#10;Sova até o ponto de véu&#10;…" />
+              <NuxtTextarea v-model="stepsText" :rows="6" placeholder="Autólise 40 min&#10;Sova até o ponto de véu&#10;…" class="w-full" />
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Notas desta versão
-              <UiTextarea v-model="notes" :rows="3" />
+              <NuxtTextarea v-model="notes" :rows="3" class="w-full" />
             </label>
           </div>
         </div>
@@ -610,17 +599,15 @@ const touch = useTouchPointer();
           <div class="flex flex-wrap items-center gap-2">
             <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Prévia da lente</p>
             <Icon v-if="lensPending" name="lucide:loader-circle" class="size-4 animate-spin text-muted-foreground" />
-            <UiButton
-              type="button"
+            <NuxtButton
               class="ml-auto"
+              color="neutral"
               variant="outline"
-              size="sm"
+              icon="i-lucide-scale"
+              :label="standardizing ? 'Padronizando…' : `Padronizar para ${HOUSE_BASIS_G} g ${anchorNoun}`"
               :disabled="standardizing || !formula.items.length"
               @click="standardizeToHouse"
-            >
-              <Icon name="lucide:scale" class="size-4" />
-              {{ standardizing ? "Padronizando…" : `Padronizar para ${HOUSE_BASIS_G} g ${anchorNoun}` }}
-            </UiButton>
+            />
           </div>
 
           <div v-if="before" class="grid gap-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
@@ -630,22 +617,23 @@ const touch = useTouchPointer();
               <br />
               Depois: âncora {{ gramsLabel(localAnchorTotal) }} · massa {{ gramsLabel(localTotal) }}
             </p>
-            <UiButton type="button" variant="link" size="sm" class="justify-self-start p-0" @click="undoStandardize">Desfazer</UiButton>
+            <NuxtButton class="justify-self-start" color="primary" variant="ghost" label="Desfazer" @click="undoStandardize" />
           </div>
 
           <FormulaLens :lens="lens" :pending="lensPending" :error="lensError" compact />
 
           <div v-if="origin.length" class="rounded-md border">
             <!-- Cabeçalho de disclosure ocupa a linha inteira; é o acionador estrutural do painel. -->
-            <button
-              type="button"
-              class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              block
+              :icon="originOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+              label="Como foi informada"
+              :ui="{ base: 'justify-start px-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground' }"
               :aria-expanded="originOpen"
               @click="originOpen = !originOpen"
-            >
-              <Icon :name="originOpen ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="size-4" />
-              Como foi informada
-            </button>
+            />
             <ul v-if="originOpen" class="divide-y border-t text-sm">
               <li v-for="(line, index) in origin" :key="index" class="px-3 py-1.5 text-muted-foreground">{{ line }}</li>
             </ul>

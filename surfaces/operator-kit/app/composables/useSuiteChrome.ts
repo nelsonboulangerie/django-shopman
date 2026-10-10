@@ -5,8 +5,8 @@
 // Por que um registro e não props: a caixa de Avisos e a ajuda de atalhos aparecem em
 // dois lugares (o pé do rail, do tablet deitado para cima; a barra de 56px do
 // cabeçalho e o "Mais", no celular e no tablet em pé), e o cabeçalho é montado por cada
-// tela. O app declara UMA vez, na navegação dele (`GestorNav`, `ProductionNav`), e as
-// peças do kit leem daqui. O estado mora no `nuxtApp` (um por requisição no servidor,
+// tela. O app declara UMA vez, no próprio `app.vue` (`provideOperatorInboxAlerts`, como
+// o Gestor e a Produção; o Marketing ainda na `MarketingNav`), e as peças do kit leem daqui. O estado mora no `nuxtApp` (um por requisição no servidor,
 // um por app no cliente), nunca no módulo.
 import { computed, onScopeDispose, shallowRef, toValue, watchEffect, type MaybeRefOrGetter, type Ref, type ShallowRef } from "vue";
 import { useMediaQuery } from "@vueuse/core";

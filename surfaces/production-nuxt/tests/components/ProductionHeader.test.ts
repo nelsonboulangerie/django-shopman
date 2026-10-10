@@ -159,4 +159,15 @@ describe("ProductionHeader — toolbar e estado", () => {
     expect(live.attributes("data-tone")).toBe("late");
     expect(live.text()).toBe("Sem atualizar");
   });
+
+  it("a tela acrescenta ao #status o que é dela (o anterior e o próximo do lote)", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader(
+      { title: "Fechamento" },
+      { status: '<span data-record-nav>3 de 8</span>' },
+    );
+    const status = wrapper.find("[data-status]");
+    expect(status.find("[data-live]").exists()).toBe(true);
+    expect(status.find("[data-record-nav]").text()).toBe("3 de 8");
+  });
 });

@@ -4,7 +4,7 @@
 // (projeção + encomendas + margem = sugestão), o histórico curto, a falta de
 // insumo com o atalho para o Compras e a alternativa que cabe no estoque. Cada
 // bloco só aparece quando o backend tem o dado: nada é inventado aqui.
-// O invólucro (popover, Esc, foco) é do UiPopover na grade; este componente é
+// O invólucro (popover, Esc, foco) é do NuxtPopover na grade; este componente é
 // só o conteúdo, para ser testável sem o overlay.
 import {
   DAY_DOT_TONE,
@@ -69,14 +69,15 @@ const HISTORY_TONE = {
         <p class="op-micro text-muted-foreground">{{ basisLine }}</p>
       </div>
       <OperatorKbd class="mt-1 hidden md:inline-flex">Esc</OperatorKbd>
-      <button
-        type="button"
-        class="-mr-2 -mt-1 grid size-12 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+      <NuxtButton
+        icon="i-lucide-x"
+        color="neutral"
+        variant="ghost"
+        square
+        class="-mr-2 -mt-1 shrink-0"
         aria-label="Fechar"
         @click="emit('close')"
-      >
-        <Icon name="lucide:x" class="size-4" />
-      </button>
+      />
     </header>
 
     <!-- A conta: os termos da fórmula, fechando no número da linha. -->
@@ -179,65 +180,62 @@ const HISTORY_TONE = {
     </ul>
 
     <!-- A falta de insumo, antes de planejar: o que falta e onde pedir. -->
-    <section
+    <NuxtAlert
       v-if="suggestion.material_shortages.length"
-      class="mx-4 flex flex-col gap-2 rounded-lg bg-warning/12 p-3"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-lock"
+      class="mx-4 w-auto"
       data-testid="reason-material"
       aria-label="Falta de insumo"
     >
-      <ul class="flex flex-col gap-1 text-sm">
-        <li
-          v-for="item in suggestion.material_shortages"
-          :key="item.sku"
-          class="flex items-start gap-2 font-medium"
-        >
-          <Icon
-            name="lucide:lock"
-            class="mt-0.5 size-4 shrink-0 text-warning"
-          />
-          <span>{{ shortageLine(item) }}</span>
-        </li>
-      </ul>
-      <a
-        v-if="purchaseUrl"
-        :href="purchaseUrl"
-        v-bind="attrsFor(purchaseUrl)"
-        class="inline-flex min-h-12 items-center gap-2 self-start rounded-md border bg-background px-3 text-sm font-medium transition hover:bg-accent"
-      >
-        Pedir no Compras
-        <Icon name="lucide:external-link" class="size-4" />
-      </a>
-    </section>
+      <template #description>
+        <ul class="flex flex-col gap-1 text-sm">
+          <li
+            v-for="item in suggestion.material_shortages"
+            :key="item.sku"
+            class="font-medium"
+          >
+            {{ shortageLine(item) }}
+          </li>
+        </ul>
+      </template>
+      <template v-if="purchaseUrl" #actions>
+        <NuxtButton
+          :href="purchaseUrl"
+          v-bind="attrsFor(purchaseUrl)"
+          color="warning"
+          variant="outline"
+          trailing-icon="i-lucide-external-link"
+          label="Pedir no Compras"
+        />
+      </template>
+    </NuxtAlert>
 
     <footer class="flex flex-wrap items-center gap-2 px-4 pb-4">
-      <UiButton
+      <NuxtButton
         v-if="alternative"
-        type="button"
+        color="primary"
         variant="outline"
-        class="min-h-12 border-primary text-primary hover:bg-primary/10 hover:text-primary"
+        icon="i-lucide-check"
+        :label="`Planejar ${alternative} (cabe no estoque)`"
         @click="emit('plan', alternative, 'manual')"
-      >
-        <Icon name="lucide:check" class="size-4" />
-        Planejar {{ alternative }} (cabe no estoque)
-      </UiButton>
-      <UiButton
+      />
+      <NuxtButton
         v-else-if="canPlanSuggested"
-        type="button"
+        color="primary"
         variant="outline"
-        class="min-h-12 border-primary text-primary hover:bg-primary/10 hover:text-primary"
+        icon="i-lucide-check"
+        :label="`Planejar ${suggestion.quantity}`"
         @click="emit('plan', suggestion.quantity, 'suggested')"
-      >
-        <Icon name="lucide:check" class="size-4" />
-        Planejar {{ suggestion.quantity }}
-      </UiButton>
-      <UiButton
-        type="button"
+      />
+      <NuxtButton
+        color="neutral"
         variant="ghost"
-        class="ml-auto min-h-12"
+        class="ml-auto"
+        label="Fechar"
         @click="emit('close')"
-      >
-        Fechar
-      </UiButton>
+      />
     </footer>
   </div>
 </template>

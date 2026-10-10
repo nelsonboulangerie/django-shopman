@@ -105,23 +105,33 @@ function onKeydown(event: KeyboardEvent) {
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
-const PAD_KEY =
-  "rounded-md border bg-card py-3 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px";
-const PAD_ADD =
-  "rounded-md border border-dashed bg-card py-3 text-base font-semibold tabular-nums text-muted-foreground transition hover:bg-accent hover:text-foreground active:translate-y-px";
+// O diálogo (o elemento `role="dialog"`) carrega a marca da exclusão mútua com o
+// numpad do forno; o `content` do NuxtModal é o que chega nele.
+const TIMER_DIALOG_CONTENT: Record<string, unknown> = {
+  "data-production-timer-dialog": "",
+};
+
+// Teclado numérico de chão: teclas `xl`, que enchem a célula da grade.
+const PAD_ROWS = [
+  { digits: [1, 2, 3], add: 1 },
+  { digits: [4, 5, 6], add: 5 },
+  { digits: [7, 8, 9], add: 10 },
+];
+const PAD_UI = { base: "justify-center text-xl font-semibold tabular-nums" };
+const PAD_ADD_UI = {
+  base: "justify-center text-base font-semibold tabular-nums text-muted-foreground",
+};
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="(v: boolean) => (open = v)">
-    <UiDialogContent class="sm:max-w-md" data-production-timer-dialog>
-      <UiDialogHeader>
-        <UiDialogTitle>Novo timer</UiDialogTitle>
-        <UiDialogDescription
-          >Lembrete deste dispositivo. Não trava lote, QC nem
-          Continuar.</UiDialogDescription
-        >
-      </UiDialogHeader>
-
+  <NuxtModal
+    v-model:open="open"
+    title="Novo timer"
+    description="Lembrete deste dispositivo. Não trava lote, QC nem Continuar."
+    class="sm:max-w-md"
+    :content="TIMER_DIALOG_CONTENT"
+  >
+    <template #body>
       <div class="flex flex-col gap-3">
         <div class="grid h-20 place-items-center rounded-md border bg-background">
           <p class="text-4xl font-bold tabular-nums">
@@ -137,94 +147,92 @@ const PAD_ADD =
           role="group"
           aria-label="Minutos do timer"
         >
-          <template
-            v-for="row in [
-              { digits: [1, 2, 3], add: 1 },
-              { digits: [4, 5, 6], add: 5 },
-              { digits: [7, 8, 9], add: 10 },
-            ]"
-            :key="row.add"
-          >
-            <button
+          <template v-for="row in PAD_ROWS" :key="row.add">
+            <NuxtButton
               v-for="value in row.digits"
               :key="value"
-              type="button"
-              :class="PAD_KEY"
+              size="xl"
+              color="neutral"
+              variant="outline"
+              block
+              :label="String(value)"
+              :ui="PAD_UI"
               :aria-label="`Dígito ${value}`"
               @click="digit(String(value))"
-            >
-              {{ value }}
-            </button>
-            <button
-              type="button"
-              :class="PAD_ADD"
+            />
+            <NuxtButton
+              size="xl"
+              color="neutral"
+              variant="outline"
+              block
+              :label="`+${row.add}`"
+              :ui="PAD_ADD_UI"
               :aria-label="`Somar ${row.add} minutos`"
               @click="add(row.add)"
-            >
-              +{{ row.add }}
-            </button>
+            />
           </template>
-          <button
-            type="button"
-            class="rounded-md border bg-card py-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+          <NuxtButton
+            size="xl"
+            color="neutral"
+            variant="outline"
+            block
+            label="C"
+            :ui="{ base: 'justify-center' }"
             aria-label="Limpar minutos"
             aria-keyshortcuts="C Delete"
             @click="clearMinutes()"
-          >
-            C
-          </button>
-          <button
-            type="button"
-            :class="PAD_KEY"
+          />
+          <NuxtButton
+            size="xl"
+            color="neutral"
+            variant="outline"
+            block
+            label="0"
+            :ui="PAD_UI"
             aria-label="Dígito 0"
             @click="digit('0')"
-          >
-            0
-          </button>
-          <button
-            type="button"
-            class="grid place-items-center rounded-md border bg-card py-3 transition hover:bg-accent active:translate-y-px"
+          />
+          <NuxtButton
+            size="xl"
+            color="neutral"
+            variant="outline"
+            block
+            icon="i-lucide-delete"
+            :ui="{ base: 'justify-center' }"
             aria-label="Apagar último dígito"
             @click="backspace()"
-          >
-            <Icon name="lucide:delete" class="size-5" />
-          </button>
-          <button
-            type="button"
+          />
+          <NuxtButton
+            size="xl"
+            block
+            label="Iniciar"
+            :ui="{ base: 'justify-center' }"
             :disabled="!minutesValid"
             aria-keyshortcuts="Enter"
-            class="rounded-md border border-transparent bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px disabled:opacity-50"
             @click="start()"
-          >
-            Iniciar
-          </button>
+          />
         </div>
 
-        <UiInput
+        <NuxtInput
           v-model="name"
           type="text"
           placeholder="Nome (opcional), ex.: Croissant"
           aria-label="Nome do timer"
-          class="min-h-8"
           @keydown.enter.prevent="start()"
         />
 
         <!-- Guardar como etiqueta: escolha explícita, com a consequência escrita.
              Sem nome não há etiqueta, e nome que já existe não vira irmã. -->
         <div v-if="canSaveAsTag" class="rounded-md border border-dashed p-3">
-          <UiCheckbox
-            v-if="!twin"
-            v-model="saveAsTag"
-            class="flex min-h-8 items-start gap-2.5 text-sm font-medium"
-          >
-            <span>
+          <NuxtCheckbox v-if="!twin" v-model="saveAsTag">
+            <template #label>
               Guardar “{{ name.trim() }}” como etiqueta
-              <span class="block text-xs font-normal text-muted-foreground">
-                Fica na fileira de disparo rápido para todo o fournil, com
-                {{ minutes }} min. O gestor pode ajustar depois.
-              </span>
-            </span>
-          </UiCheckbox>
+            </template>
+            <template #description>
+              Fica na fileira de disparo rápido para todo o fournil, com
+              {{ minutes }} min. O gestor pode ajustar depois.
+            </template>
+          </NuxtCheckbox>
           <p v-else class="text-sm text-muted-foreground">
             Já existe a etiqueta <strong class="text-foreground">{{ twin.label }}</strong>
             na fileira, com {{ twin.minutes }} min. Este timer vai correr com os
@@ -236,6 +244,6 @@ const PAD_ADD =
           Guardando a etiqueta…
         </p>
       </div>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+  </NuxtModal>
 </template>

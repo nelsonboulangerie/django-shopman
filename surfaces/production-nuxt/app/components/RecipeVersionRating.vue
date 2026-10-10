@@ -61,16 +61,15 @@ async function confirmRate() {
       <h3 id="recipe-rating-title" class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
         Nota da versão {{ version.number }}
       </h3>
-      <UiButton
+      <NuxtButton
         v-if="criteria.length"
-        type="button"
         class="ml-auto"
+        color="neutral"
         variant="outline"
-        size="sm"
+        icon="i-lucide-star"
+        :label="rating?.rated_by_me ? 'Mudar minha nota' : 'Avaliar'"
         @click="openRate"
-      >
-        <Icon name="lucide:star" class="size-4" /> {{ rating?.rated_by_me ? "Mudar minha nota" : "Avaliar" }}
-      </UiButton>
+      />
     </div>
 
     <p v-if="!criteria.length" class="text-sm text-muted-foreground">Nenhum critério de nota ativo. Ative um no Admin.</p>
@@ -91,49 +90,52 @@ async function confirmRate() {
       <p v-if="rating?.rated_by_me" class="mt-1 text-xs text-muted-foreground">Você avaliou em {{ rating.my_rated_at_display }}.</p>
     </template>
 
-    <UiDialog :open="open" @update:open="(v) => (open = v)">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Avaliar a versão {{ version.number }}</UiDialogTitle>
-          <UiDialogDescription>
-            Dê uma nota de 0 a 5 a cada critério. Se você já avaliou esta versão, a nota nova substitui a anterior.
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <form class="grid gap-4" @submit.prevent="confirmRate">
+    <NuxtModal
+      v-model:open="open"
+      :title="`Avaliar a versão ${version.number}`"
+      description="Dê uma nota de 0 a 5 a cada critério. Se você já avaliou esta versão, a nota nova substitui a anterior."
+      :ui="{ content: 'sm:max-w-md' }"
+    >
+      <template #body>
+        <form id="recipe-rating-form" class="grid gap-4" @submit.prevent="confirmRate">
           <fieldset v-for="criterion in criteria" :key="criterion.id" class="grid gap-1.5">
             <legend class="text-sm font-medium">{{ criterion.name }}</legend>
             <p v-if="criterion.description" class="text-xs text-muted-foreground">{{ criterion.description }}</p>
             <div class="flex flex-wrap gap-1.5" role="radiogroup" :aria-label="`Nota de ${criterion.name}`">
-              <UiButton
+              <NuxtButton
                 v-for="value in RATING_SCALE"
                 :key="value"
-                type="button"
                 role="radio"
-                class="min-w-11 tabular-nums"
-                :variant="scores[String(criterion.id)] === value ? 'default' : 'outline'"
-                size="sm"
+                class="min-w-11 justify-center tabular-nums"
+                color="neutral"
+                variant="outline"
+                :active="scores[String(criterion.id)] === value"
+                active-color="primary"
+                active-variant="solid"
+                :label="String(value)"
                 :aria-checked="scores[String(criterion.id)] === value"
                 :aria-label="`${criterion.name}: ${value} de 5`"
                 @click="pick(criterion.id, value)"
-              >
-                {{ value }}
-              </UiButton>
+              />
             </div>
           </fieldset>
           <p v-if="missing.length" class="text-xs text-muted-foreground">
             Falta a nota de: {{ missing.map((criterion) => criterion.name).join(", ") }}.
           </p>
           <p v-if="serverError" class="text-sm text-destructive">{{ serverError }}</p>
-          <UiDialogFooter>
-            <UiButton type="button" variant="outline" @click="open = false">
-              Cancelar
-            </UiButton>
-            <UiButton type="submit" :disabled="busy || missing.length > 0">
-              Salvar nota
-            </UiButton>
-          </UiDialogFooter>
         </form>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="open = false" />
+          <NuxtButton
+            type="submit"
+            form="recipe-rating-form"
+            label="Salvar nota"
+            :disabled="busy || missing.length > 0"
+          />
+        </div>
+      </template>
+    </NuxtModal>
   </section>
 </template>
