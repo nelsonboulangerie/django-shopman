@@ -137,7 +137,9 @@ describe("OperatorSuiteSearch", () => {
     const input = await openSearch(wrapper);
     expect((input.element as HTMLInputElement).value).toBe("maria");
     await settle();
-    dialog()!.querySelector<HTMLElement>("[data-suite-search-screen='clear']")!.click();
+    const clear = dialog()!.querySelector<HTMLElement>("[data-suite-search-screen='clear']")!;
+    expect(clear.textContent).toContain("Tirar o filtro “maria” do quadro");
+    clear.click();
     await settle();
     expect(wrapper.emitted("update:modelValue")!.at(-1)).toEqual([""]);
   });

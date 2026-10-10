@@ -7,6 +7,7 @@ import { cashAnswer, customersAnswer, salesAnswer } from "~/presentation/bi";
 import {
   MADE_SOLD_SERIES,
   madeSoldPoints,
+  carryContext,
   carryLabel,
   clientCount,
   compareName,
@@ -344,6 +345,14 @@ describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu de
     expect(historyDaysLabel("2026-10-03", 1)).toBe("O sábado");
     expect(carryLabel("2026-10-10")).toBe("Levar ao plano do próximo sábado");
     expect(carryLabel("2026-10-05")).toBe("Levar ao plano da próxima segunda");
+  });
+
+  it("a ação na base diz o que leva ao plano: os produtos que faltaram ou sobraram", () => {
+    expect(carryContext({ summary: { short: 2, over: 7, right: 4 } } as never)).toEqual({
+      label: "Faltaram ou sobraram",
+      value: "9 produtos",
+    });
+    expect(carryContext({ summary: { short: 0, over: 1, right: 0 } } as never).value).toBe("1 produto");
   });
 
   it("as oito leituras seguem na casca da suíte, na mesma ordem e com a janela na query", () => {

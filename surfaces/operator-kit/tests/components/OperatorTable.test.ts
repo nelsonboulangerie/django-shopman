@@ -199,6 +199,19 @@ describe("OperatorTable", () => {
     expect(table()).not.toBeNull();
   });
 
+  it("dentro de outro cartão: o da tabela é soft e o vazio perde a moldura", async () => {
+    mounted = await mountSuspended(OperatorTable as never, {
+      attachTo: document.body,
+      props: { data: orders, columns, rowKey: (row: Order) => row.ref, caption: "Pedidos", inCard: true },
+    });
+    const card = table().closest("[data-operator-table-root] > *") as HTMLElement;
+    expect(card.className).not.toContain("bg-card");
+    expect(card.className).toContain("bg-elevated");
+    await mounted.setProps({ data: [], emptyTitle: "Nenhum pedido neste recorte." });
+    const empty = document.querySelector<HTMLElement>("[data-operator-screen-state='empty']")!;
+    expect(empty.className).not.toMatch(/\bring\b|bg-card/);
+  });
+
   it("Exibir: Confortável e colunas ocultas valem para a tabela com a mesma chave", async () => {
     const Host = defineComponent({
       setup: () => () =>

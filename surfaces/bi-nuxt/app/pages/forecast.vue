@@ -9,7 +9,7 @@
 // Peças do kit (PR-B7 do WP-BI-CANON-LAUDO): quadro (`OperatorReadingCard`, com o
 // ⋯ "Exportar CSV deste quadro"), métrica (`OperatorMetric`; dentro de um quadro,
 // `soft`), gráfico (`OperatorReadingChart`), frescor (`ReadFreshness`), período
-// compacto e o ⋯ da página (`OperatorReadingPageMenu`). Tabela é `NuxtTable`;
+// compacto e o ⋯ da página (`OperatorReadingPageMenu`). Tabela é `OperatorTable` (`in-card`, dentro do quadro);
 // vazio e carregando, `NuxtEmpty`.
 import type { DayForecast } from "~/types/bi";
 import { readingMoneyFormat } from "../../../operator-kit/app/presentation/readingChart";
@@ -175,10 +175,12 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
               />
             </div>
 
-            <NuxtTable
+            <OperatorTable
+              in-card
               class="mt-3"
               :data="occasionYearRows(single.occasion.years)"
               :columns="yearColumns"
+              :row-key="(row) => row.date"
               :caption="`Ocorrências anteriores de ${occasionTitle(single.occasion)}`"
               data-bi-forecast-occasion-years
             />
@@ -358,10 +360,13 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
               :format="readingMoneyFormat"
               empty-title="Sem dias para projetar"
             />
-            <NuxtTable
+            <OperatorTable
+              v-if="dayRows.length"
+              in-card
               class="mt-3"
               :data="dayRows"
               :columns="dayColumns"
+              :row-key="(row) => row.date"
               caption="Projeção de cada dia do período"
               data-bi-forecast-days
             />

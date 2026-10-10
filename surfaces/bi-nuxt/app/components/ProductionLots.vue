@@ -69,9 +69,11 @@ const dayColumns = computed<TableColumn<ProductionDayRow>[]>(() => [
 ]);
 
 // Tempo de forno: tabela com a média em barra (NuxtProgress) e o "Ver todas" (laudo F20).
+// Ordena pelo nome e pela média (os minutos crus, não o texto "12 min"). O "Dia a dia"
+// fica na ordem dos dias: é uma série, ordenar a quebraria.
 const ovenColumns = (first: string): TableColumn<OvenRow>[] => [
-  { accessorKey: "label", header: first },
-  { id: "average", header: "Média" },
+  { accessorKey: "label", header: first, enableSorting: true },
+  { id: "average", accessorFn: (row) => row.minutes, header: "Média", enableSorting: true },
   { accessorKey: "p90", header: "p90", meta: { class: { th: "text-end max-sm:hidden", td: "text-end tnum max-sm:hidden" } } },
   { accessorKey: "planned", header: "Armado", meta: { class: { th: "text-end max-sm:hidden", td: "text-end tnum max-sm:hidden" } } },
   { accessorKey: "runs", header: "Medições", meta: { class: { th: "text-end", td: "text-end tnum" } } },
@@ -90,7 +92,7 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
 <template>
   <div class="flex flex-col gap-3 [&>*]:shrink-0" data-bi-lots>
     <OperatorScreenState v-if="error" state="error" what="os lotes do período" @retry="refresh()" />
-    <NuxtEmpty v-if="pending && !report" loading title="Carregando os lotes do período" data-bi-loading />
+    <OperatorScreenState v-if="pending && !report" state="loading" what="os lotes do período" data-bi-loading />
 
     <template v-if="report">
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -157,11 +159,17 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
         :csv="productionDaysCsv(buckets)"
         data-bi-production-days
       >
-        <NuxtTable :data="dayRows" :columns="dayColumns" sticky="header" class="max-h-96" caption="Produção dia a dia">
-          <template #empty>
-            <NuxtEmpty variant="naked" icon="i-lucide-chef-hat" title="Nenhum lote fechado no período" />
-          </template>
-        </NuxtTable>
+        <OperatorTable
+          in-card
+          :data="dayRows"
+          :columns="dayColumns"
+          :row-key="(row) => row.label"
+          sticky="header"
+          class="max-h-96"
+          caption="Produção dia a dia"
+          empty-icon="i-lucide-chef-hat"
+          empty-title="Nenhum lote fechado no período"
+        />
       </OperatorReadingCard>
 
       <!-- Lado a lado só a partir de 2xl: abaixo disso, cinco colunas não cabem em meia largura. -->
@@ -171,17 +179,23 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
           :description="`Média medida (armar → Concluir) · ${coverageLabel(report.batches_measured, report.batches_finished)}`"
           :csv="ovenCsv('Receita', report.oven_time_by_recipe)"
         >
-          <NuxtTable :data="recipesShown" :columns="recipeColumns" caption="Tempo de forno por receita">
+          <OperatorTable
+            in-card
+            :data="recipesShown"
+            :columns="recipeColumns"
+            :row-key="(row) => row.label"
+            caption="Tempo de forno por receita"
+            empty-icon="i-lucide-timer"
+            empty-title="Nenhuma medição no período ainda"
+            empty-description="O timer do forno alimenta este quadro."
+          >
             <template #average-cell="{ row }">
               <div class="flex min-w-32 items-center gap-2">
                 <NuxtProgress :model-value="row.original.minutes" :max="recipeScale" size="sm" class="flex-1" aria-hidden="true" />
                 <span class="tnum font-medium">{{ row.original.average }}</span>
               </div>
             </template>
-            <template #empty>
-              <NuxtEmpty variant="naked" icon="i-lucide-timer" title="Nenhuma medição no período ainda" description="O timer do forno alimenta este quadro." />
-            </template>
-          </NuxtTable>
+          </OperatorTable>
           <template v-if="recipes.length > OVEN_FOCUS_ROWS" #footer>
             <NuxtButton
               color="neutral"
@@ -198,17 +212,22 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
           description="Lotes sem posição declarada ficam de fora deste corte"
           :csv="ovenCsv('Forno', report.oven_time_by_oven)"
         >
-          <NuxtTable :data="ovens" :columns="ovenColumnsByOven" caption="Tempo de forno por forno">
+          <OperatorTable
+            in-card
+            :data="ovens"
+            :columns="ovenColumnsByOven"
+            :row-key="(row) => row.label"
+            caption="Tempo de forno por forno"
+            empty-icon="i-lucide-timer"
+            empty-title="Nenhuma medição com forno atribuído no período"
+          >
             <template #average-cell="{ row }">
               <div class="flex min-w-32 items-center gap-2">
                 <NuxtProgress :model-value="row.original.minutes" :max="ovenScaleByOven" size="sm" class="flex-1" aria-hidden="true" />
                 <span class="tnum font-medium">{{ row.original.average }}</span>
               </div>
             </template>
-            <template #empty>
-              <NuxtEmpty variant="naked" icon="i-lucide-timer" title="Nenhuma medição com forno atribuído no período" />
-            </template>
-          </NuxtTable>
+          </OperatorTable>
         </OperatorReadingCard>
       </div>
     </template>

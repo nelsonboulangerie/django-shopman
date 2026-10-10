@@ -10,7 +10,8 @@
 //
 // Peças do kit (PR-B4 do WP-BI-CANON-LAUDO): os números da página são `OperatorMetric`;
 // cada quadro é um `OperatorReadingCard` (com o ⋯ "Exportar CSV deste quadro"); os
-// gráficos são `OperatorReadingChart`; listas são `NuxtTable` e vazio é `NuxtEmpty`.
+// gráficos são `OperatorReadingChart`; listas são `OperatorTable` (`in-card`, ordena pelo
+// cabeçalho) e o vazio é o da tabela.
 // Cartão dentro de cartão só `soft` (as três contas da casa).
 import type { BICashReport } from "~/types/bi";
 import { cashAnswer, delta, formatInt, formatMoney } from "~/presentation/bi";
@@ -62,38 +63,39 @@ const hasAccounts = computed(() => {
   return Boolean(accounts && (accounts.sales_q || accounts.settled_q || accounts.open_q));
 });
 
-// As tabelas do caixa são NuxtTable: cada uma é o corpo inteiro do quadro, e o tema do
-// kit a integra ao cartão (sem padding, linhas de ponta a ponta). A coluna numérica
-// alinha à direita; o tom de cada célula sai do valor (abaixo).
+// As tabelas do caixa são a `OperatorTable` do kit dentro do quadro (`in-card`: o cartão
+// da tabela é `soft` e o vazio perde a moldura). A coluna numérica alinha à direita e
+// ordena pelo cabeçalho pelo número cru (o campo do contrato), nunca pelo texto
+// formatado; o tom de cada célula sai do valor (abaixo).
 const NUM = { th: "text-right", td: "text-right tnum" } as const;
 const NAME = { td: "font-medium text-highlighted" } as const;
 const operatorColumns = [
-  { accessorKey: "operator", header: "Operador", meta: { class: NAME } },
-  { id: "shifts", header: "Turnos", meta: { class: NUM } },
-  { id: "difference", header: "Quebra", meta: { class: NUM } },
-  { id: "drawer_openings", header: "Gaveta", meta: { class: NUM } },
-  { id: "drawer_unlocks", header: "Destraves", meta: { class: NUM } },
-  { id: "change_requests", header: "Troco", meta: { class: NUM } },
+  { accessorKey: "operator", header: "Operador", enableSorting: true, meta: { class: NAME } },
+  { accessorKey: "shifts", header: "Turnos", enableSorting: true, meta: { class: NUM } },
+  { id: "difference", accessorFn: (row: { difference_q: number }) => row.difference_q, header: "Quebra", enableSorting: true, meta: { class: NUM } },
+  { accessorKey: "drawer_openings", header: "Gaveta", enableSorting: true, meta: { class: NUM } },
+  { accessorKey: "drawer_unlocks", header: "Destraves", enableSorting: true, meta: { class: NUM } },
+  { accessorKey: "change_requests", header: "Troco", enableSorting: true, meta: { class: NUM } },
 ];
 const drawerColumns = [
-  { accessorKey: "operator", header: "Operador", meta: { class: NAME } },
-  { id: "blocks", header: "Travou", meta: { class: NUM } },
-  { id: "open_seconds", header: "Aberta (total)", meta: { class: NUM } },
-  { id: "longest_open_seconds", header: "Pior episódio", meta: { class: NUM } },
-  { id: "dismissals", header: "Desistiu", meta: { class: NUM } },
-  { id: "overrides", header: "Destraves", meta: { class: NUM } },
-  { id: "unlock_attempts", header: "Buscou o PIN", meta: { class: NUM } },
-  { id: "sensor_blind", header: "Sensor mudo", meta: { class: NUM } },
-  { id: "left_open", header: "Esquecida", meta: { class: NUM } },
+  { accessorKey: "operator", header: "Operador", enableSorting: true, meta: { class: NAME } },
+  { accessorKey: "blocks", header: "Travou", enableSorting: true, meta: { class: NUM } },
+  { accessorKey: "open_seconds", header: "Aberta (total)", enableSorting: true, meta: { class: NUM } },
+  { accessorKey: "longest_open_seconds", header: "Pior episódio", enableSorting: true, meta: { class: NUM } },
+  { accessorKey: "dismissals", header: "Desistiu", enableSorting: true, meta: { class: NUM } },
+  { accessorKey: "overrides", header: "Destraves", enableSorting: true, meta: { class: NUM } },
+  { accessorKey: "unlock_attempts", header: "Buscou o PIN", enableSorting: true, meta: { class: NUM } },
+  { accessorKey: "sensor_blind", header: "Sensor mudo", enableSorting: true, meta: { class: NUM } },
+  { accessorKey: "left_open", header: "Esquecida", enableSorting: true, meta: { class: NUM } },
 ];
 const methodColumns = [
-  { accessorKey: "method", header: "Meio", meta: { class: NAME } },
-  { id: "amount", header: "Valor", meta: { class: NUM } },
-  { id: "share", header: "Fatia" },
+  { accessorKey: "method", header: "Meio", enableSorting: true, meta: { class: NAME } },
+  { id: "amount", accessorFn: (row: { amount_q: number }) => row.amount_q, header: "Valor", enableSorting: true, meta: { class: NUM } },
+  { id: "share", accessorFn: (row: { share: number }) => row.share, header: "Fatia", enableSorting: true },
 ];
 const accountColumns = [
-  { accessorKey: "customer_name", header: "Cliente", meta: { class: NAME } },
-  { id: "balance", header: "Em aberto", meta: { class: NUM } },
+  { accessorKey: "customer_name", header: "Cliente", enableSorting: true, meta: { class: NAME } },
+  { id: "balance", accessorFn: (row: { balance_q: number }) => row.balance_q, header: "Em aberto", enableSorting: true, meta: { class: NUM } },
 ];
 /** Exceção acima de zero se lê: em negrito; zero recua. */
 const exceptionTone = (value: number) => (value ? "font-semibold text-highlighted" : "text-muted");
@@ -124,10 +126,9 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
     </OperatorPageHeader>
 
     <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
-      <NuxtEmpty
+      <OperatorScreenState
         v-if="pending && !report"
-        loading
-        icon="i-lucide-wallet"
+        state="loading"
         title="Lendo o caixa do período"
         description="Turnos, quebra, gaveta e meios de pagamento."
         data-bi-loading
@@ -211,17 +212,18 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
               :hint="`${formatInt(report.accounts.open_customers)} ${report.accounts.open_customers === 1 ? 'cliente' : 'clientes'}`"
             />
           </div>
-          <NuxtTable
+          <OperatorTable
             v-if="report.accounts.top_open.length"
+            in-card
             :data="report.accounts.top_open"
             :columns="accountColumns"
-            :get-row-id="(row) => row.customer_name"
+            :row-key="(row) => row.customer_name"
             caption="Clientes com conta em aberto"
             class="mt-3"
             data-bi-open-accounts
           >
             <template #balance-cell="{ row }">{{ formatMoney(row.original.balance_q) }}</template>
-          </NuxtTable>
+          </OperatorTable>
         </OperatorReadingCard>
 
         <div class="grid items-start gap-3 lg:grid-cols-2">
@@ -230,12 +232,14 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
             description="Quebra acumulada, aberturas de gaveta sem venda, destraves por gerente e pedidos de troco no período"
             :csv="report.by_operator.length ? operatorCsv(report.by_operator) : undefined"
           >
-            <NuxtTable
-              v-if="report.by_operator.length"
+            <OperatorTable
+              in-card
               :data="report.by_operator"
               :columns="operatorColumns"
-              :get-row-id="(row) => row.operator"
+              :row-key="(row) => row.operator"
               caption="Caixa por operador"
+              empty-icon="i-lucide-users"
+              empty-title="Nenhum turno fechado nem evento de caixa no período"
               data-bi-cash-by-operator
             >
               <template #shifts-cell="{ row }">{{ formatInt(row.original.shifts) }}</template>
@@ -247,13 +251,7 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
                 <span :class="exceptionTone(row.original.drawer_unlocks)">{{ formatInt(row.original.drawer_unlocks) }}</span>
               </template>
               <template #change_requests-cell="{ row }">{{ formatInt(row.original.change_requests) }}</template>
-            </NuxtTable>
-            <NuxtEmpty
-              v-else
-              variant="naked"
-              icon="i-lucide-users"
-              title="Nenhum turno fechado nem evento de caixa no período"
-            />
+            </OperatorTable>
           </OperatorReadingCard>
 
           <!-- O que a trava da gaveta revelou. Aqui a AUSÊNCIA é dado: um turno com
@@ -283,12 +281,15 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
             description="Quantas vezes a trava agiu, quanto tempo a gaveta ficou aberta somada, e o pior episódio, que a média esconde. Desistir da venda em vez de fechar a gaveta, destrave e tentativa de PIN são exceção: qualquer número acima de zero se lê."
             :csv="drawerRows.length ? drawerCsv(drawerRows) : undefined"
           >
-            <NuxtTable
-              v-if="drawerRows.length"
+            <OperatorTable
+              in-card
               :data="drawerRows"
               :columns="drawerColumns"
-              :get-row-id="(row) => row.operator"
+              :row-key="(row) => row.operator"
               caption="Gaveta por operador"
+              empty-icon="i-lucide-archive"
+              empty-title="Nenhum episódio de gaveta no período"
+              empty-description="Num balcão com sensor armado e movimento, isso merece conferência."
               data-bi-drawer-by-operator
             >
               <template #blocks-cell="{ row }">{{ formatInt(row.original.blocks) }}</template>
@@ -301,14 +302,7 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
                 <span :class="row.original.sensor_blind ? 'font-semibold text-error' : 'text-muted'">{{ formatInt(row.original.sensor_blind) }}</span>
               </template>
               <template #left_open-cell="{ row }"><span :class="exceptionTone(row.original.left_open)">{{ formatInt(row.original.left_open) }}</span></template>
-            </NuxtTable>
-            <NuxtEmpty
-              v-else
-              variant="naked"
-              icon="i-lucide-archive"
-              title="Nenhum episódio de gaveta no período"
-              description="Num balcão com sensor armado e movimento, isso merece conferência."
-            />
+            </OperatorTable>
           </OperatorReadingCard>
 
           <OperatorReadingCard
@@ -316,12 +310,15 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
             description="Consolidado dos fechamentos do período"
             :csv="methodRows.length ? methodsCsv(methodRows) : undefined"
           >
-            <NuxtTable
-              v-if="methodRows.length"
+            <OperatorTable
+              in-card
               :data="methodRows"
               :columns="methodColumns"
-              :get-row-id="(row) => row.method"
+              :row-key="(row) => row.method"
               caption="Meios de pagamento no período"
+              empty-icon="i-lucide-credit-card"
+              empty-title="Nenhum fechamento na janela ainda"
+              empty-description="O mix de pagamento sai do fechamento do caixa."
               data-bi-payment-methods
             >
               <template #amount-cell="{ row }">{{ formatMoney(row.original.amount_q) }}</template>
@@ -331,14 +328,7 @@ const exceptionTone = (value: number) => (value ? "font-semibold text-highlighte
                   <span class="tnum">{{ row.original.shareLabel }}</span>
                 </span>
               </template>
-            </NuxtTable>
-            <NuxtEmpty
-              v-else
-              variant="naked"
-              icon="i-lucide-credit-card"
-              title="Nenhum fechamento na janela ainda"
-              description="O mix de pagamento sai do fechamento do caixa."
-            />
+            </OperatorTable>
           </OperatorReadingCard>
         </div>
 
