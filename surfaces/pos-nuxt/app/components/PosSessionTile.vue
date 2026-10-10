@@ -41,7 +41,7 @@ const badgeClass = computed(() => {
   <NuxtButton
     color="neutral"
     variant="ghost"
-    class="relative flex min-h-28 w-full flex-col gap-2 rounded-md border p-4 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 items-stretch font-normal"
+    class="justify-start relative flex min-h-28 w-full flex-col gap-2 rounded-md border p-4 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 items-stretch font-normal"
     :class="cardClass"
     :disabled="tile.disabled"
     :data-session-tile="tile.key"

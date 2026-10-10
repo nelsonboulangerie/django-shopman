@@ -251,7 +251,7 @@ onBeforeUnmount(() => {
           <NuxtButton
             color="neutral"
             variant="ghost"
-            class="flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left text-sm transition font-normal"
+            class="justify-start flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left text-sm transition font-normal"
             :class="idx === highlighted ? 'bg-accent' : 'hover:bg-accent/60'"
             @pointerdown.prevent
             @click="accept(suggestion)"

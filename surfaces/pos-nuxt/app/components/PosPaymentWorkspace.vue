@@ -1431,7 +1431,7 @@ defineExpose({
               :data-payment-method="method.ref"
               color="neutral"
               variant="outline"
-              class="gap-3 px-3 text-left"
+              class="justify-start gap-3 px-3 text-left"
               :disabled="!!paymentMethodBlockedReason(method.ref)"
               :title="paymentMethodBlockedReason(method.ref)"
               @click="$emit('addTender', method.ref)"

@@ -46,12 +46,12 @@ type Rule =
 const CEILING: Record<string, Partial<Record<Rule, number>>> = {
   "operator-kit": {
     buttonSize: 9,
-    buttonVariant: 14,
+    buttonVariant: 10,
     // `buttonColor` caiu para zero com a exceção da ação de aviso: os dois `warning`
     // que sobravam são as ações do aviso de descarte do `OperatorReasonDialog`.
     badgeVariant: 12,
     cardVariant: 1,
-    alertOutsideSet: 19,
+    alertOutsideSet: 14,
     // Inclui duas exceções declaradas: o chip `4xl` (`text-[12px]/none` no
     // app.config) e o rótulo da barra inferior (`text-[10px]/3` em `presentation/tabBar.ts`, o desenho das duas barras de baixo),
     // que é o valor do exemplo oficial "With bottom tab bar" do NavigationMenu (dono,

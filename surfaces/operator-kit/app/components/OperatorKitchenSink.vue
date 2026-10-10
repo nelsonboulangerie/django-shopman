@@ -273,6 +273,7 @@ onMounted(() => {
           :label="collapsed ? undefined : 'Guia de composição'"
           :square="collapsed"
           class="min-w-0 w-full"
+          :class="collapsed ? undefined : 'justify-start'"
           aria-label="Guia de composição"
           color="neutral"
           variant="ghost"

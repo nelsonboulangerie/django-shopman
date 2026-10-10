@@ -38,6 +38,13 @@ function galleryDetail(ref) {
 }
 
 let scenario = "normal";
+const LOCK_PEOPLE = [
+  { id: 1, username: "ana", name: "Ana Paula" },
+  { id: 2, username: "bruno", name: "Bruno" },
+  { id: 3, username: "carla", name: "Carla Mendes" },
+  { id: 4, username: "diego", name: "Diego" },
+  { id: 5, username: "elaine", name: "Elaine Cristina Souza" },
+];
 // "Visto" do aviso com prazo no cenário gallery: o mock lembra quem já viu.
 const acknowledged = new Set();
 
@@ -140,6 +147,28 @@ createServer((req, res) => {
     return;
   }
   if (path === "/__visual/health") { send(res, 200, { ok: true }); return; }
+  // A trava do operador (kit): `lock` = ninguém operando; `lock-forced` = o gerente
+  // redefiniu o PIN e a troca é obrigatória. Destrave e troca sempre recusam: o
+  // spec mede a geometria da tela de PIN, inclusive com a recusa.
+  if (scenario.startsWith("lock")) {
+    if (path === "/api/v1/backstage/operator/session/") {
+      const forced = scenario === "lock-forced";
+      send(res, 200, {
+        station: "GESTOR-1", workstation: null,
+        operator: forced ? LOCK_PEOPLE[0] : null,
+        locked: true, pin_must_change: forced, authorized: false,
+      });
+      return;
+    }
+    if (path === "/api/v1/backstage/operator/eligible/") {
+      send(res, 200, { operators: LOCK_PEOPLE });
+      return;
+    }
+    if (req.method === "POST" && path.startsWith("/api/v1/backstage/operator/")) {
+      send(res, 403, { detail: "PIN incorreto. Restam 4 tentativas.", field: null, errors: {} });
+      return;
+    }
+  }
   if (path === "/api/v1/backstage/operator/session/") {
     send(res, 200, {
       station: "GESTOR-1", workstation: null,

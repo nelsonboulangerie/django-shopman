@@ -55,7 +55,7 @@ function toggle(machine: PosCardMachineSetting) {
           <NuxtButton
             color="neutral"
             variant="ghost"
-            class="-my-1 min-w-0 flex-1 flex-col items-start gap-0 text-left"
+            class="justify-start -my-1 min-w-0 flex-1 flex-col items-start gap-0 text-left"
             :data-settings-card-machine-edit="machine.ref"
             @click="edit(machine)"
           >

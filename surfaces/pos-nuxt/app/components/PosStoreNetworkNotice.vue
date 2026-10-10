@@ -20,7 +20,7 @@ const ITEMS = [
     <NuxtButton
       color="neutral"
       variant="ghost"
-      class="flex min-h-12 items-center gap-2.5 rounded-lg bg-secondary px-3 text-left op-label font-normal"
+      class="justify-start flex min-h-12 items-center gap-2.5 rounded-lg bg-secondary px-3 text-left op-label font-normal"
       :aria-expanded="open"
       @click="open = !open"
     >

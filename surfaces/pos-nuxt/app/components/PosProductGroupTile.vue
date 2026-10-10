@@ -36,7 +36,7 @@ function choose(product: POSProductProjection) {
   <NuxtButton
     color="neutral"
     variant="ghost"
-    class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground shadow-[4px_4px_0_-1px_var(--card),4px_4px_0_0_var(--border)] transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0 items-stretch gap-0 p-0 font-normal"
+    class="justify-start group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground shadow-[4px_4px_0_-1px_var(--card),4px_4px_0_0_var(--border)] transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0 items-stretch gap-0 p-0 font-normal"
     :class="qty > 0 ? 'border-primary' : 'border-border'"
     :disabled="group.allBlocked"
     :aria-label="`${group.name}: escolher entre ${group.options.length} opções`"
