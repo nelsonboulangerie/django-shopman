@@ -29,6 +29,11 @@ npm run catalog:build
 npm run test:visual
 ```
 
+`<OperatorSideColumn>` é a coluna da direita de largura ajustável (a `DashboardSidebar`
+oficial do lado direito, `resizable`, em rem, num `DashboardGroup` próprio, gravada em
+cookie). Primeiro consumidor: a comanda do PDV. Fora da mesa (`docked = false`) o
+conteúdo sai num `<aside>` no fluxo.
+
 Nenhum app deve criar shell, Sidebar, NavigationMenu, Page ou Splitter local. Uma
 necessidade operacional comprovada entra no ledger com responsável e teste.
 O léxico, anatomias, matriz dos oito apps, exceções e guia de adoção ficam em

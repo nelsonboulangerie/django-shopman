@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { tabTitleView } from "~/presentation/tabTitle";
 import { toast } from "vue-sonner";
-import { createReusableTemplate } from "@vueuse/core";
 
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
@@ -36,8 +35,7 @@ const { belowLg: ticketAsSheet } = useScreen();
 const TICKET_MIN_REM = 22;
 const TICKET_DEFAULT_REM = 25;
 const TICKET_MAX_REM = 32;
-// A comanda é a mesma na coluna da mesa e na folha de baixo: um molde só.
-const [DefineTicketPanel, ReuseTicketPanel] = createReusableTemplate();
+
 
 const apiPath = useApiPath();
 const action = usePosAction();
@@ -1209,14 +1207,18 @@ onBeforeUnmount(() => {
          coluna da direita vai de cima a baixo como a barra lateral, e o cabeçalho, a
          barra da venda e os filtros moram só na largura entre as duas. Abaixo do `lg`
          a comanda é a folha de baixo e o cabeçalho volta a ser a primeira faixa. -->
-    <!-- O grupo da Venda (Nuxt UI): a coluna da comanda é um `DashboardSidebar` do lado
-         direito, com a largura AJUSTÁVEL pela alça da própria primitiva (mín. e máx.
+    <!-- A coluna da comanda é a `OperatorSideColumn` do kit (DashboardSidebar do Nuxt
+         UI do lado direito): largura AJUSTÁVEL pela alça da primitiva, mínimo e máximo
          em rem, gravada no cookie `pos-sale-sidebar-ticket`; dois cliques voltam ao
-         padrão). Grupo próprio, para a largura não se misturar com a do rail. -->
-    <NuxtDashboardGroup
+         padrão. Abaixo do `lg` a comanda é a folha de baixo, sem coluna. -->
+    <OperatorSideColumn
       storage-key="pos-sale"
-      unit="rem"
-      class="relative inset-auto flex min-h-0 flex-1 max-lg:flex-col"
+      column-id="ticket"
+      :docked="!ticketAsSheet"
+      :min-size="TICKET_MIN_REM"
+      :max-size="TICKET_MAX_REM"
+      :default-size="TICKET_DEFAULT_REM"
+      :column-attrs="{ 'data-pos-ticket-column': true }"
       data-pos-sale-layout
     >
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-pos-work-column>
@@ -1590,8 +1592,7 @@ onBeforeUnmount(() => {
     <!-- COMANDA: na mesa, a coluna inteira da direita (de cima a baixo, como o rail),
          com a largura ajustável; abaixo do `lg` é a folha de baixo (o próprio
          `PosCartPanel` em modo folha), sem coluna. -->
-    <template v-if="pos && inSaleView && !checkoutMode && !orderSetupPending">
-      <DefineTicketPanel>
+    <template v-if="pos && inSaleView && !checkoutMode && !orderSetupPending" #column>
         <div class="flex min-h-0 flex-1 flex-col md:overflow-hidden">
             <PosCartPanel
               :sheet="ticketAsSheet"
@@ -1632,28 +1633,9 @@ onBeforeUnmount(() => {
               @request-tab="requestTabAssociation('start')"
             />
         </div>
-      </DefineTicketPanel>
-      <NuxtDashboardSidebar
-        v-if="!ticketAsSheet"
-        id="ticket"
-        side="right"
-        resizable
-        :min-size="TICKET_MIN_REM"
-        :max-size="TICKET_MAX_REM"
-        :default-size="TICKET_DEFAULT_REM"
-        :toggle="false"
-        :open="false"
-        :ui="{ root: 'h-full min-h-0 border-s border-default bg-card', body: 'gap-0 overflow-hidden p-0', handle: 'z-40' }"
-        data-pos-ticket-column
-      >
-        <ReuseTicketPanel />
-      </NuxtDashboardSidebar>
-      <aside v-else class="relative z-30 flex shrink-0 flex-col" data-pos-ticket-column>
-        <ReuseTicketPanel />
-      </aside>
     </template>
 
-    </NuxtDashboardGroup>
+    </OperatorSideColumn>
 
     <!-- RECEBIMENTO na tela de venda. É fato do PEDIDO, não do pagamento:
          entrega acrescenta taxa e depende de endereço, e perguntar isso só no
