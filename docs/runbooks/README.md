@@ -53,6 +53,7 @@ não implementou deve percorrer as oito decisões e assinar a evidência do MKT-
 ## Procedimentos
 
 - [Go-live — checklist de cutover (staging → produção)](go-live-cutover.md)
+- [Go-live: o delta do spec no dia D (chave a chave, com script de conferência)](go-live-delta-do-spec.md)
 - [Roteiros da QA física, do ensaio geral e do canário de um](qa-fisica-e-canario.md)
 - [Ligar o Sentry (error tracking)](ativar-sentry.md)
 - [Guardar arquivos no Cloudflare R2: o que o dono faz](r2-passo-a-passo-do-dono.md)

@@ -10,15 +10,17 @@ responde lendo o que o app vivo de fato recebe:
 - ``/health/`` e ``/ready/`` do domínio da API.
 
 Nada aqui importa Django nem toca banco. Valor de segredo nunca é lido nem
-impresso: no spec ele vem cifrado (``EV[...]``) e entra no relatório como
-``<secret>``; uma regra que dependa de valor secreto vira ``warning`` (não dá
-para afirmar) em vez de ``passed``.
+impresso: no spec ele vem cifrado (``EV[...]``) e aparece como ``<segredo>``;
+uma regra que dependa de valor secreto vira ``warning`` (não dá para afirmar)
+em vez de ``passed``.
 
-As regras espelham o perfil ``production`` do relatório local
-(``_production_profile_check``) e acrescentam as chaves de dinheiro e de nota
-que o settings decide por default (``EFI_SANDBOX`` nasce ``true``,
-``FOCUS_NFE_ENVIRONMENT`` nasce ``homologacao``) — ausência no spec é, por
-isso, reprovação, não neutralidade.
+As regras de chave são UMA tabela só, o ``DELTA`` de
+``scripts/golive_spec_delta.py`` (o mesmo que lista o que colar no painel no
+dia D, com o runbook ``docs/runbooks/go-live-delta-do-spec.md``). Aqui ela vira
+quatro checks (perfil, dinheiro e nota, chaves do corte, chaves já em dia), e
+este módulo acrescenta o que não é chave: o job de release e as sondas.
+Ausência de ``EFI_SANDBOX``/``FOCUS_NFE_ENVIRONMENT`` reprova, porque os
+defaults do settings são de ensaio.
 """
 
 from __future__ import annotations
@@ -31,22 +33,10 @@ import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
+from scripts import golive_spec_delta as delta
+
 DEFAULT_APP_NAME = "shopman-nelson"
 DEFAULT_TARGET_URL = "https://api.boulangerie.com.br"
-
-_TRUE = {"1", "true", "yes", "on"}
-_PRODUCTION_ENVIRONMENTS = {"production", "prod", "live"}
-_SECRET = "<secret>"
-
-#: Interruptores de ensaio que não podem chegar ligados à produção. Mesma lista
-#: do ``_production_profile_check`` local.
-_TEST_SWITCHES = (
-    "SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS",
-    "SHOPMAN_EXPOSE_MOCK_CAPTURE",
-    "SHOPMAN_MOCK_PIX_AUTO_CONFIRM",
-    "SHOPMAN_EXPOSE_DEBUG_OTP",
-    "SHOPMAN_STAGING_AUTOPILOT",
-)
 
 Fetcher = Callable[[str], tuple[int, str]]
 
@@ -105,88 +95,23 @@ def http_get(url: str) -> tuple[int, str]:
         return exc.code, exc.read(4096).decode("utf-8", "replace")
 
 
-# ── Ambiente efetivo por componente ──────────────────────────────────────────
+# ── Regras (tabela única do delta) ───────────────────────────────────────────
 
 
-def _runs_at_runtime(entry: dict) -> bool:
-    return str(entry.get("scope") or "RUN_AND_BUILD_TIME").upper() in {"RUN_TIME", "RUN_AND_BUILD_TIME"}
-
-
-def _value(entry: dict) -> str:
-    raw = str(entry.get("value") if entry.get("value") is not None else "")
-    if raw.startswith("EV[") or str(entry.get("type") or "").upper() == "SECRET":
-        return _SECRET
-    return raw
-
-
-def _env_map(entries) -> dict[str, str]:
-    return {entry["key"]: _value(entry) for entry in entries or [] if entry.get("key") and _runs_at_runtime(entry)}
-
-
-def django_components(spec: dict) -> dict[str, dict[str, str]]:
-    """Ambiente efetivo (app + componente) de cada componente que roda Django."""
-    base = _env_map(spec.get("envs"))
-    components: dict[str, dict[str, str]] = {}
-    for section in ("services", "workers", "jobs"):
-        for component in spec.get(section) or []:
-            command = str(component.get("run_command") or "")
-            if "manage.py" not in command and "config.asgi" not in command and "config.wsgi" not in command:
-                continue
-            components[component["name"]] = {**base, **_env_map(component.get("envs"))}
-    return components
-
-
-def _is_true(value: str | None) -> bool:
-    return str(value or "").strip().lower() in _TRUE
-
-
-# ── Regras ───────────────────────────────────────────────────────────────────
-
-
-def profile_violations(env: dict[str, str]) -> list[str]:
-    """Mesmas regras do perfil ``production`` local, sobre o env do spec."""
-    failures: list[str] = []
-    debug = _is_true(env.get("DJANGO_DEBUG"))
-    if debug:
-        failures.append("DJANGO_DEBUG=false")
-    # Ausente fora de DEBUG, o settings cai em production (falha fechado).
-    environment = (env.get("SHOPMAN_ENVIRONMENT") or ("development" if debug else "production")).strip().lower()
-    if environment not in _PRODUCTION_ENVIRONMENTS:
-        failures.append(f"SHOPMAN_ENVIRONMENT=production (hoje {environment})")
-    for switch in _TEST_SWITCHES:
-        if _is_true(env.get(switch)):
-            failures.append(f"remove_{switch}")
-    for method, key in (("pix", "SHOPMAN_PIX_ADAPTER"), ("card", "SHOPMAN_CARD_ADAPTER")):
-        if "payment_mock" in str(env.get(key) or ""):
-            failures.append(f"real_payment_adapter_for_{method} ({key})")
-    return failures
-
-
-def money_and_fiscal_violations(env: dict[str, str]) -> tuple[list[str], list[str]]:
-    """Chaves cujo default no settings é de ensaio: ausência reprova."""
-    failures: list[str] = []
-    unknown: list[str] = []
-    efi_sandbox = env.get("EFI_SANDBOX")
-    if efi_sandbox is None or efi_sandbox.strip().lower() in {"true", "1", "yes"}:
-        failures.append(f"EFI_SANDBOX=false (hoje {efi_sandbox or 'ausente, default true'})")
-    focus = env.get("FOCUS_NFE_ENVIRONMENT")
-    if (focus or "homologacao").strip().lower() != "producao":
-        failures.append(f"FOCUS_NFE_ENVIRONMENT=producao (hoje {focus or 'ausente, default homologacao'})")
-    stripe = env.get("STRIPE_PUBLISHABLE_KEY")
-    if stripe == _SECRET:
-        unknown.append("STRIPE_PUBLISHABLE_KEY é secreta no spec: não dá para ler se é pk_live_")
-    elif not str(stripe or "").startswith("pk_live_"):
-        failures.append(f"STRIPE_PUBLISHABLE_KEY pk_live_ (hoje {str(stripe or 'ausente')[:8]})")
-    return failures, unknown
-
-
-def cutover_switch_violations(env: dict[str, str]) -> list[str]:
-    failures: list[str] = []
-    if not _is_true(env.get("SHOPMAN_ADMIN_REQUIRE_2FA")):
-        failures.append("SHOPMAN_ADMIN_REQUIRE_2FA=true (cadastrar o 2FA de todo staff antes)")
-    if not _is_true(env.get("SHOPMAN_GO_LIVE")):
-        failures.append("SHOPMAN_GO_LIVE=true (arma a trava de migração do ADR-015)")
-    return failures
+def change_line(finding) -> str:
+    """Uma linha por chave fora do valor de produção, sem valor de segredo."""
+    key, rule, today = finding.row.key, finding.rule, finding.today
+    if rule.kind in {"equals", "equals_or_absent"}:
+        return f"{key}={rule.value} (hoje {today})"
+    if rule.kind == "true":
+        return f"{key}=true (hoje {today})"
+    if rule.kind in {"off", "absent"}:
+        return f"apagar {key} (hoje {today})"
+    if rule.kind == "prefix":
+        return f"{key} {rule.value}… (hoje {today[:8]})"
+    if rule.kind == "rotated":
+        return f"{key}: colar o valor de produção"
+    return f"{key}: falta"
 
 
 def release_job_check(spec: dict):
@@ -217,61 +142,36 @@ def release_job_check(spec: dict):
     )
 
 
-def _component_rule_check(check_id: str, title: str, ok_message: str, fail_message: str, components, rule):
+def _delta_check(check_id: str, title: str, ok_message: str, fail_message: str, findings, grupo: str):
+    """Um check do relatório = um grupo de linhas da tabela do delta.
+
+    ``virar`` reprova; ``sem_prova`` (segredo que o spec não deixa ler, ou
+    troca de segredo sem ``--target-baseline``) vira aviso: não dá para
+    afirmar, então não passa calado nem reprova o que pode estar certo.
+    Limpeza não entra no gate.
+    """
     from scripts.check_release_readiness import ReadinessCheck
 
-    per_component = {name: rule(env) for name, env in components.items()}
-    offending = {name: failures for name, failures in per_component.items() if failures}
-    if not components:
+    group = [finding for finding in findings if finding.row.grupo == grupo]
+    failing = [finding for finding in group if finding.status == "virar"]
+    unknown = [finding for finding in group if finding.status == "sem_prova"]
+    if failing:
+        details: dict[str, object] = {
+            "change": [change_line(finding) for finding in failing],
+            "components": sorted({name for finding in failing for name in finding.where}),
+        }
+        if unknown:
+            details["unknown"] = [change_line(finding) for finding in unknown]
+        return ReadinessCheck(id=check_id, title=title, status="failed", message=fail_message, details=details)
+    if unknown:
         return ReadinessCheck(
             id=check_id,
             title=title,
-            status="failed",
-            message="O spec não tem componente Django para avaliar.",
-        )
-    if not offending:
-        return ReadinessCheck(id=check_id, title=title, status="passed", message=ok_message)
-    distinct = sorted({failure for failures in offending.values() for failure in failures})
-    return ReadinessCheck(
-        id=check_id,
-        title=title,
-        status="failed",
-        message=fail_message,
-        details={"change": distinct, "components": sorted(offending)},
-    )
-
-
-def _money_check(components):
-    from scripts.check_release_readiness import ReadinessCheck
-
-    failures: set[str] = set()
-    unknown: set[str] = set()
-    for env in components.values():
-        component_failures, component_unknown = money_and_fiscal_violations(env)
-        failures.update(component_failures)
-        unknown.update(component_unknown)
-    if failures:
-        return ReadinessCheck(
-            id="target.money_and_fiscal",
-            title="Real money and real invoices",
-            status="failed",
-            message="Cobrança ou nota ainda em ambiente de ensaio no app vivo.",
-            details={"change": sorted(failures), **({"unknown": sorted(unknown)} if unknown else {})},
-        )
-    if unknown:
-        return ReadinessCheck(
-            id="target.money_and_fiscal",
-            title="Real money and real invoices",
             status="warning",
-            message="Cobrança e nota em produção, com chave que o spec não deixa ler.",
-            details={"unknown": sorted(unknown)},
+            message="Sem como afirmar pelo spec: segredo que não se lê, ou troca sem --target-baseline.",
+            details={"unknown": [change_line(finding) for finding in unknown]},
         )
-    return ReadinessCheck(
-        id="target.money_and_fiscal",
-        title="Real money and real invoices",
-        status="passed",
-        message="Efí, Focus e Stripe apontam para produção no app vivo.",
-    )
+    return ReadinessCheck(id=check_id, title=title, status="passed", message=ok_message)
 
 
 def probe_checks(base_url: str, fetch: Fetcher) -> tuple:
@@ -319,35 +219,52 @@ def build_target_report(
     base_url: str = DEFAULT_TARGET_URL,
     fetch: Fetcher | None = None,
     source: str = "",
+    baseline_spec: dict | None = None,
 ):
     """Relatório ``production`` sobre o alvo. Sempre estrito: é o gate do corte."""
     from scripts.check_release_readiness import ReadinessCheck, ReadinessReport
 
-    components = django_components(spec)
+    components = delta.django_components(spec)
+    findings = delta.evaluate(spec, baseline_spec=baseline_spec) if components else []
     checks = [
         ReadinessCheck(
             id="target.spec",
             title="Target spec read",
-            status="passed",
+            status="passed" if components else "failed",
             message=f"Spec do app {spec.get('name') or '?'} lido ({source or 'arquivo'}); {len(components)} componentes Django.",
             details={"components": sorted(components)},
         ),
-        _component_rule_check(
+        _delta_check(
             "production.profile",
             "Production flip profile (target)",
             "Nenhum interruptor de ensaio ligado no app vivo.",
             "O app vivo ainda roda com interruptores de ensaio.",
-            components,
-            profile_violations,
+            findings,
+            "profile",
         ),
-        _money_check(components),
-        _component_rule_check(
+        _delta_check(
+            "target.money_and_fiscal",
+            "Real money and real invoices",
+            "Efí, Focus e Stripe apontam para produção no app vivo.",
+            "Cobrança ou nota ainda em ambiente de ensaio no app vivo.",
+            findings,
+            "money",
+        ),
+        _delta_check(
             "target.cutover_switches",
             "Cutover switches",
             "2FA do Admin e SHOPMAN_GO_LIVE ligados no app vivo.",
             "Faltam as chaves que só se ligam no corte.",
-            components,
-            cutover_switch_violations,
+            findings,
+            "cutover",
+        ),
+        _delta_check(
+            "target.in_place",
+            "Production keys already in place",
+            "As chaves que os checks de produção exigem seguem no valor.",
+            "Uma chave que já estava no valor de produção saiu dele.",
+            findings,
+            "in_place",
         ),
         release_job_check(spec),
         *probe_checks(base_url, fetch or http_get),
