@@ -226,7 +226,7 @@ function menuDotSize(size: string): ChipProps["size"] {
   <NuxtDashboardGroup
     :storage-key="storageKey"
     unit="rem"
-    class="min-h-dvh"
+    class="top-[var(--operator-offline-inset,0px)] transition-[top] duration-200 ease-out motion-reduce:transition-none"
     data-operator-office-shell
     data-operator-suite-shell
     :data-rail-state="railState"

@@ -31,7 +31,7 @@ withDefaults(
   <NuxtDashboardGroup
     :storage-key="storageKey"
     :unit="rail ? 'px' : '%'"
-    class="min-h-dvh"
+    class="top-[var(--operator-offline-inset,0px)] transition-[top] duration-200 ease-out motion-reduce:transition-none"
     data-operator-office-shell
   >
     <NuxtDashboardSidebar

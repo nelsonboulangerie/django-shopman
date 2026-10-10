@@ -1,6 +1,7 @@
 <template>
   <NuxtDashboardGroup
     storage-key="operator-operational-shell"
+    class="top-[var(--operator-offline-inset,0px)] transition-[top] duration-200 ease-out motion-reduce:transition-none"
     data-operator-operational-shell
   >
     <NuxtDashboardSidebar id="operational-navigation" :default-size="15">

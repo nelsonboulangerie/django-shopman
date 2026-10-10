@@ -1246,6 +1246,8 @@ test.describe("erros globais", () => {
     await expect(
       page.getByRole("heading", { name: "Você está sem conexão" }),
     ).toBeVisible();
+    // A faixa do kit só entra depois de 1 s sem rede (piscada não move a tela).
+    await expect(page.locator("[data-operator-offline-banner]")).toBeVisible();
     await expectStableScreenshot(page, "global-error__offline", V320, "light", {
       fullPage: false,
     });
