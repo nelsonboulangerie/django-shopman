@@ -304,7 +304,6 @@ def test_comanda_mudada_em_outro_dispositivo_fecha_so_o_cobrado(balcao):
     from shopman.orderman.models import Session
 
     from shopman.backstage.models import OperatorAlert
-    from shopman.shop.services import pos_offline_sale
 
     tab = _open_tab()
     _save_tab(tab, [PAO])
@@ -326,7 +325,6 @@ def test_comanda_mudada_em_outro_dispositivo_fecha_so_o_cobrado(balcao):
     # A comanda segue viva, com o mesmo número e só o que não foi cobrado.
     still_open = Session.objects.get(handle_type="pos_tab", handle_ref=tab.handle_ref, state="open")
     assert [item["line_id"] for item in still_open.items] == ["L-outro001"]
-    assert pos_offline_sale.operator_note(order) == "Itens lançados em outro dispositivo seguem abertos na comanda 12."
     alert = OperatorAlert.objects.get(type="pos_offline_sale_adjusted", order_ref=order.ref)
     assert "1 item lançado em outro dispositivo segue aberto na comanda." in alert.message
 
@@ -369,9 +367,7 @@ def test_comanda_mudada_fora_da_fila_sem_conexao_segue_recusada(balcao):
     assert refused.value.code == "tab_revision_conflict"
 
 
-def test_quantidade_que_o_outro_dispositivo_aumentou_fica_aberta(balcao):
-    from shopman.orderman.models import Session
-
+def test_quantidade_mudada_no_outro_dispositivo_vale_o_cobrado_e_so_registra(balcao):
     tab = _open_tab()
     _save_tab(tab, [PAO])
     seen = _revision(tab)
@@ -384,9 +380,11 @@ def test_quantidade_que_o_outro_dispositivo_aumentou_fica_aberta(balcao):
 
     order = Order.objects.get(ref=result.order_ref)
     assert order.total_q == 1200
-    still_open = Session.objects.get(handle_type="pos_tab", handle_ref=tab.handle_ref, state="open")
-    assert [(item["sku"], int(item["qty"])) for item in still_open.items] == [("PAO", 2)]
-    assert order.data["pos"]["offline"]["tab"]["adjusted"][0]["kind"] == "qty_increased_elsewhere"
+    adjusted = order.data["pos"]["offline"]["tab"]["adjusted"]
+    assert adjusted == [{
+        "line_id": "L-pao00001", "sku": "PAO", "name": "Pão", "qty": 1,
+        "kind": "qty_changed_elsewhere", "charged_qty": 1, "tab_qty": 3,
+    }]
 
 
 def test_linha_que_o_outro_dispositivo_tirou_vale_o_cobrado(balcao):
@@ -408,7 +406,6 @@ def test_linha_que_o_outro_dispositivo_tirou_vale_o_cobrado(balcao):
 
 def test_comanda_ja_paga_inteira_nao_cobra_de_novo(balcao):
     from shopman.backstage.models import OperatorAlert
-    from shopman.shop.services import pos_offline_sale
 
     tab = _open_tab()
     _save_tab(tab, [PAO])
@@ -425,9 +422,6 @@ def test_comanda_ja_paga_inteira_nao_cobra_de_novo(balcao):
     order = Order.objects.get(ref=paid.order_ref)
     duplicates = order.data["pos"]["offline_duplicates"]
     assert len(duplicates) == 1 and duplicates[0]["charged_total_q"] == 1200
-    assert pos_offline_sale.operator_note(order, client_request_id="pos:dobro") == (
-        "A comanda 12 já tinha sido paga em outro dispositivo. O gerente foi avisado."
-    )
     alert = OperatorAlert.objects.get(type="pos_offline_sale_adjusted", order_ref=order.ref)
     assert "cobrou de novo R$ 12,00" in alert.message
     assert "Devolva ao cliente." in alert.message

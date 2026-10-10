@@ -29,9 +29,6 @@ export function usePosOfflineSales() {
       useSonner.success(report.sent.length === 1
         ? `Venda guardada enviada: pedido ${refs}.`
         : `${report.sent.length} vendas guardadas enviadas: pedidos ${refs}.`);
-      // A comanda mudou em outro dispositivo durante a queda: a venda entrou, e
-      // o balcão fica sabendo o que seguiu aberto (o gerente recebe o detalhe).
-      for (const row of report.sent) if (row.note) useSonner.info(row.note);
     }
     if (report.conflicts) {
       useSonner.error(report.conflicts === 1

@@ -64,7 +64,8 @@ export interface OfflineSaleInputs {
  * da rede. A comanda NÃO está na lista: a aberta antes da queda fecha com a
  * revisão que a tela conhecia (se outro dispositivo a mudou, o servidor fecha só
  * as linhas cobradas aqui e o resto segue aberto na comanda; se ela já foi paga,
- * não cobra de novo: decisão C do dono, 10/10/2026), e a aberta sem conexão vira
+ * não cobra de novo e só registra ao gerente: decisão C do dono, 10/10/2026), e
+ * a aberta sem conexão vira
  * venda de balcão direta.
  */
 export function offlineSaleBlockers(input: OfflineSaleInputs): string[] {
@@ -187,12 +188,7 @@ export function offlineTotalNote(pricesClock: string): string {
 
 /** Como o reenvio de UMA venda terminou. */
 export type OfflineSendOutcome =
-  /**
-   * `note`: a venda entrou, mas a comanda tinha mudado em outro dispositivo
-   * (itens que seguem abertos, comanda já paga). Uma frase para o balcão; o
-   * detalhe é do gerente. Vazio no caso comum.
-   */
-  | { kind: "sent"; orderRef: string; note?: string }
+  | { kind: "sent"; orderRef: string }
   /** Rede, servidor fora ou sessão: para a rodada e tenta depois, sem marcar nada. */
   | { kind: "retry"; stop: true; reason: "network" | "server" | "session" }
   /** O servidor RECUSOU esta venda: ela fica na fila com o motivo, e a rodada segue. */
@@ -208,8 +204,7 @@ export function classifyOfflineSend(input: { response?: unknown; failure?: HttpF
   if (input.response !== undefined) {
     const body = input.response && typeof input.response === "object" ? input.response as Record<string, unknown> : {};
     const orderRef = typeof body.order_ref === "string" ? body.order_ref.trim() : "";
-    const note = typeof body.offline_note === "string" ? body.offline_note.trim() : "";
-    if (body.ok === true && orderRef) return note ? { kind: "sent", orderRef, note } : { kind: "sent", orderRef };
+    if (body.ok === true && orderRef) return { kind: "sent", orderRef };
     // Resposta sem prova de pedido: não marca enviada nem recusada. O reenvio
     // com a mesma chave devolve a venda se ela tiver nascido.
     return { kind: "retry", stop: true, reason: "server" };

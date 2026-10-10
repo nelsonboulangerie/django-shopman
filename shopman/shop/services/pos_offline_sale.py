@@ -199,18 +199,16 @@ def _qty_json(value):
     return int(qty) if qty == qty.to_integral_value() else float(qty)
 
 
-def _is_weighed(line: dict) -> bool:
-    return bool(line.get("weighed") or (line.get("meta") or {}).get("weighed"))
-
-
 def plan_open_tab(session, payload: dict) -> TabPlan:
     """A comanda ainda aberta, mudada em outro dispositivo: o que fecha e o que fica.
 
-    Fecha o que foi COBRADO (as linhas do payload). Fica aberto, na mesma comanda,
-    o que só a comanda tem: a linha que o outro dispositivo acrescentou, e a
-    quantidade a mais que ele lançou numa linha cobrada aqui. Uma linha que este
-    dispositivo tirou sem conexão também aparece como "só a comanda tem" e fica
-    aberta: deixar à vista é o lado seguro (nada some calado).
+    Fecha o que foi COBRADO (as linhas do payload). Fica aberta, na mesma comanda,
+    a linha que só a comanda tem (a que o outro dispositivo acrescentou). Uma linha
+    que este dispositivo tirou sem conexão também aparece assim e fica aberta:
+    deixar à vista é o lado seguro (nada some calado).
+
+    Quantidade mudada lá numa linha cobrada aqui: vale o cobrado e só se registra
+    (cenário raríssimo; o dono pediu o mínimo seguro, sem acerto de quantidade).
     """
     from shopman.shop.services import kds as kds_service
     from shopman.shop.services import pos
@@ -232,20 +230,6 @@ def plan_open_tab(session, payload: dict) -> TabPlan:
             continue
         tab_qty, charged_qty = _qty(item.get("qty")), _qty(mine.get("qty"))
         if tab_qty == charged_qty:
-            continue
-        if tab_qty > charged_qty and not _is_weighed(item) and not _is_weighed(mine):
-            from shopman.orderman.ids import generate_line_id
-
-            residual = dict(item)
-            residual["line_id"] = generate_line_id()
-            residual["qty"] = int(tab_qty - charged_qty)
-            plan.left_open.append(residual)
-            if line_id in fired:
-                plan.inherited_fired.append(residual["line_id"])
-            plan.adjusted.append({
-                **_public_line(mine), "kind": "qty_increased_elsewhere",
-                "charged_qty": _qty_json(charged_qty), "tab_qty": _qty_json(tab_qty),
-            })
             continue
         plan.adjusted.append({
             **_public_line(mine), "kind": "qty_changed_elsewhere",
@@ -467,13 +451,6 @@ def sale_notes(order) -> list[str]:
         name = line.get("name") or line.get("sku")
         if line.get("kind") == "removed_elsewhere":
             notes.append(f"{name}: o outro dispositivo tinha tirado da comanda, mas foi cobrado aqui. Valeu o cobrado.")
-        elif line.get("kind") == "qty_increased_elsewhere":
-            extra = _qty_json(_qty(line.get("tab_qty")) - _qty(line.get("charged_qty")))
-            rest = "1 a mais segue aberto na comanda." if extra == 1 else f"Os {extra} a mais seguem abertos na comanda."
-            notes.append(
-                f"{name}: cobrado {_qty_json(line.get('charged_qty'))} aqui; "
-                f"o outro dispositivo lançou {_qty_json(line.get('tab_qty'))}. {rest}"
-            )
         else:
             notes.append(
                 f"{name}: cobrado {_qty_json(line.get('charged_qty'))} aqui; "
@@ -498,30 +475,6 @@ def duplicate_notes(order, rows: list[dict]) -> list[str]:
 def _tab_label(row: dict) -> str:
     name = row.get("tab_display") or row.get("tab_ref")
     return f"comanda {name}" if name else "comanda"
-
-
-def operator_note(order, *, client_request_id: str = "") -> str:
-    """Uma frase para o balcão, só quando a comanda mudou; o preço é assunto do gerente."""
-    pos_data = (order.data or {}).get("pos") or {}
-    if client_request_id and any(
-        row.get("client_request_id") == client_request_id for row in pos_data.get("offline_duplicates") or []
-    ):
-        return f"A {_tab_label(_last_duplicate(pos_data, client_request_id))} já tinha sido paga em outro dispositivo. O gerente foi avisado."
-    offline = pos_data.get("offline") or {}
-    tab = offline.get("tab") or {}
-    tab_name = _tab_label(tab)
-    if tab.get("outcome") == "lines_left_open" and tab.get("left_open"):
-        return f"Itens lançados em outro dispositivo seguem abertos na {tab_name}."
-    if tab.get("outcome") == "already_paid":
-        return f"Parte da {tab_name} já tinha sido paga em outro dispositivo. O gerente foi avisado."
-    return ""
-
-
-def _last_duplicate(pos_data: dict, client_request_id: str) -> dict:
-    for row in reversed(pos_data.get("offline_duplicates") or []):
-        if row.get("client_request_id") == client_request_id:
-            return row
-    return {}
 
 
 def alert_manager(order_ref: str, *, duplicate_of: str = "") -> None:

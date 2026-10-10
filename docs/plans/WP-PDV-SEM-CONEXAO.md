@@ -91,11 +91,12 @@ que a tela sem conexão não sabia), **vale o total cobrado**: a sessão é regr
 cobrados (política `external`, sem modifiers de desconto) e a diferença fica em
 `order.data.pos.offline.pricing`, no aviso do gerente e no relatório do caixa.
 
-**Comanda mudada em outro dispositivo (C).** A venda fecha **exatamente** as linhas que este dispositivo
-cobrou (por `line_id`). O que só a comanda tem (linha que o outro dispositivo lançou, ou a quantidade a
-mais numa linha cobrada aqui) segue aberto numa comanda nova com o **mesmo número**; a linha que já
-estava na cozinha não volta ao KDS (`kds_inherited_lines`). Linha que o outro tirou ou cuja quantidade
-mudou e este cobrou: vale o cobrado, e o ajuste fica registrado. Comanda **já paga** no outro
+**Comanda mudada em outro dispositivo (C).** Cenário raríssimo; o dono pediu o **mínimo seguro**
+(ajuste de 10/10/2026): nunca recusa por revisão, nunca cobra duas vezes, sem fluxo novo de tela. A
+venda fecha **exatamente** as linhas que este dispositivo cobrou (por `line_id`). A linha que o outro
+dispositivo lançou segue aberta numa comanda com o **mesmo número**; se já estava na cozinha, não volta
+ao KDS (`kds_inherited_lines`). Linha que o outro tirou ou cuja quantidade mudou e este cobrou: vale o
+cobrado, e só se registra (sem acerto de quantidade). Comanda **já paga** no outro
 dispositivo: as linhas já pagas não viram pedido de novo; o resto sobe como venda de balcão (as formas
 descem ao total novo, o dinheiro primeiro); se **todas** já estavam pagas, nenhum pedido nasce, o
 reenvio devolve o pedido pago e a cobrança em dobro fica em `pos.offline_duplicates` dele, com a
@@ -109,10 +110,8 @@ plausível: não no futuro (folga de 5 min no relógio do dispositivo), não mai
 turno aberto. Fora disso, a régua de sempre: precificada no envio, `total_changed` e
 `tab_revision_conflict`.
 
-**Quem vê o quê.** O operador, no caso comum, nada além de "Venda guardada enviada: pedido NB-…";
-quando a comanda mudou, o aviso traz uma frase ("Itens lançados em outro dispositivo seguem abertos
-na comanda 12." ou "A comanda 12 já tinha sido paga em outro dispositivo. O gerente foi avisado.").
-O gerente recebe um aviso `pos_offline_sale_adjusted` no Gestor (abre o pedido) e vê as mesmas
+**Quem vê o quê.** O operador não resolve nada: vê "Venda guardada enviada: pedido NB-…", como em
+qualquer envio (nenhuma tela nova). O gerente recebe um aviso `pos_offline_sale_adjusted` no Gestor (abre o pedido) e vê as mesmas
 frases em "Vendas sem conexão com ajuste" no relatório do caixa (leitura X/Z, só com permissão de
 auditar o caixa).
 
@@ -244,7 +243,8 @@ PC Windows ligado no nobreak, ativação com o suporte da Focus e confirmação 
    sem cobrança dupla. Fecha exatamente as linhas cobradas (por `line_id`); o que o outro dispositivo
    acrescentou segue aberto na comanda; linha tirada ou mudada lá e cobrada aqui vale o cobrado, com
    registro; comanda já paga não é cobrada de novo no sistema (sobe só o que não estava pago; tudo
-   pago, nenhum pedido nasce e o gerente é avisado para devolver). Ver §3.3.
+   pago, nenhum pedido nasce e o gerente é avisado para devolver). Mínimo seguro, sem tela nova
+   (ajuste do dono, 10/10). Ver §3.3.
 4. **Preço que mudou.** **Decidido (10/10/2026):** o servidor precifica no horário da venda
    (`offline_captured_at`); se ainda divergir, vale o total cobrado e a diferença fica no pedido, no
    aviso do gerente e no fechamento do caixa. Só dentro das travas e da janela plausível. Ver §3.3.

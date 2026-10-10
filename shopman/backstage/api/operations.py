@@ -6067,20 +6067,8 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
                 # ``not_expected`` | ``queued`` | ``awaiting_payment`` |
                 # ``authorized`` | ``failed``. ``fiscal_expected`` fica por compat.
                 "fiscal_state": _fiscal_state(closed_order),
-                # Venda sem conexão que mudou de forma ao entrar (comanda mudada
-                # ou paga em outro dispositivo): uma frase para o balcão. Vazio no
-                # caso comum. O detalhe é do gerente (aviso e relatório do caixa).
-                "offline_note": _offline_note(closed_order, body),
             }
         )
-
-
-def _offline_note(order, body) -> str:
-    if order is None or not (body or {}).get("offline_captured_at"):
-        return ""
-    from shopman.shop.services import pos_offline_sale
-
-    return pos_offline_sale.operator_note(order, client_request_id=str(body.get("client_request_id") or ""))
 
 
 @extend_schema_view(
