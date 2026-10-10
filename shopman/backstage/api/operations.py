@@ -44,7 +44,7 @@ from decimal import Decimal
 
 from django.contrib.auth import login
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.http import FileResponse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
@@ -520,12 +520,19 @@ def _cash_shift_result(shift) -> dict:
     }
 
 
-def _pos_payload_with_runtime(request, body: dict) -> dict:
-    """Attach the active POS runtime context that browser surfaces should not invent."""
+_SHIFT_UNSET = object()
+
+
+def _pos_payload_with_runtime(request, body: dict, *, cash_shift=_SHIFT_UNSET) -> dict:
+    """Attach the active POS runtime context that browser surfaces should not invent.
+
+    ``cash_shift`` evita resolver o turno duas vezes quando a view já o resolveu.
+    """
     payload = dict(body or {})
     payload.pop("cash_shift_id", None)
     payload.pop("pos_terminal_ref", None)
-    cash_shift = _open_cash_shift_for_request(request)
+    if cash_shift is _SHIFT_UNSET:
+        cash_shift = _open_cash_shift_for_request(request)
     if cash_shift:
         # O servidor CONHECE o turno do operador — o browser nunca decide a
         # atribuição de caixa (um id forjado/null desviaria a venda do turno).
@@ -3396,8 +3403,6 @@ class OrderTicketBatchEscposView(APIView):
                 status=409,
             )
 
-        from django.db import transaction
-
         shop_name = tickets.shop_display_name()
         payload = bytearray()
         refs: list[str] = []
@@ -5449,7 +5454,7 @@ class POSTabSaveView(APIView):
         except Exception as exc:
             logger.debug("pos_tab_save_failed user=%s", _actor(request), exc_info=True)
             return Response({"detail": str(exc) or "Falha ao salvar comanda."}, status=400)
-        return Response(
+        response = Response(
             {
                 "ok": True,
                 "tab_ref": result.tab_ref,
@@ -5457,6 +5462,36 @@ class POSTabSaveView(APIView):
                 "session_key": result.session_key,
             }
         )
+        # ``?review=1``: salvar E revisar numa ida só. É o que o PDV faz ao abrir
+        # o Pagamento: o total confirmado volta junto. A revisão roda aqui dentro,
+        # depois do salvar e antes do commit, por dois motivos: ela lê a comanda
+        # já gravada (o mesmo que a chamada avulsa a `sale/review/` leria), e o
+        # aviso de "comanda mudou" que o commit dispara chega às telas só depois
+        # do total pronto, sem disputar o servidor com ele.
+        if request.query_params.get("review") == "1":
+            response.data.update(_review_inside_save(request, body))
+        return response
+
+
+def _review_inside_save(request, body: dict) -> dict:
+    """``{"review": ...}`` ou ``{"review_error": ...}``; nunca derruba o salvar.
+
+    Num savepoint próprio: uma recusa da revisão (estação sem caixa, cliente em
+    conflito) desfaz só o que a revisão tocou, e o salvar segue gravado.
+    """
+    from rest_framework.exceptions import APIException
+
+    try:
+        with transaction.atomic():
+            review = _review_sale_response(request, body)
+            if review.status_code >= 400:
+                transaction.set_rollback(True)
+    except APIException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {"detail": str(exc.detail)}
+        return {"review_error": {"status": exc.status_code, **detail}}
+    if review.status_code >= 400:
+        return {"review_error": {"status": review.status_code, **(review.data or {})}}
+    return {"review": review.data["review"]}
 
 
 @extend_schema_view(
@@ -5918,30 +5953,41 @@ class POSReviewSaleView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
-        body = request.data if hasattr(request, "data") else {}
-        if _open_cash_shift_for_request(request) is None:
-            return _cash_shift_required_response()
-        try:
-            review = pos_tabs_service.review_sale(
-                channel_ref=POS_CHANNEL_REF,
-                payload=_pos_payload_with_runtime(request, body),
-                operator_username=_username(request),
-            )
-        except PosIntentError as exc:
-            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
-        except PosCustomerConflict as exc:
-            # ⚠️ ANTES do `except ValueError`: ele é a superclasse, e capturá-lo
-            # primeiro jogava fora `field` e `candidates` — a saída de um toque
-            # existia e chegava achatada em quem estava revisando a venda.
-            return _pos_customer_conflict_response(exc)
-        except IntegrityError as exc:
-            return _pos_customer_integrity_response(exc, action="review_sale")
-        except PosTaxIdOverwriteError as exc:
-            # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
-            return _pos_tax_id_overwrite_response(exc)
-        except ValueError as exc:
-            return Response({"detail": str(exc)}, status=422)
-        return Response({"ok": True, "review": _pos_sale_review_payload(review)})
+        return _review_sale_response(request, request.data if hasattr(request, "data") else {})
+
+
+def _review_sale_response(request, body: dict) -> Response:
+    """A revisão da venda (total, avisos, janelas) como resposta HTTP.
+
+    Mora fora da view porque o salvar da comanda também a devolve, quando o PDV
+    pede (``tabs/save/?review=1``): abrir o Pagamento era salvar, reler a
+    projeção do terminal, reabrir a comanda, reler a projeção de novo e só então
+    revisar. Cinco idas ao servidor em série antes do total aparecer.
+    """
+    cash_shift = _open_cash_shift_for_request(request)
+    if cash_shift is None:
+        return _cash_shift_required_response()
+    try:
+        review = pos_tabs_service.review_sale(
+            channel_ref=POS_CHANNEL_REF,
+            payload=_pos_payload_with_runtime(request, body, cash_shift=cash_shift),
+            operator_username=_username(request),
+        )
+    except PosIntentError as exc:
+        return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+    except PosCustomerConflict as exc:
+        # ⚠️ ANTES do `except ValueError`: ele é a superclasse, e capturá-lo
+        # primeiro jogava fora `field` e `candidates` — a saída de um toque
+        # existia e chegava achatada em quem estava revisando a venda.
+        return _pos_customer_conflict_response(exc)
+    except IntegrityError as exc:
+        return _pos_customer_integrity_response(exc, action="review_sale")
+    except PosTaxIdOverwriteError as exc:
+        # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
+        return _pos_tax_id_overwrite_response(exc)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=422)
+    return Response({"ok": True, "review": _pos_sale_review_payload(review)})
 
 
 @extend_schema_view(
