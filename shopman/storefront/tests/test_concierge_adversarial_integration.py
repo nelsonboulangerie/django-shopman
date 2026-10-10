@@ -23,6 +23,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def conversation(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = {
+        "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,
         "contract_version": 3,
         "account_id": "adversarial-account",
@@ -85,6 +86,8 @@ def test_dependent_payment_block_waits_for_accepted_summary(conversation, monkey
         lambda **kwargs: agent.AgentOutcome(
             reply_text="Pedido registrado; pagamento pendente.",
             extra_replies=["PIX-COPYABLE-BLOCK"],
+            # O recibo do pedido (regra da casa R6: "registrado" só com pedido).
+            order_ref="ORD-TEST-1",
         ),
     )
     adapter_class().send_outcomes["adversarial"] = [SendOutcome(first_state, "injected")]

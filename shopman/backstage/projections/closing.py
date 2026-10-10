@@ -96,15 +96,15 @@ class PendingProductionProjection:
 class UpcomingPreorderRowProjection:
     """Encomendas confirmadas para uma data futura (WP-D).
 
-    Informativo no fechamento: vendido hoje (dinheiro no caixa de hoje), sai
-    do estoque na data combinada — por isso NÃO entra na reconciliação do dia.
+    Informativo no fechamento: sai do estoque na data combinada — por isso NÃO
+    entra na reconciliação do dia. Só a CONTAGEM de pedidos: o fechamento é
+    cego para dinheiro (vendas, esperado, diferença), e o total em R$ das
+    encomendas é venda. Quem audita valores é o relatório de caixa do Dono.
     """
 
     date: str  # ISO
     date_display: str  # "amanhã", "sáb, 19/07"
     orders_count: int
-    total_q: int
-    total_display: str
 
 
 @dataclass(frozen=True)
@@ -141,7 +141,6 @@ class DayClosingProjection:
     existing_closing_display: str  # "" if not closed, "Fechado por X às HH:MM"
     total_available: int
     production_summary: dict
-    cash_shift_summary: dict
     reconciliation_errors: tuple[ReconciliationError, ...]
     pending_production: tuple[PendingProductionProjection, ...]
     has_pending_production: bool
@@ -150,6 +149,13 @@ class DayClosingProjection:
     pending_episodes: tuple[PendingEpisodeProjection, ...] = ()
     episode_options: tuple[EpisodeOptionProjection, ...] = ()
     has_pending_episodes: bool = False
+    # A forma do movimento por hora, hoje × o mesmo dia da semana típico (v4
+    # "Explicar o dia estranho"): só a FORMA, valores relativos de 0 a 1, nunca
+    # reais nem contagem. ``{hours, today, typical, typical_label, drop_after}``;
+    # vazio quando não há histórico para comparar.
+    hourly_shape: dict | None = None
+    # Quem está fechando ("Admin · gerência"), para o chip do cabeçalho do corredor.
+    operator_display: str = ""
 
 
 # ── Builder ────────────────────────────────────────────────────────────
@@ -165,14 +171,12 @@ def build_day_closing() -> DayClosingProjection:
 
     closing_display = ""
     production_summary = _today_production_summary(today)
-    cash_shift_summary = _today_cash_shift_summary(today)
     reconciliation_errors: tuple[ReconciliationError, ...] = ()
     if existing:
         by = existing.closed_by.get_username() if existing.closed_by else "?"
         at = existing.closed_at.strftime("%H:%M") if existing.closed_at else ""
         closing_display = f"Fechado por {by} às {at}"
         production_summary = _closing_data(existing).get("production_summary") or production_summary
-        cash_shift_summary = _closing_data(existing).get("cash_shift_summary") or cash_shift_summary
         raw_errors = _closing_data(existing).get("reconciliation_errors") or ()
         reconciliation_errors = tuple(
             ReconciliationError.from_dict(raw) if isinstance(raw, dict) else raw
@@ -193,7 +197,6 @@ def build_day_closing() -> DayClosingProjection:
         existing_closing_display=closing_display,
         total_available=total_available,
         production_summary=production_summary,
-        cash_shift_summary=cash_shift_summary,
         reconciliation_errors=reconciliation_errors,
         pending_production=pending_production,
         has_pending_production=bool(pending_production),
@@ -202,7 +205,74 @@ def build_day_closing() -> DayClosingProjection:
         pending_episodes=pending_episodes,
         episode_options=_episode_options() if pending_episodes else (),
         has_pending_episodes=bool(pending_episodes),
+        hourly_shape=_hourly_shape(today),
     )
+
+
+SHAPE_HOURS = tuple(range(7, 20))
+_WEEKDAY_TYPICAL = (
+    "segunda típica", "terça típica", "quarta típica", "quinta típica",
+    "sexta típica", "sábado típico", "domingo típico",
+)
+
+
+def _orders_by_hour(day) -> dict[int, int]:
+    from django.db.models import Count
+    from django.db.models.functions import ExtractHour
+    from shopman.orderman.models import Order
+
+    rows = (
+        Order.objects.filter(created_at__date=day)
+        .exclude(status="cancelled")
+        .annotate(hour=ExtractHour("created_at"))
+        .values("hour")
+        .annotate(n=Count("id"))
+    )
+    return {int(row["hour"]): int(row["n"]) for row in rows if row["hour"] is not None}
+
+
+def _hourly_shape(today) -> dict | None:
+    """Hoje × o mesmo dia da semana nas últimas 4 semanas, por hora, só a forma.
+
+    Às cegas (fim do dia não mostra dinheiro): as duas séries saem divididas pelo
+    maior valor do dia típico, então o que se lê é "a curva de hoje desceu
+    antes", nunca quanto. ``drop_after`` é a primeira hora a partir da qual hoje
+    fica abaixo de metade do típico até o fim (o "caiu depois das 14h").
+    """
+    from datetime import timedelta
+
+    try:
+        today_counts = _orders_by_hour(today)
+        past = [_orders_by_hour(today - timedelta(days=7 * week)) for week in range(1, 5)]
+    except Exception:
+        logger.debug("closing_hourly_shape_failed", exc_info=True)
+        return None
+    past = [counts for counts in past if counts]
+    if not past:
+        return None
+    typical = [sum(c.get(h, 0) for c in past) / len(past) for h in SHAPE_HOURS]
+    peak = max(typical) or 0
+    if peak <= 0:
+        return None
+    now_hour = timezone.localtime().hour if today == timezone.localdate() else 24
+    today_series = [round(today_counts.get(h, 0) / peak, 3) if h <= now_hour else None for h in SHAPE_HOURS]
+    typical_series = [round(v / peak, 3) for v in typical]
+    drop_after = ""
+    for index, hour in enumerate(SHAPE_HOURS):
+        tail = [
+            (t, ty) for t, ty in zip(today_series[index:], typical_series[index:], strict=False)
+            if t is not None and ty >= 0.15
+        ]
+        if len(tail) >= 2 and all(t < ty * 0.5 for t, ty in tail) and index > 0:
+            drop_after = f"{hour}h"
+            break
+    return {
+        "hours": [f"{h}h" for h in SHAPE_HOURS],
+        "today": today_series,
+        "typical": typical_series,
+        "typical_label": _WEEKDAY_TYPICAL[today.weekday()],
+        "drop_after": drop_after,
+    }
 
 
 # ── Internals ──────────────────────────────────────────────────────────
@@ -378,18 +448,13 @@ def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...
     data combinada depois de hoje, qualquer que seja o dia em que foi feita — e
     não "as vendidas hoje", como a tela chegou a dizer. O fechamento informa
     para o operador saber o que já está comprometido nos próximos dias.
-
-    O total é o EFETIVO (``order_composition.effective_total_q``): o pedido do
-    iFood ajustado depois de aceito vale o que a plataforma paga, não o selado.
     """
     try:
         from shopman.orderman.models import Order
-        from shopman.utils.monetary import format_money
 
-        from shopman.shop.services import order_composition
         from shopman.shop.services.order_helpers import get_commitment_date
 
-        by_date: dict[date, dict] = {}
+        by_date: dict[date, int] = {}
         orders = (
             Order.objects.filter(
                 status__in=("new", "accepted"),
@@ -400,23 +465,16 @@ def _upcoming_preorders(today: date) -> tuple[UpcomingPreorderRowProjection, ...
             commitment = get_commitment_date(order)
             if commitment is None or commitment <= today:
                 continue
-            row = by_date.setdefault(commitment, {"orders_count": 0, "total_q": 0})
-            row["orders_count"] += 1
-            row["total_q"] += order_composition.effective_total_q(order)
+            by_date[commitment] = by_date.get(commitment, 0) + 1
 
-        rows = []
-        for commitment in sorted(by_date):
-            row = by_date[commitment]
-            rows.append(
-                UpcomingPreorderRowProjection(
-                    date=commitment.isoformat(),
-                    date_display=_upcoming_date_display(commitment, today),
-                    orders_count=row["orders_count"],
-                    total_q=row["total_q"],
-                    total_display=f"R$ {format_money(row['total_q'])}",
-                )
+        return tuple(
+            UpcomingPreorderRowProjection(
+                date=commitment.isoformat(),
+                date_display=_upcoming_date_display(commitment, today),
+                orders_count=by_date[commitment],
             )
-        return tuple(rows)
+            for commitment in sorted(by_date)
+        )
     except Exception:
         logger.debug("closing.upcoming_preorders_failed", exc_info=True)
         return ()
@@ -443,13 +501,3 @@ def _today_production_summary(selected_date: date) -> dict:
     except Exception:
         logger.debug("closing.production_summary_failed", exc_info=True)
         return {}
-
-
-def _today_cash_shift_summary(selected_date: date) -> dict:
-    try:
-        from shopman.backstage.services.closing import _cash_shift_summary
-
-        return _cash_shift_summary(selected_date)
-    except Exception:
-        logger.debug("closing.cash_shift_summary_failed", exc_info=True)
-        return {"closed_shifts": [], "open_shifts": [], "totals": {}}

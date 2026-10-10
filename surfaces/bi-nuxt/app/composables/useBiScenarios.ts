@@ -1,14 +1,15 @@
 // Cenários com IA: lista versionada + "gerar" (POST síncrono, leva segundos).
 // A tela só oferece o botão se o servidor disser `configured` — oferecer e
 // falhar depois ensina o gestor a não confiar no recurso.
-import type { BIScenarioReportView, BIScenariosPage } from "~/types/bi";
+import type { BIReading, BIScenarioReportView, BIScenariosPage } from "~/types/bi";
 
 export function useBiScenarios() {
-  const { data, pending, error, refresh } = useFetch<{ bi: BIScenariosPage }>(
+  const { data, pending, error, refresh } = useFetch<BIReading<BIScenariosPage>>(
     "/api/v1/backstage/bi/scenarios/",
     { key: "bi-scenarios", server: true, onResponseError: operatorSessionOnError },
   );
   const page = computed(() => data.value?.bi ?? null);
+  const freshness = computed(() => ({ generated_at: data.value?.generated_at ?? null }));
   const generating = ref(false);
 
   async function generate(focus: string): Promise<BIScenarioReportView | null> {
@@ -33,5 +34,5 @@ export function useBiScenarios() {
     }
   }
 
-  return { page, pending, error, refresh, generate, generating };
+  return { page, freshness, pending, error, refresh, generate, generating };
 }

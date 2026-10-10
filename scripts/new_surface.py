@@ -18,7 +18,7 @@ superfície já nascer inteira, e termina rodando a própria trava.
 3. Escreve o app em cada lugar que enumera superfícies: Dependabot, as duas
    matrizes do `surfaces-gate.yml`, `SURFACES` do Makefile, `groups.json`,
    `Dockerfile.operator-group`, os dois specs de `.do/` (ingress, `OPERATOR_HOSTS`,
-   env da URL), `CSRF_TRUSTED_ORIGINS` de dev, a env e o tile do Shopman Apps no
+   env da URL), `CSRF_TRUSTED_ORIGINS` de dev, a env e o tile da Central no
    Django, `app-identity.json`, o perfil do gate de PWA e a árvore do
    `CLAUDE.md`/`README.md`.
 4. Gera os ícones PWA se o `operator-kit` tiver `node_modules`; senão, diz o comando.
@@ -30,7 +30,7 @@ superfície já nascer inteira, e termina rodando a própria trava.
 - **Quem recebe a permissão.** O gerador declara a permissão pedida em `perm=`
   (quando ela ainda não existe), cria o predicado `can_<codename>` em
   `shopman/backstage/permissions.py` e liga NELE tanto a porta do app quanto o
-  tile do Shopman Apps: os dois perguntam a mesma coisa. Enquanto ninguém a
+  tile da Central: os dois perguntam a mesma coisa. Enquanto ninguém a
   concede, só o superusuário entra (todo predicado da casa é
   `is_superuser or has_perm`). Conceder é gesto de Admin: a permissão no grupo.
 - **A copy.** O rótulo vem do argumento; descrição e convite de instalação saem
@@ -156,12 +156,16 @@ import {{ definePwaCapability }} from "../operator-kit/pwa.config";
 
 export default defineNuxtConfig({{
   extends: ["../operator-kit"],
-  ssr: false,
+  // Superfície nova nasce com o mesmo contrato das apps reais. Client-only é
+  // exceção operacional e precisa de justificativa própria, nunca o molde.
+  ssr: true,
 
   compatibilityDate: "2026-05-16",
   devtools: {{ enabled: false }},
 
   runtimeConfig: {{
+    operatorSecurityHeaders: true,
+    operatorUpstreamFailFast: true,
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
     public: {{
       // O NOME da chave é o contrato com a env: o Nuxt deriva
@@ -242,37 +246,37 @@ export default defineNuxtConfig({{
 
 def app_vue(perm: str, label: str, article: str) -> str:
     return f"""<script setup lang="ts">
-// Casca do app: gate de operador + rail + outlet. As telas são páginas próprias (pages/).
+// Casca do app: gate de operador + raiz Nuxt UI + outlet. O shell e a navegação
+// são escolhidos pela receita da página, sem reintroduzir o OperatorRail legado.
 const OPERATOR_PERM = "{perm}";
-const {{ canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock }} = useOperatorLock(OPERATOR_PERM);
-
-const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
+const {{ canIdentify, sessionState, sessionUnavailable, refresh, locked, mustChange }} = useOperatorLock(OPERATOR_PERM);
+const surface = computed(() => operatorSurfaceGate({{
+  sessionState: sessionState.value,
+  canIdentify: canIdentify.value,
+  sessionUnavailable: sessionUnavailable.value,
+  locked: locked.value,
+  mustChange: mustChange.value,
+  harness: false,
+}}));
 
 useOperatorWindowTitle();
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-background text-foreground">
+  <OperatorAppRoot>
     <NuxtRouteAnnouncer />
     <OfflineBanner />
-    <div v-if="canIdentify" class="sticky top-0 flex h-screen shrink-0 print:hidden">
-      <OperatorRail
-        :hub-url="hubUrl"
-        :operator-name="operator?.name"
-        @lock="lock"
-      />
-    </div>
-    <div class="flex min-w-0 flex-1 flex-col">
-      <NuxtPage v-if="canIdentify" />
-    </div>
+    <NuxtPage v-slot="{{ Component }}"><component :is="Component" v-if="surface.showPage" /></NuxtPage>
+    <main v-if="surface.showForbidden"><NuxtEmpty icon="i-lucide-shield-x" title="Seu acesso não inclui {article} {label}" description="Peça a um responsável a permissão de acesso. Entrar novamente não concede essa permissão." /></main>
+    <main v-else-if="surface.showChecking" role="status" aria-busy="true"><NuxtSkeleton class="h-48" /><p>Conferindo acesso.</p></main>
     <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy
          subiria a tela de senha com a sessão viva. -->
-    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="{article} {label}" @retry="refresh()" />
-    <OperatorLogin v-if="!canIdentify && !sessionUnavailable" />
-    <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
+    <OperatorSessionUnavailable v-if="surface.showUnavailable" scope="{article} {label}" @retry="refresh()" />
+    <OperatorLogin v-if="surface.showLogin" />
+    <OperatorLock v-else-if="surface.showLock" :perm="OPERATOR_PERM" />
     <OperatorSonner />
     <OperatorPwaRuntime />
-  </div>
+  </OperatorAppRoot>
 </template>
 """
 
@@ -308,6 +312,9 @@ describe("casca do {app_id}", () => {{
 
   it("estende a layer e declara a identidade PWA certa", () => {{
     expect(config).toContain('extends: ["../operator-kit"]');
+    expect(config).toContain("ssr: true");
+    expect(config).toContain("operatorSecurityHeaders: true");
+    expect(config).toContain("operatorUpstreamFailFast: true");
     expect(config).toContain('app: "{app_id}"');
   }});
 }});
@@ -457,6 +464,36 @@ def register_everywhere(repo: Repo, s: dict, sibling: dict, domain_by_spec: dict
     table["apps"][app_id] = identity
     repo.write("surfaces/operator-kit/app-identity.json", dump_json(table))
 
+    ledger_path = "docs/reference/operator-component-ledger.json"
+    ledger = json.loads(repo.read(ledger_path))
+    ledger["apps"].append(
+        {
+            "id": app_id,
+            "owner": f"surface:{app_id}",
+            "directory": d,
+            "profiles": ["desktop-keyboard", "tablet-touch", "mobile-touch"],
+            "baseline": {
+                "local_ui_files": 0,
+                "direct_reka_import_files": 0,
+                "manual_overlay_files": 0,
+                "native_control_occurrences": 0,
+                "ui_native_select_occurrences": 0,
+            },
+            "surfaces": [
+                {
+                    "id": "home",
+                    "source_files": ["app/pages/index.vue"],
+                    "routes": ["/"],
+                    "variants": ["normal", "loading", "empty", "error"],
+                    "families": ["action", "navigation", "data-display", "feedback"],
+                    "status": "pending",
+                }
+            ],
+        }
+    )
+    ledger["apps"].sort(key=lambda app: app["id"])
+    repo.write(ledger_path, dump_json(ledger))
+
     repo.insert_after_last(
         "tools/pwa-gate/check.mjs", r"^  [a-z]+: operatorProfile\(", f"  {app_id}: operatorProfile('{app_id}'),"
     )
@@ -541,7 +578,7 @@ def wire_permission(repo: Repo, perm: str, label: str, article: str) -> tuple[st
     repo.replace_once(
         PERMISSIONS,
         "def can_view_operator_alerts(user) -> bool:",
-        f'def {predicate}(user) -> bool:\n    """Gate do app {label}: a porta do app e o tile do Shopman Apps."""\n'
+        f'def {predicate}(user) -> bool:\n    """Gate do app {label}: a porta do app e o tile da Central."""\n'
         f'    return is_superuser(user) or user.has_perm("{perm}")\n\n\n'
         "def can_view_operator_alerts(user) -> bool:",
     )

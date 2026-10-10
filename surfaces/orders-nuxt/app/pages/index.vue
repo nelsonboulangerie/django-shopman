@@ -3,18 +3,24 @@
 // (SSE + 30s poll) via useOrdersBoard; renders Entrada / Preparo / Saída columns of
 // OrderCards; the gestures POST through the django proxy (CSRF handled there) and
 // reconcile. Desktop-first (3 columns), responsive (stacks on tablet/phone).
-import type { AffordanceRef, DispatchStep, SortKey, ZoneView } from "~/presentation/board";
+import type {
+  AffordanceRef,
+  DispatchStep,
+  SortKey,
+  ZoneView,
+} from "~/presentation/board";
 import {
   bulkableRefs,
   cardAffordances,
   changeBackSuggestionQ,
-  channelLabel,
   channelOptions,
-  elapsedLabel,
+  EXIT_SELECTION_LABEL,
+  exitGesture,
   flattenZones,
   fulfillmentCounts,
   lucideIcon,
   moneyInput,
+  nextOutRef,
   nextSort,
   oneTapDispatch,
   realtimeIndicator,
@@ -23,16 +29,73 @@ import {
   SORT_OPTIONS,
   splitRef,
   statusTone,
-  timerChip,
   timerTone,
-  toneBadge,
   triageCards,
-  zoneEmptyText,
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
+import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
+import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
+import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
+import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
+import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
+import type { OperatorSwipeAction } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
+import {
+  BOARD_COLUMNS_QUERY,
+  BOARD_ZONE_KEYS,
+  useBoardLayout,
+} from "~/composables/useBoardLayout";
+import {
+  QUEUE_FOCUS,
+  QUEUE_SORT_OPTIONS,
+  liveAge,
+  queueGesture,
+  queueItems,
+  queueScopeCounts,
+  type QueueScope,
+  type QueueSort,
+} from "~/presentation/queue";
+import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
-const { readMetadata, queue, zones, deviceAgent, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, courierBack, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, attentionPending, toggleSound, activateAttentionSound, acknowledgeAttention } = useOrdersBoard();
+const {
+  readMetadata,
+  queue,
+  zones,
+  deviceAgent,
+  preorders,
+  realtime,
+  pending,
+  error,
+  refresh,
+  isBusy,
+  actionError,
+  clearActionError,
+  confirm,
+  advance,
+  reject,
+  fetchCancellationReasons,
+  settleCash,
+  equipmentBack,
+  courierBack,
+  undoHandoff,
+  undoReady,
+  assign,
+  unassign,
+  confirmMany,
+  advanceMany,
+  markStationReady,
+  recallStation,
+  declareVolumes,
+  soundOn,
+  soundBlocked,
+  attentionPending,
+  toggleSound,
+  activateAttentionSound,
+  acknowledgeAttention,
+} = useOrdersBoard();
+// Quem só expede (SUITE-UX §15) opera a Saída daqui; o detalhe do pedido é de quem gerencia.
+const { canManageOrders } = useGestorAccess();
 
 // A DANFE da sacola sai sozinha pelo servidor; o card imprime ou reimprime à mão.
 const danfePrint = useDanfePrint(deviceAgent, refresh);
@@ -47,6 +110,26 @@ function handleSoundAction() {
 
 // Sinal honesto de tempo-real vs poll (indicador de degradação do SSE).
 const realtimeView = computed(() => realtimeIndicator(realtime.value));
+// O ponto ao lado do título: verde só com o SSE vivo; leitura que falhou fala em
+// vermelho e por extenso. A hora é a da última leitura útil (não a do relógio).
+const liveTone = computed(() =>
+  error.value
+    ? "off"
+    : realtime.value === "live"
+      ? "live"
+      : realtime.value === "connecting"
+        ? "late"
+        : "calm",
+);
+const readClock = computed(() => {
+  const at = readMetadata.value?.generated_at;
+  return at
+    ? new Date(at).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "";
+});
 
 // Estação travada pelo servidor: não é falha de leitura, é falta de
 // identificação. O board deixa de desenhar o aviso de erro nesse estado.
@@ -57,19 +140,53 @@ definePageMeta({ key: (route) => route.path });
 const route = useRoute();
 const router = useRouter();
 const context = useOrdersContext();
-const { query, channel, fulfillment, sort, viewMode, selected } = context;
+const {
+  query,
+  channel,
+  fulfillment,
+  sort,
+  viewMode,
+  scope,
+  queueSort,
+  selected,
+} = context;
 // O recorte vive na URL; seleção/posição/foco ficam só na sessão e pessoa atual.
 context.readLocation(route.query);
-watch(() => route.query, (params) => { if (route.path === "/") context.readLocation(params); });
-watch(context.location, (location) => {
-  if (route.path === "/" && JSON.stringify(route.query) !== JSON.stringify(location.query)) void router.replace(location);
-}, { deep: true });
+watch(
+  () => route.query,
+  (params) => {
+    if (route.path === "/") context.readLocation(params);
+  },
+);
+// A pessoa chega depois da primeira leitura (a sessão carrega no cliente): relê a URL
+// antes de o recorte reescrevê-la, para "/?view=board" abrir nas colunas.
+watch(
+  () => context.state.value.owner,
+  (owner) => {
+    if (owner && route.path === "/") context.readLocation(route.query);
+  },
+);
+watch(
+  context.location,
+  (location) => {
+    if (
+      route.path === "/" &&
+      JSON.stringify(route.query) !== JSON.stringify(location.query)
+    )
+      void router.replace(location);
+  },
+  { deep: true },
+);
 const queueViewport = ref<HTMLElement | null>(null);
 function rememberPosition(event: Event) {
-  context.state.value.scrollTop = (event.currentTarget as HTMLElement).scrollTop;
+  context.state.value.scrollTop = (
+    event.currentTarget as HTMLElement
+  ).scrollTop;
 }
 function rememberFocus(event: MouseEvent) {
-  const link = (event.target as HTMLElement).closest('a[aria-label^="Abrir pedido "]');
+  const link = (event.target as HTMLElement).closest(
+    'a[aria-label^="Abrir pedido "]',
+  );
   if (link) {
     context.state.value.focusLabel = link.getAttribute("aria-label") || "";
     context.state.value.windowY = window.scrollY;
@@ -84,7 +201,9 @@ async function restorePosition() {
   window.scrollTo({ top: context.state.value.windowY, behavior: "instant" });
   const label = context.state.value.focusLabel;
   if (label) {
-    const link = [...viewport.querySelectorAll<HTMLAnchorElement>("a[aria-label]")].find(item => item.getAttribute("aria-label") === label);
+    const link = [
+      ...viewport.querySelectorAll<HTMLAnchorElement>("a[aria-label]"),
+    ].find((item) => item.getAttribute("aria-label") === label);
     link?.focus({ preventScroll: true });
     context.state.value.focusLabel = "";
   }
@@ -92,28 +211,118 @@ async function restorePosition() {
 let restoreFrame = 0;
 function scheduleRestore() {
   cancelAnimationFrame(restoreFrame);
-  restoreFrame = requestAnimationFrame(() => { restoreFrame = requestAnimationFrame(() => { void restorePosition(); }); });
+  restoreFrame = requestAnimationFrame(() => {
+    restoreFrame = requestAnimationFrame(() => {
+      void restorePosition();
+    });
+  });
 }
 onMounted(scheduleRestore);
 onBeforeUnmount(() => cancelAnimationFrame(restoreFrame));
-watch(() => Boolean(queue.value), (available) => { if (available) scheduleRestore(); });
+watch(
+  () => Boolean(queue.value),
+  (available) => {
+    if (available) scheduleRestore();
+  },
+);
 
-const negotiationCards = computed(() => (queue.value?.ifood_negotiation_orders ?? []) as OrderCardProjection[]);
-const allCards = computed<OrderCardProjection[]>(() => zones.value.flatMap((z) => z.cards));
+const negotiationCards = computed(
+  () => (queue.value?.ifood_negotiation_orders ?? []) as OrderCardProjection[],
+);
+const allCards = computed<OrderCardProjection[]>(() =>
+  zones.value.flatMap((z) => z.cards),
+);
 const channels = computed(() => channelOptions(allCards.value));
 const fulfillment_ = computed(() => fulfillmentCounts(allCards.value));
-const sortLabel = computed(() => SORT_OPTIONS.find((o) => o.key === sort.value)?.label ?? "Chegada");
+const sortLabel = computed(
+  () => SORT_OPTIONS.find((o) => o.key === sort.value)?.label ?? "Chegada",
+);
+const sortMenuItems = computed(() =>
+  (view.value === "queue" ? QUEUE_SORT_OPTIONS : SORT_OPTIONS).map(
+    (option) => ({
+      label: option.label,
+      description:
+        "hint" in option && typeof option.hint === "string"
+          ? option.hint
+          : undefined,
+      icon:
+        (view.value === "queue" ? queueSort.value : sort.value) === option.key
+          ? "i-lucide-check"
+          : "i-lucide-arrow-up-down",
+      onSelect: () =>
+        view.value === "queue"
+          ? pickQueueSort(option.key as QueueSort)
+          : pickSort(option.key as SortKey),
+    }),
+  ),
+);
 
 function triaged(zone: ZoneView): OrderCardProjection[] {
-  return triageCards(zone.cards, { query: query.value, channel: channel.value, sort: sort.value, fulfillment: fulfillment.value });
+  return triageCards(zone.cards, {
+    query: query.value,
+    channel: channel.value,
+    sort: sort.value,
+    fulfillment: fulfillment.value,
+  });
 }
 // flat rows for the dense table view, honouring the same triage + zone order.
 const tableRows = computed(() =>
   flattenZones(zones.value.map((z) => ({ ...z, cards: triaged(z) }))),
 );
+// A Lista (dono, 07/10/2026): linhas integradas num card branco; a linha principal tem
+// só o gesto do momento e o ⋯; o resto (detalhes e todas as ações) abre na própria
+// linha. A coluna de seleção fica sempre: marcar uma linha liga a barra de lote.
+// A seleção e a seta de abrir são da `OperatorTable`; Pedido é a chave (fixada) e
+// Situação, Itens e Tempo são de apoio (somem no celular, onde o cartão aberto diz tudo).
+const supervisionColumns = [
+  { id: "order", header: "Pedido", enableHiding: false },
+  { id: "stage", header: "Situação", meta: { supporting: true } },
+  { id: "items", header: "Itens", meta: { supporting: true } },
+  { id: "total", header: "Total" },
+  { id: "elapsed", header: "Tempo", meta: { supporting: true } },
+  { id: "actions", header: "Próximo passo", enableHiding: false },
+];
+type SupervisionRow = (typeof tableRows.value)[number];
+// Paginação só quando passa de uma página (dono, 07/10/2026).
+const SUPERVISION_PAGE_SIZE = 25;
+const supervisionPage = ref(1);
+const supervisionRows = computed(() =>
+  tableRows.value.slice(
+    (supervisionPage.value - 1) * SUPERVISION_PAGE_SIZE,
+    supervisionPage.value * SUPERVISION_PAGE_SIZE,
+  ),
+);
+watch(
+  () => tableRows.value.length,
+  (total) => {
+    const last = Math.max(1, Math.ceil(total / SUPERVISION_PAGE_SIZE));
+    if (supervisionPage.value > last) supervisionPage.value = last;
+  },
+);
+const supervisionExpanded = ref<Record<string, boolean>>({});
+/** O gesto do momento numa linha da Lista: o primário (ou o travado, com o cadeado). */
+function rowPrimary(card: OrderCardProjection) {
+  return (
+    cardAffordances(card).find(
+      (aff) => aff.priority === "primary" || aff.disabled,
+    ) ?? null
+  );
+}
+/** Os outros gestos, que moram na linha aberta. */
+function rowSecondary(card: OrderCardProjection) {
+  const primary = rowPrimary(card);
+  return cardAffordances(card).filter((aff) => aff.ref !== primary?.ref);
+}
 // how many cards survive the current filters (for the "no results" affordance).
-const visibleCount = computed(() => zones.value.reduce((n, z) => n + triaged(z).length, 0));
-const hasFilter = computed(() => query.value.trim() !== "" || channel.value !== "all" || fulfillment.value !== "all");
+const visibleCount = computed(() =>
+  zones.value.reduce((n, z) => n + triaged(z).length, 0),
+);
+const hasFilter = computed(
+  () =>
+    query.value.trim() !== "" ||
+    channel.value !== "all" ||
+    fulfillment.value !== "all",
+);
 
 // Encomendas (datas futuras) sob o mesmo triage do board (busca/canal/tipo);
 // o sort não se aplica — a ordem canônica é a data combinada.
@@ -121,59 +330,732 @@ const triagedPreorders = computed(() =>
   preorders.value
     .map((group) => ({
       ...group,
-      cards: triageCards(group.cards, { query: query.value, channel: channel.value, sort: "arrival", fulfillment: fulfillment.value }),
+      cards: triageCards(group.cards, {
+        query: query.value,
+        channel: channel.value,
+        sort: "arrival",
+        fulfillment: fulfillment.value,
+      }),
     }))
     .filter((group) => group.cards.length),
 );
-const preordersCount = computed(() => triagedPreorders.value.reduce((n, g) => n + g.cards.length, 0));
+const preordersCount = computed(() =>
+  triagedPreorders.value.reduce((n, g) => n + g.cards.length, 0),
+);
 
 // ── bulk selection (Arc 4) ──────────────────────────────────────────────────
+// Seleção em lote é um MODO (UX-KIT-V2, prévia v4): a caixa saiu do cartão; liga pelo ⋯
+// do cabeçalho, pelo ⋯ do cartão ou pelo toque longo, e a barra de ação aparece em cima.
+const selectingMode = ref(false);
+const selecting = computed(
+  () => selectingMode.value || selected.value.size > 0,
+);
+function startSelection(ref_?: string) {
+  selectingMode.value = true;
+  if (ref_ && !selected.value.has(ref_))
+    selected.value = new Set([...selected.value, ref_]);
+}
+function stopSelection() {
+  selectingMode.value = false;
+  selected.value = new Set();
+}
 const isSelected = (ref_: string) => selected.value.has(ref_);
+// A seleção da Lista é a mesma da barra de lote: a tabela marca, o Set guarda.
+const supervisionRowSelection = computed<Record<string, boolean>>({
+  get: () => Object.fromEntries([...selected.value].map((ref_) => [ref_, true])),
+  set: (next) => {
+    selected.value = new Set(Object.keys(next).filter((ref_) => next[ref_]));
+  },
+});
 function toggleSelect(ref_: string) {
   const next = new Set(selected.value);
   if (next.has(ref_)) next.delete(ref_);
   else next.add(ref_);
   selected.value = next;
 }
-function clearSelection() {
-  selected.value = new Set();
-}
 // select-all over the currently visible (triaged) cards.
 const visibleRefs = computed(() => tableRows.value.map((r) => r.card.ref));
-const allVisibleSelected = computed(() => visibleRefs.value.length > 0 && visibleRefs.value.every((r) => selected.value.has(r)));
+const allVisibleSelected = computed(
+  () =>
+    visibleRefs.value.length > 0 &&
+    visibleRefs.value.every((r) => selected.value.has(r)),
+);
 function toggleSelectAll() {
-  selected.value = allVisibleSelected.value ? new Set() : new Set(visibleRefs.value);
+  selected.value = allVisibleSelected.value
+    ? new Set()
+    : new Set(visibleRefs.value);
 }
-const confirmableSel = computed(() => bulkableRefs(allCards.value, selected.value, "confirm"));
-const advanceableSel = computed(() => bulkableRefs(allCards.value, selected.value, "advance"));
+// A barra de seleção (OperatorBulkBar): a ação principal (Aceitar) e o resto no mesmo
+// peso; o × sai do modo de seleção. O recorte vai por extenso ("em Entrega · iFood").
+const bulkScope = computed(() =>
+  [
+    fulfillment.value !== "all"
+      ? String(fulfillmentFilterTabs.value.find((tab) => tab.key === fulfillment.value)?.label ?? "")
+      : "",
+    channel.value !== "all"
+      ? String(channelItems.value.find((item) => item.value === channel.value)?.label ?? "")
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · "),
+);
+const bulkItems = computed<OperatorBulkItem[]>(() => [
+  ...(confirmableSel.value.length
+    ? [{
+        label: `Aceitar ${confirmableSel.value.length}`,
+        icon: "i-lucide-check",
+        primary: true,
+        loading: bulkConfirming.value,
+        disabled: bulkConfirming.value,
+        onSelect: () => void bulkConfirm(),
+      }]
+    : []),
+  ...(advanceableSel.value.length
+    ? [{
+        label: `Avançar ${advanceableSel.value.length}`,
+        icon: "i-lucide-arrow-right",
+        loading: bulkAdvancing.value,
+        disabled: bulkAdvancing.value,
+        onSelect: () => void bulkAdvance(),
+      }]
+    : []),
+  {
+    label: allVisibleSelected.value ? "Desmarcar todos" : "Marcar todos",
+    icon: allVisibleSelected.value ? "i-lucide-square" : "i-lucide-check-check",
+    onSelect: toggleSelectAll,
+  },
+]);
+const confirmableSel = computed(() =>
+  bulkableRefs(allCards.value, selected.value, "confirm"),
+);
+const advanceableSel = computed(() =>
+  bulkableRefs(allCards.value, selected.value, "advance"),
+);
 // Aceitar/Avançar em lote: o botão gira até o último pedido responder (clique nunca
 // inerte). Antes ele não mudava nada enquanto a fila de N pedidos andava, e o segundo
 // toque parecia o primeiro.
-const { run: bulkConfirm, pending: bulkConfirming } = usePendingAction(async () => {
-  const targets = confirmableSel.value.filter((ref) => !isBusy(ref));
-  await confirmMany(targets);
-  selected.value = new Set([...selected.value].filter((ref) => !targets.includes(ref) || actionError(ref)));
-});
-const { run: bulkAdvance, pending: bulkAdvancing } = usePendingAction(async () => {
-  const targets = advanceableSel.value.filter((ref) => !isBusy(ref));
-  await advanceMany(targets);
-  selected.value = new Set([...selected.value].filter((ref) => !targets.includes(ref) || actionError(ref)));
+const { run: bulkConfirm, pending: bulkConfirming } = usePendingAction(
+  async () => {
+    const targets = confirmableSel.value.filter((ref) => !isBusy(ref));
+    await confirmMany(targets);
+    selected.value = new Set(
+      [...selected.value].filter(
+        (ref) => !targets.includes(ref) || actionError(ref),
+      ),
+    );
+  },
+);
+const { run: bulkAdvance, pending: bulkAdvancing } = usePendingAction(
+  async () => {
+    const targets = advanceableSel.value.filter((ref) => !isBusy(ref));
+    await advanceMany(targets);
+    selected.value = new Set(
+      [...selected.value].filter(
+        (ref) => !targets.includes(ref) || actionError(ref),
+      ),
+    );
+  },
+);
+
+// ⋯ da fila: atualizar, Visto, seleção, exportar e imprimir (e, no posto Saída e no
+// celular, também ordenar, a visão e o som).
+const moreOpen = ref(false);
+function menuDo(fn: () => void, close = true) {
+  if (close) moreOpen.value = false;
+  fn();
+}
+// A régua da suíte (`useScreen` do kit): mesa no servidor e na hidratação, a largura
+// real depois. Decidir a árvore com `useMediaQuery` cru fazia o celular hidratar outra
+// árvore na carga direta: a Fila ficava no esqueleto para sempre.
+// Ela responde "mesa" até montar, então a barra do topo e a toolbar NÃO decidem por ela
+// (o celular desenhava a barra da mesa encavalada até hidratar): `phone-actions`,
+// `actions-from="md"` e as classes `max-lg:`/`md:` fazem isso pelo CSS. Daqui só o que
+// muda a árvore depois de montar: as colunas que viram abas, a Fila só do `lg`, o
+// conteúdo do painel "Filtros" (aberto depois de montar) e o puxar para atualizar.
+const screen = useScreen();
+// Celular (abaixo de md): as colunas viram abas.
+const isPhone = screen.belowMd;
+const hydrated = screen.ready;
+// A régua do kit para a barra do topo e a toolbar (abaixo de `sm`, README "Barra do
+// topo no celular" e "Toolbar no celular"): ali as ações da fila vão para o ⋯ da barra
+// e os recortes, a ordem e a visão para o painel "Filtros" do kit. Entre `sm` e `md`
+// segue o painel próprio da fila ("Filtros e ações da fila").
+const kitPhone = screen.belowSm;
+// Tablet em pé: três colunas de ~240 px cortavam selo e prazo do cartão. Abaixo do
+// lg, com mais de uma coluna aberta, o quadro usa as abas do celular.
+const isNarrowTablet = computed(
+  () => screen.belowLg.value && !screen.belowMd.value,
+);
+// Celular (prévia v3 `orders-phone3.html`): Entrada, Preparo e Saída viram abas, uma
+// coluna por vez, com a contagem na aba. Abre na que tem pedido novo; sem pedido novo,
+// na primeira que tem pedido. O toque do operador manda dali em diante.
+const pickedZone = ref<string | null>(null);
+const phoneZone = computed(() => {
+  if (pickedZone.value && zones.value.some((z) => z.key === pickedZone.value))
+    return pickedZone.value;
+  const intake = zones.value.find((z) => z.key === "intake");
+  if (intake && triaged(intake).length) return intake.key;
+  return (
+    zones.value.find((z) => triaged(z).length)?.key ??
+    zones.value[0]?.key ??
+    "intake"
+  );
 });
 
-// sort menu (house pattern: button + backdrop + absolute panel).
-const sortOpen = ref(false);
+function pickPhoneZone(value: string | number) {
+  pickedZone.value = String(value);
+}
 function pickSort(key: SortKey) {
   sort.value = key;
-  sortOpen.value = false;
+}
+// A Saída no celular (G16, v4 `cozinha-celular` (a)): entrou pelo "Saída" da barra, as
+// abas são "Prontos para sair" e "Em preparo" (com o ponto de atraso); pelo "Pedidos",
+// as três colunas. Na aba da Saída, o mais antigo expandido e o resto em linhas.
+const phoneExitMode = ref(false);
+const phoneTabs = computed(() => {
+  const byKey = new Map(zones.value.map((zone) => [zone.key, zone]));
+  const tabs = phoneExitMode.value
+    ? [
+        { key: "expedition", title: "Prontos para sair" },
+        { key: "prep", title: "Em preparo" },
+      ]
+    : (isPhone.value ? zones.value : desktopZones.value).map((zone) => ({
+        key: zone.key,
+        title: zone.title,
+      }));
+  return tabs.flatMap((tab) => {
+    const zone = byKey.get(tab.key as ZoneView["key"]);
+    return zone ? [{ ...tab, zone, late: lateCount(zone) }] : [];
+  });
+});
+const phoneTabItems = computed(() =>
+  phoneTabs.value.map((tab) => ({
+    ...tab,
+    value: tab.key,
+    label: tab.title,
+    count: triaged(tab.zone).length,
+  })),
+);
+// Puxe para atualizar (celular) e o aviso dos gestos no fim da lista.
+const {
+  pull,
+  refreshing: pullRefreshing,
+  label: pullText,
+} = usePullToRefresh(queueViewport, () => refresh(), isPhone);
+// Deslizar o cartão para a esquerda (G17): Atender (quem gerencia) e Recusar (pedido novo).
+function swipeActions(card: OrderCardProjection): OperatorSwipeAction[] {
+  const actions: OperatorSwipeAction[] = [];
+  if (canManageOrders.value) {
+    actions.push({
+      key: "assign",
+      label: card.assigned_operator ? "Liberar" : "Atender",
+      icon: card.assigned_operator ? "lucide:user-minus" : "lucide:user-plus",
+      tone: "info",
+      disabled: isBusy(card.ref),
+    });
+  }
+  const reject = cardAffordances(card).find((aff) => aff.ref === "reject");
+  if (reject)
+    actions.push({
+      key: "reject",
+      label: "Recusar",
+      icon: "lucide:circle-x",
+      tone: "danger",
+      disabled: isBusy(card.ref) || reject.disabled,
+    });
+  return actions;
+}
+function onSwipe(card: OrderCardProjection, key: string) {
+  if (key === "assign") onToggleAssign(card);
+  else if (key === "reject") openReject(card.ref);
 }
 
-// keyboard shortcuts (Arc 3): / search · r refresh · v view · s sort · Esc clear.
+// ── colunas ajustáveis e recolhíveis, lembradas por posto (SUITE-UX §16) ──
+// O tablet do passe fica só com a Saída: é o mesmo quadro, com Entrada e Preparo
+// recolhidas numa faixa. Nenhuma ação muda; muda só o que cabe na tela.
+const boardLayout = useBoardLayout();
+// O sinal de canal decide se a segunda linha do cabeçalho existe. Montar sempre o
+// slot #feedback e deixar só o filho vazio criava a faixa horizontal sem conteúdo que
+// aparecia acima da toolbar da Saída.
+const { attention: channelAttention } = useChannelAttention();
+const hasChannelQueueSignal = computed(() =>
+  Boolean(channelAttention.value?.queue?.length),
+);
+const desktopZones = computed(() =>
+  zones.value.filter((zone) => boardLayout.isOpen(zone.key)),
+);
+const boardAsTabs = computed(
+  () =>
+    isPhone.value || (isNarrowTablet.value && desktopZones.value.length > 1),
+);
+const phoneZones = computed(() =>
+  zones.value.filter((zone) => zone.key === phoneZone.value),
+);
+const boardSplitterItems = computed(() => {
+  const open = desktopZones.value;
+  const totalWeight = open.reduce(
+    (total, zone) => total + (boardLayout.layout.value[zone.key]?.weight ?? 1),
+    0,
+  );
+  return open.map((zone) => ({
+    id: `orders-board-${zone.key}`,
+    slot: zone.key,
+    defaultSize:
+      totalWeight > 0
+        ? ((boardLayout.layout.value[zone.key]?.weight ?? 1) / totalWeight) *
+          100
+        : 100 / Math.max(1, open.length),
+    minSize: open.length > 1 ? 18 : 100,
+  }));
+});
+const boardSplitterPersistenceKey = computed(
+  () =>
+    `orders-board:${boardLayout.station.value || "device"}:${desktopZones.value.map((zone) => zone.key).join("-")}`,
+);
+// O índice de estações da Cozinha (estação de Saída) e o posto de saída chegam com
+// `?columns=expedition`: o quadro abre só com a Saída, e a arrumação fica no posto.
+// O parâmetro sai da URL depois de aplicado, para o operador poder abrir as outras.
+// O rail usa o mesmo parâmetro: "Pedidos" abre as três colunas (`?columns=all`) e
+// "Saída" abre o posto do passe, inclusive com o quadro já na tela.
+function applyColumnsQuery() {
+  const wanted = route.query[BOARD_COLUMNS_QUERY];
+  if (wanted !== "expedition" && wanted !== "all") return;
+  if (wanted === "expedition") boardLayout.showOnly("expedition");
+  else boardLayout.showAll();
+  // No celular as colunas são abas: "Saída" abre a Saída da v4 (abas "Prontos para
+  // sair" e "Em preparo"); "Pedidos", as três abas na da vez.
+  pickedZone.value = wanted === "expedition" ? "expedition" : null;
+  phoneExitMode.value = wanted === "expedition";
+  const { [BOARD_COLUMNS_QUERY]: _applied, ...rest } = route.query;
+  void router.replace({ path: route.path, query: rest });
+}
+onMounted(applyColumnsQuery);
+watch(
+  () => route.query[BOARD_COLUMNS_QUERY],
+  () => {
+    if (route.path === "/") applyColumnsQuery();
+  },
+);
+// O posto de saída é tablet de toque: todo alvo do cartão sobe para 48 px.
+// A Fila "Precisa de você" (V4-G4) é a casa do desktop e do tablet deitado. O celular e
+// o tablet em pé seguem com as colunas em abas, e o posto Saída com a Saída larga: lá a
+// escolha "Grade" vira a Lista. Antes de montar (SSR), vale a escolha guardada.
+const queueAvailable = computed(
+  () => !boardLayout.exitPost.value && !screen.belowLg.value,
+);
+const view = computed(() =>
+  viewMode.value === "queue" && !queueAvailable.value
+    ? "board"
+    : viewMode.value,
+);
+const viewTabs = computed(() => [
+  ...(queueAvailable.value
+    ? [{ value: "queue", label: "Grade", icon: "i-lucide-layout-grid" }]
+    : []),
+  { value: "table", label: "Lista", icon: "i-lucide-list" },
+]);
+function pickView(value: string | number) {
+  const next = String(value);
+  if (next === "queue" || next === "table") viewMode.value = next;
+}
+const exitPostView = computed(
+  () => view.value === "board" && boardLayout.exitPost.value && !isPhone.value,
+);
+// Tablet em pé (e o posto Saída): a linha de cima fica com o essencial; ordenar e a
+// visão entram no ⋯, para o cabeçalho não quebrar em duas linhas.
+// Só depois de montar: o servidor não sabe a largura, e classe divergente na hidratação
+// não é corrigida pelo Vue (o campo ficaria com a largura do servidor).
+// Abaixo do xl, título, busca e todos os controles não cabem numa linha (a 1024 px o
+// título "Pedidos" virava "Pe…"): ordenar e a visão vão para o ⋯.
+const compactHeader = computed(
+  () =>
+    screen.ready.value &&
+    (exitPostView.value || (screen.belowXl.value && !isPhone.value)),
+);
+
+// O rail conta o que o quadro vê: pedidos novos em Pedidos e o que está na Saída, e
+// acende "Saída" quando o posto está só com ela. Fora do quadro, a contagem leve do rail.
+const rail = useGestorRail();
+watch(
+  () => ({
+    exitPost: isPhone.value
+      ? phoneExitMode.value || phoneZone.value === "expedition"
+      : boardLayout.exitPost.value,
+    intake: zones.value.find((z) => z.key === "intake")?.count ?? 0,
+    exit: zones.value.find((z) => z.key === "expedition")?.count ?? 0,
+  }),
+  (next) => {
+    rail.value = { onBoard: true, ...next };
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  rail.value = { ...rail.value, onBoard: false, exitPost: false };
+});
+
+const EXIT_FILTERS = [
+  { key: "all", label: "Todos", icon: "lucide:check" },
+  { key: "pickup", label: "Retirada", icon: "lucide:store" },
+  { key: "delivery", label: "Entrega", icon: "lucide:bike" },
+] as const;
+const exitFilterTabs: QuickFilterItem[] = EXIT_FILTERS.map((option) => ({
+  key: option.key,
+  label: option.label,
+  icon: option.icon.replace("lucide:", "i-lucide-"),
+}));
+// A faixa de recortes do fluxo: na Saída, os três da expedição; no celular, a versão
+// curta; no resto, com as contagens.
+const fulfillmentFilterTabs = computed<QuickFilterItem[]>(() =>
+  exitPostView.value
+    ? exitFilterTabs
+    : isPhone.value
+      ? fulfillmentCompactTabs.value
+      : fulfillmentTabs.value,
+);
+const nowMs = useNowTick(() => queue.value?.intake[0]?.server_now_iso ?? "");
+function zoneNext(zone: ZoneView): string {
+  return zone.key === "expedition" ? nextOutRef(triaged(zone)) : "";
+}
+// A Saída do celular: o ato do "Próximo" ao alcance do polegar, na ação da base da
+// suíte (`OperatorActionBar`, no rodapé do painel, depois da área que rola). É o mesmo
+// botão largo do cartão e o mesmo deslize à direita, por outro caminho: o mesmo
+// `onAction`. Com a seleção ligada, a base é da barra de seleção.
+const exitBaseAction = computed<OperatorActionBarAction | null>(() => {
+  if (!isPhone.value || view.value !== "board" || selecting.value) return null;
+  const zone = zones.value.find((z) => z.key === "expedition");
+  if (!zone || phoneZone.value !== "expedition") return null;
+  const nextRef = zoneNext(zone);
+  const card = triaged(zone).find((c) => c.ref === nextRef);
+  const gesture = card ? exitGesture(card) : null;
+  if (!card || !gesture) return null;
+  return {
+    label: gesture.label,
+    icon: "i-lucide-hand-platter",
+    loading: isBusy(card.ref),
+    onSelect: () => {
+      if (!isBusy(card.ref)) onAction(card.ref, gesture.action);
+    },
+  };
+});
+// A coluna sozinha na tela (posto Saída) usa a largura: grade de cartões, não fila única.
+function wideColumn(key: string): boolean {
+  return !isPhone.value && key === "expedition" && boardLayout.exitPost.value;
+}
+function onStationReady(card: OrderCardProjection, stationRef: string) {
+  if (card.kitchen)
+    void markStationReady(card.ref, card.kitchen.order_pk, stationRef);
+}
+function lateCount(zone: ZoneView): number {
+  return triaged(zone).filter((card) => timerTone(card.timer_class) === "late")
+    .length;
+}
+const shortcutHint = (key: string) =>
+  String(BOARD_ZONE_KEYS.indexOf(key as (typeof BOARD_ZONE_KEYS)[number]) + 1);
+
+// ── a Fila "Precisa de você" (V4-G4) ────────────────────────────────────────
+// Os mesmos recortes do quadro (busca, canal, Entrega/Retirada), mais as encomendas
+// que ainda pedem aceite. O foco começa no mais urgente; ↑/↓ andam, Enter faz o gesto.
+// A Fila também recebe o pedido em negociação no iFood, inclusive o já entregue (o
+// cliente reclama depois): ele espera uma resposta como qualquer outro (dono, 07/10).
+const queueCards = computed<OrderCardProjection[]>(() => {
+  const cards = [
+    ...tableRows.value.map((row) => row.card),
+    ...triagedPreorders.value.flatMap((group) => group.cards),
+  ];
+  const seen = new Set(cards.map((card) => card.ref));
+  return [
+    ...cards,
+    ...negotiationCards.value.filter((card) => !seen.has(card.ref)),
+  ];
+});
+// O que as setas alcançam: o que a Fila mostra (em "Precisa de você", os 4 em foco).
+const queueOrder = computed(() => {
+  const order = queueItems(queueCards.value, nowMs.value, {
+    scope: scope.value,
+    sort: queueSort.value,
+  }).map((item) => item.card);
+  return scope.value === "attention" ? order.slice(0, QUEUE_FOCUS) : order;
+});
+// A trilha do anterior/próximo do pedido (fase 2, `OperatorRecordNav`): a ordem que
+// esta tela mostra, com o recorte (escopo, busca, canal, ordenação). Na Grade, todos
+// do escopo, não só os em foco: "3 de 18" conta o que o escopo tem.
+const { remember: rememberTrail } = useRecordTrail(ORDERS_QUEUE_TRAIL);
+const trailRefs = computed(() =>
+  (view.value === "queue"
+    ? queueItems(queueCards.value, nowMs.value, {
+        scope: scope.value,
+        sort: queueSort.value,
+      }).map((item) => item.card.ref)
+    : tableRows.value.map((row) => row.card.ref)
+  ).join("\n"),
+);
+watch(
+  trailRefs,
+  (refs) =>
+    rememberTrail(refs ? refs.split("\n") : [], {
+      from: route.fullPath,
+      label: "Pedidos",
+    }),
+  { immediate: true },
+);
+const scopeCounts = computed(() =>
+  queueScopeCounts(queueCards.value, nowMs.value),
+);
+const QUEUE_SCOPES: { key: QueueScope; label: string }[] = [
+  { key: "attention", label: "Precisa de você" },
+  { key: "all", label: "Todos" },
+  { key: "late", label: "Atrasados" },
+];
+const queueScopeTabs = computed(() =>
+  QUEUE_SCOPES.map((option) => ({
+    key: option.key,
+    label: option.label,
+    count: scopeCounts.value[option.key],
+  })),
+);
+const fulfillmentTabs = computed<QuickFilterItem[]>(() => [
+  {
+    key: "all",
+    label: "Todos",
+    icon: "i-lucide-layers-3",
+    count: allCards.value.length,
+  },
+  {
+    key: "delivery",
+    label: "Entrega",
+    icon: "i-lucide-bike",
+    count: fulfillment_.value.delivery,
+  },
+  {
+    key: "pickup",
+    label: "Retirada",
+    icon: "i-lucide-store",
+    count: fulfillment_.value.pickup,
+  },
+]);
+const fulfillmentCompactTabs = computed(() =>
+  fulfillmentTabs.value.map(({ icon: _icon, ...item }) => item),
+);
+const channelItems = computed(() => [
+  { value: "all", label: "Todos os canais", icon: "i-lucide-layers" },
+  ...channels.value.map((option) => ({
+    value: option.ref,
+    label: `${option.label} (${option.count})`,
+    icon: `i-lucide-${lucideIcon(allCards.value.find((card) => card.channel_ref === option.ref)?.channel_icon || "")}`,
+  })),
+]);
+function pickScope(value: string | number) {
+  if (value === "attention" || value === "all" || value === "late")
+    scope.value = value;
+}
+function pickFulfillment(value: string | number) {
+  if (value === "all" || value === "delivery" || value === "pickup")
+    fulfillment.value = value;
+}
+// O painel de filtros único (fase 2, K4), na mesa: o recebimento e o canal como campos
+// de escolha única, e os favoritos da pessoa. As abas e o seletor de canal continuam à
+// vista como os recortes rápidos; o painel e eles mexem no mesmo estado.
+const panelDimensions = computed<FilterDimension[]>(() => [
+  {
+    id: "fulfillment",
+    label: "Recebimento",
+    type: "single-select",
+    options: [
+      { value: "delivery", label: "Entrega" },
+      { value: "pickup", label: "Retirada" },
+    ],
+  },
+  {
+    id: "channel",
+    label: "Canal",
+    type: "single-select",
+    options: channels.value.map((option) => ({ value: option.ref, label: option.label, count: option.count })),
+  },
+]);
+const panelFilters = computed<ActiveFilters>({
+  get: () => ({
+    ...(fulfillment.value !== "all" ? { fulfillment: [fulfillment.value] } : {}),
+    ...(channel.value !== "all" ? { channel: [channel.value] } : {}),
+  }),
+  set: (next) => {
+    pickFulfillment(next.fulfillment?.[0] ?? "all");
+    channel.value = next.channel?.[0] ?? "all";
+  },
+});
+// As ações da fila no celular, em dados para o kit: o "Visto" (e o som bloqueado)
+// disputam a vaga de ícone com a Busca e vencem enquanto valem; o resto vai para o ⋯.
+// Declaradas sempre (`phone-actions`): o kit as mostra só abaixo de `sm`, pelo CSS, e o
+// servidor já desenha a barra do celular (sem o flash da mesa antes de montar).
+const phoneHeaderActions = computed(() => {
+  return [
+    ...(attentionPending.value && !exitPostView.value
+      ? [{ label: "Visto", icon: "i-lucide-check", priority: 1, onSelect: () => acknowledgeAttention() }]
+      : []),
+    {
+      label:
+        soundOn.value && soundBlocked.value
+          ? "Som bloqueado: ativar"
+          : soundOn.value
+            ? "Som ligado: desligar"
+            : "Som desligado: ligar",
+      icon: soundOn.value && !soundBlocked.value ? "i-lucide-volume-2" : "i-lucide-volume-x",
+      ...(soundOn.value && soundBlocked.value ? { priority: 2 } : {}),
+      onSelect: () => handleSoundAction(),
+    },
+    { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+    {
+      label: selecting.value ? EXIT_SELECTION_LABEL : "Selecionar pedidos",
+      icon: "i-lucide-list-checks",
+      onSelect: () => (selecting.value ? stopSelection() : startSelection()),
+    },
+    { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => exportCsv() },
+    { label: "Imprimir fila", icon: "i-lucide-printer", onSelect: () => printQueue() },
+  ];
+});
+// Os recortes ativos (chips removíveis abaixo da linha e o número no "Filtros").
+const activeFilters = computed(() => [
+  ...(fulfillment.value !== "all"
+    ? [{
+        key: "fulfillment",
+        label: String(fulfillmentFilterTabs.value.find((tab) => tab.key === fulfillment.value)?.label ?? fulfillment.value),
+        remove: () => pickFulfillment("all"),
+      }]
+    : []),
+  ...(channel.value !== "all"
+    ? [{
+        key: "channel",
+        label: `Canal: ${channelItems.value.find((item) => item.value === channel.value)?.label ?? channel.value}`,
+        remove: () => (channel.value = "all"),
+      }]
+    : []),
+]);
+const queueSortLabel = computed(
+  () =>
+    QUEUE_SORT_OPTIONS.find((o) => o.key === queueSort.value)?.label ??
+    "Urgência",
+);
+function pickQueueSort(key: QueueSort) {
+  queueSort.value = key;
+}
+// A tecla A aceita o pedido novo em foco; sem ele, o pedido novo mais urgente da Fila.
+const acceptRef = computed(() => {
+  const confirmable = (card: OrderCardProjection) =>
+    card.attention === "confirm" && card.can_confirm;
+  const focused = queueOrder.value.find(
+    (card) => card.ref === queueFocus.value,
+  );
+  if (focused && confirmable(focused)) return focused.ref;
+  return queueOrder.value.find(confirmable)?.ref ?? "";
+});
+const queueFocusPicked = ref("");
+const queueFocus = computed(() => {
+  const refs = queueOrder.value.map((card) => card.ref);
+  return refs.includes(queueFocusPicked.value)
+    ? queueFocusPicked.value
+    : (refs[0] ?? "");
+});
+function queueKey(e: KeyboardEvent): boolean {
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (key === "g" && queueAvailable.value) {
+    e.preventDefault();
+    viewMode.value = "queue";
+    return true;
+  }
+  if (key === "l") {
+    e.preventDefault();
+    viewMode.value = "table";
+    return true;
+  }
+  if (view.value !== "queue") return false;
+  const order = queueOrder.value;
+  const index = order.findIndex((card) => card.ref === queueFocus.value);
+  if (key === "ArrowDown" || key === "ArrowUp") {
+    if (!order.length) return false;
+    e.preventDefault();
+    const next =
+      key === "ArrowDown"
+        ? Math.min(order.length - 1, index + 1)
+        : Math.max(0, index - 1);
+    queueFocusPicked.value = order[next]!.ref;
+    document
+      .querySelector(`[data-queue-ref="${CSS.escape(order[next]!.ref)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+    return true;
+  }
+  if (key === "a" && acceptRef.value && !isBusy(acceptRef.value)) {
+    e.preventDefault();
+    onAction(acceptRef.value, "confirm");
+    return true;
+  }
+  const card = order[index];
+  if (!card || isBusy(card.ref)) return false;
+  if (
+    key === "Enter" &&
+    !(e.target as HTMLElement | null)?.closest(
+      "button, a, input, textarea, select",
+    )
+  ) {
+    const item = queueItems([card], nowMs.value)[0];
+    if (card.attention === "station") {
+      const station = card.kitchen?.stations.find((s) => s.can_mark_ready);
+      if (!station) return false;
+      e.preventDefault();
+      onStationReady(card, station.station_ref);
+      return true;
+    }
+    const primary = item ? queueGesture(item).primary : null;
+    if (!primary || primary.disabled) return false;
+    e.preventDefault();
+    onAction(card.ref, primary.ref);
+    return true;
+  }
+  return false;
+}
+
+// keyboard shortcuts (Arc 3): / search · r refresh · v view · s sort · Esc clear ·
+// 1/2/3 recolhem ou abrem Entrada, Preparo e Saída.
 // Pure mapping in resolveShortcut; here we run the effects and skip while typing.
 const searchInput = ref<{ focus: () => void } | null>(null);
 function onKeydown(e: KeyboardEvent) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // Esc fecha primeiro o drawer móvel; menus canônicos cuidam do próprio Escape.
+  if (e.key === "Escape" && moreOpen.value) {
+    moreOpen.value = false;
+    return;
+  }
   const el = e.target as HTMLElement | null;
-  const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+  const typing =
+    !!el &&
+    (el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      el.isContentEditable);
+  const column =
+    view.value === "board" ? queueColumnForKey(e.key, boardLayout.keys) : null;
+  if (column) {
+    // Com um diálogo aberto a tecla é do diálogo, não do quadro atrás dele.
+    if (
+      typing ||
+      rejectRef.value ||
+      settleRef.value ||
+      dispatchRef.value ||
+      courierBackRef.value
+    )
+      return;
+    e.preventDefault();
+    boardLayout.toggle(column);
+    return;
+  }
+  // A Fila: F e T trocam a visão; na Fila, ↑/↓ andam, Enter faz o gesto do item em
+  // foco e A aceita o pedido novo em foco. O R continua sendo "atualizar".
+  if (
+    !typing &&
+    !rejectRef.value &&
+    !settleRef.value &&
+    !dispatchRef.value &&
+    !courierBackRef.value &&
+    queueKey(e)
+  )
+    return;
   const shortcut = resolveShortcut(e.key);
   if (!shortcut) return;
   // While typing, only Escape (clear-filters / blur) is honoured.
@@ -187,12 +1069,19 @@ function onKeydown(e: KeyboardEvent) {
       refresh();
       break;
     case "toggle-view":
-      viewMode.value = viewMode.value === "board" ? "table" : "board";
+      // V: as três colunas (Entrada, Preparo, Saída) e de volta à Fila.
+      viewMode.value =
+        view.value === "board"
+          ? queueAvailable.value
+            ? "queue"
+            : "table"
+          : "board";
       break;
     case "cycle-sort":
       sort.value = nextSort(sort.value);
       break;
     case "clear-filters":
+      if (selecting.value && !typing) stopSelection();
       query.value = "";
       channel.value = "all";
       fulfillment.value = "all";
@@ -209,23 +1098,37 @@ const rejectRef = ref<string | null>(null);
 const rejectReason = ref("");
 const rejectReasons = ref<CancellationReason[]>([]);
 const rejectCode = ref("");
-const rejectDirty = computed(() => rejectRef.value !== null && Boolean(rejectReason.value.trim() || rejectCode.value));
+const rejectDirty = computed(
+  () =>
+    rejectRef.value !== null &&
+    Boolean(rejectReason.value.trim() || rejectCode.value),
+);
 const confirmDiscard = useConfirm();
 async function closeReject() {
   if (rejectRef.value && isBusy(rejectRef.value)) return;
-  if (rejectDirty.value && !(await confirmDiscard({
-    title: "Descartar o motivo digitado?",
-    description: "O motivo que você escreveu se perde, e o pedido não é recusado.",
-    cancelLabel: "Continuar escrevendo",
-  }))) return;
+  if (
+    rejectDirty.value &&
+    !(await confirmDiscard({
+      title: "Descartar o motivo digitado?",
+      description:
+        "O motivo que você escreveu se perde, e o pedido não é recusado.",
+      cancelLabel: "Continuar escrevendo",
+    }))
+  )
+    return;
   rejectRef.value = null;
 }
-onBeforeRouteLeave(() => !rejectDirty.value || confirmDiscard({
-  title: "Sair sem recusar o pedido?",
-  description: "O motivo que você escreveu se perde, e o pedido não é recusado.",
-  confirmLabel: "Descartar e sair",
-  cancelLabel: "Continuar escrevendo",
-}));
+onBeforeRouteLeave(
+  () =>
+    !rejectDirty.value ||
+    confirmDiscard({
+      title: "Sair sem recusar o pedido?",
+      description:
+        "O motivo que você escreveu se perde, e o pedido não é recusado.",
+      confirmLabel: "Descartar e sair",
+      cancelLabel: "Continuar escrevendo",
+    }),
+);
 function beforeUnload(event: BeforeUnloadEvent) {
   if (!rejectDirty.value) return;
   event.preventDefault();
@@ -235,9 +1138,18 @@ onMounted(() => window.addEventListener("beforeunload", beforeUnload));
 onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
 const rejectReasonsLoading = ref(false);
 const rejectReasonsError = ref("");
-const isMarketplaceReject = computed(() => allCards.value.find((c) => c.ref === rejectRef.value)?.channel_ref === "ifood");
-const canConfirmReject = computed(() =>
-  !rejectReasonsLoading.value && !rejectReasonsError.value && (isMarketplaceReject.value ? rejectReasons.value.some((r) => r.code === rejectCode.value) : rejectReason.value.trim() !== ""),
+const isMarketplaceReject = computed(
+  () =>
+    allCards.value.find((c) => c.ref === rejectRef.value)?.channel_ref ===
+    "ifood",
+);
+const canConfirmReject = computed(
+  () =>
+    !rejectReasonsLoading.value &&
+    !rejectReasonsError.value &&
+    (isMarketplaceReject.value
+      ? rejectReasons.value.some((r) => r.code === rejectCode.value)
+      : rejectReason.value.trim() !== ""),
 );
 async function openReject(ref_: string) {
   rejectRef.value = ref_;
@@ -255,9 +1167,12 @@ async function loadRejectReasons() {
   rejectReasonsError.value = "";
   try {
     const result = await fetchCancellationReasons(ref_);
-    if (request === rejectReasonsRequest && ref_ === rejectRef.value) rejectReasons.value = result;
+    if (request === rejectReasonsRequest && ref_ === rejectRef.value)
+      rejectReasons.value = result;
   } catch {
-    if (request === rejectReasonsRequest && ref_ === rejectRef.value) rejectReasonsError.value = "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
+    if (request === rejectReasonsRequest && ref_ === rejectRef.value)
+      rejectReasonsError.value =
+        "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
   } finally {
     if (request === rejectReasonsRequest) rejectReasonsLoading.value = false;
   }
@@ -271,7 +1186,11 @@ function onRejectCodeChange() {
 async function confirmReject() {
   const ref_ = rejectRef.value;
   if (!ref_ || isBusy(ref_) || !canConfirmReject.value) return;
-  const ok = await reject(ref_, rejectReason.value.trim() || "Pedido recusado", rejectCode.value);
+  const ok = await reject(
+    ref_,
+    rejectReason.value.trim() || "Pedido recusado",
+    rejectCode.value,
+  );
   if (ok) rejectRef.value = null;
 }
 
@@ -279,25 +1198,68 @@ async function confirmReject() {
 // the drawer, how much of it came back — zero included; the server requires it).
 const settleRef = ref<string | null>(null);
 const cashDrafts = useOrderCashDrafts();
-const settleCard = computed(() => allCards.value.find((c) => c.ref === settleRef.value) ?? null);
-const settleAction = computed(() => settleCard.value?.actions.find((action) => action.ref === "settle-delivery-cash"));
+const settleCard = computed(
+  () => allCards.value.find((c) => c.ref === settleRef.value) ?? null,
+);
+const settleAction = computed(() =>
+  settleCard.value?.actions.find(
+    (action) => action.ref === "settle-delivery-cash",
+  ),
+);
 const settlementDraft = computed(() => {
-  const initial = { amount: "", changeBack: settleCard.value?.change_back_pending ? moneyInput(changeBackSuggestionQ(settleCard.value)) : "", equipmentBack: false,
-    revision: String(settleAction.value?.payload_schema.base_revision || ""), custody: String(settleAction.value?.confirmation.description || "") };
-  return (settleRef.value ? cashDrafts.settlements.value[settleRef.value] : null) ?? initial;
+  const initial = {
+    amount: "",
+    changeBack: settleCard.value?.change_back_pending
+      ? moneyInput(changeBackSuggestionQ(settleCard.value))
+      : "",
+    equipmentBack: false,
+    revision: String(settleAction.value?.payload_schema.base_revision || ""),
+    custody: String(settleAction.value?.confirmation.description || ""),
+  };
+  return (
+    (settleRef.value ? cashDrafts.settlements.value[settleRef.value] : null) ??
+    initial
+  );
 });
-const settleAmount = computed({ get: () => settlementDraft.value.amount, set: (v: string) => { settlementDraft.value.amount = v; } });
-const settleChangeBack = computed({ get: () => settlementDraft.value.changeBack, set: (v: string) => { settlementDraft.value.changeBack = v; } });
-const settleEquipmentBack = computed({ get: () => settlementDraft.value.equipmentBack, set: (v: boolean) => { settlementDraft.value.equipmentBack = v; } });
+const settleAmount = computed({
+  get: () => settlementDraft.value.amount,
+  set: (v: string) => {
+    settlementDraft.value.amount = v;
+  },
+});
+const settleChangeBack = computed({
+  get: () => settlementDraft.value.changeBack,
+  set: (v: string) => {
+    settlementDraft.value.changeBack = v;
+  },
+});
+const settleEquipmentBack = computed({
+  get: () => settlementDraft.value.equipmentBack,
+  set: (v: boolean) => {
+    settlementDraft.value.equipmentBack = v;
+  },
+});
 const settleRevision = computed(() => settlementDraft.value.revision);
 const settleCustody = computed(() => settlementDraft.value.custody);
-const settleChanged = computed(() => settleRevision.value !== String(settleAction.value?.payload_schema.base_revision || ""));
+const settleChanged = computed(
+  () =>
+    settleRevision.value !==
+    String(settleAction.value?.payload_schema.base_revision || ""),
+);
 function reviewSettleCustody() {
-  settlementDraft.value.revision = String(settleAction.value?.payload_schema.base_revision || "");
-  settlementDraft.value.custody = String(settleAction.value?.confirmation.description || "");
+  settlementDraft.value.revision = String(
+    settleAction.value?.payload_schema.base_revision || "",
+  );
+  settlementDraft.value.custody = String(
+    settleAction.value?.confirmation.description || "",
+  );
 }
-const settleAsksChangeBack = computed(() => Boolean(settleCard.value?.change_back_pending));
-const settleAsksEquipment = computed(() => Boolean(settleCard.value?.equipment_back_pending));
+const settleAsksChangeBack = computed(() =>
+  Boolean(settleCard.value?.change_back_pending),
+);
+const settleAsksEquipment = computed(() =>
+  Boolean(settleCard.value?.equipment_back_pending),
+);
 function openSettle(ref_: string) {
   settleRef.value = ref_;
   cashDrafts.settlement(ref_, settlementDraft.value);
@@ -305,19 +1267,37 @@ function openSettle(ref_: string) {
 async function confirmSettle() {
   const ref_ = settleRef.value;
   if (!ref_) return;
-  const changeBack = settleAsksChangeBack.value ? settleChangeBack.value.trim() || "0" : undefined;
-  const ok = await settleCash(ref_, settleAmount.value.trim(), changeBack, settleAsksEquipment.value && settleEquipmentBack.value, settleRevision.value);
-  if (ok) { cashDrafts.clear("settlement", ref_); settleRef.value = null; }
+  const changeBack = settleAsksChangeBack.value
+    ? settleChangeBack.value.trim() || "0"
+    : undefined;
+  const ok = await settleCash(
+    ref_,
+    settleAmount.value.trim(),
+    changeBack,
+    settleAsksEquipment.value && settleEquipmentBack.value,
+    settleRevision.value,
+  );
+  if (ok) {
+    cashDrafts.clear("settlement", ref_);
+    settleRef.value = null;
+  }
 }
 
 // Saída para entrega: um toque quando não há o que perguntar (a maquininha
 // livre é escolhida sozinha); senão, o diálogo (troco, ir junto, qual maquininha,
 // ou onde elas estão). Os passos saem em ordem: quem abre a saída primeiro.
 const dispatchRef = ref<string | null>(null);
-const dispatchCard = computed(() => allCards.value.find((c) => c.ref === dispatchRef.value) ?? null);
+const dispatchCard = computed(
+  () => allCards.value.find((c) => c.ref === dispatchRef.value) ?? null,
+);
 async function runDispatch(steps: DispatchStep[]) {
   for (const step of steps) {
-    const ok = await advance(step.ref, step.changeOut, step.equipment, step.tripRef);
+    const ok = await advance(
+      step.ref,
+      step.changeOut,
+      step.equipment,
+      step.tripRef,
+    );
     if (!ok) return false;
   }
   return true;
@@ -328,7 +1308,9 @@ async function onDispatch(steps: DispatchStep[]) {
 
 // "Entregador voltou": confirma o que deve estar na mão e fecha a saída inteira.
 const courierBackRef = ref<string | null>(null);
-const courierBackCard = computed(() => allCards.value.find((c) => c.ref === courierBackRef.value) ?? null);
+const courierBackCard = computed(
+  () => allCards.value.find((c) => c.ref === courierBackRef.value) ?? null,
+);
 async function confirmCourierBack() {
   const ref_ = courierBackRef.value;
   if (!ref_) return;
@@ -352,12 +1334,33 @@ function onAction(ref_: string, action: AffordanceRef) {
       if (steps) runDispatch(steps);
       else dispatchRef.value = card.ref;
     }
-  }
-  else if (action === "courier_back") courierBackRef.value = ref_;
+  } else if (action === "courier_back") courierBackRef.value = ref_;
   else if (action === "reject") openReject(ref_);
   else if (action === "settle_cash") openSettle(ref_);
   else if (action === "equipment_back") equipmentBack(ref_);
+  else if (action === "undo_handoff") undoHandoff(ref_);
+  else if (action === "undo_ready") undoReady(ref_);
 }
+
+// O interruptor do canal na coluna da Fila (G09): o MESMO diálogo de Canais, com
+// período, motivo e a aprovação do gerente; a leitura da Fila se refaz depois.
+const menuChannels = computed(
+  () => queue.value?.awareness?.menu_channels ?? [],
+);
+const switchRef = ref<string | null>(null);
+const switchTarget = computed(
+  () =>
+    menuChannels.value.find((row) => row.ref === switchRef.value)?.switch ??
+    null,
+);
+const { switchChannel, isSwitching } = useChannelSwitch(
+  (ref_) => menuChannels.value.find((row) => row.ref === ref_)?.switch,
+  () => refresh(),
+);
+const submitSwitch = (
+  request: Parameters<typeof switchChannel>[1],
+  approval?: Record<string, string>,
+) => switchChannel(switchRef.value!, request, approval);
 
 // claim/release an order ("estou atendendo").
 function onToggleAssign(card: OrderCardProjection) {
@@ -372,7 +1375,11 @@ function exportCsv() {
   const csv = rowsToCsv(tableRows.value);
   const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
-  const stamp = new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "h");
+  const stamp = new Date()
+    .toISOString()
+    .slice(0, 16)
+    .replace("T", "-")
+    .replace(":", "h");
   const a = document.createElement("a");
   a.href = url;
   a.download = `pedidos-${stamp}.csv`;
@@ -386,367 +1393,777 @@ function printQueue() {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <!-- work toolbar: search · channel chips · sort/view/actions -->
-    <UiToolbar>
-      <UiSearchInput
-        ref="searchInput"
-        :model-value="query"
-        placeholder="Buscar pedido…"
-        aria-label="Buscar por código, cliente ou item (atalho: /)"
-        @update:model-value="(v) => (query = v)"
-      />
-      <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila (pausa,
-           recusa, divergência). O controle mora no card do canal iFood, aba Canais. -->
-      <ChannelQueueSignal />
-      <div v-if="allCards.length" class="flex flex-wrap items-center gap-1.5">
-        <UiFilterChip :active="channel === 'all'" :count="allCards.length" @click="channel = 'all'">
-          Todos
-        </UiFilterChip>
-        <UiFilterChip
-          v-for="opt in channels"
-          :key="opt.ref"
-          :active="channel === opt.ref"
-          :count="opt.count"
-          @click="channel = opt.ref"
-        >
-          <template #icon>
-            <Icon :name="`lucide:${lucideIcon(allCards.find((c) => c.channel_ref === opt.ref)?.channel_icon || '')}`" class="size-3.5" />
-          </template>
-          {{ opt.label }}
-        </UiFilterChip>
-      </div>
-
-      <!-- fulfillment axis: o que muda o FLUXO (rota vs balcão) -->
-      <div v-if="allCards.length" class="flex items-center gap-1.5">
-        <div class="h-5 w-px bg-border"></div>
-        <UiFilterChip :active="fulfillment === 'delivery'" :count="fulfillment_.delivery" @click="fulfillment = fulfillment === 'delivery' ? 'all' : 'delivery'">
-          <template #icon><Icon name="lucide:bike" class="size-3.5" /></template>
-          Entrega
-        </UiFilterChip>
-        <UiFilterChip :active="fulfillment === 'pickup'" :count="fulfillment_.pickup" @click="fulfillment = fulfillment === 'pickup' ? 'all' : 'pickup'">
-          <template #icon><Icon name="lucide:shopping-bag" class="size-3.5" /></template>
-          Retirada
-        </UiFilterChip>
-      </div>
-
-      <template #end>
-        <!-- Sinal de tempo-real: bolinha verde SÓ quando o SSE está vivo (honesto);
-             senão, sinal neutro de que o board ainda atualiza sozinho a cada 30s. -->
-        <span class="inline-flex items-center gap-1.5 text-xs text-muted-foreground" role="status" :title="realtimeView.title">
-          <span class="size-1.5 rounded-full" :class="realtimeView.dotClass" />
-          <span class="hidden md:inline">{{ realtimeView.label }}</span>
-        </span>
-        <!-- som de pedido novo (mesmos 3 estados do KDS): ligado / desligado /
-             ligado-mas-bloqueado pelo autoplay (ponto âmbar até o 1º gesto). O
-             mesmo toque pede a permissão de notificação do browser. -->
-        <button
-          type="button"
-          class="relative grid size-control place-items-center rounded-md border transition hover:bg-accent hover:text-foreground"
-          :class="soundOn && soundBlocked ? 'border-warning/50 text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
-          :aria-label="soundOn && soundBlocked ? 'Som bloqueado: toque para ativar' : soundOn ? 'Som de pedido novo ativo' : 'Som de pedido novo desativado'"
-          :title="soundOn && soundBlocked ? 'Som bloqueado: toque para ativar' : 'Som de pedido novo'"
-          data-sound-toggle
-          @click="handleSoundAction"
-        >
-          <Icon :name="soundOn ? 'lucide:volume-2' : 'lucide:volume-x'" class="size-4" />
-          <span v-if="soundOn && soundBlocked" class="absolute -right-1 -top-1 size-2 rounded-full bg-warning" aria-hidden="true" />
-        </button>
-        <button
-          v-if="attentionPending"
-          type="button"
-          class="inline-flex h-control items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold transition hover:bg-accent"
-          aria-label="Reconhecer aviso de pedido novo"
-          @click="acknowledgeAttention"
-        >
-          <Icon name="lucide:check" class="size-4" />
-          Ciente
-        </button>
-        <AlertsBell />
-        <NotificationBell />
-
-        <!-- sort -->
-        <div class="relative">
-          <button
-            type="button"
-            class="inline-flex h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
-            aria-haspopup="menu"
-            :aria-expanded="sortOpen"
-            title="Ordenar (atalho: s)"
-            @click="sortOpen = !sortOpen"
-          >
-            <Icon name="lucide:arrow-up-down" class="size-3.5" />
-            <span class="hidden sm:inline">{{ sortLabel }}</span>
-          </button>
-          <div v-if="sortOpen" class="fixed inset-0 z-40" @click="sortOpen = false" />
-          <div v-if="sortOpen" class="absolute right-0 z-50 mt-1 w-44 overflow-hidden rounded-md border bg-card py-1 shadow-lg" role="menu">
-            <button
-              v-for="opt in SORT_OPTIONS"
-              :key="opt.key"
-              type="button"
-              role="menuitemradio"
-              :aria-checked="sort === opt.key"
-              class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left text-xs transition hover:bg-accent"
-              @click="pickSort(opt.key)"
-            >
-              {{ opt.label }}
-              <Icon v-if="sort === opt.key" name="lucide:check" class="size-3.5 text-primary" />
-            </button>
-          </div>
-        </div>
-
-        <UiIconButton icon="lucide:download" label="Exportar CSV" @click="exportCsv" />
-        <UiIconButton icon="lucide:printer" label="Imprimir fila" @click="printQueue" />
-
-        <!-- view-mode -->
-        <div class="inline-flex items-center rounded-md border p-0.5">
-          <button
-            type="button"
-            class="grid size-control place-items-center rounded transition"
-            :class="viewMode === 'board' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
-            aria-label="Ver em colunas"
-            title="Colunas (atalho: v)"
-            @click="viewMode = 'board'"
-          >
-            <Icon name="lucide:columns-3" class="size-4" />
-          </button>
-          <button
-            type="button"
-            class="grid size-control place-items-center rounded transition"
-            :class="viewMode === 'table' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
-            aria-label="Ver em tabela"
-            title="Tabela (atalho: v)"
-            @click="viewMode = 'table'"
-          >
-            <Icon name="lucide:table-2" class="size-4" />
-          </button>
-        </div>
-
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar (atalho: r)" :spinning="pending" @click="refresh()" />
+    <!-- Cabeçalho de UMA linha (UX-KIT-V2, prévia v4 `gestor-fila4.html`): título, ao vivo,
+         busca e poucos controles (som, ordenar, visão, ⋯). Atualizar, exportar, imprimir,
+         a seleção em lote e a última leitura útil moram no ⋯; Visto aparece aqui só
+         enquanto há pedido novo esperando. No posto Saída (`gestor-colunas4.html`):
+         "Visão: Saída", "Mostrar as 3 colunas" e o som; o resto no ⋯. -->
+    <OperatorPageHeader
+      :title="exitPostView ? 'Saída' : 'Pedidos'"
+      :filters-wrap="false"
+      :phone-actions="phoneHeaderActions"
+      actions-from="md"
+      actions-label="Mais ações da fila"
+      :active-filters="activeFilters"
+    >
+      <template #status>
+        <!-- O texto visível é do selo (a hora, a cadência, "Última leitura às…",
+             "Sem conexão"); o rótulo do estado e o detalhe vão ao nome acessível. -->
+        <OperatorLiveStatus
+          :tone="liveTone"
+          :time="readClock"
+          :label="error ? 'Atualização falhou' : realtimeView.label"
+          :detail="realtimeView.title"
+        />
       </template>
-    </UiToolbar>
-    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
-
-    <!-- bulk action bar -->
-    <div v-if="selected.size" class="flex shrink-0 flex-wrap items-center gap-2 border-b bg-primary/10 px-4 py-2 text-sm print:hidden">
-      <Icon name="lucide:check-square" class="size-4 text-primary" />
-      <span class="font-semibold">{{ selected.size }} selecionado{{ selected.size > 1 ? "s" : "" }}</span>
-      <div class="ml-auto flex items-center gap-1.5">
-        <button
-          v-if="confirmableSel.length"
-          type="button"
-          class="min-h-action min-w-action inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-progress disabled:opacity-80"
-          :disabled="bulkConfirming"
-          :aria-busy="bulkConfirming || undefined"
-          @click="bulkConfirm"
+      <template #search>
+        <OperatorSuiteSearch
+          ref="searchInput"
+          :model-value="query"
+          screen-label="filtrando o quadro"
+          :placeholder="
+            exitPostView
+              ? 'Código ou cliente'
+              : 'Buscar pedido, cliente ou item'
+          "
+          aria-label="Buscar por código, cliente ou item (atalho: /)"
+          @update:model-value="(v) => (query = v)"
+        />
+      </template>
+      <!-- Os controles da mesa (do `md` para cima) escolhidos pelo CSS, não pela régua
+           do JS: ela responde "mesa" até montar, e o celular desenhava esta linha
+           encavalada sobre o título até a hidratação terminar. -->
+      <template #actions>
+        <!-- a visão deste posto e o caminho de volta às três colunas -->
+        <template
+          v-if="view === 'board' && !boardLayout.allOpen.value"
         >
-          <Icon :name="bulkConfirming ? 'line-md:loading-loop' : 'lucide:check'" class="size-3.5" aria-hidden="true" /> Aceitar {{ confirmableSel.length }}
-        </button>
-        <button
-          v-if="advanceableSel.length"
-          type="button"
-          class="min-h-control min-w-control inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent disabled:cursor-progress disabled:opacity-80"
-          :disabled="bulkAdvancing"
-          :aria-busy="bulkAdvancing || undefined"
-          @click="bulkAdvance"
-        >
-          <Icon :name="bulkAdvancing ? 'line-md:loading-loop' : 'lucide:arrow-right'" class="size-3.5" aria-hidden="true" /> Avançar {{ advanceableSel.length }}
-        </button>
-        <button type="button" class="min-h-control min-w-control rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent" @click="clearSelection">
-          Limpar
-        </button>
-      </div>
-    </div>
+          <NuxtButton
+            icon="i-lucide-columns-3"
+            label="Mostrar as 3 colunas"
+            color="neutral"
+            variant="outline"
+            title="Mostrar as 3 colunas (atalhos: 1, 2 e 3)"
+            data-board-show-all
+            @click="boardLayout.showAll()"
+          />
+        </template>
+        <!-- O som de pedido novo e o "Visto" que o cala formam um grupo só: o Visto
+             aparece enquanto há pedido novo tocando e, reconhecido, some, deixando o
+             botão do som sozinho. No posto Saída o Visto fica no ⋯. O som tem os
+             mesmos 3 estados do KDS: ligado, desligado e ligado-mas-bloqueado pelo
+             autoplay (ponto âmbar até o 1º gesto). -->
+        <NuxtFieldGroup data-sound-group>
+          <!-- Filhos diretos do FieldGroup, sem Chip no meio: o grupo arredonda só as
+               pontas e cola as bordas pelo primeiro e último filho. "Som bloqueado
+               pelo navegador" é a cor do próprio botão (warning) até o 1º gesto. -->
+          <NuxtButton
+            :icon="soundOn ? 'i-lucide-volume-2' : 'i-lucide-volume-x'"
+            :color="soundOn && soundBlocked ? 'warning' : 'neutral'"
+            variant="outline"
+            square
+            :aria-label="
+              soundOn && soundBlocked
+                ? 'Som bloqueado: toque para ativar'
+                : soundOn
+                  ? 'Som de pedido novo ativo'
+                  : 'Som de pedido novo desativado'
+            "
+            :title="
+              soundOn && soundBlocked
+                ? 'Som bloqueado: toque para ativar'
+                : 'Som de pedido novo'
+            "
+            data-sound-toggle
+            @click="handleSoundAction"
+          />
+          <NuxtButton
+            v-if="attentionPending && !exitPostView"
+            icon="i-lucide-check"
+            label="Visto"
+            color="neutral"
+            variant="outline"
+            aria-label="Visto: parar o som de pedido novo"
+            @click="acknowledgeAttention"
+          />
+        </NuxtFieldGroup>
 
-    <section ref="queueViewport" class="min-h-0 flex-1 overflow-auto p-3 md:p-4" @scroll.passive="rememberPosition" @click.capture="rememberFocus">
-      <p v-if="pending && !zones.length" class="text-sm text-muted-foreground">Carregando…</p>
-      <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`
-           e este parágrafo dizia "Falha ao carregar a fila. Reconectando…" —
-           erro de identificação vestido de erro de rede, na abertura de todo
-           turno e a cada auto-lock. Quem fala nesse estado é a identificação
-           que sobe por cima (app.vue), e ela não é uma falha. -->
-      <p v-else-if="error && !stationLocked" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-queue-error>
-        Falha ao atualizar a fila. Mantivemos a última leitura; atualize antes de confirmar ações.
+        <template v-if="!compactHeader">
+          <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
+               no quadro e na tabela, a ordem deles -->
+          <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'end' }">
+            <NuxtButton
+              icon="i-lucide-arrow-up-down"
+              trailing-icon="i-lucide-chevron-down"
+              :label="view === 'queue' ? queueSortLabel : sortLabel"
+              color="neutral"
+              variant="outline"
+              :title="
+                view === 'queue' ? 'Ordenar a Fila' : 'Ordenar (atalho: s)'
+              "
+              data-board-sort
+            />
+          </NuxtDropdownMenu>
+
+          <!-- visão: dois segmentos genéricos, Grade G (os cartões da Fila) | Lista L (a
+               tabela densa, com seleção em lote), nomes que servem a qualquer tela com
+               muitos registros (dono, 07/10/2026). As três colunas (Entrada, Preparo,
+               Saída) moram no ⋯ e na tecla V, e o posto Saída abre nelas. -->
+          <NuxtTabs
+            :model-value="view"
+            :items="viewTabs"
+            :content="false"
+            variant="pill"
+            aria-label="Visão do Gestor"
+            data-view-switch
+            @update:model-value="pickView"
+          />
+          <!-- Exibir (linhas e colunas) só existe com a Lista na tela. -->
+          <OperatorTableView v-if="view === 'table'" table-key="orders-queue" />
+        </template>
+
+        <!-- ⋯ da fila (do tablet para cima; no celular ele mora no fim dos recortes). O posto
+             Saída (v4 `gestor-colunas`) não tem ⋯: a leitura se atualiza sozinha e o Visto
+             é tocar a faixa da Entrada que pulsa. -->
+        <BoardMenu
+          v-if="!exitPostView"
+          mode="dropdown"
+          :metadata="readMetadata"
+          :failed="Boolean(error)"
+          :pending="pending"
+          :sort="sort"
+          :view-mode="view"
+          :queue-available="queueAvailable"
+          :sound-on="soundOn"
+          :sound-blocked="soundBlocked"
+          :attention-pending="attentionPending"
+          :selecting="selecting"
+          :full="compactHeader"
+          @refresh="refresh()"
+          @acknowledge="acknowledgeAttention"
+          @select="selecting ? stopSelection() : startSelection()"
+          @sort="pickSort"
+          @view="(mode) => (viewMode = mode)"
+          @sound="handleSoundAction"
+          @export="exportCsv"
+          @print="printQueue"
+        />
+      </template>
+
+      <!-- recortes (v4): Todos, o eixo do fluxo (Entrega, Retirada) e o canal num
+           seletor só. O posto Saída usa a mesma faixa: o título já diz a visão. -->
+      <!-- A Saída no celular (v4 `cozinha-celular` (a)) não tem a linha de recortes: a
+           barra de cima, as duas abas e a lista. -->
+      <!-- Antes de montar (e enquanto a fila chega) a faixa existe: no celular o kit
+           desenha "Filtros" já no primeiro desenho, e na mesa a faixa não some e volta
+           quando os cartões chegam. -->
+      <template
+        v-if="
+          ((exitPostView && desktopZones.length) ||
+            ((allCards.length || pending || !hydrated) && !exitPostView) ||
+            isPhone) &&
+          !(isPhone && phoneExitMode)
+        "
+        #filters
+      >
+        <OperatorQuickFilters
+          :model-value="fulfillment"
+          :items="fulfillmentFilterTabs"
+          label="Tipo de entrega"
+          data-fulfillment-filters
+          @update:model-value="pickFulfillment(String($event))"
+        />
+        <!-- Na Fila entre o `lg` e o `xl` a linha leva os recortes da fila, os de
+             entrega e o "Filtros": o canal fica só no painel (que tem a dimensão
+             "Canal" do `md` para cima), em vez de sair da tela na rolagem da faixa. -->
+        <NuxtSelect
+          v-if="channels.length"
+          v-model="channel"
+          :items="channelItems"
+          :class="view === 'queue' ? 'lg:max-xl:hidden' : ''"
+          aria-label="Canal"
+          data-channel-picker
+        />
+        <!-- celular do kit (abaixo de `sm`): no painel "Filtros", a ordem, a visão e o
+             frescor; as ações (atualizar, selecionar, exportar, imprimir, som) estão no
+             ⋯ da barra do topo. -->
+        <template v-if="kitPhone">
+          <NuxtFormField label="Ordenar">
+            <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'start' }">
+              <NuxtButton
+                icon="i-lucide-arrow-up-down"
+                trailing-icon="i-lucide-chevron-down"
+                :label="view === 'queue' ? queueSortLabel : sortLabel"
+                color="neutral"
+                variant="outline"
+                data-board-sort
+              />
+            </NuxtDropdownMenu>
+          </NuxtFormField>
+          <NuxtFormField label="Ver como">
+            <NuxtTabs
+              :model-value="view"
+              :items="viewTabs"
+              :content="false"
+              variant="pill"
+              aria-label="Visão do Gestor"
+              data-view-switch
+              @update:model-value="pickView"
+            />
+          </NuxtFormField>
+          <ReadFreshness
+            inline
+            :metadata="readMetadata"
+            :failed="Boolean(error)"
+          />
+        </template>
+        <!-- celular entre `sm` e `md`: os controles do quadro num painel só ("Filtros"
+             da prévia v3), no começo da linha para nunca ficar fora da tela -->
+        <NuxtChip
+          v-if="isPhone && !kitPhone"
+          :show="attentionPending || (soundOn && soundBlocked)"
+          color="warning"
+          size="2xl"
+          inset
+        >
+          <NuxtButton
+            icon="i-lucide-sliders-horizontal"
+            label="Filtros"
+            color="neutral"
+            variant="outline"
+            aria-haspopup="dialog"
+            :aria-expanded="moreOpen"
+            data-board-more
+            @click="moreOpen = true"
+          />
+        </NuxtChip>
+      </template>
+      <!-- O painel de filtros único, do `md` para cima (abaixo, a fila segue com o
+           painel próprio dela, que também leva a ordem e a visão). -->
+      <template v-if="!exitPostView" #filter-panel>
+        <!-- Pelo CSS (o servidor desenha o celular e a mesa juntos até hidratar). -->
+        <div class="max-md:hidden">
+          <OperatorFilterPanel
+            v-model="panelFilters"
+            :dimensions="panelDimensions"
+            surface="orders"
+            screen="queue"
+            :chips="false"
+          />
+        </div>
+      </template>
+      <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
+           muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. É o primário
+           da toolbar: no celular fica na linha, ao lado do "Filtros". -->
+      <template
+        v-if="view === 'queue' && !(isPhone && phoneExitMode)"
+        #filters-primary
+      >
+        <!-- A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o mesmo, e o
+             celular não desenha os escopos antes de montar. -->
+        <OperatorQuickFilters
+          class="max-lg:hidden"
+          :model-value="scope"
+          :items="queueScopeTabs"
+          label="Recortes da fila"
+          data-queue-scopes
+          @update:model-value="pickScope(String($event))"
+        />
+      </template>
+      <template v-if="hasChannelQueueSignal" #feedback>
+        <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
+        <ChannelQueueSignal :attention="channelAttention" />
+      </template>
+      <!-- Com o modo de seleção ligado, a barra de seleção toma o lugar da toolbar. -->
+      <template v-if="selecting" #selection>
+        <OperatorBulkBar
+          :escape="false"
+          :count="selected.size"
+          :scope="bulkScope"
+          empty="Toque nos pedidos para marcar"
+          :items="bulkItems"
+          :clear-label="EXIT_SELECTION_LABEL"
+          data-bulk-bar
+          @clear="stopSelection"
+        />
+      </template>
+    </OperatorPageHeader>
+
+    <!-- celular: o painel dos controles sobe do pé, ao alcance do polegar -->
+    <NuxtDrawer
+      v-if="isPhone && !kitPhone"
+      :open="moreOpen"
+      title="Filtros e ações da fila"
+      description="Ordenação, visão, atualização e ações auxiliares."
+      @update:open="(value) => (moreOpen = value)"
+    >
+      <template #body>
+        <BoardMenu
+          :metadata="readMetadata"
+          :failed="Boolean(error)"
+          :pending="pending"
+          :sort="sort"
+          :view-mode="view"
+          :queue-available="queueAvailable"
+          :sound-on="soundOn"
+          :sound-blocked="soundBlocked"
+          :attention-pending="attentionPending"
+          :selecting="selecting"
+          full
+          @refresh="refresh()"
+          @acknowledge="menuDo(acknowledgeAttention)"
+          @select="
+            menuDo(() => (selecting ? stopSelection() : startSelection()))
+          "
+          @sort="(key) => menuDo(() => pickSort(key))"
+          @view="(mode) => menuDo(() => (viewMode = mode))"
+          @sound="menuDo(handleSoundAction)"
+          @export="menuDo(exportCsv)"
+          @print="menuDo(printQueue)"
+        />
+      </template>
+    </NuxtDrawer>
+
+    <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. -->
+    <OperatorToolbar
+      v-if="boardAsTabs && view === 'board' && zones.length"
+      class="py-2"
+    >
+      <NuxtTabs
+        :model-value="phoneZone"
+        :items="phoneTabItems"
+        :content="false"
+        variant="link"
+        data-board-zone-tabs
+        @update:model-value="pickPhoneZone"
+      >
+        <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+      </NuxtTabs>
+    </OperatorToolbar>
+
+
+    <section
+      ref="queueViewport"
+      class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 *:shrink-0 sm:p-6"
+      @scroll.passive="rememberPosition"
+      @click.capture="rememberFocus"
+    >
+      <!-- puxe para atualizar (celular) -->
+      <p
+        v-if="isPhone && (pull > 0 || pullRefreshing)"
+        class="flex shrink-0 items-center justify-center gap-2 overflow-hidden op-micro text-muted-foreground"
+        :style="{ height: `${pullRefreshing ? 40 : pull}px` }"
+        aria-live="polite"
+        data-pull-refresh
+      >
+        <Icon
+          name="lucide:refresh-cw"
+          class="size-4"
+          :class="pullRefreshing ? 'motion-safe:animate-spin' : ''"
+        />{{ pullText }}
       </p>
+      <!-- A fila é lida só no cliente (`server: false`): o servidor e a hidratação
+           desenham o esqueleto também, senão o cliente hidratava um nó que o servidor
+           não mandou. -->
+      <div
+        v-if="(pending || !hydrated) && !zones.length"
+        class="grid gap-3 md:grid-cols-2 lg:grid-cols-3"
+        aria-label="Carregando fila"
+      >
+        <NuxtSkeleton v-for="i in 3" :key="i" class="h-40 w-full" />
+      </div>
+      <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`; quem
+           fala nesse estado é a identificação que sobe por cima (app.vue). -->
+      <NuxtAlert
+        v-else-if="error && !stationLocked"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        title="Falha ao atualizar a fila"
+        description="Mantivemos a última leitura; atualize antes de confirmar ações."
+        data-queue-error
+      />
 
       <template v-if="queue">
-        <section v-if="negotiationCards.length" class="mb-6 space-y-3" data-ifood-negotiation-orders>
-          <h2 class="text-sm font-bold uppercase tracking-wide">Negociações iFood pendentes</h2>
-          <p class="text-sm text-muted-foreground">Confira solicitações e prazos, inclusive de pedidos já encerrados.</p>
-          <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            <OrderCard v-for="card in negotiationCards" :key="`negotiation-${card.ref}`" :card="card" negotiation-only />
-          </div>
-        </section>
         <!-- no results across all zones for the active filters -->
-        <p v-if="hasFilter && !visibleCount" class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Nenhum pedido para os filtros atuais.
-          <button type="button" class="min-h-control min-w-control ml-1 font-medium text-primary hover:underline" @click="query = ''; channel = 'all'; fulfillment = 'all'">Limpar filtros</button>
-        </p>
+        <NuxtEmpty
+          v-if="hasFilter && !visibleCount"
+          icon="i-lucide-search-x"
+          title="Nenhum pedido para os filtros atuais"
+          :actions="[
+            {
+              label: 'Limpar filtros',
+              onClick: () => {
+                query = '';
+                channel = 'all';
+                fulfillment = 'all';
+              },
+            },
+          ]"
+        />
 
-        <!-- board view (clean, default) -->
-        <div v-else-if="viewMode === 'board'" class="grid gap-4 lg:grid-cols-3">
-          <section v-for="zone in zones" :key="zone.key" class="flex min-w-0 flex-col gap-3">
-            <div class="flex items-center gap-2 border-b pb-2">
-              <Icon :name="zone.icon" class="size-4 text-muted-foreground" />
-              <h2 class="text-sm font-bold uppercase tracking-wide">{{ zone.title }}</h2>
-              <span class="grid min-w-5 place-items-center rounded-full bg-muted px-1.5 text-xs font-bold tabular-nums">{{ triaged(zone).length }}</span>
-              <span class="ml-auto hidden truncate text-xs text-muted-foreground sm:block">{{ zone.subtitle }}</span>
+        <!-- a Fila "Precisa de você" (v4): só o fato humano é botão -->
+        <QueueView
+          v-else-if="view === 'queue'"
+          :cards="queueCards"
+          :awareness="queue.awareness"
+          :now-ms="nowMs"
+          :focus-ref="queueFocus"
+          :accept-ref="acceptRef"
+          :scope="scope"
+          :sort="queueSort"
+          :is-busy="isBusy"
+          :action-error="actionError"
+          :can-open="canManageOrders"
+          :switching="isSwitching"
+          @action="onAction"
+          @station-ready="onStationReady"
+          @focus="(ref_) => (queueFocusPicked = ref_)"
+          @dismiss-error="clearActionError"
+          @scope="(next) => (scope = next)"
+          @toggle-assign="onToggleAssign"
+          @select-mode="
+            (ref_) => {
+              startSelection(ref_);
+              viewMode = 'table';
+            }
+          "
+          @volumes="(ref_, count) => declareVolumes(ref_, count, 'orders')"
+          @station-recall="recallStation"
+          @switch="(ref_) => (switchRef = ref_)"
+        />
+
+        <!-- O quadro usa o Splitter oficial do kit no desktop. No celular, as tabs
+             mantêm uma coluna por vez: nenhuma alça ou faixa paralela ao Nuxt UI. -->
+        <template v-else-if="view === 'board'">
+          <OperatorSplitter
+            v-if="!boardAsTabs"
+            id="orders-board-columns"
+            :persistence-key="boardSplitterPersistenceKey"
+            :items="boardSplitterItems"
+            class="min-h-full flex-1"
+            handle-label="Ajustar largura das colunas"
+            data-board-columns
+            @layout="boardLayout.applySizes"
+          >
+            <template v-for="zone in desktopZones" :key="zone.key" #[zone.key]>
+              <OrderBoardColumn
+                :zone="zone"
+                :cards="triaged(zone)"
+                :now-ms="nowMs"
+                :next-ref="zoneNext(zone)"
+                :phone="false"
+                :wide="wideColumn(zone.key)"
+                :can-open="canManageOrders"
+                :selecting="selecting"
+                :can-collapse="boardLayout.canCollapse(zone.key)"
+                :shortcut="shortcutHint(zone.key)"
+                :is-busy="isBusy"
+                :action-error="actionError"
+                :is-selected="isSelected"
+                :danfe-printing="danfePrint.isPrinting"
+                :swipe-actions="swipeActions"
+                :heading="!exitPostView"
+                @collapse="boardLayout.toggle(zone.key)"
+                @action="onAction"
+                @dismiss-error="clearActionError"
+                @toggle-select="toggleSelect"
+                @toggle-assign="onToggleAssign"
+                @select-mode="startSelection"
+                @print-danfe="danfePrint.printDanfe"
+                @station-ready="onStationReady"
+                @station-recall="recallStation"
+                @volumes="declareVolumes"
+                @swipe="onSwipe"
+              />
+            </template>
+          </OperatorSplitter>
+
+          <OrderBoardColumn
+            v-for="zone in phoneZones"
+            v-else
+            :key="zone.key"
+            :zone="zone"
+            :cards="triaged(zone)"
+            :now-ms="nowMs"
+            :next-ref="zoneNext(zone)"
+            phone
+            :wide="false"
+            :can-open="canManageOrders"
+            :selecting="selecting"
+            :can-collapse="false"
+            :shortcut="shortcutHint(zone.key)"
+            :is-busy="isBusy"
+            :action-error="actionError"
+            :is-selected="isSelected"
+            :danfe-printing="danfePrint.isPrinting"
+            :swipe-actions="swipeActions"
+            @action="onAction"
+            @dismiss-error="clearActionError"
+            @toggle-select="toggleSelect"
+            @toggle-assign="onToggleAssign"
+            @select-mode="startSelection"
+            @print-danfe="danfePrint.printDanfe"
+            @station-ready="onStationReady"
+            @station-recall="recallStation"
+            @volumes="declareVolumes"
+            @swipe="onSwipe"
+          />
+        </template>
+
+        <!-- A Lista: a tabela da suíte (`OperatorTable`, compacta por padrão), com a
+             linha que abre os detalhes e as outras ações. -->
+        <OperatorTable
+          v-else
+          v-model:expanded="supervisionExpanded"
+          v-model:row-selection="supervisionRowSelection"
+          :data="supervisionRows"
+          :columns="supervisionColumns"
+          :row-key="(row: SupervisionRow) => row.card.ref"
+          :row-label="(row: SupervisionRow) => `o pedido ${row.card.ref}`"
+          selectable
+          pinned="order"
+          view-key="orders-queue"
+          empty-icon="i-lucide-inbox"
+          empty-title="Nenhum pedido precisa de você agora."
+          caption="Lista dos pedidos em andamento"
+          data-supervision-table
+        >
+          <template #order-cell="{ row }">
+            <div class="flex min-w-36 flex-col">
+              <NuxtLink
+                v-if="canManageOrders"
+                :to="`/${row.original.card.ref}`"
+                class="font-semibold tabular-nums hover:underline"
+                :aria-label="`Abrir pedido ${row.original.card.ref}`"
+                >{{ splitRef(row.original.card.ref).code }}</NuxtLink
+              >
+              <span v-else class="font-semibold tabular-nums">{{
+                splitRef(row.original.card.ref).code
+              }}</span>
+              <span
+                class="inline-flex items-start gap-1 text-xs text-muted-foreground"
+              >
+                <Icon
+                  :name="`lucide:${lucideIcon(row.original.card.channel_icon)}`"
+                  class="size-3.5 shrink-0"
+                />
+                <span>{{
+                  row.original.card.customer_name || "Sem cliente"
+                }}</span>
+              </span>
             </div>
-
-            <div v-if="!triaged(zone).length" class="grid place-items-center gap-1.5 rounded-lg border border-dashed py-10 text-center text-muted-foreground">
-              <Icon name="lucide:check-circle-2" class="size-6" />
-              <p class="text-sm">{{ zoneEmptyText(zone.key) }}</p>
-            </div>
-
-            <OrderCard
-              v-for="card in triaged(zone)"
-              v-else
-              :key="card.ref"
-              :card="card"
-              :busy="isBusy(card.ref)"
-              :error="actionError(card.ref)"
-              :selected="isSelected(card.ref)"
-              :danfe-printing="danfePrint.isPrinting(card.ref)"
-              @action="(action) => onAction(card.ref, action)"
-              @dismiss-error="clearActionError(card.ref)"
-              @toggle-select="toggleSelect(card.ref)"
-              @toggle-assign="onToggleAssign(card)"
-              @print-danfe="danfePrint.printDanfe(card.ref)"
+          </template>
+          <template #stage-cell="{ row }">
+            <NuxtBadge
+              :color="
+                statusTone(row.original.card.status) === 'danger'
+                  ? 'error'
+                  : statusTone(row.original.card.status) === 'success'
+                    ? 'success'
+                    : statusTone(row.original.card.status) === 'warning'
+                      ? 'warning'
+                      : 'neutral'
+              "
+              :label="row.original.card.status_label"
             />
-          </section>
-        </div>
-
-        <!-- dense table view (power-user) -->
-        <div v-else class="overflow-x-auto rounded-lg border bg-card">
-          <table class="w-full border-collapse text-sm">
-            <thead>
-              <tr class="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground [&>th]:sticky [&>th]:top-0 [&>th]:z-20 [&>th]:border-b [&>th]:bg-card">
-                <th class="w-9 px-3 py-2">
-                  <button
-                    type="button"
-                    class="grid size-control place-items-center rounded transition hover:bg-accent"
-                    :aria-label="allVisibleSelected ? 'Desmarcar todos' : 'Selecionar todos'"
-                    :aria-pressed="allVisibleSelected"
-                    @click="toggleSelectAll"
+          </template>
+          <template #items-cell="{ row }">
+            <span class="block min-w-40 text-muted-foreground">{{
+              row.original.card.items_summary
+            }}</span>
+          </template>
+          <template #total-cell="{ row }">
+            <span class="whitespace-nowrap font-semibold tabular-nums">{{
+              row.original.card.total_display
+            }}</span>
+          </template>
+          <template #elapsed-cell="{ row }">
+            <!-- O relógio vivo do kit (useNowTick), como a Grade: P1-8. -->
+            <NuxtBadge
+              :color="
+                liveAge(row.original.card, nowMs).tone === 'ok'
+                  ? 'neutral'
+                  : 'warning'
+              "
+              :label="liveAge(row.original.card, nowMs).label"
+              class="tabular-nums"
+            />
+          </template>
+          <template #actions-cell="{ row }">
+            <div class="flex min-w-max items-center justify-end gap-1.5">
+              <NuxtButton
+                v-if="rowPrimary(row.original.card)"
+                :icon="
+                  rowPrimary(row.original.card)!.disabled
+                    ? 'i-lucide-lock'
+                    : rowPrimary(row.original.card)!.icon.replace(
+                        'lucide:',
+                        'i-lucide-',
+                      )
+                "
+                :label="rowPrimary(row.original.card)!.label"
+                :color="
+                  rowPrimary(row.original.card)!.disabled
+                    ? 'neutral'
+                    : 'primary'
+                "
+                :variant="
+                  rowPrimary(row.original.card)!.disabled
+                    ? 'outline'
+                    : 'solid'
+                "
+                :disabled="
+                  isBusy(row.original.card.ref) ||
+                  rowPrimary(row.original.card)!.disabled
+                "
+                :title="rowPrimary(row.original.card)!.reason || undefined"
+                data-supervision-primary
+                @click="
+                  onAction(
+                    row.original.card.ref,
+                    rowPrimary(row.original.card)!.ref,
+                  )
+                "
+              />
+              <OrderCardMenu
+                :card="row.original.card"
+                :busy="isBusy(row.original.card.ref)"
+                :can-open="canManageOrders"
+                :selecting="selecting"
+                :selected="isSelected(row.original.card.ref)"
+                @toggle-assign="onToggleAssign(row.original.card)"
+                @toggle-select="toggleSelect(row.original.card.ref)"
+                @select-mode="startSelection(row.original.card.ref)"
+                @volumes="
+                  (count) => declareVolumes(row.original.card.ref, count)
+                "
+                @station-recall="
+                  (pk) => recallStation(row.original.card.ref, pk)
+                "
+              />
+            </div>
+            <NuxtAlert
+              v-if="actionError(row.original.card.ref)"
+              class="mt-2"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-triangle-alert"
+              :description="actionError(row.original.card.ref)"
+              :actions="alertActions('error', [
+                {
+                  label: 'Dispensar',
+                  onClick: () => clearActionError(row.original.card.ref),
+                },
+              ])"
+            />
+          </template>
+          <!-- a linha aberta: os detalhes do pedido e todas as outras ações -->
+          <template #expanded="{ row }">
+            <div
+              class="grid gap-4 whitespace-normal lg:grid-cols-[minmax(0,1fr)_auto]"
+              data-supervision-detail
+            >
+              <dl
+                class="grid gap-x-6 gap-y-2 op-body sm:grid-cols-[auto_minmax(0,1fr)]"
+              >
+                <dt class="text-muted-foreground">Itens</dt>
+                <dd>{{ row.original.card.items_summary }}</dd>
+                <dt class="text-muted-foreground">Recebimento</dt>
+                <dd>
+                  {{ row.original.card.fulfillment_label
+                  }}<template v-if="row.original.card.delivery_address">
+                    · {{ row.original.card.delivery_address }}</template
                   >
-                    <span class="grid size-4 place-items-center rounded border" :class="allVisibleSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'">
-                      <Icon v-if="allVisibleSelected" name="lucide:check" class="size-3" />
-                    </span>
-                  </button>
-                </th>
-                <th class="px-3 py-2">Código</th>
-                <th class="px-3 py-2">Etapa</th>
-                <th class="px-3 py-2">Canal</th>
-                <th class="px-3 py-2">Cliente</th>
-                <th class="hidden px-3 py-2 lg:table-cell">Itens</th>
-                <th class="px-3 py-2 text-right">Total</th>
-                <th class="px-3 py-2 text-right">Tempo</th>
-                <th class="px-3 py-2 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              <template v-for="row in tableRows" :key="row.card.ref">
-              <tr class="transition hover:bg-accent/40" :class="[actionError(row.card.ref) ? '' : 'border-b last:border-0', isSelected(row.card.ref) ? 'bg-primary/5' : '']">
-                <td class="px-3 py-2">
-                  <button
-                    type="button"
-                    class="grid size-control place-items-center rounded transition hover:bg-accent"
-                    :aria-label="isSelected(row.card.ref) ? 'Desmarcar pedido' : 'Selecionar pedido'"
-                    :aria-pressed="isSelected(row.card.ref)"
-                    @click="toggleSelect(row.card.ref)"
-                  >
-                    <span class="grid size-4 place-items-center rounded border" :class="isSelected(row.card.ref) ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'">
-                      <Icon v-if="isSelected(row.card.ref)" name="lucide:check" class="size-3" />
-                    </span>
-                  </button>
-                </td>
-                <td class="px-3 py-2">
-                  <NuxtLink :to="`/${row.card.ref}`" class="inline-flex min-h-control min-w-control items-center font-bold tabular-nums hover:underline" :aria-label="`Abrir pedido ${row.card.ref}`">
-                    {{ splitRef(row.card.ref).code }}
-                  </NuxtLink>
-                </td>
-                <td class="px-3 py-2">
-                  <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium" :class="toneBadge(statusTone(row.card.status))">
-                    {{ row.card.status_label }}
-                  </span>
-                </td>
-                <td class="px-3 py-2">
-                  <span class="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                    <Icon :name="`lucide:${lucideIcon(row.card.channel_icon)}`" class="size-3.5" />
-                    {{ channelLabel(row.card.channel_ref) }}
-                  </span>
-                </td>
-                <td class="max-w-40 px-3 py-2">
-                  <span class="block truncate">{{ row.card.customer_name }}</span>
-                  <span v-if="row.card.assigned_operator" class="mt-0.5 inline-flex items-center gap-1 text-xs text-primary">
-                    <Icon name="lucide:user-check" class="size-3" />{{ row.card.assigned_operator }}
-                  </span>
-                </td>
-                <td class="hidden max-w-56 truncate px-3 py-2 text-muted-foreground lg:table-cell">{{ row.card.items_summary }}</td>
-                <td class="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums">{{ row.card.total_display }}</td>
-                <td class="px-3 py-2 text-right">
-                  <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-xs tabular-nums" :class="timerChip(timerTone(row.card.timer_class))">
-                    {{ elapsedLabel(row.card.elapsed_seconds) }}
-                  </span>
-                </td>
-                <td class="px-3 py-2">
-                  <div class="flex items-center justify-end gap-1">
-                    <button
-                      type="button"
-                      :disabled="isBusy(row.card.ref)"
-                      class="grid size-control place-items-center rounded border transition disabled:opacity-50"
-                      :class="row.card.assigned_operator ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'"
-                      :aria-label="row.card.assigned_operator ? `Atendido por ${row.card.assigned_operator}. Toque para liberar` : 'Atender'"
-                      :title="row.card.assigned_operator ? `${row.card.assigned_operator}: toque para liberar` : 'Atender'"
-                      @click="onToggleAssign(row.card)"
+                </dd>
+                <template v-if="row.original.card.payment_method_label">
+                  <dt class="text-muted-foreground">Pagamento</dt>
+                  <dd>
+                    {{ row.original.card.payment_method_label
+                    }}<template v-if="row.original.card.change_label">
+                      · {{ row.original.card.change_label }}</template
                     >
-                      <Icon :name="row.card.assigned_operator ? 'lucide:user-check' : 'lucide:user-plus'" class="size-3.5" />
-                    </button>
-                    <button
-                      v-for="a in cardAffordances(row.card)"
-                      :key="a.ref"
-                      type="button"
-                      :disabled="isBusy(row.card.ref) || a.disabled"
-                      class="grid size-control place-items-center rounded border transition disabled:opacity-50"
-                      :class="a.priority === 'primary' ? 'min-h-action min-w-action border-transparent bg-primary text-primary-foreground hover:bg-primary/90' : a.priority === 'danger' ? 'border-destructive/40 text-destructive hover:bg-destructive/10 dark:text-orange-300' : 'hover:bg-accent'"
-                      :aria-label="a.label"
-                      :title="a.reason || a.label"
-                      @click="onAction(row.card.ref, a.ref)"
-                    >
-                      <Icon :name="a.icon" class="size-3.5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <!-- action error sub-row: the backend's specific reason, inline -->
-              <tr v-if="actionError(row.card.ref)" class="border-b last:border-0">
-                <td colspan="9" class="px-3 pb-2">
-                  <div class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive dark:text-orange-300" role="alert">
-                    <Icon name="lucide:alert-triangle" class="mt-px size-3.5 shrink-0" />
-                    <span class="min-w-0 flex-1">{{ actionError(row.card.ref) }}</span>
-                    <button type="button" class="min-h-control min-w-control shrink-0 rounded p-0.5 transition hover:bg-destructive/20" aria-label="Dispensar aviso" @click="clearActionError(row.card.ref)">
-                      <Icon name="lucide:x" class="size-3.5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              </template>
-            </tbody>
-          </table>
-        </div>
+                  </dd>
+                </template>
+                <template v-if="row.original.card.equipment_label">
+                  <dt class="text-muted-foreground">Maquininha</dt>
+                  <dd>{{ row.original.card.equipment_label }}</dd>
+                </template>
+                <template v-if="row.original.card.assigned_operator">
+                  <dt class="text-muted-foreground">Atende</dt>
+                  <dd>{{ row.original.card.assigned_operator }}</dd>
+                </template>
+                <template v-if="row.original.card.advance_block_reason">
+                  <dt class="text-muted-foreground">Por que espera</dt>
+                  <dd>{{ row.original.card.advance_block_reason }}</dd>
+                </template>
+              </dl>
+              <div
+                class="flex flex-wrap content-start items-start justify-end gap-2"
+              >
+                <NuxtButton
+                  v-for="aff in rowSecondary(row.original.card)"
+                  :key="aff.ref"
+                  :icon="aff.icon.replace('lucide:', 'i-lucide-')"
+                  :label="aff.label"
+                  :color="aff.priority === 'danger' ? 'error' : 'neutral'"
+                  variant="outline"
+                  :disabled="isBusy(row.original.card.ref) || aff.disabled"
+                  :title="aff.reason || undefined"
+                  @click="onAction(row.original.card.ref, aff.ref)"
+                />
+                <NuxtButton
+                  v-if="canManageOrders"
+                  :to="`/${row.original.card.ref}`"
+                  icon="i-lucide-file-text"
+                  label="Abrir o pedido"
+                  color="neutral"
+                  variant="outline"
+                />
+              </div>
+            </div>
+          </template>
+          <template v-if="tableRows.length > SUPERVISION_PAGE_SIZE" #footer>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <span class="op-micro text-muted-foreground tnum"
+                >{{ tableRows.length }} pedidos</span
+              >
+              <NuxtPagination
+                v-model:page="supervisionPage"
+                :total="tableRows.length"
+                :items-per-page="SUPERVISION_PAGE_SIZE"
+              />
+            </div>
+          </template>
+        </OperatorTable>
 
-        <!-- Agendados: pedidos confirmados para datas futuras, fora das colunas
+        <!-- Encomendas: pedidos confirmados para datas futuras, fora das colunas
              do dia. Agrupados pela data combinada; no dia, o despertador devolve
              o pedido ao fluxo normal do board. -->
         <section v-if="preordersCount" class="mt-6" data-preorders-section>
           <div class="flex items-center gap-2 border-b pb-2">
-            <Icon name="lucide:calendar-clock" class="size-4 text-muted-foreground" />
-            <h2 class="text-sm font-bold uppercase tracking-wide">Agendados</h2>
-            <span class="grid min-w-5 place-items-center rounded-full bg-muted px-1.5 text-xs font-bold tabular-nums">{{ preordersCount }}</span>
-            <span class="ml-auto hidden text-right text-xs text-muted-foreground sm:block">Confirmados para os próximos dias</span>
+            <Icon
+              name="lucide:calendar-clock"
+              class="size-4 text-muted-foreground"
+            />
+            <h2 class="text-sm font-bold uppercase tracking-wide">Encomendas</h2>
+            <OperatorCountChip :count="preordersCount" />
+            <span
+              class="ms-auto hidden text-end text-xs text-muted-foreground sm:block"
+              >Confirmados para os próximos dias</span
+            >
           </div>
           <div class="mt-3 grid gap-4 lg:grid-cols-3">
-            <div v-for="group in triagedPreorders" :key="group.date" class="flex min-w-0 flex-col gap-3">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{{ group.label }}</h3>
+            <div
+              v-for="group in triagedPreorders"
+              :key="group.date"
+              class="flex min-w-0 flex-col gap-3"
+            >
+              <h3
+                class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                {{ group.label }}
+              </h3>
               <OrderCard
                 v-for="card in group.cards"
                 :key="card.ref"
@@ -754,11 +2171,14 @@ function printQueue() {
                 :busy="isBusy(card.ref)"
                 :error="actionError(card.ref)"
                 :selected="isSelected(card.ref)"
+                :selecting="selecting"
                 :danfe-printing="danfePrint.isPrinting(card.ref)"
+                :can-open="canManageOrders"
                 @action="(action) => onAction(card.ref, action)"
                 @dismiss-error="clearActionError(card.ref)"
                 @toggle-select="toggleSelect(card.ref)"
                 @toggle-assign="onToggleAssign(card)"
+                @select-mode="startSelection(card.ref)"
                 @print-danfe="danfePrint.printDanfe(card.ref)"
               />
             </div>
@@ -767,54 +2187,128 @@ function printQueue() {
       </template>
     </section>
 
+    <!-- A barra de seleção da suíte, abaixo do `lg`: na base (a da mesa toma o lugar
+         da toolbar, no `#selection` do cabeçalho). -->
+    <OperatorBulkBar
+      v-if="selecting"
+      placement="base"
+      :count="selected.size"
+      :scope="bulkScope"
+      empty="Toque nos pedidos para marcar"
+      :items="bulkItems"
+      :clear-label="EXIT_SELECTION_LABEL"
+      data-bulk-bar
+      @clear="stopSelection"
+    />
+    <!-- A Saída do celular: o "Próximo" na ação da base (F7). -->
+    <OperatorActionBar
+      v-else-if="exitBaseAction"
+      :action="exitBaseAction"
+      label="Saída do próximo pedido"
+      data-exit-base-action
+    />
+
     <!-- reject dialog -->
-    <UiDialog :open="rejectRef != null" @update:open="(v) => { if (!v) closeReject() }">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Recusar pedido {{ rejectRef }}</UiDialogTitle>
-          <UiDialogDescription>
-            {{ isMarketplaceReject ? "Escolha o motivo que o iFood exige. Ele é enviado ao iFood." : "Informe o motivo. O cliente recebe o aviso com ele." }}
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <p v-if="rejectReasonsLoading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
-        <div v-else-if="rejectReasonsError" role="alert" class="text-sm text-destructive">
-          <p>{{ rejectReasonsError }}</p>
-          <button type="button" class="min-h-control min-w-control underline" @click="loadRejectReasons">Consultar novamente</button>
+    <NuxtModal
+      :open="rejectRef != null"
+      :title="`Recusar pedido ${rejectRef ?? ''}`"
+      :description="
+        isMarketplaceReject
+          ? 'Escolha o motivo que o iFood exige. Ele é enviado ao iFood.'
+          : 'Informe o motivo. O cliente recebe o aviso com ele.'
+      "
+      @update:open="
+        (v) => {
+          if (!v) closeReject();
+        }
+      "
+    >
+      <template #body>
+        <div class="grid gap-4">
+          <NuxtEmpty
+            v-if="rejectReasonsLoading"
+            loading
+            size="sm"
+            title="Carregando motivos do iFood…"
+          />
+          <NuxtAlert
+            v-else-if="rejectReasonsError"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            :description="rejectReasonsError"
+            :actions="alertActions('error', [
+              {
+                label: 'Consultar novamente',
+                onClick: () => loadRejectReasons(),
+              },
+            ])"
+          />
+          <NuxtEmpty
+            v-else-if="isMarketplaceReject && !rejectReasons.length"
+            icon="i-lucide-circle-slash"
+            title="Nenhum motivo disponível"
+            description="O iFood não oferece motivos de cancelamento neste momento."
+          />
+          <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
+          <NuxtSelect
+            v-else-if="isMarketplaceReject"
+            v-model="rejectCode"
+            class="w-full"
+            :items="
+              rejectReasons.map((reason) => ({
+                label: reason.description,
+                value: reason.code,
+              }))
+            "
+            placeholder="Selecione o motivo…"
+            aria-label="Motivo do cancelamento (iFood)"
+            @update:model-value="onRejectCodeChange"
+          />
+          <!-- Other channels: free-text reason -->
+          <NuxtTextarea
+            v-else
+            v-model="rejectReason"
+            class="w-full"
+            :rows="3"
+            placeholder="Motivo da recusa…"
+            aria-label="Motivo da recusa"
+          />
         </div>
-        <p v-else-if="isMarketplaceReject && !rejectReasons.length" class="text-sm">O iFood não oferece motivos de cancelamento neste momento.</p>
-        <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
-        <UiNativeSelect
-          v-else-if="isMarketplaceReject"
-          v-model="rejectCode"
-          class="w-full"
-          aria-label="Motivo do cancelamento (iFood)"
-          @change="onRejectCodeChange"
-        >
-          <option value="" disabled>Selecione o motivo…</option>
-          <option v-for="r in rejectReasons" :key="r.code" :value="r.code">{{ r.description }}</option>
-        </UiNativeSelect>
-        <!-- Other channels: free-text reason -->
-        <textarea
-          v-else
-          v-model="rejectReason"
-          rows="3"
-          placeholder="Motivo da recusa…"
-          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-          aria-label="Motivo da recusa"
+      </template>
+      <template #footer>
+        <NuxtButton
+          label="Voltar"
+          color="neutral"
+          variant="outline"
+          :disabled="Boolean(rejectRef && isBusy(rejectRef))"
+          @click="closeReject"
         />
-        <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" :disabled="Boolean(rejectRef && isBusy(rejectRef))" @click="closeReject">Voltar</button>
-          <button
-            type="button"
-            :disabled="!canConfirmReject || Boolean(rejectRef && isBusy(rejectRef))"
-            class="min-h-action min-w-action rounded-md border border-transparent bg-destructive px-3 py-2 text-sm font-semibold text-white transition hover:bg-destructive/90 disabled:opacity-50"
-            @click="confirmReject"
-          >
-            Recusar pedido
-          </button>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+        <NuxtButton
+          label="Recusar pedido"
+          color="error"
+          :disabled="
+            !canConfirmReject || Boolean(rejectRef && isBusy(rejectRef))
+          "
+          @click="confirmReject"
+        />
+      </template>
+    </NuxtModal>
+
+    <!-- o interruptor do canal (coluna da Fila): o mesmo diálogo de Canais -->
+    <ChannelSwitchDialog
+      :open="Boolean(switchTarget)"
+      :sw="switchTarget"
+      :managers="queue?.awareness?.managers ?? []"
+      :viewer-name="queue?.awareness?.viewer_name ?? ''"
+      :busy="Boolean(switchRef && isSwitching(switchRef))"
+      :submit="submitSwitch"
+      @update:open="
+        (value: boolean) => {
+          if (!value) switchRef = null;
+        }
+      "
+    />
 
     <!-- saída para entrega (só quando há o que perguntar) -->
     <DispatchDialog
@@ -836,46 +2330,85 @@ function printQueue() {
     />
 
     <!-- settle-cash dialog -->
-    <UiDialog :open="settleRef != null" @update:open="(v) => { if (!v) settleRef = null }">
-      <UiDialogContent class="sm:max-w-sm">
-        <UiDialogHeader>
-          <UiDialogTitle>{{ settleCard?.fulfillment_type === "pickup" ? "Pagamento na retirada" : "Acerto da entrega" }}</UiDialogTitle>
-          <UiDialogDescription>{{ settleCard?.fulfillment_type === "pickup" ? "Valor recebido na retirada" : "Valor recebido na entrega" }} ({{ settleRef }}). Em branco usa o total de {{ settleCard?.total_display }}. {{ settleCustody }}</UiDialogDescription>
-        </UiDialogHeader>
-        <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
-          <button type="button" class="min-h-control min-w-control underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
-        </p>
-        <input
-          v-model="settleAmount"
-          type="text"
-          inputmode="decimal"
-          placeholder="Ex.: 15,00"
-          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-          aria-label="Valor recebido"
-        />
-        <!-- o entregador levou troco da gaveta: quanto voltou (zero vale) -->
-        <label v-if="settleAsksChangeBack" class="min-h-control flex flex-col gap-1 text-sm" data-change-back>
-          <span class="text-muted-foreground">{{ settleCard?.change_label }}. Quanto voltou?</span>
-          <input
-            v-model="settleChangeBack"
-            type="text"
-            inputmode="decimal"
-            placeholder="0,00"
-            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-            aria-label="Troco que voltou"
+    <NuxtModal
+      :open="settleRef != null"
+      :title="
+        settleCard?.fulfillment_type === 'pickup'
+          ? 'Pagamento na retirada'
+          : 'Acerto da entrega'
+      "
+      :description="`${settleCard?.fulfillment_type === 'pickup' ? 'Valor recebido na retirada' : 'Valor recebido na entrega'} (${settleRef}). Em branco usa o total de ${settleCard?.total_display}. ${settleCustody}`"
+      @update:open="
+        (v) => {
+          if (!v) settleRef = null;
+        }
+      "
+    >
+      <template #body>
+        <div class="grid gap-4">
+          <NuxtAlert
+            v-if="settleChanged"
+            color="warning"
+            variant="subtle"
+            title="O pedido ou turno mudou"
+            :description="`Confira o contexto atual: ${settleAction?.confirmation.description || ''}`"
+            :actions="alertActions('warning', [
+              {
+                label: 'Conferir e manter os valores digitados',
+                onClick: () => reviewSettleCustody(),
+              },
+            ])"
           />
-        </label>
-        <label v-if="settleAsksEquipment" class="min-h-control flex items-center gap-2 text-sm" data-equipment-back>
-          <input v-model="settleEquipmentBack" type="checkbox" />
-          <span>{{ settleCard?.equipment_label }}. Voltou junto</span>
-        </label>
-        <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Voltar</button>
-          <button type="button" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" :disabled="settleChanged || !settleAction?.enabled || (settleRef ? isBusy(settleRef) : false)" @click="confirmSettle">
-            Confirmar acerto
-          </button>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+          <NuxtFormField label="Valor recebido">
+            <NuxtInput
+              v-model="settleAmount"
+              class="w-full"
+              type="text"
+              inputmode="decimal"
+              placeholder="Ex.: 15,00"
+            />
+          </NuxtFormField>
+          <!-- o entregador levou troco da gaveta: quanto voltou (zero vale) -->
+          <NuxtFormField
+            v-if="settleAsksChangeBack"
+            :label="`${settleCard?.change_label}. Quanto voltou?`"
+            data-change-back
+          >
+            <NuxtInput
+              v-model="settleChangeBack"
+              class="w-full"
+              type="text"
+              inputmode="decimal"
+              placeholder="0,00"
+              aria-label="Troco que voltou"
+            />
+          </NuxtFormField>
+          <NuxtCheckbox
+            v-if="settleAsksEquipment"
+            v-model="settleEquipmentBack"
+            :label="`${settleCard?.equipment_label}. Voltou junto`"
+            data-equipment-back
+          />
+        </div>
+      </template>
+      <template #footer>
+        <NuxtButton
+          label="Voltar"
+          color="neutral"
+          variant="outline"
+          @click="settleRef = null"
+        />
+        <NuxtButton
+          label="Confirmar acerto"
+          color="primary"
+          :disabled="
+            settleChanged ||
+            !settleAction?.enabled ||
+            (settleRef ? isBusy(settleRef) : false)
+          "
+          @click="confirmSettle"
+        />
+      </template>
+    </NuxtModal>
   </main>
 </template>

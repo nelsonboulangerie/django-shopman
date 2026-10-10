@@ -9,9 +9,8 @@ detalhe do Gestor, e o card da Saída do KDS.
 from __future__ import annotations
 
 import pytest
-from shopman.orderman.models import Order, OrderItem
+from shopman.orderman.models import Order
 
-from shopman.backstage.projections.kds import _build_expedition_card
 from shopman.backstage.projections.order_queue import (
     TEST_ORDER_LABEL,
     TEST_ORDER_NOTICE,
@@ -52,24 +51,3 @@ def test_pedido_de_verdade_nao_ganha_cracha_nenhum():
     assert _test_order_label(order) == ""
     assert _test_order_notice(order) == ""
 
-
-@pytest.mark.django_db
-def test_card_da_saida_marca_o_pedido_de_teste():
-    """A Saída é o card do PEDIDO, não do ticket: o pedido de teste chega
-    aqui mesmo sem ter passado pela cozinha, e é aqui que a sacola sairia."""
-    order = _order(is_test=True)
-    OrderItem.objects.create(
-        order=order, line_id="1", sku="PAO", name="Pão", qty=1, unit_price_q=1500, line_total_q=1500
-    )
-
-    assert _build_expedition_card(order).test_order_label == TEST_ORDER_LABEL
-
-
-@pytest.mark.django_db
-def test_card_da_saida_de_pedido_real_fica_limpo():
-    order = _order(is_test=False)
-    OrderItem.objects.create(
-        order=order, line_id="1", sku="PAO", name="Pão", qty=1, unit_price_q=1500, line_total_q=1500
-    )
-
-    assert _build_expedition_card(order).test_order_label == ""

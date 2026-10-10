@@ -1,0 +1,183 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"><style>.rail-item.sm{font-size:10px;letter-spacing:-.3px}.rail-item.ring-t{box-shadow:inset 0 0 0 2px #f2c46b}</style></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="production">
+<div class="flex h-[900px] overflow-hidden relative">
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Produção" icon="croissant"}}
+    <a class="rail-item sm"><i data-i="layout-grid"></i>Planejamento<kbd>Alt1</kbd></a>
+    <a class="rail-item sm"><i data-i="scale"></i>Preparação<kbd>Alt2</kbd></a>
+    <a class="rail-item sm on"><i data-i="flame"></i>Produção<kbd>Alt3</kbd></a>
+    <a class="rail-item sm"><i data-i="package"></i>Expedição<kbd>Alt4</kbd></a>
+    <div class="w-9 h-px bg-rail-foreground/20 my-1"></div>
+    <a class="rail-item sm ring-t" title="Timers (2, um tocando)"><i data-i="alarm-clock"></i>Timers<span class="badge">2</span></a>
+    <a class="rail-item sm"><i data-i="book-open"></i>Receitas</a>
+    <a class="rail-item sm"><i data-i="chart-no-axes-combined"></i>Relatórios</a>
+    {{> rail3bottom bell="6" initials="AD" operator="Admin"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0">
+    <header class="px-4 pt-3 pb-2.5 flex flex-col gap-2.5 border-b border-border bg-card">
+      <!-- linha 1: título + ao vivo + busca única + dia + progresso + ⋯ -->
+      <div class="flex items-center gap-3">
+        <h1 class="op-display !text-[22px] leading-none whitespace-nowrap">Produção do dia</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum" title="Ao vivo · última leitura 10:42:08"><span class="live-dot"></span>10:42</span>
+        <div class="w-2"></div>
+        {{> search3 w="w-[20rem]" placeholder="Buscar produto ou SKU"}}
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-3 pr-1" title="Progresso do dia">
+          <p class="op-label whitespace-nowrap"><span class="op-title tnum">5</span> <span class="text-muted-foreground">de 8 produzidos</span></p>
+          <div class="w-28">
+            <div class="h-2 rounded-full bg-muted overflow-hidden"><div class="h-full w-[33%] rounded-full bg-primary"></div></div>
+            <p class="op-micro text-muted-foreground tnum text-right mt-0.5">33% do plano</p>
+          </div>
+        </div>
+        <div class="h-control inline-flex items-stretch rounded-md border border-border bg-card overflow-hidden">
+          <button class="w-10 grid place-items-center border-r border-border text-muted-foreground" title="Dia anterior"><i data-i="chevron-left" class="size-4"></i></button>
+          <button class="px-3 inline-flex items-center gap-2 op-label font-semibold whitespace-nowrap"><i data-i="calendar" class="size-4 text-muted-foreground"></i>Hoje, sex 02/10<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+          <button class="w-10 grid place-items-center border-l border-border text-muted-foreground" title="Próximo dia"><i data-i="chevron-right" class="size-4"></i></button>
+        </div>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais ações"><i data-i="ellipsis" class="size-5"></i></button>
+      </div>
+      <!-- linha 2: filtros -->
+      <div class="flex items-center gap-1.5">
+        <button class="h-10 px-3 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos <span class="tnum text-muted-foreground">8</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-warning"></span>A confirmar <span class="tnum text-muted-foreground">3</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-success"></span>Produzidos <span class="tnum text-muted-foreground">5</span></button>
+        <span class="w-px h-6 bg-border mx-1"></span>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="layers" class="size-4"></i>Base: todas<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+      </div>
+    </header>
+
+    <!-- Conteúdo: tabela padrão -->
+    <div class="flex-1 overflow-hidden px-4 pt-4">
+      <div class="flex items-baseline gap-2 pb-2">
+        <h2 class="op-eyebrow">Produção do dia</h2><span class="tnum op-label text-muted-foreground">8 produtos</span>
+        <span class="ml-auto op-micro text-muted-foreground">Confirme o que saiu do forno. Encomendas aparecem no chip de unidades.</span>
+      </div>
+      <div class="rounded-lg border border-border bg-card overflow-hidden">
+        <table class="w-full">
+          <thead class="bg-muted/60 text-muted-foreground">
+            <tr class="h-10 text-left">
+              <th class="px-4 op-eyebrow font-semibold">Produto</th>
+              <th class="px-4 op-eyebrow font-semibold w-40">Situação</th>
+              <th class="px-4 op-eyebrow font-semibold w-44 text-right">Planejado</th>
+              <th class="px-4 op-eyebrow font-semibold w-40 text-right">Produzido</th>
+              <th class="px-4 op-eyebrow font-semibold w-56 text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody class="op-body">
+            <!-- Bichon -->
+            <tr class="h-14 border-t border-border">
+              <td class="px-4"><div class="flex items-center gap-2"><span class="font-semibold">Bichon au Citron</span><span class="op-micro font-mono text-muted-foreground">BICH</span>
+                <button class="h-6 px-2 rounded-full border border-info/40 bg-info/10 text-info op-micro font-semibold inline-flex items-center gap-1" title="Encomendas comprometidas"><i data-i="shopping-bag" class="size-3"></i>2 un. encomendadas</button></div></td>
+              <td class="px-4"><span class="h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>Produzido</span></td>
+              <td class="px-4 text-right"><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Não planejado</span></td>
+              <td class="px-4 text-right"><span class="op-title tnum inline-flex items-center gap-1.5">26<i data-i="circle-check" class="size-4 text-success"></i></span></td>
+              <td class="px-4"><div class="flex justify-end gap-1.5"><button class="h-10 px-3 rounded-md border border-border bg-card op-label inline-flex items-center gap-1.5">Ver lançamento</button><button class="size-10 rounded-md bg-accent grid place-items-center text-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button></div></td>
+            </tr>
+            <!-- Ciabatta -->
+            <tr class="h-14 border-t border-border">
+              <td class="px-4"><div class="flex items-center gap-2"><span class="font-semibold">Ciabatta</span><span class="op-micro font-mono text-muted-foreground">CI</span></div></td>
+              <td class="px-4"><span class="h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>Produzido</span></td>
+              <td class="px-4 text-right"><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Não planejado</span></td>
+              <td class="px-4 text-right"><span class="op-title tnum inline-flex items-center gap-1.5">26<i data-i="circle-check" class="size-4 text-success"></i></span></td>
+              <td class="px-4"><div class="flex justify-end gap-1.5"><button class="h-10 px-3 rounded-md border border-border bg-card op-label">Ver lançamento</button><button class="size-10 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button></div></td>
+            </tr>
+            <!-- Croissant -->
+            <tr class="h-14 border-t border-border bg-warning/5">
+              <td class="px-4"><div class="flex items-center gap-2"><span class="font-semibold">Croissant Manteiga</span><span class="op-micro font-mono text-muted-foreground">CRO</span>
+                <button class="h-6 px-2 rounded-full border border-info/40 bg-info/10 text-info op-micro font-semibold inline-flex items-center gap-1"><i data-i="shopping-bag" class="size-3"></i>6 un. encomendadas</button></div></td>
+              <td class="px-4"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>A confirmar</span></td>
+              <td class="px-4 text-right op-title tnum">42</td>
+              <td class="px-4 text-right tnum text-muted-foreground">falta lançar</td>
+              <td class="px-4"><div class="flex justify-end gap-1.5"><button class="h-10 px-4 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center gap-1.5"><i data-i="check" class="size-4"></i>Confirmar</button><button class="size-10 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button></div></td>
+            </tr>
+            <!-- Focaccia -->
+            <tr class="h-14 border-t border-border bg-warning/5">
+              <td class="px-4"><div class="flex items-center gap-2"><span class="font-semibold">Focaccia do dia</span><span class="op-micro font-mono text-muted-foreground">FOA</span></div></td>
+              <td class="px-4"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>A confirmar</span></td>
+              <td class="px-4 text-right op-title tnum">10</td>
+              <td class="px-4 text-right tnum text-muted-foreground">falta lançar</td>
+              <td class="px-4"><div class="flex justify-end gap-1.5"><button class="h-10 px-4 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center gap-1.5"><i data-i="check" class="size-4"></i>Confirmar</button><button class="size-10 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button></div></td>
+            </tr>
+            <!-- Kuro Pan -->
+            <tr class="h-14 border-t border-border">
+              <td class="px-4"><div class="flex items-center gap-2"><span class="font-semibold">Kuro Pan</span><span class="op-micro font-mono text-muted-foreground">KUP</span></div></td>
+              <td class="px-4"><span class="h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>Produzido</span></td>
+              <td class="px-4 text-right"><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Não planejado</span></td>
+              <td class="px-4 text-right"><span class="op-title tnum inline-flex items-center gap-1.5">9<i data-i="circle-check" class="size-4 text-success"></i></span></td>
+              <td class="px-4"><div class="flex justify-end gap-1.5"><button class="h-10 px-3 rounded-md border border-border bg-card op-label">Ver lançamento</button><button class="size-10 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button></div></td>
+            </tr>
+            <!-- Madeleine -->
+            <tr class="h-14 border-t border-border">
+              <td class="px-4"><div class="flex items-center gap-2"><span class="font-semibold">Madeleine</span><span class="op-micro font-mono text-muted-foreground">MDLN</span></div></td>
+              <td class="px-4"><span class="h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>Produzido</span></td>
+              <td class="px-4 text-right"><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Não planejado</span></td>
+              <td class="px-4 text-right"><span class="op-title tnum inline-flex items-center gap-1.5">70<i data-i="circle-check" class="size-4 text-success"></i></span></td>
+              <td class="px-4"><div class="flex justify-end gap-1.5"><button class="h-10 px-3 rounded-md border border-border bg-card op-label">Ver lançamento</button><button class="size-10 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button></div></td>
+            </tr>
+            <!-- Pain au Chocolat -->
+            <tr class="h-14 border-t border-border bg-warning/5">
+              <td class="px-4"><div class="flex items-center gap-2"><span class="font-semibold">Pain au Chocolat</span><span class="op-micro font-mono text-muted-foreground">PCHOC</span></div></td>
+              <td class="px-4"><span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>A confirmar</span></td>
+              <td class="px-4 text-right op-title tnum">36</td>
+              <td class="px-4 text-right tnum text-muted-foreground">falta lançar</td>
+              <td class="px-4"><div class="flex justify-end gap-1.5"><button class="h-10 px-4 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center gap-1.5"><i data-i="check" class="size-4"></i>Confirmar</button><button class="size-10 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button></div></td>
+            </tr>
+            <!-- Shokupan -->
+            <tr class="h-14 border-t border-border">
+              <td class="px-4"><div class="flex items-center gap-2"><span class="font-semibold">Shokupan</span><span class="op-micro font-mono text-muted-foreground">FORMA</span></div></td>
+              <td class="px-4"><span class="h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>Produzido</span></td>
+              <td class="px-4 text-right"><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Não planejado</span></td>
+              <td class="px-4 text-right"><span class="op-title tnum inline-flex items-center gap-1.5">18<i data-i="circle-check" class="size-4 text-success"></i></span></td>
+              <td class="px-4"><div class="flex justify-end gap-1.5"><button class="h-10 px-3 rounded-md border border-border bg-card op-label">Ver lançamento</button><button class="size-10 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- estado desatualizado (exemplo do padrão) -->
+      <div class="mt-4 flex items-center gap-3">
+        <span class="h-8 px-3 rounded-full bg-warning/10 border border-warning/30 text-warning op-label font-semibold inline-flex items-center gap-2"><i data-i="wifi-off" class="size-4"></i>Sem conexão. O que está na tela é de 10:38.</span>
+        <span class="op-micro text-muted-foreground">Exemplo do aviso de tela desatualizada (aparece no lugar do "Ao vivo" quando a leitura falha).</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- menu ⋯ da linha aberto (Bichon) -->
+  <div class="absolute right-4 top-[248px] w-60 rounded-lg border border-border bg-popover shadow-xl p-1.5 z-20">
+    <p class="px-2.5 pt-1.5 pb-1 op-eyebrow text-muted-foreground">Bichon au Citron</p>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="pencil" class="size-4"></i>Corrigir quantidade</button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="shopping-bag" class="size-4"></i>Ver encomendas (2 un.)</button>
+    <div class="h-px bg-border my-1"></div>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label text-destructive bg-destructive/8"><i data-i="undo-2" class="size-4"></i>Estornar…</button>
+  </div>
+
+  <!-- menu ⋯ da tela (fechado no estado normal; desenhado à parte como referência) -->
+  <div class="absolute right-4 top-[706px] w-72 rounded-lg border border-border bg-popover shadow-xl p-1.5 z-20">
+    <p class="px-2.5 pt-1.5 pb-1 op-eyebrow text-muted-foreground">Menu ⋯ da tela</p>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="refresh-cw" class="size-4"></i>Atualizar<kbd class="ml-auto op-micro font-mono text-muted-foreground">R</kbd></button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="alarm-clock" class="size-4"></i>Abrir timers</button>
+    <div class="h-px bg-border my-1"></div>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="keyboard" class="size-4"></i>Atalhos desta tela<kbd class="ml-auto op-micro font-mono text-muted-foreground">?</kbd></button>
+  </div>
+
+  <span class="pin" style="left:26px;top:40px">1</span>
+  <span class="pin" style="left:62px;top:96px">2</span>
+  <span class="pin" style="left:2px;top:366px">3</span>
+  <span class="pin" style="left:250px;top:4px">4</span>
+  <span class="pin" style="left:380px;top:4px">5</span>
+  <span class="pin" style="left:1100px;top:-2px">6</span>
+  <span class="pin" style="left:92px;top:66px">7</span>
+  <span class="pin" style="left:62px;top:650px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Produção · Produção do dia · v3 <span>seções no rail com Alt 1 a 4, uma barra só, uma busca só</span></p>
+  <div><b>1</b>Trocar de app: o selo da Produção no topo do rail.</div>
+  <div><b>2</b>As 4 etapas do dia (Planejamento, Preparação, Produção, Expedição) saíram das abas do topo e moram no rail, com a tecla Alt 1 a 4 impressa no item.</div>
+  <div><b>3</b>Timers sai do topo para o rail: contagem (2) e anel de alerta quando um toca. Receitas e Relatórios ficam logo abaixo.</div>
+  <div><b>4</b>Título da tela + ponto ao vivo com a hora no lugar do "Ao vivo 10:42" da faixa global; "Sem conexão. O que está na tela é de 10:38." aparece ali quando a leitura falha.</div>
+  <div><b>5</b>Uma busca só (/ ou Ctrl K): "Produto ou SKU" e "Buscar na suíte" viraram o mesmo campo.</div>
+  <div><b>6</b>Na direita da mesma linha: progresso "5 de 8 produzidos · 33% do plano", dia (‹ Hoje, sex 02/10 ›) e ⋯ (Atualizar R, Abrir timers, Atalhos ?).</div>
+  <div><b>7</b>Filtros na segunda linha: Todos, A confirmar, Produzidos e o chip Base com menu.</div>
+  <div><b>8</b>Avisos e Atalhos no pé do rail. Tabela, chip de encomendas, Confirmar / Ver lançamento e o ⋯ da linha (Corrigir, Ver encomendas, Estornar…) não mudaram.</div>
+</div>
+</body></html>

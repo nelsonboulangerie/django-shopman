@@ -168,6 +168,7 @@ export interface VersionUsageProjection {
   loss_display: string;
   yield_pct: string;
   yield_display: string;
+  started_assumed_batches: number;
   avg_loss: string;
   avg_loss_display: string;
   loss_pct_display: string;

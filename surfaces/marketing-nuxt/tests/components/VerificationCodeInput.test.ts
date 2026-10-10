@@ -1,7 +1,7 @@
 import { mount } from "@vue/test-utils";
 import { defineComponent, ref } from "vue";
 import { describe, expect, it } from "vitest";
-import VerificationCodeInput from "~/components/Ui/VerificationCodeInput.vue";
+import VerificationCodeInput from "../../../operator-kit/app/components/Ui/VerificationCodeInput.vue";
 
 const Host = defineComponent({
   components: { VerificationCodeInput },

@@ -91,6 +91,23 @@ class PurchaseConfirmReceiptView(APIView):
         return _purchase_response(projection, message="Entrada confirmada no estoque.")
 
 
+class PurchaseReceiptVolumesView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Record the counted volumes of the NF under conference",
+        responses={200: OpenApiResponse(description="Volumes recorded and projection refreshed.")},
+    )
+    def post(self, request):
+        try:
+            projection = purchase_service.save_receipt_volumes(dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection)
+
+
 class PurchaseRejectReceiptView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_purchase"

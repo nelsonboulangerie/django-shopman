@@ -236,7 +236,7 @@ def _rows(sheet, sheet_name: str, model: type[_Row], key: str) -> Iterator[tuple
     missing = [name for name in REQUIRED_COLUMNS[sheet_name] if name not in header]
     if missing:
         raise InvalidExport(
-            f"aba '{sheet_name}' sem as colunas {', '.join(missing)} — arquivo inesperado."
+            f"aba '{sheet_name}' sem as colunas {', '.join(missing)}: arquivo inesperado."
         )
     index = {name: header.index(name) for name in REQUIRED_COLUMNS[sheet_name]}
     for line, row in enumerate(iterator, start=2):
@@ -305,7 +305,7 @@ def ingest(
     try:
         for sheet in REQUIRED_COLUMNS:
             if sheet not in workbook.sheetnames:
-                raise InvalidExport(f"Aba '{sheet}' ausente no export — arquivo inesperado.")
+                raise InvalidExport(f"Aba '{sheet}' ausente no export: arquivo inesperado.")
 
         try:
             with transaction.atomic():

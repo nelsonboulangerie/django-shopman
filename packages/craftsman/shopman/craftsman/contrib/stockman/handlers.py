@@ -394,7 +394,7 @@ def _handle_started(work_order, product_ref, date):
         position=position,
         target_date=date,
         batch=STARTED_BATCH,
-        reason=f"Produção iniciada: {work_order.ref}",
+        reason=f"Abertura de lote: {work_order.ref}",
         kind="make",  # Move.Kind.MAKE
     )
     logger.info(
@@ -672,7 +672,7 @@ def _write_off_yield_shortfall(
     *,
     fail_closed: bool = False,
 ):
-    """Rendimento MENOR que o iniciado: lançar a perda como WASTE no ledger.
+    """Realizado MENOR que o previsto: lançar a perda como WASTE no ledger.
 
     Sem isso o resíduo fica eterno no quant ``batch='started'`` — a
     availability o classifica como ``in_production`` e ele continua
@@ -749,7 +749,7 @@ def _write_off_yield_shortfall(
     Move.objects.create(
         quant=quant,
         delta=-write_off,
-        reason=f"Perda de rendimento: {work_order.ref} (iniciado {started_qty}, rendeu {finished_qty})",
+        reason=f"Perda: {work_order.ref} (previsto {started_qty}, realizado {finished_qty})",
         kind="waste",  # Move.Kind.WASTE
     )
     logger.info(
@@ -951,7 +951,7 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
                 to_position=to_position,
                 from_position=from_position,
                 from_batch=from_batch,
-                reason=f"Produção concluída: {work_order.ref}",
+                reason=f"Fechamento de lote: {work_order.ref}",
                 to_batch=leg_batch,
                 to_quality_grade_ref=leg_grade_ref,
             )

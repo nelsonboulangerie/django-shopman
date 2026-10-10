@@ -57,11 +57,17 @@ describe("quantas vias vão sair", () => {
     expect(canPrintBatch(200, 200)).toBe(true);
   });
 
-  it("o número entra no CTA, e diz que são as que faltam; zero não é número de botão", () => {
+  it("o número entra no CTA e conta encomendas, não vias; zero não é número de botão", () => {
     expect(printCtaLabel(0, 0)).toBe("Nenhuma via para imprimir");
     expect(printCtaLabel(0, 3)).toBe("Todas as vias impressas");
-    expect(printCtaLabel(1, 4)).toBe("Imprimir 1 via que falta");
-    expect(printCtaLabel(34, 40)).toBe("Imprimir 34 vias que faltam");
+    expect(printCtaLabel(1, 4)).toBe("Imprimir a Via Pedido de 1 encomenda");
+    expect(printCtaLabel(34, 40)).toBe("Imprimir a Via Pedido de 34 encomendas");
+    // "Imprimir 2 vias" se lia como duas cópias (o dono leu assim, 03/10). E não é
+    // "2ª via": o lote só leva o que nunca saiu; 2ª via é o reimprimir do detalhe.
+    for (const label of [printCtaLabel(1, 4), printCtaLabel(2, 4)]) {
+      expect(label).not.toMatch(/\d+ vias?\b/);
+      expect(label).not.toContain("2ª");
+    }
   });
 
   it("a contagem fala português no singular e no zero", () => {

@@ -47,7 +47,7 @@ class BIAlertRuleAdmin(ModelAdmin):
         prefix = "DISPAROU · " if reading.get("fired") else ""
         if obj.metric in BIAlertRule.AUDIT_ONLY_METRICS and not can_audit_cash(self._request_user):
             # Apuração de caixa: quem opera vê que houve disparo, não quem nem quanto.
-            return f"{prefix}apuração de caixa — detalhe só para quem audita"
+            return f"{prefix}apuração de caixa (detalhe só para quem audita)"
         return f"{prefix}{reading.get('message', '')}"
 
     _request_user = None

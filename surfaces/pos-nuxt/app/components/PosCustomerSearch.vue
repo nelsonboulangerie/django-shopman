@@ -151,7 +151,12 @@ function reset() {
 function focus() {
   inputRef.value?.inputRef?.focus();
 }
-defineExpose({ reset, focus });
+/** A busca da venda ("produto, código, comanda ou cliente") chega aqui com o que
+ *  o operador já digitou: o campo nasce preenchido e a procura já começa. */
+function seed(value: string) {
+  query.value = value;
+}
+defineExpose({ reset, focus, seed });
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer);
 });
@@ -164,7 +169,7 @@ onBeforeUnmount(() => {
       <UiInput
         ref="inputRef"
         v-model="query"
-        class="h-11 pl-10 text-base"
+        class="h-8 pl-10 text-base"
         placeholder="Buscar por nome, telefone, CPF ou e-mail"
         role="combobox"
         aria-expanded="true"
@@ -193,15 +198,16 @@ onBeforeUnmount(() => {
       aria-label="Clientes encontrados"
       class="grid max-h-56 gap-0.5 overflow-auto rounded-md border p-1"
     >
-      <button
+      <NuxtButton
         v-for="(result, index) in results"
-        :id="optionId(index)"
         :key="result.ref"
-        type="button"
+        color="neutral"
+        variant="ghost"
+        :id="optionId(index)"
         role="option"
         :aria-selected="index === highlighted"
         :disabled="busy"
-        class="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left transition hover:bg-accent"
+        class="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left transition hover:bg-accent font-normal"
         :class="index === highlighted ? 'bg-accent' : ''"
         @mousemove="highlighted = index"
         @click="pick(result)"
@@ -214,7 +220,7 @@ onBeforeUnmount(() => {
           <OperatorKbd v-if="index === highlighted"  aria-hidden="true">Enter</OperatorKbd>
           <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
         </span>
-      </button>
+      </NuxtButton>
     </div>
     <!-- SEM RESULTADO: o que fazer agora vira BOTÃO, com o resultado no rótulo.
          O `<kbd>` é affordance da mesma ação — a tecla nunca promete outra
@@ -227,7 +233,7 @@ onBeforeUnmount(() => {
         v-if="emptyStateLabel"
         type="button"
         variant="outline"
-        class="h-11 w-full justify-center gap-2 whitespace-normal text-sm"
+        class="h-8 w-full justify-center gap-2 whitespace-normal text-sm"
         @click="run(pendingAction)"
       >
         <Icon name="lucide:user-round-plus" class="size-4 shrink-0" />

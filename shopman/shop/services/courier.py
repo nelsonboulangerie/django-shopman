@@ -91,7 +91,7 @@ def build_machine_payload(order) -> dict:
     handoff = build_dispatch_payload(order)  # NotDeliverableError p/ não-delivery
     shop = Shop.load()
     if shop is None:
-        raise ValueError("Loja não configurada — impossível montar a partida da corrida.")
+        raise ValueError("Loja não configurada: impossível montar a partida da corrida.")
     cfg = getattr(settings, "SHOPMAN_MACHINE", {}) or {}
 
     pickup_street = " ".join(
@@ -353,7 +353,7 @@ def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_rev
     if not has_active_ride(order):
         raise ValueError("Não há corrida ativa para cancelar.")
     if block.get("status") not in CANCELLABLE_STATUSES:
-        raise ValueError("A corrida já está com o entregador em rota — combine o retorno por telefone com a central.")
+        raise ValueError("A corrida já está com o entregador em rota. Combine o retorno por telefone com a central.")
     existing = latest_cancellation(order, pending_only=True)
     if existing is not None:
         state = (existing.payload or {}).get("cancel_attempt", {}).get("state")

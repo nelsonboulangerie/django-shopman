@@ -1,4 +1,4 @@
-"""O Shopman Apps e as superfícies chamam cada app pelo MESMO nome.
+"""A Central e as superfícies chamam cada app pelo MESMO nome.
 
 O dono viu um app com dois nomes: o tile do launcher dizia "Gestor de Pedidos", a barra
 de título da janela dizia "Gestor"; a Cozinha era "Cozinha" no rail e "KDS" no título.
@@ -59,6 +59,14 @@ def test_tile_label_matches_surface_label(tile_ref: str, app: str) -> None:
 
 
 @pytest.mark.parametrize(("tile_ref", "app"), sorted(TILE_TO_APP.items()))
+def test_queue_label_matches_surface_short_label(tile_ref: str, app: str) -> None:
+    """O nome curto da fila ("Gestor") é o `shortLabel` da identidade; sem ele, o rótulo."""
+    spec = next(spec for spec in _REGISTRY if spec.ref == tile_ref)
+    identity = _identity()[app]
+    assert spec.queue_label == identity.get("shortLabel", identity["label"])
+
+
+@pytest.mark.parametrize(("tile_ref", "app"), sorted(TILE_TO_APP.items()))
 def test_tile_fallback_icon_matches_surface(tile_ref: str, app: str) -> None:
     """O Lucide de recurso do tile é o mesmo que o rail do app usa quando o PNG falha."""
     spec = next(spec for spec in _REGISTRY if spec.ref == tile_ref)
@@ -66,10 +74,12 @@ def test_tile_fallback_icon_matches_surface(tile_ref: str, app: str) -> None:
 
 
 def test_every_operator_app_has_a_tile() -> None:
-    """Superfície nova sem tile é app que ninguém acha; o Shopman Apps é o único launcher."""
+    """Superfície nova sem tile é app que ninguém acha; a Central é o único launcher."""
     identity = _identity()
-    # O Shopman Apps é o próprio launcher: não tem tile dentro de si.
-    expected = {app for app in identity if app != "hub"}
+    # A Central é o próprio launcher: não tem tile dentro de si.
+    surfaces = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))["surfaces"]
+    expected = {app for app in identity if app != "hub" and surfaces[app].get("deployment") != "preview"}
+    assert surfaces["kitchensink"]["hub_tile"] is None
     assert set(TILE_TO_APP.values()) == expected
 
 
@@ -102,13 +112,19 @@ TILE_WIDER_THAN_DOOR = {"marketing": "janela de migração de shop.manage_campai
 
 
 def _door_permission(app: str) -> str:
-    """A permissão que o app pede na porta (`const OPERATOR_PERM = "..."` na casca)."""
+    """A permissão que o app pede na porta (`const OPERATOR_PERM = "..."` na casca).
+
+    Pode ter alternativas (`a|b`, ``permissions.surface_perm_codes``): o Gestor deixa
+    entrar quem gerencia pedidos e quem só expede (UX-G3).
+    """
     import re
 
     found = {
         match
         for path in (SURFACES_DIR / f"{app}-nuxt" / "app").rglob("*.vue")
-        for match in re.findall(r'const OPERATOR_PERM = "([a-z_]+\.[a-z_]+)"', path.read_text(encoding="utf-8"))
+        for match in re.findall(
+            r'const OPERATOR_PERM = "([a-z_]+\.[a-z_]+(?:\|[a-z_]+\.[a-z_]+)*)"', path.read_text(encoding="utf-8")
+        )
     }
     assert len(found) == 1, f"{app}: esperava uma permissão de porta, achei {sorted(found)}"
     return found.pop()
@@ -120,11 +136,11 @@ class _UserWith:
     is_superuser = False
     is_staff = True
 
-    def __init__(self, *, only: str | None = None, all_but: str | None = None):
+    def __init__(self, *, only: str | None = None, all_but: tuple[str, ...] = ()):
         self.only, self.all_but = only, all_but
 
     def has_perm(self, perm: str) -> bool:
-        return perm == self.only if self.only is not None else perm != self.all_but
+        return perm == self.only if self.only is not None else perm not in self.all_but
 
 
 @pytest.mark.parametrize(("tile_ref", "app"), sorted(TILE_TO_APP.items()))
@@ -136,9 +152,12 @@ def test_the_tile_asks_what_the_app_door_asks(tile_ref: str, app: str) -> None:
     levava 403 ao clicar. App novo (`make new-surface`) nasce com os dois no mesmo
     predicado; este teste impede que eles se separem depois.
     """
+    from shopman.backstage.permissions import surface_perm_codes
+
     spec = next(spec for spec in _REGISTRY if spec.ref == tile_ref)
-    door = _door_permission(app)
-    assert spec.can_access(_UserWith(only=door)), f"{tile_ref}: quem tem {door} abre o app e não vê o tile"
+    door = surface_perm_codes(_door_permission(app))
+    for code in door:
+        assert spec.can_access(_UserWith(only=code)), f"{tile_ref}: quem tem {code} abre o app e não vê o tile"
     if app in TILE_WIDER_THAN_DOOR:
         return
     assert not spec.can_access(_UserWith(all_but=door)), f"{tile_ref}: o tile aparece para quem a porta de {app} recusa"

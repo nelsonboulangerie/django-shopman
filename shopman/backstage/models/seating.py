@@ -30,6 +30,19 @@ class SpotKind(models.TextChoices):
     COUNTER = "counter", "Lugar de balcão"
 
 
+class SpotShape(models.TextChoices):
+    """A forma desenhada na planta do salão (PDV › Ajustes › Salão).
+
+    Banqueta é o lugar de balcão: um assento só, sem cadeiras em volta. As outras
+    três são mesas, e as cadeiras aparecem em volta pelo número de lugares.
+    """
+
+    ROUND = "round", "Redonda"
+    SQUARE = "square", "Quadrada"
+    LONG = "long", "Comprida"
+    STOOL = "stool", "Banqueta"
+
+
 class SeatingSpot(models.Model):
     """Um lugar onde um grupo pode sentar.
 
@@ -63,6 +76,24 @@ class SeatingSpot(models.Model):
     )
     active_until = models.DateField("existiu até", null=True, blank=True)
 
+    # A planta do salão (PDV › Ajustes › Salão). Desenho, não medida: o B.I. não
+    # lê posição nem forma, então mexer nelas não reescreve o passado e se edita no
+    # lugar. Lugares e "conta na capacidade" são medida, e mudam por versão (a mesa
+    # antiga encerra ontem e a nova nasce hoje, apontando para ela em ``replaces``).
+    short_label = models.CharField(
+        "sigla na planta", max_length=8, blank=True,
+        help_text="O que aparece dentro da mesa na planta (M1, B2). Vazio = sai do rótulo.",
+    )
+    shape = models.CharField("forma", max_length=8, choices=SpotShape.choices, default=SpotShape.SQUARE)
+    plan_x = models.PositiveIntegerField("posição na planta (x)", null=True, blank=True)
+    plan_y = models.PositiveIntegerField("posição na planta (y)", null=True, blank=True)
+    rotation = models.PositiveSmallIntegerField("giro (graus)", default=0)
+    replaces = models.OneToOneField(
+        "self", verbose_name="versão anterior", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="replaced_by",
+        help_text="A mesma mesa antes de mudar lugares ou capacidade. O passado segue contado com ela.",
+    )
+
     class Meta:
         verbose_name = "lugar do salão"
         verbose_name_plural = "lugares do salão"
@@ -75,3 +106,34 @@ class SeatingSpot(models.Model):
         if self.active_from and day < self.active_from:
             return False
         return not (self.active_until and day > self.active_until)
+
+
+class FixtureKind(models.TextChoices):
+    """O que não é lugar mas orienta a planta (v4 `salao-mesas4.html`)."""
+
+    SHOWCASE = "showcase", "Vitrine e caixa"
+    ENTRANCE = "entrance", "Entrada"
+
+
+class SeatingFixture(models.Model):
+    """Um elemento fixo desenhado na planta do salão: a vitrine e caixa, a entrada.
+
+    Desenho, não medida: o B.I. não lê nada daqui (não tem lugar nem capacidade),
+    então mexer não reescreve o passado e se edita no lugar, junto do Salvar do
+    salão (``services/seating.save_layout``).
+    """
+
+    kind = models.CharField("tipo", max_length=16, choices=FixtureKind.choices)
+    label = models.CharField("rótulo", max_length=60)
+    plan_x = models.PositiveIntegerField("posição na planta (x)", default=0)
+    plan_y = models.PositiveIntegerField("posição na planta (y)", default=0)
+    width = models.PositiveIntegerField("largura", default=40)
+    height = models.PositiveIntegerField("altura", default=320)
+
+    class Meta:
+        verbose_name = "elemento fixo do salão"
+        verbose_name_plural = "elementos fixos do salão"
+        ordering = ["kind", "pk"]
+
+    def __str__(self) -> str:
+        return self.label

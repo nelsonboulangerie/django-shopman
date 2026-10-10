@@ -1,0 +1,5 @@
+{
+  "playwright": "1.63.0",
+  "chromium_revision": "1243",
+  "chromium_version": "153.0.8010.12"
+}

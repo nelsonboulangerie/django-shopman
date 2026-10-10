@@ -19,6 +19,7 @@ import {
   changeMixLabel,
   coinFloorHint,
   coverageLabel,
+  startedAssumedHint,
   delta,
   formatExploreValue,
   formatHours,
@@ -27,7 +28,6 @@ import {
   formatMoneyCompact,
   formatPercent,
   formatQty,
-  hourLabel,
   missingLabel,
   rangeLabel,
   rangeText,
@@ -101,7 +101,6 @@ describe("presentation/bi", () => {
 
   it("datas curtas e rótulos", () => {
     expect(shortDate("2026-08-14")).toBe("14/08");
-    expect(hourLabel(5)).toBe("5h");
     expect(WEEKDAY_LABELS[0]).toBe("seg");
   });
 
@@ -110,11 +109,23 @@ describe("presentation/bi", () => {
     expect(coverageLabel(0, 0)).toBe("Sem lotes no período");
   });
 
-  it("delta honesto: sem base vira travessão; tom segue melhorou/piorou", () => {
-    expect(delta(100, 0)).toEqual({ text: "—", tone: "neutral" });
-    expect(delta(120, 100)).toEqual({ text: "▲ 20% vs Período anterior", tone: "positive" });
-    expect(delta(80, 100)).toEqual({ text: "▼ 20% vs Período anterior", tone: "negative" });
-    expect(delta(100, 100)).toEqual({ text: "Estável vs Período anterior", tone: "neutral" });
+  it("o aproveitamento diz quando o previsto foi assumido, sem esconder", () => {
+    expect(startedAssumedHint(0, 12)).toBe("Realizado ÷ previsto");
+    expect(startedAssumedHint(2, 12)).toBe("Realizado ÷ previsto; previsto assumido em 2 de 12 lotes");
+  });
+
+  it("delta honesto: sem base não inventa pílula nem travessão; tom segue melhorou/piorou", () => {
+    expect(delta(100, 0)).toMatchObject({ percent: "", direction: "none", caption: "sem período anterior para comparar", tone: "neutral" });
+    expect(delta(120, 100)).toMatchObject({ percent: "20%", direction: "up", caption: "vs período anterior", tone: "positive" });
+    expect(delta(80, 100, { base: "3.384" })).toMatchObject({
+      percent: "20%",
+      direction: "down",
+      caption: "vs período anterior (3.384)",
+      text: "queda de 20% vs período anterior (3.384)",
+      tone: "negative",
+    });
+    expect(delta(100, 100)).toMatchObject({ percent: "0%", direction: "flat", tone: "neutral" });
+    expect(delta(90, 100, { against: "mesmo período do ano passado" }).caption).toBe("vs mesmo período do ano passado");
     // Perda subindo é RUIM: downIsGood inverte o tom, nunca o texto.
     expect(delta(120, 100, { downIsGood: true }).tone).toBe("negative");
     expect(delta(80, 100, { downIsGood: true }).tone).toBe("positive");
@@ -181,7 +192,7 @@ describe("bucketSalesDays", () => {
 describe("aggregateBucket — a série longa não soma o que não se soma", () => {
   // ⚠️ Antes disto a página somava TUDO. Com "1 ano" + "Ticket médio" + "Tempo",
   // a barra da semana mostrava ~7× o ticket real — formatada como reais,
-  // "R$ 178,50", perfeitamente convincente. Rendimento passava de 100%.
+  // "R$ 178,50", perfeitamente convincente. Aproveitamento passava de 100%.
   const semana = [10000, 12000, 11000, 9000, 13000, 14000, 10500];
 
   it("soma o que é aditivo (faturamento, pedidos, quantidade)", () => {
@@ -199,7 +210,7 @@ describe("aggregateBucket — a série longa não soma o que não se soma", () =
     expect(aggregateBucket([4, 9, 6], "max")).toBe(9);
   });
 
-  it("rendimento agregado não passa de 100%", () => {
+  it("aproveitamento agregado não passa de 100%", () => {
     expect(aggregateBucket([98, 95, 101, 99], "mean")).toBeLessThan(101);
   });
 
@@ -391,7 +402,7 @@ describe("presentation/bi — perfis de consumo", () => {
 
   it("a faixa piso–teto vira texto, e faixa fechada vira ponto", () => {
     expect(rangeText({ min_orders: 1234, max_orders: 1500, min_share: 16.7, max_share: 20.1 })).toBe(
-      "1.234–1.500 pedidos (16,7–20,1%)",
+      "1.234 a 1.500 pedidos (16,7 a 20,1%)",
     );
     expect(rangeText({ min_orders: 7, max_orders: 7, min_share: 3.5, max_share: 3.5 })).toBe(
       "7 pedidos (3,5%)",
@@ -457,7 +468,7 @@ describe("presentation/bi — cenários com IA", () => {
   };
 
   it("o cabeçalho diz foco, quando e a janela que a IA viu", () => {
-    expect(scenarioReportHeadline(report)).toMatch(/^Vendas · \d{2}\/\d{2} \d{2}:\d{2} · janela 23\/07–19\/08$/);
+    expect(scenarioReportHeadline(report)).toMatch(/^Vendas · \d{2}\/\d{2} \d{2}:\d{2} · janela 23\/07 a 19\/08$/);
   });
 
   it("custo e latência ficam declarados; falha é falha, não cenário", () => {

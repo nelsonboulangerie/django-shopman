@@ -7,7 +7,7 @@ import { operatorBaselineContentSecurityPolicy } from "../../operator-kit/server
 const surfaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const config = readFileSync(resolve(surfaceRoot, "nuxt.config.ts"), "utf8");
 
-describe("Shopman Apps: configuração segura de release", () => {
+describe("Central: configuração segura de release", () => {
   it("ativa o envelope de headers do operator-kit no runtime privado", () => {
     expect(config).toContain("operatorSecurityHeaders: true");
   });

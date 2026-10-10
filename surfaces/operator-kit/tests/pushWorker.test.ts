@@ -52,6 +52,28 @@ describe("operator push service worker", () => {
     expect(harness.navigate).not.toHaveBeenCalled();
   });
 
+  it("vibra quando o servidor manda o padrão (Cozinha) e não vibra sem ele", async () => {
+    const harness = workerHarness();
+    let pending: Promise<void> = Promise.resolve();
+    const push = (payload: object) =>
+      harness.listeners.get("push")!({
+        data: { json: () => payload },
+        waitUntil: (value: Promise<void>) => { pending = value; },
+      });
+    push({ title: "Atrasado: S84 passou de 10 min", vibrate: [120, 90, 120, 90, 120, "x", 99999] });
+    await pending;
+    expect(harness.self.registration.showNotification).toHaveBeenLastCalledWith(
+      "Atrasado: S84 passou de 10 min",
+      expect.objectContaining({ vibrate: [120, 90, 120, 90, 120], renotify: true }),
+    );
+    push({ title: "Pedido" });
+    await pending;
+    expect(harness.self.registration.showNotification).toHaveBeenLastCalledWith(
+      "Pedido",
+      expect.objectContaining({ vibrate: undefined, renotify: false }),
+    );
+  });
+
   it("mantém o transporte fora do cache e limita destinos ao mesmo origin", () => {
     expect(OPERATOR_PUSH_WORKER).toContain('credentials: "include"');
     expect(OPERATOR_PUSH_WORKER).toContain("url.origin === self.location.origin");

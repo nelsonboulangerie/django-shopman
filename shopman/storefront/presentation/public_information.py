@@ -99,6 +99,19 @@ def _operational_faq(
     return items
 
 
+def food_safety_notice(shop=None) -> str:
+    """O aviso de produção compartilhada da casa (``Shop.food_safety_notice``).
+
+    Uma fonte só: é o texto que a página de cada produto mostra em Ingredientes
+    e restrições e o que a Concierge responde sobre glúten. O gestor edita no
+    Admin e os dois lugares mudam juntos.
+    """
+    from shopman.shop.models import Shop
+
+    shop = shop or Shop.load()
+    return (getattr(shop, "food_safety_notice", "") or "").strip() if shop else ""
+
+
 def build_public_faq(
     *,
     channel_ref: str,
@@ -164,4 +177,4 @@ def search_public_faq(
     return tuple(item for _, _, item in ranked[:limit])
 
 
-__all__ = ["FAQItemProjection", "build_public_faq", "search_public_faq"]
+__all__ = ["FAQItemProjection", "build_public_faq", "food_safety_notice", "search_public_faq"]

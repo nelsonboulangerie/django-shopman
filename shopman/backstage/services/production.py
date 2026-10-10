@@ -53,7 +53,7 @@ def _operator_error(exc: Exception) -> Exception:
 
     if isinstance(exc, StockError):
         return ProductionError(
-            f"O lote não foi concluído porque o estoque falhou: {exc}. Atualize o painel e tente novamente."
+            f"O lote não foi fechado porque o estoque falhou: {exc}. Atualize o painel e tente novamente."
         )
     if isinstance(exc, ObjectDoesNotExist):
         return ProductionNotFound(
@@ -67,9 +67,9 @@ def _operator_error(exc: Exception) -> Exception:
     data = getattr(exc, "data", {}) or {}
     if code in ("TERMINAL_STATUS", "VOID_FROM_DONE"):
         if str(data.get("status") or "") == "void":
-            return ProductionConflict("Este lote foi estornado. Atualize o painel.", data=data)
+            return ProductionConflict("Este lote foi cancelado. Atualize o painel.", data=data)
         if code == "VOID_FROM_DONE":
-            return ProductionConflict("Lote concluído não pode ser estornado.", data=data)
+            return ProductionConflict("Lote fechado não pode ser cancelado.", data=data)
         return ProductionConflict(
             "Este lote já foi fechado em outra tela. Atualize o painel.",
             data=data,
@@ -135,7 +135,7 @@ class ProductionBatchTraceabilityError(ProductionError):
         self.output_sku = output_sku
         self.cause = cause
         super().__init__(
-            "O lote não foi concluído porque a rastreabilidade falhou. Atualize o painel e tente novamente."
+            "O lote não foi fechado porque a rastreabilidade falhou. Atualize o painel e tente novamente."
         )
 
 
@@ -251,6 +251,20 @@ def has_committed_mutation_attempt(
                 WorkOrderEvent.Kind.VOIDED,
             ),
         ).exists()
+    if action_kind == "review_qc_batch":
+        items = list(body.get("items") or [])
+        if not items:
+            return False
+        keys = {
+            _mutation_idempotency_key("quality-review", item["work_order_id"], client_key) for item in items
+        }
+        return (
+            WorkOrderEvent.objects.filter(
+                kind=WorkOrderEvent.Kind.QUALITY_REVIEWED,
+                idempotency_key__in=keys,
+            ).count()
+            == len(keys)
+        )
     if action_kind in event_specs and work_order_id is not None:
         action, event_kind = event_specs[action_kind]
         return WorkOrderEvent.objects.filter(
@@ -363,7 +377,7 @@ def apply_void(
     actor: str,
     expected_rev: int | None = None,
     idempotency_key: str | None = None,
-    reason: str = "Estornado via produção rápida",
+    reason: str = "Cancelado via produção rápida",
 ) -> str:
     """Void a work order from the operator surface."""
     from django.db import transaction
@@ -1373,7 +1387,7 @@ def apply_oven_arm(
                     return replay
             if work_order.status != WorkOrder.Status.STARTED:
                 raise ProductionConflict(
-                    "Só é possível enfornar uma ordem iniciada.",
+                    "Só é possível enfornar um lote aberto.",
                     code="conflict",
                     data={
                         "work_order": work_order.ref,
@@ -1484,7 +1498,7 @@ def apply_oven_conclude(
 
             if work_order.status != WorkOrder.Status.STARTED:
                 raise ProductionConflict(
-                    "Só é possível retirar do forno uma ordem iniciada.",
+                    "Só é possível retirar do forno um lote aberto.",
                     code="conflict",
                     data={
                         "work_order": work_order.ref,
@@ -2332,6 +2346,105 @@ def apply_quality_review(
         raise translated from (None if translated is exc else exc)
 
 
+def apply_quality_review_batch(
+    *,
+    items,
+    target_date,
+    actor: str,
+    idempotency_key: str | None,
+):
+    """Confirm several clean lots of one day as ONE act, all or nothing (P19).
+
+    Per lot this is exactly :func:`apply_quality_review`: same event, same
+    payload, same actor and moment, same per-lot idempotency receipt (the
+    client key scoped by the lot). The batch only adds two guards: every lot
+    belongs to ``target_date`` and is still a lot WITHOUT exception (the rule
+    of :func:`qc_partition_is_clean`); a lot with loss or discount is
+    confirmed one by one, after a human looked at it. Any failure rolls the
+    whole batch back.
+    """
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+
+    from shopman.backstage.projections.production import qc_partition_is_clean
+    from shopman.shop.services import quality as quality_service
+
+    _require_irreversible_attempt(
+        actor=actor,
+        expected_rev=0,
+        idempotency_key=idempotency_key,
+    )
+    ordered = sorted(
+        ((int(item["work_order_id"]), int(item["expected_rev"])) for item in items),
+        key=lambda pair: pair[0],
+    )
+    if not ordered:
+        raise ProductionError("Nenhum lote informado para confirmar.")
+    default_grade = quality_service.default_grade_ref()
+    reviewed = []
+    try:
+        with transaction.atomic():
+            # Lock in pk order: two batches over overlapping lots never deadlock.
+            locked = {
+                work_order.pk: work_order
+                for work_order in WorkOrder.objects.select_for_update().filter(pk__in=[pk for pk, _rev in ordered]).order_by("pk")
+            }
+            for work_order_id, expected_rev in ordered:
+                work_order = locked.get(work_order_id)
+                if work_order is None:
+                    raise ProductionNotFound(
+                        "Ordem de produção não encontrada.",
+                        resource="work_order",
+                        identifier=str(work_order_id),
+                    )
+                if work_order.target_date != target_date:
+                    raise ProductionConflict(
+                        "Um dos lotes não pertence a este dia. Atualize a tela.",
+                        data={"work_order": work_order.ref, "cause": "quality_batch_wrong_date"},
+                    )
+                event_key = _mutation_idempotency_key("quality-review", work_order_id, idempotency_key)
+                already_this_attempt = WorkOrderEvent.objects.filter(
+                    idempotency_key=event_key,
+                    kind=WorkOrderEvent.Kind.QUALITY_REVIEWED,
+                    work_order_id=work_order_id,
+                ).exists()
+                if not already_this_attempt and work_order.status == WorkOrder.Status.FINISHED:
+                    partition = quality_service.effective_partitions([work_order], strict=True).get(work_order.pk, [])
+                    started = (
+                        WorkOrderEvent.objects.filter(work_order=work_order, kind=WorkOrderEvent.Kind.STARTED)
+                        .order_by("-seq")
+                        .values_list("payload", flat=True)
+                        .first()
+                    )
+                    started_qty = (started or {}).get("quantity")
+                    anchor = Decimal(str(started_qty)) if started_qty is not None else work_order.quantity
+                    if not qc_partition_is_clean(partition, anchor=anchor, default_grade_ref=default_grade):
+                        raise ProductionConflict(
+                            "Um dos lotes tem exceção e precisa ser olhado à parte.",
+                            data={"work_order": work_order.ref, "cause": "quality_batch_has_exception"},
+                        )
+                reviewed.append(
+                    apply_quality_review(
+                        work_order_id=work_order_id,
+                        actor=actor,
+                        expected_rev=expected_rev,
+                        idempotency_key=idempotency_key,
+                    )
+                )
+    except (ProductionError, ProductionNotFound, ProductionConflict):
+        raise
+    except Exception as exc:
+        translated = _operator_error(exc)
+        raise translated from (None if translated is exc else exc)
+    logger.info(
+        "production.quality_reviewed_batch date=%s count=%s actor=%s",
+        target_date,
+        len(reviewed),
+        actor,
+    )
+    return reviewed
+
+
 def _record_quality_hold_risk(exc: ProductionConflict) -> None:
     """Keep a blocked physical correction visible after its transaction rolls back."""
     data = dict(getattr(exc, "data", {}) or {})
@@ -2436,7 +2549,7 @@ def apply_quality_correction(
                 return replay
             if work_order.status != WorkOrder.Status.FINISHED:
                 raise ProductionConflict(
-                    "Somente um lote concluído pode ter a qualidade corrigida.",
+                    "Somente um lote fechado pode ter a qualidade corrigida.",
                     data={"work_order": work_order.ref, "cause": "quality_correction_requires_finished"},
                 )
             if work_order.rev != expected_rev:
@@ -2706,9 +2819,9 @@ def apply_finish(
             if yield_deviation > 0:
                 deviation_reason = str(yield_deviation_reason or "").strip()
                 if yield_deviation_confirmed is not True:
-                    raise ProductionError("Confirme explicitamente a produção acima da quantidade iniciada.")
+                    raise ProductionError("Confirme explicitamente o realizado acima do previsto.")
                 if not deviation_reason:
-                    raise ProductionError("Informe o motivo da produção acima da quantidade iniciada.")
+                    raise ProductionError("Informe o motivo do realizado acima do previsto.")
                 deviation_context = {
                     "kind": "yield_overshoot",
                     "anchor_qty": _qty(yield_anchor),
@@ -3116,9 +3229,9 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
             [
                 "Operador",
                 "Nome",
-                "Ordens concluídas",
-                "Qtd total",
-                "Rendimento médio",
+                "Lotes fechados",
+                "Qtd realizada",
+                "Aproveitamento médio",
                 "Tempo médio (min)",
             ]
         )
@@ -3164,7 +3277,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                 "Nome",
                 "Ordens",
                 "Perda total",
-                "Rendimento médio",
+                "Aproveitamento médio",
                 "Utilização capacidade",
             ]
         )
@@ -3188,13 +3301,14 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                 "Nome da receita",
                 "Posição",
                 "Qtd planejada",
-                "Qtd iniciada",
-                "Qtd concluída",
+                "Qtd prevista",
+                "Previsto assumido",
+                "Qtd realizada",
                 "Perda",
-                "Rendimento",
+                "Aproveitamento",
                 "Operador",
-                "Iniciada em",
-                "Concluída em",
+                "Aberta em",
+                "Fechada em",
                 "Duração (min)",
             ]
         )
@@ -3208,6 +3322,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                     _csv_safe(row.position_ref),
                     row.qty_planned,
                     row.qty_started,
+                    "sim" if row.started_assumed else "",
                     row.qty_finished,
                     row.qty_loss,
                     row.yield_rate,

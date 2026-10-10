@@ -4,6 +4,8 @@ test.use({ viewport: { width: 375, height: 812 }, hasTouch: true });
 
 test("agendamento e entrega iFood ficam legíveis no celular", async ({ page }, testInfo) => {
   await page.goto("/");
+  // No celular a busca mora atrás da lupa da barra de 56px (UX-KIT-V1, prévia v3).
+  await page.getByRole("button", { name: "Buscar", exact: true }).click();
   await page.getByRole("searchbox").fill("IFOOD-SCHEDULED");
   await expect(page.getByText("Entrega por entregador iFood", { exact: true })).toBeVisible();
   await expect(page.getByText("Início do preparo: 14/09/2026 às 15:15", { exact: true })).toBeVisible();

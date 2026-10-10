@@ -93,11 +93,12 @@ export function statusTone(status: string): LensTone {
   return "muted";
 }
 
-export function statusBadgeVariant(status: string): "success" | "warning" | "outline" {
+/** A cor do selo de estado da versão (`NuxtBadge`, sempre `soft`). */
+export function statusBadgeColor(status: string): "success" | "warning" | "neutral" {
   const tone = statusTone(status as VersionStatus);
   if (tone === "ok") return "success";
   if (tone === "warning") return "warning";
-  return "outline";
+  return "neutral";
 }
 
 /** Classes tonais de um chip/valor: calmo por padrão; só o aviso carrega cor. */
@@ -389,7 +390,7 @@ export function originLines(origin: Record<string, unknown> | null | undefined):
       const unit = typeof item.unit === "string" ? item.unit : "";
       const amount =
         (typeof quantity === "string" && quantity) || typeof quantity === "number" ? `${quantity}${unit ? ` ${unit}` : ""}` : "";
-      const text = [name, amount].filter(Boolean).join(" — ");
+      const text = [name, amount].filter(Boolean).join(": ");
       if (text) lines.push(text);
     }
   }

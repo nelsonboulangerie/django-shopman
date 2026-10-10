@@ -3,7 +3,7 @@
 // Proving the current PIN is the authorization (enforced by the backend). Used
 // voluntarily from the lock screen and forced after a manager reset (must-change).
 // Pure UI — the parent owns the network call (changePin) and passes busy/error.
-import { appendPinDigit } from "../presentation/operatorLock";
+import { PIN_MIN_DIGITS, appendPinDigit } from "../presentation/operatorLock";
 
 const props = defineProps<{
   operatorName: string;
@@ -42,7 +42,7 @@ function setActive(v: string) {
   else confirmPin.value = v;
 }
 
-const canAdvance = computed(() => activeValue().trim().length >= 4);
+const canAdvance = computed(() => activeValue().trim().length >= PIN_MIN_DIGITS);
 
 function press(d: string) {
   localError.value = "";
@@ -51,7 +51,6 @@ function press(d: string) {
 function backspace() {
   setActive(activeValue().slice(0, -1));
 }
-
 function advance() {
   if (!canAdvance.value || props.busy) return;
   localError.value = "";
@@ -93,79 +92,50 @@ const shownError = computed(() => localError.value || props.error || "");
 </script>
 
 <template>
-  <div>
-    <div class="mb-4 flex items-center gap-2">
-      <Icon name="lucide:key-round" class="size-5 text-muted-foreground" />
-      <h2 class="text-lg font-bold">
-        {{ forced ? "Defina um novo PIN" : "Trocar meu PIN" }}
-      </h2>
-    </div>
-    <p class="mb-3 text-sm text-muted-foreground">
-      <template v-if="forced">
-        O gerente resetou seu PIN. Digite o PIN temporário e escolha um novo
-        antes de operar.
-      </template>
-      <template v-else>
-        {{ operatorName }} — informe o PIN atual e escolha um novo.
-      </template>
-    </p>
+  <div class="grid gap-5 [@media(max-height:43.75rem)]:gap-3">
+    <!-- Mesmo cabeçalho da trava (cadeado → chave): centrado, título e a
+         linha que diz o que fazer. -->
+    <header class="grid justify-items-center gap-3 text-center">
+      <NuxtAvatar size="3xl" icon="i-lucide-key-round" alt="" class="[@media(max-height:43.75rem)]:hidden" />
+      <div class="grid gap-1">
+        <h2 class="text-lg font-semibold">
+          {{ forced ? "Defina um novo PIN" : "Trocar meu PIN" }}
+        </h2>
+        <p class="text-sm text-muted-foreground">
+          {{
+            forced
+              ? "O gerente redefiniu seu PIN. Digite o PIN temporário e escolha um novo antes de operar."
+              : `${operatorName}, informe o PIN atual e escolha um novo.`
+          }}
+        </p>
+      </div>
+    </header>
 
-    <button
-      type="button"
-      class="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      @click="back"
-    >
-      <Icon name="lucide:chevron-left" class="size-4" />
-      {{ step === "current" ? "Cancelar" : "Voltar" }}
-    </button>
+    <OperatorPinPad
+      :key="step"
+      :pin="activeValue()"
+      :label="label"
+      :error="shownError"
+      :can-submit="canAdvance"
+      :busy="busy"
+      :submit-icon="step === 'confirm' ? 'i-lucide-check' : 'i-lucide-arrow-right'"
+      :submit-label="step === 'confirm' ? 'Confirmar o novo PIN' : 'Continuar'"
+      keyboard
+      @digit="press"
+      @backspace="backspace"
+      @submit="advance"
+    />
 
-    <p class="mb-2 text-sm font-semibold">{{ label }}</p>
-    <div
-      class="mb-2 flex h-10 items-center justify-center rounded-md border bg-background text-3xl tracking-[0.4em] tabular-nums"
-    >
-      {{ "•".repeat(activeValue().length) || "—" }}
-    </div>
-    <p v-if="shownError" class="mb-2 text-sm font-medium text-destructive">
-      {{ shownError }}
-    </p>
-
-    <div class="grid grid-cols-3 gap-2">
-      <button
-        v-for="d in ['1', '2', '3', '4', '5', '6', '7', '8', '9']"
-        :key="d"
-        type="button"
-        class="rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
-        @click="press(d)"
-      >
-        {{ d }}
-      </button>
-      <button
-        type="button"
-        aria-label="Apagar o último dígito"
-        class="rounded-lg border bg-background py-3 text-sm transition hover:bg-accent"
-        @click="backspace"
-      >
-        <Icon name="lucide:delete" class="mx-auto size-5" />
-      </button>
-      <button
-        type="button"
-        class="rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
-        @click="press('0')"
-      >
-        0
-      </button>
-      <button
-        type="button"
-        :disabled="!canAdvance || busy"
-        :aria-label="step === 'confirm' ? 'Confirmar o novo PIN' : 'Continuar'"
-        class="rounded-lg border border-transparent bg-primary py-3 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-        @click="advance"
-      >
-        <Icon
-          :name="step === 'confirm' ? 'lucide:check' : 'lucide:arrow-right'"
-          class="mx-auto size-5"
-        />
-      </button>
+    <!-- Na troca forçada não há o que cancelar no primeiro passo: sem PIN novo
+         não se opera, e um "Cancelar" que não faz nada mentiria. -->
+    <div v-if="!(forced && step === 'current')" class="flex justify-center">
+      <NuxtButton
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-chevron-left"
+        :label="step === 'current' ? 'Cancelar' : 'Voltar'"
+        @click="back"
+      />
     </div>
   </div>
 </template>

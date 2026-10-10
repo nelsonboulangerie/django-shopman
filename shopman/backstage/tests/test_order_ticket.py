@@ -694,3 +694,28 @@ def test_o_papel_se_chama_ficha_do_pedido_e_nunca_comprovante(shop):
 
     assert "Ficha do pedido" in [linha.strip() for linha in linhas]
     assert not any("Comprovante de pedido" in linha for linha in linhas)
+
+
+# ── Uma via por volume ────────────────────────────────────────────────────
+
+_CORTE = bytes([0x1D, ord("V"), 1])
+
+
+def test_com_mais_de_um_volume_sai_uma_via_por_volume_com_volume_k_de_n(shop):
+    """Quem embalou declarou 3 volumes: cada sacola leva a sua via ("Volume k de 3")."""
+    papel = tickets.ticket_bytes(_order("ORD-VOL3", volumes=3))
+    linhas = [linha.strip() for linha in _linhas(papel)]
+    assert [linha for linha in linhas if linha.startswith("Volume ")] == [
+        "Volume 1 de 3", "Volume 2 de 3", "Volume 3 de 3",
+    ]
+    # Três papéis inteiros: três cortes, três cabeçalhos.
+    assert papel.count(_CORTE) == 3
+    assert _texto(papel).count("Ficha do pedido") == 3
+
+
+@pytest.mark.parametrize("volumes", [None, 1])
+def test_sem_volumes_ou_com_um_so_sai_uma_via_sem_a_linha_de_volume(shop, volumes):
+    extra = {} if volumes is None else {"volumes": volumes}
+    papel = tickets.ticket_bytes(_order(f"ORD-VOL-{volumes}", **extra))
+    assert "Volume " not in _texto(papel)
+    assert papel.count(_CORTE) == 1

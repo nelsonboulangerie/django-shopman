@@ -42,7 +42,7 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
         raise OrderError(str(exc)) from exc
 
 
-def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None, expected_revision=None, target_status=None, trip_ref: str | None = None):
+def advance_order(order, *, actor: str, operator=None, change_out_raw: str | None = None, equipment=None, expected_revision=None, target_status=None, trip_ref: str | None = None, expedite_only: bool = False):
     """Avança o pedido; no despacho de entrega em dinheiro, leva o troco da gaveta.
 
     ``change_out_raw`` é o valor que o entregador leva (texto em reais; vazio é
@@ -76,6 +76,7 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
         return operator_orders.advance_order(
             order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or []),
             expected_revision=expected_revision, target_status=target_status, trip_ref=trip_ref or None,
+            undo_window=True, expedite_only=expedite_only,
         )
     except OrderStateConflict as exc:
         raise OrderConflict(str(exc)) from exc
@@ -203,6 +204,28 @@ def courier_returned(order, *, actor: str, expected_revision=None):
         raise OrderConflict(str(exc)) from exc
     except CashError as exc:
         raise OrderError(exc.message) from exc
+    except (ValueError, InvalidTransition) as exc:
+        raise OrderError(str(exc)) from exc
+
+
+def undo_handoff(order, *, token: str, actor: str):
+    """Desfazer de Entregar/Despachar, dentro da janela (``order_undo``)."""
+    from shopman.shop.services import order_undo
+
+    try:
+        order_undo.undo_handoff(order, token=token, actor=actor)
+    except order_undo.UndoRefused as exc:
+        raise OrderConflict(str(exc)) from exc
+
+
+def undo_auto_ready(order, *, token: str, actor: str, expected_revision=None):
+    """Desfazer do pronto automático: reabre o ticket e volta o pedido ao preparo."""
+    from shopman.shop.services import order_undo
+
+    try:
+        order_undo.undo_auto_ready(order, token=token, actor=actor, expected_revision=expected_revision)
+    except (order_undo.UndoRefused, OrderStateConflict) as exc:
+        raise OrderConflict(str(exc)) from exc
     except (ValueError, InvalidTransition) as exc:
         raise OrderError(str(exc)) from exc
 
@@ -365,6 +388,15 @@ def save_kitchen_note(order, *, notes: str, expected_revision=None, actor="syste
     return operator_orders.save_kitchen_note(order, notes=notes, expected_revision=expected_revision, actor=actor)
 
 
+def save_volumes(order, *, volumes, expected_revision=None, actor="system", surface="orders"):
+    try:
+        return operator_orders.save_volumes(order, volumes=volumes, expected_revision=expected_revision, actor=actor, surface=surface)
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except ValueError as exc:
+        raise OrderError(str(exc)) from exc
+
+
 def assign_order(order, *, operator_id: int, operator_name: str, actor: str, expected_revision=None):
     return operator_orders.assign_order(
         order, operator_id=operator_id, operator_name=operator_name, actor=actor, expected_revision=expected_revision
@@ -471,7 +503,7 @@ def courier_quote(order) -> dict:
     estimate = courier.estimate_for_order(order, store=False)
     if estimate is None:
         raise OrderError(
-            "Cotação indisponível — verifique o endereço do pedido e a "
+            "Cotação indisponível. Verifique o endereço do pedido e a "
             "conexão com a central de entregas."
         )
     return {

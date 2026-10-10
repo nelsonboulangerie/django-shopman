@@ -54,6 +54,11 @@ const CARD = {
   awaiting_work_orders: [],
   confirmation_deadline_iso: "",
   confirmation_action: "confirm",
+  // A Fila (V4-G4): o fato humano que o pedido espera e a meta da etapa.
+  attention: "start",
+  attention_since_iso: new Date(Date.now() - 3 * 60_000).toISOString(),
+  goal_minutes: 5,
+  goal_label: "meta 5",
 };
 
 const QUEUE = {
@@ -72,6 +77,8 @@ const QUEUE = {
       payment_method: "link",
       advance_block_label: "Aguardando pagamento",
       advance_block_reason: "O pagamento ainda não foi capturado.",
+      attention: "blocked",
+      attention_since_iso: new Date(Date.now() - 8 * 60_000).toISOString(),
     }, {
       ...CARD,
       ref: "IFOOD-SCHEDULED",
@@ -94,6 +101,10 @@ const QUEUE = {
       next_status: "",
       advance_block_label: "Aguardando horário iFood",
       advance_block_reason: "O horário de preparo do iFood ainda não permite avançar.",
+      attention: "",
+      attention_since_iso: "",
+      goal_minutes: 0,
+      goal_label: "",
     }],
     expedition_pickup: [],
     expedition_delivery: [],
@@ -102,6 +113,14 @@ const QUEUE = {
     expedition_count: 0,
     total_count: 3,
     ifood_negotiation_orders: [],
+    awareness: {
+      system_actions: [{ order_ref: "WEB-20260625-0003", verb: "Aceito", reason: "prazo de confirmação", at_iso: new Date().toISOString(), at_display: "21:52", undo_action: "", undo_until_iso: "" }],
+      system_window_minutes: 15,
+      menu_outages: [{ sku: "BICHON", name: "Bichon au Citron", reason: "sold_out", line: "Bichon au Citron esgotado", detail: "fora de Loja online e iFood desde 21:40" }],
+      menu_outages_more: 0,
+      menu_channels: [{ ref: "ifood", name: "iFood", active: true, line: "iFood recebendo pedidos", focus_path: "/feeds?focus=ifood" }],
+      can_open_channels: false,
+    },
   },
 };
 

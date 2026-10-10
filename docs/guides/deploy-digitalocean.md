@@ -30,7 +30,14 @@ derivado do spec vivo (ingress host-based: `www.nelsonboulangerie.com.br` → lo
 Nuxt, API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
 `.do/app.subdomains.yaml` (trocar `STORE_DOMAIN`). Ambos definem:
 
-- `web`: Daphne ASGI em `config.asgi:application`;
+- `web-operator` e `web-storefront`: o MESMO Django (imagem `web`, Daphne ASGI em
+  `config.asgi:application`) em dois services, divididos só pelo ingress do `api.`:
+  `/api/v1/backstage/` e o resto do host (Admin, SSE `/events/`, webhooks, menuboard)
+  vão ao `web-operator`, em instância dedicada (`apps-d-1vcpu-2gb`); `/api/v1/` (a API
+  da loja) vai ao `web-storefront`, compartilhado (`apps-s-1vcpu-1gb`). Um pico na loja
+  não tira CPU do balcão. Sessão, CSRF, `ALLOWED_HOSTS` e o fanout do SSE são do app,
+  iguais nos dois; os BFFs seguem em `https://api.<domínio>`. Trava:
+  `shopman/shop/tests/test_do_spec_django_split.py`;
 - `directive-worker`: `python manage.py process_directives --watch`;
 - `release`: job `PRE_DEPLOY` com `check --deploy`, `migration_safety` e
   migrations. O `migration_safety` roda ANTES do `migrate` e, pós-`go-live-v1`,
@@ -55,7 +62,7 @@ O deploy é por **imagens**, e o deployment é **um por run**: o workflow
 `.github/workflows/deploy-images.yml` builda no GitHub Actions só os componentes
 alterados e publica no DOCR (`registry.digitalocean.com/nelsonboulangerie/shopman`,
 tag por componente). Publicar a tag **não** dispara nada: `deploy_on_push` está
-desligado nos oito componentes de imagem do app vivo. Depois que o manifesto prova
+desligado em todos os componentes de imagem do app vivo. Depois que o manifesto prova
 que tudo foi publicado, o job `manifest` cria **um** deployment
 (`POST /v2/apps/{id}/deployments`, causa `manual`, segredo
 `DIGITALOCEAN_APP_DEPLOY_TOKEN`), espera `ACTIVE` e grava no manifesto
@@ -124,6 +131,29 @@ ocioso até o GC (bancada de 01/10: 15 ociosas depois de 100 requests; com `0`,
 zero). No Postgres pequeno sem pool isso vira `remaining connection slots are
 reserved`. Aplicado no spec vivo em 01/10/2026 (decisão D21). Com pool em modo
 transaction, mantenha `DATABASE_DISABLE_SERVER_SIDE_CURSORS=true`.
+
+**Reuso de conexão: pool do psycopg, um por processo.** Com `DATABASE_CONN_MAX_AGE=0`
+o `config/settings.py` liga o pool do psycopg (`OPTIONS["pool"]`): as conexões são do
+processo, não da thread, e voltam ao pool no fim de cada request. Antes dele, cada
+request abria conexão nova (no ar, 30 a 160 ms de TLS até o PgBouncer). Bancada local
+de 10/10 (Daphne, Postgres sem TLS, 200 requests): `/health/ready/` 9,0 → 2,6 ms e
+`/api/v1/storefront/menu/` 56 → 35 ms de média, 1 → 0 sessão nova por request.
+
+| Env | Default | Para quê |
+|---|---|---|
+| `DATABASE_POOL_MAX_SIZE` | `8` | teto de conexões por processo; `0` desliga o pool sem deploy de código |
+| `DATABASE_POOL_MIN_SIZE` | `1` | conexões mantidas abertas |
+| `DATABASE_POOL_TIMEOUT` | `10` | segundos esperando conexão livre antes do `PoolTimeout` |
+| `DATABASE_POOL_MAX_IDLE` | `300` | segundos até fechar conexão parada |
+
+Funciona com o PgBouncer em modo transaction porque o Django já desliga prepared
+statements (`prepare_threshold=None`) e usa binding no cliente. O pool não cria sessão
+SET nenhuma, então não muda o risco do `search_path` abaixo. As conexões de servidor
+continuam limitadas pelo PgBouncer (pool de 5); daqui saem só conexões de cliente.
+
+O SSE devolve a conexão depois de cada leitura (`shopman/shop/eventstream.py`). Sem
+isso, cada `EventSource` aberto segurava uma conexão a vida inteira, e com pool isso
+esgota o pool: na bancada, 8 streams levaram as 8 conexões e o 9º cliente caiu.
 
 O pool é só para a aplicação. **Cópia do banco (`pg_dump`/`pg_restore`) vai pela
 conexão direta** (porta `25060`, banco `shopman`), nunca pelo pool (`25061`): em modo

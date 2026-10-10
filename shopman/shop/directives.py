@@ -47,6 +47,10 @@ FULFILLMENT_UPDATE = "fulfillment.update"
 # Rede de segurança: auto-conclui um pedido em entrega após ETA + folga, se nem
 # o cliente ("Recebi") nem o operador ("Marcar entregue") fecharem o loop.
 DELIVERY_AUTO_COMPLETE = "delivery.auto_complete"
+# Desfazer de Entregar/Despachar: o toque do Gestor/Saída grava só o pedido de
+# saída; esta directive grava a transição quando a janela vence
+# (``services/order_undo.py``).
+ORDER_HANDOFF_COMMIT = "order.handoff_commit"
 
 # Courier (logística externa — Machine)
 # Despacho da corrida ao marcar "pronto" (retry/idempotência via Directive) e
@@ -72,6 +76,11 @@ PAYMENT_REFUND = "payment.refund"  # retry assíncrono de estorno com backoff
 # Heartbeat auto-reagendável: varre WOs started além da janela e planned
 # esquecidas, criando OperatorAlerts sem depender de tela aberta.
 PRODUCTION_LATE_CHECK = "production.late_check"
+
+# Cozinha
+# Despertador de um ticket: quando ele estoura a meta da estação e ainda está
+# nela, a gerente recebe o atraso no bolso (``services/kds_alerts.py``).
+KDS_TICKET_LATE = "kds.ticket_late"
 
 # Preorder (encomenda com data futura)
 # O trabalho físico (KDS/baixa) de um pedido para data futura só dispara NA

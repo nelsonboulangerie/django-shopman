@@ -19,6 +19,12 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.shop.observability import (
+    ServerTimingMixin,
+    capture_catalog_timing,
+    catalog_stage,
+    log_catalog_observation,
+)
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.request_memo import stock_reads_scope
 from shopman.shop.services import remote_mutations, storefront_links
@@ -26,12 +32,6 @@ from shopman.shop.services.cart import LINE_NOTES_MAX_LENGTH, CartDateMismatchEr
 from shopman.storefront.api import clean_name, clean_text
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import compare_shadow, head_age_ms, shadow_enabled
-from shopman.storefront.observability import (
-    ServerTimingMixin,
-    capture_catalog_timing,
-    catalog_stage,
-    log_catalog_observation,
-)
 from shopman.storefront.presentation import (
     build_cart,
     build_catalog,

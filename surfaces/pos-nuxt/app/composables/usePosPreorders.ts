@@ -1,6 +1,6 @@
 import type { Ref } from "vue";
 
-import { railAriaLabel, railBadge } from "~/presentation/preorders";
+import { railBadge } from "~/presentation/preorders";
 import type { PreorderDetailResponse, PreorderListResponse, PreorderSearchResponse } from "~/types/preorders";
 
 /** A leitura padrão da rota (hoje + 6): o selo da barra lateral. */
@@ -140,5 +140,5 @@ export function usePosPreordersRail() {
   );
 
   const badge = computed(() => railBadge(list.value));
-  return { allowed, badge, ariaLabel: computed(() => railAriaLabel(badge.value)) };
+  return { allowed, badge };
 }

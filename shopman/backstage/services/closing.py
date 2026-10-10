@@ -373,9 +373,11 @@ def aggregate_by_version(work_orders) -> list[dict]:
     """Fornadas agrupadas por ``(receita, versão)``, em ``Decimal``.
 
     Mesma conta do ``production_summary`` (planejado de todas as ordens;
-    concluído e perda das concluídas), mais a contagem de fornadas e a base de
-    rendimento das executadas. A soma das linhas de uma receita bate com a
-    linha dela no resumo por receita — é a mesma fonte, outra chave.
+    concluído e perda das concluídas), mais a contagem de fornadas e o previsto
+    das executadas (base do aproveitamento). A soma das linhas de uma receita
+    bate com a linha dela no resumo por receita — é a mesma fonte, outra chave.
+    ``started_assumed`` conta as executadas sem abertura declarada: o previsto
+    delas foi assumido igual ao planejado.
 
     ``work_orders`` é um queryset de ``WorkOrder``; os eventos ``started`` vêm
     num prefetch (``started_qty`` por ordem seria uma consulta por fornada).
@@ -407,6 +409,7 @@ def aggregate_by_version(work_orders) -> list[dict]:
                 "planned": zero,
                 "executed_planned": zero,
                 "executed_started": zero,
+                "started_assumed": 0,
                 "finished": zero,
                 "loss": zero,
             },
@@ -418,6 +421,9 @@ def aggregate_by_version(work_orders) -> list[dict]:
         events = getattr(wo, "_started_events", None) or []
         started = Decimal(str(events[0].payload.get("quantity", "0"))) if events else None
         base = (started or wo.quantity) or zero
+        payload = (events[0].payload or {}) if events else {}
+        if not events or payload.get("implicit") or payload.get("quantity") is None:
+            row["started_assumed"] += 1
         row["executed"] += 1
         row["executed_planned"] += wo.quantity or zero
         row["executed_started"] += base

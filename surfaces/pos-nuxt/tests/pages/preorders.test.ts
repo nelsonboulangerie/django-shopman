@@ -8,6 +8,7 @@ import PreordersPage from "~/pages/preorders/index.vue";
 import { TO_RECEIVE_CLASS } from "~/presentation/preorders";
 import type { PreorderCard, PreorderDetail, PreorderListResponse, PreorderSearchResponse } from "~/types/preorders";
 
+import { answerConfirm, useConfirmState } from "../../../operator-kit/app/composables/useConfirm";
 import { toneBadge } from "../../../operator-kit/app/presentation/orderDetail";
 
 import { makeProjection } from "../composables/_posSaleHarness";
@@ -71,6 +72,12 @@ let found: PreorderSearchResponse;
 const searched = vi.fn();
 const listed = vi.fn();
 
+// Os favoritos do balcão (o painel e a faixa de filtros rápidos): um fixado.
+registerEndpoint("/api/v1/backstage/saved-views/", () => ({
+  views: [
+    { id: 9, surface: "pos", screen: "preorders", name: "Entregas a receber", query: { filters: { fulfillment: ["delivery"], pay: ["to_receive"] } }, pinned: true },
+  ],
+}));
 registerEndpoint("/api/v1/backstage/pos/preorders/", (event) => {
   listed(event.path);
   return week;
@@ -190,7 +197,7 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
     detail.counter.ticket_printed = true;
     const wrapper = await mount(DetailPage);
     const button = wrapper.find("[data-preorder-print]");
-    expect(button.text()).toBe("Imprimir a Via Pedido de novo");
+    expect(button.text()).toBe("Imprimir 2ª via");
     await button.trigger("click");
     await flushPromises();
     expect(printOne).toHaveBeenCalledWith("NB-7");
@@ -519,8 +526,8 @@ describe("Detalhe — o painel do Balcão (S5 do redesenho)", () => {
     expect(zone.classes()).toContain("border-t");
     expect(panel.element.lastElementChild).toBe(zone.element);
     const cancel = zone.find("[data-preorder-cancel]");
-    expect(cancel.classes()).toContain("text-destructive");
-    expect(cancel.classes()).not.toContain("border");
+    expect(cancel.classes()).toContain("text-error");
+    expect(cancel.classes()).not.toContain("ring");
   });
 
   it("Comentar no painel leva ao campo do histórico, que continua do kit", async () => {
@@ -559,14 +566,49 @@ describe("Detalhe — o painel do Balcão (S5 do redesenho)", () => {
 const refsIn = (wrapper: { findAll: (s: string) => { attributes: (n: string) => string | undefined }[] }) =>
   wrapper.findAll("[data-preorder]").map((c) => c.attributes("data-preorder"));
 
-/** "Filtrar" → a dimensão: o segundo passo da barra, com as opções e a contagem. */
-async function pickFilter(wrapper: Awaited<ReturnType<typeof mount>>, dimension: string) {
-  await wrapper.find("[data-filter-trigger]").trigger("click");
-  await wrapper.find(`[data-filter-dimension="${dimension}"]`).trigger("click");
+type Mounted = Awaited<ReturnType<typeof mount>>;
+type HeaderAction = { label: string; disabled?: boolean; reason?: string; onSelect?: () => void };
+
+/** O cabeçalho do kit, com as ações declaradas como dados (o ⋯ "Mais ações"). */
+function header(wrapper: Mounted) {
+  return wrapper.findComponent({ name: "OperatorPageHeader" });
 }
 
-async function typeSearch(wrapper: Awaited<ReturnType<typeof mount>>, value: string) {
-  await wrapper.find("[data-preorders-search]").setValue(value);
+/** A ação do ⋯ que começa com o rótulo (o lote das Vias Pedido, Atualizar). */
+function headerAction(wrapper: Mounted, label: string | RegExp): HeaderAction | undefined {
+  const actions = (header(wrapper).props("actions") ?? []) as HeaderAction[];
+  return actions.find((action) => (typeof label === "string" ? action.label === label : label.test(action.label)));
+}
+
+/** O lote das Vias Pedido no ⋯ (o rótulo diz quantas). */
+function printAction(wrapper: Mounted): HeaderAction | undefined {
+  return headerAction(wrapper, /Via Pedido|vias impressas|via para imprimir/);
+}
+
+/** O painel de filtros único da suíte. */
+function panel(wrapper: Mounted) {
+  return wrapper.findComponent({ name: "OperatorFilterPanel" });
+}
+
+/** O painel devolve o recorte (o que um toque num filtro rápido ou completo faz). */
+async function setPanel(wrapper: Mounted, filters: Record<string, string[]>) {
+  panel(wrapper).vm.$emit("update:modelValue", filters);
+  await flushPromises();
+}
+
+/** A faixa de filtros rápidos (os recortes de todo dia, num toque). */
+function quick(wrapper: Mounted) {
+  return wrapper.find("[data-page-header-filters] [data-preorders-quick]");
+}
+
+/** Os recortes ativos que o cabeçalho mostra como chips (no celular) e o painel (na mesa). */
+function activeLabels(wrapper: Mounted): string[] {
+  return ((header(wrapper).props("activeFilters") ?? []) as { label: string }[]).map((filter) => filter.label);
+}
+
+/** "Cliente veio buscar": o que se digita na busca da tela. */
+async function typeSearch(wrapper: Mounted, value: string) {
+  wrapper.findComponent({ name: "OperatorSuiteSearch" }).vm.$emit("update:modelValue", value);
   await new Promise((resolve) => setTimeout(resolve, 300));
   await flushPromises();
   await flushPromises();
@@ -596,6 +638,16 @@ describe("Encomendas — a semana no centro", () => {
     expect(grid.find('[data-preorder="NB-8"] [data-preorder-printed]').exists()).toBe(true);
     expect(grid.find('[data-preorder="NB-7"] [data-preorder-printed]').exists()).toBe(false);
     expect(grid.find('[data-preorder="NB-7"]').attributes("href")).toBe("/preorders/NB-7");
+  });
+
+  it("o nome de quem encomendou nunca se corta: quebra linha na coluna estreita", async () => {
+    const wrapper = await mount(PreordersPage);
+    const names = wrapper.find("[data-week-grid]").findAll("[data-preorder-name]");
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(name.classes()).not.toContain("truncate");
+      expect(name.classes()).toContain("break-words");
+    }
   });
 
   it("hoje tem destaque e diz o dia da semana, com 'Hoje' uma vez só", async () => {
@@ -634,20 +686,22 @@ describe("Encomendas — a semana no centro", () => {
 });
 
 describe("Encomendas — um controle por estado, uma porta por destino", () => {
-  it("R1: Dia | Semana mora só no Período; a barra do topo não tem abas", async () => {
+  it("R1: Dia | Semana mora só no Período; o cabeçalho do topo não tem abas", async () => {
     const wrapper = await mount(PreordersPage);
-    const bar = wrapper.find("[data-operator-app-bar]");
+    const bar = wrapper.find("[data-operator-page-header]");
     expect(bar.exists()).toBe(true);
     expect(bar.find("nav").exists()).toBe(false);
     expect(bar.findAll("[data-section]")).toHaveLength(0);
     expect(wrapper.find("[data-period-next]").exists()).toBe(true);
   });
 
-  it("R2: a barra diz 'Encomendas' sem ser segundo link para a seção (a porta é o rail)", async () => {
+  it("R2: o cabeçalho diz 'Encomendas' sem ser segundo link para a seção (a porta é o rail)", async () => {
     const wrapper = await mount(PreordersPage);
-    const bar = wrapper.find("[data-operator-app-bar]");
-    expect(bar.find("[data-preorders-title]").text()).toBe("Encomendas");
-    expect(bar.findAll("a")).toHaveLength(0);
+    const bar = wrapper.find("[data-operator-page-header]");
+    expect(bar.find("h1").text()).toBe("Encomendas");
+    // O único link possível ali é o selo do app no celular, que volta à Central.
+    expect(bar.findAll("a").filter((a) => a.attributes("data-page-header-app") === undefined)).toHaveLength(0);
+    expect(bar.find('a[href="/preorders"]').exists()).toBe(false);
   });
 
   it("R3: o 'A receber' tem a mesma frase e o mesmo peso no período, no dia e na encomenda", async () => {
@@ -692,7 +746,8 @@ describe("Encomendas — um controle por estado, uma porta por destino", () => {
       const page = await mount(DetailPage);
       expect(page.find("[data-preorder-situation]").text()).toBe(label);
     }
-  });
+    // Sete detalhes montados em sequência: o teto padrão (5 s) é curto com a suíte inteira rodando.
+  }, 20_000);
 });
 
 describe("Encomendas — o dia", () => {
@@ -707,104 +762,137 @@ describe("Encomendas — o dia", () => {
 });
 
 describe("Encomendas — filtros e o lote das vias que faltam", () => {
-  it("filtros numa linha, combináveis e com contagem; o filtro vai para a URL e muda a lista", async () => {
+  it("os recortes de todo dia: UM toque, com a contagem, na faixa de filtros rápidos (P1 de 02/10)", async () => {
     const wrapper = await mount(PreordersPage);
-    // Os recortes e o lote moram na MESMA linha, dentro do quadro do período.
-    const row = wrapper.find("[data-preorders-filters]");
-    expect(row.find("[data-preorders-print]").exists()).toBe(true);
-    // O "Filtrar" fica para o resto: o que tem botão de um toque não se repete nele.
-    await pickFilter(wrapper, "pay");
-    expect(wrapper.findAll("[data-filter-option]").map((o) => [o.find(".truncate").text(), o.find(".tabular-nums").text()]))
-      .toEqual([["Pagas", "1"]]);
-    await wrapper.find("[data-filter-back]").trigger("click");
-    expect(wrapper.find('[data-filter-dimension="fulfillment"]').exists()).toBe(false);
-    await wrapper.find("[data-filter-trigger]").trigger("click");
-    // Entregas é um toque só (P1), e o botão apertado é o que diz o recorte.
-    await wrapper.find('[data-preorders-shortcut="fulfillment:delivery"]').trigger("click");
+    const items = quick(wrapper).findAll("[data-quick-filter-item]");
+    expect(items.map((item) => item.attributes("data-quick-filter-item"))).toEqual(["to_receive", "unprinted", "pickup", "delivery"]);
+    expect(items.map((item) => [item.text().replace(/\d+$/, ""), item.find("[data-count-chip]").exists() ? item.find("[data-count-chip]").text() : ""]))
+      .toEqual([["A receber", "1"], ["Sem Via Pedido", "1"], ["Retiradas", "1"], ["Entregas", "1"]]);
+    // Um toque: o recorte vai para a URL, a grade filtra e o chip removível aparece.
+    await quick(wrapper).find("[data-quick-filter-item=delivery]").trigger("click");
     await flushPromises();
     expect(route.query).toEqual({ fulfillment: "delivery" });
-    expect(wrapper.find('[data-preorders-shortcut="fulfillment:delivery"]').attributes("aria-pressed")).toBe("true");
-    expect(wrapper.find('[data-filter-chip="fulfillment"]').exists()).toBe(false);
     expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-8"]);
+    expect(activeLabels(wrapper)).toEqual(["Recebimento: Entregas"]);
+    expect(quick(wrapper).find("[data-quick-filter-item=delivery]").attributes("aria-pressed")).toBe("true");
     // O card leva o recorte ao detalhe: a volta cai na semana filtrada, não na casa.
     expect(wrapper.find('[data-week-grid] [data-preorder="NB-8"]').attributes("href"))
       .toBe("/preorders/NB-8?back=%2Fpreorders%3Ffulfillment%3Ddelivery");
+    // O recorte não se esconde só no painel: ele não declara filtro rápido próprio.
+    expect(panel(wrapper).props("quick")).toEqual([]);
+  });
+
+  it("os recortes somam; Retiradas e Entregas se excluem (o tocado vence), e tocar de novo desliga", async () => {
+    const wrapper = await mount(PreordersPage);
+    // A rota entra depois de montar: a montagem do teste passa por `replace("/")`.
+    route.query = { fulfillment: "pickup" };
+    await flushPromises();
+    expect(quick(wrapper).find("[data-quick-filter-item=pickup]").attributes("aria-pressed")).toBe("true");
+    await quick(wrapper).find("[data-quick-filter-item=to_receive]").trigger("click");
+    await flushPromises();
+    expect(route.query).toEqual({ fulfillment: "pickup", pay: "to_receive" });
+    await quick(wrapper).find("[data-quick-filter-item=delivery]").trigger("click");
+    await flushPromises();
+    expect(route.query).toEqual({ fulfillment: "delivery", pay: "to_receive" });
+    await quick(wrapper).find("[data-quick-filter-item=delivery]").trigger("click");
+    await quick(wrapper).find("[data-quick-filter-item=to_receive]").trigger("click");
+    await flushPromises();
+    expect(route.query).toEqual({});
+  });
+
+  it("o painel guarda o resto, com a contagem, e os favoritos são do balcão (fixado no fim da faixa)", async () => {
+    const wrapper = await mount(PreordersPage);
+    expect(panel(wrapper).props("surface")).toBe("pos");
+    expect(panel(wrapper).props("screen")).toBe("preorders");
+    const dimensions = panel(wrapper).props("dimensions") as { id: string; options: { label: string; count: number }[] }[];
+    expect(dimensions.map((dimension) => dimension.id)).toEqual(["fulfillment", "pay", "print"]);
+    expect(dimensions.find((dimension) => dimension.id === "pay")!.options.map((option) => [option.label, option.count]))
+      .toEqual([["A receber", 1], ["Pagas", 1]]);
+    await setPanel(wrapper, { print: ["pending"] });
+    expect(route.query).toEqual({ print: "pending" });
+    // O favorito fixado entra no fim da faixa e aplica o recorte inteiro dele.
+    await vi.waitFor(() => expect(quick(wrapper).find("[data-quick-filter-favorite]").exists()).toBe(true));
+    await quick(wrapper).find("[data-quick-filter-favorite]").trigger("click");
+    await flushPromises();
+    expect(route.query).toEqual({ fulfillment: "delivery", pay: "to_receive" });
   });
 
   it("P2: o lote imprime só a via que ainda não saiu, mesmo com a impressa na tela", async () => {
     const wrapper = await mount(PreordersPage);
     // Sem recorte, as duas estão na grade: NB-8 já tem a Via Pedido, NB-7 não.
     expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-7", "NB-8"]);
-    const button = wrapper.find("[data-preorders-print]");
-    expect(button.text()).toBe("Imprimir 1 via que falta");
-    await button.trigger("click");
+    const print = printAction(wrapper)!;
+    expect(print.label).toBe("Imprimir a Via Pedido de 1 encomenda");
+    expect(print.disabled).toBe(false);
+    print.onSelect!();
     await flushPromises();
     expect(printBatch).toHaveBeenCalledWith({ date_from: "2026-09-26", date_to: "2026-10-02", refs: ["NB-7"] });
   });
 
   it("'Sem Via Pedido' mostra só o que não saiu, e o lote leva as mesmas", async () => {
     const wrapper = await mount(PreordersPage);
-    // "Falta imprimir" é o botão de um toque "Sem Via Pedido" (P1): o mesmo `?print=pending`.
-    await wrapper.find('[data-preorders-shortcut="print:pending"]').trigger("click");
-    await flushPromises();
+    await setPanel(wrapper, { print: ["pending"] });
     expect(route.query).toEqual({ print: "pending" });
     expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-7"]);
-    const button = wrapper.find("[data-preorders-print]");
-    expect(button.text()).toBe("Imprimir 1 via que falta");
-    await button.trigger("click");
+    const print = printAction(wrapper)!;
+    expect(print.label).toBe("Imprimir a Via Pedido de 1 encomenda");
+    print.onSelect!();
     await flushPromises();
     expect(printBatch).toHaveBeenCalledWith({ date_from: "2026-09-26", date_to: "2026-10-02", refs: ["NB-7"] });
   });
 
-  it("P2: com todas as vias impressas o lote não reimprime, e o botão desligado diz por quê", async () => {
+  it("P2: com todas as vias impressas o lote não reimprime, e a ação desligada diz o que há", async () => {
     week.days[0]!.orders[0] = card({ ticket_printed: true });
     const wrapper = await mount(PreordersPage);
-    const button = wrapper.find("[data-preorders-print]");
-    expect(button.text()).toBe("Todas as vias impressas");
-    expect(button.attributes("disabled")).toBeDefined();
-    await button.trigger("click");
-    await flushPromises();
-    expect(printBatch).not.toHaveBeenCalled();
+    const print = printAction(wrapper)!;
+    expect(print.label).toBe("Todas as vias impressas");
+    expect(print.disabled).toBe(true);
   });
 
-  it("filtro que esvazia a semana diz o que não há; limpar é gesto da barra, e só dela", async () => {
+  it("filtro que esvazia a semana diz o que não há; limpar é gesto do painel, e só dele", async () => {
     const wrapper = await mount(PreordersPage);
     route.query.pay = "on_account";
     await flushPromises();
     const empty = wrapper.find("[data-preorders-filter-empty]");
     expect(empty.text()).toContain("Nenhuma encomenda com estes filtros nesta semana.");
-    // R5: o vazio não repete o "limpar" da barra (antes: um "Mostrar todas" aqui).
+    // R5: o vazio não repete o "limpar" do painel (antes: um "Mostrar todas" aqui).
     expect(empty.find("button").exists()).toBe(false);
-    expect(wrapper.find('[data-filter-chip="pay"] [data-filter-remove]').exists()).toBe(true);
-    expect(wrapper.find("[data-preorders-print]").text()).toBe("Nenhuma via para imprimir");
+    expect(activeLabels(wrapper)).toEqual(["Pagamento: Na conta da casa"]);
+    expect(printAction(wrapper)!.label).toBe("Nenhuma via para imprimir");
   });
 
-  it("pagamento a conferir ganha aviso próprio", async () => {
+  it("pagamento a conferir ganha aviso da tela, com o gesto de ver só elas", async () => {
     week.days[0]!.orders.push(card({ ref: "NB-9", payment_state: "check", balance_q: null, situation: "check_payment" }));
     const wrapper = await mount(PreordersPage);
-    expect(wrapper.find("[data-preorders-check-notice]").text()).toContain("1 encomenda está com o pagamento a conferir");
+    const alerts = header(wrapper).props("alerts") as { title: string; color: string; action?: { label: string } }[];
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.title).toContain("1 encomenda está com o pagamento a conferir");
+    expect(alerts[0]!.color).toBe("warning");
+    expect(alerts[0]!.action?.label).toBe("Mostrar só essas");
+    expect(wrapper.find("[data-page-header-alert]").text()).toContain("pagamento a conferir");
   });
 
   it("'Mostrar só essas' liga o recorte, e a volta é o X do chip: o aviso não vira segundo 'limpar'", async () => {
     week.days[0]!.orders.push(card({ ref: "NB-9", payment_state: "check", balance_q: null, situation: "check_payment" }));
     const wrapper = await mount(PreordersPage);
-    await wrapper.find("[data-preorders-check-only]").trigger("click");
+    const [alert] = header(wrapper).props("alerts") as { action: { onSelect: () => void } }[];
+    alert!.action.onSelect();
     await flushPromises();
     expect(route.query).toEqual({ pay: "check" });
-    expect(wrapper.find("[data-preorders-check-notice]").exists()).toBe(false);
-    expect(wrapper.find('[data-filter-chip="pay"]').text()).toContain("A conferir");
+    expect(header(wrapper).props("alerts")).toEqual([]);
+    expect(activeLabels(wrapper)).toEqual(["Pagamento: A conferir"]);
     expect(wrapper.text()).not.toContain("Mostrar todas");
   });
 });
 
 describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
-  it("o Período mora na barra da seção, e sai durante a busca", async () => {
+  it("o Período mora na toolbar da seção, e sai durante a busca", async () => {
     const wrapper = await mount(PreordersPage);
-    const bar = wrapper.find("[data-operator-app-bar]");
-    expect(bar.find("[data-period-picker]").exists()).toBe(true);
     expect(wrapper.findAll("[data-period-picker]")).toHaveLength(1);
+    expect(wrapper.find("[data-page-header-filters] [data-period-picker]").exists()).toBe(true);
     await typeSearch(wrapper, "Ana");
     expect(wrapper.find("[data-period-picker]").exists()).toBe(false);
+    expect(panel(wrapper).exists()).toBe(false);
   });
 
   it("a linha 'Hoje': para entregar, a receber e as vias que faltam, com o peso do 'A receber'", async () => {
@@ -848,23 +936,6 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
     expect(wrapper.find("[data-preorders-today]").exists()).toBe(true);
   });
 
-  it("os recortes de todo dia são um toque, e outro toque desliga", async () => {
-    const wrapper = await mount(PreordersPage);
-    const shortcuts = wrapper.find("[data-preorders-shortcuts]");
-    expect(shortcuts.findAll("button").map((b) => b.text().replace(/\s+/g, " ")))
-      .toEqual(["A receber 1", "Sem Via Pedido 1", "Retiradas 1", "Entregas 1"]);
-    await wrapper.find('[data-preorders-shortcut="pay:to_receive"]').trigger("click");
-    await flushPromises();
-    expect(route.query).toEqual({ pay: "to_receive" });
-    expect(refsIn(wrapper.find("[data-week-grid]"))).toEqual(["NB-7"]);
-    // A volta do detalhe cai no recorte.
-    expect(wrapper.find('[data-week-grid] [data-preorder="NB-7"]').attributes("href"))
-      .toBe("/preorders/NB-7?back=%2Fpreorders%3Fpay%3Dto_receive");
-    await wrapper.find('[data-preorders-shortcut="pay:to_receive"]').trigger("click");
-    await flushPromises();
-    expect(route.query).toEqual({});
-  });
-
   it("a linha da encomenda: a janela primeiro, o número e os itens, e 'Via impressa' escrita", async () => {
     const wrapper = await mount(PreordersPage);
     const ana = wrapper.find('[data-week-grid] [data-preorder="NB-7"]');
@@ -892,17 +963,21 @@ describe("Encomendas: a tela da seção (S3 do redesenho)", () => {
 });
 
 describe("Encomendas — Cliente veio buscar", () => {
-  it("o campo está no topo, com a frase que diz o que se pode procurar", async () => {
+  it("é a busca da tela no cabeçalho, com a frase que diz o que se pode procurar", async () => {
     const wrapper = await mount(PreordersPage);
-    const field = wrapper.find("[data-preorders-search]");
-    // O título diz a tarefa; o campo diz o que se digita, sem repetir o título.
-    expect(wrapper.find("#preorders-search-title").text()).toBe("Cliente veio buscar?");
-    expect(field.attributes("placeholder")).toBe("Nome, telefone, CPF ou CNPJ, endereço ou número do pedido");
-    expect(field.attributes("placeholder")).not.toContain("Cliente veio buscar");
+    const search = wrapper.findComponent({ name: "OperatorSuiteSearch" });
+    // A busca da suíte com o alcance "Esta tela" (`v-model`): uma busca só no cabeçalho.
+    expect(wrapper.findAllComponents({ name: "OperatorSuiteSearch" })).toHaveLength(1);
+    expect(search.props("modelValue")).toBe("");
+    expect(search.props("placeholder")).toBe("Nome, telefone, CPF ou CNPJ, endereço ou número do pedido");
+    expect(search.props("ariaLabel")).toBe("Procurar encomenda por nome, telefone, CPF ou CNPJ, endereço ou número do pedido");
+    expect(wrapper.find("[data-page-header-search] [data-suite-search]").exists()).toBe(true);
     // "Incluir concluídas" só vale para a busca: sem busca digitada, não aparece.
     expect(wrapper.find("[data-preorders-include-completed]").exists()).toBe(false);
     await typeSearch(wrapper, "Ana");
-    expect(wrapper.find("[data-preorders-include-completed]").attributes("aria-checked")).toBe("false");
+    expect(wrapper.find("[data-preorders-include-completed]").exists()).toBe(true);
+    // O alcance "Esta tela" diz quantas a tela achou.
+    expect(wrapper.findComponent({ name: "OperatorSuiteSearch" }).props("screenCount")).toBe(1);
   });
 
   it("digitar troca o período pelo resultado em aberto, e a busca vai para a URL", async () => {
@@ -931,8 +1006,10 @@ describe("Encomendas — Cliente veio buscar", () => {
     };
     const wrapper = await mount(PreordersPage);
     await typeSearch(wrapper, "Ana");
-    await wrapper.find("[data-preorders-include-completed]").trigger("click");
+    const toggle = wrapper.find("[data-preorders-include-completed]");
+    await (toggle.element.matches("button") ? toggle : toggle.find("button")).trigger("click");
     await flushPromises();
+    expect(route.query).toEqual({ q: "Ana", completed: "1" });
     expect(refsIn(wrapper.find('[data-preorders-results="open"]'))).toEqual(["NB-7"]);
     const completed = wrapper.find('[data-preorders-results="completed"]');
     expect(completed.find("h2").text()).toBe("1 concluída nos últimos 30 dias");
@@ -942,8 +1019,17 @@ describe("Encomendas — Cliente veio buscar", () => {
   it("um resultado só: Enter abre o detalhe, e a volta cai de novo na busca", async () => {
     const wrapper = await mount(PreordersPage);
     await typeSearch(wrapper, "Ana");
-    await wrapper.find("[data-preorders-search]").trigger("keydown", { key: "Enter" });
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     expect(navigate).toHaveBeenCalledWith("/preorders/NB-7?back=%2Fpreorders%3Fq%3DAna");
+  });
+
+  it("leitor de código com o foco fora de campo: a leitura vira a busca da tela", async () => {
+    const wrapper = await mount(PreordersPage);
+    for (const key of "NB-7") document.body.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await flushPromises();
+    expect(wrapper.findComponent({ name: "OperatorSuiteSearch" }).props("modelValue")).toBe("NB-7");
+    expect(route.query).toEqual({ q: "NB-7" });
   });
 });
 
@@ -957,11 +1043,146 @@ describe("Encomendas — Nova encomenda (S9, P6 do dono)", () => {
     expect(navigate).toHaveBeenCalledWith({ path: "/", query: { new: "order" } });
   });
 
-  it("a porta fica ao lado da busca e não sai durante ela: quem não achou a encomenda anota uma nova", async () => {
+  it("a porta é a ação primária do cabeçalho e não sai durante a busca: quem não achou a encomenda anota uma nova", async () => {
     const wrapper = await mount(PreordersPage);
-    const search = wrapper.find("[data-preorders-search-block]");
-    expect(search.element.parentElement?.contains(wrapper.find("[data-preorders-new]").element)).toBe(true);
+    expect(wrapper.find("[data-page-header-actions] [data-preorders-new]").exists()).toBe(true);
     await typeSearch(wrapper, "Ana");
     expect(wrapper.find("[data-preorders-new]").exists()).toBe(true);
+  });
+});
+
+describe("Encomendas: a arrumação do balcão (OBS0310-D)", () => {
+  afterEach(() => {
+    try { localStorage.clear(); } catch { /* sem armazenamento no ambiente */ }
+    answerConfirm(false);
+  });
+
+  it("de cima para baixo: o cabeçalho (busca, Nova encomenda, ⋯), a toolbar (recortes, período, filtros, grade/lista, Hoje) e os cards", async () => {
+    const wrapper = await mount(PreordersPage);
+    const toolbar = wrapper.find("[data-page-header-filters]");
+    expect(toolbar.find("[data-period-picker]").exists()).toBe(true);
+    expect(toolbar.find("[data-operator-filter-panel-root]").exists()).toBe(true);
+    expect(toolbar.findAll("[data-preorders-layout-option]").map((b) => b.attributes("aria-label"))).toEqual(["Ver em grade", "Ver em lista"]);
+    expect(toolbar.find("[data-preorders-today]").exists()).toBe(true);
+    // O lote e Atualizar moram no ⋯ (agem sobre a tela inteira).
+    expect(printAction(wrapper)).toBeDefined();
+    expect(headerAction(wrapper, "Atualizar")).toBeDefined();
+    const html = wrapper.html();
+    const order = ["data-page-header-search", "data-preorders-new", "data-preorders-quick", "data-period-picker", "data-operator-filter-panel-root", "data-preorders-today", "data-week-board"]
+      .map((marker) => html.indexOf(marker));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("no celular, 'Ler código da encomenda' é a ação na base (a peça do kit)", async () => {
+    const wrapper = await mount(PreordersPage);
+    const bar = wrapper.find("[data-operator-action-bar]");
+    expect(bar.exists()).toBe(true);
+    expect(bar.text()).toContain("Ler código da encomenda");
+    expect(bar.classes()).toContain("lg:hidden");
+  });
+
+  it("grade ou lista: a semana vira um dia embaixo do outro, e a escolha fica no dispositivo", async () => {
+    const wrapper = await mount(PreordersPage);
+    const grid = wrapper.find('[data-preorders-layout-option="grid"]');
+    expect(grid.attributes("aria-pressed")).toBe("true");
+    expect(wrapper.find("[data-week-grid]").exists()).toBe(true);
+    await wrapper.find('[data-preorders-layout-option="list"]').trigger("click");
+    expect(wrapper.find('[data-preorders-layout-option="list"]').attributes("aria-pressed")).toBe("true");
+    expect(wrapper.find("[data-week-grid]").exists()).toBe(false);
+    expect(wrapper.find("[data-week-list]").findAll("[data-week-day]")).toHaveLength(7);
+    // Arrumação não é recorte: a URL não muda.
+    expect(route.query).toEqual({});
+    expect(localStorage.getItem("pos.preordersLayout")).toBe("list");
+    const again = await mount(PreordersPage);
+    expect(again.find("[data-week-list]").exists()).toBe(true);
+  });
+
+  it("arrastar o card para outro dia pergunta no diálogo da casa e reagenda pela rota do Reagendar", async () => {
+    const wrapper = await mount(PreordersPage);
+    const ana = wrapper.find('[data-preorder-card="NB-7"]');
+    expect(ana.attributes("draggable")).toBe("true");
+    // O link não se arrasta (senão o navegador levaria o endereço, e não o card).
+    expect(ana.find('[data-preorder="NB-7"]').attributes("draggable")).toBe("false");
+    await ana.trigger("dragstart");
+    const monday = wrapper.find('[data-week-day="2026-09-28"]');
+    await monday.trigger("dragover");
+    expect(monday.attributes("data-drop-target")).toBe("over");
+    await monday.trigger("drop");
+    await flushPromises();
+    const asked = useConfirmState().pending.value;
+    expect(asked?.title).toBe("Mudar a encomenda de Ana Souza para seg, 28/09?");
+    expect(asked?.description).toBe("O cliente será avisado da nova data. O horário combinado continua: 9h às 10h.");
+    expect(asked?.confirmLabel).toBe("Mudar para seg, 28/09");
+    // Mudar de dia é ato normal: o botão na cor da casa, não o vermelho de descartar.
+    expect(asked?.tone).toBe("primary");
+    expect(call).not.toHaveBeenCalled();
+    answerConfirm(true);
+    await flushPromises();
+    expect(call).toHaveBeenCalledWith("/api/v1/backstage/orders/NB-7/reschedule/", {
+      body: expect.objectContaining({ date: "2026-09-28", slot: "slot-09", reason: "", base_revision: "rev-schedule", expected_actor_id: 7 }),
+    });
+  });
+
+  it("desistir na pergunta não muda nada", async () => {
+    const wrapper = await mount(PreordersPage);
+    await wrapper.find('[data-preorder-card="NB-7"]').trigger("dragstart");
+    const monday = wrapper.find('[data-week-day="2026-09-28"]');
+    await monday.trigger("dragover");
+    await monday.trigger("drop");
+    await flushPromises();
+    expect(useConfirmState().pending.value).not.toBeNull();
+    answerConfirm(false);
+    await flushPromises();
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("soltar no próprio dia (ou num dia que passou) não pergunta nada", async () => {
+    const wrapper = await mount(PreordersPage);
+    await wrapper.find('[data-preorder-card="NB-7"]').trigger("dragstart");
+    const same = wrapper.find('[data-week-day="2026-09-26"]');
+    await same.trigger("dragover");
+    expect(same.attributes("data-drop-target")).toBeUndefined();
+    await same.trigger("drop");
+    await flushPromises();
+    expect(useConfirmState().pending.value).toBeNull();
+  });
+
+  it("teclado e toque: o menu 'Mudar de dia' do card oferece os mesmos dias e faz o mesmo gesto", async () => {
+    const wrapper = await mount(PreordersPage);
+    const trigger = wrapper.find('[data-preorder-card="NB-7"] [data-preorder-move-menu]');
+    expect(trigger.attributes("aria-label")).toBe("Mudar de dia a encomenda de Ana Souza");
+    await trigger.trigger("click");
+    await flushPromises();
+    const options = [...document.querySelectorAll<HTMLButtonElement>("[data-preorder-move-to]")];
+    // Os outros dias da semana na tela, de hoje em diante (o próprio dia fica de fora).
+    expect(options.map((o) => o.dataset.preorderMoveTo)).toEqual(week.days.slice(1).map((d) => d.date));
+    expect(document.querySelector("[data-preorder-move-other]")?.textContent).toContain("Outra data ou horário");
+    options[2]!.click();
+    await vi.waitFor(() => expect(useConfirmState().pending.value?.title).toBe("Mudar a encomenda de Ana Souza para ter, 29/09?"));
+    answerConfirm(true);
+    await flushPromises();
+    expect(call).toHaveBeenCalledWith("/api/v1/backstage/orders/NB-7/reschedule/", {
+      body: expect.objectContaining({ date: "2026-09-29" }),
+    });
+  });
+
+  it("o que já está pronto não se arrasta nem tem o menu: a régua do Reagendar recusaria", async () => {
+    week.days[0]!.orders[0] = card({ situation: "ready", situation_label: "Pronto" });
+    const wrapper = await mount(PreordersPage);
+    const ana = wrapper.find('[data-preorder-card="NB-7"]');
+    expect(ana.attributes("draggable")).toBeUndefined();
+    expect(ana.find("[data-preorder-move-menu]").exists()).toBe(false);
+  });
+
+  it("o servidor diz que não pode: o motivo aparece e nada é perguntado", async () => {
+    detail.counter.reschedule = { ...detail.counter.reschedule, allowed: false, block_reason: "A encomenda já entrou no preparo." };
+    const wrapper = await mount(PreordersPage);
+    await wrapper.find('[data-preorder-card="NB-7"]').trigger("dragstart");
+    const monday = wrapper.find('[data-week-day="2026-09-28"]');
+    await monday.trigger("dragover");
+    await monday.trigger("drop");
+    await flushPromises();
+    expect(useConfirmState().pending.value).toBeNull();
+    expect(call).not.toHaveBeenCalled();
   });
 });

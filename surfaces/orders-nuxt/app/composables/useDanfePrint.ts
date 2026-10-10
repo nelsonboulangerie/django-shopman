@@ -29,7 +29,9 @@ export function useDanfePrint(
   const printing = ref<Set<string>>(new Set());
   const isPrinting = (ref_: string) => printing.value.has(ref_);
 
-  const hasLocalAgent = computed(() => Boolean(deviceAgent.value?.can_print && deviceAgent.value.agent_url));
+  const hasLocalAgent = computed(() =>
+    Boolean(deviceAgent.value?.can_print && deviceAgent.value.agent_url),
+  );
 
   async function printDanfe(ref_: string): Promise<boolean> {
     if (printing.value.has(ref_)) return false;
@@ -42,7 +44,12 @@ export function useDanfePrint(
           { method: "POST", body: { local_agent: hasLocalAgent.value } },
         );
       } catch (error) {
-        useSonner.error(httpErrorMessage(error, `A DANFE do pedido ${ref_} não foi impressa. Tente de novo.`));
+        useSonner.error(
+          httpErrorMessage(
+            error,
+            `A DANFE do pedido ${ref_} não foi impressa. Tente de novo.`,
+          ),
+        );
         return false;
       }
       if (job.via === "relay") {
@@ -58,10 +65,16 @@ export function useDanfePrint(
       try {
         await printWithLocalDeviceAgent(agent, job.payload_b64, job.title);
       } catch (error) {
-        useSonner.error(`A DANFE do pedido ${ref_} não saiu: ${localDeviceAgentErrorMessage(error)}`);
+        useSonner.error(
+          `A DANFE do pedido ${ref_} não saiu: ${localDeviceAgentErrorMessage(error)}`,
+        );
         return false;
       }
-      useSonner.success(job.reprint ? `DANFE do pedido ${ref_} reimpressa.` : `DANFE do pedido ${ref_} impressa.`);
+      useSonner.success(
+        job.reprint
+          ? `DANFE do pedido ${ref_} reimpressa.`
+          : `DANFE do pedido ${ref_} impressa.`,
+      );
       return true;
     } finally {
       const next = new Set(printing.value);

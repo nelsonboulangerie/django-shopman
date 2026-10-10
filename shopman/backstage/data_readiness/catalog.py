@@ -224,7 +224,7 @@ def _compare(
                 code,
                 "review",
                 field,
-                "Divergência contra a autoridade Catálogo Nelson — consolidado.",
+                "Divergência contra a autoridade Catálogo Nelson (consolidado).",
                 expected=expected,
                 observed=observed,
             )

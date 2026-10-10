@@ -187,7 +187,7 @@ def test_o_canal_proprio_imprime_a_via_identificada(canal_proprio):
     order = _pedido_da_casa("ORD-CFG-CASA")
 
     assert courier_ticket_variant(order) == "identified"
-    assert "Via do entregador - Identificada" in _papel(order)
+    assert "Via do entregador (identificada)" in _papel(order)
 
 
 def test_o_canal_de_marketplace_imprime_a_via_anonima(canal_ifood):
@@ -195,7 +195,7 @@ def test_o_canal_de_marketplace_imprime_a_via_anonima(canal_ifood):
     order = _pedido_do_ifood("IFOOD-CFG", delivered_by="IFOOD")
 
     assert courier_ticket_variant(order) == "anonymous"
-    assert "Via do entregador - Anônima" in _papel(order)
+    assert "Via do entregador (anônima)" in _papel(order)
 
 
 def test_canal_novo_escolhe_a_via_sem_tocar_em_codigo(canal_proprio):
@@ -207,7 +207,7 @@ def test_canal_novo_escolhe_a_via_sem_tocar_em_codigo(canal_proprio):
     papel = _papel(order)
 
     assert courier_ticket_variant(order) == "anonymous"
-    assert "Via do entregador - Anônima" in papel
+    assert "Via do entregador (anônima)" in papel
     assert "Rua das Flores" not in papel
 
 
@@ -251,7 +251,7 @@ def test_canal_mal_configurado_nao_vira_vazamento_de_dado_do_cliente(canal_ifood
     papel = _papel(order)
 
     assert variante == "anonymous"
-    assert "Via do entregador - Anônima" in papel
+    assert "Via do entregador (anônima)" in papel
     assert "Rua das Flores" not in papel
     assert "99911-2233" not in papel
     assert "Ana Ribeiro" not in papel
@@ -293,7 +293,7 @@ def test_o_piso_nao_castiga_a_entrega_que_e_mesmo_da_casa(canal_ifood):
     papel = _papel(order)
 
     assert courier_ticket_variant(order) == "identified"
-    assert "Via do entregador - Identificada" in papel
+    assert "Via do entregador (identificada)" in papel
     assert "Rua das Flores, 123 - Apto 42, bloco B" in papel
 
 
@@ -544,7 +544,7 @@ def test_a_via_do_entregador_nao_substitui_a_filipeta(shop):
     assert "Rua das Flores, 123 - Apto 42, bloco B" in filipeta
 
     via = _papel(order)
-    assert "Via do entregador - Identificada" in via
+    assert "Via do entregador (identificada)" in via
     assert "Ficha do pedido" not in via
 
 
@@ -580,7 +580,7 @@ def test_a_rota_entrega_os_bytes_e_carimba_a_propria_segunda_via(client, shop, g
     # A resposta DIZ qual via saiu: a tela precisa nomear o papel que o
     # operador pegou, e escolher não é dela.
     assert primeira.json()["variant"] == "identified"
-    assert primeira.json()["variant_label"] == "Via do entregador — Identificada"
+    assert primeira.json()["variant_label"] == "Via do entregador (identificada)"
     papel = base64.b64decode(primeira.json()["payload_b64"]).decode(ENCODING, "replace")
     assert "Via do entregador" in papel
     assert "2a VIA" not in papel

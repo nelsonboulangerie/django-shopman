@@ -671,7 +671,7 @@ class TestStatusColours:
 
         assert proj.pickup_fulfillments == ()
         assert proj.pickup_info is not None
-        assert proj.pickup_info.address == "Rua das Flores, 123\nCentro\nLondrina — PR"
+        assert proj.pickup_info.address == "Rua das Flores, 123\nCentro\nLondrina/PR"
         assert proj.pickup_info.directions_url is not None
         assert "destination=Rua+das+Flores%2C+123%2C+Centro%2C+Londrina" in proj.pickup_info.directions_url
 

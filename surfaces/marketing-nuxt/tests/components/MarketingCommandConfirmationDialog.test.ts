@@ -1,9 +1,8 @@
 import { mount } from "@vue/test-utils";
-import { computed, defineComponent, ref, watch } from "vue";
-import { beforeAll, describe, expect, it } from "vitest";
+import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import MarketingCommandConfirmationDialog from "~/components/MarketingCommandConfirmationDialog.vue";
 
-const SlotStub = defineComponent({ template: "<div><slot /></div>" });
 // A prévia em tamanho real é sobreposição: aqui ela vira um dublê que só publica os
 // retratos que recebeu, para que o teste possa dizer DE ONDE eles saíram.
 const simulatedPreviewScenes: unknown[][] = [];
@@ -14,16 +13,30 @@ const SimulatedPreviewStub = defineComponent({
     return () => null;
   },
 });
-const DialogStub = defineComponent({
-  props: { open: Boolean },
-  template: '<div v-if="open"><slot /></div>',
-});
+
+/** O selo (v4): uma linha por destino, o nome e a grandeza em colunas. */
+function sealRow(wrapper: { get: (selector: string) => { findAll: (s: string) => { text: () => string }[] } }, platform: string): string {
+  return wrapper
+    .get(`[data-seal-row="${platform}"]`)
+    .findAll(":scope > span")
+    .map((cell) => cell.text())
+    .join(" · ");
+}
 
 beforeAll(() => {
   Object.assign(globalThis, {
     computed,
     ref,
     watch,
+    onBeforeUnmount,
+    // Sem digital neste ambiente: o selo cai no código, como num navegador sem WebAuthn.
+    useDeviceSeal: () => ({
+      supported: ref(false),
+      busy: ref(false),
+      error: ref(""),
+      register: vi.fn(),
+      seal: vi.fn(),
+    }),
     useNuxtData: () => ({
       data: ref({ operator: { username: "admin", name: "Admin" } }),
     }),
@@ -62,12 +75,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -84,7 +91,11 @@ describe("MarketingCommandConfirmationDialog", () => {
     );
     // Uma linha por plataforma: diz que a postagem é por plataforma e que ela não
     // fala com ninguém em particular, sem obrigar ninguém a distribuir um "em cada".
-    expect(wrapper.text()).toContain("Instagram · 1 postagem");
+    expect(sealRow(wrapper, "instagram")).toBe("Instagram · 1 postagem");
+    // O selo separa o que volta (postagem) do que não volta (mensagem).
+    expect(wrapper.get("[data-seal-consequence]").text()).toBe(
+      "Postagem pode ser apagada depois, na plataforma.",
+    );
   });
 
   it("mostra O QUE vai sair antes de pedir a confirmação sem volta", () => {
@@ -128,12 +139,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -176,12 +181,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -222,18 +221,14 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
 
     expect(wrapper.text()).not.toContain("Sem foto");
-    expect(wrapper.text()).toContain("WhatsApp · 4 pessoas");
+    expect(sealRow(wrapper, "whatsapp")).toBe(
+      "WhatsApp mensagem direta · 4 clientes",
+    );
   });
 
   it("chama o efeito pelo nome, em vez de pedir para confirmar uma consequência", () => {
@@ -270,21 +265,18 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
 
     // WhatsApp sozinho é envio, e o botão diz o verbo do ato. "Disparar" fica para
     // o anúncio que faz as duas coisas, onde não existe verbo específico.
-    expect(wrapper.text()).toContain("Enviar agora");
+    // O botão diz o ato, sem "agora": o quando está na linha de cima ("Agora, às 13:20").
+    expect(wrapper.text()).toContain("Enviar");
+    expect(wrapper.text()).toContain("Agora, às");
     expect(wrapper.text()).not.toContain("Confirmar consequência");
-    expect(wrapper.text()).toContain("Depois de confirmar, não tem desfazer");
+    // A consequência sem volta, dita pelo ato (v4): "Mensagem enviada não volta."
+    expect(wrapper.text()).toContain("Mensagem enviada não volta.");
     // Nada de senha nem de frase: um destino não paga o preço de quinhentos.
     expect(wrapper.find("#decision-credential").exists()).toBe(false);
     expect(wrapper.find("#decision-typed-confirmation").exists()).toBe(false);
@@ -322,12 +314,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -338,9 +324,13 @@ describe("MarketingCommandConfirmationDialog", () => {
     );
     expect(wrapper.text()).toContain("Madeleine (MDL)");
     expect(wrapper.text()).toContain("Criar para revisão");
-    expect(wrapper.text()).toContain("Voltar sem criar");
-    expect(wrapper.text()).toContain("WhatsApp · 12 pessoas");
-    expect(wrapper.text()).toContain("Instagram · 1 postagem");
+    expect(wrapper.text()).toContain("Voltar");
+    expect(sealRow(wrapper, "whatsapp")).toBe(
+      "WhatsApp mensagem direta · 12 clientes",
+    );
+    expect(sealRow(wrapper, "instagram")).toBe("Instagram · 1 postagem");
+    // Criar para revisão não faz nada sair: sem a frase do que volta e do que não volta.
+    expect(wrapper.find("[data-seal-consequence]").exists()).toBe(false);
   });
   // ⚠️ `dual_control` deixa o confirmar morto PARA SEMPRE nesta caixa. O texto antigo
   // explicava o desenho do gate — "a confirmação independente continua obrigatória;
@@ -377,27 +367,23 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
 
     expect(wrapper.text()).toContain("Este disparo precisa de duas pessoas.");
-    expect(wrapper.text()).toContain(
-      "Peça a outra pessoa com acesso ao Marketing para abrir este mesmo anúncio e confirmar.",
-    );
+    expect(wrapper.text()).toContain("4.000 clientes no WhatsApp");
     // A explicação do gate sai: ela não terminava em gesto nenhum.
     expect(wrapper.text()).not.toMatch(/segundo controle|volume exige/);
 
+    // V6-MKT (§15): o gesto é pedir à segunda pessoa por push, no próprio selo.
+    const call = wrapper.get("[data-seal-call-second]");
+    expect(call.text()).toContain("Pedir a confirmação de outra pessoa");
     const buttons = wrapper.findAll("button");
-    expect(buttons.map((button) => button.text())).toContain("Entendi");
-    // E o botão que nunca ligaria não fica na tela para ser tentado.
-    expect(buttons.map((button) => button.text())).not.toContain("Enviar agora");
+    expect(buttons.map((button) => button.text())).toContain("Voltar");
+    // Sem a segunda pessoa, o ato não liga.
+    const send = buttons.find((button) => button.text() === "Enviar");
+    expect(send === undefined || (send.element as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("a prévia em tamanho real sai do corpo CONGELADO, e o formato vem do anúncio", () => {
@@ -450,12 +436,6 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
@@ -512,16 +492,58 @@ describe("MarketingCommandConfirmationDialog", () => {
       global: {
         stubs: {
           AnnouncementSimulatedPreview: SimulatedPreviewStub,
-          UiDialog: DialogStub,
-          UiDialogContent: SlotStub,
-          UiDialogHeader: SlotStub,
-          UiDialogTitle: SlotStub,
-          UiDialogDescription: SlotStub,
-          UiDialogFooter: SlotStub,
         },
       },
     });
 
     expect(simulatedPreviewScenes.at(-1)).toEqual([]);
+  });
+
+  it("o autenticador digita casa a casa e o comando leva o código inteiro", async () => {
+    const wrapper = mount(MarketingCommandConfirmationDialog, {
+      props: {
+        command: {
+          announcementId: 42,
+          action: "approve",
+          body: { base_version: 3, publish_mode: "now" },
+          href: "/api/v1/backstage/marketing/announcements/42/approve/",
+          ownerRef: "operator:1",
+          idempotencyKey: "key",
+          challenge: {
+            token: "token",
+            ref: "challenge-totp",
+            expires_at: "2026-09-09T21:00:00-03:00",
+            mode: "typed",
+            step_up: "totp",
+            dual_control: false,
+            typed_phrase: "",
+            consequence: "publishes_now_to_eligible_audience",
+            resource_ref: "announcement:42",
+            base_version: 3,
+            audience_count: 12,
+            platforms: ["instagram"],
+            scheduled_for: null,
+          },
+        },
+        shopTimezone: "America/Sao_Paulo",
+      },
+      global: {
+        stubs: { AnnouncementSimulatedPreview: SimulatedPreviewStub },
+      },
+    });
+
+    const confirm = wrapper.get("[data-seal-confirm]");
+    expect((confirm.element as HTMLButtonElement).disabled).toBe(true);
+    const digits = wrapper.findAll('#decision-credential input[aria-label^="Dígito"]');
+    expect(digits).toHaveLength(6);
+    for (const [index, digit] of Array.from("123456").entries()) {
+      await digits[index]!.setValue(digit);
+    }
+    expect((confirm.element as HTMLButtonElement).disabled).toBe(false);
+    await confirm.trigger("click");
+    expect(wrapper.emitted("confirm")![0]![0]).toMatchObject({
+      credential: "123456",
+      typedConfirmation: "",
+    });
   });
 });

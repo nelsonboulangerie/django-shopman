@@ -79,7 +79,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>) {
       );
       return true;
     } catch (error) {
-      toast.error(`${httpErrorMessage(error, "O servidor não montou as vias.")} Nada saiu na bobina. Tente de novo.`);
+      toast.error(`${httpErrorMessage(error, "As vias não ficaram prontas.")} Nada saiu na bobina. Tente de novo.`);
       return false;
     } finally {
       printing.value = false;
@@ -106,7 +106,7 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>) {
       toast.success(`Via Pedido de ${ref} na bobina.`);
       return true;
     } catch (error) {
-      toast.error(`${httpErrorMessage(error, "O servidor não montou a Via Pedido.")} Nada saiu na bobina. Tente de novo.`);
+      toast.error(`${httpErrorMessage(error, "A Via Pedido não ficou pronta.")} Nada saiu na bobina. Tente de novo.`);
       return false;
     } finally {
       printingRef.value = "";

@@ -17,7 +17,7 @@ promoção falharem, o produto continua vendável e o card só perde o badge.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 from django.utils import timezone
@@ -166,9 +166,16 @@ def sold_today(sku: str) -> int:
         from django.db.models import Sum
         from shopman.orderman.models import Order, OrderItem
 
+        # Intervalo do dia local em instantes, e não ``created_at__date``: o
+        # ``__date`` converte cada linha para o fuso antes de comparar, e aí o
+        # índice ``ord_order_created_at_idx`` não serve (scan de pedidos por SKU).
+        today = timezone.localdate()
+        day_start = timezone.make_aware(datetime.combine(today, time.min))
+        next_day_start = timezone.make_aware(datetime.combine(today + timedelta(days=1), time.min))
         total = OrderItem.objects.filter(
             sku=sku,
-            order__created_at__date=timezone.localdate(),
+            order__created_at__gte=day_start,
+            order__created_at__lt=next_day_start,
         ).exclude(order__status=Order.Status.CANCELLED).aggregate(total=Sum("qty"))["total"]
         return max(int(total or 0), 0)
     except Exception:

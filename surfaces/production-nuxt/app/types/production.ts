@@ -56,6 +56,8 @@ export type {
   QCOrderCardProjection,
   RecipeOptionProjection,
   RecipeWasteRow,
+  SuggestionMaterialShortageProjection,
+  PlanCarryNoteProjection,
   WorkOrderCardProjection,
   WorkOrderReportRow,
 } from "~/generated/productionContract";

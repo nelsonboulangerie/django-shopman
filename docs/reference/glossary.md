@@ -46,7 +46,12 @@ Termos de domínio usados no código e na documentação.
 |-------|-----------|
 | **Recipe** | Ficha técnica / BOM (Bill of Materials). `ref` único (slug), `output_ref` (string-agnostic), `batch_size` como rendimento base. |
 | **RecipeItem** | Ingrediente na receita. Usa coeficiente francês para escalar quantidades proporcionalmente ao rendimento base. |
-| **WorkOrder** | Ordem de produção. Liga uma receita às quantidades `planned`, `started` e `finished`, com status canônico `planned` → `started` → `finished` (ou `void`). |
+| **WorkOrder** | Ordem de produção. Liga uma receita às quantidades `planned`, `started` e `finished`, com status canônico `planned` → `started` → `finished` (ou `void`). Na tela, desde 03/10/2026 (parecer do dono): status **Planejada · Aberta · Fechada · Cancelada**, rótulos com fonte única nos choices de `WorkOrder.Status`. |
+| **Abertura** | O evento `started` e a aba `/` da Produção: o ponto sem volta do lote, onde se declara o **previsto**. "Abertura de lote" quando a frase sai da Produção (Central, alertas, B.I.), para não colidir com a abertura do caixa. |
+| **Fechamento** | O evento `finished` e a aba `/close` da Produção: o lote sai do forno classificado (ADR-017 §9) e grava o **realizado**. "Fechamento de lote" fora da Produção, para não colidir com o fechamento do caixa e do dia. |
+| **Qualidade** | A aba `/quality` da Produção: a revisão do gestor sobre o lote já fechado (`quality_reviewed` / `quality_corrected`). Não classifica; a classificação é do Fechamento. |
+| **planejado · previsto · realizado** | As três quantidades do lote: `quantity` · `started_qty` · `finished`. Quando o lote fecha sem abertura explícita (`implicit` no evento), o previsto é **assumido** igual ao planejado, e o relatório diz isso. |
+| **perda · aproveitamento** | Os indicadores do lote: perda = previsto − realizado; aproveitamento = realizado ÷ previsto (`yield_rate`). "Rendimento" fica reservado à ficha técnica (`batch_size`, `yield_quantity`) e à massa (`yield_margin`). |
 | **Lote** | O nome DE TELA da WorkOrder, desde 22/09/2026 — *"lote, genérico mesmo"* (decisão do dono). Substitui "fornada" nas superfícies de operador, porque *fornada* só serve para o que vai ao forno e a casa produz coisa que não vai. O identificador no código continua `WorkOrder`/`batch`. Trava: `surfaces/operator-kit/tests/guardrails.vocabulary.test.ts`. |
 | **Fornada** | O evento do forno. Pela [ADR-017](../decisions/adr-017-quality-as-production-outcome.md) uma fornada PRODUZ um lote — mesmo objeto, visto de dois lados. Segue sendo a palavra certa em prosa sobre o forno (enfornar, retirar, timer do forno) e na voz da LOJA, que continua dizendo "fornada" ao cliente. O que ela não é mais: o rótulo do botão do operador. |
 

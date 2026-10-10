@@ -1,0 +1,332 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1260x900"><style>
+  .k { font: 600 11px/1 ui-monospace, SFMono-Regular, monospace; padding: 3px 5px; border-radius: 4px; border: 1px solid var(--border); background: var(--muted); color: var(--muted-foreground); }
+  .k-inv { border-color: color-mix(in oklab, var(--primary-foreground) 30%, transparent); background: color-mix(in oklab, var(--primary-foreground) 15%, transparent); color: var(--primary-foreground); }
+  .tile-fb { position:relative; overflow:hidden; }
+  .tile-fb::after { content:""; position:absolute; inset:0; background:radial-gradient(circle at 85% 15%, rgb(255 255 255 / .35), transparent 55%); }
+  .fade-r { -webkit-mask-image: linear-gradient(90deg, #000 90%, transparent); mask-image: linear-gradient(90deg, #000 90%, transparent); }
+  .measure { position:absolute; z-index:55; border-left:2px dashed #1f6feb; }
+  .measure::before, .measure::after { content:""; position:absolute; left:-7px; width:12px; height:2px; background:#1f6feb; }
+  .measure::before { top:0 } .measure::after { bottom:0 }
+  .measure span { position:absolute; left:6px; top:50%; transform:translateY(-50%); background:#1f6feb; color:#fff; font:700 11px/16px "Instrument Sans",sans-serif; padding:2px 6px; border-radius:999px; white-space:nowrap; }
+  .rail-ico { width:48px; height:48px; border-radius:12px; display:grid; place-items:center; position:relative; color: color-mix(in oklab, var(--rail-foreground) 82%, transparent); }
+  .rail-ico svg { width:24px !important; height:24px !important; }
+  .rail-ico.on { background: var(--rail-foreground); color: var(--rail); box-shadow: 0 1px 2px rgb(0 0 0/.18); }
+  .rail-ico .badge { position:absolute; top:1px; right:0; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#f2c46b; color:#3b2a1e; font-size:11px; line-height:18px; font-weight:700; text-align:center; }
+  .rail-ico .attn { position:absolute; top:7px; right:8px; width:9px; height:9px; border-radius:999px; background:#f2c46b; box-shadow:0 0 0 2px var(--rail); }
+  .stripes { background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in oklab, var(--destructive) 10%, transparent) 6px 12px); }
+  .cam { background: radial-gradient(120% 80% at 50% 35%, #5b4a3c 0%, #2a211b 55%, #120d0a 100%); }
+  .scan-corner { position:absolute; width:34px; height:34px; border-color:#7fe0a6; border-style:solid; }
+</style></head>
+<body class="font-sans antialiased" data-app="pos" style="background:#e9dfd6">
+<div class="h-[900px] relative grid place-items-center">
+  <div class="device tablet"><div class="screen" style="width:1180px;height:820px"><div class="flex h-full bg-background text-foreground">
+  <aside class="w-16 shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1.5 py-2">
+  <button class="size-12 rounded-xl grid place-items-center relative mb-1" style="background:var(--app-color)" title="PDV: trocar de app"><i data-i="shopping-basket" class="size-6 text-white"></i><span class="absolute -bottom-1 -right-1 size-5 rounded-full bg-rail-foreground grid place-items-center shadow"><i data-i="layout-grid" class="size-3 text-rail"></i></span></button>
+  <div class="w-8 h-px bg-rail-foreground/20 my-1"></div>
+  <a class="rail-ico on" title="Comandas"><i data-i="receipt"></i><span class="badge">1</span></a>
+  <a class="rail-ico" title="Encomendas"><i data-i="calendar-clock"></i><span class="badge">4</span></a>
+  <a class="rail-ico" title="Caixa"><i data-i="wallet"></i><span class="attn"></span></a>
+  <a class="rail-ico" title="Tela do cliente"><i data-i="monitor-smartphone"></i></a>
+  <div class="flex-1"></div>
+  <a class="rail-ico" title="Terminal"><i data-i="cpu"></i><span class="attn"></span></a>
+  <a class="rail-ico" title="Avisos"><i data-i="bell"></i><span class="badge">2</span></a>
+  <a class="rail-ico" title="Bloquear"><i data-i="lock"></i></a>
+  <div class="size-10 mt-1 rounded-full bg-rail-foreground/15 grid place-items-center text-[13px] font-semibold text-rail-foreground">MC</div>
+</aside>
+  <main class="flex-1 flex flex-col min-w-0">
+    <header class="h-14 shrink-0 px-2 flex items-center gap-2 border-b border-border bg-card">
+      <button class="size-12 rounded-md border border-border bg-card grid place-items-center"><i data-i="arrow-left" class="size-5"></i></button>
+      <div class="h-12 p-1 rounded-md bg-secondary inline-flex items-center gap-1">
+        <button class="h-full px-3 rounded inline-flex items-center gap-1.5 op-label text-muted-foreground"><i data-i="store" class="size-4"></i>Balcão</button>
+        <button class="h-full px-3 rounded bg-card shadow-sm inline-flex items-center gap-1.5 op-label font-semibold"><i data-i="calendar-clock" class="size-4"></i>Encomendas</button>
+      </div>
+      <button class="h-12 px-2 rounded-md inline-flex items-center gap-1.5"><span class="op-figure !text-[22px]">#1007</span><i data-i="pencil" class="size-4 text-muted-foreground"></i></button>
+      <div class="w-px h-7 bg-border"></div>
+      <button class="h-12 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="user-round" class="size-4 text-muted-foreground"></i><span class="font-semibold">Maria Santos</span></button>
+      <button class="h-12 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="store" class="size-4 text-muted-foreground"></i><span class="font-semibold">Retirada na loja</span></button>
+      <button class="h-12 px-3 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-2 op-label"><i data-i="calendar-clock" class="size-4 text-primary"></i><span class="font-semibold">Sáb 04/10 · 09:00</span></button>
+      <div class="flex-1"></div>
+      <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum"><span class="live-dot"></span>22:03</span>
+      <button class="size-12 rounded-md border border-border bg-card grid place-items-center" title="Últimas vendas"><i data-i="history" class="size-5"></i></button>
+      <button class="size-12 rounded-md border border-border bg-card grid place-items-center" title="Mais: Liberar comanda"><i data-i="ellipsis-vertical" class="size-5"></i></button>
+    </header>
+    <div class="flex-1 flex min-h-0">
+      <section class="flex-1 min-w-0 flex flex-col">
+        <div class="px-3 pt-3 pb-2 flex items-center gap-2">
+          <label class="h-12 flex-1 px-3 rounded-md border border-input bg-card inline-flex items-center gap-2.5">
+            <i data-i="search" class="size-5 text-muted-foreground"></i>
+            <span class="flex-1 op-body text-muted-foreground truncate">Buscar produto, comanda ou cliente</span>
+          </label>
+          <button class="size-12 rounded-md border border-border bg-card grid place-items-center" title="Ler código de barras com a câmera"><i data-i="scan-barcode" class="size-5"></i></button>
+          <div class="h-12 p-1 rounded-md bg-secondary inline-flex items-center gap-1">
+            <button class="h-full w-10 rounded grid place-items-center text-muted-foreground"><i data-i="grid-3x3" class="size-5"></i></button>
+            <button class="h-full w-10 rounded bg-card shadow-sm grid place-items-center"><i data-i="layout-grid" class="size-5"></i></button>
+          </div>
+        </div>
+        <div class="px-3 pb-3 flex items-center gap-1.5 overflow-hidden fade-r">
+          <button class="h-11 px-3.5 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-1.5 op-label font-semibold shrink-0"><i data-i="check" class="size-4 text-primary"></i>Tudo</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label shrink-0"><span class="size-2 rounded-full" style="background:#3E7FA8"></span>Bebidas geladas</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label shrink-0"><span class="size-2 rounded-full" style="background:#8A5A3B"></span>Bebidas quentes</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label shrink-0"><span class="size-2 rounded-full" style="background:#7D4B88"></span>Combos</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label shrink-0"><span class="size-2 rounded-full" style="background:#B8577A"></span>Doces</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label shrink-0"><span class="size-2 rounded-full" style="background:#C58A2B"></span>Folhados</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label shrink-0"><span class="size-2 rounded-full" style="background:#C9A56A"></span>Macios</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label shrink-0"><span class="size-2 rounded-full" style="background:#5E7A4A"></span>Mercearia</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label shrink-0"><span class="size-2 rounded-full" style="background:#8C6A3F"></span>Rústicos</button>
+          <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label shrink-0"><span class="size-2 rounded-full" style="background:#A95032"></span>Salgados</button>
+        </div>
+        <div class="flex-1 overflow-hidden px-3 grid grid-cols-3 auto-rows-max gap-3 content-start relative">
+          <button class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center" style="background:color-mix(in oklab,#C58A2B 20%,var(--card))">
+    <span style="color:#9a6a1f" class="grid place-items-center"><i data-i="croissant" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#9a6a1f">CROISSANT</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate">Croissant Tradicional</span>
+    <span class="op-title tnum">R$ 13,00</span>
+  </div>
+</button>
+<button class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center" style="background:color-mix(in oklab,#C58A2B 20%,var(--card))">
+    <span style="color:#9a6a1f" class="grid place-items-center"><i data-i="croissant" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#9a6a1f">PAIN-CHOCOLAT</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate">Pain au Chocolat</span>
+    <span class="op-title tnum">R$ 15,00</span>
+  </div>
+</button>
+<button class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative shadow-[4px_4px_0_-1px_var(--card),4px_4px_0_0_var(--border)] ring-4 ring-primary/35">
+  <div class="tile-fb h-[112px] grid place-items-center" style="background:color-mix(in oklab,#8C6A3F 20%,var(--card))">
+    <span style="color:#6e5230" class="grid place-items-center"><i data-i="wheat" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#6e5230">BAGUETE-GERGELIM</span>
+    <span class="absolute right-2 top-2 h-6 px-2 rounded-full bg-card/90 op-micro font-semibold inline-flex items-center gap-1"><i data-i="layers" class="size-3.5"></i>2 tamanhos</span>
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate">Baguete Gergelim</span>
+    <span class="op-title tnum">R$ 9,00 a 18,00</span>
+  </div>
+</button>
+<button class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center" style="background:color-mix(in oklab,#8C6A3F 20%,var(--card))">
+    <span style="color:#6e5230" class="grid place-items-center"><i data-i="wheat" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#6e5230">BAGUETTE-TRADITION</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate">Baguette de Tradition</span>
+    <span class="op-title tnum">R$ 16,00</span>
+  </div>
+</button>
+<button disabled class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center opacity-55" style="background:color-mix(in oklab,#B8577A 20%,var(--card))">
+    <span style="color:#8e3d5b" class="grid place-items-center"><i data-i="cake-slice" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#8e3d5b">BICHON-CITRON</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate text-muted-foreground">Bichon au Citron</span>
+    <span class="flex items-center justify-between"><span class="op-title tnum text-muted-foreground">R$ 18,00</span><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Esgotado</span></span>
+  </div>
+</button>
+<button class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center" style="background:color-mix(in oklab,#C9A56A 20%,var(--card))">
+    <span style="color:#8a6c3a" class="grid place-items-center"><i data-i="sandwich" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#8a6c3a">BRIOCHE-NANTERRE</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate">Brioche Nanterre</span>
+    <span class="op-title tnum">R$ 22,00</span>
+  </div>
+</button>
+<button class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center" style="background:color-mix(in oklab,#C9A56A 20%,var(--card))">
+    <span style="color:#8a6c3a" class="grid place-items-center"><i data-i="sandwich" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#8a6c3a">SHOKUPAN</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate">Shokupan</span>
+    <span class="op-title tnum">R$ 28,00</span>
+  </div>
+</button>
+<button class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center" style="background:color-mix(in oklab,#8A5A3B 20%,var(--card))">
+    <span style="color:#6b4329" class="grid place-items-center"><i data-i="coffee" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#6b4329">CAFFE-LATTE</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate">Caffè Latte</span>
+    <span class="op-title tnum">R$ 14,00</span>
+  </div>
+</button>
+<button class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center" style="background:color-mix(in oklab,#B8577A 20%,var(--card))">
+    <span style="color:#8e3d5b" class="grid place-items-center"><i data-i="cake-slice" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#8e3d5b">MADELEINE</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate">Madeleine</span>
+    <span class="op-title tnum">R$ 6,50</span>
+  </div>
+</button>
+<button disabled class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center opacity-55" style="background:color-mix(in oklab,#5E7A4A 20%,var(--card))">
+    <span style="color:#46603a" class="grid place-items-center"><i data-i="package" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#46603a">AZEITE-DEFUMADO-250</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate text-muted-foreground">Azeite Defumado 250ml</span>
+    <span class="flex items-center justify-between"><span class="op-title tnum text-muted-foreground">R$ 143,00</span><span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Esgotado</span></span>
+  </div>
+</button>
+<button class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center" style="background:color-mix(in oklab,#A95032 20%,var(--card))">
+    <span style="color:#7f3a22" class="grid place-items-center"><i data-i="pizza" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#7f3a22">MINI-FOCACCIA</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate">Mini Focaccia Cebola</span>
+    <span class="op-title tnum">R$ 12,00</span>
+  </div>
+</button>
+<button class="rounded-lg border border-border bg-card overflow-hidden text-left flex flex-col relative ">
+  <div class="tile-fb h-[112px] grid place-items-center" style="background:color-mix(in oklab,#3E7FA8 20%,var(--card))">
+    <span style="color:#2d5f80" class="grid place-items-center"><i data-i="cup-soda" class="size-9"></i></span>
+    <span class="absolute left-2 bottom-1.5 font-mono text-[10px] tracking-wide" style="color:#2d5f80">LIMONADA-SIC</span>
+    
+  </div>
+  <div class="px-3.5 py-3 flex flex-col gap-0.5">
+    <span class="op-body font-semibold truncate">Limonada Siciliana</span>
+    <span class="op-title tnum">R$ 11,00</span>
+  </div>
+</button>
+          <!-- pressão longa: opções -->
+          <div class="absolute z-20 left-[424px] top-[150px] w-[300px] rounded-xl border border-border bg-popover shadow-2xl overflow-hidden">
+            <div class="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-border"><i data-i="wheat" class="size-4 text-muted-foreground"></i><p class="op-title">Baguete Gergelim</p><span class="ml-auto op-micro text-muted-foreground">pressão longa</span></div>
+            <div class="p-2 grid grid-cols-2 gap-2">
+              <button class="h-14 rounded-md border border-border bg-card flex flex-col items-center justify-center"><span class="op-label font-semibold">Pequena</span><span class="op-micro text-muted-foreground tnum">R$ 9,00</span></button>
+              <button class="h-14 rounded-md border border-border bg-card flex flex-col items-center justify-center"><span class="op-label font-semibold">Grande</span><span class="op-micro text-muted-foreground tnum">R$ 18,00</span></button>
+            </div>
+            <button class="w-full h-12 px-4 border-t border-border inline-flex items-center gap-2 op-label"><i data-i="message-square-text" class="size-4"></i>Adicionar com observação</button>
+            <button class="w-full h-12 px-4 border-t border-border inline-flex items-center gap-2 op-label"><i data-i="hash" class="size-4"></i>Adicionar várias (quantidade)</button>
+          </div>
+        </div>
+      </section>
+      <aside class="w-[384px] shrink-0 border-l border-border bg-card flex flex-col">
+        <div class="h-12 shrink-0 pl-3 flex items-center gap-2 border-b border-border">
+          <h2 class="op-title">12 itens</h2>
+          <span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>PIX aguardando</span>
+          <div class="flex-1"></div>
+          <button class="h-12 px-3 border-l border-border inline-flex items-center gap-2 op-label"><i data-i="list-checks" class="size-5"></i>Selecionar</button>
+        </div>
+        <ul class="flex-1 min-h-0 overflow-hidden flex flex-col relative">
+          <li class="h-14 shrink-0 px-3 border-b border-border flex items-center gap-2">
+    <span class="op-title tnum w-7">2×</span>
+    <div class="flex-1 min-w-0"><p class="op-body font-medium truncate leading-5">Croissant Tradicional</p><p class="op-micro text-muted-foreground tnum truncate">R$ 13,00 cada</p></div>
+    <span class="op-title tnum">R$ 26,00</span>
+  </li>
+<li class="shrink-0 px-3 pt-2 pb-2.5 border-b border-border bg-primary/6 shadow-[inset_3px_0_0_var(--primary)] flex flex-col gap-2">
+    <div class="h-10 flex items-center gap-2">
+      <span class="op-title tnum w-7">1×</span>
+      <div class="flex-1 min-w-0"><p class="op-body font-medium truncate leading-5">Pain au Chocolat</p><p class="op-micro text-muted-foreground tnum truncate">R$ 15,00 cada</p></div>
+      <span class="op-title tnum">R$ 15,00</span>
+    </div>
+    <div class="flex items-center gap-2 pl-9">
+      <div class="h-12 inline-flex items-center rounded-md border border-input bg-card overflow-hidden">
+        <button class="size-12 grid place-items-center border-r border-border"><i data-i="minus" class="size-5"></i></button>
+        <span class="w-11 text-center op-title tnum">1</span>
+        <button class="size-12 grid place-items-center border-l border-border"><i data-i="plus" class="size-5"></i></button>
+      </div>
+      <div class="flex-1"></div>
+      <button class="h-12 px-3 rounded-md inline-flex items-center gap-1.5 op-label text-destructive"><i data-i="trash-2" class="size-5"></i>Remover</button>
+    </div>
+  </li>
+<li class="h-14 shrink-0 px-3 border-b border-border flex items-center gap-2">
+    <span class="op-title tnum w-7">1×</span>
+    <div class="flex-1 min-w-0"><p class="op-body font-medium truncate leading-5">Baguette de Tradition</p><p class="op-micro text-muted-foreground tnum truncate">R$ 16,00 cada</p></div>
+    <span class="op-title tnum">R$ 16,00</span>
+  </li>
+<li class="h-14 shrink-0 border-b border-border relative overflow-hidden bg-destructive">
+    <div class="absolute inset-y-0 right-0 w-[104px] grid place-items-center text-white"><span class="flex flex-col items-center gap-0.5 op-micro font-semibold"><i data-i="trash-2" class="size-5"></i>Remover</span></div>
+    <div class="absolute inset-0 bg-card px-3 flex items-center gap-2 shadow-[6px_0_12px_rgb(0_0_0/.14)]" style="transform:translateX(-104px)">
+      <span class="op-title tnum w-7">2×</span>
+      <div class="flex-1 min-w-0"><p class="op-body font-medium truncate leading-5">Cappuccino</p><p class="op-micro text-muted-foreground tnum truncate">R$ 14,00 cada · <span class="text-foreground/80">Obs.: 1 sem açúcar</span></p></div>
+      <span class="op-title tnum">R$ 28,00</span>
+    </div>
+  </li>
+<li class="h-14 shrink-0 px-3 border-b border-border flex items-center gap-2">
+    <span class="op-title tnum w-7">1×</span>
+    <div class="flex-1 min-w-0"><p class="op-body font-medium truncate leading-5">Bichon au Citron</p><p class="op-micro text-muted-foreground tnum truncate">R$ 18,00 cada</p></div>
+    <span class="op-title tnum">R$ 18,00</span>
+  </li>
+<li class="h-14 shrink-0 px-3 border-b border-border flex items-center gap-2">
+    <span class="op-title tnum w-7">1×</span>
+    <div class="flex-1 min-w-0"><p class="op-body font-medium truncate leading-5">Madeleine</p><p class="op-micro text-muted-foreground tnum truncate">R$ 6,50 cada</p></div>
+    <span class="op-title tnum">R$ 6,50</span>
+  </li>
+<li class="h-14 shrink-0 px-3 border-b border-border flex items-center gap-2">
+    <span class="op-title tnum w-7">1×</span>
+    <div class="flex-1 min-w-0"><p class="op-body font-medium truncate leading-5">Caffè Latte</p><p class="op-micro text-muted-foreground tnum truncate">R$ 14,00 cada</p></div>
+    <span class="op-title tnum">R$ 14,00</span>
+  </li>
+<li class="h-14 shrink-0 px-3 border-b border-border flex items-center gap-2">
+    <span class="op-title tnum w-7">1×</span>
+    <div class="flex-1 min-w-0"><p class="op-body font-medium truncate leading-5">Shokupan</p><p class="op-micro text-muted-foreground tnum truncate">R$ 28,00 cada</p></div>
+    <span class="op-title tnum">R$ 28,00</span>
+  </li>
+<li class="h-14 shrink-0 px-3 border-b border-border flex items-center gap-2">
+    <span class="op-title tnum w-7">1×</span>
+    <div class="flex-1 min-w-0"><p class="op-body font-medium truncate leading-5">Brioche Nanterre</p><p class="op-micro text-muted-foreground tnum truncate">R$ 22,00 cada</p></div>
+    <span class="op-title tnum">R$ 22,00</span>
+  </li>
+<li class="h-14 shrink-0 px-3 border-b border-border flex items-center gap-2">
+    <span class="op-title tnum w-7">1×</span>
+    <div class="flex-1 min-w-0"><p class="op-body font-medium truncate leading-5">Mini Focaccia Cebola</p><p class="op-micro text-muted-foreground tnum truncate">R$ 12,00 cada</p></div>
+    <span class="op-title tnum">R$ 12,00</span>
+  </li>
+          
+        </ul>
+        <div class="shrink-0 px-2.5 py-1.5 border-t border-border bg-muted/40">
+          <div class="grid grid-cols-4 gap-1.5">
+            <button class="h-[52px] rounded-md bg-background border border-border op-title tnum">1</button><button class="h-[52px] rounded-md bg-background border border-border op-title tnum">2</button><button class="h-[52px] rounded-md bg-background border border-border op-title tnum">3</button><button class="h-[52px] rounded-md bg-primary text-primary-foreground op-label font-semibold">Qtd</button>
+            <button class="h-[52px] rounded-md bg-background border border-border op-title tnum">4</button><button class="h-[52px] rounded-md bg-background border border-border op-title tnum">5</button><button class="h-[52px] rounded-md bg-background border border-border op-title tnum">6</button><button class="h-[52px] rounded-md bg-secondary border border-border op-label font-semibold">Desc %</button>
+            <button class="h-[52px] rounded-md bg-background border border-border op-title tnum">7</button><button class="h-[52px] rounded-md bg-background border border-border op-title tnum">8</button><button class="h-[52px] rounded-md bg-background border border-border op-title tnum">9</button><button class="h-[52px] rounded-md bg-secondary border border-border op-label font-semibold">Desc R$</button>
+            <button class="h-[52px] rounded-md bg-background border border-border op-title tnum">0</button><button class="h-[52px] rounded-md bg-background border border-border op-title tnum">,</button><button class="h-[52px] rounded-md bg-background border border-border"><span class="grid place-items-center text-destructive"><i data-i="delete" class="size-5"></i></span></button><button class="h-[52px] rounded-md bg-secondary border border-border op-label font-semibold">Obs.</button>
+          </div>
+        </div>
+        <div class="shrink-0 px-2.5 py-2 border-t border-border flex gap-2">
+          <button class="h-14 w-[76px] shrink-0 rounded-md border border-border bg-card flex flex-col items-center justify-center gap-0.5 op-micro font-semibold"><i data-i="split" class="size-5"></i>Transferir</button>
+          <button class="h-14 px-3 shrink-0 rounded-md border border-primary bg-card inline-flex items-center gap-1.5 op-label font-semibold"><i data-i="utensils-crossed" class="size-5"></i>Cozinha<span class="min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground text-[11px] grid place-items-center tnum">12</span></button>
+          <button class="h-14 flex-1 rounded-md bg-primary text-primary-foreground flex items-center justify-center gap-2.5"><i data-i="credit-card" class="size-5"></i><span class="flex flex-col items-start leading-none"><span class="op-micro opacity-85">Pagamento</span><span class="text-[20px] leading-6 font-semibold tnum">R$ 185,50</span></span></button>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div></div></div>
+  <span class="pin" style="left:44px;top:120px">1</span>
+  <span class="pin" style="left:990px;top:56px">2</span>
+  <span class="pin" style="left:520px;top:118px">3</span>
+  <span class="pin" style="left:800px;top:330px">4</span>
+  <span class="pin" style="left:1200px;top:380px">5</span>
+  <span class="pin" style="left:820px;top:604px">6</span>
+  <span class="pin" style="left:820px;top:786px">7</span>
+</div>
+<div class="legend">
+  <p class="t">PDV · Venda · tablet deitado (1180 × 820) <span>toque: sem teclas impressas, alvos de 48 px, numérico na tela</span></p>
+  <div><b>1</b>Rail só de ícones (64 px) para ganhar largura: Comandas, Encomendas, Caixa, Tela do cliente; Terminal, Avisos e Bloquear no pé. Atalhos sai (não há teclado).</div>
+  <div><b>2</b>A mesma barra de contexto, com alvos de 48 px e sem F6/F7/F8. Liberar comanda vai para o ⋮; PIX aguardando desce para o cabeçalho do carrinho.</div>
+  <div><b>3</b>Busca única com botão de câmera para ler o código de barras de mercearia. Grade em 3 colunas com tiles maiores para o dedo.</div>
+  <div><b>4</b>Pressão longa no tile abre as opções (tamanho, observação, quantidade). Toque simples adiciona.</div>
+  <div><b>5</b>Deslizar a linha para a esquerda revela Remover (a dica aparece na primeira vez). Lista de 406 px (hoje 405 px) com o numérico na tela: 6 linhas com a ativa aberta. Total entra no botão Pagamento.</div>
+  <div><b>6</b>Numérico visível porque toque não tem teclado: 4 × 4 teclas de 52 px (Qtd, Desc %, Desc R$, Obs. na quarta coluna).</div>
+  <div><b>7</b>useOperatorContext: ponteiro grosso → esconde teclas e mostra o numérico. Se um teclado físico for conectado, as teclas voltam e o numérico recolhe como no desktop.</div>
+</div>
+</body></html>

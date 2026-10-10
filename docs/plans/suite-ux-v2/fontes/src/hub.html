@@ -1,0 +1,219 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="hub">
+<div class="flex h-[900px] overflow-hidden relative">
+  {{> rail initials="AD" operator="Admin"}}
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- Faixa 1: barra de seções (na home: selo + nome + saudação) -->
+    <header class="h-16 px-4 flex items-center gap-3 border-b border-border bg-card">
+      <div class="flex items-center gap-2.5 pr-3 mr-1 border-r border-border h-9">
+        <span class="size-8 rounded-md grid place-items-center text-white" style="background:var(--app-color)"><i data-i="layout-grid" class="size-4.5"></i></span>
+        <span class="op-title">Shopman Apps</span>
+      </div>
+      <div class="leading-tight">
+        <p class="op-title">Olá, Admin</p>
+        <p class="op-micro text-muted-foreground">Sábado, 3 de outubro · Nelson Boulangerie</p>
+      </div>
+      <div class="flex-1"></div>
+      <div class="flex items-center gap-2">
+        <button class="h-control w-[26rem] px-3 rounded-md border border-primary/60 bg-card text-muted-foreground inline-flex items-center gap-2 op-label font-normal shadow-[0_0_0_3px_color-mix(in_oklab,var(--primary)_12%,transparent)]">
+          <i data-i="search" class="size-4 text-foreground"></i><span class="flex-1 text-left">Buscar pedido, produto, cliente ou app</span>
+          <kbd class="op-micro px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground font-mono">Ctrl K</kbd>
+        </button>
+        <span class="h-control px-3 inline-flex items-center gap-2 rounded-md op-label text-muted-foreground"><span class="size-2 rounded-full bg-success shadow-[0_0_0_3px_color-mix(in_oklab,var(--success)_22%,transparent)]"></span>Ao vivo <span class="tnum text-foreground/70">22:03</span></span>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center relative" title="Avisos"><i data-i="bell" class="size-5"></i><span class="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold grid place-items-center">7</span></button>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Atalhos (?)"><i data-i="keyboard" class="size-5"></i></button>
+      </div>
+    </header>
+
+    <div class="flex-1 overflow-hidden px-6 pt-6 flex flex-col gap-7">
+      <!-- Precisa de você -->
+      <section class="flex flex-col gap-3">
+        <div class="flex items-baseline gap-2">
+          <i data-i="hand" class="size-4 self-center text-warning"></i><h2 class="op-eyebrow">Precisa de você</h2><span class="tnum op-label text-muted-foreground">3</span>
+          <span class="ml-auto op-micro text-muted-foreground">Juntado de todos os apps. Some sozinho quando resolvido.</span>
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+          <a class="rounded-lg border border-warning/35 bg-warning/8 px-3.5 py-3.5 flex items-center gap-3" data-app="orders">
+            <span class="size-9 rounded-md grid place-items-center text-white shrink-0" style="background:var(--app-color)"><i data-i="monitor-smartphone" class="size-4.5"></i></span>
+            <div class="flex-1 min-w-0">
+              <p class="op-micro text-muted-foreground">Gestor › Canais</p>
+              <p class="op-label font-semibold truncate">Canal TV do Café com 1 pendência</p>
+            </div>
+            <span class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-1.5 op-label font-semibold">Resolver<i data-i="arrow-right" class="size-4"></i></span>
+          </a>
+          <a class="rounded-lg border border-warning/35 bg-warning/8 px-3.5 py-3.5 flex items-center gap-3" data-app="pos">
+            <span class="size-9 rounded-md grid place-items-center text-white shrink-0" style="background:var(--app-color)"><i data-i="receipt" class="size-4.5"></i></span>
+            <div class="flex-1 min-w-0">
+              <p class="op-micro text-muted-foreground">PDV › Caixa</p>
+              <p class="op-label font-semibold truncate">2 contas na casa em aberto</p>
+            </div>
+            <span class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-1.5 op-label font-semibold">Ver contas<i data-i="arrow-right" class="size-4"></i></span>
+          </a>
+          <a class="rounded-lg border border-destructive/30 bg-destructive/8 px-3.5 py-3.5 flex items-center gap-3" data-app="kds">
+            <span class="size-9 rounded-md grid place-items-center text-white shrink-0" style="background:var(--app-color)"><i data-i="timer" class="size-4.5"></i></span>
+            <div class="flex-1 min-w-0">
+              <p class="op-micro text-muted-foreground">Cozinha › Preparo</p>
+              <p class="op-label font-semibold truncate">1 ticket atrasado: Croissant, 14 min</p>
+            </div>
+            <span class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-1.5 op-label font-semibold">Abrir<i data-i="arrow-right" class="size-4"></i></span>
+          </a>
+        </div>
+      </section>
+
+      <!-- Apps com estado -->
+      <section class="flex flex-col gap-3">
+        <div class="flex items-baseline gap-2">
+          <i data-i="layout-grid" class="size-4 self-center text-muted-foreground"></i><h2 class="op-eyebrow">Seus apps</h2><span class="tnum op-label text-muted-foreground">8</span>
+          <span class="ml-auto op-micro text-muted-foreground inline-flex items-center gap-3"><span class="inline-flex items-center gap-1"><i data-i="app-window" class="size-3.5"></i>abre no app instalado</span><span class="inline-flex items-center gap-1"><i data-i="globe" class="size-3.5"></i>abre no navegador</span></span>
+        </div>
+        <div class="grid grid-cols-4 gap-4">
+          <!-- PDV -->
+          <article class="rounded-lg border border-border bg-card p-4 flex flex-col gap-3.5 shadow-[inset_0_3px_0_var(--app-color)]" data-app="pos">
+            <div class="flex items-start gap-2.5">
+              <span class="size-10 rounded-md grid place-items-center text-white shrink-0" style="background:var(--app-color)"><i data-i="shopping-basket" class="size-5"></i></span>
+              <div class="flex-1 min-w-0"><p class="op-title leading-tight">PDV</p><p class="op-micro text-muted-foreground">Vender no balcão</p></div>
+              <i data-i="app-window" class="size-4 text-muted-foreground" title="Abre no app instalado"></i>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <span class="self-start h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>Caixa aberto desde 08:45</span>
+              <p class="op-body"><span class="font-semibold tnum">10</span> vendas hoje</p>
+            </div>
+            <button class="mt-auto h-control rounded-md border border-border bg-background inline-flex items-center justify-between px-3 op-label font-semibold">Continuar vendendo<i data-i="arrow-right" class="size-4"></i></button>
+          </article>
+          <!-- Cozinha -->
+          <article class="rounded-lg border border-border bg-card p-4 flex flex-col gap-3.5 shadow-[inset_0_3px_0_var(--app-color)]" data-app="kds">
+            <div class="flex items-start gap-2.5">
+              <span class="size-10 rounded-md grid place-items-center text-white shrink-0" style="background:var(--app-color)"><i data-i="chef-hat" class="size-5"></i></span>
+              <div class="flex-1 min-w-0"><p class="op-title leading-tight">Cozinha</p><p class="op-micro text-muted-foreground">Preparo e saída</p></div>
+              <i data-i="app-window" class="size-4 text-muted-foreground"></i>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <span class="self-start h-6 px-2 rounded-full bg-destructive/12 text-destructive op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-destructive"></span>1 atrasado</span>
+              <p class="op-body"><span class="font-semibold tnum">3</span> tickets em preparo</p>
+            </div>
+            <button class="mt-auto h-control rounded-md border border-border bg-background inline-flex items-center justify-between px-3 op-label font-semibold">Abrir o preparo<i data-i="arrow-right" class="size-4"></i></button>
+          </article>
+          <!-- Gestor -->
+          <article class="rounded-lg border border-border bg-card p-4 flex flex-col gap-3.5 shadow-[inset_0_3px_0_var(--app-color)]" data-app="orders">
+            <div class="flex items-start gap-2.5">
+              <span class="size-10 rounded-md grid place-items-center text-white shrink-0" style="background:var(--app-color)"><i data-i="square-kanban" class="size-5"></i></span>
+              <div class="flex-1 min-w-0"><p class="op-title leading-tight">Gestor de pedidos</p><p class="op-micro text-muted-foreground">Fila e acompanhamento</p></div>
+              <i data-i="app-window" class="size-4 text-muted-foreground"></i>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <span class="self-start h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>0 aguardando aceite</span>
+              <p class="op-body"><span class="font-semibold tnum">10</span> pedidos ativos · iFood <span class="font-semibold tnum">1</span></p>
+            </div>
+            <button class="mt-auto h-control rounded-md border border-border bg-background inline-flex items-center justify-between px-3 op-label font-semibold">Ver pedidos<i data-i="arrow-right" class="size-4"></i></button>
+          </article>
+          <!-- Produção -->
+          <article class="rounded-lg border border-border bg-card p-4 flex flex-col gap-3.5 shadow-[inset_0_3px_0_var(--app-color)]" data-app="production">
+            <div class="flex items-start gap-2.5">
+              <span class="size-10 rounded-md grid place-items-center text-white shrink-0" style="background:var(--app-color)"><i data-i="croissant" class="size-5"></i></span>
+              <div class="flex-1 min-w-0"><p class="op-title leading-tight">Produção</p><p class="op-micro text-muted-foreground">Produção e lotes</p></div>
+              <i data-i="app-window" class="size-4 text-muted-foreground"></i>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <p class="op-body"><span class="font-semibold tnum">5 de 15</span> lotes produzidos</p>
+              <div class="h-2 rounded-full bg-muted overflow-hidden flex"><div class="h-full bg-[var(--app-color)]" style="width:33%"></div><div class="h-full bg-[var(--app-color)]/35" style="width:53%"></div></div>
+              <p class="op-micro text-muted-foreground"><span class="font-semibold text-foreground tnum">8</span> para finalizar · 2 planejados</p>
+            </div>
+            <button class="mt-auto h-control rounded-md border border-border bg-background inline-flex items-center justify-between px-3 op-label font-semibold">Finalizar lotes<i data-i="arrow-right" class="size-4"></i></button>
+          </article>
+          <!-- Compras -->
+          <article class="rounded-lg border border-border bg-card p-4 flex flex-col gap-3.5 shadow-[inset_0_3px_0_var(--app-color)]" data-app="purchase">
+            <div class="flex items-start gap-2.5">
+              <span class="size-10 rounded-md grid place-items-center text-white shrink-0" style="background:var(--app-color)"><i data-i="package" class="size-5"></i></span>
+              <div class="flex-1 min-w-0"><p class="op-title leading-tight">Compras</p><p class="op-micro text-muted-foreground">Comprar e receber insumos</p></div>
+              <i data-i="globe" class="size-4 text-muted-foreground"></i>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <span class="self-start h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Cadastro incompleto</span>
+              <p class="op-body"><span class="font-semibold tnum">120</span> insumos sem custo preferencial</p>
+            </div>
+            <button class="mt-auto h-control rounded-md border border-border bg-background inline-flex items-center justify-between px-3 op-label font-semibold">Definir custos<i data-i="arrow-right" class="size-4"></i></button>
+          </article>
+          <!-- Marketing -->
+          <article class="rounded-lg border border-border bg-card p-4 flex flex-col gap-3.5 shadow-[inset_0_3px_0_var(--app-color)]" data-app="marketing">
+            <div class="flex items-start gap-2.5">
+              <span class="size-10 rounded-md grid place-items-center text-white shrink-0" style="background:var(--app-color)"><i data-i="megaphone" class="size-5"></i></span>
+              <div class="flex-1 min-w-0"><p class="op-title leading-tight">Marketing</p><p class="op-micro text-muted-foreground">Divulgar o lote</p></div>
+              <i data-i="globe" class="size-4 text-muted-foreground"></i>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <span class="self-start h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-muted-foreground"></span>0 pedem revisão</span>
+              <p class="op-body"><span class="font-semibold tnum">3</span> campanhas ligadas</p>
+            </div>
+            <button class="mt-auto h-control rounded-md border border-border bg-background inline-flex items-center justify-between px-3 op-label font-semibold">Ver campanhas<i data-i="arrow-right" class="size-4"></i></button>
+          </article>
+          <!-- B.I. -->
+          <article class="rounded-lg border border-border bg-card p-4 flex flex-col gap-3.5 shadow-[inset_0_3px_0_var(--app-color)]" data-app="bi">
+            <div class="flex items-start gap-2.5">
+              <span class="size-10 rounded-md grid place-items-center text-white shrink-0" style="background:var(--app-color)"><i data-i="chart-no-axes-combined" class="size-5"></i></span>
+              <div class="flex-1 min-w-0"><p class="op-title leading-tight">B.I.</p><p class="op-micro text-muted-foreground">Números da operação</p></div>
+              <i data-i="globe" class="size-4 text-muted-foreground"></i>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <p class="op-micro text-muted-foreground">Faturamento 28D</p>
+              <p class="flex items-center gap-2"><span class="op-figure">R$ 208,6 mil</span><span class="h-6 px-2 rounded-full bg-destructive/12 text-destructive op-micro font-semibold inline-flex items-center gap-1"><i data-i="trending-down" class="size-3.5"></i>11%</span></p>
+            </div>
+            <button class="mt-auto h-control rounded-md border border-border bg-background inline-flex items-center justify-between px-3 op-label font-semibold">Abrir vendas<i data-i="arrow-right" class="size-4"></i></button>
+          </article>
+          <!-- Loja online -->
+          <article class="rounded-lg border border-border bg-card p-4 flex flex-col gap-3.5 shadow-[inset_0_3px_0_var(--primary)]">
+            <div class="flex items-start gap-2.5">
+              <span class="size-10 rounded-md grid place-items-center text-white shrink-0" style="background:var(--primary)"><i data-i="store" class="size-5"></i></span>
+              <div class="flex-1 min-w-0"><p class="op-title leading-tight">Loja online</p><p class="op-micro text-muted-foreground">A loja do cliente</p></div>
+              <i data-i="external-link" class="size-4 text-muted-foreground"></i>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <span class="self-start h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>Aberta</span>
+              <p class="op-body"><span class="font-semibold tnum">5</span> pedidos hoje</p>
+            </div>
+            <button class="mt-auto h-control rounded-md border border-border bg-background inline-flex items-center justify-between px-3 op-label font-semibold">Abrir a loja<i data-i="external-link" class="size-4"></i></button>
+          </article>
+        </div>
+      </section>
+
+      <!-- Avisos neste dispositivo + versão -->
+      <section class="grid grid-cols-4 gap-4">
+        <div class="col-span-3 rounded-lg border border-border bg-card p-4 flex items-start gap-3">
+          <span class="size-10 rounded-full bg-muted text-muted-foreground grid place-items-center shrink-0"><i data-i="bell-off" class="size-5"></i></span>
+          <div class="flex-1 min-w-0">
+            <p class="op-title flex items-center gap-2">Avisos neste dispositivo
+              <span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Envio não configurado</span>
+            </p>
+            <p class="op-label font-normal text-muted-foreground mt-0.5">Avisos da operação chegam a este dispositivo mesmo com o Shopman Apps fechado. O envio ainda não foi ligado nesta instalação: peça a quem cuida do sistema. Até lá, nenhum dispositivo recebe aviso.</p>
+          </div>
+          <button disabled class="h-control px-3 rounded-md border border-dashed border-border text-muted-foreground inline-flex items-center gap-2 op-label font-semibold shrink-0"><i data-i="lock" class="size-4"></i>Ativar neste dispositivo</button>
+        </div>
+        <div class="rounded-lg border border-border bg-card p-4 flex flex-col justify-center gap-1">
+          <p class="op-eyebrow text-muted-foreground">Versão do Shopman Apps</p>
+          <p class="op-title font-mono">local</p>
+          <p class="op-micro text-muted-foreground">Build que está no ar</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <span class="pin" style="left:520px;top:20px">1</span>
+  <span class="pin" style="left:1190px;top:4px">2</span>
+  <span class="pin" style="left:76px;top:88px">3</span>
+  <span class="pin" style="left:1404px;top:112px">4</span>
+  <span class="pin" style="left:1112px;top:206px">5</span>
+  <span class="pin" style="left:546px;top:316px">6</span>
+  <span class="pin" style="left:398px;top:378px">7</span>
+  <span class="pin" style="left:76px;top:690px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Shopman Apps · Início <span>proposta · o launcher vira painel com estado (aprovado pelo dono)</span></p>
+  <div><b>1</b>Barra de seções da home: selo, nome e a saudação que já existia, agora com o dia e a loja.</div>
+  <div><b>2</b>A busca da suíte (Ctrl K) é o centro da home: mais larga e em destaque, acha pedido, produto, cliente ou app.</div>
+  <div><b>3</b>"Precisa de você": pendências de todos os apps num lugar só, cada uma com o link direto para a tela que resolve.</div>
+  <div><b>4</b>Cada item some sozinho quando resolvido no app; nada a dar baixa aqui.</div>
+  <div><b>5</b>Legenda do modo de abrir: app instalado ou navegador; a Loja online abre a loja do cliente em outra aba.</div>
+  <div><b>6</b>Tile por app: selo na cor dele, nome, descrição, um estado em pílula de tom e o número que importa.</div>
+  <div><b>7</b>Ação principal é um atalho para onde o trabalho está (Continuar vendendo, Finalizar lotes); o tile inteiro abre o app.</div>
+  <div><b>8</b>"Avisos neste dispositivo" e a versão continuam, no rodapé, no padrão de cartão do kit.</div>
+</div>
+</body></html>

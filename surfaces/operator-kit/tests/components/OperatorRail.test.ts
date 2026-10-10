@@ -42,7 +42,7 @@ describe("OperatorRail — identidade do app", () => {
     const square = identitySquare(wrapper);
 
     expect(square.find("img").exists()).toBe(false);
-    expect(square.getComponent({ name: "Icon" }).attributes("name")).toBe("lucide:shopping-basket");
+    expect(square.get(".iconify").classes()).toContain("i-lucide:shopping-basket");
   });
 
   it("com appIconSrc renderiza o PNG do app no lugar do Lucide, decorativo (alt vazio)", async () => {
@@ -53,7 +53,7 @@ describe("OperatorRail — identidade do app", () => {
     expect(img.attributes("src")).toBe(ICON_SRC);
     expect(img.attributes("alt")).toBe("");
     expect(img.classes()).toContain("size-11");
-    expect(square.findComponent({ name: "Icon" }).exists()).toBe(false);
+    expect(square.find(".iconify").exists()).toBe(false);
   });
 
   it("imagem que falha cai no Lucide — nunca um quadrado vazio", async () => {
@@ -63,7 +63,7 @@ describe("OperatorRail — identidade do app", () => {
     await square.get("img").trigger("error");
 
     expect(square.find("img").exists()).toBe(false);
-    expect(square.getComponent({ name: "Icon" }).attributes("name")).toBe("lucide:shopping-basket");
+    expect(square.get(".iconify").classes()).toContain("i-lucide:shopping-basket");
   });
 
   it("com hubUrl a imagem some no hover como o Lucide (vira a seta de voltar)", async () => {
@@ -71,8 +71,8 @@ describe("OperatorRail — identidade do app", () => {
     const square = identitySquare(wrapper);
 
     expect(square.get("img").classes()).toContain("group-hover:hidden");
-    // A seta "voltar ao Shopman Apps" continua ali, escondida até o hover/foco.
-    const arrow = square.findAllComponents({ name: "Icon" }).find((c) => c.attributes("name") === "lucide:arrow-left");
+    // A seta "voltar à Central" continua ali, escondida até o hover/foco.
+    const arrow = square.findAll(".iconify").find((icon) => icon.classes().includes("i-lucide:arrow-left"));
     expect(arrow?.exists()).toBe(true);
     expect(wrapper.get("aside > a").attributes("href")).toBe("http://central/");
   });
@@ -152,7 +152,7 @@ describe("OperatorRail — trava de giro", () => {
 
     await wrapper.get("[data-orientation-lock]").trigger("click");
     await vi.waitFor(() => expect(sonner.warning).toHaveBeenCalledWith(
-      "Este dispositivo não deixa o app travar o giro — use o bloqueio de rotação do sistema.",
+      "Este dispositivo não deixa o app travar o giro. Use o bloqueio de rotação do sistema.",
     ));
     expect(sonner.success).not.toHaveBeenCalled();
     expect(wrapper.get("[data-orientation-lock]").attributes("aria-pressed")).toBe("false");

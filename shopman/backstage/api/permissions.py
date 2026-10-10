@@ -118,10 +118,11 @@ def _recusa_se_capability_travada(request, capabilities) -> None:
         _recusa_travada()
 
 
-def _capabilities_travadas(request) -> frozenset[str]:
+def _capability_travada(request, code: str) -> bool:
+    """A superfície está travada, sozinha ou pelo Bloquear do dispositivo (V6-KIT)."""
     from shopman.backstage.services import operator_session
 
-    return operator_session.locked_capabilities(request)
+    return operator_session.is_capability_locked(request, code)
 
 
 def _operador(request):
@@ -230,8 +231,38 @@ class HasAnyBackstagePermission(BasePermission):
         permitted = tuple(code for code in perms if operador.has_perm(code))
         if not permitted:
             _recusa_sem_permissao()
-        if all(code in _capabilities_travadas(request) for code in permitted):
+        if all(_capability_travada(request, code) for code in permitted):
             _recusa_travada()
+        return True
+
+
+class HasOrderBoardAccess(BasePermission):
+    """O quadro do Gestor e os gestos da Saída: quem gerencia pedidos ou quem expede.
+
+    SUITE-UX §15/§16: a Saída da Cozinha virou a coluna Saída do Gestor, e quem a
+    operava com ``backstage.operate_kds`` continua operando, sem ganhar o resto
+    do Gestor. Esta classe decide só QUEM entra; o que quem só expede pode fazer
+    em cada pedido é régua do serviço (``operator_orders.expedite_refusal``) e
+    sai nas ações da projeção.
+
+    A trava é a do Gestor (``shop.manage_orders``, a primeira das alternativas
+    que a superfície pede): travar o Gestor tranca o quadro para os dois, e a
+    trava da Cozinha não tranca o Gestor.
+    """
+
+    message = _MSG_FORBIDDEN
+
+    def has_permission(self, request, view) -> bool:
+        from shopman.backstage.permissions import ORDER_BOARD_PERMISSIONS
+
+        operador = _operador(request)
+        if operador is None:
+            if is_trusted_station(request):
+                _recusa_travada()
+            return False
+        if not any(operador.has_perm(code) for code in ORDER_BOARD_PERMISSIONS):
+            _recusa_sem_permissao()
+        _recusa_se_capability_travada(request, ORDER_BOARD_PERMISSIONS[:1])
         return True
 
 

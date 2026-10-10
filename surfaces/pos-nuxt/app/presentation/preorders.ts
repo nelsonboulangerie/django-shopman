@@ -1,9 +1,10 @@
 // ENCOMENDAS — a seção do PDV que lê o que a casa prometeu (ENCOMENDAS-PDV-PLAN).
 //
 // Uma tela só (redesenho aprovado pelo dono, 28/09/2026): a busca "Cliente veio
-// buscar" sempre no topo, o Período do kit na barra (Dia ou Semana, ‹ › e a data),
-// a linha "Hoje", os recortes de todo dia em botões de um toque com o "Filtrar"
-// do kit para o resto, e o lote das vias que faltam no que está visível. O estado inteiro
+// buscar" na busca do cabeçalho, o Período do kit na toolbar (o dia, a semana, os
+// próximos dias, um intervalo; ‹ › e a data), a linha "Hoje", os recortes de todo
+// dia como filtros rápidos do painel único da suíte, e o lote das vias que faltam no
+// que está visível. O estado inteiro
 // (modo, data, filtros, busca) mora na URL, para a volta do detalhe cair no
 // mesmo lugar e para o kiosk guardar o favorito.
 //
@@ -27,6 +28,12 @@ import type {
   PreorderSituation,
 } from "~/types/preorders";
 
+import {
+  CUSTOM_PERIOD,
+  resolvePeriod,
+  type PeriodSelection,
+} from "../../../operator-kit/app/presentation/dates";
+
 import { addDays } from "./orderTickets";
 import { parseLocalDate } from "./schedule";
 
@@ -35,7 +42,19 @@ export const PREORDERS_SCOPE_NOTE = "Retiradas e entregas de todos os canais, pe
 
 // ── O estado da tela (a URL) ────────────────────────────────────────────────
 
-export type PreordersMode = "day" | "week";
+/**
+ * O que o Período das Encomendas oferece (o `presets` do controle do kit). O
+ * balcão olha sobretudo para a frente: o dia, a semana, o mês, os próximos dias;
+ * e, para conferir o que passou, os últimos dias e o personalizado.
+ */
+export const PREORDERS_PERIOD_PRESETS = ["day", "week", "month", "next7d", "next14d", "next28d", "7d", "28d"] as const;
+
+/** O teto do intervalo que o servidor aceita (`projections.preorders.MAX_SPAN_DAYS`). */
+export const PREORDERS_MAX_SPAN_DAYS = 62;
+
+export type PreordersMode = (typeof PREORDERS_PERIOD_PRESETS)[number] | typeof CUSTOM_PERIOD;
+
+const PREORDERS_MODES: readonly PreordersMode[] = [...PREORDERS_PERIOD_PRESETS, CUSTOM_PERIOD];
 export type FulfillmentFilter = "all" | "pickup" | "delivery";
 export type PrintFilter = "all" | "pending";
 export type PaymentFilter = "all" | PreorderPaymentState;
@@ -48,8 +67,13 @@ export interface PreorderFilters {
 
 export interface PreordersView extends PreorderFilters {
   mode: PreordersMode;
-  /** O dia escolhido. No modo Semana, a semana é a que contém este dia. */
+  /**
+   * O dia escolhido. Na semana e no mês, o período é o que contém este dia; nos
+   * próximos dias e no personalizado, é o primeiro dia; nos últimos dias, o último.
+   */
   date: string;
+  /** O último dia, só no personalizado ("" nos outros modos). */
+  to: string;
   /** A busca "Cliente veio buscar" (vazia = a tela mostra o período). */
   q: string;
   /** "Incluir concluídas" — só vale para a busca. */
@@ -87,9 +111,14 @@ export function parsePaymentFilter(raw: unknown): PaymentFilter {
 /** A URL → o estado da tela. Valor ilegível cai no padrão, nunca em erro. */
 export function parseView(query: Record<string, unknown>, today: string): PreordersView {
   const date = first(query.date);
+  const to = first(query.to);
+  let mode = oneOf(query.mode, PREORDERS_MODES, DEFAULT_MODE);
+  // Personalizado sem a data final não é intervalo: cai no padrão.
+  if (mode === CUSTOM_PERIOD && !(parseLocalDate(date) && parseLocalDate(to))) mode = DEFAULT_MODE;
   return {
-    mode: oneOf(query.mode, ["day", "week"] as const, DEFAULT_MODE),
+    mode,
     date: parseLocalDate(date) ? date : today,
+    to: mode === CUSTOM_PERIOD ? to : "",
     fulfillment: oneOf(query.fulfillment, FULFILLMENT_FILTERS, "all"),
     pay: parsePaymentFilter(query.pay),
     print: oneOf(query.print, PRINT_FILTERS, "all"),
@@ -102,7 +131,8 @@ export function parseView(query: Record<string, unknown>, today: string): Preord
 export function viewQuery(view: PreordersView, today: string): Record<string, string> {
   const query: Record<string, string> = {};
   if (view.mode !== DEFAULT_MODE) query.mode = view.mode;
-  if (view.date !== today) query.date = view.date;
+  if (view.date !== today || view.mode === CUSTOM_PERIOD) query.date = view.date;
+  if (view.mode === CUSTOM_PERIOD && view.to) query.to = view.to;
   if (view.fulfillment !== "all") query.fulfillment = view.fulfillment;
   if (view.pay !== "all") query.pay = view.pay;
   if (view.print !== "all") query.print = view.print;
@@ -142,11 +172,41 @@ export function isoWeek(iso: string): string {
   return `${year}-W${String(week).padStart(2, "0")}`;
 }
 
+// ── A ponte com o Período do kit ────────────────────────────────────────────
+
+/**
+ * O estado da URL → a seleção do controle. A data de hoje vira âncora vazia, que
+ * é como o controle sabe que o período acompanha hoje (e mostra "Voltar para
+ * hoje" quando não acompanha).
+ */
+export function periodSelectionOf(view: Pick<PreordersView, "mode" | "date" | "to">, today: string): PeriodSelection {
+  if (view.mode === CUSTOM_PERIOD) return { preset: CUSTOM_PERIOD, from: view.date, to: view.to };
+  const anchor = view.date === today ? "" : view.date;
+  if (view.mode === "7d" || view.mode === "28d") return { preset: view.mode, from: "", to: anchor };
+  if (view.mode === "day" || view.mode.startsWith("next")) return { preset: view.mode, from: anchor, to: "" };
+  // Semana e mês: hoje dentro do período é o período de hoje.
+  const range = resolvePeriod({ preset: view.mode, from: view.date, to: "" }, { today });
+  const containsToday = range.date_from <= today && today <= range.date_to;
+  return { preset: view.mode, from: containsToday ? "" : view.date, to: "" };
+}
+
+/** A seleção do controle → o que muda na URL. */
+export function viewOfPeriod(selection: PeriodSelection, today: string): Pick<PreordersView, "mode" | "date" | "to"> {
+  const mode = PREORDERS_MODES.includes(selection.preset as PreordersMode)
+    ? (selection.preset as PreordersMode)
+    : DEFAULT_MODE;
+  if (mode === CUSTOM_PERIOD) return { mode, date: selection.from, to: selection.to };
+  const date = mode === "7d" || mode === "28d" ? selection.to : selection.from;
+  return { mode, date: date || today, to: "" };
+}
+
 /** O que a tela pede ao servidor para o período do estado. */
-export function periodParams(view: Pick<PreordersView, "mode" | "date">): Record<string, string> {
-  return view.mode === "day"
-    ? { date_from: view.date, date_to: view.date }
-    : { week: isoWeek(view.date) };
+export function periodParams(view: Pick<PreordersView, "mode" | "date" | "to">): Record<string, string> {
+  if (view.mode === "day") return { date_from: view.date, date_to: view.date };
+  if (view.mode === "week") return { week: isoWeek(view.date) };
+  // O resto pelas datas: a seleção com a âncora explícita resolve sem depender de hoje.
+  const range = resolvePeriod(periodSelectionOf(view, ""), { today: view.date });
+  return { date_from: range.date_from, date_to: range.date_to };
 }
 
 // ── Contagens e frases ──────────────────────────────────────────────────────
@@ -175,7 +235,15 @@ export function dayColumnTitle(day: Pick<PreorderDay, "is_today" | "weekday_disp
 
 /** O período vazio, por extenso. */
 export function periodEmptyMessage(mode: PreordersMode): string {
-  return mode === "day" ? "Nenhuma encomenda neste dia." : "Nenhuma encomenda nesta semana.";
+  return `Nenhuma encomenda ${periodPhrase(mode)}.`;
+}
+
+/** "neste dia", "nesta semana", "neste mês", "neste período". */
+function periodPhrase(mode: PreordersMode): string {
+  if (mode === "day") return "neste dia";
+  if (mode === "week") return "nesta semana";
+  if (mode === "month") return "neste mês";
+  return "neste período";
 }
 
 /**
@@ -400,9 +468,7 @@ export function checkPaymentNotice(count: number): string {
 
 /** O que a lista diz quando os filtros esvaziaram o período. */
 export function filterEmptyMessage(mode: PreordersMode): string {
-  return mode === "day"
-    ? "Nenhuma encomenda com estes filtros neste dia."
-    : "Nenhuma encomenda com estes filtros nesta semana.";
+  return `Nenhuma encomenda com estes filtros ${periodPhrase(mode)}.`;
 }
 
 // ── "A receber": uma grandeza, uma apresentação ─────────────────────────────
@@ -524,95 +590,88 @@ export function railBadge(list: Pick<PreorderListResponse, "days"> | null | unde
   return count > 0 ? String(count) : undefined;
 }
 
-/** O nome acessível do item da barra, com o selo por extenso. */
-export function railAriaLabel(badge: string | undefined): string {
-  if (!badge) return "Encomendas";
-  return badge === "1" ? "Encomendas: 1 para entregar hoje" : `Encomendas: ${badge} para entregar hoje`;
-}
-
-// ── Os recortes de um toque (decisão do dono, P1 de 02/10) ──────────────────
+// ── O painel de filtros da suíte (`OperatorFilterPanel`, fase 2) ────────────
 //
-// Os recortes de todo dia do balcão saem de trás do menu de dois passos e viram
-// botões de um toque: A receber, Sem Via Pedido, Retiradas, Entregas. Cada um
-// liga e desliga o MESMO estado da URL que o "Filtrar" escrevia (nenhum estado
-// novo). O "Filtrar" do kit fica para o resto (Pagas, Na conta da casa, e o
-// "A conferir" que o aviso liga): um recorte mora num lugar só, e a barra não
-// repete em chip o botão que já está apertado.
+// Os recortes de todo dia do balcão (decisão do dono, P1 de 02/10: A receber, Sem
+// Via Pedido, Retiradas, Entregas) são UM toque, com a contagem: a faixa de filtros
+// rápidos da suíte (`OperatorQuickFilters`, vários que somam), à esquerda da toolbar.
+// O painel único (`OperatorFilterPanel`) guarda o resto (Pagas, Na conta da casa e o
+// "A conferir" que o aviso liga) nos filtros completos; os recortes ligados viram
+// chips removíveis (na mesa ao lado do botão, no celular abaixo da linha). O estado
+// continua o de sempre (`PreorderFilters`, na URL); aqui só se traduz.
 
-export interface Shortcut {
-  /** A dimensão do estado que o botão escreve. */
+export interface QuickFilter {
+  /** A chave do item na faixa. */
+  key: string;
+  /** A dimensão do estado que o filtro rápido escreve. */
   dimension: keyof PreorderFilters;
   value: string;
   label: string;
 }
 
-export const SHORTCUTS: readonly Shortcut[] = [
-  { dimension: "pay", value: "to_receive", label: "A receber" },
-  { dimension: "print", value: "pending", label: "Sem Via Pedido" },
-  { dimension: "fulfillment", value: "pickup", label: "Retiradas" },
-  { dimension: "fulfillment", value: "delivery", label: "Entregas" },
+export const QUICK_FILTERS: readonly QuickFilter[] = [
+  { key: "to_receive", dimension: "pay", value: "to_receive", label: "A receber" },
+  { key: "unprinted", dimension: "print", value: "pending", label: "Sem Via Pedido" },
+  { key: "pickup", dimension: "fulfillment", value: "pickup", label: "Retiradas" },
+  { key: "delivery", dimension: "fulfillment", value: "delivery", label: "Entregas" },
 ];
 
-export interface ShortcutChip extends Shortcut {
-  count: number;
-  pressed: boolean;
-}
-
-function isShortcut(dimension: keyof PreorderFilters, value: string | undefined): boolean {
-  return SHORTCUTS.some((shortcut) => shortcut.dimension === dimension && shortcut.value === value);
+/** As chaves da faixa ligadas no estado da tela. */
+export function quickKeysOf(filters: PreorderFilters): string[] {
+  return QUICK_FILTERS.filter((quick) => filters[quick.dimension] === quick.value).map((quick) => quick.key);
 }
 
 /**
- * Os botões de um toque, com a contagem do que cada um mostraria com os outros
- * filtros como estão (a mesma conta do "Filtrar"). Botão que não mostraria nada
- * não aparece, a menos que esteja apertado: zero não é código.
+ * O que a faixa devolveu → o estado da tela. O desligado volta a "Todas" na dimensão
+ * dele; o ligado escreve a dele. Retiradas e Entregas moram na mesma dimensão: a
+ * tocada vence a que estava.
  */
-export function shortcutChips(cards: readonly FilterCard[], filters: PreorderFilters): ShortcutChip[] {
-  const chips = filterChips(cards, filters);
-  return SHORTCUTS.map((shortcut) => {
-    const options = chips[shortcut.dimension] as FilterChip<string>[];
-    const count = options.find((chip) => chip.key === shortcut.value)?.count ?? 0;
-    return { ...shortcut, count, pressed: filters[shortcut.dimension] === shortcut.value };
-  }).filter((chip) => chip.pressed || chip.count > 0);
-}
-
-/** Apertar o botão liga o recorte; apertado, desliga (a dimensão volta a "Todas"). */
-export function toggleShortcut(filters: PreorderFilters, shortcut: Pick<Shortcut, "dimension" | "value">): PreorderFilters {
-  const pressed = filters[shortcut.dimension] === shortcut.value;
-  return fromActiveFilters({
-    ...toActiveFilters(filters),
-    [shortcut.dimension]: pressed ? [] : [shortcut.value],
-  });
-}
-
-/** O "Filtrar" sem o que já tem botão: só as dimensões e as opções que sobram. */
-export function barDimensions(cards: readonly FilterCard[], filters: PreorderFilters): FilterDimension[] {
-  return filterDimensions(cards, filters)
-    .map((dimension) => ({
-      ...dimension,
-      options: dimension.options.filter((option) => !isShortcut(dimension.id as keyof PreorderFilters, option.value)),
-    }))
-    .filter((dimension) => dimension.options.length > 0);
-}
-
-/** O estado da tela → o da barra do "Filtrar", sem os recortes que moram nos botões. */
-export function toBarFilters(filters: PreorderFilters): ActiveFilters {
-  return Object.fromEntries(Object.entries(toActiveFilters(filters))
-    .filter(([key, values]) => !isShortcut(key as keyof PreorderFilters, values[0])));
-}
-
-/**
- * O que a barra devolveu → o estado da tela. A barra só fala do que ela mostra:
- * a dimensão que ela não traz e que está num botão apertado continua como está.
- */
-export function fromBarFilters(current: PreorderFilters, bar: ActiveFilters): PreorderFilters {
-  const merged: ActiveFilters = {};
-  for (const key of Object.keys(FILTER_LABELS) as (keyof PreorderFilters)[]) {
-    const fromBar = bar[key];
-    if (fromBar?.length) merged[key] = fromBar;
-    else if (isShortcut(key, current[key])) merged[key] = [current[key]];
+export function filtersFromQuickKeys(current: PreorderFilters, keys: readonly string[]): PreorderFilters {
+  const before = new Set(quickKeysOf(current));
+  const after = new Set(keys);
+  const next: PreorderFilters = { ...current };
+  for (const quick of QUICK_FILTERS) {
+    if (before.has(quick.key) && !after.has(quick.key) && next[quick.dimension] === quick.value) {
+      (next as Record<keyof PreorderFilters, string>)[quick.dimension] = "all";
+    }
   }
-  return fromActiveFilters(merged);
+  for (const quick of QUICK_FILTERS) {
+    if (after.has(quick.key) && !before.has(quick.key)) {
+      (next as Record<keyof PreorderFilters, string>)[quick.dimension] = quick.value;
+    }
+  }
+  return next;
+}
+
+/**
+ * Os itens da faixa, com a contagem de cada um: o que ELE mostraria com os OUTROS
+ * filtros como estão (a mesma conta das opções do painel).
+ */
+export function quickFilterItems(
+  cards: readonly FilterCard[],
+  filters: PreorderFilters,
+): { key: string; label: string; count: number }[] {
+  const chips = filterChips(cards, filters);
+  const count = (dimension: keyof PreorderFilters, value: string) =>
+    (chips[dimension] as FilterChip<string>[]).find((chip) => chip.key === value)?.count ?? 0;
+  return QUICK_FILTERS.map((quick) => ({ key: quick.key, label: quick.label, count: count(quick.dimension, quick.value) }));
+}
+
+/**
+ * O que o painel devolveu → o estado da tela. Cada dimensão das Encomendas tem um
+ * valor só (Retiradas e Entregas se excluem); quando o painel devolve dois numa
+ * dimensão (o favorito fixado do grupo "Filtros rápidos" dele soma), o valor novo
+ * vence o que já estava.
+ */
+export function fromPanelFilters(current: PreorderFilters, next: ActiveFilters): PreorderFilters {
+  const single: ActiveFilters = {};
+  for (const key of Object.keys(FILTER_LABELS) as (keyof PreorderFilters)[]) {
+    const values = (next[key] ?? []).filter(Boolean);
+    if (!values.length) continue;
+    const added = values.filter((value) => value !== current[key]);
+    single[key] = [added.length ? added[added.length - 1]! : values[0]!];
+  }
+  return fromActiveFilters(single);
 }
 
 // ── A linha "Hoje" ──────────────────────────────────────────────────────────
@@ -677,7 +736,10 @@ export function periodIsToday(view: Pick<PreordersView, "mode" | "date">, today:
 
 /** O rótulo do resumo do período. */
 export function periodSummaryLabel(mode: PreordersMode): string {
-  return mode === "day" ? "No dia" : "Na semana";
+  if (mode === "day") return "No dia";
+  if (mode === "week") return "Na semana";
+  if (mode === "month") return "No mês";
+  return "No período";
 }
 
 // ── A linha da encomenda (uma forma só: dia, semana e busca) ────────────────
@@ -723,3 +785,122 @@ export function moneyPieces(text: string): { text: string; amount: boolean }[] {
 
 /** A Via Pedido que já saiu, escrita: o ícone sozinho não diz. */
 export const PRINTED_LABEL = "Via impressa";
+
+// ── Grade ou lista (preferência do dispositivo) ─────────────────────────────
+//
+// Como os cards se arrumam é preferência de quem olha, não estado do recorte:
+// mora no dispositivo (como a densidade da grade de produtos do balcão), e não
+// na URL. A volta do detalhe e o favorito continuam dizendo QUE encomendas; a
+// grade ou a lista é de cada balcão.
+//
+//   Semana · grade   os sete dias lado a lado (a árvore responsiva de sempre)
+//   Semana · lista   os dias um embaixo do outro, cada um com as suas linhas
+//   Dia · grade      cada janela com os seus cards em colunas
+//   Dia · lista      cada janela com a linha inteira de cada encomenda
+//   Busca            o mesmo: cards em colunas ou linhas inteiras
+
+export type PreordersLayout = "grid" | "list";
+
+export const DEFAULT_LAYOUT: PreordersLayout = "grid";
+
+export const LAYOUT_STORAGE_KEY = "pos.preordersLayout";
+
+export interface LayoutOption {
+  value: PreordersLayout;
+  label: string;
+  icon: string;
+}
+
+/** Os dois botões do alternador, com o rótulo que o leitor de tela diz. */
+export const LAYOUT_OPTIONS: readonly LayoutOption[] = [
+  { value: "grid", label: "Ver em grade", icon: "i-lucide-layout-grid" },
+  { value: "list", label: "Ver em lista", icon: "i-lucide-list" },
+];
+
+/** O que veio guardado no dispositivo; qualquer outra coisa é a grade. */
+export function parseLayout(raw: unknown): PreordersLayout {
+  return raw === "list" ? "list" : DEFAULT_LAYOUT;
+}
+
+// ── Mudar a encomenda de dia (arrastar na semana, ou o menu do card) ────────
+//
+// Mudar de dia é REAGENDAR: ato de negócio, com aviso ao cliente. Quem valida e
+// move o resto (despertador, lembrete, estoque, produção) é o orquestrador, pela
+// MESMA rota do Reagendar do detalhe. Aqui mora só o que a tela decide: que card
+// se pode pegar, onde se pode soltar e as frases da pergunta.
+
+/** As que a régua do orquestrador recusa de saída (`reschedule._REFUSED_STATUSES`): nem pegam. */
+const UNMOVABLE: readonly PreorderSituation[] = ["ready", "out_for_delivery", "delivered"];
+
+/** O card se pode pegar para mudar de dia? (O servidor confere de novo ao soltar.) */
+export function canMoveCard(card: Pick<PreorderCard, "situation">): boolean {
+  return !UNMOVABLE.includes(card.situation);
+}
+
+/** Soltar aqui muda alguma coisa? Outro dia, de hoje em diante. */
+export function canDropOn(date: string, card: Pick<PreorderCard, "commitment_date" | "situation">, today: string): boolean {
+  return canMoveCard(card) && Boolean(date) && date >= today && date !== card.commitment_date;
+}
+
+export interface MoveTarget {
+  date: string;
+  label: string;
+}
+
+/** Os dias da tela para onde o menu do card oferece mudar (o mesmo que arrastar). */
+export function moveTargets(
+  days: readonly Pick<PreorderDay, "date" | "is_today" | "weekday_display" | "day_display">[],
+  card: Pick<PreorderCard, "commitment_date" | "situation">,
+  today: string,
+): MoveTarget[] {
+  return days
+    .filter((day) => canDropOn(day.date, card, today))
+    .map((day) => ({ date: day.date, label: dayColumnTitle(day) }));
+}
+
+/** O dia no meio da frase: "amanhã", "hoje", "qui, 09/10". */
+function dayInSentence(label: string): string {
+  return label === "Hoje" || label === "Amanhã" ? label.toLowerCase() : label;
+}
+
+/** "Mudar a encomenda de Maria para qui, 09/10?" */
+export function moveQuestion(customerName: string, dayLabel: string): string {
+  const name = customerName.trim();
+  const who = name ? `a encomenda de ${name}` : "a encomenda";
+  return `Mudar ${who} para ${dayInSentence(dayLabel)}?`;
+}
+
+/** O que acontece junto: o aviso ao cliente e o horário, que continua o combinado. */
+export function moveDescription(windowLabel: string): string {
+  const window = windowLabel.trim();
+  const keeps = window ? ` O horário combinado continua: ${window.charAt(0).toLowerCase()}${window.slice(1)}.` : "";
+  return `O cliente será avisado da nova data.${keeps}`;
+}
+
+/** O botão que confirma: para onde vai. */
+export function moveConfirmLabel(dayLabel: string): string {
+  return `Mudar para ${dayInSentence(dayLabel)}`;
+}
+
+export interface PhonePill {
+  label: string;
+  tone: SituationTone;
+}
+
+/**
+ * As duas pílulas do cartão do celular (v3 `depois-pdv-celular` 3): o preparo
+ * (só quando diz algo que o dinheiro não diz) e o pagamento, na voz do balcão
+ * ("Paga", "Pagar na retirada", "Pagar na entrega").
+ */
+export function phoneCardPills(
+  card: Pick<PreorderCard, "situation" | "situation_label" | "balance_q" | "fulfillment_type">,
+): PhonePill[] {
+  const pills: PhonePill[] = [];
+  if (rowShowsSituation(card.situation)) pills.push({ label: card.situation_label, tone: situationTone(card.situation) });
+  if (card.balance_q === null) pills.push({ label: "Conferir pagamento", tone: "warning" });
+  else if (card.situation === "on_account") pills.push({ label: "Conta da casa", tone: "neutral" });
+  else if (card.balance_q > 0) {
+    pills.push({ label: card.fulfillment_type === "delivery" ? "Pagar na entrega" : "Pagar na retirada", tone: "warning" });
+  } else pills.push({ label: "Paga", tone: "success" });
+  return pills;
+}

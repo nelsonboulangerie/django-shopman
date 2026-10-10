@@ -315,6 +315,17 @@ class CraftQueries:
                         "soldout_days": sum(
                             1 for dd in history if dd.soldout_at is not None
                         ),
+                        # Os dias da amostra, um a um: quem explica a sugestão
+                        # mostra o desfecho de cada dia ("acabou às 10:40").
+                        "days": tuple(
+                            {
+                                "date": dd.date,
+                                "sold": dd.sold,
+                                "wasted": dd.wasted,
+                                "soldout_at": dd.soldout_at,
+                            }
+                            for dd in history
+                        ),
                     },
                 )
             )

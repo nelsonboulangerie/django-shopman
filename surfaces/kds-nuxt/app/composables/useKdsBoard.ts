@@ -2,16 +2,17 @@
 //   - useFetch the canonical projection (GET /api/v1/backstage/kds/<ref>/);
 //   - poll every 15s as a robust fallback (mirrors the HTMX `every 15s`);
 //   - SSE realtime: EventSource same-origin no BFF (/sse/kds/<ref> → proxy do
-//     eventstream do Django) → refresh on push, and a beep when the
-//     active-ticket count rises (new order arrived).
+//     eventstream do Django) → refresh on push, and the fanfare while a ticket
+//     nobody at the station has seen yet is on the board.
 // SSE/poll/beep are client-only (EventSource + Web Audio are browser APIs).
+//
+// O "Visto" é da ESTAÇÃO, no servidor (K20, prévia v4 nota 3): o ticket chega com
+// `seen`, e quem dá Visto numa tela cala as outras telas da mesma estação. O quadro
+// é sempre o de hoje (a prévia de outra data foi para a Produção/Encomendas).
+// Densidade e som também são da estação (nota 1): o cadastro guarda, e os Ajustes
+// gravam lá (`useKdsStationSettings`).
 import type { KDSBoardProjection, KDSBoardResponse, KDSTicketProjection } from "~/types/kds";
-import {
-  boardView,
-  KDS_UNDO_WINDOW_MS,
-  type KDSBoardView,
-} from "~/presentation/board";
-import type { Ref } from "vue";
+import { boardView, KDS_UNDO_WINDOW_MS, type KDSBoardView } from "~/presentation/board";
 import { openResilientEventSource, type ResilientEventSource } from "../../../operator-kit/app/utils/resilientEventSource";
 
 /**
@@ -49,36 +50,35 @@ export const KDS_ALERT = {
   ],
 };
 
+/** Os avisos que pedem atenção agora: ticket aberto ou cancelado que ninguém da
+ *  estação viu (`seen` vem do servidor). */
+export function kdsAttentionIds(current: KDSBoardView): string[] {
+  return [
+    ...current.cards.filter((card) => !card.seen && !current.finishingPks.has(card.pk)).map((card) => `active:${card.pk}`),
+    ...current.cancelled.filter((card) => !card.seen).map((card) => `cancelled:${card.pk}`),
+  ].sort();
+}
+
+/** Tocar ou calar. Toca quando aparece um aviso que esta tela ainda não anunciou;
+ *  cala quando não sobra nenhum (alguém deu Visto aqui, em outra tela da estação, ou
+ *  iniciou o ticket). */
 export function kdsAttentionDecision(
   current: KDSBoardView,
-  seenIds: ReadonlySet<string>,
   previousSignature: string,
 ): { signature: string; shouldAlert: boolean; shouldStop: boolean } {
-  if (current.serviceDate !== current.today) {
-    return { signature: "", shouldAlert: false, shouldStop: true };
-  }
-  const ids = [
-    ...current.cards.map((card) => `active:${card.pk}`),
-    ...current.cancelled.map((card) => `cancelled:${card.pk}`),
-  ].sort();
+  const ids = kdsAttentionIds(current);
   const signature = ids.join("|");
-  const noUnseen = ids.every((id) => seenIds.has(id));
-  if (signature === previousSignature) {
-    return { signature, shouldAlert: false, shouldStop: noUnseen };
-  }
+  const announced = new Set(previousSignature ? previousSignature.split("|") : []);
   return {
     signature,
-    shouldAlert: ids.some((id) => !seenIds.has(id)),
-    shouldStop: noUnseen,
+    shouldAlert: signature !== previousSignature && ids.some((id) => !announced.has(id)),
+    shouldStop: ids.length === 0,
   };
 }
 
-export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
+export function useKdsBoard(stationRef: string) {
   const config = useRuntimeConfig();
-  const path = computed(() => {
-    const base = `/api/v1/backstage/kds/${encodeURIComponent(stationRef)}/`;
-    return serviceDate?.value ? `${base}?date=${encodeURIComponent(serviceDate.value)}` : base;
-  });
+  const path = `/api/v1/backstage/kds/${encodeURIComponent(stationRef)}/`;
 
   // useFetch (not useAsyncData) so the SSR payload transfers reliably (POS gotcha).
   const { data, pending, error, refresh } = useFetch<KDSBoardResponse>(path, {
@@ -100,11 +100,14 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   // "escolha outra estação". O poll continua (barato): se a estação voltar com o
   // mesmo ref, o quadro volta sozinho.
   const stationMissing = computed(() => httpError(error.value).status === 404);
-  // Finalizados dentro da janela de "Desfazer": o servidor ainda os tem abertos,
+  // Marcados Pronto dentro da janela de "Desfazer": o servidor ainda os tem abertos,
   // e a grade também — apagados, no mesmo lugar, com o "Desfazer" ali. A view os
   // tira dos contadores e do "a fazer", então o poll e o SSE não os devolvem ao
   // trabalho enquanto a janela está aberta.
   const finishing = ref<Set<number>>(new Set());
+  // O prazo de cada janela aberta (epoch ms): o botão Desfazer conta até ele, e montar
+  // o card de novo (foco do celular, recarga da grade) não reinicia a janela.
+  const finishUntil = ref<ReadonlyMap<number, number>>(new Map());
   const view = computed<KDSBoardView | null>(() =>
     board.value ? boardView(board.value, finishing.value) : null,
   );
@@ -114,8 +117,6 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   const {
     soundOn,
     soundBlocked,
-    playbackCount,
-    toggleSound,
     activateSound,
     startAlert,
     stopAlert,
@@ -125,90 +126,76 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   );
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let source: ResilientEventSource | null = null;
-  // A Saída vê o pedido de TODAS as estações ("Em preparo") e o pedido que
-  // fica pronto: o canal da própria estação não recebe nada disso (nenhum
-  // ticket é da Saída). Ela assina o canal geral dos tickets e o dos pedidos.
-  let exitSources: ResilientEventSource[] = [];
   let attentionReady = false;
   let lastAttentionSignature = "";
-  const attentionPending = ref(false);
-  let pendingAttentionIds = new Set<string>();
+  // O que está tocando, para a faixa de avisos dizer QUAL pedido é novo ("Pedido novo
+  // U13") em vez de um "Visto" solto no cabeçalho.
+  const attentionKeys = ref<string[]>([]);
+  const attentionPending = computed(() => attentionKeys.value.length > 0);
+  // Tempo real honesto (o mesmo padrão do painel de retirada): "ao vivo" só com o SSE
+  // de fato aberto; senão o quadro segue no poll de 15 s, e o cabeçalho diz isso.
+  const realtime = ref<"connecting" | "live" | "polling">("polling");
 
-  const attentionStorageKey = (date: string) => `kds_seen_${stationRef}_${date}`;
+  // O som é da estação (o cadastro): quando o quadro chega, o que vale é ele, não o
+  // que este dispositivo lembrava.
+  watch(
+    () => view.value?.soundEnabled,
+    (enabled) => {
+      if (enabled === undefined) return;
+      soundOn.value = enabled;
+    },
+    { immediate: true },
+  );
 
-  function attentionIds(current: KDSBoardView): string[] {
-    return [
-      ...current.cards.map((card) => `active:${card.pk}`),
-      ...current.cancelled.map((card) => `cancelled:${card.pk}`),
-    ];
-  }
-
-  function seenAttentionIds(date: string): Set<string> {
-    if (!import.meta.client) return new Set();
+  function vibrate() {
+    if (!import.meta.client || typeof navigator.vibrate !== "function") return;
+    if (!window.matchMedia?.("(max-width: 767.98px)").matches) return;
     try {
-      const value = JSON.parse(localStorage.getItem(attentionStorageKey(date)) || "[]");
-      return new Set(Array.isArray(value) ? value.map(String) : []);
+      navigator.vibrate(400);
     } catch {
-      return new Set();
+      // Navegador sem vibração: o som e a faixa continuam avisando.
     }
   }
 
-  function rememberPendingAttention() {
-    const current = view.value;
-    if (!current || current.serviceDate !== current.today || !import.meta.client) return;
-    const seen = seenAttentionIds(current.serviceDate);
-    for (const id of pendingAttentionIds) seen.add(id);
-    try {
-      // Limite defensivo: a chave é diária, mas um terminal pode ficar semanas
-      // sem limpeza. Os mais novos bastam para impedir repetição no remount.
-      localStorage.setItem(
-        attentionStorageKey(current.serviceDate),
-        JSON.stringify([...seen].slice(-500)),
-      );
-    } catch {
-      // Sem storage, a atenção continua válida apenas nesta montagem.
+  function alertForUnseenWork(current: KDSBoardView) {
+    if (!attentionReady || !import.meta.client) return;
+    const decision = kdsAttentionDecision(current, lastAttentionSignature);
+    lastAttentionSignature = decision.signature;
+    attentionKeys.value = decision.signature ? decision.signature.split("|") : [];
+    if (decision.shouldStop) stopAlert();
+    if (decision.shouldAlert) {
+      startAlert();
+      vibrate();
     }
-    lastAttentionSignature = attentionIds(current).sort().join("|");
-    pendingAttentionIds = new Set();
-    attentionPending.value = false;
-    stopAlert();
   }
 
+  // "Visto": grava no servidor, para a estação inteira (K20). Otimista: a faixa some
+  // na hora nesta tela; as outras telas da estação calam no SSE que o servidor manda.
   function acknowledgeAttention() {
-    rememberPendingAttention();
+    const keys = [...attentionKeys.value];
+    if (!keys.length) return;
+    const pks = keys.map((key) => Number(key.split(":")[1])).filter((pk) => Number.isInteger(pk));
+    const lists = [data.value?.board?.tickets ?? [], data.value?.board?.cancelled_tickets ?? []];
+    for (const list of lists) for (const card of list) if (pks.includes(card.pk)) card.seen = true;
+    attentionKeys.value = [];
+    stopAlert();
+    postProxy(`/api/v1/backstage/kds/${encodeURIComponent(stationRef)}/seen/`, {
+      method: "POST",
+      body: { ticket_pks: pks },
+    })
+      .then(() => scheduleReconcile())
+      .catch((err) => {
+        useSonner.error(httpErrorMessage(err, "Não deu para registrar o Visto. Tente de novo."));
+        refresh();
+      });
   }
 
   async function activateAttentionSound() {
     await activateSound();
   }
 
-  function alertForUnseenWork(current: KDSBoardView) {
-    if (!attentionReady || !import.meta.client) return;
-    const seen = seenAttentionIds(current.serviceDate);
-    const decision = kdsAttentionDecision(current, seen, lastAttentionSignature);
-    lastAttentionSignature = decision.signature;
-    if (decision.shouldStop) {
-      pendingAttentionIds = new Set();
-      attentionPending.value = false;
-      stopAlert();
-    }
-    if (decision.shouldAlert) {
-      pendingAttentionIds = new Set(attentionIds(current).filter((id) => !seen.has(id)));
-      attentionPending.value = pendingAttentionIds.size > 0;
-      startAlert();
-    }
-  }
-
-  // Tentativa bloqueada pelo autoplay não conta como vista. Só a reprodução
-  // efetiva (recibo do kit) ou o botão Ciente persiste os IDs pendentes.
-  watch(playbackCount, (count, previous) => {
-    if (count > previous && attentionPending.value) rememberPendingAttention();
-  });
-
-  // Som só pertence ao quadro de HOJE. A atenção é por identidade, não por
-  // contagem: uma troca de tickets que preserve o total ainda precisa avisar. A
-  // memória diária também faz um ticket criado de madrugada tocar na primeira
-  // abertura, mas não repetir depois que alguém interagiu com o KDS.
+  // Som só pertence a quem ninguém viu. A atenção é por identidade, não por
+  // contagem: uma troca de tickets que preserve o total ainda precisa avisar.
   watch(() => view.value, (current) => {
     if (!current) return;
     alertForUnseenWork(current);
@@ -216,6 +203,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
 
   function connectSse() {
     if (source) return;
+    realtime.value = "connecting";
     // Same-origin sempre: o BFF (server/routes/sse/kds/[ref].ts) faz streaming do
     // eventstream do Django, em dev e em prod — nada de gate por origem.
     // django-eventstream pushes named events; any of them means "refetch".
@@ -226,37 +214,13 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
       url: ssePath(`/sse/kds/${encodeURIComponent(stationRef)}`, config.app.baseURL),
       events: ["backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"],
       onEvent: () => { refresh(); },
-      onOpen: (reconnected) => { if (reconnected) refresh(); },
+      onOpen: (reconnected) => {
+        realtime.value = "live";
+        if (reconnected) refresh();
+      },
+      onDown: () => { realtime.value = "polling"; },
     });
   }
-
-  function connectExitSse() {
-    if (exitSources.length) return;
-    const onEvent = () => { refresh(); };
-    const onOpen = (reconnected: boolean) => { if (reconnected) refresh(); };
-    exitSources = [
-      openResilientEventSource({
-        url: ssePath("/sse/kds/main", config.app.baseURL),
-        events: ["backstage-kds-update", "backstage-kds-created", "backstage-kds-status-changed", "backstage-kds-station-changed"],
-        onEvent,
-        onOpen,
-      }),
-      openResilientEventSource({
-        url: ssePath("/sse/orders", config.app.baseURL),
-        events: ["backstage-orders-update"],
-        onEvent,
-        onOpen,
-      }),
-    ];
-  }
-
-  // Só no cliente e depois de montado (EventSource é API do browser); o tipo da
-  // estação chega com o primeiro fetch, que no SSR já veio pronto.
-  const clientMounted = ref(false);
-  watch(
-    () => clientMounted.value && Boolean(board.value?.is_expedition),
-    (on) => { if (on) connectExitSse(); },
-  );
 
   let removeVisibilityListeners: (() => void) | null = null;
 
@@ -265,16 +229,14 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     if (view.value) alertForUnseenWork(view.value);
     pollTimer = setInterval(() => refresh(), 15_000);
     connectSse();
-    clientMounted.value = true;
     // Tablet dormiu / voltou à aba: refetch imediato (setInterval é throttlado em
     // aba oculta), em vez de esperar até 15s por dados possivelmente muito velhos.
-    // Tablet que dorme ou fecha com um "Desfazer" aberto: o finalizar vale na hora
+    // Tablet que dorme ou fecha com um "Desfazer" aberto: o Pronto vale na hora
     // (keepalive), em vez de sumir com a aba.
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         refresh();
         source?.reconnectNow();
-        for (const exitSource of exitSources) exitSource.reconnectNow();
       } else flushFinishes();
     };
     const onPageHide = () => flushFinishes();
@@ -295,7 +257,6 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   // numa cozinha em ritmo, toques em sequência não podem ser descartados.
   let chain: Promise<unknown> = Promise.resolve();
   let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
-  const readOnly = computed(() => Boolean(view.value && view.value.serviceDate !== view.value.today));
 
   // O `$fetch` tipado do Nitro estoura o typecheck (TS2321 excessive stack depth) ao casar
   // um path DINÂMICO contra o catch-all `/api/v1/**:path`. Estas escritas vão pro proxy BFF
@@ -318,17 +279,15 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
   }
 
   function findTicket(pk: number): KDSTicketProjection | undefined {
-    return data.value?.board?.tickets?.find(
-      (x) => x.pk === pk && !x.is_expedition,
-    ) as KDSTicketProjection | undefined;
+    return data.value?.board?.tickets?.find((x) => x.pk === pk);
   }
 
   // Primeiro toque: em preparo. Otimista; reverte e avisa se o servidor recusar.
   function start(pk: number) {
-    if (readOnly.value) return;
     const t = findTicket(pk);
-    if (!t || t.is_scheduled || t.status !== "pending") return;
+    if (!t || t.status !== "pending") return;
     t.status = "in_progress";
+    t.seen = true;
     enqueue(`/api/v1/backstage/kds/tickets/${pk}/start/`)
       .then(() => scheduleReconcile())
       .catch((err) => {
@@ -359,7 +318,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
       });
   }
 
-  // Segundo toque: finalizar — com janela de "Desfazer". O POST só sai quando a
+  // Segundo toque: Pronto, com janela de "Desfazer". O POST só sai quando a
   // janela fecha (ou o tablet dorme), então um toque errado não vira "pedido
   // pronto" avisado ao cliente. O aviso e o desfazer vivem NO CARD, que fica no
   // lugar por 5 s: um toast no topo da tela não se alcança com a mão ocupada.
@@ -370,6 +329,9 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     const next = new Set(finishing.value);
     next.delete(pk);
     finishing.value = next;
+    const deadlines = new Map(finishUntil.value);
+    deadlines.delete(pk);
+    finishUntil.value = deadlines;
   }
 
   function commitFinish(pk: number) {
@@ -384,7 +346,7 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
       })
       .catch((err) => {
         releaseFinish(pk); // volta para a grade
-        useSonner.error(httpErrorMessage(err, "Falha ao finalizar. Tente de novo."));
+        useSonner.error(httpErrorMessage(err, "Falha ao marcar Pronto. Tente de novo."));
         refresh();
       });
   }
@@ -401,76 +363,65 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     for (const pk of [...finishTimers.keys()]) commitFinish(pk);
   }
 
-  const finalize = (pk: number) => {
-    if (readOnly.value || finishTimers.has(pk)) return;
+  const finish = (pk: number) => {
+    if (finishTimers.has(pk)) return;
     const t = findTicket(pk);
-    if (!t || t.is_scheduled) return;
+    if (!t) return;
     finishing.value = new Set(finishing.value).add(pk);
+    finishUntil.value = new Map(finishUntil.value).set(pk, Date.now() + KDS_UNDO_WINDOW_MS);
     finishTimers.set(pk, setTimeout(() => commitFinish(pk), KDS_UNDO_WINDOW_MS));
   };
-  const expedite = (pk: number, action: "dispatch" | "complete") => {
-    if (readOnly.value) return;
-    removeFrom(() => data.value?.board?.tickets, pk, `/api/v1/backstage/kds/expedition/${pk}/action/`, { action });
-  };
-  // Saída: "Pronto" pela estação sem tela. Otimista — o chip vira "pronto" na
-  // hora e o botão some; se era a última estação, a reconciliação (e o SSE)
-  // move o card para "Prontos para sair". Em falha, volta e diz o porquê.
-  const busyStations = ref<Set<string>>(new Set());
-  const markStationReady = (orderPk: number, stationRef: string) => {
-    if (readOnly.value) return;
-    const key = `${orderPk}:${stationRef}`;
-    if (busyStations.value.has(key)) return;
-    const card = data.value?.board?.preparing?.find((c) => c.pk === orderPk);
-    const chip = card?.stations.find((c) => c.station_ref === stationRef);
-    if (!card || !chip || !chip.can_mark_ready) return;
-    const before = { state: chip.state, state_label: chip.state_label, can_mark_ready: chip.can_mark_ready };
-    chip.state = "done";
-    chip.state_label = "pronto";
-    chip.can_mark_ready = false;
-    busyStations.value = new Set(busyStations.value).add(key);
-    const release = () => {
-      const next = new Set(busyStations.value);
-      next.delete(key);
-      busyStations.value = next;
-    };
-    enqueue(`/api/v1/backstage/kds/expedition/${orderPk}/printed-stations/${encodeURIComponent(stationRef)}/done/`)
-      .then(async () => {
-        await refresh();
-        release();
-      })
-      .catch((err) => {
-        Object.assign(chip, before);
-        release();
-        useSonner.error(httpErrorMessage(err, "Falha ao marcar como pronto. Tente de novo."));
-        refresh();
-      });
-  };
-
   // Recall: o concluído sai da lista de recentes; a reconciliação o traz de volta ao board ativo.
   const recall = (pk: number) => {
-    if (readOnly.value) return;
     removeFrom(() => data.value?.board?.recent_done, pk, `/api/v1/backstage/kds/tickets/${pk}/recall/`);
   };
   // Reconhecer cancelado: some do board.
   const acknowledge = (pk: number) => {
-    if (readOnly.value) return;
     removeFrom(() => data.value?.board?.cancelled_tickets, pk, `/api/v1/backstage/kds/tickets/${pk}/acknowledge/`);
   };
+
+  // Volumes: quem embalou declara, onde estiver (dono, 04/10/2026). A MESMA porta do
+  // Gestor (`orders/<ref>/volumes/`, protocolo de intenção: quem age, a base lida e a
+  // chave da tentativa), com `surface: "kds"` para o histórico dizer de onde veio.
+  // Zero apaga. Não é otimista: o número só muda na tela quando o servidor gravou.
+  const { data: operatorSession } = useNuxtData<{ operator?: { id: number } | null }>("operator-session");
+  const volumesBusy = ref(false);
+  async function declareVolumes(ticket: KDSTicketProjection, volumes: number): Promise<boolean> {
+    if (volumesBusy.value || !ticket.volumes_order_ref) return false;
+    volumesBusy.value = true;
+    try {
+      await postProxy(`/api/v1/backstage/orders/${encodeURIComponent(ticket.volumes_order_ref)}/volumes/`, {
+        method: "POST",
+        body: {
+          volumes,
+          surface: "kds",
+          expected_actor_id: operatorSession.value?.operator?.id ?? null,
+          base_revision: ticket.volumes_revision,
+          idempotency_key: crypto.randomUUID(),
+        },
+      });
+      await refresh();
+      return true;
+    } catch (err) {
+      useSonner.error(httpErrorMessage(err, "Não deu para gravar os volumes. Tente de novo."));
+      await refresh();
+      return false;
+    } finally {
+      volumesBusy.value = false;
+    }
+  }
 
   onBeforeUnmount(() => {
     flushFinishes();
     if (pollTimer) clearInterval(pollTimer);
     if (reconcileTimer) clearTimeout(reconcileTimer);
     if (source) { source.close(); source = null; }
-    for (const exitSource of exitSources) exitSource.close();
-    exitSources = [];
     if (removeVisibilityListeners) removeVisibilityListeners();
   });
 
   return {
     board,
     view,
-    readOnly,
     pending,
     error,
     stationMissing,
@@ -478,16 +429,17 @@ export function useKdsBoard(stationRef: string, serviceDate?: Ref<string>) {
     soundOn,
     soundBlocked,
     attentionPending,
-    toggleSound,
+    attentionKeys,
+    realtime,
     activateAttentionSound,
     acknowledgeAttention,
     start,
-    finalize,
+    finish,
+    finishUntil,
     undoFinish,
-    expedite,
-    markStationReady,
-    busyStations,
     recall,
     acknowledge,
+    declareVolumes,
+    volumesBusy,
   };
 }

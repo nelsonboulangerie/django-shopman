@@ -19,12 +19,19 @@ const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
  * as do PDV — fechamento do dia → Produção (na ORDEM, não na raiz), trava de
  * cobrança → fila do Gestor, aviso de recebimento pendente → fila do Gestor.
  */
+// Também a ação como dado (`:actions="[{ href: hubUrl, target: … }]"` do NuxtEmpty,
+// como no "Voltar à Central" do Marketing sem acesso).
 const CROSS_APP_HREF =
-  /:href="(hubUrl|tile\.url|productionGrid|workOrderHref\(row\)|closeGuardNotice\.link\.href|note\.link\.href)"/;
+  /(?::href="|\bhref: )(hubUrl|tile\.url|productionGrid|workOrderHref\(row(?:\.original)?\)|closeGuardNotice\.link\.href|note\.link\.href)(?=["',\s])/;
 
-/** O link declara o alvo pela regra do kit — por `:target` ou pelo `v-bind` inteiro. */
+/** O link declara o alvo pela regra do kit — por `:target`, pelo `v-bind` inteiro ou
+ *  pelo `target:` da ação como dado. */
 function declaresTarget(tag: string): boolean {
-  return tag.includes(":target=") || /v-bind="[a-zA-Z]*[aA]ttrs(For)?\(/.test(tag);
+  return (
+    tag.includes(":target=") ||
+    /\btarget: /.test(tag) ||
+    /v-bind="[a-zA-Z]*[aA]ttrs(For)?\(/.test(tag)
+  );
 }
 
 function vueFiles(dir: string): string[] {
@@ -68,7 +75,7 @@ describe("link para outro app de operador", () => {
     expect(offenders, "use useOperatorAppLink().attrsFor(href) e ligue :target/:rel").toEqual([]);
     // Varredura que não acha nada não prova nada: se o padrão do href mudar (ou os
     // links saírem do lugar), este teste passaria a ser decorativo sem ninguém notar.
-    // Hoje são os tiles do Shopman Apps, o "Voltar ao Shopman Apps" da tela sem
+    // Hoje são os tiles da Central, o "Voltar à Central" da tela sem
     // acesso do Marketing e as três travessias do PDV (duas para a Produção no
     // fechamento e a da trava de cobrança). O aviso de saldo na retirada deixou de
     // ser travessia: o PDV recebe em Encomendas, no próprio app.

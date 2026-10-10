@@ -18,6 +18,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections.types import Action
 from shopman.shop.services import account as account_service
@@ -31,7 +32,6 @@ from shopman.storefront.identity import (
     knows_only_the_number,
 )
 from shopman.storefront.intents.types import AddressIntent
-from shopman.storefront.observability import ServerTimingMixin
 from shopman.storefront.presentation.account import (
     FOOD_PREFERENCE_OPTIONS,
     NOTIFICATION_CHANNELS,

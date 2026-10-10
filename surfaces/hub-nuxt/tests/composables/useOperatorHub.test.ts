@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "vue";
 import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 
-// Read-window do Shopman Apps: deriva tiles/operatorName da projection. Mockamos useFetch.
+// Read-window da Central: deriva tiles/operatorName da projection. Mockamos useFetch.
 const { fetchResult } = vi.hoisted(() => ({ fetchResult: { value: null as unknown } }));
 
 mockNuxtImport("useFetch", () => () => fetchResult.value);
@@ -26,6 +26,15 @@ describe("useOperatorHub", () => {
     expect(h.tiles.value).toHaveLength(1);
     expect(h.tiles.value[0]!.ref).toBe("pos");
     expect(h.hub.value).toEqual(hub);
+    // Projection sem fila (versão anterior do Django) não quebra a tela.
+    expect(h.queue.value).toBeNull();
+  });
+
+  it("expõe o resumo da fila como veio do servidor", async () => {
+    const queue = { total_count: 3, server_now: "2026-10-03T10:00:00-03:00" };
+    fetchResult.value = asyncData({ hub: { operator_name: "Ana", tiles: [], queue } });
+    const h = await useOperatorHub();
+    expect(h.queue.value).toEqual(queue);
   });
 
   it("degrada para []/'' quando o payload vem vazio", async () => {
@@ -34,5 +43,6 @@ describe("useOperatorHub", () => {
     expect(h.hub.value).toBeNull();
     expect(h.tiles.value).toEqual([]);
     expect(h.operatorName.value).toBe("");
+    expect(h.queue.value).toBeNull();
   });
 });

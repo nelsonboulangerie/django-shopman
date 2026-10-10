@@ -131,7 +131,7 @@ export function exclusionNotes(
     .map((key) =>
       sentence(
         counts[key] ?? 0,
-        `fora por um motivo novo (${key}) — avise quem cuida do sistema`,
+        `fora por um motivo novo (${key}). Avise quem cuida do sistema`,
       ),
     );
   return [...known, ...unknown];

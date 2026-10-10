@@ -434,6 +434,109 @@ def decide(
         }
 
     listing_item = _sku_in_channel_listing(sku, channel_ref)
+    gate = _listing_gate_decision(
+        sku, qty_d, listing_item, as_component=as_component, target_date=target_date,
+    )
+    if gate is not None:
+        return gate
+
+    adapter = get_adapter("stock")
+    scope = adapter.get_channel_scope(channel_ref)
+    info = adapter.get_availability(sku, target_date=target_date, **_availability_kwargs(scope))
+    return _stock_decision(adapter, sku, qty_d, info, target_date=target_date)
+
+
+def decide_many(
+    lines,
+    *,
+    channel_ref: str | None = None,
+    target_date: date | None = None,
+) -> list[dict]:
+    """``decide`` para várias linhas ``(sku, qty)`` com leituras em lote.
+
+    Devolve, na ordem das linhas, exatamente o que ``decide(sku, qty,
+    channel_ref=..., target_date=...)`` devolveria para cada uma. O que muda é o
+    custo: ``decide`` vai ao banco umas quinze vezes por SKU (canal, vitrine,
+    item da vitrine, bundle, recorte do canal, estoque, lotes, holds…), e a
+    revisão da venda do PDV perguntava linha por linha. Aqui o canal, a vitrine,
+    a detecção de bundle e a leitura do Stockman são feitas uma vez para todos os
+    SKUs, e cada linha é decidida pelos MESMOS passos de ``decide``
+    (``_listing_gate_decision`` e ``_stock_decision``).
+
+    Ficam no caminho de ``decide``, um por um: linha sem ``target_date`` (a data
+    ali depende do SKU e da quantidade, via fila de espera) e SKU que é bundle
+    (a expansão é recursiva e rara no balcão).
+    """
+    items = [(str(sku), Decimal(str(qty))) for sku, qty in lines]
+    if not items:
+        return []
+    if target_date is None:
+        return [decide(sku, qty, channel_ref=channel_ref) for sku, qty in items]
+
+    skus = list(dict.fromkeys(sku for sku, _qty in items))
+    catalog = get_adapter("catalog")
+    bulk_bundles = getattr(catalog, "bulk_bundle_skus", None)
+    try:
+        bundles = bulk_bundles(skus) if bulk_bundles else set(skus)
+    except Exception:
+        logger.debug("availability.decide_many: bundle lookup degraded; per-SKU path", exc_info=True)
+        bundles = set(skus)
+    simple = [sku for sku in skus if sku not in bundles]
+
+    listing_items = _listing_items_for_skus(simple, channel_ref)
+    adapter = get_adapter("stock")
+    infos: dict[str, dict] = {}
+    to_read = [
+        sku for sku in simple
+        if _listing_gate_decision(
+            sku, Decimal("0"), listing_items[sku], as_component=False, target_date=target_date,
+        ) is None
+    ]
+    if to_read:
+        scope = adapter.get_channel_scope(channel_ref)
+        kwargs = _availability_kwargs(scope)
+        bulk_read = getattr(adapter, "get_availability_for_skus", None)
+        if bulk_read is not None:
+            infos = bulk_read(to_read, target_date=target_date, **kwargs)
+        else:
+            infos = {sku: adapter.get_availability(sku, target_date=target_date, **kwargs) for sku in to_read}
+
+    decisions: list[dict] = []
+    for sku, qty in items:
+        if sku in bundles:
+            decisions.append(decide(sku, qty, channel_ref=channel_ref, target_date=target_date))
+            continue
+        gate = _listing_gate_decision(
+            sku, qty, listing_items[sku], as_component=False, target_date=target_date,
+        )
+        if gate is not None:
+            decisions.append(gate)
+            continue
+        decisions.append(_stock_decision(adapter, sku, qty, infos[sku], target_date=target_date))
+    return decisions
+
+
+def _availability_kwargs(scope: dict) -> dict:
+    """O recorte do canal nos argumentos da leitura de estoque do adapter."""
+    return {
+        "safety_margin": scope["safety_margin"],
+        "allowed_positions": scope["allowed_positions"],
+        "excluded_positions": scope.get("excluded_positions"),
+        "expiry_margin_days": scope.get("expiry_margin_days", 0),
+        "include_nonconforming": scope.get("sells_nonconforming", True),
+        "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
+    }
+
+
+def _listing_gate_decision(
+    sku: str,
+    qty_d: Decimal,
+    listing_item: dict | bool,
+    *,
+    as_component: bool,
+    target_date: date | None,
+) -> dict | None:
+    """A recusa do portão da vitrine, ou ``None`` quando o SKU passa por ele."""
     if listing_item is False and as_component:
         listing_item = True  # componente não precisa estar listado; pausado no canal, sim, recusa
     if listing_item is False:
@@ -465,19 +568,11 @@ def decide(
     # ``ListingItem.min_qty`` is kept in the model but not enforced at the
     # gate (AVAILABILITY-PLAN §10 — ``below_min_qty`` is YAGNI today).
     # Future B2B/MOQ scenarios should resurrect this with proper UX.
+    return None
 
-    adapter = get_adapter("stock")
-    scope = adapter.get_channel_scope(channel_ref)
-    info = adapter.get_availability(
-        sku,
-        target_date=target_date,
-        safety_margin=scope["safety_margin"],
-        allowed_positions=scope["allowed_positions"],
-        excluded_positions=scope.get("excluded_positions"),
-            expiry_margin_days=scope.get("expiry_margin_days", 0),
-            include_nonconforming=scope.get("sells_nonconforming", True),
-            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
-    )
+
+def _stock_decision(adapter, sku: str, qty_d: Decimal, info: dict, *, target_date: date | None) -> dict:
+    """A decisão a partir da leitura de estoque já feita (passo final de ``decide``)."""
     if not info.get("is_paused", False) and not info.get("is_tracked", bool(info.get("positions"))):
         return {
             "approved": True,
@@ -691,6 +786,31 @@ def _sku_in_channel_listing(sku: str, channel_ref: str | None) -> dict | bool:
     if item is None:
         return False
     return item
+
+
+def _listing_items_for_skus(skus: list[str], channel_ref: str | None) -> dict[str, dict | bool]:
+    """``_sku_in_channel_listing`` para vários SKUs: canal e vitrine lidos uma vez.
+
+    Mesmas respostas, SKU a SKU: ``True`` quando o portão não se aplica, o
+    ``dict`` do item quando o SKU está na vitrine, ``False`` quando não está.
+    """
+    if not skus:
+        return {}
+    skipped = dict.fromkeys(skus, True)
+    if not channel_ref:
+        return skipped
+    channel = Channel.objects.filter(ref=channel_ref).first()
+    if channel is None or not channel.ref:
+        return skipped
+    listing_ref = channel.ref
+    catalog = get_adapter("catalog")
+    if not catalog.listing_exists(listing_ref):
+        return skipped
+    bulk_items = getattr(catalog, "bulk_listing_items", None)
+    if bulk_items is None:
+        return {sku: _sku_in_channel_listing(sku, channel_ref) for sku in skus}
+    found = bulk_items(skus, listing_ref)
+    return {sku: found.get(sku, False) for sku in skus}
 
 
 def _channel_hold_ttl_minutes(channel_ref: str | None) -> int:

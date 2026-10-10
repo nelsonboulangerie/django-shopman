@@ -337,8 +337,11 @@ class VersionUsageProjection:
     planned_display: str
     finished_display: str
     loss_display: str
+    #: Aproveitamento = realizado ÷ previsto das executadas (UX-PROD-AF).
     yield_pct: str
     yield_display: str
+    #: Fornadas sem abertura declarada: o previsto delas foi assumido igual ao planejado.
+    started_assumed_batches: int
     avg_loss: str
     avg_loss_display: str
     loss_pct_display: str
@@ -1107,8 +1110,10 @@ def build_recipe_usage(ref: str, *, date_from=None, date_to=None) -> RecipeUsage
     """As fornadas EXECUTADAS da receita, por versão, num intervalo de datas (inclusivo).
 
     Lê as ``WorkOrder`` (não os ``DayClosing``): fornada concluída, agrupada pelo
-    ``version_ref`` congelado no plano. Rendimento = concluído ÷ planejado das
-    executadas; perda = soma do resíduo ``(iniciado ou planejado) − concluído``.
+    ``version_ref`` congelado no plano. Aproveitamento = realizado ÷ previsto das
+    executadas (``WorkOrder.yield_rate``); perda = soma do resíduo
+    ``previsto − realizado``. Fornada fechada sem abertura declarada tem o
+    previsto assumido igual ao planejado, e o resumo diz quantas foram.
 
     Os avisos vão no dado (``caveats``), e a ordem é a da linha do tempo (versão
     mais nova primeiro), **nunca** por perda: a perda é resíduo contábil, e
@@ -1167,7 +1172,7 @@ def _own_version_number(version_ref: str, ref: str) -> int | None:
     return number if stamped_ref == ref else None
 
 
-_USAGE_SUM_KEYS = ("executed", "executed_planned", "executed_started", "finished", "loss")
+_USAGE_SUM_KEYS = ("executed", "executed_planned", "executed_started", "started_assumed", "finished", "loss")
 
 
 def _merge_usage_rows(acc: dict | None, row: dict) -> dict:
@@ -1185,14 +1190,17 @@ def _version_usage(row: dict, *, number: int | None, ref: str, grade_labels: dic
     planned, started, finished, loss = (
         row["executed_planned"], row["executed_started"], row["finished"], row["loss"],
     )
-    yield_pct = (finished / planned * 100) if planned else None
+    yield_pct = (finished / started * 100) if started else None
+    assumed = int(row["started_assumed"])
     avg_loss = (loss / batches) if batches else None
     loss_pct = (loss / started * 100) if started else None
     batches_display = f"{batches} fornada" if batches == 1 else f"{batches} fornadas"
     avg_loss_display = f"{_number(avg_loss)} por fornada" if avg_loss is not None else ""
     summary = batches_display
     if yield_pct is not None:
-        summary += f"; rendimento médio {_pct_display(yield_pct)}"
+        summary += f"; aproveitamento médio {_pct_display(yield_pct)}"
+        if assumed:
+            summary += f" (previsto assumido em {assumed} de {batches})"
     if avg_loss_display:
         summary += f"; perda média {avg_loss_display}"
 
@@ -1212,6 +1220,7 @@ def _version_usage(row: dict, *, number: int | None, ref: str, grade_labels: dic
         loss_display=_number(loss),
         yield_pct=_plain_number(yield_pct),
         yield_display=_pct_display(yield_pct),
+        started_assumed_batches=assumed,
         avg_loss=_plain_number(avg_loss),
         avg_loss_display=avg_loss_display,
         loss_pct_display=_pct_display(loss_pct),

@@ -17,14 +17,14 @@ const props = withDefaults(
     /** O nome que aparece como autor da postagem e como contato da conversa. */
     shopName?: string;
     /** Ajuste de posição do botão do olho no cabeçalho que o chama. A raiz é o
-     *  `DialogRoot`, que não é um elemento: a classe precisa chegar ao botão. */
+     *  `NuxtModal`, que não é um elemento: a classe precisa chegar ao botão. */
     triggerClass?: string;
   }>(),
   { shopName: "Nelson Boulangerie", triggerClass: "" },
 );
 
 const open = ref(false);
-const activeKey = ref("");
+const activeKey = ref(props.scenes[0]?.key || "");
 /** A hora do retrato é congelada na abertura: um relógio correndo dentro de uma prévia
  *  redesenharia a tela debaixo de quem está conferindo. */
 const shownAt = ref("");
@@ -58,82 +58,48 @@ const SCENE_NOTES: Record<SimulatedScene["kind"], string> = {
     "A mensagem chega assim na conversa de cada pessoa elegível, uma por pessoa. Mensagem entregue fica com quem recebeu.",
 };
 
-const note = computed(() => (scene.value ? SCENE_NOTES[scene.value.kind] : ""));
+/** As abas: uma por formato, com o nome do formato e do lugar. */
+const sceneTabs = computed(() =>
+  props.scenes.map((candidate) => ({ label: candidate.label, value: candidate.key })),
+);
 
-function step(delta: number) {
-  if (props.scenes.length < 2) return;
-  const current = props.scenes.findIndex(
-    (candidate) => candidate.key === scene.value?.key,
-  );
-  const next =
-    (current + delta + props.scenes.length) % props.scenes.length;
-  activeKey.value = props.scenes[next]?.key || "";
-}
+const note = computed(() => (scene.value ? SCENE_NOTES[scene.value.kind] : ""));
 </script>
 
 <template>
-  <UiDialog v-if="scenes.length" v-model:open="open">
-    <UiDialogTrigger as-child>
-      <UiButton
-        type="button"
-        variant="ghost"
-        size="icon"
-        :class="triggerClass"
-        data-testid="open-simulated-preview"
-        aria-label="Ver a prévia em tamanho real"
-      >
-        <Icon name="lucide:eye" class="size-4" />
-      </UiButton>
-    </UiDialogTrigger>
+  <NuxtModal
+    v-if="scenes.length"
+    v-model:open="open"
+    fullscreen
+    title="Prévia em tamanho real"
+    :description="scene ? `${scene.label}, do jeito que a pessoa vai ver.` : ''"
+  >
+    <NuxtButton
+      color="neutral"
+      variant="ghost"
+      square
+      icon="i-lucide-eye"
+      :class="triggerClass"
+      data-testid="open-simulated-preview"
+      aria-label="Ver a prévia em tamanho real"
+    />
 
-    <UiDialogContent
-      class="h-dvh max-h-dvh w-screen max-w-none gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none"
-      data-testid="simulated-preview"
-    >
-      <div class="flex h-full min-h-0 flex-col">
-        <UiDialogHeader class="px-4 pt-4 pr-14 pb-3 text-left">
-          <UiDialogTitle>Prévia em tamanho real</UiDialogTitle>
-          <UiDialogDescription>
-            {{ scene?.label }} — do jeito que a pessoa vai ver.
-          </UiDialogDescription>
-        </UiDialogHeader>
-
+    <template #body>
+      <div class="flex h-full min-h-0 flex-col gap-3" data-testid="simulated-preview">
         <!-- Um botão por FORMATO. Instagram e Facebook com o mesmo Feed são um retrato
-             só; Story e Feed do mesmo Instagram são dois. Abas nativas preservam
-             role=tab e aria-selected; as setas do teclado passam de um para o outro. -->
-        <div
+             só; Story e Feed do mesmo Instagram são dois. -->
+        <NuxtTabs
           v-if="scenes.length > 1"
-          class="grid grid-cols-2 gap-2 px-4 pb-3"
-          role="tablist"
+          v-model="activeKey"
+          :items="sceneTabs"
+          :content="false"
+          variant="pill"
           aria-label="Formato da prévia"
-          @keydown.left.prevent="step(-1)"
-          @keydown.right.prevent="step(1)"
-        >
-          <button
-            v-for="(candidate, index) in scenes"
-            :key="candidate.key"
-            type="button"
-            role="tab"
-            class="min-h-11 rounded-md border px-3 text-sm font-medium"
-            :class="[
-              candidate.key === scene?.key
-                ? 'border-primary bg-primary/10 text-foreground'
-                : 'border-border bg-background text-muted-foreground',
-              index === scenes.length - 1 && scenes.length % 2 === 1
-                ? 'col-span-2'
-                : '',
-            ]"
-            :aria-selected="candidate.key === scene?.key"
-            :data-scene="candidate.key"
-            @click="activeKey = candidate.key"
-          >
-            {{ candidate.label }}
-          </button>
-        </div>
+        />
 
         <div
           v-if="scene"
-          class="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4"
+          class="flex min-h-0 flex-1 items-center justify-center overflow-y-auto"
           role="tabpanel"
           :aria-label="scene.label"
           :data-scene-kind="scene.kind"
@@ -174,14 +140,17 @@ function step(delta: number) {
             >
               <!-- O chevron é o gesto de voltar do Story e fecha a prévia de verdade:
                    um controle desenhado que não faz nada ensinaria a tela a mentir. -->
-              <UiDialogClose
-                class="grid size-11 place-items-center rounded-full text-white"
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                square
+                icon="i-lucide-chevron-left"
+                class="text-white"
                 aria-label="Fechar a prévia"
-              >
-                <Icon name="lucide:chevron-left" class="size-5" />
-              </UiDialogClose>
+                @click="open = false"
+              />
               <span
-                class="grid size-7 place-items-center rounded-full bg-white/25 text-[11px] font-semibold"
+                class="grid size-7 place-items-center rounded-full bg-white/25 text-xs font-semibold"
                 aria-hidden="true"
               >
                 {{ shopName.slice(0, 1) }}
@@ -355,7 +324,7 @@ function step(delta: number) {
                   >
                     {{ scene.link }}
                   </p>
-                  <p class="mt-1 text-right text-[11px] text-muted-foreground">
+                  <p class="mt-1 text-right text-xs text-muted-foreground">
                     {{ shownAt }}
                   </p>
                 </div>
@@ -366,11 +335,11 @@ function step(delta: number) {
 
         <p
           v-if="note"
-          class="border-t border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground"
+          class="border-t border-border pt-3 text-xs text-muted-foreground"
         >
           {{ note }}
         </p>
       </div>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+  </NuxtModal>
 </template>

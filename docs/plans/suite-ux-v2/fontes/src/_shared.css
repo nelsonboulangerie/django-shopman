@@ -1,0 +1,82 @@
+/* Proposta: os papéis tipográficos que hoje são só comentário em operator-base.css
+   viram CSS de verdade (op-*), como as .shop-* da loja. */
+@layer components {
+  .op-display { font-size: 1.75rem; line-height: 2.125rem; font-weight: 600; letter-spacing: -0.01em; }
+  .op-figure  { font-size: 1.5rem;  line-height: 1.75rem;  font-weight: 600; font-variant-numeric: tabular-nums; }
+  .op-title   { font-size: 1rem;    line-height: 1.5rem;   font-weight: 600; }
+  .op-body    { font-size: 0.9375rem; line-height: 1.375rem; }
+  .op-label   { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; }
+  .op-micro   { font-size: 0.75rem; line-height: 1rem; letter-spacing: 0.02em; }
+  .op-eyebrow { font-size: 0.6875rem; line-height: 1rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* Rail da suíte: o app ativo acende com a cor de identidade dele */
+  .rail-app { color: color-mix(in oklab, var(--rail-foreground) 72%, transparent); }
+  .rail-app:hover { background: color-mix(in oklab, var(--rail-foreground) 10%, transparent); }
+  [data-app="pos"] .rail-app[data-app="pos"],
+  [data-app="kds"] .rail-app[data-app="kds"],
+  [data-app="orders"] .rail-app[data-app="orders"],
+  [data-app="production"] .rail-app[data-app="production"],
+  [data-app="purchase"] .rail-app[data-app="purchase"],
+  [data-app="marketing"] .rail-app[data-app="marketing"],
+  [data-app="bi"] .rail-app[data-app="bi"],
+  [data-app="hub"] .rail-app[data-app="hub"] {
+    background: var(--rail-foreground);
+    color: var(--app-color);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .18);
+  }
+  [data-app] .rail-app .rail-dot { display: none; }
+
+  [data-app="pos"] { --app-color: #A95032; }
+  [data-app="kds"] { --app-color: #2E7168; }
+  [data-app="orders"] { --app-color: #8B2F4D; }
+  [data-app="production"] { --app-color: #B9781B; }
+  [data-app="purchase"] { --app-color: #386F9A; }
+  [data-app="marketing"] { --app-color: #7D4B88; }
+  [data-app="bi"] { --app-color: #414F91; }
+  [data-app="hub"] { --app-color: #34373B; }
+
+  button, a, kbd, .chip, label > span { white-space: nowrap; }
+  /* Anotações das prévias (não fazem parte da UI) */
+  .pin { position:absolute; z-index:60; width:24px; height:24px; border-radius:999px; background:#1f6feb; color:#fff;
+    font: 700 12px/24px "Instrument Sans", sans-serif; text-align:center; box-shadow:0 0 0 3px #fff, 0 2px 6px rgb(0 0 0 / .35); }
+  .legend { background:#0f1b2d; color:#e6edf6; padding:14px 20px; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px 24px;
+    font: 500 13px/18px "Instrument Sans", sans-serif; }
+  .legend .t { grid-column:1/-1; font-weight:700; font-size:14px; color:#fff; display:flex; gap:10px; align-items:center; }
+  .legend .t span { font-weight:500; color:#9fb3c8; }
+  .legend div { display:flex; gap:8px; align-items:flex-start; }
+  .legend b { flex:none; width:20px; height:20px; border-radius:999px; background:#1f6feb; color:#fff; display:grid; place-items:center; font-size:11px; }
+  .note {
+    position: absolute; z-index: 50; background: #1f6feb; color: #fff; font-size: 12px; line-height: 16px;
+    font-weight: 600; padding: 4px 8px; border-radius: 999px; box-shadow: 0 2px 6px rgb(0 0 0 / .25);
+    white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .note b { background: #fff; color: #1f6feb; border-radius: 999px; width: 18px; height: 18px; display: inline-grid; place-items: center; font-size: 11px; }
+  .note-box { position: absolute; z-index: 49; border: 2px dashed #1f6feb; border-radius: 10px; pointer-events: none; }
+
+  /* ===== v3: rail com as seções do app ===== */
+  .rail-item { display:flex; flex-direction:column; align-items:center; gap:3px; width:64px; padding:7px 0 6px; border-radius:10px;
+    color: color-mix(in oklab, var(--rail-foreground) 80%, transparent); font-size:11px; line-height:13px; font-weight:600; position:relative; text-align:center; white-space:normal; }
+  .rail-item svg { width:22px !important; height:22px !important; }
+  .rail-item.on { background: var(--rail-foreground); color: var(--rail); box-shadow: 0 1px 2px rgb(0 0 0/.18); }
+  .dark .rail-item.on { color: var(--background); }
+  .rail-item .badge { position:absolute; top:2px; right:6px; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#f2c46b; color:#3b2a1e; font-size:11px; line-height:18px; font-weight:700; }
+  .rail-item .attn { position:absolute; top:6px; right:17px; width:9px; height:9px; border-radius:999px; background:#f2c46b; box-shadow:0 0 0 2px var(--rail); }
+  .rail-item kbd { font: 600 9.5px/1 ui-monospace, monospace; opacity:.7; }
+  .live-dot { width:8px; height:8px; border-radius:999px; background: var(--success); box-shadow:0 0 0 3px color-mix(in oklab, var(--success) 22%, transparent); display:inline-block; flex:none; }
+
+  .pill-info { background: color-mix(in oklab, var(--info) 12%, transparent); color: var(--info); }
+  .pill-success { background: color-mix(in oklab, var(--success) 12%, transparent); color: var(--success); }
+  .pill-warning { background: color-mix(in oklab, var(--warning) 12%, transparent); color: var(--warning); }
+  .pill-destructive { background: color-mix(in oklab, var(--destructive) 12%, transparent); color: var(--destructive); }
+  .pill-primary { background: color-mix(in oklab, var(--primary) 12%, transparent); color: var(--primary); }
+  .pill-muted { background: var(--muted); color: var(--muted-foreground); }
+  .act-0 { background: var(--primary); color: var(--primary-foreground); }
+  .act-1 { border: 1px dashed var(--border); color: var(--muted-foreground); }
+
+  /* moldura de dispositivo para prévias de celular/tablet */
+  .device { border-radius: 44px; padding: 12px; background: #1b1410; box-shadow: 0 20px 50px rgb(0 0 0/.35), inset 0 0 0 2px #3a2c22; }
+  .device > .screen { border-radius: 32px; overflow: hidden; position: relative; }
+  .device.tablet { border-radius: 30px; padding: 16px; }
+  .device.tablet > .screen { border-radius: 16px; }
+}

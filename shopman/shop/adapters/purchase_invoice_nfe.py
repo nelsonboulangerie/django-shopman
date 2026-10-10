@@ -175,6 +175,7 @@ def parse_nfe_xml_to_purchase_draft(xml: str | bytes, *, access_key: str = "") -
     series = _text(ide, "serie")
     issued_at = (_text(ide, "dhEmi") or _text(ide, "dEmi"))[:10]
     total_value = _decimal(_text(_find_desc(inf, "ICMSTot"), "vNF"))
+    volumes = _declared_volumes(inf)
 
     items = [_item_from_det(det, index=index) for index, det in enumerate(_find_children(inf, "det"), start=1)]
     lines = [
@@ -198,6 +199,10 @@ def parse_nfe_xml_to_purchase_draft(xml: str | bytes, *, access_key: str = "") -
         "supplierRef": supplier.ref if supplier else "",
         "note": " - ".join(note_parts),
         "lines": lines,
+        # Quantos volumes (caixas, sacos, fardos) a nota declara no transporte.
+        # É o número que o recebedor confere contando na doca; 0 quando a
+        # nota não informou, e aí a tela soma as embalagens das linhas.
+        "invoiceVolumes": volumes,
         "issuer": {
             "document": issuer_document,
             "name": issuer_name,
@@ -205,6 +210,16 @@ def parse_nfe_xml_to_purchase_draft(xml: str | bytes, *, access_key: str = "") -
             "phone": _text(_find_child(issuer, "enderEmit"), "fone"),
         },
     }
+
+
+def _declared_volumes(inf: ET.Element) -> int:
+    """Soma de ``transp/vol/qVol``: os volumes que a nota diz ter despachado."""
+    total = 0
+    for vol in _find_children(_find_child(inf, "transp"), "vol"):
+        quantity = _decimal(_text(vol, "qVol"))
+        if quantity > 0 and quantity == quantity.to_integral():
+            total += int(quantity)
+    return total
 
 
 def _download_nfe_xml(access_key: str, config: dict[str, Any]) -> str:
@@ -310,6 +325,10 @@ def _receipt_line_from_item(item: NFeItem, *, index: int, supplier: Any | None) 
         "requiresConversion": requires_conversion,
         "conversionSuggestion": _conversion_suggestion_data(conversion_suggestion),
         "purchaseQty": _decimal_text(quantity),
+        # A quantidade da NOTA na unidade da linha. `purchaseQty` é o que
+        # chegou (o recebedor sobrescreve); este fica parado, e é a diferença
+        # entre os dois que o recebimento por exceção cobra com motivo.
+        "invoicePurchaseQty": _decimal_text(quantity),
         "costInput": _money_text(total_value),
         "expiryDate": item.expiry_date,
         # Validade que veio da NOTA não é a mesma coisa que validade digitada:

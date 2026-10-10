@@ -35,6 +35,13 @@ _CATEGORY_BASE_SETTING = {
     "order": "SHOPMAN_ORDERS_BASE_URL",
     "purchase": "SHOPMAN_PURCHASE_BASE_URL",
     "report": "SHOPMAN_BI_BASE_URL",
+    "kitchen": "SHOPMAN_KDS_BASE_URL",
+}
+#: A Cozinha vibra no bolso (prévia v4 ``cozinha-celular``): o atraso são três
+#: toques curtos, o pedido novo um toque longo. Os outros avisos não vibram.
+_KITCHEN_VIBRATION = {
+    NotificationSeverity.WARNING: [120, 90, 120, 90, 120],
+    NotificationSeverity.ACTION_REQUIRED: [400],
 }
 
 
@@ -165,7 +172,7 @@ def _push_payload(notification: UserNotification) -> dict:
     body = ""
     if notification.category not in _FINANCIAL_OR_SENSITIVE_CATEGORIES:
         body = _scrub(notification.message, maximum=180)
-    return {
+    payload = {
         "schema_version": 1,
         "notification_id": notification.pk,
         "category": notification.category,
@@ -185,6 +192,9 @@ def _push_payload(notification: UserNotification) -> dict:
             lifecycle=NotificationLifecycle.UNSEEN,
         ).exclude(severity=NotificationSeverity.INFORMATION).count(),
     }
+    if notification.category == "kitchen" and notification.severity in _KITCHEN_VIBRATION:
+        payload["vibrate"] = _KITCHEN_VIBRATION[notification.severity]
+    return payload
 
 
 def _scrub(value: object, *, maximum: int) -> str:

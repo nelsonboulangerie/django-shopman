@@ -61,7 +61,7 @@ class LoyaltyAccountAdmin(CustomerOwnedPrivacyFenceAdminMixin, admin.ModelAdmin)
     def stamps_progress(self, obj):
         pct = obj.stamps_progress_percent
         return format_html(
-            '{}/{} ({}%) — {} completas',
+            '{}/{} ({}%), {} completas',
             obj.stamps_current,
             obj.stamps_target,
             pct,

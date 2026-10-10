@@ -61,7 +61,7 @@ def test_o_gerente_transforma_o_dispositivo_em_estacao(client, gerente, terminal
     client.force_login(gerente)
 
     resposta = client.post(
-        STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json"
+        STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json"
     )
 
     assert resposta.status_code == 200
@@ -81,7 +81,7 @@ def test_a_estacao_e_a_sessao_do_gestor_sobrevivem_ao_lock(client, gerente, term
     quando o PDV é travado; apenas a capability do PDV volta à antessala.
     """
     client.force_login(gerente)
-    client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
+    client.post(STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json")
 
     client.post(
         reverse("api-backstage-operator-lock"),
@@ -112,7 +112,7 @@ def test_quem_nao_gere_operadores_nao_provisiona(client, terminal):
     client.force_login(caixa)
 
     resposta = client.post(
-        STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json"
+        STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json"
     )
 
     assert resposta.status_code == 403
@@ -128,11 +128,11 @@ def test_terminal_desconhecido_e_recusado(client, gerente):
     client.force_login(gerente)
 
     resposta = client.post(
-        STATION_URL, {"terminal_ref": "pdv-fantasma"}, content_type="application/json"
+        STATION_URL, {"workstation_ref": "pdv-fantasma"}, content_type="application/json"
     )
 
     assert resposta.status_code == 400
-    assert resposta.json()["error"]["code"] == "terminal_unknown"
+    assert resposta.json()["error"]["code"] == "workstation_unknown"
     assert not TrustedDevice.objects.filter(subject_type=SubjectType.STATION).exists()
 
 
@@ -142,7 +142,7 @@ def test_terminal_inativo_e_recusado(client, gerente, terminal):
     client.force_login(gerente)
 
     resposta = client.post(
-        STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json"
+        STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json"
     )
 
     assert resposta.status_code == 400
@@ -154,9 +154,9 @@ def test_a_tela_de_provisionamento_ve_o_estado_e_as_opcoes(client, gerente, term
 
     antes = client.get(STATION_URL).json()
     assert antes["station"] == ""
-    assert [t["ref"] for t in antes["terminals"]] == ["pdv-2", "pdv-main"]
+    assert [w["ref"] for w in antes["workstations"]] == ["pdv-2", "pdv-main"]
 
-    client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
+    client.post(STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json")
 
     assert client.get(STATION_URL).json()["station"] == terminal.ref
 
@@ -168,9 +168,9 @@ def test_revogar_mata_a_confianca_no_banco(client, gerente, terminal):
     sair da loja. O dispositivo perdido continua revogável pelo Admin.
     """
     client.force_login(gerente)
-    client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
+    client.post(STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json")
 
-    resposta = client.delete(f"{STATION_URL}?terminal_ref={terminal.ref}")
+    resposta = client.delete(f"{STATION_URL}?workstation_ref={terminal.ref}")
 
     assert resposta.status_code == 200
     assert not TrustedDevice.objects.filter(
@@ -181,8 +181,8 @@ def test_revogar_mata_a_confianca_no_banco(client, gerente, terminal):
 def test_provisionar_duas_vezes_nao_polui_a_auditoria(client, gerente, terminal):
     """Abrir a tela de novo no mesmo dispositivo não cria um segundo dispositivo."""
     client.force_login(gerente)
-    client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
-    client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
+    client.post(STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json")
+    client.post(STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json")
 
     assert TrustedDevice.objects.filter(subject_type=SubjectType.STATION).count() == 1
 
@@ -195,7 +195,7 @@ def test_gerente_repara_dois_vinculos_com_escolha_explicita(client, gerente, ter
     client.force_login(gerente)
 
     resposta = client.post(
-        STATION_URL, {"terminal_ref": outro.ref}, content_type="application/json"
+        STATION_URL, {"workstation_ref": outro.ref}, content_type="application/json"
     )
 
     assert resposta.status_code == 200
@@ -219,7 +219,7 @@ def test_reparo_preserva_outro_dispositivo(client, gerente, terminal):
 
     resposta = client.post(
         STATION_URL,
-        {"terminal_ref": outro_terminal.ref},
+        {"workstation_ref": outro_terminal.ref},
         content_type="application/json",
     )
 
@@ -239,7 +239,7 @@ def test_reparo_substitui_cookie_expirado(client, gerente, terminal):
     client.force_login(gerente)
 
     resposta = client.post(
-        STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json"
+        STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json"
     )
 
     assert resposta.status_code == 200
@@ -249,7 +249,7 @@ def test_reparo_substitui_cookie_expirado(client, gerente, terminal):
 
 def test_provisionamento_anonimo_e_recusado(client, terminal):
     resposta = client.post(
-        STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json"
+        STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json"
     )
 
     assert resposta.status_code in {401, 403}
@@ -261,7 +261,7 @@ def test_provisionamento_por_sessao_exige_csrf(gerente, terminal):
     csrf_client.force_login(gerente)
 
     resposta = csrf_client.post(
-        STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json"
+        STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json"
     )
 
     assert resposta.status_code == 403
@@ -291,19 +291,19 @@ def test_segundo_dispositivo_no_mesmo_balcao_pede_confirmacao(client, gerente, t
     trust_station(Client(), terminal.ref)
     client.force_login(gerente)
 
-    sem = client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
+    sem = client.post(STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json")
 
     assert sem.status_code == 409
     corpo = sem.json()
-    assert corpo["error"]["code"] == "station_terminal_shared"
+    assert corpo["error"]["code"] == "station_cash_desk_shared"
     assert corpo["field"] == "confirm"
     assert corpo["errors"] == {"confirm": [corpo["detail"]]}
     assert "1 outro dispositivo" in corpo["detail"]
-    assert corpo["error"]["context"] == {"terminal_ref": terminal.ref, "other_devices": 1}
+    assert corpo["error"]["context"] == {"workstation_ref": terminal.ref, "other_devices": 1}
     assert len(station_trust.active_station_devices(terminal.ref)) == 1
 
     com = client.post(
-        STATION_URL, {"terminal_ref": terminal.ref, "confirm": True}, content_type="application/json"
+        STATION_URL, {"workstation_ref": terminal.ref, "confirm": True}, content_type="application/json"
     )
 
     assert com.status_code == 200
@@ -312,9 +312,9 @@ def test_segundo_dispositivo_no_mesmo_balcao_pede_confirmacao(client, gerente, t
 
 def test_reprovisionar_o_proprio_dispositivo_nao_pede_confirmacao(client, gerente, terminal):
     client.force_login(gerente)
-    client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
+    client.post(STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json")
 
-    de_novo = client.post(STATION_URL, {"terminal_ref": terminal.ref}, content_type="application/json")
+    de_novo = client.post(STATION_URL, {"workstation_ref": terminal.ref}, content_type="application/json")
 
     assert de_novo.status_code == 200
 
@@ -328,7 +328,7 @@ def test_a_lista_de_terminais_traz_a_ocupacao(client, gerente, terminal):
     pos_service.open_cash_shift(operator=gerente, terminal_ref=terminal.ref)
     client.force_login(gerente)
 
-    terminais = {t["ref"]: t for t in client.get(STATION_URL).json()["terminals"]}
+    terminais = {w["ref"]: w for w in client.get(STATION_URL).json()["workstations"]}
 
     assert terminais["pdv-main"]["active_devices"] == 2
     assert terminais["pdv-main"]["has_open_shift"] is True

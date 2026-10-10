@@ -266,7 +266,7 @@ def request_cancellation(order_id: str, *, code: str = "", description: str = ""
     code = str(code or _cfg().get("cancellation_default_code") or "").strip()
     if not code:
         raise IFoodCallbackError(
-            "no iFood cancellation code — set SHOPMAN_IFOOD['cancellation_default_code'] "
+            "no iFood cancellation code: set SHOPMAN_IFOOD['cancellation_default_code'] "
             "(discover valid codes with fetch_cancellation_reasons)"
         )
     # iFood rejects requestCancellation with 400 when `reason` is empty

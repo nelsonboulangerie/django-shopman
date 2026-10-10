@@ -62,7 +62,7 @@ class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
         if not destino:
             messages.error(
                 request,
-                "Seu usuário do Admin não tem e-mail cadastrado — o teste envia "
+                "Seu usuário do Admin não tem e-mail cadastrado. O teste envia "
                 "para você mesmo, e sem endereço não há para onde mandar.",
             )
             return self._redirect()
@@ -84,7 +84,7 @@ class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
             # que este botão precisa vem do próprio alias, declarado em
             # `config/settings.py` ao lado do teto do worker.
             enviados = EmailMessage(
-                subject="Shopman — teste de envio",
+                subject="Shopman: teste de envio",
                 body=(
                     "Se esta mensagem chegou, o e-mail da loja está funcionando.\n\n"
                     f"Remetente: {projection.email.sender}\n"
@@ -100,7 +100,7 @@ class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
             decorrido = time.monotonic() - inicio
             messages.error(
                 request,
-                f"Falhou em {decorrido:.1f}s — {type(exc).__name__}: {exc}",
+                f"Falhou em {decorrido:.1f}s ({type(exc).__name__}: {exc})",
             )
             return self._redirect()
 
@@ -115,7 +115,7 @@ class DiagnosticsView(UnfoldModelAdminViewMixin, TemplateView):
         messages.success(
             request,
             f"Enviado para {destino} em {decorrido:.1f}s. "
-            "Se não aparecer na entrada, procure no spam — aí o problema é "
+            "Se não aparecer na entrada, procure no spam: aí o problema é "
             "entregabilidade, não configuração.",
         )
         return self._redirect()

@@ -26,7 +26,7 @@ export interface ProductionActionApprovalRequirementProjection {
 /** A server-owned action offered by an operational projection. */
 export interface ProductionActionProjection {
   ref: string;
-  kind: "plan" | "start" | "finish" | "review_qc" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "print_labels";
+  kind: "plan" | "start" | "finish" | "review_qc" | "review_qc_batch" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "print_labels";
   label: string;
   priority: number;
   enabled: boolean;
@@ -49,7 +49,7 @@ export interface OperatorAlertCountsProjection {
   critical: number;
 }
 
-/** OperatorAlertProjection(pk: 'int', rev: 'int', type: 'str', type_label: 'str', severity: "Literal['warning', 'error', 'critical']", severity_label: 'str', audience: 'str', message: 'str', order_ref: 'str', created_at_display: 'str', actions: 'tuple[ProductionActionProjection, ...]') */
+/** OperatorAlertProjection(pk: 'int', rev: 'int', type: 'str', type_label: 'str', severity: "Literal['warning', 'error', 'critical']", severity_label: 'str', audience: 'str', message: 'str', order_ref: 'str', created_at_display: 'str', actions: 'tuple[ProductionActionProjection, ...]', respond_by_iso: 'str' = '', deadline_kind: 'str' = '', origin_label: 'str' = '', origin_icon: 'str' = '', subject: 'str' = '') */
 export interface OperatorAlertProjection {
   pk: number;
   rev: number;
@@ -62,6 +62,11 @@ export interface OperatorAlertProjection {
   order_ref: string;
   created_at_display: string;
   actions: ProductionActionProjection[];
+  respond_by_iso: string;
+  deadline_kind: string;
+  origin_label: string;
+  origin_icon: string;
+  subject: string;
 }
 
 /** OperatorAlertsProjection(alerts: 'tuple[OperatorAlertProjection, ...]', counts: 'OperatorAlertCountsProjection', generated_at: 'str' = '', source_revision: 'str' = '', fresh_until: 'str' = '', contract_version: 'int' = 1) */
@@ -80,6 +85,7 @@ export interface OrderCommitmentProjection {
   status: string;
   status_label: string;
   qty_required: string;
+  due_time: string;
 }
 
 /** How much of a base recipe is used by an output SKU recipe. */
@@ -118,6 +124,8 @@ export interface WorkOrderCardProjection {
   committed_qty: string;
   order_commitments: OrderCommitmentProjection[];
   can_void: boolean;
+  position_name: string;
+  created_at_time: string;
 }
 
 /** Aggregate counts for the production board header. */
@@ -156,6 +164,33 @@ export interface PositionOptionProjection {
   is_default: boolean;
 }
 
+/** Um insumo que não cobre a sugestão, lido antes de planejar (L3). */
+export interface SuggestionMaterialShortageProjection {
+  sku: string;
+  name: string;
+  missing_display: string;
+  fits_quantity: string;
+}
+
+/** Um dia da amostra que sustenta a sugestão, com o desfecho dele. */
+export interface SuggestionDayProjection {
+  date: string;
+  date_display: string;
+  outcome: "soldout" | "leftover" | "ok";
+  soldout_at: string;
+}
+
+/** O porquê que o B.I. levou a esta linha ("Levar ao plano", ``bi-sobra4`` pino 3). */
+export interface PlanCarryNoteProjection {
+  source_day: string;
+  verdict: string;
+  made: string;
+  sold: string;
+  leftover: string;
+  soldout_at: string;
+  lost_estimate: string;
+}
+
 /** A suggested production row from Craftsman demand planning. */
 export interface ProductionSuggestionProjection {
   recipe_pk: number;
@@ -169,7 +204,20 @@ export interface ProductionSuggestionProjection {
   confidence: string;
   sample_size: number;
   high_demand_applied: boolean;
-  explanation_parts: string[];
+  projected: string;
+  margin: string;
+  safety_percent: number;
+  same_weekday: boolean;
+  season_label: string;
+  soldout_days: number;
+  waste_percent: number;
+  waste_discounted: boolean;
+  material_shortages: SuggestionMaterialShortageProjection[];
+  fits_quantity: string;
+  season_fallback: boolean;
+  current_season_label: string;
+  recent_days: SuggestionDayProjection[];
+  bi_notes: PlanCarryNoteProjection[];
 }
 
 /** A high-volume production matrix row grouped by SKU. */
@@ -186,6 +234,7 @@ export interface ProductionMatrixRowProjection {
   started_qty: string;
   finished_qty: string;
   loss_qty: string;
+  output_unit: string;
 }
 
 /** A matrix row within a base recipe group. */
@@ -229,6 +278,13 @@ export interface ProductionSurfaceAccess {
   can_print_prep: boolean;
 }
 
+/** Ocasião e clima do dia planejado (``DayContext``). Sem dado, campo vazio. */
+export interface ProductionDayContextProjection {
+  occasion: string;
+  weather: string;
+  weather_kind: "forecast" | "measured" | "";
+}
+
 /** Top-level read model for the production board. */
 export interface ProductionBoardProjection {
   selected_date: string;
@@ -250,6 +306,8 @@ export interface ProductionBoardProjection {
   default_position_pk: number | null;
   access: ProductionSurfaceAccess;
   actions: ProductionActionProjection[];
+  purchase_url: string;
+  day_context: ProductionDayContextProjection | null;
   generated_at: string;
   source_revision: string;
   fresh_until: string;
@@ -527,6 +585,7 @@ export interface QCOrderCardProjection {
   recipe_name: string;
   output_sku: string;
   position_ref: string;
+  position_name: string;
   status: string;
   planned_qty: string;
   started_qty: string;
@@ -543,6 +602,12 @@ export interface QCOrderCardProjection {
   full_price_qty: string;
   discounted_qty: string;
   loss_qty: string;
+  quality_exception: boolean;
+  closed_by: string;
+  closed_at_display: string;
+  typical_loss_qty: string;
+  alert_waiting_count: number | null;
+  output_unit: string;
 }
 
 /** O quiosque do fournil (ADR-017 §9): ordens do dia + catálogos de QC. */
@@ -585,6 +650,7 @@ export interface WorkOrderReportRow {
   position_ref: string;
   qty_planned: string;
   qty_started: string;
+  started_assumed: boolean;
   qty_finished: string;
   qty_loss: string;
   yield_rate: string;
@@ -667,6 +733,13 @@ export interface ProductionWorkOrderMutationSuccess {
   wo_ref: string;
   quantity: string;
   current: ProductionMutationCurrent | null;
+}
+
+/** ProductionQualityReviewBatchMutationSuccess(ok: 'bool', reviewed_count: 'int', current: 'tuple[ProductionMutationCurrent, ...]') */
+export interface ProductionQualityReviewBatchMutationSuccess {
+  ok: boolean;
+  reviewed_count: number;
+  current: ProductionMutationCurrent[];
 }
 
 /** ProductionVoidMutationSuccess(ok: 'bool', wo_ref: 'str', current: 'ProductionMutationCurrent | None') */
@@ -842,6 +915,11 @@ export interface ProductionPartitionGroupRequest {
   loss?: boolean;
 }
 
+export interface ProductionQualityReviewBatchItemRequest {
+  work_order_id: number;
+  expected_rev: number;
+}
+
 export interface ProductionPlanMutationRequest {
   idempotency_key: string;
   projection_generated_at: string;
@@ -906,6 +984,18 @@ export interface ProductionQualityReviewMutationRequest {
   action_ref: string;
   action_proof: string;
   expected_rev: number;
+}
+
+export interface ProductionQualityReviewBatchMutationRequest {
+  idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
+  target_date: string;
+  items: ProductionQualityReviewBatchItemRequest[];
 }
 
 export interface ProductionQualityCorrectionMutationRequest {
@@ -1024,6 +1114,10 @@ export function finishProductionWorkOrder(workOrderId: number, body: ProductionF
 
 export function reviewProductionQuality(workOrderId: number, body: ProductionQualityReviewMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {
   return postProductionMutation<ProductionWorkOrderMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/quality-review/`, body);
+}
+
+export function reviewProductionQualityBatch(body: ProductionQualityReviewBatchMutationRequest): Promise<ProductionQualityReviewBatchMutationSuccess> {
+  return postProductionMutation<ProductionQualityReviewBatchMutationSuccess>("/api/v1/backstage/production/quality-review/batch/", body);
 }
 
 export function correctProductionQuality(workOrderId: number, body: ProductionQualityCorrectionMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {

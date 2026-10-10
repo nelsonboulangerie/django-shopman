@@ -215,7 +215,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
 
 surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro único em surfaces/registry.json
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
-├── hub-nuxt/          Shopman Apps — a home do operador (:3001)            → api./backstage
+├── hub-nuxt/          Central — a home do operador (:3001)            → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
 ├── kds-nuxt/          cozinha (KDS, :3003)                                 → api./backstage
 ├── orders-nuxt/       gestor de pedidos (:3004)                            → api./backstage
@@ -223,6 +223,7 @@ surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro 
 ├── marketing-nuxt/    marketing do gestor — campanhas e anúncios (:3006)  → api./backstage
 ├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento (:3008) → api./backstage
 ├── bi-nuxt/           B.I. do gestor — vendas, caixa, clientes, projeção (:3007)  → api./backstage
+├── kitchensink-nuxt/ Catálogo do operador (:3009)        → api./backstage
 ├── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
 │                      retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
 │                      BFF canônico (server/utils: djangoProxy, eventStream, apiVersion),
@@ -301,7 +302,7 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   fica só no balcão (`sku_records.sells_remotely`).
 - **URL é em inglês nas superfícies de operador, no Admin, no SSE do backstage e nas APIs.** Dentro desse perímetro não há exceção por tela.
   - ⚠️ **O Storefront fica de fora, e é decisão escrita do dono (24/09/2026)**: a loja fala português com o cliente, e as rotas dela são `/conta`, `/entrar`, `/sacola`, `/finalizar`, `/produto/<sku>`, `/pedido/<ref>`, `/privacidade`, `/termos`, `/documentos-legais/…`. Mesma lógica da exceção de *aparelho*: superfície de cliente final tem voz própria, e a exceção é da superfície inteira. A API que o Storefront consome (`/api/v1/storefront/…`) é API, e segue em inglês.
-  - Apps Nuxt de operador: vocabulário do domínio em inglês (`/plan`, `/mise-en-place`, `/expedite`, `/board`, `/pickup`, `/showcases`); as rotas pt-br antigas respondem 301, bookmarks de kiosk preservados — PR #68.
+  - Apps Nuxt de operador: vocabulário do domínio em inglês (Produção: `/plan`, `/mise-en-place`, `/close`, `/quality`, `/board`; Cozinha: `/pickup`; PDV: `/preorders`). Pré go-live, rota renomeada não ganha redirect: o nome antigo morre junto (zero legado, decisão do dono; Saída da Cozinha #1431, Produção #1433). Os 301 que ainda existem são anteriores a essa regra e estão nos `routeRules` de cada `nuxt.config.ts`: Cozinha (`/estacao/**`, `/cliente`, `/retirada`) e PDV (`/tickets`, `/preorders/panel`, `/preorders/today`, `/preorders/week`). Não crie outros.
   - Admin e backstage: `/admin/settings/copy/`, `/admin/pos/terminal/<ref>/agent/`, `/admin/operators/badge/`, `/admin/cash/receipt/<code>/`, `/events/*` — PR #169. Sem 301 aqui: são telas de gestor, não kiosk, e a regra pré-go-live é zerar o nome antigo.
   - ⚠️ O **texto** da tela continua em português. Isto é sobre o caminho na URL, não sobre a copy.
   - Subdomínio é **hostname**, não URL: `gestor.`, `pdv.`, `central.` seguem como estão — mexer ali é DNS.
@@ -355,7 +356,7 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   A referência é a versão **mais alta** presente, nunca a mais comum: por maioria o guard
   mandaria rebaixar `@nuxt/eslint` e `@nuxt/icon` — alinhados e velhos, o oposto do que foi
   decidido. ⚠️ Superfície nova entra PRIMEIRO em `surfaces/registry.json` (id, diretório,
-  tipo, porta, grupo, subdomínio, env da URL, tile do Shopman Apps) e depois em cada lugar
+  tipo, porta, grupo, subdomínio, env da URL, tile da Central) e depois em cada lugar
   que enumera superfícies — medidos em 24/09/2026: `.github/dependabot.yml` (cadência),
   `surfaces-gate.yml` (teste e PWA), `SURFACES` no Makefile, `operator-router/groups.json`,
   `Dockerfile.operator-group`, os dois specs de `.do/` (ingress, `OPERATOR_HOSTS`, env da

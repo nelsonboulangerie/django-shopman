@@ -412,7 +412,7 @@ class OfferedDocument:
         """O rótulo pronto: a via, e o que ela deixa de mostrar."""
         if not self.filter_labels:
             return self.label
-        return f"{self.label} — {', '.join(self.filter_labels)}"
+        return f"{self.label} ({', '.join(self.filter_labels)})"
 
     @property
     def hides_customer_identity(self) -> bool:

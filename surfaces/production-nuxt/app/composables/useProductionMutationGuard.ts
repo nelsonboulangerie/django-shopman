@@ -92,13 +92,13 @@ export function projectionFreshUntilMs(value: unknown): number | null {
 const REFRESH_LABEL = "Atualizar os números";
 const STALE_ON_SERVER_DETAIL =
   "Nada foi salvo: os números desta tela passaram do prazo antes de o pedido chegar.";
-const REFRESHED_CONFIRM_AGAIN = "Os números já foram atualizados — confira e confirme de novo.";
+const REFRESHED_CONFIRM_AGAIN = "Os números já foram atualizados. Confira e confirme de novo.";
 const UNREACHABLE_DETAIL =
   "Nada foi salvo: não foi possível buscar os números atuais desta tela. O que você digitou continua aqui.";
 const CHANGED_ELSEWHERE_DETAIL =
-  "Nada foi salvo: outra tela alterou este lote enquanto você decidia. Os números já foram atualizados — confira e confirme de novo.";
+  "Nada foi salvo: outra tela alterou este lote enquanto você decidia. Os números já foram atualizados. Confira e confirme de novo.";
 const NOT_PROJECTED_AFTER_REFRESH_DETAIL =
-  "Nada foi salvo: esta linha mudou em outra tela enquanto você decidia. Os números já foram atualizados — confira e confirme de novo.";
+  "Nada foi salvo: esta linha mudou em outra tela enquanto você decidia. Os números já foram atualizados. Confira e confirme de novo.";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object"

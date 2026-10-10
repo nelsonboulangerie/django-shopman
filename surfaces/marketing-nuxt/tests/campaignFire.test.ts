@@ -60,12 +60,12 @@ describe("a lista de campanhas mostra o porquê por extenso", () => {
   // tooltip em botão desabilitado; "Indisponível" ficava sem frase.
   it("põe a frase num parágrafo sob a linha, não num title", () => {
     const page = readFileSync(
-      new URL("../app/pages/campaigns.vue", import.meta.url),
+      new URL("../app/pages/settings/campaigns.vue", import.meta.url),
       "utf8",
     );
 
-    expect(page).toContain('v-if="!fireState(rule).enabled"');
-    expect(page).toContain("{{ fireState(rule).reason }}");
-    expect(page).not.toMatch(/:title="[^"]*fireState\(rule\)\.reason/);
+    expect(page).toContain('v-if="!fireState(row.original).enabled"');
+    expect(page).toContain("{{ fireState(row.original).reason }}");
+    expect(page).not.toMatch(/:title="[^"]*fireState\(row\.original\)\.reason/);
   });
 });

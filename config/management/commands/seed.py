@@ -212,7 +212,7 @@ QUALITY_DEFECTS = (
     ("overbaked", "Assou demais", "Escuro, casca amarga", False, 40),
     ("misshapen", "Deformado", "Torto, colado, fora do padrão", False, 50),
     ("scorch_marks", "Marcas de forno", "Fuligem, sujeira de lastro", False, 60),
-    ("contaminated", "Contaminado", "Matéria estranha — não vende", True, 70),
+    ("contaminated", "Contaminado", "Matéria estranha: não vende", True, 70),
 )
 
 # O plano de produção do dia — calibrado com as médias diárias REAIS dos XMLs
@@ -1050,8 +1050,8 @@ NOTIFICATION_TEMPLATES = {
     # Produção → operador (notification.send de sistema, WP-PE2).
     # Opt-in via Shop.defaults["production"]["notifications"].
     "production_late": {"subject": "Produção {work_order_ref} atrasada", "body": "A produção *{work_order_ref}* ({output_sku}) está há {elapsed_minutes} min em andamento (janela: {target_minutes} min).\n\nConfira o chão de produção."},
-    "production_low_yield": {"subject": "Yield baixo na produção {work_order_ref}", "body": "A produção *{work_order_ref}* ({output_sku}) fechou com yield de {yield_percent}%.\n\nVale conferir a perda no relatório de produção."},
-    "production_forgotten": {"subject": "Produção {work_order_ref} não foi iniciada", "body": "A produção *{work_order_ref}* ({output_sku}) planejada para {target_date} nunca foi iniciada.\n\nConclua, reagende ou estorne no planejamento."},
+    "production_low_yield": {"subject": "Aproveitamento baixo no lote {work_order_ref}", "body": "O lote *{work_order_ref}* ({output_sku}) fechou com aproveitamento de {yield_percent}%.\n\nVale conferir a perda no relatório de produção."},
+    "production_forgotten": {"subject": "Lote {work_order_ref} não foi aberto", "body": "O lote *{work_order_ref}* ({output_sku}) planejado para {target_date} nunca foi aberto.\n\nAbra, reagende ou cancele no planejamento."},
     "production_stock_short": {"subject": "Produção {work_order_ref} sem insumos", "body": "A produção *{work_order_ref}* ({output_sku}) falhou por estoque insuficiente.\n\nDetalhe: {error}"},
 }
 
@@ -2149,29 +2149,29 @@ class Command(BaseCommand):
             # de gergelim, que vende pouco no balcão por ser de caixa presente.
             ("SFTCH", "Soft Chai Cítrico", "Chai da casa com cítricos, servido gelado", 2100, "un", None, True,
              unsplash("photo-1517701550927-30cf4ba1dba5"), 300, ""),
-            ("CHA-ACONCHEGO-KANFA-L50", "Aconchego Chai Kãnfa — Lata 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+            ("CHA-ACONCHEGO-KANFA-L50", "Aconchego Chai Kãnfa · Lata 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
              unsplash("photo-1608214355036-3509d671c880"), 50, "Conservar em local seco e fechado"),
-            ("CHA-ACONCHEGO-KANFA-P50", "Aconchego Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+            ("CHA-ACONCHEGO-KANFA-P50", "Aconchego Chai Kãnfa · Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("CHA-INTIMIDADE-KANFA-L50", "Intimidade Kãnfa — Lata 50g", "Blend Kãnfa em folhas, para levar", 8800, "un", 365, True,
+            ("CHA-INTIMIDADE-KANFA-L50", "Intimidade Kãnfa · Lata 50g", "Blend Kãnfa em folhas, para levar", 8800, "un", 365, True,
              unsplash("photo-1608214355036-3509d671c880"), 50, "Conservar em local seco e fechado"),
-            ("CHA-INTIMIDADE-KANFA-P50", "Intimidade Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+            ("CHA-INTIMIDADE-KANFA-P50", "Intimidade Kãnfa · Pouch 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("CHA-INTUICAO-KANFA-L70", "Intuição Chai Kãnfa — Lata 70g", "Blend Kãnfa em folhas, para levar", 8800, "un", 365, True,
+            ("CHA-INTUICAO-KANFA-L70", "Intuição Chai Kãnfa · Lata 70g", "Blend Kãnfa em folhas, para levar", 8800, "un", 365, True,
              unsplash("photo-1608214355036-3509d671c880"), 70, "Conservar em local seco e fechado"),
-            ("CHA-INTUICAO-KANFA-P50", "Intuição Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+            ("CHA-INTUICAO-KANFA-P50", "Intuição Chai Kãnfa · Pouch 50g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("CHA-MAMA-KANFA-L70", "Mama Chai Kãnfa — Lata 70g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+            ("CHA-MAMA-KANFA-L70", "Mama Chai Kãnfa · Lata 70g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
              unsplash("photo-1608214355036-3509d671c880"), 70, "Conservar em local seco e fechado"),
-            ("CHA-MAMA-KANFA-P50", "Mama Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+            ("CHA-MAMA-KANFA-P50", "Mama Chai Kãnfa · Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("CHA-NAMASTE-KANFA-L70", "Namastê Chai Kãnfa — Lata 70g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
+            ("CHA-NAMASTE-KANFA-L70", "Namastê Chai Kãnfa · Lata 70g", "Blend Kãnfa em folhas, para levar", 7300, "un", 365, True,
              unsplash("photo-1608214355036-3509d671c880"), 70, "Conservar em local seco e fechado"),
-            ("CHA-NAMASTE-KANFA-P50", "Namastê Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+            ("CHA-NAMASTE-KANFA-P50", "Namastê Chai Kãnfa · Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("CHA-CHALOSOFIA-KANFA-P50", "Chalosofia Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+            ("CHA-CHALOSOFIA-KANFA-P50", "Chalosofia Kãnfa · Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
-            ("CHA-VITAL-KANFA-P50", "Vital Chai Kãnfa — Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
+            ("CHA-VITAL-KANFA-P50", "Vital Chai Kãnfa · Pouch 50g", "Blend Kãnfa em folhas, para levar", 6000, "un", 365, True,
              unsplash("photo-1580606768809-ae4c046eb7e9"), 60, "Conservar em local seco e fechado"),
             # ── Voltaram do Yooga (18/08) ──
             # O cardápio 2027 tinha colapsado famílias inteiras em produtos
@@ -3614,7 +3614,7 @@ class Command(BaseCommand):
 
         from datetime import timedelta as _td
 
-        yesterday = date.today() - _td(days=1)
+        yesterday = timezone.localdate() - _td(days=1)
         for sku, qty in LEFTOVER_ITEMS:
             if sku not in products:
                 continue
@@ -7616,7 +7616,7 @@ class Command(BaseCommand):
             order_ref=returned.ref,
             defaults={
                 "severity": "warning",
-                "message": f"Pedido {returned.ref} devolvido e estornado — conferir motivo e estoque.",
+                "message": f"Pedido {returned.ref} devolvido e estornado. Conferir motivo e estoque.",
             },
         )
         created += 1
@@ -8597,7 +8597,7 @@ class Command(BaseCommand):
         )
 
         Campaign.objects.update_or_create(
-            name="Fornada pronta",
+            name="Lote pronto",
             defaults={
                 "trigger": Trigger.PRODUCTION_FINISHED,
                 # Piso de 90%: fornada boa COM até 10% de unidades fora ainda
@@ -9520,16 +9520,16 @@ class Command(BaseCommand):
         # BI-CONSUMPTION-PROFILES §8; o passo 2 mede pela comanda).
         catalog = [
             ("bebida-preparada", "Bebida preparada",
-             "Café, chá, frappé, soda da casa — feita aqui, bebida aqui",
+             "Café, chá, frappé, soda da casa: feita aqui, bebida aqui",
              Reading.ANCHOR, Beverage.PREPARED, 95, 5),
             ("bebida-pronta", "Bebida pronta",
-             "Água, refrigerante, suco de garrafa — abre e bebe aqui",
+             "Água, refrigerante, suco de garrafa: abre e bebe aqui",
              Reading.ANCHOR, Beverage.READY, 95, 6),
             ("consome-aqui", "Consome aqui",
              "Prato quente, lanche montado, sobremesa servida", Reading.ANCHOR,
              Beverage.NONE, 95, 10),
             ("leva", "Leva",
-             "Pão, geleia, café em grão — o que sai pela porta", Reading.TAKEAWAY,
+             "Pão, geleia, café em grão: o que sai pela porta", Reading.TAKEAWAY,
              Beverage.NONE, 5, 20),
             ("hibrido", "Híbrido",
              "Croissant, doce, pão japonês: serve aos dois usos", Reading.HYBRID,
@@ -9964,32 +9964,45 @@ class Command(BaseCommand):
         a leitura precisa enxergar. Pelo mesmo motivo o sofá das mesas internas,
         que permite apertar mais gente com menos conforto, não vira lugar novo.
         """
-        from shopman.backstage.models import SeatingSpot, SpotKind
+        from shopman.backstage.models import SeatingSpot, SpotKind, SpotShape
 
+        # (ref, rótulo, sigla, tipo, forma, área, lugares, conta, x, y): a planta
+        # que o PDV › Ajustes › Salão desenha. Posição só entra em mesa ainda sem
+        # posição: rodar o seed de novo não desfaz o desenho do operador.
         spots = []
         for index in range(1, 5):
-            spots.append((f"mesa-interna-{index}", f"Mesa interna {index}",
-                            SpotKind.TABLE, "Salão interno", 2, True))
+            column, row = (index - 1) % 2, (index - 1) // 2
+            spots.append((f"mesa-interna-{index}", f"Mesa interna {index}", f"M{index}",
+                          SpotKind.TABLE, SpotShape.ROUND, "Salão interno", 2, True,
+                          70 + column * 130, 80 + row * 130))
         for index in range(1, 5):
-            spots.append((f"mesa-externa-{index}", f"Mesa externa {index}",
-                            SpotKind.TABLE, "Calçada", 2, True))
+            spots.append((f"mesa-externa-{index}", f"Mesa externa {index}", f"E{index}",
+                          SpotKind.TABLE, SpotShape.SQUARE, "Calçada", 2, True,
+                          70 + (index - 1) * 130, 490))
         for index in range(1, 7):
-            spots.append((f"balcao-{index}", f"Balcão {index}",
-                            SpotKind.COUNTER, "Balcão", 1, True))
+            spots.append((f"balcao-{index}", f"Balcão {index}", f"B{index}",
+                          SpotKind.COUNTER, SpotShape.STOOL, "Balcão", 1, True,
+                          520, 60 + (index - 1) * 58))
         for index in range(1, 3):
-            spots.append((f"bistro-{index}", f"Mesinha alta {index}",
-                            SpotKind.TABLE, "Salão interno", 2, False))
-        spots.append(("bancao-externo", "Bancão externo",
-                        SpotKind.COUNTER, "Calçada", 4, False))
+            spots.append((f"bistro-{index}", f"Mesinha alta {index}", f"A{index}",
+                          SpotKind.TABLE, SpotShape.ROUND, "Salão interno", 2, False,
+                          340, 80 + (index - 1) * 130))
+        spots.append(("bancao-externo", "Bancão externo", "BX",
+                      SpotKind.COUNTER, SpotShape.LONG, "Calçada", 4, False, 600, 495))
 
-        for ref, label, kind, area, seats, counts in spots:
-            SeatingSpot.objects.update_or_create(
+        for ref, label, short_label, kind, shape, area, seats, counts, plan_x, plan_y in spots:
+            spot, _ = SeatingSpot.objects.update_or_create(
                 ref=ref,
                 defaults={
                     "label": label, "kind": kind, "area": area,
                     "seats": seats, "counts_in_capacity": counts,
                 },
             )
+            if spot.plan_x is None or spot.plan_y is None:
+                spot.short_label = spot.short_label or short_label
+                spot.shape = shape
+                spot.plan_x, spot.plan_y = plan_x, plan_y
+                spot.save(update_fields=["short_label", "shape", "plan_x", "plan_y"])
 
     def _seed_business_days(self, *, days: int) -> None:
         """Expediente congelado por dia — o denominador das métricas de tempo."""
@@ -10141,6 +10154,20 @@ class Command(BaseCommand):
             context.temp_avg_c = tmax - Decimal("4.5")
             context.rain_mm = Decimal(str(round(max(0.0, rng.uniform(-8, 14)), 1)))
             context.sources = {**(context.sources or {}), "weather": "seed"}
+            context.save()
+        # Previsão de exemplo para hoje e os dois dias seguintes: o Planejamento
+        # diz "previsão 24 °C e sol" no cabeçalho. Carimbada como previsão de
+        # seed; o arquivo real de previsão (import_weather) sobrescreve.
+        for offset in range(0, 3):
+            day = today + timedelta(days=offset)
+            estacao = 1 if day.month in (12, 1, 2, 3) else 0
+            tmax = Decimal(str(round(22 + estacao * 7 + rng.uniform(-3, 4), 1)))
+            context, _ = DayContext.objects.get_or_create(date=day)
+            context.temp_max_c = tmax
+            context.temp_min_c = tmax - Decimal("9.0")
+            context.temp_avg_c = tmax - Decimal("4.5")
+            context.rain_mm = Decimal(str(round(max(0.0, rng.uniform(-10, 6)), 1)))
+            context.sources = {**(context.sources or {}), "weather": "seed-forecast"}
             context.save()
 
     def _at(self, day, hour: int):

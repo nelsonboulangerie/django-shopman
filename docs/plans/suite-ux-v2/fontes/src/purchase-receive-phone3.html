@@ -1,0 +1,277 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1320x1000">
+<style>
+  .canvas { background:#e9dfd6; }
+  .sbar { height:40px; padding:0 22px 0 28px; display:flex; align-items:center; justify-content:space-between; font:600 14px/1 "Instrument Sans",sans-serif; position:relative; }
+  .sbar .island { position:absolute; left:50%; top:9px; width:112px; height:28px; margin-left:-56px; border-radius:999px; background:#000; }
+  .safe { height:22px; display:grid; place-items:center; }
+  .safe::after { content:""; width:128px; height:5px; border-radius:999px; background:currentColor; opacity:.35; }
+  .bnav a { display:flex; flex-direction:column; align-items:center; gap:3px; padding-top:7px; font-size:12px; line-height:14px; font-weight:600; color:var(--muted-foreground); }
+  .bnav a .ic { width:56px; height:30px; border-radius:999px; display:grid; place-items:center; }
+  .bnav a.on { color:var(--foreground); }
+  .bnav a.on .ic { background: color-mix(in oklab, var(--app-color) 16%, transparent); color: var(--app-color); }
+  .seal { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; position:relative; background:var(--app-color); flex:none; }
+  .seal .g { position:absolute; right:-4px; bottom:-4px; width:17px; height:17px; border-radius:999px; background:var(--card); display:grid; place-items:center; box-shadow:0 1px 2px rgb(0 0 0/.25); }
+  .bell-badge { position:absolute; top:4px; right:4px; min-width:17px; height:17px; padding:0 4px; border-radius:999px; background:#f2c46b; color:#3b2a1e; font:700 11px/17px "Instrument Sans",sans-serif; text-align:center; }
+  .barcode { background: repeating-linear-gradient(90deg,#111 0 2px,#fff 2px 3px,#111 3px 4px,#fff 4px 7px,#111 7px 10px,#fff 10px 11px,#111 11px 12px,#fff 12px 15px,#111 15px 16px,#fff 16px 18px); }
+  .corner { position:absolute; width:30px; height:30px; border-color:#4ade80; border-style:solid; }
+  .thumb-zone { background: repeating-linear-gradient(135deg, rgb(31 111 235/.0) 0 8px, rgb(31 111 235/.0) 8px 16px); }
+  .swipe-bg { background: var(--success); }
+  .tag { position:absolute; z-index:40; font:600 11px/14px "Instrument Sans",sans-serif; color:#1f6feb; background:#fff; border:1.5px solid #1f6feb; border-radius:999px; padding:3px 8px; display:inline-flex; gap:5px; align-items:center; white-space:nowrap; }
+</style>
+</head>
+<body class="canvas text-foreground font-sans antialiased" data-app="purchase">
+<div class="relative h-[1000px] w-[1320px] overflow-hidden">
+  <div class="absolute left-0 right-0 top-0 flex justify-center gap-[40px] pt-[22px]">
+
+  <!-- ============ (a) INÍCIO ============ -->
+  <div class="flex flex-col gap-2.5">
+    <p class="op-title px-2">a · Receber: começar pela câmera</p>
+    <div class="device"><div class="screen bg-background flex flex-col" style="width:390px;height:844px">
+      <div class="sbar bg-card"><span>22:03</span><span class="island"></span><span class="flex items-center gap-1.5"><i data-i="signal" class="size-4"></i><i data-i="wifi" class="size-4"></i><i data-i="battery-full" class="size-5"></i></span></div>
+      <header class="h-14 px-3 flex items-center gap-2.5 bg-card border-b border-border">
+        <button class="seal" title="Compras: trocar de app"><i data-i="package-check" class="size-5 text-white"></i><span class="g"><i data-i="layout-grid" class="size-2.5 text-foreground"></i></span></button>
+        <div class="min-w-0 flex-1">
+          <p class="text-[18px] font-semibold leading-tight">Receber</p>
+          <p class="op-micro text-muted-foreground flex items-center gap-1.5 tnum"><span class="live-dot !size-1.5"></span>22:03 · Compras</p>
+        </div>
+        <button class="size-11 rounded-full grid place-items-center"><i data-i="search" class="size-5"></i></button>
+        <button class="size-11 rounded-full grid place-items-center relative"><i data-i="bell" class="size-5"></i><span class="bell-badge">3</span></button>
+      </header>
+
+      <div class="flex-1 min-h-0 overflow-hidden px-4 pt-3 flex flex-col gap-3">
+        <!-- Rascunho em conferência: retomar -->
+        <button class="w-full rounded-xl border border-primary/40 bg-primary/8 p-3 flex items-center gap-3 text-left">
+          <span class="size-10 rounded-full bg-primary/15 text-primary grid place-items-center shrink-0"><i data-i="list-checks" class="size-5"></i></span>
+          <span class="min-w-0 flex-1">
+            <span class="block op-eyebrow text-primary">Em conferência</span>
+            <span class="block text-[15px] font-semibold truncate">Alto Alegre · NF 12.884</span>
+            <span class="block text-[13px] text-muted-foreground">4 de 7 conferidos · 2 pendências</span>
+          </span>
+          <span class="h-9 px-3 rounded-full bg-primary text-primary-foreground text-[13px] font-semibold inline-flex items-center">Continuar</span>
+        </button>
+
+        <div class="flex items-baseline justify-between pt-1">
+          <h2 class="op-eyebrow text-muted-foreground">Entradas de hoje</h2>
+          <span class="text-[13px] text-muted-foreground">3</span>
+        </div>
+        <div class="rounded-xl border border-border bg-card divide-y divide-border">
+          <div class="px-3 py-2.5 flex items-center gap-3">
+            <span class="size-9 rounded-full bg-success/12 text-success grid place-items-center shrink-0"><i data-i="package-check" class="size-[18px]"></i></span>
+            <div class="min-w-0 flex-1"><p class="text-[15px] font-medium truncate">Laticínios Serra Verde</p><p class="text-[13px] text-muted-foreground tnum">NF 4.512 · 07:40 · 5 itens</p></div>
+            <p class="text-[14px] font-semibold tnum">R$ 1.284,00</p>
+          </div>
+          <div class="px-3 py-2.5 flex items-center gap-3">
+            <span class="size-9 rounded-full bg-success/12 text-success grid place-items-center shrink-0"><i data-i="package-check" class="size-[18px]"></i></span>
+            <div class="min-w-0 flex-1"><p class="text-[15px] font-medium truncate">Moinho Santa Clara</p><p class="text-[13px] text-muted-foreground tnum">NF 88.031 · 06:15 · 2 itens</p></div>
+            <p class="text-[14px] font-semibold tnum">R$ 2.190,00</p>
+          </div>
+          <div class="px-3 py-2.5 flex items-center gap-3">
+            <span class="size-9 rounded-full bg-warning/12 text-warning grid place-items-center shrink-0"><i data-i="clipboard-pen-line" class="size-[18px]"></i></span>
+            <div class="min-w-0 flex-1"><p class="text-[15px] font-medium truncate">Sítio Boa Vista (ovos)</p><p class="text-[13px] text-muted-foreground tnum">Sem NF · romaneio · 05:50</p></div>
+            <p class="text-[14px] font-semibold tnum">R$ 216,00</p>
+          </div>
+        </div>
+        <p class="text-[13px] text-muted-foreground px-1">Toque numa entrada para ver o comprovante e compartilhar.</p>
+
+        <div class="flex-1"></div>
+
+        <!-- Zona do polegar -->
+        <div class="flex flex-col gap-2.5 pb-3">
+          <button class="h-[124px] w-full rounded-2xl bg-primary text-primary-foreground flex flex-col items-center justify-center gap-1.5 shadow-[0_6px_18px_rgb(0_0_0/.18)]">
+            <span class="size-14 rounded-full bg-white/15 grid place-items-center"><i data-i="scan-barcode" class="size-8"></i></span>
+            <span class="text-[20px] font-semibold leading-none">Escanear NF</span>
+            <span class="text-[13px] opacity-80">QR ou código de barras do DANFE</span>
+          </button>
+          <div class="grid grid-cols-2 gap-2.5">
+            <button class="h-12 rounded-xl border border-border bg-card inline-flex items-center justify-center gap-2 text-[15px] font-semibold"><i data-i="keyboard" class="size-5"></i>Digitar chave</button>
+            <button class="h-12 rounded-xl border border-border bg-card inline-flex items-center justify-center gap-2 text-[15px] font-semibold"><i data-i="clipboard-pen-line" class="size-5"></i>Sem NF</button>
+          </div>
+        </div>
+      </div>
+
+      <nav class="bnav bg-card border-t border-border">
+        <div class="grid grid-cols-4 h-16">
+          <a><span class="ic"><i data-i="layout-dashboard" class="size-[22px]"></i></span>Painel</a>
+          <a><span class="ic"><i data-i="shopping-cart" class="size-[22px]"></i></span>Comprar</a>
+          <a class="on"><span class="ic"><i data-i="package-check" class="size-[22px]"></i></span>Receber</a>
+          <a><span class="ic"><i data-i="database" class="size-[22px]"></i></span>Base</a>
+        </div>
+        <div class="safe text-foreground"></div>
+      </nav>
+    </div></div>
+  </div>
+
+  <!-- ============ (b) LEITOR ============ -->
+  <div class="flex flex-col gap-2.5">
+    <p class="op-title px-2">b · Leitor em tela cheia (leu: vibra)</p>
+    <div class="device"><div class="screen flex flex-col text-white" style="width:390px;height:844px;background:#0b0907">
+      <div class="sbar"><span>22:03</span><span class="island"></span><span class="flex items-center gap-1.5"><i data-i="signal" class="size-4"></i><i data-i="wifi" class="size-4"></i><i data-i="battery-full" class="size-5"></i></span></div>
+      <header class="h-14 px-3 flex items-center gap-2">
+        <button class="size-12 rounded-full bg-white/12 grid place-items-center" title="Fechar câmera"><i data-i="x" class="size-6"></i></button>
+        <div class="flex-1 text-center"><p class="text-[12px] uppercase tracking-wider text-white/60 font-semibold">Receber</p><p class="text-[17px] font-semibold leading-tight">Escanear NF</p></div>
+        <button class="size-12 rounded-full bg-[#f2c46b] text-[#3b2a1e] grid place-items-center" title="Desligar lanterna"><i data-i="flashlight" class="size-6"></i></button>
+      </header>
+
+      <!-- visor da câmera -->
+      <div class="relative flex-1 min-h-0 overflow-hidden" style="background:radial-gradient(120% 80% at 40% 40%, #5a4636 0%, #2c2119 55%, #120d0a 100%)">
+        <!-- DANFE de papel sobre a bancada -->
+        <div class="absolute left-[34px] top-[70px] w-[330px] h-[440px] bg-[#f7f4ee] rounded-[3px] shadow-[0_18px_40px_rgb(0_0_0/.55)] text-[#222] p-3" style="transform:rotate(-2.5deg)">
+          <div class="flex gap-2">
+            <div class="flex-1 border border-[#999] p-1.5"><p class="text-[9px] font-bold">ALTO ALEGRE ALIMENTOS LTDA</p><div class="mt-1 h-1.5 w-4/5 bg-[#ccc]"></div><div class="mt-1 h-1.5 w-3/5 bg-[#ccc]"></div></div>
+            <div class="w-[78px] border border-[#999] p-1 text-center"><p class="text-[12px] font-black tracking-wide">DANFE</p><p class="text-[7px] leading-tight">Documento Auxiliar da NF-e</p><p class="text-[8px] font-bold mt-0.5">Nº 12.884</p></div>
+          </div>
+          <div class="mt-2 border border-[#999] p-1.5">
+            <p class="text-[7px] font-bold">CHAVE DE ACESSO</p>
+            <div class="barcode h-[46px] mt-1 mx-1"></div>
+            <p class="text-[8.5px] font-mono mt-1 tracking-tight text-center">3526 1012 3456 7800 0190 5500 1000 0128 8410 0004 4170</p>
+          </div>
+          <div class="mt-2 space-y-1.5">
+            <div class="h-2 bg-[#ddd] w-full"></div><div class="h-2 bg-[#e6e6e6] w-11/12"></div><div class="h-2 bg-[#ddd] w-full"></div><div class="h-2 bg-[#e6e6e6] w-10/12"></div><div class="h-2 bg-[#ddd] w-full"></div><div class="h-2 bg-[#e6e6e6] w-9/12"></div><div class="h-2 bg-[#ddd] w-full"></div><div class="h-2 bg-[#e6e6e6] w-11/12"></div><div class="h-2 bg-[#ddd] w-8/12"></div>
+          </div>
+        </div>
+        <!-- véu + moldura -->
+        <div class="absolute left-[22px] right-[22px] top-[118px] h-[104px] rounded-lg" style="box-shadow:0 0 0 999px rgb(0 0 0/.5)"></div>
+        <div class="absolute left-[22px] right-[22px] top-[118px] h-[104px]">
+          <span class="corner left-0 top-0 border-l-4 border-t-4 rounded-tl-lg"></span>
+          <span class="corner right-0 top-0 border-r-4 border-t-4 rounded-tr-lg"></span>
+          <span class="corner left-0 bottom-0 border-l-4 border-b-4 rounded-bl-lg"></span>
+          <span class="corner right-0 bottom-0 border-r-4 border-b-4 rounded-br-lg"></span>
+          <div class="absolute left-3 right-3 top-1/2 h-0.5 bg-[#4ade80] shadow-[0_0_12px_#4ade80]"></div>
+        </div>
+        <p class="absolute left-6 right-6 top-[236px] text-center text-[13px] leading-[18px] text-white rounded-xl bg-black/70 px-3 py-2 flex items-center gap-2"><i data-i="rotate-cw-square" class="size-5 shrink-0"></i>Barras na horizontal, linha inteira visível. Deite o dispositivo para barras longas.</p>
+
+        <!-- leu -->
+        <div class="absolute left-3 right-3 bottom-3 rounded-2xl bg-[#14532d]/95 border border-[#4ade80]/50 p-3.5 flex items-start gap-3 shadow-xl">
+          <span class="size-11 rounded-full bg-[#4ade80] text-[#052e16] grid place-items-center shrink-0"><i data-i="check" class="size-6"></i></span>
+          <div class="min-w-0 flex-1">
+            <p class="text-[16px] font-semibold">NF lida · Alto Alegre</p>
+            <p class="text-[13px] text-white/80 tnum">Chave …0004 4170 · 7 itens · R$ 2.416,80</p>
+            <p class="text-[13px] text-white/80 mt-1 flex items-center gap-1.5"><i data-i="loader-circle" class="size-3.5"></i>Traduzindo a NF para a conferência</p>
+          </div>
+          <i data-i="vibrate" class="size-5 text-[#4ade80] shrink-0 mt-1"></i>
+        </div>
+      </div>
+
+      <!-- alternativas no alcance do polegar -->
+      <div class="px-3 pt-3 pb-1 grid grid-cols-2 gap-2.5">
+        <button class="h-14 rounded-xl bg-white/12 inline-flex items-center justify-center gap-2 text-[15px] font-semibold"><i data-i="keyboard" class="size-5"></i>Digitar chave</button>
+        <button class="h-14 rounded-xl bg-white/12 inline-flex items-center justify-center gap-2 text-[15px] font-semibold"><i data-i="image-up" class="size-5"></i>Ler foto da NF</button>
+      </div>
+      <div class="safe text-white"></div>
+    </div></div>
+  </div>
+
+  <!-- ============ (c) CONFERÊNCIA ============ -->
+  <div class="flex flex-col gap-2.5">
+    <p class="op-title px-2">c · Conferência item a item</p>
+    <div class="device"><div class="screen bg-background flex flex-col" style="width:390px;height:844px">
+      <div class="sbar bg-card"><span>22:03</span><span class="island"></span><span class="flex items-center gap-1.5"><i data-i="signal" class="size-4"></i><i data-i="wifi" class="size-4"></i><i data-i="battery-full" class="size-5"></i></span></div>
+      <header class="h-14 px-2 flex items-center gap-1.5 bg-card">
+        <button class="size-11 rounded-full grid place-items-center"><i data-i="chevron-left" class="size-6"></i></button>
+        <div class="min-w-0 flex-1">
+          <p class="text-[17px] font-semibold leading-tight truncate">Alto Alegre</p>
+          <p class="text-[13px] text-muted-foreground tnum truncate">NF 12.884 · série 1 · R$ 2.416,80</p>
+        </div>
+        <span class="h-7 px-2 rounded-full pill-success text-[12px] font-semibold inline-flex items-center gap-1"><i data-i="check" class="size-3.5"></i>Chave</span>
+        <button class="size-11 rounded-full grid place-items-center" title="Mais: + Item, Ressalva geral, Registrar devolução, Trocar fornecedor"><i data-i="ellipsis-vertical" class="size-5"></i></button>
+      </header>
+      <!-- progresso -->
+      <div class="px-4 pt-1 pb-3 bg-card border-b border-border">
+        <div class="flex items-baseline justify-between"><p class="text-[15px] font-semibold tnum">4 de 7 conferidos</p><p class="text-[13px] text-destructive font-medium">2 pendências</p></div>
+        <div class="mt-2 h-2 rounded-full bg-muted overflow-hidden flex"><span class="bg-success" style="width:57%"></span><span class="bg-destructive/70" style="width:14%"></span></div>
+      </div>
+
+      <div class="flex-1 min-h-0 overflow-hidden px-3 pt-3 flex flex-col gap-2">
+        <!-- pendente: falta validade -->
+        <div class="rounded-xl border border-destructive/40 bg-card p-3 flex items-center gap-3">
+          <i data-i="circle-alert" class="size-6 text-destructive shrink-0"></i>
+          <div class="min-w-0 flex-1">
+            <p class="text-[15px] font-semibold truncate">Manteiga sem sal</p>
+            <p class="text-[13px] text-muted-foreground tnum truncate">4 × caixa 5 kg = 20 kg</p>
+            <p class="text-[13px] font-medium text-destructive">Informe a validade</p>
+          </div>
+          <div class="flex flex-col items-end gap-1 shrink-0"><span class="text-[14px] font-semibold tnum">R$ 980,00</span><span class="h-6 px-2 rounded-full pill-destructive text-[12px] font-semibold inline-flex items-center">Falta validade</span></div>
+        </div>
+        <!-- revisar: NF diverge -->
+        <div class="rounded-xl border border-warning/40 bg-card p-3 flex items-center gap-3">
+          <i data-i="triangle-alert" class="size-6 text-warning shrink-0"></i>
+          <div class="min-w-0 flex-1">
+            <p class="text-[15px] font-semibold truncate">Açúcar cristal</p>
+            <p class="text-[13px] text-muted-foreground tnum truncate">NF: fardo 30 kg · cadastro: 25 kg</p>
+            <p class="text-[13px] font-medium text-warning">NF diverge da conversão</p>
+          </div>
+          <div class="flex flex-col items-end gap-1 shrink-0"><span class="text-[14px] font-semibold tnum">R$ 186,00</span><span class="h-6 px-2 rounded-full pill-warning text-[12px] font-semibold inline-flex items-center">Divergente</span></div>
+        </div>
+        <!-- deslizando: conferir -->
+        <div class="relative rounded-xl overflow-hidden shrink-0">
+          <div class="absolute inset-0 swipe-bg text-white flex items-center gap-2 pl-4 text-[15px] font-semibold"><i data-i="circle-check-big" class="size-6"></i>Conferido<i data-i="vibrate" class="size-5 ml-1 opacity-80"></i></div>
+          <div class="relative translate-x-[132px] rounded-xl border border-border bg-card p-3 flex items-center gap-3 shadow-[-6px_0_14px_rgb(0_0_0/.15)]">
+            <i data-i="circle-dashed" class="size-6 text-muted-foreground shrink-0"></i>
+            <div class="min-w-0 flex-1">
+              <p class="text-[15px] font-semibold truncate">Leite integral</p>
+              <p class="text-[13px] text-muted-foreground tnum truncate">12 × caixa 12 L = 144 L</p>
+            </div>
+          </div>
+        </div>
+        <!-- conferidos -->
+        <div class="rounded-xl border border-success/30 bg-success/5 p-3 flex items-center gap-3">
+          <i data-i="circle-check-big" class="size-6 text-success shrink-0"></i>
+          <div class="min-w-0 flex-1"><p class="text-[15px] font-semibold truncate">Farinha T65</p><p class="text-[13px] text-muted-foreground tnum truncate">8 × saco 25 kg = 200 kg</p></div>
+          <div class="flex flex-col items-end gap-1 shrink-0"><span class="text-[14px] font-semibold tnum">R$ 640,00</span><span class="h-6 px-2 rounded-full pill-success text-[12px] font-semibold inline-flex items-center">Conferido</span></div>
+        </div>
+        <div class="rounded-xl border border-success/30 bg-success/5 p-3 flex items-center gap-3">
+          <i data-i="circle-check-big" class="size-6 text-success shrink-0"></i>
+          <div class="min-w-0 flex-1"><p class="text-[15px] font-semibold truncate">Ovos</p><p class="text-[13px] text-muted-foreground tnum truncate">10 × bandeja 30 un = 300 un</p></div>
+          <div class="flex flex-col items-end gap-1 shrink-0"><span class="text-[14px] font-semibold tnum">R$ 210,00</span><span class="h-6 px-2 rounded-full pill-success text-[12px] font-semibold inline-flex items-center">Conferido</span></div>
+        </div>
+        <div class="rounded-xl border border-success/30 bg-success/5 p-3 flex items-center gap-3">
+          <i data-i="circle-check-big" class="size-6 text-success shrink-0"></i>
+          <div class="min-w-0 flex-1"><p class="text-[15px] font-semibold truncate">Chocolate 70% gotas</p><p class="text-[13px] text-muted-foreground tnum truncate">2 × pacote 2 kg = 4 kg</p></div>
+          <div class="flex flex-col items-end gap-1 shrink-0"><span class="text-[14px] font-semibold tnum">R$ 232,00</span><span class="h-6 px-2 rounded-full pill-success text-[12px] font-semibold inline-flex items-center">Conferido</span></div>
+        </div>
+        <div class="rounded-xl border border-success/30 bg-success/5 p-3 flex items-center gap-3">
+          <i data-i="circle-check-big" class="size-6 text-success shrink-0"></i>
+          <div class="min-w-0 flex-1"><p class="text-[15px] font-semibold truncate">Fermento biológico seco</p><p class="text-[13px] text-muted-foreground tnum truncate">4 × pacote 500 g = 2 kg</p></div>
+          <div class="flex flex-col items-end gap-1 shrink-0"><span class="text-[14px] font-semibold tnum">R$ 168,80</span><span class="h-6 px-2 rounded-full pill-success text-[12px] font-semibold inline-flex items-center">Conferido</span></div>
+        </div>
+      </div>
+
+      <!-- ação fixa no polegar -->
+      <div class="px-3 pt-2.5 pb-2 bg-card border-t border-border shadow-[0_-6px_14px_rgb(0_0_0/.06)]">
+        <button class="h-14 w-full rounded-xl border-2 border-dashed border-border bg-background text-muted-foreground inline-flex items-center justify-center gap-2 text-[16px] font-semibold"><i data-i="list-checks" class="size-5"></i>Confirmar entrada</button>
+        <p class="mt-1.5 flex items-center justify-center gap-1.5 text-[13px] text-muted-foreground"><i data-i="arrow-right" class="size-3.5"></i>Informe a validade em Manteiga sem sal · e mais 1</p>
+      </div>
+      <nav class="bnav bg-card border-t border-border">
+        <div class="grid grid-cols-4 h-16">
+          <a><span class="ic"><i data-i="layout-dashboard" class="size-[22px]"></i></span>Painel</a>
+          <a><span class="ic"><i data-i="shopping-cart" class="size-[22px]"></i></span>Comprar</a>
+          <a class="on"><span class="ic"><i data-i="package-check" class="size-[22px]"></i></span>Receber</a>
+          <a><span class="ic"><i data-i="database" class="size-[22px]"></i></span>Base</a>
+        </div>
+        <div class="safe text-foreground"></div>
+      </nav>
+    </div></div>
+  </div>
+  </div>
+
+  <span class="pin" style="left:64px;top:96px">1</span>
+  <span class="pin" style="left:30px;top:200px">2</span>
+  <span class="pin" style="left:46px;top:740px">3</span>
+  <span class="pin" style="left:802px;top:100px">4</span>
+  <span class="pin" style="left:466px;top:180px">5</span>
+  <span class="pin" style="left:466px;top:780px">6</span>
+  <span class="pin" style="left:902px;top:405px">7</span>
+  <span class="pin" style="left:902px;top:820px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Compras · Receber no celular · v3 <span>câmera, lanterna, vibração, giro e polegar; a mesma conferência de hoje, desenhada para a doca</span></p>
+  <div><b>1</b>Barra de 56 px: o selo troca de app, busca abre em tela cheia, sino. Seções Painel · Comprar · Receber · Base na barra de baixo.</div>
+  <div><b>2</b>No alto, o que se LÊ: rascunho em conferência para retomar (o mesmo rascunho de hoje) e as entradas do dia (novo; toque abre o comprovante e Compartilhar).</div>
+  <div><b>3</b>No polegar, o que se FAZ: "Escanear NF" (openInvoiceScanner, zxing). Digitar chave (o campo de chave + Traduzir NF) e Sem NF (setReceiptMode) ao lado.</div>
+  <div><b>4</b>Leitor em tela cheia, câmera traseira. Lanterna (toggleScannerTorch) no alto; a dica de enquadramento de hoje, mais "gire para barras longas": deitado, a moldura alarga.</div>
+  <div><b>5</b>Leu: moldura verde, vibração curta (navigator.vibrate, novo) e o cartão já diz fornecedor, itens e valor enquanto traduz (readInvoice). Não precisa olhar a tela para saber que leu.</div>
+  <div><b>6</b>Alternativas no polegar: Digitar chave e Ler foto da NF (input com capture="environment", readInvoiceImage). Fechar no canto (stopInvoiceScanner).</div>
+  <div><b>7</b>Cada item é um cartão com o estado em palavra (Conferido · Falta validade · Divergente · Confirmável) e o próximo passo. Toque abre a gaveta de baixo (ReceiptLineSheet). Deslizar à direita = "Marcar como conferido" com vibração; à esquerda = Remover, com Desfazer.</div>
+  <div><b>8</b>"Confirmar entrada" fixo no polegar, com cara de pendente mas tocável: leva ao primeiro bloqueio (onConfirmReceipt). + Item, Ressalva geral e Registrar devolução no ⋯ do topo.</div>
+</div>
+</body></html>

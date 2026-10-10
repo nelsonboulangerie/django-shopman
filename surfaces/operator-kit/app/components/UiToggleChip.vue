@@ -1,18 +1,15 @@
 <script setup lang="ts">
-// Escolha múltipla desenhada como CHIP — a peça que faltava ao lado do `UiCheckbox`.
+// Escolha binária compacta desenhada como CHIP.
 //
 // ⚠️ Não é o mesmo controle. O `UiCheckbox` desenha um quadrado com o rótulo ao lado; o
-// chip é uma pílula cuja CAIXA INTEIRA acende. Onde a escolha é curta e cabem várias na
-// mesma linha — plataformas de disparo, etiquetas, segmentos, dias da semana — o chip é
-// o desenho certo, e trocá-lo pelo quadrado seria pôr a peça parecida no lugar da peça
-// certa. Foi por isso que a conversão dos primitivos de escolha deixou essas telas de
-// fora, com o vazio registrado em comentário: elas pediam ISTO.
+// chip é uma pílula cuja CAIXA INTEIRA acende. Ele só é o desenho certo quando a forma
+// compacta e posicional é parte do uso, como os sete dias da semana numa grade. Listas
+// de respostas nomeadas (plataformas, etiquetas, segmentos) pertencem ao
+// `UiCheckboxGroup` canônico, com fieldset, legenda e modelo de grupo.
 //
-// Antes deste arquivo havia 50 ocorrências de `aria-pressed` escritas à mão nas
-// superfícies de operador, mais as pílulas de plataforma do Marketing, que embrulhavam
-// um `<input type="checkbox" class="sr-only">` num `<label>` pintado. Três desenhos
-// para o mesmo gesto, e o alvo de toque saindo de literal em vez de token em quase
-// todos.
+// Antes deste arquivo havia ocorrências de `aria-pressed` escritas à mão nas
+// superfícies de operador. O componente continua útil para os poucos casos em que a
+// silhueta compacta tem função; ele não substitui um grupo de checkboxes.
 //
 // SEMÂNTICA: `role="checkbox"`, como o `UiCheckbox`, e não `aria-pressed`. Escolher
 // plataformas é marcar itens de uma lista, não apertar botões que ficam apertados —

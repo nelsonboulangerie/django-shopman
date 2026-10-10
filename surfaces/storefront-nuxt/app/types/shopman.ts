@@ -634,6 +634,7 @@ export interface LastOrderItemProjection {
 export interface PublicConfigProjection {
   google_maps_api_key: string
   address_map_confirmation_enabled: boolean
+  hide_unavailable_by_default: boolean
   address_location_divergence: {
     mode: 'off' | 'measure' | 'visible'
     threshold_m: number

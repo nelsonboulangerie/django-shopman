@@ -2,14 +2,45 @@
 // manter a resolução aqui faz botão, tecla, ajuda e testes falarem a mesma
 // língua sem espalhar `event.key` pelo app.
 
-export type ProductionGlobalShortcut =
-  | "plan"
-  | "mise-en-place"
-  | "produce"
-  | "expedite"
-  | "focus-search"
-  | "refresh"
-  | "help";
+import type { ShortcutGroup } from "../../../operator-kit/app/presentation/suiteChrome";
+
+/**
+ * O que a ajuda de atalhos da suíte lista para a Produção, além de "Em todo o app" (as
+ * etapas, Alt+1 a Alt+5, a busca "/" e o "?", que o kit monta com as seções do shell).
+ */
+export const PRODUCTION_SHORTCUT_GROUPS: ShortcutGroup[] = [
+  {
+    title: "Em toda tela da Produção",
+    items: [
+      { keys: ["R"], label: "Atualizar os dados da tela" },
+    ],
+  },
+  {
+    title: "Listas e diálogos",
+    items: [
+      { keys: ["Tab", "Shift+Tab"], label: "Percorrer os comandos" },
+      { keys: ["Enter", "Espaço"], label: "Acionar o comando em foco" },
+      { keys: ["Esc"], label: "Fechar ou voltar sem confirmar" },
+      { keys: ["Enter"], label: "Confirmar uma quantidade digitada" },
+    ],
+  },
+  {
+    title: "QC e timer",
+    items: [
+      { keys: ["0–9"], label: "Digitar quantidade ou minutos" },
+      { keys: ["Backspace"], label: "Apagar o último dígito" },
+      { keys: ["C", "Delete"], label: "Limpar o número" },
+      { keys: ["Enter numérico"], label: "Confirmar pelo numpad físico" },
+      { keys: ["Enter"], label: "Iniciar o timer; quando tocar, marcar Visto" },
+    ],
+  },
+];
+
+export const PRODUCTION_SHORTCUTS_DESCRIPTION =
+  "Toque e teclado executam os mesmos comandos. Os atalhos pausam sob bloqueio, confirmação ou edição de texto.";
+
+/** O único atalho global da tela: R relê. Etapas (Alt+1 a Alt+5), "/" e "?" são do shell. */
+export type ProductionGlobalShortcut = "refresh";
 
 export type QuantityKeyboardShortcut =
   | { kind: "digit"; digit: string }
@@ -22,25 +53,11 @@ type ShortcutEvent = Pick<
   "key" | "code" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey"
 >;
 
-const STAGE_BY_ALT_CODE: Record<string, ProductionGlobalShortcut> = {
-  Digit1: "plan",
-  Digit2: "mise-en-place",
-  Digit3: "produce",
-  Digit4: "expedite",
-};
-
 export function resolveProductionGlobalShortcut(
   event: ShortcutEvent,
 ): ProductionGlobalShortcut | null {
-  if (event.ctrlKey || event.metaKey) return null;
-
-  const altStage = event.altKey ? STAGE_BY_ALT_CODE[event.code] : null;
-  if (altStage) return altStage;
-
-  if (event.altKey) return null;
-  if (event.key === "/") return "focus-search";
+  if (event.ctrlKey || event.metaKey || event.altKey) return null;
   if (event.key === "r" || event.key === "R") return "refresh";
-  if (event.key === "?") return "help";
   return null;
 }
 

@@ -42,7 +42,7 @@ RULE_PARAM_SCHEMAS: dict[str, RuleParamSchema] = {
             RuleParam("start", TIME, "Início",
                       "Hora em que a janela começa (HH:MM)."),
             RuleParam("end", TIME, "Fim",
-                      "Hora em que a janela termina — exclusiva (HH:MM)."),
+                      "Hora em que a janela termina, exclusiva (HH:MM)."),
         ),
     ),
     "employee_discount": RuleParamSchema(

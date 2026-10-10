@@ -37,6 +37,11 @@ import {
   outgoingImageUrl,
 } from "~/presentation/marketingDelivery";
 import { scheduleSummary } from "~/utils/marketingSchedule";
+import { clockLabel, decisionTitle, remainingLabel } from "~/presentation/decisions";
+import type { DecisionItem } from "~/types/decisions";
+import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
+import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
+import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 
 const route = useRoute();
 const pk = computed(() => Number(route.params.id));
@@ -106,7 +111,6 @@ const decisionError = ref("");
 const confirmingDecision = ref(false);
 const busy = ref(false);
 const confirmingReject = ref(false);
-const rejectReason = ref("");
 const approvalKeys = new Map<string, string>();
 const draftOwner = useMarketingDraftOwner();
 // Foco explícito: esta tela não é uma sequência de blocos, mas o estado que nasce de
@@ -133,11 +137,12 @@ const dispatchNotice = computed(() => {
   });
 });
 
-const OUTCOME_TONE_CLASS = {
-  ok: "border-emerald-500/40 bg-emerald-500/5 text-emerald-800 dark:text-emerald-300",
-  attention: "border-warning/40 bg-warning/5 text-warning",
-  danger: "border-destructive/40 bg-destructive/5 text-destructive",
-  quiet: "border-border bg-muted/40 text-foreground",
+/** O tom do que a decisão causou, na cor do aviso do conjunto mínimo. */
+const OUTCOME_COLOR = {
+  ok: "success",
+  attention: "warning",
+  danger: "error",
+  quiet: "info",
 } as const;
 
 /**
@@ -310,6 +315,8 @@ async function finishDecision(
 async function confirmServerDecision(value: {
   credential: string;
   typedConfirmation: string;
+  deviceSealed?: boolean;
+  secondApproved?: boolean;
 }) {
   const command = decisionCommand.pendingDecision.value;
   if (!command) return;
@@ -361,316 +368,378 @@ async function resumeServerDecision() {
   }
 }
 
+// O título da tela é a ocasião com o produto (v4: "Lote pronto: Croissant"), o mesmo
+// do cartão da fila; sem ocasião, o nome da campanha; sem campanha, anúncio avulso.
+const headerTitle = computed(() => {
+  const current = announcement.value;
+  if (!current) return "Anúncio";
+  const product = current.sku
+    ? products.value.find((option) => option.value === current.sku)?.label || ""
+    : "";
+  return decisionTitle({
+    trigger: current.trigger,
+    product_name: product,
+    campaign_name: current.rule_name,
+  } as DecisionItem);
+});
+
+// O prazo, colado no título (v4: "decide até 10:15 · faltam 11 min"), no tom da
+// atenção ao tempo: âmbar, mais forte quando está perto. Vermelho é de bloqueio.
+const clock = ref(Date.now());
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  clockTimer = setInterval(() => (clock.value = Date.now()), 30_000);
+});
+onBeforeUnmount(() => {
+  if (clockTimer) clearInterval(clockTimer);
+});
+const deadline = computed(() => {
+  const current = announcement.value;
+  if (!current?.expires_at || current.status !== "pending_review") return null;
+  const left = Date.parse(current.expires_at) - clock.value;
+  const at = clockLabel(current.expires_at, shopTimezone.value, clock.value);
+  const remaining = remainingLabel(current.expires_at, clock.value);
+  return {
+    clock: at,
+    remaining,
+    text: `decide até ${at} · ${remaining}`,
+    tone: left <= 15 * 60_000 ? "font-semibold text-warning" : left <= 60 * 60_000 ? "text-warning" : "text-muted-foreground",
+  };
+});
+
+// A decisão mora na página (fase 2): o cartão expõe o estado e os gestos, e a página
+// monta a ação na base (abaixo de `lg`) e os dois botões da barra do topo (na mesa).
+const card = ref<{
+  openScheduling: () => void;
+  askToReject: () => void;
+  continueDecision: () => void;
+  canContinue: boolean;
+  continueBlockedReason: string;
+} | null>(null);
+const decisionOpen = computed(
+  () => announcement.value?.status === "pending_review",
+);
+const canContinue = computed(() => Boolean(card.value?.canContinue) && !busy.value);
+const continueReason = computed(() => card.value?.continueBlockedReason ?? "");
+const continueAction = computed<OperatorActionBarAction>(() => ({
+  label: "Continuar",
+  icon: "i-lucide-arrow-right",
+  loading: busy.value,
+  disabled: !canContinue.value,
+  reason: continueReason.value,
+  onSelect: () => card.value?.continueDecision(),
+}));
+const rejectAction = computed<OperatorActionBarAction>(() => ({
+  label: "Recusar",
+  disabled: busy.value,
+  onSelect: () => card.value?.askToReject(),
+}));
+
+// O ⋯ da revisão: o que não é a decisão (recusar com motivo também está no polegar).
+const headerActions = computed<OperatorHeaderAction[]>(() => [
+  ...(decisionOpen.value
+    ? [
+        {
+          label: "Agendar para outra hora",
+          icon: "i-lucide-calendar-clock",
+          onSelect: () => card.value?.openScheduling(),
+        },
+        {
+          label: "Recusar com motivo",
+          icon: "i-lucide-circle-slash",
+          onSelect: () => card.value?.askToReject(),
+        },
+      ]
+    : []),
+  { label: "Ver as campanhas", icon: "i-lucide-megaphone", to: "/settings/campaigns" },
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refreshAll() },
+]);
+
 useHead({ title: "Anúncio" });
 </script>
 
 <template>
-  <main class="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
-    <section
-      v-if="pendingReauthentication"
-      class="mb-4 rounded-md border border-warning/40 bg-warning/5 p-4"
-      role="status"
+  <main class="flex min-h-0 flex-1 flex-col">
+    <!-- A barra do topo da revisão: o voltar no lugar do selo, o nome da ocasião, o
+         prazo como estado (no celular o kit o desce para a 2ª linha) e o ⋯ com o que não
+         é a decisão. Na mesa, a decisão sobe para cá (`#actions`); abaixo de `lg` ela
+         mora na ação na base, no fim da página. -->
+    <OperatorPageHeader
+      :title="headerTitle"
+      :actions="headerActions"
+      actions-label="Mais ações da revisão"
     >
-      <p class="font-semibold">Sua sessão voltou. A decisão não foi enviada.</p>
-      <p class="mt-1 text-sm text-muted-foreground">
-        Seu texto e sua escolha estão guardados. Retome para confirmar de novo.
-      </p>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <UiButton
-          type="button"
-          :disabled="confirmingDecision"
-          @click="resumeServerDecision"
-        >
-          {{ confirmingDecision ? "Retomando…" : "Retomar e reconfirmar" }}
-        </UiButton>
-        <UiButton
-          type="button"
-          variant="outline"
-          :disabled="confirmingDecision"
-          @click="cancelServerDecision"
-        >
-          Agora não
-        </UiButton>
-      </div>
-      <p
-        v-if="decisionError"
-        class="mt-2 text-sm text-destructive"
-        role="alert"
-      >
-        {{ decisionError }}
-      </p>
-    </section>
+      <template #lead>
+        <NuxtButton
+          to="/"
+          color="neutral"
+          variant="ghost"
+          square
+          icon="i-lucide-arrow-left"
+          aria-label="Voltar às decisões"
+          title="Voltar às decisões"
+          data-announcement-back
+        />
+      </template>
+      <template v-if="deadline" #status>
+        <span class="tnum text-sm" :class="deadline.tone" data-review-deadline>{{ deadline.text }}</span>
+      </template>
+      <template v-if="decisionOpen" #actions>
+        <div class="flex items-center gap-2 max-lg:hidden" data-review-desk-actions>
+          <NuxtButton
+            color="neutral"
+            variant="outline"
+            label="Recusar"
+            :disabled="busy"
+            @click="card?.askToReject()"
+          />
+          <NuxtButton
+            trailing-icon="i-lucide-arrow-right"
+            label="Continuar"
+            :loading="busy"
+            :disabled="!canContinue"
+            :title="continueReason || undefined"
+            data-testid="publish-now"
+            @click="card?.continueDecision()"
+          />
+        </div>
+      </template>
+    </OperatorPageHeader>
 
-    <NuxtLink
-      to="/"
-      class="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
-    >
-      <Icon name="lucide:arrow-left" class="size-4" />
-      Voltar ao painel
-    </NuxtLink>
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <div class="mx-auto flex w-full max-w-2xl flex-col gap-4">
+        <NuxtAlert
+          v-if="pendingReauthentication"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-rotate-ccw"
+          role="status"
+          title="Sua sessão voltou. A decisão não foi enviada."
+          description="Seu texto e sua escolha estão guardados. Retome para confirmar de novo."
+          :actions="alertActions('warning', [
+            {
+              label: confirmingDecision ? 'Retomando…' : 'Retomar e reconfirmar',
+              loading: confirmingDecision,
+              disabled: confirmingDecision,
+              onClick: resumeServerDecision,
+            },
+            {
+              label: 'Agora não',
+              disabled: confirmingDecision,
+              onClick: cancelServerDecision,
+            },
+          ])"
+          data-review-reauthentication
+        />
+        <NuxtAlert
+          v-if="pendingReauthentication && decisionError"
+          color="error"
+          variant="subtle"
+          :title="decisionError"
+        />
 
-    <!-- O que a decisão causou, em estado. Fica na tela; o toast só acompanha. -->
-    <section
-      v-if="decisionNotice"
-      data-focus-target="decision-outcome"
-      tabindex="-1"
-      class="mb-4 scroll-mt-4 rounded-md border p-4 outline-none"
-      :class="OUTCOME_TONE_CLASS[decisionNotice.tone]"
-      role="status"
-      aria-labelledby="decision-outcome-title"
-    >
-      <div class="flex items-start gap-2.5">
-        <Icon :name="decisionNotice.icon" class="mt-0.5 size-5 shrink-0" />
-        <div class="min-w-0">
-          <h2 id="decision-outcome-title" class="font-semibold">
-            {{ decisionNotice.title }}
-          </h2>
-          <p class="mt-1 text-sm opacity-90">{{ decisionNotice.detail }}</p>
-          <p
-            v-if="trackingDelivery"
-            class="mt-2 flex items-center gap-1.5 text-sm opacity-90"
-          >
-            <Icon
-              name="lucide:loader-circle"
-              class="size-4 shrink-0 animate-spin"
-            />
-            Acompanhando a entrega…
-          </p>
-          <template v-else-if="trackingExhausted">
-            <p class="mt-2 text-sm opacity-90">
+        <!-- O que a decisão causou, em estado. Fica na tela; o toast só acompanha. -->
+        <NuxtAlert
+          v-if="decisionNotice"
+          :color="OUTCOME_COLOR[decisionNotice.tone]"
+          variant="subtle"
+          :icon="decisionNotice.icon"
+          :title="decisionNotice.title"
+          :actions="alertActions(OUTCOME_COLOR[decisionNotice.tone], trackingExhausted && !trackingDelivery
+            ? [
+              {
+                label: 'Atualizar',
+                icon: 'i-lucide-refresh-cw',
+                onClick: trackDeliveryUntilSettled,
+              },
+            ]
+            : [])"
+          role="status"
+          tabindex="-1"
+          class="scroll-mt-4 outline-none"
+          data-focus-target="decision-outcome"
+          data-decision-outcome
+        >
+          <template #description>
+            <p>{{ decisionNotice.detail }}</p>
+            <p v-if="trackingDelivery" class="mt-2 flex items-center gap-1.5">
+              <Icon name="lucide:loader-circle" class="size-4 shrink-0 animate-spin" />
+              Acompanhando a entrega…
+            </p>
+            <p v-else-if="trackingExhausted" class="mt-2">
               Ainda não sabemos se foi disparado. Provavelmente é a fila.
             </p>
-            <UiButton
-              type="button"
-              variant="outline"
-              class="mt-2"
-              @click="trackDeliveryUntilSettled"
-            >
-              <Icon name="lucide:refresh-cw" class="size-4" />
-              Atualizar
-            </UiButton>
           </template>
-        </div>
+        </NuxtAlert>
+
+        <OperatorScreenState
+          v-if="pending && !announcement"
+          state="loading"
+          what="o anúncio"
+        />
+
+        <template v-else-if="error || !announcement">
+          <OperatorScreenState
+            v-if="loadFailure.canRetry"
+            state="error"
+            :title="loadFailure.title"
+            :description="loadFailure.detail"
+            @retry="refreshAll"
+          />
+          <OperatorScreenState
+            v-else
+            state="empty"
+            icon="i-lucide-search-x"
+            :title="loadFailure.title"
+            :description="loadFailure.detail"
+          >
+            <template #actions>
+              <NuxtButton color="neutral" variant="outline" to="/" label="Ver as decisões" />
+            </template>
+          </OperatorScreenState>
+        </template>
+
+        <template v-else>
+          <!-- Já decidido: mostra o estado em vez de oferecer botões que não valem mais -->
+          <NuxtAlert
+            v-if="announcement.status !== 'pending_review'"
+            color="info"
+            variant="subtle"
+            title="Este anúncio já foi decidido."
+            :description="`Situação: ${announcement.status_label}${announcement.approved_by ? ` · por ${announcement.approved_by}` : ''}`"
+            data-review-decided
+          />
+
+          <section
+            v-if="announcement.status === 'pending_review'"
+            id="review"
+            class="flex scroll-mt-4 flex-col gap-4"
+            aria-label="Revisão do anúncio"
+          >
+            <!-- Quem veio do disparo precisa saber por que está aqui, e que nada saiu. -->
+            <NuxtAlert
+              v-if="dispatchNotice"
+              color="info"
+              variant="subtle"
+              icon="i-lucide-badge-check"
+              role="status"
+              :title="dispatchNotice.title"
+            >
+              <template #description>
+                <p>{{ dispatchNotice.detail }}</p>
+                <p v-if="dispatchNotice.replayNote">{{ dispatchNotice.replayNote }}</p>
+              </template>
+            </NuxtAlert>
+
+            <AnnouncementCard
+              ref="card"
+              decision-in-page
+              :announcement="announcement"
+              :platform-options="platforms"
+              :platform-readiness="platformReadiness"
+              :product-options="products"
+              :busy="busy"
+              :draft-owner="draftOwner"
+              :shop-timezone="shopTimezone"
+              :quiet-hours-suspended-for-local-simulation="
+                quietHoursSuspendedForLocalSimulation
+              "
+              @approve="
+                (_, edits, publishMode) => decide('approve', edits, publishMode)
+              "
+              @reject="confirmingReject = true"
+            />
+          </section>
+
+          <NuxtCard
+            v-else-if="announcement.status === 'rejected'"
+            as="article"
+          >
+            <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Texto recusado
+            </h2>
+            <p class="whitespace-pre-line text-sm">{{ announcement.body }}</p>
+            <!-- Recusa é decisão de alguém, e a decisão precisa ser legível depois. Sem
+                 isto, o motivo ficaria só no banco. -->
+            <p
+              class="mt-3 flex items-start gap-1.5 border-t border-border pt-3 text-xs text-muted-foreground"
+            >
+              <Icon name="lucide:circle-slash" class="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                Recusado{{
+                  announcement.rejected_by
+                    ? ` por ${announcement.rejected_by}`
+                    : ""
+                }}<template v-if="announcement.rejected_reason"
+                  >: {{ announcement.rejected_reason }}</template
+                >
+              </span>
+            </p>
+          </NuxtCard>
+
+          <template v-if="announcement.status !== 'pending_review'">
+            <OperatorScreenState
+              v-if="resultPending && !resultAnnouncement"
+              state="loading"
+              what="o resultado da entrega"
+            />
+            <OperatorScreenState
+              v-else-if="resultError || !resultAnnouncement"
+              state="error"
+              title="O conteúdo abriu, mas o resultado de entrega não."
+              description="Ainda não sabemos o que foi disparado. O comprovante continua abaixo."
+              @retry="refreshResult()"
+            />
+            <AnnouncementResultPanel
+              v-else
+              id="result"
+              class="scroll-mt-4"
+              :announcement="resultAnnouncement"
+              :actions="resultActions"
+              :receipt="displayedReceipt"
+              :shop-timezone="shopTimezone"
+              :approved-text="announcement.body"
+              :quiet-hours-suspended-for-local-simulation="
+                quietHoursSuspendedForLocalSimulation
+              "
+              @receipt="rememberReceipt"
+              @refresh="refreshAll"
+            />
+          </template>
+        </template>
       </div>
     </section>
 
-    <div
-      v-if="pending && !announcement"
-      class="h-64 animate-pulse rounded-md bg-muted"
-      aria-busy="true"
-    ></div>
+    <!-- A decisão abaixo de `lg`: a ação na base do kit, irmã da região que rola, depois
+         dela. Continuar leva ao selo (não dispara); o motivo aparece escrito quando ele
+         não pode. Recusar é a segunda ação. -->
+    <OperatorActionBar
+      v-if="decisionOpen"
+      :action="continueAction"
+      :secondary="rejectAction"
+      :context-label="deadline ? `Decide até ${deadline.clock}` : ''"
+      :context-value="deadline?.remaining ?? ''"
+      label="Decisão do anúncio"
+      data-review-actions
+    />
 
-    <div
-      v-else-if="error || !announcement"
-      class="rounded-md border border-dashed border-border bg-card/50 px-6 py-10 text-center"
-    >
-      <Icon
-        name="lucide:search-x"
-        class="mx-auto size-8 text-muted-foreground"
-      />
-      <p class="mt-2 font-semibold">{{ loadFailure.title }}</p>
-      <p class="mt-1 text-sm text-muted-foreground">{{ loadFailure.detail }}</p>
-      <UiButton
-        v-if="loadFailure.canRetry"
-        type="button"
-        variant="outline"
-        class="mt-3"
-        @click="refreshAll"
-      >
-        <Icon name="lucide:refresh-cw" class="size-4" />
-        Tentar de novo
-      </UiButton>
-      <NuxtLink
-        v-else
-        to="/"
-        class="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium transition hover:bg-muted"
-      >
-        Ver o painel
-      </NuxtLink>
-    </div>
-
-    <template v-else>
-      <!-- Já decidido: mostra o estado em vez de oferecer botões que não valem mais -->
-      <div
-        v-if="announcement.status !== 'pending_review'"
-        class="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm"
-      >
-        <p class="font-semibold">Este anúncio já foi decidido.</p>
-        <p class="mt-0.5 text-muted-foreground">
-          Situação: {{ announcement.status_label
-          }}<template v-if="announcement.approved_by">
-            · por {{ announcement.approved_by }}</template
-          >
-        </p>
-      </div>
-
-      <section
-        v-if="announcement.status === 'pending_review'"
-        id="review"
-        class="scroll-mt-4"
-        aria-label="Revisão do anúncio"
-      >
-        <!-- Quem veio do disparo precisa saber por que está aqui — e que nada saiu. -->
-        <div
-          v-if="dispatchNotice"
-          class="mb-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
-          role="status"
-        >
-          <Icon
-            name="lucide:badge-check"
-            class="mt-0.5 size-4 shrink-0 text-muted-foreground"
-          />
-          <div class="min-w-0">
-            <p class="font-medium">{{ dispatchNotice.title }}</p>
-            <p class="text-muted-foreground">{{ dispatchNotice.detail }}</p>
-            <p v-if="dispatchNotice.replayNote" class="text-muted-foreground">
-              {{ dispatchNotice.replayNote }}
-            </p>
-          </div>
-        </div>
-
-        <AnnouncementCard
-          :announcement="announcement"
-          :platform-options="platforms"
-          :platform-readiness="platformReadiness"
-          :product-options="products"
-          :busy="busy"
-          :draft-owner="draftOwner"
-          :shop-timezone="shopTimezone"
-          :quiet-hours-suspended-for-local-simulation="
-            quietHoursSuspendedForLocalSimulation
-          "
-          @approve="
-            (_, edits, publishMode) => decide('approve', edits, publishMode)
-          "
-          @reject="
-            confirmingReject = true;
-            rejectReason = '';
-          "
-        />
-      </section>
-
-      <article
-        v-else-if="announcement.status === 'rejected'"
-        class="rounded-md border border-border bg-card p-4"
-      >
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Texto recusado
-        </h2>
-        <p class="whitespace-pre-line text-sm">{{ announcement.body }}</p>
-        <!-- Recusa é decisão de alguém, e a decisão precisa ser legível depois. Sem
-             isto, o motivo ficaria só no banco. -->
-        <p
-          v-if="announcement.status === 'rejected'"
-          class="mt-3 flex items-start gap-1.5 border-t border-border pt-3 text-xs text-muted-foreground"
-        >
-          <Icon name="lucide:circle-slash" class="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            Recusado{{
-              announcement.rejected_by
-                ? ` por ${announcement.rejected_by}`
-                : ""
-            }}<template v-if="announcement.rejected_reason"
-              >: {{ announcement.rejected_reason }}</template
-            >
-          </span>
-        </p>
-      </article>
-
-      <div
-        v-if="
-          announcement.status !== 'pending_review' &&
-          resultPending &&
-          !resultAnnouncement
-        "
-        class="mt-4 h-48 animate-pulse rounded-md bg-muted"
-        aria-busy="true"
-      ></div>
-      <div
-        v-else-if="
-          announcement.status !== 'pending_review' &&
-          (resultError || !resultAnnouncement)
-        "
-        class="mt-4 rounded-md border border-warning/40 bg-warning/5 p-4 text-sm"
-        role="alert"
-      >
-        <p class="font-semibold">
-          O conteúdo abriu, mas o resultado de entrega não.
-        </p>
-        <p class="mt-1 text-muted-foreground">
-          Ainda não sabemos o que foi disparado. O comprovante continua abaixo.
-        </p>
-        <UiButton
-          type="button"
-          variant="link"
-          class="mt-2"
-          @click="refreshResult()"
-        >
-          Tentar de novo
-        </UiButton>
-      </div>
-      <AnnouncementResultPanel
-        v-else-if="
-          announcement.status !== 'pending_review' && resultAnnouncement
-        "
-        class="mt-4"
-        :announcement="resultAnnouncement"
-        :actions="resultActions"
-        :receipt="displayedReceipt"
-        :shop-timezone="shopTimezone"
-        :approved-text="announcement.body"
-        :quiet-hours-suspended-for-local-simulation="
-          quietHoursSuspendedForLocalSimulation
-        "
-        @receipt="rememberReceipt"
-        @refresh="refreshAll"
-      />
-    </template>
-
-    <UiDialog
+    <OperatorReasonDialog
       :open="confirmingReject"
-      @update:open="(v) => (confirmingReject = v)"
-    >
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Recusar este anúncio?</UiDialogTitle>
-          <UiDialogDescription>
-            Ele não vai para nenhuma plataforma e não volta para a fila.
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <div>
-          <label for="reject-reason" class="mb-1 block text-xs font-medium text-muted-foreground">
-            Motivo (opcional)
-          </label>
-          <UiInput
-            id="reject-reason"
-            v-model="rejectReason"
-            type="text"
-            :maxlength="200"
-            placeholder="Foto ruim, texto errado, produto acabou…"
-          />
-        </div>
-        <UiDialogFooter>
-          <UiButton
-            type="button"
-            variant="outline"
-            @click="confirmingReject = false"
-          >
-            Manter na fila
-          </UiButton>
-          <UiButton
-            type="button"
-            variant="destructive"
-            @click="
-              confirmingReject = false;
-              decide('reject', { reason: rejectReason.trim() });
-            "
-          >
-            Recusar
-          </UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+      title="Recusar este anúncio?"
+      description="Ele não vai para nenhuma plataforma e não volta para a fila."
+      confirm-label="Recusar"
+      reason-label="Motivo (opcional)"
+      placeholder="Foto ruim, texto errado, produto acabou…"
+      :maxlength="200"
+      :busy="busy"
+      @update:open="(open) => (confirmingReject = open)"
+      @confirm="
+        ({ reason }) => {
+          confirmingReject = false;
+          decide('reject', { reason });
+        }
+      "
+    />
 
     <MarketingCommandConfirmationDialog
       :command="pendingDecision"

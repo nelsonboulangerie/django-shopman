@@ -253,7 +253,7 @@ def operator_task_message(ids: tuple[str, ...], *, receipt_ref, deadline) -> str
         "a API deles não tem como apagar assinante, então essa parte é na mão. "
         f"No ManyChat, abra Contacts, procure o assinante {assinantes} e exclua o contato "
         "(Delete Contact). "
-        f"Prazo: até {deadline:%d/%m/%Y} — são 15 dias para concluir o pedido do titular. "
+        f"Prazo: até {deadline:%d/%m/%Y} (são 15 dias para concluir o pedido do titular). "
         f"Recibo da exclusão: {receipt_ref}."
     )
 

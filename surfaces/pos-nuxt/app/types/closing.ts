@@ -1,14 +1,18 @@
 // Contrato do fechamento do DIA (contagem cega de sobras/perdas), servido por
 // GET/POST /api/v1/backstage/closing/ — serialização da DayClosingProjection
 // (shopman/backstage/projections/closing.py). Só os campos que a superfície lê.
+//
+// CEGO ATÉ A CONTAGEM: antes do registro o servidor não manda as quantidades
+// que a contagem deveria descobrir (disponível, vencendo, não conforme, total,
+// produção do dia). Por isso são opcionais aqui. Dinheiro não vem nunca.
 
 export interface ClosingItemProjection {
   sku: string;
   name: string;
-  qty_available: number;
   classification: "keep" | "expired" | "mixed" | string; // o LOTE decide (C4)
-  qty_expiring: number;
-  qty_nonconforming: number;
+  qty_available?: number;
+  qty_expiring?: number;
+  qty_nonconforming?: number;
 }
 
 export interface ClosingProductionRow {
@@ -43,8 +47,6 @@ export interface ClosingUpcomingPreorder {
   date: string;
   date_display: string;
   orders_count: number;
-  total_q: number;
-  total_display: string;
 }
 
 export interface DayClosingProjection {
@@ -54,15 +56,48 @@ export interface DayClosingProjection {
   has_items: boolean;
   already_closed: boolean;
   existing_closing_display: string;
-  total_available: number;
-  production_summary: Record<string, ClosingProductionRow>;
+  total_available?: number;
+  production_summary?: Record<string, ClosingProductionRow>;
   reconciliation_errors: ClosingReconciliationError[];
   pending_production: ClosingPendingProduction[];
   has_pending_production: boolean;
   upcoming_preorders: ClosingUpcomingPreorder[];
   has_upcoming_preorders: boolean;
+  /** "Explicar o dia estranho": vazio na maioria dos dias. */
+  pending_episodes?: ClosingPendingEpisode[];
+  episode_options?: ClosingEpisodeOption[];
+  has_pending_episodes?: boolean;
+  /** A forma do movimento por hora, hoje × o mesmo dia típico (0 a 1, sem valores). */
+  hourly_shape?: ClosingHourlyShape | null;
+  /** Quem fecha ("Admin · gerência"). */
+  operator_display?: string;
+}
+
+/** Algo estranho que o sistema notou no dia e ninguém explicou (`OperationEpisode`). */
+export interface ClosingPendingEpisode {
+  id: number;
+  /** O que o sistema MEDIU, em português ("nenhuma venda entre 14h e 16h"). */
+  signal: string;
+  window_display: string;
+}
+
+/** Uma resposta possível, do catálogo (`OperationEpisodeKind`): escolher, nunca digitar. */
+export interface ClosingEpisodeOption {
+  ref: string;
+  label: string;
+  hint: string;
 }
 
 export interface DayClosingResponse {
   closing: DayClosingProjection;
+}
+
+export interface ClosingHourlyShape {
+  hours: string[];
+  /** `null` nas horas que ainda não chegaram. */
+  today: Array<number | null>;
+  typical: number[];
+  typical_label: string;
+  /** "14h" quando o movimento de hoje caiu abaixo da metade do típico dali em diante. */
+  drop_after: string;
 }

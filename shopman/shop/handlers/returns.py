@@ -256,7 +256,7 @@ class ReturnHandler:
             severity="warning",
             message=(
                 f"Devolução PARCIAL no pedido {order.ref} com NFC-e autorizada. "
-                "A nota NÃO foi cancelada (venda parcialmente mantida) — avaliar "
+                "A nota NÃO foi cancelada (venda parcialmente mantida). Avaliar "
                 "com o contador o instrumento fiscal da devolução."
             ),
             order_ref=order.ref,

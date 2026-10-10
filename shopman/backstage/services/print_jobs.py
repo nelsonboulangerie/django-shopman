@@ -900,6 +900,12 @@ def acknowledge_job(
             from shopman.backstage.services import kitchen_ticket_print
 
             transaction.on_commit(lambda: kitchen_ticket_print.on_job_changed(job))
+        elif job.kind == PrintJob.Kind.DRAWER_PULSE:
+            # O pulso da gaveta pedido pelo tablet: a resposta do agente vai ao
+            # livro, ao lado da abertura (services/drawer_pulse.py).
+            from shopman.backstage.services import drawer_pulse
+
+            transaction.on_commit(lambda: drawer_pulse.on_job_changed(job))
         return job
 
 
@@ -907,7 +913,17 @@ def reconcile_job_state(job: PrintJob) -> PrintJob:
     """Make polling sufficient to surface a relay that died after claiming."""
     now = timezone.now()
     with transaction.atomic():
-        locked = PrintJob.objects.select_for_update().select_related("target_terminal").get(pk=job.pk)
+        # ``of=("self",)``: o terminal é FK anulável, e o PostgreSQL recusa ``FOR
+        # UPDATE`` no lado anulável do OUTER JOIN que o ``select_related`` monta
+        # ("FOR UPDATE cannot be applied to the nullable side of an outer join").
+        # Sem isto, toda leitura de estado no Postgres caía em 400: o pulso de
+        # gaveta do PDV, a DANFE e a Via Cozinha (alpha, 10/10/2026). O SQLite
+        # dos testes ignora ``FOR UPDATE`` e não via o erro.
+        locked = (
+            PrintJob.objects.select_for_update(of=("self",))
+            .select_related("target_terminal")
+            .get(pk=job.pk)
+        )
         if locked.status in {PrintJob.Status.QUEUED, PrintJob.Status.PREPARED} and locked.expires_at <= now:
             locked.status = PrintJob.Status.EXPIRED
             locked.save(update_fields=("status", "updated_at"))

@@ -1,0 +1,160 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900">
+<style>
+  .tile { display:flex; flex-direction:column; gap:0; padding:20px; border-radius:14px; border:1px solid var(--border); background:var(--card); min-height:164px; }
+  .tile .ico { width:40px; height:40px; border-radius:10px; display:grid; place-items:center; background:var(--app-color); color:#fff; }
+  .tile .state { margin-top:auto; display:flex; align-items:center; gap:8px; }
+  .dot { width:7px; height:7px; border-radius:999px; flex:none; }
+  .need { display:flex; align-items:center; gap:14px; height:52px; padding:0 16px; }
+  .need + .need { border-top:1px solid var(--border); }
+  .need .ico { width:28px; height:28px; border-radius:8px; display:grid; place-items:center; background:var(--app-color); color:#fff; flex:none; }
+</style>
+</head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="hub">
+<div class="flex h-[900px] overflow-hidden relative">
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Shopman Apps" icon="layout-grid"}}
+    <a class="rail-item on"><i data-i="house"></i>Início</a>
+    {{> rail3bottom bell="7" initials="AD" operator="Admin"}}
+  </aside>
+
+  <main class="flex-1 flex flex-col min-w-0">
+    <header class="h-[76px] px-8 flex items-center gap-6 border-b border-border bg-card">
+      <div class="min-w-0">
+        <h1 class="op-display !text-[22px] leading-none">Olá, Admin</h1>
+        <p class="op-micro text-muted-foreground mt-1.5 inline-flex items-center gap-1.5 tnum"><span class="live-dot"></span>22:03 · Sábado, 3 de outubro · Nelson Boulangerie</p>
+      </div>
+      <div class="flex-1"></div>
+      <label class="h-12 w-[34rem] px-4 rounded-lg border border-input bg-background inline-flex items-center gap-3" title="Uma busca só: pedidos, clientes, produtos, insumos e telas de toda a suíte">
+        <i data-i="search" class="size-5 text-muted-foreground"></i>
+        <span class="flex-1 op-body text-muted-foreground truncate">Buscar pedido, cliente, produto, insumo ou tela</span>
+        <kbd class="op-micro px-1.5 py-0.5 rounded border border-border bg-muted font-mono text-muted-foreground">/</kbd>
+        <kbd class="op-micro px-1.5 py-0.5 rounded border border-border bg-muted font-mono text-muted-foreground">Ctrl K</kbd>
+      </label>
+      <div class="flex-1"></div>
+      <div class="w-[188px]"></div>
+    </header>
+
+    <div class="flex-1 overflow-hidden">
+      <div class="max-w-[1120px] mx-auto px-8 pt-8 flex flex-col gap-8">
+
+        <!-- Precisa de você: lista fina, só aparece quando tem algo -->
+        <section>
+          <div class="flex items-baseline gap-2 mb-3">
+            <h2 class="op-eyebrow">Precisa de você</h2><span class="op-label text-muted-foreground tnum">3</span>
+            <span class="ml-auto op-micro text-muted-foreground">Some sozinho quando resolvido</span>
+          </div>
+          <div class="rounded-xl border border-border bg-card">
+            <a class="need" data-app="kds">
+              <span class="ico"><i data-i="chef-hat" class="size-4"></i></span>
+              <span class="dot bg-warning"></span>
+              <span class="op-body font-semibold">1 ticket atrasado: Croissant, 14 min</span>
+              <span class="op-label font-normal text-muted-foreground">Cozinha › Preparo</span>
+              <i data-i="chevron-right" class="size-4 ml-auto text-muted-foreground"></i>
+            </a>
+            <a class="need" data-app="orders">
+              <span class="ico"><i data-i="square-kanban" class="size-4"></i></span>
+              <span class="dot bg-warning"></span>
+              <span class="op-body font-semibold">Canal TV do Café com 1 pendência</span>
+              <span class="op-label font-normal text-muted-foreground">Gestor › Canais</span>
+              <i data-i="chevron-right" class="size-4 ml-auto text-muted-foreground"></i>
+            </a>
+            <a class="need" data-app="pos">
+              <span class="ico"><i data-i="shopping-basket" class="size-4"></i></span>
+              <span class="dot bg-muted-foreground/50"></span>
+              <span class="op-body font-semibold">2 comandas em aberto</span>
+              <span class="op-label font-normal text-muted-foreground">PDV › Comandas</span>
+              <i data-i="chevron-right" class="size-4 ml-auto text-muted-foreground"></i>
+            </a>
+          </div>
+        </section>
+
+        <!-- Apps: blocos brancos e calmos; o bloco inteiro é o link -->
+        <section>
+          <div class="flex items-baseline gap-2 mb-3">
+            <h2 class="op-eyebrow">Apps</h2><span class="op-label text-muted-foreground tnum">8</span>
+          </div>
+          <div class="grid grid-cols-4 gap-4">
+            <a class="tile" data-app="pos">
+              <span class="ico"><i data-i="shopping-basket" class="size-5"></i></span>
+              <p class="op-title mt-4">PDV</p>
+              <p class="op-label font-normal text-muted-foreground">Vender no balcão</p>
+              <p class="state op-label font-normal pt-4"><span class="dot bg-success"></span>Caixa aberto · 10 vendas hoje</p>
+            </a>
+            <a class="tile" data-app="kds">
+              <span class="ico"><i data-i="chef-hat" class="size-5"></i></span>
+              <p class="op-title mt-4">Cozinha</p>
+              <p class="op-label font-normal text-muted-foreground">Preparo e saída</p>
+              <p class="state op-label pt-4 text-warning font-semibold"><span class="dot bg-warning"></span><span>1 ticket atrasado <span class="font-normal text-muted-foreground">· 3 em preparo</span></span></p>
+            </a>
+            <a class="tile" data-app="orders">
+              <span class="ico"><i data-i="square-kanban" class="size-5"></i></span>
+              <p class="op-title mt-4">Gestor de pedidos</p>
+              <p class="op-label font-normal text-muted-foreground">Fila e acompanhamento</p>
+              <p class="state op-label font-normal pt-4"><span class="dot bg-success"></span>10 ativos · nenhum novo</p>
+            </a>
+            <a class="tile" data-app="production">
+              <span class="ico"><i data-i="croissant" class="size-5"></i></span>
+              <p class="op-title mt-4">Produção</p>
+              <p class="op-label font-normal text-muted-foreground">Produção e lotes</p>
+              <p class="state op-label font-normal pt-4"><span class="dot bg-muted-foreground/50"></span>5 de 15 lotes produzidos hoje</p>
+            </a>
+            <a class="tile" data-app="purchase">
+              <span class="ico"><i data-i="package" class="size-5"></i></span>
+              <p class="op-title mt-4">Compras</p>
+              <p class="op-label font-normal text-muted-foreground">Comprar e receber insumos</p>
+              <p class="state op-label font-normal pt-4"><span class="dot bg-muted-foreground/50"></span>120 insumos sem custo definido</p>
+            </a>
+            <a class="tile" data-app="marketing">
+              <span class="ico"><i data-i="megaphone" class="size-5"></i></span>
+              <p class="op-title mt-4">Marketing</p>
+              <p class="op-label font-normal text-muted-foreground">Divulgar o lote</p>
+              <p class="state op-label font-normal pt-4"><span class="dot bg-success"></span>3 campanhas ligadas</p>
+            </a>
+            <a class="tile" data-app="bi">
+              <span class="ico"><i data-i="chart-no-axes-combined" class="size-5"></i></span>
+              <p class="op-title mt-4">B.I.</p>
+              <p class="op-label font-normal text-muted-foreground">Números da operação</p>
+              <p class="state op-label font-normal pt-4 tnum"><span class="dot bg-muted-foreground/50"></span><span>28D: R$ 208,6 mil <span class="text-muted-foreground">(−11%)</span></span></p>
+            </a>
+            <a class="tile relative" data-app="hub" style="--app-color:#8B6A2E">
+              <i data-i="external-link" class="size-4 text-muted-foreground absolute top-5 right-5"></i>
+              <span class="ico"><i data-i="store" class="size-5"></i></span>
+              <p class="op-title mt-4">Loja online</p>
+              <p class="op-label font-normal text-muted-foreground">A loja do cliente</p>
+              <p class="state op-label font-normal pt-4"><span class="dot bg-success"></span>Aberta · 5 pedidos hoje</p>
+            </a>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Rodapé calmo: avisos neste dispositivo + versão -->
+    <footer class="h-14 px-8 border-t border-border flex items-center">
+      <div class="max-w-[1120px] w-full mx-auto px-8 flex items-center gap-3 op-label font-normal text-muted-foreground">
+        <i data-i="bell-off" class="size-4"></i>
+        <span>Avisos neste dispositivo: o envio ainda não foi configurado nesta instalação. Peça a quem cuida do sistema.</span>
+        <a class="font-semibold text-foreground underline underline-offset-4 decoration-border">Ativar neste dispositivo</a>
+        <span class="ml-auto tnum">Versão <span class="font-mono text-foreground">local</span></span>
+      </div>
+    </footer>
+  </main>
+
+  <span class="pin" style="left:26px;top:40px">1</span>
+  <span class="pin" style="left:548px;top:4px">2</span>
+  <span class="pin" style="left:184px;top:144px">3</span>
+  <span class="pin" style="left:184px;top:372px">4</span>
+  <span class="pin" style="left:508px;top:486px">5</span>
+  <span class="pin" style="left:1272px;top:540px">6</span>
+  <span class="pin" style="left:184px;top:836px">7</span>
+</div>
+<div class="legend">
+  <p class="t">Shopman Apps · Início · v3 <span>a função aprovada da v2 com a calma do original</span></p>
+  <div><b>1</b>Rail v3 igual aos apps: o selo abre os oito apps, "Início" é a única seção. Avisos, atalhos, bloquear e operador no pé.</div>
+  <div><b>2</b>Busca única no cabeçalho, larga e quieta (/ ou Ctrl K): pedido, cliente, produto, insumo ou tela, de toda a suíte. "Ao vivo" é o ponto com a hora.</div>
+  <div><b>3</b>"Precisa de você" mantido, mas como lista fina (até 3 linhas, filete entre elas). A linha inteira leva ao lugar certo. Some quando não há nada.</div>
+  <div><b>4</b>Blocos brancos, ícone na cor do app, nome e uma linha curta, como o original. Sem botões dentro e sem borda colorida.</div>
+  <div><b>5</b>O estado mantido da v2 cabe em UMA linha com ponto. Âmbar só quando pede atenção; o resto é neutro.</div>
+  <div><b>6</b>O bloco inteiro é o link profundo: Cozinha abre no ticket atrasado, PDV na venda, B.I. em Vendas 28D. Loja online abre em outra aba (seta).</div>
+  <div><b>7</b>Avisos neste dispositivo e versão viram uma linha de rodapé, com "Ativar neste dispositivo". Mais leve: sem cartões, sem pílulas, sem botões de "Continuar vendendo".</div>
+</div>
+</body></html>

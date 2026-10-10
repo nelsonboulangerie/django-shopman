@@ -80,14 +80,11 @@ export default defineNuxtConfig({
     definePwaCapability({
       app: "marketing",
       display: "standalone",
-      // A prévia V2 é uma experiência navegável online, não parte do casco
-      // offline. Mantê-la fora evita congelar HTML de demonstração no PWA.
-      precacheIgnores: ["marketing-v2-preview/**"],
       wakeLock: false,
       kiosk: false,
       push: { surfaceRef: "marketing", categories: ["campaign"] },
       shortcuts: [
-        { name: "Campanhas", shortName: "Campanhas", url: "/campaigns" },
+        { name: "Campanhas", shortName: "Campanhas", url: "/settings/campaigns" },
       ],
     }),
     "@nuxtjs/color-mode",
@@ -128,7 +125,10 @@ export default defineNuxtConfig({
 
   icon: {
     clientBundle: {
-      scan: true,
+      // `.ts` também: as seções (`useMarketingSections`) e as presentations
+      // escolhem ícones fora dos templates, e ícone fora do pacote o navegador iria
+      // buscar no api.iconify.design, que a CSP do Marketing recusa.
+      scan: { globInclude: ["**/*.{vue,ts}"] },
       sizeLimitKb: 0,
     },
 

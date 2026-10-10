@@ -1,0 +1,214 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1320x1000">
+<style>
+  .sb { height:44px; padding:0 26px 0 30px; display:flex; align-items:center; font:600 15px/1 "Instrument Sans",sans-serif; }
+  .sb svg { width:17px !important; height:17px !important; }
+  .home-ind { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:99px; background:var(--foreground); opacity:.85; }
+  .pill { height:24px; padding:0 8px; border-radius:999px; display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; }
+  .pill i, .pill .d { width:6px; height:6px; border-radius:99px; background:currentColor; display:inline-block; }
+  .chip { height:40px; padding:0 14px; border-radius:999px; border:1px solid var(--border); background:var(--card); display:inline-flex; align-items:center; gap:6px; font-size:14px; flex:none; }
+  .chip.on { border-color:var(--primary); background:color-mix(in oklab,var(--primary) 10%,transparent); font-weight:600; }
+  .nav a { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:12px; font-weight:600; color:var(--muted-foreground); position:relative; padding-top:10px; }
+  .nav a.on { color:var(--foreground); }
+  .nav a.on .ni { background:var(--secondary); }
+  .nav .ni { width:56px; height:30px; border-radius:99px; display:grid; place-items:center; }
+  .nav .badge { position:absolute; top:4px; left:calc(50% + 8px); min-width:18px; height:18px; padding:0 5px; border-radius:99px; background:#f2c46b; color:#3b2a1e; font-size:11px; line-height:18px; font-weight:700; }
+  .nav .attn { position:absolute; top:10px; left:calc(50% + 10px); width:9px; height:9px; border-radius:99px; background:#f2c46b; box-shadow:0 0 0 2px var(--card); }
+  .lock { background: radial-gradient(120% 70% at 30% 10%, #6b4a32 0%, #3a281c 45%, #1d140e 100%); }
+  .glass { background: rgb(255 248 240 / .82); backdrop-filter: blur(18px); }
+  .vib { position:absolute; width:4px; border-radius:4px; background:#f2c46b; }
+</style>
+</head>
+<body class="font-sans antialiased text-foreground" style="background:#e9dfd6" data-app="orders">
+<div class="relative h-[1000px] overflow-hidden flex justify-center gap-6 pt-5">
+
+  <!-- ============ (a) Pedidos ============ -->
+  <div class="flex flex-col items-center gap-3">
+    <p class="op-title">(a) Pedidos no balcão: abas no lugar das colunas</p>
+    <div class="device"><div class="screen bg-background" style="width:390px;height:844px">
+      <div class="sb bg-card"><span class="tnum">22:03</span><span class="flex-1"></span><span class="flex items-center gap-1.5"><i data-i="signal"></i><i data-i="wifi"></i><i data-i="battery-full"></i></span></div>
+      <div class="h-14 pl-4 pr-2 flex items-center gap-2.5 bg-card">
+        <button class="size-9 rounded-lg grid place-items-center relative" style="background:var(--app-color)"><i data-i="square-kanban" class="size-5 text-white"></i></button>
+        <h1 class="text-[20px] font-semibold leading-none">Pedidos</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum"><span class="live-dot"></span>22:03</span>
+        <span class="flex-1"></span>
+        <button class="size-12 grid place-items-center"><i data-i="search" class="size-6"></i></button>
+        <button class="size-12 grid place-items-center relative"><i data-i="bell" class="size-6"></i><span class="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold grid place-items-center" style="background:#f2c46b;color:#3b2a1e">7</span></button>
+      </div>
+      <!-- chips roláveis + Filtros -->
+      <div class="bg-card relative">
+        <div class="flex items-center gap-2 pl-4 pb-2.5 overflow-hidden pr-28">
+          <span class="chip on"><i data-i="check" class="size-4 text-primary"></i>Todos <span class="text-muted-foreground font-normal tnum">12</span></span>
+          <span class="chip"><i data-i="bike" class="size-4"></i>iFood <span class="text-muted-foreground tnum">1</span></span>
+          <span class="chip"><i data-i="globe" class="size-4"></i>Loja online <span class="text-muted-foreground tnum">6</span></span>
+          <span class="chip"><i data-i="store" class="size-4"></i>PDV <span class="text-muted-foreground tnum">4</span></span>
+        </div>
+        <div class="absolute right-0 top-0 bottom-2.5 pl-20 pr-4 flex items-center bg-gradient-to-l from-card from-45% to-transparent">
+          <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-1.5 text-[14px] font-semibold"><i data-i="sliders-horizontal" class="size-4"></i>Filtros</button>
+        </div>
+      </div>
+      <!-- abas Entrada / Preparo / Saída -->
+      <div class="bg-card border-b border-border px-2 flex">
+        <a class="flex-1 h-12 flex items-center justify-center gap-1.5 text-[15px] font-semibold shadow-[inset_0_-3px_0_var(--primary)]">Entrada <span class="h-5 min-w-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[12px] grid place-items-center tnum">2</span></a>
+        <a class="flex-1 h-12 flex items-center justify-center gap-1.5 text-[15px] text-muted-foreground">Preparo <span class="tnum">8</span></a>
+        <a class="flex-1 h-12 flex items-center justify-center gap-1.5 text-[15px] text-muted-foreground">Saída <span class="tnum">2</span></a>
+      </div>
+
+      <div class="px-3 pt-3 flex flex-col gap-3">
+        <!-- card deslizado para a esquerda -->
+        <div class="relative rounded-xl overflow-hidden h-[206px]">
+          <div class="absolute inset-y-0 right-0 flex">
+            <button class="w-[72px] bg-info text-white flex flex-col items-center justify-center gap-1 text-[13px] font-semibold"><i data-i="user-plus" class="size-6"></i>Atender</button>
+            <button class="w-[72px] bg-destructive text-white flex flex-col items-center justify-center gap-1 text-[13px] font-semibold"><i data-i="circle-x" class="size-6"></i>Recusar</button>
+          </div>
+          <div class="absolute inset-y-0 left-0 w-full -translate-x-[144px] rounded-xl border border-border bg-card p-3.5 flex flex-col gap-2 shadow-[6px_0_14px_rgb(0_0_0/.12)]">
+            <div class="flex items-center gap-2 op-micro text-muted-foreground"><i data-i="globe" class="size-3.5"></i>Loja online · WEB-261003-<span class="flex-1"></span><span class="inline-flex items-center gap-1"><i data-i="clock" class="size-3.5"></i>2 min</span></div>
+            <div class="flex items-baseline gap-2"><span class="text-[22px] font-bold leading-none">K21</span><span class="text-[14px]"><b class="font-semibold">João Oliveira</b> · Entrega</span></div>
+            <p class="text-[14px] text-muted-foreground">3× Baguette de Tradition, 2× Pain au Chocolat</p>
+            <div class="flex items-center gap-1.5"><span class="pill pill-warning"><i></i>Novo</span><span class="pill pill-warning"><i></i>Pix aguardando</span><span class="ml-auto font-semibold tnum">R$ 61,00</span></div>
+            <button class="mt-1 h-12 rounded-lg act-0 inline-flex items-center justify-center gap-2 text-[15px] font-semibold"><i data-i="check" class="size-5"></i>Aceitar</button>
+          </div>
+        </div>
+        <!-- card normal -->
+        <div class="rounded-xl border border-border bg-card p-3.5 flex flex-col gap-2">
+          <div class="flex items-center gap-2 op-micro text-muted-foreground"><i data-i="bike" class="size-3.5"></i>iFood · IFD-<span class="flex-1"></span><span class="inline-flex items-center gap-1 font-semibold text-warning"><i data-i="clock" class="size-3.5"></i>agora</span></div>
+          <div class="flex items-baseline gap-2"><span class="text-[22px] font-bold leading-none">U68</span><span class="text-[14px]"><b class="font-semibold">Ana Ferreira</b> · Retirada</span></div>
+          <p class="text-[14px] text-muted-foreground">1× Croissant, 1× Café coado</p>
+          <div class="flex items-center gap-1.5"><span class="pill pill-warning"><i></i>Novo</span><span class="pill pill-success"><i></i>Pago no iFood</span><span class="ml-auto font-semibold tnum">R$ 12,00</span></div>
+          <button class="mt-1 h-12 rounded-lg act-0 inline-flex items-center justify-center gap-2 text-[15px] font-semibold"><i data-i="check" class="size-5"></i>Aceitar</button>
+        </div>
+        <p class="text-center op-micro text-muted-foreground inline-flex items-center justify-center gap-1.5 pt-1"><i data-i="hand" class="size-3.5"></i>Deslize para Atender ou Recusar · puxe para atualizar</p>
+      </div>
+
+      <!-- barra inferior de seções -->
+      <nav class="nav absolute left-0 right-0 bottom-0 h-[86px] bg-card border-t border-border flex px-2">
+        <a class="on"><span class="ni"><i data-i="clipboard-list" class="size-6"></i></span>Pedidos<span class="badge">12</span></a>
+        <a><span class="ni"><i data-i="book-open" class="size-6"></i></span>Catálogo</a>
+        <a><span class="ni"><i data-i="users" class="size-6"></i></span>Clientes</a>
+        <a><span class="ni"><i data-i="monitor-smartphone" class="size-6"></i></span>Canais<span class="attn"></span></a>
+      </nav>
+      <div class="home-ind"></div>
+    </div></div>
+  </div>
+
+  <!-- ============ (b) push na tela bloqueada ============ -->
+  <div class="flex flex-col items-center gap-3">
+    <p class="op-title">(b) Pedido novo chega com o dispositivo no bolso</p>
+    <div class="device relative">
+      <span class="vib" style="left:-9px;top:180px;height:44px"></span><span class="vib" style="left:-17px;top:186px;height:32px;opacity:.5"></span>
+      <span class="vib" style="right:-9px;top:180px;height:44px"></span><span class="vib" style="right:-17px;top:186px;height:32px;opacity:.5"></span>
+      <div class="screen lock text-white" style="width:390px;height:844px">
+      <div class="sb"><span class="tnum">Nelson</span><span class="flex-1"></span><span class="flex items-center gap-1.5"><i data-i="signal"></i><i data-i="wifi"></i><i data-i="battery-full"></i></span></div>
+      <div class="flex flex-col items-center pt-6">
+        <i data-i="lock" class="size-5 opacity-80"></i>
+        <p class="text-[17px] font-medium mt-3 opacity-90">Sábado, 3 de outubro</p>
+        <p class="text-[88px] font-semibold leading-none tracking-tight tnum mt-1">22:03</p>
+      </div>
+      <!-- notificação -->
+      <div class="mx-3 mt-10 rounded-[22px] glass text-foreground p-3.5 shadow-lg">
+        <div class="flex items-start gap-3">
+          <span class="size-10 rounded-[10px] grid place-items-center shrink-0" style="background:var(--app-color)"><i data-i="square-kanban" class="size-5 text-white"></i></span>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center op-micro text-muted-foreground"><span class="font-semibold text-foreground">Gestor de pedidos</span><span class="flex-1"></span>agora</div>
+            <p class="text-[15px] font-semibold leading-snug mt-0.5">Novo pedido iFood U68 · R$ 12,00</p>
+            <p class="text-[14px] leading-snug text-muted-foreground">Ana Ferreira · Retirada · 1× Croissant, 1× Café coado. Confirma sozinho em 5 min se ninguém recusar.</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mt-3">
+          <button class="h-12 rounded-xl bg-card text-[15px] font-semibold inline-flex items-center justify-center gap-2 border border-border"><i data-i="arrow-up-right" class="size-5"></i>Abrir</button>
+          <button class="h-12 rounded-xl act-0 text-[15px] font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-5"></i>Aceitar</button>
+        </div>
+      </div>
+      <div class="mx-6 -mt-1 h-3 rounded-b-[16px] glass opacity-60"></div>
+      <div class="mx-10 h-2.5 rounded-b-[14px] glass opacity-35"></div>
+      <p class="text-center op-micro opacity-75 mt-2">+1 aviso: Cozinha, 1 ticket atrasado</p>
+      <!-- vibração -->
+      <div class="mt-6 flex justify-center"><div class="h-9 px-3.5 rounded-full bg-black/35 inline-flex items-center gap-2 text-[13px] font-medium"><i data-i="vibrate" class="size-4"></i>Vibração de pedido novo: 2 toques longos</div></div>
+      <div class="absolute bottom-12 left-0 right-0 flex justify-between px-12">
+        <span class="size-12 rounded-full bg-black/35 grid place-items-center"><i data-i="flashlight" class="size-5"></i></span>
+        <span class="size-12 rounded-full bg-black/35 grid place-items-center"><i data-i="camera" class="size-5"></i></span>
+      </div>
+      <div class="home-ind !bg-white"></div>
+    </div></div>
+  </div>
+
+  <!-- ============ (c) detalhe em tela cheia ============ -->
+  <div class="flex flex-col items-center gap-3">
+    <p class="op-title">(c) Detalhe aberto do aviso, fora da loja</p>
+    <div class="device"><div class="screen bg-background" style="width:390px;height:844px">
+      <div class="sb bg-card"><span class="tnum">22:03</span><span class="flex-1"></span><span class="flex items-center gap-1.5"><i data-i="signal"></i><i data-i="battery-full"></i></span></div>
+      <!-- fora da loja -->
+      <div class="mx-3 mb-1 py-2 px-3 rounded-lg bg-info/10 text-info flex items-start gap-2 text-[13px] leading-snug font-semibold"><i data-i="map-pin-off" class="size-4 shrink-0 mt-0.5"></i>Você está fora da loja: mostrando o que pede decisão</div>
+      <div class="h-14 pl-1 pr-2 flex items-center gap-1 bg-background">
+        <button class="size-12 grid place-items-center"><i data-i="arrow-left" class="size-6"></i></button>
+        <h1 class="text-[22px] font-bold leading-none">U68</h1>
+        <span class="ml-2 op-micro text-muted-foreground inline-flex items-center gap-1"><i data-i="bike" class="size-3.5"></i>iFood · IFD-8841</span>
+        <span class="flex-1"></span>
+        <button class="size-12 grid place-items-center"><i data-i="ellipsis-vertical" class="size-6"></i></button>
+      </div>
+
+      <div class="px-4 flex flex-col gap-3">
+        <div class="flex items-center gap-2">
+          <span class="pill pill-warning"><i></i>Novo, aguardando aceite</span>
+          <span class="pill pill-success"><i></i>Pago no iFood</span>
+        </div>
+        <div class="rounded-xl bg-warning/10 px-3 py-2.5 flex items-center gap-2.5 text-[14px]"><i data-i="timer" class="size-5 text-warning"></i><span>Confirma sozinho em <b class="tnum">4:32</b> se ninguém recusar.</span></div>
+
+        <section class="rounded-xl border border-border bg-card p-3.5">
+          <p class="op-eyebrow text-muted-foreground mb-2">Cliente</p>
+          <div class="flex items-center gap-3">
+            <span class="size-10 rounded-full bg-secondary grid place-items-center text-[14px] font-semibold">AF</span>
+            <div class="flex-1 min-w-0"><p class="text-[15px] font-semibold">Ana Ferreira</p><p class="op-micro text-muted-foreground">3º pedido · Retirada às 22:20</p></div>
+            <button class="size-11 rounded-full border border-border grid place-items-center"><i data-i="message-circle" class="size-5"></i></button>
+            <button class="size-11 rounded-full border border-border grid place-items-center"><i data-i="phone" class="size-5"></i></button>
+          </div>
+        </section>
+
+        <section class="rounded-xl border border-border bg-card p-3.5">
+          <p class="op-eyebrow text-muted-foreground mb-1.5">Itens</p>
+          <div class="flex text-[15px] py-1"><span class="w-7 font-semibold tnum">1×</span><span class="flex-1">Croissant</span><span class="tnum">R$ 7,00</span></div>
+          <div class="flex text-[15px] py-1"><span class="w-7 font-semibold tnum">1×</span><span class="flex-1">Café coado</span><span class="tnum">R$ 5,00</span></div>
+          <div class="flex text-[15px] pt-2 mt-1 border-t border-border font-semibold"><span class="flex-1">Total</span><span class="tnum">R$ 12,00</span></div>
+        </section>
+
+        <section class="rounded-xl border border-border bg-card p-3.5">
+          <p class="op-eyebrow text-muted-foreground mb-2">Linha do tempo</p>
+          <ol class="flex flex-col gap-2 text-[14px]">
+            <li class="flex items-center gap-2.5"><span class="size-2 rounded-full bg-foreground"></span><span class="tnum text-muted-foreground w-11">22:03</span>Recebido do iFood</li>
+            <li class="flex items-center gap-2.5"><span class="size-2 rounded-full bg-foreground"></span><span class="tnum text-muted-foreground w-11">22:03</span>Avisado em 2 dispositivos</li>
+            <li class="flex items-center gap-2.5 text-muted-foreground"><span class="size-2 rounded-full border-2 border-muted-foreground"></span><span class="w-11"></span>Aceite, depois vai para Preparo</li>
+          </ol>
+        </section>
+      </div>
+
+      <!-- rodapé fixo no polegar -->
+      <div class="absolute left-0 right-0 bottom-0 bg-card border-t border-border px-4 pt-3 pb-8 flex gap-2.5">
+        <button class="h-14 px-5 rounded-xl border border-border text-[15px] font-semibold text-destructive">Recusar</button>
+        <button class="flex-1 h-14 rounded-xl act-0 text-[17px] font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-5"></i>Aceitar</button>
+      </div>
+      <div class="home-ind"></div>
+    </div></div>
+  </div>
+
+  <span class="pin" style="left:20px;top:122px">1</span>
+  <span class="pin" style="left:404px;top:176px">2</span>
+  <span class="pin" style="left:150px;top:250px">3</span>
+  <span class="pin" style="left:300px;top:470px">4</span>
+  <span class="pin" style="left:124px;top:840px">5</span>
+  <span class="pin" style="left:520px;top:300px">6</span>
+  <span class="pin" style="left:1294px;top:124px">7</span>
+  <span class="pin" style="left:1294px;top:200px">8</span>
+  <span class="pin" style="left:1292px;top:840px">9</span>
+</div>
+<div class="legend">
+  <p class="t">Gestor · Pedidos · celular · v3 <span>o mesmo quadro, lapidado para o polegar, o bolso e o lugar</span></p>
+  <div><b>1</b>Barra superior 56px: selo (troca de app), título, ponto ao vivo, busca única (lupa, tela cheia, câmera lê o QR do pedido) e sino.</div>
+  <div><b>2</b>Canais em chips roláveis; "Filtros" abre um painel de baixo com Entrega/Retirada, Ordenar (Chegada), Som e Ciente. Exportar e imprimir ficam no desktop.</div>
+  <div><b>3</b>Entrada, Preparo e Saída viram abas com contagem no lugar das 3 colunas espremidas. Abre na aba que tem pedido novo.</div>
+  <div><b>4</b>Deslizar o cartão para a esquerda: Atender (o "atribuir a mim" do desktop) e Recusar. A ação principal segue larga no cartão.</div>
+  <div><b>5</b>Barra inferior com as 4 seções do rail: Pedidos, Catálogo, Clientes, Canais (contagem e ponto de atenção iguais).</div>
+  <div><b>6</b>Push com Aceitar e Abrir direto da tela bloqueada, e vibração própria de pedido novo (o som do quadro, no bolso). Avisos de outros apps se empilham.</div>
+  <div><b>7</b>Localização com consentimento: fora da loja o Gestor abre em resumo e decisões. A faixa diz por que a tela está assim.</div>
+  <div><b>8</b>Detalhe em tela cheia: estado, confirmação otimista com contagem, cliente (WhatsApp e ligar), itens, linha do tempo. O ⋯ guarda imprimir e histórico.</div>
+  <div><b>9</b>Aceitar fixo no alcance do polegar (56px). Recusar menor, à esquerda, e pede o motivo antes de confirmar.</div>
+</div>
+</body></html>

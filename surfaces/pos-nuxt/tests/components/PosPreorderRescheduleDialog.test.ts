@@ -55,7 +55,9 @@ it("o reagendar respeita o limite de dias da casa, como a venda", async () => {
 
   day("other")?.click();
   await vi.waitFor(() => expect(document.querySelector("[data-day-other-input]")).not.toBeNull());
-  expect(document.querySelector("[data-day-other-input]")?.getAttribute("max")).toBe("2026-09-15");
+  // O DateField visível é segmentado; Reka mantém este input escondido só para
+  // integração com formulário e nele materializa o limite recebido.
+  expect(document.querySelector('[data-day-other-input] input[type="date"]')?.getAttribute("max")).toBe("2026-09-15");
   w.unmount();
 });
 
@@ -86,5 +88,21 @@ it("o reagendar usa o mesmo seletor de dia e horário da venda", async () => {
     props: { open: true, customerName: "Ana", currentDate: "2026-09-12", currentSlot: "", skus: ["CROISSANT"] },
   });
   expect(w.findComponent(PosSchedulePicker).exists()).toBe(true);
+  w.unmount();
+});
+
+it("aberto pela lista depois de soltar num dia recusado: já está nesse dia, com o horário a escolher", async () => {
+  const w = await mountSuspended(PosPreorderRescheduleDialog, {
+    props: {
+      open: false, customerName: "Ana", currentDate: "2026-09-12", currentSlot: "slot-09",
+      skus: ["CROISSANT"], initialDate: "2026-09-14",
+    },
+  });
+  await w.setProps({ open: true });
+  await vi.waitFor(() => expect(day("next")).not.toBeNull());
+  expect(day("next")?.getAttribute("aria-checked")).toBe("true");
+  // Mudou o dia: o confirmar já vale, sem o operador repetir a escolha.
+  const confirm = document.querySelector<HTMLButtonElement>("[data-preorder-reschedule-confirm]");
+  expect(confirm?.disabled).toBe(false);
   w.unmount();
 });

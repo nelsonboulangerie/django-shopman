@@ -66,7 +66,7 @@ class KDSInstanceAdmin(ModelAdmin):
         """
         terminal = getattr(obj, "print_terminal", None) if obj is not None else None
         if terminal is None:
-            return unfold_badge("sem impressora — a estação usa a tela", "base")
+            return unfold_badge("sem impressora: a estação usa a tela", "base")
         if not terminal.is_active:
             return format_html(
                 "{} {}",

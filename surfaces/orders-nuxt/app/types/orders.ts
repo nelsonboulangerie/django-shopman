@@ -15,13 +15,21 @@ import type {
 } from "~/generated/ordersContract";
 
 export type {
+  QueueAwarenessProjection,
+  SystemActionProjection,
+  MenuOutageProjection,
+  MenuChannelProjection,
   AwaitingWorkOrderProjection,
   CancellationPresetGroupProjection,
   OrderItemProjection,
   TimelineEventProjection,
 } from "~/generated/ordersContract";
 
-export type OrderTimerClass = "timer-ok" | "timer-warning" | "timer-urgent" | "timer-muted";
+export type OrderTimerClass =
+  | "timer-ok"
+  | "timer-warning"
+  | "timer-urgent"
+  | "timer-muted";
 
 export interface OrderCardProjection extends OrderCardContract {
   timer_class: OrderTimerClass;
@@ -44,7 +52,12 @@ export type CourierBlock = {
   status: string;
   status_label: string;
   active: boolean;
-  driver: { name: string; phone: string; vehicle_plate: string; vehicle_model: string } | null;
+  driver: {
+    name: string;
+    phone: string;
+    vehicle_plate: string;
+    vehicle_model: string;
+  } | null;
   tracking_url: string;
   confirmation_code: string;
   estimate_display: string;
@@ -67,7 +80,8 @@ export interface CustomerProfileProjection extends CustomerProfileContract {
   segment_tone: "success" | "warning" | "";
 }
 
-export interface OperatorOrderProjection extends Omit<OperatorOrderContract, "managers"> {
+export interface OperatorOrderProjection
+  extends Omit<OperatorOrderContract, "managers"> {
   courier: CourierBlock | null;
   customer_profile: CustomerProfileProjection | null;
   /** Quem pode dar a segunda assinatura — a mesma lista do PDV (nome + username). */
@@ -110,6 +124,8 @@ export interface AlertProjection {
   message: string;
   order_ref: string;
   created_at_display: string;
+  /** Prazo em que a causa decide sozinha (ISO); vazio sem prazo. */
+  respond_by_iso?: string;
   actions: Array<{
     ref: string;
     kind: string;

@@ -117,7 +117,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
           role="status"
           aria-live="polite"
           class="inline-flex items-center gap-1.5 tone-amber"
-          title="Sem sinal — mostrando o último quadro"
+          title="Sem sinal: mostrando o último quadro"
         >
           <Icon name="lucide:wifi-off" class="size-4" />
           <span>sem sinal</span>
@@ -133,35 +133,32 @@ const STATUS_CHARS = 10; // CONFIRMADO
           align="start"
         />
         <div class="ml-auto flex items-center gap-2.5">
-          <!-- Controles de som/tela cheia são teclas do kiosk, não botões do shell operador. -->
-          <button
-            type="button"
+          <!-- Teclas do kiosk (som e tela cheia): o botão canônico vestido com a pele do
+               letreiro (`.board-key`), sem o desenho do shell operador. -->
+          <NuxtButton
+            size="xl"
+            color="neutral"
+            variant="ghost"
+            square
             class="board-key"
+            :icon="sound.enabled.value ? 'i-lucide-volume-2' : 'i-lucide-volume-x'"
             :aria-label="
               sound.enabled.value
                 ? 'Silenciar palhetas'
                 : 'Ativar som das palhetas'
             "
             @click="sound.toggle()"
-          >
-            <Icon
-              :name="
-                sound.enabled.value ? 'lucide:volume-2' : 'lucide:volume-x'
-              "
-              class="size-4"
-            />
-          </button>
-          <button
-            type="button"
+          />
+          <NuxtButton
+            size="xl"
+            color="neutral"
+            variant="ghost"
+            square
             class="board-key"
+            :icon="isFullscreen ? 'i-lucide-minimize' : 'i-lucide-maximize'"
             :aria-label="isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'"
             @click="toggleFullscreen()"
-          >
-            <Icon
-              :name="isFullscreen ? 'lucide:minimize' : 'lucide:maximize'"
-              class="size-4"
-            />
-          </button>
+          />
         </div>
       </div>
 
@@ -180,7 +177,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
         Carregando…
       </p>
       <p v-else-if="error && !rows.length" class="board-labels py-8">
-        Sinal perdido — reconectando…
+        Sinal perdido. Reconectando…
       </p>
 
       <div
@@ -247,13 +244,16 @@ const STATUS_CHARS = 10; // CONFIRMADO
           role="group"
           aria-label="Páginas do painel"
         >
-          <!-- Pontos de paginação são navegação espacial do letreiro, deliberadamente não UiButton. -->
-          <button
+          <!-- Pontos de paginação: navegação espacial do letreiro. O botão canônico,
+               com a pele do ponto (`.board-pagedot`) no lugar do desenho do shell. -->
+          <NuxtButton
             v-for="p in pages.pageCount.value"
             :key="p"
-            type="button"
+            color="neutral"
+            variant="ghost"
+            square
             class="board-pagedot"
-            :class="{ 'board-pagedot--active': pages.page.value === p - 1 }"
+            :class="{ 'board-pagedot-current': pages.page.value === p - 1 }"
             :aria-label="`Página ${p}`"
             :aria-pressed="pages.page.value === p - 1"
             @click="
@@ -270,33 +270,36 @@ const STATUS_CHARS = 10; // CONFIRMADO
 <style scoped>
 /* ── A pele do Solari: noturna por natureza, alheia ao tema do app ── */
 .board {
-  --board-bg: #0b0d10;
-  --board-panel: #121417;
-  --board-line: #23262b;
-  --board-text: #ece9df;
-  --board-dim: #82868d;
-  --board-green: #45d98a;
-  --board-amber: #ffb02e;
-  --board-cyan: #5cc9f5;
+  /* V4-PROD: os tokens e a tipografia da suíte no escuro (os do \`.dark\` do
+     operator-theme: marrom quase-preto, cartão, borda, creme, o âmbar do selo),
+     fixos aqui porque o Letreiro é noturno por natureza, alheio ao tema do app. */
+  --board-bg: #1a110c;
+  --board-panel: #2b1d16;
+  --board-line: #463528;
+  --board-text: #f0e6d2;
+  --board-dim: #c2ae96;
+  --board-green: #7eb26e;
+  --board-amber: #f2c46b;
+  --board-cyan: #6fa0c0;
 
   /* DUAS escalas, e só: display (título · relógio) e linha (palhetas). */
   --scale-display: clamp(1.9rem, 4vw, 2.6rem);
   --scale-row: clamp(1.05rem, 2vw, 1.5rem);
 
   background:
-    radial-gradient(120% 90% at 50% 0%, #14171b 0%, var(--board-bg) 55%),
+    radial-gradient(120% 90% at 50% 0%, #2b1d16 0%, var(--board-bg) 60%),
     var(--board-bg);
   color: var(--board-text);
-  font-family: Oswald, "Arial Narrow", "Helvetica Neue", sans-serif;
-  letter-spacing: 0.02em;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
 }
 
 .board-title {
   font-size: var(--scale-display);
   font-weight: 600;
   line-height: 1;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: -0.01em;
 }
 .board-display {
   font-size: var(--scale-display);
@@ -309,8 +312,8 @@ const STATUS_CHARS = 10; // CONFIRMADO
 
 .board-labels {
   font-size: 0.78rem;
-  font-weight: 500;
-  letter-spacing: 0.18em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--board-dim);
 }
@@ -334,9 +337,10 @@ const STATUS_CHARS = 10; // CONFIRMADO
 .board-key {
   display: grid;
   place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: 0.375rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: 0.5rem;
   border: 1px solid var(--board-line);
   background: var(--board-panel);
   color: var(--board-dim);
@@ -346,19 +350,31 @@ const STATUS_CHARS = 10; // CONFIRMADO
 }
 .board-key:hover {
   color: var(--board-text);
-  border-color: #3a3e45;
+  border-color: var(--board-dim);
+  background: var(--board-panel);
+}
+.board-key :deep(.iconify),
+.board-key :deep(svg) {
+  width: 1rem;
+  height: 1rem;
 }
 
 .board-pagedot {
   width: 0.45rem;
   height: 0.45rem;
+  min-width: 0;
+  padding: 0;
   border-radius: 9999px;
   background: var(--board-line);
   transition:
     background 200ms,
     transform 200ms;
 }
-.board-pagedot--active {
+.board-pagedot:hover {
+  background: var(--board-line);
+}
+.board-pagedot-current,
+.board-pagedot-current:hover {
   background: var(--board-text);
   transform: scale(1.25);
 }
@@ -370,8 +386,8 @@ const STATUS_CHARS = 10; // CONFIRMADO
   gap: 1.25rem;
   align-items: center;
   border: 1px solid var(--board-line);
-  border-radius: 0.5rem;
-  background: linear-gradient(180deg, #14171b 0%, var(--board-panel) 100%);
+  border-radius: 0.75rem;
+  background: var(--board-panel);
   padding: 0.7rem 1rem;
 }
 

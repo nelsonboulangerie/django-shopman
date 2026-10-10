@@ -315,7 +315,7 @@ def native_overrides_history(rule, *, today: date) -> Reading:
     listing = "; ".join(f"{day:%d/%m}: {orders} nativo(s) apagaram {dropped}" for day, orders, dropped in hits)
     return Reading(
         value=float(worst[2]), baseline=float(min_dropped), fired=True,
-        message=f"{len(hits)} dia(s) em que um pedido nativo apagou histórico — {listing}",
+        message=f"{len(hits)} dia(s) em que um pedido nativo apagou histórico: {listing}",
     )
 
 
@@ -370,7 +370,7 @@ def cash_variance_by_drawer(rule, *, today: date) -> Reading:
     )
     return Reading(
         value=float(len(over)), baseline=float(threshold), fired=True,
-        message=f"{len(over)} gaveta(s) com quebra acumulada acima de {_brl(threshold)} em {days} dias — {detail}",
+        message=f"{len(over)} gaveta(s) com quebra acumulada acima de {_brl(threshold)} em {days} dias: {detail}",
     )
 
 

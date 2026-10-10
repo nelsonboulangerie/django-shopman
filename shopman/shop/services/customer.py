@@ -425,7 +425,7 @@ def _create_timeline_event(customer: dict, order) -> None:
             customer_ref=customer_ref,
             event_type="order",
             title=f"Pedido {order.ref}",
-            description=f"Pedido realizado via {order.channel_ref} — R$ {format_money(order.total_q)}",
+            description=f"Pedido realizado via {order.channel_ref}: R$ {format_money(order.total_q)}",
             channel=order.channel_ref,
             reference=f"order:{order.ref}",
             metadata={"order_ref": order.ref, "total_q": order.total_q},

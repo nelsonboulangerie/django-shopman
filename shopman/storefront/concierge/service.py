@@ -33,6 +33,7 @@ from shopman.shop.models import (
     OutboundAttempt,
 )
 
+from . import metrics
 from .contracts import IdentityResolution, InboundEvent, TransportScope
 
 logger = logging.getLogger(__name__)
@@ -889,7 +890,9 @@ def _best_window_evidence(
 
 
 @_observed("turn")
-def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_client=None) -> TurnResult:
+def run_turn(
+    conversation_id: int, binding_id: int, *, client=None, triage_client=None, intents_client=None
+) -> TurnResult:
     """Processa uma entrada pelo vínculo causal e preserva a conversa lógica."""
     conversation, binding, inbound = _claim(conversation_id, binding_id)
     result = TurnResult(
@@ -902,6 +905,12 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
     window_evidence = _best_window_evidence(binding, inbound)
     from shopman.storefront.concierge import agent as agent_module
 
+    # A régua (OBS0310-K): custo e tempo do turno, gravados no primeiro bloco
+    # da resposta. O relógio de ponta a ponta parte da última entrada do turno,
+    # a que o cliente está esperando responder.
+    meter = metrics.TurnMeter()
+    meter.received_at = max(message.created_at for message in inbound)
+    conversation._meter = meter
     try:
         assert_turn_authority(conversation, for_mutation=False)
         from . import triage as triage_module
@@ -911,18 +920,40 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
         # para a equipe (ou para a outra mesa), com o resumo gravado.
         turn_text = "\n".join(message.text for message in inbound if message.text)
         previous_triage = (conversation.flags or {}).get("triage")
-        decision = triage_module.decide(
-            turn_text,
-            context=triage_module.context_for(conversation),
-            previous=previous_triage,
-            message_ids=ids,
-            commercial_authority=bool(conversation._commercial_authority),
-            client=triage_client,
-        )
+        from . import cancellation
+
+        concierge_answers = ""
+        if cancellation.is_pending_answer(conversation, turn_text):
+            concierge_answers = "cancel_answer"
+        elif cancellation.asks_to_cancel(turn_text) and cancellation.self_cancellable(conversation, turn_text):
+            # Cancelamento que o cliente poderia fazer pelo site: a Concierge
+            # pergunta e cancela. Fora da janela, a triagem manda para a equipe (R4).
+            concierge_answers = "self_cancel"
+        with meter.stage("triage"):
+            decision = triage_module.decide(
+                turn_text,
+                context=triage_module.context_for(conversation),
+                previous=previous_triage,
+                message_ids=ids,
+                commercial_authority=bool(conversation._commercial_authority),
+                client=metrics.triage_client_for(meter, triage_client),
+                channel_ref=str(conversation.channel_ref or config().get("channel_ref") or ""),
+                concierge_answers=concierge_answers,
+            )
+        meter.triage_source = decision.source
         triage_module.record(conversation, inbound, decision)
         result.triage = decision
-        if decision.escalates:
-            mark_handoff(conversation, binding, decision.reason_line(), consumed_ids=ids, triage=decision)
+        from . import intents as intents_module
+
+        # Intenções no plural (OBS0310-Q), atrás da chave: a parte sensível não cala as
+        # outras. A decisão de equipe vai junto para o turno, que responde as dúvidas
+        # simples, não mexe no pedido e chama a equipe (decisão do dono, 03/10/2026).
+        plural = intents_module.enabled_for(binding)
+        if decision.escalates and not plural:
+            meter.layer = metrics.LAYER_TEAM
+            mark_handoff(
+                conversation, binding, decision.reason_line(), consumed_ids=ids, triage=decision, meter=meter
+            )
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids, triage=decision)
         if (
             binding.identity_assurance
@@ -939,18 +970,29 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
             (message.envelope or {}).get("message_type", "text") not in CONVERSATIONAL_MESSAGE_TYPES
             for message in inbound
         ):
-            outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_MEDIA_UNSUPPORTED"))
+            outcome = agent_module.AgentOutcome(
+                reply_text=copy_message("CONCIERGE_MEDIA_UNSUPPORTED"), layer=metrics.LAYER_MEDIA
+            )
             result.fallback = "media"
         elif _bump_turn_counter(conversation) > int(config().get("max_turns_per_day") or 80):
-            outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_TURN_LIMIT"))
+            outcome = agent_module.AgentOutcome(
+                reply_text=copy_message("CONCIERGE_TURN_LIMIT"), layer=metrics.LAYER_TURN_LIMIT
+            )
             result.fallback = "turn_limit"
         else:
             try:
-                outcome = agent_module.run_agent(
-                    conversation=conversation,
-                    history=agent_module.history_for(conversation),
-                    client=client,
-                )
+                if plural:
+                    outcome = intents_module.run(
+                        conversation, binding=binding, decision=decision, client=intents_client
+                    )
+                    meter.intents = getattr(outcome, "intents", {}) or {}
+                else:
+                    with meter.stage("agent"):
+                        outcome = agent_module.run_agent(
+                            conversation=conversation,
+                            history=agent_module.history_for(conversation),
+                            client=meter.wrap(client, "model", factory=agent_module.build_client),
+                        )
             except TurnRevoked:
                 raise
             except Exception:
@@ -968,7 +1010,15 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                         (conversation.flags or {}).get("triage"), turn_text
                     )
                     triage_module.record(conversation, inbound, escalation)
-                    mark_handoff(conversation, binding, escalation.reason_line(), consumed_ids=ids, triage=escalation)
+                    meter.layer = metrics.LAYER_TEAM
+                    mark_handoff(
+                        conversation,
+                        binding,
+                        escalation.reason_line(),
+                        consumed_ids=ids,
+                        triage=escalation,
+                        meter=meter,
+                    )
                     return TurnResult(
                         conversation.pk, handoff=True, processed_message_ids=ids, triage=escalation
                     )
@@ -977,22 +1027,84 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                     "concierge_unavailable",
                     "Resposta automática indisponível; contexto preservado.",
                 )
-                outcome = agent_module.AgentOutcome(reply_text=copy_message("CONCIERGE_UNAVAILABLE"))
+                outcome = agent_module.AgentOutcome(
+                    reply_text=copy_message("CONCIERGE_UNAVAILABLE"), layer=metrics.LAYER_ERROR
+                )
                 result.fallback = "error"
+        meter.layer = outcome.layer
+        from . import house_rules
+        from .transport import semantic_blocks
+
+        if getattr(outcome, "triage_update", None) is not None:
+            triage_module.record(conversation, inbound, outcome.triage_update)
         if outcome.handoff:
+            team = getattr(outcome, "team_triage", None)
+            ack_text = ""
+            if team is not None:
+                # Intenções no plural: o cartão leva cada parte, e o aviso ao cliente leva as
+                # dúvidas já respondidas mais a frase de que a equipe foi chamada.
+                triage_module.record(conversation, inbound, team)
+                result.triage = team
+                if outcome.reply_text:
+                    reviewed_ack = house_rules.review(
+                        [outcome.reply_text],
+                        house_rules.ReplyContext(
+                            receipts=house_rules.receipts_for(outcome, handoff=True),
+                            customer_text=turn_text,
+                            house_contacts=house_rules.house_contacts(),
+                        ),
+                    )
+                    ack_text = "" if reviewed_ack.held else reviewed_ack.texts[0]
+            else:
+                meter.layer = metrics.LAYER_AGENT_HANDOFF
+                # Quem chamou a equipe pode ter montado o aviso com o motivo (a
+                # Concierge recusando o acréscimo numa encomenda): ele substitui o
+                # padrão e passa pelas regras da casa em ``_prepare_reply``.
+                ack_text = getattr(outcome, "handoff_ack", "") or ""
             mark_handoff(
                 conversation,
                 binding,
                 outcome.handoff_reason or "pedido do cliente",
                 consumed_ids=ids,
+                meter=meter,
+                triage=team,
+                ack_text=ack_text,
+            )
+            return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids, triage=team)
+
+        # Regras da casa (OBS0310-M): toda resposta do turno, inclusive a montada
+        # pelo sistema, passa pela tabela antes de ser gravada. O que ela segura
+        # não sai: a conversa vai para a equipe, e o aviso de handoff é verdade.
+        receipts = house_rules.receipts_for(outcome, team_notified=result.fallback == "error")
+        reviewed = house_rules.review(
+            [outcome.reply_text, *outcome.extra_replies],
+            house_rules.ReplyContext(
+                receipts=receipts,
+                customer_text=turn_text,
+                house_contacts=house_rules.house_contacts(),
+            ),
+        )
+        if reviewed.held:
+            logger.warning(
+                "concierge.house_rule_held conversation=%s rules=%s",
+                conversation.pk,
+                ",".join(sorted({v.rule for v in reviewed.held})),
+            )
+            meter.layer = metrics.LAYER_HOUSE_RULE
+            mark_handoff(
+                conversation,
+                binding,
+                reviewed.reason_line(),
+                consumed_ids=ids,
+                meter=meter,
+                house_rules_held=reviewed.as_envelope(),
             )
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
-        from .transport import semantic_blocks
-
-        primary = semantic_blocks(binding, outcome.reply_text) if outcome.reply_text else []
+        reply_text, *extra_replies = reviewed.texts
+        primary = semantic_blocks(binding, reply_text) if reply_text else []
         extras = [
             block
-            for text in outcome.extra_replies
+            for text in extra_replies
             if text and text.strip()
             for block in semantic_blocks(binding, text)
         ]
@@ -1001,6 +1113,7 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
             Conversation.objects.select_for_update().get(pk=conversation.pk)
             assert_turn_authority(conversation, for_mutation=False)
             _persist_outcome(conversation, outcome)
+            _save_memory(conversation, outcome)
             prepared = []
             for index, text in enumerate(texts):
                 prepared.append(
@@ -1020,6 +1133,12 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
                         ),
                         depends_on=prepared[-1].pk if prepared else None,
                         window_evidence=window_evidence,
+                        # Um registro por turno: o primeiro bloco leva a conta toda.
+                        meter=meter if index == 0 else None,
+                        receipts=receipts,
+                        customer_text=turn_text,
+                        # O que a tabela já consertou no turno vai no primeiro bloco.
+                        house_rules_found=reviewed.violations if index == 0 else (),
                     )
                 )
             if not prepared:
@@ -1059,6 +1178,20 @@ def run_turn(conversation_id: int, binding_id: int, *, client=None, triage_clien
     return result
 
 
+def _save_memory(conversation: Conversation, outcome) -> None:
+    """Memória da conversa (``dialogue``), na mesma transação e com o mesmo fence da resposta."""
+    memory = getattr(outcome, "memory", None)
+    if memory is None:
+        return
+    from . import dialogue
+
+    memos = [memo for memo in getattr(outcome, "memory_memos", []) if memo]
+    open_refs = [
+        ref for ref, status in memory.facts.order_status.items() if status in dialogue.OPEN_ORDER_STATUSES
+    ]
+    dialogue.save_turn(conversation, memos, previous=memory.state, open_order_refs=open_refs)
+
+
 def _persist_outcome(conversation: Conversation, outcome) -> None:
     kinds = {
         "assistant": ConversationMessage.Kind.TOOL_CALL,
@@ -1088,7 +1221,45 @@ def _prepare_reply(
     depends_on=None,
     purpose="reply",
     window_evidence=None,
+    meter=None,
+    receipts=frozenset(),
+    customer_text="",
+    house_rules_held=None,
+    house_rules_found=(),
 ):
+    """Grava a resposta para envio. Toda resposta passa aqui, e aqui passa pelas regras da casa.
+
+    Na última trava só o conserto vale (R2, R10, R12) e a forma é medida (R11): o
+    que precisa SEGURAR a resposta foi decidido antes, em ``run_turn``, onde a
+    conversa ainda pode ir para a equipe. O que escapar até aqui é gravado no
+    envelope e no log, para a régua contar.
+    """
+    from . import house_rules
+
+    if purpose == "handoff_ack":
+        receipts = frozenset(receipts) | {house_rules.HANDOFF, house_rules.TEAM_NOTIFIED}
+    reviewed = house_rules.review(
+        [text],
+        house_rules.ReplyContext(
+            receipts=frozenset(receipts),
+            customer_text=customer_text,
+            house_contacts=house_rules.house_contacts(),
+        ),
+    )
+    text = reviewed.texts[0] if reviewed.texts else text
+    if reviewed.held:
+        logger.error(
+            "concierge.house_rule_unenforced conversation=%s purpose=%s rules=%s",
+            conversation.pk,
+            purpose,
+            ",".join(sorted({v.rule for v in reviewed.held})),
+        )
+    rules_envelope = house_rules.Review(
+        violations=[*house_rules_found, *reviewed.violations]
+    ).as_envelope()
+    if house_rules_held:
+        # O aviso de handoff que substituiu uma resposta segurada guarda o porquê.
+        rules_envelope["replaced"] = house_rules_held
     return ConversationMessage.objects.create(
         conversation=conversation,
         binding=binding,
@@ -1108,8 +1279,21 @@ def _prepare_reply(
             "inbound_max_id": getattr(conversation, "_inbound_max_id", None),
             "window_evidence": window_evidence,
             "content_hash": hashlib.sha256(text.encode()).hexdigest(),
+            "house_rules": rules_envelope,
         },
+        usage=_turn_usage(meter),
     )
+
+
+def _turn_usage(meter) -> dict:
+    """A régua do turno para ``ConversationMessage.usage``; medir nunca derruba o turno."""
+    if meter is None:
+        return {}
+    try:
+        return meter.as_usage(received_at=getattr(meter, "received_at", None))
+    except Exception:
+        logger.warning("concierge.metrics_failed", exc_info=True)
+        return {}
 
 
 def _next_attempt_no(message: ConversationMessage) -> int:
@@ -1288,8 +1472,22 @@ def mark_handoff(
     *,
     consumed_ids=(),
     triage=None,
+    meter=None,
+    house_rules_held=None,
+    ack_text: str = "",
 ) -> bool:
-    """Transfere a posse local e sincroniza cada vínculo ativo."""
+    """Transfere a posse local e sincroniza cada vínculo ativo.
+
+    ``ack_text`` substitui o aviso de atendimento humano da casa
+    (``CONCIERGE_HANDOFF_ACK``): intenções no plural, em que o aviso leva as dúvidas
+    já respondidas e a frase de que a equipe foi chamada, e a Concierge recusando o
+    acréscimo numa encomenda (o motivo e "já chamei a equipe"). Passa pelas regras
+    da casa como qualquer aviso de handoff.
+
+    ``meter`` (a régua do turno) vai para o aviso de handoff, quando há aviso.
+    ``house_rules_held`` é a resposta que as regras da casa seguraram
+    (``house_rules.Review.as_envelope``), gravada no envelope do aviso.
+    """
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
         current.state = Conversation.State.HANDOFF
@@ -1343,7 +1541,8 @@ def mark_handoff(
         _alert(
             current,
             "concierge_handoff",
-            "Atendimento solicitado; sincronização "
+            (f"{reason}. " if house_rules_held else "")
+            + "Atendimento solicitado; sincronização "
             + ("aceita em todos os vínculos." if accepted else "pendente em pelo menos um vínculo."),
         )
     if consumed_ids:
@@ -1360,7 +1559,7 @@ def mark_handoff(
             consumed,
             purpose="handoff_ack",
         )
-        ack = copy_message("CONCIERGE_HANDOFF_ACK")
+        ack = (ack_text or "").strip() or copy_message("CONCIERGE_HANDOFF_ACK")
         if ack:
             _dispatch_reply(
                 current,
@@ -1370,6 +1569,8 @@ def mark_handoff(
                     ack,
                     purpose="handoff_ack",
                     window_evidence=evidence,
+                    meter=meter,
+                    house_rules_held=house_rules_held,
                 ),
             )
     conversation.refresh_from_db()
@@ -1427,6 +1628,11 @@ def return_to_concierge(conversation: Conversation) -> bool:
                 handoff_sync_state="routing_mismatch"
             )
         if synced:
+            # A equipe falou coisas que o sistema não viu: a memória da conversa zera.
+            from . import dialogue
+
+            dialogue.forget(current.pk)
+            current.refresh_from_db(fields=["flags"])
             current.state = Conversation.State.ACTIVE
             current.turn_fence += 1
             current.handoff_reason = ""

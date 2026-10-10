@@ -288,7 +288,7 @@ def test_finishing_the_same_batch_with_other_numbers_is_a_clean_conflict(client,
 
 @pytest.mark.django_db
 def test_finish_after_void_is_hidden_and_void_after_finish_conflicts(client, floor_operator, recipe, monkeypatch):
-    """Alvo estornado invisível dá 403; alvo concluído visível conflita em 409."""
+    """Alvo cancelado invisível dá 403; alvo fechado visível conflita em 409."""
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
     client.force_login(floor_operator)
     voided = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
@@ -332,7 +332,7 @@ def test_finish_after_void_is_hidden_and_void_after_finish_conflicts(client, flo
         content_type="application/json",
     )
     assert response.status_code == 409
-    assert "não pode ser estornado" in response.json()["detail"]
+    assert "não pode ser cancelado" in response.json()["detail"]
 
 
 @pytest.mark.django_db

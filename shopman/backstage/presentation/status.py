@@ -34,14 +34,33 @@ def status_color(status: str) -> str:
     return _TONE_CLASSES[tone] if tone else DEFAULT_STATUS_COLOR
 
 
-def order_status_label(status: str | None, fallback: str | None = None) -> str:
-    """Resolve an order-status key to its display label.
+#: O estado do pedido na voz do OPERADOR (G24 da auditoria v4). O ``OmotenashiCopy``
+#: é a copy do CLIENTE, editável pela loja ("Em Preparo" com P maiúsculo, por
+#: exemplo); a tela de operador tem rótulo próprio e fixo, no vocabulário da suíte.
+OPERATOR_ORDER_STATUS_LABELS = {
+    "new": "Novo",
+    "accepted": "Aceito",
+    "preparing": "Em preparo",
+    "ready": "Pronto",
+    "dispatched": "Saiu para entrega",
+    "delivered": "Entregue",
+    "completed": "Concluído",
+    "cancelled": "Cancelado",
+    "returned": "Devolvido",
+}
 
-    ``fallback`` defaults to the raw status (or ``""`` for an empty status).
+
+def order_status_label(status: str | None, fallback: str | None = None) -> str:
+    """Resolve an order-status key to its operator-facing label.
+
+    ``fallback`` defaults to the raw status (or ``""`` for an empty status). Um
+    estado novo, ainda sem rótulo de operador, cai na copy da casa antes do cru.
     """
     fb = (status or "") if fallback is None else fallback
     if not status:
         return fb
+    if status in OPERATOR_ORDER_STATUS_LABELS:
+        return OPERATOR_ORDER_STATUS_LABELS[status]
     return build_copy("ORDER_STATUS").title(f"ORDER_STATUS_{status.upper()}", fb)
 
 

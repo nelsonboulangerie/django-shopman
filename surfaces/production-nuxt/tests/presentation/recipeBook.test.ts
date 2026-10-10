@@ -35,7 +35,7 @@ import {
   roleLabel,
   setAnchor,
   splitDataUrl,
-  statusBadgeVariant,
+  statusBadgeColor,
   statusTone,
   stepsForPayload,
   stepsFromText,
@@ -163,9 +163,9 @@ describe("labels", () => {
     expect(statusTone("draft")).toBe("warning");
     expect(statusTone("published")).toBe("ok");
     expect(statusTone("superseded")).toBe("muted");
-    expect(statusBadgeVariant("draft")).toBe("warning");
-    expect(statusBadgeVariant("published")).toBe("success");
-    expect(statusBadgeVariant("superseded")).toBe("outline");
+    expect(statusBadgeColor("draft")).toBe("warning");
+    expect(statusBadgeColor("published")).toBe("success");
+    expect(statusBadgeColor("superseded")).toBe("neutral");
   });
 
   it("only the warning tone carries saturated color", () => {
@@ -404,7 +404,7 @@ describe("steps and unmatched", () => {
         ],
         text: "ignored when items exist",
       }),
-    ).toEqual(["Rendimento 2 kg", "farine T65 — 1000 g", "eau — 700"]);
+    ).toEqual(["Rendimento 2 kg", "farine T65: 1000 g", "eau: 700"]);
     expect(originLines({ text: "1 kg farine\n700 g eau\n" })).toEqual(["1 kg farine", "700 g eau"]);
   });
 

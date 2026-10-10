@@ -217,7 +217,7 @@ def _local_simulation_readiness(
         source_status="simulated",
         reason="Simulação local ativa; nenhum conteúdo sai deste computador.",
         limitation=(
-            "Exercita aprovação, fila, registro de entrega e comprovante local — não comprova a "
+            "Exercita aprovação, fila, registro de entrega e comprovante local, mas não comprova a "
             "credencial nem a entrega da plataforma real."
         ),
     )
@@ -238,7 +238,7 @@ def _publication_readiness(platform: str, *, now: datetime) -> PlatformReadiness
             source_status="fresh",
             reason=(
                 "Esta plataforma não está desligada, mas a integração de entrega dela "
-                "não está registrada neste ambiente — erro de configuração."
+                "não está registrada neste ambiente: erro de configuração."
             ),
             action="Pedir à operação para conferir o registro da integração neste ambiente",
         )
@@ -340,7 +340,7 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
             checked_at=now,
             facts_as_of=now,
             source_status="fresh",
-            reason="Nenhum transporte configurado — o envio falharia para todos.",
+            reason="Nenhum transporte configurado: o envio falharia para todos.",
             action="Conferir a credencial do canal neste ambiente",
         )
     if backend != "manychat":
@@ -377,7 +377,7 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
             source_status="fresh",
             reason=(
                 "O envio de campanhas por WhatsApp não está desligado, mas a integração "
-                "dele com a fila segura de envio não está registrada neste ambiente — "
+                "dele com a fila segura de envio não está registrada neste ambiente: "
                 "erro de configuração."
             ),
             action="Pedir à operação para conferir o registro da integração neste ambiente",
@@ -427,7 +427,7 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
             version=version,
             limitation=(
                 "Só alcança quem conversou com a loja nas últimas 24 horas. Quem não "
-                "conversou não recebe — é regra da plataforma, não falha do envio."
+                "conversou não recebe: é regra da plataforma, não falha do envio."
             ),
             action="Escolher um fluxo aprovado e ativo para o anúncio",
         )

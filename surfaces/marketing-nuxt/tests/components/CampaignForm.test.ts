@@ -5,7 +5,6 @@ import CampaignForm from "~/components/CampaignForm.vue";
 import DraftRecoveryNotice from "~/components/DraftRecoveryNotice.vue";
 import type { Campaign } from "~/types/campaign";
 import { installMemoryLocalStorage } from "../support/localStorage";
-import { UiNativeSelectStub } from "../support/nativeUiStubs";
 
 // Sem runtime Nuxt: os auto-imports viram globais e o Icon vira stub.
 beforeAll(() => {
@@ -98,10 +97,22 @@ function form(rule: Campaign | null = null, draftOwner = "") {
       draftOwner,
     },
     global: {
-      components: { DraftRecoveryNotice, UiNativeSelect: UiNativeSelectStub },
+      components: { DraftRecoveryNotice },
       stubs: { Icon: true },
     },
   });
+}
+
+function checkboxNamed(wrapper: ReturnType<typeof form>, label: string) {
+  const choice = wrapper
+    .findAll('[role="checkbox"]')
+    .find((candidate) =>
+      candidate.element
+        .closest('[data-slot="item"], [data-slot="checkbox"]')
+        ?.textContent?.includes(label),
+    );
+  if (!choice) throw new Error(`Checkbox "${label}" não encontrado.`);
+  return choice;
 }
 
 function makeRule(over: Partial<Campaign> = {}): Campaign {
@@ -134,7 +145,12 @@ describe("CampaignForm — a oferta anunciada", () => {
   it("manda a oferta escolhida", async () => {
     const wrapper = form(makeRule({ trigger: "production_finished" }));
 
-    await wrapper.find("#rule-offer").setValue("relampago-17h30");
+    await wrapper.get("#rule-offer").trigger("click");
+    const offer = wrapper
+      .findAll('[role="option"]')
+      .find((option) => option.text().includes("Relâmpago das 17h30"));
+    if (!offer) throw new Error("Oferta pesquisável não encontrada.");
+    await offer.trigger("click");
     await wrapper.find("form").trigger("submit");
 
     const [payload] = wrapper.emitted("submit")![0] as [
@@ -145,9 +161,14 @@ describe("CampaignForm — a oferta anunciada", () => {
 
   it("relê a oferta da regra aberta", () => {
     const wrapper = form(makeRule({ promotion_ref: "relampago-17h30" }));
+    // A lista com busca recebe o ITEM escolhido (`NuxtSelectMenu`), e é ele que o
+    // gatilho mostra.
+    const offer = wrapper
+      .findAllComponents({ name: "NuxtSelectMenu" })
+      .find((menu) => menu.find("#rule-offer").exists())!;
     expect(
-      (wrapper.find("#rule-offer").element as HTMLSelectElement).value,
-    ).toBe("relampago-17h30");
+      (offer.props("modelValue") as { label?: string } | undefined)?.label,
+    ).toBe("Relâmpago das 17h30");
   });
 
   it("some quando não há oferta viva — seletor vazio não ajuda ninguém", () => {
@@ -160,7 +181,7 @@ describe("CampaignForm — a oferta anunciada", () => {
         offers: [],
         platformLabels: {},
       },
-      global: { stubs: { Icon: true, UiNativeSelect: UiNativeSelectStub } },
+      global: { stubs: { Icon: true } },
     });
     expect(wrapper.find("#rule-offer").exists()).toBe(false);
   });
@@ -172,6 +193,9 @@ describe("CampaignForm — composer V2", () => {
       makeRule({ trigger: "production_finished", platforms: ["instagram"] }),
     );
 
+    expect(
+      wrapper.find('[role="group"][aria-label="Etapas da campanha"]').exists(),
+    ).toBe(true);
     expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe(
       "1. Objetivo",
     );
@@ -195,6 +219,19 @@ describe("CampaignForm — composer V2", () => {
     expect(rows[0]!.text()).not.toContain("WhatsApp");
     expect(wrapper.text()).toContain(
       "Recursos apenas catalogados para o futuro não entram nesta campanha",
+    );
+  });
+
+  it("mantém o salto para uma etapa pronta mesmo usando o primitive canônico", async () => {
+    const wrapper = form(
+      makeRule({ trigger: "production_finished", platforms: ["instagram"] }),
+    );
+    const review = wrapper.find('button[aria-label="5. Revisar"]');
+
+    expect(review.attributes("disabled")).toBeUndefined();
+    await review.trigger("mousedown", { button: 0, ctrlKey: false });
+    expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe(
+      "5. Revisar",
     );
   });
 
@@ -277,13 +314,10 @@ describe("CampaignForm — quando disparar", () => {
   it("manda só os dias marcados", async () => {
     const wrapper = form(makeRule());
 
-    // Os dias são `UiToggleChip`: `role="checkbox"` com `aria-checked`, e não botão
-    // com `aria-pressed` — marcar dia é marcar item, não apertar botão que fica
-    // apertado.
-    const days = wrapper
-      .findAll('[role="checkbox"]')
-      .filter((chip) => ["sex", "sáb"].includes(chip.text()));
-    for (const day of days) await day.trigger("click");
+    // Os dias são um grupo de caixas (`NuxtCheckboxGroup`): `role="checkbox"` com
+    // `aria-checked`, e não botão com `aria-pressed`. Marcar dia é marcar item, não
+    // apertar botão que fica apertado.
+    for (const day of ["sex", "sáb"]) await checkboxNamed(wrapper, day).trigger("click");
     await wrapper.find("form").trigger("submit");
 
     const [payload] = wrapper.emitted("submit")![0] as [
@@ -379,7 +413,7 @@ describe("CampaignForm — quando disparar", () => {
     ).toBe("06:00");
     const marked = wrapper
       .findAll('[role="checkbox"][aria-checked="true"]')
-      .map((chip) => chip.text());
+      .map((box) => box.element.closest('[data-slot="item"]')?.textContent);
     expect(marked).toContain("seg");
   });
 
@@ -404,7 +438,7 @@ describe("CampaignForm — quando disparar", () => {
     ];
     expect(payload.schedule).toEqual(schedule);
     expect(wrapper.text()).toContain(
-      "Horários adicionais preservados: 16:00–18:00",
+      "Horários adicionais preservados: 16:00 a 18:00",
     );
   });
 
@@ -526,18 +560,9 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
       }),
     );
 
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "Sem glúten")!
-      .trigger("click");
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "Atacado")!
-      .trigger("click");
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text() === "Cliente fiel")!
-      .trigger("click");
+    await checkboxNamed(wrapper, "Sem glúten").trigger("click");
+    await checkboxNamed(wrapper, "Atacado").trigger("click");
+    await checkboxNamed(wrapper, "Cliente fiel").trigger("click");
     await wrapper.find("#rule-audience-match").setValue("all");
     await wrapper.find("form").trigger("submit");
 
@@ -561,10 +586,7 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     });
     const first = form(rule, "operator:7");
     await first.find("#rule-name").setValue("Campanha em revisão");
-    await first
-      .findAll("button")
-      .find((button) => button.text() === "Sem glúten")!
-      .trigger("click");
+    await checkboxNamed(first, "Sem glúten").trigger("click");
     first.unmount();
 
     const restored = form(rule, "operator:7");
@@ -577,10 +599,7 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     // `aria-pressed`: escolher etiqueta é marcar item, não apertar um botão que fica
     // apertado. O leitor de tela diz "marcada", que é o que a pessoa está fazendo.
     expect(
-      restored
-        .findAll('[role="checkbox"]')
-        .find((chip) => chip.text() === "Sem glúten")!
-        .attributes("aria-checked"),
+      checkboxNamed(restored, "Sem glúten").attributes("aria-checked"),
     ).toBe("true");
     expect(restored.text()).toContain("Rascunho restaurado");
   });
@@ -644,7 +663,9 @@ describe("CampaignForm — as escolhas são peças do kit", () => {
 
     const birthday = wrapper
       .findAll('[role="checkbox"]')
-      .find((box) => box.text().includes("Aniversariantes de hoje"))!;
+      .find(
+        (box) => box.attributes("aria-label") === "Aniversariantes de hoje",
+      )!;
 
     expect(birthday.attributes("aria-checked")).toBe("false");
     await birthday.trigger("click");
@@ -659,21 +680,15 @@ describe("CampaignForm — as escolhas são peças do kit", () => {
     ).toBe(true);
   });
 
-  // ⚠️ A pílula de plataforma é um `UiToggleChip`, não um `UiCheckbox`: ela é um chip
-  // cuja caixa inteira acende e que ainda carrega o estado da plataforma. Era um
-  // `<input type="checkbox" class="sr-only">` embrulhado num `<label>` pintado —
-  // semântica escondida num lugar, alvo de toque noutro.
-  it("a pílula de plataforma é um chip com ARIA de escolha, e marcar chega ao envio", async () => {
+  it("o destino pertence ao grupo canônico, e marcar chega ao envio", async () => {
     const wrapper = form(makeRule({ platforms: [] }));
 
     expect(wrapper.find('input[type="checkbox"].sr-only').exists()).toBe(false);
-    const pill = wrapper
-      .findAll('[role="checkbox"]')
-      .find((chip) => chip.text().includes("WhatsApp"))!;
-    expect(pill.attributes("aria-checked")).toBe("false");
+    const destination = checkboxNamed(wrapper, "WhatsApp");
+    expect(destination.attributes("aria-checked")).toBe("false");
 
-    await pill.trigger("click");
-    expect(pill.attributes("aria-checked")).toBe("true");
+    await destination.trigger("click");
+    expect(destination.attributes("aria-checked")).toBe("true");
     await wrapper.find("form").trigger("submit");
     const [payload] = wrapper.emitted("submit")![0] as [
       Record<string, unknown>,
@@ -762,7 +777,7 @@ describe("CampaignForm — a voz do gestor", () => {
         ],
       },
       global: {
-        components: { DraftRecoveryNotice, UiNativeSelect: UiNativeSelectStub },
+        components: { DraftRecoveryNotice },
         stubs: { Icon: true, NuxtLink: true },
       },
     });
@@ -793,10 +808,7 @@ describe("CampaignForm — a voz do gestor", () => {
       updated_at: "v1",
     });
     const first = form(rule, "operator:7");
-    await first
-      .findAll("button")
-      .find((button) => button.text() === "Sem glúten")!
-      .trigger("click");
+    await checkboxNamed(first, "Sem glúten").trigger("click");
     first.unmount();
 
     const conflicted = form(

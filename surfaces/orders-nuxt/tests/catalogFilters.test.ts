@@ -7,9 +7,11 @@ import {
   FILTER_STOCK,
   FILTER_SURFACE,
   FILTER_SYNC,
+  FILTER_VOCATION,
   catalogDimensions,
   filterByDimensions,
   stockBucket,
+  vocationPendingFilters,
 } from "../app/presentation/catalogFilters";
 import type {
   CatalogRowProjection,
@@ -79,6 +81,7 @@ const row = (over: Partial<CatalogRowProjection> = {}): CatalogRowProjection => 
   social: social(),
   pim_complete: false,
   hidden_by_inactive_collection: false,
+  has_vocation: true,
   ...over,
 });
 
@@ -88,14 +91,14 @@ const surfaces = [
 ];
 
 describe("catalogDimensions", () => {
-  it("oferece as 6 dimensões (coleção fica de fora — é o eixo das pills)", () => {
+  it("oferece as 7 dimensões (coleção fica de fora — é o eixo das pills)", () => {
     const ids = catalogDimensions(surfaces, [row()]).map((d) => d.id);
-    expect(ids).toEqual([FILTER_SYNC, FILTER_SURFACE, FILTER_PUBLISHED, FILTER_SELLABLE, FILTER_STOCK, FILTER_PIM]);
+    expect(ids).toEqual([FILTER_SYNC, FILTER_SURFACE, FILTER_PUBLISHED, FILTER_SELLABLE, FILTER_STOCK, FILTER_PIM, FILTER_VOCATION]);
   });
 
   it("sem plataforma que projeta, envio e dados sociais somem", () => {
     const ids = catalogDimensions([surface({ ref: "web", is_projection_target: false })], [row()]).map((d) => d.id);
-    expect(ids).toEqual([FILTER_SURFACE, FILTER_PUBLISHED, FILTER_SELLABLE, FILTER_STOCK]);
+    expect(ids).toEqual([FILTER_SURFACE, FILTER_PUBLISHED, FILTER_SELLABLE, FILTER_STOCK, FILTER_VOCATION]);
   });
 
   it("canais e feeds vêm da lista viva de superfícies", () => {
@@ -174,5 +177,23 @@ describe("filterByDimensions", () => {
   it("lista vazia numa dimensão não recorta nada", () => {
     expect(skus({ [FILTER_SYNC]: [] })).toEqual(["A", "B", "C", "D"]);
     expect(skus({ [FILTER_PUBLISHED]: [] })).toEqual(["A", "B", "C", "D"]);
+  });
+});
+
+describe("vocação", () => {
+  const rows = [
+    row({ sku: "COM" }),
+    row({ sku: "SEM", has_vocation: false }),
+    row({ sku: "SEM-FORA", has_vocation: false, is_sellable: false }),
+  ];
+
+  it("o recorte boolean separa quem tem e quem não tem vocação", () => {
+    const skus = (value: string) => filterByDimensions(rows, surfaces, { [FILTER_VOCATION]: [value] }).map((r) => r.sku);
+    expect(skus("true")).toEqual(["COM"]);
+    expect(skus("false")).toEqual(["SEM", "SEM-FORA"]);
+  });
+
+  it("o Classificar recorta à venda e sem vocação, o mesmo critério do aviso", () => {
+    expect(filterByDimensions(rows, surfaces, vocationPendingFilters()).map((r) => r.sku)).toEqual(["SEM"]);
   });
 });

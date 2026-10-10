@@ -12,6 +12,27 @@ from dataclasses import asdict, dataclass, field
 
 QUALITY_OK_GRADE_REFS = ("excellent", "standard")
 
+#: Meta de tempo de cada etapa do pedido no Gestor, em minutos (decisão do dono,
+#: 04/10/2026). O canal pode mudar qualquer uma em
+#: ``fulfillment.stage_goal_minutes`` (``Channel.config`` ou ``Shop.defaults``); a
+#: chave ausente herda daqui. O prazo do pedido NOVO não mora aqui: é o da
+#: confirmação do canal (``confirmation``).
+#:
+#: - ``start``: iniciar o preparo, contado do aceite;
+#: - ``station``: a estação terminar, contado do início do preparo;
+#: - ``handoff``: o pronto esperar no balcão, contado do pronto;
+#: - ``dispatch``: a entrega sair, contado da CHEGADA do pedido;
+#: - ``courier_back``: o entregador voltar, contado da saída;
+#: - ``settle``: acertar o dinheiro da entrega, contado da entrega.
+STAGE_GOAL_DEFAULTS = {
+    "start": 5,
+    "station": 15,
+    "handoff": 10,
+    "dispatch": 30,
+    "courier_back": 45,
+    "settle": 15,
+}
+
 
 def quality_grade_refs_for_channel(
     channel_ref: str,
@@ -136,6 +157,19 @@ class ChannelConfig:
         # "operator" — pago fica em "Aceito"; a cozinha só é acionada quando o
         #              operador dá "Iniciar preparo" no gestor. Honesto com o
         #              cliente remoto (web): "Em preparo" só quando alguém encosta.
+        auto_ready: bool = True
+        # A Cozinha concluiu TODAS as estações do pedido (inclusive a estação sem
+        # tela, que conclui pelo papel na Saída): o pedido vai a "pronto"
+        # sozinho (SUITE-UX §5.1, decisão do dono). False = o pedido fica em
+        # preparo até alguém dar "Marcar pronto" no Gestor.
+        ready_undo_seconds: int = 30
+        # Janela do desfazer do "pronto" automático. O aviso de "pronto" ao
+        # cliente (e o pronto para o iFood) só sai quando ela vence. 0 = sem
+        # janela: avisa na hora e não oferece desfazer.
+        handoff_undo_seconds: int = 5
+        # Desfazer de Entregar/Despachar (Gestor e Saída da Cozinha). A
+        # transição só é gravada quando a janela vence; até lá o operador pode
+        # desfazer e nada sai da casa. 0 = grava na hora, sem desfazer.
         courier: str = "none"
         # "none" — sem despacho automático de entregador (marketplace tem
         #          logística própria; retirada não entrega)
@@ -166,6 +200,11 @@ class ChannelConfig:
         # NÃO pode fazer é liberar dado do cliente para logística de terceiro:
         # ``order_helpers.courier_ticket_variant`` derruba "identified" para
         # "anonymous" quando o pedido diz que quem entrega é o marketplace.
+        stage_goal_minutes: dict = field(default_factory=lambda: dict(STAGE_GOAL_DEFAULTS))
+        # Meta de tempo de cada etapa no Gestor (o relógio do cartão e a Fila
+        # "Precisa de você"), em minutos inteiros > 0. Chaves em
+        # ``STAGE_GOAL_DEFAULTS``; o canal declara só as que mudam, ex.
+        # ``{"dispatch": 40}`` (a cascata é por chave).
 
     # ── 4. Estoque ──
 
@@ -269,6 +308,12 @@ class ChannelConfig:
         policy: str = "internal"
         # "internal" — preço resolvido pelo backend (padrão para canais próprios)
         # "external" — preço definido externamente (marketplace)
+        concierge_discount_max_percent: float = 2.5
+        # Teto do desconto que a Concierge concede sozinha quando o cliente pede,
+        # em % do subtotal da sacola (dono, 03/10/2026: "algo como arredondar um
+        # valor até 2%"; padrão 2,5%, decidido por ele no mesmo dia). Aceita decimal;
+        # 0 desliga. O desconto entra como cupom de uso único,
+        # pelo mesmo caminho do cupom do site (``storefront/concierge/discount.py``).
 
     # ── 7. Editing ──
 
@@ -485,6 +530,23 @@ class ChannelConfig:
             raise ValueError(f"fulfillment.prep_start inválido: {self.fulfillment.prep_start}")
         if self.fulfillment.courier_ticket not in ("identified", "anonymous"):
             raise ValueError(f"fulfillment.courier_ticket inválido: {self.fulfillment.courier_ticket}")
+        if not isinstance(self.fulfillment.auto_ready, bool):
+            raise ValueError("fulfillment.auto_ready deve ser true/false")
+        for name in ("ready_undo_seconds", "handoff_undo_seconds"):
+            value = getattr(self.fulfillment, name)
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 300:
+                raise ValueError(f"fulfillment.{name} deve ser um inteiro entre 0 e 300")
+        goals = self.fulfillment.stage_goal_minutes
+        if not isinstance(goals, dict):
+            raise ValueError("fulfillment.stage_goal_minutes deve ser um objeto {etapa: minutos}")
+        for stage, minutes in goals.items():
+            if stage not in STAGE_GOAL_DEFAULTS:
+                raise ValueError(
+                    f"fulfillment.stage_goal_minutes: etapa desconhecida {stage!r} "
+                    f"(use {', '.join(STAGE_GOAL_DEFAULTS)})"
+                )
+            if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes <= 0:
+                raise ValueError(f"fulfillment.stage_goal_minutes.{stage} deve ser um inteiro > 0")
         if self.stock.hold_ttl_minutes is not None and self.stock.hold_ttl_minutes <= 0:
             raise ValueError("stock.hold_ttl_minutes deve ser > 0 ou null")
         if self.stock.safety_margin < 0:
@@ -525,6 +587,9 @@ class ChannelConfig:
             )
         if self.pricing.policy not in ("internal", "external"):
             raise ValueError(f"pricing.policy inválido: {self.pricing.policy}")
+        cap = self.pricing.concierge_discount_max_percent
+        if isinstance(cap, bool) or not isinstance(cap, (int, float)) or not 0 <= cap <= 100:
+            raise ValueError("pricing.concierge_discount_max_percent deve ser um número entre 0 e 100")
         if self.editing.policy not in ("open", "locked"):
             raise ValueError(f"editing.policy inválido: {self.editing.policy}")
         if self.rules.validators is not None and not isinstance(self.rules.validators, list):

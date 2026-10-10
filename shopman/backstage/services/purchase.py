@@ -23,6 +23,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.module_loading import import_string
+from django.utils.text import slugify
 
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.shop.adapters.purchase_invoice_nfe import INVOICE_PRODUCT_MAP_KEYS
@@ -85,6 +86,9 @@ class ResolvedReceiptLine:
     #: (``shop.services.product_enrichment``).
     invoice_ean: str = ""
     invoice_package_ean: str = ""
+    #: O código de barras que o recebedor leu na embalagem ("Ler EAN"). Vira EAN
+    #: do cadastro de compra do insumo ao confirmar (``_learn_material_eans``).
+    scanned_ean: str = ""
     invoice_ncm: str = ""
     invoice_cest: str = ""
     invoice_unit: str = ""
@@ -94,6 +98,14 @@ class ResolvedReceiptLine:
     invoice_icms_cst: str = ""
     invoice_icms_csosn: str = ""
     invoice_st_value_q: int = 0
+    #: O que a NOTA diz desta linha, para o recebimento por exceção comparar
+    #: com o que chegou: quantidade na unidade da linha (``None`` sem nota),
+    #: valor em centavos, unidade comercial e o fator de embalagem que a nota
+    #: sugere (``None`` quando não sugere).
+    invoice_purchase_qty: Decimal | None = None
+    invoice_total_q: int = 0
+    invoice_commercial_unit: str = ""
+    invoice_conversion_factor: Decimal | None = None
 
     @property
     def sku(self) -> str:
@@ -158,6 +170,8 @@ def scan_invoice(qr_payload: str) -> tuple[dict[str, Any], str]:
         "invoiceInput": qr_payload,
         "note": note,
         "lines": draft.get("lines") or (),
+        "invoiceVolumes": draft.get("invoiceVolumes") or 0,
+        "volumesCounted": counted_receipt_volumes(access_key),
     }
     if draft.get("lines"):
         message = (
@@ -201,6 +215,7 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
         _require_supplier_is_issuer(supplier=supplier, invoice_key=invoice_key)
 
     lines = [_resolve_receipt_line(raw, index=index, supplier=supplier) for index, raw in enumerate(raw_lines)]
+    attestation = _receipt_attestation(lines, payload, mode=mode)
     note = str(payload.get("note") or "").strip()
     source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=note, lines=lines)
 
@@ -213,6 +228,7 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
             note=note,
             source_ref=source_ref,
             user=user,
+            attestation=attestation,
         )
         return (
             {
@@ -224,6 +240,7 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
                 "total_cost_q": sum(line.total_cost_q for line in lines),
                 "operator": (getattr(user, "get_username", lambda: "")() if user else "") or "",
                 "received_at": timezone.now().isoformat(),
+                "volumes_counted": attestation["counted"] if attestation else None,
             },
             200,
         )
@@ -283,7 +300,7 @@ def _format_receipt_moment(raw: str) -> str:
     return momento.strftime("%d/%m às %H:%M")
 
 
-def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user) -> None:
+def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user, attestation=None) -> None:
     """O corpo do recebimento — o que era o `with transaction.atomic()` de sempre."""
     Batch = apps.get_model("stockman", "Batch")
     Move = apps.get_model("stockman", "Move")
@@ -328,6 +345,7 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user
                 purchase_total_cost_q=line.total_cost_q,
                 purchase_unit_cost_q=line.unit_cost_q,
                 **_converted_via(line),
+                **_attested_by(line, attestation),
             )
             if line.total_cost_q > 0:
                 _upsert_supplier_cost(
@@ -338,6 +356,7 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user
                     make_preferred=False,
                     prefer_if_missing=True,
                 )
+        _learn_material_eans(lines)
         # O que chegou encerra o pedido que esperava por ele: sem isto o card ficava
         # "aguardando entrega" para sempre e o insumo nunca mais podia ser pedido.
         for material in {line.material.pk: line.material for line in lines}.values():
@@ -345,6 +364,136 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user
         if mode == "invoice":
             _learn_invoice_product_map(supplier=supplier, lines=lines)
             _suggest_catalog_from_invoice(lines=lines, invoice_key=invoice_key)
+        if invoice_key:
+            forget_receipt_volumes(invoice_key)
+
+
+def _valid_gtin(code: str) -> bool:
+    """GTIN-8/12/13/14 com o dígito verificador certo (o que a câmera lê da caixa)."""
+    digits = str(code or "").strip()
+    if not digits.isdigit() or len(digits) not in {8, 12, 13, 14}:
+        return False
+    body, check = digits[:-1], int(digits[-1])
+    total = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(reversed(body)))
+    return (10 - total % 10) % 10 == check
+
+
+def _learn_material_eans(lines: list[ResolvedReceiptLine]) -> None:
+    """Guarda no cadastro de compra o EAN que chegou com o insumo.
+
+    O recebedor confirma o item; o código de barras daquela embalagem passa a
+    identificar o insumo no próximo "Ler EAN" (``Material.metadata.purchase.eans``,
+    ver docs/reference/data-schemas.md). Lido pela câmera ou declarado na nota,
+    tanto faz: o que a pessoa conferiu é a verdade mais fresca.
+    """
+    by_sku: dict[str, tuple[Any, set[str]]] = {}
+    for line in lines:
+        codes = {code for code in (line.scanned_ean, line.invoice_ean, line.invoice_package_ean) if _valid_gtin(code)}
+        if not codes:
+            continue
+        material, known = by_sku.setdefault(line.sku, (line.material, set()))
+        known.update(codes)
+    for material, codes in by_sku.values():
+        metadata = dict(material.metadata or {})
+        purchase = dict(metadata.get("purchase") or {})
+        current = [str(code) for code in purchase.get("eans") or () if str(code)]
+        merged = current + sorted(code for code in codes if code not in current)
+        if merged == current:
+            continue
+        purchase["eans"] = merged
+        metadata["purchase"] = purchase
+        material.metadata = metadata
+        material.save(update_fields=["metadata"])
+
+
+#: Onde mora a contagem de volumes da NF em conferência: no fornecedor emitente,
+#: por chave de acesso (``Supplier.metadata.purchase.receipt_volume_counts``, ver
+#: docs/reference/data-schemas.md). JSON primeiro (CLAUDE.md): sem modelo novo.
+RECEIPT_VOLUME_COUNTS_KEY = "receipt_volume_counts"
+
+
+def _receipt_volume_supplier(invoice_key: str, *, for_update: bool = False):
+    """O fornecedor emitente da NF (CNPJ da chave), ou ``None``."""
+    Supplier = apps.get_model("buyman", "Supplier")
+    ref = _supplier_ref_from_invoice_key(invoice_key)
+    if not ref:
+        return None
+    qs = Supplier.objects.select_for_update() if for_update else Supplier.objects
+    return qs.filter(ref=ref).first()
+
+
+def save_receipt_volumes(payload: dict[str, Any], *, user) -> dict[str, Any]:
+    """Grava a contagem de volumes da NF em conferência ("Contei N volumes").
+
+    O rascunho da conferência é do cliente, mas a contagem é o único ato físico
+    da doca: abrir a mesma NF em outro dispositivo não pode voltar a pedir que
+    alguém conte as caixas de novo (L7). ``counted`` nulo desfaz a contagem.
+    """
+    invoice_key = parse_invoice_access_key(str(payload.get("invoiceAccessKey") or payload.get("invoiceInput") or ""))
+    if not invoice_key:
+        raise PurchaseError("Leia a NF antes de contar os volumes.", code="invoice_key_required", field="invoiceAccessKey")
+    raw = payload.get("counted")
+    if raw in (None, ""):
+        forget_receipt_volumes(invoice_key)
+        return build_purchase()
+    try:
+        counted = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise PurchaseError("Contagem de volumes inválida.", code="volumes_invalid", field="counted") from exc
+    if not 1 <= counted <= 999:
+        raise PurchaseError("Conte entre 1 e 999 volumes.", code="volumes_invalid", field="counted")
+    with transaction.atomic():
+        supplier = _receipt_volume_supplier(invoice_key, for_update=True)
+        if supplier is None:
+            raise PurchaseError(
+                "Cadastre o fornecedor da nota antes de contar os volumes.",
+                code="supplier_not_found",
+                field="supplierRef",
+            )
+        metadata = dict(supplier.metadata or {})
+        purchase = dict(metadata.get("purchase") or {})
+        counts = dict(purchase.get(RECEIPT_VOLUME_COUNTS_KEY) or {})
+        counts[invoice_key] = {
+            "counted": counted,
+            "counted_by": (getattr(user, "get_username", lambda: "")() if user else "") or "",
+            "counted_at": timezone.now().isoformat(),
+        }
+        purchase[RECEIPT_VOLUME_COUNTS_KEY] = counts
+        metadata["purchase"] = purchase
+        supplier.metadata = metadata
+        supplier.save(update_fields=["metadata", "updated_at"])
+    return build_purchase()
+
+
+def counted_receipt_volumes(invoice_key: str) -> int | None:
+    """A contagem já feita desta NF (em qualquer dispositivo), ou ``None``."""
+    if not invoice_key:
+        return None
+    supplier = _receipt_volume_supplier(invoice_key)
+    if supplier is None:
+        return None
+    entry = ((supplier.metadata or {}).get("purchase") or {}).get(RECEIPT_VOLUME_COUNTS_KEY, {}).get(invoice_key)
+    try:
+        return int(entry["counted"]) if entry else None
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def forget_receipt_volumes(invoice_key: str) -> None:
+    with transaction.atomic():
+        supplier = _receipt_volume_supplier(invoice_key, for_update=True)
+        if supplier is None:
+            return
+        metadata = dict(supplier.metadata or {})
+        purchase = dict(metadata.get("purchase") or {})
+        counts = dict(purchase.get(RECEIPT_VOLUME_COUNTS_KEY) or {})
+        if invoice_key not in counts:
+            return
+        counts.pop(invoice_key)
+        purchase[RECEIPT_VOLUME_COUNTS_KEY] = counts
+        metadata["purchase"] = purchase
+        supplier.metadata = metadata
+        supplier.save(update_fields=["metadata", "updated_at"])
 
 
 def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], str]:
@@ -384,6 +533,17 @@ def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], st
 
     source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=reason)
     receipt_ref = _receipt_rejection_ref(source_ref=source_ref, supplier_ref=supplier.ref)
+    # "Devolver só este item" (recusa parcial): a devolução é de UMA linha e o
+    # rascunho segue com as outras. A referência ganha o insumo, para duas
+    # devoluções parciais da mesma NF não se confundirem.
+    partial = _as_flag(payload, "partial", field="partial")
+    if partial:
+        if len(raw_lines) != 1 or not isinstance(raw_lines[0], dict):
+            raise PurchaseError(
+                "Devolução parcial é de um item só.", code="receipt_partial_invalid", field="lines"
+            )
+        item_sku = str(raw_lines[0].get("materialSku") or raw_lines[0].get("material_sku") or "item").strip()
+        receipt_ref = f"{receipt_ref}-{slugify(item_sku)[:24]}"
     context = {
         "receipt_ref": receipt_ref,
         "supplier_ref": supplier.ref,
@@ -412,6 +572,8 @@ def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], st
     from shopman.shop.directives import NOTIFICATION_SEND, create_deduped
 
     create_deduped(topic=NOTIFICATION_SEND, payload=notification_payload, dedupe_key=dedupe_key)
+    if partial:
+        return build_purchase(), f"Devolução do item registrada ({receipt_ref}). A entrada segue com os outros."
     return build_purchase(), f"Devolução registrada ({receipt_ref})."
 
 
@@ -1121,7 +1283,7 @@ def _supplier_contact_line(supplier) -> str:
     if not contact:
         return ""
     reach = " / ".join(part for part in (contact.email, contact.phone) if part)
-    return f"{contact.name} ({contact.get_role_display()}) — {reach}"
+    return f"{contact.name} ({contact.get_role_display()}): {reach}"
 
 
 def _purchase_request_snapshot(material, cost) -> dict[str, str]:
@@ -1349,13 +1511,9 @@ def parse_money_input(value: str, *, field: str = "costInput") -> int:
 def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> ResolvedReceiptLine:
     if not isinstance(raw, dict):
         raise PurchaseError("Item de recebimento inválido.", code="receipt_line_invalid", field=f"lines.{index}")
-    if not raw.get("checked"):
-        raise PurchaseError(
-            "Todos os itens precisam ser conferidos antes da entrada.",
-            code="receipt_line_unchecked",
-            field=f"lines.{index}.checked",
-        )
-
+    # O "ok" da linha NÃO é exigido aqui: quem decide se a linha precisa dele é
+    # `_receipt_attestation`, depois de todas as linhas resolvidas. A que bate
+    # com a nota entra pelo ato físico da contagem de volumes.
     material = _resolve_receipt_material(raw, index=index)
 
     purchase_qty = _decimal(raw.get("purchaseQty", raw.get("purchase_qty")))
@@ -1410,8 +1568,9 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         note=note,
         invoice_product_code=str(raw.get("invoiceProductCode") or raw.get("invoice_product_code") or "").strip(),
         invoice_lot=str(raw.get("invoiceLot") or raw.get("invoice_lot") or "").strip(),
-        checked=True,
+        checked=bool(raw.get("checked")),
         invoice_ean=_raw_text(raw, "invoiceEan", "invoice_ean"),
+        scanned_ean=_raw_text(raw, "scannedEan", "scanned_ean"),
         invoice_package_ean=_raw_text(raw, "invoicePackageEan", "invoice_package_ean"),
         invoice_ncm=_raw_text(raw, "invoiceNcm", "invoice_ncm"),
         invoice_cest=_raw_text(raw, "invoiceCest", "invoice_cest"),
@@ -1421,7 +1580,188 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         invoice_icms_cst=_raw_text(raw, "invoiceIcmsCst", "invoice_icms_cst"),
         invoice_icms_csosn=_raw_text(raw, "invoiceIcmsCsosn", "invoice_icms_csosn"),
         invoice_st_value_q=_raw_int(raw, "invoiceStValueQ", "invoice_st_value_q"),
+        invoice_purchase_qty=_invoice_purchase_qty(raw),
+        invoice_total_q=_invoice_total_q(raw),
+        invoice_commercial_unit=_raw_text(raw, "invoiceUnit", "invoice_unit"),
+        invoice_conversion_factor=_invoice_conversion_factor(raw),
     )
+
+
+def _invoice_purchase_qty(raw: dict[str, Any]) -> Decimal | None:
+    text = str(raw.get("invoicePurchaseQty") or "").strip()
+    if not text:
+        return None
+    value = _decimal(text)
+    return value if value > 0 else None
+
+
+def _invoice_total_q(raw: dict[str, Any]) -> int:
+    try:
+        return parse_money_input(str(raw.get("invoiceTotal") or ""), field="invoiceTotal")
+    except PurchaseError:
+        return 0
+
+
+def _invoice_conversion_factor(raw: dict[str, Any]) -> Decimal | None:
+    suggestion = raw.get("conversionSuggestion")
+    if not isinstance(suggestion, dict):
+        return None
+    factor = _decimal(suggestion.get("factor"))
+    return factor if factor > 0 else None
+
+
+# ── Recebimento por exceção ──────────────────────────────────────────────────
+#
+# Decisão do dono (03/10/2026): "recebimento por exceção, sim; validade é
+# incontornável". O "ok" linha a linha (C13) era obrigatório em toda linha,
+# mesmo quando nada foi mexido: numa nota de 20 itens que bate, 20 toques que
+# não acrescentam informação. Agora a linha que BATE com a nota entra sem o ok,
+# desde que o recebedor declare um ATO FÍSICO: contou os volumes e a contagem
+# fecha. O que não se afrouxa: validade de perecível (`expiry_required`, acima),
+# conversão (`conversion_required`) e motivo para toda diferença entre a nota e
+# o que chegou. A linha que não bate continua pedindo o ok dela.
+#
+# A guarda contra "a nota diz 20 kg, chegam 18, entram 20 em silêncio" é a
+# contagem: uma linha de embalagem que chegou a menos derruba a conta de volumes,
+# e a tela puxa o item que não bate.
+
+
+def _line_difference(line: ResolvedReceiptLine) -> Decimal:
+    """Chegou menos a nota, na unidade da linha; zero sem nota para comparar."""
+    if line.invoice_purchase_qty is None:
+        return Decimal("0")
+    return line.purchase_qty - line.invoice_purchase_qty
+
+
+def _line_counts_in_packages(line: ResolvedReceiptLine) -> bool:
+    """A linha se conta em embalagens (caixa, saco, fardo, unidade)?
+
+    Com conversão declarada a quantidade é de embalagens ("4 × caixa 5 kg").
+    Sem conversão, a unidade comercial decide: peso e volume (kg, g, l, ml) não
+    se contam na doca; o resto (CX, SC, FD, UN) sim.
+    """
+    from shopman.utils import units
+
+    if line.conversion is not None:
+        return True
+    return units.dimension(line.invoice_commercial_unit) not in (units.MASS, units.VOLUME)
+
+
+def receipt_expected_volumes(lines: list[ResolvedReceiptLine], *, declared: int) -> int | None:
+    """Quantos volumes o recebedor deve contar na doca, dado o que chegou.
+
+    Base: os volumes que a nota declara (``qVol``); sem eles, a soma das
+    embalagens das linhas, desde que TODAS as linhas se contem em embalagens.
+    Ajuste: a diferença (chegou menos nota) das linhas de embalagem, que é o
+    item que não bateu e já foi resolvido com motivo. ``None`` quando não há
+    como saber: aí não existe atalho, e cada linha pede o seu ok.
+    """
+    if declared > 0:
+        base = Decimal(declared)
+    elif lines and all(
+        _line_counts_in_packages(line) and line.invoice_purchase_qty is not None for line in lines
+    ):
+        base = sum((line.invoice_purchase_qty for line in lines), Decimal("0"))
+    else:
+        return None
+    adjust = sum(
+        (_line_difference(line) for line in lines if _line_counts_in_packages(line)),
+        Decimal("0"),
+    )
+    expected = base + adjust
+    if expected <= 0 or expected != expected.to_integral():
+        return None
+    return int(expected)
+
+
+def _invoice_unit_reaches_base(line: ResolvedReceiptLine) -> bool:
+    """A unidade comercial da nota é peso/volume da mesma dimensão da base do insumo?"""
+    from shopman.utils import units
+
+    return units.dimension(line.invoice_commercial_unit) in (units.MASS, units.VOLUME) and units.same_dimension(
+        line.invoice_commercial_unit, str(line.material.unit or "")
+    )
+
+
+def _line_matches_invoice(line: ResolvedReceiptLine) -> bool:
+    """A linha bate com a nota: quantidade, valor e embalagem são os da nota."""
+    if line.invoice_purchase_qty is None or line.purchase_qty != line.invoice_purchase_qty:
+        return False
+    if line.invoice_total_q <= 0 or line.total_cost_q != line.invoice_total_q:
+        return False
+    if line.note:
+        return False
+    if line.conversion is not None and _invoice_unit_reaches_base(line):
+        # A nota veio em peso ou volume que a física leva à base: o leitor de
+        # NF-e já converteu a quantidade ("5 KG" chega como 5000 g). Uma
+        # embalagem escolhida por cima multiplica de novo (5000 × litro), e isso
+        # não é o que a nota diz: a linha pede o ok dela.
+        return False
+    suggested = line.invoice_conversion_factor
+    if suggested is not None and line.conversion is not None:
+        chosen = Decimal(line.conversion.to_base_factor)
+        # A mesma tolerância relativa da tela (0,1%).
+        if abs(chosen - suggested) > max(chosen, suggested) * Decimal("0.001"):
+            return False
+    return True
+
+
+def _receipt_attestation(
+    lines: list[ResolvedReceiptLine], payload: dict[str, Any], *, mode: str
+) -> dict[str, int] | None:
+    """Quem assina cada linha: o ok dela, ou a contagem de volumes.
+
+    Devolve ``{"counted", "expected"}`` quando a contagem foi usada, ou ``None``
+    quando toda linha veio com o próprio ok.
+    """
+    for index, line in enumerate(lines):
+        if _line_difference(line) != 0 and not line.note:
+            raise PurchaseError(
+                f"{line.name}: a nota diz {_format_decimal(line.invoice_purchase_qty)} e chegou "
+                f"{_format_decimal(line.purchase_qty)}. Escolha o motivo da diferença.",
+                code="receipt_difference_reason_required",
+                field=f"lines.{index}.lineNote",
+            )
+
+    unchecked = [(index, line) for index, line in enumerate(lines) if not line.checked]
+    if not unchecked:
+        return None
+
+    for index, line in unchecked:
+        if mode != "invoice" or not _line_matches_invoice(line):
+            raise PurchaseError(
+                f"{line.name} não bate com a nota: confira o item e marque como conferido.",
+                code="receipt_line_unchecked",
+                field=f"lines.{index}.checked",
+            )
+
+    declared = max(int(_decimal(payload.get("invoiceVolumes") or 0)), 0)
+    expected = receipt_expected_volumes(lines, declared=declared)
+    if expected is None:
+        index = unchecked[0][0]
+        raise PurchaseError(
+            "Esta nota não diz quantos volumes são: confira cada item e marque como conferido.",
+            code="receipt_line_unchecked",
+            field=f"lines.{index}.checked",
+        )
+
+    raw_volumes = payload.get("volumes")
+    counted_raw = raw_volumes.get("counted") if isinstance(raw_volumes, dict) else None
+    counted = _decimal(counted_raw) if counted_raw not in (None, "") else None
+    if counted is None or counted <= 0:
+        raise PurchaseError(
+            f"Conte os volumes da entrega antes de confirmar: a nota diz {expected}.",
+            code="receipt_volumes_required",
+            field="volumes.counted",
+        )
+    if counted != expected:
+        raise PurchaseError(
+            f"Você contou {_format_decimal(counted)} volumes e deviam ser {expected}. "
+            "Ache o item que não bate e corrija a quantidade que chegou.",
+            code="receipt_volumes_mismatch",
+            field="volumes.counted",
+        )
+    return {"counted": int(counted), "expected": expected}
 
 
 def _raw_int(raw: dict[str, Any], *keys: str) -> int:
@@ -1527,6 +1867,21 @@ def _conversion_from_invoice_axes(payload: dict[str, Any], *, material):
         tax_unit=tax_unit,
         name=str(payload.get("invoiceDescription") or payload.get("invoice_description") or ""),
     )
+
+
+def _attested_by(line: ResolvedReceiptLine, attestation: dict[str, int] | None) -> dict[str, Any]:
+    """Quem assinou a linha: o ok dela, ou a contagem de volumes (e quantos).
+
+    Quem contou é o ``Move.user``; aqui fica COMO a linha foi assinada, para a
+    pergunta "alguém olhou este item?" ter resposta depois.
+    """
+    if line.checked:
+        return {"purchase_line_attested_by": "line_check"}
+    return {
+        "purchase_line_attested_by": "volume_count",
+        "purchase_volumes_counted": attestation["counted"] if attestation else 0,
+        "purchase_volumes_expected": attestation["expected"] if attestation else 0,
+    }
 
 
 def _converted_via(line: ResolvedReceiptLine) -> dict[str, Any]:
@@ -1982,7 +2337,7 @@ def _receipt_rejection_lines(raw_lines: list[Any]) -> str:
         qty = str(raw.get("purchaseQty") or raw.get("purchase_qty") or "").strip()
         note = str(raw.get("lineNote") or raw.get("line_note") or "").strip()
         label = material_names.get(sku, sku or "item")
-        suffix = f" — {note}" if note else ""
+        suffix = f" ({note})" if note else ""
         rows.append(f"- {label}: {qty or '?'}{suffix}")
     return "\n".join(rows)
 

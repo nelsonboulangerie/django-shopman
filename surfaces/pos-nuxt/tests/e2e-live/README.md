@@ -57,3 +57,25 @@ não acharam o que procuravam (`skipped`).
 
 A sonda cria comandas e fecha uma venda de verdade no banco que você apontar.
 Use um banco descartável.
+
+# Sonda ao vivo do PDV — tempo até o total
+
+`checkout-latency.live.spec.ts` lança dez produtos numa comanda, toca em
+**Pagamento** e mede o tempo até o total confirmado pelo servidor (nenhum
+"Calculando…" na tela), listando cada requisição do intervalo com início e fim:
+é o mapa de série × paralelo do caminho do total.
+
+Roda contra o mesmo PDV de verdade da sonda acima. Para reproduzir o alpha,
+ponha atrasos entre as peças (navegador → BFF ~150 ms de ida e volta, BFF →
+Django, Django → Postgres) com qualquer proxy TCP de latência, e suba o Django
+com `daphne`, como em produção.
+
+```bash
+PDV_LIVE_URL=http://127.0.0.1:3312 PDV_LIVE_USER=<usuário> PDV_LIVE_PASSWORD=<senha> \
+  PDV_LIVE_ROUNDS=3 PDV_LIVE_REPORT=/tmp/total.json \
+  npx playwright test -c playwright.live.config.ts checkout-latency
+```
+
+Variáveis: `PDV_LIVE_LINES` (itens por venda, padrão 10), `PDV_LIVE_TAP_MS`
+(intervalo entre toques, padrão 250), `PDV_LIVE_PAUSE_MS` (do último toque ao
+Pagamento, padrão 300), `PDV_LIVE_ROUNDS`.

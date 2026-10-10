@@ -164,7 +164,7 @@ def register_cash_movement(
 
 
 def register_drawer_opening(*, operator, reason: str = "", terminal_ref: str = ""):
-    """Registra uma abertura de gaveta SEM venda e sem movimento (``drawer_open``).
+    """Registra uma abertura de gaveta SEM venda, no próprio balcão (``drawer_open``).
 
     Os outros momentos que abrem a gaveta já deixam rastro sozinhos: a venda em
     dinheiro tem a linha ``sale``, a sangria e o suprimento têm a sua. Este não
@@ -172,15 +172,19 @@ def register_drawer_opening(*, operator, reason: str = "", terminal_ref: str = "
     qualquer motivo que só ele sabe. Sem registro, é exatamente o buraco que a
     chave física deixava. Efeito zero no saldo; o motivo é a substância.
 
-    ⚠️ Isto NÃO decide quem pode abrir. A política de autorização de gaveta é da
-    frente de estresse do PDV (retirada exige PIN em qualquer valor); aqui é o
-    caminho físico.
+    É o caso ``no_sale``/``local`` do dono único das aberturas
+    (``services/drawer_pulse.open_drawer``), que também atende o tablet pelo relay.
     """
-    reason = str(reason or "").strip()[:120]
-    if not reason:
-        raise POSError("Informe o motivo da abertura.")
-    shift = _open_shift_or_raise(operator, terminal_ref)
-    return _record("drawer_open", shift=shift, operator=operator, reason=reason)
+    from shopman.backstage.services import drawer_pulse
+
+    entry, _job = drawer_pulse.open_drawer(
+        operator=operator,
+        terminal_ref=terminal_ref,
+        purpose=drawer_pulse.PURPOSE_NO_SALE,
+        reason=reason,
+        via=drawer_pulse.VIA_LOCAL,
+    )
+    return entry
 
 
 def report_drawer_blind(*, operator, reason: str = "", terminal_ref: str = ""):

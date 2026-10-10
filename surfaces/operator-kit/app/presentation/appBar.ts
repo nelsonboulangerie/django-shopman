@@ -30,6 +30,12 @@ export interface OperatorSection {
   /** Identidade da seção. É o que o app compara e o que o teste nomeia. */
   key: string;
   label: string;
+  /**
+   * Rótulo curto para a barra do polegar no celular, quando o nome não cabe em 1/5 da
+   * tela (ex.: a Produção, "Plano" para Planejamento, como nas prévias v4). O rail e o
+   * nome acessível seguem com `label`. Ausente = `label`.
+   */
+  shortLabel?: string;
   /** Ícone lucide (`lucide:*`). */
   icon: string;
   /** Rota da seção. Sem ela, a aba vira botão e a barra emite `select`. */
@@ -38,8 +44,44 @@ export interface OperatorSection {
   match?: string[];
   /** Aviso curto ao lado do rótulo ("1 desligado"). Ausente = estado normal, sem ruído. */
   attention?: string;
+  /**
+   * A cor do sinal no rail da suíte (ponto ou número): `success`, `warning` (padrão) ou
+   * `error`. A cor nunca fala sozinha: o que ela quer dizer está em `attention` ou no
+   * número.
+   */
+  tone?: "success" | "warning" | "error";
   /** Tecla que leva a esta seção. Ensinada na própria aba, onde a mão está. */
   shortcut?: string;
+  /**
+   * Contagem curta no selo do item (barra lateral e barra inferior), ex.: pedidos na
+   * fila. Ausente ou vazia = sem selo; zero não é selo. O nome acessível sai de
+   * `sectionDescription` ("Pedidos · 3 pendências"), a mesma descrição em todo lugar.
+   */
+  badge?: string;
+  /**
+   * Rótulo do grupo (rail da suíte, prévia v4: "Operação"). Sai uma vez, acima da
+   * primeira seção do grupo. A barra do polegar ignora.
+   */
+  group?: string;
+  /**
+   * Mora no pé do rail, separada da operação (v4: "Ajustes não divide barra com a
+   * operação"). Na barra do polegar entra no fim, como as outras.
+   */
+  foot?: boolean;
+  /**
+   * Onde a seção aparece (V6-KIT). Omitido: no rail e na barra do polegar. `rail`: só no
+   * rail (ex.: a Tela do cliente do PDV, que abre no segundo monitor e não cabe no
+   * bolso). `bar`: só na barra de baixo (ex.: o Fim do dia do PDV no tablet em pé).
+   */
+  where?: "rail" | "bar";
+  /**
+   * Vai para a barra inferior do celular no shell da suíte (o menu rápido; a gaveta tem
+   * todas). Regra única em `quickBarLayout` (`suiteChrome.ts`): no máximo 5, "Mais"
+   * só quando sobra seção. Nenhuma seção declarada = as primeiras, até 4.
+   */
+  quick?: boolean;
+  /** Um traço acima desta seção no rail (v4 `salao-mesas4.html`: Caixa · traço · Ajustes). */
+  divider?: boolean;
 }
 
 /** `/pedidos/` e `/pedidos` são a mesma tela. Uma normalização só, com teste. */

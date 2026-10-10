@@ -6,12 +6,13 @@
 //   óbvia a fazer: tocando → ``Visto`` silencia o que grita; já visto → o
 //   toque encerra. Correndo, o corpo não é botão: um esbarrão não pode mexer
 //   no tempo de ninguém.
-// · RODAPÉ = os dois botões explícitos que sobram, ``+5 min`` e ``Encerrar``.
+// · RODAPÉ = as duas ações explícitas que sobram, ``+5 min`` e ``Encerrar``.
 //   Sem grade de quatro: o caso comum está no corpo, e +1 morreu com o numpad
 //   da criação, que já resolve precisão.
 //
 // O que o toque faz nunca fica escondido: a dica escreve o gesto do estado
 // atual, e o rótulo ARIA do corpo diz a mesma frase para quem não vê a tela.
+import { createReusableTemplate } from "@vueuse/core";
 import type { FloorTimerEntry } from "~/composables/useFloorTimers";
 import {
   FLOOR_TIMER_ARM_MS,
@@ -58,6 +59,15 @@ function onTap() {
   if (tap.value === "seen") emit("seen");
   else if (tap.value === "clear") emit("clear");
 }
+
+// O mesmo corpo em duas cascas: botão quando há gesto, bloco inerte enquanto corre.
+const [DefineBody, ReuseBody] = createReusableTemplate();
+const BODY_CLASS = "flex min-h-32 flex-1 flex-col items-start gap-1 p-4 text-left";
+// O corpo-botão é um cartão, não um botão de linha: ocupa a área, quebra texto,
+// sem canto próprio (o canto é do card).
+const BODY_UI = { base: `${BODY_CLASS} h-auto w-full rounded-none whitespace-normal` };
+// Rodapé: duas teclas de chão, coladas, separadas pela linha de 1 px da grade.
+const FOOT_UI = { base: "min-h-14 justify-center rounded-none bg-card tabular-nums" };
 </script>
 
 <template>
@@ -65,28 +75,17 @@ function onTap() {
     class="flex flex-col overflow-hidden rounded-lg border bg-card"
     :class="entry.mode === 'ringing' ? 'floor-timer-ringing border-destructive/60' : ''"
   >
-    <component
-      :is="tap === 'none' ? 'div' : 'button'"
-      :type="tap === 'none' ? undefined : 'button'"
-      class="flex min-h-32 flex-1 flex-col items-start gap-1 p-4 text-left"
-      :class="
-        tap === 'none'
-          ? ''
-          : 'transition hover:bg-accent active:translate-y-px'
-      "
-      :aria-label="hint ? `${entry.title}: ${hint}` : undefined"
-      @click="onTap()"
-    >
-      <p class="w-full truncate text-lg font-semibold leading-tight">
+    <DefineBody>
+      <span class="block w-full truncate text-lg font-semibold leading-tight">
         {{ entry.title }}
-      </p>
-      <p class="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+      </span>
+      <span class="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
         <span v-if="entry.kind === 'oven'">Forno</span>
         <span v-if="entry.sku" class="truncate">{{ entry.sku }}</span>
         <span>{{ minutesLabel(entry.minutes) }}</span>
-      </p>
-      <p
-        class="mt-auto w-full text-4xl font-bold tabular-nums leading-none"
+      </span>
+      <span
+        class="mt-auto block w-full text-4xl font-bold tabular-nums leading-none"
         :class="
           entry.mode === 'ringing'
             ? 'animate-pulse text-destructive motion-reduce:animate-none'
@@ -98,29 +97,48 @@ function onTap() {
         :aria-label="`${entry.title}: ${clock}`"
       >
         {{ clock }}
-      </p>
-      <p v-if="hint" class="text-xs font-medium text-muted-foreground">
+      </span>
+      <span v-if="hint" class="block text-xs font-medium text-muted-foreground">
         {{ hint }}
-      </p>
-    </component>
+      </span>
+    </DefineBody>
+
+    <div v-if="tap === 'none'" :class="BODY_CLASS">
+      <ReuseBody />
+    </div>
+    <NuxtButton
+      v-else
+      color="neutral"
+      variant="ghost"
+      block
+      :ui="BODY_UI"
+      :aria-label="hint ? `${entry.title}: ${hint}` : undefined"
+      @click="onTap()"
+    >
+      <ReuseBody />
+    </NuxtButton>
 
     <div class="grid grid-cols-2 gap-px border-t bg-border">
-      <button
-        type="button"
-        class="min-h-14 bg-card text-base font-semibold tabular-nums transition hover:bg-accent active:translate-y-px"
+      <NuxtButton
+        size="xl"
+        color="neutral"
+        variant="ghost"
+        block
+        label="+5 min"
+        :ui="FOOT_UI"
         :aria-label="`Somar 5 minutos a ${entry.title}`"
         @click="emit('extend', 5)"
-      >
-        +5 min
-      </button>
-      <button
-        type="button"
-        class="min-h-14 bg-card text-base font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground active:translate-y-px"
+      />
+      <NuxtButton
+        size="xl"
+        color="neutral"
+        variant="ghost"
+        block
+        label="Encerrar"
+        :ui="FOOT_UI"
         :aria-label="`Encerrar ${entry.title}`"
         @click="emit('clear')"
-      >
-        Encerrar
-      </button>
+      />
     </div>
   </li>
 </template>

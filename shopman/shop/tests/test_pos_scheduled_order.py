@@ -382,7 +382,7 @@ def test_dia_de_FERIADO_e_recusado_no_balcao(balcao):
     with pytest.raises(ValueError) as erro:
         _close(operator, _payload(shift, client_request_id="fechado-1", delivery_date=dia))
 
-    assert str(erro.value) == "Fechado: Feriado — escolha outra data."
+    assert str(erro.value) == "Fechado: Feriado. Escolha outra data."
     assert Order.objects.count() == 0
 
 
@@ -397,7 +397,7 @@ def test_dia_da_semana_SEM_EXPEDIENTE_e_recusado_no_balcao(balcao):
     with pytest.raises(ValueError) as erro:
         _close(operator, _payload(shift, client_request_id="fechado-2", delivery_date=dia.isoformat()))
 
-    assert str(erro.value) == f"A casa não abre em {dia.strftime('%d/%m/%Y')} — escolha outra data."
+    assert str(erro.value) == f"A casa não abre em {dia.strftime('%d/%m/%Y')}. Escolha outra data."
     assert Order.objects.count() == 0
 
 

@@ -5,24 +5,48 @@
 // 19/09/2026, nascia um por pedido. A busca e os filtros daqui são o caminho para
 // achá-lo; a ficha (`/customers/<ref>`) é onde se compara e unifica. A URL guarda a
 // busca, então voltar da ficha devolve a mesma lista.
-import { listQueryFromRoute, routeQueryFromList, type CustomerFilter } from "~/presentation/customers";
+import type { ActiveFilters, FilterDimension } from "../../../../operator-kit/app/types/filters";
+import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
+import {
+  listQueryFromRoute,
+  routeQueryFromList,
+  type CustomerFilter,
+} from "~/presentation/customers";
 
 useHead({ title: "Clientes" });
 
 const route = useRoute();
 const router = useRouter();
 const listQuery = computed(() => listQueryFromRoute(route.query));
-const { list, pending, error, refresh, readMetadata } = useCustomerList(listQuery);
+const { list, pending, error, refresh, readMetadata } =
+  useCustomerList(listQuery);
 
 const search = ref(listQuery.value.q);
-watch(() => listQuery.value.q, (q) => { if (q !== search.value.trim()) search.value = q; });
-watchDebounced(search, (q) => {
-  if (q.trim() === listQuery.value.q) return;
-  router.replace({ query: routeQueryFromList({ ...listQuery.value, q: q.trim(), page: 1 }) });
-}, { debounce: 300 });
+watch(
+  () => listQuery.value.q,
+  (q) => {
+    if (q !== search.value.trim()) search.value = q;
+  },
+);
+watchDebounced(
+  search,
+  (q) => {
+    if (q.trim() === listQuery.value.q) return;
+    router.replace({
+      query: routeQueryFromList({ ...listQuery.value, q: q.trim(), page: 1 }),
+    });
+  },
+  { debounce: 300 },
+);
 
 function setFilter(filter: string) {
-  router.replace({ query: routeQueryFromList({ ...listQuery.value, filter: filter as CustomerFilter, page: 1 }) });
+  router.replace({
+    query: routeQueryFromList({
+      ...listQuery.value,
+      filter: filter as CustomerFilter,
+      page: 1,
+    }),
+  });
 }
 function goToPage(page: number) {
   router.replace({ query: routeQueryFromList({ ...listQuery.value, page }) });
@@ -32,120 +56,223 @@ function goToPage(page: number) {
 const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
 
 const items = computed(() => list.value?.items ?? []);
-const loading = computed(() => pending.value && !list.value);
+type CustomerRow = (typeof items.value)[number];
+// O painel de filtros único (fase 2, K4): os recortes da lista como um campo de
+// escolha única, e os favoritos da pessoa. As abas continuam como os filtros rápidos à
+// vista; o painel e as abas mexem no mesmo `?filter=`.
+const panelDimensions = computed<FilterDimension[]>(() => [
+  {
+    id: "filter",
+    label: "Recorte",
+    type: "single-select",
+    options: (list.value?.filters ?? [])
+      .filter((option) => option.ref !== "all")
+      .map((option) => ({ value: option.ref, label: option.label })),
+  },
+]);
+const panelFilters = computed<ActiveFilters>({
+  get: (): ActiveFilters =>
+    listQuery.value.filter === "all" ? {} : { filter: [String(listQuery.value.filter)] },
+  set: (next: ActiveFilters) => setFilter(next.filter?.[0] ?? "all"),
+});
+const activeFilters = computed(() =>
+  filterBarActiveFilters(panelDimensions.value, panelFilters.value, (next) => {
+    panelFilters.value = next;
+  }),
+);
+const filterItems = computed(() =>
+  (list.value?.filters ?? []).map((option) => ({
+    key: option.ref,
+    label: option.label,
+  })),
+);
+// Cliente é a chave (fixada); Pedidos é de apoio (some no celular).
+const customerColumns = [
+  { id: "customer", header: "Cliente", enableHiding: false },
+  { id: "contact", header: "Contato" },
+  { id: "orders", header: "Pedidos", meta: { supporting: true } },
+];
+// Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
+// celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
+// desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
+const phoneHeaderActions = computed(() => [
+  { label: "Unificações", icon: "i-lucide-history", to: "/customers/merges" },
+  ...(adminBaseUrl
+    ? [{ label: "Cadastrar ou editar no Admin", icon: "i-lucide-settings", to: `${adminBaseUrl}/admin/guestman/customer/`, target: "_blank" }]
+    : []),
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+]);
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <UiToolbar>
-      <div class="flex items-center gap-2">
-        <Icon name="lucide:users" class="size-4 text-muted-foreground" />
-        <h1 class="text-sm font-semibold">Clientes</h1>
-        <span class="hidden text-xs text-muted-foreground sm:inline">Buscar, comparar e unificar cadastros</span>
-      </div>
-      <template #end>
-        <UiSearchInput v-model="search" placeholder="Nome, telefone, CPF…" aria-label="Buscar cliente" />
-        <NuxtLink
-          to="/customers/merges"
-          class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+    <OperatorPageHeader
+      title="Clientes"
+      :filters-wrap="false"
+      :phone-actions="phoneHeaderActions"
+      desk-only-filters
+      :active-filters="activeFilters"
+    >
+      <template #status>
+        <span class="hidden op-micro text-muted-foreground lg:inline"
+          >Buscar, comparar e unificar cadastros</span
         >
-          <Icon name="lucide:history" class="size-4" />
-          <span class="hidden sm:inline">Unificações</span>
-        </NuxtLink>
-        <a
-          v-if="adminBaseUrl"
-          :href="`${adminBaseUrl}/admin/guestman/customer/`"
-          target="_blank"
-          rel="noopener"
-          class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          title="Cadastrar ou editar cliente (abre o Admin)"
-        >
-          <Icon name="lucide:settings" class="size-4" />
-          <span class="hidden sm:inline">Admin</span>
-          <Icon name="lucide:external-link" class="size-3.5 opacity-60" />
-        </a>
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
       </template>
-    </UiToolbar>
-    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
-
-    <section class="min-h-0 flex-1 overflow-auto p-4">
-      <div class="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar clientes">
-        <UiFilterChip
-          v-for="option in list?.filters ?? []"
-          :key="option.ref"
-          :active="option.active"
-          :aria-pressed="option.active"
-          :data-customer-filter="option.ref"
-          @click="setFilter(option.ref)"
-        >
-          {{ option.label }}
-        </UiFilterChip>
-        <span v-if="list" class="ml-auto text-xs text-muted-foreground tabular-nums" data-customer-total>{{ list.total_label }}</span>
-      </div>
-
-      <div v-if="error" role="alert" class="mb-3 rounded-md border border-destructive p-3 text-sm">
-        {{ httpErrorMessage(error, "Não foi possível carregar os clientes.") }}
-        {{ list ? "Exibindo a última lista carregada." : "" }}
-        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
-      </div>
-
-      <div v-if="loading" class="space-y-2">
-        <div v-for="i in 6" :key="i" class="h-14 animate-pulse rounded-lg border bg-muted/40"></div>
-      </div>
-
-      <ul v-else-if="items.length" class="divide-y rounded-lg border bg-card" data-customer-list>
-        <li v-for="row in items" :key="row.ref">
-          <NuxtLink
-            :to="`/customers/${encodeURIComponent(row.ref)}`"
-            class="grid gap-1 px-4 py-3 transition hover:bg-accent sm:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1fr)] sm:items-center sm:gap-4"
-            :data-customer-row="row.ref"
+      <template #search>
+        <OperatorSuiteSearch
+          v-model="search"
+          screen-label="filtrando os clientes"
+          placeholder="Nome, telefone, CPF…"
+          aria-label="Buscar cliente"
+        />
+      </template>
+      <template #filters-primary>
+        <OperatorQuickFilters
+          :model-value="listQuery.filter"
+          :items="filterItems"
+          label="Filtrar clientes"
+          @update:model-value="setFilter(String($event))"
+        />
+      </template>
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          surface="orders"
+          screen="customers"
+          :chips="false"
+        />
+      </template>
+      <template #filters>
+        <div class="flex items-center gap-3">
+          <NuxtButton
+            to="/customers/merges"
+            icon="i-lucide-history"
+            label="Unificações"
+            color="neutral"
+            variant="outline"
+          />
+          <NuxtButton
+            v-if="adminBaseUrl"
+            :to="`${adminBaseUrl}/admin/guestman/customer/`"
+            target="_blank"
+            icon="i-lucide-settings"
+            trailing-icon="i-lucide-external-link"
+            label="Admin"
+            color="neutral"
+            variant="outline"
+            title="Cadastrar ou editar cliente (abre o Admin)"
+          />
+          <OperatorTableView table-key="orders-customers" />
+          <NuxtButton
+            icon="i-lucide-refresh-cw"
+            label="Atualizar"
+            color="neutral"
+            variant="outline"
+            :loading="pending"
+            @click="refresh()"
+          />
+        </div>
+      </template>
+      <template #filters-end>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span
+            v-if="list"
+            class="text-xs text-muted-foreground tabular-nums"
+            data-customer-total
+            >{{ list.total_label }}</span
           >
-            <span class="min-w-0">
-              <span class="flex flex-wrap items-center gap-2">
-                <span class="truncate font-medium">{{ row.name }}</span>
-                <span v-if="row.source_label" class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{{ row.source_label }}</span>
-                <span
-                  v-if="row.duplicate_hint"
-                  class="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-500/15 dark:text-amber-200"
-                >{{ row.duplicate_hint }}</span>
-              </span>
-              <span class="font-mono text-xs text-muted-foreground">{{ row.ref }}</span>
-            </span>
-            <span class="text-sm">
-              <span :class="row.phone_display ? '' : 'text-muted-foreground'">{{ row.phone_display || "Sem telefone" }}</span>
-              <span v-if="row.document_display" class="block text-xs text-muted-foreground">CPF {{ row.document_display }}</span>
-            </span>
-            <span class="text-sm text-muted-foreground">
-              {{ row.orders_label }}<template v-if="row.last_order_display"> · último {{ row.last_order_display }}</template>
-            </span>
-          </NuxtLink>
-        </li>
-      </ul>
+          <ReadFreshness
+            inline
+            :metadata="readMetadata"
+            :failed="Boolean(error)"
+          />
+        </div>
+      </template>
+    </OperatorPageHeader>
 
-      <p v-else-if="list" class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        {{ list.total_label }}.
-      </p>
-
-      <nav v-if="list && (list.page > 1 || list.has_next)" class="mt-3 flex items-center justify-between" aria-label="Páginas">
-        <button
-          type="button"
-          class="min-h-control rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-40"
-          :disabled="list.page <= 1 || pending"
-          @click="goToPage(list.page - 1)"
-        >
-          Anteriores
-        </button>
-        <span class="text-xs text-muted-foreground tabular-nums">Página {{ list.page }}</span>
-        <button
-          type="button"
-          class="min-h-control rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-40"
-          :disabled="!list.has_next || pending"
-          @click="goToPage(list.page + 1)"
-        >
-          Próximos
-        </button>
-      </nav>
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <OperatorTable
+        :data="items"
+        :columns="customerColumns"
+        :row-key="(row: CustomerRow) => row.ref"
+        :row-label="(row: CustomerRow) => `o cadastro de ${row.name}`"
+        :on-select="
+          (row: CustomerRow) =>
+            router.push(`/customers/${encodeURIComponent(row.ref)}`)
+        "
+        :loading="pending"
+        :error="Boolean(error)"
+        what="os clientes"
+        :error-description="list ? 'Exibindo a última lista carregada.' : ''"
+        empty-icon="i-lucide-users"
+        empty-title="Nenhum cliente neste recorte."
+        :empty-description="list ? `${list.total_label}.` : ''"
+        pinned="customer"
+        view-key="orders-customers"
+        caption="Clientes encontrados"
+        data-customer-list
+        @retry="refresh()"
+      >
+        <template #customer-cell="{ row }">
+          <div :data-customer-row="row.original.ref">
+            <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <NuxtLink
+                :to="`/customers/${encodeURIComponent(row.original.ref)}`"
+                class="font-medium hover:underline"
+                >{{ row.original.name }}</NuxtLink
+              >
+              <NuxtBadge
+                v-if="row.original.source_label"
+                color="neutral"
+                :label="row.original.source_label"
+              />
+              <NuxtBadge
+                v-if="row.original.duplicate_hint"
+                color="warning"
+                :label="row.original.duplicate_hint"
+              />
+            </span>
+            <span class="block font-mono text-xs text-muted-foreground">{{
+              row.original.ref
+            }}</span>
+          </div>
+        </template>
+        <template #contact-cell="{ row }">
+          <span
+            :class="row.original.phone_display ? '' : 'text-muted-foreground'"
+            >{{ row.original.phone_display || "Sem telefone" }}</span
+          >
+          <span
+            v-if="row.original.document_display"
+            class="block text-xs text-muted-foreground"
+            >CPF {{ row.original.document_display }}</span
+          >
+        </template>
+        <template #orders-cell="{ row }">
+          <span class="text-muted-foreground">
+            {{ row.original.orders_label
+            }}<template v-if="row.original.last_order_display">
+              · último {{ row.original.last_order_display }}</template
+            >
+          </span>
+        </template>
+        <template v-if="list && (list.page > 1 || list.has_next)" #footer>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <span class="op-micro text-muted-foreground tnum">{{
+              list.total_label
+            }}</span>
+            <NuxtPagination
+              :page="list.page"
+              :total="list.total"
+              :items-per-page="list.page_size"
+              :disabled="pending"
+              aria-label="Páginas"
+              @update:page="goToPage"
+            />
+          </div>
+        </template>
+      </OperatorTable>
     </section>
   </main>
 </template>

@@ -1,294 +1,174 @@
 <script setup lang="ts">
-// Cabeçalho de seção do Produção — mora no topo do CONTEÚDO (não é o rail). Segura o
-// controle do rail (kit) + a nav das visões de produção (Planejamento/Preparação/
-// Produção/Expedição/Painel) + busca, alertas e atualizar. As funções COMUNS (Shopman Apps,
-// operador/travar, tema) vivem no OperatorRail à esquerda — o rail as concentra e economiza
-// a horizontal. Touch-first e light-first, como o Gestor.
+// Cabeçalho das telas da Produção: o `OperatorPageHeader` do kit, com os papéis das
+// barras da fase 2 (WP-FASE2-UX-OPERADOR §5):
+//   · barra primária: título, selo ao vivo com a hora da última leitura, a busca
+//     (nível "Esta tela" declarado: filtra a lista da tela) e o ⋯ "Mais ações" (as
+//     ações como DADOS: as da tela e Atualizar, tecla R). Avisos e o ciclo da barra
+//     lateral são do kit;
+//   · toolbar: o dia ou a vista (`#primary`, no começo da linha, também no celular), os recortes
+//     (`#filters`, que no celular vão para o painel "Filtros") e, no fim, o progresso
+//     do dia ("4 de 28 planejados" com a barra);
+//   · aviso da tela: `alerts`, logo abaixo da toolbar.
+// As etapas do lote (Alt+1 a Alt+5), "/" (busca) e "?" (ajuda) são do shell e da busca
+// da suíte. Este cabeçalho só segura o R, e entrega à ajuda do kit os grupos de teclas
+// da Produção.
+import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import {
   isEditableKeyboardTarget,
+  PRODUCTION_SHORTCUT_GROUPS,
+  PRODUCTION_SHORTCUTS_DESCRIPTION,
   productionGlobalKeysBlocked,
   resolveProductionGlobalShortcut,
 } from "~/presentation/keyboard";
 
-defineProps<{
-  title: string;
-  count?: number;
-  countLabel?: string;
-  /** 0–100: a linha visual do quanto o dia andou, JUNTO do contador. */
-  progress?: number | null;
-  pending?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    title: string;
+    count?: number;
+    countLabel?: string;
+    /** Total do dia: com ele o contador fala "4 de 28 planejados". */
+    total?: number | null;
+    /** 0–100: a linha visual do quanto o dia andou, JUNTO do contador. */
+    progress?: number | null;
+    pending?: boolean;
+    /** A última leitura falhou e a tela mostra dado velho: o ao vivo fala por extenso. */
+    stale?: boolean;
+    /** Selo ao lado do título (ex.: o dia que a tela mostra). */
+    eyebrow?: string;
+    /** O que a tela diz em uma frase, ao lado do selo ao vivo ("lotes fechados hoje"). */
+    subtitle?: string;
+    searchPlaceholder?: string;
+    /** O que a busca filtra nesta tela ("filtrando os lotes"). */
+    searchLabel?: string;
+    /** Telas sem lista própria (Ajustes, Relatórios) usam a busca da suíte, sem nível de tela. */
+    searchable?: boolean;
+    /** Ações da tela, antes de Atualizar, no ⋯ "Mais ações". */
+    actions?: OperatorHeaderAction[];
+    /** Recortes ativos (viram número no "Filtros" e chips no celular). */
+    activeFilters?: { key: string; label: string; remove: () => void }[];
+    alerts?: OperatorScreenAlert[];
+  }>(),
+  {
+    count: undefined,
+    countLabel: "",
+    total: null,
+    progress: null,
+    pending: false,
+    stale: false,
+    eyebrow: "",
+    subtitle: "",
+    searchPlaceholder: "Buscar produto ou SKU",
+    searchLabel: "filtrando a lista",
+    searchable: true,
+    actions: () => [],
+    activeFilters: () => [],
+    alerts: () => [],
+  },
+);
 const emit = defineEmits<{ refresh: [] }>();
 const query = defineModel<string>("query", { default: "" });
 
-const route = useRoute();
-const searchInput = ref<{ inputRef: HTMLInputElement | null } | null>(null);
-const shortcutsHelpOpen = ref(false);
+provideOperatorShortcuts(PRODUCTION_SHORTCUT_GROUPS, PRODUCTION_SHORTCUTS_DESCRIPTION);
 
-// Timers da bancada: ferramenta de primeira classe, em toda tela. O botão LEVA
-// à página /timers — o diálogo morreu em 18/09/2026 porque o gesto de toda hora
-// não cabia num modal: no fournil o timer é coisa que fica à vista, não que se
-// abre e fecha. O contador vem do localStorage — o servidor não o conhece —,
-// então o primeiro render do cliente precisa BATER com o SSR (0) e só depois de
-// montar mostrar o real.
-const floorTimers = useFloorTimers();
-const hydrated = ref(false);
-const timersCount = computed(() =>
-  hydrated.value ? floorTimers.activeCount.value : 0,
-);
-const timersRinging = computed(() =>
-  hydrated.value ? floorTimers.ringingCount.value : 0,
+// A hora da última leitura útil: o selo ao vivo mostra quando a tela leu pela última
+// vez. Nasce no cliente (o SSR não sabe a hora local de quem lê).
+const readClock = ref("");
+function stamp() {
+  readClock.value = new Date().toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+watch(
+  () => props.pending,
+  (now, before) => {
+    if (before && !now && !props.stale) stamp();
+  },
 );
 
-const SHORTCUT_ROUTES = {
-  plan: "/plan",
-  "mise-en-place": "/mise-en-place",
-  produce: "/",
-  expedite: "/expedite",
-} as const;
+const headerActions = computed<OperatorHeaderAction[]>(() => [
+  ...props.actions,
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    kbds: ["R"],
+    onSelect: () => emit("refresh"),
+  },
+]);
 
 function onGlobalKeydown(event: KeyboardEvent) {
-  if (event.repeat || event.isComposing || productionGlobalKeysBlocked())
-    return;
-  const shortcut = resolveProductionGlobalShortcut(event);
-  if (!shortcut) return;
-  const editing = isEditableKeyboardTarget(event.target);
-  if (editing && ["focus-search", "refresh", "help"].includes(shortcut)) return;
-
+  if (event.repeat || event.isComposing || productionGlobalKeysBlocked()) return;
+  if (resolveProductionGlobalShortcut(event) !== "refresh") return;
+  if (isEditableKeyboardTarget(event.target)) return;
   event.preventDefault();
-  if (shortcut === "focus-search") {
-    searchInput.value?.inputRef?.focus();
-    return;
-  }
-  if (shortcut === "refresh") {
-    emit("refresh");
-    return;
-  }
-  if (shortcut === "help") {
-    shortcutsHelpOpen.value = true;
-    return;
-  }
-  navigateTo(SHORTCUT_ROUTES[shortcut]);
+  emit("refresh");
 }
 
 onMounted(() => {
-  hydrated.value = true;
+  stamp();
   window.addEventListener("keydown", onGlobalKeydown);
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
-// As abas são SÓ o fluxo do dia do operador: decide → separa/pesa → produz →
-// expede. A Expedição É o fechamento de fornada (QC, ADR-017 §9): a fornada
-// sai do forno já classificada. O que não é etapa do fluxo — o Letreiro
-// (kiosk de TV) e os Relatórios (persona gestor) — mora no RAIL, não aqui:
-// primeiro nível enxuto, e a fileira nunca mais estoura a janela escondendo
-// aba sem aviso.
-const tabs = computed(() => [
-  {
-    to: "/plan",
-    label: "Planejamento",
-    icon: "lucide:layout-grid",
-    shortcut: "Alt+1",
-  },
-  {
-    to: "/mise-en-place",
-    label: "Preparação",
-    icon: "lucide:scale",
-    shortcut: "Alt+2",
-  },
-  {
-    to: "/",
-    label: "Produção",
-    icon: "lucide:flame",
-    shortcut: "Alt+3",
-  },
-  {
-    to: "/expedite",
-    label: "Expedição",
-    icon: "lucide:package-check",
-    shortcut: "Alt+4",
-  },
-]);
-function isActive(to: string): boolean {
-  return to === "/" ? route.path === "/" : route.path.startsWith(to);
-}
+const counterText = computed(() => {
+  if (props.count == null) return "";
+  if (props.total != null) return `de ${props.total} ${props.countLabel}`.trim();
+  return props.countLabel || "ativos";
+});
 </script>
 
 <template>
-  <header
-    class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-card px-4 py-2.5"
+  <OperatorPageHeader
+    :title="title"
+    :eyebrow="eyebrow"
+    :actions="headerActions"
+    actions-label="Mais ações da tela"
+    :active-filters="activeFilters"
+    :alerts="alerts"
   >
-    <RailToggle />
-    <div class="mr-2 min-w-0">
-      <p
-        class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-      >
-        Produção
-      </p>
-      <h1 class="truncate text-lg font-bold leading-tight">{{ title }}</h1>
-    </div>
-
-    <nav
-      class="flex items-center gap-1 rounded-md border bg-background p-0.5"
-      aria-label="Telas de produção"
-    >
-      <NuxtLink
-        v-for="tab in tabs"
-        :key="tab.to"
-        :to="tab.to"
-        :aria-keyshortcuts="tab.shortcut"
-        :title="`${tab.label} · ${tab.shortcut}`"
-        class="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-        :class="
-          isActive(tab.to)
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-        "
-      >
-        <Icon :name="tab.icon" class="size-4" />
-        <span class="hidden sm:inline">{{ tab.label }}</span>
-        <OperatorKbd
-          variant="inverse"
-          class="hidden opacity-100 xl:inline-flex"
-          aria-hidden="true"
-          >{{ tab.shortcut }}</OperatorKbd>
-      </NuxtLink>
-    </nav>
-
-    <div
-      v-if="count != null"
-      class="ml-auto hidden flex-col items-end gap-1 leading-none sm:flex"
-    >
-      <span class="text-lg font-bold tabular-nums"
-        >{{ count }}
-        <span
-          class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-          >{{ countLabel || "ativos" }}</span
-        ></span
-      >
-      <!-- O percentual mora COM o número que ele resume — nunca longe dele. -->
-      <div
-        v-if="progress != null"
-        class="flex items-center gap-1.5"
-        role="progressbar"
-        :aria-valuenow="progress"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-label="Progresso do dia"
-      >
-        <div class="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-          <div
-            class="h-full rounded-full bg-primary transition-all"
-            :style="{ width: `${progress}%` }"
-          />
-        </div>
-        <span class="text-xs font-medium tabular-nums text-muted-foreground"
-          >{{ progress }}%</span
-        >
+    <template v-if="$slots.lead" #lead><slot name="lead" /></template>
+    <template #status>
+      <OperatorLiveStatus
+        :tone="stale ? 'late' : 'live'"
+        :time="readClock"
+        :label="stale ? 'Sem atualizar' : 'Ao vivo'"
+        :detail="stale ? 'A última leitura falhou: a tela mostra o que tinha.' : ''"
+      />
+      <span
+        v-if="subtitle"
+        class="min-w-0 text-xs text-muted-foreground"
+        data-header-subtitle
+      >{{ subtitle }}</span>
+      <!-- O que a tela acrescenta ao "onde estou" (o anterior e o próximo do registro). -->
+      <slot name="status" />
+    </template>
+    <template v-if="searchable" #search>
+      <OperatorSuiteSearch
+        v-model="query"
+        :screen-label="searchLabel"
+        :placeholder="searchPlaceholder"
+        aria-label="Buscar por código, SKU ou receita"
+      />
+    </template>
+    <template v-if="$slots.primary" #filters-primary><slot name="primary" /></template>
+    <template v-if="$slots.filters" #filters><slot name="filters" /></template>
+    <template v-if="count != null" #filters-end>
+      <!-- O percentual mora COM o número que ele resume, nunca longe dele. -->
+      <div class="flex items-center gap-3" data-header-progress>
+        <p class="whitespace-nowrap text-sm">
+          <span class="font-semibold tabular-nums">{{ count }}</span>
+          <span class="text-muted-foreground">{{ ` ${counterText}` }}</span>
+        </p>
+        <NuxtProgress
+          v-if="progress != null"
+          :model-value="progress"
+          class="w-24 max-sm:hidden"
+          size="sm"
+          :aria-label="`Progresso do dia: ${progress}%`"
+        />
       </div>
-    </div>
-
-    <div
-      class="flex items-center gap-1.5"
-      :class="count != null ? '' : 'ml-auto'"
-    >
-      <div class="relative">
-        <Icon
-          name="lucide:search"
-          class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <UiInput
-          ref="searchInput"
-          v-model="query"
-          type="search"
-          inputmode="search"
-          placeholder="Buscar…"
-          class="w-32 pl-8 pr-8 focus:w-44 sm:w-40"
-          aria-label="Buscar por código, SKU ou receita"
-          aria-keyshortcuts="/"
-        />
-        <!-- Limpar ocupa o espaço reservado dentro do campo; é affordance do input, não botão de toolbar. -->
-        <button
-          v-if="query"
-          type="button"
-          class="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground transition hover:text-foreground"
-          aria-label="Limpar busca"
-          @click="query = ''"
-        >
-          <Icon name="lucide:x" class="size-3.5" />
-        </button>
-        <OperatorKbd
-          v-else
-          class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"
-          aria-hidden="true"
-          >/</OperatorKbd>
-      </div>
-      <!-- Timers: contador de ativos; pulsa quando algum toca. LEVA à página,
-           não abre diálogo. Nunca bloqueia nada. -->
-      <NuxtLink
-        to="/timers"
-        class="relative inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition"
-        :class="[
-          timersRinging ? 'border-destructive text-destructive' : '',
-          isActive('/timers')
-            ? 'bg-primary text-primary-foreground'
-            : 'hover:bg-accent hover:text-foreground',
-        ]"
-        :aria-label="`Timers (${timersCount} ativos)`"
-        title="Timers da bancada"
-      >
-        <Icon
-          name="lucide:alarm-clock"
-          class="size-4"
-          :class="timersRinging ? 'animate-pulse motion-reduce:animate-none' : ''"
-        />
-        <span class="hidden xl:inline">Timers</span>
-        <span
-          v-if="timersCount"
-          class="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full px-1 text-xs font-bold tabular-nums"
-          :class="
-            timersRinging
-              ? 'bg-destructive text-destructive-foreground'
-              : 'bg-primary text-primary-foreground'
-          "
-          >{{ timersCount }}</span
-        >
-      </NuxtLink>
-      <AlertsBell />
-      <UiButton
-        type="button"
-        variant="outline"
-        size="icon-sm"
-        class="min-h-11 min-w-11"
-        aria-label="Atualizar"
-        aria-keyshortcuts="R"
-        title="Atualizar · R"
-        @click="emit('refresh')"
-      >
-        <Icon
-          name="lucide:refresh-cw"
-          class="size-4"
-          :class="pending ? 'animate-spin' : ''"
-        />
-      </UiButton>
-      <UiButton
-        type="button"
-        variant="outline"
-        size="sm"
-        class="hidden min-h-11 sm:inline-flex"
-        aria-label="Ver atalhos do teclado"
-        aria-keyshortcuts="?"
-        title="Atalhos do teclado · ?"
-        @click="shortcutsHelpOpen = true"
-      >
-        <Icon name="lucide:keyboard" class="size-4" />
-        <span class="hidden xl:inline">Atalhos</span>
-        <OperatorKbd
-          aria-hidden="true"
-          >?</OperatorKbd>
-      </UiButton>
-    </div>
-  </header>
-
-  <ProductionShortcutsHelp v-model:open="shortcutsHelpOpen" />
+    </template>
+    <template v-if="$slots.below" #below><slot name="below" /></template>
+  </OperatorPageHeader>
 </template>

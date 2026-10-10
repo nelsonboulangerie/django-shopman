@@ -1,0 +1,252 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1320x1000">
+<style>
+  .canvas { background:#e9dfd6; }
+  .sbar { height:40px; padding:0 22px 0 28px; display:flex; align-items:center; justify-content:space-between; font:600 14px/1 "Instrument Sans",sans-serif; position:relative; }
+  .sbar .island { position:absolute; left:50%; top:9px; width:112px; height:28px; margin-left:-56px; border-radius:999px; background:#000; }
+  .safe { height:22px; display:grid; place-items:center; }
+  .safe::after { content:""; width:128px; height:5px; border-radius:999px; background:currentColor; opacity:.35; }
+  .bnav a { display:flex; flex-direction:column; align-items:center; gap:3px; padding-top:7px; font-size:12px; line-height:14px; font-weight:600; color:var(--muted-foreground); }
+  .bnav a .ic { width:56px; height:30px; border-radius:999px; display:grid; place-items:center; }
+  .bnav a.on { color:var(--foreground); }
+  .bnav a.on .ic { background: color-mix(in oklab, var(--app-color) 16%, transparent); color: var(--app-color); }
+  .chip { min-height:48px; border-radius:12px; border:1px solid var(--border); background:var(--card); padding:6px 10px; display:flex; align-items:center; gap:8px; text-align:left; }
+  .chip .l1 { font-size:14px; font-weight:600; line-height:17px; }
+  .chip .l2 { font-size:13px; color:var(--muted-foreground); line-height:16px; font-variant-numeric:tabular-nums; }
+  .step-btn { width:56px; height:56px; border-radius:14px; border:1px solid var(--border); background:var(--card); display:grid; place-items:center; }
+  .reason { height:48px; border-radius:999px; border:1px solid var(--border); background:var(--card); padding:0 14px; font-size:15px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+</style>
+</head>
+<body class="canvas text-foreground font-sans antialiased" data-app="purchase">
+<div class="relative h-[1000px] w-[1320px] overflow-hidden">
+  <div class="absolute left-0 right-0 top-0 flex justify-center gap-[40px] pt-[22px]">
+
+  <!-- ============ (a) TUDO BATE + UM ATO FÍSICO ============ -->
+  <div class="flex flex-col gap-2.5">
+    <p class="op-title px-2">a · Leu a NF: tudo bate, falta contar volumes</p>
+    <div class="device"><div class="screen bg-background flex flex-col" style="width:390px;height:844px">
+      <div class="sbar bg-card"><span>22:03</span><span class="island"></span><span class="flex items-center gap-1.5"><i data-i="signal" class="size-4"></i><i data-i="wifi" class="size-4"></i><i data-i="battery-full" class="size-5"></i></span></div>
+      <header class="h-14 px-2 flex items-center gap-1.5 bg-card border-b border-border">
+        <button class="size-11 rounded-full grid place-items-center"><i data-i="chevron-left" class="size-6"></i></button>
+        <div class="min-w-0 flex-1">
+          <p class="text-[17px] font-semibold leading-tight truncate">Alto Alegre</p>
+          <p class="text-[13px] text-muted-foreground tnum truncate flex items-center gap-1.5"><span class="live-dot !size-1.5"></span>NF 12.884 · lida 22:02</p>
+        </div>
+        <button class="size-11 rounded-full grid place-items-center" title="Mais: + Item, Ressalva geral, Recusar a entrega, Trocar fornecedor"><i data-i="ellipsis-vertical" class="size-5"></i></button>
+      </header>
+
+      <div class="flex-1 min-h-0 overflow-hidden px-4 pt-4 flex flex-col gap-3">
+        <!-- veredito do sistema -->
+        <div class="rounded-2xl border border-success/35 bg-success/8 p-4">
+          <div class="flex items-start gap-3">
+            <span class="size-11 rounded-full bg-success text-white grid place-items-center shrink-0"><i data-i="check-check" class="size-6"></i></span>
+            <div class="min-w-0">
+              <p class="text-[19px] font-semibold leading-snug">Tudo bate com a nota</p>
+              <p class="text-[15px] tnum mt-0.5">7 itens · R$ 2.416,80</p>
+            </div>
+          </div>
+          <ul class="mt-3 text-[14px] leading-[22px] text-foreground/85 space-y-0.5">
+            <li class="flex items-center gap-2"><i data-i="sparkles" class="size-4 text-muted-foreground"></i>Itens reconhecidos pelo de-para</li>
+            <li class="flex items-center gap-2"><i data-i="sparkles" class="size-4 text-muted-foreground"></i>Embalagens conferem com o cadastro</li>
+            <li class="flex items-center gap-2"><i data-i="sparkles" class="size-4 text-muted-foreground"></i>Preços dentro do último pago</li>
+          </ul>
+          <button class="mt-2 h-10 -mx-1 px-1 inline-flex items-center gap-1.5 text-[14px] font-semibold text-primary">Ver os 7 itens<i data-i="chevron-down" class="size-4"></i></button>
+        </div>
+
+        <!-- o único ato físico -->
+        <div class="rounded-2xl border-2 border-primary bg-card p-4">
+          <p class="op-eyebrow text-primary">O que só você vê</p>
+          <p class="text-[18px] font-semibold mt-1">Contei os volumes</p>
+          <p class="text-[13px] text-muted-foreground">A nota diz 9 volumes (caixas, sacos, fardos)</p>
+          <div class="mt-3 flex items-center gap-3">
+            <button class="step-btn"><i data-i="minus" class="size-6"></i></button>
+            <div class="flex-1 h-[64px] rounded-xl bg-success/8 border border-success/40 grid place-items-center">
+              <p class="tnum leading-none flex items-baseline gap-1.5"><span class="text-[34px] font-semibold">9</span><span class="text-[17px] text-muted-foreground font-medium">de 9</span><i data-i="circle-check" class="size-5 text-success self-center ml-1"></i></p>
+            </div>
+            <button class="step-btn"><i data-i="plus" class="size-6"></i></button>
+          </div>
+          <button class="mt-3 h-12 w-full rounded-xl border border-border bg-background inline-flex items-center justify-center gap-2 text-[15px] font-semibold"><i data-i="scan-barcode" class="size-5"></i>Bipar cada volume</button>
+        </div>
+
+        <div class="flex-1"></div>
+        <p class="text-[13px] text-muted-foreground flex items-center gap-1.5 px-1 pb-3"><i data-i="calendar-clock" class="size-4"></i>Depois: só a validade de 3 perecíveis</p>
+      </div>
+
+      <div class="px-3 pt-2.5 pb-2 bg-card border-t border-border shadow-[0_-6px_14px_rgb(0_0_0/.06)]">
+        <button class="h-14 w-full rounded-xl bg-primary text-primary-foreground inline-flex items-center justify-center gap-2 text-[17px] font-semibold"><i data-i="check" class="size-5"></i>Contei 9 volumes</button>
+        <button class="mt-1 h-11 w-full inline-flex items-center justify-center gap-1.5 text-[14px] font-semibold text-foreground/80"><i data-i="circle-alert" class="size-4"></i>Algo não bate</button>
+      </div>
+      <nav class="bnav bg-card border-t border-border">
+        <div class="grid grid-cols-4 h-16">
+          <a><span class="ic"><i data-i="layout-dashboard" class="size-[22px]"></i></span>Painel</a>
+          <a><span class="ic"><i data-i="shopping-cart" class="size-[22px]"></i></span>Comprar</a>
+          <a class="on"><span class="ic"><i data-i="package-check" class="size-[22px]"></i></span>Receber</a>
+          <a><span class="ic"><i data-i="database" class="size-[22px]"></i></span>Base</a>
+        </div>
+        <div class="safe text-foreground"></div>
+      </nav>
+    </div></div>
+  </div>
+
+  <!-- ============ (b) FALTA SÓ A VALIDADE ============ -->
+  <div class="flex flex-col gap-2.5">
+    <p class="op-title px-2">b · Falta só a validade</p>
+    <div class="device"><div class="screen bg-background flex flex-col" style="width:390px;height:844px">
+      <div class="sbar bg-card"><span>22:04</span><span class="island"></span><span class="flex items-center gap-1.5"><i data-i="signal" class="size-4"></i><i data-i="wifi" class="size-4"></i><i data-i="battery-full" class="size-5"></i></span></div>
+      <header class="h-14 px-2 flex items-center gap-1.5 bg-card">
+        <button class="size-11 rounded-full grid place-items-center"><i data-i="chevron-left" class="size-6"></i></button>
+        <div class="min-w-0 flex-1">
+          <p class="text-[17px] font-semibold leading-tight truncate">Alto Alegre</p>
+          <p class="text-[13px] text-muted-foreground tnum truncate">NF 12.884 · R$ 2.416,80</p>
+        </div>
+        <span class="h-7 px-2 rounded-full pill-success text-[12px] font-semibold inline-flex items-center gap-1 tnum"><i data-i="package-check" class="size-3.5"></i>9 de 9</span>
+        <button class="size-11 rounded-full grid place-items-center"><i data-i="ellipsis-vertical" class="size-5"></i></button>
+      </header>
+      <div class="px-4 pt-1 pb-3 bg-card border-b border-border">
+        <div class="flex items-baseline justify-between"><p class="text-[19px] font-semibold">Falta só a validade</p><p class="text-[15px] font-semibold tnum">2 de 3</p></div>
+        <div class="mt-2 grid grid-cols-3 gap-1.5"><span class="h-2 rounded-full bg-success"></span><span class="h-2 rounded-full bg-success"></span><span class="h-2 rounded-full bg-primary/25"></span></div>
+      </div>
+
+      <div class="flex-1 min-h-0 overflow-hidden px-3 pt-3 flex flex-col gap-2">
+        <!-- aberta -->
+        <div class="rounded-2xl border-2 border-primary bg-card p-3">
+          <div class="flex items-center gap-2.5">
+            <span class="size-9 rounded-full bg-primary/12 text-primary grid place-items-center shrink-0"><i data-i="calendar-clock" class="size-5"></i></span>
+            <div class="min-w-0 flex-1"><p class="text-[16px] font-semibold truncate">Manteiga sem sal</p><p class="text-[13px] text-muted-foreground tnum">4 caixas · 20 kg · vence em quando?</p></div>
+          </div>
+          <div class="mt-3 flex flex-col gap-2">
+            <button class="chip border-primary/50 bg-primary/6"><i data-i="history" class="size-5 text-primary shrink-0"></i><span class="l1 flex-1">Mesma da última entrega</span><span class="l2">12/10 · seg</span></button>
+            <button class="chip"><i data-i="calendar-plus" class="size-5 text-muted-foreground shrink-0"></i><span class="l1 flex-1">Típica: +7 dias</span><span class="l2">10/10 · sáb</span></button>
+            <div class="grid grid-cols-2 gap-2">
+              <button class="chip"><i data-i="scan-text" class="size-5 text-muted-foreground shrink-0"></i><span class="l1">Ler da embalagem</span></button>
+              <button class="chip"><i data-i="calendar" class="size-5 text-muted-foreground shrink-0"></i><span class="l1">Outra data</span></button>
+            </div>
+          </div>
+          <p class="mt-2 text-[13px] text-muted-foreground">Um toque grava e passa para o próximo.</p>
+        </div>
+        <!-- feitas -->
+        <div class="rounded-xl border border-success/30 bg-success/5 px-3 py-1.5 flex items-center gap-3">
+          <i data-i="circle-check-big" class="size-6 text-success shrink-0"></i>
+          <div class="min-w-0 flex-1"><p class="text-[15px] font-semibold truncate">Leite integral</p><p class="text-[13px] text-muted-foreground tnum">Vence 10/10 · típica +7 dias</p></div>
+          <button class="h-11 px-3 rounded-full text-[14px] font-semibold text-primary">Trocar</button>
+        </div>
+        <div class="rounded-xl border border-success/30 bg-success/5 px-3 py-1.5 flex items-center gap-3">
+          <i data-i="circle-check-big" class="size-6 text-success shrink-0"></i>
+          <div class="min-w-0 flex-1"><p class="text-[15px] font-semibold truncate">Ovos</p><p class="text-[13px] text-muted-foreground tnum">Vence 24/10 · lida da bandeja</p></div>
+          <button class="h-11 px-3 rounded-full text-[14px] font-semibold text-primary">Trocar</button>
+        </div>
+        <!-- não perecíveis -->
+        <div class="rounded-xl border border-border bg-card px-3 h-12 flex items-center gap-3">
+          <span class="size-6 rounded-full bg-muted text-muted-foreground grid place-items-center shrink-0"><i data-i="check" class="size-4"></i></span>
+          <p class="min-w-0 flex-1 text-[14px] truncate"><b class="font-semibold">4 sem validade</b> <span class="text-muted-foreground">Farinha, Açúcar, Chocolate…</span></p>
+          <span class="h-6 px-2 rounded-full pill-muted text-[12px] font-semibold inline-flex items-center">ok</span>
+        </div>
+      </div>
+
+      <div class="px-3 pt-2.5 pb-2 bg-card border-t border-border shadow-[0_-6px_14px_rgb(0_0_0/.06)]">
+        <button class="h-14 w-full rounded-xl border-2 border-dashed border-primary/50 bg-background text-foreground inline-flex items-center justify-center gap-2 text-[16px] font-semibold"><i data-i="arrow-up" class="size-5"></i>Confirmar entrada</button>
+        <p class="mt-1.5 flex items-center justify-center gap-1.5 text-[13px] text-muted-foreground"><i data-i="arrow-right" class="size-3.5"></i>Falta a validade de Manteiga sem sal</p>
+      </div>
+      <nav class="bnav bg-card border-t border-border">
+        <div class="grid grid-cols-4 h-16">
+          <a><span class="ic"><i data-i="layout-dashboard" class="size-[22px]"></i></span>Painel</a>
+          <a><span class="ic"><i data-i="shopping-cart" class="size-[22px]"></i></span>Comprar</a>
+          <a class="on"><span class="ic"><i data-i="package-check" class="size-[22px]"></i></span>Receber</a>
+          <a><span class="ic"><i data-i="database" class="size-[22px]"></i></span>Base</a>
+        </div>
+        <div class="safe text-foreground"></div>
+      </nav>
+    </div></div>
+  </div>
+
+  <!-- ============ (c) EXCEÇÃO ============ -->
+  <div class="flex flex-col gap-2.5">
+    <p class="op-title px-2">c · Um item não bate: só ele se resolve</p>
+    <div class="device"><div class="screen bg-background flex flex-col" style="width:390px;height:844px">
+      <div class="sbar bg-card"><span>22:06</span><span class="island"></span><span class="flex items-center gap-1.5"><i data-i="signal" class="size-4"></i><i data-i="wifi" class="size-4"></i><i data-i="battery-full" class="size-5"></i></span></div>
+      <header class="h-14 px-2 flex items-center gap-1.5 bg-card">
+        <button class="size-11 rounded-full grid place-items-center"><i data-i="chevron-left" class="size-6"></i></button>
+        <div class="min-w-0 flex-1">
+          <p class="text-[17px] font-semibold leading-tight truncate">Alto Alegre</p>
+          <p class="text-[13px] text-muted-foreground tnum truncate">NF 12.884 · R$ 2.416,80</p>
+        </div>
+        <span class="h-7 px-2 rounded-full pill-warning text-[12px] font-semibold inline-flex items-center gap-1 tnum"><i data-i="package" class="size-3.5"></i>8 de 9</span>
+        <button class="size-11 rounded-full grid place-items-center"><i data-i="ellipsis-vertical" class="size-5"></i></button>
+      </header>
+      <div class="px-4 pt-1 pb-3 bg-card border-b border-border">
+        <div class="flex items-baseline justify-between"><p class="text-[17px] font-semibold tnum">6 batem · 1 para resolver</p><p class="text-[13px] text-muted-foreground tnum">validade 3 de 3</p></div>
+        <div class="mt-2 h-2 rounded-full bg-muted overflow-hidden flex"><span class="bg-success" style="width:86%"></span><span class="bg-warning" style="width:14%"></span></div>
+      </div>
+
+      <div class="flex-1 min-h-0 overflow-hidden px-3 pt-3 flex flex-col gap-2">
+        <div class="rounded-2xl border-2 border-warning bg-card p-3.5">
+          <div class="flex items-center gap-2.5">
+            <i data-i="triangle-alert" class="size-6 text-warning shrink-0"></i>
+            <div class="min-w-0 flex-1"><p class="text-[17px] font-semibold">Açúcar cristal</p><p class="text-[13px] text-muted-foreground tnum">pacote 5 kg · R$ 6,20/kg</p></div>
+          </div>
+          <div class="mt-3 grid grid-cols-3 rounded-xl border border-border overflow-hidden text-center">
+            <div class="py-2 bg-muted/50"><p class="op-micro text-muted-foreground">Nota</p><p class="text-[19px] font-semibold tnum">30 kg</p><p class="text-[12px] text-muted-foreground tnum">6 pacotes</p></div>
+            <div class="py-2 border-x border-border bg-warning/8"><p class="op-micro text-warning font-semibold">Chegou</p><p class="text-[19px] font-semibold tnum">25 kg</p><p class="text-[12px] text-muted-foreground tnum">5 pacotes</p></div>
+            <div class="py-2 bg-muted/50"><p class="op-micro text-muted-foreground">Diferença</p><p class="text-[19px] font-semibold tnum text-destructive">−5 kg</p><p class="text-[12px] text-muted-foreground tnum">R$ 31,00</p></div>
+          </div>
+          <div class="mt-2.5 flex items-center gap-2">
+            <button class="step-btn !w-12 !h-12"><i data-i="minus" class="size-5"></i></button>
+            <p class="flex-1 text-center text-[15px] font-semibold tnum">5 pacotes contados</p>
+            <button class="step-btn !w-12 !h-12"><i data-i="plus" class="size-5"></i></button>
+          </div>
+          <p class="mt-3 text-[14px] font-semibold">Por quê?</p>
+          <div class="mt-1.5 grid grid-cols-4 gap-1.5" data-focus-target="motivo">
+            <button class="reason !px-0">Faltou</button>
+            <button class="reason !px-0">Avariado</button>
+            <button class="reason !px-0">Trocado</button>
+            <button class="reason !px-0">Outro</button>
+          </div>
+          <p class="mt-2.5 text-[13px] text-muted-foreground flex items-start gap-1.5"><i data-i="send" class="size-4 shrink-0 mt-0.5"></i>Entra 25 kg. A diferença vira cobrança ao fornecedor e o comprador é avisado.</p>
+        </div>
+
+        <button class="rounded-xl border border-success/30 bg-success/5 px-3 py-2.5 flex items-center gap-3 text-left">
+          <i data-i="circle-check-big" class="size-6 text-success shrink-0"></i>
+          <span class="min-w-0 flex-1"><span class="block text-[15px] font-semibold">6 itens batem com a nota</span><span class="block text-[13px] text-muted-foreground truncate">Manteiga, Leite, Ovos com validade · Farinha T65…</span></span>
+          <i data-i="chevron-down" class="size-5 text-muted-foreground"></i>
+        </button>
+        <button class="h-12 rounded-xl border border-border bg-card inline-flex items-center justify-center gap-2 text-[14px] font-semibold text-destructive"><i data-i="undo-2" class="size-4"></i>Devolver só este item</button>
+        <div class="flex-1"></div>
+      </div>
+
+      <div class="px-3 pt-2.5 pb-2 bg-card border-t border-border shadow-[0_-6px_14px_rgb(0_0_0/.06)]">
+        <button class="h-14 w-full rounded-xl border-2 border-dashed border-warning/60 bg-background text-foreground inline-flex items-center justify-center gap-2 text-[16px] font-semibold"><i data-i="arrow-up" class="size-5"></i>Confirmar entrada</button>
+        <p class="mt-1.5 flex items-center justify-center gap-1.5 text-[13px] text-muted-foreground"><i data-i="arrow-right" class="size-3.5"></i>Escolha o motivo da diferença no Açúcar</p>
+      </div>
+      <nav class="bnav bg-card border-t border-border">
+        <div class="grid grid-cols-4 h-16">
+          <a><span class="ic"><i data-i="layout-dashboard" class="size-[22px]"></i></span>Painel</a>
+          <a><span class="ic"><i data-i="shopping-cart" class="size-[22px]"></i></span>Comprar</a>
+          <a class="on"><span class="ic"><i data-i="package-check" class="size-[22px]"></i></span>Receber</a>
+          <a><span class="ic"><i data-i="database" class="size-[22px]"></i></span>Base</a>
+        </div>
+        <div class="safe text-foreground"></div>
+      </nav>
+    </div></div>
+  </div>
+  </div>
+
+  <span class="pin" style="left:42px;top:150px">1</span>
+  <span class="pin" style="left:16px;top:420px">2</span>
+  <span class="pin" style="left:42px;top:770px">3</span>
+  <span class="pin" style="left:458px;top:170px">4</span>
+  <span class="pin" style="left:458px;top:330px">5</span>
+  <span class="pin" style="left:476px;top:770px">6</span>
+  <span class="pin" style="left:912px;top:270px">7</span>
+  <span class="pin" style="left:912px;top:690px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Compras · Doca · v4 <span>CONFERÊNCIA por exceção (L4, §4.2, guarda de recebimento §5.1): o que bate entra com um ato físico; a validade é incontornável e ultra rápida</span></p>
+  <div><b>1</b>O sistema diz o que já sabe: de-para, embalagem e preço conferidos (marca "o sistema fez"). Os 7 itens ficam recolhidos; a nota que bate não pede 7 "ok" (C10, C13).</div>
+  <div><b>2</b>O único ato físico: contar os volumes (stepper, 9 de 9) ou bipar cada volume pela câmera. É o fato que só o recebedor vê.</div>
+  <div><b>3</b>Ação no polegar diz o fato ("Contei 9 volumes"). "Algo não bate" abre a exceção. Recusar a entrega, Ressalva geral e + Item continuam no ⋯.</div>
+  <div><b>4</b>"Falta só a validade": uma linha por perecível, uma aberta por vez, progresso 2 de 3. Nada mais é pedido (C11).</div>
+  <div><b>5</b>Atalhos de um toque: mesma da última entrega, validade típica do item, ler da embalagem (câmera lê data e lote, GS1 quando houver) e outra data. Feitos viram linha verde com "Trocar".</div>
+  <div><b>6</b>Selo que aponta: "Confirmar entrada" nunca fica morto; com pendência leva ao campo que falta (C14). Não perecíveis já aparecem "ok".</div>
+  <div><b>7</b>Exceção: a contagem de volumes (8 de 9) puxa o item que não bate. Nota × chegou × diferença lado a lado, motivo de lista curta (Faltou, Avariado, Trocado, Outro), consequência escrita (C10, C12).</div>
+  <div><b>8</b>Recusa parcial ("Devolver só este item", C16) sem desmontar o rascunho. O rascunho mora no servidor (L7): recarregar não perde a conferência.</div>
+</div>
+</body></html>

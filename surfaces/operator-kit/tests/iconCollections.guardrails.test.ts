@@ -3,7 +3,10 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import {
+  DEPLOYED_OPERATOR_SURFACES,
+  OPERATOR_SURFACES,
+} from "./support/surfaceRegistry";
 
 // Todo ícone dos apps de operador sai do BUNDLE do cliente, nunca da rede no meio do
 // gesto. Irmã de `surfaces/storefront-nuxt/tests/iconCollections.test.ts` (#1311).
@@ -37,9 +40,12 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 const kitDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const surfacesDir = resolve(kitDir, "..");
 const require = createRequire(import.meta.url);
-const iconifyPrefixes = new Set(Object.keys(require("@iconify/collections/collections.json")));
+const iconifyPrefixes = new Set(
+  Object.keys(require("@iconify/collections/collections.json")),
+);
 
-const ICON_LITERAL = /["'`]([a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9]+(?:-[a-z0-9]+)*)["'`]/g;
+const ICON_LITERAL =
+  /["'`]([a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9]+(?:-[a-z0-9]+)*)["'`]/g;
 
 function installedCollections(dir: string): Set<string> {
   const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
@@ -52,11 +58,13 @@ function installedCollections(dir: string): Set<string> {
 
 function sourceFiles(root: string, dir: string): string[] {
   if (!existsSync(join(root, dir))) return [];
-  return readdirSync(join(root, dir), { withFileTypes: true }).flatMap((entry) => {
-    const path = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) return sourceFiles(root, path);
-    return /\.(vue|ts)$/.test(entry.name) ? [path] : [];
-  });
+  return readdirSync(join(root, dir), { withFileTypes: true }).flatMap(
+    (entry) => {
+      const path = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) return sourceFiles(root, path);
+      return /\.(vue|ts)$/.test(entry.name) ? [path] : [];
+    },
+  );
 }
 
 /** Ícones citados no código que vai para o navegador, por prefixo de coleção. */
@@ -74,10 +82,16 @@ function iconNames(root: string, dirs: string[]): Map<string, string[]> {
   return byPrefix;
 }
 
-function missing(used: Map<string, string[]>, installed: Set<string>): string[] {
+function missing(
+  used: Map<string, string[]>,
+  installed: Set<string>,
+): string[] {
   return [...used]
     .filter(([prefix]) => !installed.has(prefix))
-    .map(([prefix, icons]) => `@iconify-json/${prefix}: ${icons.slice(0, 3).join(", ")}`);
+    .map(
+      ([prefix, icons]) =>
+        `@iconify-json/${prefix}: ${icons.slice(0, 3).join(", ")}`,
+    );
 }
 
 const kitInstalled = installedCollections(kitDir);
@@ -86,10 +100,17 @@ const kitIcons = iconNames(kitDir, ["app", "runtime"]);
 describe("coleções de ícones dos apps de operador", () => {
   it("acha os ícones da layer e de cada app (a varredura não está cega)", () => {
     expect(kitIcons.get("lucide")?.length).toBeGreaterThan(20);
-    expect(kitIcons.get("line-md")?.some((icon) => icon.startsWith("line-md:loading-loop"))).toBe(true);
+    expect(
+      kitIcons
+        .get("line-md")
+        ?.some((icon) => icon.startsWith("line-md:loading-loop")),
+    ).toBe(true);
     expect(OPERATOR_SURFACES.length).toBeGreaterThanOrEqual(8);
-    for (const app of OPERATOR_SURFACES) {
-      expect(iconNames(join(surfacesDir, app), ["app"]).get("lucide")?.length, app).toBeGreaterThan(0);
+    for (const app of DEPLOYED_OPERATOR_SURFACES) {
+      expect(
+        iconNames(join(surfacesDir, app), ["app"]).get("lucide")?.length,
+        app,
+      ).toBeGreaterThan(0);
     }
   });
 
@@ -97,9 +118,15 @@ describe("coleções de ícones dos apps de operador", () => {
     expect(missing(kitIcons, kitInstalled)).toEqual([]);
   });
 
-  it.each(OPERATOR_SURFACES)("%s: todo prefixo usado tem a coleção instalada no app ou na layer", (app) => {
-    const appDir = join(surfacesDir, app);
-    const installed = new Set([...kitInstalled, ...installedCollections(appDir)]);
-    expect(missing(iconNames(appDir, ["app"]), installed)).toEqual([]);
-  });
+  it.each(OPERATOR_SURFACES)(
+    "%s: todo prefixo usado tem a coleção instalada no app ou na layer",
+    (app) => {
+      const appDir = join(surfacesDir, app);
+      const installed = new Set([
+        ...kitInstalled,
+        ...installedCollections(appDir),
+      ]);
+      expect(missing(iconNames(appDir, ["app"]), installed)).toEqual([]);
+    },
+  );
 });

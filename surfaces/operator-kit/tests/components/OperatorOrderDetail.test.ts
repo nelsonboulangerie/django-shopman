@@ -178,10 +178,10 @@ describe("OperatorOrderDetail", () => {
         ],
       }),
     });
-    const rows = wrapper.findAll("[data-order-timeline] li");
-    expect(rows).toHaveLength(2);
-    expect(rows[1]!.text()).toContain("08:05 · Maria");
-    expect(rows[1]!.find("span").classes()).toContain("bg-primary");
+    const timeline = wrapper.get("[data-order-timeline]");
+    expect(timeline.text()).toContain("Pedido criado");
+    expect(timeline.text()).toContain("Cliente pediu sem açúcar");
+    expect(timeline.text()).toContain("08:05 · Maria");
   });
 
   it("comentar só aparece quando o servidor oferece a ação neste contexto", async () => {
@@ -206,6 +206,33 @@ describe("OperatorOrderDetail", () => {
     await wrapper.setProps({ comment: "outra", busy: true });
     expect(wrapper.get("[data-order-comment-submit]").attributes("disabled")).toBeDefined();
     expect(wrapper.emitted("comment")).toHaveLength(1);
+  });
+
+  it("layout split (G14, o Gestor): duas colunas, Cliente e Linha do tempo à direita; o padrão continua coluna única (o PDV)", async () => {
+    const stack = await mount({ order: order() });
+    expect(stack.get("[data-order-detail]").attributes("data-order-layout")).toBe("stack");
+    expect(stack.find("[data-customer-card]").exists()).toBe(false);
+    expect(stack.get("[data-order-timeline] h2").text()).toBe("Histórico");
+    stack.unmount();
+
+    const split = await mount(
+      { order: order({ channel_name: "Loja online", opened_line: "aberto às 09:51" }), layout: "split" },
+      { actions: () => h("div", { "data-slot-actions": "" }, "estado") },
+    );
+    expect(split.get("[data-order-meta]").text()).toContain("Loja online");
+    expect(split.get("[data-order-meta]").text()).toContain("ORD-1");
+    expect(split.get("[data-order-meta]").text()).toContain("aberto às 09:51");
+    expect(split.get("[data-customer-card]").text()).toContain("Ana");
+    expect(split.get("[data-customer-card] [data-contact-whatsapp]").attributes("aria-label")).toBe("WhatsApp do cliente");
+    expect(split.get("[data-order-timeline] h2").text()).toBe("Linha do tempo");
+    expect(split.get("[data-order-total]").text()).toBe("R$ 42,00");
+    expect(split.get("[data-slot-actions]").text()).toBe("estado");
+  });
+
+  it("decisionOnly (fora da loja, G18): sem fiscal nem comentar", async () => {
+    const w = await mount({ order: order({ fiscal_status_label: "NFC-e autorizada" }), decisionOnly: true });
+    expect(w.find("[data-order-fiscal]").exists()).toBe(false);
+    expect(w.find("[data-order-comment]").exists()).toBe(false);
   });
 
   it("presente sem destinatário vira instrução de embalar", async () => {

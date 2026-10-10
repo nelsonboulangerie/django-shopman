@@ -55,13 +55,13 @@ _CACHE_KEY = "shopman:operator_capacity:{service}"
 
 #: Nome que o gestor reconhece. Serviço fora da lista aparece pelo próprio nome.
 SERVICE_LABELS: dict[str, str] = {
-    "operator-floor": "Apps do chão de loja (PDV, Cozinha, Pedidos, Produção, Shopman Apps)",
+    "operator-floor": "Apps do chão de loja (PDV, Cozinha, Pedidos, Produção, Central)",
     "operator-office": "Apps do escritório (Marketing, B.I., Compras)",
     "pos": "PDV",
     "kds": "Cozinha",
     "orders": "Pedidos",
     "production": "Produção",
-    "hub": "Shopman Apps",
+    "hub": "Central",
     "marketing": "Marketing",
     "bi": "B.I.",
     "purchase": "Compras",
@@ -207,7 +207,7 @@ def _raise_alert(
     minutes = max(minutes, policy.sustain_minutes)
     message = (
         f"{service_label(sample.service)}: acima de {policy.critical_percent}% da capacidade "
-        f"há {minutes} min — memória {_format_percent(sample.memory_percent)}, "
+        f"há {minutes} min: memória {_format_percent(sample.memory_percent)}, "
         f"CPU {_format_percent(sample.cpu_percent)}. As telas podem ficar lentas ou travar "
         "no movimento. Se não baixar, aumente o tamanho do serviço na DigitalOcean ou "
         "confira se algum app ficou preso."

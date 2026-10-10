@@ -64,6 +64,63 @@ jobs:
           python -m pip install --quiet pyyaml
           python scripts/check_surface_registry.py
 
+      - name: Gate de componentes canônicos do operador
+        run: python scripts/check_operator_component_ledger.py
+
+      - name: Gate de atalhos globais do operador
+        run: python scripts/check_operator_shortcuts.py
+
+      - name: Gate de layouts e tokens do operador
+        run: python scripts/check_operator_layout_guardrails.py
+
+      # O tema compartilhado do kit (app.config.ts + CSS de tokens) é herdado por
+      # extends; mexer nele reapinta as baselines visuais das apps consumidoras. O
+      # contrato registra o fingerprint aceito e o gate reprova quando o tema muda
+      # sem que as baselines afetadas sejam regeradas no MESMO PR, com aceite do
+      # dono. Baseline não se regenera cego — ver o relatório de saúde do Marketing.
+      - name: Gate do tema compartilhado x baselines consumidoras
+        run: python scripts/check_theme_baseline_contract.py
+
+  # Supply chain: o `npm audit` das superfícies Nuxt vive aqui, não dentro do job de
+  # um app. Antes, o audit do operator-kit rodava no job "Marketing — cadeia completa"
+  # (o Marketing instala a layer e era o único job macOS com o kit à mão). Efeito
+  # medido: o Marketing ficava vermelho por dívida TRANSITIVA do toolchain Nuxt do kit
+  # — simple-git/node-forge via @nuxt/devtools/listhen — que não é dele. O check de
+  # Marketing deixava de significar Marketing, e um vermelho crônico e alheio é pior
+  # que nenhum check.
+  #
+  # O audit NÃO precisa de `node_modules`: `npm audit` lê o `package-lock.json` e a
+  # API do registry. Por isso este job é checkout + Node + leitura — sem `npm ci`,
+  # sem build e sem macOS. A allowlist versionada (`surfaces/npm-audit-allowlist.json`)
+  # é a única exceção, e cada entrada tem prazo e motivo.
+  supply-chain:
+    name: Supply chain — npm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - operator-kit
+          - marketing-nuxt
+
+    defaults:
+      run:
+        working-directory: surfaces/${{ matrix.app }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Audit ${{ matrix.app }} supply chain
+        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
+
   app-quality:
     name: ${{ matrix.app }}
     runs-on: ubuntu-latest
@@ -83,6 +140,7 @@ jobs:
           - hub-nuxt
           - marketing-nuxt
           - bi-nuxt
+          - kitchensink-nuxt
 
     defaults:
       run:
@@ -131,6 +189,48 @@ jobs:
       - name: Typecheck
         run: npm run typecheck --if-present
 
+      - name: Build do catálogo canônico
+        if: matrix.app == 'operator-kit'
+        run: npm run catalog:build
+
+      - name: Install pinned Chromium for the shared visual runner
+        if: matrix.app == 'operator-kit'
+        run: npx playwright install chromium
+
+      - name: Shared visual runner and geometry scanner
+        if: matrix.app == 'operator-kit'
+        run: npm run test:visual
+
+      - name: Install Chromium for the Kitchen Sink consumer matrix
+        if: matrix.app == 'kitchensink-nuxt'
+        run: npx playwright install chromium
+
+      - name: Kitchen Sink SSR, hydration, accessibility and visual matrix
+        if: matrix.app == 'kitchensink-nuxt'
+        run: npm run test:visual
+
+      # A matriz de geometria do Compras, da Cozinha e do Gestor (scanner do kit: nada
+      # estoura a largura, nenhum alvo de toque pequeno, nenhum foco cortado, nenhum
+      # texto cortado), com backend hermético e o build de produção. Sem baseline de
+      # pixel. Ficava fora de todo job: a régua existia e ninguém a rodava. ~3 min cada.
+      # O Gestor escolhe portas livres sozinho (`playwright.visual.config.ts`).
+      - name: Install Chromium for the app geometry matrix
+        if: matrix.app == 'purchase-nuxt' || matrix.app == 'kds-nuxt' || matrix.app == 'orders-nuxt'
+        run: npx playwright install chromium
+
+      - name: App geometry matrix (Compras, Cozinha, Gestor)
+        if: matrix.app == 'purchase-nuxt' || matrix.app == 'kds-nuxt' || matrix.app == 'orders-nuxt'
+        run: npm run test:visual
+
+      - name: Upload shared operator evidence
+        if: always() && matrix.app == 'operator-kit'
+        uses: actions/upload-artifact@v7
+        with:
+          name: operator-kit-visual-evidence
+          path: surfaces/operator-kit/test-results/operator-evidence
+          if-no-files-found: error
+          retention-days: 14
+
   pwa-quality:
     name: PWA — ${{ matrix.app }}
     runs-on: ubuntu-latest
@@ -158,6 +258,8 @@ jobs:
             surface: purchase-nuxt
           - app: bi
             surface: bi-nuxt
+          - app: kitchensink
+            surface: kitchensink-nuxt
 
     steps:
       - name: Checkout
@@ -203,6 +305,16 @@ jobs:
       - name: Structural PWA gate
         run: node tools/pwa-gate/check.mjs --app=${{ matrix.app }}
 
+      # Carga direta com SSR no build de produção (o mesmo `.output` acima), a 390 e a
+      # 1440 px: nenhum mismatch de hidratação, nenhum erro de página. A matriz visual
+      # do Gestor é client-only e não via a Fila presa no esqueleto (09/10/2026).
+      - name: Orders SSR direct load (celular e mesa)
+        if: matrix.app == 'orders'
+        working-directory: surfaces/orders-nuxt
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:ssr
+
       - name: Storefront PWA browser smoke
         if: matrix.app == 'storefront'
         working-directory: surfaces/storefront-nuxt
@@ -211,9 +323,25 @@ jobs:
       # O deploy usa esta receita genérica, não o workspace já preparado pelo
       # job. Construí-la aqui prova a ordem real de instalação e impede que o
       # postinstall do consumer só falhe depois do merge, ao publicar no DOCR.
+      - name: Log in to GHCR (espelho das imagens da CI)
+        if: matrix.app != 'storefront'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build operator deployment image
         if: matrix.app != 'storefront'
-        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=${{ matrix.surface }} .
+        # Base e frontend vêm do espelho da MESMA imagem oficial no GHCR do
+        # repositório (ci-image-mirror.yml); o pull anônimo cai com 429 no Docker Hub
+        # e no ECR público. O deploy segue no default do ARG.
+        run: >-
+          docker build --file surfaces/Dockerfile.surface
+          --build-arg SURFACE=${{ matrix.surface }}
+          --build-arg NODE_IMAGE=ghcr.io/nelsonboulangerie/ci-mirror/node:22-alpine
+          --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1
+          .
 
   marketing-complete:
     name: Marketing — cadeia completa
@@ -287,13 +415,6 @@ jobs:
 
       - name: Security contracts
         run: npm run test:security
-
-      - name: Audit operator-kit supply chain
-        working-directory: surfaces/operator-kit
-        run: npm audit --audit-level=high
-
-      - name: Audit Marketing supply chain
-        run: npm audit --audit-level=high
 
       - name: Upload browser evidence
         if: always()

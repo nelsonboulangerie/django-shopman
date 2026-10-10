@@ -29,6 +29,29 @@ CODE_PAGE = 3
 ENCODING = "cp860"
 COLUMNS = 48
 
+#: O pulso do solenoide da gaveta vai em unidades de 2 ms, uma por byte.
+_PULSE_UNIT_MS = 2
+_PULSE_MAX_UNITS = 255
+
+
+def drawer_kick(*, pin: int = 0, on_ms: int = 50, off_ms: int = 500) -> bytes:
+    """``ESC p m t1 t2``: os cinco bytes que abrem a gaveta pendurada na impressora.
+
+    O mesmo comando que o agente monta para o chute local
+    (``tools/pos-counter-agent/counter_agent.py::kick_bytes``), aqui composto
+    pelo servidor para o pulso pelo relay (``services/drawer_pulse.py``): o
+    agente recebe bytes prontos e não sabe que é gaveta. ``on_ms``/``off_ms``
+    são milissegundos de verdade (o default 50/500 é ``1B 70 00 19 FA``), e o
+    teto é o de um byte (510 ms), porque segurar o solenoide aquece a bobina.
+    """
+    if pin not in (0, 1):
+        raise ValueError("pino da gaveta deve ser 0 (pino 2) ou 1 (pino 5)")
+
+    def units(value_ms: int) -> int:
+        return max(1, min(_PULSE_MAX_UNITS, int(value_ms) // _PULSE_UNIT_MS))
+
+    return bytes([ESC, ord("p"), pin, units(on_ms), units(off_ms)])
+
 
 def cash_movement_receipt(entry, *, verify_code: str, verify_url: str, reprint: bool = False) -> bytes:
     """Comprovante de movimento de gaveta (sangria, suprimento) a partir da linha do livro.
@@ -203,6 +226,14 @@ def _qr(data: str, *, module: int = 6) -> bytes:
     )
 
 
+LOT_LABEL_PREFIX = "shopman-lote:"
+
+
+def lot_label_payload(output_sku: str) -> str:
+    """O conteúdo do QR da etiqueta de preparo (lido pelo Fechamento)."""
+    return f"{LOT_LABEL_PREFIX}{output_sku}"
+
+
 def production_label_run(
     document: dict,
     *,
@@ -269,6 +300,11 @@ def production_label_run(
             annotation = str(ingredient.get("annotation") or "")
             if annotation:
                 out += _line(f"  {annotation}")
+        if mode == "explicit" and ticket.get("output_sku"):
+            # O QR do lote: o Fechamento lê ("Ler etiqueta do lote") e abre o
+            # Finalizar deste produto. Só na etiqueta de preparo; a cega não pode
+            # carregar o SKU do que se pesa.
+            out += _qr(lot_label_payload(str(ticket["output_sku"])), module=4)
         out += bytes([ESC, ord("d"), 3])
         if cut_mode == "partial":
             out += bytes([GS, ord("V"), 1])
@@ -473,7 +509,14 @@ def _headline_name(name: str, width: int) -> str:
     return label[:width]
 
 
-def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint: bool = False) -> bytes:
+def order_ticket(
+    order,
+    *,
+    shop_name: str = "",
+    tracking_url: str = "",
+    reprint: bool = False,
+    volume: tuple[int, int] | None = None,
+) -> bytes:
     """Ficha do pedido REMOTO — o papel que vai para o painel físico.
 
     Irmã do :func:`sale_receipt`, e o parentesco para aí: o recibo é a projeção
@@ -500,6 +543,12 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
     ``tracking_url`` é o acompanhamento do pedido na loja — e, no pedido de
     link em aberto, é a MESMA página onde se paga. Vazio quando o deployment
     não configurou a base da loja: o papel sai sem QR em vez de com um QR mudo.
+
+    ``volume`` = ``(k, n)``: esta é a via do volume ``k`` de ``n`` (o pedido sai
+    em mais de uma sacola ou caixa, declarado por quem embalou em
+    ``Order.data["volumes"]``). O papel diz "Volume k de N" no bloco de longe,
+    para cada sacola levar a sua e ninguém entregar o pedido pela metade. Quem
+    gera as N vias é ``order_ticket.ticket_bytes``.
     """
     from shopman.utils.monetary import format_money
 
@@ -551,6 +600,8 @@ def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint:
         # Sem nome, o número do iFood ocupa a posição do nome (decisão do dono):
         # identifica o pedido para a casa sem revelar ninguém.
         out += _double(f"iFood #{display_id}" if display_id else f"Pedido {order.ref}")
+    if volume is not None:
+        out += _double(f"Volume {volume[0]} de {volume[1]}")
     out += _line("")
     out += _rule()
 
@@ -847,7 +898,7 @@ def courier_ticket(order, *, shop_name: str = "", reprint: bool = False) -> byte
     out += _centered((shop_name or "NELSON BOULANGERIE").upper())
     # O nome da via no alto, e não só no rodapé de quem programou: duas pessoas
     # segurando papéis diferentes precisam saber qual é qual antes de comparar.
-    out += _centered("Via do entregador — Identificada" if identificada else "Via do entregador — Anônima")
+    out += _centered("Via do entregador (identificada)" if identificada else "Via do entregador (anônima)")
     if reprint:
         # Mesma regra do recibo e da ficha: sem a marca, dois papéis idênticos
         # circulam e a segunda via passa por original — aqui, duas pessoas

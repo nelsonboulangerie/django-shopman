@@ -331,7 +331,7 @@ def test_dia_fechado_recusa(vitrine):
     order = _encomenda("RS-FECH", 3)
     with pytest.raises(RescheduleRefused) as exc:
         reschedule(order, date=_day(5).isoformat(), slot="", actor="pos:marina")
-    assert exc.value.message == "Fechado: Feriado — escolha outra data."
+    assert exc.value.message == "Fechado: Feriado. Escolha outra data."
 
 
 def test_data_invalida_recusa(vitrine):

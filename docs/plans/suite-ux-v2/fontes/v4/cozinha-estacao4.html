@@ -1,0 +1,193 @@
+<!doctype html><html lang="pt-BR" class="dark"><head><meta charset="utf-8"><meta name="viewport-size" content="1260x900">
+<style>
+  .pill { height:24px; padding:0 8px; border-radius:999px; display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; white-space:nowrap; }
+  .pill .d { width:6px; height:6px; border-radius:99px; background:currentColor; }
+  .it { display:flex; gap:10px; padding:6px 0; font-size:17px; line-height:22px; font-weight:600; }
+  .it .q { width:30px; flex:none; font-variant-numeric: tabular-nums; }
+  .stripes { background: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklab, var(--destructive) 9%, transparent) 7px 14px); }
+  .tk { border-radius:12px; border:1px solid var(--border); background:var(--card); padding:12px 14px; display:flex; flex-direction:column; gap:6px; min-height:0; }
+  .code { font-size:30px; line-height:32px; font-weight:700; font-variant-numeric: tabular-nums; }
+  .tm { height:36px; padding:0 10px; border-radius:8px; display:inline-flex; align-items:center; gap:6px; font-size:18px; font-weight:700; font-variant-numeric: tabular-nums; }
+</style></head>
+<body class="font-sans antialiased" data-app="kds" style="background:#e9dfd6">
+<div class="h-[900px] relative grid place-items-center">
+<div class="device tablet"><div class="screen" style="width:1180px;height:820px"><div class="flex h-full bg-background text-foreground">
+
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Cozinha" icon="chef-hat"}}
+    <a class="rail-item"><i data-i="layout-grid"></i>Estações</a>
+    <a class="rail-item on"><i data-i="flame"></i>Preparo<span class="badge">12</span></a>
+    <a class="rail-item"><i data-i="package-check"></i>Saída<span class="badge">5</span></a>
+    <a class="rail-item"><i data-i="monitor"></i>Painel de retirada</a>
+    <div class="flex-1"></div>
+    <a class="rail-item"><i data-i="bell"></i>Avisos<span class="badge">1</span></a>
+    <a class="rail-item"><i data-i="settings-2"></i>Ajustes</a>
+    <a class="rail-item"><i data-i="lock"></i>Bloquear</a>
+    <div class="size-10 my-1 rounded-full bg-rail-foreground/15 grid place-items-center text-[13px] font-semibold text-rail-foreground">FO</div>
+  </aside>
+
+  <main class="flex-1 flex flex-col min-w-0">
+    <header class="h-16 shrink-0 px-4 flex items-center gap-3 border-b border-border bg-card">
+      <div class="flex flex-col leading-none gap-1">
+        <span class="op-eyebrow text-muted-foreground">Estação Forno · este dispositivo</span>
+        <span class="flex items-center gap-2.5"><h1 class="op-display !text-[22px] leading-none">Preparo</h1><span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum"><span class="live-dot"></span>22:03</span></span>
+      </div>
+      <div class="w-3"></div>
+      <label class="h-12 w-[19rem] px-3.5 rounded-md border border-input bg-background inline-flex items-center gap-2.5">
+        <i data-i="search" class="size-5 text-muted-foreground"></i>
+        <span class="flex-1 op-body text-muted-foreground truncate">Código, cliente ou item</span>
+      </label>
+      <div class="flex-1"></div>
+      <span class="h-12 px-3 rounded-md bg-muted inline-flex items-center gap-2 op-label text-muted-foreground"><i data-i="volume-2" class="size-4.5 text-success"></i>Som da estação</span>
+      <button class="h-12 px-3.5 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label font-semibold relative"><i data-i="rotate-ccw" class="size-4.5 text-muted-foreground"></i>Reabrir<span class="min-w-5 h-5 px-1 rounded-full bg-foreground text-background text-[11px] font-bold grid place-items-center tnum">1</span></button>
+      <span class="text-[1.625rem] font-semibold tnum leading-none pl-1">22:03</span>
+    </header>
+
+    <div class="flex-1 min-h-0 flex flex-col gap-2 px-4 pt-3 pb-3">
+      <!-- linha de avisos: pedido novo (Visto) + cancelamento (Recebi), lado a lado -->
+      <div class="grid grid-cols-[1fr_1.35fr] gap-2 shrink-0">
+        <div class="h-[60px] pl-3 pr-1.5 rounded-lg border border-info/45 bg-info/12 flex items-center gap-3">
+          <span class="size-9 rounded-full bg-info/20 text-info grid place-items-center shrink-0"><i data-i="bell-ring" class="size-5"></i></span>
+          <p class="op-title leading-tight min-w-0">Pedido novo <span class="tnum">U13</span><span class="block op-label font-normal text-muted-foreground">toca nesta estação até alguém dar Visto</span></p>
+          <div class="flex-1"></div>
+          <button class="h-12 px-5 rounded-md bg-foreground text-background inline-flex items-center gap-2 op-title"><i data-i="check" class="size-5"></i>Visto</button>
+        </div>
+        <div class="h-[60px] pl-3 pr-1.5 rounded-lg border border-destructive/45 border-l-4 border-l-destructive bg-destructive/12 flex items-center gap-3">
+          <div class="leading-tight min-w-0">
+            <p class="flex items-center gap-2"><b class="text-[20px] tnum">F22</b><span class="pill pill-destructive"><span class="d"></span>Item cancelado 22:01</span><span class="op-label text-muted-foreground">o resto continua</span></p>
+            <p class="op-label font-semibold line-through decoration-destructive/70 mt-0.5">2× Croissant, 1× Campagne Passas &amp; Castanhas</p>
+          </div>
+          <div class="flex-1"></div>
+          <button class="h-12 px-4 rounded-md border border-destructive/60 text-destructive inline-flex items-center gap-2 op-title"><i data-i="check" class="size-5"></i>Recebi o cancelamento</button>
+        </div>
+      </div>
+
+      <!-- A fazer (agregado de toda a fila, inclusive os +7) -->
+      <div class="h-12 flex items-center gap-2 shrink-0">
+        <span class="op-eyebrow text-muted-foreground inline-flex items-center gap-1.5 w-[86px]"><i data-i="clipboard-list" class="size-4"></i>A fazer</span>
+        <span class="h-11 px-3 rounded-md border border-border bg-card inline-flex items-center gap-2"><b class="text-lg tnum">14×</b><span class="op-body font-medium">Croissant</span></span>
+        <span class="h-11 px-3 rounded-md border border-border bg-card inline-flex items-center gap-2"><b class="text-lg tnum">9×</b><span class="op-body font-medium">Pão de Hambúrguer</span></span>
+        <span class="h-11 px-3 rounded-md border border-border bg-card inline-flex items-center gap-2"><b class="text-lg tnum">6×</b><span class="op-body font-medium">Mini Focaccia Cebola Bacon e Tomilho</span></span>
+        <span class="h-11 px-3 rounded-md border border-border bg-card inline-flex items-center gap-2"><b class="text-lg tnum">4×</b><span class="op-body font-medium">Campagne P&amp;C</span></span>
+      </div>
+
+      <!-- cabeçalho da grade -->
+      <div class="h-11 flex items-center gap-2 shrink-0">
+        <i data-i="arrow-down-wide-narrow" class="size-4 text-muted-foreground"></i>
+        <h2 class="op-eyebrow text-muted-foreground">Mais urgente primeiro</h2>
+        <span class="op-micro text-muted-foreground">· o destacado é o próximo</span>
+        <span class="flex-1"></span>
+        <button class="h-11 px-3.5 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-1.5 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos <span class="tnum text-muted-foreground">12</span></button>
+        <button class="h-11 px-3.5 rounded-full border border-border bg-card inline-flex items-center gap-1.5 op-label"><i data-i="bike" class="size-4"></i>Entrega <span class="tnum text-muted-foreground">3</span></button>
+        <button class="h-11 px-3.5 rounded-full border border-destructive/50 bg-card inline-flex items-center gap-1.5 op-label text-destructive"><i data-i="timer" class="size-4"></i>Atrasados <span class="tnum">2</span></button>
+      </div>
+
+      <!-- grade 3×2: 5 tickets em foco, um de 7 itens em altura dupla -->
+      <div class="flex-1 min-h-0 grid grid-cols-3 grid-rows-2 gap-3">
+        <!-- S84: o próximo, atrasado -->
+        <article class="tk !border-2 !border-destructive !bg-destructive/8 shadow-[0_0_0_4px_color-mix(in_oklab,var(--destructive)_15%,transparent)]">
+          <div class="flex items-start gap-2">
+            <div class="flex-1"><p class="code">S84</p><p class="op-label text-muted-foreground">Retirada</p></div>
+            <div class="flex flex-col items-end gap-1"><span class="tm bg-destructive text-background"><i data-i="timer" class="size-5"></i>12m</span><span class="pill pill-destructive"><span class="d"></span>Próximo · atrasado</span></div>
+          </div>
+          <div class="border-t border-border divide-y divide-border">
+            <div class="it"><span class="q">3×</span>Pão de Hambúrguer</div>
+            <div class="it"><span class="q">3×</span>Mini Focaccia Cebola Bacon e Tomilho</div>
+          </div>
+          <div class="flex-1"></div>
+          <button class="h-14 shrink-0 rounded-lg act-0 inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold"><i data-i="play" class="size-5"></i>Iniciar preparo</button>
+        </article>
+
+        <!-- B52: encomenda grande, altura dupla -->
+        <article class="tk row-span-2">
+          <div class="flex items-start gap-2">
+            <div class="flex-1"><p class="code">B52</p><p class="op-label text-muted-foreground">Encomenda · Café Parisiense</p></div>
+            <div class="flex flex-col items-end gap-1"><span class="tm border border-border"><i data-i="timer" class="size-5 text-muted-foreground"></i>7m</span><span class="pill pill-primary"><span class="d"></span>Em preparo</span></div>
+          </div>
+          <p class="op-micro text-muted-foreground inline-flex items-center gap-1.5"><i data-i="user" class="size-3.5"></i>iniciado por Rafael às 21:56 · retira às 22:30</p>
+          <div class="border-t border-border divide-y divide-border">
+            <div class="it"><span class="q">8×</span>Croissant</div>
+            <div class="it"><span class="q">4×</span>Pão de Hambúrguer</div>
+            <div class="it"><span class="q">3×</span><span>Mini Focaccia Cebola Bacon e Tomilho<span class="block mt-1 w-fit h-7 px-2.5 rounded-md bg-warning/15 text-warning text-[13px] font-semibold inline-flex items-center gap-1.5"><i data-i="message-square-warning" class="size-4"></i>Obs.: uma sem bacon (vegetariana)</span></span></div>
+            <div class="it"><span class="q">2×</span>Campagne Passas &amp; Castanhas</div>
+            <div class="it"><span class="q">2×</span>Pain au Chocolat</div>
+            <div class="it"><span class="q">2×</span>Brioche</div>
+            <div class="it"><span class="q">1×</span>Baguette de Tradition</div>
+          </div>
+          <div class="flex-1"></div>
+          <p class="op-micro text-muted-foreground text-center">7 itens: ocupa duas alturas em vez de cortar a lista</p>
+          <button class="h-14 shrink-0 rounded-lg bg-success text-background inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold"><i data-i="circle-check" class="size-5"></i>Finalizar preparo</button>
+        </article>
+
+        <!-- U13: novo -->
+        <article class="tk">
+          <div class="flex items-start gap-2">
+            <div class="flex-1"><p class="code">U13</p><p class="op-label text-muted-foreground">Retirada</p></div>
+            <div class="flex flex-col items-end gap-1"><span class="tm border border-warning/60 text-warning"><i data-i="timer" class="size-5"></i>8m</span><span class="pill pill-info"><span class="d"></span>Novo</span></div>
+          </div>
+          <div class="border-t border-border divide-y divide-border">
+            <div class="it"><span class="q">2×</span>Campagne Passas &amp; Castanhas</div>
+            <div class="it"><span class="q">2×</span>Croissant</div>
+          </div>
+          <div class="flex-1"></div>
+          <button class="h-14 shrink-0 rounded-lg border-2 border-foreground/80 inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold"><i data-i="play" class="size-5"></i>Iniciar preparo</button>
+        </article>
+
+        <!-- X36: em preparo -->
+        <article class="tk !border-primary/50">
+          <div class="flex items-start gap-2">
+            <div class="flex-1"><p class="code">X36</p><p class="op-label text-muted-foreground">Entrega</p></div>
+            <div class="flex flex-col items-end gap-1"><span class="tm border border-border"><i data-i="timer" class="size-5 text-muted-foreground"></i>4m</span><span class="pill pill-primary"><span class="d"></span>Em preparo</span></div>
+          </div>
+          <div class="border-t border-border divide-y divide-border">
+            <div class="it"><span class="q">2×</span><span>Pão de Hambúrguer <span class="text-warning text-[14px]">· sem gergelim</span></span></div>
+            <div class="it"><span class="q">1×</span>Croissant</div>
+          </div>
+          <div class="flex-1"></div>
+          <button class="h-14 shrink-0 rounded-lg bg-success text-background inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold"><i data-i="circle-check" class="size-5"></i>Finalizar preparo</button>
+        </article>
+
+        <!-- F15: bloqueio de pagamento no card, antes do toque -->
+        <article class="tk !border-destructive/50">
+          <div class="flex items-start gap-2">
+            <div class="flex-1"><p class="code">F15</p><p class="op-label text-muted-foreground">Entrega</p></div>
+            <div class="flex flex-col items-end gap-1"><span class="tm border border-border"><i data-i="timer" class="size-5 text-muted-foreground"></i>3m</span><span class="pill pill-destructive"><span class="d"></span>Bloqueado</span></div>
+          </div>
+          <div class="border-t border-border divide-y divide-border">
+            <div class="it"><span class="q">4×</span>Croissant</div>
+          </div>
+          <div class="rounded-md bg-destructive/12 border border-destructive/30 px-2.5 py-1.5 flex items-start gap-2">
+            <i data-i="lock" class="size-4 text-destructive mt-0.5 shrink-0"></i>
+            <p class="text-[13px] leading-snug"><b class="text-destructive">Pix não confirmado.</b> Pode adiantar; o Finalizar libera quando o pagamento entrar.</p>
+          </div>
+          <div class="flex-1"></div>
+          <button class="h-14 shrink-0 rounded-lg border-2 border-dashed border-border text-muted-foreground inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold stripes"><i data-i="lock" class="size-5"></i>Finalizar preparo</button>
+        </article>
+      </div>
+
+      <div class="h-11 shrink-0 rounded-lg border border-dashed border-border flex items-center justify-center gap-2 op-label text-muted-foreground"><b class="text-foreground text-[16px] tnum">+7 na fila</b> · todos no prazo, já somados em "A fazer" · entram aqui quando um ticket sair</div>
+    </div>
+  </main>
+</div></div></div>
+
+  <span class="pin" style="left:8px;top:200px">1</span>
+  <span class="pin" style="left:292px;top:72px">2</span>
+  <span class="pin" style="left:120px;top:125px">3</span>
+  <span class="pin" style="left:577px;top:100px">4</span>
+  <span class="pin" style="left:120px;top:192px">5</span>
+  <span class="pin" style="left:120px;top:300px">6</span>
+  <span class="pin" style="left:802px;top:440px">7</span>
+  <span class="pin" style="left:1170px;top:640px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Cozinha · Estação no tablet fixo da bancada · v4 <span>FILA do cozinheiro: 4 a 6 tickets em foco (3×2), o resto vira "+N" e "A fazer" (§10.3, L5)</span></p>
+  <div><b>1</b>Rail compacto com a mesma anatomia da Saída. Densidade e som saem do botão: vêm da estação provisionada (Ajustes), não do toque de quem passa.</div>
+  <div><b>2</b>Cabeçalho limpo para quem só faz o hoje: a prévia de outra data foi para Produção/Encomendas (§9). Reabrir (30 min) continua com a contagem.</div>
+  <div><b>3</b>Pedido novo é ACUSAR CIÊNCIA: "Visto" registrado no servidor por estação, então as duas telas do Forno param juntas (K20).</div>
+  <div><b>4</b>Cancelamento por ticket: "Recebi o cancelamento", agora dizendo se o resto do pedido continua (K10). Sem a ciência, o Finalizar de F22 segue travado.</div>
+  <div><b>5</b>A fazer soma a fila inteira, inclusive os 7 que não aparecem: a profundidade vira agregado, nunca card minúsculo.</div>
+  <div><b>6</b>O próximo em destaque, o tempo contra a meta num número só. Card sem canal, telefone nem cliente: código, tempo, itens, observação, um gesto.</div>
+  <div><b>7</b>Encomenda de 7 itens ocupa duas alturas em vez de cortar. Quem iniciou aparece no card (hoje some). Observação destacada, inteira.</div>
+  <div><b>8</b>Bloqueio de pagamento no card antes do toque (hoje é um toast 5 s depois, K11). O excedente é "+7 na fila", sem paginação.</div>
+</div>
+</body></html>

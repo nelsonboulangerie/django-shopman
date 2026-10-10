@@ -102,6 +102,70 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CHECKOUT_WHEN_REQUIRED": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
+    "CONCIERGE_ADD_CONFIRM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_addition.py", "WhatsApp", "Concierge: acrescentar a pedido já feito"),
+    ),
+    "CONCIERGE_ADD_DONE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_addition.py", "WhatsApp", "Concierge: acrescentar a pedido já feito"),
+    ),
+    "CONCIERGE_ADD_REFUSED_NEW": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_addition.py", "WhatsApp", "Concierge: acrescentar a pedido já feito"),
+    ),
+    "CONCIERGE_ADD_REFUSED_TEAM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_addition.py", "WhatsApp", "Concierge: acrescentar a pedido já feito"),
+    ),
+    "CONCIERGE_ALLERGY_ASK_WHICH": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/allergens.py", "WhatsApp", "Concierge: alergia e alérgenos"),
+    ),
+    "CONCIERGE_ALLERGY_PRODUCT_DECLARED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/allergens.py", "WhatsApp", "Concierge: alergia e alérgenos"),
+    ),
+    "CONCIERGE_ALLERGY_PRODUCT_UNDECLARED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/allergens.py", "WhatsApp", "Concierge: alergia e alérgenos"),
+    ),
+    "CONCIERGE_ALLERGY_TEAM_OFFER": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/allergens.py", "WhatsApp", "Concierge: alergia e alérgenos"),
+    ),
+    "CONCIERGE_CANCEL_CONFIRM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
+    "CONCIERGE_CANCEL_DONE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
+    "CONCIERGE_CANCEL_KEPT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
+    "CONCIERGE_DISCOUNT_ABOVE_CAP": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
+    "CONCIERGE_DISCOUNT_ALREADY_GIVEN": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
+    "CONCIERGE_DISCOUNT_COUPON_IN_USE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
+    "CONCIERGE_DISCOUNT_GRANTED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
+    "CONCIERGE_DISCOUNT_NO_CART": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
+    ),
     "CONCIERGE_GREETING": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/prompt.py", "WhatsApp", "Concierge: abertura da conversa"),
@@ -110,12 +174,104 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
     ),
+    "CONCIERGE_IDENTITY": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/house_rules.py", "WhatsApp", "Concierge: regras da casa"),
+    ),
     "CONCIERGE_MEDIA_UNSUPPORTED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
     ),
+    "CONCIERGE_MEMORY_ARRIVED_THANKS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_NEW_AFTER_CLOSED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_ORDER_OR_NEW": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_PRODUCT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_QTY_PRODUCT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_WHAT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ASK_WHICH": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_DECLINED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_ORDER_THANKS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
     "CONCIERGE_NO_PHONE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+    ),
+    "CONCIERGE_PARTS_NOT_FOUND": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_PARTS_OFFER_TEAM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_PARTS_ORDER_WITH_TEAM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_PARTS_REPEAT_ASK": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_PARTS_REPEAT_LEAD": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_PARTS_TEAM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_PARTS_UNCLEAR": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_PRICE_NEGOTIATION": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/house_rules.py", "WhatsApp", "Concierge: regras da casa"),
+    ),
+    "CONCIERGE_SMALL_TALK_FAREWELL": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+    ),
+    "CONCIERGE_SMALL_TALK_HOW_ARE_YOU": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+    ),
+    "CONCIERGE_SMALL_TALK_INTRO": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+    ),
+    "CONCIERGE_SMALL_TALK_OFFER": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+    ),
+    "CONCIERGE_SMALL_TALK_THANKS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
     ),
     "CONCIERGE_TURN_LIMIT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),

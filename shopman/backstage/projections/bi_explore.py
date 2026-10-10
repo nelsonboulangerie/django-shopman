@@ -22,7 +22,7 @@ from decimal import Decimal
 from django.db.models import Q
 from django.utils import timezone
 
-from .bi_production import _normalize_window
+from .bi_production import _normalize_window, _with_started_events, batch_outcome
 
 MAX_ROWS = 60
 
@@ -51,7 +51,7 @@ class MetricSpec:
     #: ⚠️ Isto mora no CONTRATO, e não em duas cabeças, porque a página somava
     #: tudo: o gestor escolhia "1 ano" + "Ticket médio" + "Tempo" e a barra da
     #: semana mostrava ~7× o ticket real — formatada como reais, "R$ 178,50",
-    #: perfeitamente convincente. Rendimento passava de 100%.
+    #: perfeitamente convincente. Aproveitamento passava de 100%.
     #:
     #: `sum` é o default porque a maioria das métricas é aditiva; quem não é
     #: declara aqui, e a UI obedece o que o servidor disse.
@@ -79,8 +79,9 @@ METRICS: dict[str, MetricSpec] = {
                    ("time", "recipe", "oven", "operator", "weekday", "grade", "defect"), "production"),
         MetricSpec("loss", "Perda de produção", "qty",
                    ("time", "recipe", "oven", "operator", "weekday", "defect"), "production"),
-        # Proporção: somar sete dias passaria de 100%.
-        MetricSpec("yield_percent", "Rendimento", "percent",
+        # Aproveitamento do lote: realizado ÷ previsto (UX-PROD-AF). Proporção:
+        # somar sete dias passaria de 100%.
+        MetricSpec("yield_percent", "Aproveitamento", "percent",
                    ("time", "recipe", "oven", "operator", "weekday"), "production",
                    aggregation="mean"),
         MetricSpec("oven_minutes", "Tempo de forno", "minutes",
@@ -729,9 +730,11 @@ def _production_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     from shopman.shop.services import quality as quality_service
 
     wos = list(
-        WorkOrder.objects.filter(
-            target_date__range=(date_from, date_to), status=WorkOrder.Status.FINISHED
-        ).select_related("recipe")
+        _with_started_events(
+            WorkOrder.objects.filter(
+                target_date__range=(date_from, date_to), status=WorkOrder.Status.FINISHED
+            ).select_related("recipe")
+        )
     )
     needs_quality_partition = "grade" in (by, by2) or "defect" in (by, by2)
     catalog_labels = _quality_labels() if needs_quality_partition else {}
@@ -751,8 +754,10 @@ def _production_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
             return str(index), WEEKDAY_LABELS[index]
         return "", ""
 
-    planned: dict[tuple, Decimal] = defaultdict(Decimal)
+    # Base do aproveitamento e da perda: o PREVISTO de cada lote, nunca o planejado.
+    started: dict[tuple, Decimal] = defaultdict(Decimal)
     finished: dict[tuple, Decimal] = defaultdict(Decimal)
+    loss: dict[tuple, Decimal] = defaultdict(Decimal)
     labels: dict[tuple, tuple[str, str]] = {}
 
     if needs_quality_partition:
@@ -786,20 +791,22 @@ def _production_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     for wo in wos:
         parts = [wo_part(by, wo), wo_part(by2, wo) if by2 else ("", "")]
         key = (parts[0][0], parts[1][0])
-        planned[key] += wo.quantity
-        finished[key] += wo.finished or Decimal(0)
+        wo_started, wo_finished, wo_loss = batch_outcome(wo)
+        started[key] += wo_started
+        finished[key] += wo_finished
+        loss[key] += wo_loss
         labels[key] = (parts[0][1], parts[1][1])
 
     def value(key) -> float:
         if spec.key == "qty_produced":
             return float(finished[key])
         if spec.key == "loss":
-            return float(max(Decimal(0), planned[key] - finished[key]))
-        return round(float(finished[key] * 100 / planned[key])) if planned[key] else 0.0
+            return float(loss[key])
+        return round(float(finished[key] * 100 / started[key])) if started[key] else 0.0
 
     return [
         BIExploreRow(key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1], value=value((k1, k2)))
-        for (k1, k2) in planned
+        for (k1, k2) in labels
     ]
 
 

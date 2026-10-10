@@ -34,6 +34,8 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.payment_timeout.PaymentTimeoutHandler",
     # Production
     "shopman.shop.handlers.production_alerts.ProductionLateCheckHandler",
+    # Cozinha (avisos no bolso: pedido novo e atraso)
+    "shopman.shop.handlers.kds_alerts.KDSTicketLateHandler",
     # Campanha (marketing operacional)
     "shopman.shop.handlers.campaign.AnnouncementHandler",
     "shopman.shop.handlers.campaign.AnnouncementNotifyHandler",
@@ -46,6 +48,7 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.fulfillment.FulfillmentCreateHandler",
     "shopman.shop.handlers.fulfillment.FulfillmentUpdateHandler",
     "shopman.shop.handlers.delivery_auto_complete.DeliveryAutoCompleteHandler",
+    "shopman.shop.handlers.handoff_commit.HandoffCommitHandler",
     # Courier (logística externa — no-op sem adapter "courier" resolvido)
     "shopman.shop.handlers.courier_dispatch.CourierDispatchHandler",
     "shopman.shop.handlers.courier_cancel.CourierCancelHandler",
@@ -112,6 +115,7 @@ def register_all() -> None:
     _register_validators()
     _register_stock_signals()
     _register_production_alerts()
+    _register_kds_alerts()
     _register_production_order_sync()
     _register_cancellation_request_signals()
     _register_alert_resolution()
@@ -276,6 +280,9 @@ def _register_fulfillment_handler() -> None:
 def _register_delivery_auto_complete_handler() -> None:
     from shopman.shop.handlers.delivery_auto_complete import DeliveryAutoCompleteHandler
     registry.register_directive_handler(DeliveryAutoCompleteHandler())
+    from shopman.shop.handlers.handoff_commit import HandoffCommitHandler
+
+    registry.register_directive_handler(HandoffCommitHandler())
 
 
 def _register_courier_handlers() -> None:
@@ -372,6 +379,14 @@ def _register_production_alerts() -> None:
     production_alerts.connect()
     registry.register_directive_handler(production_alerts.ProductionLateCheckHandler())
     logger.info("shopman.handlers: connected production alert receivers.")
+
+
+def _register_kds_alerts() -> None:
+    from shopman.shop.handlers import kds_alerts
+
+    kds_alerts.connect()
+    registry.register_directive_handler(kds_alerts.KDSTicketLateHandler())
+    logger.info("shopman.handlers: connected kitchen alert receivers.")
 
 
 def _register_production_order_sync() -> None:

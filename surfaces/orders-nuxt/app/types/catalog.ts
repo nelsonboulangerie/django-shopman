@@ -9,7 +9,13 @@ export type SurfaceKind = "channel" | "display" | "feed";
 
 // Estado de sync por CÉLULA (produto × plataforma) — CatalogSyncState (Arc C).
 // "" = nunca sincronizado / superfície que não projeta (feed de pull).
-export type CellSyncStatus = "synced" | "pending" | "error" | "retracted" | "skipped" | "";
+export type CellSyncStatus =
+  | "synced"
+  | "pending"
+  | "error"
+  | "retracted"
+  | "skipped"
+  | "";
 
 // Atributos PIM sociais da linha (Arc A) — Product.metadata['social'].
 export interface ProductSocial {
@@ -82,6 +88,9 @@ export interface CatalogRowProjection {
   // vínculo de coleção é com uma coleção desativada, e o balde "sem categoria"
   // só recolhe quem não tem vínculo nenhum. Efeito colateral, não escolha.
   hidden_by_inactive_collection: boolean;
+  // Tem vocação (etiqueta de consumo do SKU)? Só o B.I. lê; aqui serve ao
+  // filtro "Vocação" e ao aviso discreto da lista.
+  has_vocation: boolean;
 }
 
 export interface CollectionProjection {
@@ -95,6 +104,20 @@ export interface CatalogMatrixProjection {
   surfaces: SurfaceProjection[];
   rows: CatalogRowProjection[];
   collections: CollectionProjection[];
+  // Produtos à venda sem vocação, da loja inteira (não do recorte de coleção).
+  vocation_pending: VocationPending[];
+}
+
+export interface VocationPending {
+  sku: string;
+  name: string;
+}
+
+/** Uma escolha de vocação: um papel de consumo ativo, editável no Admin. */
+export interface VocationChoice {
+  ref: string;
+  label: string;
+  hint: string;
 }
 
 export interface CatalogMatrixResponse extends ReadMetadata {
@@ -189,6 +212,34 @@ export interface ProductDetailProjection {
   // Selos derivados do SKU — somente leitura. "Permitir compra" é gesto próprio
   // (POST .../purchase/), não campo do rascunho.
   readonly roles?: SkuRoles;
+  /** Vocação do SKU (ref do papel de consumo); "" = sem vocação. Só para o B.I. */
+  vocation: string;
+  readonly vocation_choices: VocationChoice[];
+  /** Onde dá para comprar agora (V4-G4): do registro de faltas, somente leitura. */
+  readonly channel_availability?: ChannelAvailability[];
+  /** "10:40" e "lote de 42 no forno": o próximo lote do SKU hoje (G23). */
+  readonly back_at?: string;
+  readonly back_reason?: string;
+  /** O histórico de alterações do produto no Admin (⋯ do painel). */
+  readonly admin_history_path?: string;
+}
+
+/** Um canal no painel do produto: vende agora, esgotado ou pausado, e desde quando. */
+export interface ChannelAvailability {
+  readonly ref: string;
+  readonly name: string;
+  readonly kind: "sale" | "display";
+  readonly state: "available" | "sold_out" | "paused";
+  /** "09:52" quando indisponível. */
+  readonly since: string;
+  /** O canal recebe a indisponibilidade sozinho (iFood, Meta, Google). */
+  readonly automatic: boolean;
+  /** "10:40": o esgotado volta com o próximo lote (G23); vazio sem lote ou na pausa. */
+  readonly back_at?: string;
+  /** "lote no forno" · "lote programado". */
+  readonly back_hint?: string;
+  /** A segunda linha: o que o cliente vê ali ("'Me avise' ligado, 3 esperando"). */
+  readonly note?: string;
 }
 
 /**
@@ -231,6 +282,7 @@ export type ProductDetailPatch = Partial<
     | "fiscal_origins"
     | "fiscal_warnings"
     | "roles"
+    | "vocation_choices"
     | "gtin_rejected"
     | "social"
     | "fiscal"

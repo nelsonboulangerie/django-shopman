@@ -7,8 +7,8 @@
 // pedido remoto, antes do pagamento... para todos os pedidos da semana, por
 // exemplo. Assim fica fácil de visualizar em um painel físico."
 //
-// Desde 28/09 o lote não tem tela própria: é o botão "Imprimir N vias que
-// faltam" da tela das Encomendas, que imprime do que está VISÍVEL (período +
+// Desde 28/09 o lote não tem tela própria: é o botão "Imprimir a Via Pedido de
+// N encomendas" da tela das Encomendas, que imprime do que está VISÍVEL (período +
 // filtros) só as vias que ainda não saíram (P2 do dono, 02/10). A via que já
 // saiu se reimprime no detalhe da encomenda, uma por vez. Aqui mora
 // só o FORMATO do gesto e a aritmética de datas; quem decide que pedidos entram
@@ -60,7 +60,10 @@ export function ticketCountLabel(count: number): string {
 
 /**
  * O texto do CTA do lote. O número entra no botão porque é o que ninguém quer
- * errar, e o botão diz que são as que FALTAM: as já impressas na tela não vão.
+ * errar, e conta ENCOMENDAS, não vias: "Imprimir 2 vias" se lia como duas cópias
+ * (o dono leu assim em 03/10 e pediu "2ª via"). Não é 2ª via: o lote só leva as
+ * encomendas cuja Via Pedido ainda não saiu, então cada uma sai pela primeira
+ * vez. "2ª via" é o reimprimir do detalhe, uma por vez, e é lá que o nome mora.
  * Zero não é número de botão: com a tela vazia, "Nenhuma via para imprimir";
  * com tudo impresso, a frase diz por que o botão está desligado.
  *
@@ -68,7 +71,7 @@ export function ticketCountLabel(count: number): string {
  */
 export function printCtaLabel(missing: number, shown: number): string {
   if (missing <= 0) return shown > 0 ? "Todas as vias impressas" : "Nenhuma via para imprimir";
-  return missing === 1 ? "Imprimir 1 via que falta" : `Imprimir ${missing} vias que faltam`;
+  return missing === 1 ? "Imprimir a Via Pedido de 1 encomenda" : `Imprimir a Via Pedido de ${missing} encomendas`;
 }
 
 export interface BatchNotice {

@@ -1,0 +1,246 @@
+<!doctype html><html lang="pt-BR" class="dark"><head><meta charset="utf-8"><meta name="viewport-size" content="1320x1000">
+<style>
+  .canvas { background:#e9dfd6; }
+  .canvas .ttl { color:#2b2018; }
+  .sbar { height:40px; padding:0 22px 0 28px; display:flex; align-items:center; justify-content:space-between; font:600 14px/1 "Instrument Sans",sans-serif; position:relative; }
+  .sbar .island { position:absolute; left:50%; top:9px; width:112px; height:28px; margin-left:-56px; border-radius:999px; background:#000; }
+  .safe { height:22px; display:grid; place-items:center; }
+  .safe::after { content:""; width:128px; height:5px; border-radius:999px; background:currentColor; opacity:.35; }
+  .bnav a { display:flex; flex-direction:column; align-items:center; gap:3px; padding-top:7px; font-size:12px; line-height:14px; font-weight:600; color:var(--muted-foreground); position:relative; }
+  .bnav a .ic { width:52px; height:30px; border-radius:999px; display:grid; place-items:center; }
+  .bnav a.on { color:var(--foreground); }
+  .bnav a.on .ic { background: color-mix(in oklab, var(--app-color) 26%, transparent); color: #f0b45a; }
+  .bnav a .b { position:absolute; top:3px; left:50%; margin-left:8px; min-width:17px; height:17px; padding:0 4px; border-radius:999px; background:#f2c46b; color:#3b2a1e; font:700 11px/17px "Instrument Sans",sans-serif; text-align:center; }
+  .seal { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; position:relative; background:var(--app-color); flex:none; }
+  .seal .g { position:absolute; right:-4px; bottom:-4px; width:17px; height:17px; border-radius:999px; background:var(--card); display:grid; place-items:center; box-shadow:0 1px 2px rgb(0 0 0/.25); }
+  .bdg { position:absolute; top:3px; right:3px; min-width:17px; height:17px; padding:0 4px; border-radius:999px; background:#f2c46b; color:#3b2a1e; font:700 11px/17px "Instrument Sans",sans-serif; text-align:center; }
+  .bdg.red { background:var(--destructive); color:#fff; }
+  .key { height:66px; border-radius:14px; background:var(--secondary); display:grid; place-items:center; font-size:26px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .ring-pulse { box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 55%, transparent), 0 0 28px color-mix(in oklab, var(--destructive) 45%, transparent); }
+</style>
+</head>
+<body class="canvas text-foreground font-sans antialiased" data-app="production">
+<div class="relative h-[1000px] w-[1320px] overflow-hidden">
+  <div class="absolute left-0 right-0 top-0 flex justify-center gap-[40px] pt-[22px]">
+
+  <!-- ============ (a) EXPEDIÇÃO ============ -->
+  <div class="flex flex-col gap-2.5">
+    <p class="op-title ttl px-2">a · Expedição: forno e Finalizar no polegar</p>
+    <div class="device"><div class="screen bg-background flex flex-col" style="width:390px;height:844px">
+      <div class="sbar bg-card"><span>06:12</span><span class="island"></span><span class="flex items-center gap-1.5"><i data-i="signal" class="size-4"></i><i data-i="wifi" class="size-4"></i><i data-i="battery-full" class="size-5"></i></span></div>
+      <header class="h-14 px-3 flex items-center gap-1.5 bg-card border-b border-border">
+        <button class="seal mr-1" title="Produção: trocar de app"><i data-i="croissant" class="size-5 text-white"></i><span class="g"><i data-i="layout-grid" class="size-2.5 text-foreground"></i></span></button>
+        <div class="min-w-0 flex-1">
+          <p class="text-[18px] font-semibold leading-tight">Expedição</p>
+          <p class="op-micro text-muted-foreground flex items-center gap-1.5 tnum"><span class="live-dot !size-1.5"></span>06:12 · 6 para finalizar</p>
+        </div>
+        <button class="size-11 rounded-full grid place-items-center relative" title="Timers"><i data-i="alarm-clock" class="size-[22px]"></i><span class="bdg">2</span></button>
+        <button class="size-11 rounded-full grid place-items-center"><i data-i="search" class="size-[22px]"></i></button>
+        <button class="size-11 rounded-full grid place-items-center relative"><i data-i="bell" class="size-[22px]"></i><span class="bdg">6</span></button>
+      </header>
+
+      <div class="px-3 pt-3 flex items-center gap-2">
+        <button class="size-11 rounded-xl border border-border bg-card grid place-items-center"><i data-i="chevron-left" class="size-5"></i></button>
+        <button class="h-11 flex-1 rounded-xl border border-border bg-card inline-flex items-center justify-center gap-2 text-[15px] font-semibold"><i data-i="calendar" class="size-4"></i>Hoje, sáb 03/10</button>
+        <button class="size-11 rounded-xl border border-border bg-card grid place-items-center opacity-40"><i data-i="chevron-right" class="size-5"></i></button>
+        <button class="size-11 rounded-xl border border-border bg-card grid place-items-center" title="Lote avulso"><i data-i="ellipsis-vertical" class="size-5"></i></button>
+      </div>
+      <div class="px-3 pt-2.5">
+        <div class="h-12 p-1 rounded-xl bg-secondary grid grid-cols-2 gap-1">
+          <button class="rounded-lg bg-card shadow-sm text-[15px] font-semibold">Expedição <span class="text-muted-foreground tnum">6</span></button>
+          <button class="rounded-lg text-[15px] text-muted-foreground inline-flex items-center justify-center gap-1.5">Qualidade <span class="h-5 min-w-5 px-1.5 rounded-full bg-[#f2c46b] text-[#3b2a1e] text-[11px] leading-5 font-bold">20</span></button>
+        </div>
+      </div>
+
+      <div class="flex-1 min-h-0 overflow-hidden px-3 pt-2.5 flex flex-col gap-2">
+        <button class="shrink-0 h-11 rounded-xl border border-warning/40 bg-warning/10 text-warning px-3 flex items-center gap-2 text-[14px] font-medium"><i data-i="history" class="size-4"></i>8 lotes abertos de dias anteriores<i data-i="chevron-right" class="size-4 ml-auto"></i></button>
+
+        <!-- rodando -->
+        <div class="shrink-0 rounded-xl border-2 border-primary bg-card p-3">
+          <div class="flex items-baseline gap-2"><p class="text-[16px] font-semibold truncate">Croissant Manteiga</p><span class="op-micro text-muted-foreground font-mono">CRO</span></div>
+          <p class="text-[13px] text-muted-foreground truncate">Forno 2 · produzida às 05:10 · <span class="text-primary">6 comprometidas</span></p>
+          <div class="mt-2.5 flex gap-2">
+            <button class="h-14 flex-1 rounded-xl bg-secondary px-3 flex items-center gap-2"><i data-i="alarm-clock" class="size-5"></i><span class="text-left leading-tight"><b class="block text-[20px] tnum">12:40</b><span class="text-[12px] text-muted-foreground">restante</span></span></button>
+            <button class="h-14 w-[132px] rounded-xl bg-primary text-primary-foreground flex flex-col items-center justify-center leading-tight"><b class="text-[19px] tnum">26 un.</b><span class="text-[11px] font-semibold uppercase tracking-wider opacity-90">Finalizar</span></button>
+          </div>
+        </div>
+        <!-- iniciar -->
+        <div class="shrink-0 rounded-xl border border-border bg-card p-3">
+          <div class="flex items-baseline gap-2"><p class="text-[16px] font-semibold truncate">Pain au Chocolat</p><span class="op-micro text-muted-foreground font-mono">PCHOC</span></div>
+          <p class="text-[13px] text-muted-foreground truncate">Forno 1 · produzida às 05:25</p>
+          <div class="mt-2.5 flex gap-2">
+            <button class="h-14 flex-1 rounded-xl border border-dashed border-border px-3 flex items-center gap-2 text-muted-foreground"><i data-i="alarm-clock" class="size-5"></i><span class="text-[17px] font-semibold">Iniciar timer</span></button>
+            <button class="h-14 w-[132px] rounded-xl border border-border bg-background flex flex-col items-center justify-center leading-tight"><b class="text-[19px] tnum">36 un.</b><span class="text-[11px] font-semibold uppercase tracking-wider text-primary">Finalizar</span></button>
+          </div>
+        </div>
+        <!-- visto -->
+        <div class="shrink-0 rounded-xl border border-border bg-card p-3">
+          <div class="flex items-baseline gap-2"><p class="text-[16px] font-semibold truncate">Baguette de Tradition</p><span class="op-micro text-muted-foreground font-mono">TRADI</span></div>
+          <p class="text-[13px] text-muted-foreground truncate">Lastro · produzida às 04:50</p>
+          <div class="mt-2.5 flex gap-2">
+            <button class="h-14 flex-1 rounded-xl bg-success/12 text-success px-3 flex items-center gap-2"><i data-i="alarm-clock-check" class="size-5"></i><span class="text-[17px] font-semibold">Visto</span><span class="text-[12px] opacity-80 ml-auto">às 05:58</span></button>
+            <button class="h-14 w-[132px] rounded-xl border border-border bg-background flex flex-col items-center justify-center leading-tight"><b class="text-[19px] tnum">28 un.</b><span class="text-[11px] font-semibold uppercase tracking-wider text-primary">Finalizar</span></button>
+          </div>
+        </div>
+        <div class="shrink-0 rounded-xl border border-border bg-card p-3">
+          <div class="flex items-baseline gap-2"><p class="text-[16px] font-semibold truncate">Shokupan</p><span class="op-micro text-muted-foreground font-mono">FORMA</span></div>
+          <p class="text-[13px] text-muted-foreground truncate">ainda não produzida</p>
+        </div>
+      </div>
+
+      <div class="px-3 pt-2 pb-2 bg-background">
+        <button class="h-12 w-full rounded-xl border border-border bg-card inline-flex items-center justify-center gap-2 text-[15px] font-semibold"><i data-i="scan-qr-code" class="size-5"></i>Ler etiqueta do lote</button>
+      </div>
+      <nav class="bnav bg-card border-t border-border">
+        <div class="grid grid-cols-5 h-16">
+          <a><span class="ic"><i data-i="layout-grid" class="size-[22px]"></i></span>Plano</a>
+          <a><span class="ic"><i data-i="scale" class="size-[22px]"></i></span>Preparo</a>
+          <a><span class="ic"><i data-i="flame" class="size-[22px]"></i></span>Produção<span class="b">3</span></a>
+          <a class="on"><span class="ic"><i data-i="package-check" class="size-[22px]"></i></span>Expedição</a>
+          <a><span class="ic"><i data-i="ellipsis" class="size-[22px]"></i></span>Mais</a>
+        </div>
+        <div class="safe text-foreground"></div>
+      </nav>
+    </div></div>
+  </div>
+
+  <!-- ============ (b) FINALIZAR LOTE / QC ============ -->
+  <div class="flex flex-col gap-2.5">
+    <p class="op-title ttl px-2">b · Finalizar lote: teclado grande, uma mão</p>
+    <div class="device"><div class="screen bg-background flex flex-col" style="width:390px;height:844px">
+      <div class="sbar bg-background"><span>06:14</span><span class="island"></span><span class="flex items-center gap-1.5"><i data-i="signal" class="size-4"></i><i data-i="wifi" class="size-4"></i><i data-i="battery-full" class="size-5"></i></span></div>
+      <header class="h-14 px-2 flex items-center gap-1.5">
+        <button class="h-11 px-2.5 rounded-full inline-flex items-center gap-1 text-[15px] font-semibold"><i data-i="chevron-left" class="size-5"></i>Voltar</button>
+        <div class="min-w-0 flex-1 text-center">
+          <p class="text-[16px] font-semibold leading-tight truncate">Croissant Manteiga</p>
+          <p class="text-[12px] text-muted-foreground truncate">CRO · lote #WO-118 · Forno 2</p>
+        </div>
+        <span class="h-9 px-2.5 rounded-lg bg-secondary text-[13px] font-semibold tnum inline-flex items-center">26 produzidos</span>
+      </header>
+
+      <div class="px-4 pt-1 flex flex-col gap-2.5 flex-1 min-h-0">
+        <!-- campo ativo -->
+        <div class="rounded-xl border-2 border-destructive/70 bg-destructive/10 px-4 py-2.5 flex items-end justify-between">
+          <div><p class="op-eyebrow text-destructive">Perda · digitando</p><p class="text-[44px] font-semibold tnum leading-none mt-1">2<span class="inline-block w-[3px] h-9 bg-destructive ml-1 align-middle"></span></p></div>
+          <p class="text-[13px] text-muted-foreground text-right leading-snug">Normal fica com<br><b class="text-foreground text-[15px] tnum">24</b> (saldo automático)</p>
+        </div>
+        <p class="text-[13px] text-muted-foreground -mb-1">Toque num grau ou em Perda. Dois toques usam o saldo.</p>
+        <!-- graus -->
+        <div class="grid grid-cols-4 gap-1.5">
+          <button class="h-[60px] rounded-xl border border-border bg-card relative overflow-hidden text-left pl-3"><span class="absolute left-0 inset-y-0 w-1.5 bg-success"></span><span class="block text-[13px] font-medium">Ótimo</span><b class="text-[18px] tnum">0</b></button>
+          <button class="h-[60px] rounded-xl border border-border bg-card relative overflow-hidden text-left pl-3"><span class="absolute left-0 inset-y-0 w-1.5 bg-info"></span><span class="block text-[13px] font-medium">Normal</span><b class="text-[18px] tnum">24</b></button>
+          <button class="h-[60px] rounded-xl border border-border bg-card relative overflow-hidden text-left pl-3"><span class="absolute left-0 inset-y-0 w-1.5 bg-warning"></span><span class="block text-[13px] font-medium">Razoável</span><b class="text-[18px] tnum">0</b></button>
+          <button class="h-[60px] rounded-xl border border-border bg-card relative overflow-hidden text-left pl-3"><span class="absolute left-0 inset-y-0 w-1.5 bg-destructive/60"></span><span class="block text-[13px] font-medium">Mínimo</span><b class="text-[18px] tnum">0</b></button>
+        </div>
+        <button class="shrink-0 h-[52px] rounded-xl border-2 border-destructive/70 bg-destructive/10 px-4 flex items-center justify-between"><span class="text-[15px] font-semibold">Perda</span><span class="text-[13px] text-muted-foreground">Assou demais</span><b class="text-[18px] tnum">2</b></button>
+        <!-- motivo -->
+        <div>
+          <p class="text-[13px] text-muted-foreground mb-1.5">Motivo da perda <span class="opacity-70">(deslize para ver os 7)</span></p>
+          <div class="flex gap-1.5 overflow-hidden [mask-image:linear-gradient(90deg,#000_80%,transparent)]">
+            <span class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center text-[14px] shrink-0">Assou pouco</span>
+            <span class="h-10 px-3 rounded-full border border-destructive bg-destructive/15 inline-flex items-center gap-1.5 text-[14px] font-semibold shrink-0"><i data-i="check" class="size-4"></i>Assou demais</span>
+            <span class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center text-[14px] shrink-0">Deformado</span>
+            <span class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center text-[14px] shrink-0">Fermentou pouco</span><span class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center text-[14px] shrink-0">Fermentou demais</span><span class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center text-[14px] shrink-0">Marcas de forno</span><span class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center text-[14px] shrink-0">Contaminado</span>
+          </div>
+        </div>
+        <div class="flex-1"></div>
+        <!-- teclado -->
+        <div class="grid grid-cols-3 gap-2">
+          <span class="key">1</span><span class="key">2</span><span class="key">3</span>
+          <span class="key">4</span><span class="key">5</span><span class="key">6</span>
+          <span class="key">7</span><span class="key">8</span><span class="key">9</span>
+          <span class="key !text-[15px] !font-semibold text-muted-foreground">Limpar</span><span class="key">0</span><span class="key"><i data-i="delete" class="size-7"></i></span>
+        </div>
+        <button class="h-14 w-full rounded-xl bg-primary text-primary-foreground inline-flex items-center justify-center gap-2 text-[17px] font-semibold"><i data-i="package-check" class="size-5"></i>Finalizar 26 un.<span class="text-[13px] font-medium opacity-80">(24 boas · 2 perda)</span></button>
+      </div>
+      <div class="safe text-foreground"></div>
+    </div></div>
+  </div>
+
+  <!-- ============ (c) TIMER TOCANDO ============ -->
+  <div class="flex flex-col gap-2.5">
+    <p class="op-title ttl px-2">c · Timer tocando: som, vibração, tela acesa</p>
+    <div class="device"><div class="screen bg-background flex flex-col" style="width:390px;height:844px">
+      <div class="sbar bg-card"><span>06:23</span><span class="island"></span><span class="flex items-center gap-1.5"><i data-i="signal" class="size-4"></i><i data-i="wifi" class="size-4"></i><i data-i="battery-full" class="size-5"></i></span></div>
+      <header class="h-14 px-3 flex items-center gap-1.5 bg-card border-b border-border">
+        <button class="seal mr-1"><i data-i="croissant" class="size-5 text-white"></i><span class="g"><i data-i="layout-grid" class="size-2.5 text-foreground"></i></span></button>
+        <div class="min-w-0 flex-1">
+          <p class="text-[18px] font-semibold leading-tight">Timers</p>
+          <p class="op-micro text-muted-foreground flex items-center gap-1.5 tnum"><span class="live-dot !size-1.5"></span>06:23 · 3 ativos</p>
+        </div>
+        <button class="size-11 rounded-full grid place-items-center relative bg-destructive/20 text-destructive"><i data-i="alarm-clock" class="size-[22px]"></i><span class="bdg red">1</span></button>
+        <button class="size-11 rounded-full grid place-items-center"><i data-i="search" class="size-[22px]"></i></button>
+        <button class="size-11 rounded-full grid place-items-center relative"><i data-i="bell" class="size-[22px]"></i><span class="bdg">6</span></button>
+      </header>
+
+      <div class="flex-1 min-h-0 overflow-hidden px-3 pt-3 flex flex-col gap-3">
+        <!-- alerta tocando -->
+        <div class="shrink-0 rounded-2xl border-2 border-destructive bg-destructive/15 ring-pulse overflow-hidden">
+          <div class="p-4">
+            <div class="flex items-center gap-2 text-destructive"><i data-i="bell-ring" class="size-5"></i><span class="op-eyebrow">Forno 2 · tempo esgotado</span><span class="ml-auto inline-flex items-center gap-1 text-[12px] font-semibold"><i data-i="vibrate" class="size-4"></i>vibrando</span></div>
+            <p class="mt-1.5 text-[24px] font-semibold leading-tight">Croissant pronto</p>
+            <p class="text-[13px] text-muted-foreground">CRO · lote #WO-118 · 18 min</p>
+            <p class="mt-2 text-[52px] font-bold tnum leading-none text-destructive">+1:12</p>
+          </div>
+          <div class="grid grid-cols-[1.6fr_1fr] gap-px bg-destructive/40">
+            <button class="h-16 bg-destructive text-white text-[20px] font-semibold inline-flex items-center justify-center gap-2"><i data-i="check" class="size-6"></i>Visto</button>
+            <button class="h-16 bg-card text-[18px] font-semibold tnum">+5 min</button>
+          </div>
+        </div>
+
+        <div class="flex items-baseline justify-between"><h2 class="op-eyebrow text-muted-foreground">Em andamento</h2><span class="text-[13px] text-muted-foreground">2</span></div>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="rounded-xl border border-border bg-card overflow-hidden">
+            <div class="p-3"><p class="text-[15px] font-semibold truncate">Pain au Chocolat</p><p class="text-[12px] text-muted-foreground">Forno · PCHOC · 16 min</p><p class="mt-2 text-[30px] font-bold tnum leading-none">08:12</p></div>
+            <div class="grid grid-cols-2 gap-px bg-border border-t border-border"><button class="h-12 bg-card text-[14px] font-semibold">+5 min</button><button class="h-12 bg-card text-[14px] text-muted-foreground">Encerrar</button></div>
+          </div>
+          <div class="rounded-xl border border-border bg-card overflow-hidden">
+            <div class="p-3"><p class="text-[15px] font-semibold truncate">Bichon au Citron</p><p class="text-[12px] text-muted-foreground">Forno · BICH · 22 min</p><p class="mt-2 text-[30px] font-bold tnum leading-none">14:30</p></div>
+            <div class="grid grid-cols-2 gap-px bg-border border-t border-border"><button class="h-12 bg-card text-[14px] font-semibold">+5 min</button><button class="h-12 bg-card text-[14px] text-muted-foreground">Encerrar</button></div>
+          </div>
+        </div>
+
+        <div class="flex items-baseline justify-between pt-1"><h2 class="op-eyebrow text-muted-foreground">Disparar</h2></div>
+        <div class="grid grid-cols-3 gap-2">
+          <button class="h-[72px] rounded-xl border border-border bg-card p-2.5 text-left flex flex-col justify-between"><span class="text-[13px] font-semibold truncate">Ciabatta</span><span class="text-[20px] font-bold tnum text-muted-foreground">20 min</span></button>
+          <button class="h-[72px] rounded-xl border border-border bg-card p-2.5 text-left flex flex-col justify-between"><span class="text-[13px] font-semibold truncate">Madeleine</span><span class="text-[20px] font-bold tnum text-muted-foreground">11 min</span></button>
+          <button class="h-[72px] rounded-xl border border-dashed border-border bg-card p-2.5 text-left flex flex-col justify-between"><span class="text-[13px] font-semibold">Novo timer</span><span class="text-[12px] text-muted-foreground inline-flex items-center gap-1"><i data-i="plus" class="size-3.5"></i>minutos</span></button>
+        </div>
+        <div class="flex-1"></div>
+        <p class="rounded-xl bg-secondary px-3 py-2.5 text-[13px] text-muted-foreground flex items-start gap-2 mb-2"><i data-i="sun" class="size-4 shrink-0 mt-0.5"></i>Tela acesa enquanto houver timer correndo. Com a tela bloqueada, o aviso chega por push e vibra.</p>
+      </div>
+      <nav class="bnav bg-card border-t border-border">
+        <div class="grid grid-cols-5 h-16">
+          <a><span class="ic"><i data-i="layout-grid" class="size-[22px]"></i></span>Plano</a>
+          <a><span class="ic"><i data-i="scale" class="size-[22px]"></i></span>Preparo</a>
+          <a><span class="ic"><i data-i="flame" class="size-[22px]"></i></span>Produção<span class="b">3</span></a>
+          <a><span class="ic"><i data-i="package-check" class="size-[22px]"></i></span>Expedição</a>
+          <a class="on"><span class="ic"><i data-i="ellipsis" class="size-[22px]"></i></span>Mais</a>
+        </div>
+        <div class="safe text-foreground"></div>
+      </nav>
+    </div></div>
+  </div>
+  </div>
+
+  <span class="pin" style="left:300px;top:96px">1</span>
+  <span class="pin" style="left:22px;top:330px">2</span>
+  <span class="pin" style="left:372px;top:780px">3</span>
+  <span class="pin" style="left:164px;top:822px">4</span>
+  <span class="pin" style="left:478px;top:160px">5</span>
+  <span class="pin" style="left:846px;top:290px">6</span>
+  <span class="pin" style="left:478px;top:860px">7</span>
+  <span class="pin" style="left:922px;top:170px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Produção · chão no celular · v3 (tema escuro do forno) <span>o celular no bolso do avental: timer, Finalizar e QC com uma mão; som, vibração e tela acesa</span></p>
+  <div><b>1</b>Barra de 56 px com o selo (trocar de app), ponto ao vivo, Timers com contagem (vermelho quando um toca), busca e sino. Atualizar vira puxar para atualizar.</div>
+  <div><b>2</b>Cartão do lote com dois alvos de 56 px no polegar: o timer do forno (Iniciar · 12:40 restante · Visto · Tempo esgotado, como hoje) e "26 un. Finalizar" (openOrder). Data ‹ ›, Expedição | Qualidade 20 e os lotes de dias anteriores ficam.</div>
+  <div><b>3</b>"Ler etiqueta do lote" (novo): a câmera lê o QR da etiqueta e abre o Finalizar daquele lote. Pede um QR na etiqueta impressa (ProductionLabelPrintDialog). Lote avulso continua no ⋮.</div>
+  <div><b>4</b>Seções na barra de baixo: Plano · Preparo · Produção · Expedição + Mais (Timers, Receitas, Relatórios, conforme permissão).</div>
+  <div><b>5</b>Finalizar lote (QcCloseScreen) em tela cheia: Voltar, produto, lote e "26 produzidos". O campo ativo é enorme; Normal recebe o saldo sozinho, como hoje.</div>
+  <div><b>6</b>Graus Ótimo · Normal · Razoável · Mínimo e Perda como alvos de 52 a 60 px; o motivo aparece em chips logo abaixo (o mesmo cadastro de defeitos). Dois toques num grau usam o saldo.</div>
+  <div><b>7</b>OperatorNumpad de 66 px e "Finalizar 26 un." no alcance do polegar, com a conta dita (24 boas, 2 perda). Confirmou: vibração curta; erro: vibração dupla.</div>
+  <div><b>8</b>Timer tocando (FloorTimerCard em modo alarme): cartão inteiro pulsa, som + vibração; Visto (toque no cartão, como hoje) e +5 min grandes, Encerrar nos demais. Tela acesa (useWakeLock do kit) enquanto houver timer; bloqueada, chega por push.</div>
+</div>
+</body></html>

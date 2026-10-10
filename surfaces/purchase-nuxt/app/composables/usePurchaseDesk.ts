@@ -13,11 +13,14 @@ import type {
   ReceiptLine,
   ReceiptLinePreview,
   ReceiptMode,
+  ReceiptHistoryEntry,
   ReceiptOutcome,
   Supplier,
   SupplierMaterialCost,
 } from "~/types/purchase";
 import { PURCHASE_API_ENDPOINTS, usePurchaseApi } from "~/composables/usePurchaseApi";
+import { matchesMaterialFilters } from "~/presentation/purchaseUi";
+import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import {
   costBatchLineErrors as buildCostBatchLineErrors,
   costBatchPayload as buildCostBatchPayload,
@@ -30,11 +33,15 @@ import {
   isApproximateCost,
   parseMoneyInput,
   quotePreview as buildQuotePreview,
+  receiptConferenceTally,
+  receiptDefaultConversionId,
+  receiptExceptionView as buildReceiptExceptionView,
   receiptFirstBlocker as receiptFirstReceiptBlocker,
   receiptIsBlank as receiptIsBlankDraft,
   receiptLinePreview,
   receiptLineRows,
   receiptPendingItems,
+  receiptVolumesStep as buildReceiptVolumesStep,
   reorderBlockers as buildReorderBlockers,
   reorderRows as buildReorderRows,
   supplierCostRows,
@@ -81,7 +88,9 @@ export function usePurchaseDesk() {
   const view = useState<PurchaseView>("purchase-view", () => "panel");
   const baseView = useState<PurchaseBaseView>("purchase-base-view", () => "materials");
   const query = useState("purchase-query", () => "");
-  const onlyAlerts = useState("purchase-only-alerts", () => false);
+  // O recorte de Base · Insumos (o painel de filtros): mora no estado da sessão, não na
+  // URL, porque abrir o insumo ao lado troca a rota e o recorte precisa ficar.
+  const materialFilters = useState<ActiveFilters>("purchase-material-filters", () => ({}));
   const selectedMaterialSku = useState("purchase-selected-material", () => "");
   const selectedSupplierRef = useState("purchase-selected-supplier", () => "");
   const noteMaterialSku = useState("purchase-note-material", () => "");
@@ -93,10 +102,16 @@ export function usePurchaseDesk() {
   const receiptSupplierRef = useState("purchase-receipt-supplier", () => "");
   const receiptNote = useState("purchase-receipt-note", () => "");
   const receiptLines = useState<ReceiptLine[]>("purchase-receipt-lines", () => []);
+  // Os volumes que a nota declara (0 quando não declara) e o ATO FÍSICO do
+  // recebedor: quantos ele contou na doca. `null` = ainda não contou.
+  const receiptInvoiceVolumes = useState("purchase-receipt-invoice-volumes", () => 0);
+  const receiptVolumesCounted = useState<number | null>("purchase-receipt-volumes-counted", () => null);
   // Confirmar zera o rascunho, e um rascunho zerado nao sabe dizer o que acabou
   // de entrar. O resultado guarda o resumo capturado ANTES da limpeza — e o que
   // o aviso de sucesso mostra.
   const receiptOutcome = useState<ReceiptOutcome | null>("purchase-receipt-outcome", () => null);
+  // As entradas já registradas ("essa nota já entrou?" e as "Entradas de hoje").
+  const receiptHistory = useState<ReceiptHistoryEntry[]>("purchase-receipt-history", () => []);
   const receiptHydrated = useState("purchase-receipt-hydrated", () => false);
   const purchaseRequestStatuses = useState<Record<string, PurchaseRequestStatus>>(
     "purchase-request-statuses",
@@ -155,7 +170,7 @@ export function usePurchaseDesk() {
   const backendBlockTitle = computed(() => {
     if (backendErrorStatus.value === 403) return "Operador sem acesso a Compras";
     if (backendErrorStatus.value === 401) return "Sessão expirada";
-    return "Compras sem conexão operacional";
+    return "Não foi possível carregar as compras";
   });
   const backendBlockMessage = computed(() => {
     if (backendErrorStatus.value === 403) {
@@ -164,7 +179,7 @@ export function usePurchaseDesk() {
     if (backendErrorStatus.value === 401) {
       return "Entre novamente para carregar dados reais e registrar ações.";
     }
-    return "A tela não conseguiu carregar a base de insumos, fornecedores e custos. Nada é exibido enquanto não houver dado real. Toque em Atualizar para tentar de novo.";
+    return "Insumos, fornecedores e custos não carregaram.";
   });
 
   const enrichedMaterials = computed(() =>
@@ -184,8 +199,7 @@ export function usePurchaseDesk() {
         material.sku.toLowerCase().includes(term) ||
         material.name.toLowerCase().includes(term) ||
         material.category.toLowerCase().includes(term);
-      const alertMatch = !onlyAlerts.value || material.tone !== "ok";
-      return matches && alertMatch;
+      return matches && matchesMaterialFilters(material, materialFilters.value);
     });
   });
 
@@ -233,7 +247,21 @@ export function usePurchaseDesk() {
   );
   // A lista da entrada: uma linha por item, com o estado dela. É por ela que o
   // operador enxerga a nota inteira sem rolar dez formulários abertos.
-  const receiptRows = computed(() => receiptLineRows(receiptLinePreviews.value));
+  // Recebimento por exceção: o que bate com a nota entra pela contagem de
+  // volumes, sem o ok da linha; o que não bate pede o seu.
+  const receiptException = computed(() =>
+    buildReceiptExceptionView(
+      receiptLinePreviews.value,
+      receiptMode.value,
+      receiptInvoiceVolumes.value,
+      receiptVolumesCounted.value,
+    ),
+  );
+  const receiptMatchedIds = computed<ReadonlySet<string>>(() =>
+    receiptException.value.available ? new Set(receiptException.value.matched.map((preview) => preview.line.id)) : new Set(),
+  );
+  const receiptVolumesStep = computed(() => buildReceiptVolumesStep(receiptException.value));
+  const receiptRows = computed(() => receiptLineRows(receiptLinePreviews.value, receiptMatchedIds.value));
   const receiptLineWarnings = computed(() => receiptLinePreviews.value.flatMap((preview) => preview.warnings));
   const receiptBlockers = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "block"));
   const receiptWatchWarnings = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "watch"));
@@ -248,7 +276,7 @@ export function usePurchaseDesk() {
   // O painel listava as pendências ACHATADAS — dez pílulas "Definir insumo"
   // iguais, sem dizer de qual item, e a lista ficava inútil justamente quando
   // era mais necessária (nota grande). Uma linha por item, com nome e gesto.
-  const receiptPendingLines = computed(() => receiptPendingItems(receiptLinePreviews.value));
+  const receiptPendingLines = computed(() => receiptPendingItems(receiptLinePreviews.value, receiptMatchedIds.value));
   const receiptDocumentBlockers = computed(() =>
     receiptIsBlank.value ? []
     : receiptMode.value === "invoice" && !invoiceStatus.value.valid ? ["Ler QR, código de barras ou chave da NF"]
@@ -257,6 +285,17 @@ export function usePurchaseDesk() {
   const receiptSupplierBlockers = computed(() =>
     receiptIsBlank.value || receiptSupplierRef.value ? [] : ["Definir fornecedor"],
   );
+  // Conta ITENS travados, não avisos: uma linha que precisa de insumo E de validade é
+  // um item para resolver, não dois bloqueios. O mesmo número no resumo da conferência,
+  // no selo de Receber (barra lateral e barra inferior) e no Painel.
+  const receiptTotalPending = computed(() =>
+    receiptIsBlank.value ? 0 : (
+      receiptPendingLines.value.length +
+      receiptDocumentBlockers.value.length +
+      receiptSupplierBlockers.value.length +
+      (receiptVolumesStep.value ? 1 : 0)
+    ),
+  );
   // O gesto que o botao `Confirmar entrada` responde quando ainda nao da.
   const receiptFirstBlocker = computed(() =>
     receiptFirstReceiptBlocker(
@@ -264,9 +303,14 @@ export function usePurchaseDesk() {
       receiptSupplierBlockers.value,
       receiptPendingLines.value,
       receiptLinePreviews.value.length > 0,
+      receiptVolumesStep.value,
     ),
   );
-  const receiptCheckedCount = computed(() => receiptLinePreviews.value.filter((preview) => preview.line.checked).length);
+  // Pronto = entra se confirmar agora: assinado (ok da linha, ou batendo com a
+  // nota com os volumes contados) e sem bloqueio, validade inclusa.
+  const receiptConference = computed(() =>
+    receiptConferenceTally(receiptLinePreviews.value, receiptMatchedIds.value, receiptException.value.countOk),
+  );
   const receiptTotalCostQ = computed(() =>
     receiptLinePreviews.value.reduce((total, preview) => total + preview.totalCostQ, 0),
   );
@@ -279,7 +323,8 @@ export function usePurchaseDesk() {
       receiptDocumentBlockers.value.length === 0 &&
       receiptSupplierBlockers.value.length === 0 &&
       receiptBlockers.value.length === 0 &&
-      receiptCheckedCount.value === receiptLinePreviews.value.length,
+      receiptVolumesStep.value === "" &&
+      receiptConference.value.ready === receiptLinePreviews.value.length,
   );
 
   watch([noteMaterialSku, noteSupplierRef], () => {
@@ -562,6 +607,7 @@ export function usePurchaseDesk() {
       invoiceInput: invoiceInput.value,
       note: receiptNote.value,
       lines: receiptLines.value,
+      invoiceVolumes: receiptInvoiceVolumes.value,
     },
   }));
 
@@ -616,7 +662,8 @@ export function usePurchaseDesk() {
       return {
         ...line,
         materialSku,
-        conversionId: conversionAllowed ? line.conversionId : defaultReceiptConversionId(materialSku),
+        conversionId:
+          conversionAllowed ? line.conversionId : receiptDefaultConversionId(line, receiptConversionsFor(materialSku)),
       };
     });
   }
@@ -632,12 +679,17 @@ export function usePurchaseDesk() {
     conversions.value = copy(next.conversions);
     costs.value = copy(next.costs);
     purchaseRequestStatuses.value = { ...next.purchaseRequestStatuses };
+    receiptHistory.value = copy(next.receiptHistory ?? []);
     if (options.receipt) {
       receiptMode.value = next.activeReceipt.mode;
       receiptSupplierRef.value = next.activeReceipt.supplierRef || "";
       invoiceInput.value = next.activeReceipt.invoiceInput || "";
       receiptNote.value = next.activeReceipt.note || "";
       receiptLines.value = receiptLineCopy(next.activeReceipt.lines ?? []);
+      receiptInvoiceVolumes.value = Number(next.activeReceipt.invoiceVolumes) || 0;
+      // A contagem de volumes mora no servidor (C23): a mesma NF aberta em outro
+      // dispositivo já chega contada.
+      receiptVolumesCounted.value = next.activeReceipt.volumesCounted ?? null;
       receiptOutcome.value = null;
       receiptHydrated.value = true;
     }
@@ -663,7 +715,7 @@ export function usePurchaseDesk() {
         "Este operador não tem permissão para Compras."
       : backendErrorStatus.value === 401 ?
         "Sua sessão expirou. Entre novamente para continuar."
-      : `Conecte o backend para ${action}.`;
+      : `As compras não carregaram. Toque em Atualizar e tente ${action} de novo.`;
     actionError.value = message;
     useSonner.error(message);
     return false;
@@ -736,6 +788,22 @@ export function usePurchaseDesk() {
     receiptSupplierRef.value = suppliers.value[0]?.ref ?? "";
     receiptNote.value = mode === "manual" ? "Romaneio em papel conferido na entrega" : "";
     receiptLines.value = [];
+    receiptInvoiceVolumes.value = 0;
+    receiptVolumesCounted.value = null;
+  }
+
+  /** O ato físico: "Contei N volumes". `null` desfaz a contagem. Vai ao servidor
+   *  (C23): quem abrir a mesma NF em outro dispositivo não conta de novo. */
+  function setReceiptVolumesCounted(counted: number | null) {
+    receiptOutcome.value = null;
+    receiptVolumesCounted.value = counted !== null && Number.isFinite(counted) && counted > 0 ? Math.round(counted) : null;
+    const accessKey = invoiceStatus.value.accessKey;
+    if (!accessKey || !backendReady.value) return;
+    void api
+      .saveReceiptVolumes({ invoiceAccessKey: accessKey, counted: receiptVolumesCounted.value })
+      .catch((err) => {
+        useSonner.error(httpErrorMessage(err, "A contagem ficou só neste dispositivo. Tente de novo."));
+      });
   }
 
   function updateReceiptLine(lineId: string, patch: Partial<ReceiptLine>) {
@@ -754,7 +822,10 @@ export function usePurchaseDesk() {
         currentConversion.isActive &&
         currentConversion.materialSku === line.materialSku &&
         (!currentConversion.supplierRef || currentConversion.supplierRef === ref);
-      return currentIsAllowed ? line : { ...line, conversionId: defaultReceiptConversionId(line.materialSku) };
+      return currentIsAllowed ? line : {
+        ...line,
+        conversionId: receiptDefaultConversionId(line, receiptConversionsFor(line.materialSku)),
+      };
     });
   }
 
@@ -902,6 +973,8 @@ export function usePurchaseDesk() {
           invoiceAccessKey: invoiceStatus.value.accessKey,
           note: receiptNote.value,
           lines: receiptLines.value,
+          invoiceVolumes: receiptInvoiceVolumes.value,
+          ...(receiptVolumesCounted.value !== null ? { volumes: { counted: receiptVolumesCounted.value } } : {}),
         }),
       { receipt: true, quiet: true },
     );
@@ -930,6 +1003,38 @@ export function usePurchaseDesk() {
     );
     if (ok) receiptOutcome.value = snapshot;
     return Boolean(ok);
+  }
+
+  /**
+   * "Devolver só este item" (recusa parcial, v4 c): devolve UMA linha ao
+   * fornecedor com o motivo e tira a linha do rascunho; a entrada segue com as
+   * outras. O estoque não muda (é devolução, não entrada).
+   */
+  async function rejectReceiptLine(lineId: string): Promise<boolean> {
+    if (!requireBackend("devolver o item")) return false;
+    const line = receiptLines.value.find((item) => item.id === lineId);
+    if (!line) return false;
+    const reason = (line.lineNote || "").trim();
+    if (!reason) {
+      actionError.value = "Escolha o motivo da diferença antes de devolver o item.";
+      useSonner.error(actionError.value);
+      return false;
+    }
+    const response = await runBackendAction(
+      () =>
+        api.rejectReceipt({
+          mode: receiptMode.value,
+          supplierRef: receiptSupplierRef.value,
+          invoiceAccessKey: invoiceStatus.value.accessKey,
+          note: reason,
+          lines: [line],
+          partial: true,
+        }),
+      { receipt: false },
+    );
+    if (!response) return false;
+    receiptLines.value = receiptLines.value.filter((item) => item.id !== lineId);
+    return true;
   }
 
   /** Fecha o aviso de sucesso — o proximo recebimento comeca da tela limpa. */
@@ -1104,7 +1209,7 @@ export function usePurchaseDesk() {
     view,
     baseView,
     query,
-    onlyAlerts,
+    materialFilters,
     selectedMaterialSku,
     selectedSupplierRef,
     noteMaterialSku,
@@ -1166,12 +1271,19 @@ export function usePurchaseDesk() {
     invoiceStatus,
     receiptLinePreviews,
     receiptRows,
+    receiptException,
+    receiptMatchedIds,
+    receiptVolumesStep,
+    receiptVolumesCounted,
+    receiptInvoiceVolumes,
+    setReceiptVolumesCounted,
     receiptBlockers,
     receiptWatchWarnings,
     receiptPendingLines,
+    receiptTotalPending,
     receiptDocumentBlockers,
     receiptSupplierBlockers,
-    receiptCheckedCount,
+    receiptConference,
     receiptTotalCostQ,
     receiptHasRejectionReason,
     receiptReady,
@@ -1202,6 +1314,8 @@ export function usePurchaseDesk() {
     readInvoice,
     confirmReceipt,
     rejectReceipt,
+    rejectReceiptLine,
+    receiptHistory,
     countBoardRows,
     countFilteredRows,
     countDivergentRows,

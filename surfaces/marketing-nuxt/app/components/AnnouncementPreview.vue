@@ -5,6 +5,7 @@ import {
   googleSceneDetails,
   scenesFromDraftArtifacts,
 } from "~/presentation/simulatedPreview";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   body: string;
@@ -232,9 +233,33 @@ function previewProblem(error: unknown): PreviewProblem {
         : "Não foi possível atualizar a prévia agora.",
     fieldDetail,
     retryable,
-    repairHref: isMediaProblem ? "/templates" : "",
+    repairHref: isMediaProblem ? "/settings/templates" : "",
   };
 }
+
+/** As abas da prévia, uma por plataforma que a resposta trouxe. */
+const platformTabs = computed(() =>
+  Object.keys(preview.value?.previews || {}).map((platform) => ({
+    label: props.platformLabels[platform] || platform,
+    value: platform,
+  })),
+);
+
+/** A saída do erro: repetir só o que é temporário; o erro de imagem leva aos modelos. */
+const problemActions = computed(() => {
+  const current = problem.value;
+  if (current?.retryable) {
+    return [
+      { label: "Tentar de novo", icon: "i-lucide-refresh-cw", color: "error" as const, variant: "outline" as const, onClick: retry },
+    ];
+  }
+  if (current?.repairHref) {
+    return [
+      { label: "Corrigir imagem nos modelos", icon: "i-lucide-image", color: "error" as const, variant: "outline" as const, to: current.repairHref },
+    ];
+  }
+  return [];
+});
 
 const selected = computed(
   () => preview.value?.previews[activePlatform.value] || null,
@@ -354,64 +379,31 @@ const simulatedScenes = computed(() =>
       }}
     </p>
 
-    <div
+    <NuxtAlert
       v-else-if="problem"
       data-testid="preview-error"
-      class="mt-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm"
-      role="alert"
+      class="mt-2"
+      color="error"
+      variant="subtle"
+      :title="problem.title"
+      :actions="alertActions('error', problemActions ?? [])"
     >
-      <p class="font-medium">{{ problem.title }}</p>
-      <p class="mt-1 text-xs text-muted-foreground">{{ problem.detail }}</p>
-      <p v-if="problem.fieldDetail" class="mt-1 text-xs text-muted-foreground">
-        {{ problem.fieldDetail }}
-      </p>
-      <UiButton
-        v-if="problem.retryable"
-        type="button"
-        variant="outline"
-        class="mt-2"
-        @click="retry"
-      >
-        <Icon name="lucide:refresh-cw" class="size-4" />
-        Tentar de novo
-      </UiButton>
-      <UiButton
-        v-else-if="problem.repairHref"
-        :to="problem.repairHref"
-        variant="outline"
-        class="mt-2"
-      >
-        <Icon name="lucide:image" class="size-4" />
-        Corrigir imagem nos modelos
-      </UiButton>
-    </div>
+      <template #description>
+        <p>{{ problem.detail }}</p>
+        <p v-if="problem.fieldDetail" class="mt-1">{{ problem.fieldDetail }}</p>
+      </template>
+    </NuxtAlert>
 
     <template v-else-if="preview && artifact">
-      <div
-        v-if="Object.keys(preview.previews).length > 1"
-        class="mt-3 flex flex-wrap gap-1.5"
-        role="tablist"
+      <NuxtTabs
+        v-if="platformTabs.length > 1"
+        v-model="activePlatform"
+        :items="platformTabs"
+        :content="false"
+        variant="pill"
+        class="mt-3"
         aria-label="Plataforma da prévia"
-      >
-        <!-- Abas permanecem nativas para preservar role=tab, aria-selected e navegação semântica. -->
-        <button
-          v-for="(_, platform) in preview.previews"
-          :key="platform"
-          type="button"
-          role="tab"
-          class="min-h-11 rounded-md border px-3 text-sm font-medium"
-          :class="
-            platform === activePlatform
-              ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border bg-card text-muted-foreground'
-          "
-          :aria-selected="platform === activePlatform"
-          :data-platform="platform"
-          @click="activePlatform = platform"
-        >
-          {{ platformLabels[platform] || platform }}
-        </button>
-      </div>
+      />
 
       <p
         v-if="preview.ai_writes"
@@ -518,7 +510,7 @@ const simulatedScenes = computed(() =>
           <li v-if="artifact.image_url">
             O Google recorta a foto para caber no cartão, e o recorte muda entre
             a Busca e o Maps: o que estiver perto das bordas pode sumir. Não ponha
-            texto dentro da imagem — escreva no texto do post.
+            texto dentro da imagem. Escreva no texto do post.
           </li>
           <li v-if="!google.buttonLabel && artifact.link">
             Sem botão, o link não aparece no post.
@@ -561,17 +553,18 @@ const simulatedScenes = computed(() =>
         </div>
       </div>
 
-      <p
+      <NuxtAlert
         v-if="emptyFields.length"
-        class="mt-3 flex items-start gap-1.5 rounded-md bg-warning/10 px-2 py-1.5 text-xs text-warning"
+        class="mt-3"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
       >
-        <Icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0" />
-        <span>
+        <template #description>
           Sem valor nesta amostra:
-          <span class="font-mono">{{ emptyFields.join(", ") }}</span
-          >. Aqui é um exemplo: cada pessoa recebe o nome dela.
-        </span>
-      </p>
+          <span class="font-mono">{{ emptyFields.join(", ") }}</span>. Aqui é um exemplo: cada pessoa recebe o nome dela.
+        </template>
+      </NuxtAlert>
 
       <!-- ⚠️ Uma frase só não servia aqui: "sairá sem imagem" valia para mensagem e
            para postagem ao mesmo tempo, e os dois atos são diferentes — mensagem se
@@ -623,15 +616,15 @@ const simulatedScenes = computed(() =>
       </dl>
     </template>
 
-    <div
+    <NuxtAlert
       v-else-if="preview"
-      class="mt-2 rounded-md bg-warning/10 p-3 text-xs text-warning"
-      role="alert"
-    >
-      A resposta não trouxe a plataforma escolhida.
-      <UiButton type="button" variant="link" class="ml-1" @click="retry">
-        Tentar de novo
-      </UiButton>
-    </div>
+      class="mt-2"
+      color="warning"
+      variant="subtle"
+      title="A resposta não trouxe a plataforma escolhida."
+      :actions="alertActions('warning', [
+        { label: 'Tentar de novo', onClick: retry },
+      ])"
+    />
   </aside>
 </template>

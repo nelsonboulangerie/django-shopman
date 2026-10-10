@@ -544,8 +544,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Log in to GHCR (espelho das imagens da CI)
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Base e frontend do Dockerfile vêm do espelho da MESMA imagem oficial no GHCR
+      # do repositório (ci-image-mirror.yml), com pull autenticado: o anônimo cai com
+      # 429 no Docker Hub (09/10) e no ECR público (10/10/2026).
+      # O deploy (deploy-images.yml, App Platform) não passa estes args e segue no default.
       - name: Build deploy image
-        run: docker build --tag django-shopman:ci .
+        run: >-
+          docker build --tag django-shopman:ci
+          --build-arg PYTHON_IMAGE=ghcr.io/nelsonboulangerie/ci-mirror/python:3.12-slim
+          --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1
+          .
 
       # `docker build` prova que o COPY não falha, NÃO que o arquivo caiu onde o
       # código procura. O Admin serve o agente do balcão a partir de
@@ -576,7 +591,10 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ghcr.io/nelsonboulangerie/ci-mirror/postgres:16-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         env:
           POSTGRES_DB: shopman
           POSTGRES_USER: shopman
@@ -589,7 +607,10 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       redis:
-        image: redis:7-alpine
+        image: ghcr.io/nelsonboulangerie/ci-mirror/redis:7-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports:
           - "6379:6379"
         options: >-

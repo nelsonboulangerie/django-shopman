@@ -111,7 +111,7 @@ def record(
     # primeiro caminho novo. Quem diz qual é a requisição (``acting_device``),
     # nunca o corpo; o que vier do chamador nessa chave é descartado.
     payload = acting_device.stamp(dict(payload or {}))
-    _validate_payload(kind, payload)
+    _validate_payload(kind, payload, order_ref=order_ref, reason=reason)
 
     with transaction.atomic():
         locked = _locked_shift(shift)
@@ -148,7 +148,7 @@ def record(
     return entry
 
 
-def _validate_payload(kind: str, payload: dict) -> None:
+def _validate_payload(kind: str, payload: dict, *, order_ref: str = "", reason: str = "") -> None:
     """O payload dos tipos que TÊM schema é conferido pelo único escritor.
 
     Contrato que só a superfície cobra não é contrato — é a mesma razão pela qual
@@ -156,7 +156,8 @@ def _validate_payload(kind: str, payload: dict) -> None:
     comando, ou o seed) não passa pelo ``backstage``, e um pedido de troco de
     ``-500`` viajaria calado até a tela de quem vai buscar o dinheiro.
 
-    Só os dois tipos que carregam DECISÃO no payload entram aqui. Os demais
+    Só os tipos que carregam DECISÃO no payload entram aqui (troco pedido,
+    resultado do papel e o porquê da abertura da gaveta). Os demais
     guardam contexto livre (``note.text``, ``sale.intents``), e inventar schema
     para eles seria regra sem defeito para prevenir.
 
@@ -183,6 +184,30 @@ def _validate_payload(kind: str, payload: dict) -> None:
                 "INVALID_PAYLOAD",
                 "As cédulas e moedas pedidas são uma lista de valores em centavos.",
                 {"kind": kind, "denominations": denominations},
+            )
+        return
+
+    if kind == Kind.DRAWER_OPEN and "purpose" in payload:
+        # Abertura com o porquê declarado. Sem a chave é o lançamento antigo
+        # (abrir sem venda), e ele continua valendo como estava.
+        purpose = payload.get("purpose")
+        if purpose not in Entry.DRAWER_OPEN_PURPOSES:
+            raise CashError(
+                "INVALID_PAYLOAD",
+                "A abertura da gaveta é por uma venda ou sem venda.",
+                {"kind": kind, "purpose": purpose},
+            )
+        if purpose == "sale" and not str(order_ref or "").strip():
+            raise CashError(
+                "INVALID_PAYLOAD",
+                "A abertura por venda precisa do pedido.",
+                {"kind": kind, "purpose": purpose},
+            )
+        if purpose == "no_sale" and not str(reason or "").strip():
+            raise CashError(
+                "INVALID_PAYLOAD",
+                "A abertura sem venda precisa do motivo.",
+                {"kind": kind, "purpose": purpose},
             )
         return
 

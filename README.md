@@ -111,7 +111,7 @@ django-shopman/
 │
 ├── surfaces/                   # 9 apps Nuxt 4 (SSR) + 1 layer
 │   ├── storefront-nuxt/        # loja do cliente (apex, :3000)
-│   ├── hub-nuxt/               # Shopman Apps — a home do operador (:3001)
+│   ├── hub-nuxt/               # Central — a home do operador (:3001)
 │   ├── pos-nuxt/               # PDV (:3002)
 │   ├── kds-nuxt/               # cozinha (:3003)
 │   ├── orders-nuxt/            # gestor de pedidos (:3004)
@@ -119,6 +119,7 @@ django-shopman/
 │   ├── marketing-nuxt/         # marketing do gestor — campanhas e anúncios (:3006)
 │   ├── bi-nuxt/                # B.I. do gestor (:3007)
 │   ├── purchase-nuxt/          # compras e recebimento (:3008)
+│   ├── kitchensink-nuxt/       # Catálogo do operador (:3009)
 │   └── operator-kit/           # Nuxt layer compartilhada dos apps de operador
 │
 ├── config/                     # Django project wrapper + seed do deployment (Nelson)

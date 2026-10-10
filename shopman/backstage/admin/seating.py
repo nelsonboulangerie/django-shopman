@@ -25,12 +25,15 @@ class SeatingSpotAdmin(ModelAdmin):
     list_filter = ("kind", "counts_in_capacity", "area")
     ordering = ("kind", "ref")
     fields = (
-        "ref", "label", "kind", "area", "seats",
+        "ref", "label", "short_label", "kind", "shape", "area", "seats",
         "counts_in_capacity", "active_from", "active_until",
+        "plan_x", "plan_y", "rotation", "replaces",
     )
 
     def get_readonly_fields(self, request, obj=None):
-        return ("ref",) if obj else ()
+        # A versão anterior é escrita pela gravação do PDV (Ajustes › Salão), que
+        # encerra a mesa de ontem e aponta a de hoje para ela.
+        return ("ref", "replaces") if obj else ("replaces",)
 
     @display(
         description="capacidade",

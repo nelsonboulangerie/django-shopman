@@ -140,7 +140,7 @@ MONTH_CHOICES = (
 )
 
 PRODUCTION_NOTIFICATION_STATE_CHOICES = (
-    ("", "Herdar — desligadas"),
+    ("", "Herdar (desligadas)"),
     ("enabled", "Ativar"),
     ("disabled", "Desativar explicitamente"),
 )
@@ -153,7 +153,7 @@ PRODUCTION_NOTIFICATION_SEVERITY_CHOICES = (
 )
 
 PRODUCTION_ORDER_MATCH_CHOICES = (
-    ("", "Herdar — primeiro planejado"),
+    ("", "Herdar (primeiro planejado)"),
     ("first_planned", "Primeiro planejado"),
     ("earliest_target", "Menor data-alvo"),
     ("manual", "Associação manual"),
@@ -478,6 +478,18 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminDecimalFieldWidget,
             help_text="Taxa de entrega zera a partir deste valor. 0 ou vazio = desligado.",
         ),
+        "defaults_storefront_hide_unavailable_by_default": forms.BooleanField(
+            label="Esconder indisponíveis no cardápio",
+            required=False,
+            widget=UnfoldBooleanSwitchWidget,
+            help_text=(
+                "Ligado, o cliente abre o cardápio e as coleções vendo só o que pode "
+                "pedir agora. Ele ainda pode mostrar tudo pela chave \"Mostrar só "
+                "disponíveis\". Desligado, os indisponíveis aparecem com o selo "
+                "Indisponível e o \"Me avise\". Não muda a disponibilidade, só o que "
+                "aparece."
+            ),
+        ),
         "defaults_storefront_address_map_confirmation_enabled": forms.BooleanField(
             label="Confirmar o ponto de entrega no mapa",
             required=False,
@@ -596,14 +608,14 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             help_text="Percentual em decimal. Ex.: 0,20 para 20%. Em branco = herda 0%.",
         ),
         "defaults_production_low_yield_threshold": forms.DecimalField(
-            label="Limiar de rendimento baixo",
+            label="Limiar de aproveitamento baixo",
             required=False,
             min_value=Decimal("0"),
             max_value=Decimal("1"),
             max_digits=4,
             decimal_places=2,
             widget=UnfoldAdminDecimalFieldWidget,
-            help_text="Proporção produzido/iniciado. Em branco = herda 0,80.",
+            help_text="Proporção realizado ÷ previsto. Em branco = herda 0,80.",
         ),
         "defaults_production_default_max_started_minutes": forms.IntegerField(
             label="Tempo máximo em produção (minutos)",
@@ -739,6 +751,37 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             "(SHOPMAN_FISCAL_EMISSION_RESOLVER), que pode emitir mesmo com isto desligado. "
             "Também depende do adapter fiscal estar pronto."
         ),
+    )
+    fields["defaults_pos_cash_tolerance_percent"] = forms.DecimalField(
+        label="Tolerância do caixa (% do dinheiro do dia)",
+        required=False,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        max_digits=5,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text=(
+            "Diferença no fechamento que o gerente aceita sem alerta, em % do dinheiro que "
+            "entrou na gaveta no dia. Em branco = padrão (0,5%). Cada terminal pode ter a sua."
+        ),
+    )
+    fields["defaults_pos_cash_tolerance_min"] = forms.DecimalField(
+        label="Tolerância mínima do caixa (R$)",
+        required=False,
+        min_value=Decimal("0"),
+        max_digits=8,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="Piso da tolerância, para dia de pouco dinheiro. Em branco = padrão (R$ 2,00).",
+    )
+    fields["defaults_pos_cash_tolerance_max"] = forms.DecimalField(
+        label="Tolerância máxima do caixa (R$)",
+        required=False,
+        min_value=Decimal("0"),
+        max_digits=8,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="Teto da tolerância, para dia de muito dinheiro. Em branco = padrão (R$ 20,00).",
     )
     fields["defaults_pos_late_fiscal_emission_days"] = forms.IntegerField(
         label="Emissão avulsa de NFC-e: dias depois da venda",
@@ -881,7 +924,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         help_text=(
             "O outro lado da mesma pergunta: quanto o disparo pode custar antes de pedir "
             "senha. Vale o que chegar primeiro, este teto ou a fatia acima. Em branco = "
-            f"R$ {DEFAULT_CEREMONY_SPEND_LIMIT_Q // 100},00. ⚠️ Palpite — confirme com o "
+            f"R$ {DEFAULT_CEREMONY_SPEND_LIMIT_Q // 100},00. ⚠️ Palpite: confirme com o "
             "que a casa aceita gastar num disparo."
         ),
     )
@@ -895,7 +938,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         help_text=(
             "Quanto o provedor cobra por mensagem de campanha entregue. Só mensagem "
             "custa; postagem em Instagram, Facebook ou Google não tem custo por pessoa. "
-            "⚠️ Palpite — o preço real está no contrato com a Meta/ManyChat e muda por "
+            "⚠️ Palpite: o preço real está no contrato com a Meta/ManyChat e muda por "
             "categoria de modelo. Deixe arredondado para cima: custo superestimado faz o "
             "teto de gasto morder antes, nunca depois."
         ),
@@ -909,7 +952,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         ),
         help_text=(
             "O limiar nunca fica abaixo deste número, e é ele que responde enquanto a "
-            "base for pequena ou desconhecida — o cálculo falha fechado, pedindo mais "
+            "base for pequena ou desconhecida: o cálculo falha fechado, pedindo mais "
             f"cerimônia, nunca menos. Em branco = {DEFAULT_CEREMONY_RECIPIENT_FLOOR} "
             "pessoas. ⚠️ Palpite."
         ),
@@ -1238,7 +1281,7 @@ class ShopForm(forms.ModelForm):
             "accent_color": UnfoldAdminColorInputWidget,
             "neutral_color": UnfoldAdminColorInputWidget,
             "neutral_dark_color": UnfoldAdminColorInputWidget,
-            "heading_font": FontPreviewWidget(sample_text="Aa Bb Cc \u2014 O sabor que encanta"),
+            "heading_font": FontPreviewWidget(sample_text="Aa Bb Cc. O sabor que encanta"),
             "body_font": FontPreviewWidget(
                 sample_text="O p\u00e3o fresco de cada dia, feito com amor e tradi\u00e7\u00e3o."
             ),
@@ -1273,7 +1316,7 @@ class ShopForm(forms.ModelForm):
             self.fields["kitchen_note_tags"].required = False
             self.fields["kitchen_note_tags"].help_text = (
                 "Adicione uma tag por vez. O operador anexa com um toque à nota da cozinha "
-                "no gestor, e a nota aparece no ticket do KDS para a produção — instruções "
+                "no gestor, e a nota aparece no ticket do KDS para a produção: instruções "
                 "curtas de preparo (ex.: “Bem assado”, “Sem cebola”)."
             )
 
@@ -1381,6 +1424,12 @@ class ShopForm(forms.ModelForm):
             for field_name, key in DEFAULTS_RULE_Q_FIELDS:
                 self.fields[field_name].initial = _q_to_reais(rules.get(key))
 
+        if self._has("defaults_storefront_hide_unavailable_by_default"):
+            storefront = defaults.get("storefront") if isinstance(defaults.get("storefront"), dict) else {}
+            self.fields["defaults_storefront_hide_unavailable_by_default"].initial = bool(
+                storefront.get("hide_unavailable_by_default", False)
+            )
+
         if self._has("defaults_storefront_address_map_confirmation_enabled"):
             storefront = defaults.get("storefront") if isinstance(defaults.get("storefront"), dict) else {}
             self.fields["defaults_storefront_address_map_confirmation_enabled"].initial = bool(
@@ -1414,6 +1463,18 @@ class ShopForm(forms.ModelForm):
         if self._has("defaults_pos_fiscal_toggle"):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             self.fields["defaults_pos_fiscal_toggle"].initial = bool(pos_cfg.get("fiscal_toggle", False))
+
+        if self._has("defaults_pos_cash_tolerance_percent"):
+            pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
+            tolerance = pos_cfg.get("cash_tolerance") if isinstance(pos_cfg.get("cash_tolerance"), dict) else {}
+            if tolerance.get("percent") not in (None, ""):
+                self.fields["defaults_pos_cash_tolerance_percent"].initial = Decimal(str(tolerance["percent"]))
+            for field_name, key in (
+                ("defaults_pos_cash_tolerance_min", "min_q"),
+                ("defaults_pos_cash_tolerance_max", "max_q"),
+            ):
+                if isinstance(tolerance.get(key), int):
+                    self.fields[field_name].initial = Decimal(int(tolerance[key])) / 100
 
         if self._has("defaults_pos_late_fiscal_emission_days"):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
@@ -1545,7 +1606,7 @@ class ShopForm(forms.ModelForm):
             if len(refs) != len(set(refs)):
                 self.add_error(
                     "defaults_dynamic_collections",
-                    "Há coleções repetidas — cada coleção só pode aparecer uma vez.",
+                    "Há coleções repetidas. Cada coleção só pode aparecer uma vez.",
                 )
 
         if self._has(_defaults_pickup_field(1, "ref")):
@@ -1912,6 +1973,17 @@ class ShopForm(forms.ModelForm):
                 rules[key] = _reais_to_q(self.cleaned_data.get(field_name))
             defaults["rules"] = rules
 
+        if self._has("defaults_storefront_hide_unavailable_by_default"):
+            storefront = dict(defaults.get("storefront") if isinstance(defaults.get("storefront"), dict) else {})
+            if self.cleaned_data.get("defaults_storefront_hide_unavailable_by_default"):
+                storefront["hide_unavailable_by_default"] = True
+            else:
+                storefront.pop("hide_unavailable_by_default", None)
+            if storefront:
+                defaults["storefront"] = storefront
+            else:
+                defaults.pop("storefront", None)
+
         if self._has("defaults_storefront_address_map_confirmation_enabled"):
             storefront = defaults.get("storefront") if isinstance(defaults.get("storefront"), dict) else {}
             storefront = dict(storefront)
@@ -1945,9 +2017,28 @@ class ShopForm(forms.ModelForm):
             self._has("defaults_pos_discount_approval_threshold_q")
             or self._has("defaults_pos_fiscal_toggle")
             or self._has("defaults_pos_late_fiscal_emission_days")
+            or self._has("defaults_pos_cash_tolerance_percent")
         ):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             pos_cfg = dict(pos_cfg)
+            if self._has("defaults_pos_cash_tolerance_percent"):
+                # Campo vazio = vale o padrão do dono (0,5%, R$ 2, R$ 20), lido em
+                # ``backstage/services/cash_tolerance.py``. Só grava o que foi dito.
+                tolerance = {}
+                percent = self.cleaned_data.get("defaults_pos_cash_tolerance_percent")
+                if percent is not None:
+                    tolerance["percent"] = format(Decimal(percent).normalize(), "f")
+                for field_name, key in (
+                    ("defaults_pos_cash_tolerance_min", "min_q"),
+                    ("defaults_pos_cash_tolerance_max", "max_q"),
+                ):
+                    value = self.cleaned_data.get(field_name)
+                    if value is not None:
+                        tolerance[key] = int((Decimal(value) * 100).to_integral_value())
+                if tolerance:
+                    pos_cfg["cash_tolerance"] = tolerance
+                else:
+                    pos_cfg.pop("cash_tolerance", None)
             if self._has("defaults_pos_discount_approval_threshold_q"):
                 threshold = self.cleaned_data.get("defaults_pos_discount_approval_threshold_q")
                 if threshold is None:
@@ -2206,7 +2297,7 @@ _APPEARANCE_FIELDSETS = (
         {
             "fields": ("brand_voice",),
             "description": (
-                "Como a IA escreve quando o gestor pede uma sugestão — no catálogo e nos "
+                "Como a IA escreve quando o gestor pede uma sugestão, no catálogo e nos "
                 "anúncios, com a mesma voz. Antes isto era um texto fixo no código, "
                 "invisível para quem opera. Vazio = a IA usa a voz padrão do sistema."
             ),
@@ -2308,13 +2399,14 @@ _MENU_FIELDSETS = (
         "Cardápio",
         {
             "fields": (
+                "defaults_storefront_hide_unavailable_by_default",
                 "defaults_dynamic_collections",
                 "defaults_notifications_backend",
             ),
             "description": (
-                "Coleções dinâmicas do cardápio (a ordem da lista define a ordem no "
-                "cardápio) e o canal padrão de notificações. As coleções vêm do "
-                "registry canônico do core."
+                "Se os indisponíveis aparecem no cardápio, as coleções dinâmicas (a "
+                "ordem da lista define a ordem no cardápio) e o canal padrão de "
+                "notificações. As coleções vêm do registry canônico do core."
             ),
         },
     ),
@@ -2401,7 +2493,7 @@ _PRODUCTION_FIELDSETS = (
                 ("defaults_sales_silence_minutes",),
             ),
             "description": (
-                "Limiares operacionais para rendimento, fornadas atrasadas e investigação de períodos sem vendas."
+                "Limiares operacionais para aproveitamento, lotes atrasados e investigação de períodos sem vendas."
             ),
         },
     ),
@@ -2447,7 +2539,7 @@ _LOYALTY_FIELDSETS = (
             ),
             "description": (
                 "Programa de fidelidade da loja. A taxa de acúmulo vale para todos os pedidos. "
-                "Os limiares definem quando o cliente sobe de nível — Bronze é o nível inicial "
+                "Os limiares definem quando o cliente sobe de nível. Bronze é o nível inicial "
                 "(a partir de 0 pontos) e cada nível seguinte exige mais pontos acumulados. "
                 "A meta de carimbos vale para novas contas."
             ),
@@ -2485,12 +2577,16 @@ _POS_FIELDSETS = (
                 "defaults_pos_discount_approval_threshold_q",
                 "defaults_pos_fiscal_toggle",
                 "defaults_pos_late_fiscal_emission_days",
+                "defaults_pos_cash_tolerance_percent",
+                ("defaults_pos_cash_tolerance_min", "defaults_pos_cash_tolerance_max"),
             ),
             "description": (
                 "Políticas do balcão. O limite de aprovação vale para descontos "
-                "manuais aplicados no PDV — acima dele, é preciso o PIN do gerente. "
+                "manuais aplicados no PDV: acima dele, é preciso o PIN do gerente. "
                 "A emissão de NFC-e só aparece se ligada aqui E com o Focus configurado. "
-                "A emissão avulsa (nota de venda que não a pediu) sempre exige o gerente."
+                "A emissão avulsa (nota de venda que não a pediu) sempre exige o gerente. "
+                "A tolerância do caixa decide o que vira alerta no fechamento; o operador nunca "
+                "vê o veredito (fechamento cego), só o relatório do turno."
             ),
         },
     ),
@@ -2553,7 +2649,7 @@ _INTEGRATIONS_FIELDSETS = (
                 "A partir de quantas PESSOAS um disparo de mensagem deixa de ser “leia o "
                 "resumo e toque” e passa a pedir frase digitada e senha. Vale o que chegar "
                 "primeiro: a fatia da base ou o teto de gasto. Postagem pública fica de "
-                "fora — ela se apaga, não custa por pessoa, e o número de plataformas não "
+                "fora: ela se apaga, não custa por pessoa, e o número de plataformas não "
                 "mede risco. Quem mudou e quando fica no histórico desta página."
             ),
         },
@@ -2566,7 +2662,7 @@ _INTEGRATIONS_FIELDSETS = (
                 "defaults_operator_capacity_sustain_minutes",
             ),
             "description": (
-                "Cada app de operação (PDV, Cozinha, Pedidos, Produção, Shopman Apps, Marketing, "
+                "Cada app de operação (PDV, Cozinha, Pedidos, Produção, Central, Marketing, "
                 "B.I., Compras) mede a memória e a CPU do serviço em que roda e mostra no "
                 "indicador de capacidade do rail. Estes limites decidem quando o indicador "
                 "muda de cor e quando o gestor é avisado. Quem mudou e quando fica no "
@@ -2580,7 +2676,7 @@ _INTEGRATIONS_FIELDSETS = (
             "fields": ("channel_refs_display",),
             "description": (
                 "Quais canais respondem pela Loja online e pelo PDV. Definidos no "
-                "deployment (settings/env) — exibidos aqui só para conferência."
+                "deployment (settings/env) e exibidos aqui só para conferência."
             ),
         },
     ),
@@ -3084,7 +3180,7 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
         for label, ref in pairs:
             channel = Channel.objects.filter(ref=ref).first()
             name = channel.name if channel else "(canal não encontrado)"
-            rows.append((label, f"{ref} — {name}"))
+            rows.append((label, f"{ref} · {name}"))
         body = format_html_join(
             "",
             '<div class="flex gap-3 py-1 border-b border-base-100 dark:border-base-800">'

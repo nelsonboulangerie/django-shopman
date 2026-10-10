@@ -1,0 +1,197 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="orders">
+<div class="flex h-[900px] overflow-hidden relative">
+  {{> rail initials="AD" operator="Admin"}}
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- Faixa 1: barra de seções -->
+    <header class="h-16 px-4 flex items-center gap-3 border-b border-border bg-card">
+      <div class="flex items-center gap-2.5 pr-3 mr-1 border-r border-border h-9">
+        <span class="size-8 rounded-md grid place-items-center text-white" style="background:var(--app-color)"><i data-i="square-kanban" class="size-4.5"></i></span>
+        <span class="op-title">Gestor</span>
+      </div>
+      <nav class="flex items-center gap-1">
+        <a class="h-control px-3.5 rounded-md inline-flex items-center gap-2 op-label font-semibold bg-secondary text-foreground shadow-[inset_0_-2px_0_var(--primary)]"><i data-i="clipboard-list" class="size-4"></i>Pedidos <span class="tnum text-xs px-1.5 rounded bg-primary text-primary-foreground">10</span></a>
+        <a class="h-control px-3.5 rounded-md inline-flex items-center gap-2 op-label text-muted-foreground hover:bg-accent"><i data-i="book-open" class="size-4"></i>Catálogo</a>
+        <a class="h-control px-3.5 rounded-md inline-flex items-center gap-2 op-label text-muted-foreground"><i data-i="users" class="size-4"></i>Clientes</a>
+        <a class="h-control px-3.5 rounded-md inline-flex items-center gap-2 op-label text-muted-foreground"><i data-i="monitor-smartphone" class="size-4"></i>Canais <span class="size-2 rounded-full bg-warning"></span></a>
+      </nav>
+      <div class="flex-1"></div>
+      <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Som dos pedidos novos: ligado"><i data-i="volume-2" class="size-5"></i></button>
+      <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4"></i>Ciente</button>
+      {{> global time="22:03" bell="7"}}
+    </header>
+
+    <!-- Faixa 2: barra de trabalho -->
+    <div class="px-4 py-2.5 flex items-center gap-2 border-b border-border bg-background">
+      <label class="h-control w-48 px-3 rounded-md border border-input bg-card inline-flex items-center gap-2">
+        <i data-i="search" class="size-4 text-muted-foreground"></i>
+        <span class="flex-1 op-body text-muted-foreground">Buscar pedido</span>
+        <kbd class="op-micro px-1.5 py-0.5 rounded border border-border bg-muted font-mono text-muted-foreground">/</kbd>
+      </label>
+      <div class="flex items-center gap-1.5 ml-1">
+        <button class="h-control px-3 rounded-full border border-primary bg-primary/10 text-foreground inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos <span class="tnum text-muted-foreground">10</span></button>
+        <button class="h-control px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="bike" class="size-4"></i>iFood <span class="tnum text-muted-foreground">1</span></button>
+        <button class="h-control px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="globe" class="size-4"></i>Loja online <span class="tnum text-muted-foreground">5</span></button>
+        <button class="h-control px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="store" class="size-4"></i>PDV <span class="tnum text-muted-foreground">3</span></button>
+        <button class="h-control px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="message-circle" class="size-4"></i>WhatsApp <span class="tnum text-muted-foreground">1</span></button>
+        <button class="h-control px-3 rounded-full border border-dashed border-border inline-flex items-center gap-2 op-label text-muted-foreground"><i data-i="plus" class="size-4"></i>Entrega/retirada</button>
+      </div>
+      <div class="flex-1"></div>
+      <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="arrow-down-up" class="size-4"></i>Chegada<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+      <div class="h-control p-1 rounded-md bg-secondary inline-flex items-center gap-1" role="radiogroup">
+        <button class="h-full px-2.5 rounded bg-card shadow-sm inline-flex items-center gap-1.5 op-label font-semibold"><i data-i="columns-3" class="size-4"></i>Quadro</button>
+        <button class="h-full px-2.5 rounded inline-flex items-center gap-1.5 op-label text-muted-foreground"><i data-i="table-2" class="size-4"></i>Tabela</button>
+      </div>
+      <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais ações"><i data-i="ellipsis" class="size-5"></i></button>
+    </div>
+
+    <!-- Conteúdo -->
+    <div class="flex-1 overflow-hidden px-4 pt-4 grid grid-cols-3 gap-4">
+      <!-- coluna -->
+      <section class="flex flex-col gap-3 min-w-0">
+        <div class="flex items-baseline gap-2 pb-2 border-b border-border">
+          <i data-i="inbox" class="size-4 self-center text-muted-foreground"></i><h2 class="op-eyebrow">Entrada</h2><span class="tnum op-label text-muted-foreground">0</span>
+          <span class="ml-auto op-micro text-muted-foreground">Novos: aceitar ou recusar</span>
+        </div>
+        <div class="rounded-lg border border-dashed border-border bg-card/60 px-6 py-8 flex flex-col items-center text-center gap-2">
+          <span class="size-11 rounded-full bg-success/10 text-success grid place-items-center"><i data-i="circle-check" class="size-6"></i></span>
+          <p class="op-title">Nenhum pedido novo</p>
+          <p class="op-label font-normal text-muted-foreground max-w-64">Quando um pedido chegar, ele aparece aqui e o som toca.</p>
+        </div>
+      </section>
+
+      <section class="flex flex-col gap-3 min-w-0">
+        <div class="flex items-baseline gap-2 pb-2 border-b border-border">
+          <i data-i="cooking-pot" class="size-4 self-center text-muted-foreground"></i><h2 class="op-eyebrow">Preparo</h2><span class="tnum op-label text-muted-foreground">8</span>
+          <span class="ml-auto op-micro text-muted-foreground">Confirmados e em preparo</span>
+        </div>
+        <!-- card -->
+        <article class="rounded-lg border border-border bg-card p-3.5 flex flex-col gap-2.5">
+          <div class="flex items-start gap-2">
+            <input type="checkbox" class="mt-1 size-5 rounded border-input accent-[var(--primary)]">
+            <div class="flex-1 min-w-0">
+              <p class="op-micro text-muted-foreground inline-flex items-center gap-1"><i data-i="globe" class="size-3.5"></i>Loja online · WEB-261003-</p>
+              <p class="op-figure leading-none">X36</p>
+            </div>
+            <span class="op-label tnum inline-flex items-center gap-1 text-muted-foreground"><i data-i="clock" class="size-3.5"></i>22 min</span>
+            <button class="size-9 -mt-1 rounded-md border border-border grid place-items-center text-muted-foreground" title="Atender"><i data-i="user-plus" class="size-4"></i></button><button class="size-9 -mr-1 -mt-1 rounded-md grid place-items-center text-muted-foreground hover:bg-accent" title="Mais ações do pedido"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="op-body"><span class="font-medium">Maria Santos</span> <span class="text-muted-foreground">· Retirada</span></div>
+          <p class="op-body text-foreground/85">1× Croissant</p>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="h-6 px-2 rounded-full bg-info/12 text-info op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-info"></span>Aceito</span>
+            <span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-warning"></span>Pix aguardando</span>
+            <span class="ml-auto op-title tnum">R$ 13,00</span>
+          </div>
+          <div class="rounded-md bg-muted/70 px-2.5 py-1.5 op-micro text-muted-foreground flex items-center gap-2"><i data-i="folder-clock" class="size-3.5"></i>CRO · Planejado <span class="ml-auto tnum">0%</span></div>
+          <div class="flex items-center gap-2 pt-0.5">
+            <button disabled class="h-action flex-1 rounded-md border border-dashed border-border text-muted-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="lock" class="size-4"></i>Iniciar preparo</button>
+          </div>
+          <p class="op-micro text-muted-foreground -mt-1">Espera o pagamento confirmar para avançar.</p>
+        </article>
+        <article class="rounded-lg border border-border bg-card p-3.5 flex flex-col gap-2.5">
+          <div class="flex items-start gap-2">
+            <input type="checkbox" class="mt-1 size-5 rounded border-input">
+            <div class="flex-1 min-w-0">
+              <p class="op-micro text-muted-foreground inline-flex items-center gap-1"><i data-i="store" class="size-3.5"></i>PDV · PDV-261003-</p>
+              <p class="op-figure leading-none">S84</p>
+            </div>
+            <span class="op-label tnum inline-flex items-center gap-1 text-muted-foreground"><i data-i="clock" class="size-3.5"></i>16 min</span>
+            <button class="size-9 -mt-1 rounded-md border border-border grid place-items-center text-muted-foreground" title="Atender"><i data-i="user-plus" class="size-4"></i></button><button class="size-9 -mr-1 -mt-1 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="op-body"><span class="font-medium">(43) 99111-1111</span> <span class="text-muted-foreground">· Retirada</span></div>
+          <p class="op-body text-foreground/85">3× Pão de Hambúrguer, 3× Mini Focaccia Cebola, Bacon e Tomilho</p>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="h-6 px-2 rounded-full bg-primary/12 text-primary op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-primary"></span>Em preparo</span>
+            <span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Pagamento não informado</span>
+            <span class="ml-auto op-title tnum">R$ 72,00</span>
+          </div>
+          <button class="h-action rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="arrow-right" class="size-4"></i>Marcar pronto</button>
+        </article>
+      </section>
+
+      <section class="flex flex-col gap-3 min-w-0">
+        <div class="flex items-baseline gap-2 pb-2 border-b border-border">
+          <i data-i="package-check" class="size-4 self-center text-muted-foreground"></i><h2 class="op-eyebrow">Saída</h2><span class="tnum op-label text-muted-foreground">2</span>
+          <span class="ml-auto op-micro text-muted-foreground">Retirada, coleta e entrega</span>
+        </div>
+        <article class="rounded-lg border border-border bg-card p-3.5 flex flex-col gap-2.5">
+          <div class="flex items-start gap-2">
+            <input type="checkbox" class="mt-1 size-5 rounded border-input">
+            <div class="flex-1 min-w-0">
+              <p class="op-micro text-muted-foreground inline-flex items-center gap-1"><i data-i="globe" class="size-3.5"></i>Loja online · WEB-261003-</p>
+              <p class="op-figure leading-none">F15</p>
+            </div>
+            <span class="op-label tnum inline-flex items-center gap-1 text-muted-foreground"><i data-i="clock" class="size-3.5"></i>5 min</span>
+            <button class="size-9 -mt-1 rounded-md border border-border grid place-items-center text-muted-foreground" title="Atender"><i data-i="user-plus" class="size-4"></i></button><button class="size-9 -mr-1 -mt-1 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="op-body"><span class="font-medium">(43) 99111-1111</span> <span class="text-muted-foreground">· Retirada</span></div>
+          <p class="op-body text-foreground/85">2× Cappuccino, 3× Namastê Chai Kãnfa — Lata 70g</p>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>Pronto</span>
+            <span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-muted-foreground"></span>Pagamento não informado</span>
+            <span class="ml-auto op-title tnum">R$ 243,00</span>
+          </div>
+          <button class="h-action rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="hand-platter" class="size-4"></i>Marcar como retirado</button>
+        </article>
+        <article class="rounded-lg border border-border bg-card p-3.5 flex flex-col gap-2.5">
+          <div class="flex items-start gap-2">
+            <input type="checkbox" class="mt-1 size-5 rounded border-input">
+            <div class="flex-1 min-w-0">
+              <p class="op-micro text-muted-foreground inline-flex items-center gap-1"><i data-i="store" class="size-3.5"></i>PDV · DLV-</p>
+              <p class="op-figure leading-none">NARUA</p>
+            </div>
+            <span class="op-label tnum inline-flex items-center gap-1 text-warning font-semibold"><i data-i="clock" class="size-3.5"></i>29 min</span>
+            <button class="size-9 -mt-1 rounded-md border border-border grid place-items-center text-muted-foreground" title="Atender"><i data-i="user-plus" class="size-4"></i></button><button class="size-9 -mr-1 -mt-1 rounded-md grid place-items-center text-muted-foreground"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+          <div class="op-body"><span class="font-medium">João Oliveira</span> <span class="text-muted-foreground">· Entrega</span></div>
+          <p class="op-micro text-muted-foreground inline-flex items-center gap-1"><i data-i="map-pin" class="size-3.5"></i>Rua Paranaguá, 800, Bl B Apto 5 · Centro</p>
+          <p class="op-body text-foreground/85">3× Baguette de Tradition, 2× Croissant</p>
+          <p class="op-micro text-muted-foreground inline-flex items-center gap-1"><i data-i="smartphone-nfc" class="size-3.5"></i>Saiu com a maquininha de demonstração</p>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="h-6 px-2 rounded-full bg-info/12 text-info op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-info"></span>Saiu para entrega</span>
+            <span class="h-6 px-2 rounded-full bg-muted text-muted-foreground op-micro font-semibold inline-flex items-center gap-1.5"><i data-i="banknote" class="size-3"></i>Dinheiro · troco R$ 26</span>
+            <span class="ml-auto op-title tnum">R$ 74,00</span>
+          </div>
+          <button class="h-action rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center justify-center gap-2"><i data-i="undo-2" class="size-4"></i>Entregador voltou</button>
+        </article>
+      </section>
+    </div>
+  </main>
+  <span class="pin" style="left:20px;top:150px">1</span>
+  <span class="pin" style="left:300px;top:4px">2</span>
+  <span class="pin" style="left:930px;top:4px">3</span>
+  <span class="pin" style="left:70px;top:70px">4</span>
+  <span class="pin" style="left:1160px;top:70px">5</span>
+  <span class="pin" style="left:1150px;top:180px">6</span>
+  <span class="pin" style="left:540px;top:318px">7</span>
+  <span class="pin" style="left:70px;top:170px">8</span>
+
+  <!-- menu ⋯ aberto -->
+  <div class="absolute right-4 top-[124px] w-64 rounded-lg border border-border bg-popover shadow-xl p-1.5 z-20">
+    <p class="px-2.5 pt-1.5 pb-1 op-eyebrow text-muted-foreground">Esta lista</p>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label hover:bg-accent"><i data-i="refresh-cw" class="size-4"></i>Atualizar<kbd class="ml-auto op-micro font-mono text-muted-foreground">R</kbd></button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label bg-accent"><i data-i="download" class="size-4"></i>Exportar CSV</button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="printer" class="size-4"></i>Imprimir quadro</button>
+    <div class="h-px bg-border my-1"></div>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="keyboard" class="size-4"></i>Atalhos desta tela<kbd class="ml-auto op-micro font-mono text-muted-foreground">?</kbd></button>
+  </div>
+
+
+
+
+
+
+</div>
+<div class="legend">
+  <p class="t">Gestor · Pedidos <span>proposta · nada sai da tela, só muda de lugar ou de forma</span></p>
+  <div><b>1</b>Rail da suíte: os 8 apps a um toque, o atual aceso na cor dele; aviso pendente vira ponto no ícone.</div>
+  <div><b>2</b>Barra de seções do kit (OperatorAppBar), igual em todos os apps; contagem na própria aba.</div>
+  <div><b>3</b>Faixa global igual em todo app: busca na suíte (Ctrl K), "Ao vivo" com a hora da leitura (substitui a faixa "Última leitura útil"), um sino só e os atalhos.</div>
+  <div><b>4</b>Barra de trabalho: busca desta lista com a tecla ensinada (/), filtros como chips com contagem.</div>
+  <div><b>5</b>Ordenar e Quadro/Tabela com o mesmo controle em todo app (menu e controle segmentado do kit).</div>
+  <div><b>6</b>Ações raras (Exportar CSV, Imprimir, Atualizar) vão para o menu ⋯, com a mesma tecla de antes.</div>
+  <div><b>7</b>Status num vocabulário só de tom (info, sucesso, alerta, neutro), em token, nunca cor solta.</div>
+  <div><b>8</b>Estado vazio padrão: diz o que é o espaço e o que vai acontecer.</div>
+</div>
+</body></html>

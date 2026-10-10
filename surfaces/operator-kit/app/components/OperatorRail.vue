@@ -2,7 +2,7 @@
 // Rail de operador CANÔNICO — a espinha vertical em `bg-rail` (token próprio do chrome,
 // de marca: disciplina de ERP) que TODAS as superfícies de operador adotam. É o portador
 // nº1 da familiaridade: mesma peça em POS/Gestor/KDS/Produção e na home. Segura o que é
-// COMUM (voltar ao Shopman Apps, capacidade do serviço, operador/travar, tema, e o que o app
+// COMUM (voltar à Central, capacidade do serviço, operador/travar, tema, e o que o app
 // puser em #status); o específico de cada app entra pelos slots (#nav = funções;
 // #status = saúde/conexão).
 //
@@ -11,10 +11,14 @@
 // rótulo). A nav de SEÇÃO de cada app (abas do Gestor, visões do Produção) NÃO vive aqui —
 // fica no topo do conteúdo; o rail concentra só o comum e economiza a horizontal.
 import { computed, ref } from "vue";
-import { OPERATOR_APPS } from "../../appIdentity";
+import { OPERATOR_APPS, operatorAppNamed } from "../../appIdentity";
+import { workstationKindIcon } from "../presentation/workstation";
+import type { OperatorSession } from "../types/operator";
 
 /** O nome da home sai da identidade canônica, como o nome de qualquer app. */
 const HUB_LABEL = OPERATOR_APPS.hub.label;
+/** "Voltar à Central": a contração sai do artigo da identidade, não de um literal. */
+const HUB_BACK = `Voltar ${operatorAppNamed("hub", "a")}`;
 
 interface OperatorRailIdentity { label: string; icon: string; iconSrc: string }
 
@@ -28,7 +32,7 @@ const props = defineProps<{
   appIconSrc?: string;
   /** Rótulo do app. Omitido → vem da identidade canônica. */
   appLabel?: string;
-  /** URL do Shopman Apps (a home). Omitida na própria home → some o item. */
+  /** URL da Central (a home). Omitida na própria home → some o item. */
   hubUrl?: string;
   /** Operador ativo — mostra o item de travar/trocar; emite `lock` ao acionar. */
   operatorName?: string;
@@ -44,9 +48,16 @@ const iconSrc = computed(() => props.appIconSrc || identity?.iconSrc);
 
 const emit = defineEmits<{ lock: [] }>();
 
+// O posto deste dispositivo ("Posto Expedição"), como contexto: lido da antessala que
+// o shell já buscou (`useOperatorLock`, chave `operator-session`), sem fetch a mais.
+// Dispositivo que não é posto não mostra nada.
+const { data: operatorSession } = useNuxtData<OperatorSession>("operator-session");
+const workstationContext = computed(() => operatorSession.value?.workstation?.context_label ?? "");
+const workstationIcon = computed(() => workstationKindIcon(operatorSession.value?.workstation?.kind ?? ""));
+
 const { state, isCollapsed, isExtended } = useRailState();
 
-// Voltar ao Shopman Apps é ir para OUTRA origem (`central.<zona>`). No app instalado isso
+// Voltar à Central é ir para OUTRA origem (`central.<zona>`). No app instalado isso
 // precisa acontecer na janela dele, não dentro desta — ver `presentation/appLaunch.ts`.
 const { attrsFor } = useOperatorAppLink();
 const hubLink = computed(() => attrsFor(props.hubUrl || ""));
@@ -95,15 +106,15 @@ const showAppImage = computed(() => Boolean(iconSrc.value) && !appIconBroken.val
     :data-rail-state="state"
   >
     <!-- Identidade + volta para a home (padrão Odoo): o ícone forte do app é também o
-         atalho pro Shopman Apps — no hover/foco vira uma seta "voltar". Na própria home
+         atalho pra Central — no hover/foco vira uma seta "voltar". Na própria home
          (sem hubUrl) é identidade pura, sem atalho. -->
     <component
       :is="hubUrl ? 'a' : 'div'"
       :href="hubUrl"
       :target="hubUrl ? hubLink.target : undefined"
       :rel="hubUrl ? hubLink.rel : undefined"
-      :aria-label="hubUrl ? `Voltar ao ${HUB_LABEL}` : undefined"
-      :title="hubUrl ? `Voltar ao ${HUB_LABEL}` : undefined"
+      :aria-label="hubUrl ? HUB_BACK : undefined"
+      :title="hubUrl ? HUB_BACK : undefined"
       class="group mb-1 flex items-center gap-2"
       :class="isExtended ? 'w-full' : ''"
     >
@@ -163,11 +174,24 @@ const showAppImage = computed(() => Boolean(iconSrc.value) && !appIconBroken.val
         <OperatorCapacityStatus v-if="operatorName" :key="operatorName" />
       </ClientOnly>
 
+      <!-- Contexto, não ação: o posto onde este dispositivo está vinculado. -->
+      <div
+        v-if="workstationContext"
+        class="flex h-11 items-center rounded-md text-rail-foreground/80"
+        :class="isExtended ? 'w-full gap-3 px-2.5' : 'w-11 justify-center'"
+        :title="isExtended ? undefined : workstationContext"
+        data-rail-workstation
+      >
+        <Icon :name="workstationIcon" class="size-5 shrink-0" aria-hidden="true" />
+        <span v-if="isExtended" class="min-w-0 text-sm leading-tight">{{ workstationContext }}</span>
+        <span v-else class="sr-only">{{ workstationContext }}</span>
+      </div>
+
       <RailItem
         v-if="operatorName"
         icon="user-round"
         :label="operatorName"
-        :aria-label="`${operatorName} — travar / trocar`"
+        :aria-label="`${operatorName}: travar ou trocar`"
         @activate="emit('lock')"
       />
 

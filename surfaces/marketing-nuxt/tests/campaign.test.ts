@@ -159,7 +159,7 @@ describe("exclusionNotes", () => {
 
   it("never turns a new server reason into silence", () => {
     expect(exclusionNotes({ some_new_gate: 2 })).toEqual([
-      "2 pessoas fora por um motivo novo (some_new_gate) — avise quem cuida do sistema",
+      "2 pessoas fora por um motivo novo (some_new_gate). Avise quem cuida do sistema",
     ]);
   });
 

@@ -45,7 +45,7 @@ function projection(overrides: Partial<DayClosingProjection> = {}): DayClosingPr
     ],
     has_pending_production: true,
     upcoming_preorders: [
-      { date: "2026-08-19", date_display: "19/08", orders_count: 3, total_q: 9000, total_display: "90,00" },
+      { date: "2026-08-19", date_display: "19/08", orders_count: 3 },
     ],
     has_upcoming_preorders: true,
     ...overrides,
@@ -117,6 +117,15 @@ describe("fechamento do dia — DEPOIS de registrado, o quadro aparece", () => {
     expect(texto).toContain("Encomendas para os próximos dias");
     expect(texto).toContain("Produção pendente");
     expect(texto).toContain("BAGUETE");
+  });
+
+  it("as encomendas dos próximos dias saem em PEDIDOS, nunca em reais", async () => {
+    const page = await abrirTela(projection({ already_closed: true, existing_closing_display: "Fechado às 19:40" }));
+    const texto = page.text();
+
+    // Fechamento é cego para dinheiro; o valor vendido é do relatório do Dono.
+    expect(texto).toContain("Encomendas para os próximos dias");
+    expect(texto).not.toContain("R$");
   });
 
   it("e o aviso de bloqueio some, porque já não há o que bloquear", async () => {

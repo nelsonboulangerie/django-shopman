@@ -719,6 +719,31 @@ system check `SHOPMAN_W022`/`SHOPMAN_W023` e `manage.py concierge_check` (`shopm
 Testes em `shopman/storefront/tests/test_concierge_triage.py`. Ligar continua sendo do dono, no
 painel, pela sequência do `docs/plans/WHATSAPP-CONCIERGE-PLAN.md`.
 
+**Ajuste do dono, 03/10/2026: glúten saiu da lista sensível.** A pergunta que é SÓ de glúten
+(glúten, trigo como restrição, doença celíaca) a Concierge responde sozinha, porque a resposta é
+categórica: a casa usa farinha de trigo em tudo o que assa e não tem nada sem glúten. A resposta é
+o aviso de produção compartilhada da casa (`Shop.food_safety_notice`, o mesmo da página de cada
+produto), mais os alérgenos declarados do produto citado; nenhum texto próprio da Concierge, então
+o gestor edita no Admin e as duas superfícies mudam juntas. Glúten junto de outra alergia, outras
+alergias, reclamação, pedido de pessoa e casa sem aviso cadastrado seguem para a equipe.
+Registro em `docs/coordination/ROUNDS/OBS0310-H-concierge-gluten.md`.
+
+**Ajuste do dono, 03/10/2026 (mesmo dia): TODAS as perguntas de alergia e alérgeno.** A Concierge
+responde sozinha qualquer pergunta de alérgeno, não só glúten, pela mesma fonte única: o aviso de
+produção compartilhada da casa (que cobre glúten e traços de leite, ovos, castanha-do-brasil,
+castanha de caju, gergelim e pimenta-do-reino) mais os alérgenos declarados do produto citado, e
+sempre termina oferecendo a equipe para alergia grave (copy `CONCIERGE_ALLERGY_TEAM_OFFER`,
+editável em Copy Omotenashi; "sim" logo depois chama a equipe). "Glúten + outra alergia" agora é
+respondido inteiro. Regras de segurança: nunca afirma ausência de alérgeno; produto sem alérgeno
+declarado não é apresentado como seguro (a linha dele diz que vale o aviso, pode conter traços);
+nada é listado como "pode comer"; alergia sem dizer a quê recebe a pergunta "a quê?" (e, se a
+resposta ainda não disser, vai para a equipe); alérgeno de que nenhuma das duas fontes fala
+(soja, amendoim, hoje) e restrição que não é alérgeno (vegano, diabetes) vão para a equipe, porque
+responder só com o aviso deixaria deduzir uma ausência que ninguém afirmou; reação alérgica ou
+pessoa passando mal é reclamação, equipe, sempre; casa sem aviso cadastrado, equipe. Código em
+`shopman/storefront/concierge/allergens.py`; registro em
+`docs/coordination/ROUNDS/OBS0310-I-concierge-alergenos.md`.
+
 ---
 
 ## D-019 · Botão do `link_pagamento_enviado` vai para a tela do pedido
@@ -828,7 +853,7 @@ visual espera aprovação visual do dono).
 
 ## D-026 · Drift do spec em `[FAIL]` por `SHOPMAN_COURIER_ADAPTER` é o desenho do D-020
 
-- **Estado:** `DECIDIDA` · **Dono:** coordenador noturno · **Data:** 2026-10-02 · **revisar_em:** quando a chave entrar no arquivo
+- **Estado:** `SUPERADA` (10/10, PR #1633: a chave entrou no arquivo com o valor do vivo) · **Dono:** coordenador noturno · **Data:** 2026-10-02 · **revisar_em:** —
 
 **Decisão.** Não declarar exceção no `check_do_spec_drift.py`. Com o interruptor ligado no painel e
 fora do arquivo (D-020), o drift acusa `[FAIL]` só nessa chave, e é o que o teste exige

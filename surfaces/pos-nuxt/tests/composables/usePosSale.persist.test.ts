@@ -21,7 +21,14 @@ function openProjection() {
  * não agenda por si) — evita depender do `openTab`/`setFromTabPayload` internos.
  */
 function saleWithOpenTab(actionCall = vi.fn().mockResolvedValue({})) {
-  const h = makeSale({ projection: openProjection(), actionCall });
+  // A revisão silenciosa do total da venda (`saleTotal`) também chama o
+  // servidor a cada mudança do carrinho. Ela não é persistência: responde à
+  // parte, e as contagens destes testes enxergam só o que grava a comanda.
+  const routed = vi.fn((path: string, options?: unknown) => (String(path).includes("/sale/review/")
+    ? Promise.resolve({ review: { total_q: 0, total_display: "R$ 0,00" } })
+    : actionCall(path, options)));
+  const h = makeSale({ projection: openProjection(), actionCall: routed });
+  h.handles.actionCall = actionCall;
   h.sale.cart.tabRef = "M1";
   h.sale.cart.tabDisplay = "M1";
   h.sale.cart.tabSessionKey = "sess-1";

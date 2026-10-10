@@ -20,7 +20,7 @@ esta é a do resíduo de produção morta.
 
 **A janela é "só quando a WO está morta", não uma idade.** Zerar por idade
 decidiria pelo operador: o quant ``started`` de ONTEM de uma WO ainda
-``started`` é a fornada esquecida que a expedição aceita concluir tarde hoje —
+``started`` é a fornada esquecida que o Fechamento aceita fechar tarde hoje —
 e o ``realize`` do finish precisa do quant lá para creditar a vitrine. Zerar
 antes quebraria o finish tardio e cancelaria a fornada por baixo do pano,
 deixando a WO ``started`` para sempre com estoque zero. O par desenhado:

@@ -8,7 +8,10 @@
 // Recusar exige motivo (o cliente é avisado com ele); cancelar pode sair em branco,
 // com o texto genérico que a página aplica.
 import type { ReasonChoice } from "../../../operator-kit/app/types/reason";
-import type { CancellationPresetGroupProjection, CancellationReason } from "~/types/orders";
+import type {
+  CancellationPresetGroupProjection,
+  CancellationReason,
+} from "~/types/orders";
 
 const props = defineProps<{
   open: boolean;
@@ -28,7 +31,9 @@ const emit = defineEmits<{
   confirm: [payload: { reason: string; cancellationCode: string }];
 }>();
 
-const title = computed(() => (props.mode === "reject" ? "Recusar pedido" : "Cancelar pedido"));
+const title = computed(() =>
+  props.mode === "reject" ? "Recusar pedido" : "Cancelar pedido",
+);
 const description = computed(() =>
   props.marketplace
     ? "Escolha o motivo que o iFood exige. Ele é enviado ao iFood."
@@ -54,10 +59,20 @@ const description = computed(() =>
     loading-text="Carregando motivos do iFood…"
     :error="error"
     :busy="busy"
-    :placeholder="mode === 'reject' ? 'Motivo da recusa…' : 'Motivo do cancelamento (opcional)…'"
+    :placeholder="
+      mode === 'reject'
+        ? 'Motivo da recusa…'
+        : 'Motivo do cancelamento (opcional)…'
+    "
     @update:open="(value: boolean) => emit('update:open', value)"
     @dirty-change="(value: boolean) => emit('dirty-change', value)"
     @retry="emit('retry')"
-    @confirm="(choice: ReasonChoice) => emit('confirm', { reason: choice.reason, cancellationCode: choice.code })"
+    @confirm="
+      (choice: ReasonChoice) =>
+        emit('confirm', {
+          reason: choice.reason,
+          cancellationCode: choice.code,
+        })
+    "
   />
 </template>

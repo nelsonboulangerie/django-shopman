@@ -165,7 +165,7 @@ class FocusNFeBackend:
             )
         except HTTPError as exc:
             if exc.code == 400:
-                return False, "A NFC-e ainda não está autorizada — reenvie quando autorizar."
+                return False, "A NFC-e ainda não está autorizada. Reenvie quando autorizar."
             return False, f"Focus NFe recusou o envio (HTTP {exc.code})."
         except (URLError, TimeoutError) as exc:
             return False, f"Focus NFe inacessível: {exc}"
@@ -815,7 +815,7 @@ def _document_result(response: dict, config: dict | None = None) -> FiscalDocume
             access_key=str(access_key) if access_key else None,
             status="processing",
             error_code="focus_nfe_processing",
-            error_message="NFC-e em processamento na SEFAZ — consultar novamente.",
+            error_message="NFC-e em processamento na SEFAZ: consultar novamente.",
         )
     return FiscalDocumentResult(
         success=success,

@@ -105,4 +105,8 @@ export interface OperatorOrderDetail {
   customer_note: string;
   kitchen_note: string;
   timeline: OrderDetailTimelineEvent[];
+  /** O nome do canal como a loja o chama ("Loja online"); vazio cai no ref. */
+  channel_name?: string;
+  /** "aberto às 21:47" (o cabeçalho do detalhe em duas colunas). */
+  opened_line?: string;
 }

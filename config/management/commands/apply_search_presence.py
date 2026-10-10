@@ -97,7 +97,7 @@ PUBLIC_FAQ: tuple[dict, ...] = (
             "castanha de caju, gergelim e pimenta-do-reino. Na página de cada produto, em "
             "Ingredientes e restrições, listamos os ingredientes e os alérgenos declarados."
         ),
-        "search_terms": "glúten, sem glúten, celíaco, alergia, alérgenos, intolerância, lactose, leite, ovos, castanhas, gergelim, traços, trigo",
+        "search_terms": "glúten, sem glúten, celíaco, celíaca, doença celíaca, farinha de trigo, alergia, alérgenos, intolerância, lactose, leite, ovos, castanhas, gergelim, traços, trigo",
     },
     {
         "ref": "como-faco-um-pedido-pelo-site",

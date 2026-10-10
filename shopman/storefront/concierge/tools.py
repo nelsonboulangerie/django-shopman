@@ -80,6 +80,8 @@ class ToolContext:
     extra_replies: list[str] = field(default_factory=list)
     handoff: bool = False
     handoff_reason: str = ""
+    #: O aviso do handoff montado pela casa (motivo + "já chamei a equipe").
+    handoff_ack: str = ""
     order_ref: str = ""
     rendered_results: list[str] = field(default_factory=list)
 
@@ -467,10 +469,25 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
     from shopman.storefront.presentation.catalog import build_catalog
     from shopman.storefront.presentation.public_information import search_public_faq
 
+    from .small_talk import strip_small_talk
+
+    # Cumprimento não é termo de busca: "bom dia, tudo bem?" casava "bom" com
+    # "bom para cachorro quente" e "dia" com "todos os dias" (alpha, 03/10/2026).
     search_text = " ".join(
-        dict.fromkeys(text.strip() for text in (ctx.customer_text, query) if text and text.strip())
+        dict.fromkeys(
+            stripped
+            for stripped in (strip_small_talk(text) for text in (ctx.customer_text, query) if text)
+            if stripped
+        )
     )
     needle = _fold(search_text).strip()
+    if not needle and any((text or "").strip() for text in (ctx.customer_text, query)):
+        # Sobrou só cortesia: nada a buscar. Sem isto a busca vazia viraria o
+        # cardápio inteiro.
+        return {
+            "ok": True, "code": "no_match", "outcome": "read", "found": False, "count": 0,
+            "available_count": 0, "items": [], "answers": [], "links": [], "issues": [],
+        }
     issues = []
     catalog = None
     ref = _catalog_channel_ref(ctx.channel_ref)
@@ -505,9 +522,18 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
             items = []
     items.sort(key=lambda item: (0 if item.can_add_to_cart else 1))
 
+    # Cada palavra responde uma vez: a que achou produto fica com o catálogo, e
+    # só o resto vai às perguntas frequentes. Sem isso "tem croissant hoje?"
+    # trazia a explicação do levain (que cita croissant no corpo) junto do preço.
+    matched_words = set()
+    if needle:
+        for item in items:
+            matched_words.update(re.findall(r"[a-z0-9]+", _fold(f"{item.name} {item.category or ''}")))
+    faq_terms = [term for term in _public_search_terms(search_text) if term not in matched_words]
+
     try:
         shop = Shop.load()
-        faq_query = " ".join(_public_search_terms(search_text))
+        faq_query = " ".join(faq_terms)
         answers = (
             search_public_faq(
                 faq_query,
@@ -1430,6 +1456,26 @@ def order_status(ctx: ToolContext, order_ref: str = "") -> dict:
     return {"ok": True, "orders": orders}
 
 
+def add_to_order(ctx: ToolContext, order_ref: str, sku: str, qty: int) -> dict:
+    """Acrescentar a um pedido JÁ FEITO do cliente: só a PERGUNTA, nada muda aqui.
+
+    Pelo mesmo serviço do balcão (``order_addition`` → ``order_edit``). Devolve a
+    pergunta de uma linha da casa (itens, pedido, total novo, saldo) ou o motivo
+    de não dar com o caminho que existe; a pergunta fica pendente na memória da
+    conversa e o "sim" do cliente é aplicado pelo servidor, sem modelo.
+    """
+    from . import order_addition
+
+    outcome = order_addition.propose(
+        ctx.conversation, order_ref=str(order_ref or ""), additions=[{"sku": sku, "qty": qty}]
+    )
+    if outcome.handoff:
+        ctx.handoff = True
+        ctx.handoff_reason = outcome.handoff_reason
+        ctx.handoff_ack = outcome.text
+    return {"ok": True, "code": outcome.code, "message": outcome.text, "pending": outcome.pending}
+
+
 def last_order(ctx: ToolContext) -> dict:
     """O último pedido do cliente, para o "o de sempre"."""
     from shopman.guestman.services import customer as customer_service
@@ -1679,7 +1725,7 @@ def _guard(handler):
     return guarded
 
 
-for _name in ("search_storefront", "view_cart", "last_order", "order_status", "list_fulfillment_slots", "set_item", "set_fulfillment", "review_order", "place_order", "send_web_link", "notify_when_available"):
+for _name in ("search_storefront", "view_cart", "last_order", "order_status", "list_fulfillment_slots", "set_item", "set_fulfillment", "review_order", "place_order", "add_to_order", "send_web_link", "notify_when_available"):
     globals()[_name] = _guard(globals()[_name])
 
 
@@ -1714,9 +1760,9 @@ def render_result(name: str, result: dict) -> str:
         if result.get("found") is False:
             return "Não encontrei essa informação no conteúdo público da loja. Posso chamar a equipe."
         if result.get("overview"):
-            rows = [f"{_display_name(c['label'])}: {c['available_count']} disponíveis. " + "; ".join(f"{_display_name(i['name'])} — {i['price']}" for i in c['examples']) for c in result.get("collections", [])]
+            rows = [f"{_display_name(c['label'])}: {c['available_count']} disponíveis. " + "; ".join(f"{_display_name(i['name'])} ({i['price']})" for i in c['examples']) for c in result.get("collections", [])]
         else:
-            rows = [f"{_display_name(i['name'])} — {i['price']}. {_display_text(i['availability_label'])}" for i in result.get("items", [])]
+            rows = [f"{_display_name(i['name'])}: {i['price']}. {_display_text(i['availability_label'])}" for i in result.get("items", [])]
         rows.extend(_display_text(answer.get("answer")) for answer in result.get("answers", []))
         for link in result.get("links", []):
             url = str(link.get("url") or "")
@@ -1728,7 +1774,7 @@ def render_result(name: str, result: dict) -> str:
             rows.append("Qual deles você prefere?")
         return "\n".join(rows)
     if name in {"view_cart", "set_item", "set_fulfillment", "review_order"}:
-        rows = [f"{i['qty']} × {_display_name(i['name'])} — {i['line_total']}" for i in result.get("lines", [])]
+        rows = [f"{i['qty']} × {_display_name(i['name'])}: {i['line_total']}" for i in result.get("lines", [])]
         if not rows:
             return "Sua sacola está vazia. Escolha um produto para começar."
         rows.append(f"Total: {result.get('total', '')}")
@@ -1768,7 +1814,7 @@ def render_result(name: str, result: dict) -> str:
     if name == "order_status":
         rows = []
         for order in result.get("orders", []):
-            rows.append(f"Pedido {order['order_ref']} — {order['title']}. {order['message']} Total: {order['total']}.")
+            rows.append(f"Pedido {order['order_ref']}: {order['title']}. {order['message']} Total: {order['total']}.")
             for action in order.get("actions", []):
                 if action.get("enabled"):
                     href = action.get("href") or order["tracking_url"]
@@ -1935,6 +1981,22 @@ TOOL_SPECS: list[dict] = [
         ),
     },
     {
+        "name": "add_to_order",
+        "description": (
+            "Acrescentar item a um pedido JÁ FEITO do cliente (não a sacola). Use SÓ quando o cliente "
+            "pedir; nunca ofereça. Não muda nada: devolve a pergunta de confirmação da casa, ou o motivo "
+            "de não dar. O \"sim\" do cliente o servidor aplica."
+        ),
+        "input_schema": _schema(
+            {
+                "order_ref": {"type": "string", "description": "Número do pedido do cliente."},
+                "sku": {"type": "string", "description": "SKU do produto (de search_storefront)."},
+                "qty": {"type": "integer", "description": "Quantos a mais, de 1 a 99."},
+            },
+            ["order_ref", "sku", "qty"],
+        ),
+    },
+    {
         "name": "last_order",
         "description": "Itens do último pedido do cliente, para repetir (\"o de sempre\").",
         "input_schema": _schema({}, []),
@@ -1972,6 +2034,7 @@ _HANDLERS = {
     "review_order": review_order,
     "place_order": place_order,
     "order_status": order_status,
+    "add_to_order": add_to_order,
     "last_order": last_order,
     "send_web_link": send_web_link,
     "notify_when_available": notify_when_available,

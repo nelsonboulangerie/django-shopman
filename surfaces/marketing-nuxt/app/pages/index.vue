@@ -1,10 +1,9 @@
 <script setup lang="ts">
-await navigateTo(
-  { path: "/v2", query: { area: "today" } },
-  { redirectCode: 301, replace: true },
-);
+// A casa do Marketing é a fila de decisões (decisão do dono, 03/10/2026). Os ajustes
+// moram em `/settings/campaigns`, `/settings/templates`, `/settings/offers` e `/settings/platforms`.
+useHead({ title: "Decisões" });
 </script>
 
 <template>
-  <div />
+  <MarketingDecisionQueue />
 </template>

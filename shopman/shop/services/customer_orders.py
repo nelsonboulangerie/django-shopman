@@ -563,7 +563,13 @@ def can_cancel(order) -> bool:
 
 
 @transaction.atomic
-def cancel(order) -> bool:
+def cancel(order, *, actor: str = "customer.self_cancel") -> bool:
+    """O autocancelamento do cliente: a mesma política (``can_cancel``) para todo caminho.
+
+    ``actor`` diz por onde o cliente pediu: o site (``customer.self_cancel``) ou a
+    Concierge no WhatsApp (``concierge``), que cancela só quando o próprio cliente
+    poderia cancelar pelo site, e a pedido dele.
+    """
     from shopman.orderman.models import Order
 
     from shopman.shop.services.cancellation import cancel as cancel_order
@@ -573,7 +579,7 @@ def cancel(order) -> bool:
     payment_service.lock_order_payment(order)
     if not payment_service.can_cancel(order):
         return False
-    return cancel_order(order, reason="customer_requested", actor="customer.self_cancel")
+    return cancel_order(order, reason="customer_requested", actor=actor)
 
 
 def confirm_received(order) -> bool:

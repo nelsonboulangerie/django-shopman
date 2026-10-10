@@ -114,6 +114,12 @@ A linha do rascunho leva o item da nota como DADO, e nao como texto solto:
 `invoiceDescription`, `invoiceQty`/`invoiceUnit`, `invoiceTaxQty`/`invoiceTaxUnit`
 (so quando o eixo tributavel diz algo diferente do comercial) e `invoiceTotal`.
 
+`invoicePurchaseQty` e a quantidade da NOTA na unidade da linha (a mesma de
+`purchaseQty` no scan). `purchaseQty` e o que chegou, e o recebedor sobrescreve;
+`invoicePurchaseQty` fica parado. A diferenca entre os dois e o que o recebimento
+por excecao cobra com motivo (ver abaixo). No rascunho, `invoiceVolumes` traz a
+soma de `transp/vol/qVol` (os volumes que a nota declara; 0 quando nao declara).
+
 `lineNote` e a **ocorrencia do operador** (avaria, falta, ressalva) e nasce
 vazia. Ate 27/08/2026 os dois dividiam a mesma caixa: a descricao da NF era
 despejada dentro do textarea rotulado "Ocorrencia", entao o operador tinha de
@@ -241,3 +247,31 @@ python manage.py smoke_gateways --sandbox-only --json
 O check `purchase_nfe/distribution_credentials` deve sair `ready`. Se ficar
 `blocked_by_credentials`, faltam certificado, documento do destinatario ou o
 reader `SHOPMAN_PURCHASE_INVOICE_READER`.
+
+
+## Recebimento por excecao (UX-C1, 03/10/2026)
+
+Decisao do dono: "recebimento por excecao, sim; validade e incontornavel". O ok
+linha a linha deixou de ser obrigatorio para a linha que **bate com a nota**:
+mesma quantidade (`purchaseQty == invoicePurchaseQty`), mesmo valor
+(`costInput == invoiceTotal`), embalagem que confere com a sugestao da nota e
+nenhuma ocorrencia. Essas linhas entram com UM ato fisico: o recebedor conta os
+volumes na doca e manda `volumes: {counted}` no confirmar.
+
+O servidor (`services/purchase.py::_receipt_attestation`) confere:
+
+- **volumes esperados**: `invoiceVolumes` quando a nota declara; senao, a soma
+  das embalagens das linhas, desde que todas se contem em embalagens (conversao
+  declarada, ou unidade comercial que nao e peso nem volume). A diferenca das
+  linhas de embalagem desconta (a caixa que faltou some da conta). Sem como
+  saber, nao ha atalho e toda linha pede o ok (`receipt_line_unchecked`);
+- `counted` ausente: `receipt_volumes_required`; diferente do esperado:
+  `receipt_volumes_mismatch`;
+- linha que nao bate continua pedindo `checked` (`receipt_line_unchecked`);
+- **toda** diferenca entre nota e chegou pede motivo na `lineNote`
+  (`receipt_difference_reason_required`), conferida ou nao;
+- validade de perecivel continua obrigatoria (`expiry_required`), sem excecao.
+
+Cada `Move` grava `purchase_line_attested_by` (`line_check` ou `volume_count`) e,
+no segundo caso, `purchase_volumes_counted`/`purchase_volumes_expected`; quem
+contou e o `Move.user`. Entrada sem NF nao tem atalho.

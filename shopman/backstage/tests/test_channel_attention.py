@@ -47,8 +47,8 @@ def test_desligado_e_pausado_contam_e_so_venda_vai_para_a_fila(channels):
     assert attention.count == 3
     assert attention.label == "3 desligados"
     assert [(item.ref, item.state, item.line) for item in attention.queue] == [
-        ("web", "off", "Loja online: pedidos desligados — Desfalque na equipe"),
-        ("ifood", "paused", "iFood: pedidos pausados até hoje às 10h30 — Loja cheia"),
+        ("web", "off", "Loja online: pedidos desligados (Desfalque na equipe)"),
+        ("ifood", "paused", "iFood: pedidos pausados até hoje às 10h30 (Loja cheia)"),
     ]
     assert attention.queue[0].focus_path == "/feeds?focus=web"
     # Fim da pausa pelo relógio, sem esperar o worker.

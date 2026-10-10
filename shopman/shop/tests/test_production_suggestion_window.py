@@ -141,3 +141,150 @@ class TestClosedDaysLeaveTheSample:
     def test_no_calendar_configured_excludes_nothing(self, recipe):
         """Sem agenda, a sugestão prefere amostra a mais do que amostra fantasma."""
         assert closed_days_within(days=28) == frozenset()
+
+
+def _first_day_of_next_month() -> date:
+    today = timezone.localdate()
+    return (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+
+
+def _seasons(months_by_season: dict, **extra) -> None:
+    from shopman.shop.models import Shop
+
+    shop = Shop.load() or Shop.objects.create(name="Nelson")
+    shop.defaults = {
+        **(shop.defaults or {}),
+        "production": {"suggestion": {"seasons": months_by_season, **extra}},
+    }
+    shop.save()
+
+
+class TestSeasonStartUsesThePreviousSeason:
+    """Começo de estação: a janela inteira ainda é da estação que acabou.
+
+    A data planejada é o dia 1 do mês que vem e a estação corrente é só esse
+    mês, então nenhum dia da janela (que termina ontem) é da estação corrente.
+    Sem a troca, o filtro por meses deixava a ficha sem amostra e a sugestão
+    sumia; com ela, a conta usa a estação anterior e diz isso.
+    """
+
+    def test_new_season_without_history_falls_back_to_previous(self, recipe):
+        target = _first_day_of_next_month()
+        others = [m for m in range(1, 13) if m != target.month]
+        _seasons({"hot": [target.month], "mild": others})
+        for index, day in enumerate(_same_weekday_days_before(target, count=3)):
+            _sold_on(day, qty=20, ref=f"ANTERIOR-{index}")
+
+        line = next(s for s in suggest_for(target) if s.recipe.pk == recipe.pk)
+
+        assert line.basis["sample_size"] == 3
+        assert Decimal(line.basis["avg_demand"]) == Decimal("20")
+        assert line.basis["season_fallback"] is True
+        assert line.basis["season"] == "mild"
+        assert line.basis["current_season"] == "hot"
+        assert line.basis["current_season_samples"] == 0
+
+    def test_fallback_disabled_keeps_old_behavior(self, recipe):
+        """``season_min_samples = 0`` desliga a troca: a ficha some, como antes."""
+        target = _first_day_of_next_month()
+        others = [m for m in range(1, 13) if m != target.month]
+        _seasons({"hot": [target.month], "mild": others}, season_min_samples=0)
+        for index, day in enumerate(_same_weekday_days_before(target, count=3)):
+            _sold_on(day, qty=20, ref=f"DESLIGADO-{index}")
+
+        assert [s for s in suggest_for(target) if s.recipe.pk == recipe.pk] == []
+
+    def test_enough_current_season_history_keeps_current(self, recipe):
+        """Com amostra suficiente da estação corrente, nada muda."""
+        target = _first_day_of_next_month()
+        far = (target.month + 5) % 12 + 1  # mês longe da janela e da data
+        _seasons({"hot": [m for m in range(1, 13) if m != far], "cold": [far]})
+        for index, day in enumerate(_same_weekday_days_before(target, count=3)):
+            _sold_on(day, qty=12, ref=f"CORRENTE-{index}")
+
+        line = next(s for s in suggest_for(target) if s.recipe.pk == recipe.pk)
+
+        assert line.basis["sample_size"] == 3
+        assert "season_fallback" not in line.basis
+
+
+class TestThinSeasonMerge:
+    """A regra da troca, ficha a ficha, com a fórmula do Core trocada por uma falsa.
+
+    Os casos que dependem de QUANTOS dias da janela caem em cada estação não
+    são reproduzíveis com datas reais (a janela anda com o calendário), então
+    a fórmula falsa devolve a amostra conforme os meses pedidos.
+    """
+
+    @pytest.fixture
+    def two_recipes(self, recipe):
+        broa = Recipe.objects.create(
+            ref="broa", name="Broa", output_sku="BROA", batch_size=Decimal("10")
+        )
+        return recipe, broa
+
+    def _fake_formula(self, samples_by_season):
+        from shopman.craftsman.services.queries import Suggestion
+
+        calls = []
+
+        def fake(target_date, output_skus=None, *, season_months=None, **_kwargs):
+            calls.append((tuple(output_skus or ()), tuple(season_months or ())))
+            key = "current" if season_months == [10, 11, 12, 1, 2, 3] else "previous"
+            out = []
+            for recipe in Recipe.objects.filter(is_active=True).order_by("name"):
+                if output_skus and recipe.output_sku not in output_skus:
+                    continue
+                size = samples_by_season[key].get(recipe.output_sku, 0)
+                if size:
+                    out.append(
+                        Suggestion(recipe=recipe, quantity=Decimal(size), basis={"sample_size": size})
+                    )
+            return out
+
+        return fake, calls
+
+    def _run(self, monkeypatch, samples_by_season, *, min_samples=3):
+        import shopman.craftsman
+
+        _seasons(
+            {"hot": [10, 11, 12, 1, 2, 3], "mild": [4, 5, 9], "cold": [6, 7, 8]},
+            season_min_samples=min_samples,
+        )
+        fake, calls = self._fake_formula(samples_by_season)
+        monkeypatch.setattr(shopman.craftsman, "suggest", fake)
+        return suggest_for(date(2026, 10, 5)), calls
+
+    def test_thin_recipe_swaps_rich_recipe_stays(self, monkeypatch, two_recipes):
+        lines, calls = self._run(
+            monkeypatch,
+            {"current": {"PAO": 4, "BROA": 1}, "previous": {"PAO": 4, "BROA": 4}},
+        )
+        by_sku = {line.recipe.output_sku: line for line in lines}
+
+        assert "season_fallback" not in by_sku["PAO"].basis
+        assert by_sku["BROA"].basis["season_fallback"] is True
+        assert by_sku["BROA"].basis["season"] == "mild"
+        assert by_sku["BROA"].basis["current_season_samples"] == 1
+        # Só a ficha rala volta à fórmula, e com os meses da estação anterior.
+        assert calls[1] == (("BROA",), (4, 5, 9))
+        # A ordem é a das fichas (por nome), como a fórmula devolve.
+        assert [line.recipe.output_sku for line in lines] == ["BROA", "PAO"]
+
+    def test_previous_season_with_less_history_does_not_replace(self, monkeypatch, two_recipes):
+        lines, _calls = self._run(
+            monkeypatch,
+            {"current": {"PAO": 2, "BROA": 4}, "previous": {"PAO": 1}},
+        )
+        by_sku = {line.recipe.output_sku: line for line in lines}
+
+        assert by_sku["PAO"].basis["sample_size"] == 2
+        assert "season_fallback" not in by_sku["PAO"].basis
+
+    def test_everything_sufficient_skips_second_pass(self, monkeypatch, two_recipes):
+        lines, calls = self._run(
+            monkeypatch,
+            {"current": {"PAO": 3, "BROA": 3}, "previous": {}},
+        )
+        assert len(calls) == 1
+        assert all("season_fallback" not in line.basis for line in lines)

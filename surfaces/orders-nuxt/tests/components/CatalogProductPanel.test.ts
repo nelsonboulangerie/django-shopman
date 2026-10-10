@@ -32,7 +32,7 @@ describe("rascunho do produto", () => {
     await w.setProps({ conflict: { product: { ...detail, name: "Outra pessoa" }, conflicting_fields: ["name"] } });
     expect((w.find('input[type="text"]').element as HTMLInputElement).value).toBe("Meu rascunho");
     expect(w.text()).toContain("Nome. Valor atual: Outra pessoa");
-    expect(w.findAll("button").find(b => b.text() === "Salvar")!.attributes("disabled")).toBeDefined();
+    expect(w.find("[data-panel-save]").attributes("disabled")).toBeDefined();
     await w.findAll("button").find(b => b.text() === "Manter meu rascunho")!.trigger("click");
     expect(w.emitted("review-conflict")).toEqual([[true]]);
     expect(w.emitted("save")).toBeUndefined();
@@ -41,11 +41,11 @@ describe("rascunho do produto", () => {
   it("fechar um rascunho requer descarte explícito e não salva", async () => {
     const w = panel();
     await w.find('input[type="text"]').setValue("Meu rascunho");
-    await w.findAll("button").find(b => b.text() === "Cancelar")!.trigger("click");
+    await w.find("[data-panel-discard]").trigger("click");
     expect(w.emitted("update:open")).toBeUndefined();
     await w.findAll("button").find(b => b.text() === "Continuar editando")!.trigger("click");
     expect((w.find('input[type="text"]').element as HTMLInputElement).value).toBe("Meu rascunho");
-    await w.findAll("button").find(b => b.text() === "Cancelar")!.trigger("click");
+    await w.find("[data-panel-discard]").trigger("click");
     await w.findAll("button").find(b => b.text() === "Descartar e fechar")!.trigger("click");
     expect(w.emitted("update:open")).toEqual([[false]]);
     expect(w.emitted("save")).toBeUndefined();
@@ -63,21 +63,21 @@ it("informa rascunho à página para proteger navegação e descarte", async () 
 describe("Vendido por peso", () => {
   it("vira kg, o mesmo campo passa a ser o preço do quilo, e avisa que é só no balcão", async () => {
     const w = panel();
-    const toggle = w.find('[data-testid="sold-by-weight"] input');
+    const toggle = w.get('[data-testid="sold-by-weight"]');
     expect(w.text()).not.toContain("Preço por kg");
-    await toggle.setValue(true);
+    await toggle.trigger("click");
     expect(w.text()).toContain("Preço por kg");
     expect(w.text()).toContain("Vendido só no balcão");
-    await w.findAll("button").find(b => b.text() === "Salvar")!.trigger("click");
+    await w.find("[data-panel-save]").trigger("click");
     expect(w.emitted("save")).toEqual([[{ unit: "kg" }]]);
   });
 
   it("desligar volta a vender por unidade e o rótulo volta a Preço", async () => {
     const w = panel();
     await w.setProps({ detail: { ...detail, unit: "kg" } });
-    await w.find('[data-testid="sold-by-weight"] input').setValue(false);
+    await w.get('[data-testid="sold-by-weight"]').trigger("click");
     expect(w.text()).not.toContain("Preço por kg");
-    await w.findAll("button").find(b => b.text() === "Salvar")!.trigger("click");
+    await w.find("[data-panel-save]").trigger("click");
     expect(w.emitted("save")).toEqual([[{ unit: "un" }]]);
   });
 });
@@ -86,20 +86,20 @@ describe("Permitir compra", () => {
   it("é gesto na hora, fora do rascunho, e o quadrado espera o servidor", async () => {
     const w = panel();
     await w.setProps({ roles: { purchasable: false, sellable: true, produced: false, used_in_recipe: true } });
-    const box = w.find('[data-testid="purchase-toggle"] input[type="checkbox"]');
+    const box = w.get('[data-testid="purchase-toggle"] [role="checkbox"]');
     expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("Vendável");
     expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("Usado em receita");
-    await box.setValue(true);
+    await box.trigger("click");
     expect(w.emitted("set-purchasable")).toEqual([[true]]);
     // Ninguém confirmou ainda: o quadrado volta ao que o servidor diz.
-    expect((box.element as HTMLInputElement).checked).toBe(false);
+    expect(box.attributes("aria-checked")).toBe("false");
     expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
   });
 
   it("o que é produzido aqui não oferece o interruptor", async () => {
     const w = panel();
     await w.setProps({ roles: { purchasable: false, sellable: true, produced: true, used_in_recipe: false } });
-    expect(w.find('[data-testid="purchase-toggle"] input[type="checkbox"]').exists()).toBe(false);
+    expect(w.find('[data-testid="purchase-toggle"] [role="checkbox"]').exists()).toBe(false);
     expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("É produzido aqui");
   });
 });
@@ -109,7 +109,7 @@ it("mostra mudança de origem mesmo quando o valor não mudou", async () => {
   await w.setProps({ detail: { ...detail, allergens: ["leite"], field_sources: { allergens: "recipe" } } });
   await w.setProps({ conflict: { product: { ...detail, allergens: ["leite"], field_sources: { allergens: "manual" } }, conflicting_fields: ["allergens"] } });
   expect(w.text()).toContain("Origem: ficha técnica → edição manual.");
-  expect(w.findAll("button").find(button => button.text() === "Salvar")!.attributes("disabled")).toBeDefined();
+  expect(w.find("[data-panel-save]").attributes("disabled")).toBeDefined();
   expect(w.emitted("save")).toBeUndefined();
 });
 
@@ -138,7 +138,7 @@ describe("GTIN recusado pela SEFAZ", () => {
     await w.find('input[placeholder="8, 12, 13 ou 14 dígitos"]').setValue("3088542500285");
     expect(w.find("[data-gtin-keep-without]").exists()).toBe(false);
     expect(w.find("[data-gtin-rejected-corrected]").text()).toContain("o código novo volta a ir na nota");
-    await w.findAll("button").find(b => b.text() === "Salvar")!.trigger("click");
+    await w.find("[data-panel-save]").trigger("click");
     expect(w.emitted("save")).toEqual([[{ social: { gtin: "3088542500285" } }]]);
   });
 
@@ -147,5 +147,69 @@ describe("GTIN recusado pela SEFAZ", () => {
     await w.setProps({ detail: { ...recusado, gtin_rejected: { ...recusa, confirmed: true, confirmed_by: "maria" } } });
     expect(w.find("[data-gtin-rejected-confirmed]").text()).toContain("maria conferiu a embalagem");
     expect(w.find("[data-gtin-keep-without]").exists()).toBe(false);
+  });
+});
+
+describe("Vocação", () => {
+  const choices = [
+    { ref: "consome-aqui", label: "Consome aqui", hint: "Prato quente" },
+    { ref: "leva", label: "Leva", hint: "Pão, geleia" },
+    { ref: "hibrido", label: "Híbrido", hint: "Croissant" },
+  ];
+  const radios = (w: ReturnType<typeof panel>) => w.findAll('[data-testid="vocation"] [role="radio"]');
+
+  it("mostra as escolhas do servidor com a gravada marcada e a nota de que é só para o B.I.", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, vocation: "leva", vocation_choices: choices } });
+    expect(radios(w).map((r) => r.text())).toEqual(["Consome aqui", "Leva", "Híbrido"]);
+    expect(radios(w).map((r) => r.attributes("aria-checked"))).toEqual(["false", "true", "false"]);
+    expect(w.find('[data-testid="vocation"]').text()).toContain("só para o B.I.");
+  });
+
+  it("escolher entra no rascunho e só grava no Salvar", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, vocation: "", vocation_choices: choices } });
+    expect(w.text()).toContain("Sem vocação: o B.I. não classifica as vendas deste produto.");
+    await radios(w)[2]!.trigger("click");
+    expect(w.emitted("save")).toBeUndefined();
+    expect(w.text()).toContain("1 campo alterado");
+    await w.find("[data-panel-save]").trigger("click");
+    expect(w.emitted("save")).toEqual([[{ vocation: "hibrido" }]]);
+  });
+
+  it("Deixar sem vocação manda vazio", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, vocation: "leva", vocation_choices: choices } });
+    await w.findAll("button").find(b => b.text() === "Deixar sem vocação")!.trigger("click");
+    await w.find("[data-panel-save]").trigger("click");
+    expect(w.emitted("save")).toEqual([[{ vocation: "" }]]);
+  });
+
+  it("no conflito, o valor atual sai pelo rótulo, não pelo ref", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, vocation: "", vocation_choices: choices } });
+    await w.setProps({ conflict: { product: { ...detail, vocation: "hibrido", vocation_choices: choices }, conflicting_fields: ["vocation"] } });
+    expect(w.text()).toContain("Vocação. Valor atual: Híbrido");
+  });
+});
+
+describe("disponibilidade nos canais (V4-G4)", () => {
+  it("um estado só no topo e o porquê por canal; o automático é marcado", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, channel_availability: [
+      { ref: "web", name: "Loja online", kind: "sale", state: "sold_out", since: "09:52", automatic: false },
+      { ref: "ifood", name: "iFood", kind: "sale", state: "sold_out", since: "09:52", automatic: true },
+      { ref: "pos", name: "PDV", kind: "sale", state: "available", since: "", automatic: false },
+    ] } });
+    const block = w.find("[data-panel-availability]");
+    expect(block.text()).toContain("Esgotado em 2 de 3 desde 09:52");
+    const rows = w.findAll("[data-panel-channel]");
+    expect(rows).toHaveLength(3);
+    expect(rows[1]!.text()).toContain("automático");
+    expect(rows[2]!.text()).toContain("À venda");
+  });
+
+  it("sem a leitura, o bloco não aparece", () => {
+    expect(panel().find("[data-panel-availability]").exists()).toBe(false);
   });
 });

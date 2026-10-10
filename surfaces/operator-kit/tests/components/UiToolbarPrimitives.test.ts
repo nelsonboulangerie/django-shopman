@@ -5,14 +5,12 @@ import { h, type VueWrapper } from "vue";
 import UiFilterChip from "../../app/components/UiFilterChip.vue";
 import UiIconButton from "../../app/components/UiIconButton.vue";
 import UiSearchInput from "../../app/components/UiSearchInput.vue";
-import UiToolbar from "../../app/components/UiToolbar.vue";
 
-// As quatro primitivas da barra de trabalho do operador, testadas NA FONTE.
+// As primitivas da barra de trabalho do operador, testadas NA FONTE.
 //
-// Nasceram no Gestor de Pedidos e foram copiadas para o Marketing; na cópia o token
-// de alvo de toque virou literal e o chip caiu de 44 px para 36 px. Estes testes
-// prendem o contrato que o guardrail de arquivo (kitOwnership.guardrails) só
-// consegue farejar por texto: o que de fato vai ao DOM.
+// Primitivas legadas ainda consumidas por apps em migração. Elas fazem opt-in no
+// token de alvo onde seu contrato antigo exige; não há regra global que infle os
+// componentes canônicos do Nuxt UI.
 
 const mounted: VueWrapper[] = [];
 
@@ -27,7 +25,11 @@ afterEach(() => {
 });
 
 describe("UiFilterChip", () => {
-  it("é um botão de 44 px pelo token, com rótulo, ícone e contagem", async () => {
+  // DECISÃO MUDOU (WP-OPERADOR-NUXTUI-ONDAS, onda 0, 08/10/2026): esta trava exigia
+  // o tamanho compacto (sem `min-h-control`) e consagrou a perda do alvo de 44 px da
+  // pílula no balcão do PDV (Encomendas), que nenhum app pediu. O Gestor não usa a
+  // pílula (usa NuxtTabs). A pílula volta ao alvo de toque da casa até cada app migrar.
+  it("tem o alvo de toque da casa (44/48 px), com rótulo, ícone e contagem tabular", async () => {
     const wrapper = await mount(UiFilterChip, {
       props: { active: true, count: 12 },
       slots: { default: () => "Balcão", icon: () => h("i", { class: "glyph" }) },
@@ -36,7 +38,9 @@ describe("UiFilterChip", () => {
     const button = wrapper.get("button");
     expect(button.attributes("type")).toBe("button");
     expect(button.classes()).toContain("min-h-control");
-    expect(button.classes()).toContain("bg-primary");
+    expect(button.classes()).toContain("py-1.5");
+    expect(wrapper.get(".tabular-nums").text()).toBe("12");
+    expect(button.classes()).toContain("bg-primary/10");
     expect(wrapper.get(".glyph").exists()).toBe(true);
     expect(wrapper.text()).toContain("Balcão");
     expect(wrapper.text()).toContain("12");
@@ -45,7 +49,7 @@ describe("UiFilterChip", () => {
   it("some com a contagem quando ela não existe, e fica neutro sem active", async () => {
     const wrapper = await mount(UiFilterChip, { slots: { default: () => "Todos" } });
 
-    expect(wrapper.get("button").classes()).toContain("text-muted-foreground");
+    expect(wrapper.get("button").classes()).toContain("text-default");
     expect(wrapper.text()).toBe("Todos");
   });
 });
@@ -83,25 +87,5 @@ describe("UiSearchInput", () => {
   it("esconde o botão de limpar quando não há o que limpar", async () => {
     const wrapper = await mount(UiSearchInput, { props: { modelValue: "" } });
     expect(wrapper.find('button[aria-label="Limpar busca"]').exists()).toBe(false);
-  });
-});
-
-describe("UiToolbar", () => {
-  it("empurra o cluster `end` para a direita e deixa ele QUEBRAR em tela estreita", async () => {
-    const wrapper = await mount(UiToolbar, {
-      slots: { default: () => h("span", "busca"), end: () => h("span", { class: "tool" }, "ação") },
-    });
-
-    const end = wrapper.get(".ml-auto");
-    // `flex-wrap` é a diferença que a cópia do Marketing tinha perdido: sem ele o
-    // cluster de ações transborda em vez de quebrar.
-    expect(end.classes()).toContain("flex-wrap");
-    expect(end.get(".tool").text()).toBe("ação");
-  });
-
-  it("não abre o cluster `end` quando o slot não é usado", async () => {
-    const wrapper = await mount(UiToolbar, { slots: { default: () => h("span", "só busca") } });
-    expect(wrapper.find(".ml-auto").exists()).toBe(false);
-    expect(wrapper.text()).toBe("só busca");
   });
 });

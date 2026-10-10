@@ -10,10 +10,14 @@ import type {
   MaterialIssue,
   MaterialTone,
   ReceiptBlocker,
+  ReceiptConferenceTally,
   ReceiptConversionSuggestion,
+  ReceiptExceptionView,
+  ReceiptExpiryShortcut,
   ReceiptFieldAnchor,
   ReceiptFiscalDivergence,
   ReceiptLine,
+  ReceiptLineDifference,
   ReceiptLinePreview,
   ReceiptLineRow,
   ReceiptLineStatus,
@@ -31,6 +35,7 @@ import type {
   SupplierCostRow,
   SupplierMaterialCost,
 } from "~/types/purchase";
+import { addDays, shortDayMonth, weekdayShort } from "../../../operator-kit/app/presentation/dates";
 
 const moneyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -44,7 +49,7 @@ const quantityFormatter = new Intl.NumberFormat("pt-BR", {
 });
 
 export function formatMoney(cents: number | null | undefined): string {
-  if (cents === null || cents === undefined || Number.isNaN(cents)) return "—";
+  if (cents === null || cents === undefined || Number.isNaN(cents)) return "sem valor";
   return moneyFormatter.format(cents / 100);
 }
 
@@ -71,7 +76,7 @@ export function parseMoneyInput(value: string): number {
 }
 
 export function formatQty(value: number, unit: string): string {
-  if (!Number.isFinite(value)) return "—";
+  if (!Number.isFinite(value)) return "sem quantidade";
   return `${quantityFormatter.format(value)} ${unit}`;
 }
 
@@ -110,19 +115,19 @@ export function formatFactor(value: number, unit: string, approximate = false): 
 const shortDateFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" });
 
 /**
- * Data curta (dd/mm) para carimbo de tela — "—" quando não há data.
+ * Data curta (dd/mm) para carimbo de tela; "sem data" quando não há data.
  *
  * `Intl.DateTimeFormat.format()` **lança** `RangeError: Invalid time value`
  * diante de um Invalid Date, em vez de devolver texto. Como a projeção manda
  * `lastDeliveryAt: ""` para todo fornecedor que ainda não entregou, formatar
  * sem checar derrubava o render inteiro da aba Fornecedores. Ausência de data é
- * um estado normal do domínio, não um erro: ela vira travessão, não exceção.
+ * um estado normal do domínio, não um erro: ela vira texto, não exceção.
  */
 export function formatShortDate(value: string | null | undefined): string {
   const text = (value ?? "").trim();
-  if (!text) return "—";
+  if (!text) return "sem data";
   const parsed = new Date(`${text}T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) return "—";
+  if (Number.isNaN(parsed.getTime())) return "sem data";
   return shortDateFormatter.format(parsed);
 }
 
@@ -203,6 +208,26 @@ export function invoiceProbe(raw: string) {
     accessKey,
     valid: Boolean(accessKey),
   };
+}
+
+/**
+ * O número da NF lido da própria chave de acesso ("NF 12.884"), para o cabeçalho da
+ * conferência. A chave de 44 dígitos traz o número nas posições 26 a 34 (layout
+ * oficial: UF, AAMM, CNPJ, modelo, série, número, tipo de emissão, código, DV).
+ * Chave ausente ou de outro tamanho → "" (o cabeçalho não inventa número).
+ */
+export function invoiceNumberLabel(accessKey: string | null | undefined): string {
+  const digits = (accessKey ?? "").replace(/\D/g, "");
+  if (digits.length !== 44) return "";
+  const number = Number(digits.slice(25, 34));
+  if (!Number.isFinite(number) || number <= 0) return "";
+  return `NF ${number.toLocaleString("pt-BR")}`;
+}
+
+/** A chave curta do selo ("Chave …4170"): os quatro últimos dígitos bastam para conferir. */
+export function invoiceKeyTail(accessKey: string | null | undefined): string {
+  const digits = (accessKey ?? "").replace(/\D/g, "");
+  return digits.length >= 4 ? `Chave …${digits.slice(-4)}` : "";
 }
 
 export function receiptBaseQty(line: ReceiptLine, conversion: MaterialConversion | null): number {
@@ -291,6 +316,7 @@ export function receiptNextStep(warnings: ReceiptWarning[]): string {
 
 /** Bloqueios que o card do próprio campo já anuncia — o topo não os repete. */
 const FIELD_LEVEL_BLOCKERS = new Set([
+  "difference-reason",
   "confirm-suggestion",
   "missing-material",
   "confirm-conversion",
@@ -317,6 +343,7 @@ const BLOCKER_FIELD: Record<ReceiptWarning["key"], ReceiptFieldAnchor | null> = 
   "confirm-conversion": "conversion",
   "missing-conversion": "conversion",
   "invalid-qty": "qty",
+  "difference-reason": "reason",
   "missing-expiry": "expiry",
   "diverging-conversion": null,
   "fiscal-divergence": null,
@@ -372,9 +399,10 @@ const ATTENTION_WARNINGS = new Set<ReceiptWarning["key"]>([
  * 2. **conferido ganha da atenção**: a divergência foi vista e assinada pelo
  *    operador; repintar de âmbar o que ele acabou de confirmar desfaz o gesto.
  */
-export function receiptLineStatus(preview: ReceiptLinePreview): ReceiptLineStatus {
+export function receiptLineStatus(preview: ReceiptLinePreview, matched = false): ReceiptLineStatus {
   if (preview.warnings.some((warning) => warning.tone === "block")) return "blocked";
   if (preview.line.checked) return "checked";
+  if (matched) return "matched";
   if (preview.warnings.some((warning) => ATTENTION_WARNINGS.has(warning.key))) return "attention";
   return "ready";
 }
@@ -383,6 +411,7 @@ const RECEIPT_LINE_STATUS_BADGE: Record<ReceiptLineStatus, ReceiptLineStatusBadg
   blocked: { label: "Pendente", icon: "lucide:circle-alert" },
   attention: { label: "Revisar", icon: "lucide:triangle-alert" },
   ready: { label: "Confirmável", icon: "lucide:circle-dashed" },
+  matched: { label: "Bate com a nota", icon: "lucide:circle-check" },
   checked: { label: "Conferido", icon: "lucide:circle-check-big" },
 };
 
@@ -409,9 +438,12 @@ export function receiptLineDigest(preview: ReceiptLinePreview): string {
  * saber o que faltava numa nota de dez linhas, o operador rolava dez cards. A
  * lista dá a visão geral que faltava, e cada linha já diz em que pé está.
  */
-export function receiptLineRows(previews: ReceiptLinePreview[]): ReceiptLineRow[] {
+export function receiptLineRows(
+  previews: ReceiptLinePreview[],
+  matchedIds: ReadonlySet<string> = new Set(),
+): ReceiptLineRow[] {
   return previews.map((preview) => {
-    const status = receiptLineStatus(preview);
+    const status = receiptLineStatus(preview, matchedIds.has(preview.line.id));
     const badge = receiptLineStatusBadge(status);
     return {
       id: preview.line.id,
@@ -437,7 +469,12 @@ export function receiptLineRows(previews: ReceiptLinePreview[]): ReceiptLineRow[
  * ninguem conferiu ainda. A segunda nao aparecia em lugar nenhum — o botao
  * ficava cinza sem que nada na tela dissesse por que.
  */
-export function receiptPendingItems(previews: ReceiptLinePreview[]): ReceiptPendingItem[] {
+export function receiptPendingItems(
+  previews: ReceiptLinePreview[],
+  // As linhas que batem com a nota: não pedem o ok, porque a contagem de
+  // volumes (pendência própria, fora da linha) responde por elas.
+  excused: ReadonlySet<string> = new Set(),
+): ReceiptPendingItem[] {
   return previews.flatMap<ReceiptPendingItem>((preview) => {
     const label = receiptLineLabel(preview);
     if (preview.nextStep) {
@@ -451,7 +488,7 @@ export function receiptPendingItems(previews: ReceiptLinePreview[]): ReceiptPend
         },
       ];
     }
-    if (!preview.line.checked) {
+    if (!preview.line.checked && !excused.has(preview.line.id)) {
       return [{ id: preview.line.id, label, step: "Marcar como conferido", field: "check", tone: "watch" }];
     }
     return [];
@@ -481,6 +518,8 @@ export function receiptFirstBlocker(
   supplierBlockers: string[],
   pending: ReceiptPendingItem[],
   hasLines: boolean,
+  // A contagem de volumes que falta (ou que não fechou), em uma frase.
+  volumesStep = "",
 ): ReceiptBlocker | null {
   if (documentBlockers.length) {
     return { scope: "document", step: documentBlockers[0]!, label: "", lineId: "", field: null, anchor: "invoice" };
@@ -490,6 +529,9 @@ export function receiptFirstBlocker(
   }
   if (!hasLines) {
     return { scope: "document", step: "Lance ao menos um item para dar entrada", label: "", lineId: "", field: null, anchor: "invoice" };
+  }
+  if (volumesStep) {
+    return { scope: "volumes", step: volumesStep, label: "", lineId: "", field: null, anchor: "volumes" };
   }
   const item = pending[0];
   if (!item) return null;
@@ -502,6 +544,29 @@ export function receiptOutcomeSummary(outcome: ReceiptOutcome): string {
   if (outcome.totalCostQ > 0) parts.push(formatMoney(outcome.totalCostQ));
   if (outcome.supplierName) parts.push(outcome.supplierName);
   return parts.join(" · ");
+}
+
+/**
+ * A linha veio da nota já na unidade-base do insumo?
+ *
+ * O leitor de NF-e responde isso, e não a tela: quando a unidade da nota
+ * alcança a base pela física (a própria base, ou kg↔g, l↔ml), o servidor já
+ * converte a quantidade e devolve a linha sem conversão e sem pedir uma
+ * (`conversionId: null`, `requiresConversion: false`). Aplicar a embalagem
+ * padrão do insumo por cima multiplicava de novo: "5 KG" de creme de leite
+ * virava "5.000 × litros = 5.050.000 g".
+ */
+export function receiptLineInBaseUnit(line: ReceiptLine): boolean {
+  return Boolean(line.invoiceUnit) && !line.conversionId && !line.requiresConversion;
+}
+
+/**
+ * A conversão que a linha recebe quando ninguém escolheu uma: a primeira das
+ * candidatas, salvo quando a nota já veio na unidade-base (aí nenhuma).
+ */
+export function receiptDefaultConversionId(line: ReceiptLine, candidates: MaterialConversion[]): string | null {
+  if (receiptLineInBaseUnit(line)) return null;
+  return candidates[0]?.id ?? null;
 }
 
 /**
@@ -588,6 +653,11 @@ export function receiptLineWarnings(
   }
   if (parseMoneyInput(line.costInput) <= 0) {
     warnings.push({ key: "missing-cost", label: "Conferir valor", tone: "watch" });
+  }
+  if (receiptLineDifference(line) && !line.lineNote.trim()) {
+    // A nota diz 20, chegaram 18: não entra em silêncio. O servidor recusa
+    // igual (`receipt_difference_reason_required`).
+    warnings.push({ key: "difference-reason", label: "Escolha o motivo da diferença", tone: "block" });
   }
   if (material.shelfLifeDays !== null && !line.expiryDate) {
     warnings.push({ key: "missing-expiry", label: "Informe a validade", tone: "block" });
@@ -790,7 +860,7 @@ export function countConfirmPayload(rows: CountRow[]) {
 }
 
 export function formatQtyDiff(diff: number, unit: string): string {
-  if (diff === 0) return "—";
+  if (diff === 0) return "sem diferença";
   const sign = diff > 0 ? "+" : "−";
   return `${sign}${quantityFormatter.format(Math.abs(diff))} ${unit}`;
 }
@@ -960,7 +1030,7 @@ export function reorderBlockers(materials: Material[], costs: SupplierMaterialCo
       key: "no-consumption",
       headline: `${semConsumo.length} de ${active.length} insumos sem consumo medido`,
       detail:
-        "A sugestão de reposição vem do consumo real, e o consumo é registrado quando um lote é finalizado na Produção. Sem lote fechado, não há quanto repor — defina o estoque mínimo do insumo para comprar mesmo assim.",
+        "A sugestão de reposição vem do consumo real, e o consumo é registrado quando um lote é finalizado na Produção. Sem lote fechado, não há quanto repor. Defina o estoque mínimo do insumo para comprar mesmo assim.",
       count: semConsumo.length,
       action: { label: "Abrir Insumos", baseView: "materials" },
     });
@@ -973,7 +1043,7 @@ export function reorderBlockers(materials: Material[], costs: SupplierMaterialCo
       key: "no-preferred-cost",
       headline: `${semCusto.length} de ${active.length} insumos sem custo preferencial`,
       detail:
-        "Só dá para enviar pedido de um insumo que tenha custo padrão e fornecedor definidos. Cadastre em Custos — dá para lançar vários de uma vez pelo mesmo fornecedor.",
+        "Só dá para enviar pedido de um insumo que tenha custo padrão e fornecedor definidos. Cadastre em Custos (dá para lançar vários de uma vez pelo mesmo fornecedor).",
       count: semCusto.length,
       action: { label: "Abrir Custos", baseView: "costs" },
     });
@@ -1063,4 +1133,192 @@ export function openingView(material: Material, materials: Material[]) {
 
 function formatDecimalPtBr(value: string): string {
   return value ? value.replace(".", ",") : "";
+}
+
+// ── Recebimento por exceção (UX-C1) ──────────────────────────────────────────
+//
+// Decisão do dono (03/10/2026): "recebimento por exceção, sim; validade é
+// incontornável". O que bate com a nota entra com UM ato físico, contar os
+// volumes; a validade de perecível é pedida sempre; só o item que não bate pede
+// atenção. As contas aqui são o espelho das do servidor
+// (`services/purchase.py::receipt_expected_volumes` e `_line_matches_invoice`):
+// a tela promete o que o servidor aceita, nem mais nem menos.
+
+/** Os motivos de diferença, em lista curta. Gravam na ocorrência da linha. */
+export const RECEIPT_DIFFERENCE_REASONS = ["Faltou", "Avariado", "Trocado", "Outro"] as const;
+
+const MASS_UNITS = new Set(["mg", "g", "kg"]);
+const VOLUME_UNITS = new Set(["ml", "l", "lt", "lts", "litro", "litros", "liter", "liters"]);
+const MEASURE_UNITS = new Set([...MASS_UNITS, ...VOLUME_UNITS]);
+
+/** As duas unidades são peso, ou as duas são volume: a física leva uma à outra. */
+function sameMeasureDimension(first: string | undefined, second: string | undefined): boolean {
+  const a = (first ?? "").trim().toLowerCase();
+  const b = (second ?? "").trim().toLowerCase();
+  return (MASS_UNITS.has(a) && MASS_UNITS.has(b)) || (VOLUME_UNITS.has(a) && VOLUME_UNITS.has(b));
+}
+
+function sameQty(a: number, b: number): boolean {
+  return Math.abs(a - b) < 1e-9;
+}
+
+/** A nota × o que chegou; `null` quando a linha não veio de nota ou bate. */
+export function receiptLineDifference(line: ReceiptLine): ReceiptLineDifference | null {
+  const invoiceQty = line.invoicePurchaseQty;
+  if (invoiceQty === null || invoiceQty === undefined || !(invoiceQty > 0)) return null;
+  if (!Number.isFinite(line.purchaseQty) || sameQty(line.purchaseQty, invoiceQty)) return null;
+  return { invoiceQty, arrivedQty: line.purchaseQty, difference: line.purchaseQty - invoiceQty };
+}
+
+/**
+ * O que a diferença FAZ, escrito: entra o que chegou, e a falta fica anotada
+ * para cobrar o fornecedor.
+ */
+export function receiptDifferenceConsequence(preview: ReceiptLinePreview): string {
+  const difference = receiptLineDifference(preview.line);
+  if (!difference) return "";
+  const unit = preview.purchaseUnitLabel;
+  const arrived = unit ? `${quantityFormatter.format(difference.arrivedQty)} × ${unit}` : quantityFormatter.format(difference.arrivedQty);
+  return difference.difference < 0 ?
+      `Entra ${arrived}. A falta fica anotada na entrada para cobrar o fornecedor.`
+    : `Entra ${arrived}, mais do que a nota diz. Fica anotado na entrada.`;
+}
+
+/** A linha se conta em embalagens (caixa, saco, fardo, unidade)? Peso e volume não. */
+export function receiptLineCountsInPackages(preview: ReceiptLinePreview): boolean {
+  if (preview.conversion) return true;
+  return !MEASURE_UNITS.has((preview.line.invoiceUnit ?? "").trim().toLowerCase());
+}
+
+/**
+ * A linha bate com a nota: insumo resolvido, quantidade, valor e embalagem
+ * iguais aos da nota, e nenhuma ocorrência. Validade NÃO entra aqui: é pedida
+ * sempre, à parte.
+ */
+export function receiptLineMatchesInvoice(preview: ReceiptLinePreview, mode: ReceiptMode): boolean {
+  if (mode !== "invoice") return false;
+  const line = preview.line;
+  if (preview.warnings.some((warning) => warning.tone === "block" && warning.key !== "missing-expiry")) return false;
+  if (preview.conversionDiverges) return false;
+  // A nota veio em peso ou volume que já alcança a base (o leitor converteu a
+  // quantidade). Uma embalagem escolhida por cima multiplica de novo: isso não
+  // bate com a nota, pede o ok da linha. O servidor recusa igual.
+  if (preview.conversion && sameMeasureDimension(line.invoiceUnit, preview.material.unit)) return false;
+  const invoiceQty = line.invoicePurchaseQty;
+  if (invoiceQty === null || invoiceQty === undefined || !(invoiceQty > 0) || !sameQty(line.purchaseQty, invoiceQty)) {
+    return false;
+  }
+  const invoiceTotal = parseMoneyInput(line.invoiceTotal ?? "");
+  if (invoiceTotal <= 0 || parseMoneyInput(line.costInput) !== invoiceTotal) return false;
+  return !line.lineNote.trim();
+}
+
+/**
+ * Quantos volumes devem estar na doca, dado o que chegou.
+ *
+ * Base: os volumes que a nota declara; sem eles, a soma das embalagens, desde
+ * que todas as linhas se contem em embalagens. Ajuste: a diferença das linhas
+ * de embalagem (a caixa que faltou some da conta). `null` = não há o que contar.
+ */
+export function receiptExpectedVolumes(previews: ReceiptLinePreview[], declared: number): number | null {
+  let base: number;
+  if (declared > 0) {
+    base = declared;
+  } else if (
+    previews.length &&
+    previews.every((preview) => receiptLineCountsInPackages(preview) && (preview.line.invoicePurchaseQty ?? 0) > 0)
+  ) {
+    base = previews.reduce((total, preview) => total + (preview.line.invoicePurchaseQty ?? 0), 0);
+  } else {
+    return null;
+  }
+  const adjust = previews
+    .filter(receiptLineCountsInPackages)
+    .reduce((total, preview) => total + (receiptLineDifference(preview.line)?.difference ?? 0), 0);
+  const expected = base + adjust;
+  const rounded = Math.round(expected);
+  if (expected <= 0 || !sameQty(expected, rounded)) return null;
+  return rounded;
+}
+
+/** Os atalhos de validade: a da última entrega (se ainda vale) e a típica do insumo. */
+export function receiptExpiryShortcuts(material: Material, today: string): ReceiptExpiryShortcut[] {
+  const caption = (date: string) => `${shortDayMonth(date)} · ${weekdayShort(date)}`;
+  const shortcuts: ReceiptExpiryShortcut[] = [];
+  const last = material.lastDeliveryExpiry ?? "";
+  if (last && last >= today) {
+    shortcuts.push({ key: "last", label: "Mesma da última entrega", date: last, caption: caption(last) });
+  }
+  const days = material.shelfLifeDays ?? 0;
+  if (days > 0) {
+    const date = addDays(today, days);
+    if (date !== last) {
+      shortcuts.push({
+        key: "typical",
+        label: `Típica: +${days} ${days === 1 ? "dia" : "dias"}`,
+        date,
+        caption: caption(date),
+      });
+    }
+  }
+  return shortcuts;
+}
+
+/**
+ * Quantos itens estão prontos para entrar, e o que ainda falta, numa frase.
+ *
+ * Era "3 de 3 conferidos" com os três itens em "Pendente": a contagem de
+ * volumes assina a QUANTIDADE, mas a validade continua incontornável, e o selo
+ * do `Confirmar entrada` dizia o contrário do cabeçalho. Agora pronto é o que
+ * entra se confirmar agora: assinado (ok da linha, ou batendo com a nota com os
+ * volumes contados) e sem bloqueio nenhum.
+ */
+export function receiptConferenceTally(
+  previews: ReceiptLinePreview[],
+  matchedIds: ReadonlySet<string>,
+  countOk: boolean,
+): ReceiptConferenceTally {
+  const total = previews.length;
+  const ready = previews.filter(
+    (preview) =>
+      (preview.line.checked || (countOk && matchedIds.has(preview.line.id))) &&
+      !preview.warnings.some((warning) => warning.tone === "block"),
+  ).length;
+  const missingExpiry = previews.filter((preview) => preview.needsExpiry).length;
+  const parts = [`${ready} de ${total} prontos para entrar`];
+  if (missingExpiry > 0) parts.push(`falta a validade de ${missingExpiry}`);
+  return { total, ready, missingExpiry, label: total ? parts.join(" · ") : "Nenhum item ainda" };
+}
+
+/** A conferência por exceção da entrada: o que bate, o que não bate, e o passo da vez. */
+export function receiptExceptionView(
+  previews: ReceiptLinePreview[],
+  mode: ReceiptMode,
+  declaredVolumes: number,
+  countedVolumes: number | null,
+): ReceiptExceptionView {
+  const matched = previews.filter((preview) => receiptLineMatchesInvoice(preview, mode));
+  const exceptions = previews.filter((preview) => !matched.includes(preview));
+  const expectedVolumes = mode === "invoice" ? receiptExpectedVolumes(previews, declaredVolumes) : null;
+  const available = expectedVolumes !== null && matched.length > 0;
+  const countOk = available && countedVolumes !== null && countedVolumes === expectedVolumes;
+  const perishables = previews.filter((preview) => preview.material.shelfLifeDays !== null && Boolean(preview.line.materialSku));
+  const expiryDone = perishables.filter((preview) => Boolean(preview.line.expiryDate)).length;
+  const nextExpiry = perishables.find((preview) => !preview.line.expiryDate) ?? null;
+  const unresolved = exceptions.some(
+    (preview) => !preview.line.checked || preview.warnings.some((warning) => warning.tone === "block" && warning.key !== "missing-expiry"),
+  );
+  const step: ReceiptExceptionView["step"] =
+    available && !countOk ? "count"
+    : nextExpiry ? "expiry"
+    : unresolved ? "exceptions"
+    : "done";
+  return { available, expectedVolumes, countedVolumes, countOk, matched, exceptions, perishables, expiryDone, nextExpiry, step };
+}
+
+/** A frase do que falta na contagem, ou vazio quando não falta (ou não se aplica). */
+export function receiptVolumesStep(view: ReceiptExceptionView): string {
+  if (!view.available || view.countOk) return "";
+  if (view.countedVolumes === null) return "Contar os volumes da entrega";
+  return `Contou ${view.countedVolumes} de ${view.expectedVolumes}: ache o item que não bate`;
 }

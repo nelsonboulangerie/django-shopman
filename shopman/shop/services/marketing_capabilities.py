@@ -90,7 +90,7 @@ _DESTINATIONS = (
     ),
     MarketingPlatformCapability(
         platform="google_business",
-        label="Google Meu Negócio",
+        label="Google · perfil da loja",
         delivery_kind="publication",
         formats=(
             MarketingFormatCapability(

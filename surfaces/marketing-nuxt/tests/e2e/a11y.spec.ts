@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
+// Alvo mínimo = altura `md` (32 px), decisão do dono de 09/10/2026; acima do piso
+// WCAG 2.2 AA (2.5.8, 24 px).
+const MIN_TARGET = 32;
+
 type AxeViolation = {
   id: string;
   impact: string | null;
@@ -40,7 +44,7 @@ async function expectTouchTargets(page: Page, context: string) {
     .locator(
       'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="switch"]',
     )
-    .evaluateAll((elements) =>
+    .evaluateAll((elements, minTarget) =>
       elements.flatMap((element) => {
         const node = element as HTMLElement;
         const style = getComputedStyle(node);
@@ -53,16 +57,26 @@ async function expectTouchTargets(page: Page, context: string) {
         )
           return [];
         const input = node as HTMLInputElement;
+        if (node.getAttribute("role") === "switch") {
+          // O kit dá ao NuxtSwitch a área de toque no `::after` (`after:size-control`,
+          // app.config do operator-kit): o trilho visível é menor que o alvo.
+          const hit = getComputedStyle(node, "::after");
+          if (
+            Number.parseFloat(hit.width) >= minTarget &&
+            Number.parseFloat(hit.height) >= minTarget
+          )
+            return [];
+        }
         if (["checkbox", "radio"].includes(input.type)) {
           const label =
             node.closest("label") ??
             document.querySelector(`label[for="${node.id}"]`);
           if (label) {
             const labelRect = label.getBoundingClientRect();
-            if (labelRect.width >= 44 && labelRect.height >= 44) return [];
+            if (labelRect.width >= minTarget && labelRect.height >= minTarget) return [];
           }
         }
-        return rect.width >= 44 && rect.height >= 44
+        return rect.width >= minTarget && rect.height >= minTarget
           ? []
           : [
               {
@@ -76,6 +90,7 @@ async function expectTouchTargets(page: Page, context: string) {
               },
             ];
       }),
+    MIN_TARGET,
     );
   expect(failures, `${context}: ${JSON.stringify(failures, null, 2)}`).toEqual(
     [],
@@ -105,10 +120,7 @@ async function signIn(page: Page) {
   await page.getByLabel("Senha").fill(password!);
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(
-    page.getByRole("heading", {
-      level: 1,
-      name: "Uma campanha, consequências honestas em cada destino",
-    }),
+    page.getByRole("heading", { level: 1, name: "Decisões" }),
   ).toBeVisible();
 }
 
@@ -166,35 +178,37 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
     ),
   ).toBeLessThanOrEqual(0.001);
 
-  const bell = page.getByRole("button", { name: /^Alertas:/ });
-  await bell.focus();
-  await page.keyboard.press("Enter");
-  const alerts = page.getByRole("dialog", { name: "Alertas pessoais" });
-  await expect(alerts).toBeVisible();
-  await expect(page.locator("[data-marketing-app-root]")).toHaveAttribute(
-    "inert",
-    "",
-  );
-  await expectNoAxeViolations(page, "alertas modais");
+  // O sino é a caixa de Avisos do kit (V6-KIT), um só na barra de 56px; o resumo
+  // das decisões dentro dela é coberto em operator-flow.spec.ts.
+  const inboxTrigger = page.getByRole("button", { name: /^Avisos/ });
+  await expect(inboxTrigger).toHaveCount(1);
+  await inboxTrigger.click();
+  await expect(
+    page.locator("[data-operator-inbox-panel]").getByRole("heading", { name: "Avisos" }),
+  ).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(alerts).toBeHidden();
-  await expect(bell).toBeFocused();
 
+  // Ajustes abre o índice das sub-seções (um cartão por lugar).
   await page
-    .getByRole("link", { name: "Campanhas", exact: true })
-    .first()
+    .getByRole("navigation", { name: "Seções do Marketing" })
+    .getByRole("link", { name: "Ajustes", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", {
-      level: 2,
-      name: "Planeje uma vez, adapte por destino",
-    }),
+    page.getByRole("heading", { level: 1, name: "Ajustes" }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, "ajustes 320×568");
+  await page.locator('[data-settings-section="campaigns"]').click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Campanhas" }),
   ).toBeVisible();
   await expectNoAxeViolations(page, "campanhas 320×568");
   await expectNoHorizontalOverflow(page, "campanhas 320×568");
   await expectTouchTargets(page, "campanhas 320×568");
 
-  const create = page.getByRole("link", { name: "Nova campanha" }).first();
+  const create = page
+    .getByRole("button", { name: /^Nova campanha/ })
+    .filter({ visible: true })
+    .first();
   await create.click();
   const campaignDialog = page.getByRole("dialog").last();
   await expect(campaignDialog).toBeVisible();
@@ -204,15 +218,13 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await expect(create).toBeFocused();
 
   await page.setViewportSize({ width: 640, height: 800 });
+  // Do `sm` para cima as sub-seções de Ajustes são abas.
   await page
-    .getByRole("link", { name: "Plataformas", exact: true })
-    .first()
+    .getByRole("navigation", { name: "Seções de Ajustes" })
+    .getByRole("tab", { name: "Plataformas", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", {
-      level: 2,
-      name: "Plataformas possíveis e situação real",
-    }),
+    page.getByRole("heading", { level: 1, name: "Plataformas" }),
   ).toBeVisible();
   await expectNoAxeViolations(page, "plataformas em equivalente a zoom 200%");
   await expectNoHorizontalOverflow(
@@ -222,8 +234,30 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await expectTouchTargets(page, "plataformas em equivalente a zoom 200%");
 
   await page.setViewportSize({ width: 320, height: 568 });
+  // Shell da suíte (fase 2): no celular a barra lateral vira gaveta pelo ☰, e tema,
+  // giro e Bloquear moram no menu do operador, no pé dela.
+  const lightBackground = await page.evaluate(
+    () => getComputedStyle(document.body).backgroundColor,
+  );
+  await page.getByRole("button", { name: "Abrir barra lateral" }).click();
+  await page.getByRole("button", { name: "Menu do operador" }).click();
   await page.getByRole("button", { name: "Tema escuro" }).click();
+  // O menu fecha com o toque; a gaveta, pelo X dela.
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^Fechar/ })
+    .click();
+  // A gaveta fecha de verdade (o véu escuro não pode ficar por cima da página
+  // quando o axe mede o contraste).
+  await expect(page.getByRole("button", { name: "Menu do operador" })).toBeHidden();
   await expect(page.locator("html")).toHaveClass(/dark/);
+  // A classe troca antes de o navegador terminar de recalcular as cores herdadas. O
+  // axe não pode medir o primeiro frame escuro ainda com o token claro.
+  await expect
+    .poll(() =>
+      page.evaluate(() => getComputedStyle(document.body).backgroundColor),
+    )
+    .not.toBe(lightBackground);
   await expectNoAxeViolations(page, "plataformas 320×568 em tema escuro");
   await expectNoHorizontalOverflow(page, "plataformas 320×568 em tema escuro");
   await expectTouchTargets(page, "plataformas 320×568 em tema escuro");
@@ -232,10 +266,12 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   expect(
     await page.evaluate(() => matchMedia("(forced-colors: active)").matches),
   ).toBe(true);
-  await page.getByRole("link", { name: "Hoje", exact: true }).focus();
+  // A barra de baixo da suíte: do Decisões, o Tab vai ao Agendados.
+  const sections = page.getByRole("navigation", { name: "Seções do Marketing" });
+  await sections.getByRole("link", { name: /^Decisões/ }).focus();
   await page.keyboard.press("Tab");
-  const forcedColorsFocus = page.getByRole("link", {
-    name: "Campanhas",
+  const forcedColorsFocus = sections.getByRole("link", {
+    name: "Agendados",
     exact: true,
   });
   await expect(forcedColorsFocus).toBeFocused();
@@ -246,20 +282,17 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   ).not.toBe("none");
 });
 
-test("workspace V2 preserva reflow, toque e semântica no mobile", async ({
+test("Ofertas e cupons preserva reflow, toque e semântica no mobile", async ({
   page,
 }) => {
   await signIn(page);
-  await page.goto("/v2?area=campaigns");
+  await page.goto("/settings/offers");
   await expect(
-    page.getByRole("heading", {
-      level: 2,
-      name: "Planeje uma vez, adapte por destino",
-    }),
+    page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
   ).toBeVisible();
-  await expectNoAxeViolations(page, "Marketing V2 campanhas 320×568");
-  await expectNoHorizontalOverflow(page, "Marketing V2 campanhas 320×568");
-  await expectTouchTargets(page, "Marketing V2 campanhas 320×568");
+  await expectNoAxeViolations(page, "ofertas 320×568");
+  await expectNoHorizontalOverflow(page, "ofertas 320×568");
+  await expectTouchTargets(page, "ofertas 320×568");
 });
 
 declare global {

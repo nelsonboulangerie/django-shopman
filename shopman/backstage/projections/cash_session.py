@@ -103,6 +103,10 @@ class ShiftReadingProjection:
     sales_total_display: str
     sales_by_method: tuple[SalesByMethodRowProjection, ...]
     notes: str  # "" while open
+    #: Vendas feitas sem conexão que entraram com ajuste neste turno (valeu o
+    #: cobrado, comanda mudada ou já paga em outro dispositivo): uma frase cada.
+    #: Fatos da venda, nunca o esperado da gaveta.
+    offline_notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -235,7 +239,37 @@ def _shift_reading(shift) -> ShiftReadingProjection:
         sales_total_display=format_money(sales_total_q),
         sales_by_method=_method_rows(by_method),
         notes=notes,
+        offline_notes=_offline_notes(shift, entries),
     )
+
+
+def _offline_notes(shift, entries) -> tuple[str, ...]:
+    """As frases das vendas sem conexão deste turno (``pos_offline_sale.manager_notes``).
+
+    Duas origens: as vendas do turno (linha ``sale`` do livro) que nasceram sem
+    conexão, e a cobrança em dobro de uma comanda que já estava paga, que não
+    vira venda e por isso não tem linha no livro: ela mora no pedido pago, com o
+    turno de quem cobrou.
+    """
+    from shopman.cashman.models import Entry
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import pos_offline_sale
+
+    refs = {e.order_ref for e in entries if e.kind == Entry.Kind.SALE and e.order_ref}
+    orders = list(Order.objects.filter(ref__in=refs, data__pos__has_key="offline")) if refs else []
+    notes: list[str] = []
+    for order in orders:
+        notes.extend(pos_offline_sale.sale_notes(order))
+    since = shift.opened_at
+    duplicates = Order.objects.filter(data__pos__has_key="offline_duplicates")
+    if since:
+        duplicates = duplicates.filter(updated_at__gte=since)
+    for order in duplicates:
+        rows = [row for row in (order.data.get("pos") or {}).get("offline_duplicates") or [] if row.get("shift_id") == shift.pk]
+        if rows:
+            notes.extend(pos_offline_sale.duplicate_notes(order, rows))
+    return tuple(notes)
 
 
 def _count_notes(entries) -> str:

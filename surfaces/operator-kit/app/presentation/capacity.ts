@@ -67,7 +67,7 @@ export function capacitySourceText(reading: CapacityResponse | null): string {
   switch (reading.source) {
     case "cgroup-v2":
     case "cgroup-v1":
-      return "Número medido no servidor.";
+      return "Número medido.";
     case "proc":
       return "Número estimado: a memória pode aparecer maior do que é.";
     default:
@@ -112,5 +112,5 @@ export function capacityThresholdsText(thresholds: CapacityThresholds | null): s
 export function capacityAriaLabel(reading: CapacityResponse | null, level: CapacityLevel): string {
   const meta = CAPACITY_LEVEL_META[level];
   if (level === "unknown") return `Capacidade do serviço: ${meta.label}`;
-  return `Capacidade do serviço: ${meta.label} — ${capacitySummary(reading)}`;
+  return `Capacidade do serviço: ${meta.label}. ${capacitySummary(reading)}`;
 }

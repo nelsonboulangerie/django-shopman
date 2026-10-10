@@ -1,0 +1,232 @@
+<!doctype html><html lang="pt-BR" class="dark"><head><meta charset="utf-8"><meta name="viewport-size" content="1320x1000">
+<style>
+  .sb { height:44px; padding:0 26px 0 30px; display:flex; align-items:center; font:600 15px/1 "Instrument Sans",sans-serif; }
+  .sb svg { width:17px !important; height:17px !important; }
+  .home-ind { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:99px; background:var(--foreground); opacity:.85; }
+  .pill { height:24px; padding:0 8px; border-radius:999px; display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; white-space:nowrap; }
+  .pill .d { width:6px; height:6px; border-radius:99px; background:currentColor; }
+  .nav a { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:12px; font-weight:600; color:var(--muted-foreground); position:relative; padding-top:10px; }
+  .nav a.on { color:var(--foreground); }
+  .nav a.on .ni { background:var(--secondary); }
+  .nav .ni { width:56px; height:30px; border-radius:99px; display:grid; place-items:center; }
+  .nav .badge { position:absolute; top:4px; left:calc(50% + 8px); min-width:18px; height:18px; padding:0 5px; border-radius:99px; background:#f2c46b; color:#3b2a1e; font-size:11px; line-height:18px; font-weight:700; }
+  .lock { background: radial-gradient(120% 70% at 30% 10%, #6b4a32 0%, #3a281c 45%, #1d140e 100%); }
+  .glass { background: rgb(255 248 240 / .86); backdrop-filter: blur(18px); color:#2a1d14; }
+  .vib { position:absolute; width:4px; border-radius:4px; background:#f2c46b; }
+  .cap { color:#3b2a1e; }
+  .row { display:flex; align-items:center; gap:10px; min-height:64px; padding:8px 12px; border-radius:12px; border:1px solid var(--border); background:var(--card); }
+  .it { display:flex; gap:10px; padding:5px 0; font-size:15px; line-height:20px; font-weight:600; }
+  .it .q { width:26px; flex:none; font-variant-numeric: tabular-nums; }
+  .stripes { background: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklab, var(--destructive) 9%, transparent) 7px 14px); }
+</style>
+</head>
+<body class="font-sans antialiased" style="background:#e9dfd6" data-app="kds">
+<div class="relative h-[1000px] overflow-hidden flex justify-center gap-6 pt-5">
+
+  <!-- ============ (a) atendente / expedidor: Saída ============ -->
+  <div class="flex flex-col items-center gap-3">
+    <p class="op-title cap">(a) Atendente: Saída no bolso, levando à mesa e à porta</p>
+    <div class="device"><div class="screen bg-background text-foreground" style="width:390px;height:844px">
+      <div class="sb bg-card"><span class="tnum">22:03</span><span class="flex-1"></span><span class="flex items-center gap-1.5"><i data-i="signal"></i><i data-i="wifi"></i><i data-i="battery-full"></i></span></div>
+      <div class="h-14 pl-4 pr-2 flex items-center gap-2.5 bg-card">
+        <button class="size-9 rounded-lg grid place-items-center" style="background:var(--app-color)"><i data-i="chef-hat" class="size-5 text-white"></i></button>
+        <h1 class="text-[20px] font-semibold leading-none">Saída</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum"><span class="live-dot"></span>22:03</span>
+        <span class="flex-1"></span>
+        <button class="size-12 grid place-items-center"><i data-i="search" class="size-6"></i></button>
+        <button class="size-12 grid place-items-center relative"><i data-i="bell" class="size-6"></i><span class="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold grid place-items-center" style="background:#f2c46b;color:#3b2a1e">1</span></button>
+      </div>
+      <div class="bg-card border-b border-border px-2 flex">
+        <a class="flex-1 h-12 flex items-center justify-center gap-1.5 text-[15px] font-semibold shadow-[inset_0_-3px_0_var(--primary)]">Prontos para sair <span class="h-5 min-w-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[12px] grid place-items-center tnum">4</span></a>
+        <a class="flex-1 h-12 flex items-center justify-center gap-1.5 text-[15px] text-muted-foreground">Em preparo <span class="tnum">6</span><span class="size-2 rounded-full bg-destructive"></span></a>
+      </div>
+
+      <div class="px-3 pt-3 flex flex-col gap-2">
+        <p class="op-micro text-muted-foreground px-1">O mais antigo no topo</p>
+        <!-- U13 expandido -->
+        <article class="rounded-xl border-2 border-primary bg-card p-3.5 flex flex-col gap-2">
+          <div class="flex items-start gap-2">
+            <div class="flex-1 min-w-0">
+              <p class="text-[30px] leading-8 font-bold tnum">U13</p>
+              <p class="text-[16px] font-semibold">Ana Ferreira</p>
+            </div>
+            <div class="flex flex-col items-end gap-1">
+              <span class="pill pill-primary"><span class="d"></span>Próximo</span>
+              <span class="op-micro text-muted-foreground tnum">pronto há 4 min</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="h-9 px-2.5 rounded-md bg-secondary inline-flex items-center gap-1.5 text-[14px] font-semibold"><i data-i="store" class="size-4"></i>Retirada</span>
+            <span class="h-9 px-2.5 rounded-md bg-secondary inline-flex items-center gap-1.5 text-[14px] font-semibold tnum"><i data-i="package" class="size-4"></i>2 volumes</span>
+          </div>
+          <div class="border-t border-border divide-y divide-border">
+            <div class="it"><span class="q">2×</span>Campagne Passas &amp; Castanhas</div>
+            <div class="it"><span class="q">2×</span>Croissant</div>
+            <div class="it"><span class="q">1×</span><span>Cappuccino <span class="text-warning text-[13px]">· nome no copo: Ana</span></span></div>
+          </div>
+        </article>
+
+        <!-- linhas compactas -->
+        <div class="row">
+          <b class="text-[20px] tnum w-12">X36</b>
+          <div class="flex-1 min-w-0 leading-tight"><p class="text-[15px] font-semibold truncate">Maria Santos</p><p class="op-micro text-muted-foreground">Entrega · 2 volumes · há 3 min</p></div>
+          <i data-i="chevron-right" class="size-5 text-muted-foreground"></i>
+        </div>
+        <div class="row !border-destructive/50">
+          <b class="text-[20px] tnum w-12">F15</b>
+          <div class="flex-1 min-w-0 leading-tight"><p class="text-[15px] font-semibold truncate">João Oliveira</p><p class="op-micro text-destructive font-semibold inline-flex items-center gap-1"><i data-i="lock" class="size-3.5"></i>Pix não confirmado: não sai ainda</p></div>
+          <i data-i="chevron-right" class="size-5 text-muted-foreground"></i>
+        </div>
+        <div class="row">
+          <b class="text-[20px] tnum w-12">K21</b>
+          <div class="flex-1 min-w-0 leading-tight"><p class="text-[15px] font-semibold truncate">Mesa 4</p><p class="op-micro text-muted-foreground">Consome aqui · 1 bandeja · há 1 min</p></div>
+          <i data-i="chevron-right" class="size-5 text-muted-foreground"></i>
+        </div>
+      </div>
+
+      <!-- ação no polegar -->
+      <div class="absolute left-0 right-0 bottom-[86px] px-3 pb-3 pt-6 bg-gradient-to-t from-background from-70% to-transparent">
+        <p class="op-micro text-muted-foreground text-center mb-2 inline-flex w-full justify-center items-center gap-1.5"><i data-i="hand" class="size-3.5"></i>Deslize uma linha para entregar outro pedido</p>
+        <button class="w-full h-16 rounded-xl act-0 inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold"><i data-i="hand-helping" class="size-6"></i>Entregar U13 a Ana</button>
+      </div>
+      <nav class="nav absolute left-0 right-0 bottom-0 h-[86px] bg-card border-t border-border flex px-2">
+        <a class="on"><span class="ni"><i data-i="package-check" class="size-6"></i></span>Saída<span class="badge">4</span></a>
+        <a><span class="ni"><i data-i="flame" class="size-6"></i></span>Preparo</a>
+        <a><span class="ni"><i data-i="layout-grid" class="size-6"></i></span>Estações</a>
+        <a><span class="ni"><i data-i="ellipsis" class="size-6"></i></span>Mais</a>
+      </nav>
+      <div class="home-ind"></div>
+    </div></div>
+  </div>
+
+  <!-- ============ (b) barista: estação pequena no celular ============ -->
+  <div class="flex flex-col items-center gap-3">
+    <p class="op-title cap">(b) Barista: a estação Café inteira no celular</p>
+    <div class="device"><div class="screen bg-background text-foreground" style="width:390px;height:844px">
+      <div class="sb bg-card"><span class="tnum">22:03</span><span class="flex-1"></span><span class="flex items-center gap-1.5"><i data-i="signal"></i><i data-i="wifi"></i><i data-i="battery-full"></i></span></div>
+      <div class="h-14 pl-4 pr-2 flex items-center gap-2.5 bg-card">
+        <button class="size-9 rounded-lg grid place-items-center" style="background:var(--app-color)"><i data-i="chef-hat" class="size-5 text-white"></i></button>
+        <div class="leading-none"><p class="op-micro text-muted-foreground">Estação Café</p><h1 class="text-[20px] font-semibold leading-none mt-0.5">Preparo</h1></div>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum"><span class="live-dot"></span>22:03</span>
+        <span class="flex-1"></span>
+        <button class="size-12 grid place-items-center"><i data-i="search" class="size-6"></i></button>
+        <button class="size-12 grid place-items-center"><i data-i="bell" class="size-6"></i></button>
+      </div>
+      <div class="mx-3 mt-2 py-2 px-3 rounded-lg bg-success/12 text-success flex items-center gap-2 text-[13px] leading-snug font-semibold"><i data-i="vibrate" class="size-4 shrink-0"></i>Toca e vibra mesmo com a tela apagada (push)</div>
+
+      <div class="px-3 pt-3 flex flex-col gap-2">
+        <!-- o ticket em foco -->
+        <article class="rounded-xl border-2 border-primary/70 bg-card p-3.5 flex flex-col gap-2">
+          <div class="flex items-start gap-2">
+            <div class="flex-1 min-w-0">
+              <p class="op-micro text-muted-foreground">Agora</p>
+              <p class="text-[34px] leading-9 font-bold tnum">W07</p>
+              <p class="op-label text-muted-foreground">Retirada</p>
+            </div>
+            <div class="flex flex-col items-end gap-1">
+              <span class="h-9 px-2.5 rounded-md border border-warning/60 text-warning inline-flex items-center gap-1.5 text-[18px] font-bold tnum"><i data-i="timer" class="size-5"></i>6m</span>
+              <span class="op-micro text-muted-foreground tnum">meta 8 min</span>
+              <span class="pill pill-primary"><span class="d"></span>Em preparo</span>
+            </div>
+          </div>
+          <div class="border-t border-border divide-y divide-border">
+            <div class="it !text-[17px] !leading-6"><span class="q">2×</span>Cappuccino</div>
+            <div class="it !text-[17px] !leading-6"><span class="q">1×</span><span>Cappuccino grande</span></div>
+          </div>
+          <div class="rounded-md bg-warning/15 text-warning px-2.5 py-1.5 text-[14px] font-semibold inline-flex items-start gap-1.5"><i data-i="message-square-warning" class="size-4 mt-0.5 shrink-0"></i>Grande com leite sem lactose · nome no copo: João</div>
+        </article>
+
+        <!-- fila em linhas -->
+        <div class="row">
+          <span class="op-micro text-muted-foreground w-16">Próximo</span>
+          <b class="text-[18px] tnum w-11">K21</b>
+          <p class="flex-1 text-[14px] font-semibold truncate">1× Cappuccino</p>
+          <span class="text-[15px] font-bold tnum text-muted-foreground">2m</span>
+        </div>
+        <div class="row">
+          <span class="op-micro text-muted-foreground w-16">Depois</span>
+          <b class="text-[18px] tnum w-11">T18</b>
+          <p class="flex-1 text-[14px] font-semibold truncate">2× Cappuccino</p>
+          <span class="text-[15px] font-bold tnum text-muted-foreground">1m</span>
+        </div>
+        <div class="row !border-destructive/40">
+          <span class="op-micro text-muted-foreground w-16">Depois</span>
+          <b class="text-[18px] tnum w-11">F15</b>
+          <p class="flex-1 text-[14px] font-semibold truncate">1× Cappuccino</p>
+          <span class="inline-flex items-center gap-1 op-micro font-semibold text-destructive"><i data-i="lock" class="size-3.5"></i>Pix</span>
+        </div>
+        <p class="text-center op-label text-muted-foreground"><b class="text-foreground tnum">+2 na fila</b> · A fazer: 6× Cappuccino</p>
+      </div>
+
+      <div class="absolute left-0 right-0 bottom-[86px] px-3 pb-3 pt-6 bg-gradient-to-t from-background from-70% to-transparent">
+        <p class="op-micro text-muted-foreground text-center mb-2">Toque longo: desfazer, reabrir, ver o pedido</p>
+        <button class="w-full h-16 rounded-xl bg-success text-background inline-flex items-center justify-center gap-2.5 text-[18px] font-semibold"><i data-i="circle-check" class="size-6"></i>Pronto W07</button>
+      </div>
+      <nav class="nav absolute left-0 right-0 bottom-0 h-[86px] bg-card border-t border-border flex px-2">
+        <a class="on"><span class="ni"><i data-i="flame" class="size-6"></i></span>Preparo<span class="badge">6</span></a>
+        <a><span class="ni"><i data-i="package-check" class="size-6"></i></span>Saída</a>
+        <a><span class="ni"><i data-i="layout-grid" class="size-6"></i></span>Estações</a>
+        <a><span class="ni"><i data-i="ellipsis" class="size-6"></i></span>Mais</a>
+      </nav>
+      <div class="home-ind"></div>
+    </div></div>
+  </div>
+
+  <!-- ============ (c) gerente fora da cozinha: só o aviso ============ -->
+  <div class="flex flex-col items-center gap-3">
+    <p class="op-title cap">(c) Gerente fora da cozinha: só o aviso, sem quadro</p>
+    <div class="device relative">
+      <span class="vib" style="left:-9px;top:200px;height:44px"></span><span class="vib" style="left:-17px;top:206px;height:32px;opacity:.5"></span>
+      <span class="vib" style="right:-9px;top:200px;height:44px"></span><span class="vib" style="right:-17px;top:206px;height:32px;opacity:.5"></span>
+      <div class="screen lock text-white" style="width:390px;height:844px">
+      <div class="sb"><span>Nelson</span><span class="flex-1"></span><span class="flex items-center gap-1.5"><i data-i="signal"></i><i data-i="wifi"></i><i data-i="battery-full"></i></span></div>
+      <div class="flex flex-col items-center pt-6">
+        <i data-i="lock" class="size-5 opacity-80"></i>
+        <p class="text-[17px] font-medium mt-3 opacity-90">Sábado, 3 de outubro</p>
+        <p class="text-[88px] font-semibold leading-none tracking-tight tnum mt-1">22:03</p>
+      </div>
+      <div class="mx-3 mt-10 rounded-[22px] glass p-3.5 shadow-lg">
+        <div class="flex items-start gap-3">
+          <span class="size-10 rounded-[10px] grid place-items-center shrink-0" style="background:var(--app-color)"><i data-i="chef-hat" class="size-5 text-white"></i></span>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center text-[12px]" style="color:#6b5545"><span class="font-semibold" style="color:#2a1d14">Cozinha</span><span class="flex-1"></span>agora</div>
+            <p class="text-[16px] font-semibold leading-snug mt-0.5">Atrasado: S84 passou de 10 min</p>
+            <p class="text-[14px] leading-snug" style="color:#5a4636">Estação Forno, 12 min (meta 10) · 3× Pão de Hambúrguer, 3× Mini Focaccia · Pedro Lima, retirada</p>
+          </div>
+        </div>
+        <button class="mt-3 w-full h-12 rounded-xl text-[15px] font-semibold inline-flex items-center justify-center gap-2" style="background:#fff;border:1px solid #e3d6ca;color:#2a1d14"><i data-i="arrow-up-right" class="size-5"></i>Abrir</button>
+      </div>
+      <div class="mx-6 -mt-1 h-3 rounded-b-[16px] glass opacity-60"></div>
+      <div class="mx-10 h-2.5 rounded-b-[14px] glass opacity-35"></div>
+      <p class="text-center op-micro opacity-75 mt-2">+1 aviso da Cozinha: U13 chegou a 8 de 10 min</p>
+      <div class="mt-6 flex justify-center"><div class="h-9 px-3.5 rounded-full bg-black/35 inline-flex items-center gap-2 text-[13px] font-medium"><i data-i="vibrate" class="size-4"></i>Vibração de atraso: 3 toques curtos</div></div>
+      <div class="mx-6 mt-4 rounded-xl bg-black/30 px-3.5 py-2.5 text-[13px] leading-snug opacity-90 flex gap-2"><i data-i="info" class="size-4 shrink-0 mt-0.5"></i><span>Some sozinho quando S84 sai do Forno. Abrir leva ao pedido, com a estação e quem iniciou.</span></div>
+      <div class="absolute bottom-12 left-0 right-0 flex justify-between px-12">
+        <span class="size-12 rounded-full bg-black/35 grid place-items-center"><i data-i="flashlight" class="size-5"></i></span>
+        <span class="size-12 rounded-full bg-black/35 grid place-items-center"><i data-i="camera" class="size-5"></i></span>
+      </div>
+      <div class="home-ind !bg-white"></div>
+    </div></div>
+  </div>
+
+  <span class="pin" style="left:2px;top:150px">1</span>
+  <span class="pin" style="left:2px;top:250px">2</span>
+  <span class="pin" style="left:2px;top:515px">3</span>
+  <span class="pin" style="left:2px;top:770px">4</span>
+  <span class="pin" style="left:438px;top:150px">5</span>
+  <span class="pin" style="left:438px;top:250px">6</span>
+  <span class="pin" style="left:438px;top:780px">7</span>
+  <span class="pin" style="left:878px;top:330px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Cozinha · celular · v4 <span>mais pedidos como linhas compactas, um card completo só para o que está em foco (§10.3)</span></p>
+  <div><b>1</b>Barra de cima de 56 px (selo, título, ponto ao vivo, busca, sino). Duas abas que mudam o trabalho: Prontos para sair e Em preparo (com o ponto de atraso).</div>
+  <div><b>2</b>Atendente: o mais antigo no topo, só ele expandido com itens, volumes e o nome no copo. Os outros são linhas de 64 px: cabem 3 a 5.</div>
+  <div><b>3</b>Bloqueio na própria linha (F15, Pix), antes do gesto. A mesa vem com a Vocação ("Consome aqui").</div>
+  <div><b>4</b>Um gesto no polegar: "Entregar U13 a Ana", com o mesmo desfazer de 5 s da Saída. Deslizar uma linha entrega outro pedido.</div>
+  <div><b>5</b>Barista sem tablet: 1 ticket em foco + Próximo e Depois em linhas. O push é o que faz a estação no celular existir (hoje o KDS não tem push).</div>
+  <div><b>6</b>Observação inteira e destacada no ticket em foco; o restante da fila é número e agregado ("+2 na fila · A fazer: 6× Cappuccino").</div>
+  <div><b>7</b>"Pronto W07" largo no polegar. Desfazer, reabrir e o pedido no toque longo, sem botões a mais na tela.</div>
+  <div><b>8</b>Gerente fora da cozinha não vigia quadro: recebe o atraso quando a meta estoura, vibra, e o aviso some sozinho quando o pedido anda.</div>
+</div>
+</body></html>

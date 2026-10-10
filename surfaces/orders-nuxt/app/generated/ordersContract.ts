@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/notification_receipts.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -374,6 +374,40 @@ export interface CustomerProfileProjection {
   is_birthday_today: boolean;
 }
 
+/** O que o sistema fez (ou o operador tocou) e ainda pode ser desfeito. */
+export interface UndoProjection {
+  kind: string;
+  label: string;
+  detail: string;
+  undo_until_iso: string;
+  action_ref: string;
+  held_effect: string;
+  already_out: string;
+  undo_since_iso: string;
+}
+
+/** Uma estação da Cozinha neste pedido, vista do Gestor (SUITE-UX §15). */
+export interface KitchenStationProjection {
+  station_ref: string;
+  station_name: string;
+  prints: boolean;
+  state: string;
+  state_label: string;
+  paper_label: string;
+  paper_failed: boolean;
+  cancelled_items: number;
+  can_mark_ready: boolean;
+  recall_ticket_pk: number | null;
+  items: string[];
+}
+
+/** Em que pé a Cozinha está com o pedido: o progresso por estação no cartão. */
+export interface KitchenProgressProjection {
+  order_pk: number;
+  stations: KitchenStationProjection[];
+  missing_label: string;
+}
+
 /** A single order card in the operator queue. */
 export interface OrderCardProjection {
   ref: string;
@@ -456,6 +490,16 @@ export interface OrderCardProjection {
   danfe_printed: boolean;
   danfe_state: string;
   danfe_problem: string;
+  undo: UndoProjection | null;
+  kitchen: KitchenProgressProjection | null;
+  volumes: number;
+  ready_at_iso: string;
+  dispatched_at_iso: string;
+  attention: string;
+  attention_since_iso: string;
+  goal_minutes: number;
+  goal_label: string;
+  ready_eta_iso: string;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */
@@ -603,6 +647,7 @@ export interface OperatorOrderProjection {
   courier_return_lines: string[];
   can_resend_payment_link: boolean;
   payment_link_notice: string;
+  undo: UndoProjection | null;
   notification_receipts: NotificationReceiptProjection[];
   managers: Record<string, string>[];
   ifood_cancellation_notice: string;
@@ -614,6 +659,11 @@ export interface OperatorOrderProjection {
   context: string;
   schedule_label: string;
   counter: CounterOrderProjection | null;
+  channel_name: string;
+  opened_line: string;
+  confirmation_deadline_iso: string;
+  confirmation_action: string;
+  store_location: Record<string, number> | null;
 }
 
 /** Top-level read model for the operator order queue. */
@@ -621,6 +671,49 @@ export interface OrderQueueProjection {
   orders: OrderCardProjection[];
   counts: Record<string, number>;
   active_filter: string;
+}
+
+/** Uma linha de "O sistema fez": o que mudou sozinho e por quê. */
+export interface SystemActionProjection {
+  order_ref: string;
+  verb: string;
+  reason: string;
+  at_iso: string;
+  at_display: string;
+  undo_action: string;
+  undo_until_iso: string;
+}
+
+/** Um produto que não dá para comprar agora (esgotado ou pausado). */
+export interface MenuOutageProjection {
+  sku: string;
+  name: string;
+  reason: string;
+  line: string;
+  detail: string;
+}
+
+/** Um canal de venda: recebe pedido agora? */
+export interface MenuChannelProjection {
+  ref: string;
+  name: string;
+  active: boolean;
+  line: string;
+  focus_path: string;
+  switch: ChannelSwitchProjection | null;
+}
+
+/** QueueAwarenessProjection(system_actions: 'tuple[SystemActionProjection, ...]' = (), system_window_minutes: 'int' = 15, menu_outages: 'tuple[MenuOutageProjection, ...]' = (), menu_outages_more: 'int' = 0, menu_channels: 'tuple[MenuChannelProjection, ...]' = (), can_open_channels: 'bool' = False, kitchen_eta_basis: 'str' = '', managers: 'tuple[ManagerOptionProjection, ...]' = (), viewer_name: 'str' = '') */
+export interface QueueAwarenessProjection {
+  system_actions: SystemActionProjection[];
+  system_window_minutes: number;
+  menu_outages: MenuOutageProjection[];
+  menu_outages_more: number;
+  menu_channels: MenuChannelProjection[];
+  can_open_channels: boolean;
+  kitchen_eta_basis: string;
+  managers: ManagerOptionProjection[];
+  viewer_name: string;
 }
 
 /** Operator queue grouped by action area: intake, prep and expedition */
@@ -641,6 +734,7 @@ export interface TwoZoneQueueProjection {
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
   ifood_negotiation_orders: OrderCardProjection[];
+  awareness: QueueAwarenessProjection | null;
 }
 
 /** CustomerFilterOption(ref: 'str', label: 'str', active: 'bool') */
@@ -782,4 +876,53 @@ export interface MergeAuditRowProjection {
 export interface MergeAuditListProjection {
   items: MergeAuditRowProjection[];
   undo_window_hours: number;
+}
+
+/** HistoryFacetOption(value: 'str', label: 'str', count: 'int') */
+export interface HistoryFacetOption {
+  value: string;
+  label: string;
+  count: number;
+}
+
+/** HistoryFacet(id: 'str', label: 'str', options: 'tuple[HistoryFacetOption, ...]') */
+export interface HistoryFacet {
+  id: string;
+  label: string;
+  options: HistoryFacetOption[];
+}
+
+/** OrderHistoryRowProjection(ref: 'str', status: 'str', status_label: 'str', status_tone: 'str', channel_ref: 'str', channel_label: 'str', customer_label: 'str', fulfillment: 'str', fulfillment_label: 'str', payment_method: 'str', payment_label: 'str', total_q: 'int', total_display: 'str', closed_at: 'str', closed_display: 'str') */
+export interface OrderHistoryRowProjection {
+  ref: string;
+  status: string;
+  status_label: string;
+  status_tone: string;
+  channel_ref: string;
+  channel_label: string;
+  customer_label: string;
+  fulfillment: string;
+  fulfillment_label: string;
+  payment_method: string;
+  payment_label: string;
+  total_q: number;
+  total_display: string;
+  closed_at: string;
+  closed_display: string;
+}
+
+/** OrderHistoryProjection(date_from: 'str', date_to: 'str', query: 'str', sku: 'str', sku_name: 'str', facets: 'tuple[HistoryFacet, ...]', items: 'tuple[OrderHistoryRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
+export interface OrderHistoryProjection {
+  date_from: string;
+  date_to: string;
+  query: string;
+  sku: string;
+  sku_name: string;
+  facets: HistoryFacet[];
+  items: OrderHistoryRowProjection[];
+  page: number;
+  page_size: number;
+  total: number;
+  has_next: boolean;
+  total_label: string;
 }

@@ -125,6 +125,12 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
 # hide the very bug this test exists to catch.
 # ---------------------------------------------------------------------------
 UNGRANTED_BY_DESIGN: dict[str, str] = {
+    # O Kitchen Sink é preview técnico, fora dos grupos de operação e do roteador
+    # implantado. Só superusuário recebe esta permissão até existir um serviço de
+    # preview isolado com público explicitamente escolhido.
+    "backstage.view_operator_kitchen_sink": (
+        "Protected technical preview; intentionally exclusive to superusers."
+    ),
     # Compatibilidade temporária MKT-007: a permissão ampla ainda é consultada
     # somente para fallback auditado de view/edit/preview. `setup_groups` não a
     # concede mais; publish/fire/test/config continuam deny-safe.

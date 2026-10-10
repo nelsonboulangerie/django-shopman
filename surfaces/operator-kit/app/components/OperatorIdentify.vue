@@ -66,10 +66,14 @@ const picked = ref<IdentifiablePerson | null>(null);
 const typedName = ref("");
 
 const hasList = computed(() => props.people.length > 0);
-const username = computed(() => (picked.value?.username ?? typedName.value).trim());
+const username = computed(() =>
+  (picked.value?.username ?? typedName.value).trim(),
+);
 // Sem lista o pad aparece de cara, junto do campo de nome: é o modo de emergência.
 const showPad = computed(() => !hasList.value || picked.value !== null);
-const canSubmit = computed(() => canSubmitPin(username.value || null, pin.value));
+const canSubmit = computed(() =>
+  canSubmitPin(username.value || null, pin.value),
+);
 
 // UM caminho de captura para tudo: crachá, teclado físico e botões do pad
 // alimentam o mesmo buffer, na hora — dígito nenhum se perde por cadência, e a
@@ -79,7 +83,15 @@ const canSubmit = computed(() => canSubmitPin(username.value || null, pin.value)
 // bloqueia a DIGITAÇÃO (bloquear submissão não pode custar dígito): ele só
 // segura o Enter-submete e a resolução de crachá (autorizar duas vezes pelo
 // mesmo gesto).
+// A moldura modal em volta (overlay da trava ou diálogo): campo de texto dela é
+// do dono (o motivo do cancelamento, o nome livre); o que ficou focado FORA dela
+// (a busca do PDV atrás do overlay) não recebe as teclas. Ver `useIdentityCapture`.
+const root = ref<HTMLElement | null>(null);
+const frame = () =>
+  root.value?.closest("[data-operator-lock], [role='dialog']") ?? root.value;
+
 const { pin, pressDigit, backspace, clear } = useIdentityCapture({
+  frame,
   padVisible: () => showPad.value,
   badgeEnabled: () => props.badgeEnabled !== false && !props.busy,
   canSubmitEnter: () => canSubmit.value && !props.busy,
@@ -95,7 +107,9 @@ const { pin, pressDigit, backspace, clear } = useIdentityCapture({
 // até onde uma tecla única alcança; do décimo em diante o toque continua sendo
 // o caminho, sem número prometendo atalho que não existe.
 const MAX_NUMBERED = 9;
-const numberedCount = computed(() => Math.min(props.people.length, MAX_NUMBERED));
+const numberedCount = computed(() =>
+  Math.min(props.people.length, MAX_NUMBERED),
+);
 
 /** Escolha pelo número, SEM limpar o buffer de captura — o dígito pode ser a
  *  primeira tecla de um crachá, e o token tem de chegar inteiro ao Enter. */
@@ -109,7 +123,12 @@ function pickByNumber(digit: string) {
 
 // Recusa apaga só o PIN: quem foi escolhido continua escolhido, senão a pessoa
 // reescolheria o próprio nome a cada dedo errado no teclado.
-watch(() => props.error, (e) => { if (e) clear(); });
+watch(
+  () => props.error,
+  (e) => {
+    if (e) clear();
+  },
+);
 
 function pick(person: IdentifiablePerson) {
   picked.value = person;
@@ -123,7 +142,11 @@ function unpick() {
 
 function submit() {
   if (!canSubmit.value || props.busy) return;
-  emit("pin", { person: picked.value, username: username.value, pin: pin.value });
+  emit("pin", {
+    person: picked.value,
+    username: username.value,
+    pin: pin.value,
+  });
 }
 
 /** Para o pai limpar entre aberturas sem conhecer o estado interno. */
@@ -138,112 +161,96 @@ defineExpose({ reset });
 </script>
 
 <template>
-  <div class="grid w-full gap-3">
+  <div ref="root" class="grid w-full gap-4 [@media(max-height:43.75rem)]:gap-3">
     <!-- Escolher quem é -->
     <template v-if="hasList && !picked">
       <p class="text-center text-sm text-muted-foreground">{{ prompt }}</p>
       <div class="grid grid-cols-2 gap-2" role="group" :aria-label="prompt">
-        <button
+        <!-- Alvo de dedo (`xl`), todos da MESMA altura (dono, 10/10/2026: irmãos
+             nunca com alturas diferentes): o nome reserva duas linhas e o que
+             passar de duas corta com reticências, com o nome inteiro na dica e no
+             nome acessível. É lista: o número e o nome começam à esquerda
+             (`justify-start`, a exceção declarada do botão centrado). -->
+        <NuxtButton
           v-for="(person, index) in people"
           :key="person.username"
-          type="button"
-          class="flex touch-manipulation select-none items-center gap-2 rounded-lg border bg-background px-3 py-3 text-left text-sm font-medium transition hover:bg-accent"
-          :aria-keyshortcuts="index < numberedCount ? String(index + 1) : undefined"
+          block
+          color="neutral"
+          variant="outline"
+          size="xl"
+          class="h-auto justify-start py-2"
+          :title="person.name"
+          :aria-label="person.name"
+          :aria-keyshortcuts="
+            index < numberedCount ? String(index + 1) : undefined
+          "
           @click="pick(person)"
         >
-          <OperatorKbd
+          <NuxtKbd
             v-if="index < numberedCount"
+            :value="String(index + 1)"
             aria-hidden="true"
-          >{{ index + 1 }}</OperatorKbd>
-          <span class="min-w-0 truncate">{{ person.name }}</span>
-        </button>
+          />
+          <span class="grid h-[2lh] min-w-0 items-center text-start">
+            <span class="line-clamp-2 [overflow-wrap:anywhere]">{{ person.name }}</span>
+          </span>
+        </NuxtButton>
       </div>
       <p v-if="numberedCount" class="text-center text-xs text-muted-foreground">
-        Digite o número para escolher{{ badgeEnabled !== false ? ", ou passe o crachá" : "" }}.
+        Digite o número para escolher{{
+          badgeEnabled !== false ? ", ou passe o crachá" : ""
+        }}.
       </p>
-      <p v-if="error && !showPad" class="text-center text-sm font-medium text-destructive" role="alert">
-        {{ error }}
-      </p>
+      <NuxtAlert
+        v-if="error && !showPad"
+        color="error"
+        variant="subtle"
+        :title="error"
+      />
     </template>
 
     <!-- PIN -->
     <template v-if="showPad">
-      <div v-if="picked" class="grid gap-1">
-        <button
-          type="button"
-          class="inline-flex items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground"
+      <!-- Quem foi escolhido, no centro, e o voltar logo abaixo do nome: o
+           gesto fica junto da coisa que ele troca. -->
+      <div v-if="picked" class="grid justify-items-center gap-1">
+        <p class="text-base font-semibold" data-operator-identify-picked>
+          {{ picked.name }}
+        </p>
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-chevron-left"
+          :label="changeLabel"
           @click="unpick"
-        >
-          <Icon name="lucide:chevron-left" class="size-4" />
-          {{ changeLabel }}
-        </button>
-        <p class="text-center text-sm font-semibold">{{ picked.name }}</p>
+        />
       </div>
-      <UiInput
+      <NuxtInput
         v-else-if="allowTypedName"
         v-model="typedName"
+        class="w-full"
         :placeholder="nameLabel"
         :aria-label="nameLabel"
         autocomplete="off"
-        class="h-11 w-full text-center text-base"
+        size="xl"
       />
 
-      <p v-if="error" class="text-center text-sm font-medium text-destructive" role="alert">
-        {{ error }}
-      </p>
-
-      <div
-        class="flex h-10 items-center justify-center rounded-md border bg-background text-3xl tracking-[0.4em] tabular-nums"
-        aria-live="polite"
-        :aria-label="`${pin.length} dígitos`"
-      >
-        {{ "•".repeat(pin.length) || "—" }}
-      </div>
-
-      <!-- `touch-manipulation` desliga o double-tap-zoom do browser nos botões:
-           sem ele, dois toques rápidos no mesmo dígito viram gesto de zoom e o
-           clique some — o pad tem que aguentar dedo apressado. Digitar nunca
-           desabilita (nem durante verificação): só o CONFIRMAR trava, porque
-           o que não pode duplicar é a submissão, não o dígito. -->
-      <div class="grid grid-cols-3 gap-2">
-        <button
-          v-for="d in ['1', '2', '3', '4', '5', '6', '7', '8', '9']"
-          :key="d"
-          type="button"
-          class="touch-manipulation select-none rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
-          @click="pressDigit(d)"
-        >
-          {{ d }}
-        </button>
-        <button
-          type="button"
-          aria-label="Apagar"
-          class="touch-manipulation select-none rounded-lg border bg-background py-3 text-sm transition hover:bg-accent"
-          @click="backspace"
-        >
-          <Icon name="lucide:delete" class="mx-auto size-5" />
-        </button>
-        <button
-          type="button"
-          class="touch-manipulation select-none rounded-lg border bg-background py-3 text-lg font-semibold transition hover:bg-accent"
-          @click="pressDigit('0')"
-        >
-          0
-        </button>
-        <button
-          type="button"
-          aria-label="Confirmar"
-          :disabled="!canSubmit || busy"
-          class="touch-manipulation select-none rounded-lg border border-transparent bg-primary py-3 text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-          @click="submit"
-        >
-          <Icon name="lucide:check" class="mx-auto size-5" />
-        </button>
-      </div>
+      <OperatorPinPad
+        :pin="pin"
+        :error="error"
+        :can-submit="canSubmit"
+        :busy="busy"
+        @digit="pressDigit"
+        @backspace="backspace"
+        @submit="submit"
+      />
 
       <!-- O crachá segue valendo aqui: a frase existe para o operador saber que
            não precisa terminar de digitar se estiver com ele no pescoço. -->
-      <p v-if="badgeEnabled !== false" class="text-center text-xs text-muted-foreground">
+      <p
+        v-if="badgeEnabled !== false"
+        class="text-center text-xs text-muted-foreground"
+      >
         Ou passe o crachá no leitor.
       </p>
 

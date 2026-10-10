@@ -7,12 +7,12 @@
   },
   "apps": {
     "hub": {
-      "label": "Shopman Apps",
+      "label": "Central",
       "description": "Todos os aplicativos da operação, num lugar só.",
       "symbol": "lucide:layout-grid",
       "fallbackIcon": "layout-grid",
       "color": "#34373B",
-      "article": "o",
+      "article": "a",
       "install": "Abra todos os aplicativos da operação direto da tela inicial deste dispositivo."
     },
     "pos": {
@@ -36,6 +36,7 @@
     },
     "orders": {
       "label": "Gestor de pedidos",
+      "shortLabel": "Gestor",
       "description": "Fila e acompanhamento de pedidos.",
       "symbol": "lucide:square-kanban",
       "fallbackIcon": "square-kanban",
@@ -78,6 +79,15 @@
       "color": "#414F91",
       "article": "o",
       "install": "Abra os números da operação direto da tela inicial deste dispositivo."
+    },
+    "kitchensink": {
+      "label": "Catálogo do operador",
+      "description": "Catálogo do operador da operação.",
+      "symbol": "lucide:panels-top-left",
+      "fallbackIcon": "panels-top-left",
+      "color": "#44546F",
+      "article": "o",
+      "install": "Abra o Catálogo do operador direto da tela inicial deste dispositivo."
     }
   }
 }

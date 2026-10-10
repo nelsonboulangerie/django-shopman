@@ -115,7 +115,8 @@ const props = defineProps<{
   splitNote: string;
   selectedTenderIndex: number;
   selectedTenderMethod: string;
-  /** Total a cobrar (review viva → total retido → estimativa líquida local). */
+  /** Conta interna do pagamento (review viva → total retido → estimativa local).
+   *  NUNCA vai para a tela como total: sem `review`, o total está em cálculo. */
   paymentTotalQ: number;
   paymentRemainingQ: number;
   paymentChangeQ: number;
@@ -177,6 +178,8 @@ const props = defineProps<{
   /** A última revisão FALHOU (rede). Sem isto, a tela ficava com o botão
    *  desabilitado e o spinner de "Atualizando…" para sempre. */
   reviewFailed?: boolean;
+  /** Por que a revisão falhou, dito pelo servidor ou pela rede. */
+  reviewFailureReason?: string;
 }>();
 
 const emit = defineEmits<{
@@ -242,10 +245,13 @@ const emit = defineEmits<{
   pickSavedAddress: [SavedAddressProjection];
 }>();
 
-// Total interino enquanto a review não chega: o MESMO `paymentTotalQ` do
-// composable (líquido, com o último total de review retido) — nunca o bruto do
-// carrinho, que fazia o hero saltar durante o debounce da review.
-const interimTotalDisplay = computed(() => formatBRL(props.paymentTotalQ));
+// TOTAL QUE AINDA PODE MUDAR NÃO APARECE COMO TOTAL (regra do dono). Sem a
+// revisão do servidor, o herói não mostra número nenhum: nem o último total
+// (que já não vale: o desconto mudou), nem a estimativa do carrinho (que não
+// sabe o desconto da venda nem a taxa). Riscar o anterior também não serve:
+// nesta suíte, número riscado é o preço ANTES do desconto (tela do cliente), e
+// o operador leria "ficou mais barato". O que aparece é o estado: calculando,
+// ou não calculado com o motivo.
 // Nota fiscal é SECUNDÁRIA: mora na coluna "Nota e comprovante" (não é botãozão
 // no grid) e só aparece quando a loja ofereceu NFC-e no PDV E o adapter fiscal
 // está configurado.
@@ -469,7 +475,9 @@ function setReceiptChannel(ref: string, on: boolean) {
 
 // The adaptive live readout under the hero — one line that carries the state the
 // operator needs right now, so the big number stays the (stable) sale total.
-const payState = computed<"idle" | "short" | "change" | "ready">(() => {
+const payState = computed<"pending" | "idle" | "short" | "change" | "ready">(() => {
+  // Troco, restante e "coberto" são contas sobre o total: sem ele, nenhum vale.
+  if (!props.review) return "pending";
   if (props.paymentChangeQ > 0) return "change";
   if (props.paymentCovered) return "ready";
   if (props.paymentTenders.length) return "short";
@@ -510,6 +518,7 @@ const splitBadge = computed(() => (
 ));
 /** Quanto ficaria cada parte se a conta fosse dividida em `n` — preview do modal. */
 function splitShareLabel(n: number): string {
+  if (!props.review) return "calculando";
   return formatBRL(splitShareQ(props.paymentTotalQ, n, props.splitPaidCount, props.paymentRemainingQ));
 }
 
@@ -685,8 +694,8 @@ function blockedForDelivery(method: string): boolean {
 function awaitingReviewReason(): string | undefined {
   if (!needsReview.value) return undefined;
   return props.reviewFailed
-    ? "O total não atualizou. Toque em Tentar de novo."
-    : "Atualizando o total. A forma libera assim que ele chegar.";
+    ? "O total não foi calculado. Toque em Tentar de novo."
+    : "Calculando o total. A forma libera assim que ele chegar.";
 }
 
 function paymentMethodBlockedReason(ref: string): string | undefined {
@@ -720,7 +729,7 @@ const ctaLabel = computed(() => {
   // A revisão falhou: o botão deixa de fingir que está carregando e vira a
   // própria saída. Girar para sempre é a tela mentindo sobre o que está fazendo.
   if (props.reviewFailed) return "Tentar de novo";
-  if (needsReview.value) return "Atualizando…";
+  if (needsReview.value) return "Calculando o total…";
   // ⚠️ Este botão NÃO autoriza nem valida: ele abre o teclado do gerente
   // (`onCta` → `managerAuthOpen = true`). Quem conclui é o gerente digitando o
   // PIN, que é, corretamente, o último passo — e só o último passo diz o verbo
@@ -787,8 +796,8 @@ const ctaBlock = computed<{
   }
   if (props.reviewFailed) {
     return {
-      message: "Não deu para atualizar o total.",
-      hint: "Confira a conexão e tente de novo.",
+      message: "O total não foi calculado.",
+      hint: props.reviewFailureReason || "Confira a conexão e tente de novo.",
     };
   }
   if (props.loading || needsReview.value) return null;
@@ -1020,7 +1029,7 @@ const notices = computed<CheckoutNotice[]>(() => {
       tone: "warn",
       icon: "lucide:flask-conical",
       message: pixProviderTestWithinLimitMessage.value,
-      hint: `Este pedido de ${formatBRL(props.paymentTotalQ)} está dentro do limite.`,
+      ...(props.review ? { hint: `Este pedido de ${props.review.total_display} está dentro do limite.` } : {}),
     });
   }
   // A COZINHA PREPAROU MAIS DO QUE A CONTA COBRA. Fica ao lado do Validar
@@ -1310,17 +1319,17 @@ defineExpose({
              os dois botões que definem quando receber. -->
         <section class="grid gap-1.5" aria-label="Ajustes da conta">
           <div class="grid grid-cols-2 gap-1.5">
-            <button
+            <NuxtButton
               :disabled="!discountTypes.length"
               :title="!discountTypes.length ? 'Nenhum desconto disponível para esta loja' : undefined"
-              type="button"
-              class="flex min-h-11 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
-              :class="hasDiscount ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
+              :color="hasDiscount ? 'primary' : 'neutral'"
+              variant="outline"
+              icon="i-lucide-tag"
+              class="min-w-0"
               :aria-pressed="hasDiscount"
               :aria-label="hasDiscount ? `Desconto de ${discountSummary} na venda. Abrir para alterar` : 'Desconto na venda'"
               @click="discountSheetOpen = true"
             >
-              <Icon name="lucide:tag" class="size-4 shrink-0" />
               <span class="min-w-0 flex-1 text-left leading-tight">Desconto</span>
               <!-- O BADGE É O ESTADO. Ligado, o botão diz o quanto — ninguém
                    precisa abrir o modal para conferir se há desconto e de que
@@ -1333,14 +1342,13 @@ defineExpose({
                 class="hidden @[21.5rem]:inline-flex"
                 aria-hidden="true"
               >F9</OperatorKbd>
-            </button>
+            </NuxtButton>
 
-            <button
-              type="button"
-              class="flex min-h-11 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
-              :class="[
-                splitActive ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground',
-              ]"
+            <NuxtButton
+              :color="splitActive ? 'primary' : 'neutral'"
+              variant="outline"
+              icon="i-lucide-users"
+              class="min-w-0"
               :disabled="!splitAvailable"
               :title="hasLinkTender
                 ? 'O link de pagamento cobra a venda inteira'
@@ -1353,7 +1361,6 @@ defineExpose({
                 : 'Dividir conta'"
               @click="splitSheetOpen = true"
             >
-              <Icon name="lucide:users" class="size-4 shrink-0" />
               <span class="min-w-0 flex-1 text-left leading-tight">Dividir conta</span>
               <!-- "3" enquanto armado, "1/3" a partir da primeira parte: ARMADO
                    e EM USO são estados diferentes, e o segundo é o que impede o
@@ -1366,7 +1373,7 @@ defineExpose({
                 class="hidden @[21.5rem]:inline-flex"
                 aria-hidden="true"
               >F10</OperatorKbd>
-            </button>
+            </NuxtButton>
           </div>
         </section>
 
@@ -1379,24 +1386,24 @@ defineExpose({
                Balcão/Encomendas. -->
           <div
             v-if="deliveryCollections.length > 1"
-            class="flex items-center gap-0.5 rounded-md border bg-muted/40 p-0.5"
+            class="flex items-center gap-1"
             role="group"
             aria-label="Quando cobrar"
           >
-            <button
+            <NuxtButton
               v-for="collection in deliveryCollections"
               :key="collection.ref"
-              type="button"
-              class="flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded px-3 py-1 text-sm font-semibold leading-tight transition"
-              :class="paymentCollection === collection.ref
-                ? 'bg-primary text-primary-foreground shadow-xs'
-                : 'text-muted-foreground hover:text-foreground'"
+              color="neutral"
+              variant="outline"
+              active-color="primary"
+              active-variant="solid"
+              :active="paymentCollection === collection.ref"
+              :icon="collection.ref === 'terminal' ? 'i-lucide-store' : fulfillmentType === 'pickup' ? 'i-lucide-hand-coins' : 'i-lucide-bike'"
+              class="min-w-0 flex-1 justify-center font-semibold leading-tight"
               :aria-pressed="paymentCollection === collection.ref"
+              :label="paymentCollectionLabel(collection, salesMode, fulfillmentType)"
               @click="$emit('update:paymentCollection', collection.ref)"
-            >
-              <Icon :name="collection.ref === 'terminal' ? 'lucide:store' : fulfillmentType === 'pickup' ? 'lucide:hand-coins' : 'lucide:bike'" class="size-4 shrink-0" />
-              <span>{{ paymentCollectionLabel(collection, salesMode, fulfillmentType) }}</span>
-            </button>
+            />
           </div>
           <p v-if="paymentGuidance" class="px-1 text-sm text-muted-foreground" role="status">{{ paymentGuidance }}</p>
           <p
@@ -1418,12 +1425,13 @@ defineExpose({
 
                  Na entrega, as linhas são cobranças pendentes; a confirmação
                  ocorre no acerto do Gestor, separada da devolução do dispositivo. -->
-            <button
+            <NuxtButton
               v-for="method in injectableMethods"
               :key="method.ref"
-              type="button"
               :data-payment-method="method.ref"
-              class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+              color="neutral"
+              variant="outline"
+              class="justify-start gap-3 px-3 text-left"
               :disabled="!!paymentMethodBlockedReason(method.ref)"
               :title="paymentMethodBlockedReason(method.ref)"
               @click="$emit('addTender', method.ref)"
@@ -1434,31 +1442,32 @@ defineExpose({
                 v-if="methodKeys[method.ref]"
                 aria-hidden="true"
               >{{ methodKeys[method.ref] }}</OperatorKbd>
-            </button>
+            </NuxtButton>
           </div>
 
           <!-- numpad (dígitos: entrada decimal, vírgula nos centavos) + trilho de
                cédulas à direita (só dinheiro: as 6 notas BR que o cliente entrega) -->
           <div class="flex gap-1.5">
           <div class="grid gap-1.5" :class="cashSelected ? 'flex-[3] basis-0' : 'flex-1'">
-          <!-- Teclas h-11/text-xl propositais: números legíveis num console compacto de toque. -->
+          <!-- Teclas h-11/text-xl propositais: números legíveis num console compacto de
+               toque. É a exceção de altura declarada da suíte (o numérico do
+               Pagamento); o resto dos campos e botões fica na altura `md`. -->
           <div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Teclado de valor">
-            <button
+            <NuxtButton
               v-for="digit in digitKeys"
               :key="digit"
-              type="button"
-              class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-50"
+              size="xl"
+              color="neutral"
+              variant="outline"
+              class="h-11 justify-center text-xl font-semibold tabular-nums"
               :disabled="!numpadActive"
               :aria-label="`Dígito ${digit}`"
+              :label="digit"
               @click="$emit('tenderDigit', digit)"
-            >
-              {{ digit }}
-            </button>
-            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50" :disabled="!numpadActive" aria-label="Vírgula (centavos)" @click="$emit('tenderComma')">,</button>
-            <button type="button" class="grid place-items-center rounded-md border bg-card h-11 text-xl font-semibold tabular-nums transition hover:bg-accent active:translate-y-px disabled:opacity-50" :disabled="!numpadActive" aria-label="Dígito 0" @click="$emit('tenderDigit', '0')">0</button>
-            <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-11 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-50" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')">
-              <Icon name="lucide:delete" class="size-5" />
-            </button>
+            />
+            <NuxtButton size="xl" color="neutral" variant="outline" class="h-11 justify-center text-xl font-semibold" :disabled="!numpadActive" aria-label="Vírgula (centavos)" label="," @click="$emit('tenderComma')" />
+            <NuxtButton size="xl" color="neutral" variant="outline" class="h-11 justify-center text-xl font-semibold tabular-nums" :disabled="!numpadActive" aria-label="Dígito 0" label="0" @click="$emit('tenderDigit', '0')" />
+            <NuxtButton size="xl" color="error" variant="outline" icon="i-lucide-delete" class="h-11 justify-center" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')" />
           </div>
             <!-- Exato: a linha selecionada assume o que as OUTRAS deixam devendo
                  (venda coberta, troco zero) — tecla '='. Limpar (C): zera a linha
@@ -1471,9 +1480,10 @@ defineExpose({
                  zoom. Sem `truncate`: rótulo de ação não se corta — "Exa…" não
                  diz nada ao operador (guardrails.copyNeverTruncates). -->
             <div class="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              class="min-w-0 justify-center font-semibold"
               :disabled="!numpadActive || !!awaitingReviewReason()"
               aria-label="Exato: a linha assume o restante"
               :title="awaitingReviewReason() || 'A forma selecionada assume o que falta para cobrir o total (=)'"
@@ -1481,18 +1491,19 @@ defineExpose({
             >
               <span>Exato</span>
               <OperatorKbd aria-hidden="true">=</OperatorKbd>
-            </button>
-            <button
-              type="button"
-              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-50"
+            </NuxtButton>
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-eraser"
+              class="min-w-0 justify-center font-semibold"
               :disabled="!numpadActive"
               aria-label="Limpar: zera o valor da linha"
               title="Zera o valor da linha inteira (o Backspace apaga um dígito)"
               @click="$emit('tenderClear')"
             >
-              <Icon name="lucide:eraser" class="size-4 shrink-0 text-muted-foreground" />
               <span>Limpar</span>
-            </button>
+            </NuxtButton>
             </div>
           </div>
           <!-- cédula rail — 4ª coluna (mesma largura das colunas do teclado);
@@ -1504,18 +1515,19 @@ defineExpose({
             role="group"
             :aria-label="onDelivery ? `Cédulas previstas na ${fulfillmentType === 'pickup' ? 'retirada' : 'entrega'}` : 'Cédulas recebidas'"
           >
-            <button
+            <NuxtButton
               v-for="note in cashNotesQ"
               :key="note"
-              type="button"
-              class="flex items-center justify-center gap-1 rounded-md border border-success/30 bg-success/10 text-sm font-semibold tabular-nums text-success transition hover:bg-success/20 active:translate-y-px disabled:opacity-50"
+              color="neutral"
+              variant="outline"
+              class="h-full justify-center gap-1 font-semibold tabular-nums"
               :disabled="!numpadActive"
               :aria-label="`${onDelivery ? 'Cliente pagará com' : 'Recebi nota de'} ${formatBRL(note)}`"
               @click="$emit('tenderAdd', note)"
             >
-              <Icon name="lucide:banknote" class="size-3.5 shrink-0 opacity-70" />
+              <Icon name="lucide:banknote" class="size-3.5 shrink-0 text-success" />
               {{ cashNoteLabel(note) }}
-            </button>
+            </NuxtButton>
           </div>
           </div>
         </section>
@@ -1605,7 +1617,7 @@ defineExpose({
                 :key="action.label"
                 size="lg"
                 variant="outline"
-                class="h-auto min-h-11 max-w-full whitespace-normal py-2 text-left"
+                class="h-auto min-h-8 max-w-full whitespace-normal py-2 text-left"
                 @click="action.run()"
               >
                 {{ action.label }}
@@ -1625,20 +1637,49 @@ defineExpose({
         <section
           class="flex min-h-0 flex-1 flex-col items-center justify-center text-center"
           :aria-label="payState === 'change' ? 'Troco' : 'Total a cobrar'"
+          :aria-busy="payState === 'pending' && !reviewFailed ? 'true' : undefined"
           aria-live="polite"
+          data-pos-total
+          :data-pos-total-state="review ? 'confirmed' : reviewFailed ? 'failed' : 'calculating'"
         >
           <p class="text-xs font-medium uppercase tracking-wide" :class="payState === 'change' ? 'text-primary' : 'text-muted-foreground'">
             {{ payState === "change" ? "Troco" : "Total a cobrar" }}
           </p>
-          <p
-            class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl"
-            :class="payState === 'change' ? 'text-primary' : ''"
-          >
-            {{ payState === "change" ? formatBRL(paymentChangeQ) : (review ? review.total_display : interimTotalDisplay) }}
-          </p>
-          <p v-if="payState === 'change'" class="mt-2 text-sm tabular-nums text-muted-foreground">
-            Total a cobrar {{ review ? review.total_display : interimTotalDisplay }}
-          </p>
+          <!-- Sem a revisão do servidor, NENHUM número no lugar do total: o
+               que aparece é o estado (ver `needsReview`). -->
+          <template v-if="!review">
+            <p
+              v-if="reviewFailed"
+              class="mt-1 text-3xl font-semibold text-destructive xl:text-4xl"
+              data-pos-total-failed
+            >
+              Total não calculado
+            </p>
+            <p
+              v-else
+              class="mt-1 flex items-center gap-3 text-3xl font-semibold text-muted-foreground xl:text-4xl"
+              data-pos-total-calculating
+            >
+              <Icon name="lucide:loader-circle" class="size-7 shrink-0 animate-spin motion-reduce:animate-none xl:size-9" aria-hidden="true" />
+              Calculando…
+            </p>
+            <p class="mt-2 max-w-md text-sm text-muted-foreground">
+              {{ reviewFailed
+                ? (reviewFailureReason || "Confira a conexão e toque em Tentar de novo.")
+                : "A cobrança libera quando o total chegar." }}
+            </p>
+          </template>
+          <template v-else>
+            <p
+              class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl"
+              :class="payState === 'change' ? 'text-primary' : ''"
+            >
+              {{ payState === "change" ? formatBRL(paymentChangeQ) : review.total_display }}
+            </p>
+            <p v-if="payState === 'change'" class="mt-2 text-sm tabular-nums text-muted-foreground">
+              Total a cobrar {{ review.total_display }}
+            </p>
+          </template>
         </section>
 
         <!-- linhas de pagamento + troco/restante -->
@@ -1652,12 +1693,13 @@ defineExpose({
             <li
               v-for="(tender, idx) in tenderLines"
               :key="idx"
-              class="flex min-h-11 items-center gap-1 rounded-md border pr-1 transition"
+              class="flex min-h-8 items-center gap-1 rounded-md border pr-1 transition"
               :class="idx === selectedTenderIndex ? 'border-primary bg-primary/5' : 'hover:bg-accent/60'"
             >
-              <button
-                type="button"
-                class="flex min-h-11 min-w-0 flex-1 flex-wrap items-center justify-between gap-x-2 self-stretch rounded-l-md px-3 py-1 text-left"
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                class="min-h-8 min-w-0 flex-1 flex-wrap justify-between gap-x-2 self-stretch rounded-r-none px-3 py-1 text-left hover:bg-transparent"
                 :aria-current="idx === selectedTenderIndex ? 'true' : undefined"
                 :aria-label="`Editar ${tender.label} de ${tender.amountDisplay}`"
                 @click="$emit('selectTender', idx)"
@@ -1667,16 +1709,16 @@ defineExpose({
                   <span class="leading-tight">{{ tender.label }}</span>
                 </span>
                 <strong class="shrink-0 text-lg tabular-nums">{{ tender.amountDisplay }}</strong>
-              </button>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
+                color="error"
                 variant="ghost"
-                size="icon-sm"
+                icon="i-lucide-x"
+                square
                 class="shrink-0"
                 :aria-label="`Remover ${tender.label} de ${tender.amountDisplay}`"
                 @click="$emit('removeTender', idx)"
-              >
-                <Icon name="lucide:x" class="size-4 text-destructive" />
-              </UiButton>
+              />
             </li>
           </ul>
           <!-- O que FALTA. O rótulo e o número precisam concordar: com o total
@@ -1696,9 +1738,11 @@ defineExpose({
             <span class="shrink-0 text-sm font-medium uppercase tracking-wide text-muted-foreground">Restante</span>
             <strong
               class="ml-auto text-3xl font-bold tabular-nums"
-              :class="payState === 'ready' ? 'text-muted-foreground' : ''"
+              :class="payState === 'ready' || payState === 'pending' ? 'text-muted-foreground' : ''"
             >
-              {{ formatBRL(Math.max(0, paymentRemainingQ)) }}
+              <!-- O restante é o total menos o lançado: sem total, não há restante. -->
+              <template v-if="payState === 'pending'"><span class="text-base font-medium">espera o total</span></template>
+              <template v-else>{{ formatBRL(Math.max(0, paymentRemainingQ)) }}</template>
             </strong>
           </div>
         </div>
@@ -1875,7 +1919,7 @@ defineExpose({
                   <UiInput
                     :model-value="invoiceTaxIdMasked"
                     inputmode="numeric"
-                    class="h-11 tabular-nums"
+                    class="h-8 tabular-nums"
                     placeholder="000.000.000-00"
                     aria-label="CPF que sai na nota"
                     :maxlength="18"
@@ -1932,7 +1976,7 @@ defineExpose({
                   <UiInput
                     :model-value="receiptEmail"
                     type="email"
-                    class="h-11"
+                    class="h-8"
                     :placeholder="customerEmail || 'cliente@email.com'"
                     aria-label="E-mail que recebe a nota"
                     @update:model-value="$emit('update:receiptEmail', String($event || ''))"
@@ -2082,12 +2126,14 @@ defineExpose({
        atendendo, e o erro só aparece no fechamento do dia. Não pergunta se deu
        certo — se a maquininha recusar, o operador fecha o diálogo e troca a
        forma; a venda ainda não foi registrada. -->
-  <UiDialog v-model:open="machineConfirmOpen">
-    <UiDialogContent class="sm:max-w-sm">
-      <UiDialogHeader>
-        <UiDialogTitle>Passe na maquininha</UiDialogTitle>
-        <UiDialogDescription>Digite este valor no terminal e conclua a operação com o cliente.</UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    v-model:open="machineConfirmOpen"
+    title="Passe na maquininha"
+    description="Digite este valor no terminal e conclua a operação com o cliente."
+    :ui="{ content: 'sm:max-w-sm' }"
+    data-pos-machine-confirm
+  >
+    <template #body>
       <div class="grid gap-2">
         <!-- As DUAS coisas que o operador vai reproduzir na maquininha têm o
              mesmo peso: a função (crédito ou débito — teclas diferentes, prazos
@@ -2106,14 +2152,14 @@ defineExpose({
           <p class="text-5xl font-bold tabular-nums tracking-tight text-primary">{{ line.amountDisplay }}</p>
         </div>
       </div>
-      <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
-        <UiButton size="lg" class="h-12 text-base" @click="onMachineConfirmed">
-          OK, cobrei na maquininha
-        </UiButton>
-        <UiButton variant="ghost" size="sm" @click="machineConfirmOpen = false">Voltar</UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+    <template #footer>
+      <div class="flex w-full flex-col gap-2">
+        <NuxtButton size="xl" block color="primary" label="OK, cobrei na maquininha" data-pos-machine-charged @click="onMachineConfirmed" />
+        <NuxtButton block color="neutral" variant="ghost" label="Voltar" @click="machineConfirmOpen = false" />
+      </div>
+    </template>
+  </NuxtModal>
 
   <!-- MODAL: Dividir conta — o irmão do de Desconto, e de propósito.
        Era um trilho de cinco botões preso na coluna: ocupava altura fixa em
@@ -2123,14 +2169,15 @@ defineExpose({
        Escolher o número JÁ É a decisão inteira — por isso o toque fecha o
        modal, sem "Concluir". Só o desfazer fica, porque desfazer com partes já
        lançadas merece uma frase antes. -->
-  <UiDialog v-model:open="splitSheetOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-md" @keydown="onSplitKeydown">
-      <UiDialogHeader>
-        <UiDialogTitle>Dividir conta</UiDialogTitle>
-        <UiDialogDescription>
-          Em quantas pessoas? Digite o número ou toque. Cada forma de pagamento lançada depois cobra uma parte já calculada; os centavos fecham sozinhos.
-        </UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    v-model:open="splitSheetOpen"
+    title="Dividir conta"
+    description="Em quantas pessoas? Digite o número ou toque. Cada forma de pagamento lançada depois cobra uma parte já calculada; os centavos fecham sozinhos."
+    :content="{ ...({ onKeydown: onSplitKeydown } as object) }"
+    :ui="{ content: 'sm:max-w-md' }"
+    data-pos-split-modal
+  >
+    <template #body>
       <div class="grid gap-4">
         <p
           v-if="hasLinkTender"
@@ -2152,7 +2199,7 @@ defineExpose({
             :class="splitCount === n ? 'border-primary bg-primary/5' : ''"
             :disabled="hasLinkTender"
             :aria-pressed="splitCount === n"
-            :aria-label="`Dividir em ${n} pessoas, ${splitShareLabel(n)} cada`"
+            :aria-label="review ? `Dividir em ${n} pessoas, ${splitShareLabel(n)} cada` : `Dividir em ${n} pessoas`"
             @click="$emit('setSplitCount', n); splitSheetOpen = false"
           >
             <span class="text-lg font-semibold leading-none">{{ n }}</span>
@@ -2160,31 +2207,35 @@ defineExpose({
           </UiButton>
         </div>
       </div>
-      <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
+    </template>
+    <template v-if="splitNote || splitActive" #footer>
+      <div class="flex w-full flex-col gap-2">
         <p v-if="splitNote" class="text-center text-sm text-muted-foreground">{{ splitNote }}</p>
         <template v-if="splitActive">
-          <UiButton variant="outline" class="w-full gap-2" @click="$emit('setSplitCount', 0); splitSheetOpen = false">
+          <NuxtButton block color="neutral" variant="outline" @click="$emit('setSplitCount', 0); splitSheetOpen = false">
             Não dividir
             <OperatorKbd aria-hidden="true">1</OperatorKbd>
-          </UiButton>
+          </NuxtButton>
           <p v-if="splitInProgress" class="text-center text-xs text-muted-foreground">
             As partes já lançadas continuam na conta. Para recomeçar, remova cada linha de pagamento.
           </p>
         </template>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+      </div>
+    </template>
+  </NuxtModal>
 
   <!-- MODAL: Desconto -->
-  <UiDialog v-model:open="discountSheetOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-md">
-      <UiDialogHeader>
-        <UiDialogTitle>Desconto</UiDialogTitle>
-        <!-- "backend" era a única palavra de implementação em toda a copy do
-             PDV. E o diálogo fechava sem dizer o número que o operador vai falar
-             em voz alta — ele aplicava 15% e só descobria o total depois. -->
-        <UiDialogDescription>Tipo, valor e motivo. A loja confere e aplica.</UiDialogDescription>
-      </UiDialogHeader>
+  <!-- "backend" era a única palavra de implementação em toda a copy do PDV. E o
+       diálogo fechava sem dizer o número que o operador vai falar em voz alta: ele
+       aplicava 15% e só descobria o total depois. -->
+  <NuxtModal
+    v-model:open="discountSheetOpen"
+    title="Desconto"
+    description="Tipo, valor e motivo. A loja confere e aplica."
+    :ui="{ content: 'sm:max-w-md' }"
+    data-pos-discount-modal
+  >
+    <template #body>
       <div class="grid gap-4">
         <div class="grid grid-cols-2 gap-2">
             <UiButton
@@ -2214,14 +2265,16 @@ defineExpose({
             </UiButton>
           </div>
         </div>
-        <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
-          <p v-if="review" class="text-center text-sm text-muted-foreground">
-            Fica <strong class="font-semibold tabular-nums text-foreground">{{ review.total_display }}</strong>
-          </p>
-          <UiButton class="w-full" @click="discountSheetOpen = false">Voltar ao pagamento</UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+    </template>
+    <template #footer>
+      <div class="flex w-full flex-col gap-2">
+        <p v-if="review" class="text-center text-sm text-muted-foreground">
+          Fica <strong class="font-semibold tabular-nums text-foreground">{{ review.total_display }}</strong>
+        </p>
+        <NuxtButton block color="primary" label="Voltar ao pagamento" @click="discountSheetOpen = false" />
+      </div>
+    </template>
+  </NuxtModal>
 
   <!-- AUTORIZAÇÃO DO GERENTE -->
   <OperatorManagerAuth

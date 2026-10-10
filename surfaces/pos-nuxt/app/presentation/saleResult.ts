@@ -48,6 +48,9 @@ export interface PosSaleResultSnapshot {
    *  é o que o operador lê de volta ao cliente antes de desligar o telefone. */
   fulfillmentLabel?: string;
   scheduleLabel?: string;
+  /** Venda feita SEM CONEXÃO: guardada na fila do dispositivo, ainda sem pedido
+   *  no servidor. `orderRef` é o rótulo local ("Sem conexão 3F2A"). */
+  offline?: { capturedAt: string; id: string; sentOrderRef?: string };
 }
 
 /**

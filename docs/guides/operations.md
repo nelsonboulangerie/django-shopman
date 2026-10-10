@@ -137,7 +137,15 @@ loja o BFF acrescenta `bff;dur=` (e `csrf;dur=` quando semeia o token).
 
 O log `storefront_catalog_observation` (cardápio e Continuum) traz os mesmos
 números em campos: `connect_ms`/`connect_count`, `cache_ms`/`cache_calls`,
-`gc_ms`/`gc_count`. Implementação: `shopman/storefront/observability.py`.
+`gc_ms`/`gc_count`. Implementação: `shopman/shop/observability.py`.
+
+As idas do PDV que o operador espera carimbam o mesmo header: a leitura do
+terminal (`GET pos/`), abrir e salvar a comanda (`tabs/<ref>/open/`,
+`tabs/save/`, inclusive com `?review=1`, que é o total do Pagamento), a revisão
+(`sale/review/`) e o fechamento (`sale/close/`). O BFF dos apps de operador
+repassa o `server-timing`, então ele aparece no DevTools do `pdv.` (aba Rede,
+"Timing") sem credencial extra: é a forma de saber, no ar, quanto de uma espera
+é servidor e quanto é rede.
 
 ## Alertas operacionais
 

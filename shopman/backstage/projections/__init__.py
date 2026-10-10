@@ -11,7 +11,6 @@ from .dashboard import (
 )
 from .kds import (
     KDSBoardProjection,
-    KDSExpeditionCardProjection,
     KDSInstanceSummaryProjection,
     KDSItemProjection,
     KDSTicketProjection,
@@ -69,7 +68,6 @@ __all__ = [
     "DashboardProjection",
     "DayClosingProjection",
     "KDSBoardProjection",
-    "KDSExpeditionCardProjection",
     "KDSInstanceSummaryProjection",
     "KDSItemProjection",
     "KDSTicketProjection",

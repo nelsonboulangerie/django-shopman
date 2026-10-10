@@ -27,7 +27,9 @@ from django.conf import settings
 
 from shopman.shop.models import Conversation, ConversationMessage
 
+from . import allergens, cancellation, dialogue, discount, house_rules, small_talk
 from . import tools as tools_module
+from .metrics import LAYER_AGENT, LAYER_CONTEXT, LAYER_COURTESY, LAYER_HOUSE_RULE, stage_of
 from .tools import ToolContext
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,8 @@ MAX_HISTORY_TOOL_RESULT_CHARS = 400
 #: Montado por partes para o próprio arquivo não carregar a sequência literal.
 _TAG_OPEN = "<" + "/?" + "\\w*" + "antml" + "[^>]*>"
 _LEAK_RE = re.compile(_TAG_OPEN + "|<" + "/?parameter[^>]*>|<" + "/?invoke[^>]*>|" + 'name="[a-z_]+">', re.I)
+#: O motivo do handoff quando o cancelamento não é do autoatendimento (regra R4).
+CANCEL_HANDOFF_REASON = "Cancelamento de pedido: fora do que o cliente cancela pelo site"
 #: Quantas vezes a mesma chamada (ferramenta + argumentos) pode se repetir num turno.
 MAX_REPEATED_CALLS = 2
 _CART_STATE_TOOLS = {"view_cart", "set_item", "set_fulfillment", "review_order"}
@@ -79,11 +83,27 @@ class AgentOutcome:
     usage: dict = field(default_factory=dict)
     handoff: bool = False
     handoff_reason: str = ""
+    #: O aviso do handoff quando quem chamou a equipe tem o que dizer (o motivo
+    #: verdadeiro e "já chamei a equipe"); vazio = o aviso padrão da casa.
+    handoff_ack: str = ""
     extra_replies: list[str] = field(default_factory=list)
     tool_events: list[dict] = field(default_factory=list)
     order_ref: str = ""
     quote_token: str = ""
     disclosure: dict = field(default_factory=dict)
+    #: Quem respondeu (``metrics.LAYER_*``): a régua grava em ``usage["layer"]``.
+    layer: str = LAYER_AGENT
+    #: Intenções no plural (``intents.Plan.as_dict``): as partes do turno e quem as leu.
+    intents: dict = field(default_factory=dict)
+    #: Intenções no plural: a triagem do cartão da equipe (parte sensível no turno) e a
+    #: que a conversa guarda quando a alergia foi respondida pelo aviso da casa.
+    team_triage: object | None = None
+    triage_update: object | None = None
+    #: Memória da conversa (``dialogue``): o estado que valia no começo do turno e
+    #: o que a resolução quer gravar. ``None`` quando o turno não passou por ela
+    #: (mídia, teto diário): aí o estado fica como estava.
+    memory: object | None = None
+    memory_memos: list[dict] = field(default_factory=list)
 
 
 def _config() -> dict:
@@ -241,7 +261,86 @@ def _current_customer_text(conversation: Conversation) -> str:
     ).strip()
 
 
+def _earlier_customer_text(conversation: Conversation) -> str:
+    """A fala do cliente antes deste turno (a que recebeu "a que é a alergia?")."""
+    inbound_ids = tuple(getattr(conversation, "_inbound_ids", ()) or ())
+    return (
+        conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND)
+        .exclude(pk__in=inbound_ids)
+        .exclude(text="")
+        .order_by("-pk")
+        .values_list("text", flat=True)
+        .first()
+        or ""
+    )
+
+
+def _allergy_outcome(conversation: Conversation, customer_text: str, *, channel_ref: str) -> AgentOutcome | None:
+    """Alergia (dono, 03/10/2026, ``allergens.py``): a resposta sai das fontes, sem modelo.
+
+    Nada aqui pode ser parafraseado em "sem leite": a resposta é o aviso da casa,
+    os alérgenos declarados do produto citado e a oferta da equipe; ou a pergunta
+    "a quê?". O que a concierge não pode responder vai para a equipe (a triagem
+    já o mandou; aqui é a segunda trava, para quem chama sem triagem).
+    """
+    stamp = (conversation.flags or {}).get("triage") or {}
+    inbound_ids = set(getattr(conversation, "_inbound_ids", ()) or ())
+    # Só vale a triagem DESTE turno: a de um turno anterior não diz nada desta fala.
+    this_turn = bool(inbound_ids & set(stamp.get("message_ids") or ()))
+    answered_by = (stamp.get("answered_by") or "") if this_turn else ""
+    if answered_by not in allergens.ANSWERED_BY:
+        answered_by = allergens.decision(customer_text, channel_ref=tools_module._catalog_channel_ref(channel_ref))
+    if not answered_by:
+        return None
+    if answered_by == allergens.ASK_WHICH:
+        reply = allergens.ask_which(customer_text)
+    else:
+        text = customer_text
+        if answered_by == allergens.NOTICE_AFTER_ASK:
+            text = f"{_earlier_customer_text(conversation)}\n{customer_text}"
+        reply = (
+            allergens.reply_for(text, channel_ref=tools_module._catalog_channel_ref(channel_ref))
+            if answered_by != allergens.TEAM else ""
+        )
+    if reply:
+        return AgentOutcome(reply_text=reply)
+    return AgentOutcome(reply_text="", handoff=True, handoff_reason="alergia")
+
+
 # ── O turno ───────────────────────────────────────────────────────────
+
+
+def addition_outcome(conversation, resolution, *, memory, memos) -> AgentOutcome | None:
+    """Acrescentar a pedido já feito, pelo mesmo serviço do PDV (dono, 03/10/2026).
+
+    A memória resolveu o "1" (``add_preview``: a pergunta de uma linha) ou o "sim" a
+    ela (``add_apply``). Sem modelo. Recusa numa encomenda chama a equipe com o
+    motivo no aviso. ``None`` quando a fala é outra coisa. Usado pelo agente e
+    pelas intenções no plural.
+    """
+    if resolution.outcome not in {"add_preview", "add_apply"}:
+        return None
+    from . import order_addition
+
+    request = resolution.request
+    if resolution.outcome == "add_preview":
+        addition = order_addition.propose(
+            conversation, order_ref=request.get("order_ref", ""), additions=request.get("add")
+        )
+    else:
+        addition = order_addition.apply(conversation, request)
+    if addition.handoff:
+        return AgentOutcome(
+            reply_text="", handoff=True, handoff_reason=addition.handoff_reason,
+            handoff_ack=addition.text, layer=LAYER_CONTEXT, memory=memory, memory_memos=memos,
+        )
+    return AgentOutcome(
+        reply_text=addition.text,
+        order_ref=addition.order_ref if addition.code == "added" else "",
+        layer=LAYER_CONTEXT,
+        memory=memory,
+        memory_memos=[*memos, addition.memo],
+    )
 
 
 def run_agent(*, conversation: Conversation, history: list[dict], client=None) -> AgentOutcome:
@@ -265,6 +364,87 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
             conversation._channel_off = True
             conversation._commercial_authority = False
 
+    customer_text = _current_customer_text(conversation)
+    is_first_turn = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
+
+    # Memória (v2, bloco 2): "sim", "o segundo", "mais 2" se resolvem contra o
+    # estado explícito da conversa, sem modelo. Sem referente que ainda valha, a
+    # casa pergunta; nunca supõe.
+    memory = dialogue.for_turn(conversation, channel_ref=channel_ref)
+
+    # Cancelamento conforme a etapa (dono, 03/10/2026): quando o próprio cliente
+    # poderia cancelar pelo site, a Concierge pergunta em uma linha e cancela no
+    # "sim", pelo mesmo serviço. Antes da memória e da cortesia: o "sim" e o
+    # "não, obrigado" respondem à pergunta pendente de cancelamento. Fora da
+    # janela, a equipe (regra da casa R4).
+    cancel_turn = cancellation.resolve_pending(conversation, customer_text)
+    if cancel_turn is None and cancellation.asks_to_cancel(customer_text):
+        order = cancellation.self_cancellable(conversation, customer_text)
+        if order is None:
+            return AgentOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
+        cancel_turn = cancellation.ask(conversation, order, customer_text)
+    if cancel_turn is not None:
+        if cancel_turn.code == "refused":
+            return AgentOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
+        return AgentOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
+
+    resolution = dialogue.resolve(customer_text, memory.state, memory.facts)
+    memos = [resolution.memo] if resolution.memo else []
+    addition = addition_outcome(conversation, resolution, memory=memory, memos=memos)
+    if addition is not None:
+        return addition
+    if resolution.answers_without_model:
+        return AgentOutcome(
+            reply_text=resolution.reply,
+            handoff=resolution.outcome == "handoff",
+            handoff_reason=resolution.handoff_reason,
+            layer=LAYER_COURTESY if resolution.outcome == "courtesy" else LAYER_CONTEXT,
+            memory=memory,
+            memory_memos=memos,
+        )
+    if resolution.text:
+        customer_text = resolution.text
+
+    courtesy = small_talk.small_talk_kind(customer_text)
+    if courtesy:
+        # "Bom dia", "obrigado", "tchau": a resposta é cortesia da casa, curta.
+        # Nem o modelo nem a busca entram: a busca sobre "bom dia, tudo bem?"
+        # devolveu três produtos, o levain e os alérgenos (alpha, 03/10/2026).
+        from .prompt import _shop
+
+        shop_name = (getattr(_shop(), "name", "") or "").strip()
+        return AgentOutcome(
+            reply_text=small_talk.reply_for(
+                customer_text, kind=courtesy, shop_name=shop_name, is_first_turn=is_first_turn
+            ),
+            layer=LAYER_COURTESY,
+            memory=memory,
+        )
+
+    from .prompt import _shop
+
+    _rule, fixed = house_rules.fixed_reply_for(
+        customer_text, shop_name=(getattr(_shop(), "name", "") or "").strip()
+    )
+    if _rule == "R7":
+        # Pedido de desconto (dono, 03/10/2026): até o teto da casa, a Concierge
+        # concede pelo mesmo cupom do site, e o valor é do sistema. Quando não
+        # dá (teto 0, sem autoridade, cupom recusado), segue a frase fixa de R7.
+        granted = discount.handle_request(
+            conversation=conversation, channel_ref=channel_ref, customer_text=customer_text
+        )
+        if granted.text:
+            return AgentOutcome(reply_text=granted.text, layer=LAYER_HOUSE_RULE, memory=memory)
+    if fixed:
+        # Regras da casa R7 (nunca negociar preço) e R8 (diz que é a assistente
+        # da casa): frase fixa, sem modelo nem busca. A equipe fica a uma frase.
+        return AgentOutcome(reply_text=fixed, layer=LAYER_HOUSE_RULE, memory=memory)
+
+    allergy = _allergy_outcome(conversation, customer_text, channel_ref=channel_ref)
+    if allergy is not None:
+        allergy.memory = memory
+        return allergy
+
     client = client or build_client()
     ctx = ToolContext(
         conversation=conversation,
@@ -273,18 +453,20 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         account=str(getattr(binding, "account", "") or ""),
         transport_channel=str(getattr(binding, "transport_channel", "") or ""),
         connection_key=str(getattr(binding, "connection_key", "") or ""),
-        customer_text=_current_customer_text(conversation),
+        customer_text=customer_text,
     )
 
-    is_first_turn = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
     system = build_system(
         conversation,
         is_first_turn=is_first_turn,
         cart_summary=_cart_summary(conversation, channel_ref),
     )
+    memory_text = "\n".join(part for part in (memory.prompt_lines(), resolution.note) if part)
+    if memory_text:
+        system.append({"type": "text", "text": f"## Memória da conversa (estado da casa)\n{memory_text}"})
 
     messages: list[dict] = list(history)
-    outcome = AgentOutcome(reply_text="")
+    outcome = AgentOutcome(reply_text="", memory=memory, memory_memos=memos)
     usage: dict = {}
     seen_calls: dict[str, int] = {}
     tool_specs = tools_module.TOOL_SPECS
@@ -338,7 +520,8 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                 # quando encontra um fato; saudações e conversa sem match mantêm
                 # o fallback neutro.
                 arguments: dict = {}
-                result = tools_module.execute("search_storefront", arguments, ctx)
+                with stage_of(conversation, "tools"):
+                    result = tools_module.execute("search_storefront", arguments, ctx)
                 rendered = (
                     tools_module.render_result("search_storefront", result)
                     if result.get("ok") and result.get("found")
@@ -374,12 +557,17 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                     outcome.tool_events.append(
                         {"name": "search_storefront", "input": arguments, "ok": True}
                     )
+                    outcome.memory_memos.append(dialogue.memo_of("search_storefront", arguments, result))
                     canonical_replies["search_storefront:{}"] = rendered
             outcome.reply_text = (
                 "\n\n".join(dict.fromkeys(canonical_replies.values()))
                 if canonical_replies
                 else "Preciso consultar os dados da loja para responder. Você pode pedir o cardápio, consultar seu pedido ou falar com a equipe."
             )
+            salutation = small_talk.opening_salutation(customer_text)
+            if salutation and canonical_replies:
+                # "Bom dia, tem croissant?": o bom dia volta antes do fato.
+                outcome.reply_text = f"{salutation}!\n{outcome.reply_text}"
             outcome.messages.append({"role": "assistant", "content": _persistable_content(response)})
             break
 
@@ -403,7 +591,8 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                     "message": "Esta chamada já foi feita com os mesmos argumentos. Responda ao cliente com o que já tem.",
                 }
             else:
-                result = tools_module.execute(use.name, arguments, ctx)
+                with stage_of(conversation, "tools"):
+                    result = tools_module.execute(use.name, arguments, ctx)
             rendered = "" if result.get("error") == "repeated_call" else tools_module.render_result(use.name, result)
             if rendered:
                 reply_key = "cart_state" if use.name in _CART_STATE_TOOLS else signature
@@ -415,6 +604,9 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
                 elif use.name in {"set_item", "set_fulfillment"}:
                     outcome.quote_token = ""
             outcome.tool_events.append({"name": use.name, "input": arguments, "ok": result.get("ok", True)})
+            memo = dialogue.memo_of(use.name, arguments, result)
+            if memo:
+                outcome.memory_memos.append(memo)
             results.append(
                 {
                     "type": "tool_result",
@@ -437,6 +629,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     outcome.usage = usage
     outcome.handoff = ctx.handoff
     outcome.handoff_reason = ctx.handoff_reason
+    outcome.handoff_ack = ctx.handoff_ack
     outcome.extra_replies = list(ctx.extra_replies)
     outcome.order_ref = ctx.order_ref
     return outcome

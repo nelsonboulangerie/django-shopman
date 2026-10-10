@@ -34,6 +34,48 @@ const fulfillmentTypes = ref<string[]>([]);
 const customerSegments = ref<string[]>([]);
 const birthdayOnly = ref(false);
 const isActive = ref(true);
+const minValidityDate = localInput(now).slice(0, 10);
+const advancedOpen = ref(false);
+// O `NuxtForm` pede um estado; a validação é a do `canSubmit` (e a do servidor).
+const formState = computed(() => ({
+  name: name.value,
+  coupon_code: couponCode.value,
+}));
+
+const validityDates = computed({
+  get: () => ({
+    start: validFrom.value.slice(0, 10),
+    end: validUntil.value.slice(0, 10),
+  }),
+  set: (next: { start?: string; end?: string }) => {
+    const startTime = validFrom.value.slice(11, 16) || "00:00";
+    const endTime = validUntil.value.slice(11, 16) || "23:59";
+    validFrom.value = next.start ? `${next.start}T${startTime}` : "";
+    validUntil.value = next.end ? `${next.end}T${endTime}` : "";
+  },
+});
+
+const validityTimes = computed({
+  get: () => ({
+    start: validFrom.value.slice(11, 16),
+    end: validUntil.value.slice(11, 16),
+  }),
+  set: (next: { start?: string; end?: string }) => {
+    const startDate = validFrom.value.slice(0, 10);
+    const endDate = validUntil.value.slice(0, 10);
+    validFrom.value = startDate && next.start ? `${startDate}T${next.start}` : "";
+    validUntil.value = endDate && next.end ? `${endDate}T${next.end}` : "";
+  },
+});
+
+const validityProblem = computed(() => {
+  const startsAt = Date.parse(validFrom.value);
+  const endsAt = Date.parse(validUntil.value);
+  if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt)) return "";
+  return endsAt <= startsAt
+    ? "O fim da vigência precisa acontecer depois do início."
+    : "";
+});
 
 const valueLabel = computed(() => {
   if (type.value === "percent") return "Percentual de desconto";
@@ -98,12 +140,6 @@ function fieldError(field: string): string {
   return props.fieldErrors?.[field]?.[0] ?? "";
 }
 
-function selectedValues(event: Event): string[] {
-  const target = event.target;
-  if (!(target instanceof HTMLSelectElement)) return [];
-  return Array.from(target.selectedOptions, (option) => option.value);
-}
-
 function cents(raw: string): number {
   const normalized = raw.trim().replace(",", ".");
   const parsed = Number(normalized || 0);
@@ -135,319 +171,303 @@ function submit() {
 </script>
 
 <template>
-  <form class="mx-auto w-full max-w-5xl space-y-6" @submit.prevent="submit">
-    <div
+  <NuxtForm
+    :state="formState"
+    class="mx-auto w-full max-w-5xl space-y-6"
+    @submit="submit"
+  >
+    <NuxtAlert
       v-if="globalError || visibleErrors.length"
-      class="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
-      role="alert"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-circle-alert"
+      :title="globalError || 'Revise os campos destacados.'"
       tabindex="-1"
     >
-      <p class="font-semibold">
-        {{ globalError || "Revise os campos destacados." }}
-      </p>
-      <ul v-if="visibleErrors.length" class="mt-2 list-disc space-y-1 pl-5">
-        <li v-for="error in visibleErrors" :key="`${error.field}:${error.message}`">
-          <strong>{{ error.label }}:</strong> {{ error.message }}
-        </li>
-      </ul>
-    </div>
-
-    <div class="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-      <section class="space-y-4 rounded-xl border border-border bg-card p-5">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-wide text-primary">
-            {{
-              kind === "coupon"
-                ? "Identificação do cupom"
-                : "Identificação da oferta"
-            }}
-          </p>
-          <h2 class="mt-1 text-lg font-semibold">
-            {{
-              kind === "coupon" ? "Código e desconto" : "Benefício comercial"
-            }}
-          </h2>
-        </div>
-
-        <label
-          v-if="kind === 'coupon'"
-          class="grid gap-1.5 text-sm font-medium"
-        >
-          Código do cupom
-          <UiInput
-            id="marketing-offer-coupon-code"
-            v-model="couponCode"
-            autocomplete="off"
-            :maxlength="50"
-            placeholder="EX.: PRIMEIRACOMPRA"
-            class="uppercase"
-            required
-            :aria-invalid="Boolean(fieldError('coupon_code'))"
-          />
-          <span class="text-xs font-normal text-muted-foreground">
-            Sem espaços; letras, números, hífen e sublinhado.
-          </span>
-          <span v-if="fieldError('coupon_code')" class="text-xs text-destructive">
-            {{ fieldError("coupon_code") }}
-          </span>
-        </label>
-
-        <label class="grid gap-1.5 text-sm font-medium">
-          Nome para a equipe
-          <UiInput
-            id="marketing-offer-name"
-            v-model="name"
-            :maxlength="200"
-            :placeholder="
-              kind === 'coupon' ? 'Primeira compra' : 'Semana do croissant'
-            "
-            required
-            :aria-invalid="Boolean(fieldError('name'))"
-          />
-          <span v-if="fieldError('name')" class="text-xs text-destructive">
-            {{ fieldError("name") }}
-          </span>
-        </label>
-
-        <div class="grid gap-4 sm:grid-cols-2">
-          <label class="grid gap-1.5 text-sm font-medium">
-            Tipo de benefício
-            <UiNativeSelect
-              v-model="type"
-              :aria-invalid="Boolean(fieldError('type'))"
-            >
-              <option
-                v-for="choice in options?.types ?? []"
-                :key="choice.value"
-                :value="choice.value"
-              >
-                {{ choice.label }}
-              </option>
-            </UiNativeSelect>
-            <span v-if="fieldError('type')" class="text-xs text-destructive">
-              {{ fieldError("type") }}
-            </span>
-          </label>
-          <label class="grid gap-1.5 text-sm font-medium">
-            {{ valueLabel }}
-            <UiInput
-              v-model="value"
-              type="number"
-              :min="type === 'free_delivery' ? 0 : 0.01"
-              :max="type === 'percent' ? 100 : undefined"
-              :step="type === 'percent' ? 1 : 0.01"
-              required
-              :aria-invalid="Boolean(fieldError('value'))"
-            />
-            <span class="text-xs font-normal text-muted-foreground">{{
-              valueHint
-            }}</span>
-            <span v-if="fieldError('value')" class="text-xs text-destructive">
-              {{ fieldError("value") }}
-            </span>
-          </label>
-        </div>
-
-        <div class="grid gap-4 sm:grid-cols-2">
-          <label class="grid gap-1.5 text-sm font-medium">
-            Começa em
-            <UiInput
-              v-model="validFrom"
-              type="datetime-local"
-              required
-              :aria-invalid="Boolean(fieldError('valid_from'))"
-            />
-            <span v-if="fieldError('valid_from')" class="text-xs text-destructive">
-              {{ fieldError("valid_from") }}
-            </span>
-          </label>
-          <label class="grid gap-1.5 text-sm font-medium">
-            Termina em
-            <UiInput
-              v-model="validUntil"
-              type="datetime-local"
-              required
-              :aria-invalid="Boolean(fieldError('valid_until'))"
-            />
-            <span v-if="fieldError('valid_until')" class="text-xs text-destructive">
-              {{ fieldError("valid_until") }}
-            </span>
-          </label>
-        </div>
-        <p class="text-xs text-muted-foreground">
-          Horário da loja:
-          {{ options?.shop_timezone || "configurado pelo servidor" }}.
-        </p>
-      </section>
-
-      <section class="space-y-4 rounded-xl border border-border bg-card p-5">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-wide text-primary">
-            Alcance
-          </p>
-          <h2 class="mt-1 text-lg font-semibold">Onde o benefício vale</h2>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Sem produto ou coleção, vale para todo o catálogo. Para usar uma
-            oferta em campanha, escolha ao menos um produto ou coleção.
-          </p>
-        </div>
-
-        <label class="grid gap-1.5 text-sm font-medium">
-          Produtos
-          <select
-            multiple
-            size="6"
-            class="min-h-36 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            @change="skus = selectedValues($event)"
+      <template v-if="visibleErrors.length" #description>
+        <ul class="list-disc space-y-1 pl-5">
+          <li
+            v-for="error in visibleErrors"
+            :key="`${error.field}:${error.message}`"
           >
-            <option
-              v-for="choice in options?.products ?? []"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{ choice.label }}
-            </option>
-          </select>
-          <span class="text-xs font-normal text-muted-foreground">
-            Use Ctrl/⌘ para selecionar mais de um.
-          </span>
-        </label>
-
-        <label class="grid gap-1.5 text-sm font-medium">
-          Coleções
-          <select
-            multiple
-            size="4"
-            class="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            @change="collections = selectedValues($event)"
-          >
-            <option
-              v-for="choice in options?.collections ?? []"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{ choice.label }}
-            </option>
-          </select>
-        </label>
-      </section>
-    </div>
-
-    <details class="rounded-xl border border-border bg-card p-5">
-      <summary class="cursor-pointer font-semibold">
-        Condições avançadas
-      </summary>
-      <p class="mt-1 text-sm text-muted-foreground">
-        Deixe uma lista vazia para aceitar todos os casos daquela condição.
-      </p>
-      <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <label class="grid gap-1.5 text-sm font-medium">
-          Pedido mínimo em reais
-          <UiInput v-model="minOrder" type="number" min="0" step="0.01" />
-        </label>
-        <label
-          v-if="kind === 'coupon'"
-          class="grid gap-1.5 text-sm font-medium"
-        >
-          Limite total de usos
-          <UiInput v-model="maxUses" type="number" min="0" step="1" />
-          <span class="text-xs font-normal text-muted-foreground"
-            >0 = ilimitado.</span
-          >
-        </label>
-        <label class="grid gap-1.5 text-sm font-medium">
-          Canais de venda
-          <select
-            multiple
-            size="3"
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            @change="channels = selectedValues($event)"
-          >
-            <option
-              v-for="choice in options?.channels ?? []"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{ choice.label }}
-            </option>
-          </select>
-        </label>
-        <label class="grid gap-1.5 text-sm font-medium">
-          Entrega ou retirada
-          <select
-            multiple
-            size="2"
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            @change="fulfillmentTypes = selectedValues($event)"
-          >
-            <option
-              v-for="choice in options?.fulfillment_types ?? []"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{ choice.label }}
-            </option>
-          </select>
-        </label>
-        <label class="grid gap-1.5 text-sm font-medium">
-          Segmentos de clientes
-          <select
-            multiple
-            size="3"
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            @change="customerSegments = selectedValues($event)"
-          >
-            <option
-              v-for="choice in options?.customer_segments ?? []"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{ choice.label }}
-            </option>
-          </select>
-        </label>
-      </div>
-      <div class="mt-4 flex flex-wrap gap-5">
-        <label class="flex min-h-11 items-center gap-2 text-sm font-medium">
-          <input
-            v-model="birthdayOnly"
-            type="checkbox"
-            class="rounded border-input text-primary"
-          />
-          Somente aniversariantes
-        </label>
-        <label class="flex min-h-11 items-center gap-2 text-sm font-medium">
-          <input
-            v-model="isActive"
-            type="checkbox"
-            class="rounded border-input text-primary"
-          />
-          Ativar ao salvar
-        </label>
-      </div>
-    </details>
+            <strong>{{ error.label }}:</strong> {{ error.message }}
+          </li>
+        </ul>
+      </template>
+    </NuxtAlert>
 
     <div
-      class="flex flex-col-reverse gap-2 border-t border-border pt-5 sm:flex-row sm:justify-end"
+      class="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]"
     >
-      <UiButton
-        type="button"
+      <NuxtCard class="min-w-0">
+        <div class="space-y-4">
+          <div>
+            <p class="text-xs font-semibold text-primary">
+              {{
+                kind === "coupon"
+                  ? "Identificação do cupom"
+                  : "Identificação da oferta"
+              }}
+            </p>
+            <h2 class="mt-1 text-base font-semibold">
+              {{
+                kind === "coupon" ? "Código e desconto" : "Benefício comercial"
+              }}
+            </h2>
+          </div>
+
+          <NuxtFormField
+            v-if="kind === 'coupon'"
+            label="Código do cupom"
+            help="Sem espaços; letras, números, hífen e sublinhado."
+            :error="fieldError('coupon_code') || undefined"
+            required
+          >
+            <NuxtInput
+              id="marketing-offer-coupon-code"
+              v-model="couponCode"
+              autocomplete="off"
+              :maxlength="50"
+              placeholder="EX.: PRIMEIRACOMPRA"
+              class="w-full uppercase"
+              required
+              :aria-invalid="Boolean(fieldError('coupon_code'))"
+            />
+          </NuxtFormField>
+
+          <NuxtFormField
+            label="Nome para a equipe"
+            :error="fieldError('name') || undefined"
+            required
+          >
+            <NuxtInput
+              id="marketing-offer-name"
+              v-model="name"
+              :maxlength="200"
+              :placeholder="
+                kind === 'coupon' ? 'Primeira compra' : 'Semana do croissant'
+              "
+              class="w-full"
+              required
+              :aria-invalid="Boolean(fieldError('name'))"
+            />
+          </NuxtFormField>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <NuxtFormField
+              label="Tipo de benefício"
+              :error="fieldError('type') || undefined"
+            >
+              <NuxtSelect
+                id="marketing-offer-type"
+                v-model="type"
+                :items="options?.types ?? []"
+                class="w-full"
+                :aria-invalid="Boolean(fieldError('type'))"
+              />
+            </NuxtFormField>
+            <NuxtFormField
+              :label="valueLabel"
+              :help="valueHint"
+              :error="fieldError('value') || undefined"
+              required
+            >
+              <NuxtInput
+                id="marketing-offer-value"
+                v-model="value"
+                type="number"
+                :min="type === 'free_delivery' ? 0 : 0.01"
+                :max="type === 'percent' ? 100 : undefined"
+                :step="type === 'percent' ? 1 : 0.01"
+                class="w-full"
+                required
+                :aria-invalid="Boolean(fieldError('value'))"
+              />
+            </NuxtFormField>
+          </div>
+
+          <div class="grid gap-4">
+            <NuxtFormField
+              label="Período de validade"
+              required
+              :error="
+                fieldError('valid_from') ||
+                fieldError('valid_until') ||
+                undefined
+              "
+            >
+              <UiDateRangeField
+                id="marketing-offer-validity-dates"
+                v-model="validityDates"
+                label="Período de validade"
+                :min="minValidityDate"
+                :clearable="false"
+                :allow-open-ended="false"
+                required
+                :aria-invalid="
+                  Boolean(fieldError('valid_from') || fieldError('valid_until'))
+                "
+              />
+            </NuxtFormField>
+
+            <NuxtFormField
+              label="Horário de início e fim"
+              :help="
+                options?.shop_timezone
+                  ? `Horário da loja: ${options.shop_timezone}.`
+                  : 'Vale o horário da loja.'
+              "
+              :error="validityProblem || undefined"
+              required
+            >
+              <UiTimeRangeField
+                id="marketing-offer-validity-times"
+                v-model="validityTimes"
+                label="Horário de início e fim"
+                required
+                :aria-invalid="Boolean(validityProblem)"
+              />
+            </NuxtFormField>
+          </div>
+        </div>
+      </NuxtCard>
+
+      <NuxtCard class="min-w-0">
+        <div class="space-y-4">
+          <div>
+            <p class="text-xs font-semibold text-primary">Alcance</p>
+            <h2 class="mt-1 text-base font-semibold">Onde o benefício vale</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Sem produto ou coleção, vale para todo o catálogo. Para usar uma
+              oferta em campanha, escolha ao menos um produto ou coleção.
+            </p>
+          </div>
+
+          <div v-if="options?.products.length" class="max-h-72 overflow-y-auto">
+            <NuxtCheckboxGroup
+              v-model="skus"
+              :items="options?.products ?? []"
+              legend="Produtos"
+              variant="card"
+            />
+          </div>
+          <p v-else class="text-sm text-muted-foreground">
+            Nenhum produto disponível para restringir esta oferta.
+          </p>
+
+          <div
+            v-if="options?.collections.length"
+            class="max-h-56 overflow-y-auto"
+          >
+            <NuxtCheckboxGroup
+              v-model="collections"
+              :items="options?.collections ?? []"
+              legend="Coleções"
+              variant="card"
+            />
+          </div>
+          <p v-else class="text-sm text-muted-foreground">
+            Nenhuma coleção disponível para restringir esta oferta.
+          </p>
+        </div>
+      </NuxtCard>
+    </div>
+
+    <NuxtCard>
+      <NuxtCollapsible v-model:open="advancedOpen" :unmount-on-hide="false">
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          block
+          class="justify-start"
+          label="Condições avançadas"
+          :trailing-icon="
+            advancedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+          "
+          data-offer-advanced-toggle
+        />
+        <template #content>
+          <div class="mt-2 space-y-4">
+            <p class="text-sm text-muted-foreground">
+              Deixe uma lista vazia para aceitar todos os casos daquela
+              condição.
+            </p>
+            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <NuxtFormField label="Pedido mínimo em reais">
+                <NuxtInput
+                  id="marketing-offer-min-order"
+                  v-model="minOrder"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  class="w-full"
+                />
+              </NuxtFormField>
+              <NuxtFormField
+                v-if="kind === 'coupon'"
+                label="Limite total de usos"
+                help="0 = ilimitado."
+              >
+                <NuxtInput
+                  id="marketing-offer-max-uses"
+                  v-model="maxUses"
+                  type="number"
+                  min="0"
+                  step="1"
+                  class="w-full"
+                />
+              </NuxtFormField>
+              <NuxtCheckboxGroup
+                v-if="options?.channels.length"
+                v-model="channels"
+                :items="options?.channels ?? []"
+                legend="Canais de venda"
+                variant="card"
+              />
+              <NuxtCheckboxGroup
+                v-if="options?.fulfillment_types.length"
+                v-model="fulfillmentTypes"
+                :items="options?.fulfillment_types ?? []"
+                legend="Entrega ou retirada"
+                variant="card"
+              />
+              <NuxtCheckboxGroup
+                v-if="options?.customer_segments.length"
+                v-model="customerSegments"
+                :items="options?.customer_segments ?? []"
+                legend="Segmentos de clientes"
+                variant="card"
+              />
+            </div>
+            <div class="flex flex-wrap gap-5">
+              <NuxtCheckbox
+                v-model="birthdayOnly"
+                label="Somente aniversariantes"
+              />
+              <NuxtCheckbox v-model="isActive" label="Ativar ao salvar" />
+            </div>
+          </div>
+        </template>
+      </NuxtCollapsible>
+    </NuxtCard>
+
+    <div
+      class="flex flex-col-reverse gap-2 border-t border-default pt-5 sm:flex-row sm:justify-end"
+    >
+      <NuxtButton
+        color="neutral"
         variant="outline"
+        label="Cancelar"
         :disabled="busy"
         @click="emit('cancel')"
-      >
-        Cancelar
-      </UiButton>
-      <UiButton type="submit" :disabled="!canSubmit || busy" :aria-busy="busy">
-        <Icon name="lucide:check" class="size-4" />
-        {{
-          busy
-            ? "Salvando…"
-            : kind === "coupon"
-              ? "Criar cupom"
-              : "Criar oferta"
-        }}
-      </UiButton>
+      />
+      <NuxtButton
+        type="submit"
+        icon="i-lucide-check"
+        :disabled="!canSubmit"
+        :loading="busy"
+        :label="kind === 'coupon' ? 'Criar cupom' : 'Criar oferta'"
+      />
     </div>
-  </form>
+  </NuxtForm>
 </template>

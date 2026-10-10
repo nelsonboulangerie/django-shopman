@@ -9,7 +9,7 @@ for (const width of [375, 1280]) {
     await page.route("**/api/v1/backstage/orders/", async route => {
       const response = await route.fetch();
       const body = await response.json();
-      card = { ...body.queue.prep[0], ref: "IFOOD-COMPLETED", channel_ref: "ifood", status: "completed", status_label: "Concluído", customer_name: "Cliente de teste", ifood_negotiations: [dispute], actions: [], can_advance: false, can_confirm: false };
+      card = { ...body.queue.prep[0], ref: "IFOOD-COMPLETED", channel_ref: "ifood", status: "completed", status_label: "Concluído", customer_name: "Cliente de teste", ifood_negotiations: [dispute], actions: [], can_advance: false, can_confirm: false, attention: "negotiation", attention_since_iso: new Date().toISOString(), goal_minutes: 10, goal_label: "responder até 15:15" };
       body.queue.ifood_negotiation_orders = [card];
       await route.fulfill({ json: body });
     });
@@ -17,11 +17,15 @@ for (const width of [375, 1280]) {
       ...card, customer_phone: "", customer_phone_uri: "", customer_whatsapp_url: "", customer_email: "", customer_ref: "", delivery_address: "", delivery_instructions: "", items: [{ sku: "CAFE", name: "Café com leite", qty: "1", unit_price_display: "R$ 10,00", total_display: "R$ 10,00" }], timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], awaiting_work_orders: [], equipment_options: [], equipment_out: [], cancellation_presets: [], kitchen_note_tags: [], customer_profile: null, revisions: {},
     } } }));
     await page.goto("/");
-    await page.getByRole("button", { name: "Atualizar (atalho: r)" }).click();
-    const section = page.locator("[data-ifood-negotiation-orders]");
-    await expect(section).toBeVisible();
-    await expect(section.getByRole("button", { name: "Selecionar pedido" })).toHaveCount(0);
-    await section.locator("[data-ifood-negotiation-link]").click();
+    // Atualizar mora no ⋯ do quadro (v4, UX-KIT-V2); a tecla r continua.
+    await page.locator("[data-board-more]").click();
+    await page.getByRole("menuitem", { name: "Atualizar (atalho: r)" }).click();
+    await page.keyboard.press("Escape");
+    // A negociação entra no "Precisa de você" como os outros pedidos (dono, 07/10/2026).
+    const row = page.locator('[data-queue-ref="IFOOD-COMPLETED"]');
+    await expect(row).toBeVisible();
+    await expect(row.locator("[data-queue-negotiation]")).toBeVisible();
+    await row.getByRole("link", { name: "Responder" }).click();
     const form = page.locator("[data-ifood-negotiations]");
     await expect(form).toBeVisible();
     await expect(form.getByRole("button", { name: "Enviar resposta ao iFood" })).toBeDisabled();

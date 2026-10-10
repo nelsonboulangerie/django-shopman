@@ -40,3 +40,26 @@ Se a política mudar durante uma chamada HTTP já iniciada, não é possível de
 essa chamada. A validação é repetida antes de cada PUT/PATCH; uma chamada já em voo
 não é cancelada retroativamente. Para ensaio de catálogo, não habilitar envio do
 catálogo local de exemplo para o merchant de produção.
+
+## Estoque: o item esgotado sai indisponível
+
+Desde a UX-R2 (decisão do dono, 03/10/2026) o status enviado não olha só
+publicado/vendável: o upsert sai `UNAVAILABLE` quando o produto não tem estoque
+para oferecer, e volta `AVAILABLE` quando tem. A regra é a do portão de pedido
+(`availability.decide` com uma unidade, no escopo do canal `ifood`), via
+`shopman/shop/services/external_availability.py`: produto sem rastreio de estoque
+e política `demand_ok` seguem disponíveis; fornada planejada aceita pela política
+`planned_ok` conta como disponível. A pausa (global ou do canal) continua vencendo.
+
+O gatilho é a passagem por zero e a volta registradas pelo `ShelfOutage`
+(`backstage/services/shelf_outages._apply`, por evento de estoque/reserva e pela
+reconciliação periódica do `maintenance_worker`): cada transição enfileira
+`catalog.project_sku` com `trigger="stock_changed"` para os canais empurrados cujo
+estoque vem daquele canal. Diretiva ainda na fila absorve a seguinte, e o handler
+lê o estado na hora de enviar: zerar e voltar em seguida converge para o estado
+final. O mesmo vale para o catálogo da Meta (`catalog_projection_meta`), que lê o
+estoque do canal apontado por `display.prices_from`. O feed público Google/Meta
+(`views/product_feed.py`) calcula o mesmo na hora em que a plataforma o busca.
+
+Tudo isso passa pela política de escrita acima: sem ela, a diretiva registra o
+bloqueio como antes.

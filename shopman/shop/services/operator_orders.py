@@ -324,6 +324,72 @@ _KITCHEN_FINISHED_STATUSES = frozenset({
 })
 
 
+#: A permissão de quem EXPEDE (SUITE-UX §15: uma Saída só, no Gestor). Era a
+#: permissão da Saída da Cozinha; quem a tem opera a coluna Saída do Gestor e
+#: nada além (``expedite_refusal``). Espelho de ``backstage.permissions``.
+EXPEDITE_PERMISSION = "backstage.operate_kds"
+
+#: Para onde quem só expede leva o pedido pronto: Despachar (entrega) e
+#: Entregar/Retirado (retirada).
+EXPEDITE_TARGETS = frozenset({Order.Status.DISPATCHED, Order.Status.COMPLETED})
+
+EXPEDITE_SCOPE_REASON = "Quem expede entrega e despacha o pedido pronto. Esta etapa é de quem gerencia pedidos."
+EXPEDITE_CUSTODY_REASON = "Despachar com troco ou maquininha é de quem gerencia pedidos: chame quem gerencia."
+
+
+def expedites_only(user) -> bool:
+    """Expede, mas não gerencia pedidos (``shop.manage_orders``)."""
+    return bool(
+        user
+        and user.is_active
+        and user.is_staff
+        and not user.has_perm("shop.manage_orders")
+        and user.has_perm(EXPEDITE_PERMISSION)
+    )
+
+
+def dispatch_custody_question(order: Order) -> str:
+    """O que o despacho deste pedido pergunta além do toque: ``machine``, ``change`` ou "".
+
+    Maquininha (qual sai, custódia no pedido) e troco (quanto sai da gaveta,
+    ``courier_out``) são perguntas que só quem gerencia pedidos responde. A
+    Saída da Cozinha recusava as duas com "abra no Gestor"; no Gestor, quem só
+    expede chama quem gerencia.
+    """
+    if get_fulfillment_type(order) != "delivery":
+        return ""
+    from shopman.shop.adapters.delivery_devices import needs_card_machine
+
+    if needs_card_machine(order):
+        return "machine"
+    if change_out_suggested_q(order) > 0:
+        return "change"
+    return ""
+
+
+def expedite_refusal(
+    order: Order,
+    *,
+    target_status: str | None,
+    change_out_q: int | None = None,
+    equipment=None,
+    trip_ref: str | None = None,
+) -> str:
+    """Por que quem só expede NÃO pode dar este passo; "" quando pode.
+
+    Só o pedido pronto saindo (Despachar, Entregar/Retirado), sem troco, sem
+    maquininha e sem juntar a outra saída. As outras réguas (pagamento, iFood,
+    janela de desfazer) são as do Gestor e valem para todos.
+    """
+    if order.status != Order.Status.READY or target_status not in EXPEDITE_TARGETS:
+        return EXPEDITE_SCOPE_REASON
+    if change_out_q or equipment or trip_ref or (
+        target_status == Order.Status.DISPATCHED and dispatch_custody_question(order)
+    ):
+        return EXPEDITE_CUSTODY_REASON
+    return ""
+
+
 @transaction.atomic
 def advance_order(
     order: Order,
@@ -336,8 +402,22 @@ def advance_order(
     target_status: str | None = None,
     expected_courier_id: str | None = None,
     trip_ref: str | None = None,
+    undo_window: bool = False,
+    handoff_token: str | None = None,
+    expedite_only: bool = False,
 ) -> str:
     """Advance an order through the operator lifecycle.
+
+    ``expedite_only``: quem toca só expede (``expedites_only``). A régua de
+    ``expedite_refusal`` é aplicada aqui, sob o lock, na linha travada.
+
+    ``undo_window``: o toque veio do Gestor ou da Saída da Cozinha. Entregar e
+    Despachar (``order_undo.HANDOFF_TARGETS``) então NÃO gravam a transição:
+    tudo é validado como se fosse gravar, o pedido de saída fica registrado
+    em ``order.data["pending_handoff"]`` e a gravação acontece quando a janela
+    de desfazer vence (``order_undo.commit_handoff``, que volta aqui com
+    ``handoff_token``). Os outros chamadores (iFood, entregador, PDV, piloto
+    de staging) gravam na hora, como sempre.
 
     ``trip_ref``: o pedido sai na MESMA saída de outro pedido já despachado
     (o entregador leva os dois). A saída é identificada pelo pedido que a abriu,
@@ -357,10 +437,41 @@ def advance_order(
     order.refresh_from_db()
     if expected_courier_id is not None and (order.data or {}).get("courier", {}).get("id_mch") != expected_courier_id:
         raise OrderStateConflict("A corrida mudou. Confira a entrega atual.")
+    from shopman.shop.services import order_undo
+
+    pending = order_undo.pending_handoff(order)
+    if pending and pending.get("token") != handoff_token:
+        if undo_window and order_undo.handoff_window_open(order):
+            # A saída já foi pedida e ainda pode ser desfeita: o mesmo toque
+            # repetido (duas telas, replay) é a mesma saída; outro destino é
+            # conflito, e quem quer outra coisa desfaz primeiro.
+            if (target_status or pending.get("to_status")) == pending.get("to_status"):
+                return str(pending.get("to_status"))
+            raise OrderStateConflict("Este pedido está saindo. Desfaça a saída antes de outra ação.")
+        # Janela vencida (o worker ainda não passou) ou fato de fora (iFood,
+        # entregador): a saída tocada é gravada agora, e só então este avanço
+        # segue. O fato externo não espera o desfazer de uma tela.
+        forced = not undo_window and order_undo.handoff_window_open(order)
+        settled = order_undo.settle_pending_handoff(order, force=not undo_window)
+        order.refresh_from_db()
+        if forced and settled and (target_status is None or target_status == settled):
+            # O fato de fora pedia exatamente o passo que a tela já tinha
+            # tocado: ele está gravado, e avançar de novo pularia um degrau.
+            return settled
     if expected_revision is not None and expected_revision != operational_revision(order):
         raise OrderStateConflict("O pedido mudou. Confira o estado atualizado antes de continuar.")
     if target_status is not None and target_status != next_status_for(order):
         raise OrderStateConflict("A etapa solicitada não é mais a próxima ação deste pedido.")
+    if expedite_only:
+        refusal = expedite_refusal(
+            order,
+            target_status=target_status or next_status_for(order),
+            change_out_q=change_out_q,
+            equipment=equipment,
+            trip_ref=trip_ref,
+        )
+        if refusal:
+            raise ValueError(refusal)
     payment_service.lock_order_payment(order)
     # A maquininha é decidida abaixo, sob lock (reserva ou saída compartilhada).
     blocked = advance_block_message(gestor_advance_block(order))
@@ -381,6 +492,22 @@ def advance_order(
             raise ValueError("Abra um turno de caixa para o entregador levar troco da gaveta.")
         from shopman.shop.adapters import delivery_devices
 
+        if hold_seconds := _handoff_hold_seconds(order, next_status, undo_window=undo_window, handoff_token=handoff_token):
+            # Valida o que a gravação vai exigir (saída aberta, maquininha
+            # prevista), sem reservar nada: a reserva é da gravação.
+            open_trip = _open_trip(trip_ref, order) if trip_ref else ""
+            joins_machine = bool(open_trip and trip_machine(open_trip)) and (
+                delivery_devices.needs_card_machine(order)
+                or any(str(ref).startswith(delivery_devices.reference_prefix()) for ref in (equipment or []))
+            )
+            if not joins_machine:
+                _clean_equipment(order, equipment)
+            order_undo.request_handoff(
+                order, to_status=next_status, actor=actor, seconds=hold_seconds,
+                change_out_q=change_out_q, cash_shift=cash_shift, equipment=equipment, trip_ref=trip_ref,
+            )
+            return next_status
+
         trip = _open_trip(trip_ref, order) if trip_ref else ""
         shared = trip_machine(trip) if trip else None
         wants_machine = delivery_devices.needs_card_machine(order) or any(
@@ -396,8 +523,17 @@ def advance_order(
                 taken = [ref for ref in taken if not ref.startswith(delivery_devices.reference_prefix())] + ["card_machine"]
     else:
         taken, trip, device_fields = [], "", {}
+        if hold_seconds := _handoff_hold_seconds(order, next_status, undo_window=undo_window, handoff_token=handoff_token):
+            order_undo.request_handoff(order, to_status=next_status, actor=actor, seconds=hold_seconds)
+            return next_status
 
     with transaction.atomic():
+        if handoff_token:
+            order_undo._drop_pending(order)
+        if order.status == Order.Status.READY:
+            # Saindo do pronto com a janela do pronto automático aberta: o
+            # aviso de pronto sai agora, antes do aviso da saída.
+            order_undo.release_ready_hold(order)
         if taken or trip:
             # Custódia da maquininha: o despacho registra o que saiu;
             # "onde está agora" é derivado (saiu e ainda não voltou). Não é
@@ -447,6 +583,15 @@ def advance_order(
     if dispatching:
         schedule_delivery_auto_complete(order)
     return next_status
+
+
+def _handoff_hold_seconds(order: Order, next_status: str, *, undo_window: bool, handoff_token: str | None) -> int:
+    """Segundos da janela de desfazer deste toque, ou 0 quando grava na hora."""
+    from shopman.shop.services import order_undo
+
+    if not undo_window or handoff_token or next_status not in order_undo.HANDOFF_TARGETS:
+        return 0
+    return order_undo.handoff_undo_seconds(order)
 
 
 # ── Troco da entrega: o que a loja coletou e o que o livro diz ─────────────
@@ -913,7 +1058,7 @@ def schedule_delivery_auto_complete(order: Order) -> None:
 def confirm_received(order: Order, *, actor: str = "customer", expected_courier_id: str | None = None) -> bool:
     """Customer confirms a dispatched delivery arrived → mark delivered.
 
-    Same machinery as the operator "Marcar como Entregue" (fulfillment sync +
+    Same machinery as the operator "Marcar como entregue" (fulfillment sync +
     transition), so handlers/notifications fire exactly once. Only valid while
     the order is out for delivery; idempotent (returns False) otherwise — couriers
     são terceirizados, então o cliente fechando o loop é uma das vias legítimas
@@ -1417,6 +1562,55 @@ def save_kitchen_note(order: Order, *, notes: str, expected_revision: str | None
     order.emit_event(event_type="kitchen_note_changed", actor=actor)
 
 
+#: Teto dos volumes declarados de um pedido. Acima disso é engano de toque.
+MAX_VOLUMES = 99
+
+#: De onde a declaração de volumes veio (decisão do dono, 04/10/2026: quem embalou
+#: declara, onde estiver): o ⋯ do cartão do Gestor, o posto Saída do Gestor, ou a
+#: estação da Cozinha.
+VOLUME_SURFACES = ("orders", "exit", "kds")
+
+
+@transaction.atomic
+def save_volumes(
+    order: Order,
+    *,
+    volumes: int,
+    expected_revision: str | None = None,
+    actor: str = "system",
+    surface: str = "orders",
+) -> None:
+    """Grava quantos volumes (sacolas, caixas) o pedido leva, como quem embalou contou.
+
+    Não existe volume deduzido: o número é declarado por quem embala, onde estiver
+    (Gestor, posto Saída ou estação da Cozinha), e fica em ``Order.data["volumes"]``
+    (inteiro). Zero apaga a declaração, e o cartão volta a mostrar a contagem de
+    itens. O evento ``volumes_declared`` registra quem (``actor``) e de qual
+    superfície (``surface``). Ver ``docs/reference/data-schemas.md``.
+    """
+    if isinstance(volumes, bool) or not isinstance(volumes, int) or not 0 <= volumes <= MAX_VOLUMES:
+        raise ValueError(f"Volumes é um número inteiro de 0 a {MAX_VOLUMES}.")
+    if surface not in VOLUME_SURFACES:
+        raise ValueError(f"Superfície desconhecida para volumes: {surface!r}.")
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_revision is not None and expected_revision != operational_revision(order, field="volumes"):
+        raise OrderStateConflict("Os volumes deste pedido mudaram. Confira o valor atual antes de gravar.")
+    data = dict(order.data or {})
+    if volumes:
+        data["volumes"] = volumes
+    else:
+        data.pop("volumes", None)
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+
+    order.emit_event(
+        event_type="volumes_declared",
+        actor=actor,
+        payload={"volumes": volumes, "actor": actor, "surface": surface},
+    )
+
+
 @transaction.atomic
 def assign_order(order: Order, *, operator_id: int, operator_name: str, actor: str, expected_revision: str | None = None) -> None:
     """Claim an order for an operator ("estou atendendo"), stored in Order.data.
@@ -1596,7 +1790,7 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
     data = order.data or {}
-    if field in {"kitchen_note", "assignment"}:
+    if field in {"kitchen_note", "assignment", "volumes"}:
         state = data.get(field)
     elif field == "equipment":
         dispatch = data.get("dispatch") or {}
@@ -1627,7 +1821,7 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
             "data": {key: data.get(key) for key in (
                 "payment", "availability_decision", "waitlist", "fulfillment_type",
                 "delivery_method", "delivery_date", "commitment_date", "dispatch",
-                "ifood_cancellation_request", "ifood",
+                "ifood_cancellation_request", "ifood", "pending_handoff", "auto_ready",
             )},
         }
     else:
@@ -1635,11 +1829,42 @@ def operational_revision(order: Order, *, field: str = "advance") -> str:
     return mutation_fingerprint({"version": 1, "order": order.ref, "field": field, "state": state})
 
 
+def _undo_handoff_action(order: Order, *, authorized: bool, actor_id, permission_reason: str):
+    """O "Desfazer" da saída pedida, enquanto a janela está aberta (ou ``None``)."""
+    from shopman.shop.projections.types import Action
+    from shopman.shop.services import order_undo
+
+    record = order_undo.pending_handoff(order)
+    if not record:
+        return None
+    window_open = order_undo.handoff_window_open(order)
+    return Action(
+        ref="undo-handoff", kind="mutation", label="Desfazer", priority="primary",
+        enabled=authorized and window_open,
+        reason=(permission_reason if not authorized else "" if window_open else "O prazo para desfazer acabou."),
+        method="POST", idempotency="required",
+        payload_schema={"expected_actor_id": actor_id, "token": record["token"], "base_revision": operational_revision(order)},
+    )
+
+
+def _kitchen_will_conclude(order: Order) -> bool:
+    """A Cozinha tem ticket aberto deste pedido e o pronto automático está ligado."""
+    from shopman.shop.adapters import kds as kds_adapter
+    from shopman.shop.services import order_undo
+
+    if not order_undo.auto_ready_enabled(order):
+        return False
+    return kds_adapter.get_tickets(order).filter(status__in=["pending", "in_progress"]).exists()
+
+
 def operational_actions(order: Order, *, user=None, waitlist_state: str | None = None, payment_reads=None, channel_config=None):
     """Elegibilidade canônica; cliente só renderiza. API ainda revalida sob lock."""
     from shopman.shop.projections.types import Action
 
     authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+    # Quem só expede (SUITE-UX §15): avança a saída do pedido pronto e desfaz
+    # (a saída, o pronto automático). O resto continua de quem gerencia.
+    expedite = not authorized and expedites_only(user)
     permission_reason = "Identifique uma pessoa com permissão para gerenciar pedidos."
     actions = []
     actor_id = getattr(user, "pk", None)
@@ -1656,11 +1881,15 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
             method="POST", idempotency="required", payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order)},
             confirmation={"required": True},
         ))
+    elif pending_handoff_action := _undo_handoff_action(order, authorized=authorized or expedite, actor_id=actor_id, permission_reason=permission_reason):
+        # A saída foi pedida e ainda pode ser desfeita: o único gesto do card é
+        # desfazer. Avançar de novo seria repetir a mesma saída.
+        actions.append(pending_handoff_action)
     elif next_status_for(order):
         labels = {
             "preparing": "Iniciar preparo", "ready": "Marcar pronto",
-            "dispatched": "Marcar saída para entrega", "delivered": "Marcar como Entregue",
-            "completed": "Marcar como Retirado" if order.status == "ready" else "Concluir",
+            "dispatched": "Marcar saída para entrega", "delivered": "Marcar como entregue",
+            "completed": "Marcar como retirado" if order.status == "ready" else "Concluir",
         }
         target = next_status_for(order)
         if target == Order.Status.DISPATCHED:
@@ -1668,12 +1897,42 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
 
             if needs_card_machine(order):
                 labels["dispatched"] = "Saiu com a maquininha"
-        reason = advance_block_message(gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads)) if authorized else permission_reason
+        if authorized:
+            reason = advance_block_message(gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads))
+        elif expedite:
+            reason = expedite_refusal(order, target_status=target) or advance_block_message(
+                gestor_advance_block(order, waitlist_state=waitlist_state, payment_reads=payment_reads)
+            )
+        else:
+            reason = permission_reason
+        # "Pronto" é fato que o sistema sabe quando a Cozinha conclui (L1): com o
+        # pronto automático ligado e ticket aberto na cozinha, o "Marcar pronto"
+        # sai do card e fica no menu do pedido (``priority="menu"``), para a
+        # estação sem tela e para o caso que o sistema não viu.
+        priority = "menu" if target == Order.Status.READY and _kitchen_will_conclude(order) else "primary"
         actions.append(Action(
-            ref="advance", kind="mutation", label=labels[target], priority="primary",
+            ref="advance", kind="mutation", label=labels[target], priority=priority,
             enabled=not reason, reason=reason, method="POST", idempotency="required",
             payload_schema={"expected_actor_id": actor_id, "target_status": target, "base_revision": operational_revision(order)},
         ))
+    from shopman.shop.services import order_undo
+
+    auto_ready = order_undo.ready_hold(order)
+    if auto_ready and not order_undo.pending_handoff(order):
+        actions.append(Action(
+            ref="undo-ready", kind="mutation", label="Desfazer", priority="secondary",
+            enabled=authorized or expedite, reason="" if authorized or expedite else permission_reason,
+            method="POST", idempotency="required",
+            payload_schema={"expected_actor_id": actor_id, "token": auto_ready["token"], "base_revision": operational_revision(order)},
+        ))
+    # Volumes: quem embalou declara, onde estiver. Quem só expede (posto Saída,
+    # Cozinha) também embala, então o gesto é dele também.
+    actions.append(Action(
+        ref="volumes", kind="mutation", label="Declarar volumes",
+        enabled=authorized or expedite, reason="" if authorized or expedite else permission_reason,
+        method="POST", idempotency="required",
+        payload_schema={"expected_actor_id": actor_id, "base_revision": operational_revision(order, field="volumes")},
+    ))
     for ref, label, field in (
         ("notes", "Salvar nota", "kitchen_note"),
         ("comment", "Adicionar comentário", "comment"),

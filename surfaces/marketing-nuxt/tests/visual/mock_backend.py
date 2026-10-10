@@ -110,6 +110,90 @@ def action(
     }
 
 
+def decision_queue(scenario: str) -> dict:
+    """A fila de decisões (UX-M1): revisão, falha repetível e o incerto conferido sozinho."""
+
+    empty = scenario in {"board-empty", "board-normal"}
+    items = [] if empty else [
+        {
+            "ref": "review:announcement:41",
+            "kind": "review",
+            "announcement_id": 41,
+            "announcement_version": 3,
+            "campaign_name": "Fornada artesanal",
+            "trigger": "production_finished",
+            "product_name": "Pão artesanal",
+            "platform_refs": ["instagram", "whatsapp"],
+            "reach": {"posts": 1, "people": 12},
+            "deadline_at": _anda("2026-09-10T10:42:00-03:00"),
+            "scheduled_for": None,
+            "created_at": _anda("2026-09-10T10:00:00-03:00"),
+            "failures": [],
+            "href": "/announcements/41#review",
+        },
+        {
+            "ref": "retry_failed:announcement:40",
+            "kind": "retry_failed",
+            "announcement_id": 40,
+            "announcement_version": 5,
+            "campaign_name": "Fornada artesanal",
+            "trigger": "production_finished",
+            "product_name": "Pain au chocolat",
+            "platform_refs": ["instagram"],
+            "reach": {"posts": 1, "people": 0},
+            "deadline_at": _anda("2026-09-10T11:40:00-03:00"),
+            "scheduled_for": None,
+            "created_at": _anda("2026-09-10T09:40:00-03:00"),
+            "failures": [
+                {
+                    "platform_ref": "instagram",
+                    "delivery_kind": "publication",
+                    "count": 1,
+                    "reason_code": "instagram_prepare_transport_failure",
+                }
+            ],
+            "href": "/announcements/40#result",
+        },
+    ]
+    checks = [] if empty else [
+        {
+            "ref": "check:announcement:39:google_business",
+            "announcement_id": 39,
+            "campaign_name": "Pão de queijo",
+            "platform_ref": "google_business",
+            "delivery_kind": "publication",
+            "state": "confirmed",
+            "target_count": 1,
+            "checked_at": _anda("2026-09-10T09:58:00-03:00"),
+            "href": "/announcements/39#result",
+        }
+    ]
+    scheduled = [] if scenario == "board-empty" else [
+        {
+            "ref": "scheduled:announcement:42",
+            "announcement_id": 42,
+            "campaign_name": "Relâmpago de fim de tarde",
+            "trigger": "schedule",
+            "product_name": "",
+            "platform_refs": ["whatsapp"],
+            "reach": {"posts": 0, "people": 142},
+            "scheduled_for": _anda("2026-09-10T17:30:00-03:00"),
+            "href": "/announcements/42",
+        }
+    ]
+    return {
+        "queue": {
+            "generated_at": FIXED_NOW,
+            "shop_timezone": "America/Sao_Paulo",
+            "items": items,
+            "automatic_checks": checks,
+            "scheduled": scheduled,
+            "scheduled_today_count": len(scheduled),
+            "active_campaign_count": 3,
+        }
+    }
+
+
 def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
     suffix = " — clientes recorrentes da unidade central e encomendas especiais" if long else ""
     return {
@@ -583,6 +667,10 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
             return
+        # Os favoritos do painel de filtros (Enviados, Campanhas): nenhum na matriz.
+        if path == "/api/v1/backstage/saved-views/":
+            self._send(200, {"views": []})
+            return
         if path == "/api/v1/backstage/marketing/":
             if scenario == "login-expired":
                 self._send(401, {"detail": "Sua sessão terminou."})
@@ -612,6 +700,12 @@ class Handler(BaseHTTPRequestHandler):
                 "shop_timezone": "America/Sao_Paulo",
                 "quiet_hours_suspended_for_local_simulation": False,
             }})
+            return
+        if path == "/api/v1/backstage/marketing/decisions/":
+            if scenario == "login-expired":
+                self._send(401, {"detail": "Sua sessão terminou."})
+                return
+            self._send(200, decision_queue(scenario))
             return
         if path == "/api/v1/backstage/marketing/v2/":
             fresh = "degraded" if scenario == "board-degraded" else "fresh"
@@ -649,7 +743,7 @@ class Handler(BaseHTTPRequestHandler):
                 action(
                     f"campaign:{rule['pk']}",
                     "edit_campaign",
-                    f"/campaigns#campaign-{rule['pk']}",
+                    f"/settings/campaigns#campaign-{rule['pk']}",
                     enabled=True,
                     version=rule["version"],
                 )
@@ -1165,6 +1259,31 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/v1/backstage/marketing/security/step-up/":
             self._send(200, {"ok": True, "step_up": {"level": "password"}})
+            return
+        if re.fullmatch(r"/api/v1/backstage/marketing/announcements/\d+/approve/", path) and scenario == "seal-dual":
+            # V6-MKT: acima do limiar, o selo pede a segunda pessoa por push; sem digital
+            # cadastrada neste navegador, a frase e a senha seguem como caminho.
+            self._send(428, {
+                "code": "confirmation_required",
+                "detail": "Confirme a consequência antes de publicar.",
+                "confirmation": {
+                    "token": "visual-confirmation-token",
+                    "ref": "00000000-0000-4000-8000-000000000041",
+                    "expires_at": _anda("2026-09-10T10:35:00-03:00"),
+                    "mode": "typed",
+                    "step_up": "password",
+                    "dual_control": True,
+                    "dual_control_threshold": 500,
+                    "device_available": False,
+                    "typed_phrase": "ENVIAR 642",
+                    "consequence": "publishes_now_to_eligible_audience",
+                    "resource_ref": "announcement:41",
+                    "base_version": 3,
+                    "audience_count": 642,
+                    "platforms": ["instagram", "whatsapp"],
+                    "scheduled_for": None,
+                },
+            })
             return
         if re.fullmatch(r"/api/v1/backstage/marketing/announcements/\d+/approve/", path):
             self._send(428, {

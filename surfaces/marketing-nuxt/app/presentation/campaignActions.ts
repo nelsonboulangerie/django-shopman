@@ -32,7 +32,7 @@ export function isExactCampaignEditAction(
     action.resource_ref === resource &&
     action.ref === `${resource}:edit_campaign:v${rule.version}` &&
     action.kind === "edit_campaign" &&
-    action.href === `/campaigns#campaign-${rule.pk}` &&
+    action.href === `/settings/campaigns#campaign-${rule.pk}` &&
     action.method === "GET" &&
     action.idempotency === "none" &&
     !action.confirmation.token_required,

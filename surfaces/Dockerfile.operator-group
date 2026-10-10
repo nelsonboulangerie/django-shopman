@@ -21,8 +21,12 @@
 # operator-router.
 
 ARG OPERATOR_GROUP
+# A imagem base é ARG só para a CI trocar de REGISTRO (espelho público da mesma
+# imagem oficial, sem o limite de pull anônimo do Docker Hub). O default é o que o
+# deploy usa e não muda: deploy-images.yml e o App Platform não passam o arg.
+ARG NODE_IMAGE=node:22-alpine
 
-FROM node:22-alpine AS kit
+FROM ${NODE_IMAGE} AS kit
 WORKDIR /repo
 # A layer compartilhada precisa das próprias dependências antes do `npm ci` de
 # qualquer consumer (o postinstall faz `nuxt prepare` e importa a layer).
@@ -70,7 +74,7 @@ RUN cd surfaces/purchase-nuxt && npm ci && npm run build
 
 # Base de runtime comum: só Node + o roteador. Nada de node_modules — o
 # `.output/` do Nitro já traz as dependências de servidor empacotadas.
-FROM node:22-alpine AS runtime
+FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000

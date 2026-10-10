@@ -71,13 +71,16 @@ function confirmTyped() {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <UiDialogContent class="sm:max-w-xl">
-      <UiDialogHeader>
-        <UiDialogTitle>{{ title }}</UiDialogTitle>
-        <UiDialogDescription>{{ description }}</UiDialogDescription>
-      </UiDialogHeader>
-
+  <NuxtModal
+    :open="open"
+    :title="title"
+    :description="description"
+    :ui="{ content: 'sm:max-w-xl' }"
+    data-pos-tab-picker
+    @update:open="$emit('update:open', Boolean($event))"
+  >
+    <template #body>
+      <div class="grid gap-4">
       <form class="grid gap-2" @submit.prevent="confirmTyped">
         <label class="grid gap-1 text-xs">
           <span class="font-medium text-muted-foreground">Referência da comanda</span>
@@ -89,9 +92,7 @@ function confirmTyped() {
               autofocus
               @update:model-value="updateValue"
             />
-            <UiButton type="submit" :disabled="busy || !modelValue.trim()">
-              Abrir comanda
-            </UiButton>
+            <NuxtButton type="submit" color="primary" label="Abrir comanda" :disabled="busy || !modelValue.trim()" />
           </div>
         </label>
       </form>
@@ -102,12 +103,13 @@ function confirmTyped() {
           <UiBadge v-if="hasDraft" variant="outline">Rascunho atual</UiBadge>
         </div>
         <div v-if="filteredTabs.length" class="grid max-h-72 gap-2 overflow-auto pr-1 sm:grid-cols-2">
-          <button
+          <NuxtButton
             v-for="tab in filteredTabs"
             :key="tab.ref"
-            type="button"
-            class="grid gap-1 rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-border disabled:hover:bg-transparent"
-            :class="tab.state === 'in_use' ? 'border-warning/40 bg-warning/10' : ''"
+            color="neutral"
+            variant="outline"
+            class="justify-normal grid gap-1 px-3 py-2 text-left font-normal"
+            :class="tab.state === 'in_use' ? 'bg-warning/10' : ''"
             :disabled="busy || !canAssociate(tab)"
             @click="selectTab(tab)"
           >
@@ -119,18 +121,24 @@ function confirmTyped() {
             <span v-if="hasDraft && !canAssociate(tab)" class="text-xs text-warning">
               Abra separadamente para evitar mistura de pedidos.
             </span>
-          </button>
+          </NuxtButton>
         </div>
         <p v-else class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
           Nenhuma comanda encontrada. Digite uma referência para abrir uma nova.
         </p>
       </div>
 
-      <UiDialogFooter>
-        <UiDialogClose as-child>
-          <UiButton type="button" variant="outline" :disabled="busy">Cancelar</UiButton>
-        </UiDialogClose>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+      </div>
+    </template>
+    <template #footer>
+      <NuxtButton
+        class="ml-auto"
+        color="neutral"
+        variant="outline"
+        label="Cancelar"
+        :disabled="busy"
+        @click="$emit('update:open', false)"
+      />
+    </template>
+  </NuxtModal>
 </template>

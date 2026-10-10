@@ -20,7 +20,7 @@ import {
 import {
   platformReadinessNote,
   readinessByPlatform,
-  readinessPillClass,
+  readinessStatusClass,
 } from "~/presentation/platformReadiness";
 import type { PlatformReadiness } from "~/presentation/platformReadiness";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
@@ -29,6 +29,7 @@ import {
   scheduleSummary,
 } from "~/utils/marketingSchedule";
 import type { ScheduleFold } from "~/utils/marketingSchedule";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   rule: Campaign | null; // null = criando
@@ -46,7 +47,7 @@ const props = defineProps<{
    *  lista; o catálogo teórico de providers nunca vira opção de disparo. */
   deliveryCapabilities?: MarketingPlatformCapability[];
   /** Estado e motivo por plataforma (`/marketing/platforms/`). Ausente = tudo pronto.
-   *  Pinta a pílula e explica, ANTES do clique, onde a campanha não vai sair. */
+   *  Sinaliza a opção e explica, ANTES do clique, onde a campanha não vai sair. */
   platformReadiness?: PlatformReadiness[];
   whatsappTemplate?: string;
   busy?: boolean;
@@ -113,6 +114,25 @@ const selectedRfmSegments = ref<string[]>([]);
 const churnRiskOn = ref(false);
 const churnRiskMin = ref(0.7);
 const birthdayToday = ref(false);
+
+const PRODUCT_AUDIENCE_ITEMS: Array<Choice & { hint?: string }> = [
+  { value: "favorites", label: "Quem favoritou o produto" },
+  {
+    value: "alerts",
+    label: 'Quem pediu "me avise" deste produto',
+    hint: "A fila do sino da loja: lote para pão, reposição para o resto.",
+  },
+];
+const productAudience = computed<string[]>({
+  get: () => [
+    ...(favorites.value ? ["favorites"] : []),
+    ...(alerts.value ? ["alerts"] : []),
+  ],
+  set: (next) => {
+    favorites.value = next.includes("favorites");
+    alerts.value = next.includes("alerts");
+  },
+});
 
 const MANAGED_AUDIENCE_KEYS = new Set([
   "alerts",
@@ -198,7 +218,7 @@ function scheduleDraftSummary(schedule: Record<string, unknown>): string {
   return days ? `${days} às ${windows}` : `todo dia às ${windows}`;
 }
 
-// Prontidão por plataforma: a pílula ganha cor e palavra, e a escolhida que não
+// Prontidão por plataforma: a opção ganha cor e palavra, e a escolhida que não
 // publica ganha a frase completa embaixo — antes do clique, não depois de aprovar.
 const readinessMap = computed(() =>
   readinessByPlatform(props.platformReadiness),
@@ -211,6 +231,12 @@ const selectedReadinessNotes = computed(() =>
     .filter((option) => platforms.value.includes(option.value))
     .map((option) => ({ platform: option.value, ...readinessNote(option) }))
     .filter((note) => note.tone !== "ready"),
+);
+const platformChoiceItems = computed(() =>
+  props.platformOptions.map((option) => ({
+    ...option,
+    "data-readiness": readinessNote(option).tone,
+  })),
 );
 
 /** O aviso de conflito pede uma frase, não JSON: o formulário é quem sabe ler o campo. */
@@ -308,6 +334,14 @@ const onceResolution = computed(() =>
 const dateRangeValid = computed(
   () => !startsOn.value || !endsOn.value || startsOn.value <= endsOn.value,
 );
+const recurrencePeriod = computed({
+  get: () => ({ start: startsOn.value, end: endsOn.value }),
+  set: (next: { start?: string; end?: string }) => {
+    startsOn.value = next.start ?? "";
+    endsOn.value = next.end ?? "";
+    scheduleTouched.value = true;
+  },
+});
 
 const canSubmit = computed(
   () =>
@@ -331,6 +365,14 @@ function stepEnabled(index: number): boolean {
   return index === 0 || stepReady.value.slice(0, index).every(Boolean);
 }
 
+const stepperItems = computed(() =>
+  COMPOSER_STEPS.map((step, index) => ({
+    title: step.label,
+    description: step.hint,
+    disabled: !stepEnabled(index),
+  })),
+);
+
 function goToStep(index: number) {
   if (index < 0 || index >= COMPOSER_STEPS.length || !stepEnabled(index))
     return;
@@ -348,13 +390,6 @@ const scheduleReady = computed(() =>
       (Boolean(props.rule && !scheduleTouched.value) || onceResolution.value.ok)
     : fireAt.value !== "" && dateRangeValid.value,
 );
-
-function toggleWeekday(day: number) {
-  scheduleTouched.value = true;
-  const index = weekdays.value.indexOf(day);
-  if (index >= 0) weekdays.value.splice(index, 1);
-  else weekdays.value.push(day);
-}
 
 function buildSchedule(): Record<string, unknown> {
   if (
@@ -476,12 +511,6 @@ function buildAudienceRules(): Record<string, unknown> {
     else delete result.match;
   }
   return result;
-}
-
-function toggleChoice(target: string[], value: string) {
-  const index = target.indexOf(value);
-  if (index >= 0) target.splice(index, 1);
-  else target.push(value);
 }
 
 const preservedAudienceKeys = computed(() =>
@@ -668,6 +697,22 @@ const selectedTemplate = computed(
     null,
 );
 
+const templateOptions = computed(() =>
+  props.templates.map((template) => ({
+    value: template.pk,
+    label: template.name,
+    keywords: `${template.pk} ${template.body}`,
+  })),
+);
+
+const offerOptions = computed(() => [
+  {
+    value: "",
+    label: "Nenhuma (só contar a novidade)",
+  },
+  ...props.offers,
+]);
+
 const deliveryCapabilityMap = computed(() =>
   Object.fromEntries(
     (props.deliveryCapabilities ?? []).map((capability) => [
@@ -719,11 +764,67 @@ const reviewAudience = computed(() =>
     : "Público das contas selecionadas",
 );
 
-function togglePlatform(value: string) {
-  const index = platforms.value.indexOf(value);
-  if (index >= 0) platforms.value.splice(index, 1);
-  else platforms.value.push(value);
+// As listas com busca (`NuxtSelectMenu`) devolvem o ITEM escolhido; o formulário
+// guarda só o valor. Ler e gravar pelo item mantém o v-model honesto nos dois lados.
+const selectedTemplateOption = computed(() =>
+  templateOptions.value.find((option) => option.value === templateId.value),
+);
+function chooseTemplate(item: unknown) {
+  const value =
+    item && typeof item === "object"
+      ? (item as { value: number }).value
+      : item;
+  templateId.value = typeof value === "number" ? value : null;
 }
+const selectedOfferOption = computed(() =>
+  offerOptions.value.find((option) => option.value === promotionRef.value),
+);
+function chooseOffer(item: unknown) {
+  const value =
+    item && typeof item === "object" ? (item as Choice).value : item;
+  promotionRef.value = String(value ?? "");
+}
+
+const SCHEDULE_KIND_ITEMS = [
+  { label: "Toda semana", value: "recurring" },
+  { label: "Uma vez", value: "once" },
+];
+const scheduleKindChoice = computed({
+  get: () => scheduleKind.value,
+  set: (next: string) =>
+    chooseScheduleKind(next === "once" ? "once" : "recurring"),
+});
+
+const onceFoldItems = computed(() =>
+  (onceResolution.value.candidates ?? []).map((candidate, index) => ({
+    label: `${index === 0 ? "Primeira" : "Segunda"} ocorrência (UTC${candidate.offset})`,
+    value: index === 0 ? "earlier" : "later",
+  })),
+);
+const onceFoldChoice = computed({
+  get: () => onceFold.value,
+  set: (next: string) => {
+    onceFold.value = next === "earlier" || next === "later" ? next : "";
+  },
+});
+
+// O NuxtCheckboxGroup trabalha com valor em texto; o dia segue número no formulário.
+const WEEKDAY_ITEMS = WEEKDAY_LABELS.map((label, day) => ({
+  label,
+  value: String(day),
+}));
+const weekdaysChoice = computed({
+  get: () => weekdays.value.map(String),
+  set: (next: string[]) => {
+    scheduleTouched.value = true;
+    weekdays.value = next.map(Number);
+  },
+});
+
+const AUDIENCE_MATCH_ITEMS = [
+  { label: "Atender a qualquer um", value: "any" },
+  { label: "Atender a todos", value: "all" },
+];
 
 function submit() {
   if (!canSubmit.value) return;
@@ -735,7 +836,11 @@ function submit() {
 </script>
 
 <template>
-  <form class="mx-auto w-full max-w-5xl space-y-5" @submit.prevent="submit">
+  <NuxtForm
+    :state="{ name, trigger, templateId, platforms }"
+    class="mx-auto w-full max-w-5xl space-y-5"
+    @submit="submit"
+  >
     <DraftRecoveryNotice
       :state="draft.state.value"
       :saved-at="draft.savedAt.value"
@@ -747,109 +852,88 @@ function submit() {
       @discard="draft.discard()"
     />
 
-    <nav aria-label="Etapas da campanha">
-      <ol
-        class="grid grid-cols-5 gap-1 rounded-lg border border-border bg-muted/30 p-1"
+    <!-- As cinco etapas. O título carrega o número para o leitor de tela ("2. Destinos")
+         e some no celular, onde a frase da etapa atual vem logo abaixo. -->
+    <div class="campaign-stepper">
+      <NuxtStepper
+        :model-value="currentStep"
+        :items="stepperItems"
+        :linear="false"
+        size="sm"
+        aria-label="Etapas da campanha"
+        @update:model-value="goToStep(Number($event))"
       >
-        <li v-for="(step, index) in COMPOSER_STEPS" :key="step.label">
-          <button
-            type="button"
-            class="flex min-h-11 w-full items-center justify-center gap-1 rounded-md px-2 text-xs font-medium transition sm:justify-start"
-            :class="
-              currentStep === index
-                ? 'bg-background text-foreground shadow-sm'
-                : index < currentStep
-                  ? 'text-primary'
-                  : 'text-muted-foreground'
-            "
-            :disabled="!stepEnabled(index)"
-            :aria-current="currentStep === index ? 'step' : undefined"
-            :aria-label="`${index + 1}. ${step.label}`"
-            @click="goToStep(index)"
-          >
-            <span
-              class="grid size-6 shrink-0 place-items-center rounded-full border text-[11px]"
-              :class="
-                currentStep === index
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : index < currentStep
-                    ? 'border-primary text-primary'
-                    : 'border-border'
-              "
-              >{{ index < currentStep ? "✓" : index + 1 }}</span
-            >
-            <span class="hidden text-left sm:inline">{{ step.label }}</span>
-          </button>
-        </li>
-      </ol>
-      <p class="mt-2 text-xs text-muted-foreground" role="status">
-        <strong class="text-foreground">
-          {{ currentStep + 1 }}. {{ COMPOSER_STEPS[currentStep]?.label }}.
-        </strong>
+        <template #title="{ item }">
+          <span class="sr-only"
+            >{{ stepperItems.indexOf(item as never) + 1 }}. </span
+          ><span class="max-sm:sr-only">{{ item.title }}</span>
+        </template>
+        <template #description="{ item }">
+          <span class="max-sm:hidden">{{ item.description }}</span>
+        </template>
+      </NuxtStepper>
+      <span class="sr-only" role="status" aria-live="polite">
+        Etapa {{ currentStep + 1 }} de {{ COMPOSER_STEPS.length }}
+      </span>
+      <p class="mt-3 text-sm text-muted-foreground sm:hidden">
+        <strong class="text-highlighted"
+          >{{ currentStep + 1 }}. {{ COMPOSER_STEPS[currentStep]?.label }}.</strong
+        >
         {{ COMPOSER_STEPS[currentStep]?.hint }}
       </p>
-    </nav>
+    </div>
 
-    <div v-show="currentStep === 0">
-      <label
-        for="rule-name"
-        class="mb-1 block text-xs font-medium text-muted-foreground"
-        >Nome da campanha</label
-      >
-      <UiInput
+    <NuxtFormField v-show="currentStep === 0" label="Nome da campanha">
+      <NuxtInput
         id="rule-name"
         v-model="name"
         type="text"
         placeholder="Lote de pães → redes"
+        class="w-full"
       />
-    </div>
+    </NuxtFormField>
 
     <div
       v-show="currentStep === 0 || currentStep === 2"
       class="grid gap-4 sm:grid-cols-2"
     >
-      <div v-show="currentStep === 0">
-        <label
-          for="rule-trigger"
-          class="mb-1 block text-xs font-medium text-muted-foreground"
-          >Quando acontecer</label
-        >
-        <UiNativeSelect id="rule-trigger" v-model="trigger" class="w-full">
-          <option
-            v-for="choice in triggers"
-            :key="choice.value"
-            :value="choice.value"
-          >
-            {{ choice.label }}
-          </option>
-        </UiNativeSelect>
-      </div>
+      <NuxtFormField v-show="currentStep === 0" label="Quando acontecer">
+        <NuxtSelect
+          id="rule-trigger"
+          v-model="trigger"
+          :items="triggers"
+          placeholder="Escolha o que inicia a campanha"
+          class="w-full"
+        />
+      </NuxtFormField>
 
-      <div v-show="currentStep === 2">
-        <label
-          for="rule-template"
-          class="mb-1 block text-xs font-medium text-muted-foreground"
-          >Usar o modelo</label
-        >
-        <UiNativeSelect id="rule-template" v-model="templateId" class="w-full">
-          <option
-            v-for="template in templates"
-            :key="template.pk"
-            :value="template.pk"
-          >
-            {{ template.name }}
-          </option>
-        </UiNativeSelect>
-        <p
+      <div v-show="currentStep === 2" class="space-y-2">
+        <NuxtFormField label="Usar o modelo">
+          <NuxtSelectMenu
+            id="rule-template"
+            :model-value="selectedTemplateOption"
+            :items="templateOptions"
+            placeholder="Escolha o modelo"
+            :search-input="{ placeholder: 'Buscar modelo' }"
+            :filter-fields="['label', 'keywords']"
+            class="w-full"
+            @update:model-value="chooseTemplate"
+          />
+        </NuxtFormField>
+        <NuxtAlert
           v-if="templates.length === 0"
-          class="mt-1 text-xs text-muted-foreground"
-        >
-          Nenhum modelo cadastrado ainda.
-          <NuxtLink to="/templates" class="font-medium underline"
-            >Crie o primeiro aqui</NuxtLink
-          >
-          antes de criar a campanha.
-        </p>
+          color="info"
+          variant="subtle"
+          title="Nenhum modelo cadastrado ainda."
+          description="Crie o primeiro modelo antes de criar a campanha."
+          :actions="alertActions('info', [
+            {
+              label: 'Criar o primeiro modelo',
+              to: '/settings/templates',
+              size: 'md',
+            },
+          ])"
+        />
       </div>
     </div>
 
@@ -868,626 +952,500 @@ function submit() {
     />
 
     <!-- A oferta que o anúncio leva. Quando escolhida, o {{link}} da mensagem aponta
-         para a oferta e o clique monta a sacola com o preço resolvido NA HORA — não no
+         para a oferta e o clique monta a sacola com o preço resolvido NA HORA, e não no
          envio, que é quando o preço envelheceria. -->
-    <div v-if="offers.length" v-show="currentStep === 2">
-      <label
-        for="rule-offer"
-        class="mb-1 block text-xs font-medium text-muted-foreground"
-        >Anunciar a oferta</label
-      >
-      <UiNativeSelect id="rule-offer" v-model="promotionRef" class="w-full">
-        <option value="">Nenhuma — só contar a novidade</option>
-        <option v-for="offer in offers" :key="offer.value" :value="offer.value">
-          {{ offer.label }}
-        </option>
-      </UiNativeSelect>
-      <p class="mt-1 text-xs text-muted-foreground">
-        Com oferta, quem toca no link já recebe a sacola montada.
-      </p>
-    </div>
+    <NuxtFormField
+      v-if="offers.length"
+      v-show="currentStep === 2"
+      label="Anunciar a oferta"
+      description="Com oferta, quem toca no link já recebe a sacola montada."
+    >
+      <NuxtSelectMenu
+        id="rule-offer"
+        :model-value="selectedOfferOption"
+        :items="offerOptions"
+        placeholder="Escolha a oferta"
+        :search-input="{ placeholder: 'Buscar oferta' }"
+        class="w-full"
+        @update:model-value="chooseOffer"
+      />
+    </NuxtFormField>
 
     <!-- Sem este bloco, "agendado" era escolhível e insatisfazível: o gestor salvava e
          a campanha nunca disparava. -->
-    <fieldset
-      v-if="schedules"
-      v-show="currentStep === 3"
-      class="rounded-lg border border-border bg-card p-4"
-    >
-      <legend class="px-1 text-xs font-medium text-muted-foreground">
-        Quando disparar
-      </legend>
+    <NuxtCard v-if="schedules" v-show="currentStep === 3">
+      <fieldset class="space-y-4">
+        <legend class="mb-3 text-sm font-medium text-highlighted">
+          Quando disparar
+        </legend>
 
-      <div class="flex gap-2">
-        <!-- Segmentos nativos mantêm aria-pressed e a troca exclusiva sem fingir envio de formulário. -->
-        <button
-          v-for="option in [
-            { value: 'recurring', label: 'Toda semana' },
-            { value: 'once', label: 'Uma vez' },
-          ]"
-          :key="option.value"
-          type="button"
-          :aria-pressed="scheduleKind === option.value"
-          class="rounded-md border px-3 py-1.5 text-sm font-medium transition"
-          :class="
-            scheduleKind === option.value
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-border hover:bg-muted'
-          "
-          @click="chooseScheduleKind(option.value as 'once' | 'recurring')"
-        >
-          {{ option.label }}
-        </button>
-      </div>
+        <NuxtTabs
+          v-model="scheduleKindChoice"
+          :items="SCHEDULE_KIND_ITEMS"
+          :content="false"
+          variant="pill"
+          aria-label="Frequência do disparo"
+        />
 
-      <div v-if="scheduleKind === 'once'" class="mt-3">
-        <label
-          for="rule-once-at"
-          class="mb-1 block text-xs font-medium text-muted-foreground"
-          >Dia e hora</label
-        >
-        <div class="flex flex-wrap items-center gap-2">
-          <UiInput
-            id="rule-once-at"
-            v-model="onceAt"
-            type="datetime-local"
-            class="sm:w-64"
-            @update:model-value="
-              scheduleTouched = true;
-              onceFold = '';
+        <div v-if="scheduleKind === 'once'" class="space-y-3">
+          <NuxtFormField
+            label="Dia e hora"
+            :hint="timezoneName"
+            description="Dispara uma única vez. Depois disso a campanha não volta sozinha."
+            :error="
+              scheduleTouched &&
+              onceResolution.problem &&
+              onceResolution.problem !== 'ambiguous'
+                ? onceResolution.detail
+                : undefined
             "
-          />
-          <span class="text-xs font-semibold text-muted-foreground">{{
-            timezoneName
-          }}</span>
+          >
+            <UiDateTimeField
+              id="rule-once-at"
+              v-model="onceAt"
+              label="Dia e hora do disparo"
+              class="sm:max-w-md"
+              @update:model-value="
+                scheduleTouched = true;
+                onceFold = '';
+              "
+            />
+          </NuxtFormField>
+          <template
+            v-if="scheduleTouched && onceResolution.problem === 'ambiguous'"
+          >
+            <NuxtAlert
+              color="warning"
+              variant="subtle"
+              title="Horário repetido pela mudança do relógio"
+              :description="onceResolution.detail"
+            />
+            <NuxtRadioGroup
+              v-model="onceFoldChoice"
+              :items="onceFoldItems"
+              legend="Qual das duas ocorrências"
+              orientation="horizontal"
+            />
+          </template>
+          <p
+            v-if="
+              scheduleTouched && onceResolution.ok && onceResolution.candidate
+            "
+            class="text-xs text-muted-foreground"
+          >
+            Instante exato:
+            {{ scheduleSummary(onceResolution.candidate.instant, timezoneName) }}
+            · UTC{{ onceResolution.candidate.offset }}.
+          </p>
         </div>
-        <p
-          v-if="
-            scheduleTouched &&
-            onceResolution.problem &&
-            onceResolution.problem !== 'ambiguous'
-          "
-          class="mt-1 text-xs text-destructive"
-          role="alert"
-        >
-          {{ onceResolution.detail }}
-        </p>
-        <fieldset
-          v-if="scheduleTouched && onceResolution.problem === 'ambiguous'"
-          class="mt-2 rounded-md border border-warning/40 bg-warning/5 p-2"
-        >
-          <legend class="px-1 text-xs font-semibold">
-            Horário repetido pela mudança do relógio
-          </legend>
+
+        <div v-else class="space-y-4">
+          <NuxtFormField label="Hora" :hint="timezoneName">
+            <UiTimeField
+              id="rule-fire-at"
+              v-model="fireAt"
+              label="Hora do disparo"
+              class="w-32"
+              @update:model-value="scheduleTouched = true"
+            />
+          </NuxtFormField>
+
+          <!-- Os dias refluem para caber (o grupo quebra linha), em vez de o alvo de
+               toque encolher: sete dias lado a lado não cabem numa tela de 320. -->
+          <div>
+            <NuxtCheckboxGroup
+              v-model="weekdaysChoice"
+              :items="WEEKDAY_ITEMS"
+              legend="Nos dias"
+              orientation="horizontal"
+              variant="card"
+            />
+            <p class="mt-1 text-xs text-muted-foreground">
+              Nenhum dia marcado quer dizer todos os dias.
+            </p>
+          </div>
+
+          <NuxtFormField
+            label="Período de veiculação (opcional)"
+            description="Deixe o início ou o fim vazio quando a recorrência não tiver esse limite."
+            :error="
+              dateRangeValid
+                ? undefined
+                : 'A data final precisa ser igual ou posterior à data inicial.'
+            "
+          >
+            <UiDateRangeField
+              id="rule-period"
+              v-model="recurrencePeriod"
+              label="Período de veiculação da recorrência"
+              class="max-w-full sm:max-w-md"
+            />
+          </NuxtFormField>
+          <p v-if="extraWindows.length" class="text-xs text-muted-foreground">
+            Horários adicionais preservados:
+            {{ extraWindows.map((window) => window.join(" a ")).join(", ") }}.
+          </p>
           <p class="text-xs text-muted-foreground">
-            {{ onceResolution.detail }}
-          </p>
-          <UiRadioGroup
-            v-model="onceFold"
-            label="Qual das duas ocorrências"
-            orientation="horizontal"
-            class="mt-1 text-xs"
-          >
-            <UiRadio
-              v-for="(candidate, index) in onceResolution.candidates"
-              :key="candidate.instant"
-              :value="index === 0 ? 'earlier' : 'later'"
-              variant="inline"
-              :label="`${index === 0 ? 'Primeira' : 'Segunda'} ocorrência (UTC${candidate.offset})`"
-            />
-          </UiRadioGroup>
-        </fieldset>
-        <p
-          v-if="
-            scheduleTouched && onceResolution.ok && onceResolution.candidate
-          "
-          class="mt-1 text-xs text-muted-foreground"
-        >
-          Instante exato:
-          {{ scheduleSummary(onceResolution.candidate.instant, timezoneName) }}
-          · UTC{{ onceResolution.candidate.offset }}.
-        </p>
-        <p class="mt-1 text-xs text-muted-foreground">
-          Dispara uma única vez. Depois disso a campanha não volta sozinha.
-        </p>
-      </div>
-
-      <div v-else class="mt-3 space-y-3">
-        <div>
-          <label
-            for="rule-fire-at"
-            class="mb-1 block text-xs font-medium text-muted-foreground"
-            >Hora</label
-          >
-          <UiInput
-            id="rule-fire-at"
-            v-model="fireAt"
-            type="time"
-            class="w-28"
-            @update:model-value="scheduleTouched = true"
-          />
-        </div>
-
-        <div>
-          <p class="mb-1 text-xs font-medium text-muted-foreground">Nos dias</p>
-          <!-- ⚠️ A grade REFLUI para caber, em vez de o chip encolher. Sete dias lado a
-               lado a 44px não cabem numa tela de 320 (7×44 + 6 de folga passa dos 232px
-               que sobram ao lado do rail), e a saída fácil seria um degrau denso de
-               36px — que é exatamente a dívida que a cópia antiga do kit carregava. Em
-               quatro colunas cabem: 4×44 + 3×6 = 194px. Acima do `sm`, os sete voltam
-               para a mesma linha.
-               `grid` em vez de `flex-wrap` porque as colunas iguais mantêm o alvo de
-               toque previsível: a mão procura posição, não largura de palavra. -->
-          <div class="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
-            <UiToggleChip
-              v-for="(label, day) in WEEKDAY_LABELS"
-              :key="label"
-              :model-value="weekdays.includes(day)"
-              class="capitalize"
-              @update:model-value="toggleWeekday(day)"
-            >
-              {{ label }}
-            </UiToggleChip>
-          </div>
-          <p class="mt-1 text-xs text-muted-foreground">
-            Nenhum dia marcado quer dizer todos os dias.
+            Horários em {{ timezoneName }}. Se o relógio pular esse horário,
+            aquela data é ignorada; se repetir, a primeira ocorrência dispara uma
+            única vez.
           </p>
         </div>
-
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label
-              for="rule-starts-on"
-              class="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              Começar em (opcional)
-            </label>
-            <UiInput
-              id="rule-starts-on"
-              v-model="startsOn"
-              type="date"
-              @update:model-value="scheduleTouched = true"
-            />
-          </div>
-          <div>
-            <label
-              for="rule-ends-on"
-              class="mb-1 block text-xs font-medium text-muted-foreground"
-            >
-              Parar depois de (opcional)
-            </label>
-            <UiInput
-              id="rule-ends-on"
-              v-model="endsOn"
-              type="date"
-              @update:model-value="scheduleTouched = true"
-            />
-          </div>
-        </div>
-        <p v-if="extraWindows.length" class="text-xs text-muted-foreground">
-          Horários adicionais preservados:
-          {{ extraWindows.map((window) => window.join("–")).join(", ") }}.
-        </p>
-        <p v-if="!dateRangeValid" class="text-xs text-destructive" role="alert">
-          A data final precisa ser igual ou posterior à data inicial.
-        </p>
-        <p class="text-xs text-muted-foreground">
-          Horários em {{ timezoneName }}. Se o relógio pular esse horário,
-          aquela data é ignorada; se repetir, a primeira ocorrência dispara uma
-          única vez.
-        </p>
-      </div>
-    </fieldset>
+      </fieldset>
+    </NuxtCard>
 
     <p
       v-if="!schedules && preservedTriggerFilterKeys.length"
       v-show="currentStep === 3"
-      class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+      class="text-xs text-muted-foreground"
     >
       Os filtros do evento já salvos ({{
         preservedSummary(preservedTriggerFilterKeys, TRIGGER_FILTER_LABELS)
       }}) continuam valendo.
     </p>
 
-    <fieldset v-show="currentStep === 1">
-      <legend class="mb-1 text-xs font-medium text-muted-foreground">
-        Disparado via
-      </legend>
-      <!-- ⚠️ `UiToggleChip` do kit, e não `UiCheckbox`: o checkbox desenha um quadrado
-           com rótulo ao lado, e o que está aqui é uma pílula cuja caixa inteira acende.
-           O vazio que esta tela registrava em comentário agora tem peça.
-           ⚠️ A pílula conta o estado da plataforma ANTES do clique: as quatro
-           apareciam iguais e a recusa só vinha depois de aprovar. -->
-      <!-- ⚠️ Uma por linha, largura cheia, até o `sm`; `flex-wrap` daí para cima.
-           Soltas no `flex-wrap`, as pílulas quebravam por largura de texto: duas
-           numa linha, uma sozinha na outra, cada uma de um tamanho. Duas colunas
-           não servem aqui — a mais larga ("WhatsApp · limitada") não cabe em meia
-           tela de 320px e vaza da coluna. Empilhadas, o nome inteiro cabe, o alvo
-           de toque é a linha toda e o olho desce uma lista, não um mosaico. -->
-      <div class="grid gap-1.5 sm:flex sm:flex-wrap">
-        <UiToggleChip
-          v-for="option in platformOptions"
-          :key="option.value"
-          :model-value="platforms.includes(option.value)"
-          :class="readinessPillClass(readinessNote(option).tone)"
-          :data-readiness="readinessNote(option).tone"
-          @update:model-value="togglePlatform(option.value)"
-        >
-          {{ option.label }}
-          <span v-if="readinessNote(option).badge" class="text-xs"
-            >· {{ readinessNote(option).badge }}</span
+    <div v-show="currentStep === 1" class="space-y-3">
+      <!-- Uma pergunta, várias respostas: o grupo canônico assume fieldset, legenda,
+           teclado e modelo. A variante `table` mantém cada destino como uma linha
+           inteira de toque. -->
+      <NuxtCheckboxGroup
+        v-model="platforms"
+        :items="platformChoiceItems"
+        variant="table"
+      >
+        <template #legend>Disparado via</template>
+        <template #label="{ item }">
+          <span>{{ item.label }}</span>
+          <span
+            v-if="readinessNote(item as Choice).badge"
+            class="ml-1.5 text-xs"
+            :class="readinessStatusClass(readinessNote(item as Choice).tone)"
           >
-        </UiToggleChip>
-      </div>
+            · {{ readinessNote(item as Choice).badge }}
+          </span>
+        </template>
+      </NuxtCheckboxGroup>
       <!-- Prontidão é pré-condição de PUBLICAR, não de configurar: a campanha salva,
-           mas o gestor sabe agora, e não depois de aprovar, onde ela não vai sair. -->
-      <ul v-if="selectedReadinessNotes.length" class="mt-1.5 space-y-1">
-        <li
-          v-for="note in selectedReadinessNotes"
-          :key="note.platform"
-          class="text-xs"
-          :class="note.tone === 'blocked' ? 'text-destructive' : 'text-warning'"
-          role="status"
-        >
-          {{ note.text }}
-          <template v-if="note.tone !== 'limited'">
-            A campanha pode ser salva assim mesmo.
-            <NuxtLink
-              :to="{ path: '/v2', query: { area: 'platforms' } }"
-              class="font-semibold underline"
-            >
-              Ver em Plataformas
-            </NuxtLink>
-          </template>
-        </li>
-      </ul>
-      <p class="mt-1.5 text-xs text-muted-foreground">
+           mas o gestor sabe agora, e não depois de aprovar, onde ela não vai sair. O
+           aviso leva aonde se resolve. -->
+      <NuxtAlert
+        v-for="note in selectedReadinessNotes"
+        :key="note.platform"
+        :color="note.tone === 'blocked' ? 'error' : 'warning'"
+        variant="subtle"
+        :title="note.text"
+        :description="
+          note.tone !== 'limited'
+            ? 'A campanha pode ser salva assim mesmo.'
+            : undefined
+        "
+        :actions="alertActions(note.tone === 'blocked' ? 'error' : 'warning',
+          note.tone !== 'limited'
+            ? [
+                {
+                  label: 'Ver em Plataformas',
+                  to: { path: '/settings/platforms' },
+                  size: 'md' as const,
+                },
+              ]
+            : []
+        )"
+      />
+      <p class="text-xs text-muted-foreground">
         Instagram, Facebook e Google criam uma postagem pública por plataforma.
         WhatsApp envia uma mensagem por pessoa elegível. Mensagens diretas do
         Instagram ainda não fazem parte deste app.
       </p>
-    </fieldset>
+    </div>
 
-    <fieldset
+    <NuxtCard
       v-if="platforms.includes('whatsapp')"
       v-show="currentStep === 3"
-      class="rounded-lg border border-border p-3"
     >
-      <legend class="px-1 text-xs font-medium text-muted-foreground">
-        Público alvo
-      </legend>
-      <div class="space-y-2.5">
-        <UiCheckbox v-model="favorites" label="Quem favoritou o produto" />
-        <!-- ⚠️ O rótulo dizia "me avise quando sair do forno" e a regra pega TODA a
-             fila de avisos do produto — inclusive quem espera reposição de um item de
-             prateleira. Quem escolhe o eixo é o servidor, pela natureza do produto, e
-             o gestor não tem como (nem por que) separar os dois aqui. -->
-        <UiCheckbox
-          v-model="alerts"
-          label='Quem pediu "me avise" deste produto'
-          description="A fila do sino da loja: fornada para pão, reposição para o resto."
+      <fieldset class="space-y-4">
+        <legend class="mb-3 text-sm font-medium text-highlighted">
+          Público alvo
+        </legend>
+        <!-- A fila de "me avise" cobre lote e reposição. As duas respostas formam uma
+             pergunta única sobre sinais deste produto, então usam o grupo canônico. -->
+        <NuxtCheckboxGroup
+          v-model="productAudience"
+          :items="PRODUCT_AUDIENCE_ITEMS"
+          description-key="hint"
+          legend="Sinais deste produto"
+          variant="card"
         />
-        <!-- ⚠️ O número e a UNIDADE são um grupo só (`inline-flex`), não dois irmãos
-             soltos no `flex-wrap`: soltos, a 390px a unidade caía sozinha na linha de
-             baixo e o campo ficava sem dizer de quê era o número. Quebrar é esperado
-             num celular; quebrar ENTRE o número e a unidade é o defeito. -->
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <UiCheckbox v-model="boughtOn" label="Quem comprou nos últimos" />
+        <!-- ⚠️ O número e a UNIDADE são um grupo só (`inline-flex`): quebrar ENTRE o
+             número e a unidade deixava o campo sem dizer de quê era o número. -->
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+          <NuxtCheckbox v-model="boughtOn" label="Quem comprou nos últimos" />
           <span class="inline-flex items-center gap-2">
-            <input
-              v-model.number="boughtDays"
-              type="number"
-              min="1"
-              max="365"
+            <NuxtInputNumber
+              v-model="boughtDays"
+              :min="1"
+              :max="365"
               :disabled="!boughtOn"
               aria-label="Dias de recompra"
-              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
+              class="w-32"
             />
             <span :class="boughtOn ? '' : 'text-muted-foreground'">dias</span>
           </span>
         </div>
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <label for="rule-vip">VIPs recebem</label>
-          <span class="inline-flex items-center gap-2">
-            <input
+        <!-- D5: "(0 = todo mundo junto)" obrigava a decorar o que o campo faz vazio.
+             A frase descreve o valor que ESTÁ na tela. -->
+        <NuxtFormField
+          label="VIPs recebem"
+          :description="
+            vipFirstMinutes > 0
+              ? 'Os VIPs recebem primeiro; o restante da lista recebe depois desse intervalo.'
+              : 'Todo mundo recebe junto.'
+          "
+        >
+          <span class="inline-flex items-center gap-2 text-sm">
+            <NuxtInputNumber
               id="rule-vip"
-              v-model.number="vipFirstMinutes"
-              type="number"
-              min="0"
-              max="120"
-              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+              v-model="vipFirstMinutes"
+              :min="0"
+              :max="120"
+              class="w-32"
             />
             <span>minutos antes</span>
           </span>
-          <!-- D5: "(0 = todo mundo junto)" obrigava a decorar o que o campo faz
-               vazio. A frase agora descreve o valor que ESTÁ na tela. -->
-          <span class="text-xs text-muted-foreground">{{
-            vipFirstMinutes > 0
-              ? "Os VIPs recebem primeiro; o restante da lista recebe depois desse intervalo."
-              : "Todo mundo recebe junto."
-          }}</span>
-        </div>
+        </NuxtFormField>
 
-        <div class="border-t border-border pt-3">
-          <label
-            for="rule-audience-match"
-            class="mb-1 block text-xs font-medium text-muted-foreground"
-          >
-            Quando houver vários critérios
-          </label>
-          <UiNativeSelect
+        <NuxtFormField label="Quando houver vários critérios">
+          <NuxtSelect
             id="rule-audience-match"
             v-model="audienceMatch"
-            class="w-auto"
-          >
-            <option value="any">Atender a qualquer um</option>
-            <option value="all">Atender a todos</option>
-          </UiNativeSelect>
-        </div>
+            :items="AUDIENCE_MATCH_ITEMS"
+            class="min-w-56"
+          />
+        </NuxtFormField>
 
-        <fieldset v-if="tags?.length">
-          <legend
-            class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
-          >
-            Etiquetas
-          </legend>
-          <!-- ⚠️ Estes três grupos acendiam em `bg-primary` SÓLIDO, escrito à mão em
-               cada um. Sólido é do botão primário; o padrão único de seleção da casa é
-               contorno + tint levíssimo, e é o que o primitivo traz. Eram a mesma peça
-               copiada três vezes, com o alvo de toque em literal e sem ARIA de escolha. -->
-          <div class="flex flex-wrap gap-1.5">
-            <UiToggleChip
-              v-for="tag in tags"
-              :key="tag.value"
-              :model-value="selectedTags.includes(tag.value)"
-              @update:model-value="toggleChoice(selectedTags, tag.value)"
-            >
-              {{ tag.label }}
-            </UiToggleChip>
-          </div>
-        </fieldset>
+        <NuxtCheckboxGroup
+          v-if="tags?.length"
+          v-model="selectedTags"
+          :items="tags"
+          legend="Etiquetas"
+          orientation="horizontal"
+        />
 
-        <fieldset v-if="priceTiers?.length">
-          <legend
-            class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
-          >
-            Faixa de preço
-          </legend>
-          <div class="flex flex-wrap gap-1.5">
-            <UiToggleChip
-              v-for="tier in priceTiers"
-              :key="tier.value"
-              :model-value="selectedPriceTiers.includes(tier.value)"
-              @update:model-value="toggleChoice(selectedPriceTiers, tier.value)"
-            >
-              {{ tier.label }}
-            </UiToggleChip>
-          </div>
-        </fieldset>
+        <NuxtCheckboxGroup
+          v-if="priceTiers?.length"
+          v-model="selectedPriceTiers"
+          :items="priceTiers"
+          orientation="horizontal"
+        >
+          <template #legend>Faixa de preço</template>
+        </NuxtCheckboxGroup>
 
-        <fieldset v-if="rfmSegments?.length">
-          <legend
-            class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground"
-          >
-            Comportamento de compra
-          </legend>
-          <div class="flex flex-wrap gap-1.5">
-            <UiToggleChip
-              v-for="segment in rfmSegments"
-              :key="segment.value"
-              :model-value="selectedRfmSegments.includes(segment.value)"
-              @update:model-value="
-                toggleChoice(selectedRfmSegments, segment.value)
-              "
-            >
-              {{ segment.label }}
-            </UiToggleChip>
-          </div>
-        </fieldset>
+        <NuxtCheckboxGroup
+          v-if="rfmSegments?.length"
+          v-model="selectedRfmSegments"
+          :items="rfmSegments"
+          legend="Comportamento de compra"
+          orientation="horizontal"
+        />
 
-        <UiCheckbox v-model="birthdayToday" label="Aniversariantes de hoje" />
+        <NuxtCheckbox v-model="birthdayToday" label="Aniversariantes de hoje" />
 
         <!-- Este número não tem unidade (é uma fração de 0 a 1), então não há par
-             para manter junto: quebrar aqui não deixa nada órfão. -->
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <UiCheckbox
+             para manter junto. -->
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+          <NuxtCheckbox
             v-model="churnRiskOn"
             label="Risco de não voltar a partir de"
           />
-          <input
-            v-model.number="churnRiskMin"
-            type="number"
-            min="0"
-            max="1"
-            step="0.05"
+          <NuxtInputNumber
+            v-model="churnRiskMin"
+            :min="0"
+            :max="1"
+            :step="0.05"
             :disabled="!churnRiskOn"
             aria-label="Risco mínimo de não voltar"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
+            class="w-32"
           />
         </div>
 
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <label for="rule-preferred-window"
-            >Respeitar horário preferido em uma janela de</label
-          >
-          <span class="inline-flex items-center gap-2">
-            <input
+        <NuxtFormField
+          label="Respeitar horário preferido em uma janela de"
+          :description="
+            preferredHourWindowHours > 0
+              ? 'Quem costuma comprar dentro dessa janela recebe na hora de sempre; os demais recebem agora.'
+              : 'O horário preferido de cada pessoa não é considerado: todos recebem agora.'
+          "
+        >
+          <span class="inline-flex items-center gap-2 text-sm">
+            <NuxtInputNumber
               id="rule-preferred-window"
-              v-model.number="preferredHourWindowHours"
-              type="number"
-              min="0"
-              max="12"
-              class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+              v-model="preferredHourWindowHours"
+              :min="0"
+              :max="12"
+              class="w-32"
             />
             <span>horas</span>
           </span>
-          <span class="text-xs text-muted-foreground">{{
-            preferredHourWindowHours > 0
-              ? "Quem costuma comprar dentro dessa janela recebe na hora de sempre; os demais recebem agora."
-              : "O horário preferido de cada pessoa não é considerado: todos recebem agora."
-          }}</span>
-        </div>
+        </NuxtFormField>
 
         <p
           v-if="preservedAudienceKeys.length"
-          class="rounded-md bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground"
+          class="text-xs text-muted-foreground"
         >
           Filtros de público já salvos ({{
             preservedSummary(preservedAudienceKeys, PRESERVED_AUDIENCE_LABELS)
           }}) continuam valendo, sem alteração.
         </p>
-      </div>
-      <p class="mt-2 text-xs text-muted-foreground">
-        Só quem aceitou receber novidades entra na conta. Assinatura de alerta
-        por produto já é um aceite daquele produto.
-      </p>
-    </fieldset>
+        <p class="text-xs text-muted-foreground">
+          Só quem aceitou receber novidades entra na conta. Assinatura de alerta
+          por produto já é um aceite daquele produto.
+        </p>
+      </fieldset>
+    </NuxtCard>
 
-    <p
-      v-else
-      v-show="currentStep === 3"
-      class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
-    >
+    <p v-else v-show="currentStep === 3" class="text-xs text-muted-foreground">
       Estas publicações vão para o público geral das plataformas. A lista de
       contatos só é usada quando o WhatsApp está selecionado.
     </p>
 
-    <div v-show="currentStep === 3" class="space-y-2.5">
-      <UiCheckbox
-        v-model="requiresApproval"
-        label="Revisar antes de publicar"
-      />
+    <div v-show="currentStep === 3" class="space-y-3">
+      <NuxtCheckbox v-model="requiresApproval" label="Revisar antes de publicar" />
       <!-- ⚠️ "sai sozinho" não dizia o ato, e o ato depende do destino: mensagem se
-           envia, postagem se publica, e o genérico dos dois é disparar. Aqui a
-           campanha pode ter os dois, então o genérico é o verbo honesto. -->
-      <p v-if="!requiresApproval" class="pl-6 text-xs text-warning">
-        Sem revisão, o anúncio é disparado assim que o evento acontecer, sem
-        passar por você.
-      </p>
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <label for="rule-expiry">O anúncio aguarda revisão por</label>
-        <span class="inline-flex items-center gap-2">
-          <input
+           envia, postagem se publica, e o genérico dos dois é disparar. -->
+      <NuxtAlert
+        v-if="!requiresApproval"
+        color="warning"
+        variant="subtle"
+        title="Sem revisão, o anúncio é disparado assim que o evento acontecer, sem passar por você."
+      />
+      <NuxtFormField
+        label="O anúncio aguarda revisão por"
+        :description="
+          expiresAfterMinutes > 0
+            ? 'Sem revisão até lá, o anúncio caduca e nada é disparado.'
+            : 'O anúncio espera a revisão sem prazo: não caduca sozinho.'
+        "
+      >
+        <span class="inline-flex items-center gap-2 text-sm">
+          <NuxtInputNumber
             id="rule-expiry"
-            v-model.number="expiresAfterMinutes"
-            type="number"
-            min="0"
-            max="1440"
-            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+            v-model="expiresAfterMinutes"
+            :min="0"
+            :max="1440"
+            class="w-32"
           />
           <span>minutos</span>
         </span>
-        <span class="text-xs text-muted-foreground">{{
-          expiresAfterMinutes > 0
-            ? "Sem revisão até lá, o anúncio caduca e nada é disparado."
-            : "O anúncio espera a revisão sem prazo: não caduca sozinho."
-        }}</span>
-      </div>
-      <UiCheckbox v-model="isActive" label="Campanha ligada" />
+      </NuxtFormField>
+      <NuxtCheckbox v-model="isActive" label="Campanha ligada" />
     </div>
 
-    <section
-      v-show="currentStep === 4"
-      class="space-y-4 rounded-lg border border-border bg-card p-4"
-      aria-labelledby="campaign-review-title"
-    >
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-wide text-primary">
-          5 · Revisar
-        </p>
-        <h3 id="campaign-review-title" class="mt-1 text-base font-semibold">
-          {{ rule ? "Salvar esta campanha" : "Criar esta campanha" }}
-        </h3>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Cada destino é independente: uma falha em um não apaga nem duplica os
-          demais.
+    <NuxtCard v-show="currentStep === 4" aria-labelledby="campaign-review-title">
+      <div class="space-y-4">
+        <div>
+          <p class="text-xs font-semibold text-primary">5 · Revisar</p>
+          <h3 id="campaign-review-title" class="mt-1 text-base font-semibold">
+            {{ rule ? "Salvar esta campanha" : "Criar esta campanha" }}
+          </h3>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Cada destino é independente: uma falha em um não apaga nem duplica os
+            demais.
+          </p>
+        </div>
+
+        <dl class="grid gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt class="text-xs text-muted-foreground">Objetivo interno</dt>
+            <dd class="font-medium">{{ name || "Sem nome" }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-muted-foreground">Quando começa</dt>
+            <dd class="font-medium">{{ selectedTriggerLabel }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-muted-foreground">Conteúdo</dt>
+            <dd class="font-medium">
+              {{ selectedTemplate?.name || "Sem modelo" }}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs text-muted-foreground">Oferta</dt>
+            <dd class="font-medium">{{ selectedOfferLabel }}</dd>
+          </div>
+          <div class="sm:col-span-2">
+            <dt class="text-xs text-muted-foreground">Público</dt>
+            <dd class="font-medium">{{ reviewAudience }}</dd>
+          </div>
+        </dl>
+
+        <div>
+          <p class="mb-2 text-xs font-medium text-muted-foreground">
+            Composições que serão geradas
+          </p>
+          <ul class="space-y-2" data-testid="campaign-compositions">
+            <li
+              v-for="row in compositionRows"
+              :key="row.platform"
+              class="flex items-center justify-between gap-3 rounded-md bg-elevated px-3 py-2"
+            >
+              <span>
+                <strong class="block text-sm">{{ row.platformLabel }}</strong>
+                <small class="text-xs text-muted-foreground">{{
+                  row.deliveryLabel
+                }}</small>
+              </span>
+              <span class="text-right text-xs font-medium">{{
+                row.formatLabel
+              }}</span>
+            </li>
+          </ul>
+        </div>
+
+        <p class="text-xs text-muted-foreground">
+          Aqui aparecem somente formatos que o Shopman já consegue despachar.
+          Recursos apenas catalogados para o futuro não entram nesta campanha.
         </p>
       </div>
+    </NuxtCard>
 
-      <dl class="grid gap-3 text-sm sm:grid-cols-2">
-        <div>
-          <dt class="text-xs text-muted-foreground">Objetivo interno</dt>
-          <dd class="font-medium">{{ name || "Sem nome" }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs text-muted-foreground">Quando começa</dt>
-          <dd class="font-medium">{{ selectedTriggerLabel }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs text-muted-foreground">Conteúdo</dt>
-          <dd class="font-medium">
-            {{ selectedTemplate?.name || "Sem modelo" }}
-          </dd>
-        </div>
-        <div>
-          <dt class="text-xs text-muted-foreground">Oferta</dt>
-          <dd class="font-medium">{{ selectedOfferLabel }}</dd>
-        </div>
-        <div class="sm:col-span-2">
-          <dt class="text-xs text-muted-foreground">Público</dt>
-          <dd class="font-medium">{{ reviewAudience }}</dd>
-        </div>
-      </dl>
-
-      <div>
-        <p class="mb-2 text-xs font-medium text-muted-foreground">
-          Composições que serão geradas
-        </p>
-        <ul class="space-y-2" data-testid="campaign-compositions">
-          <li
-            v-for="row in compositionRows"
-            :key="row.platform"
-            class="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
-          >
-            <span>
-              <strong class="block text-sm">{{ row.platformLabel }}</strong>
-              <small class="text-muted-foreground">{{
-                row.deliveryLabel
-              }}</small>
-            </span>
-            <span class="text-right text-xs font-medium">{{
-              row.formatLabel
-            }}</span>
-          </li>
-        </ul>
-      </div>
-
-      <p class="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-        Aqui aparecem somente formatos que o Shopman já consegue despachar.
-        Recursos apenas catalogados para o futuro não entram nesta campanha.
-      </p>
-    </section>
-
-    <div class="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-      <UiButton type="button" variant="outline" @click="emit('cancel')">
-        Cancelar
-      </UiButton>
-      <UiButton
+    <div class="flex flex-wrap items-center gap-2 border-t border-default pt-4">
+      <NuxtButton
+        label="Cancelar"
+        color="neutral"
+        variant="outline"
+        @click="emit('cancel')"
+      />
+      <NuxtButton
         v-if="currentStep > 0"
-        type="button"
+        label="Voltar"
+        color="neutral"
         variant="outline"
         @click="goToStep(currentStep - 1)"
-      >
-        Voltar
-      </UiButton>
+      />
       <span class="min-w-0 flex-1 text-center text-xs text-muted-foreground">
         Etapa {{ currentStep + 1 }} de {{ COMPOSER_STEPS.length }}
       </span>
-      <UiButton
+      <NuxtButton
         v-if="currentStep < COMPOSER_STEPS.length - 1"
-        type="button"
+        label="Continuar"
         :disabled="!stepReady[currentStep]"
         @click="nextStep"
-      >
-        Continuar
-      </UiButton>
-      <UiButton v-else type="submit" :disabled="!canSubmit">
-        <Icon
-          :name="busy ? 'line-md:loading-loop' : 'lucide:check'"
-          class="size-4"
-        />
-        {{ rule ? "Salvar" : "Criar campanha" }}
-      </UiButton>
+      />
+      <NuxtButton
+        v-else
+        type="submit"
+        icon="i-lucide-check"
+        :label="rule ? 'Salvar' : 'Criar campanha'"
+        :loading="busy"
+        :disabled="!canSubmit"
+      />
     </div>
-  </form>
+  </NuxtForm>
 </template>
+
+<style scoped>
+/* O Reka embute "Step N of M" em inglês, sem opção de tradução; a etapa em pt-BR é o
+   status logo abaixo do stepper. (A mesma saída do `UiStepper` do kit.) */
+.campaign-stepper :deep([data-slot="root"] > [role="status"]) {
+  display: none;
+}
+</style>

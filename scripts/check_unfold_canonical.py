@@ -313,6 +313,9 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
             # A seção Encomendas do PDV (ENCOMENDAS-PDV-PLAN): API headless
             # `/api/v1/backstage/pos/preorders/`, consumida pelo pos-nuxt.
             ROOT / "shopman/backstage/projections/preorders.py",
+            # PDV › Ajustes › Salão (V5-SALAO): a planta das mesas e o registro de
+            # cada mudança, API headless `/api/v1/backstage/pos/seating/`.
+            ROOT / "shopman/backstage/projections/seating.py",
         ),
         replacement="POS is registered runtime UI; management screens must use Admin/Unfold.",
     ),
@@ -321,11 +324,20 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
     Surface(
         id="runtime-central-hub",
         kind="registered-runtime-backstage",
-        projections=(ROOT / "shopman/backstage/projections/hub.py",),
+        projections=(
+            ROOT / "shopman/backstage/projections/hub.py",
+            ROOT / "shopman/backstage/projections/hub_queue.py",
+            # A busca da suíte (o campo do cabeçalho dos oito apps e a barra da Central):
+            # `GET /api/v1/backstage/search/`, recortada pelo que o operador abre.
+            ROOT / "shopman/backstage/projections/suite_search.py",
+        ),
         replacement=(
             "A Central de Apps (surfaces/hub-nuxt) é o launcher runtime do operador — "
-            "projection `build_operator_hub` + API `GET /api/v1/backstage/hub/`, no MESMO "
+            "projection `build_operator_hub` (com a fila `Precisa de você`, `hub_queue`) + "
+            "API `GET /api/v1/backstage/hub/`, no MESMO "
             "contrato projection+Action das superfícies dedicadas (pos/kds/gestor/Produção). "
+            "A busca da suíte (`build_suite_search`, `GET /api/v1/backstage/search/`) mora junto: "
+            "é o alcance App/Toda a suíte do campo do cabeçalho dos oito apps e da Central. "
             "NÃO hospeda CRUD de Admin; o tile Loja deep-linka pro Unfold canônico (plan §5)."
         ),
     ),
@@ -352,6 +364,10 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
         kind="explicit-exception",
         projections=(
             ROOT / "shopman/backstage/projections/order_queue.py",
+            # A Fila "Precisa de você" do Gestor (fato humano, metas, o sistema fez, cardápio).
+            ROOT / "shopman/backstage/projections/order_attention.py",
+            # Histórico do Gestor (pedidos fechados, filtros no servidor).
+            ROOT / "shopman/backstage/projections/order_history.py",
             # Comprovante de entrega dos avisos ao cliente, no detalhe do pedido.
             ROOT / "shopman/backstage/projections/notification_receipts.py",
             ROOT / "shopman/backstage/projections/ifood.py",
@@ -374,8 +390,10 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/purchase_count.py",
             ROOT / "shopman/backstage/projections/marketing.py",
             ROOT / "shopman/backstage/projections/marketing_v2.py",
+            ROOT / "shopman/backstage/projections/marketing_decisions.py",
             ROOT / "shopman/backstage/projections/marketing_actions.py",
             ROOT / "shopman/backstage/projections/bi_production.py",
+            ROOT / "shopman/backstage/projections/bi_over_short.py",
             ROOT / "shopman/backstage/projections/bi_sales.py",
             ROOT / "shopman/backstage/projections/bi_cash.py",
             ROOT / "shopman/backstage/projections/bi_customers.py",

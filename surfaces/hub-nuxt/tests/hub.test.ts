@@ -6,10 +6,18 @@ import { describe, expect, it } from "vitest";
 import { OPERATOR_APPS } from "../../operator-kit/appIdentity";
 import {
   HUB_NAME,
+  HUB_NAMED_OF,
+  HUB_SECTIONS,
+  hubBrandLine,
+  hubDateLine,
   hubFailure,
   hubFailureCopy,
   hubGreeting,
   hubIsEmpty,
+  HUB_REFRESH_LABEL,
+  readClockLabel,
+  staleQueueAlert,
+  tileAriaLabel,
   tileIcon,
   tileIconUrl,
   tileLinkAttrs,
@@ -23,6 +31,8 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
   icon: "shopping-basket",
   url: "http://127.0.0.1:3002/",
   kind: "launch",
+  status_attention: "",
+  status_summary: "",
   ...over,
 });
 
@@ -57,14 +67,14 @@ describe("presentation/hub", () => {
     const browser = { installed: false, currentOrigin: HUB };
     const installed = { installed: true, currentOrigin: HUB };
 
-    it("Shopman Apps em ABA: o app abre na mesma aba, como antes", () => {
+    it("Central em ABA: o app abre na mesma aba, como antes", () => {
       expect(tileLinkAttrs(tile({ kind: "launch", url: PDV }), browser)).toEqual({ target: "_self" });
     });
 
-    it("Shopman Apps INSTALADO: o app abre na janela DELE — é o conserto da tarja", () => {
-      // Abrir dentro da janela do Shopman Apps sai do `scope` dela: o Chrome desenha a
-      // barra de "você saiu do app" e a janela continua com o nome e a cor do
-      // Shopman Apps, não do PDV.
+    it("Central INSTALADA: o app abre na janela DELE — é o conserto da tarja", () => {
+      // Abrir dentro da janela da Central sai do `scope` dela: o Chrome desenha a
+      // barra de "você saiu do app" e a janela continua com o nome e a cor da
+      // Central, não do PDV.
       expect(tileLinkAttrs(tile({ kind: "launch", url: PDV }), installed))
         .toEqual({ target: "_blank", rel: "noopener" });
     });
@@ -76,7 +86,7 @@ describe("presentation/hub", () => {
       }
     });
 
-    it("tile que aponta para o próprio Shopman Apps não sai da janela", () => {
+    it("tile que aponta para a própria Central não sai da janela", () => {
       expect(tileLinkAttrs(tile({ kind: "launch", url: HUB }), installed)).toEqual({ target: "_self" });
     });
   });
@@ -88,15 +98,27 @@ describe("presentation/hub", () => {
 
   it("hubGreeting personaliza com o nome ou cai no nome do app", () => {
     expect(hubGreeting("Ana")).toBe("Olá, Ana");
-    expect(hubGreeting("  ")).toBe("Shopman Apps");
-    expect(hubGreeting("")).toBe("Shopman Apps");
+    expect(hubGreeting("  ")).toBe("Central");
+    expect(hubGreeting("")).toBe("Central");
+  });
+
+  it("a linha de marca é o sistema com a casa do Shop ao lado, nunca uma loja fixa", () => {
+    expect(hubBrandLine("Nelson")).toBe("Shopman · Nelson");
+    expect(hubBrandLine("  Outra Casa ")).toBe("Shopman · Outra Casa");
+    expect(hubBrandLine("")).toBe("Shopman");
+    expect(hubBrandLine(null)).toBe("Shopman");
+  });
+
+  it("as frases sobre a Central seguem o artigo da identidade", () => {
+    expect(HUB_NAMED_OF).toBe("da Central");
+    expect(hubFailureCopy("forbidden").title).toBe("Você não tem acesso à Central");
   });
 });
 
 
-// ── Por que o Shopman Apps falhou ────────────────────────────────────────────
+// ── Por que a Central falhou ────────────────────────────────────────────
 //
-// ⚠️ `useFetch` popula `error` em qualquer não-2xx, e o Shopman Apps reduzia CINCO causas
+// ⚠️ `useFetch` popula `error` em qualquer não-2xx, e a Central reduzia CINCO causas
 // a um booleano que subia o formulário de senha. No balcão: API fora do ar → senha;
 // deploy em andamento → senha; estação travada → SENHA, onde a credencial é PIN.
 
@@ -185,6 +207,18 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+describe("camada da suíte (prévia v4)", () => {
+  it("hubDateLine: hora e dia por extenso, com o dia da semana em maiúscula", () => {
+    const nowMs = Date.parse("2026-10-03T13:03:00Z");
+    expect(hubDateLine(nowMs, "America/Sao_Paulo")).toBe("10:03 · Sábado, 3 de outubro");
+    expect(hubDateLine(Number.NaN)).toBe("");
+  });
+
+  it("Início é a única seção da Central no rail", () => {
+    expect(HUB_SECTIONS.map(section => section.label)).toEqual(["Início"]);
+  });
+});
+
 describe("um app, um nome", () => {
   const name = OPERATOR_APPS.hub.label;
 
@@ -205,5 +239,56 @@ describe("um app, um nome", () => {
     // rede caída, sem bundle para importar nada. Por isso o teste vem buscá-lo aqui.
     const offline = readFileSync(resolve(APP_DIR, "..", "public", "offline.html"), "utf8");
     expect(offline).toContain(name);
+  });
+});
+
+// Fase 2 (WP-FASE2-UX-OPERADOR, onda da Central): a Central no shell da suíte, com as
+// peças do kit no lugar delas e o conjunto mínimo.
+describe("a Central no shell da suíte (fase 2)", () => {
+  const app = readFileSync(resolve(APP_DIR, "app.vue"), "utf8");
+  const template = app.slice(app.indexOf("<template>"));
+
+  it("veste o shell e o cabeçalho do kit, com aviso e ⋯ nos lugares declarados", () => {
+    expect(template).toContain("<OperatorSuiteShell");
+    expect(template).toContain(':sections="HUB_SECTIONS"');
+    expect(template).toContain("<OperatorPageHeader");
+    expect(template).toContain(':alerts="alerts"');
+    expect(template).toContain(':actions="headerActions"');
+    // A variante "início": o selo é identidade, sem caminho de volta.
+    expect(template).toMatch(/<OperatorAppSeal\s+home\b/);
+  });
+
+  it("estado da tela pelo OperatorScreenState: sem app e falha", () => {
+    expect(template.match(/<OperatorScreenState\b/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it("conjunto mínimo: nada cru, nada nativo, nenhuma régua de largura no script", () => {
+    expect(template).not.toMatch(/<button\b|<table\b|UiNativeSelect|<select\b/);
+    expect(app).not.toMatch(/useMediaQuery|useSuiteRailShown|data-suite=/);
+  });
+});
+
+describe("selo, aviso e nome acessível do bloco", () => {
+  it("o selo diz a cadência pela voz aprovada", () => {
+    expect(HUB_REFRESH_LABEL).toBe("Atualiza sozinho a cada 30 s");
+  });
+
+  it("a releitura que falha diz de quando é a tela, e nunca usa travessão", () => {
+    expect(staleQueueAlert("10:42")).toEqual({
+      title: "Os apps não foram atualizados.",
+      description: "O que está na tela é de 10:42.",
+    });
+    expect(staleQueueAlert("").description).toBe("O que está na tela pode estar desatualizado.");
+    expect(readClockLabel(Date.parse("2026-10-03T13:42:00Z"), "America/Sao_Paulo")).toBe("10:42");
+    expect(readClockLabel(Number.NaN)).toBe("");
+  });
+
+  it("o nome acessível do bloco leva o estado inteiro, e avisa quando abre fora", () => {
+    expect(tileAriaLabel(tile({ status_positive: "Caixa aberto", status_summary: "2 encomendas" }))).toBe(
+      "PDV: Vender no balcão. Caixa aberto, 2 encomendas",
+    );
+    expect(tileAriaLabel(tile({ label: "Loja online", description: "Abrir a loja", kind: "external" }))).toBe(
+      "Loja online: Abrir a loja. Abre em outra janela",
+    );
   });
 });

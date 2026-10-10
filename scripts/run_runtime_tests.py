@@ -110,6 +110,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # hydrated ``member__customer`` path as an OUTER JOIN and rejects a broad
     # ``FOR UPDATE``; this regression only exists on the real database.
     "shopman/shop/tests/test_marketing_delivery_postgres.py",
+    # O mesmo FOR UPDATE no lado anulável do OUTER JOIN, no estado do trabalho
+    # de impressão: o pulso de gaveta do PDV voltava 400 em loop no alpha.
+    "shopman/backstage/tests/test_drawer_pulse_postgres.py",
     # O ciclo expand/rollback/reapply da 0053 precisa rodar no PostgreSQL real:
     # SQLite não prova compatibilidade do writer 0052 com defaults/constraints
     # do schema expandido nem a reversão transacional do banco de produção.

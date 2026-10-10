@@ -179,7 +179,10 @@ class CatalogProductDetailView(_CatalogBase):
             except CatalogConflict as exc:
                 return {"outcome": "not_applied", "detail": str(exc), "conflicting_fields": getattr(exc, "fields", [])}, 409
             except (CatalogError, ValidationError) as exc:
-                return {"outcome": "not_applied", "detail": str(exc)}, 400
+                body = {"outcome": "not_applied", "detail": str(exc)}
+                if getattr(exc, "field", None):
+                    body["field"] = exc.field
+                return body, 400
             return {"ok": True, "outcome": "applied", "intention": key, "sku": sku, "changed_fields": list(patch)}, 200
 
         try:

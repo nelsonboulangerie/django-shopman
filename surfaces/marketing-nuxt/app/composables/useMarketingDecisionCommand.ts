@@ -104,14 +104,18 @@ export function useMarketingDecisionCommand() {
   async function confirm(options: {
     credential?: string;
     typedConfirmation?: string;
+    /** A digital do dispositivo já assinou esta confirmação (dispensa senha e frase). */
+    deviceSealed?: boolean;
+    /** A segunda pessoa já confirmou no celular dela (duplo controle). */
+    secondApproved?: boolean;
   }): Promise<MarketingCommandResponse> {
     const command = pendingDecision.value;
     if (!command) throw new Error("marketing_confirmation_missing");
-    if (command.challenge.dual_control) {
+    if (command.challenge.dual_control && !options.secondApproved) {
       throw new Error("marketing_dual_control_required");
     }
     try {
-      if (command.challenge.step_up !== "none") {
+      if (command.challenge.step_up !== "none" && !options.deviceSealed) {
         await $fetch("/api/v1/backstage/marketing/security/step-up/", {
           method: "POST",
           credentials: "same-origin",

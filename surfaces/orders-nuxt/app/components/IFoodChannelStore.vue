@@ -8,15 +8,26 @@ import { ifoodStatusLine } from "~/presentation/ifoodStore";
 const { store } = useIFoodStore();
 
 const visible = computed(() => Boolean(store.value?.enabled));
-const statusLine = computed(() => (store.value ? ifoodStatusLine(store.value) : ""));
+const statusLine = computed(() =>
+  store.value ? ifoodStatusLine(store.value) : "",
+);
 </script>
 
 <template>
-  <div v-if="visible && store" class="space-y-1 border-t border-border pt-3" data-ifood-store>
+  <div v-if="visible && store" class="space-y-1" data-ifood-store>
+    <NuxtSeparator />
     <p class="text-xs font-medium text-muted-foreground">A loja no iFood</p>
-    <p class="text-sm font-semibold text-foreground" data-ifood-status>{{ statusLine }}</p>
-    <ul v-if="store.diverges && store.ifood_problems.length" class="flex flex-col gap-0.5 text-xs text-amber-700 dark:text-amber-300" data-ifood-problems>
-      <li v-for="(problem, i) in store.ifood_problems" :key="i">{{ problem }}</li>
+    <p class="text-sm font-semibold text-foreground" data-ifood-status>
+      {{ statusLine }}
+    </p>
+    <ul
+      v-if="store.diverges && store.ifood_problems.length"
+      class="flex flex-col gap-0.5 text-xs text-warning"
+      data-ifood-problems
+    >
+      <li v-for="(problem, i) in store.ifood_problems" :key="i">
+        {{ problem }}
+      </li>
     </ul>
   </div>
 </template>

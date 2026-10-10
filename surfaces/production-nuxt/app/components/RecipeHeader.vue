@@ -1,11 +1,15 @@
 <script setup lang="ts">
-// Cabeçalho das telas de receitas — irmão do ProductionHeader (mesmo lugar, mesmo
-// desenho: RailToggle + eyebrow + título + busca + atualizar), SEM as abas do fluxo
-// do dia: o inventário de receitas não é etapa da fornada, é conhecimento da casa.
-// O que é comum (Shopman Apps, operador/travar, tema) mora no OperatorRail à esquerda.
-defineProps<{
+// Cabeçalho das telas de receitas: o mesmo `OperatorPageHeader` do kit das outras
+// telas da Produção, com o selo "Receitas" ao lado do título, o voltar (`#lead`), a
+// busca e a ação primária da tela. Atualizar mora no ⋯ "Mais ações" (dados). SEM o
+// progresso do dia: o inventário de receitas não é etapa do lote, é conhecimento da
+// casa. Receitas mora em Ajustes. O `#status` repassa o "onde estou" da tela (o
+// anterior e próxima da receita, `OperatorRecordNav`) ao mesmo slot do cabeçalho.
+import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
+
+const props = defineProps<{
   title: string;
-  /** Linha pequena sob o título (kind, SKU, versão) — opcional. */
+  /** Linha pequena ao lado de "Receitas" (kind, SKU, versão) — opcional. */
   subtitle?: string;
   /** Rota de volta (seta à esquerda do título). */
   back?: string;
@@ -14,70 +18,71 @@ defineProps<{
   /** Placeholder e rótulo acessível da busca. */
   searchLabel?: string;
   pending?: boolean;
-  /** Esconde o botão Atualizar (telas sem leitura própria, como o editor). */
+  /** Esconde Atualizar (telas sem leitura própria, como o editor). */
   hideRefresh?: boolean;
+  /** A ação primária da tela: botão na mesa, ícone fixo (ou topo do ⋯) no celular. */
+  primary?: OperatorHeaderAction;
 }>();
 const emit = defineEmits<{ refresh: [] }>();
 const query = defineModel<string>("query", { default: "" });
+
+const eyebrow = computed(() =>
+  props.subtitle ? `Receitas · ${props.subtitle}` : "Receitas",
+);
+const refreshAction = computed<OperatorHeaderAction[]>(() =>
+  props.hideRefresh
+    ? []
+    : [{ label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => emit("refresh") }],
+);
+// Mesa: a primária é botão no `#actions` e o ⋯ só leva Atualizar. Celular: a primária
+// disputa a vaga de ícone (priority 1) e Atualizar vai para o ⋯.
+const deskActions = computed(() => (refreshAction.value.length ? refreshAction.value : undefined));
+const phoneActions = computed(() => {
+  const list = [...(props.primary ? [{ ...props.primary, priority: 1 }] : []), ...refreshAction.value];
+  return list.length ? list : undefined;
+});
 </script>
 
 <template>
-  <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-card px-4 py-2.5">
-    <RailToggle />
-    <NuxtLink
-      v-if="back"
-      :to="back"
-      class="grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
-      aria-label="Voltar"
-      title="Voltar"
-    >
-      <Icon name="lucide:arrow-left" class="size-5" />
-    </NuxtLink>
-    <div class="mr-2 min-w-0">
-      <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Receitas</p>
-      <h1 class="truncate text-lg font-bold leading-tight">{{ title }}</h1>
-      <p v-if="subtitle" class="truncate text-xs text-muted-foreground">{{ subtitle }}</p>
-    </div>
-
-    <div class="ml-auto flex items-center gap-1.5">
+  <OperatorPageHeader
+    :title="title"
+    :eyebrow="eyebrow"
+    :actions="deskActions"
+    :phone-actions="phoneActions"
+    actions-label="Mais ações da tela"
+  >
+    <template v-if="back" #lead>
+      <NuxtButton
+        :to="back"
+        icon="i-lucide-arrow-left"
+        color="neutral"
+        variant="ghost"
+        square
+        aria-label="Voltar"
+        title="Voltar"
+      />
+    </template>
+    <template v-if="$slots.status" #status>
+      <slot name="status" />
+    </template>
+    <template v-if="searchable" #search>
+      <OperatorSuiteSearch
+        v-model="query"
+        screen-label="filtrando as receitas"
+        placeholder="Buscar receita"
+        :aria-label="searchLabel || 'Buscar por nome, ref ou SKU'"
+      />
+    </template>
+    <template v-if="primary || $slots.actions" #actions>
       <slot name="actions" />
-      <div v-if="searchable" class="relative">
-        <Icon
-          name="lucide:search"
-          class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <UiInput
-          v-model="query"
-          type="search"
-          inputmode="search"
-          placeholder="Buscar…"
-          class="w-32 pl-8 pr-7 focus:w-44 sm:w-40"
-          :aria-label="searchLabel || 'Buscar por nome, ref ou SKU'"
-        />
-        <!-- Limpar ocupa o espaço reservado dentro do campo; é affordance do input, não botão de toolbar. -->
-        <button
-          v-if="query"
-          type="button"
-          class="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded text-muted-foreground transition hover:text-foreground"
-          aria-label="Limpar busca"
-          @click="query = ''"
-        >
-          <Icon name="lucide:x" class="size-3.5" />
-        </button>
-      </div>
-      <AlertsBell />
-      <UiButton
-        v-if="!hideRefresh"
-        type="button"
-        variant="outline"
-        size="icon-sm"
-        class="min-h-11 min-w-11"
-        aria-label="Atualizar"
-        title="Atualizar"
-        @click="emit('refresh')"
-      >
-        <Icon name="lucide:refresh-cw" class="size-4" :class="pending ? 'animate-spin' : ''" />
-      </UiButton>
-    </div>
-  </header>
+      <NuxtButton
+        v-if="primary"
+        :to="primary.to"
+        :icon="primary.icon"
+        :label="primary.label"
+        :disabled="primary.disabled"
+        @click="primary.onSelect?.($event)"
+      />
+    </template>
+  </OperatorPageHeader>
 </template>

@@ -305,9 +305,15 @@ def test_hold_save_emits_stock_update(
             target_date=date.today(),
         )
     types = {call.args[1] for call in mock_send.call_args_list}
-    skus = {call.args[2]["sku"] for call in mock_send.call_args_list}
+    # Só os canais de estoque carregam o SKU. A mesma reserva pode zerar a
+    # oferta e abrir uma falta (ShelfOutage), que avisa a Fila do Gestor no
+    # canal ``backstage-orders-*`` com ``{kind: "menu"}``, sem SKU (V4-G4).
+    stock_calls = [call for call in mock_send.call_args_list if call.args[0].startswith("stock-")]
+    skus = {call.args[2]["sku"] for call in stock_calls}
     assert "stock-update" in types
     assert "BAGUETE" in skus
+    other = [call for call in mock_send.call_args_list if not call.args[0].startswith("stock-")]
+    assert all(call.args[0].startswith(("backstage-", "fomo")) or "sku" in call.args[2] for call in other), other
 
 
 @pytest.mark.django_db

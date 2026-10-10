@@ -99,6 +99,14 @@ class MaterialProjection:
     opensInto: OpensIntoProjection | None
     #: Conteúdo de uma embalagem em kg, pelo peso líquido declarado — pré-preenche o "Quando aberto, vira".
     netContentKg: str
+    #: Validade do lote da última entrega deste insumo (ISO), só enquanto ainda
+    #: não venceu; vazio sem entrega com validade. É o atalho "Mesma da última
+    #: entrega" do recebimento: fornecedor costuma mandar o mesmo lote seguido.
+    lastDeliveryExpiry: str = ""
+    #: Códigos de barras (EAN/GTIN) que já chegaram com este insumo e foram
+    #: conferidos (``Material.metadata.purchase.eans``): o "Ler EAN" do receber
+    #: acha o item da caixa pela câmera.
+    eans: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -201,6 +209,9 @@ class ReceiptLineProjection:
     requiresConversion: bool
     conversionSuggestion: ReceiptConversionSuggestionProjection | None
     purchaseQty: float
+    #: A quantidade da NOTA na unidade da linha; ``None`` quando a linha não
+    #: veio de nota. ``purchaseQty`` é o que chegou.
+    invoicePurchaseQty: float | None
     costInput: str
     expiryDate: str
     expiryFromInvoice: bool
@@ -233,6 +244,11 @@ class ActiveReceiptProjection:
     invoiceInput: str
     note: str
     lines: tuple[ReceiptLineProjection, ...]
+    #: Volumes que a nota declara no transporte (``qVol``); 0 quando não declara.
+    invoiceVolumes: int = 0
+    #: Volumes já contados desta NF ("Contei N volumes"), em qualquer dispositivo;
+    #: ``None`` enquanto ninguém contou (``Supplier.metadata.purchase.receipt_volume_counts``).
+    volumesCounted: int | None = None
 
 
 @dataclass(frozen=True)
@@ -253,6 +269,9 @@ class ReceiptHistoryProjection:
     totalCostQ: int
     operator: str
     receivedAtDisplay: str
+    #: "07:40" e se foi hoje: a lista "Entradas de hoje" do começo do Receber (C13).
+    receivedAtTime: str = ""
+    receivedToday: bool = False
 
 
 @dataclass(frozen=True)
@@ -297,6 +316,9 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     sale_prices = _sale_price_map(skus)
     material_by_sku = {material.sku: material for material in material_rows}
     net_contents = _net_contents_kg([material.sku for material in material_rows if material.unit == "un"])
+    last_delivery_expiry = _last_delivery_expiry_map(
+        [material.sku for material in material_rows if material.shelf_life_days is not None]
+    )
     sale_suggestions = _sale_suggestions(
         [sku for sku in skus if not (roles.get(sku) and (roles[sku].sellable or roles[sku].produced))]
     )
@@ -317,6 +339,7 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
             sale_suggestion=sale_suggestions.get(material.sku),
             opens_into=_opens_into(material, material_by_sku),
             net_content_kg=net_contents.get(material.sku, ""),
+            last_delivery_expiry=last_delivery_expiry.get(material.sku, ""),
         )
         for material in material_rows
     )
@@ -401,6 +424,8 @@ def _receipt_history() -> tuple[ReceiptHistoryProjection, ...]:
                 totalCostQ=int(corpo.get("total_cost_q") or 0),
                 operator=str(corpo.get("operator") or ""),
                 receivedAtDisplay=timezone.localtime(linha.created_at).strftime("%d/%m %H:%M"),
+                receivedAtTime=timezone.localtime(linha.created_at).strftime("%H:%M"),
+                receivedToday=timezone.localtime(linha.created_at).date() == timezone.localdate(),
             )
         )
     return tuple(historico)
@@ -421,6 +446,7 @@ def _material_projection(
     sale_suggestion: SaleSuggestionProjection | None = None,
     opens_into: OpensIntoProjection | None = None,
     net_content_kg: str = "",
+    last_delivery_expiry: str = "",
 ) -> MaterialProjection:
     meta = _purchase_meta(material)
     replenish_at = lead_time_days + Decimal(policy["review_period_days"]) + Decimal(policy["safety_days"])
@@ -481,6 +507,8 @@ def _material_projection(
         saleSuggestion=sale_suggestion,
         opensInto=opens_into,
         netContentKg=net_content_kg,
+        lastDeliveryExpiry=last_delivery_expiry,
+        eans=tuple(str(code) for code in (meta.get("eans") or ()) if str(code).strip()),
     )
 
 
@@ -669,6 +697,10 @@ def _active_receipt(active_receipt: dict[str, Any] | None, *, default_supplier_r
         invoiceInput=str(data.get("invoiceInput") or data.get("invoice_input") or ""),
         note=str(data.get("note") or ""),
         lines=tuple(_receipt_line_projection(line) for line in data.get("lines") or ()),
+        invoiceVolumes=max(int(_decimal(data.get("invoiceVolumes") or 0)), 0),
+        volumesCounted=(
+            int(data["volumesCounted"]) if str(data.get("volumesCounted") or "").strip().isdigit() else None
+        ),
     )
 
 
@@ -689,6 +721,11 @@ def _receipt_line_projection(line: dict[str, Any]) -> ReceiptLineProjection:
             line.get("conversionSuggestion") or line.get("conversion_suggestion"),
         ),
         purchaseQty=_number(_decimal(line.get("purchaseQty", line.get("purchase_qty", 0)))),
+        invoicePurchaseQty=(
+            _number(_decimal(line.get("invoicePurchaseQty")))
+            if str(line.get("invoicePurchaseQty") or "").strip()
+            else None
+        ),
         costInput=str(line.get("costInput") or line.get("cost_input") or ""),
         expiryDate=str(line.get("expiryDate") or line.get("expiry_date") or ""),
         expiryFromInvoice=bool(line.get("expiryFromInvoice") or line.get("expiry_from_invoice")),
@@ -950,6 +987,36 @@ def _recipes_map(skus: list[str]) -> dict[str, tuple[str, ...]]:
         return {sku: tuple(names) for sku, names in result.items()}
     except Exception:
         logger.debug("purchase.recipes_failed", exc_info=True)
+        return {}
+
+
+def _last_delivery_expiry_map(skus: list[str]) -> dict[str, str]:
+    """Validade do lote da ÚLTIMA entrega de cada perecível, se ainda não venceu.
+
+    Lote de entrega é o que o recebimento cria com o fornecedor preenchido
+    (``services/purchase.py::_write_receipt``); o lote do dia que a reposição
+    de balcão ganha não tem fornecedor e não conta. Vencida, a data não serve de
+    atalho para nada: a entrega de hoje não pode trazer um lote já vencido.
+    """
+    if not skus:
+        return {}
+    try:
+        Batch = apps.get_model("stockman", "Batch")
+        today = timezone.localdate()
+        result: dict[str, str] = {}
+        rows = (
+            Batch.objects.filter(sku__in=skus, expiry_date__isnull=False)
+            .exclude(supplier="")
+            .order_by("sku", "-created_at")
+            .values_list("sku", "expiry_date")
+        )
+        for sku, expiry in rows:
+            if sku in result:
+                continue
+            result[sku] = expiry.isoformat() if expiry >= today else ""
+        return {sku: value for sku, value in result.items() if value}
+    except Exception:
+        logger.debug("purchase.last_delivery_expiry_failed", exc_info=True)
         return {}
 
 

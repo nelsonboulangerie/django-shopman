@@ -342,6 +342,146 @@ describe("OperatorLock — PIN pelo teclado físico", () => {
   });
 });
 
+// ── Teclado de primeira, com o foco esquecido atrás da trava ─────────────────
+//
+// O achado do dono (03/10/2026): "quando a tela do PDV trava, na tela do PIN
+// parece que nunca pega o número que digito logo de primeira; tenho que clicar
+// na tela". O PDV trava por ociosidade com a busca de produto focada (ela nasce
+// com `autofocus`). A captura tratava aquele campo como "do dono" e deixava os
+// dígitos irem para a busca escondida. O teste monta a cena do balcão: um campo
+// de busca focado na tela de baixo, a trava subindo por cima, e as teclas
+// despachadas no elemento que o browser considera focado, sem clique nenhum.
+describe("OperatorLock — teclado de primeira, sem clicar", () => {
+  let search: HTMLInputElement;
+  let reachedSearch: string[];
+
+  beforeEach(() => {
+    unlock.mockReset().mockResolvedValue(true);
+    changePin.mockReset();
+    mustChange.value = false;
+    vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+    // A tela de baixo: a busca do PDV, focada, com o Enter que adiciona produto.
+    search = document.createElement("input");
+    search.type = "search";
+    document.body.appendChild(search);
+    reachedSearch = [];
+    search.addEventListener("keydown", (event) => reachedSearch.push(event.key));
+    search.focus();
+  });
+
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+    document.body.innerHTML = "";
+    vi.restoreAllMocks();
+  });
+
+  /** Teclas no elemento FOCADO, como o teclado de verdade (nada de clicar antes). */
+  function press(keys: string[], gapMs = 400) {
+    let clock = Date.now();
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const events: KeyboardEvent[] = [];
+    for (const key of keys) {
+      clock += gapMs;
+      const target = (document.activeElement ?? document.body) as HTMLElement;
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      events.push(event);
+    }
+    spy.mockRestore();
+    return events;
+  }
+
+  const quiet = () => new Promise((resolve) => setTimeout(resolve, PICK_QUIET_MS + 40));
+
+  it("a trava toma o foco da busca ao subir", async () => {
+    await mount();
+
+    const overlay = document.querySelector("[data-operator-lock]");
+    expect(document.activeElement).toBe(overlay);
+    expect(document.activeElement).not.toBe(search);
+  });
+
+  it("número do operador, PIN e Enter destravam sem tocar na tela", async () => {
+    await mount();
+
+    press(["1"]); // Bia é a primeira da lista
+    await quiet();
+    press(["1", "2", "3", "4", "Enter"]);
+
+    expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+    expect(reachedSearch).toEqual([]);
+  });
+
+  it("mesmo com o foco de volta na busca escondida, o PIN vai para a trava", async () => {
+    // A rede de segurança da captura: Tab, um script da tela de baixo ou um
+    // `autofocus` tardio devolvem o foco à busca. A tecla segue sendo da trava,
+    // e nem o dígito nem o Enter (que lá adicionaria produto) chegam à busca.
+    const wrapper = await mount();
+    await wrapper.find("button").trigger("click"); // Bia
+    search.focus();
+
+    const events = press(["1", "2", "3", "9", "Backspace", "4", "Enter"]);
+
+    expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+    expect(reachedSearch).toEqual([]);
+    // O default do dígito (escrever na busca) também é cancelado.
+    expect(events.every((event) => event.defaultPrevented)).toBe(true);
+  });
+
+  it("Enter na busca escondida não vaza nem sem PIN pronto", async () => {
+    await mount();
+    search.focus();
+
+    const [enter] = press(["Enter"]);
+
+    expect(enter!.defaultPrevented).toBe(true);
+    expect(reachedSearch).toEqual([]);
+    expect(unlock).not.toHaveBeenCalled();
+  });
+
+  it("toma o foco de novo quando a janela volta a ter foco", async () => {
+    await mount();
+    search.focus(); // o foco escapou enquanto a janela estava em segundo plano
+
+    window.dispatchEvent(new Event("focus"));
+
+    expect(document.activeElement).toBe(document.querySelector("[data-operator-lock]"));
+  });
+
+  it("toma o foco de novo quando a aba volta a ficar visível", async () => {
+    await mount();
+    search.focus();
+
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(document.activeElement).toBe(document.querySelector("[data-operator-lock]"));
+  });
+
+  it("não rouba o foco de quem já está dentro da trava", async () => {
+    const wrapper = await mount();
+    const name = wrapper.find("button").element as HTMLButtonElement;
+    name.focus();
+
+    window.dispatchEvent(new Event("focus"));
+
+    expect(document.activeElement).toBe(name);
+  });
+
+  it("o toque no pad continua valendo", async () => {
+    const wrapper = await mount();
+    await wrapper.find("button").trigger("click"); // Bia
+
+    const digits = wrapper
+      .findAll("button")
+      .filter((b) => ["1", "2", "3", "4"].includes(b.text()));
+    for (const button of digits) await button.trigger("click");
+    await wrapper.find('button[aria-label="Confirmar"]').trigger("click");
+
+    expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+  });
+});
+
 // ── A outra metade do par ─────────────────────────────────────────────────
 //
 // ⚠️ Esta tela se confunde com a AUTORIZAÇÃO DO GERENTE do PDV, não com o

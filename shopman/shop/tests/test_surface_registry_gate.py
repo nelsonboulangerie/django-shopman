@@ -94,7 +94,7 @@ def test_a_new_registry_entry_lists_every_place_that_still_lacks_it(repo: Path):
     registry["surfaces"]["loyalty"] = {
         "dir": "loyalty-nuxt",
         "kind": "operator",
-        "dev_port": 3009,
+        "dev_port": 3010,
         "service": "operator-office",
         "subdomain": "fidelidade",
         "base_url_env": "SHOPMAN_LOYALTY_BASE_URL",

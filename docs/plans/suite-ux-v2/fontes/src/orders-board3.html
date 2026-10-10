@@ -1,0 +1,93 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="orders">
+<div class="flex h-[900px] overflow-hidden relative">
+  <!-- Rail v3: trocador de apps compacto + seções do app + sino/atalhos/bloquear -->
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Gestor" icon="square-kanban"}}
+    <a class="rail-item on"><i data-i="clipboard-list"></i>Pedidos<span class="badge">10</span></a>
+    <a class="rail-item"><i data-i="book-open"></i>Catálogo</a>
+    <a class="rail-item"><i data-i="users"></i>Clientes</a>
+    <a class="rail-item"><i data-i="monitor-smartphone"></i>Canais<span class="attn"></span></a>
+    {{> rail3bottom bell="7" initials="AD" operator="Admin"}}
+  </aside>
+
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- Barra única: título + ao vivo discreto + busca única + controles -->
+    <header class="px-4 pt-3 pb-2.5 flex flex-col gap-2.5 border-b border-border bg-card">
+      <div class="flex items-center gap-3">
+        <h1 class="op-display !text-[22px] leading-none">Pedidos</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum" title="Ao vivo · última leitura 22:03:14"><span class="live-dot"></span>22:03</span>
+        <div class="w-3"></div>
+        {{> search3 w="w-[22rem]" placeholder="Buscar pedido, cliente ou item"}}
+        <div class="flex-1"></div>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Som dos pedidos novos: ligado"><i data-i="volume-2" class="size-5"></i></button>
+        <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4"></i>Ciente</button>
+        <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="arrow-down-up" class="size-4"></i>Chegada<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+        <div class="h-control p-1 rounded-md bg-secondary inline-flex items-center gap-1">
+          <button class="h-full px-2.5 rounded bg-card shadow-sm inline-flex items-center gap-1.5 op-label font-semibold"><i data-i="columns-3" class="size-4"></i>Quadro</button>
+          <button class="h-full px-2.5 rounded inline-flex items-center gap-1.5 op-label text-muted-foreground"><i data-i="table-2" class="size-4"></i>Tabela</button>
+        </div>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais ações"><i data-i="ellipsis" class="size-5"></i></button>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button class="h-10 px-3 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todos <span class="tnum text-muted-foreground">10</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="bike" class="size-4"></i>iFood <span class="tnum text-muted-foreground">1</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="globe" class="size-4"></i>Loja online <span class="tnum text-muted-foreground">5</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="store" class="size-4"></i>PDV <span class="tnum text-muted-foreground">3</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="message-circle" class="size-4"></i>WhatsApp <span class="tnum text-muted-foreground">1</span></button>
+        <span class="w-px h-6 bg-border mx-1"></span>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="bike" class="size-4"></i>Entrega <span class="tnum text-muted-foreground">2</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="store" class="size-4"></i>Retirada <span class="tnum text-muted-foreground">8</span></button>
+      </div>
+    </header>
+
+    <div class="flex-1 overflow-hidden px-4 pt-4 grid grid-cols-3 gap-4">
+      <section class="flex flex-col gap-3 min-w-0">
+        <div class="flex items-baseline gap-2 pb-2 border-b border-border">
+          <i data-i="inbox" class="size-4 self-center text-muted-foreground"></i><h2 class="op-eyebrow">Entrada</h2><span class="tnum op-label text-muted-foreground">0</span>
+          <span class="ml-auto op-micro text-muted-foreground">Novos: aceitar ou recusar</span>
+        </div>
+        <div class="rounded-lg border border-dashed border-border bg-card/60 px-6 py-8 flex flex-col items-center text-center gap-2">
+          <span class="size-11 rounded-full bg-success/10 text-success grid place-items-center"><i data-i="circle-check" class="size-6"></i></span>
+          <p class="op-title">Nenhum pedido novo</p>
+          <p class="op-label font-normal text-muted-foreground max-w-64">Quando um pedido chegar, ele aparece aqui e o som toca.</p>
+        </div>
+      </section>
+      <section class="flex flex-col gap-3 min-w-0">
+        <div class="flex items-baseline gap-2 pb-2 border-b border-border">
+          <i data-i="cooking-pot" class="size-4 self-center text-muted-foreground"></i><h2 class="op-eyebrow">Preparo</h2><span class="tnum op-label text-muted-foreground">8</span>
+          <span class="ml-auto op-micro text-muted-foreground">Confirmados e em preparo</span>
+        </div>
+        {{> ocard ch="globe" chn="Loja online · WEB-261003-" code="X36" t="22 min" who="Maria Santos" mode="Retirada" items="1× Croissant" s1="info" l1="Aceito" s2="warning" l2="Pix aguardando" total="R$ 13,00" act="Iniciar preparo" aicon="lock" dis="1" why="Espera o pagamento confirmar para avançar."}}
+        {{> ocard ch="store" chn="PDV · PDV-261003-" code="S84" t="16 min" who="(43) 99111-1111" mode="Retirada" items="3× Pão de Hambúrguer, 3× Mini Focaccia Cebola, Bacon e Tomilho" s1="primary" l1="Em preparo" s2="muted" l2="Pagamento não informado" total="R$ 72,00" act="Marcar pronto" aicon="arrow-right" dis="0" why=""}}
+      </section>
+      <section class="flex flex-col gap-3 min-w-0">
+        <div class="flex items-baseline gap-2 pb-2 border-b border-border">
+          <i data-i="package-check" class="size-4 self-center text-muted-foreground"></i><h2 class="op-eyebrow">Saída</h2><span class="tnum op-label text-muted-foreground">2</span>
+          <span class="ml-auto op-micro text-muted-foreground">Retirada, coleta e entrega</span>
+        </div>
+        {{> ocard ch="globe" chn="Loja online · WEB-261003-" code="F15" t="5 min" who="(43) 99111-1111" mode="Retirada" items="2× Cappuccino, 3× Namastê Chai Kãnfa, Lata 70g" s1="success" l1="Pronto" s2="muted" l2="Pagamento não informado" total="R$ 243,00" act="Marcar como retirado" aicon="hand-platter" dis="0" why=""}}
+        {{> ocard ch="store" chn="PDV · DLV-" code="NARUA" t="29 min" who="João Oliveira" mode="Entrega · Rua Paranaguá, 800 · saiu com a maquininha" items="3× Baguette de Tradition, 2× Croissant" s1="info" l1="Saiu para entrega" s2="muted" l2="Dinheiro · troco R$ 26" total="R$ 74,00" act="Entregador voltou" aicon="undo-2" dis="0" why=""}}
+      </section>
+    </div>
+  </main>
+  <!--SEARCH-->
+  <span class="pin" style="left:26px;top:40px">1</span>
+  <span class="pin" style="left:62px;top:150px">2</span>
+  <span class="pin" style="left:186px;top:4px">3</span>
+  <span class="pin" style="left:300px;top:4px">4</span>
+  <span class="pin" style="left:62px;top:604px">5</span>
+  <span class="pin" style="left:1040px;top:4px">6</span>
+  <span class="pin" style="left:92px;top:66px">7</span>
+</div>
+<div class="legend">
+  <p class="t">Gestor · Pedidos · v3 <span>seções no rail, uma barra só, uma busca só, "ao vivo" discreto</span></p>
+  <div><b>1</b>Trocar de app: o selo do app no topo do rail abre os oito apps e o Shopman Apps. Ocupa um botão, não uma faixa.</div>
+  <div><b>2</b>As seções do app moram no rail (ícone + nome + contagem + ponto de atenção). A barra de cima fica livre para o trabalho.</div>
+  <div><b>3</b>"Ao vivo" vira um ponto com a hora. Só cresce quando a leitura atrasa ("Sem conexão. O que está na tela é de 21:58.").</div>
+  <div><b>4</b>Uma busca só, uma tecla só (/ ou Ctrl K): filtra esta tela enquanto digita e oferece a suíte logo abaixo.</div>
+  <div><b>5</b>Sino, atalhos, bloquear e operador no pé do rail, iguais em todo app.</div>
+  <div><b>6</b>Controles da tela na mesma linha: som, Ciente, ordenar, visão, ⋯ (exportar, imprimir, atualizar).</div>
+  <div><b>7</b>Filtros na segunda linha. Altura do cabeçalho: hoje ~205 px (as barras quebram em 3 linhas a 1440 px); v2 128 px; v3 104 px.</div>
+</div>
+</body></html>

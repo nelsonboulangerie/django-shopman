@@ -18,9 +18,14 @@ import {
   statusTone,
   toneBadge,
 } from "../app/presentation/orderDetail";
-import type { OperatorOrderDetail, OrderDetailCustomerProfile } from "../app/types/orderDetail";
+import type {
+  OperatorOrderDetail,
+  OrderDetailCustomerProfile,
+} from "../app/types/orderDetail";
 
-function profile(overrides: Partial<OrderDetailCustomerProfile> = {}): OrderDetailCustomerProfile {
+function profile(
+  overrides: Partial<OrderDetailCustomerProfile> = {},
+): OrderDetailCustomerProfile {
   return {
     orders_label: "",
     last_order_display: "",
@@ -36,7 +41,9 @@ function profile(overrides: Partial<OrderDetailCustomerProfile> = {}): OrderDeta
   };
 }
 
-function contact(overrides: Partial<OperatorOrderDetail> = {}): OperatorOrderDetail {
+function contact(
+  overrides: Partial<OperatorOrderDetail> = {},
+): OperatorOrderDetail {
   return {
     customer_phone_uri: "",
     customer_relay_phone: "",
@@ -56,7 +63,7 @@ describe("orderDetail · tom", () => {
 
   it("o selo neutro não carrega cor saturada", () => {
     expect(toneBadge("neutral")).toContain("bg-muted");
-    expect(toneBadge("danger")).toContain("text-destructive");
+    expect(toneBadge("danger")).toContain("text-error");
     expect(toneBadge("")).toBe(toneBadge("neutral"));
   });
 
@@ -64,9 +71,13 @@ describe("orderDetail · tom", () => {
     // O tema da casa (operator-theme.css) dá a cada tom a cor que passa AA como
     // texto sobre o próprio fundo /10, no claro e no escuro. Paleta crua ignora
     // o tema e dá um selo de cor diferente em cada app.
-    expect(toneBadge("danger")).toBe("border-destructive/40 bg-destructive/10 text-destructive");
-    expect(toneBadge("warning")).toBe("border-warning/40 bg-warning/10 text-warning");
-    expect(toneBadge("success")).toBe("border-success/40 bg-success/10 text-success");
+    expect(toneBadge("danger")).toBe("border-error/40 bg-error/10 text-error");
+    expect(toneBadge("warning")).toBe(
+      "border-warning/40 bg-warning/10 text-warning",
+    );
+    expect(toneBadge("success")).toBe(
+      "border-success/40 bg-success/10 text-success",
+    );
     expect(toneBadge("info")).toBe("border-info/40 bg-info/10 text-info");
     for (const tone of ["danger", "warning", "success", "info", "neutral"]) {
       expect(toneBadge(tone)).not.toMatch(/\b(red|amber|green|blue)-\d|dark:/);
@@ -83,20 +94,36 @@ describe("orderDetail · linhas", () => {
   it("histórico e hábitos do cliente só com o que o servidor sabe", () => {
     expect(profileHistory(null)).toBe("");
     expect(profileHabits(null)).toBe("");
-    expect(profileHistory(profile({ orders_label: "12 pedidos", last_order_display: "há 12 dias" }))).toBe(
-      "12 pedidos · última compra há 12 dias",
+    expect(
+      profileHistory(
+        profile({
+          orders_label: "12 pedidos",
+          last_order_display: "há 12 dias",
+        }),
+      ),
+    ).toBe("12 pedidos · última compra há 12 dias");
+    expect(profileHistory(profile({ orders_label: "Primeiro pedido" }))).toBe(
+      "Primeiro pedido",
     );
-    expect(profileHistory(profile({ orders_label: "Primeiro pedido" }))).toBe("Primeiro pedido");
-    expect(profileHabits(profile({ average_ticket_display: "R$ 42,00", favorite_product: "Pão francês" }))).toBe(
-      "ticket médio R$ 42,00 · costuma levar Pão francês",
+    expect(
+      profileHabits(
+        profile({
+          average_ticket_display: "R$ 42,00",
+          favorite_product: "Pão francês",
+        }),
+      ),
+    ).toBe("ticket médio R$ 42,00 · costuma levar Pão francês");
+    expect(profileHabits(profile({ favorite_product: "Croissant" }))).toBe(
+      "costuma levar Croissant",
     );
-    expect(profileHabits(profile({ favorite_product: "Croissant" }))).toBe("costuma levar Croissant");
   });
 
   it("o prazo do código do iFood só aparece quando é legível", () => {
     expect(relayExpiresLabel("")).toBe("");
     expect(relayExpiresLabel("não é data")).toBe("");
-    expect(relayExpiresLabel("2026-09-28T14:32:00")).toMatch(/^Vale até \d{2}:\d{2}$/);
+    expect(relayExpiresLabel("2026-09-28T14:32:00")).toMatch(
+      /^Vale até \d{2}:\d{2}$/,
+    );
   });
 });
 
@@ -119,8 +146,12 @@ describe("orderDetail · ícones e links", () => {
   it("sem nenhum caminho até a pessoa, o bloco de contato não existe", () => {
     expect(hasCustomerContact(contact(), "")).toBe(false);
     expect(hasCustomerContact(contact(), "https://admin.exemplo/x")).toBe(true);
-    expect(hasCustomerContact(contact({ customer_relay_phone: "0800" }), "")).toBe(true);
-    expect(hasCustomerContact(contact({ customer_email: "a@b.c" }), "")).toBe(true);
+    expect(
+      hasCustomerContact(contact({ customer_relay_phone: "0800" }), ""),
+    ).toBe(true);
+    expect(hasCustomerContact(contact({ customer_email: "a@b.c" }), "")).toBe(
+      true,
+    );
   });
 
   it("o link fiscal aceita href e o url legado", () => {
@@ -131,7 +162,13 @@ describe("orderDetail · ícones e links", () => {
 });
 
 describe("orderDetail · ações (a régua é do servidor)", () => {
-  const comment = { ref: "comment", label: "Comentar", enabled: true, reason: "", payload_schema: {} };
+  const comment = {
+    ref: "comment",
+    label: "Comentar",
+    enabled: true,
+    reason: "",
+    payload_schema: {},
+  };
 
   it("acha a ação oferecida, e nada quando não veio", () => {
     expect(detailAction({ actions: [comment] }, "comment")).toEqual(comment);
@@ -141,7 +178,11 @@ describe("orderDetail · ações (a régua é do servidor)", () => {
 
   it("comentar só quando o servidor oferece E deixa", () => {
     expect(canComment({ actions: [comment] })).toBe(true);
-    expect(canComment({ actions: [{ ...comment, enabled: false, reason: "Sem permissão" }] })).toBe(false);
+    expect(
+      canComment({
+        actions: [{ ...comment, enabled: false, reason: "Sem permissão" }],
+      }),
+    ).toBe(false);
     expect(canComment({ actions: [] })).toBe(false);
     expect(canComment(undefined)).toBe(false);
   });

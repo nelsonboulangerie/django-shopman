@@ -120,7 +120,7 @@ export function useCampaignHistory() {
         }),
       );
       if (envelope.data.kind !== "history") {
-        throw new Error("unexpected Marketing history projection");
+        throw new Error("O histórico veio num formato inesperado. Atualize a tela.");
       }
       appended.value.push(envelope);
     } catch (caught) {
@@ -144,6 +144,21 @@ export function useCampaignHistory() {
       ),
     );
     if (value && !(name === "period" && value === "all")) query[name] = value;
+    await router.replace({ query });
+  }
+
+  /** Os quatro recortes de uma vez (o painel de filtros e o favorito trocam vários). */
+  async function replaceFilters(
+    values: Partial<Record<MarketingHistoryFilterName, string>>,
+  ) {
+    const query = Object.fromEntries(
+      Object.entries(route.query).filter(
+        ([key]) => key !== "cursor" && !(key in values),
+      ),
+    );
+    for (const [name, value] of Object.entries(values)) {
+      if (value && !(name === "period" && value === "all")) query[name] = value;
+    }
     await router.replace({ query });
   }
 
@@ -175,6 +190,7 @@ export function useCampaignHistory() {
     loadMore,
     refresh,
     setFilter,
+    replaceFilters,
     clearFilters,
   };
 }

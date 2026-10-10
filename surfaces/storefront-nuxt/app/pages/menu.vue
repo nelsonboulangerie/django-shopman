@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import {
   FILTERED_SECTION_VALUE,
+  availableOnlyHint,
+  availableOnlySections,
   buildSectionsBySku,
   choiceGroupsByName,
   collectionDisplayLabel,
   dynamicCollectionPublicSlug,
   filteredSections,
+  hiddenUnavailableCount,
+  orderableItems,
   resolveCatalogSections,
   resolveSectionRefFromParam,
   sectionEntries,
@@ -87,6 +91,8 @@ const appliedFilterKeys = ref<string[]>([])
 // "Só compatível com minhas preferências" (WP-5): off por padrão; esconde itens
 // com aviso dietético, de forma transparente e reversível (contador de ocultos).
 const dietaryFilterOn = ref(false)
+// "Mostrar só disponíveis": padrão da casa (Admin), escolha do cliente vence.
+const { availableOnly, setAvailableOnly } = useAvailableOnly()
 
 const sections = computed(() => resolveCatalogSections(catalog.value))
 const allItems = computed(() => catalog.value?.items || [])
@@ -96,16 +102,34 @@ const hasAppliedFilters = computed(() => appliedFilterKeys.value.length > 0)
 const sectionsBySku = computed(() => buildSectionsBySku(sections.value))
 // Cartões de escolha (mesmo `choice_group`): o grupo inteiro do cardápio, para o
 // cartão abrir a mesma escolha em qualquer seção onde aparece.
-const choiceGroups = computed(() => choiceGroupsByName(allItems.value))
+// Com a chave ligada, a opção indisponível sai da escolha (e o grupo que fica
+// com uma opção só volta a ser item).
+const choiceGroups = computed(() => choiceGroupsByName(
+  availableOnly.value ? orderableItems(allItems.value) : allItems.value
+))
 // O toggle só faz sentido quando o cliente logado tem preferências que geram aviso.
 const hasDietaryPrefs = computed(() => allItems.value.some(item => item.dietary_warnings.length > 0))
-const activeSections = computed(() => {
+// O que os filtros (pílulas e preferências) deixam, ANTES da chave de
+// disponíveis: a base do contador de escondidos.
+const filterMatchedSections = computed(() => {
   const base = filteredSections(sections.value, '', appliedFilterKeys.value, sectionsBySku.value)
   if (!dietaryFilterOn.value) return base
   return base
     .map(section => ({ ...section, items: section.items.filter(item => item.dietary_warnings.length === 0) }))
     .filter(section => section.items.length > 0)
 })
+const activeSections = computed(() => (
+  availableOnly.value ? availableOnlySections(filterMatchedSections.value) : filterMatchedSections.value
+))
+const hiddenUnavailable = computed(() => (
+  availableOnly.value ? hiddenUnavailableCount(filterMatchedSections.value.flatMap(section => [...section.items])) : 0
+))
+// A chave aparece quando há o que esconder, ou quando já está ligada (para o
+// cliente poder desligar). Cardápio todo disponível e chave desligada: nada.
+const showAvailableOnlyToggle = computed(() => (
+  availableOnly.value || hiddenUnavailableCount(allItems.value) > 0
+))
+const availableOnlyFilterHint = computed(() => availableOnlyHint(availableOnly.value, hiddenUnavailable.value))
 const hiddenByDietaryCount = computed(() => {
   if (!dietaryFilterOn.value) return 0
   const hidden = new Set<string>()
@@ -117,7 +141,7 @@ const hiddenByDietaryCount = computed(() => {
 
 const filteredCount = computed(() => uniqueItemsBySku(activeSections.value.flatMap(section => [...section.items])).length)
 const sectionOptions = computed(() => {
-  const source = (hasAppliedFilters.value || dietaryFilterOn.value) ? activeSections.value : sections.value
+  const source = (hasAppliedFilters.value || dietaryFilterOn.value || availableOnly.value) ? activeSections.value : sections.value
   return source.map(section => ({
     ref: section.ref,
     label: collectionDisplayLabel(section),
@@ -239,8 +263,16 @@ const dietaryFilterHint = computed(() => {
     : `${hiddenByDietaryCount.value} itens escondidos por conflitarem com suas restrições.`
 })
 
-const menuFilterEmptyCopy = computed(() => (
-  dietaryFilterOn.value && !hasAppliedFilters.value
+const menuFilterEmptyCopy = computed(() => {
+  if (availableOnly.value && hiddenUnavailable.value > 0) {
+    return {
+      title: 'Nada disponível por aqui agora',
+      message: hiddenUnavailable.value === 1
+        ? '1 item indisponível está escondido.'
+        : `${hiddenUnavailable.value} itens indisponíveis estão escondidos.`
+    }
+  }
+  return dietaryFilterOn.value && !hasAppliedFilters.value
     ? {
         title: 'Nenhum item compatível nesta seção',
         message: 'Todos os itens desta seção conflitam com suas preferências. Desligue o filtro para vê-los.'
@@ -249,10 +281,11 @@ const menuFilterEmptyCopy = computed(() => (
         title: 'Nenhum item com esses filtros',
         message: 'Limpe os filtros para ver o cardápio inteiro.'
       }
-))
+})
 
 function clearAllMenuFilters () {
   dietaryFilterOn.value = false
+  if (availableOnly.value) setAvailableOnly(false)
   clearMenuFilters()
 }
 
@@ -588,6 +621,23 @@ useHead({
           </UiAlert>
 
           <section data-menu-results class="min-w-0 scroll-mt-40 space-y-4">
+            <!-- Mostrar só disponíveis: padrão da casa, chave do cliente. -->
+            <div
+              v-if="showAvailableOnlyToggle"
+              class="flex items-center justify-between gap-3 rounded-lg border bg-card p-3"
+              data-menu-available-only
+            >
+              <div class="min-w-0">
+                <p class="shop-body font-semibold">Mostrar só disponíveis</p>
+                <p class="shop-meta">{{ availableOnlyFilterHint }}</p>
+              </div>
+              <UiSwitch
+                :model-value="availableOnly"
+                aria-label="Mostrar só disponíveis"
+                @update:model-value="setAvailableOnly(Boolean($event))"
+              />
+            </div>
+
             <!-- Filtro de preferências (WP-5): off por padrão, transparente e
                  reversível; só aparece quando o cliente tem preferências ativas. -->
             <div
@@ -663,8 +713,22 @@ useHead({
                 <UiEmptyTitle>{{ menuFilterEmptyCopy.title }}</UiEmptyTitle>
                 <UiEmptyDescription>{{ menuFilterEmptyCopy.message }}</UiEmptyDescription>
               </UiEmptyHeader>
-              <div class="flex justify-center">
-                <UiButton variant="outline" data-menu-empty-clear @click="clearAllMenuFilters">Limpar filtros</UiButton>
+              <div class="flex flex-wrap justify-center gap-2">
+                <UiButton
+                  v-if="availableOnly && hiddenUnavailable > 0"
+                  data-menu-empty-show-unavailable
+                  @click="setAvailableOnly(false)"
+                >
+                  Mostrar indisponíveis
+                </UiButton>
+                <UiButton
+                  v-if="hasAppliedFilters || dietaryFilterOn"
+                  variant="outline"
+                  data-menu-empty-clear
+                  @click="clearAllMenuFilters"
+                >
+                  Limpar filtros
+                </UiButton>
               </div>
             </UiEmpty>
           </section>

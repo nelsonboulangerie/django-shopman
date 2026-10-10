@@ -75,6 +75,69 @@ describe("HubPushSettings", () => {
     expect(wrapper.find("[data-push-unavailable]").exists()).toBe(false);
   });
 
+  // A linha do rodapé da Central (prévia v4): o mesmo mecanismo, a mesma causa por
+  // extenso, e o conteúdo do cartão a um toque.
+  describe("variant=line", () => {
+    it("ativa direto da linha, só depois do toque", async () => {
+      const state = holder.state;
+      const wrapper = await mountSuspended(OperatorPushSettings, { props: { variant: "line" } });
+      expect(wrapper.get("[data-push-line-state]").text()).toContain("Avisos neste dispositivo: desligados.");
+      expect(state.activate).not.toHaveBeenCalled();
+      await wrapper.get("[data-activate-push]").trigger("click");
+      expect(state.activate).toHaveBeenCalledOnce();
+    });
+
+    it("sem chave de envio: a causa e a quem pedir, sem gesto de ativar", async () => {
+      const state = holder.state;
+      state.supported.value = false;
+      state.unavailableReason.value = "deploy";
+      const wrapper = await mountSuspended(OperatorPushSettings, { props: { variant: "line" } });
+      const line = wrapper.get("[data-push-unavailable='deploy']").text();
+      expect(line).toContain("o envio ainda não foi configurado nesta instalação");
+      expect(line).toContain("Peça a quem cuida do sistema");
+      expect(wrapper.find("[data-activate-push]").exists()).toBe(false);
+    });
+
+    // "recarregue ela" (onda da Central, 09/10/2026): a frase errava a gramática e não
+    // dizia onde ficam os ajustes. Agora diz o lugar exato e entrega o último gesto.
+    it("bloqueado pelo navegador: onde permitir, e o Recarregar à mão", async () => {
+      const state = holder.state;
+      state.permission.value = "denied";
+      const wrapper = await mountSuspended(OperatorPushSettings, { props: { variant: "line" } });
+      const line = wrapper.get("[data-push-line-state]").text();
+      expect(line).toBe(
+        "Avisos neste dispositivo: bloqueados pelo navegador. Permita as notificações nos ajustes do site (o ícone à esquerda do endereço) e toque em Recarregar.",
+      );
+      expect(line).not.toMatch(/recarregue|—/);
+      expect(wrapper.find("[data-activate-push]").exists()).toBe(false);
+      const reload = vi.fn();
+      vi.stubGlobal("location", { ...window.location, reload });
+      await wrapper.get("[data-push-reload]").trigger("click");
+      expect(reload).toHaveBeenCalledOnce();
+      vi.unstubAllGlobals();
+    });
+
+    it("ligado: o que chega e os dispositivos ficam a um toque, com as mesmas ações", async () => {
+      const state = holder.state;
+      const device = { id: 7, endpoint: "https://push.test/7", surface_ref: "hub", device_label: "iPhone", categories: ["order"] };
+      state.active.value = true;
+      state.devices.value = [device];
+      state.currentDevice.value = device;
+      const wrapper = await mountSuspended(OperatorPushSettings, { props: { variant: "line" } });
+
+      expect(wrapper.get("[data-push-line-state]").text()).toContain("ligados");
+      expect(wrapper.find("[data-push-details]").exists()).toBe(false);
+      const toggle = wrapper.get("[data-push-details-toggle]");
+      expect(toggle.attributes("aria-expanded")).toBe("false");
+      await toggle.trigger("click");
+      expect(wrapper.text()).toContain("O que chega aqui");
+      await wrapper.get('[role="checkbox"]').trigger("click");
+      expect(state.updateCategories).toHaveBeenCalledWith(device, []);
+      await wrapper.get("button.text-xs").trigger("click");
+      expect(state.removeDevice).toHaveBeenCalledWith(device);
+    });
+  });
+
   it("mostra categorias e permite remover um dispositivo", async () => {
     const state = holder.state;
     const device = { id: 7, endpoint: "https://push.test/7", surface_ref: "hub", device_label: "iPhone", categories: ["order"] };
@@ -90,8 +153,7 @@ describe("HubPushSettings", () => {
     // era lido como se fosse. Foi para o rodapé da home, com rótulo.
     expect(wrapper.text()).toContain(OPERATOR_APPS.hub.label);
     expect(wrapper.text()).not.toContain("local");
-    // Checkbox da casa (`UiCheckbox`), não o do sistema: é um botão com
-    // `role="checkbox"`, e desmarcar é o clique.
+    // Checkbox canônico do Nuxt UI, exposto pela API estável do kit.
     await wrapper.get('[role="checkbox"]').trigger("click");
     expect(state.updateCategories).toHaveBeenCalledWith(device, []);
     await wrapper.get("button.text-xs").trigger("click");

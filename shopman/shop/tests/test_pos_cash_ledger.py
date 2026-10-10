@@ -802,7 +802,12 @@ def test_venda_que_chega_depois_do_fechamento_grita_em_vez_de_evaporar(monkeypat
     #    contagem está congelada), mas nomeia o que conferir na gaveta.
     counter.shift.refresh_from_db()
     assert not counter.shift.is_open
-    nota = Entry.objects.get(shift=counter.shift, kind=Entry.Kind.NOTE)
+    # O fechamento também grava o veredito da tolerância (outra nota, só para
+    # quem audita); a nota da venda tardia é a que nomeia o pedido.
+    (nota,) = [
+        n for n in Entry.objects.filter(shift=counter.shift, kind=Entry.Kind.NOTE)
+        if (n.payload or {}).get("event") != "cash_tolerance"
+    ]
     assert nota.payload["order_ref"] == order.ref
     assert nota.payload["cash_q"] == 1200
     assert not counter.sale_lines()

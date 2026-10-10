@@ -135,12 +135,18 @@ def _resolve_category_id(item: ProjectedItem, cfg: dict) -> str:
     )
 
 
-def _item_payload(item: ProjectedItem, *, merchant_id: str, category_id: str) -> dict:
-    """Build the FullItemDto body for ``PUT /items`` from a ProjectedItem."""
+def _item_payload(
+    item: ProjectedItem, *, merchant_id: str, category_id: str, in_stock: bool = True,
+) -> dict:
+    """Build the FullItemDto body for ``PUT /items`` from a ProjectedItem.
+
+    ``in_stock`` é a resposta de :mod:`shopman.shop.services.external_availability`:
+    vendável zerado sai ``UNAVAILABLE``, e a pausa (``is_sellable``) continua vencendo.
+    """
     price = round(item.price_q / 100, 2)
     product_id = _product_uuid(merchant_id, item.sku)
     item_id = _item_uuid(merchant_id, item.sku)
-    available = item.is_published and item.is_sellable
+    available = item.is_published and item.is_sellable and in_stock
     return {
         "item": {
             "id": item_id,
@@ -183,14 +189,14 @@ def _headers(cfg: dict) -> tuple[dict | None, str]:
     return ifood_auth.headers_with_reason({"Content-Type": "application/json"})
 
 
-def _upsert_item(item: ProjectedItem, cfg: dict, headers: dict) -> None:
+def _upsert_item(item: ProjectedItem, cfg: dict, headers: dict, *, in_stock: bool = True) -> None:
     ensure_catalog_write_allowed(cfg)
     merchant_id = cfg["merchant_id"]
     category_id = _resolve_category_id(item, cfg)
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items"
     resp = requests.put(
         url,
-        json=_item_payload(item, merchant_id=merchant_id, category_id=category_id),
+        json=_item_payload(item, merchant_id=merchant_id, category_id=category_id, in_stock=in_stock),
         headers=headers,
         timeout=int(cfg.get("timeout") or 30),
     )
@@ -235,11 +241,19 @@ class IFoodCatalogProjection:
                 channel=channel,
             )
 
+        from shopman.shop.services import external_availability
+
         errors: list[str] = []
         projected = 0
         for item in items:
             try:
-                _upsert_item(item, cfg, headers)
+                # Estoque só se consulta para o que as flags já deixariam vender.
+                in_stock = (
+                    external_availability.in_stock(item.sku, channel_ref=channel)
+                    if item.is_published and item.is_sellable
+                    else True
+                )
+                _upsert_item(item, cfg, headers, in_stock=in_stock)
                 projected += 1
             except IFoodRateLimitError:
                 raise

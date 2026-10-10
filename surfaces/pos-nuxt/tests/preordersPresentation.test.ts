@@ -5,10 +5,22 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_MODE,
+  LAYOUT_OPTIONS,
+  canDropOn,
+  canMoveCard,
+  moveConfirmLabel,
+  moveDescription,
+  moveQuestion,
+  moveTargets,
+  parseLayout,
   NO_FILTERS,
+  QUICK_FILTERS,
+  filtersFromQuickKeys,
+  quickFilterItems,
+  quickKeysOf,
+  fromPanelFilters,
   NO_WINDOW_LABEL,
   balanceStandsOut,
-  barDimensions,
   canSearch,
   checkCount,
   checkPaymentNotice,
@@ -19,7 +31,6 @@ import {
   filterDays,
   filterDimensions,
   fromActiveFilters,
-  fromBarFilters,
   filterEmptyMessage,
   flattenDays,
   groupByWindow,
@@ -36,10 +47,10 @@ import {
   periodEmptyMessage,
   periodIsToday,
   periodParams,
+  periodSelectionOf,
   periodSummaryLabel,
   preorderCountLabel,
   printPlan,
-  railAriaLabel,
   railBadge,
   rowDetailLine,
   rowShowsSituation,
@@ -50,16 +61,14 @@ import {
   searchLimitNote,
   searchOpenEmptyMessage,
   searchOpenHeading,
-  shortcutChips,
   singleResult,
   situationTone,
-  toBarFilters,
   toReceiveLine,
   todayFacts,
   todayOf,
   todayPendingCount,
-  toggleShortcut,
   viewPath,
+  viewOfPeriod,
   viewQuery,
   type PreordersView,
 } from "../app/presentation/preorders";
@@ -113,7 +122,7 @@ function day(partial: Partial<PreorderDay> = {}): PreorderDay {
 }
 
 function view(partial: Partial<PreordersView> = {}): PreordersView {
-  return { mode: "week", date: HOJE, ...NO_FILTERS, q: "", completed: false, ...partial };
+  return { mode: "week", date: HOJE, to: "", ...NO_FILTERS, q: "", completed: false, ...partial };
 }
 
 // ── O estado na URL ─────────────────────────────────────────────────────────
@@ -172,8 +181,60 @@ describe("a semana começa na SEGUNDA (decisão do dono, 28/09)", () => {
   });
 
   it("o período pedido ao servidor: o dia pelas datas, a semana pela semana ISO", () => {
-    expect(periodParams({ mode: "day", date: "2026-10-01" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-01" });
-    expect(periodParams({ mode: "week", date: "2026-10-01" })).toEqual({ week: "2026-W40" });
+    expect(periodParams({ mode: "day", date: "2026-10-01", to: "" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-01" });
+    expect(periodParams({ mode: "week", date: "2026-10-01", to: "" })).toEqual({ week: "2026-W40" });
+  });
+});
+
+// ── O Período universal do kit ──────────────────────────────────────────────
+
+describe("o Período das Encomendas olha para a frente (e para trás, quando pedido)", () => {
+  it("o servidor recebe as datas de cada modo, dentro do teto", () => {
+    expect(periodParams({ mode: "next7d", date: HOJE, to: "" })).toEqual({ date_from: HOJE, date_to: "2026-10-04" });
+    expect(periodParams({ mode: "next28d", date: "2026-10-20", to: "" })).toEqual({ date_from: "2026-10-20", date_to: "2026-11-16" });
+    expect(periodParams({ mode: "7d", date: HOJE, to: "" })).toEqual({ date_from: "2026-09-22", date_to: HOJE });
+    expect(periodParams({ mode: "month", date: "2026-10-15", to: "" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-31" });
+    expect(periodParams({ mode: "custom", date: "2026-10-01", to: "2026-10-20", })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-20" });
+  });
+
+  it("a URL guarda o modo, a data e, no personalizado, o fim", () => {
+    const custom = view({ mode: "custom", date: "2026-10-01", to: "2026-10-20" });
+    expect(viewQuery(custom, HOJE)).toEqual({ mode: "custom", date: "2026-10-01", to: "2026-10-20" });
+    expect(parseView(viewQuery(custom, HOJE), HOJE)).toEqual(custom);
+    const ahead = view({ mode: "next7d" });
+    expect(viewQuery(ahead, HOJE)).toEqual({ mode: "next7d" });
+    expect(parseView(viewQuery(ahead, HOJE), HOJE)).toEqual(ahead);
+    // Personalizado sem o fim não é intervalo.
+    expect(parseView({ mode: "custom", date: "2026-10-01" }, HOJE)).toEqual(view({ date: "2026-10-01" }));
+    // O fim só vale no personalizado.
+    expect(parseView({ mode: "day", to: "2026-10-20" }, HOJE)).toEqual(view({ mode: "day" }));
+  });
+
+  it("a ponte com o controle vai e volta, e hoje é âncora vazia", () => {
+    expect(periodSelectionOf(view(), HOJE)).toEqual({ preset: "week", from: "", to: "" });
+    expect(periodSelectionOf(view({ date: "2026-10-01" }), HOJE)).toEqual({ preset: "week", from: "", to: "" });
+    expect(periodSelectionOf(view({ date: "2026-10-07" }), HOJE)).toEqual({ preset: "week", from: "2026-10-07", to: "" });
+    expect(periodSelectionOf(view({ mode: "next7d" }), HOJE)).toEqual({ preset: "next7d", from: "", to: "" });
+    expect(periodSelectionOf(view({ mode: "7d", date: "2026-09-20" }), HOJE)).toEqual({ preset: "7d", from: "", to: "2026-09-20" });
+    for (const state of [
+      view({ mode: "day", date: "2026-10-02" }),
+      view({ mode: "week", date: "2026-10-07" }),
+      view({ mode: "month", date: "2026-11-03" }),
+      view({ mode: "next14d", date: "2026-10-12" }),
+      view({ mode: "28d", date: "2026-09-01" }),
+      view({ mode: "custom", date: "2026-10-01", to: "2026-10-20" }),
+    ]) {
+      const back = viewOfPeriod(periodSelectionOf(state, HOJE), HOJE);
+      expect({ ...state, ...back }).toEqual(state);
+    }
+  });
+
+  it("as frases dizem o período, qualquer que seja", () => {
+    expect(periodEmptyMessage("month")).toBe("Nenhuma encomenda neste mês.");
+    expect(periodEmptyMessage("next7d")).toBe("Nenhuma encomenda neste período.");
+    expect(filterEmptyMessage("custom")).toBe("Nenhuma encomenda com estes filtros neste período.");
+    expect(periodSummaryLabel("month")).toBe("No mês");
+    expect(periodSummaryLabel("next28d")).toBe("No período");
   });
 });
 
@@ -426,66 +487,65 @@ describe("o selo da barra lateral", () => {
     const today = [card({ ref: "1" }), card({ ref: "2", situation: "out_for_delivery" }), card({ ref: "3", situation: "delivered" })];
     expect(todayPendingCount(list(today).days)).toBe(2);
     expect(railBadge(list(today))).toBe("2");
-    expect(railAriaLabel("2")).toBe("Encomendas: 2 para entregar hoje");
   });
 
   it("zero não é selo; sem resposta (403, carregando) também não", () => {
     expect(railBadge(list([card({ situation: "delivered" })]))).toBeUndefined();
     expect(railBadge(null)).toBeUndefined();
-    expect(railAriaLabel(undefined)).toBe("Encomendas");
   });
 });
 
-// ── Os recortes de um toque (P1 do dono, 02/10) ─────────────────────────────
+// ── O painel de filtros da suíte (fase 2) ───────────────────────────────────
 
-describe("os recortes de todo dia viram botões de um toque", () => {
-  const cards = [
-    card({ ref: "A" }),
-    card({ ref: "B", fulfillment_type: "delivery", payment_state: "paid", balance_q: 0, ticket_printed: true }),
-    card({ ref: "C", payment_state: "on_account", balance_q: 0 }),
-  ];
-
-  it("A receber, Sem Via Pedido, Retiradas, Entregas, com a contagem do que cada um mostraria", () => {
-    expect(shortcutChips(cards, NO_FILTERS).map((c) => [c.label, c.count, c.pressed])).toEqual([
-      ["A receber", 1, false],
-      ["Sem Via Pedido", 2, false],
-      ["Retiradas", 2, false],
-      ["Entregas", 1, false],
+describe("os recortes de todo dia são a faixa de filtros rápidos da suíte", () => {
+  it("A receber, Sem Via Pedido, Retiradas e Entregas, cada um numa dimensão da tela", () => {
+    expect(QUICK_FILTERS.map((quick) => [quick.key, quick.dimension, quick.value, quick.label])).toEqual([
+      ["to_receive", "pay", "to_receive", "A receber"],
+      ["unprinted", "print", "pending", "Sem Via Pedido"],
+      ["pickup", "fulfillment", "pickup", "Retiradas"],
+      ["delivery", "fulfillment", "delivery", "Entregas"],
     ]);
   });
 
-  it("botão que não mostraria nada some (zero não é código), a menos que esteja apertado", () => {
-    const deliveries = { ...NO_FILTERS, fulfillment: "delivery" as const };
-    const chips = shortcutChips(cards, deliveries);
-    // Entre as entregas, nenhuma a receber e nenhuma sem Via: os dois botões somem.
-    expect(chips.map((c) => [c.label, c.pressed])).toEqual([["Retiradas", false], ["Entregas", true]]);
+  it("a faixa lê e escreve o estado da tela: somam, e Retiradas e Entregas se excluem", () => {
+    expect(quickKeysOf({ fulfillment: "delivery", pay: "to_receive", print: "all" })).toEqual(["to_receive", "delivery"]);
+    const pickup = { ...NO_FILTERS, fulfillment: "pickup" as const };
+    expect(filtersFromQuickKeys(pickup, ["pickup", "delivery"])).toEqual({ ...NO_FILTERS, fulfillment: "delivery" });
+    expect(filtersFromQuickKeys(pickup, ["pickup", "to_receive"])).toEqual({ ...NO_FILTERS, fulfillment: "pickup", pay: "to_receive" });
+    expect(filtersFromQuickKeys(pickup, [])).toEqual(NO_FILTERS);
+    // O que a faixa não escreve (Pagas) fica como está.
+    expect(filtersFromQuickKeys({ ...NO_FILTERS, pay: "paid" }, ["unprinted"])).toEqual({ ...NO_FILTERS, pay: "paid", print: "pending" });
   });
 
-  it("apertar liga o recorte; apertar de novo volta a 'Todas' naquela dimensão", () => {
-    const on = toggleShortcut(NO_FILTERS, { dimension: "pay", value: "to_receive" });
-    expect(on).toEqual({ ...NO_FILTERS, pay: "to_receive" });
-    expect(toggleShortcut(on, { dimension: "pay", value: "to_receive" })).toEqual(NO_FILTERS);
-    // Retiradas e Entregas são a mesma dimensão: uma troca a outra.
-    const pickup = toggleShortcut(NO_FILTERS, { dimension: "fulfillment", value: "pickup" });
-    expect(toggleShortcut(pickup, { dimension: "fulfillment", value: "delivery" }).fulfillment).toBe("delivery");
+  it("a contagem de cada recorte é a do que ele mostraria com os outros como estão", () => {
+    const cards = [
+      { fulfillment_type: "delivery", payment_state: "to_receive", ticket_printed: false },
+      { fulfillment_type: "pickup", payment_state: "to_receive", ticket_printed: true },
+      { fulfillment_type: "delivery", payment_state: "paid", ticket_printed: true },
+    ] as Parameters<typeof quickFilterItems>[0];
+    expect(quickFilterItems(cards, NO_FILTERS).map((item) => [item.key, item.count]))
+      .toEqual([["to_receive", 2], ["unprinted", 1], ["pickup", 1], ["delivery", 2]]);
+    expect(quickFilterItems(cards, { ...NO_FILTERS, fulfillment: "delivery" }).map((item) => [item.key, item.count]))
+      .toEqual([["to_receive", 1], ["unprinted", 1], ["pickup", 1], ["delivery", 2]]);
   });
 
-  it("o 'Filtrar' fica para o resto: nem opção nem chip do que já tem botão", () => {
-    const dims = barDimensions(cards, NO_FILTERS);
-    expect(dims.map((d) => [d.id, d.options.map((o) => o.value)])).toEqual([["pay", ["paid", "on_account"]]]);
-    expect(toBarFilters({ fulfillment: "delivery", pay: "to_receive", print: "pending" })).toEqual({});
-    expect(toBarFilters({ ...NO_FILTERS, pay: "paid" })).toEqual({ pay: ["paid"] });
-  });
-
-  it("o que a barra devolve não apaga o botão apertado de outra dimensão", () => {
+  it("o painel devolve dois valores numa dimensão: na tela fica um só, e o novo vence", () => {
+    const pickup = { ...NO_FILTERS, fulfillment: "pickup" as const };
+    // Retiradas apertado, toca Entregas: o painel devolve as duas, a tela fica com Entregas.
+    expect(fromPanelFilters(pickup, { fulfillment: ["pickup", "delivery"] }).fulfillment).toBe("delivery");
+    // Tocar de novo no que está ligado desliga (a dimensão volta a "Todas").
+    expect(fromPanelFilters(pickup, {})).toEqual(NO_FILTERS);
+    // O resto não muda: o X de um chip só tira a dimensão dele.
     const current = { fulfillment: "delivery" as const, pay: "paid" as const, print: "pending" as const };
-    // X do chip "Pagamento: Pagas": só o Pagamento volta a "Todas".
-    expect(fromBarFilters(current, {})).toEqual({ fulfillment: "delivery", pay: "all", print: "pending" });
-    // Escolher "Na conta da casa" no Filtrar troca o Pagamento, e o resto fica.
-    expect(fromBarFilters(current, { pay: ["on_account"] })).toEqual({ fulfillment: "delivery", pay: "on_account", print: "pending" });
-    // Com "A receber" apertado, escolher "Pagas" no Filtrar troca o recorte (mesma dimensão).
-    expect(fromBarFilters({ ...NO_FILTERS, pay: "to_receive" }, { pay: ["paid"] }).pay).toBe("paid");
-    expect(fromBarFilters({ ...NO_FILTERS, pay: "to_receive" }, {}).pay).toBe("to_receive");
+    expect(fromPanelFilters(current, { fulfillment: ["delivery"], print: ["pending"] }))
+      .toEqual({ fulfillment: "delivery", pay: "all", print: "pending" });
+    // Valor desconhecido cai em "Todas", nunca em erro.
+    expect(fromPanelFilters(NO_FILTERS, { pay: ["inventado"] }).pay).toBe("all");
+  });
+
+  it("o estado da tela vira o do painel, e só o que não é 'Todas' conta como recorte", () => {
+    expect(toActiveFilters({ fulfillment: "delivery", pay: "to_receive", print: "all" }))
+      .toEqual({ fulfillment: ["delivery"], pay: ["to_receive"] });
   });
 });
 
@@ -576,5 +636,54 @@ describe("a linha da encomenda: uma forma só", () => {
     expect(rowShowsSituation("ready")).toBe(true);
     expect(rowShowsSituation("out_for_delivery")).toBe(true);
     expect(rowShowsSituation("delivered")).toBe(true);
+  });
+});
+
+describe("OBS0310-D: grade ou lista, e mudar de dia", () => {
+  it("a arrumação guardada no dispositivo: só 'list' vira lista; o resto é a grade", () => {
+    expect(parseLayout("list")).toBe("list");
+    expect(parseLayout("grid")).toBe("grid");
+    expect(parseLayout(null)).toBe("grid");
+    expect(parseLayout("tabela")).toBe("grid");
+    expect(LAYOUT_OPTIONS.map((option) => option.label)).toEqual(["Ver em grade", "Ver em lista"]);
+  });
+
+  it("pega-se o que ainda pode mudar de data; o pronto, o que saiu e o entregue não", () => {
+    expect(canMoveCard({ situation: "to_pay" })).toBe(true);
+    expect(canMoveCard({ situation: "paid" })).toBe(true);
+    expect(canMoveCard({ situation: "check_payment" })).toBe(true);
+    expect(canMoveCard({ situation: "ready" })).toBe(false);
+    expect(canMoveCard({ situation: "out_for_delivery" })).toBe(false);
+    expect(canMoveCard({ situation: "delivered" })).toBe(false);
+  });
+
+  it("solta-se em outro dia, de hoje em diante; o próprio dia e o passado não aceitam", () => {
+    const card = { commitment_date: "2026-10-05", situation: "to_pay" as const };
+    expect(canDropOn("2026-10-06", card, "2026-10-03")).toBe(true);
+    expect(canDropOn("2026-10-03", card, "2026-10-03")).toBe(true);
+    expect(canDropOn("2026-10-05", card, "2026-10-03")).toBe(false);
+    expect(canDropOn("2026-10-02", card, "2026-10-03")).toBe(false);
+    expect(canDropOn("2026-10-06", { ...card, situation: "ready" }, "2026-10-03")).toBe(false);
+  });
+
+  it("o menu do card oferece os mesmos dias que o arrasto aceita", () => {
+    const days = ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01"].map((date, index) => ({
+      date, is_today: index === 1, weekday_display: ["seg", "ter", "qua", "qui"][index]!, day_display: `${date.slice(8)}/${date.slice(5, 7)}`,
+    }));
+    const targets = moveTargets(days, { commitment_date: "2026-09-30", situation: "to_pay" }, "2026-09-29");
+    expect(targets).toEqual([
+      { date: "2026-09-29", label: "Hoje, ter 29/09" },
+      { date: "2026-10-01", label: "Qui 01/10" },
+    ]);
+  });
+
+  it("a pergunta diz quem, para quando, e que o cliente será avisado", () => {
+    expect(moveQuestion("Maria", "qui, 09/10")).toBe("Mudar a encomenda de Maria para qui, 09/10?");
+    expect(moveQuestion("Maria", "Amanhã")).toBe("Mudar a encomenda de Maria para amanhã?");
+    expect(moveQuestion("  ", "Hoje")).toBe("Mudar a encomenda para hoje?");
+    expect(moveDescription("A partir das 9h")).toBe("O cliente será avisado da nova data. O horário combinado continua: a partir das 9h.");
+    expect(moveDescription("")).toBe("O cliente será avisado da nova data.");
+    expect(moveConfirmLabel("qui, 09/10")).toBe("Mudar para qui, 09/10");
+    expect(moveConfirmLabel("Amanhã")).toBe("Mudar para amanhã");
   });
 });

@@ -90,7 +90,12 @@ export function useOperatorLock(perm: string) {
   // O operador foi resetado pelo gerente (PIN temporário) → força a troca.
   const mustChange = computed(() => Boolean(session.value?.pin_must_change));
 
-  const eligible = ref<OperatorCard[]>([]);
+  // A lista de quem destrava sobrevive entre aberturas da trava (por permissão).
+  // Era um `ref` novo a cada montagem: a trava subia VAZIA, o teclado de
+  // identificação só montava quando a busca voltava, e o que se digitava nesse
+  // meio-tempo caía no chão. Agora a segunda trava em diante abre com a lista
+  // de antes, já ouvindo, e a busca só a atualiza.
+  const eligible = useState<OperatorCard[]>(`operator-eligible:${perm}`, () => []);
   async function loadEligible(): Promise<void> {
     try {
       const res = await $fetch<OperatorEligibleResponse>(

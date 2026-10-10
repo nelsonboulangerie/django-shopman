@@ -92,6 +92,41 @@ export function filterProducts(
   return exact.concat(wordStart, contains);
 }
 
+// ── Ocultar indisponíveis ──────────────────────────────────────────────────
+// Preferência de EXIBIÇÃO do dispositivo, não regra de disponibilidade: o
+// produto inerte (esgotado ou sem preço, o mesmo critério do selo do tile) sai
+// da grade, e só. Padrão = mostrar, porque sumir da grade faz o operador
+// procurar um botão que "sumiu"; quem quer a grade enxuta liga no olho.
+
+export const HIDE_UNAVAILABLE_STORAGE_KEY = "pos.hideUnavailable";
+
+/** O produto não pode entrar no pedido agora (mesmo critério do selo do tile). */
+export function isUnavailableProduct(
+  product: Pick<POSProductProjection, "price_q" | "sold_out" | "sold_out_reason">,
+): boolean {
+  return Boolean(productBlockedLabel(product));
+}
+
+/** Tira os indisponíveis quando `hide` está ligado, e diz quantos saíram. */
+export function hideUnavailableProducts(
+  products: POSProductProjection[],
+  hide: boolean,
+): { products: POSProductProjection[]; hiddenCount: number } {
+  if (!hide) return { products, hiddenCount: 0 };
+  const visible = products.filter((product) => !isUnavailableProduct(product));
+  return { products: visible, hiddenCount: products.length - visible.length };
+}
+
+/** "1 indisponível oculto" / "3 indisponíveis ocultos". */
+export function hiddenUnavailableLabel(count: number): string {
+  return count === 1 ? "1 indisponível oculto" : `${count} indisponíveis ocultos`;
+}
+
+/** Só "1" liga; qualquer outra coisa (vazio, storage bloqueado) é o padrão: mostrar. */
+export function parseHideUnavailable(raw: unknown): boolean {
+  return raw === "1";
+}
+
 /**
  * O produto que o Enter adiciona a partir da busca: o PRIMEIRO resultado
  * DISPONÍVEL na ordem do filtro (esgotado não entra na comanda — pula). Com um
@@ -116,6 +151,21 @@ export function enterTargetProduct(
 export function productFallbackStyle(product: POSProductProjection): Record<string, string> {
   const color = (product.collection_color || "").trim();
   return color ? { "--tile-color": color } : {};
+}
+
+/**
+ * A cor de cada coleção, para o ponto do chip na grade (v4). A coleção não traz cor
+ * na Projection; os produtos dela trazem (`collection_color`, a mesma do tile), e a
+ * primeira configurada vale. Coleção sem cor fica fora do mapa (o chip cai no neutro).
+ */
+export function collectionColorMap(products: POSProductProjection[]): Map<string, string> {
+  const colors = new Map<string, string>();
+  for (const product of products) {
+    const ref = product.collection_ref || "";
+    const color = (product.collection_color || "").trim();
+    if (ref && color && !colors.has(ref)) colors.set(ref, color);
+  }
+  return colors;
 }
 
 /**
@@ -217,4 +267,40 @@ export function gridEntries(
     entries.push({ kind: "group", key: `group:${name}`, group: choiceGroup(name, members) });
   }
   return entries;
+}
+
+/** O chip "Favoritos" (v4 tablet): o primeiro da fila no toque, e o ligado ao abrir. */
+export const FAVORITES_COLLECTION = "__favoritos__";
+
+/** Os produtos das coleções favoritas do terminal, na ordem da grade. */
+export function favoriteProducts(
+  products: POSProductProjection[],
+  favoriteRefs: string[],
+): POSProductProjection[] {
+  const refs = new Set(favoriteRefs);
+  return products.filter((product) => refs.has(product.collection_ref));
+}
+
+export interface TabMatchSource {
+  ref: string;
+  display_ref: string;
+  customer_name: string;
+  state: string;
+}
+
+/**
+ * A busca da venda é "produto, código, comanda ou cliente" (v4): o que ela acha
+ * de COMANDA vem daqui. Só comanda em uso (a livre se abre pelo quadro), casando
+ * o número, o nome ("Mesa 6") ou o cliente dela. A comanda aberta agora fica de
+ * fora: ela já é a tela.
+ */
+export function matchOpenTabs<T extends TabMatchSource>(tabs: T[], query: string, currentRef = ""): T[] {
+  const normalized = normalizeSearchText((query || "").trim().replace(/^#/, ""));
+  if (!normalized) return [];
+  return tabs
+    .filter((tab) => tab.state === "in_use" && tab.ref !== currentRef)
+    .filter((tab) => [tab.ref, tab.display_ref, tab.customer_name]
+      .map((value) => normalizeSearchText(value || ""))
+      .some((value) => Boolean(value) && (value.startsWith(normalized) || matchesWordStart(value, normalized))))
+    .slice(0, 4);
 }

@@ -189,7 +189,9 @@ def shop_display_name() -> str:
 
 
 def ticket_bytes(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
-    """Os bytes de UMA filipeta, com o QR do acompanhamento já resolvido.
+    """Os bytes da filipeta, com o QR do acompanhamento já resolvido.
+
+    Com mais de um volume declarado, sai uma via por volume ("Volume k de N").
 
     O QR aponta para o acompanhamento do pedido na LOJA e não para uma tela de
     operador: a filipeta pode acompanhar a sacola, e no pedido de link em aberto
@@ -201,12 +203,22 @@ def ticket_bytes(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     from shopman.shop.services.storefront_links import order_tracking_url, storefront_base_url
 
     tracking_url = order_tracking_url(order.ref) if storefront_base_url() else ""
-    return order_ticket(
-        order,
-        shop_name=shop_name or shop_display_name(),
-        tracking_url=tracking_url,
-        reprint=reprint,
+    name = shop_name or shop_display_name()
+    total = declared_volumes(order)
+    if total <= 1:
+        return order_ticket(order, shop_name=name, tracking_url=tracking_url, reprint=reprint)
+    # Mais de um volume declarado: uma via por volume, cada uma com "Volume k de
+    # N" (a ficha vai grampeada na sacola; cada sacola leva a sua).
+    return b"".join(
+        order_ticket(order, shop_name=name, tracking_url=tracking_url, reprint=reprint, volume=(k, total))
+        for k in range(1, total + 1)
     )
+
+
+def declared_volumes(order) -> int:
+    """Os volumes declarados por quem embalou (``Order.data["volumes"]``), ou 0."""
+    value = (order.data or {}).get("volumes")
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
 
 
 def courier_ticket_bytes(order, *, shop_name: str = "", reprint: bool = False) -> bytes:

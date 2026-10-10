@@ -797,7 +797,7 @@ if LoyaltyAccount is not None:
 
         @display(description=_("Carimbos"))
         def stamps_progress(self, obj):
-            return f"{obj.stamps_current}/{obj.stamps_target} ({obj.stamps_progress_percent}%) — {obj.stamps_completed} completas"
+            return f"{obj.stamps_current}/{obj.stamps_target} ({obj.stamps_progress_percent}%), {obj.stamps_completed} completas"
 
         @display(description=_("Ativo"), boolean=True)
         def is_active_badge(self, obj):

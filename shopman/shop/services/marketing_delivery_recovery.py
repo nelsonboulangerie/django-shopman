@@ -44,6 +44,8 @@ from shopman.shop.services.marketing_contracts import (
     ensure_delivery_transition,
 )
 
+#: Quem pede a consulta automática do resultado incerto (sem pessoa por trás).
+SYSTEM_RECONCILIATION_ACTOR = "system:marketing-reconciliation"
 RECONCILIATION_RETRY_SECONDS = 30
 DEFAULT_RECONCILIATION_LIMIT = 100
 DEFAULT_RECONCILIATION_LEASE_SECONDS = 60
@@ -349,6 +351,200 @@ def request_reconciliation_command(
         request_id=request_id,
     )
     return _command_result(execution, "lookup_count")
+
+
+def request_automatic_reconciliations(
+    *,
+    platforms,
+    now: datetime | None = None,
+    limit: int = DEFAULT_RECONCILIATION_LIMIT,
+) -> int:
+    """Pedir, sem operador, a consulta de cada tentativa incerta. Só leitura.
+
+    Decisão do dono (03/10/2026, SUITE-UX §5.1): o Marketing confere o incerto
+    sozinho. A guarda é a mesma do comando do operador: a consulta nunca reenvia,
+    e um resultado ``unknown`` nunca volta para a fila de envio.
+
+    Cada tentativa incerta recebe **uma** consulta automática, e só uma: se uma
+    reconciliação qualquer já apontou para aquela tentativa (pendente, reservada
+    ou concluída, pedida pelo sistema ou por uma pessoa), o sistema não pede de
+    novo. Sem isso, um provedor que responde "não sei" na consulta faria o
+    worker consultar o mesmo destino a cada ciclo, para sempre. Depois da
+    consulta automática, pedir de novo é gesto do operador (o comando de sempre).
+
+    ``platforms`` são as plataformas que têm quem consulte neste ciclo (o
+    provedor registrado). Plataforma desligada não ganha consulta automática:
+    ela ficaria adiada a cada passada sem nunca poder ler nada.
+
+    Devolve quantas consultas novas foram enfileiradas.
+    """
+
+    clock = _aware_now(now)
+    safe_limit = max(1, min(int(limit), 1_000))
+    lookup_platforms = _platforms(platforms)
+    if not lookup_platforms:
+        return 0
+    candidates = list(
+        DeliveryTarget.objects.filter(
+            state=DeliveryTarget.State.UNKNOWN,
+            platform__in=lookup_platforms,
+            attempts__state=DeliveryAttempt.State.COMPLETED,
+            attempts__outcome_kind=ProviderOutcomeKind.UNKNOWN.value,
+        )
+        .values_list("announcement_id", flat=True)
+        .distinct()
+        .order_by("announcement_id")
+    )
+    queued = 0
+    for announcement_id in candidates:
+        if queued >= safe_limit:
+            break
+        queued += _request_automatic_reconciliation(
+            announcement_id,
+            platforms=lookup_platforms,
+            now=clock,
+            limit=safe_limit - queued,
+        )
+    return queued
+
+
+def _request_automatic_reconciliation(
+    announcement_id: int,
+    *,
+    platforms: tuple[str, ...],
+    now: datetime,
+    limit: int,
+) -> int:
+    from shopman.shop.services.marketing_commands import command_fingerprints
+
+    with transaction.atomic():
+        announcement = (
+            Announcement.objects.select_for_update()
+            .filter(pk=announcement_id)
+            .first()
+        )
+        if announcement is None:
+            return 0
+        unknown_targets = list(
+            DeliveryTarget.objects.select_for_update()
+            .filter(
+                announcement=announcement,
+                state=DeliveryTarget.State.UNKNOWN,
+                platform__in=platforms,
+            )
+            .order_by("platform", "pk")
+        )
+        if not unknown_targets:
+            return 0
+        target_ids = [target.pk for target in unknown_targets]
+        latest_unknown_attempts: dict[int, DeliveryAttempt] = {}
+        for attempt in (
+            DeliveryAttempt.objects.filter(
+                target_id__in=target_ids,
+                state=DeliveryAttempt.State.COMPLETED,
+                outcome_kind=ProviderOutcomeKind.UNKNOWN.value,
+            )
+            .order_by("target_id", "-ordinal")
+        ):
+            latest_unknown_attempts.setdefault(attempt.target_id, attempt)
+        active_target_ids = set(
+            DeliveryReconciliation.objects.filter(
+                target_id__in=target_ids,
+                state__in=(
+                    DeliveryReconciliation.State.PENDING,
+                    DeliveryReconciliation.State.CLAIMED,
+                ),
+            ).values_list("target_id", flat=True)
+        )
+        already_looked_up_attempt_ids = set(
+            DeliveryReconciliation.objects.filter(
+                attempt_id__in=[
+                    attempt.pk for attempt in latest_unknown_attempts.values()
+                ],
+            ).values_list("attempt_id", flat=True)
+        )
+        eligible = [
+            target
+            for target in unknown_targets
+            if target.pk in latest_unknown_attempts
+            and target.pk not in active_target_ids
+            and latest_unknown_attempts[target.pk].pk
+            not in already_looked_up_attempt_ids
+        ][:limit]
+        if not eligible:
+            return 0
+
+        selection_hash = _selection_hash(eligible)
+        affected_platforms = _target_platforms(eligible)
+        base_version = announcement.version
+        resource_ref = f"announcement:{announcement.pk}"
+        payload = {"platforms": list(affected_platforms)}
+        key_hash, payload_hash = command_fingerprints(
+            kind=MarketingCommandReceipt.Kind.RECONCILE_DELIVERY,
+            resource_ref=resource_ref,
+            idempotency_key=(
+                f"marketing-auto-reconcile:{announcement.pk}:{selection_hash}"
+            ),
+            base_version=base_version,
+            payload=payload,
+        )
+        if MarketingCommandReceipt.objects.filter(
+            actor__isnull=True,
+            actor_ref=SYSTEM_RECONCILIATION_ACTOR,
+            idempotency_key_hash=key_hash,
+        ).exists():
+            return 0
+        receipt = MarketingCommandReceipt.objects.create(
+            kind=MarketingCommandReceipt.Kind.RECONCILE_DELIVERY,
+            state=MarketingCommandReceipt.State.ACCEPTED,
+            announcement=announcement,
+            resource_ref=resource_ref,
+            actor=None,
+            actor_ref=SYSTEM_RECONCILIATION_ACTOR,
+            idempotency_key_hash=key_hash,
+            payload_hash=payload_hash,
+            base_version=base_version,
+            request_id="",
+            retention_until=now + APPROVAL_RECORD_RETENTION,
+        )
+        DeliveryReconciliation.objects.bulk_create([
+            DeliveryReconciliation(
+                command=receipt,
+                target=target,
+                attempt=latest_unknown_attempts[target.pk],
+                available_at=now,
+                retention_until=now + APPROVAL_RECORD_RETENTION,
+            )
+            for target in eligible
+        ])
+        outcome = {
+            "lookup_count": len(eligible),
+            "platforms": list(affected_platforms),
+            "selection_hash": selection_hash,
+        }
+        _audit(
+            event_type=MarketingAuditEvent.EventType.RECONCILIATION_REQUESTED,
+            receipt=receipt,
+            announcement=announcement,
+            reason_code="automatic_reconcile_unknown",
+            facts=outcome,
+            now=now,
+        )
+        # Mesmo contrato do comando do operador: todo recibo concluído avança a
+        # versão, e o evento de auditoria acima já registrou ``versão + 1``.
+        announcement.version += 1
+        announcement.save(update_fields=["version"])
+        receipt.state = MarketingCommandReceipt.State.COMPLETED
+        receipt.outcome = outcome
+        receipt.resulting_version = announcement.version
+        receipt.completed_at = now
+        receipt.save(update_fields=[
+            "state",
+            "outcome",
+            "resulting_version",
+            "completed_at",
+        ])
+        return len(eligible)
 
 
 def claim_reconciliations(

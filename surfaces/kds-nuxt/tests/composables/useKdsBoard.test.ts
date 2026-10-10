@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises } from "@vue/test-utils";
+import { ref } from "vue";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
-import { KDS_ALERT, kdsAttentionDecision, useKdsBoard } from "~/composables/useKdsBoard";
+import { KDS_ALERT, kdsAttentionDecision, kdsAttentionIds, useKdsBoard } from "~/composables/useKdsBoard";
 import { boardView } from "~/presentation/board";
 import type { KDSBoardProjection, KDSTicketProjection } from "~/types/kds";
 
 const env = installNuxtGlobals();
+// A sessão do operador que o shell já buscou (chave `operator-session`): quem age.
+const operatorSession = ref<{ operator: { id: number } | null } | null>({ operator: { id: 42 } });
+vi.stubGlobal("useNuxtData", () => ({ data: operatorSession }));
 
 function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
   return {
@@ -29,14 +33,23 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     ],
     status: "in_progress",
     previous_tab_ref: "",
-    is_scheduled: false,
-    is_expedition: false,
     status_label: "",
     is_cancelled: false,
     cancelled_at_display: "",
     completed_at_display: "",
     kitchen_note: "",
     customer_note: "",
+    test_order_label: "",
+    finish_block_label: "",
+    finish_block_reason: "",
+    volumes: 0,
+    volumes_order_ref: "",
+    volumes_revision: "",
+    started_by: "",
+    started_at_display: "",
+    is_preorder: false,
+    due_time_display: "",
+    seen: false,
     ...over,
   };
 }
@@ -47,15 +60,12 @@ function board(over: Record<string, unknown> = {}) {
       instance_ref: "bancada",
       instance_name: "Bancada",
       instance_type: "prep",
-      is_expedition: false,
       tickets: [ticket()],
       counts: { total: 1 },
-      service_date: "2026-09-15",
-      service_date_display: "Hoje",
-      today: "2026-09-15",
-      available_dates: ["2026-09-15"],
       cancelled_tickets: [],
       recent_done: [],
+      density: "cozy",
+      sound_enabled: true,
       ...over,
     },
   };
@@ -142,7 +152,46 @@ describe("useKdsBoard — start (optimistic + rollback)", () => {
   });
 });
 
-describe("useKdsBoard — finalize com janela de desfazer", () => {
+describe("useKdsBoard: quem embalou declara os volumes na estação", () => {
+  beforeEach(() => env.reset());
+
+  it("usa a porta do Gestor com o protocolo de intenção e diz que veio da Cozinha", async () => {
+    const t = ticket({ volumes: 0, volumes_order_ref: "WEB-261004-0007", volumes_revision: "rev-1" });
+    env.fetchData.value = board({ tickets: [t] });
+    const { declareVolumes } = useKdsBoard("bancada");
+    expect(await declareVolumes(t, 3)).toBe(true);
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/orders/WEB-261004-0007/volumes/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          volumes: 3, surface: "kds", expected_actor_id: 42, base_revision: "rev-1", idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+    expect(env.refresh).toHaveBeenCalled();
+  });
+
+  it("ticket de comanda (sem pedido) não declara", async () => {
+    const t = ticket({ volumes_order_ref: "", volumes_revision: "" });
+    env.fetchData.value = board({ tickets: [t] });
+    const { declareVolumes } = useKdsBoard("bancada");
+    expect(await declareVolumes(t, 2)).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("recusa do servidor avisa e relê", async () => {
+    const t = ticket({ volumes_order_ref: "WEB-1", volumes_revision: "rev" });
+    env.fetchData.value = board({ tickets: [t] });
+    env.fetchMock.mockRejectedValueOnce({ status: 409, data: { detail: "Os volumes deste pedido mudaram." } });
+    const { declareVolumes } = useKdsBoard("bancada");
+    expect(await declareVolumes(t, 2)).toBe(false);
+    expect(env.sonner.error).toHaveBeenCalled();
+    expect(env.refresh).toHaveBeenCalled();
+  });
+});
+
+describe("useKdsBoard — finish com janela de desfazer", () => {
   beforeEach(() => {
     env.reset();
     vi.useFakeTimers();
@@ -151,8 +200,8 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
 
   it("tira o card do TRABALHO na hora, mas o deixa na grade, e só POSTa quando a janela fecha", async () => {
     env.fetchData.value = board();
-    const { finalize, view } = useKdsBoard("bancada");
-    finalize(1);
+    const { finish, view } = useKdsBoard("bancada");
+    finish(1);
     // O card fica desenhado: é ele que carrega o "Desfazer", onde o dedo tocou.
     expect(view.value?.cards).toHaveLength(1);
     expect(view.value?.finishingPks.has(1)).toBe(true);
@@ -174,8 +223,8 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
 
   it("Desfazer devolve o card ao trabalho e nada vai ao servidor", async () => {
     env.fetchData.value = board();
-    const { finalize, undoFinish, view } = useKdsBoard("bancada");
-    finalize(1);
+    const { finish, undoFinish, view } = useKdsBoard("bancada");
+    finish(1);
     undoFinish(1);
     expect(view.value?.cards).toHaveLength(1);
     expect(view.value?.finishingPks.has(1)).toBe(false);
@@ -187,8 +236,8 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
 
   it("um refresh durante a janela não devolve o card ao trabalho", () => {
     env.fetchData.value = board();
-    const { finalize, view } = useKdsBoard("bancada");
-    finalize(1);
+    const { finish, view } = useKdsBoard("bancada");
+    finish(1);
     env.fetchData.value = board(); // poll/SSE trouxe o servidor, que ainda o tem aberto
     expect(view.value?.finishingPks.has(1)).toBe(true);
     expect(view.value?.total).toBe(0);
@@ -197,8 +246,8 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
   it("recusa do servidor devolve o card ao trabalho e avisa", async () => {
     env.fetchData.value = board();
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "Há item cancelado" } });
-    const { finalize, view } = useKdsBoard("bancada");
-    finalize(1);
+    const { finish, view } = useKdsBoard("bancada");
+    finish(1);
     vi.advanceTimersByTime(5000);
     await flushPromises();
     expect(view.value?.cards).toHaveLength(1);
@@ -209,17 +258,6 @@ describe("useKdsBoard — finalize com janela de desfazer", () => {
 
 describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
   beforeEach(() => env.reset());
-
-  it("expedite POSTs the action to the expedition endpoint", async () => {
-    env.fetchData.value = board();
-    const { expedite } = useKdsBoard("bancada");
-    expedite(1, "dispatch");
-    await flushPromises();
-    expect(env.fetchMock).toHaveBeenCalledWith(
-      "/api/v1/backstage/kds/expedition/1/action/",
-      expect.objectContaining({ body: { action: "dispatch" } }),
-    );
-  });
 
   it("recall acts on the recent_done list", async () => {
     env.fetchData.value = board({
@@ -264,70 +302,73 @@ describe("useKdsBoard — card actions (optimistic remove + rollback)", () => {
     expect(env.sonner.error).toHaveBeenCalled();
   });
 
-  it("future boards are read-only for every mutation path", async () => {
-    env.fetchData.value = board({
-      service_date: "2026-09-16",
-      tickets: [ticket()],
-      recent_done: [ticket({ pk: 9, status: "done" })],
-      cancelled_tickets: [ticket({ pk: 7, status: "cancelled", is_cancelled: true })],
-    });
-    const { readOnly, start, finalize, expedite, recall, acknowledge, view } = useKdsBoard("bancada");
-
-    expect(readOnly.value).toBe(true);
-    start(1);
-    finalize(1);
-    expedite(1, "dispatch");
-    recall(9);
-    acknowledge(7);
-    await flushPromises();
-
-    expect(env.fetchMock).not.toHaveBeenCalled();
-    expect((env.fetchData.value as any).board.tickets).toHaveLength(1);
-    expect((env.fetchData.value as any).board.tickets[0].status).toBe("in_progress");
-    expect(view.value?.cards).toHaveLength(1);
-    expect(env.sonner.success).not.toHaveBeenCalled();
-  });
 });
 
-describe("useKdsBoard — sound preference", () => {
+describe("useKdsBoard — o som é da estação (v4 nota 1)", () => {
   beforeEach(() => env.reset());
 
-  it("toggleSound flips the on/off state", () => {
-    env.fetchData.value = board();
-    const { soundOn, toggleSound } = useKdsBoard("bancada");
-    expect(soundOn.value).toBe(true);
-    toggleSound();
+  it("o som segue o cadastro da estação, não a lembrança do dispositivo", async () => {
+    env.fetchData.value = board({ sound_enabled: false });
+    const { soundOn, board: projected } = useKdsBoard("bancada");
     expect(soundOn.value).toBe(false);
+    projected.value!.sound_enabled = true; // o SSE trouxe o cadastro novo
+    await flushPromises();
+    expect(soundOn.value).toBe(true);
   });
 });
 
-describe("useKdsBoard — atenção por ticket e data", () => {
-  const view = () => boardView(board().board as KDSBoardProjection);
+describe("useKdsBoard — Visto da estação no servidor (K20)", () => {
+  beforeEach(() => env.reset());
 
-  it("avisa na primeira abertura quando já existe trabalho de hoje", () => {
-    expect(kdsAttentionDecision(view(), new Set(), "").shouldAlert).toBe(true);
+  it("Visto grava no servidor os tickets que pediam atenção e cala esta tela na hora", async () => {
+    env.fetchData.value = board({
+      tickets: [ticket({ pk: 1, status: "pending" }), ticket({ pk: 2, status: "pending", seen: true })],
+      cancelled_tickets: [ticket({ pk: 7, status: "cancelled", is_cancelled: true })],
+    });
+    const { acknowledgeAttention, attentionKeys, attentionPending } = useKdsBoard("bancada");
+    // A atenção só arma depois de montar (client-only); o harness monta na criação.
+    attentionKeys.value = ["active:1", "cancelled:7"];
+    acknowledgeAttention();
+    expect(attentionPending.value).toBe(false);
+    expect((env.fetchData.value as any).board.tickets[0].seen).toBe(true);
+    await flushPromises();
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/kds/bancada/seen/",
+      expect.objectContaining({ method: "POST", body: { ticket_pks: [1, 7] } }),
+    );
   });
 
-  it("não repete depois que os mesmos tickets foram vistos", () => {
-    const decision = kdsAttentionDecision(view(), new Set(["active:1"]), "active:1");
-    expect(decision.shouldAlert).toBe(false);
-    expect(decision.shouldStop).toBe(true);
+  it("iniciar também é ver: o ticket iniciado deixa de pedir atenção", () => {
+    env.fetchData.value = board({ tickets: [ticket({ pk: 1, status: "pending" })] });
+    const { start } = useKdsBoard("bancada");
+    start(1);
+    expect((env.fetchData.value as any).board.tickets[0].seen).toBe(true);
+  });
+});
+
+describe("useKdsBoard — atenção por ticket, vista pela estação", () => {
+  const view = (over: Record<string, unknown> = {}) => boardView(board(over).board as KDSBoardProjection);
+
+  it("avisa na primeira abertura quando há ticket que ninguém da estação viu", () => {
+    expect(kdsAttentionDecision(view(), "").shouldAlert).toBe(true);
+  });
+
+  it("não repete o que esta tela já anunciou; cala quando alguém da estação dá Visto", () => {
+    expect(kdsAttentionDecision(view(), "active:1").shouldAlert).toBe(false);
+    const seen = view({ tickets: [ticket({ seen: true })] });
+    expect(kdsAttentionDecision(seen, "active:1")).toEqual({ signature: "", shouldAlert: false, shouldStop: true });
   });
 
   it("avisa quando a identidade muda mesmo que o total continue igual", () => {
-    const current = view();
-    current.cards = [ticket({ pk: 2 })];
-    expect(kdsAttentionDecision(current, new Set(["active:1"]), "active:1").shouldAlert).toBe(true);
+    const current = view({ tickets: [ticket({ pk: 2 })] });
+    expect(kdsAttentionDecision(current, "active:1").shouldAlert).toBe(true);
   });
 
-  it("consulta futura nunca toca e encerra alerta em curso", () => {
-    const current = view();
-    current.serviceDate = "2026-09-16";
-    expect(kdsAttentionDecision(current, new Set(), "active:1")).toEqual({
-      signature: "",
-      shouldAlert: false,
-      shouldStop: true,
-    });
+  it("o cancelamento que ninguém viu também pede atenção; o que sai pela janela de desfazer não", () => {
+    const current = view({ cancelled_tickets: [ticket({ pk: 7, status: "cancelled" })] });
+    expect(kdsAttentionIds(current)).toEqual(["active:1", "cancelled:7"]);
+    const finishing = boardView(board().board as KDSBoardProjection, new Set([1]));
+    expect(kdsAttentionIds(finishing)).toEqual([]);
   });
 });
 
@@ -423,96 +464,20 @@ describe("useKdsBoard — SSE da estação", () => {
   });
 });
 
-// ── A Saída: "Pronto" da estação sem tela e o canal de todas as estações ────
+// ── A Saída mudou para o Gestor (UX-G3) ──────────────────────────────────────
+// A estação de Saída não opera mais aqui: a página manda para a coluna Saída do
+// Gestor. O composable não assina mais os canais gerais por ela.
 
-function exitBoard(over: Record<string, unknown> = {}) {
-  return board({
-    instance_ref: "saida",
-    instance_name: "Saída",
-    instance_type: "expedition",
-    is_expedition: true,
-    tickets: [],
-    preparing: [
-      {
-        pk: 42,
-        order_ref: "WEB-20260926-1234",
-        channel_icon: "language",
-        customer_name: "Ana",
-        fulfillment_icon: "storefront",
-        fulfillment_label: "Retirada",
-        is_delivery: false,
-        fired_at_display: "10:40",
-        elapsed_seconds: 120,
-        is_scheduled: false,
-        test_order_label: "",
-        stations: [
-          {
-            station_ref: "lanches",
-            station_name: "Lanches",
-            prints: true,
-            state: "pending",
-            state_label: "na fila",
-            paper_label: "impresso às 10:42",
-            paper_failed: false,
-            cancelled_items: 0,
-            can_mark_ready: true,
-          },
-        ],
-      },
-    ],
-    ...over,
-  });
-}
-
-describe("useKdsBoard — Saída: Pronto pela estação sem tela", () => {
+describe("useKdsBoard: estação de Saída aposentada", () => {
   beforeEach(() => env.reset());
 
-  it("o chip vira pronto na hora e o POST vai para o pedido e a estação do card", async () => {
-    env.fetchData.value = exitBoard();
-    const { markStationReady } = useKdsBoard("saida");
-    markStationReady(42, "lanches");
-    const chip = (env.fetchData.value as any).board.preparing[0].stations[0];
-    expect(chip.state).toBe("done");
-    expect(chip.can_mark_ready).toBe(false);
-    await flushPromises();
-    expect(env.fetchMock).toHaveBeenCalledWith(
-      "/api/v1/backstage/kds/expedition/42/printed-stations/lanches/done/",
-      expect.objectContaining({ method: "POST" }),
-    );
-  });
-
-  it("recusa do servidor devolve o chip e diz o porquê", async () => {
-    env.fetchData.value = exitBoard();
-    env.fetchMock.mockRejectedValueOnce({ data: { detail: "Lanches tem tela: o pronto é dado lá." } });
-    const { markStationReady } = useKdsBoard("saida");
-    markStationReady(42, "lanches");
-    await flushPromises();
-    const chip = (env.fetchData.value as any).board.preparing[0].stations[0];
-    expect(chip.state).toBe("pending");
-    expect(chip.can_mark_ready).toBe(true);
-    expect(env.sonner.error).toHaveBeenCalled();
-  });
-
-  it("chip sem Pronto não manda nada", async () => {
-    env.fetchData.value = exitBoard();
-    (env.fetchData.value as any).board.preparing[0].stations[0].can_mark_ready = false;
-    const { markStationReady } = useKdsBoard("saida");
-    markStationReady(42, "lanches");
-    await flushPromises();
-    expect(env.fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("a Saída assina o canal de todas as estações e o dos pedidos", async () => {
+  it("a estação de Saída assina só o próprio canal (não opera mais aqui)", async () => {
     vi.useFakeTimers();
-    env.fetchData.value = exitBoard();
+    env.fetchData.value = board({ instance_ref: "saida", instance_type: "expedition", is_expedition: true, tickets: [] });
     const { unmount } = await withMountedBrowser(() => useKdsBoard("saida"));
     try {
       await flushPromises();
-      const urls = FakeEventSource.instances.map((source) => source.url);
-      expect(urls).toEqual(expect.arrayContaining(["/sse/kds/saida", "/sse/kds/main", "/sse/orders"]));
-      env.refresh.mockClear();
-      FakeEventSource.instances.find((s) => s.url === "/sse/kds/main")!.emit("backstage-kds-status-changed");
-      expect(env.refresh).toHaveBeenCalled();
+      expect(FakeEventSource.instances.map((s) => s.url)).toEqual(["/sse/kds/saida"]);
     } finally {
       unmount();
       vi.useRealTimers();

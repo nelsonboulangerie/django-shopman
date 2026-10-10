@@ -2,9 +2,27 @@ import tailwindcss from "@tailwindcss/vite";
 import { definePwaCapability } from "../operator-kit/pwa.config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
+// Ícones que chegam da projeção sem o prefixo (o `channel_icon` traduzido em
+// `lucideIcon`, no kit): a varredura não os acha no código, então entram no pacote
+// do cliente por nome, pelo gancho `icon:clientBundleIcons` (lá embaixo).
+const PROJECTION_ICONS = [
+  "lucide:globe",
+  "lucide:message-circle",
+  "lucide:utensils-crossed",
+  "lucide:store",
+  "lucide:shopping-bag",
+  "lucide:bike",
+  "lucide:utensils",
+  "lucide:circle",
+];
+
 export default defineNuxtConfig({
   // Superfície de operador: herda BFF/resiliência/telemetria/DS do kit compartilhado.
   extends: ["../operator-kit"],
+
+  // A matriz visual roda em modo client-only (sem SSR): o backend é o mock
+  // hermético do runner. Em qualquer outro modo o SSR continua ligado.
+  ssr: process.env.ORDERS_VISUAL_CLIENT_ONLY !== "1",
 
   compatibilityDate: "2026-05-16",
   devtools: { enabled: false },
@@ -12,6 +30,12 @@ export default defineNuxtConfig({
   runtimeConfig: {
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
     operatorSecurityHeaders: true,
+    // Exceção de Permissions-Policy (G18 da auditoria v4, prévia v3
+    // `depois-gestor-celular` (c), aprovada): "fora da loja, mostrando o que pede
+    // decisão". A posição só é lida com o sim de quem segura o dispositivo
+    // (`useOutsideStore`), é comparada ali mesmo com o ponto da loja e nunca sai
+    // do dispositivo. Só nesta origem.
+    operatorPermissionsAllow: { geolocation: "self" },
     // Exceções da CSP do kit, uma por função real (SEC-SURF-001, decisão do dono
     // em 29/09/2026):
     // - img-src https: a foto do produto no Catálogo vem de host externo, e o
@@ -64,8 +88,7 @@ export default defineNuxtConfig({
     '@vueuse/nuxt',
     '@nuxt/icon',
     '@nuxt/fonts',
-    '@nuxt/eslint',
-    "vue-sonner/nuxt"
+    '@nuxt/eslint'
   ],
 
   // Instrument Sans self-hospedada com os PESOS da escala do operador (body=500,
@@ -87,8 +110,9 @@ export default defineNuxtConfig({
       name: 'VariantProps',
       type: true
     }, {
-      from: "vue-sonner",
-      name: "toast",
+      // Contrato de aviso da suíte → toast do Nuxt UI (utils/operatorToast.ts).
+      from: "~/utils/operatorToast",
+      name: "operatorToast",
       as: "useSonner"
     }]
   },
@@ -105,7 +129,12 @@ export default defineNuxtConfig({
 
   icon: {
     clientBundle: {
-      scan: true,
+      // A varredura padrão lê só .vue: os ícones que moram nas presentations (.ts:
+      // as cabeças de coluna, os gestos do cartão) e os que chegam da projeção (o
+      // ícone do canal, traduzido em `lucideIcon`) ficavam fora do pacote, e o
+      // navegador ia buscá-los no api.iconify.design, que a CSP do kit recusa: a tela
+      // ficava com o buraco do ícone (medido em 03/10/2026, UX-KIT-V1).
+      scan: { globInclude: ["**/*.{vue,ts}"] },
       sizeLimitKb: 0
     },
 
@@ -115,6 +144,12 @@ export default defineNuxtConfig({
     class: 'shrink-0',
     fetchTimeout: 2000,
     serverBundle: 'local'
+  },
+
+  hooks: {
+    "icon:clientBundleIcons"(bundle: Set<string>) {
+      for (const name of PROJECTION_ICONS) bundle.add(name);
+    },
   },
 
   css: ["~/assets/css/tailwind.css"],

@@ -61,9 +61,9 @@ describe("OperatorCapacityStatus", () => {
   });
 
   it.each([
-    [62, 18, "normal", "bg-rail-foreground/45", "Capacidade do serviço: Normal — Memória 62% · CPU 18%"],
-    [80, 18, "attention", "bg-warning", "Capacidade do serviço: Atenção — Memória 80% · CPU 18%"],
-    [40, 95, "critical", "bg-destructive", "Capacidade do serviço: Crítica — Memória 40% · CPU 95%"],
+    [62, 18, "normal", "bg-rail-foreground/45", "Capacidade do serviço: Normal. Memória 62% · CPU 18%"],
+    [80, 18, "attention", "bg-warning", "Capacidade do serviço: Atenção. Memória 80% · CPU 18%"],
+    [40, 95, "critical", "bg-destructive", "Capacidade do serviço: Crítica. Memória 40% · CPU 95%"],
   ])("memória %s%% · CPU %s%% → %s", async (memory, cpu, level, dot, label) => {
     reading.value = sample(memory, cpu);
     authorized.value = true;
@@ -118,8 +118,8 @@ describe("OperatorCapacityStatus", () => {
   });
 
   it.each([
-    ["cgroup-v2", "Número medido no servidor."],
-    ["cgroup-v1", "Número medido no servidor."],
+    ["cgroup-v2", "Número medido."],
+    ["cgroup-v1", "Número medido."],
     ["proc", "Número estimado: a memória pode aparecer maior do que é."],
   ] as const)("o detalhe diz de onde veio o número (%s), sem jargão", async (source, text) => {
     reading.value = sample(40, 10, { source });

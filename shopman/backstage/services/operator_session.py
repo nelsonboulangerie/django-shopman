@@ -39,6 +39,13 @@ SESSION_MARKER = "shopman_operator_session"
 #: permite travar o PDV sem derrubar o Gestor aberto na aba ao lado.
 LOCKED_CAPABILITIES_KEY = "shopman_locked_station_capabilities"
 
+#: Marca de "dispositivo travado" (o Bloquear da Central, V6-KIT): fecha TODAS as
+#: superfícies desta sessão de uma vez. A Central não é superfície com capacidade
+#: própria; travar ali é dizer "ninguém está operando neste dispositivo". Quem
+#: provar a identidade em qualquer app tira a marca (passa a ser a pessoa do
+#: dispositivo); as travas por superfície continuam como estavam.
+DEVICE_LOCK = "*dispositivo"
+
 
 def idle_seconds() -> int:
     """Quanto tempo a sessão de operador sobrevive sem uso."""
@@ -86,6 +93,15 @@ def lock_capability(request, capability: str) -> None:
     request.session[LOCKED_CAPABILITIES_KEY] = sorted(locked)
 
 
+def lock_device(request) -> None:
+    """Travar o dispositivo inteiro: toda superfície desta sessão pede PIN/crachá."""
+    lock_capability(request, DEVICE_LOCK)
+
+
+def is_device_locked(request) -> bool:
+    return DEVICE_LOCK in locked_capabilities(request)
+
+
 def unlock_capability(request, capability: str | None) -> None:
     """Liberar a superfície provada por PIN/crachá.
 
@@ -98,6 +114,8 @@ def unlock_capability(request, capability: str | None) -> None:
         return
     locked = set(locked_capabilities(request))
     locked.discard(str(capability).strip())
+    # A pessoa acabou de provar quem é: o dispositivo deixa de estar travado.
+    locked.discard(DEVICE_LOCK)
     if locked:
         request.session[LOCKED_CAPABILITIES_KEY] = sorted(locked)
     else:
@@ -105,7 +123,8 @@ def unlock_capability(request, capability: str | None) -> None:
 
 
 def is_capability_locked(request, capability: str) -> bool:
-    return str(capability or "").strip() in locked_capabilities(request)
+    locked = locked_capabilities(request)
+    return DEVICE_LOCK in locked or str(capability or "").strip() in locked
 
 
 def renew_if_due(request) -> bool:

@@ -74,16 +74,10 @@ function surfaceDirs(): string[] {
 
 // O que existia em 03/10/2026 fora do Gestor, com o motivo. Só encolhe: migrou, tira
 // daqui (a entrada que sobrou reprova); entrada nova não entra sem motivo escrito.
-const DECLARED: Record<string, { calls: number; reason: string }> = {
-  "production-nuxt/app/components/QcCloseScreen.vue": {
-    calls: 1,
-    reason: "Produção: descartar a contagem de qualidade. Migra para o useConfirm na próxima frente da Produção.",
-  },
-  "production-nuxt/app/pages/expedite.vue": {
-    calls: 1,
-    reason: "Produção: confirmar a qualidade do lote (não é descarte). Migra para o useConfirm na próxima frente da Produção.",
-  },
-};
+// A Produção migrou na UX-P1 (qualidade em lote): o descarte da contagem usa o
+// useConfirm e a confirmação da qualidade é o próprio gesto, com a consequência
+// escrita antes. A lista ficou vazia e assim deve ficar.
+const DECLARED: Record<string, { calls: number; reason: string }> = {};
 
 describe("pergunta antes de descartar: o diálogo da casa, nunca a caixa do navegador", () => {
   it("nenhuma superfície chama o confirm nativo fora do que está declarado com motivo", () => {

@@ -25,6 +25,12 @@
 //   - Campo de texto de verdade (nome livre) é do dono: as teclas continuam
 //     chegando ao campo; a captura só OBSERVA (o leitor segue funcionando até
 //     com um input focado), sem pôr esses dígitos no PIN.
+//   - Mas só campo DE DENTRO da moldura (`frame`). O PDV trava por ociosidade
+//     com a busca de produto focada atrás do overlay: o campo continuava com o
+//     foco, a captura o tratava como "do dono", e o PIN ia parar na busca
+//     escondida. O balcão via a trava ignorando o teclado até alguém tocar na
+//     tela (03/10/2026). Foco FORA da moldura é foco esquecido: Enter, Backspace
+//     e toda tecla da captura vão para a identificação e não chegam lá atrás.
 //
 // O token é credencial: fica só neste buffer em memória, some no Enter, e NUNCA
 // é logado nem exibido (o mesmo tratamento que o PIN recebe).
@@ -75,6 +81,11 @@ export interface IdentityCaptureOptions {
    *  ir ao pad. Qualquer tecla dentro da janela cancela, e cancelar não faz
    *  nada: o atalho simplesmente não age, e a tela fica como estava. */
   onDigitPick?: (digit: string) => void;
+  /** A moldura modal da identificação (o overlay da trava, o diálogo do
+   *  gerente). Campo de texto só é "do dono" se estiver DENTRO dela; o que
+   *  ficou focado fora (atrás do overlay) não recebe as teclas. Sem moldura,
+   *  vale o comportamento antigo: qualquer campo é do dono. */
+  frame?: () => Element | null;
 }
 
 /** Silêncio que prova que o dígito veio de um dedo, não de um leitor. Folgado
@@ -123,11 +134,23 @@ export function useIdentityCapture(options: IdentityCaptureOptions) {
     lastAt = 0;
   }
 
+  /** O alvo da tecla está FORA da moldura modal? Aí o foco ficou esquecido
+   *  atrás do overlay (a busca do PDV, um botão da tela de baixo): a tecla é
+   *  da identificação e não pode ter efeito nenhum lá. */
+  function isOutsideFrame(target: EventTarget | null): boolean {
+    const frame = options.frame?.();
+    if (!frame) return false;
+    const node = target as Node | null;
+    return !!node && node !== document.body && node !== document.documentElement
+      && !frame.contains(node);
+  }
+
   function isEditingTarget(target: EventTarget | null): boolean {
     const el = target as HTMLElement | null;
     return (
       !!el
       && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)
+      && !isOutsideFrame(el)
     );
   }
 
@@ -135,6 +158,7 @@ export function useIdentityCapture(options: IdentityCaptureOptions) {
     // Atalho com modificador é comando do sistema, não identificação.
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     const editing = isEditingTarget(event.target);
+    const outside = isOutsideFrame(event.target);
     // Backspace e Enter também quebram o silêncio: o que vinha antes deles não
     // era um dedo escolhendo um nome.
     if (event.key === "Backspace" || event.key === "Enter") cancelPick();
@@ -157,14 +181,23 @@ export function useIdentityCapture(options: IdentityCaptureOptions) {
       if (!editing) {
         // Consumida: a tela de identificação é modal, nada vaza para baixo.
         event.stopPropagation();
-        // Dígito que virou bolinha não deve ter outro efeito default.
-        if (toPin) event.preventDefault();
+        // Dígito que virou bolinha não deve ter outro efeito default, e o que
+        // ia cair num campo atrás do overlay também não.
+        if (toPin || outside) event.preventDefault();
       }
       return;
     }
 
     if (event.key === "Backspace") {
-      if (editing || !options.padVisible()) return;
+      if (editing) return;
+      if (!options.padVisible()) {
+        // Sem pad não há o que apagar; mas apagar a busca escondida também não.
+        if (outside) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       backspace();
@@ -188,7 +221,15 @@ export function useIdentityCapture(options: IdentityCaptureOptions) {
     }
     // Enter de gente: submete o PIN quando dá; senão segue o caminho normal
     // (num campo de texto ele pertence ao formulário, num botão focado clica).
-    if (editing || !options.padVisible() || !options.canSubmitEnter()) return;
+    if (editing || !options.padVisible() || !options.canSubmitEnter()) {
+      // Enter num alvo esquecido atrás do overlay (a busca do PDV adiciona
+      // produto no Enter, um botão focado clica): não chega lá.
+      if (outside) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     options.onSubmit();

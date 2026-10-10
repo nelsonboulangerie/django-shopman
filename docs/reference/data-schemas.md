@@ -44,11 +44,14 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `items[].meta.pos_authorship` | `dict` | **um escritor só**: `shop/services/pos_intent.stamp_line_authorship`, chamado por `pos._replace_session_ops` (salvar, fechar e editar encomenda passam todos por ele); `build_session_ops` só copia | `backstage/api/pos_concurrency.tab_command` (`line_authors` na resposta), projection do tab (`build_open_tab`, `authorship` por item), PDV (`PosCartPanel`, "Lançado por / Editado por") | **Quem lançou e quem editou a linha da comanda.** `{created_by, created_label, created_at, updated_by?, updated_label?, updated_at?}`. `*_by` é o `User.pk` do operador, como texto: identificador ESTÁVEL, que sobrevive a renomear a pessoa. `*_label` é o nome legível (`get_full_name()` ou o username) **congelado no ato**, nunca derivado na leitura: renomear alguém depois não reescreve quem era. `*_at` é ISO 8601. `created_*` é gravado uma vez, quando a linha nasce, e nunca muda; `updated_*` a cada mudança do que o operador controla (SKU, quantidade, observação, desconto de linha, entrada de peso). Reprecificação pelo catálogo não é edição de ninguém. Linha que já existia sem carimbo não ganha `created_*` inventado. O cliente não escreve: o parser do intent copia campo a campo e descarta o que vier com esse nome. Sem operador identificado (username sem `User`), o save é recusado (`operator_unidentified`) |
 | `tab_ref` | `string` | POS tab service | POS tab service, projections | Referência canônica da comanda. Aceita texto curto alfanumérico; referências numéricas de até 8 dígitos continuam normalizadas com zeros. Ex: `"00001007"`, `"MESA ANA"` |
 | `tab_display` | `string` | POS tab service | POS UI, Order.data | Rótulo curto para operador. Em numéricos, remove zeros à esquerda; em texto, preserva o rótulo informado. Ex: `"1007"`, `"mesa ana"` |
+| `tab_number` | `string` | `shop/services/pos.rename_pos_tab` (no primeiro renomear) | `build_open_tab` (`tab_number`) → barra de contexto do PDV | O número original da comanda ("1007") quando ela foi renomeada ("Mesa 6"): a barra mostra o nome grande e "#1007" pequeno. Ausente numa comanda nunca renomeada (vale o `tab_ref`) |
+| `seating_spot_ref` | `string` | `shop/services/pos.set_pos_tab_seating` (via `POST pos/tabs/rename/` com a chave `seating_spot_ref`) | `build_open_tab`, `POSTabProjection`, `projections/seating.open_tabs_by_spot` (mesa ocupada no Salão), `_mark_tab_committed` → `Order.data` | **Vínculo OPCIONAL comanda × mesa** (dono, 04/10/2026): o `ref` do `SeatingSpot` escolhido com um toque ao dar nome à comanda. Ausente = comanda sem mesa (balcão, ou ninguém escolheu); uma mesa tem no máximo uma comanda aberta |
 | `pos_operator` | `string` | POS tab service | POS projections, Order.data | Username do operador que abriu/tocou o POS tab |
 | `last_touched_at` | `string` | POS tab service | POS projections | Timestamp ISO da última interação operacional |
 | `pos_edit` | `dict` | `shop/services/pos_edit_session.open_edit_session` (API `POST pos/preorders/<ref>/edit-session/`), regravado pelo autosave (`pos._save_edit_session`) | `pos_edit_session.is_edit_session` (recusa de `fire_pos_tab` e `close_sale`), `build_open_tab` (`edit_of`, `tab_display` "Encomenda <ref>") | **A comanda virtual da edição de encomenda** — a tela de venda em modo edição (WP-E6). `{order_ref, base_revision, started_by, started_at}`: de qual pedido é a edição e a revisão `edit` que ele tinha ao abrir (reabrir com o pedido igual retoma; com o pedido mudado, abandona e refaz). A sessão tem `handle_type="pos_edit"`, `handle_ref=<ref do pedido>`, `pricing_policy="external"` (o item que já estava mostra o preço VENDIDO) e **nunca** `tab_ref`: não aparece no quadro nem cria `POSTab`. Não dispara cozinha nem vira venda; o gesto dela é "Salvar alterações" (`order_edit`), e "Descartar" a abandona |
-| `fired_lines` | `list[str]` | POS `fire_pos_tab` (`session.save`) | `_tab_payload` (flag `fired` por item) | Marker UI de quais `line_id` da comanda já foram disparados à cozinha (KDS). Mirror do ledger autoritativo (tickets KDS por `session_key`, que sobrevive ao commit); escrito direto, sem re-pricing. Disparo progressivo curso-a-curso. **Não propagado ao Order.data** — o ledger pós-commit são os próprios `KDSTicket` |
-| `fired_qty` | `dict[str, int]` | POS `fire_pos_tab` (`session.save`) | `_tab_payload` (`fired_qty` por item) | QUANTAS unidades de cada `line_id` foram à cozinha, escrito no disparo. O `fired_lines` acima já responde "foi?" (a linha vai INTEIRA — não existe meia-linha); este número responde a outra pergunta: a linha enviada **encolheu** depois? Reduzir de 3 para 2 algo que a cozinha já está fazendo é a SOBRA que o balcão precisa ver antes de fechar. Gravado só para a linha que o ledger confirmou; apagado por `line_id` no unfire. **Não propagado ao Order.data** |
+| `fired_lines` | `list[str]` | POS `fire_pos_tab` (`session.save`); refeito nas duas comandas por `pos._carry_kitchen_state` ao transferir/separar/juntar | `_tab_payload` (flag `fired` por item) | Marker UI de quais `line_id` da comanda já foram disparados à cozinha (KDS). Mirror do ledger autoritativo (tickets KDS por `session_key`, que sobrevive ao commit); escrito direto, sem re-pricing. Disparo progressivo curso-a-curso. **Não propagado ao Order.data** — o ledger pós-commit são os próprios `KDSTicket` |
+| `fired_qty` | `dict[str, int]` | POS `fire_pos_tab` (`session.save`); passa ao destino com o `line_id` novo em `pos._carry_kitchen_state` | `_tab_payload` (`fired_qty` por item) | QUANTAS unidades de cada `line_id` foram à cozinha, escrito no disparo. O `fired_lines` acima já responde "foi?" (a linha vai INTEIRA — não existe meia-linha); este número responde a outra pergunta: a linha enviada **encolheu** depois? Reduzir de 3 para 2 algo que a cozinha já está fazendo é a SOBRA que o balcão precisa ver antes de fechar. Gravado só para a linha que o ledger confirmou; apagado por `line_id` no unfire. **Não propagado ao Order.data** |
+| `kds_inherited_lines` | `list[str]` | `shop/services/pos_offline_sale.py` (`reopen_tab_with_leftovers`), `pos._commit_sale_session`, `pos._carry_kitchen_state` (a linha herdada que muda de comanda segue herdada, com o `line_id` novo) | `adapters/kds.fired_line_ids_for_session` (soma ao ledger) | `line_id` que já estão na cozinha num ticket de OUTRA sessão (a comanda antiga, fechada pela venda sem conexão) e passaram para esta: contam como já enviados, para não voltarem ao KDS nem no Enviar nem no commit. Lido pela `session_key`, que o pedido herda: **não propagado ao Order.data** |
 | `fiscal` | `dict` | POS checkout · checkout da loja (`storefront/api/views.CheckoutView`, entrega E retirada; sempre gravada, `{}` quando não há CPF) · concierge (`set_fulfillment`, `tax_id`) | Order.data · `DeliveryFiscalIdentityRule` (commit) | Preferências fiscais capturadas no checkout: `{issue_document, tax_id}`. ⚠️ Entrega a domicílio cuja NFC-e vai sair (`fiscal.emission_expected`) não entra sem `tax_id` válido e endereço estruturado completo (`shop/services/delivery_fiscal_identity.py`, a mesma régua do adapter Focus; decisão do dono, 24/09/2026). ⚠️ `fiscal.tax_id` é o CPF PEDIDO nesta nota, não identidade: nunca vira `customer.document` sozinho (pode ser o do marido, o da empresa) — só com a ordem explícita `save_receipt_tax_id` no payload do intent (PDV) ou `save_fiscal_tax_id` no checkout da loja (a pessoa respondeu "guardar no seu cadastro?"; a ordem não é persistida). Na loja (decisões do dono, 25/09/2026): na RETIRADA o `tax_id` é o "CPF na nota?" do balcão, opcional; guardar só preenche cadastro SEM documento — igual ao do cadastro só usa, diferente vale só para a nota, e documento de OUTRA conta nunca vira identidade nem é revelado: a resposta do checkout não diz nada sobre o guardar (é a mesma, byte a byte, tenha gravado ou não; o desfecho fica só no log do servidor, sem dado pessoal), e o documento fica como preferência da nota (`Customer.metadata.note_tax_id`) para a próxima visita também não denunciar a diferença (`shop/services/customer_tax_id.save_to_customer`; decisão do dono, 25/09/2026). Na próxima vez a loja LÊ `customer.document`, sem ele o `Customer.metadata.note_tax_id`, ou, sem os dois, o `fiscal.tax_id` do último pedido de entrega do mesmo `customer_ref` e pré-preenche o campo, só para a própria pessoa (`shop/projections/delivery_fiscal.delivery_tax_id_prefill`) |
 | `receipt` | `dict` | POS checkout | Order.data, NFCeEmitHandler (e-mail da nota) | Preferência de comprovante: `{channels: [print\|email], email}` — canais MULTI: imprimir E enviar não competem; lista vazia = sem comprovante. ⚠️ `receipt.email` é fato DA VENDA e NUNCA vira `customer.email` sozinho (pode ser o do contador, o do marido); só com a ordem explícita `save_receipt_contact` no payload do intent — que não é persistida, é decisão de quem fecha |
 | `is_gift` | `bool` | CheckoutView, API (`set_data`) | CommitService, KDS/Saída | `True` quando o pedido é presente (entrega para terceiro). Só presente quando é presente. Ver [GIFT-UX-PLAN](../plans/GIFT-UX-PLAN.md) |
@@ -122,13 +125,14 @@ guarda a conversa em **modelos próprios**, não em JSON de sessão: `Conversati
 (uma por assinante do ManyChat: telefone, `customer_ref`, `session_key` da sacola,
 orçamento vigente `quote`, estado, contadores de turno e tokens) e
 `ConversationMessage` (a transcrição em blocos no formato da API do modelo), em
-`shopman/shop/models/concierge.py`. Na `Session` do pedido ele escreve só duas chaves,
-pelas ferramentas em `shopman/storefront/concierge/tools.py`:
+`shopman/shop/models/concierge.py`. Na `Session` do pedido ele escreve estas chaves,
+pelas ferramentas em `shopman/storefront/concierge/tools.py` (e o desconto, por `discount.py`):
 
 | Chave | Valor | Para quê |
 |---|---|---|
 | `origin_channel` | `"whatsapp"` | o pedido é roteado como qualquer pedido de WhatsApp (notificação, Gestor) |
 | `concierge` | `{"conversation_id": <Conversation.pk>}` | ligar a sacola/pedido à transcrição no Admin; nada lê isso para decidir regra de pedido |
+| `concierge_discount` | `{coupon_code, discount_q, max_percent, conversation_id, at}` | o desconto que a Concierge concedeu nesta sacola (dono, 03/10/2026; `storefront/concierge/discount.py`). Presente = já concedido: é o "uma vez por pedido". `coupon_code` é o cupom `CONCIERGE-…` de uso único que entrou em `coupon_code` pelo caminho do cupom do site; `discount_q` é o que o modifier de fato aplicou; `max_percent` é o teto vigente na hora (texto decimal); `at` em ISO 8601. Não é copiada para o pedido: a origem do desconto no pedido é o cupom (`Order.snapshot.pricing.coupon`) e o evento `concierge_discount` |
 
 O `quote_token` que prende a confirmação ao orçamento vive em `Conversation.quote`, não
 na sessão: mudou a sacola, o token muda, e `place_order` recusa o antigo.
@@ -155,19 +159,113 @@ transferência para consultar o recibo canônico da mesma intenção. Não é ou
 Triagem (D32, 02/10/2026; `shopman/storefront/concierge/triage.py`): cada entrada do turno
 ganha `ConversationMessage.envelope["triage"]` e a conversa guarda a última em
 `Conversation.flags["triage"]`, ambos `{intent, urgency, destination, summary, source,
-escalated_by}` (a da conversa também `message_ids`, as entradas que ela cobriu, e `at`, ISO 8601). `intent` é uma das 12 referências de
+escalated_by, answered_by}` (a da conversa também `message_ids`, as entradas que ela cobriu, e `at`, ISO 8601). `intent` é uma das 12 referências de
 `intent_pilot.DEFAULT_INTENTS`; `urgency` é `now`/`today`/`can_wait`; `destination` é
 `answer` (o bot responde), `team` (equipe, cartão no sino do Gestor) ou `other_desk` (vaga,
 parceria, fornecedor: Admin, sem acordar o balcão); `source` é `rules`, `model` (Anthropic),
-`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed` ou `no_useful_answer`.
+`jev` (com `CONCIERGE_TRIAGE_CLASSIFIER=jev`), `default` ou `failures`; `escalated_by` é vazio, `order_not_closed`, `no_useful_answer`, `allergy_offer_accepted` ("sim" à oferta da equipe para alergia grave) ou `cancel_order` (pedido de cancelamento que o cliente não poderia fazer pelo site, regra da casa R4, `intent=order`, `destination=team`); `answered_by` é vazio, `allergy_notice` (pergunta de alérgeno respondida com o aviso de produção compartilhada da casa e os alérgenos declarados do produto citado), `allergy_ask_which` (alergia sem dizer a quê: a Concierge pergunta) ou `allergy_notice_after_ask` (a resposta a essa pergunta, respondida), com `intent=allergy` e `destination=answer` (dono, 03/10/2026, `concierge/allergens.py`), `self_cancel` (pedido de cancelamento que o próprio cliente poderia fazer pelo site: a Concierge pergunta; `intent=order`, `destination=answer`) ou `cancel_answer` (o "sim" ou "não" à pergunta de cancelamento).
+
+Cancelamento pela Concierge (dono, 03/10/2026; `shopman/storefront/concierge/cancellation.py`):
+a pergunta de confirmação fica em `Conversation.flags["pending_cancel"]` = `{order_ref, asked_at,
+request}` (`asked_at` ISO 8601; vale 30 minutos; `request` é a fala do cliente, até 300 caracteres).
+Só o "sim" no turno seguinte cancela; qualquer outra fala apaga a chave. O cancelamento passa por
+`customer_orders.cancel(order, actor="concierge")`, a mesma régua do site (`can_cancel`), e grava
+`Order.data["cancelled_by"] = "concierge"`, o evento `concierge_cancelled` (ator `concierge`,
+`payload = {note: "Cancelado pela Concierge a pedido do cliente: \"<fala>\"", conversation_id}`) e
+uma nota na conversa (`ConversationMessage` `kind=note`).
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
+Intenções no plural (OBS0310-Q, 03/10/2026; `shopman/storefront/concierge/intents.py`). Ligadas
+para a coorte que a Concierge já atende em `assist` (OBS0310-R: `allowed_subjects` da connection;
+fora dela nada muda); `SHOPMAN_CONCIERGE["intents_plural"]` (`CONCIERGE_INTENTS_PLURAL`) é
+`cohort` (padrão, sem env), `off` (emergência, desliga para todos), `subjects` (só
+`CONCIERGE_INTENTS_SUBSCRIBERS`, dentro da coorte) ou `all` (dentro da coorte); valor desconhecido
+desliga. A triagem ganha `jev_scores` = `{ref: probabilidade}` que o Jev deu
+neste turno (as 12 intenções e `multiple_parts`, a pergunta "a mensagem traz mais de uma coisa?",
+feita só com a chave ligada; vazio sem Jev). Com parte sensível no turno, a triagem gravada é a do
+turno inteiro: `source=intents`, `intent` a primeira parte de equipe (cancelamento grava
+`intent=order`, `escalated_by=cancel_order`), `summary` com cada parte numerada e o que houve com ela
+(`respondida`, `com a equipe`, `suspenso, a equipe fecha`). Alergia respondida pelo aviso da casa
+dentro de uma mensagem com várias partes grava `source=intents` e o `answered_by` de sempre.
 Sombra do Jev (D-028, 02/10/2026; `intent_pilot.shadow_triage`): mensagem de entrada ganha
 `ConversationMessage.envelope["triage_shadow"]` = `{rules, rules_source, jev, jev_scores, latency_ms,
 model, at}`: `rules`/`rules_source` como `triage.classify_rules`; `jev` é a intenção mais provável
 acima de 0,5 (vazio se nenhuma); `jev_scores` é `{ref: probabilidade}` das 12; `latency_ms`
 inteiro; `at` ISO 8601. Escrita só pelo ciclo do piloto, lida por `shadow_report`. Não muda a
 decisão; vence com a mensagem (retenção da observação).
+Régua da Concierge (OBS0310-K, fatia 1 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO.md`;
+`shopman/storefront/concierge/metrics.py`): o PRIMEIRO bloco de resposta de cada turno (`kind=reply`,
+inclusive o aviso de handoff `purpose=handoff_ack`) grava em `ConversationMessage.usage` =
+`{version: 1, layer, triage: {classifier, source}, calls: [...], input_tokens, output_tokens,
+cache_read_input_tokens, cache_creation_input_tokens, cost_usd, latency_ms: {...}, unpriced_models?}`.
+Os outros blocos do mesmo turno ficam com `usage = {}` (um registro por turno, sem contar duas vezes).
+`layer` é quem respondeu: `courtesy` (frase da casa, sem modelo), `media`, `turn_limit`, `agent` (o
+laço com o modelo), `error` (indisponível), `team` (a triagem mandou à equipe ou à outra mesa),
+`agent_handoff` (o agente chamou a equipe) ou `house_rule` (regra da casa: frase fixa de R7/R8, ou resposta segurada que virou handoff). `triage.classifier` é `anthropic` ou `jev`; `source` como
+`envelope["triage"]`. `calls` tem uma linha por (etapa, modelo): `{stage: triage|model|jev, model,
+provider: anthropic|typesafe, calls, input_tokens, output_tokens, cache_read_input_tokens,
+cache_creation_input_tokens, cost_usd}`; os totais somam as linhas. `cost_usd` é estimativa em US$ pela
+tabela de `shop/services/ai_pricing.py` (leitura de cache a 0,1 e escrita a 1,25 do preço de entrada;
+Jev a US$ 0,042/M de entrada), `null` quando algum modelo está fora da tabela (listado em
+`unpriced_models`). `latency_ms` em milissegundos inteiros: `total` (da ÚLTIMA entrada do turno até a
+resposta gravada, inclui a espera `dispatch_delay_seconds` e a fila), `turn` (o processamento no worker),
+e por etapa, quando houve: `triage` (inclui Jev ou modelo da triagem), `jev`, `agent` (o laço inteiro),
+`model` (soma das idas ao modelo da resposta), `tools` (soma das ferramentas). Os contadores da
+`Conversation` (`input_tokens`, `output_tokens`, `cache_read_tokens`) seguem só com o modelo da resposta,
+como antes; a escrita de cache e a triagem só existem aqui. Lida por `concierge_reply_eval --production`.
+Com as intenções no plural (OBS0310-Q): `layer` pode ser `intents` (cada parte pelo executor da
+casa, uma resposta), a etapa `intents` aparece em `latency_ms` (porteiro, leitura e execução) e em
+`calls` (`stage: intents`, a leitura com o modelo pequeno, quando houve), e `usage.intents` =
+`{acts: [{act, span, product, qty}], source: gate|model|local, reason, read_ms, read_error?}`: as
+partes na ordem do cliente (`act` da lista fechada `intents.ACT_NAMES`), quem as decidiu (o porteiro
+sozinho, a leitura com o modelo, ou a divisão local quando a leitura falhou) e por quê. Na pergunta
+repetida (OBS0310-R), `reason` começa com `asked_again`: `source=memory, reason=asked_again` (as
+partes vieram de `flags["dialogue"]["parts"]`), `reason=asked_again:<motivo do porteiro>` com o
+`source` da leitura (a última fala do cliente que perguntava algo) ou `source=memory,
+reason=asked_again_nothing` (nada achado, a Concierge pediu para repetir).
+Registros anteriores a 03/10/2026 têm `usage = {}`.
+Regras da casa (OBS0310-M, fatia F3 do `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
+`shopman/storefront/concierge/house_rules.py`): toda resposta (`kind=reply`, inclusive
+`purpose=handoff_ack`) grava `ConversationMessage.envelope["house_rules"]` = `{version, held,
+repaired, recorded, violations, replaced?}`. `version` é a versão da tabela (inteiro); `held`,
+`repaired`, `recorded` são listas ordenadas de ids de regra (`R1`…`R14`) pelo efeito: `held`
+(segurada; só aparece aqui quando escapou até a última trava, e vai também para o log
+`concierge.house_rule_unenforced`), `repaired` (palavra consertada, a resposta saiu) e `recorded`
+(só medida, hoje a forma R11 da resposta da casa). `violations` é `[{rule, effect, found}]`, com
+`found` cortado em 80 caracteres (o que R13 acha vira `[dado pessoal omitido]`). As violações consertadas no turno vão no primeiro bloco.
+`replaced` só existe no aviso de handoff que substituiu uma resposta segurada em `run_turn`: é o
+mesmo formato, da resposta que não saiu (sem o texto dela). Nesse caso `Conversation.handoff_reason`
+começa com `Regra da casa: R<n> <título>`. Registros anteriores a 03/10/2026 não têm a chave.
+Memória da conversa (OBS0310-N, bloco 2 de `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
+`shopman/storefront/concierge/dialogue.py`): `Conversation.flags["dialogue"]` = `{v: 1, fence, at,
+valid_until, pending?, listed?, focus?, order?, last_change?, parts?}`. `fence` é o `turn_fence` do turno que
+gravou (gravação na mesma transação da resposta; turno revogado não grava); `at` e `valid_until` são ISO
+8601. `valid_until` é o fim do PRÓXIMO dia de funcionamento depois do dia de `at`, pelo calendário da
+casa (`business_calendar`): vale para `listed`, `focus` e `last_change`. `pending` é a pergunta que a
+casa deixou no ar, `{kind, options?, token?, order_ref?, item?, sku?, qty?, add?, total_q?, day?}`, com `kind` em `offer_team`
+(busca sem resultado: "Posso chamar a equipe."), `choose` (lista com mais de um item), `confirm_order`
+(resumo pronto; `token` = `quote_token`, vale enquanto for o de `Conversation.quote`), `ask_address`,
+`ask_slot` (horários mostrados; `day` = a data deles), `choose_order` ("acrescentar ao pedido aberto ou
+pedido novo?"; vale enquanto `order_ref` estiver aberto; `sku`/`qty` quando o produto veio do foco),
+`confirm_add` ("Acrescento 4 croissant ao pedido X? Total novo, saldo a pagar. sim/não", de
+`concierge/order_addition.py`; `add` = `[{sku, qty, name}]`, `total_q` = o total novo que o cliente viu:
+no "sim" o serviço recalcula e, se o valor mudou, pergunta de novo; vale enquanto `order_ref` estiver
+aberto) e `confirm_new` ("o último pedido já foi entregue; quer um novo?", também a oferta depois de
+uma recusa do acréscimo num pedido do dia); `options` = `[{n, ref, name}]`, `day` = ISO date: passado o dia, a pergunta
+vence. `listed` = a última lista numerada (até 5) `[{n, ref, name, kind?}]` (`kind=collection` na visão
+por coleção); `focus` = `{ref, name, qty?}` (o SKU em foco); `order` = `{ref, open}` (o pedido em foco
+e se estava aberto quando foi gravado; entregue ou cancelado depois disso, `listed`/`focus`/`pending`
+deixam de valer); `last_change` = `{ref, qty}` (o último `set_item`, para "não, era o outro");
+`parts` (OBS0310-R) = `[{act, span, product, qty, state}]`, as partes da última mensagem lida pelas
+intenções no plural, com `act` em `intents.ACT_NAMES`, `span` o trecho redigido (até 120
+caracteres) e `state` em `answered`, `unanswered` (sem fato na busca, ou parte não entendida),
+`team` ou `suspended`; vale como `listed` e `focus`, e é o que a pergunta repetida ("você não
+respondeu", "e a minha pergunta?") responde de novo (as `unanswered`; se nenhuma, todas menos as de
+equipe). Pedido
+recente (entregue ou cancelado há até `SHOPMAN_CONCIERGE["recent_order_days"]` dias, 7 por padrão, e
+sem pedido mais novo) NÃO é guardado aqui: vem do Orderman a cada turno. Zerado quando a equipe
+devolve a conversa (`return_to_concierge`). Lido por `dialogue.for_turn`; nada de pedido, sacola ou
+preço mora aqui.
 Message de aceite de disponibilidade liga `subscription_ref` e
 `disclosure_message_id` à StockAlertSubscription canônica; disclosure contém SKU,
 texto, versão/token apresentados. Não replica estado de consentimento.
@@ -225,6 +323,7 @@ for key in (
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
+| `seating_spot_ref` | `string` | `shop/services/pos._mark_tab_committed` (da `Session.data`) | B.I. (lotação real por mesa: pedido × `SeatingSpot.ref`, com `seats` vigente no dia) | A mesa da comanda que virou o pedido, quando o operador vinculou uma (opcional). Ausente na venda sem mesa |
 | `payment` | `dict` | CommitService (propaga `{method}` de Session.data), `payment.initiate()`, webhooks | Muitos (ver abaixo) | Dados de pagamento. Contrato: `{intent_ref, method}`. Status de pagamento vive em Payman — nunca duplicado aqui. Ver detalhamento abaixo. |
 | `customer_ref` | `string` | CustomerIdentificationHandler | CheckoutInferDefaultsHandler | Ref do Customer criado/encontrado |
 | `fulfillment_created` | `bool` | FulfillmentCreateHandler | FulfillmentCreateHandler (idempotência) | Flag: Fulfillment object criado |
@@ -232,8 +331,10 @@ for key in (
 | `cancellation_note` | `string` | `operator_orders.cancel_order` (via OrderCancelView `customer_note`) | `lifecycle._on_cancelled` | Justificativa **voltada ao cliente**, escrita/escolhida pelo operador (preset). Só existe em cancelamento por operador com motivo informado; entra na notificação `order_cancelled` como `{status_note}` ("Motivo: …."; sem motivo, "Os detalhes estão no pedido."). Ausente ⇒ mensagem genérica. Distinta de `cancellation_reason` (que carrega códigos de máquina) |
 | `rejected_by` | `string` | GestorOrderRejectView | — | Username do operador que rejeitou |
 | `reschedule_history` | `list[dict]` | `shop.services.reschedule.reschedule` (API `POST orders/<ref>/reschedule/`), sob lock do pedido | trilha/auditoria; histórico do pedido (evento `order_rescheduled`) | Cada troca da data/janela combinada, na ordem: `{from_date, from_slot, to_date, to_slot, actor, at, reason}` — datas ISO (`from_date` pode ser `""` quando não havia data), janelas no formato de `delivery_time_slot` (`""` = a combinar), `at` ISO datetime, `reason` texto do operador (pode ser `""`). Append-only; o reagendamento também reescreve `delivery_date`, `delivery_time_slot` e `is_preorder` (recalculado contra hoje). Reenviar a MESMA data/janela não acrescenta linha (idempotente) |
-| _(edição da encomenda)_ | — | `shop.services.order_edit.edit` (API `POST orders/<ref>/edit/`, prévia em `POST orders/<ref>/edit/preview/`), sob lock do pedido, numa transação | todos os leitores de pedido | **Não cria chave nova de estado**: reescreve as que já existem. `adjustment` (itens/total, acima); `order_notes` (a observação do cliente; vazia ⇒ removida); retirada ↔ entrega: `fulfillment_type`, `delivery_address`, `delivery_address_structured`, `delivery_fee_q`, `delivery_fee_override_q`, `delivery_distance_km` (removidas quando vira retirada), `fiscal.tax_id` (o CPF/CNPJ que a entrega com nota exige, régua de 24/09); `payment` segue a invariante do valor final: `amount_q` vira o total novo, a linha recebida pelo meio que devolve encolhe junto, a linha pendente única passa a valer o saldo, e o pagamento digital já capturado vira linha `received` explícita (+ a pendente do saldo, `collection: "on_delivery"`, `method: "mixed"`) quando sobra saldo a receber. A data/janela vai pelo `services.reschedule` (acrescenta `reschedule_history`, `reason: "edição da encomenda"`, sem aviso próprio). Trilha: evento `order_edited` no OrderEvent `{source, revision, previous_total_q, total_q, diff, settlement: {kind, amount_q, method}, customer_note, notes?, fulfillment?, delivery_fee?, schedule?, approved_by?}` — `settlement.kind` ∈ `none`, `collect`, `refund_gateway`, `refund_cash`, `refund_card_machine`. Estorno registrado na maquininha: evento `card_machine_refund_recorded` `{amount_q, approved_by}` |
+| _(edição da encomenda)_ | — | `shop.services.order_edit.edit` (API `POST orders/<ref>/edit/`, prévia em `POST orders/<ref>/edit/preview/`), sob lock do pedido, numa transação | todos os leitores de pedido | **Não cria chave nova de estado**: reescreve as que já existem. `adjustment` (itens/total, acima); `order_notes` (a observação do cliente; vazia ⇒ removida); retirada ↔ entrega: `fulfillment_type`, `delivery_address`, `delivery_address_structured`, `delivery_fee_q`, `delivery_fee_override_q`, `delivery_distance_km` (removidas quando vira retirada), `fiscal.tax_id` (o CPF/CNPJ que a entrega com nota exige, régua de 24/09); `payment` segue a invariante do valor final: `amount_q` vira o total novo, a linha recebida pelo meio que devolve encolhe junto, a linha pendente única passa a valer o saldo, e o pagamento digital já capturado vira linha `received` explícita (+ a pendente do saldo, `collection: "on_delivery"`, `method: "mixed"`) quando sobra saldo a receber. A data/janela vai pelo `services.reschedule` (acrescenta `reschedule_history`, `reason: "edição da encomenda"`, sem aviso próprio). Trilha: evento `order_edited` no OrderEvent (`source` = `pos:edit` no balcão, `concierge:add` quando a Concierge acrescenta a pedido do cliente, com `actor: "concierge"`; o Gestor mostra "Itens acrescentados pela Concierge a pedido do cliente") `{source, revision, previous_total_q, total_q, diff, settlement: {kind, amount_q, method}, customer_note, notes?, fulfillment?, delivery_fee?, schedule?, approved_by?}` — `settlement.kind` ∈ `none`, `collect`, `refund_gateway`, `refund_cash`, `refund_card_machine`. Estorno registrado na maquininha: evento `card_machine_refund_recorded` `{amount_q, approved_by}` |
 | `kitchen_note` | `string` | OrderNotesView (`operator_orders.save_kitchen_note`) | OperatorOrderProjection (`kitchen_note`), KDS ticket (`kitchen_note`) | Nota da cozinha escrita pelo operador no gestor (tags pré-configuradas `Shop.kitchen_note_tags` anexadas + texto livre). **Exibida no ticket do KDS** para a produção. Distinta da `order_notes` (nota do cliente, do checkout) e dos `operator_comment` do histórico |
+| `volumes` | `int` | OrderVolumesView (`operator_orders.save_volumes`), o mesmo gesto "Declarar volumes" (− N +, Gravar) em três lugares: o ⋯ e a etiqueta do cartão do Gestor, a coluna/posto Saída do Gestor e o detalhe do ticket na estação da Cozinha (KDS, também nos concluídos recentes). Porta: quem opera o quadro (`HasOrderBoardAccess`: `shop.manage_orders` ou `backstage.operate_kds`) | OrderCardProjection (`volumes`: "N volumes" no cartão e na Fila) · KDSTicketProjection (`volumes`, com `volumes_order_ref`/`volumes_revision` para declarar da estação) · `order_ticket.ticket_bytes` (com N > 1 sai uma Via Pedido por volume, cada uma com "Volume k de N") | Quantos volumes (sacolas, caixas) o pedido leva, **declarado** por quem embalou, onde estiver (dono, 04/10/2026). 1 a 99; zero apaga a chave e o cartão volta a contar itens. Não existe volume deduzido (dos itens, das estações ou da embalagem): sem declaração a chave não existe. Evento `volumes_declared` no histórico com `{volumes, actor, surface}`: `actor` = quem declarou (username), `surface` ∈ `orders` (cartão do Gestor, padrão), `exit` (Saída do Gestor), `kds` (estação da Cozinha). O "pronto há N min" NÃO mora aqui: vem do log de eventos (última entrada em READY; `Order.ready_at` guarda só a primeira) |
+| `kds_started` | `dict[str, dict]` | `shop.services.kds._record_ticket_start` (primeiro "Iniciar preparo" do ticket na estação) | KDSTicketProjection (`started_by` = o primeiro nome da conta, `started_at_display`: "iniciado por Rafael às 21:56" no card e no detalhe do ticket) | Quem iniciou cada ticket do KDS e quando: `{"<ticket_pk>": {at, by}}` (`at` ISO, `by` = username). Só o PRIMEIRO início conta (replay e recall não sobrescrevem). Ticket de comanda ainda sem pedido (Session) não registra: o ticket muda de dono no commit e o registro não tem caminho próprio até lá |
 | `assignment` | `dict` | OrderAssignView (operator_orders.assign_order) | OrderCardProjection (`assigned_operator`) | Operador que assumiu o pedido ("estou atendendo"): `{operator_id, operator_name, at}`. Removido por OrderUnassignView |
 | `returns` | `list[dict]` | ReturnService | ReturnHandler | Histórico de devoluções (ver detalhamento) |
 | `waitlist` | `dict` | `services.waitlist` (`open_window`, `confirm`, `release`) | `waitlist.state_for`, projections de acompanhamento e do board | Fila de espera (WP-P2E). Contrato: `{state, sku, qty, opened_at, deadline, confirmed_at, released_at, release_reason}`. ⚠️ O estado `fermata` **não** é gravado aqui — ele é DERIVADO do hold planejado indefinido, para não haver duas verdades sobre "ainda estou esperando a fornada". Ver detalhamento abaixo |
@@ -257,22 +358,24 @@ for key in (
 | `fiscal.tax_id` | `string` | POS checkout ("CPF na nota") · checkout da loja na entrega (`fiscal_tax_id` do payload, só dígitos) · concierge `set_fulfillment(tax_id)` | `on_request_or_tax_id`, `_fiscal_customer` (payload da emissão), `DeliveryFiscalIdentityRule` (porta do pedido de entrega) | CPF/CNPJ **pedido NESTA venda** ("CPF na nota"). ⚠️ Nunca ler `customer.tax_id` para fins fiscais: aquele é cadastro/CRM — usá-lo tornava o CPF compulsório para cliente identificado |
 | `fiscal.issue_override` | `dict` | `backstage.services.orders.emit_fiscal_on_demand` (Últimas vendas do PDV, `POST pos/orders/<ref>/emit-fiscal/`, sempre após `validate_manager_override`) | `shop.services.fiscal.emission_resolver` (passa por cima da regra), `fiscal.issue_override` | Emissão AVULSA da NFC-e que a regra da casa não emitiu: `{approved_by, requested_by, at}` — `approved_by` é o username do gerente VERIFICADO pelo desafio (crachá ou PIN), `requested_by` o ator do PDV, `at` ISO datetime. Presente ⇒ `emission_resolver` diz sim para ESTE pedido. Escritor único; gravada na mesma transação da Directive (sem Directive, a chave não fica). Evento `fiscal_issue_override` no OrderEvent. Só vale para venda sem nota em andamento (`fiscal_state == not_expected`), do dia de operação da venda, ou até `pos.late_fiscal_emission_days` dias depois (Shop.defaults) e com pagamento capturado quando a cobrança exige. ⚠️ A nota sai com a data e a hora da emissão, não da venda |
 | `availability_decision` | `dict` | `lifecycle.approve_with_adjustments()`, `lifecycle.approve_order()`, `lifecycle.reject_order()` | `lifecycle.has_availability_approval()`, `lifecycle.ensure_confirmable()`, `services/stock.py` | Decisão do operador sobre disponibilidade: `{approved: bool, decisions: [{sku, original_qty, approved_qty, action}], decided_at, decided_by}`. Guard para confirmação |
-| `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer"` ou `"operator:<username>"` |
+| `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer.self_cancel"` (o cliente, pelo site), `"concierge"` (a Concierge, a pedido do cliente, pela mesma régua do site) ou `"operator:<username>"` |
 | `session_key` | `string` | hooks._on_cancelled | hooks._on_cancelled | Chave de sessão original (referência para release holds) |
 | `hold_ids` | `list[dict]` | `StockService.hold(order)` | `StockService.fulfill(order)`, `StockService.release(order)` | Holds do Stockman adotados no commit. Cada entry: `{sku, hold_id, qty}` |
-| `adjustment` | `dict` | `shop/services/order_composition.record()`, pelo caminho único `shop/services/order_edit.apply_final_items` — chamado pelo iFood (`ifood_events._apply_patch`, `ORDER_PATCHED`, `source: "ifood:ORDER_PATCHED"`) e pela edição da encomenda no balcão (`order_edit.edit`, API `POST orders/<ref>/edit/`, `source: "pos:edit"`, `event_id: "pos-edit:<ref>:<revision>"`) | **TODO consumidor de item ou total de pedido**, via `shop/services/order_composition`: `kds._order_to_lines`, `stock.revert`/`reconcile_to_items`, `fiscal._build_fiscal_items`, `views/fiscal_danfe`, `handlers/returns`, `projections/order_tracking`, `backstage/projections/order_queue`, `backstage/projections/kds`, `backstage/services/receipt_escpos`, `backstage/services/closing`, `backstage/bi/sources/orderman` | **O pedido depois de o cliente alterá-lo.** `{source, event_id, revision, applied_at, items, total_q, sealed_total_q}`. Existe porque `Order.total_q` e `Order.snapshot` são `SEALED_FIELDS`: o estado novo não tem onde ser escrito por cima, então vive ao lado. ⚠️ **`items` é a lista FINAL, absoluta** (relida com `ifood_orders.fetch_order`), nunca um delta — um ajuste novo SUBSTITUI o anterior, e `revision` conta quantas vezes o pedido mudou. `total_q` é o total que a fonte paga (o `orderAmount` do iFood; na edição do balcão, o total vigente mais a diferença das linhas que mudaram — nenhuma regra promocional é reavaliada). Na edição, item novo ganha `line_id` `E<revision>-<n>` e `meta.added_by = "pos:edit"`; a peça vendida por peso que entra na edição é uma linha por peça, com quantidade em kg e `meta.weighed` no mesmo formato da venda (`{entry, weight_g, price_per_kg_q, total_q, label_q?}`, `weighed_sale.WeighedLine.as_meta`), e a peça que já estava não muda de peso; a taxa de entrega é a linha `__DELIVERY_FEE__` (`meta.type = "delivery_fee"`, `line_id` `E<revision>-FEE` quando nasce na edição); `sealed_total_q` guarda o `Order.total_q` original, que é o que permite dizer "era X, virou Y". ⚠️ **Ninguém soma isto por conta própria**: quem lê item ou total de pedido chama `order_composition.effective_items()` / `effective_total_q()`, porque duas telas somando cada uma do seu jeito é divergência garantida entre o que a cozinha faz e o que o B.I. fatura |
+| `adjustment` | `dict` | `shop/services/order_composition.record()`, pelo caminho único `shop/services/order_edit.apply_final_items` — chamado pelo iFood (`ifood_events._apply_patch`, `ORDER_PATCHED`, `source: "ifood:ORDER_PATCHED"`) e pela edição da encomenda no balcão (`order_edit.edit`, API `POST orders/<ref>/edit/`, `source: "pos:edit"`, `event_id: "pos-edit:<ref>:<revision>"`) e pela Concierge acrescentando itens a pedido do cliente (`concierge/order_addition.apply` → `order_edit.edit(source="concierge:add")`, `event_id: "concierge-edit:<ref>:<revision>"`, só aumento de itens) | **TODO consumidor de item ou total de pedido**, via `shop/services/order_composition`: `kds._order_to_lines`, `stock.revert`/`reconcile_to_items`, `fiscal._build_fiscal_items`, `views/fiscal_danfe`, `handlers/returns`, `projections/order_tracking`, `backstage/projections/order_queue`, `backstage/projections/kds`, `backstage/services/receipt_escpos`, `backstage/services/closing`, `backstage/bi/sources/orderman` | **O pedido depois de o cliente alterá-lo.** `{source, event_id, revision, applied_at, items, total_q, sealed_total_q}`. Existe porque `Order.total_q` e `Order.snapshot` são `SEALED_FIELDS`: o estado novo não tem onde ser escrito por cima, então vive ao lado. ⚠️ **`items` é a lista FINAL, absoluta** (relida com `ifood_orders.fetch_order`), nunca um delta — um ajuste novo SUBSTITUI o anterior, e `revision` conta quantas vezes o pedido mudou. `total_q` é o total que a fonte paga (o `orderAmount` do iFood; na edição do balcão, o total vigente mais a diferença das linhas que mudaram — nenhuma regra promocional é reavaliada). Na edição, item novo ganha `line_id` `E<revision>-<n>` e `meta.added_by` = a origem (`"pos:edit"` ou `"concierge:add"`); a peça vendida por peso que entra na edição é uma linha por peça, com quantidade em kg e `meta.weighed` no mesmo formato da venda (`{entry, weight_g, price_per_kg_q, total_q, label_q?}`, `weighed_sale.WeighedLine.as_meta`), e a peça que já estava não muda de peso; a taxa de entrega é a linha `__DELIVERY_FEE__` (`meta.type = "delivery_fee"`, `line_id` `E<revision>-FEE` quando nasce na edição); `sealed_total_q` guarda o `Order.total_q` original, que é o que permite dizer "era X, virou Y". ⚠️ **Ninguém soma isto por conta própria**: quem lê item ou total de pedido chama `order_composition.effective_items()` / `effective_total_q()`, porque duas telas somando cada uma do seu jeito é divergência garantida entre o que a cozinha faz e o que o B.I. fatura |
 | `stock_ceded_holds` | `list[dict]` | `StockService.hold(order)` (caminho otimista, venda consumada fora: `payment.timing == "external"`, data de hoje) | operador/auditoria | Reservas de CARRINHO que cederam a esta venda quando o livre não bastava (`adapters/stock.reserve_ceding_cart_holds`). Cada entry: `{sku, hold_id, reference, qty, ceded_qty, remainder_hold_id}` — `reference` é a sessão que perdeu, `ceded_qty` o que esta venda levou, `remainder_hold_id` a reserva nova com o troco devolvido à sacola (ou `null`). O hold cedido carrega `metadata.ceded_to = "order:<ref>"`. Ausente quando nada cedeu. Reserva de pedido (`order:`) nunca aparece aqui |
 | `lifecycle` | `dict` | `lifecycle.dispatch()` via `_mark_phase_complete` | `sweep_stuck_orders`, `LifecyclePhaseHandler`, `phase_complete()` | Conclusão do handler de fase, `{on_commit: "done", on_accepted: "done", on_paid: "done", on_preparing: "done", on_ready: "done", on_dispatched: "done", on_delivered: "done", on_completed: "done", on_cancelled: "done", on_returned: "done"}`; apenas fases efetivamente retornadas com sucesso. Não prova conclusão remota dos filhos. Chaves históricas desconhecidas são preservadas. preparing/ready/dispatched/delivered/completed/returned ganham Directive no commit da transição; falha do marcador mantém a tarefa recuperável. Estado avançado não cria marcador por inferência. |
 | `loyalty` | `dict` | `LoyaltyRedeemModifier` (via `CommitService`) | `services/loyalty.py` (redeem), `LoyaltyRedeemHandler` | Resgate de pontos: `{redeem_points_q: int, applied_discount_q: int}`. `redeem_points_q` = pedido pelo cliente; `applied_discount_q` = desconto efetivamente aplicado (clampado ao subtotal) — é o valor DEBITADO. Propagada Session→Order na lista do `_do_commit()` |
 | `awaiting_wo_refs` | `list[string]` | `shop.handlers.production_order_sync` | Backstage pedidos/producao projections | Refs de WorkOrders que cobrem itens produzidos do pedido. Contextual, derivável e limpável em void. |
 | `pos_committed_at` | `string` | `shop/services/pos.py` (`_mark_tab_committed`) | — | Timestamp ISO de quando a comanda foi finalizada no POS |
 | `client_request_id` | `string` | `shop/services/pos.py` (`_mark_tab_committed`) | `_existing_sale_by_client_request_id` (dedupe) | Chave de idempotência do checkout direto POS. Espelhada em `pos.client_request_id` |
-| `pos` | `dict` | `shop/services/pos.py` (`_mark_tab_committed`, `close_sale`) | POS projections | Contexto POS selado no Order: `{terminal_ref, client_request_id, direct_checkout, intent_version, customer_memory_action, sales_mode}`. **Não há `cash_shift_id`**: a atribuição da venda ao turno é a linha `sale` no livro do `cashman` (ADR-022), nunca etiqueta no pedido |
+| `pos` | `dict` | `shop/services/pos.py` (`_mark_tab_committed`, `close_sale`) | POS projections | Contexto POS selado no Order: `{terminal_ref, client_request_id, direct_checkout, intent_version, customer_memory_action, sales_mode, offline, offline_duplicates}`. `offline` = `{captured_at, prices_at, priced_at?, pricing?, tab?}` só na venda que o PDV fez SEM CONEXÃO e enviou depois pela fila local (intent `offline_captured_at`/`offline_prices_at`, `close_sale`; WP-PDV-SEM-CONEXAO §3.3, `shop/services/pos_offline_sale.py`): `captured_at` (ISO 8601 com fuso) é a hora em que o balcão cobrou e `prices_at` a da leitura de preços que a tela usou. `priced_at` existe quando a venda passou nas travas (sem desconto, sem taxa, sem entrega, sem encomenda, dinheiro/maquininha) e a hora é plausível (não no futuro, não mais velha que 24 h nem que o turno aberto): o kernel a precificou NESSA hora (`ctx["priced_at"]`, `modifiers.pricing_now`). `pricing` = `{priced_at, charged_total_q, server_total_q, difference_q}` só quando, mesmo assim, a conta do servidor divergiu do cobrado: vale o cobrado (a sessão é regravada com os preços cobrados, política `external`, sem modifiers de desconto) e `difference_q = charged − server` (positivo: cobrou acima do preço daquela hora). `tab` = `{outcome, tab_ref, tab_display, left_open?, adjusted?, already_paid?, already_paid_q?, paid_order_ref?}` quando a comanda mudou em outro dispositivo durante a queda: `outcome` `lines_left_open` (fechou só as linhas cobradas, por `line_id`; `left_open` = `[{line_id, sku, name, qty}]` seguem numa comanda aberta com o mesmo número), `already_paid` (a comanda já estava paga no pedido `paid_order_ref`; `already_paid` = `[{line_id, sku, name, qty, amount_q}]` não viraram pedido de novo, `already_paid_q` é o que foi cobrado em dobro) ou `tab_cleared` (comanda limpa no outro dispositivo: entrou como balcão). `adjusted` = `[{line_id, sku, name, qty, kind, charged_qty, tab_qty?}]`, `kind` `removed_elsewhere` \| `qty_changed_elsewhere`: vale o cobrado, só registro (sem acerto de quantidade). `offline_duplicates` = `[{client_request_id, captured_at, charged_total_q, lines, payment_methods, terminal_ref, shift_id, operator, tab_ref, tab_display}]` no pedido JÁ PAGO quando uma venda guardada cobrou de novo TODAS as linhas dele: nenhum pedido novo nasce (o reenvio devolve este pedido). Cada ajuste vira um `OperatorAlert` `pos_offline_sale_adjusted` (Gestor) e uma frase no relatório do caixa (`ShiftReadingProjection.offline_notes`). **Não há `cash_shift_id`**: a atribuição da venda ao turno é a linha `sale` no livro do `cashman` (ADR-022), nunca etiqueta no pedido |
 | `external_order_code` | `string` | `shop/services/ifood_ingest.py` | — | Código do pedido no marketplace iFood. Duplicado em `ifood.order_code` |
 | `merchant_id` | `string` | `shop/services/ifood_ingest.py` | — | ID do merchant na iFood. Duplicado em `ifood.merchant_id` |
-| `ifood` | `dict` | `shop/services/ifood_ingest.py` · `shop/services/ifood_events.py` | `backstage/projections/ifood.py` · `backstage/projections/order_queue.py` · `shop/services/ifood_callbacks.remote_status_observed` · `receipt_escpos` | Contexto do iFood (só em pedidos ingeridos via `ifood_ingest`). **Da ingestão:** `order_code`, `merchant_id`, `created_at`, `display_id` (o número que cliente, portal e suporte falam), `is_test`, `order_timing`, `schedule`, `totals`, `payments`, `benefits`, `delivered_by`, `pickup_code`, `ref_from_display_id` (bool — o `Order.ref` adotou o `display_id` como sufixo; `false` quando o número estava ocupado no dia ou não veio, e aí o card exibe o `display_id` à parte), `confirm_by` (ISO — quando o iFood cancela se ninguém confirmar: `createdAt` deles + `confirmation.external_sla_minutes` do canal; ausente com SLA 0). **Fatos de status vindos do iFood** (`{event_id, observed_at}`, gravados uma vez, pelo primeiro evento): `remote_confirmed` (CFM), `remote_dispatched` (DSP), `remote_concluded` (CON). ⚠️ O fato é gravado e o evento recebe ACK **mesmo quando o pedido local ainda não chegou ao ponto** — ACK é "armazenei", não "apliquei" (doc do polling; o Firefly Audit pune evento sem ACK). A aplicação local acontece depois, em `ifood_events.reconcile_remote`, chamada a cada transição pelo receiver do `order_changed`; ela nunca inventa preparo nem pula a custódia do entregador, e nenhum aviso sai ao iFood para etapa que um fato já cobre. **`patches`** (`list[dict]`, de `ifood_events._process_patch`) — o cliente ALTEROU o pedido depois de confirmado (`ORDER_PATCHED`). Lista acumulável, um registro por evento: `{event_id, change_type, items, old_total_q, new_total_q, observed_at, order_status, local_total_q, fiscal_authorized, reconciled}`. ⚠️ `reconciled` diz se a loja acompanhou: `True` significa que `order.data["adjustment"]` foi gravado e estoque e cozinha foram reconciliados; `False` significa que **o pedido local segue com os itens e o total originais**. Junto vem `reconciliation` — o resumo `{revision, total_q, previous_total_q, diff, stock, kds}` quando reconciliou, ou `"blocked:<motivo>"` quando não: `test_order` (homologação não faz a padaria trabalhar), `fiscal_authorized` (a NFC-e já saiu e corrigir é decisão fiscal), `terminal` (pedido encerrado) e `fetch_failed` (a releitura no iFood falhou). Com a mercadoria já despachada o ajuste vale mas o estoque não se desfaz: `stock: {"skipped": "goods_left"}`. `items` é o DELTA do iFood (só os itens afetados), não a lista final; `old_total_q`/`new_total_q` são centavos do `oldTotal`/`newTotal` deles, e `None` quando o campo não veio (ausente ≠ zero). `fiscal_authorized` marca que a NFC-e já saiu, e aí corrigir é decisão fiscal — o sistema avisa e para |
+| `ifood` | `dict` | `shop/services/ifood_ingest.py` · `shop/services/ifood_events.py` | `backstage/projections/ifood.py` · `backstage/projections/order_queue.py` · `shop/services/ifood_callbacks.remote_status_observed` · `receipt_escpos` | Contexto do iFood (só em pedidos ingeridos via `ifood_ingest`). **Da ingestão:** `order_code`, `merchant_id`, `created_at`, `display_id` (o número que cliente, portal e suporte falam), `is_test`, `order_timing`, `schedule`, `totals`, `payments`, `benefits`, `delivered_by`, `pickup_code`, `ref_from_display_id` (bool — o `Order.ref` adotou o `display_id` como sufixo; `false` quando o número estava ocupado no dia ou não veio, e aí o card exibe o `display_id` à parte), `confirm_by` (ISO — quando o iFood cancela se ninguém confirmar: `createdAt` deles + `confirmation.external_sla_minutes` do canal; ausente com SLA 0). **Fatos de status vindos do iFood** (`{event_id, observed_at}`, gravados uma vez, pelo primeiro evento): `remote_confirmed` (CFM), `remote_dispatched` (DSP), `remote_concluded` (CON). ⚠️ O fato é gravado e o evento recebe ACK **mesmo quando o pedido local ainda não chegou ao ponto** — ACK é "armazenei", não "apliquei" (doc do polling; o Firefly Audit pune evento sem ACK). A aplicação local acontece depois, em `ifood_events.reconcile_remote`, chamada a cada transição pelo receiver do `order_changed`; ela nunca inventa preparo nem pula a custódia do entregador, e nenhum aviso sai ao iFood para etapa que um fato já cobre. **`patches`** (`list[dict]`, de `ifood_events._process_patch`) — o cliente ALTEROU o pedido depois de confirmado (`ORDER_PATCHED`). Lista acumulável, um registro por evento: `{event_id, change_type, items, old_total_q, new_total_q, observed_at, order_status, local_total_q, fiscal_authorized, reconciled}`. ⚠️ `reconciled` diz se a loja acompanhou: `True` significa que `order.data["adjustment"]` foi gravado e estoque e cozinha foram reconciliados; `False` significa que **o pedido local segue com os itens e o total originais**. Junto vem `reconciliation` — o resumo `{revision, total_q, previous_total_q, diff, stock, kds}` quando reconciliou, ou `"blocked:<motivo>"` quando não: `test_order` (homologação não faz a padaria trabalhar), `fiscal_authorized` (a NFC-e já saiu e corrigir é decisão fiscal), `terminal` (pedido encerrado) e `fetch_failed` (a releitura no iFood falhou). Com a mercadoria já despachada o ajuste vale mas o estoque não se desfaz: `stock: {"skipped": "goods_left"}`. `items` é o DELTA do iFood (só os itens afetados), não a lista final; `old_total_q`/`new_total_q` são centavos do `oldTotal`/`newTotal` deles, e `None` quando o campo não veio (ausente ≠ zero). `fiscal_authorized` marca que a NFC-e já saiu, e aí corrigir é decisão fiscal — o sistema avisa e para. **`handshakes`** (`dict` por id da disputa, de `shop/services/ifood_handshake.persist_event`): as negociações da Plataforma de Negociação do iFood (o cliente pede cancelamento ou reembolso, às vezes depois da entrega). Cada registro: `{state, raw, received_at, settlements, response?, last_event_id}`; `raw` é o evento deles (com `expiresAt` e `timeoutAction`, o que o iFood faz sozinho se a loja não responder), `received_at` (ISO) é quando a loja ficou sabendo e é de onde a Fila do Gestor conta o tempo. `handshake_pending` (bool) diz se há negociação não encerrada. Enquanto há uma aberta, existe um `OperatorAlert` `ifood_negotiation_open` com `respond_by` = o prazo deles (`ifood_handshake.sync_alert`) |
 | `courier` | `dict` | `CourierDispatchHandler`, `services/courier.apply_status` | `_courier_block` (projection do gestor), webhook Machine (lookup por `data__courier__id_mch`), notificação (`courier_tracking_url`) | Corrida de entrega na logística externa (Machine). Ver detalhamento abaixo |
 | `dispatch` | `dict` | `operator_orders.advance_order`, `mark_equipment_returned` | Custódia e projeções do Gestor | `equipment` conserva tipos legados (ex. `card_machine`); `equipment_out_at/by`, `equipment_back_at/by` são trilha. Novo `device_ref` (UUID string) e `device_label` registram qual dispositivo foi levado, sem inferir históricos. `trip_ref` (ref do pedido que abriu a saída) existe só nos pedidos que saíram JUNTO com outro: a saída é o pedido-âncora mais os que apontam para ele, e o pedido de cartão que entra numa saída com maquininha grava o mesmo `device_ref` sem reserva nova (o vínculo `DeliveryDevice.current_order` fica com quem a reservou). `courier_back_at/by`: "Entregador voltou" fechou a saída (`operator_orders.courier_returned`: entregue, acerto com troco integral, maquininha devolvida, concluído). Maquininha na rua além de `Shop.defaults.delivery.card_machine_alert_minutes` (default 120; 0 desliga) vira alerta `card_machine_overdue` (`check_card_machines_out`, no ciclo do `maintenance_worker`). Disponibilidade individual vem exclusivamente de `backstage.DeliveryDevice.current_order` (vínculo exclusivo), alterado na mesma transação do despacho/devolução. Pagamento é independente. |
+| `auto_ready` | `dict` | `kds.on_all_tickets_done` → `order_undo.record_auto_ready` (antes da transição a READY); some em `order_undo.undo_auto_ready` e no recall do ticket (`kds.reopen_ticket`) | `order_undo.ready_hold`, `lifecycle.enqueue_phase`, `LifecyclePhaseHandler`, `order_queue._undo_projection` | O pronto automático da Cozinha (SUITE-UX §5.1). `{token, at, undo_until, ticket_ids, actor}`: `token` (hex) identifica ESTE pronto; `at`/`undo_until` ISO; `ticket_ids` = o ticket cuja baixa fechou o pedido (o desfazer o reabre). Enquanto `undo_until` não vence, a fase `on_ready` (aviso de pronto, nota da sacola, corrida) fica agendada para `undo_until` com `hold_token`; desfeito, vira no-op. O `readyToPickup` do iFood sai na hora (o card diz "iFood já avisado"). Só fora do balcão e com `fulfillment.ready_undo_seconds > 0`. Fica no pedido depois da janela (o card diz "Pronto · automático"). |
+| `pending_handoff` | `dict` | `operator_orders.advance_order(undo_window=True)` → `order_undo.request_handoff`; some no commit (`order_undo.commit_handoff`), no desfazer (`undo_handoff`) ou na recusa da gravação | `order_undo`, `HandoffCommitHandler`, `operational_actions`, projeções do Gestor e da Saída | Entregar/Despachar tocado no Gestor ou na Saída e ainda não gravado. `{token, from_status, to_status, requested_at, commit_at, actor, change_out_q, cash_shift_id, equipment, trip_ref}`: os argumentos do toque, reaplicados por `advance_order(handoff_token=token)` quando `commit_at` vence (directive `order.handoff_commit`). Até lá o status não muda e nada sai da casa. Recusa na gravação (turno fechado, maquininha tomada) apaga o registro e cria alerta `handoff_refused`. Entra na revisão `advance`. |
 
 ### courier — detalhamento
 
@@ -694,6 +797,15 @@ o handler roda `check_late_started_orders()` + `check_forgotten_planned_orders()
 e reenfileira a si mesmo em `production.alerts.late_check_cadence_minutes`
 (0 = desligado), zerando `attempts`. Duplicatas colapsam mantendo a mais antiga.
 
+#### `kds.ticket_late`
+
+Despertador de UM ticket da Cozinha (`shop/handlers/kds_alerts.py`), criado quando o
+ticket nasce, com `available_at` = criação + `KDSInstance.target_time_minutes`. Payload:
+`{ticket_pk: int}`. Ao rodar, se o ticket ainda está aberto na estação, avisa quem
+cadastra as estações (`backstage.change_kdsinstance`) com o alerta pessoal
+`kds_ticket_late` (categoria `kitchen`, push que vibra); ticket que já saiu não avisa
+ninguém. O aviso some sozinho quando o ticket sai (pronto, cancelado).
+
 #### `card.create`
 
 | Chave | Tipo | Escrito por | Lido por |
@@ -863,6 +975,16 @@ frete de quem não entregou) — motor em `shopman.shop.fiscal_intermediary`.
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks | FulfillmentCreateHandler |
 | `channel_ref` | `string` | hooks | FulfillmentCreateHandler |
+
+#### `order.handoff_commit`
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `order_ref` | `string` | `order_undo.request_handoff` | HandoffCommitHandler |
+| `token` | `string` | `order_undo.request_handoff` | HandoffCommitHandler (só grava se bater com `Order.data.pending_handoff.token`) |
+
+`available_at` = fim da janela de desfazer (`fulfillment.handoff_undo_seconds`).
+Dedupe `order.handoff_commit:{order_ref}:{token}`.
 
 #### `fulfillment.update`
 
@@ -1090,6 +1212,18 @@ Lido por: `hooks._build_directive_payload`, `hooks._maybe_schedule_card_timeout`
 
 Lido por: `StockHoldHandler`, `confirmation.py` helpers, `apps._validate_hold_ttl`.
 
+### Fulfillment — preparo, saída e as metas do Gestor
+
+Campos completos no docstring de `ChannelConfig.Fulfillment` (`timing`, `auto_sync`,
+`prep_start`, `auto_ready`, `ready_undo_seconds`, `handoff_undo_seconds`, `courier`,
+`equipment`, `courier_ticket`). A chave das metas:
+
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `stage_goal_minutes` | `dict[str, int]` | `{"start": 5, "station": 15, "handoff": 10, "dispatch": 30, "courier_back": 45, "settle": 15}` | Meta de tempo de cada etapa do pedido no Gestor (o "meta N" do cartão e a Fila "Precisa de você"), em minutos inteiros > 0. `start` conta do aceite; `station` (estação terminar, inclusive o "Marcar pronto" à mão) do início do preparo; `handoff` do pronto (balcão); `dispatch` da CHEGADA do pedido; `courier_back` da saída; `settle` da entrega. O canal declara só as que mudam (`{"dispatch": 40}`): a cascata é por chave (`deep_merge`), e `Shop.defaults` também pode. Etapa desconhecida ou valor não inteiro recusa no `validate()`. O pedido novo não usa esta chave: o prazo dele é o de `confirmation` (`timeout_minutes`/`external_sla_minutes`), com 5 min sem prazo do canal. Padrões decididos pelo dono em 04/10/2026 (`shop/config.STAGE_GOAL_DEFAULTS`) |
+
+Lido por: `backstage/projections/order_attention.stage_goal` (via `card_attention`, na projeção do quadro).
+
 ### 4. Pipeline — o que acontece em cada fase?
 
 | Campo | Tipo | Default | Descrição |
@@ -1139,6 +1273,15 @@ Lido por: `setup.py` (registro), validators, modifiers.
 | `auto_sync_fulfillment` | `bool` | `False` | Sync automático fulfillment → order status |
 
 Lido por: `hooks.on_payment_confirmed`, `FulfillmentUpdateHandler`.
+
+### Pricing — preço do canal e desconto da Concierge
+
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `policy` | `string` | `"internal"` | `"internal"` (preço do backend) ou `"external"` (marketplace) |
+| `concierge_discount_max_percent` | `number` | `2.5` | Teto do desconto que a Concierge concede sozinha quando o cliente pede, em % do subtotal da sacola (aceita decimal); `0` desliga; entre 0 e 100. Configure no `Channel.config` do canal da Concierge (`whatsapp`) ou em `Shop.defaults`. O valor é calculado pelo sistema (arredondamento do total dentro do teto) e entra como cupom de uso único `CONCIERGE-…` pelas portas do cupom do site (canal, pedido mínimo, maior desconto ganha); no commit, o evento `concierge_discount` (ator `concierge`, `payload = {note, coupon_code, discount_q}`) vai para o histórico do pedido. Dono, 03/10/2026 |
+
+Lido por: `storefront/concierge/discount.py`.
 
 ### 8. Display — como um canal `display` exibe
 
@@ -1209,6 +1352,7 @@ Configuração operacional editável no ShopAdmin. Ausência preserva o fluxo an
 | Chave | Tipo/default | Lido por | Descrição |
 |---|---|---|---|
 | `storefront.address_map_confirmation_enabled` | `bool`, `false` | `storefront.presentation.home`, `AddressPicker` | Kill switch da confirmação visual no mapa. |
+| `storefront.hide_unavailable_by_default` | `bool`, `false` | `storefront.presentation.home` → `public_config`, `useAvailableOnly` | Padrão da casa para a chave "Mostrar só disponíveis" do cardápio e das coleções (Admin › Loja › Cardápio). Só exibição: o item indisponível segue no catálogo e na PDP. A escolha do cliente, guardada no navegador, vence o padrão. |
 | `storefront.address_location_divergence.mode` | `"off" \| "measure" \| "visible"`, `off` | `address_location_config`, `AddressPicker` | `measure` classifica somente após opt-in e emite agregado; `visible` também mostra o aviso. Ambos projetam `off` se o mapa estiver desligado. |
 | `storefront.address_location_divergence.threshold_m` | `int`, 500 | política TypeScript | Limite inferior conservador a partir do qual há divergência; bounds 100–10.000. |
 | `storefront.address_location_divergence.max_accuracy_m` | `int`, 250 | política TypeScript | Accuracy máxima do fix; bounds 20–2.000. Acima disso o resultado é inconclusivo. |
@@ -1309,6 +1453,7 @@ Políticas do balcão, fora do schema do `ChannelConfig`.
 |-------|------|----------|-----------|
 | `pos.discount_approval_threshold_q` | `int` (centavos) | `discount_approval_threshold_q` (`shop/services/pos.py`) | Descontos manuais **acima** deste valor exigem PIN do gerente. `0` **desliga** o teto — nenhum desconto passa a exigir aprovação por valor (a exceção de preço alterado segue exigindo, sempre). **Ausente = herda `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q`** (deploy). Editado em Reais no ShopAdmin. Dono único: o gate do orquestrador; a projection do backstage lê dele. |
 | `pos.weighed_weight_entry` | `bool` | `weighed_sale.weight_entry_enabled` (`shop/services/weighed_sale.py`) → `POSProjection.weighed_weight_entry` | **Venda por peso: o operador pode digitar o PESO**, além do valor da etiqueta. Liga quando houver balança no balcão. Ausente/qualquer valor que não `true` = **desligado** (o padrão): o PDV só pede o valor da etiqueta, a opção "Peso" não aparece e o servidor recusa `entry: "weight"` (`weight_entry_disabled`). Por LOJA e não por terminal: é equipamento do balcão, e uma chave só evita dois PDVs discordando. |
+| `pos.cash_tolerance` | `dict` `{percent: str, min_q: int, max_q: int}` | `cash_tolerance.shop_policy` (`backstage/services/cash_tolerance.py`) | **Tolerância do caixa** (decisão do dono, 04/10/2026): a diferença do fechamento que vira só registro, sem alerta. `percent` do dinheiro do dia (vendas, acertos de entrega e de conta em dinheiro do turno), preso entre `min_q` e `max_q` (centavos). Ausente ou chave ausente = **padrão do dono: `0.5`%, `200` (R$ 2), `2000` (R$ 20)**. Valor ilegível cai no padrão, nunca desliga a régua. Editado no ShopAdmin (Ponto de venda → "Tolerância do caixa", mínima e máxima, em % e R$). Cada terminal pode sobrescrever (`Terminal.metadata["cash_tolerance"]`). O operador nunca vê o veredito: o fechamento continua cego |
 | `pos.late_fiscal_emission_days` | `int` (dias) | `late_emission_days` (`shop/services/fiscal.py`) | Quantos dias DEPOIS do dia da venda a emissão avulsa da NFC-e (Últimas vendas do PDV, com gerente) ainda vale. Conta por dia de operação no fuso da loja (`TIME_ZONE`), não por 24 h corridas. **`0` ou ausente = só no mesmo dia** (padrão). Valor ilegível cai no mesmo dia, nunca em "sem limite". Editado no ShopAdmin (PDV e alertas → "Emissão avulsa de NFC-e: dias depois da venda"). ⚠️ A nota sai com a data e a hora da emissão, não da venda. A lista Últimas vendas estica a janela (24 h) até o primeiro dia do prazo, para a venda não sumir antes de vencer |
 
 ### Marketing — `Shop.defaults["marketing"]`
@@ -1354,6 +1499,7 @@ mecânica do `LoyaltyConfig`): defaults sensatos, `deep_merge` com
 | Chave | Tipo | Lido por | Descrição |
 |-------|------|----------|-----------|
 | `production.suggestion.seasons` | `dict[str, list[int]]` | `production.suggest_for()` (`shop/services/production.py`) | Estações → meses (1-12). O mês da data-alvo resolve a estação; a lista filtra o histórico de demanda do `craft.suggest()`. Vazio = sem filtro sazonal. |
+| `production.suggestion.season_min_samples` | `int` (>= 0) | `production.suggest_for()` | Dias-amostra da estação corrente, na janela do histórico, abaixo dos quais a ficha usa o histórico da **estação anterior** (começo de estação). O `basis` marca a troca com `season_fallback=True`, `season` = estação anterior, `current_season` e `current_season_samples`. Default `3`; `0` desliga. |
 | `production.suggestion.high_demand_multiplier` | `string` (Decimal) | `production.suggest_for()` | Multiplicador aplicado em sexta/sábado (ex: `"1.2"`). Ausente = desligado. |
 | `production.suggestion.safety_stock_percent` | `string` (Decimal) | `production.suggest_for()` | Margem sobre (demanda média + committed), ex: `"0.20"`. **Ausente = herda `CRAFTSMAN["SAFETY_STOCK_PERCENT"]`** (deploy, default 0.20). |
 | `production.alerts.low_yield_threshold` | `string` (Decimal 0-1) | `maybe_create_low_yield_alert` (`shop/handlers/production_alerts.py`) | Yield (finished/started) abaixo disto → `OperatorAlert production_low_yield`. Default `"0.80"`. |
@@ -1558,6 +1704,7 @@ achata `metadata` com `metadata["purchase"]` (a forma aninhada vence).
 |-------|------|-------------|----------|-----------|
 | `purchase.category` | `str` | seed/admin | projection do Compras (aba Base, Contagem) | Agrupador da tela. Ausente = "Insumos". |
 | `purchase.min_stock` | `str` decimal | `set_min_stock` (`backstage/services/purchase.py`), seed/admin | `_material_projection` | **Estoque mínimo declarado.** Sem ele o alvo de reposição cai para `daily_use * replenish_at`, que é **zero quando não há consumo medido** — e aí `suggestedQty` é zero para sempre e o insumo nunca vira pedido. Declarar o mínimo é o que destrava o insumo sem histórico de produção. Apagar a chave (não gravar `0`) devolve o insumo ao cálculo por consumo. Aceita `minStock` na leitura, por compatibilidade de entrada. |
+| `purchase.eans` | `list[str]` (GTIN-8/12/13/14, dígito verificador conferido) | `_learn_material_eans` em `confirm_receipt` (`backstage/services/purchase.py`): o EAN lido na embalagem (`scannedEan` da linha, "Ler EAN") e os da nota (`invoiceEan`, `invoicePackageEan`) de toda linha confirmada | `_material_projection` (`eans`); "Ler EAN" do Receber (`presentation/scanning.ts`) | **Os códigos de barras que já chegaram com este insumo e foram conferidos.** Só acrescenta (sem duplicar, na ordem em que apareceram); quem confirma o item é a fonte. É o que permite à câmera do recebimento achar o item da caixa sem a nota dizer. |
 | `purchase.request_status` | `str` | `send_purchase_request` | projection (`purchaseRequestStatuses`) | Só `sent` ("Aguardando entrega"): pedido em aberto, e enquanto ele existe o insumo não é pedido de novo (409 `purchase_request_open`). Ausente = `review`. Não há model de solicitação: o estado mora aqui. **Encerrado** pelo recebimento do insumo (`confirm_receipt`) ou por `cancel_purchase_request`, que apagam TODAS as chaves `purchase.request_*` — pedido encerrado não deixa resto no metadata; o despacho segue registrado na directive `notification.send`. |
 | `purchase.request_status_at` | `str` ISO 8601 | `send_purchase_request` | auditoria | Quando o pedido foi enviado. |
 | `purchase.request_ref` | `str` | `_queue_supplier_purchase_request` | auditoria | Ref da solicitação despachada ao fornecedor. |
@@ -1595,7 +1742,7 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `steps_progress` | `int` | Ninguém no backstage (o escritor `CraftExecution.advance_step` segue no Core, sem chamador de superfície desde a decisão de 16/09/2026: a aba Produção tem uma ação só, Continuar) | Ninguém | Ponteiro manual de passo, 1-based. Legado em ordens antigas; não é lido por projection. |
 | ~~`quality`~~ | — | **REMOVIDA (ADR-017, 2026-08-13)** | — | A qualidade da fornada não é mais armazenada: é DERIVADA das linhas de OUTPUT (`WorkOrderItem.quality_grade_ref`, colunas reais, não meta). Consumidores usam `shop.services.quality.derived_quality/output_partition`. Hierarquia = `QualityGrade.rank` (catálogo). A migração `shop/0014` traduziu os dados antigos (pt→en). |
 | ~~`batch_ref`/`batch_quantity`/`expiry_date`~~ | — | **REMOVIDAS (ADR-017 §5, 2026-08-13)** | — | O lote sai da LINHA de OUTPUT (`WorkOrderItem.batch_ref`), um `Batch` por linha — a fórmula no meta só admitia um lote por ordem. Validade vive em `Batch.expiry_date`; grupo com desconto congela `Batch.nonconformity_percent`/`_reason`. |
-| `formula_basis` | `dict` | `set_planned_quantity` (`shop/services/production.py`) | matriz/auditoria de sugestão | Basis da sugestão aceita (demanda média, committed, margem, `accepted_quantity`). Só quando `source_ref="formula:suggestion"`. |
+| `formula_basis` | `dict` | `set_planned_quantity` (`shop/services/production.py`) | matriz/auditoria de sugestão | Basis da sugestão aceita (demanda média, committed, margem, `accepted_quantity`; no começo de estação também `season_fallback`, `current_season`, `current_season_samples`). Só quando `source_ref="formula:suggestion"`. |
 | `consolidated_work_order_refs` | `list[string]` | `set_planned_quantity` | auditoria | Refs de WOs planned duplicadas consolidadas nesta. |
 | `_recipe_snapshot` | `dict` | Core (`CraftPlanning.plan`) | Core (`finish`), B.I. | BOM congelada no plan — **gerida pelo Core, nunca editar**. Carrega `version_ref` (`"<ref>@<n>"`, copiado de `Recipe.meta["version_ref"]`, vazio para ficha nunca publicada pelo inventário) para o B.I. cruzar fornada × versão da receita (ADR-027). Lido por versão em `backstage/services/closing.aggregate_by_version` (fechamento: `DayClosing.data["production_by_version"]`; inventário: `RecipeEntryDetailProjection.usage`). |
 | `stock_consumed_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`), `config/.../seed.py` | `sweep_unrealized_production` | Instante em que a perna de INSUMO do ledger fechou. Ausente numa WO `finished` = o consumo não rodou. O `seed` grava `FINISHED` direto no banco (sem passar pelo handler) e por isso **carimba os dois na mão** — sem o carimbo o sweeper reconsumia a história inteira. |
@@ -1802,6 +1949,24 @@ serializa receita/SKU de saída. No modo `explicit`, o documento não serializa
 ingredientes nem alvos individuais; ele declara **uso interno**. Um rótulo
 comercial futuro é outro contrato (ADR-028).
 
+### `kind=drawer_pulse` — o pulso da gaveta pedido pelo tablet
+
+Escrito por `backstage/services/drawer_pulse._create_job`, na mesma transação da
+linha `drawer_open` do livro (`via=relay`). Os bytes são `ESC p m t1 t2`
+(`receipt_escpos.drawer_kick`, com o pino e o pulso do `CashDrawerConfig` do
+terminal); o agente do terminal os entrega à fila da impressora do Balcão sem
+saber que é gaveta. Vale `drawer_pulse.PULSE_WINDOW` (30 s): pulso que chegasse
+depois abriria a gaveta sem ninguém na frente, então expira.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `purpose` | `drawer_pulse` | Finalidade do trabalho. |
+| `drawer_purpose` | `sale\|no_sale` | O porquê da abertura (o mesmo do livro). |
+| `order_ref` | `str` | A venda, quando `sale`. |
+| `terminal` | `str` | `ref` do terminal da gaveta. |
+| `pulse` | `{pin, on_ms, off_ms}` | O pulso composto, em ms. |
+| `entry_id` | `int` | A linha `drawer_open` que autorizou o pulso; a resposta do agente vira uma nota filha dela. |
+
 ### `kind=kitchen_ticket` — a Via Cozinha do posto sem tela
 
 Escrito por `backstage/services/kitchen_ticket_print._create_job`, um por
@@ -1835,6 +2000,35 @@ As demais chaves citadas no `help_text` do campo (`text_size`, `dark_mode`,
 
 ---
 
+## Workstation.metadata (backstage)
+
+Preferências do POSTO de trabalho (`shopman/backstage/models/workstation.py`). O posto é o
+que a estação confiável nomeia (`doorman.TrustedDevice.subject_id = Workstation.ref`); o
+posto Caixa tem o mesmo ref do seu `Terminal`, e é só por ele que se chega à gaveta. A
+configuração do caixa (hardware, `station`, coleções do PDV) continua em `Terminal.metadata`;
+aqui fica só o que é do posto, valha ele com caixa ou sem.
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `gestor_board` | `dict` | Gestor (`PUT /api/v1/backstage/orders/board-layout/`) | Gestor (`GET` do mesmo endpoint) | A arrumação das colunas do quadro do Gestor NESTE posto: quais estão recolhidas e a largura das abertas. Ver abaixo. |
+
+### gestor_board: as colunas do Gestor neste posto
+
+Escrito e lido só por `shopman/backstage/services/order_board_layout.py`, pelo endpoint
+`orders/board-layout/` (permissão `shop.manage_orders`, a mesma de ler o quadro). O posto é o
+`Workstation` da estação confiável da requisição (`station_trust.station_ref`): sem estação, a leitura volta
+`columns: null` e a gravação é recusada com 409, e a tela abre com as três colunas. SUITE-UX
+§16 e lei L7: o tablet do passe fica só com a Saída, e trocar de navegador não desfaz isso.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `columns` | `dict` | Uma entrada por zona do quadro, sempre as três: `intake` (Entrada), `prep` (Preparo), `expedition` (Saída). Cada uma é `{open: bool, weight: float}`: `open=false` é a faixa recolhida; `weight` é a fração da largura entre as abertas (1 = parte igual, faixa 0,25 a 4). Pelo menos uma aberta: o servidor recusa a arrumação com todas recolhidas. Guardado inválido lê como ausente. |
+
+Nada disto é dado de seed. Nenhum cadastro edita esta chave (é do posto, arrumada na própria
+tela), e a gravação trava a linha para não apagar as outras chaves por corrida.
+
+---
+
 ## cashman.Terminal.metadata
 
 Configuração por terminal do PDV (`packages/cashman`, `Terminal.metadata`). Escrita pelo
@@ -1851,6 +2045,7 @@ pacote porque hardware é da superfície) e pelo `seed`; lida por
 | `auto_lock_seconds` | `int` | Admin | projection POS | Inatividade DO DISPOSITIVO (nenhum app de operador tocado no navegador) até o cadeado do operador — relógio `shopman_operator_activity` do operator-kit. Default 60. |
 | `default_float_q` | `int` | Admin | projection POS (`cash_runtime.default_float_q`) | Fundo de troco sugerido na abertura guiada do caixa, em centavos. Escolha FIXA do gestor; 0/ausente = sem sugestão. ⚠️ Nunca derivado do contado/esperado de turnos (regime de contagem cega). |
 | `hardware` | `dict` | Admin, `seed` | `runtime_profile` | Periféricos declarados. Ver abaixo. |
+| `cash_tolerance` | `dict` `{percent?: str, min_q?: int, max_q?: int}` | Admin (seção "Tolerância do caixa") | `cash_tolerance.policy_for` | A tolerância do caixa DESTE terminal, por cima da da loja (`Shop.defaults["pos"]["cash_tolerance"]`), chave a chave: chave ausente = vale a da loja. Mesmas regras de leitura (valor ilegível mantém o de baixo; teto abaixo do piso vira o piso) |
 | `station` | `dict` | Admin | `backstage/station_trust.py`, `services/print_jobs.py` | Que ESPÉCIE de estação é este dispositivo, em nome de quem ela age, e para onde vão as etiquetas que ela pede. Ver abaixo. |
 
 ⚠️ **Nada disto é dado de seed, e o `seed --flush` não custa nenhum.** O flush precisa apagar
@@ -2011,7 +2206,9 @@ TOCTOU. Quem chama recebe `CashError("DUPLICATE_ENTRY")`, não `IntegrityError`.
 | `cash_out` | < 0 (exige `approved_by`) | — | — (motivo em `reason`) | sangria: idem (PIN de gerente, `cashman.adjust_shift`) |
 | `count` | contado − esperado | — | `{counted_q, notes}` | `services.close_shift`. Quem contou é `Entry.operator`. ⚠️ `supervisory` foi ESCRITO até 21/08/2026 e ainda aparece em lançamentos antigos (o livro é imutável); parou de ser escrito quando a custódia passou a ser da gaveta — turno sem dono não tem substituto, e a gerente fechar o caixa que outra pessoa abriu virou o caso normal |
 | `count_correction` | ± (exige `approved_by`) | `count` | — (motivo em `reason`) | `services.correct_count` |
-| `drawer_open` | 0 | — | — (motivo em `reason`) | abertura sem venda: `backstage/services/pos.py::register_drawer_opening` |
+| `drawer_open` | 0 | — | `{purpose: sale\|no_sale, via: local\|relay, pulse_job?}` (motivo em `reason`; a venda em `order_ref`) | **toda abertura pedida por um operador**, pelo dono único `backstage/services/drawer_pulse.py::open_drawer` (`POST pos/cash/drawer-open/`, permissão `cashman.operate_pos`). `operator` é quem está no dispositivo que pediu (o PIN do tablet, não quem está logado no PC do Balcão); o dispositivo é o `station_device_id`. `purpose=sale` exige `order_ref` cujo dinheiro entrou NESTA gaveta (linha `sale`/`cod_settled` com valor); `purpose=no_sale` exige `reason` (o `record` cobra os dois, `CashError("INVALID_PAYLOAD")`). `via=local`: o navegador do Balcão chuta pelo agente da própria máquina depois do `ok`; `via=relay`: o tablet pediu e o servidor pôs o pulso na fila do relay do terminal (`PrintJob kind=drawer_pulse`, ref em `pulse_job`). Linha antiga sem `purpose` é abertura sem venda. O B.I. (`bi_cash`) conta como "abertura sem venda" só o que não é `purpose=sale` |
+| `note` (resposta ao pulso) | 0 | `drawer_open` | `{event: "drawer_pulse_result", status: sent\|failed\|expired\|uncertain, job, detail}` | a resposta final do agente ao pulso pedido pelo relay, uma nota por abertura: `drawer_pulse._close_in_ledger`, no ACK do agente (`print_jobs.acknowledge_job`) ou quando a tela lê o pulso vencido (`GET pos/cash/drawer-pulse/<ref>/`). O relatório do turno no Admin mostra a frase ao lado da abertura |
+| `note` (tolerância) | 0 | — | `{event: "cash_tolerance", within, difference_q, tolerance_q, cash_received_q, policy: {percent, min_q, max_q}}` | o veredito da tolerância, gravado DEPOIS do fechamento cego por `backstage/services/cash_tolerance.py` (ouvindo `shift_closed`; refeito a cada `count_correction`, e vale a última nota). Congela a régua do dia. Só o relatório do turno (`cashman.audit_shift`) lê; o operador nunca vê. Fora da tolerância sai junto um `OperatorAlert` `cash_out_of_tolerance` (público `finance`) |
 | `drawer_unlock` | 0 (exige `approved_by`) | — | `{drawer_raw, outcome, duration_ms}` | **EXCEÇÃO** da trava da gaveta: `backstage/services/pos.py::unlock_drawer` (`POST pos/cash/drawer-unlock/`, PIN de gerente). ⚠️ Desde 29/08 a trava é DURA e quem libera é o mundo físico — o bloqueio cai quando o sensor diz que a gaveta fechou. Este caminho existe só para gaveta emperrada aberta ou sensor morto; `outcome` (`manager_override` \| `sensor_lost`) é o que separa a emergência da rotina no B.I., e `duration_ms` é quanto tempo a gaveta ficou aberta |
 | `note` (bloqueio) | 0 | — | `{event: "drawer_blocked", outcome, duration_ms, drawer_raw}` | o bloqueio por gaveta aberta terminou: `record_drawer_block` (`POST pos/cash/drawer-block/`). `outcome` = `closed` (o operador fechou — caminho normal) \| `dismissed` (desistiu da venda pelo X, ou saiu da tela com a trava de pé) \| `sensor_lost` \| `manager_override`. É esta linha que torna a duração real mensurável: no desenho antigo o PIN cortava a medição no meio |
 | `note` (busca da saída) | 0 | — | `{event: "drawer_unlock_attempt", outcome}` | alguém ABRIU a tela de PIN da trava: `record_unlock_attempt` (`POST pos/cash/drawer-unlock-attempt/`). `outcome` = `opened` \| `abandoned` (Esc de volta) \| `denied` (PIN recusado). A tela de trava **não mostra** a saída de emergência — mostrá-la ensinaria o bypass —, e por isso quem a procura é sinal: registrar só o destrave bem-sucedido apagaria justamente quem tenta e desiste |
@@ -2181,6 +2378,30 @@ O de-para aprendido entre o item da NF-e do fornecedor e o insumo da casa.
   substituída — a confirmação do operador é a verdade mais fresca — com
   `warning` estruturado `purchase.invoice_product_map_overwrite`.
 
+### `purchase.receipt_volume_counts`
+
+A contagem de volumes na doca, por NF ainda não confirmada (o operador conta os
+volumes antes de conferir item a item; a contagem sobrevive à troca de dispositivo).
+
+```json
+{
+  "purchase": {
+    "receipt_volume_counts": {
+      "<chave da NF, 44 dígitos>": {"counted": 12, "counted_by": "ana", "counted_at": "2026-10-04T09:12:00-03:00"}
+    }
+  }
+}
+```
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `receipt_volume_counts.<chave>` | `{counted: int, counted_by: str, counted_at: ISO str}` | `backstage/services/purchase.py::save_receipt_volumes` (`POST purchase/receipts/volumes/`) | `counted_receipt_volumes` (scan da NF e `ActiveReceiptProjection.volumesCounted`) |
+
+- O fornecedor é o do CNPJ embutido na chave da NF; sem fornecedor cadastrado, a
+  gravação recusa com `supplier_not_found`.
+- A entrada sai do mapa quando a NF é confirmada ou quando o operador desfaz a contagem
+  (`forget_receipt_volumes`).
+
 O lado do insumo (`buyman.Material.metadata`) tem as chaves de leitura do mesmo
 scan (`invoice_codes`, `gtins` e afins em `MATERIAL_CODE_KEYS`) e o estado do
 pedido de reposição (`purchase.request_*`, escrito por
@@ -2203,6 +2424,8 @@ quem confirmou, de qual NF, com que preço — mais **uma** estruturada:
 | `purchase_qty` · `purchase_base_qty` | `str` (Decimal) | quantidade **na unidade de compra** e **na unidade-base** — é o par que prova a conversão |
 | `purchase_total_cost_q` · `purchase_unit_cost_q` | `int` (centavos) | valor da linha e custo por unidade de compra |
 | `converted_via` | `{label: str, factor: str, approximate: bool}` | **a ponte que a quantidade atravessou** — ver abaixo |
+| `purchase_line_attested_by` | `"line_check" \| "volume_count"` | como a linha foi assinada: o ok dela, ou a contagem de volumes do recebimento por exceção (UX-C1). Quem contou é o `Move.user` |
+| `purchase_volumes_counted` · `purchase_volumes_expected` | `int` | só com `volume_count`: quantos volumes o recebedor contou na doca e quantos deviam ser |
 
 `converted_via` só existe quando houve conversão: entrada na própria unidade-base
 não carimba nada, porque não houve ponte, e uma chave com `null` fingiria que
@@ -2370,6 +2593,13 @@ da fase foi concluído, não que fiscal/aviso/courier filho teve aceite externo.
 enqueue reverte a transição; erro depois do commit conserva tarefa. Fase incompatível
 com estado atual fica failed/alerta canônico, sem executar trabalho antigo ou marcar done.
 `on_delivered` pode retomar em completed: só conclui aviso idempotente/fechamento já feito.
+`hold_token` (string, opcional): fase `on_ready` do pronto automático, agendada para
+`Order.data.auto_ready.undo_until`; a chave ganha o sufixo `:{hold_token}` (pronto
+desfeito e refeito é outra fase devida). O handler não roda se o token não for mais o de
+`auto_ready` (desfeito/recall) ou se o pedido voltou ao preparo; se o pedido já saiu de
+READY sem passar por `order_undo.release_ready_hold`, roda. O `readyToPickup` do iFood
+(`ifood.status_callback`) NÃO é segurado: chama o entregador do iFood e precisa sair antes
+do despacho dele (ver `order_undo`).
 Rollback deve drenar ou manter este handler disponível enquanto houver tarefas deste topic.
 
 
@@ -2450,3 +2680,16 @@ confirmation). An exact retry returns without any writes only while current
 saved values and all owner mappings still match. CPF changes, owner changes,
 new sale IDs or operators cannot reuse that receipt; normal guards apply.
 Only the most recent successful SAVE fingerprint is retained per customer.
+
+
+## KDSInstance.config
+
+**Campo**: `KDSInstance.config` (JSONField, `shopman/backstage/models/kds.py`). Como a
+estação provisionada se mostra e quem a leva no bolso (frente V6-KDS-HUB, prévia v4
+`cozinha-estacao` nota 1 e `cozinha-celular` b).
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|---|---|---|---|---|
+| `density` | `"compact" \| "cozy" \| "roomy"` | Ajustes da Cozinha (`PATCH kds/<ref>/settings/`, `backstage/services/kds.update_station_settings`) | `KDSBoardProjection.density` (todas as telas da estação) | Tamanho do ticket da estação. Ausente = `cozy`. O som mora no campo `KDSInstance.sound_enabled`, gravado pela mesma porta |
+| `followers` | `dict[str, str]` | `POST kds/<ref>/follow/` (o quadro aberto num celular), `shop/services/kds_alerts.follow` | `kds_alerts.notify_new_ticket` | Quem leva a estação no bolso: `{"<user_id>": "<iso de quando passou a seguir>"}`. Vale por um turno (`FOLLOW_TTL`, 12 h); seguir outra estação tira a pessoa desta. O pedido novo vira alerta pessoal `kds_ticket_new` (categoria `kitchen`), que some quando alguém dá Visto ou inicia o ticket |
+

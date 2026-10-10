@@ -219,6 +219,11 @@ def build_bi_cash(
             day_movements[event.day][event.kind] += abs(event.amount_q)  # o sinal já é o tipo
         elif event.kind == Kind.ACCOUNT_SETTLED:
             operator_account_settled[event.operator_key] += event.amount_q
+        elif event.kind == Kind.DRAWER_OPEN and event.payload.get("purpose") == "sale":
+            # A gaveta aberta para guardar o dinheiro de uma venda (o tablet
+            # pedindo ao Balcão) não é "abertura sem venda": contá-la aqui
+            # faria o atendente que mais vende parecer o mais suspeito.
+            continue
         elif event.kind in counted:
             operator_events[event.operator_key][event.kind] += 1
             if event.kind != Kind.CHANGE_REQUESTED:

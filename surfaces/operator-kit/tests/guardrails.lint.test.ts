@@ -56,11 +56,12 @@ describe("cobertura de lint das superfícies", () => {
     expect(hasFlatConfig(surface)).toBe(true);
   });
 
-  it("o kit NÃO parte de `.nuxt/eslint.config.mjs` — layer não registra @nuxt/eslint", () => {
+  it("o kit NÃO parte de `.nuxt/eslint.config.mjs` nem registra @nuxt/eslint", () => {
     // `nuxt prepare` roda no layer (gera tipos) mas não escreve config de ESLint:
     // quem escreve é o módulo `@nuxt/eslint`, e o `nuxt.config.ts` do layer não
-    // registra módulo nenhum de propósito (módulo daqui vaza por `extends`).
-    // Se um dia alguém "uniformizar" o kit copiando o import dos apps, o lint do
+    // registra @nuxt/eslint. O Nuxt UI é a exceção deliberada: infraestrutura
+    // canônica do WP-UX-8, configurada sem tema visual e compartilhada por extends.
+    // Se alguém "uniformizar" o kit copiando o módulo de lint dos apps, o lint do
     // kit passa a depender de um arquivo que nunca é gerado — e some em silêncio.
     // Olha o IMPORT, não a menção: o próprio config explica em prosa por que não
     // parte do `.nuxt`, e um `toContain` cru se acusaria a si mesmo.
@@ -70,6 +71,7 @@ describe("cobertura de lint das superfícies", () => {
     expect(config).toContain("./eslint.config.base.mjs");
 
     const nuxtConfig = readFileSync(resolve(surfacesDir, "operator-kit", "nuxt.config.ts"), "utf8");
-    expect(nuxtConfig).not.toContain("modules:");
+    expect(nuxtConfig).toContain('"@nuxt/ui"');
+    expect(nuxtConfig).not.toContain('"@nuxt/eslint"');
   });
 });

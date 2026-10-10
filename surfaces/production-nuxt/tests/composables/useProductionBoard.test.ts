@@ -364,7 +364,7 @@ describe("useProductionBoard — plan/start writes", () => {
     expect(result.ok).toBe(false);
     expect(env.sonner.error).toHaveBeenCalledWith(
       "Nada foi salvo: os números desta tela passaram do prazo antes de o pedido chegar.",
-      { description: "Os números já foram atualizados — confira e confirme de novo." },
+      { description: "Os números já foram atualizados. Confira e confirme de novo." },
     );
     expect(env.refresh).toHaveBeenCalledOnce(); // sem depender de um toque
   });

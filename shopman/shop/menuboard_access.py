@@ -63,7 +63,7 @@ def menuboard_access_denied(request, ref: str):
 
     return HttpResponseForbidden(
         "Menuboard é superfície interna. Abra uma vez com sessão de operador nesta "
-        "tela para autorizá-la — o dispositivo fica confiável e não pede mais nada."
+        "tela para autorizá-la. O dispositivo fica confiável e não pede mais nada."
     )
 
 

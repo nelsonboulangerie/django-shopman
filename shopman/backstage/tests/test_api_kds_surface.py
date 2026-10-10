@@ -105,12 +105,29 @@ def test_board_returns_tickets(client, kds_operator, kds_setup):
 
 
 @pytest.mark.django_db
-def test_board_rejects_invalid_or_past_service_date(client, kds_operator, kds_setup):
+def test_board_of_the_exit_station_is_404(client, kds_operator, kds_setup):
+    """A Saída mora no Gestor (SUITE-UX §15 e §16): o endereço dela na Cozinha não tem quadro."""
+    expedition = kds_setup[1]
+    client.force_login(kds_operator)
+
+    response = client.get(reverse("api-backstage-kds-board", args=[expedition.ref]))
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_board_is_today_and_ignores_a_date_in_the_address(client, kds_operator, kds_setup):
+    """A prévia de outra data foi para a Produção/Encomendas (SUITE-UX §9)."""
     prep = kds_setup[0]
     client.force_login(kds_operator)
-    url = reverse("api-backstage-kds-board", args=[prep.ref])
-    assert client.get(url, {"date": "amanha"}).status_code == 400
-    assert client.get(url, {"date": "2000-01-01"}).status_code == 400
+
+    response = client.get(reverse("api-backstage-kds-board", args=[prep.ref]), {"date": "2099-01-01"})
+
+    assert response.status_code == 200
+    board = response.json()["board"]
+    assert "service_date" not in board
+    assert "available_dates" not in board
+    assert len(board["tickets"]) == 1
 
 
 @pytest.mark.django_db
@@ -146,6 +163,47 @@ def test_ticket_start_puts_ticket_in_progress_and_replay_is_success(client, kds_
     r2 = client.post(url, content_type="application/json")
     assert r2.status_code == 200
     assert r2.json()["ticket"]["status"] == "in_progress"
+
+
+@pytest.mark.django_db
+def test_ticket_start_records_who_started_and_when_only_once(client, kds_operator, kds_setup):
+    """Quem iniciou e a que horas, no ``Order.data`` (sem migração); o replay não sobrescreve."""
+    ticket = kds_setup[2]
+    client.force_login(kds_operator)
+    url = reverse("api-backstage-kds-ticket-start", args=[ticket.pk])
+    first = client.post(url, content_type="application/json").json()["ticket"]
+    assert first["started_by"] == "kds-api"
+    assert first["started_at_display"]
+
+    order = Order.objects.get(ref="KDS-API-1")
+    record = order.data["kds_started"][str(ticket.pk)]
+    assert record["by"] == "kds-api"
+
+    other = User.objects.create_user("kds-api-2", password="pw", is_staff=True)
+    other.user_permissions.add(_operate_kds_perm())
+    client.force_login(other)
+    again = client.post(url, content_type="application/json").json()["ticket"]
+    assert again["started_by"] == "kds-api"
+    order.refresh_from_db()
+    assert order.data["kds_started"][str(ticket.pk)] == record
+
+
+@pytest.mark.django_db
+def test_board_ticket_carries_volumes_and_the_base_to_declare_them(client, kds_operator, kds_setup):
+    """A estação declara volumes pela mesma porta do Gestor: o ticket traz o pedido e a base."""
+    from shopman.shop.services.operator_orders import operational_revision
+
+    prep, _, ticket, _ = kds_setup
+    order = Order.objects.get(ref="KDS-API-1")
+    order.data = {**order.data, "volumes": 2}
+    order.save(update_fields=["data"])
+    client.force_login(kds_operator)
+    board = client.get(reverse("api-backstage-kds-board", args=[prep.ref])).json()["board"]
+    card = next(item for item in board["tickets"] if item["pk"] == ticket.pk)
+    assert card["volumes"] == 2
+    assert card["volumes_order_ref"] == "KDS-API-1"
+    assert card["volumes_revision"] == operational_revision(order, field="volumes")
+    assert card["started_by"] == ""
 
 
 @pytest.mark.django_db
@@ -206,44 +264,12 @@ def test_internal_bug_surfaces_as_500_not_400(kds_operator, kds_setup, monkeypat
 
 
 @pytest.mark.django_db
-def test_expedition_action_validates_action(client, kds_operator, kds_setup):
-    ready = kds_setup[3]
-    client.force_login(kds_operator)
-    url = reverse("api-backstage-kds-expedition", args=[ready.pk])
-    assert client.post(url, data={"action": "bogus"}, content_type="application/json").status_code == 400
-    ok = client.post(url, data={"action": "complete"}, content_type="application/json")
-    assert ok.status_code == 200
-    assert ok.json()["action"] == "complete"
-
-
-@pytest.mark.django_db
 def test_ticket_done_missing_ticket_is_404(client, kds_operator, kds_setup):
     # Recurso inexistente mapeia por TIPO (KDSTicketNotFound) para 404, não 400.
     client.force_login(kds_operator)
     response = client.post(reverse("api-backstage-kds-ticket-done", args=[999999]))
     assert response.status_code == 404
     assert response.json()["detail"] == "Ticket não encontrado."
-
-
-@pytest.mark.django_db
-def test_expedition_missing_order_is_404(client, kds_operator, kds_setup):
-    client.force_login(kds_operator)
-    url = reverse("api-backstage-kds-expedition", args=[999999])
-    response = client.post(url, data={"action": "complete"}, content_type="application/json")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Pedido não encontrado."
-
-
-@pytest.mark.django_db
-def test_expedition_propagates_specific_core_message(client, kds_operator, kds_setup):
-    # Dispatch de pedido de retirada: a mensagem real do core chega ao
-    # operador — nunca o genérico "Ação inválida".
-    ready = kds_setup[3]  # pickup
-    client.force_login(kds_operator)
-    url = reverse("api-backstage-kds-expedition", args=[ready.pk])
-    response = client.post(url, data={"action": "dispatch"}, content_type="application/json")
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Pedido de retirada não pode ser despachado"
 
 
 @pytest.mark.django_db

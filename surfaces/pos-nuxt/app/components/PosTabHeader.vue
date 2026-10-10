@@ -4,12 +4,24 @@
 // line items + numpad. Owns the renameable tab number, the customer chip +
 // sheet, and "liberar comanda" (with confirmation). It renders
 // what the read-side hands it and emits intent; the shell resolves the commands.
-import type { POSCustomerLookupProjection, POSCustomerSearchResult } from "~/types/pos";
+import type { POSCustomerLookupProjection, POSCustomerSearchResult, POSSeatingSpotOption } from "~/types/pos";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
+import { tabTitleView } from "~/presentation/tabTitle";
 
 const props = defineProps<{
   salesMode?: "counter" | "order";
   tabDisplay: string;
+  /** O número da comanda ("1007"); vira o "#1007" pequeno quando ela tem nome. */
+  tabNumber?: string;
+  /** Hora em que a comanda abriu ("21:48"), lida no tablet ("aberta 21:48"). */
+  openedAt?: string;
+  /** As mesas do Salão de hoje: ao renomear, escolher uma com um toque (vínculo
+   *  OPCIONAL comanda × mesa, dono 04/10/2026). */
+  seatingSpots?: POSSeatingSpotOption[];
+  /** A mesa vinculada a esta comanda ("" = sem mesa). */
+  seatingSpotRef?: string;
+  /** Mesas já com outra comanda aberta (não se escolhe a mesma duas vezes). */
+  occupiedSpotRefs?: string[];
   hasOpenTab: boolean;
   canRename: boolean;
   customerName: string;
@@ -64,7 +76,8 @@ const emit = defineEmits<{
   "update:customerTaxId": [string];
   "update:customerEmail": [string];
   salesModeChange: ["counter" | "order"];
-  rename: [string];
+  /** Novo nome; e, quando veio de uma mesa tocada, o ref dela ("" = sem mesa). */
+  rename: [name: string, seatingSpotRef?: string];
   clear: [];
   clearCustomer: [];
   lookupCustomer: [];
@@ -97,6 +110,14 @@ const SALES_MODES = [
   { ref: "order", label: "Encomendas", icon: "lucide:calendar-clock" },
 ] as const;
 
+// "Mesa 6" grande e "#1007" pequeno (v4): o nome é como a mesa chama, o número é
+// a referência do balcão e do cupom. Sem nome próprio, o número é o título.
+const title = computed(() => tabTitleView(props.tabDisplay, props.tabNumber || ""));
+// Toque não tem teclado: nenhuma tecla impressa (SPEC4 §7).
+const coarsePointer = useMediaQuery("(pointer: coarse)");
+// O tamanho dos controles da barra no conjunto mínimo: `md` no mouse, `xl` no toque.
+const controlSize = computed(() => (coarsePointer.value ? "xl" : "md"));
+const isCounter = computed(() => (props.salesMode || "counter") === "counter");
 const renaming = ref(false);
 const renameValue = ref("");
 function startRename() {
@@ -111,6 +132,16 @@ function confirmRename() {
 function cancelRename() {
   renaming.value = false;
 }
+/** Tocar a mesa dá à comanda o nome dela e o vínculo, num gesto só. */
+function pickSpot(spot: POSSeatingSpotOption) {
+  renaming.value = false;
+  emit("rename", spot.label, spot.ref);
+}
+function clearSpot() {
+  renaming.value = false;
+  emit("rename", props.tabDisplay || props.tabNumber || "", "");
+}
+const occupied = computed(() => new Set(props.occupiedSpotRefs || []));
 function onRenameKeydown(event: KeyboardEvent) {
   if (event.key === "Enter") {
     event.preventDefault();
@@ -123,22 +154,24 @@ function onRenameKeydown(event: KeyboardEvent) {
 
 // The customer picker is the shared PosCustomerModal (full-screen, picker-first).
 const customerSheetOpen = ref(false);
-// F6 no shell abre o mesmo modal que o chip de cliente abre.
-function openCustomerSheet() {
+const customerSeed = ref("");
+// F6 no shell abre o mesmo modal que o chip de cliente abre. `seed`: a busca da
+// venda passou o que o operador digitou ("Buscar cliente “Maria”").
+function openCustomerSheet(seed = "") {
   if (props.customerLockedReason) {
     emit("customerLocked", props.customerLockedReason);
     return;
   }
+  customerSeed.value = typeof seed === "string" ? seed : "";
   customerSheetOpen.value = true;
 }
-defineExpose({ openCustomer: openCustomerSheet });
 // Foco devolvido ao CONTEXTO quando o modal fecha: o diálogo é controlado (sem
 // trigger do reka), então sem isto o foco morria no body.
-const customerChipRef = ref<HTMLButtonElement | null>(null);
+const customerChipRef = ref<{ $el?: HTMLElement } | null>(null);
 watch(customerSheetOpen, async (open) => {
   if (open || !import.meta.client) return;
   await nextTick();
-  customerChipRef.value?.focus();
+  customerChipRef.value?.$el?.focus();
   emit("customerClosed");
 });
 
@@ -147,62 +180,113 @@ function runClear() {
   confirmClear.value = false;
   emit("clear");
 }
+/** A porta "Liberar comanda" da barra de contexto pede a MESMA confirmação de sempre. */
+function askRelease() {
+  if (!props.hasOpenTab || props.readOnly) return;
+  confirmClear.value = true;
+}
+defineExpose({ openCustomer: openCustomerSheet, askRelease });
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-wrap items-center gap-2">
-    <!-- MODO DE ATENDIMENTO — o escolhido é CHEIO (`bg-primary`), como o modo
-         do numpad e o seletor do "Transferir": `secondary` sobre `ghost` era
-         dois cinzas quase iguais, e sob a luz do balcão ninguém dizia qual
-         estava ligado. O ícone dobra a leitura para quem não pára para ler. -->
-    <div v-if="!readOnly" class="flex shrink-0 items-center gap-0.5 rounded-md border bg-muted/40 p-0.5" role="group" aria-label="Modo de atendimento">
-      <UiButton
+  <div class="flex min-w-0 flex-nowrap items-center gap-2">
+    <!-- MODO DE ATENDIMENTO (v4): o seletor da suíte, o ligado `solid` (o ativo único
+         da suíte), com ícone que dobra a leitura e `aria-pressed` para o leitor de tela. -->
+    <div v-if="!readOnly" class="inline-flex shrink-0 items-center gap-1 max-lg:hidden" role="group" aria-label="Modo de atendimento" data-pos-sales-modes>
+      <NuxtButton
         v-for="mode in SALES_MODES"
         :key="mode.ref"
-        variant="ghost"
-        size="sm"
-        class="h-8 gap-1.5 px-3 font-semibold"
-        :class="(salesMode || 'counter') === mode.ref
-          ? 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 hover:text-primary-foreground'
-          : 'text-muted-foreground hover:text-foreground'"
+        :size="controlSize"
+        color="neutral"
+        variant="outline"
+        active-color="primary"
+        active-variant="solid"
+        :active="(salesMode || 'counter') === mode.ref"
+        :icon="mode.icon"
         :aria-pressed="(salesMode || 'counter') === mode.ref"
+        :data-pos-sales-mode-active="(salesMode || 'counter') === mode.ref ? '' : undefined"
         :disabled="loading"
         @click="$emit('salesModeChange', mode.ref)"
       >
-        <Icon :name="mode.icon" class="size-4 shrink-0" />
-        {{ mode.label }}
-      </UiButton>
+        <span class="max-2xl:sr-only">{{ mode.label }}</span>
+      </NuxtButton>
     </div>
     <!-- tab number (renameable) -->
-    <div v-if="renaming" class="flex items-center gap-1">
+    <div v-if="renaming" class="relative flex items-center gap-1" data-pos-tab-rename>
+      <!-- As mesas do Salão (vínculo OPCIONAL): um toque dá o nome e liga a mesa.
+           Quem prefere escrever escreve; balcão segue sem mesa. -->
+      <div
+        v-if="seatingSpots?.length"
+        class="absolute top-full left-0 z-40 mt-1 grid w-[min(22rem,80vw)] gap-2 rounded-lg border border-border bg-popover p-2.5 text-popover-foreground shadow-lg"
+        data-pos-tab-rename-spots
+      >
+        <p class="op-micro text-muted-foreground">Ou escolha a mesa do salão</p>
+        <div class="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
+          <NuxtButton
+            v-for="spot in seatingSpots"
+            :key="spot.ref"
+            :size="controlSize"
+            color="neutral"
+            variant="outline"
+            active-color="primary"
+            active-variant="solid"
+            :active="spot.ref === seatingSpotRef"
+            :disabled="occupied.has(spot.ref) && spot.ref !== seatingSpotRef"
+            :title="occupied.has(spot.ref) && spot.ref !== seatingSpotRef ? `${spot.label} já tem comanda aberta` : spot.area"
+            :data-pos-spot-option="spot.ref"
+            :label="spot.label"
+            @mousedown.prevent
+            @click="pickSpot(spot)"
+          />
+        </div>
+        <NuxtButton
+          v-if="seatingSpotRef"
+          color="primary"
+          variant="ghost"
+          class="justify-self-start"
+          label="Tirar a mesa desta comanda"
+          @mousedown.prevent
+          @click="clearSpot"
+        />
+      </div>
       <UiInput
         v-model="renameValue"
-        class="h-9 w-40 text-lg font-semibold"
+        class="h-10 w-40 text-lg font-semibold"
         placeholder="Mesa, nome…"
         autofocus
         @keydown="onRenameKeydown"
       />
-      <UiButton variant="ghost" size="icon-sm" aria-label="Confirmar nome" @click="confirmRename">
-        <Icon name="lucide:check" class="size-4" />
-      </UiButton>
-      <UiButton variant="ghost" size="icon-sm" aria-label="Cancelar" @click="cancelRename">
-        <Icon name="lucide:x" class="size-4" />
-      </UiButton>
+      <NuxtButton color="neutral" variant="ghost" icon="i-lucide-check" square aria-label="Confirmar nome" @click="confirmRename" />
+      <NuxtButton color="neutral" variant="ghost" icon="i-lucide-x" square aria-label="Cancelar" @click="cancelRename" />
     </div>
-    <button
+    <NuxtButton
       v-else-if="hasOpenTab && canRename && !readOnly"
-      type="button"
-      class="group flex min-w-0 max-w-full shrink-0 items-center gap-1.5"
+      color="neutral"
+      variant="ghost"
+      class="min-w-0 max-w-full shrink font-normal"
       aria-label="Renomear comanda"
+      title="Renomear comanda"
+      data-pos-tab-title
       @click="startRename"
     >
-      <h1 class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
-      <Icon name="lucide:pencil" class="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-    </button>
-    <h1 v-else-if="hasOpenTab" class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
-    <h1 v-else class="whitespace-nowrap text-lg font-semibold">Venda rápida</h1>
+      <span class="flex min-w-0 flex-col text-left leading-none">
+        <h1 class="truncate op-heading tabular-nums">{{ title.title }}</h1>
+        <span v-if="title.ref || openedAt" class="mt-0.5 truncate op-micro text-muted-foreground tnum lg:hidden" data-pos-tab-subtitle>{{ [title.ref, openedAt ? `aberta ${openedAt}` : ""].filter(Boolean).join(" · ") }}</span>
+      </span>
+      <span v-if="title.ref" class="shrink-0 self-end pb-1 op-micro text-muted-foreground tnum max-lg:hidden" data-pos-tab-number>{{ title.ref }}</span>
+      <Icon name="lucide:pencil" class="size-3.5 shrink-0 text-muted-foreground max-lg:hidden" />
+    </NuxtButton>
+    <span v-else-if="hasOpenTab" class="inline-flex min-w-0 items-center gap-1.5 px-2" data-pos-tab-title>
+      <span class="flex min-w-0 flex-col leading-none">
+        <h1 class="truncate op-heading tabular-nums">{{ title.title }}</h1>
+        <span v-if="title.ref || openedAt" class="mt-0.5 truncate op-micro text-muted-foreground tnum lg:hidden" data-pos-tab-subtitle>{{ [title.ref, openedAt ? `aberta ${openedAt}` : ""].filter(Boolean).join(" · ") }}</span>
+      </span>
+      <span v-if="title.ref" class="shrink-0 self-end pb-1 op-micro text-muted-foreground tnum max-lg:hidden" data-pos-tab-number>{{ title.ref }}</span>
+    </span>
+    <h1 v-else class="whitespace-nowrap px-2 op-heading">Venda rápida</h1>
+    <div class="hidden h-6 w-px shrink-0 bg-border lg:block" aria-hidden="true" />
 
-    <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA — F6 · F7 · F8, na ordem em que
+    <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA: F6 · F7 · F8, na ordem em que
          aparecem. O atalho existia e só vivia no dicionário (tecla `?`), que é
          onde se aprende, não onde se lembra. No balcão quem ensina é a tela: a
          tecla ao lado do botão é o que faz a mão largar o mouse.
@@ -210,69 +294,81 @@ function runClear() {
          `aria-hidden` nos três: quem usa leitor de tela navega por foco, e o
          nome acessível do botão não deve virar "Identificar cliente F6". -->
 
-    <!-- customer chip — e, na encomenda anônima, o CHAMADO.
+    <!-- customer chip, e, na encomenda anônima, o CHAMADO.
          O checkout tinha um cartaz dizendo "identifique o cliente" a 400px de
          distância do único botão que faz isso. Dois lugares para uma pendência:
-         um que fala e outro que resolve. Agora quem fala é o próprio botão —
+         um que fala e outro que resolve. Agora quem fala é o próprio botão:
          ele pulsa, ganha a cor do alerta e diz o porquê no `title`.
          `motion-safe:` porque pulso é enfeite para quem pediu para a tela parar
          de se mexer; a cor e a borda seguram o recado sozinhas. -->
-    <button
+    <NuxtButton
       ref="customerChipRef"
       data-context-entry="customer"
-      type="button"
-      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
-      :class="customerRequired
-        ? 'border-warning bg-warning/10 font-medium text-warning motion-safe:animate-pulse'
-        : 'border-border'"
+      :size="controlSize"
+      :color="customerRequired ? 'primary' : 'neutral'"
+      variant="outline"
+      class="min-w-0 shrink-0 gap-2"
+      :class="customerRequired ? 'motion-safe:animate-pulse' : ''"
       aria-haspopup="dialog"
-      :title="customerLockedReason || (customerRequired ? 'A encomenda precisa de cliente: é quem a casa avisa se algo mudar até a data' : undefined)"
+      :title="customerLockedReason || (customerRequired ? 'A encomenda precisa de cliente: é quem a casa avisa se algo mudar até a data' : 'Cliente (F6)')"
       @click="readOnly ? $emit('openCustomer') : openCustomerSheet()"
     >
       <Icon
         :name="customerRequired ? 'lucide:user-round-plus' : 'lucide:user-round'"
         class="size-4 shrink-0"
-        :class="customerRequired ? 'text-warning' : 'text-muted-foreground'"
+        :class="customerRequired ? '' : 'text-muted-foreground'"
       />
-      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-medium" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
-      <span v-else class="whitespace-nowrap" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
+      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-40 truncate font-semibold max-sm:sr-only" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
+      <span v-else class="whitespace-nowrap max-sm:sr-only" :class="customerRequired ? '' : 'text-muted-foreground'"><span class="max-2xl:hidden">Identificar cliente</span><span class="2xl:hidden">Cliente</span></span>
       <OperatorKbd
+        v-if="!coarsePointer"
+        class="max-lg:hidden"
         aria-hidden="true"
       >F6</OperatorKbd>
-    </button>
+    </NuxtButton>
 
-    <!-- RECEBIMENTO — irmão do chip de cliente. Os dois são fatos do PEDIDO,
+    <!-- RECEBIMENTO: irmão do chip de cliente. Os dois são fatos do PEDIDO,
          decididos na abertura do atendimento e revistos de relance daqui em
          diante. Na barra eles são LEITURA com porta de saída; o lugar onde se
          decide é o começo do fluxo, não esta barra. -->
-    <button
-      v-if="hasOpenTab && salesMode !== 'counter'"
-      type="button"
-      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
-      :class="fulfillmentType === 'delivery' ? 'border-primary bg-primary/5' : 'border-border'"
+    <!-- NO BALCÃO os dois chips continuam (v4, `pos-sale4.html`): "Consumir aqui F7"
+         e "Agora F8" tracejado. São a porta da encomenda: entregar ou agendar troca
+         o modo e abre a mesma pergunta (`pages/index.vue`, `leaveCounterThen`). -->
+    <NuxtButton
+      v-if="hasOpenTab"
+      :size="controlSize"
+      :color="!isCounter && fulfillmentType === 'delivery' ? 'primary' : 'neutral'"
+      variant="outline"
+      class="min-w-0 shrink-0 gap-2 max-sm:hidden"
       aria-haspopup="dialog"
+      :title="isCounter ? 'Recebimento (F7): entregar vira encomenda' : 'Recebimento (F7)'"
+      data-context-entry="fulfillment"
       @click="$emit('openFulfillment')"
     >
-      <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
-      <span class="min-w-0 max-w-48 truncate font-medium">{{ fulfillmentLabel }}</span>
+      <Icon :name="isCounter ? 'lucide:utensils' : (fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store')" class="size-4 shrink-0 text-muted-foreground" />
+      <span class="min-w-0 max-w-48 truncate font-semibold">{{ isCounter ? 'Consumir aqui' : fulfillmentLabel }}</span>
       <OperatorKbd
+        v-if="!coarsePointer"
+        class="max-lg:hidden"
         aria-hidden="true"
       >F7</OperatorKbd>
-    </button>
+    </NuxtButton>
 
-    <!-- QUANDO — o terceiro irmão. A data morava dentro do formulário de
+    <!-- QUANDO: o terceiro irmão. A data morava dentro do formulário de
          ENTREGA, e por isso a retirada agendada não existia: a casa recebe
          encomenda por telefone e o balcão não tinha onde escrever isso.
-         "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um campo vazio. -->
-    <button
-      v-if="hasOpenTab && salesMode !== 'counter'"
-      type="button"
-      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
-      :class="scheduleConflict
-        ? 'border-destructive bg-destructive/10 text-destructive'
-        : (scheduled ? 'border-primary bg-primary/5' : 'border-border')"
+         "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um campo vazio; por isso
+         a borda tracejada (v4) enquanto nada foi agendado. -->
+    <NuxtButton
+      v-if="hasOpenTab"
+      :size="controlSize"
+      :color="scheduleConflict ? 'error' : (scheduled ? 'primary' : 'neutral')"
+      variant="outline"
+      class="min-w-0 shrink-0 gap-2 max-xl:hidden"
+      :class="scheduleConflict || scheduled ? '' : 'text-muted-foreground'"
+      data-context-entry="schedule"
       aria-haspopup="dialog"
-      :title="scheduleConflictReason || ''"
+      :title="scheduleConflictReason || (isCounter ? 'Quando (F8): agendar vira encomenda' : 'Quando (F8)')"
       @click="$emit('openSchedule')"
     >
       <Icon
@@ -280,27 +376,18 @@ function runClear() {
         class="size-4 shrink-0"
         :class="scheduleConflict ? '' : 'text-muted-foreground'"
       />
-      <span class="min-w-0 max-w-56 truncate font-medium">{{ scheduleLabel }}</span>
+      <span class="min-w-0 max-w-56 truncate" :class="scheduled || scheduleConflict ? 'font-semibold' : ''">{{ isCounter ? 'Agora' : scheduleLabel }}</span>
       <OperatorKbd
+        v-if="!coarsePointer"
         aria-hidden="true"
       >F8</OperatorKbd>
-    </button>
+    </NuxtButton>
 
-    <!-- release tab (pushed to the right of the context bar) -->
-    <UiButton
-      v-if="hasOpenTab && !readOnly"
-      variant="ghost"
-      size="icon-sm"
-      class="ml-auto shrink-0 text-muted-foreground"
-      aria-label="Liberar comanda"
-      title="Liberar comanda"
-      @click="confirmClear = true"
-    >
-      <Icon name="lucide:x" class="size-4" />
-    </UiButton>
-
+    <!-- Liberar comanda: a porta mora no fim da barra de contexto (`pages/index.vue`,
+         v4); o gesto e a confirmação continuam aqui (`askRelease`). -->
     <PosCustomerModal
       v-model:open="customerSheetOpen"
+      :seed-query="customerSeed"
       :customer-name="customerName"
       :customer-phone="customerPhone"
       :customer-tax-id="customerTaxId"
@@ -332,25 +419,22 @@ function runClear() {
       @apply-preference="(key, value) => $emit('applyPreference', key, value)"
     />
 
-    <UiDialog :open="confirmClear" @update:open="(value) => { if (!value) confirmClear = false; }">
-      <UiDialogContent class="sm:max-w-sm">
-        <UiDialogHeader>
-          <UiDialogTitle>Liberar comanda?</UiDialogTitle>
-          <UiDialogDescription>
-            <template v-if="hasFiredItems">
-              Isso descarta este atendimento e libera a comanda. O que já foi enviado à cozinha
-              é cancelado: avise quem está lá dentro. Não dá para desfazer.
-            </template>
-            <template v-else>
-              Isso descarta este atendimento e libera a comanda. A ação não pode ser desfeita.
-            </template>
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <UiDialogFooter class="gap-2">
-          <UiButton variant="outline" @click="confirmClear = false">Cancelar</UiButton>
-          <UiButton variant="destructive" :disabled="loading" @click="runClear">Liberar comanda</UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+    <NuxtModal
+      :open="confirmClear"
+      title="Liberar comanda?"
+      :description="hasFiredItems
+        ? 'Isso descarta este atendimento e libera a comanda. O que já foi enviado à cozinha é cancelado: avise quem está lá dentro. Não dá para desfazer.'
+        : 'Isso descarta este atendimento e libera a comanda. A ação não pode ser desfeita.'"
+      :ui="{ content: 'sm:max-w-sm' }"
+      data-pos-release-tab
+      @update:open="(value: boolean) => { if (!value) confirmClear = false; }"
+    >
+      <template #footer>
+        <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="confirmClear = false" />
+          <NuxtButton color="error" label="Liberar comanda" :disabled="loading" @click="runClear" />
+        </div>
+      </template>
+    </NuxtModal>
   </div>
 </template>

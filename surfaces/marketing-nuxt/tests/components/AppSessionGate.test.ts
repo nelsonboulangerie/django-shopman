@@ -21,7 +21,7 @@ beforeEach(() => {
     // com o vue-test-utils puro, então ele entra como os demais globais.
     useOperatorWindowTitle: vi.fn(() => ({ appName: "Marketing" })),
     useRuntimeConfig: () => ({ public: { operatorHubUrl: "/apps/" } }),
-    // Implementação REAL do kit: é ela que decide se o "Voltar ao Shopman Apps" sai da
+    // Implementação REAL do kit: é ela que decide se o "Voltar à Central" sai da
     // janela (app instalado) ou fica nela (aba). Mocká-la esconderia justamente o
     // que importa aqui.
     useOperatorAppLink,
@@ -33,8 +33,20 @@ beforeEach(() => {
       operator: ref(null),
       lock,
       refresh: refreshSession,
+      locked: ref(false),
+      stationRef: ref(""),
     }),
+    // A oferta de fixar o dispositivo num posto é do kit e tem teste próprio; aqui
+    // ela fica fechada para o gate de sessão ser o único assunto.
+    useStationSetupOffer: () => ({ offer: ref(false), dismiss: vi.fn(), done: vi.fn() }),
     watch,
+    // As seções e o resumo das decisões na caixa de Avisos (o shell é stub aqui).
+    useMarketingSections: () => ({
+      sections: ref([]),
+      activeSection: ref("decisions"),
+    }),
+    useMarketingDecisions: () => ({ decisionCount: ref(0) }),
+    provideOperatorInboxAlerts: vi.fn(),
   });
 });
 
@@ -45,7 +57,6 @@ function mountApp() {
   return mount(MarketingApp, {
     global: {
       stubs: {
-        CampaignTopBar: true,
         Icon: true,
         NuxtPage: {
           setup(_props: unknown, { slots }: { slots: { default?: Slot } }) {
@@ -56,7 +67,13 @@ function mountApp() {
         OfflineBanner: true,
         OperatorLock: true,
         OperatorLogin: true,
-        OperatorRail: true,
+        OperatorAppRoot: { template: "<div><slot /></div>" },
+        OperatorSuiteShell: {
+          name: "OperatorSuiteShell",
+          template: '<div data-testid="suite-shell"><slot /></div>',
+        },
+        MarketingInboxLive: true,
+        OperatorStationSetup: true,
         UiSonner: true,
       },
     },
@@ -71,6 +88,8 @@ describe("Marketing app session gate", () => {
     expect(wrapper.findComponent({ name: "OperatorLogin" }).exists()).toBe(
       true,
     );
+    // Sem sessão, nenhuma conexão da caixa pessoal.
+    expect(wrapper.findComponent({ name: "MarketingInboxLive" }).exists()).toBe(false);
   });
 
   it("mounts the protected route only after capability authentication", () => {
@@ -79,6 +98,9 @@ describe("Marketing app session gate", () => {
     const wrapper = mountApp();
 
     expect(wrapper.find('[data-testid="protected-page"]').exists()).toBe(true);
+    // Fase 2: o app mora no shell da suíte, e a caixa pessoal (uma só) vem depois do gate.
+    expect(wrapper.find('[data-testid="suite-shell"]').exists()).toBe(true);
+    expect(wrapper.findComponent({ name: "MarketingInboxLive" }).exists()).toBe(true);
   });
 
   it("keeps the route closed when the session endpoint is unavailable", () => {

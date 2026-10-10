@@ -6,12 +6,20 @@ import type {
 } from "~/types/notifications";
 
 export const NOTIFICATION_REVISION_STATE = "marketing-notification-revision";
+export const NOTIFICATION_REALTIME_STATE = "marketing-notification-realtime";
 const POLL_MS = 60_000;
 
 export function useMarketingNotificationInbox() {
   const config = useRuntimeConfig();
   const revision = useState<number>(NOTIFICATION_REVISION_STATE, () => 0);
-  const realtime = ref<"connecting" | "live" | "polling">("polling");
+  // Estado da conexão em `useState`: quem segura a caixa é o `MarketingInboxLive` (um
+  // só, no shell), e quem mostra o "ao vivo" é o cabeçalho de cada tela.
+  const realtime = useState<"connecting" | "live" | "polling">(
+    NOTIFICATION_REALTIME_STATE,
+    // Antes do primeiro `connect()` (inclusive no SSR) a conexão ainda não tem
+    // veredito: "conectando", não "caiu para o poll".
+    () => "connecting",
+  );
   const mutationError = ref("");
   const acknowledging = ref<ReadonlySet<number>>(new Set());
   const markingSeen = ref(false);

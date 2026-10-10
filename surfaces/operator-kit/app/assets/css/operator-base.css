@@ -8,14 +8,20 @@
    próprio arquivo só o que é dele: as diretivas que resolvem por node_modules e
    o seu tail (impressão térmica, fontes self-hosted, alvos de toque).
 
-   ⚠️ O que NÃO pode morar aqui: diretiva que resolve por especificador nu
-   (`@import "tailwindcss"`, `@import "tw-animate-css"`, `@plugin "..."`). O kit
-   é uma layer do Nuxt, não um app: não tem node_modules com o Tailwind, e a
-   resolução parte do diretório do arquivo que declara a diretiva. Essas ficam no
-   tailwind.css de cada app, onde há node_modules para resolvê-las.
+   ⚠️ O que NÃO pode morar aqui: diretiva que depende do node_modules do app
+   (`@import "tailwindcss"`, `@import "tw-animate-css"`, `@plugin "..."`). Essas
+   ficam no tailwind.css de cada app. O tema canônico do Nuxt UI permanece ligado;
+   operator-theme.css traduz seus tokens semânticos para a identidade Shopman.
    ============================================================================ */
 
+/* Importar o tema oficial não é opcional: além dos tokens semânticos, ele
+   informa ao Tailwind onde estão as classes geradas dos componentes detectados.
+   Sem esta linha a anatomia chega ao DOM, mas cores e separadores não existem no
+   CSS final. operator-theme.css vem depois para traduzir a marca. */
+@import "@nuxt/ui";
 @import "./operator-theme.css";
+@import "./operator-suite.css";
+@import "./operator-fit.css";
 
 /* O Tailwind v4 auto-detecta fontes só a partir da raiz do app; o `operator-kit`
    (Nuxt layer irmão, via `extends`) fica fora dela. Sem este `@source`, classes
@@ -33,63 +39,6 @@
     "Courier New", monospace;
   --font-display--font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 
-  --animate-shine: shine 3s ease-out infinite;
-  --animate-gradient-flow: gradientFlow 10s ease 0s infinite normal none running;
-  --animate-meteor: meteor 5s linear infinite;
-  --animate-background-position-spin: background-position-spin 3000ms infinite alternate;
-  --animate-grid: grid 15s linear infinite;
-
-  @keyframes grid {
-    0% {
-      transform: translateY(-50%);
-    }
-    100% {
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes shine {
-    0% {
-      background-position: 200% 0;
-    }
-    25%,
-    100% {
-      background-position: -200% 0;
-    }
-  }
-
-  @keyframes gradientFlow {
-    50% {
-      background-position: 100% 50%;
-    }
-    0%,
-    100% {
-      background-position: 0% 50%;
-    }
-  }
-
-  @keyframes meteor {
-    0% {
-      transform: rotate(var(--angle)) translateX(0);
-      opacity: 1;
-    }
-    70% {
-      opacity: 1;
-    }
-    100% {
-      transform: rotate(var(--angle)) translateX(-500px);
-      opacity: 0;
-    }
-  }
-
-  @keyframes background-position-spin {
-    0% {
-      background-position: top center;
-    }
-    100% {
-      background-position: bottom center;
-    }
-  }
 }
 
 @theme inline {
@@ -134,18 +83,6 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-input: var(--sidebar-input);
 
-  --color-gradient-lime: var(--gradient-lime);
-  --color-gradient-ocean: var(--gradient-ocean);
-  --color-gradient-wine: var(--gradient-wine);
-  --color-gradient-rust: var(--gradient-rust);
-}
-
-:root {
-  /* Gradient slide show Colors */
-  --gradient-lime: oklch(67.287% 0.1546 116.644);
-  --gradient-ocean: oklch(44.56% 0.10114 242.813);
-  --gradient-wine: oklch(32.332% 0.12034 5.266);
-  --gradient-rust: oklch(55.695% 0.19944 34.155);
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -165,12 +102,11 @@
      forte=text-foreground · médio=text-muted-foreground · borda=border-border
      superfície=bg-background/bg-card · superfície-2=bg-muted/bg-secondary
 
-   ALTURAS DE CONTROLE (ladder confortável — 3 degraus, alvo de toque ≥44 no md+)
-     sm  h-9  (36px)  chip / botão inline / pílula de filtro
-     md  h-11 (44px)  campo, botão padrão, linha de tender, tile de método
-     lg  h-14 (56px)  CTA primário, tecla de numpad, tile de produto/ação
-     Os componentes ui-thing mapeiam para o ladder (UiButton sm=h-9 / default=h-11
-     / lg=h-14; UiInput=h-11). xs=h-7 é o degrau micro (inline/ícone minúsculo).
+   ALTURAS DE CONTROLE
+     tamanhos oficiais do Nuxt UI, escolhidos semanticamente no componente.
+     `min-h-control` e `min-h-action` são opt-in para os poucos fluxos operacionais
+     de toque que exigem envelope maior; toolbars, menus, tabs e navbars não são
+     inflados por CSS global.
 
    ESPAÇAMENTO
      gap-1.5  dentro de grupo (numpad, cluster de chips)
@@ -194,6 +130,12 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+  /* Título que recebe o foco por programa (o leitor de tela anuncia a tela nova): não
+     é controle, não se alcança pelo Tab, e o anel ao abrir a tela parecia um botão
+     selecionado ("Painel" do Marketing). O anel de foco é de controle. */
+  :where(h1, h2, h3)[tabindex="-1"]:focus {
+    outline: none;
   }
   * {
     scrollbar-width: thin;

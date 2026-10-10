@@ -5,6 +5,7 @@ import type { PrintOutcome } from "~/composables/useCounterAgent";
 import type { Action, POSCashManagementCapability, POSProjection } from "~/types/pos";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { actionHref } from "~/utils/posIntent";
+import { cashCloseBlockedByQueue } from "~/presentation/offlineSales";
 
 interface CashSessionDeps {
   pos: ComputedRef<POSProjection | null>;
@@ -52,6 +53,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   // isso o gancho "abrir ao imprimir" do driver nunca serviria aqui. Mesmo
   // caminho da venda em dinheiro: um só, para os quatro momentos.
   const drawer = useCounterAgent(pos);
+  // O tablet não alcança o agente do Balcão: abre pelo relay do servidor, com a
+  // mesma linha no livro-caixa (quem, de qual dispositivo, quando, por quê).
+  const drawerOpening = useDrawerOpening({ pos, actions, action, drawer });
 
   const cashManagement = computed<POSCashManagementCapability | null>(
     () => pos.value?.checkout?.capabilities?.cash_management ?? null,
@@ -141,7 +145,19 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     );
   }
 
+  // A fila de vendas sem conexão barra o fechamento (`blocks_close_when_offline_
+  // queue_pending` do contrato): fechar o turno com venda que ainda não chegou
+  // ao servidor deixaria essa venda sem turno onde entrar.
+  const offlineSales = usePosOfflineSales();
+
   function closeCashShift(payload: { amount: string; notes: string }): Promise<boolean> {
+    const blocked = cashManagement.value?.blocks_close_when_offline_queue_pending === false
+      ? ""
+      : cashCloseBlockedByQueue(offlineSales.unsentCount.value);
+    if (blocked) {
+      toast.error(blocked);
+      return Promise.resolve(false);
+    }
     return run(
       actionHref(actions.value, "close_cash_shift", "/api/v1/backstage/pos/cash/close/"),
       { closing_amount: payload.amount || "0", notes: payload.notes },
@@ -218,7 +234,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       // Fragmento em minúscula de propósito: entra DENTRO de "O comprovante não
       // saiu: …", e a saída (ação "Tentar de novo" + onde se resolve) é do toast
       // logo abaixo. Frase inteira aqui duplicaria o sujeito.
-      outcome = { status: "failed", detail: httpErrorMessage(error, "o servidor não montou o comprovante") };
+      outcome = { status: "failed", detail: httpErrorMessage(error, "o comprovante não ficou pronto") };
     }
     if (outcome.status === "failed") {
       // Nunca só "indisponível": o operador ganha a saída na mão — tentar de
@@ -272,9 +288,24 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
    */
   async function openDrawerWithoutSale(reason: string): Promise<boolean> {
     if (busy.value) return false;
+    // No TABLET (o agente não responde nesta máquina) o pedido vai pelo relay:
+    // o servidor grava a abertura e o agente do Balcão abre a gaveta. O motivo
+    // e a permissão são os mesmos; a autoria é de quem está neste dispositivo.
+    if (drawerOpening.relay.value?.available && !(await drawer.reachable())) {
+      busy.value = true;
+      try {
+        const opened = await drawerOpening.open({ purpose: "no_sale", reason });
+        if (!opened) {
+          toast.error(`${drawerOpening.message.value} Tente de novo ou abra com a chave.`);
+        }
+        return opened;
+      } finally {
+        busy.value = false;
+      }
+    }
     const registered = await run(
       actionHref(actions.value, "drawer_open", "/api/v1/backstage/pos/cash/drawer-open/"),
-      { reason },
+      { purpose: "no_sale", reason, via: "local" },
       "A abertura da gaveta não entrou na trilha.",
       "A gaveta continua fechada: sem registro ela não abre. Tente de novo.",
     );
@@ -356,7 +387,7 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
       `/api/v1/backstage/pos/cash/refund/${encodeURIComponent(payload.orderRef)}/`,
       body,
       "A devolução não foi registrada.",
-      "O dinheiro não saiu da gaveta e a devolução segue pendente. Tente de novo: o servidor não devolve duas vezes.",
+      "O dinheiro não saiu da gaveta e a devolução segue pendente. Tente de novo: a devolução não sai duas vezes.",
     ).then((ok) => {
       // A gaveta abre para entregar as notas, e só depois do `ok`: devolução
       // recusada (PIN errado, já devolvida) não pode abrir a gaveta.
@@ -426,7 +457,9 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     // "pode ser reimpresso depois" não tinha.
     reprintMovementReceipt,
     // Gaveta: a antesala mostra o botão só onde existe caminho de software.
-    canOpenDrawer: drawer.canKick,
+    // Pelo agente do Balcão OU, no tablet, pelo relay do servidor.
+    canOpenDrawer: drawerOpening.canOpen,
+    drawerOpening,
     drawerUnavailableReason: drawer.unavailableReason,
     // IMPRESSORA, capacidade à parte: o comprovante de sangria/suprimento sai
     // onde há bobina, mesmo que a gaveta deste balcão abra com a chave.

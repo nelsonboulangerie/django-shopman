@@ -7,14 +7,14 @@ import {
   ref,
   watch,
 } from "vue";
-import { mount, type VueWrapper } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 
 import QcCloseScreen from "../../app/components/QcCloseScreen.vue";
 import type {
   QCDefectProjection,
   QCGradeProjection,
 } from "../../app/types/production";
-import { UiButtonStub, UiTextareaStub } from "../support/nativeUiStubs";
+import { nuxtUiStubs } from "../support/nuxtUiStubs";
 
 const GRADES: QCGradeProjection[] = [
   {
@@ -68,7 +68,6 @@ const DEFECTS: QCDefectProjection[] = [
   },
 ];
 
-const passthrough = { template: "<div><slot /></div>" };
 const stubs = {
   Icon: true,
   OperatorNumpad: {
@@ -85,20 +84,28 @@ const stubs = {
       </div>
     `,
   },
-  UiSheet: {
-    props: ["open"],
-    template: "<div v-if='open'><slot /></div>",
+  ...nuxtUiStubs,
+  // A barra da base do kit: a ação como dados, desenhada como um botão.
+  OperatorActionBar: {
+    props: ["action", "contextLabel", "contextValue", "label"],
+    template: `
+      <footer :aria-label="label">
+        <span data-bar-context>{{ contextLabel }} {{ contextValue }}</span>
+        <button type="button" data-bar-action :disabled="action.disabled || action.loading"
+          @click="action.onSelect && action.onSelect($event)">{{ action.label }}</button>
+        <p v-if="action.disabled && action.reason" data-bar-reason>{{ action.reason }}</p>
+      </footer>
+    `,
   },
-  UiSheetContent: {
-    props: ["title"],
-    template: "<section><h2>{{ title }}</h2><slot name='content' /></section>",
-  },
-  UiBadge: passthrough,
-  UiButton: UiButtonStub,
-  UiTextarea: UiTextareaStub,
 };
 
+// O diálogo da casa (`useConfirm` do kit) no lugar do `window.confirm`.
+const confirmDiscard = vi.fn(async () => true);
+
 function installGlobals() {
+  confirmDiscard.mockReset();
+  confirmDiscard.mockResolvedValue(true);
+  vi.stubGlobal("useConfirm", () => confirmDiscard);
   vi.stubGlobal("computed", computed);
   vi.stubGlobal("ref", ref);
   vi.stubGlobal("onMounted", onMounted);
@@ -413,19 +420,53 @@ describe("QcCloseScreen — classificação por grau", () => {
     wrapper.unmount();
   });
 
-  it("confirma antes de descartar um QC preenchido", async () => {
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
+  it("pergunta no diálogo da casa antes de descartar um QC preenchido", async () => {
+    const nativeConfirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", nativeConfirm);
+    confirmDiscard.mockResolvedValue(false);
     const wrapper = mountQc();
     await buttonByText(wrapper, "Razoável")!.trigger("click");
     await enter(wrapper, "5");
 
     await buttonByText(wrapper, "Voltar")!.trigger("click");
+    await flushPromises();
     expect(wrapper.emitted("back")).toBeUndefined();
+    expect(confirmDiscard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Descartar as quantidades e os motivos informados?",
+        confirmLabel: "Descartar e sair",
+      }),
+    );
 
-    confirm.mockReturnValue(true);
+    confirmDiscard.mockResolvedValue(true);
     await buttonByText(wrapper, "Voltar")!.trigger("click");
+    await flushPromises();
     expect(wrapper.emitted("back")).toHaveLength(1);
+    expect(nativeConfirm).not.toHaveBeenCalled();
+  });
+
+  it("expõe o que foi digitado para a página segurar o ‹ › entre lotes", async () => {
+    const wrapper = mountQc();
+    const screen = wrapper.vm as unknown as {
+      isDirty: boolean;
+      confirmDiscardChanges: (action: "leave" | "switch") => Promise<boolean>;
+    };
+    expect(screen.isDirty).toBe(false);
+    await expect(screen.confirmDiscardChanges("switch")).resolves.toBe(true);
+    expect(confirmDiscard).not.toHaveBeenCalled();
+
+    await buttonByText(wrapper, "Razoável")!.trigger("click");
+    await enter(wrapper, "5");
+    expect(screen.isDirty).toBe(true);
+    confirmDiscard.mockResolvedValue(false);
+    await expect(screen.confirmDiscardChanges("switch")).resolves.toBe(false);
+    expect(confirmDiscard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Descartar as quantidades e os motivos informados?",
+        confirmLabel: "Descartar e trocar de lote",
+      }),
+    );
+    wrapper.unmount();
   });
 
   it("desabilita o numpad enquanto Normal é apenas o saldo automático", () => {
@@ -461,7 +502,7 @@ describe("QcCloseScreen — correção auditável", () => {
     );
     const fairQuantity = wrapper.find('[data-grade-ref="fair"]');
     expect(fairReason.text()).toBe("Formato");
-    expect(fairReason.classes()).toContain("h-11");
+    expect(fairReason.classes()).toContain("h-8");
     expect(fairReason.classes()).toContain("rounded-md");
     expect(fairReason.classes()).toContain("ml-3");
     expect(fairReason.classes()).toContain("mr-2");
@@ -484,7 +525,7 @@ describe("QcCloseScreen — correção auditável", () => {
       'button[aria-label="Editar motivo da perda: Queimado"]',
     );
     expect(lossReason.text()).toBe("Queimado");
-    expect(lossReason.classes()).toContain("h-11");
+    expect(lossReason.classes()).toContain("h-8");
     expect(lossReason.classes()).toContain("rounded-md");
     expect(lossReason.classes()).toContain("w-[calc(100%-1rem)]");
     expect(lossReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(
@@ -514,6 +555,20 @@ describe("QcCloseScreen — correção auditável", () => {
     expect(submit.attributes("disabled")).toBeUndefined();
     await submit.trigger("click");
 
+    // O motivo é perguntado ao operador; a tela nunca o escreve sozinha.
+    expect(wrapper.emitted("confirm")).toBeUndefined();
+    expect(wrapper.text()).toContain(
+      "Por que a qualidade deste lote está sendo corrigida?",
+    );
+    await buttonByText(wrapper, "Contagem errada no fechamento")!.trigger(
+      "click",
+    );
+    await wrapper
+      .find("[data-correction-reason]")
+      .findAll("button")
+      .find((button) => button.text() === "Salvar correção")!
+      .trigger("click");
+
     const payload = wrapper.emitted("confirm")?.[0]?.[0] as {
       quantity: string;
       reason: string;
@@ -541,7 +596,7 @@ describe("QcCloseScreen — correção auditável", () => {
       ],
       yield_deviation_confirmed: false,
       yield_deviation_reason: "",
-      reason: "Revisão do QC registrada no quiosque.",
+      reason: "Contagem errada no fechamento",
     });
     expect(payload.partition.filter((group) => group.loss)).toEqual([
       { quantity: "8", quality_defect_ref: "shape", loss: true },
@@ -572,20 +627,96 @@ describe("QcCloseScreen — correção auditável", () => {
     ).toBe(false);
   });
 
+  it("exige motivo escrito pelo operador e envia o texto dele", async () => {
+    const wrapper = mountQc({
+      mode: "correct",
+      initialPartition,
+    });
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "2");
+    await buttonByText(wrapper, "Salvar correção")!.trigger("click");
+
+    const sheet = wrapper.find("[data-correction-reason]");
+    const sheetSubmit = sheet
+      .findAll("button")
+      .find((button) => button.text() === "Salvar correção")!;
+    expect(sheetSubmit.attributes("disabled")).toBeDefined();
+    await sheetSubmit.trigger("click");
+    expect(wrapper.emitted("confirm")).toBeUndefined();
+
+    await sheet
+      .find('textarea[aria-label="Motivo da correção de qualidade"]')
+      .setValue("  Duas peças estavam em outra bandeja  ");
+    await sheetSubmit.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
+      reason: "Duas peças estavam em outra bandeja",
+    });
+  });
+
   it("não trata o preenchimento inicial como alteração e mostra o estado de envio", async () => {
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     const wrapper = mountQc({
       mode: "correct",
       initialPartition,
     });
 
     await buttonByText(wrapper, "Voltar")!.trigger("click");
-    expect(confirm).not.toHaveBeenCalled();
+    await flushPromises();
+    expect(confirmDiscard).not.toHaveBeenCalled();
     expect(wrapper.emitted("back")).toHaveLength(1);
 
     await wrapper.setProps({ submitting: true });
     const submit = buttonByText(wrapper, "Salvando correção…")!;
     expect(submit.attributes("disabled")).toBeDefined();
+  });
+});
+
+describe("QcCloseScreen — a ação do momento no celular", () => {
+  it("a barra da base fecha o lote pelo mesmo caminho do botão da mesa", async () => {
+    const wrapper = mountQc();
+    const bar = wrapper.find('footer[aria-label="Ação do lote"]');
+
+    expect(bar.find("[data-bar-context]").text()).toBe("Realizado 40 de 40");
+    // Na mesa o botão continua sob o teclado; abaixo de lg ele sai e fica a barra.
+    expect(wrapper.find("[data-qc-submit]").classes()).toContain("max-lg:hidden");
+
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "4");
+    await bar.find("[data-bar-action]").trigger("click");
+
+    // A folha de motivos continua: a barra só abre a pergunta que falta.
+    expect(wrapper.emitted("confirm")).toBeUndefined();
+    expect(wrapper.text()).toContain("Qual o motivo principal da perda de 4?");
+    await buttonByText(wrapper, "Queimado")!.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
+      quantity: "40",
+      partition: [
+        { quantity: "36", quality_grade_ref: "standard" },
+        { quantity: "4", quality_defect_ref: "burned", loss: true },
+      ],
+    });
+    await nextTick();
+    expect(bar.find("[data-bar-action]").text()).toBe("Finalizando o lote…");
+    expect(bar.find("[data-bar-action]").attributes("disabled")).toBeDefined();
+  });
+
+  it("na correção sem mudança, a barra diz por que ainda não salva", async () => {
+    const wrapper = mountQc({
+      mode: "correct",
+      initialPartition: [{ quantity: "40", quality_grade_ref: "standard" }],
+    });
+    const bar = () => wrapper.find('footer[aria-label="Ação do lote"]');
+
+    expect(bar().find("[data-bar-action]").text()).toBe("Salvar correção");
+    expect(bar().find("[data-bar-action]").attributes("disabled")).toBeDefined();
+    expect(bar().find("[data-bar-reason]").text()).toBe(
+      "Mude um grau, a perda ou um motivo para salvar a correção.",
+    );
+
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "2");
+    expect(bar().find("[data-bar-action]").attributes("disabled")).toBeUndefined();
+    expect(bar().find("[data-bar-reason]").exists()).toBe(false);
   });
 });

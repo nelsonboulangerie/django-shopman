@@ -17,6 +17,7 @@ Superfície = Channel; célula = ListingItem da listing de mesmo ref.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 from math import isfinite
 
@@ -24,6 +25,8 @@ from django.db import transaction
 
 from shopman.backstage.services.exceptions import CatalogError
 from shopman.shop.services import attributes
+
+logger = logging.getLogger(__name__)
 
 
 def _reconcile_if_projected(surface_ref: str) -> None:
@@ -588,7 +591,176 @@ def _detail_payload(product) -> dict:
         # Selos derivados do SKU (Comprável · Vendável · Produzido · Usado em
         # receita) — somente leitura; o gesto de compra é ``set_purchasable``.
         "roles": _roles_payload(product.sku),
+        # Vocação do SKU (``ProductConsumptionTag``): o ref do papel, "" = sem
+        # vocação. Serve só ao B.I.; não muda a venda. As escolhas vêm do
+        # catálogo de papéis, editável no Admin — não de uma lista no Nuxt.
+        **_vocation_payload(product.sku),
+        # Disponibilidade nos canais (V4-G4, prévia ``catalogo-produto4.html``):
+        # somente leitura, do registro de faltas (``ShelfOutage``). Pausar segue
+        # no interruptor do canal, na tabela.
+        "channel_availability": _channel_availability_payload(product.sku),
+        # "Volta ~10:40: lote de 42 no forno" (G23): o próximo lote do SKU hoje, pela
+        # previsão da Produção (início real + duração medida). Vazio sem lote aberto.
+        **_back_payload(product.sku),
+        # O histórico de alterações do produto (⋯ do painel, v4): o do Admin.
+        "admin_history_path": _admin_history_path(product),
     }
+
+
+#: Canais que recebem a indisponibilidade sozinhos (o iFood pelo catálogo
+#: projetado; os de exibição pelo estoque do canal de origem, #1404).
+_AUTOMATIC_CHANNELS = frozenset({"ifood"})
+
+
+def _next_batch(sku: str) -> dict | None:
+    """O próximo lote do SKU hoje na previsão da Produção: hora e quantidade.
+
+    Mesma leitura do painel de fornadas (``build_production_forecast``): o lote
+    em produção volta no início real mais a duração medida; o planejado, na hora
+    típica de término. Lote já atrasado ou sem previsão não promete hora.
+    """
+    from shopman.backstage.projections.production import build_production_forecast
+
+    try:
+        rows = build_production_forecast().rows
+    except Exception:
+        logger.warning("catalog.next_batch_failed sku=%s", sku, exc_info=True)
+        return None
+    for row in rows:
+        if row.output_sku != sku or row.status not in ("in_progress", "scheduled") or row.eta_display in ("", "—"):
+            continue
+        qty = row.qty.rstrip("0").rstrip(".").rstrip(",") if any(c in row.qty for c in ".,") else row.qty
+        where = "no forno" if row.status == "in_progress" else "programado"
+        return {"at": row.eta_display, "reason": f"lote de {qty} {where}", "in_oven": row.status == "in_progress"}
+    return None
+
+
+def _back_payload(sku: str) -> dict:
+    batch = _next_batch(sku)
+    return {"back_at": batch["at"] if batch else "", "back_reason": batch["reason"] if batch else ""}
+
+
+def _admin_history_path(product) -> str:
+    from django.urls import NoReverseMatch, reverse
+
+    try:
+        return reverse(f"admin:{product._meta.app_label}_{product._meta.model_name}_history", args=[product.pk])
+    except NoReverseMatch:
+        return ""
+
+
+def _channel_note(channel, *, state: str, sale: bool, waiting: int) -> str:
+    """A segunda linha do canal indisponível (v4): o que o cliente vê ali agora."""
+    if state == "available":
+        return ""
+    ref = channel.ref
+    if ref == "web":
+        return f'"Me avise" ligado, {waiting} esperando' if waiting else '"Me avise" ligado'
+    if ref in ("pdv", "pos", "balcao"):
+        return "selo no botão, venda desativada"
+    # A TV (menuboard) é o canal de exibição sem formato de feed (``feeds._switch_kind``).
+    display = (channel.config or {}).get("display") or {}
+    if not sale and not display.get("format"):
+        return 'letreiro mostra "esgotado"'
+    return ""
+
+
+def _channel_availability_payload(sku: str) -> list[dict]:
+    """Em que canal dá para comprar o produto agora, e desde quando não dá.
+
+    ``state``: ``available`` · ``sold_out`` · ``paused``. Canal de exibição
+    (Meta, Google) não vende: segue o estoque do canal para onde manda o
+    cliente (``external_availability.stock_channel_ref``) e é ``automatic``.
+    Leitura que falha some (lista vazia): ausência de resposta não é resposta.
+    """
+    from django.utils import timezone
+
+    from shopman.backstage.models import ShelfOutage
+    from shopman.shop.models import Channel
+    from shopman.shop.services import external_availability
+
+    try:
+        from shopman.shop.services.fomo import demand_count
+
+        open_rows = {row.channel_ref: row for row in ShelfOutage.objects.filter(sku=sku, ended_at__isnull=True)}
+        waiting = demand_count(sku) if open_rows else 0
+        batch = _next_batch(sku) if open_rows else None
+        rows = []
+        for channel in Channel.objects.filter(is_active=True).order_by("display_order", "name"):
+            sale = channel.commerce_policy == Channel.CommercePolicy.ORDER
+            source = channel.ref if sale else external_availability.stock_channel_ref(channel.ref)
+            outage = open_rows.get(source)
+            state = outage.reason if outage else "available"
+            rows.append({
+                "ref": channel.ref,
+                "name": channel.name or channel.ref,
+                "kind": "sale" if sale else "display",
+                "state": state,
+                "since": timezone.localtime(outage.started_at).strftime("%H:%M") if outage else "",
+                "automatic": (not sale) or channel.ref in _AUTOMATIC_CHANNELS,
+                # "volta ~10:40 (lote no forno)": só o esgotado volta com o lote; a
+                # pausa é decisão de alguém e não volta sozinha.
+                "back_at": batch["at"] if batch and state == "sold_out" else "",
+                "back_hint": ("lote no forno" if batch["in_oven"] else "lote programado") if batch and state == "sold_out" else "",
+                "note": _channel_note(channel, state=state, sale=sale, waiting=waiting),
+            })
+        return rows
+    except Exception:
+        logger.warning("catalog.channel_availability_failed sku=%s", sku, exc_info=True)
+        return []
+
+
+def _vocation_payload(sku: str) -> dict:
+    """A vocação gravada e as escolhas ativas.
+
+    Um papel desativado no Admin continua aparecendo para o SKU que ainda o
+    usa: esconder a escolha atual faria a tela mentir "sem vocação".
+    """
+    from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
+
+    tag = ProductConsumptionTag.objects.filter(sku=sku).select_related("role").first()
+    roles = list(ConsumptionRole.objects.filter(is_active=True))
+    if tag is not None and all(role.pk != tag.role_id for role in roles):
+        roles.append(tag.role)
+    return {
+        "vocation": tag.role.ref if tag is not None else "",
+        "vocation_choices": [{"ref": role.ref, "label": role.label, "hint": role.hint} for role in roles],
+    }
+
+
+def _apply_vocation(sku: str, raw) -> None:
+    """Grava, troca ou remove a vocação do SKU. "" remove.
+
+    Escolher pelo Gestor é curadoria de gente: a etiqueta sai ``reviewed``. Ao
+    TROCAR o papel, o peso próprio do SKU volta a herdar o do papel novo — o
+    peso medido para um "híbrido" não vale para um "leva".
+    """
+    from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
+
+    if not isinstance(raw, str):
+        error = CatalogError("Vocação: escolha uma das opções.")
+        error.field = "vocation"
+        raise error
+    ref = raw.strip()
+    tag = ProductConsumptionTag.objects.select_for_update().filter(sku=sku).first()
+    if not ref:
+        if tag is not None:
+            tag.delete()
+        return
+    if tag is not None and tag.role.ref == ref:
+        return
+    role = ConsumptionRole.objects.filter(ref=ref, is_active=True).first()
+    if role is None:
+        error = CatalogError("Vocação: esta opção não existe mais. Atualize o produto e escolha de novo.")
+        error.field = "vocation"
+        raise error
+    if tag is None:
+        ProductConsumptionTag.objects.create(sku=sku, role=role, reviewed=True)
+        return
+    tag.role = role
+    tag.eat_in_weight = None
+    tag.reviewed = True
+    tag.save(update_fields=["role", "eat_in_weight", "reviewed", "updated_at"])
 
 
 def _roles_payload(sku: str) -> dict[str, bool]:
@@ -634,7 +806,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles"}
+    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability", "back_at", "back_reason", "admin_history_path"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():
@@ -915,6 +1087,13 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
         raise CatalogError(f"Produto '{sku}' não encontrado.")
     if expected_revisions is not None:
         _check_product_revisions(product, data, expected_revisions)
+    # A vocação mora fora do produto (``ProductConsumptionTag``): grava à parte,
+    # na mesma transação, e sozinha não regrava nem revalida o produto.
+    if "vocation" in data:
+        _apply_vocation(product.sku, data["vocation"])
+        data = {key: value for key, value in data.items() if key != "vocation"}
+        if not data:
+            return _detail_payload(product)
     keywords = None
     if "keywords" in data:
         raw = data["keywords"]
@@ -1174,7 +1353,7 @@ def _ai_assist_prompt(product, field: str, current_value: str) -> str:
         "Contexto do produto:",
         _ai_assist_context(product),
         "",
-        f"Tarefa — campo \"{spec['label']}\":",
+        f"Tarefa (campo \"{spec['label']}\"):",
         spec["instruction"],
     ]
     if current_value.strip():

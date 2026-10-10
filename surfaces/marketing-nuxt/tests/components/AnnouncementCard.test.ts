@@ -104,13 +104,15 @@ function mountCard(
 }
 
 describe("AnnouncementCard", () => {
-  it("shows the generated text, the audience and the deadline", () => {
+  // V6-MKT (v4): o nome da ocasião e o prazo moram no cabeçalho da página (o prazo em
+  // âmbar); o cartão abre pela origem do texto e mostra o público por extenso.
+  it("abre pela origem do texto e mostra o público, sem repetir o prazo", () => {
     const text = mountCard(
       makeAnnouncement({ platforms: ["whatsapp"] }),
     ).text();
-    expect(text).toContain("Lote de pães");
+    expect(text).toContain("Rascunho do modelo: Lote");
     expect(text).toContain("12 favoritos, 3 alertas = 15 clientes");
-    expect(text).toContain("Expira em 20 min");
+    expect(text).not.toContain("Expira em");
   });
 
   // ⚠️ O cabeçalho mostrava o SKU em monoespaçado e a foto dizia "Foto de CRO-001".
@@ -127,7 +129,6 @@ describe("AnnouncementCard", () => {
       },
     );
 
-    expect(wrapper.text()).toContain("Croissant de manteiga");
     expect(wrapper.text()).not.toContain("CRO-001");
     expect(wrapper.get("img").attributes("alt")).toBe(
       "Foto de Croissant de manteiga",
@@ -137,7 +138,6 @@ describe("AnnouncementCard", () => {
   it("cai no SKU só quando não há rótulo", () => {
     const wrapper = mountCard(makeAnnouncement({ image_url: "/media/c.jpg" }));
 
-    expect(wrapper.text()).toContain("CRO-001");
     expect(wrapper.get("img").attributes("alt")).toBe("Foto de CRO-001");
   });
 
@@ -174,15 +174,15 @@ describe("AnnouncementCard", () => {
     );
     const text = wrapper.text();
 
-    expect(wrapper.find('[data-readiness="blocked"]').text()).toContain(
-      "Instagram · não publica",
-    );
-    expect(wrapper.find('[data-readiness="limited"]').text()).toContain(
-      "WhatsApp · limitada",
-    );
-    expect(text).toContain(
-      "Instagram: A integração existe, mas está sem credencial neste ambiente. Nada é publicado por aqui até resolver.",
-    );
+    // Uma linha por plataforma (v4): o aviso fica embaixo do nome, e uma frase só
+    // resume o porquê para todas.
+    const blocked = wrapper.find('[data-readiness="blocked"]').text();
+    expect(blocked).toContain("Instagram");
+    expect(blocked).toContain("não publica");
+    const limited = wrapper.find('[data-readiness="limited"]').text();
+    expect(limited).toContain("WhatsApp");
+    expect(limited).toContain("limitada");
+    expect(wrapper.get("[data-review-readiness]").text()).toContain("Instagram");
     expect(text).not.toContain("um por vez");
 
     const publishNow = wrapper.get("[data-testid=publish-now]");
@@ -227,10 +227,9 @@ describe("AnnouncementCard", () => {
     const wrapper = mountCard(
       makeAnnouncement({ platforms: ["instagram", "whatsapp"] }),
     );
-    // A pílula é um `UiToggleChip`: o estado vive em `aria-checked`, não num
-    // `<input>` escondido atrás dela.
+    // Uma linha por plataforma com a chave (v4): o estado vive em `aria-checked`.
     const checked = wrapper
-      .findAll('[role="checkbox"]')
+      .findAll('[role="switch"]')
       .filter((chip) => chip.attributes("aria-checked") === "true");
     expect(checked).toHaveLength(2);
   });
@@ -278,6 +277,8 @@ describe("AnnouncementCard", () => {
         },
       },
     });
+    // A prévia fica recolhida (v4): abre no "Ver como fica em cada plataforma".
+    await wrapper.get("[data-review-preview-toggle]").trigger("click");
     await wrapper.find("textarea").setValue("Texto revisado");
     await wrapper.find("input[type=text]").setValue("#paes #fornada");
     await vi.advanceTimersByTimeAsync(400);
@@ -322,7 +323,7 @@ describe("AnnouncementCard", () => {
     // ⚠️ O rodapé mandava "Aprovar" num card que não tem botão "Aprovar" — e "selar" é
     // palavra de ADR, não de padaria. Ele descreve o que a próxima tela mostra.
     expect(wrapper.text()).toContain(
-      "O texto que você conferir na próxima tela é o que será disparado",
+      "O texto que você conferir na próxima tela é o que vai",
     );
     expect(wrapper.text()).not.toMatch(/\bAprovar\b|\bsela\b/);
     expect(
@@ -792,6 +793,79 @@ describe("AnnouncementCard", () => {
     expect(
       (conflicted.find("textarea").element as HTMLTextAreaElement).value,
     ).toBe("Minha revisão");
+  });
+});
+
+// A Revisão (fase 2): a decisão mora na PÁGINA (ação na base do kit e barra do topo),
+// e o cartão expõe o estado e os gestos. Sem a página (o painel), ele a desenha em fluxo.
+describe("AnnouncementCard — decisão montada pela página", () => {
+  type Exposed = {
+    canContinue: boolean;
+    continueBlockedReason: string;
+    continueDecision: () => void;
+    askToReject: () => void;
+    openScheduling: () => void;
+  };
+
+  it("na página, não desenha a própria barra e expõe o que a página monta", async () => {
+    const wrapper = mountCard(makeAnnouncement(), "", "America/Sao_Paulo", false, false, {
+      decisionInPage: true,
+    });
+    const card = wrapper.vm as unknown as Exposed;
+
+    expect(wrapper.find("[data-review-actions]").exists()).toBe(false);
+    expect(wrapper.find("[data-testid=publish-now]").exists()).toBe(false);
+    // A frase do que vem depois continua no cartão: ela explica o Continuar de onde ele estiver.
+    expect(wrapper.text()).toContain(
+      "O texto que você conferir na próxima tela é o que vai",
+    );
+    expect(card.canContinue).toBe(true);
+    expect(card.continueBlockedReason).toBe("");
+
+    card.continueDecision();
+    expect(wrapper.emitted("approve")![0]![2]).toBe("now");
+    card.askToReject();
+    expect(wrapper.emitted("reject")![0]).toEqual([7]);
+  });
+
+  it("diz por que Continuar não pode, com a frase do campo que falta", async () => {
+    const wrapper = mountCard(makeAnnouncement(), "", "America/Sao_Paulo", false, false, {
+      decisionInPage: true,
+    });
+    const card = wrapper.vm as unknown as Exposed;
+
+    await wrapper.find("textarea").setValue("   ");
+    expect(card.canContinue).toBe(false);
+    expect(card.continueBlockedReason).toBe("O anúncio precisa de um texto.");
+
+    await wrapper.find("textarea").setValue("x".repeat(2201));
+    expect(card.canContinue).toBe(false);
+    expect(card.continueBlockedReason).toContain("passou do limite");
+
+    card.continueDecision();
+    expect(wrapper.emitted("approve")).toBeFalsy();
+  });
+
+  it("no silêncio do WhatsApp, o motivo aponta o Agendado; agendar abre a hora sugerida", async () => {
+    vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 no relógio da loja.
+    const wrapper = mountCard(
+      makeAnnouncement({ platforms: ["whatsapp"] }),
+      "",
+      "America/Sao_Paulo",
+      false,
+      false,
+      { decisionInPage: true },
+    );
+    const card = wrapper.vm as unknown as Exposed;
+
+    expect(card.canContinue).toBe(false);
+    expect(card.continueBlockedReason).toContain("Agendado");
+
+    card.openScheduling();
+    await wrapper.vm.$nextTick();
+    expect(card.canContinue).toBe(true);
+    card.continueDecision();
+    expect(wrapper.emitted("approve")![0]![2]).toBe("scheduled");
   });
 });
 

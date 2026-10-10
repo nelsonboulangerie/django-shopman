@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from shopman.shop.tests.postgres_lock_rule import install as _install_postgres_lock_rule
+
+# SQLite ignora FOR UPDATE; esta trava aplica a regra de lock do PostgreSQL a toda
+# consulta da suíte (ver o módulo). Nasceu do pulso da gaveta (#1640).
+_install_postgres_lock_rule()
+
 
 @pytest.fixture(autouse=True)
 def _isolate_rules_state():

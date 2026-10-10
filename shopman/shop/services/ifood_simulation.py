@@ -77,7 +77,7 @@ def session_to_ifood_payload(session, *, merchant_id: str = "mock-merchant") -> 
         },
         "delivery": {
             "type": "DELIVERY",
-            "address": delivery_address or "Rua Simulada, 123 — Bairro iFood",
+            "address": delivery_address or "Rua Simulada, 123, Bairro iFood",
         },
         "items": items_payload,
         "notes": data.get("order_notes") or "[SIMULAÇÃO] Pedido iFood injetado localmente",

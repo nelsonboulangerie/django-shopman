@@ -581,6 +581,50 @@ class TestAddressMapConfirmationAdminToggle:
         assert ShopForm(instance=disabled).fields[self.FIELD].initial is False
 
 
+class TestHideUnavailableAdminToggle:
+    FIELD = "defaults_storefront_hide_unavailable_by_default"
+
+    def test_toggle_is_canonical_unfold_switch_on_menu_page(self, db, admin_user, shop):
+        from unfold.widgets import UnfoldBooleanSwitchWidget
+
+        from shopman.shop.admin.shop import _MENU_FIELDSETS, _section_form
+
+        form = _section_form(_MENU_FIELDSETS)(instance=shop)
+        assert isinstance(form.fields[self.FIELD].widget, UnfoldBooleanSwitchWidget)
+        assert form.fields[self.FIELD].initial is False
+
+        client = Client()
+        client.force_login(admin_user)
+        response = client.get(reverse("admin:shop_shopmenu_change", args=[shop.pk]))
+
+        assert response.status_code == 200
+        assert f'name="{self.FIELD}"'.encode() in response.content
+
+    def test_toggle_round_trip_preserves_other_storefront_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {"storefront": {"existing": "preserved"}}
+        shop.save(update_fields=["defaults"])
+
+        enabled_data = _shop_form_data(shop)
+        enabled_data[self.FIELD] = "on"
+        enabled_form = ShopForm(data=enabled_data, instance=shop)
+        assert enabled_form.is_valid(), enabled_form.errors
+        saved = enabled_form.save()
+        assert saved.defaults["storefront"] == {
+            "existing": "preserved",
+            "hide_unavailable_by_default": True,
+        }
+        assert ShopForm(instance=saved).fields[self.FIELD].initial is True
+
+        disabled_data = _shop_form_data(saved)
+        disabled_data.pop(self.FIELD, None)
+        disabled_form = ShopForm(data=disabled_data, instance=saved)
+        assert disabled_form.is_valid(), disabled_form.errors
+        disabled = disabled_form.save()
+        assert disabled.defaults["storefront"] == {"existing": "preserved"}
+
+
 class TestAddressLocationDivergenceAdminConfig:
     MODE = "defaults_storefront_address_location_divergence_mode"
 
@@ -1561,6 +1605,48 @@ class TestPosLateFiscalEmissionPolicy:
 
         fields = [f for _, opts in _POS_FIELDSETS for f in opts["fields"]]
         assert "defaults_pos_late_fiscal_emission_days" in fields
+
+
+class TestCashTolerancePolicy:
+    """Tolerância do caixa (decisão do dono, 04/10/2026): % do dinheiro do dia, piso e teto."""
+
+    def test_form_saves_tolerance_to_pos_defaults(self, shop):
+        from shopman.backstage.services import cash_tolerance
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_pos_cash_tolerance_percent"] = "1"
+        data["defaults_pos_cash_tolerance_min"] = "3.00"
+        data["defaults_pos_cash_tolerance_max"] = "15"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.defaults["pos"]["cash_tolerance"] == {"percent": "1", "min_q": 300, "max_q": 1500}
+        assert cash_tolerance.shop_policy().tolerance_q(100_000) == 1000
+
+    def test_blank_means_owner_default(self, shop):
+        from shopman.backstage.services import cash_tolerance
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {"pos": {"cash_tolerance": {"percent": "2"}}}
+        shop.save(update_fields=["defaults"])
+        data = _shop_form_data(shop)
+        for key in ("percent", "min", "max"):
+            data[f"defaults_pos_cash_tolerance_{key}"] = ""
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert "cash_tolerance" not in (saved.defaults.get("pos") or {})
+        assert cash_tolerance.shop_policy() == cash_tolerance.TolerancePolicy()
+
+    def test_fields_live_on_the_pos_page(self):
+        from django.contrib.admin.utils import flatten_fieldsets
+
+        from shopman.shop.admin.shop import _POS_FIELDSETS
+
+        fields = flatten_fieldsets(_POS_FIELDSETS)
+        for name in ("percent", "min", "max"):
+            assert f"defaults_pos_cash_tolerance_{name}" in fields
 
 
 class TestStockAlertCooldownPolicy:

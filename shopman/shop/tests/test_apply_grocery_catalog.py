@@ -333,7 +333,7 @@ def test_latas_kanfa_com_o_peso_confirmado(catalog):
     assert Product.objects.get(sku="CHA-NAMASTE-KANFA-L70").unit_weight_g == 70
     assert Product.objects.get(sku="CHA-ACONCHEGO-KANFA-L50").unit_weight_g == 50
     vital = Product.objects.get(sku="CHA-VITAL-KANFA-L70")
-    assert (vital.name, vital.unit_weight_g) == ("Vital Chai Kãnfa — Lata 70g", 70)
+    assert (vital.name, vital.unit_weight_g) == ("Vital Chai Kãnfa · Lata 70g", 70)
 
 
 def test_frutas_vermelhas_se_acham_por_4_frutas(catalog):
@@ -473,7 +473,7 @@ def test_classificacao_curada_fica_e_sai_como_divergencia(catalog):
 
 def test_chas_kanfa_do_seed_ganham_ncm_da_nota_e_cest(catalog):
     cha = Product.objects.create(
-        sku="CHA-MAMA-KANFA-P50", name="Mama Chai Kãnfa — Pouch 50g", unit="un", base_price_q=6000,
+        sku="CHA-MAMA-KANFA-P50", name="Mama Chai Kãnfa · Pouch 50g", unit="un", base_price_q=6000,
         metadata={"fiscal": {"profile": "standard", "ncm": "09022000", "unit": "UN"}},
     )
 

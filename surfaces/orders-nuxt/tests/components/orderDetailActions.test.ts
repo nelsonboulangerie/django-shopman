@@ -1,6 +1,6 @@
 import { fixtureActions } from "../support/orderActions";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, defineComponent, ref, watch } from "vue";
+import { computed, defineComponent, h, ref, watch } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { useOrderCashDrafts } from "../../app/composables/useOrderCashDrafts";
 
@@ -38,12 +38,18 @@ vi.stubGlobal("useConfirm", () => vi.fn(async () => false));
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
-vi.stubGlobal("useRoute", () => ({ params: { ref: "WEB-1" } }));
+const routeHash = ref("");
+vi.stubGlobal("useRoute", () => ({ params: { ref: "WEB-1" }, get hash() { return routeHash.value; } }));
+const reveal = vi.fn();
+vi.stubGlobal("useNextFocus", () => ({ reveal }));
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "https://api.exemplo" } }));
-vi.stubGlobal("useOrderEvents", () => {});
+vi.stubGlobal("useOrderEvents", () => ({ realtime: ref("polling") }));
 vi.stubGlobal("useOrdersContext", () => ({ location: ref({ path: "/", query: {} }) }));
 vi.stubGlobal("useStationLock", () => ({ denied: ref(false) }));
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+vi.stubGlobal("useNowTick", () => ref(Date.now()));
+vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), belowMd: ref(false), belowLg: ref(false), belowXl: ref(false) }));
+vi.stubGlobal("useOutsideStore", () => ({ askConsent: ref(false), away: ref(false), allow: vi.fn(), decline: vi.fn(), showAll: vi.fn() }));
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
   pending: ref(false),
@@ -160,8 +166,21 @@ function profile(over: Partial<CustomerProfileProjection> = {}): CustomerProfile
 
 const stubs = {
   Icon: true,
+  // O cabeçalho de uma linha (G14) carrega a ação primária e o ⋯: os slots entram.
+  OperatorPageHeader: { template: "<header><slot name='lead' /><slot name='status' /><slot name='actions' /><slot name='phone-actions' /></header>" },
+  OperatorLiveStatus: true,
+  OperatorRecordNav: true,
+  ReadFreshness: true,
+  UiIconButton: defineComponent({
+    inheritAttrs: false,
+    emits: ["click"],
+    setup(_, { attrs, emit, slots }) {
+      return () => h("button", { ...attrs, type: "button", onClick: (event: MouseEvent) => emit("click", event) }, slots.default?.());
+    },
+  }),
   NuxtLink: { template: "<a><slot /></a>" },
   OrderCourierPanel: true,
+  OrderIFoodNegotiations: true,
   OrderReasonDialog: true,
   UiDialog: { template: "<div><slot /></div>" },
   UiDialogContent: { template: "<div><slot /></div>" },
@@ -175,6 +194,27 @@ function abrir(projection: OperatorOrderProjection) {
   detalhe.value = projection;
   return mount(OrderDetailPage, { global: { stubs, mocks: { $router: { go: vi.fn() } } } });
 }
+
+// F4 do laudo do Gestor: o aviso com prazo ("Responder") chega com #ifood-negotiations;
+// a página leva o operador à resposta, não só ao pedido.
+describe("detalhe do pedido — o aviso leva à negociação iFood", () => {
+  beforeEach(() => {
+    reveal.mockClear();
+    routeHash.value = "";
+  });
+  const negotiation = { id: "d1", can_respond: true } as unknown as OperatorOrderProjection["ifood_negotiations"][number];
+  it("com o destino no endereço e a negociação lida, revela o bloco", async () => {
+    routeHash.value = "#ifood-negotiations";
+    abrir(order({ ifood_negotiations: [negotiation] }));
+    await flushPromises();
+    expect(reveal).toHaveBeenCalledWith("ifood-negotiations");
+  });
+  it("sem o destino no endereço, a página não rola sozinha", async () => {
+    abrir(order({ ifood_negotiations: [negotiation] }));
+    await flushPromises();
+    expect(reveal).not.toHaveBeenCalled();
+  });
+});
 
 describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
   it("preserva a quantidade fracionária projetada sem arredondar", () => {
@@ -311,6 +351,7 @@ describe("detalhe do pedido — link de pagamento", () => {
     }));
 
     expect(w.find("[data-payment-link-notice]").text()).toContain("Link enviado às 14h32");
+    await w.get('[data-action="menu"]').trigger("click");
     const botao = w.find('[data-action="resend-payment-link"]');
     expect(botao.exists()).toBe(true);
     expect(botao.text()).toContain("Reenviar link de pagamento");
@@ -500,7 +541,7 @@ describe("nota da cozinha — atualização concorrente", () => {
     detalhe.value = order({ kitchen_note: "Outra pessoa", revisions: { kitchen_note: "v2" } });
     await w.vm.$nextTick();
     expect((w.get("#order-notes").element as HTMLTextAreaElement).value).toBe("Meu rascunho");
-    expect(w.text()).toContain("No servidor: Outra pessoa");
+    expect(w.text()).toContain("A nota gravada é: Outra pessoa");
     const save = w.findAll("button").find((button) => button.text() === "Salvar nota")!;
     expect(save.attributes("disabled")).toBeDefined();
     await w.findAll("button").find((button) => button.text() === "Manter meu texto")!.trigger("click");
@@ -570,6 +611,7 @@ it.each([
     ref: refName, kind: "mutation", label, enabled: false, reason, priority: "secondary",
     href: "", method: "POST", idempotency: "required", payload_schema: {}, confirmation: {},
   }] }));
+  await w.get('[data-action="menu"]').trigger("click");
   const button = w.findAll("button").find((candidate) => candidate.text().includes(label))!;
   expect(button.attributes("disabled")).toBeDefined();
   expect(button.attributes("title")).toBe(reason);
@@ -583,7 +625,7 @@ it("keeps a confirmed note when the following useful read fails", async () => {
   const w = abrir(order({ can_confirm: false, kitchen_note: "Nota anterior", revisions: { kitchen_note: "old-base" } }));
   try {
     saveNotes.mockImplementationOnce(async () => { readError.value = new Error("synthetic read unavailable"); return true; });
-    const note = w.find('textarea[placeholder="Instruções de preparo para a cozinha…"]');
+    const note = w.find("#order-notes");
     await note.setValue("Nota nova confirmada");
     await w.findAll("button").find((button) => button.text() === "Salvar nota")!.trigger("click");
     await flushPromises();
@@ -646,5 +688,18 @@ describe("contato de pedido do iFood", () => {
     }));
     expect(w.find("[data-contact-phone]").exists()).toBe(false);
     expect(w.get("[data-contact-relay-expired]").text()).toContain("Código vencido");
+  });
+});
+
+describe("G14: o detalhe em duas colunas com a ação primária no cabeçalho", () => {
+  it("cabeçalho de uma linha leva Aceitar e Recusar; Cancelar mora no ⋯", async () => {
+    const w = abrir(order({ can_cancel: true }));
+    expect(w.get("[data-order-detail]").attributes("data-order-layout")).toBe("split");
+    expect(w.get("header [data-action='confirm']").text()).toContain("Aceitar");
+    expect(w.find("header [data-action='reject']").exists()).toBe(true);
+    expect(w.find("[data-action='cancel']").exists()).toBe(false);
+    await w.get("[data-action='menu']").trigger("click");
+    expect(w.get("[data-detail-menu] [data-action='cancel']").text()).toContain("Cancelar pedido");
+    w.unmount();
   });
 });

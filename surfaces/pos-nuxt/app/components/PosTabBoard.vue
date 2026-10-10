@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { tabTitleView } from "~/presentation/tabTitle";
 // Tab Board (spec §2.3) — the map of open/free comandas. Odoo-style first
 // screen: pick or open a comanda before ringing. It renders the tabs Projection
 // through `presentation/tabBoard` (ordering, in-use/all filter, per-card shape)
@@ -92,22 +93,24 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
 
 <template>
   <section class="flex h-full min-h-0 flex-col gap-3">
-    <form class="flex shrink-0 gap-2" @submit.prevent="submitInput">
+    <!-- No celular a busca ocupa a linha inteira e os dois botões dividem a de baixo:
+         nada colapsa num quadrado vazio nem sai da tela (régua da v4). -->
+    <form class="flex shrink-0 flex-wrap gap-2" @submit.prevent="submitInput">
       <!-- Autofocus: o board remonta a cada volta (inclusive pós-venda) e a
            primeira ação do operador é digitar a comanda — o foco já espera lá. -->
-      <div class="relative max-w-xs flex-1">
+      <div class="relative min-w-0 max-sm:basis-full sm:max-w-xs sm:flex-1">
         <UiInput
           ref="inputRef"
           :model-value="modelValue"
-          class="h-11 pr-12 text-base"
+          class="h-8 pr-12 text-base"
           :maxlength="maxLength"
           :placeholder="placeholder"
           autofocus
           @update:model-value="updateInput"
         />
-        <OperatorKbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" aria-hidden="true">F2</OperatorKbd>
+        <OperatorKbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-md:hidden" aria-hidden="true">F2</OperatorKbd>
       </div>
-      <UiButton type="submit" size="lg" class="h-11 shrink-0 gap-2" :disabled="busy || !modelValue.trim()">
+      <UiButton type="submit" size="lg" class="h-8 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1" :disabled="busy || !modelValue.trim()">
         <Icon name="lucide:plus" class="size-5" />
         Abrir comanda
       </UiButton>
@@ -115,55 +118,67 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         type="button"
         size="lg"
         variant="outline"
-        class="h-11 shrink-0 gap-2"
+        class="h-8 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1"
         :disabled="busy"
         :title="`Abrir a comanda ${nextFreeDisplay}`"
         @click="openNextFree"
       >
         <Icon name="lucide:arrow-right-circle" class="size-5" />
-        Próxima livre · #{{ nextFreeDisplay }}
+        <span class="truncate"><span class="max-sm:hidden">Próxima livre · </span><span class="sm:hidden">Próxima </span>#{{ nextFreeDisplay }}</span>
       </UiButton>
     </form>
     <div v-if="tabs.length" class="flex shrink-0 flex-wrap items-center gap-2">
-      <div class="flex gap-1">
-        <UiButton
-          size="sm"
+      <!-- Recorte e arrumação: o ligado é `solid` (o ativo único da suíte), os outros
+           `outline`, como a faixa de filtros rápidos do kit (`OperatorQuickFilters`). -->
+      <div class="flex gap-1" role="group" aria-label="Quais comandas">
+        <NuxtButton
+          color="neutral"
           variant="outline"
-          :class="tabFilter === 'all' ? 'border-primary bg-primary/5' : ''"
+          active-color="primary"
+          active-variant="solid"
+          :active="tabFilter === 'all'"
+          :aria-pressed="tabFilter === 'all'"
+          :label="`Todas ${tabs.length}`"
           @click="tabFilter = 'all'"
-        >
-          Todas {{ tabs.length }}
-        </UiButton>
-        <UiButton
-          size="sm"
+        />
+        <NuxtButton
+          color="neutral"
           variant="outline"
-          :class="tabFilter === 'in_use' ? 'border-primary bg-primary/5' : ''"
+          active-color="primary"
+          active-variant="solid"
+          :active="tabFilter === 'in_use'"
+          :aria-pressed="tabFilter === 'in_use'"
+          :label="`Em uso ${openCount}`"
           @click="tabFilter = 'in_use'"
-        >
-          Em uso {{ openCount }}
-        </UiButton>
+        />
       </div>
-      <div class="ml-auto flex gap-1">
-        <UiButton
-          size="icon-sm"
+      <div class="ml-auto flex gap-1" role="group" aria-label="Arrumação das comandas">
+        <NuxtButton
+          color="neutral"
           variant="outline"
+          active-color="primary"
+          active-variant="solid"
+          icon="i-lucide-layout-grid"
+          square
+          :active="tabView === 'grid'"
+          :aria-pressed="tabView === 'grid'"
           aria-label="Ver em grade"
           title="Grade"
-          :class="tabView === 'grid' ? 'border-primary bg-primary/5' : ''"
           @click="tabView = 'grid'"
-        >
-          <Icon name="lucide:layout-grid" class="size-4" />
-        </UiButton>
-        <UiButton
-          size="icon-sm"
+        />
+        <NuxtButton
+          color="neutral"
           variant="outline"
+          active-color="primary"
+          active-variant="solid"
+          icon="i-lucide-list"
+          square
+          :active="tabView === 'list'"
+          :aria-pressed="tabView === 'list'"
           aria-label="Ver em lista"
           title="Lista"
-          :class="tabView === 'list' ? 'border-primary bg-primary/5' : ''"
           @click="tabView = 'list'"
-        >
-          <Icon name="lucide:list" class="size-4" />
-        </UiButton>
+        />
       </div>
     </div>
 
@@ -175,23 +190,24 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
     </p>
     <p v-else-if="!cards.length" class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
       Nenhuma comanda em uso agora.
-      <button type="button" class="font-medium underline underline-offset-4" @click="tabFilter = 'all'">Ver todas</button>
+      <NuxtButton color="neutral" variant="ghost" class="px-1 font-medium underline underline-offset-4" @click="tabFilter = 'all'">Ver todas</NuxtButton>
     </p>
     <div
       v-else
       class="max-h-[72vh] content-start overflow-y-auto pr-1 md:max-h-none md:min-h-0 md:flex-1"
       :class="tabView === 'grid' ? 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' : 'grid gap-2'"
     >
-      <button
+      <NuxtButton
         v-for="{ tab, view } in cards"
         :key="view.ref"
-        type="button"
-        class="flex h-[5.5rem] flex-col gap-0.5 overflow-hidden rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent"
+        color="neutral"
+        variant="ghost"
+        class="flex h-[5.5rem] flex-col gap-0.5 overflow-hidden rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent items-stretch justify-start font-normal"
         :class="cardTone(view)"
         @click="activateTab(tab)"
       >
         <div class="flex items-center justify-between gap-2">
-          <span class="truncate font-semibold tabular-nums" :title="`#${view.displayRef}`">#{{ view.displayRef }}</span>
+          <span class="truncate font-semibold tabular-nums" :title="tabTitleView(view.displayRef, '').title">{{ tabTitleView(view.displayRef, "").title }}</span>
           <span
             v-if="view.isUnpaid"
             class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
@@ -218,7 +234,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         >
           {{ view.summary }}
         </span>
-      </button>
+      </NuxtButton>
     </div>
   </section>
 </template>

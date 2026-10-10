@@ -778,8 +778,8 @@ def _alert_intermediary_benefit_unattributed(order) -> None:
         message=(
             f"A NFC-e do pedido {order.ref} vai declarar o cupom como repasse da "
             f"plataforma (base cheia), porque não deu para saber quem o patrocinou: "
-            f"{missing}. Se o cupom era da loja, a nota está declarando a MAIS — "
-            "confira no portal do iFood antes de fechar o mês."
+            f"{missing}. Se o cupom era da loja, a nota está declarando a MAIS. "
+            "Confira no portal do iFood antes de fechar o mês."
         ),
         order_ref=order.ref,
         dedupe_key=f"fiscal_intermediary_benefit_unattributed:{order.ref}",

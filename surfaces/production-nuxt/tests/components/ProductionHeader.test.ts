@@ -1,69 +1,88 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import {
+  computed,
+  defineComponent,
+  h,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+  type PropType,
+} from "vue";
 import { mount, type VueWrapper } from "@vue/test-utils";
 
 import ProductionHeader from "../../app/components/ProductionHeader.vue";
-import { UiButtonStub, UiInputStub } from "../support/nativeUiStubs";
+import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 
-const navigateSpy = vi.fn();
+// Fase 2: o cabeçalho é o `OperatorPageHeader` do kit, dentro do shell da suíte. As
+// etapas (Alt+1 a Alt+5), a busca "/" e a ajuda "?" são do shell e da busca da suíte;
+// aqui ficam o R (Atualizar), o ⋯ como DADOS (as ações da tela e Atualizar), o dia na
+// toolbar (`#primary`) e o progresso no fim dela.
+
 let wrapper: VueWrapper | null = null;
+let headerActions: OperatorHeaderAction[] = [];
+
+// O cabeçalho da suíte é do kit (testado lá): aqui ele só expõe props e slots.
+const OperatorPageHeaderStub = defineComponent({
+  props: {
+    title: String,
+    eyebrow: String,
+    actions: { type: Array as PropType<OperatorHeaderAction[]>, default: () => [] },
+    alerts: { type: Array, default: () => [] },
+  },
+  setup(props, { slots }) {
+    return () => {
+      headerActions = props.actions;
+      return h("header", [
+        h("h1", props.title),
+        h("div", { "data-status": "" }, slots.status?.()),
+        slots.search?.(),
+        h("div", { "data-primary": "" }, slots["filters-primary"]?.()),
+        h("div", { "data-filters": "" }, slots.filters?.()),
+        h("div", { "data-end": "" }, slots["filters-end"]?.()),
+        h("div", { "data-alerts": props.alerts.length }),
+      ]);
+    };
+  },
+});
 
 const stubs = {
-  RailToggle: true,
-  AlertsBell: true,
-  Icon: true,
-  OperatorKbd: true,
-  UiButton: UiButtonStub,
-  UiInput: UiInputStub,
-  NuxtLink: {
-    props: ["to"],
-    template: '<a :href="to"><slot /></a>',
+  OperatorPageHeader: OperatorPageHeaderStub,
+  OperatorLiveStatus: {
+    props: ["tone", "time", "label"],
+    template: '<span data-live :data-tone="tone">{{ label }}</span>',
   },
-  ProductionShortcutsHelp: {
-    props: ["open"],
-    emits: ["update:open"],
-    template: '<div v-if="open" data-shortcuts-help />',
+  OperatorSuiteSearch: {
+    props: ["modelValue", "screenLabel"],
+    template: '<input type="search" :data-screen-label="screenLabel" />',
+  },
+  NuxtProgress: {
+    props: ["modelValue"],
+    template: '<div role="progressbar" :aria-valuenow="modelValue" />',
   },
 };
 
-const timersActive = ref(0);
-const timersRinging = ref(0);
+const provideShortcuts = vi.fn();
 
-function press(
-  key: string,
-  overrides: KeyboardEventInit = {},
-  target: HTMLElement | Window = window,
-) {
+function press(key: string, overrides: KeyboardEventInit = {}, target: HTMLElement | Window = window) {
   target.dispatchEvent(
-    new KeyboardEvent("keydown", {
-      key,
-      code: overrides.code ?? key,
-      bubbles: true,
-      cancelable: true,
-      ...overrides,
-    }),
+    new KeyboardEvent("keydown", { key, code: overrides.code ?? key, bubbles: true, cancelable: true, ...overrides }),
   );
+}
+
+function mountHeader(props: Record<string, unknown> = { title: "Planejamento" }, slots = {}) {
+  return mount(ProductionHeader, { props, slots, global: { stubs }, attachTo: document.body });
 }
 
 beforeEach(() => {
   vi.stubGlobal("computed", computed);
   vi.stubGlobal("ref", ref);
+  vi.stubGlobal("watch", watch);
   vi.stubGlobal("onMounted", onMounted);
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
-  vi.stubGlobal("useRoute", () => ({ path: "/plan" }));
-  vi.stubGlobal("navigateTo", navigateSpy);
-  vi.stubGlobal("useFloorTimers", () => ({
-    activeCount: computed(() => timersActive.value),
-    ringingCount: computed(() => timersRinging.value),
-  }));
-  navigateSpy.mockClear();
-  timersActive.value = 0;
-  timersRinging.value = 0;
-  wrapper = mount(ProductionHeader, {
-    props: { title: "Planejamento" },
-    global: { stubs },
-    attachTo: document.body,
-  });
+  vi.stubGlobal("provideOperatorShortcuts", provideShortcuts);
+  provideShortcuts.mockClear();
+  wrapper = mountHeader();
 });
 
 afterEach(() => {
@@ -73,77 +92,82 @@ afterEach(() => {
   document.querySelector("[data-production-shortcut-scope]")?.remove();
 });
 
-describe("ProductionHeader — atalhos descobríveis", () => {
-  it("navega pelas etapas com Alt+número e preserva as teclas de função", () => {
-    press("€", { altKey: true, code: "Digit2" });
-    press("F1");
-
-    expect(navigateSpy).toHaveBeenCalledOnce();
-    expect(navigateSpy).toHaveBeenCalledWith("/mise-en-place");
-  });
-
-  it("foca a busca com / e não sequestra R enquanto o campo é editado", async () => {
+describe("ProductionHeader — teclas", () => {
+  it("R relê fora de campo; dentro de um campo, R é letra", () => {
     const input = wrapper!.find('input[type="search"]');
-    press("/");
-    await nextTick();
-    expect(document.activeElement).toBe(input.element);
-
     press("r", {}, input.element as HTMLInputElement);
     expect(wrapper!.emitted("refresh")).toBeUndefined();
-
-    (input.element as HTMLInputElement).blur();
     press("r");
     expect(wrapper!.emitted("refresh")).toHaveLength(1);
   });
 
-  it("abre a ajuda por ? e anuncia os atalhos nos controles", async () => {
-    press("?");
-    await nextTick();
-
-    expect(wrapper!.find("[data-shortcuts-help]").exists()).toBe(true);
-    expect(
-      wrapper!.find('input[type="search"]').attributes("aria-keyshortcuts"),
-    ).toBe("/");
-    expect(
-      wrapper!
-        .find('button[aria-label="Atualizar"]')
-        .attributes("aria-keyshortcuts"),
-    ).toBe("R");
+  it("Alt+número é do shell: o cabeçalho não navega nem relê", () => {
+    press("€", { altKey: true, code: "Digit2" });
+    expect(wrapper!.emitted("refresh")).toBeUndefined();
   });
 
-  it("não navega por baixo de um fluxo exclusivo", () => {
+  it("não relê por baixo de um fluxo exclusivo", () => {
     const blocker = document.createElement("div");
     blocker.dataset.productionShortcutScope = "exclusive";
     document.body.append(blocker);
+    press("r");
+    expect(wrapper!.emitted("refresh")).toBeUndefined();
+  });
 
-    press("#", { altKey: true, code: "Digit3" });
-
-    expect(navigateSpy).not.toHaveBeenCalled();
+  it("entrega os grupos de teclas da Produção à ajuda do kit", () => {
+    expect(provideShortcuts).toHaveBeenCalledOnce();
+    const groups = provideShortcuts.mock.calls[0]![0] as Array<{ title: string }>;
+    expect(groups.map((group) => group.title)).toContain("QC e timer");
   });
 });
 
-// O botão de timers LEVA à página /timers (o diálogo morreu em 18/09/2026);
-// o que o cabeçalho ainda prova é o contador e o link.
-describe("ProductionHeader — timers da bancada", () => {
-  it("o botão Timers mostra os ativos depois de montar e leva a /timers", async () => {
-    timersActive.value = 2;
+describe("ProductionHeader — o ⋯ como dados", () => {
+  it("as ações da tela vêm antes de Atualizar, que leva a tecla R", () => {
     wrapper?.unmount();
-    wrapper = mount(ProductionHeader, {
-      props: { title: "Produção" },
-      global: { stubs },
-      attachTo: document.body,
-    });
-    await nextTick();
-
-    const link = wrapper.find('a[aria-label="Timers (2 ativos)"]');
-    expect(link.exists()).toBe(true);
-    expect(link.attributes("href")).toBe("/timers");
-    expect(link.text()).toContain("2");
+    const onSelect = vi.fn();
+    wrapper = mountHeader({ title: "Fechamento", actions: [{ label: "Lote avulso", icon: "i-lucide-plus", onSelect }] });
+    expect(headerActions.map((action) => action.label)).toEqual(["Lote avulso", "Atualizar"]);
+    expect(headerActions[1]!.kbds).toEqual(["R"]);
+    headerActions[1]!.onSelect?.();
+    expect(wrapper.emitted("refresh")).toHaveLength(1);
   });
 
-  it("sem timer ativo não há badge — e o link continua lá", () => {
-    const link = wrapper!.find('a[aria-label="Timers (0 ativos)"]');
-    expect(link.exists()).toBe(true);
-    expect(link.text()).not.toMatch(/\d/);
+  it("a busca declara o que filtra nesta tela", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader({ title: "Qualidade", searchLabel: "filtrando os lotes" });
+    expect(wrapper.find('input[type="search"]').attributes("data-screen-label")).toBe("filtrando os lotes");
+  });
+});
+
+describe("ProductionHeader — toolbar e estado", () => {
+  it("o dia vai para o começo da toolbar; o progresso, para o fim", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader(
+      { title: "Planejamento", count: 4, total: 28, countLabel: "planejados", progress: 14 },
+      { primary: '<span data-day>Hoje</span>' },
+    );
+    expect(wrapper.find("[data-primary] [data-day]").exists()).toBe(true);
+    const progress = wrapper.find("[data-end] [data-header-progress]");
+    expect(progress.text().replace(/\s+/g, " ")).toBe("4 de 28 planejados");
+    expect(progress.find('[role="progressbar"]').attributes("aria-valuenow")).toBe("14");
+  });
+
+  it("dado velho: o ao vivo fala por extenso", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader({ title: "Abertura", stale: true });
+    const live = wrapper.find("[data-status] [data-live]");
+    expect(live.attributes("data-tone")).toBe("late");
+    expect(live.text()).toBe("Sem atualizar");
+  });
+
+  it("a tela acrescenta ao #status o que é dela (o anterior e o próximo do lote)", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader(
+      { title: "Fechamento" },
+      { status: '<span data-record-nav>3 de 8</span>' },
+    );
+    const status = wrapper.find("[data-status]");
+    expect(status.find("[data-live]").exists()).toBe(true);
+    expect(status.find("[data-record-nav]").text()).toBe("3 de 8");
   });
 });

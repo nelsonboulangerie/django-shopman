@@ -99,7 +99,7 @@ watch(
           </ul>
           <UiButton
             v-if="canReady(ticket)"
-            class="h-11 w-full text-base"
+            class="h-8 w-full text-base"
             :disabled="busy.has(ticket.pk)"
             @click="markReady(ticket)"
           >

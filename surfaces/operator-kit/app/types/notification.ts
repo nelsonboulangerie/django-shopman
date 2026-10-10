@@ -6,6 +6,9 @@ export interface UserNotification {
   title: string;
   message: string;
   action_url: string;
+  /** O rótulo do botão que leva ao `action_url` (diz aonde leva). Vazio: o servidor
+   *  não conhece tela onde o aviso se resolve, e o aviso fica sem botão. */
+  action_label?: string;
   action_data: Record<string, unknown>;
   is_actionable: boolean;
   is_read: boolean;

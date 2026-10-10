@@ -77,7 +77,7 @@ def _ts_type(tp: object, known: frozenset[str]) -> str:
         name = tp.__name__  # type: ignore[union-attr]
         if name not in known:
             raise TypeError(
-                f"Dataclass {name} referenced but not exported — add it to the "
+                f"Dataclass {name} referenced but not exported: add it to the "
                 "contract's dataclass list (before its first reference)."
             )
         return name

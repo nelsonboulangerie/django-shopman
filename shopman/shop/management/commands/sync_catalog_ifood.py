@@ -11,7 +11,8 @@ Usage:
 Routes through CatalogService.project_listing() — the canonical, retract-aware
 projection engine. Incremental mode reconciles: published+sellable items are
 upserted, and items no longer published/sellable (or dropped from the listing)
-are retracted via the backend. Both resolve the iFood backend through the
+are retracted via the backend. The upsert goes out ``UNAVAILABLE`` when the item
+has no stock to offer (``services/external_availability``). Both resolve the iFood backend through the
 canonical registry (OFFERMAN["PROJECTION_BACKENDS"]).
 """
 
@@ -70,10 +71,14 @@ class Command(BaseCommand):
             return
 
         if options["dry_run"]:
+            from shopman.shop.services import external_availability
+
             self.stdout.write(f"Dry run — {len(items)} item(s) in listing 'ifood':\n")
             for item in items:
                 price = item.price_q / 100
-                avail = "✓" if (item.is_published and item.is_sellable) else "✗"
+                sellable = item.is_published and item.is_sellable
+                available = sellable and external_availability.in_stock(item.sku, channel_ref="ifood")
+                avail = "✓" if available else "✗"
                 self.stdout.write(f"  [{avail}] {item.sku} — {item.name} — R${price:.2f}")
             self.stdout.write("\nNo changes sent to iFood (dry run).")
             return

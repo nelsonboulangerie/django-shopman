@@ -139,12 +139,15 @@ function onAddressSelected(address: StructuredAddressProjection) {
 </script>
 
 <template>
-  <UiDialog v-model:open="isOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onOpenAutoFocus">
-      <UiDialogHeader>
-        <UiDialogTitle>Recebimento</UiDialogTitle>
-        <UiDialogDescription>Escolha uma opção. Cliente e data não definem como o pedido será recebido.</UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    v-model:open="isOpen"
+    title="Recebimento"
+    description="Escolha uma opção. Cliente e data não definem como o pedido será recebido."
+    :content="{ onOpenAutoFocus }"
+    :ui="{ content: 'sm:max-w-lg' }"
+    data-pos-fulfillment-modal
+  >
+    <template #body>
       <div class="grid gap-4">
         <div class="grid grid-cols-2 gap-2">
           <UiButton
@@ -218,13 +221,13 @@ function onAddressSelected(address: StructuredAddressProjection) {
               <strong class="tabular-nums">{{ deliveryFeeKnown ? formatBRL(deliveryFeeQ) : "—" }}</strong>
             </div>
             <p class="text-xs text-muted-foreground">{{ deliveryFeeNote }}</p>
-            <button
-              type="button"
-              class="justify-self-start text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              class="justify-self-start"
+              :label="deliveryFeeOverride ? 'Usar a taxa da loja' : 'Combinar outro valor'"
               @click="$emit('update:deliveryFeeOverride', !deliveryFeeOverride)"
-            >
-              {{ deliveryFeeOverride ? "Usar a taxa da loja" : "Combinar outro valor" }}
-            </button>
+            />
             <UiInput
               v-if="deliveryFeeOverride"
               :model-value="deliveryFeeOverrideInput"
@@ -242,17 +245,18 @@ function onAddressSelected(address: StructuredAddressProjection) {
              bloco de entrega, elas simplesmente NÃO EXISTIAM na retirada, e a
              encomenda por telefone para retirar na quinta não tinha onde ser
              escrita. O atalho fica FORA do bloco de entrega pela mesma razão. -->
-        <button
-          type="button"
-          class="flex items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-left text-sm transition hover:bg-accent"
+        <NuxtButton
+          color="neutral"
+          variant="outline"
+          trailing-icon="i-lucide-chevron-right"
+          class="justify-between gap-2 px-3 py-2 text-left font-normal"
           @click="$emit('openSchedule')"
         >
           <span>
             <span class="block font-medium text-muted-foreground">Quando</span>
             <span class="block text-xs opacity-80">{{ scheduleLabel }}</span>
           </span>
-          <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
-        </button>
+        </NuxtButton>
 
         <!-- Observações do pedido valem para RETIRADA também (não só entrega):
              o dado sempre viajou no intent; só a tela o escondia. -->
@@ -261,15 +265,22 @@ function onAddressSelected(address: StructuredAddressProjection) {
           <UiTextarea :model-value="orderNotes" :rows="2" placeholder="Instruções do pedido, referência, recado" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
         </label>
       </div>
-      <UiDialogFooter>
-        <!-- ⚠️ O rodapé confirma a ESCOLHA, não o desfecho: aqui só se decide
-             COMO o pedido será recebido, antes de qualquer coisa acontecer.
-             "Concluir entrega" é ato real desta casa (é o que o Gestor de
-             Pedidos faz quando o pedido chegou na mão de alguém), e numa
-             encomenda para sábado o rótulo afirmava que a entrega tinha
-             terminado no instante em que foi combinada. -->
-        <UiButton class="w-full" :disabled="!fulfillmentConfirmed" @click="isOpen = false">{{ !fulfillmentConfirmed ? "Escolha o recebimento" : fulfillmentType === "delivery" ? "Entrega neste endereço" : "Retirada no balcão" }}</UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+    <template #footer>
+      <!-- ⚠️ O rodapé confirma a ESCOLHA, não o desfecho: aqui só se decide
+           COMO o pedido será recebido, antes de qualquer coisa acontecer.
+           "Concluir entrega" é ato real desta casa (é o que o Gestor de
+           Pedidos faz quando o pedido chegou na mão de alguém), e numa
+           encomenda para sábado o rótulo afirmava que a entrega tinha
+           terminado no instante em que foi combinada. -->
+      <NuxtButton
+        block
+        color="primary"
+        :disabled="!fulfillmentConfirmed"
+        :label="!fulfillmentConfirmed ? 'Escolha o recebimento' : fulfillmentType === 'delivery' ? 'Entrega neste endereço' : 'Retirada no balcão'"
+        data-pos-fulfillment-confirm
+        @click="isOpen = false"
+      />
+    </template>
+  </NuxtModal>
 </template>

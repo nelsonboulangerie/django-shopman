@@ -258,7 +258,7 @@ if DEBUG:
         "https://*.trycloudflare.com",
         # Portas de dev das superfícies Nuxt — a MESMA lista de `dev_port` em
         # surfaces/registry.json (a trava de registro confere): loja :3000 ·
-        # Shopman Apps :3001 · PDV :3002 · Cozinha :3003 · Gestor :3004 ·
+        # Central :3001 · PDV :3002 · Cozinha :3003 · Gestor :3004 ·
         # Produção :3005 · Marketing :3006 · B.I. :3007 · Compras :3008.
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -278,6 +278,8 @@ if DEBUG:
         "http://127.0.0.1:3007",
         "http://localhost:3008",
         "http://127.0.0.1:3008",
+        "http://localhost:3009",
+        "http://127.0.0.1:3009",
     ]
 
 SHOPMAN_INSTANCE_APPS = _csv_env_list("SHOPMAN_INSTANCE_APPS")
@@ -476,6 +478,34 @@ _DB_URL = os.environ.get("DATABASE_URL", "").strip()
 if _DB_URL:
     _parsed = _urlparse.urlparse(_DB_URL)
     _conn_max_age = int(os.environ.get("DATABASE_CONN_MAX_AGE", "60"))
+    # Reuso de conexão sob ASGI: pool do psycopg, um por processo.
+    #
+    # Sob Daphne cada request roda numa thread nova, então `CONN_MAX_AGE > 0` não
+    # reaproveita nada: só deixa backend ocioso até o GC (bancada de 01/10, D21). Por
+    # isso o deploy roda com `DATABASE_CONN_MAX_AGE=0`, e cada request pagava uma
+    # conexão nova (no ar, 30 a 160 ms de TLS até o PgBouncer). O pool resolve as
+    # duas coisas: as conexões são do PROCESSO, não da thread, e voltam ao pool no
+    # fim de cada request (e depois de cada leitura do SSE, ver shop/eventstream.py).
+    #
+    # Liga sozinho quando `CONN_MAX_AGE` é 0 (o Django recusa os dois juntos);
+    # `DATABASE_POOL_MAX_SIZE=0` desliga sem deploy de código. Compatível com o
+    # PgBouncer em modo transaction: o Django já desliga prepared statements
+    # (`prepare_threshold=None`) e usa cursor de binding no cliente, e o deploy
+    # mantém `DATABASE_DISABLE_SERVER_SIDE_CURSORS=true`. Quem conta conexão de
+    # servidor é o PgBouncer (pool de 5); daqui saem só conexões de cliente até ele.
+    # O teto por processo fica abaixo do `max_connections` (25) do banco também no
+    # caso de alguém apontar `DATABASE_URL` para a conexão direta.
+    _pool_max_size = int(os.environ.get("DATABASE_POOL_MAX_SIZE", "8"))
+    _db_options: dict = {}
+    if _conn_max_age == 0 and _pool_max_size > 0:
+        _db_options["pool"] = {
+            "min_size": min(int(os.environ.get("DATABASE_POOL_MIN_SIZE", "1")), _pool_max_size),
+            "max_size": _pool_max_size,
+            # Espera por conexão livre antes de falhar o request (PoolTimeout).
+            "timeout": float(os.environ.get("DATABASE_POOL_TIMEOUT", "10")),
+            # Conexão parada sai do pool: não segura cliente no PgBouncer à toa.
+            "max_idle": float(os.environ.get("DATABASE_POOL_MAX_IDLE", "300")),
+        }
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -487,6 +517,7 @@ if _DB_URL:
             "CONN_MAX_AGE": _conn_max_age,
             "CONN_HEALTH_CHECKS": _env_bool("DATABASE_CONN_HEALTH_CHECKS", True),
             "DISABLE_SERVER_SIDE_CURSORS": _env_bool("DATABASE_DISABLE_SERVER_SIDE_CURSORS", False),
+            "OPTIONS": _db_options,
         }
     }
 else:
@@ -1347,12 +1378,8 @@ SPECTACULAR_SETTINGS = {
             ("individual", "Pessoa Física"),
             ("business", "Pessoa Jurídica"),
         ],
-        "CraftsmanWorkOrderStatusEnum": [
-            ("planned", "Planejada"),
-            ("started", "Iniciada"),
-            ("finished", "Concluída"),
-            ("void", "Cancelada"),
-        ],
+        # Fonte única dos rótulos de status da WorkOrder: os choices do modelo.
+        "CraftsmanWorkOrderStatusEnum": "shopman.craftsman.models.work_order.WorkOrder.Status",
         "PaymanPaymentIntentStatusEnum": [
             ("pending", "Pendente"),
             ("authorized", "Autorizado"),
@@ -1369,11 +1396,10 @@ SPECTACULAR_SETTINGS = {
 # ── Offerman ──────────────────────────────────────────────────────
 
 OFFERMAN = {
-    # Seam de leitura do Offerman (Product.reference_cost_q/margin_percent); None
-    # até existir um provedor real de custo. Ele vai compor receita (Craftsman) com
-    # custo de insumo (Buyman), então nasce aqui no orquestrador — depois da decisão
-    # em docs/decisions/adr-023-cost-live-and-frozen.md.
-    "COST_BACKEND": None,
+    # Seam de leitura do Offerman (Product.reference_cost_q/margin_percent): o custo
+    # VIVO (ADR-023), ficha técnica ativa (Craftsman) × custo preferencial do insumo
+    # (Buyman). Sem custo de algum insumo obrigatório, responde None (sem chute).
+    "COST_BACKEND": "shopman.shop.adapters.cost.RecipeCostBackend",
     "PRICING_BACKEND": "shopman.shop.adapters.pricing.PromotionPricingBackend",
     # Canonical catalog projection registry (env-gated above).
     "PROJECTION_BACKENDS": _CATALOG_PROJECTION_BACKENDS,
@@ -1475,6 +1501,9 @@ SHOPMAN_CONCIERGE = {
     # Janela de memória enviada ao modelo (mensagens) e teto diário por conversa.
     "window_messages": int(os.environ.get("CONCIERGE_WINDOW_MESSAGES", "40")),
     "max_turns_per_day": int(os.environ.get("CONCIERGE_MAX_TURNS_PER_DAY", "80")),
+    # Memória da conversa: por quantos dias o pedido entregue ou cancelado segue como
+    # "pedido recente" ("chegou, obrigado", "esqueci o suco"), ou até o próximo pedido.
+    "recent_order_days": int(os.environ.get("CONCIERGE_RECENT_ORDER_DAYS", "7")),
     # Máximo de idas ao modelo num turno (cada ida pode chamar ferramentas).
     "max_iterations": int(os.environ.get("CONCIERGE_MAX_ITERATIONS", "6")),
     # Segundos entre a chegada da mensagem e o processamento: o webhook responde
@@ -1499,6 +1528,20 @@ SHOPMAN_CONCIERGE = {
     # o piloto mede o Jev em sombra (`intent_pilot.shadow_triage`); esta chave é a
     # troca para quando ela atender. A regra local sensível vence os dois.
     "triage_classifier": os.environ.get("CONCIERGE_TRIAGE_CLASSIFIER", "anthropic"),
+    # Intenções no plural (OBS0310-Q, v2 bloco 1): a mensagem vira uma lista de partes, cada
+    # parte pelo executor da casa, uma resposta só na ordem do cliente. O Jev decide primeiro;
+    # a leitura com o modelo pequeno entra só quando ele hesita ou há mais de uma parte.
+    # Valem para quem a Concierge JÁ atende (OBS0310-R): `cohort` (padrão, sem env nenhuma:
+    # a coorte atendida em `assist`, `allowed_subjects` da connection; fora dela nada muda),
+    # `off` (interruptor de emergência: desliga para todos), `subjects` (só os subscribers de
+    # CONCIERGE_INTENTS_SUBSCRIBERS, dentro da coorte) ou `all` (também só dentro da coorte).
+    "intents_plural": os.environ.get("CONCIERGE_INTENTS_PLURAL", "cohort"),
+    "intents_subjects": [
+        value.strip()
+        for value in os.environ.get("CONCIERGE_INTENTS_SUBSCRIBERS", "").split(",")
+        if value.strip()
+    ],
+    "intents_model": os.environ.get("CONCIERGE_INTENTS_MODEL", "claude-haiku-4-5"),
     # Primeira connection real. Novos providers/canais entram como irmãos com o
     # mesmo contrato; nenhuma view ou service recebe defaults de transporte.
     "connections": {
@@ -2055,11 +2098,11 @@ SHOPMAN_PRODUCTION_REPORT_EXPORT_SPOOL_BYTES = int(
 
 # Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado,
 # publicado em `mkt.` (staging: mkt.boulangerie.com.br). Vazio ⇒ o tile
-# "Marketing" some do Shopman Apps, sem link morto.
+# "Marketing" some da Central, sem link morto.
 SHOPMAN_MARKETING_BASE_URL = (os.environ.get("SHOPMAN_MARKETING_BASE_URL") or "").strip().rstrip("/")
 
 # Base URL pública do B.I. (surfaces/bi-nuxt) — app Nuxt dedicado, publicado em
-# `bi.` (staging: bi.boulangerie.com.br). Vazio ⇒ o tile "B.I." some do Shopman Apps,
+# `bi.` (staging: bi.boulangerie.com.br). Vazio ⇒ o tile "B.I." some da Central,
 # sem link morto.
 SHOPMAN_BI_BASE_URL = (os.environ.get("SHOPMAN_BI_BASE_URL") or "").strip().rstrip("/")
 
@@ -2117,9 +2160,9 @@ SHOPMAN_ADMIN_HOST = (
     (os.environ.get("SHOPMAN_ADMIN_HOST", "")).strip().removeprefix("https://").removeprefix("http://").rstrip("/")
 )
 
-# URLs das superfícies para o Shopman Apps (surfaces/hub-nuxt). REUSA as base URLs
+# URLs das superfícies para a Central (surfaces/hub-nuxt). REUSA as base URLs
 # públicas que o nav do Admin já usa — UMA fonte por superfície (DRY): quem já configurou
-# os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha o Shopman Apps de graça, sem
+# os links de operador do Admin (SHOPMAN_POS_BASE_URL etc.) ganha a Central de graça, sem
 # env vars novas. Vazio ⇒ o tile some do launcher (nunca link morto); só em DEBUG o
 # launcher cai nos defaults de dev (127.0.0.1:PORT) de `projections/hub.py`. O tile Loja
 # abre a loja do cliente (storefront, mesma base dos links de cliente).

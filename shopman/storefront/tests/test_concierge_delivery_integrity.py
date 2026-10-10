@@ -29,6 +29,7 @@ pytestmark = pytest.mark.django_db
 def enabled(settings, monkeypatch):
     settings.AI_ASSIST_API_KEY = "test-only"
     settings.SHOPMAN_CONCIERGE = {
+        "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,
         "contract_version": 3,
         "channel_ref": "web",
@@ -120,6 +121,8 @@ def test_pix_second_block_failure_preserves_first(monkeypatch):
         lambda **kwargs: agent.AgentOutcome(
             reply_text="Pedido registrado; pagamento pendente.",
             extra_replies=["PIX-CANONICAL"],
+            # O recibo do pedido (regra da casa R6: "registrado" só com pedido).
+            order_ref="ORD-TEST-1",
         ),
     )
     adapter_class().send_outcomes["manychat-wa"] = [

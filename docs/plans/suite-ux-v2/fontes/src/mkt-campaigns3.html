@@ -1,0 +1,216 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"><style>.note.menu{display:block;background:var(--popover);color:var(--popover-foreground);padding:6px;border-radius:.5rem;white-space:normal;font-size:inherit;font-weight:inherit;line-height:inherit;box-shadow:0 12px 32px rgb(0 0 0/.18)}</style></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="marketing">
+<div class="flex h-[900px] overflow-hidden relative">
+  <!-- Rail v3: trocador de apps + seções do Marketing + avisos/atalhos/bloquear -->
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Marketing" icon="megaphone"}}
+    <a class="rail-item"><i data-i="sparkles"></i>Hoje</a>
+    <a class="rail-item on"><i data-i="send"></i>Campanhas<span class="badge">3</span></a>
+    <a class="rail-item"><i data-i="badge-percent"></i><span class="text-center leading-tight">Ofertas e cupons</span></a>
+    <a class="rail-item" title="3 plataformas desligadas"><i data-i="share-2"></i>Plataformas<span class="attn"></span></a>
+    <a class="rail-item"><i data-i="history"></i>Histórico</a>
+    {{> rail3bottom bell="2" initials="AD" operator="Admin"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- Cabeçalho único: título + ao vivo + busca única + ⋯ + ação primária; linha 2 = filtros -->
+    <header class="px-4 pt-3 pb-2.5 flex flex-col gap-2.5 border-b border-border bg-card">
+      <div class="flex items-center gap-3">
+        <h1 class="op-display !text-[22px] leading-none">Campanhas</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum" title="Ao vivo · última leitura 22:03:10"><span class="live-dot"></span>22:03</span>
+        <div class="w-3"></div>
+        {{> search3 w="w-[27rem]" placeholder="Buscar campanha, gatilho, modelo, plataforma"}}
+        <div class="flex-1"></div>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais ações"><i data-i="ellipsis" class="size-5"></i></button>
+        <button class="h-control px-4 rounded-md bg-primary text-primary-foreground inline-flex items-center gap-2 op-label font-semibold"><i data-i="plus" class="size-4"></i>Nova campanha<kbd class="op-micro px-1.5 rounded bg-primary-foreground/20 font-mono">N</kbd></button>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button class="h-10 px-3 rounded-full border border-primary bg-primary/10 text-foreground inline-flex items-center gap-2 op-label font-semibold"><i data-i="check" class="size-4 text-primary"></i>Todas <span class="tnum text-muted-foreground">3</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-success"></span>Ligadas <span class="tnum text-muted-foreground">3</span></button>
+        <button class="h-10 px-3 rounded-full border border-border bg-card inline-flex items-center gap-2 op-label"><span class="size-2 rounded-full bg-muted-foreground/60"></span>Desligadas <span class="tnum text-muted-foreground">0</span></button>
+        <span class="w-px h-6 bg-border mx-1"></span>
+        <button class="h-10 px-3 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-2 op-label font-semibold"><i data-i="message-circle" class="size-4 text-primary"></i>Plataforma: WhatsApp<i data-i="chevron-down" class="size-4 text-muted-foreground"></i></button>
+        <button class="h-10 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-primary font-semibold underline-offset-4 hover:underline"><i data-i="x" class="size-4"></i>Limpar filtros</button>
+      </div>
+    </header>
+
+    <!-- Conteúdo -->
+    <div class="flex-1 overflow-hidden px-4 pt-4 flex flex-col gap-3">
+      <!-- Faixa de "acabou de criar" -->
+      <div class="rounded-lg border border-success/30 bg-success/8 px-3.5 py-2.5 flex items-center gap-3">
+        <span class="size-8 rounded-full bg-success/15 text-success grid place-items-center"><i data-i="circle-check" class="size-4.5"></i></span>
+        <div class="flex-1 min-w-0">
+          <p class="op-label font-semibold">Campanha criada e salva: Relâmpago de fim de tarde.</p>
+          <p class="op-micro text-muted-foreground">Ela está destacada na lista. Abra para conferir ou prepare o primeiro disparo.</p>
+        </div>
+        <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label font-semibold"><i data-i="send" class="size-4"></i>Preparar o primeiro disparo</button>
+        <button class="h-control px-3 rounded-md inline-flex items-center gap-2 op-label text-muted-foreground"><i data-i="check" class="size-4"></i>Visto</button>
+      </div>
+
+      <div class="flex items-baseline gap-2">
+        <h2 class="op-eyebrow">Campanhas</h2><span class="tnum op-label text-muted-foreground">3 de 3</span>
+        <span class="ml-auto op-micro text-muted-foreground">Toque na linha para editar. A chave liga ou desliga sem abrir.</span>
+      </div>
+
+      <!-- Tabela padrão -->
+      <div class="rounded-lg border border-border bg-card overflow-hidden">
+        <div class="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)_224px_minmax(0,1.15fr)_112px_236px] items-center gap-4 px-4 h-10 bg-muted/60 border-b border-border op-eyebrow text-muted-foreground">
+          <span>Campanha</span><span>Gatilho</span><span>Destinos</span><span>Público</span><span>Situação</span><span class="text-right pr-1">Ações</span>
+        </div>
+
+        <!-- linha 1 -->
+        <div class="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)_224px_minmax(0,1.15fr)_112px_236px] items-center gap-4 px-4 py-3 border-b border-border hover:bg-accent/40">
+          <div class="min-w-0">
+            <p class="op-title flex items-center gap-2">Fornada pronta
+              <span class="h-6 px-2 rounded-full bg-warning/12 text-warning op-micro font-semibold inline-flex items-center gap-1.5" title="Publica sem passar por revisão"><i data-i="zap" class="size-3"></i>Automática</span>
+            </p>
+            <p class="op-micro text-muted-foreground mt-0.5 tnum">Disparou 18× · 412 pessoas · <span class="text-destructive">1 falha, a última por limite do Instagram</span></p>
+          </div>
+          <div class="min-w-0">
+            <p class="op-body inline-flex items-center gap-1.5"><i data-i="croissant" class="size-4 text-muted-foreground"></i>Produção concluída</p>
+            <p class="op-micro text-muted-foreground">Quando um lote termina</p>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <span class="h-6 px-2 rounded-full bg-muted text-foreground op-micro font-semibold inline-flex items-center gap-1"><i data-i="instagram" class="size-3"></i>Instagram</span>
+            <span class="h-6 px-2 rounded-full bg-muted text-foreground op-micro font-semibold inline-flex items-center gap-1"><i data-i="message-circle" class="size-3"></i>WhatsApp</span>
+          </div>
+          <div class="min-w-0">
+            <p class="op-label font-normal">Favoritos, alertas, melhores clientes</p>
+            <p class="op-micro text-muted-foreground inline-flex items-center gap-1"><i data-i="clock" class="size-3.5"></i>15 min antes</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-11 h-6 rounded-full bg-primary relative shrink-0"><span class="absolute right-0.5 top-0.5 size-5 rounded-full bg-white shadow"></span></span>
+            <span class="op-label text-success font-semibold">Ligada</span>
+          </div>
+          <div class="flex items-center justify-end gap-1.5">
+            <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label font-semibold"><i data-i="send" class="size-4"></i>Preparar disparo</button>
+            <button class="size-control rounded-md grid place-items-center text-muted-foreground hover:bg-accent" title="Mais ações da campanha"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+        </div>
+
+        <!-- linha 2: disparo indisponível com a razão por extenso -->
+        <div class="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)_224px_minmax(0,1.15fr)_112px_236px] items-center gap-4 px-4 pt-3 pb-1">
+          <div class="min-w-0">
+            <p class="op-title">Recado para os clientes</p>
+            <p class="op-micro text-muted-foreground mt-0.5">Ainda não disparou</p>
+          </div>
+          <div class="min-w-0">
+            <p class="op-body inline-flex items-center gap-1.5"><i data-i="hand" class="size-4 text-muted-foreground"></i>Disparo manual</p>
+            <p class="op-micro text-muted-foreground">Quando você mandar</p>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <span class="h-6 px-2 rounded-full bg-muted text-foreground op-micro font-semibold inline-flex items-center gap-1"><i data-i="message-circle" class="size-3"></i>WhatsApp</span>
+          </div>
+          <div class="min-w-0">
+            <p class="op-label font-normal text-muted-foreground">Sem público definido</p>
+            <p class="op-micro text-muted-foreground">Escolhido a cada disparo</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-11 h-6 rounded-full bg-primary relative shrink-0"><span class="absolute right-0.5 top-0.5 size-5 rounded-full bg-white shadow"></span></span>
+            <span class="op-label text-success font-semibold">Ligada</span>
+          </div>
+          <div class="flex flex-col items-end gap-1">
+            <div class="flex items-center gap-1.5">
+              <button disabled class="h-control px-3 rounded-md border border-dashed border-border text-muted-foreground inline-flex items-center gap-2 op-label font-semibold"><i data-i="lock" class="size-4"></i>Preparar disparo</button>
+              <button class="size-control rounded-md grid place-items-center text-muted-foreground" title="Mais ações da campanha"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+            </div>
+          </div>
+        </div>
+        <div class="px-4 pb-2.5 border-b border-border flex justify-end">
+          <p class="op-micro text-muted-foreground inline-flex items-center gap-1.5 mr-12"><i data-i="info" class="size-3.5"></i>WhatsApp desligado: ligue em Plataformas para preparar.</p>
+        </div>
+
+        <!-- linha 3: recém-criada, destacada -->
+        <div class="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)_224px_minmax(0,1.15fr)_112px_236px] items-center gap-4 px-4 py-3 bg-success/6 shadow-[inset_3px_0_0_var(--success)]">
+          <div class="min-w-0">
+            <p class="op-title flex items-center gap-2">Relâmpago de fim de tarde
+              <span class="h-6 px-2 rounded-full bg-success/12 text-success op-micro font-semibold inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-success"></span>Nova</span>
+            </p>
+            <p class="op-micro text-muted-foreground mt-0.5">Ainda não disparou</p>
+          </div>
+          <div class="min-w-0">
+            <p class="op-body inline-flex items-center gap-1.5"><i data-i="calendar-clock" class="size-4 text-muted-foreground"></i>Agendado</p>
+            <p class="op-micro text-muted-foreground">Sex, sáb, às 17:30</p>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <span class="h-6 px-2 rounded-full bg-muted text-foreground op-micro font-semibold inline-flex items-center gap-1"><i data-i="message-circle" class="size-3"></i>WhatsApp</span>
+          </div>
+          <div class="min-w-0">
+            <p class="op-label font-normal text-muted-foreground">Sem público definido</p>
+            <p class="op-micro text-muted-foreground">Próximo: sex, 09/10, 17:30</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-11 h-6 rounded-full bg-primary relative shrink-0"><span class="absolute right-0.5 top-0.5 size-5 rounded-full bg-white shadow"></span></span>
+            <span class="op-label text-success font-semibold">Ligada</span>
+          </div>
+          <div class="flex items-center justify-end gap-1.5">
+            <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label font-semibold"><i data-i="send" class="size-4"></i>Preparar disparo</button>
+            <button class="size-control rounded-md grid place-items-center text-muted-foreground" title="Mais ações da campanha"><i data-i="ellipsis-vertical" class="size-4.5"></i></button>
+          </div>
+        </div>
+
+        <!-- rodapé de paginação padrão -->
+        <div class="px-4 h-14 border-t border-border bg-muted/30 flex items-center gap-3">
+          <span class="op-label text-muted-foreground tnum">1 a 3 de 3 campanhas</span>
+          <div class="flex-1"></div>
+          <span class="op-label text-muted-foreground tnum">Página 1 de 1</span>
+          <button disabled class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-1.5 op-label text-muted-foreground/60"><i data-i="chevron-left" class="size-4"></i>Anterior</button>
+          <button disabled class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-1.5 op-label text-muted-foreground/60">Próxima<i data-i="chevron-right" class="size-4"></i></button>
+        </div>
+      </div>
+
+      <!-- Estados da lista (mesma caixa padrão do kit) -->
+      <div class="grid grid-cols-3 gap-3 mt-1">
+        <div class="rounded-lg border border-dashed border-border bg-card/60 px-5 py-5 flex flex-col items-center text-center gap-1.5">
+          <span class="size-10 rounded-full bg-muted text-muted-foreground grid place-items-center"><i data-i="search-x" class="size-5"></i></span>
+          <p class="op-title">Nenhuma campanha combina com os filtros</p>
+          <p class="op-micro text-muted-foreground">Limpe ou ajuste os filtros para ampliar a busca.</p>
+          <button class="h-control px-3 rounded-md op-label font-semibold text-primary">Limpar filtros</button>
+        </div>
+        <div class="rounded-lg border border-dashed border-border bg-card/60 px-5 py-5 flex flex-col items-center text-center gap-1.5">
+          <span class="size-10 rounded-full bg-primary/10 text-primary grid place-items-center"><i data-i="sliders-horizontal" class="size-5"></i></span>
+          <p class="op-title">Nenhuma campanha ainda</p>
+          <p class="op-micro text-muted-foreground">Uma campanha liga um evento da padaria a um anúncio. Comece pelo lote.</p>
+          <button class="h-control px-3 rounded-md bg-primary text-primary-foreground op-label font-semibold inline-flex items-center gap-2"><i data-i="plus" class="size-4"></i>Criar a primeira</button>
+        </div>
+        <div class="rounded-lg border border-warning/30 bg-warning/10 px-5 py-5 flex flex-col items-center text-center gap-1.5">
+          <span class="size-10 rounded-full bg-warning/15 text-warning grid place-items-center"><i data-i="wifi-off" class="size-5"></i></span>
+          <p class="op-title">Mostrando a lista de 21:58</p>
+          <p class="op-micro text-muted-foreground">Não foi possível atualizar agora. Nenhuma campanha foi alterada.</p>
+          <button class="h-control px-3 rounded-md border border-border bg-card op-label font-semibold inline-flex items-center gap-2"><i data-i="refresh-cw" class="size-4"></i>Atualizar</button>
+        </div>
+      </div>
+      <p class="op-micro text-muted-foreground text-center -mt-1">Estados da mesma lista, lado a lado só nesta prévia: sem resultado, vazia, desatualizada.</p>
+    </div>
+  </main>
+
+  <!-- menu ⋯ aberto -->
+  <div class="note menu absolute right-[206px] top-[62px] w-64 rounded-lg border border-border bg-popover shadow-xl p-1.5 z-20">
+    <p class="px-2.5 pt-1.5 pb-1 op-eyebrow text-muted-foreground">Campanhas</p>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label bg-accent"><i data-i="file-text" class="size-4"></i>Modelos de texto</button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="history" class="size-4"></i>Histórico de disparos</button>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="refresh-cw" class="size-4"></i>Atualizar<kbd class="ml-auto op-micro font-mono text-muted-foreground">R</kbd></button>
+    <div class="h-px bg-border my-1"></div>
+    <button class="w-full h-control px-2.5 rounded-md flex items-center gap-2.5 op-label"><i data-i="keyboard" class="size-4"></i>Atalhos desta tela<kbd class="ml-auto op-micro font-mono text-muted-foreground">?</kbd></button>
+  </div>
+
+  <span class="pin" style="left:62px;top:150px">1</span>
+  <span class="pin" style="left:226px;top:4px">2</span>
+  <span class="pin" style="left:330px;top:4px">3</span>
+  <span class="pin" style="left:1250px;top:4px">4</span>
+  <span class="pin" style="left:84px;top:66px">5</span>
+  <span class="pin" style="left:420px;top:126px">6</span>
+  <span class="pin" style="left:968px;top:420px">7</span>
+  <span class="pin" style="left:62px;top:604px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Marketing · Campanhas · v3 <span>seções no rail, uma barra só, uma busca só; nenhuma função sai da tela</span></p>
+  <div><b>1</b>Hoje, Campanhas (3), Ofertas e cupons, Plataformas (ponto: destinos desligados) e Histórico moram no rail. O selo no topo troca de app.</div>
+  <div><b>2</b>Título da tela com "ao vivo" em ponto e hora; só cresce quando a leitura atrasa.</div>
+  <div><b>3</b>Uma busca só, tecla / ou Ctrl K: filtra por nome, gatilho, modelo e plataforma (mesmo debounce e ?q na URL), com a suíte no dropdown.</div>
+  <div><b>4</b>⋯ (Modelos de texto, Histórico de disparos, Atualizar R, Atalhos ?) e "Nova campanha" (N) por último, na mesma linha.</div>
+  <div><b>5</b>Situação em chips com contagem e Plataforma em chip-menu na linha 2; "Limpar filtros" só com filtro ativo.</div>
+  <div><b>6</b>Faixa "Campanha criada" com o próximo passo e "Visto"; a linha nova fica marcada.</div>
+  <div><b>7</b>Tabela, chave Ligada, razão do botão travado por extenso, paginação e os três estados ficam iguais à v2.</div>
+  <div><b>8</b>O sino do Marketing é o "Avisos" do pé do rail (2), com Atalhos, Bloquear e operador.</div>
+</div>
+</body></html>

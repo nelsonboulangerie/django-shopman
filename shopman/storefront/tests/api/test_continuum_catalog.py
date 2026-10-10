@@ -15,9 +15,9 @@ from django.utils import timezone
 from jsonschema import Draft202012Validator, FormatChecker
 
 from shopman.shop.logging import JsonLogFormatter
+from shopman.shop.observability import log_catalog_observation
 from shopman.storefront.continuum import current_or_build_head, rendered_message
 from shopman.storefront.models import CatalogStructureHead
-from shopman.storefront.observability import log_catalog_observation
 from shopman.storefront.presentation import build_catalog
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
@@ -346,7 +346,7 @@ def test_warm_read_model_has_fixed_query_budget_below_canonical_menu(client):
 def test_observability_keeps_numeric_metrics_structured_and_allowlisted(monkeypatch):
     captured = {}
     monkeypatch.setattr(
-        "shopman.storefront.observability.logger.info",
+        "shopman.shop.observability.logger.info",
         lambda message, *, extra: captured.update(message=message, extra=extra),
     )
     log_catalog_observation(

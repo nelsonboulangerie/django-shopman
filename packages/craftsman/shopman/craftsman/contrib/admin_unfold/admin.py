@@ -159,11 +159,11 @@ class RecipeAdminForm(forms.ModelForm):
         help_text=_("Uma etapa por linha, na ordem operacional."),
     )
     max_started_minutes = forms.IntegerField(
-        label=_("Tempo alvo iniciado (min)"),
+        label=_("Tempo máximo de lote aberto (min)"),
         required=False,
         min_value=1,
         widget=UnfoldAdminIntegerFieldWidget(),
-        help_text=_("Após esse tempo uma OP iniciada passa a aparecer como atrasada."),
+        help_text=_("Após esse tempo um lote aberto passa a aparecer como atrasado."),
     )
     capacity_per_day = forms.DecimalField(
         label=_("Capacidade por dia"),
@@ -704,14 +704,14 @@ class WorkOrderAdmin(BaseModelAdmin):
             return _format_work_order_units(obj.quantity)
         return "-"
 
-    @display(description=_("Produzido"), ordering="finished")
+    @display(description=_("Realizado"), ordering="finished")
     def produced_display(self, obj):
-        """Display finished quantity."""
+        """Quantidade realizada (``finished``), declarada no Fechamento."""
         if obj.finished is not None:
             return _format_work_order_units(obj.finished)
         return "-"
 
-    @display(description=_("Iniciado"))
+    @display(description=_("Previsto"))
     def started_quantity_display(self, obj):
         return _format_work_order_units(_started_quantity(obj))
 
@@ -952,13 +952,11 @@ def _format_work_order_units(value) -> str:
 
 
 def _work_order_status_label(status: str) -> str:
-    labels = {
-        WorkOrder.Status.PLANNED: _("Planejada"),
-        WorkOrder.Status.STARTED: _("Iniciada"),
-        WorkOrder.Status.FINISHED: _("Concluída"),
-        WorkOrder.Status.VOID: _("Cancelada"),
-    }
-    return str(labels.get(status, status))
+    """Rótulo do status da fonte única: ``WorkOrder.Status`` (choices do modelo)."""
+    try:
+        return str(WorkOrder.Status(status).label)
+    except ValueError:
+        return str(status)
 
 
 def _work_order_related(wo: WorkOrder, related_name: str) -> list:

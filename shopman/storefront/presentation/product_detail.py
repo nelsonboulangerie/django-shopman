@@ -587,10 +587,9 @@ def _cross_sell_heading() -> str:
 
 def _food_safety_notice() -> str:
     try:
-        from shopman.shop.models import Shop
+        from shopman.storefront.presentation.public_information import food_safety_notice
 
-        shop = Shop.load()
-        return (shop.food_safety_notice or "").strip() if shop else ""
+        return food_safety_notice()
     except Exception:
         logger.exception("product_detail_projection_food_safety_notice_failed")
         return ""

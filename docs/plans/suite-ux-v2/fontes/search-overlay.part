@@ -1,0 +1,32 @@
+  <div class="absolute inset-0 left-[76px] bg-foreground/10 z-20"></div>
+  <div class="absolute z-30 left-[268px] top-[10px] w-[600px]">
+    <label class="h-control w-[22rem] px-3 rounded-md border-2 border-ring bg-card inline-flex items-center gap-2 shadow-sm">
+      <i data-i="search" class="size-4 text-foreground"></i><span class="flex-1 op-body">maria<span class="inline-block w-px h-4 bg-foreground align-middle ml-px"></span></span>
+      <button class="size-6 rounded grid place-items-center text-muted-foreground"><i data-i="x" class="size-4"></i></button>
+    </label>
+    <div class="mt-2 rounded-xl border border-border bg-popover shadow-2xl overflow-hidden">
+      <div class="px-3 pt-3 pb-2 flex items-center gap-2 border-b border-border">
+        <div class="h-9 p-1 rounded-md bg-secondary inline-flex items-center gap-1">
+          <button class="h-full px-2.5 rounded bg-card shadow-sm op-label font-semibold inline-flex items-center gap-1.5">Esta tela <span class="tnum text-muted-foreground">2</span></button>
+          <button class="h-full px-2.5 rounded op-label text-muted-foreground inline-flex items-center gap-1.5">Gestor <span class="tnum">5</span></button>
+          <button class="h-full px-2.5 rounded op-label text-muted-foreground inline-flex items-center gap-1.5">Toda a suíte <span class="tnum">9</span></button>
+        </div>
+        <span class="ml-auto op-micro text-muted-foreground">Tab troca o alcance</span>
+      </div>
+      <p class="px-4 pt-3 pb-1 op-eyebrow text-muted-foreground">Nesta tela · filtrando o quadro</p>
+      <div class="px-2">
+        <div class="h-12 px-2 rounded-md bg-accent flex items-center gap-3"><span class="size-8 rounded-md bg-card grid place-items-center"><i data-i="clipboard-list" class="size-4"></i></span><div class="flex-1"><p class="op-label font-semibold">X36 · <mark class="bg-primary/20 text-foreground rounded px-0.5">Maria</mark> Santos</p><p class="op-micro text-muted-foreground">Preparo · 1× Croissant · R$ 13,00</p></div><kbd class="op-micro font-mono text-muted-foreground">Enter</kbd></div>
+        <div class="h-12 px-2 rounded-md flex items-center gap-3"><span class="size-8 rounded-md bg-muted grid place-items-center"><i data-i="clipboard-list" class="size-4"></i></span><div class="flex-1"><p class="op-label font-semibold">U78 · <mark class="bg-primary/20 text-foreground rounded px-0.5">Maria</mark> Santos</p><p class="op-micro text-muted-foreground">Preparo · 2× Croissant · R$ 26,00</p></div></div>
+      </div>
+      <p class="px-4 pt-3 pb-1 op-eyebrow text-muted-foreground">Na suíte</p>
+      <div class="px-2 pb-2">
+        <div class="h-12 px-2 rounded-md flex items-center gap-3"><span class="size-8 rounded-md grid place-items-center text-white" style="background:#8B2F4D"><i data-i="user" class="size-4"></i></span><div class="flex-1"><p class="op-label font-semibold"><mark class="bg-primary/20 text-foreground rounded px-0.5">Maria</mark> Santos <span class="font-normal text-muted-foreground">· cliente</span></p><p class="op-micro text-muted-foreground">Gestor › Clientes · 23 pedidos · (43) 99111-1111</p></div></div>
+        <div class="h-12 px-2 rounded-md flex items-center gap-3"><span class="size-8 rounded-md grid place-items-center text-white" style="background:#A95032"><i data-i="calendar-clock" class="size-4"></i></span><div class="flex-1"><p class="op-label font-semibold">Encomenda de <mark class="bg-primary/20 text-foreground rounded px-0.5">Maria</mark> Santos</p><p class="op-micro text-muted-foreground">PDV › Encomendas · retirada sáb 04/10 às 09:00 · R$ 41,00</p></div></div>
+        <div class="h-12 px-2 rounded-md flex items-center gap-3"><span class="size-8 rounded-md grid place-items-center text-white" style="background:#414F91"><i data-i="chart-no-axes-combined" class="size-4"></i></span><div class="flex-1"><p class="op-label font-semibold">Perfil de <mark class="bg-primary/20 text-foreground rounded px-0.5">Maria</mark> Santos</p><p class="op-micro text-muted-foreground">B.I. › Clientes · Fiel · última visita hoje</p></div></div>
+        <div class="h-12 px-2 rounded-md flex items-center gap-3"><span class="size-8 rounded-md bg-muted grid place-items-center"><i data-i="plus" class="size-4"></i></span><div class="flex-1"><p class="op-label font-semibold">Abrir venda para <mark class="bg-primary/20 text-foreground rounded px-0.5">Maria</mark> Santos <span class="font-normal text-muted-foreground">· ação</span></p><p class="op-micro text-muted-foreground">PDV › Comandas, já com a cliente identificada</p></div></div>
+      </div>
+      <div class="px-4 h-10 flex items-center gap-4 border-t border-border bg-muted/50 op-micro text-muted-foreground">
+        <span><kbd class="font-mono">↑↓</kbd> navegar</span><span><kbd class="font-mono">Enter</kbd> abrir</span><span><kbd class="font-mono">Tab</kbd> alcance</span><span><kbd class="font-mono">Esc</kbd> fechar e manter o filtro</span>
+      </div>
+    </div>
+  </div>

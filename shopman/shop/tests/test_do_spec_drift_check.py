@@ -71,8 +71,8 @@ def test_machine_envs_born_from_the_file_are_declared_and_the_switch_is_not():
     """As envs da Machine que só o arquivo tem são diferença declarada; o adapter não.
 
     As seis GENERAL repetem o padrão do settings.py e as quatro SECRET vêm sem valor.
-    ``SHOPMAN_COURIER_ADAPTER`` não é declarada: se alguém a puser no arquivo, o
-    relatório acusa, porque ela liga o despacho no ``apps update``.
+    ``SHOPMAN_COURIER_ADAPTER`` não é declarada: ela liga o despacho, então arquivo
+    e vivo têm que concordar nela, e qualquer lado sozinho acusa.
     """
     versioned = {
         key: _env(key, value, secret=value is None)

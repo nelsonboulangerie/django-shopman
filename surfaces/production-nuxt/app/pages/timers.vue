@@ -58,11 +58,22 @@ async function startFree(payload: {
   );
 }
 
+// A etiqueta é uma tecla de chão: alvo grande, nome em cima e o tempo embaixo. O
+// botão canônico em `xl`, esticado em ladrilho (quebra texto, altura do conteúdo).
+const TILE_UI = {
+  base: "min-h-28 h-auto flex-col items-start justify-between gap-2 p-4 text-left whitespace-normal",
+};
+// "Novo timer" é o caso que a fileira não previu: o mesmo ladrilho, com a borda
+// tracejada de quem ainda não tem tempo escolhido.
+const NEW_TILE_UI = {
+  base: `${TILE_UI.base} ring-0 border border-dashed border-border`,
+};
+
 useHead({ title: "Timers" });
 </script>
 
 <template>
-  <main class="flex min-h-screen flex-col">
+  <main class="flex min-h-0 flex-1 flex-col">
     <ProductionHeader
       v-model:query="query"
       title="Timers"
@@ -74,15 +85,17 @@ useHead({ title: "Timers" });
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <!-- ── 1. Disparar ────────────────────────────────────────────────── -->
-      <h2 class="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <h2 class="mb-2 op-eyebrow text-muted-foreground">
         Disparar
       </h2>
       <div class="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-        <button
+        <NuxtButton
           v-for="tag in visibleTags"
           :key="tag.ref"
-          type="button"
-          class="flex min-h-28 flex-col items-start justify-between rounded-lg border bg-card p-4 text-left transition hover:bg-accent active:translate-y-px"
+          size="xl"
+          color="neutral"
+          variant="outline"
+          :ui="TILE_UI"
           :aria-label="`Disparar ${tag.label}, ${minutesLabel(tag.minutes)}`"
           @click="fireTag(tag)"
         >
@@ -92,18 +105,20 @@ useHead({ title: "Timers" });
           <span class="text-3xl font-bold tabular-nums text-muted-foreground">{{
             minutesLabel(tag.minutes)
           }}</span>
-        </button>
+        </NuxtButton>
 
-        <button
-          type="button"
-          class="flex min-h-28 flex-col items-start justify-between rounded-lg border border-dashed bg-card p-4 text-left transition hover:bg-accent active:translate-y-px"
+        <NuxtButton
+          size="xl"
+          color="neutral"
+          variant="outline"
+          :ui="NEW_TILE_UI"
           @click="creating = true"
         >
           <span class="text-lg font-semibold leading-tight">Novo timer</span>
           <span class="flex items-center gap-1.5 text-sm text-muted-foreground">
             <Icon name="lucide:plus" class="size-4" /> Escolher os minutos
           </span>
-        </button>
+        </NuxtButton>
       </div>
 
       <p
@@ -128,7 +143,7 @@ useHead({ title: "Timers" });
       </p>
 
       <!-- ── 2. Em andamento ───────────────────────────────────────────── -->
-      <h2 class="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <h2 class="mb-2 op-eyebrow text-muted-foreground">
         Em andamento
       </h2>
       <ul

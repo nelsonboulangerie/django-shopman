@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { shouldConnectSse, shouldPollTick } from "../app/presentation/events";
+import { refreshScopeForChannel, shouldConnectSse, shouldPollTick } from "../app/presentation/events";
+
+describe("refreshScopeForChannel — o aviso de comanda relê só o quadro", () => {
+  it("o stream das comandas relê só o quadro", () => {
+    expect(refreshScopeForChannel("/sse/tabs")).toBe("tabs");
+  });
+
+  it("caixa, poll e volta à aba relêem a projeção inteira", () => {
+    expect(refreshScopeForChannel("/sse/cash")).toBe("all");
+    expect(refreshScopeForChannel(undefined)).toBe("all");
+  });
+});
 
 describe("shouldPollTick — o poll é fallback, não segundo canal", () => {
   it("com o SSE vivo, o tick não refaz nada (o push já refez)", () => {

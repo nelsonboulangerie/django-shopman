@@ -323,8 +323,9 @@ def test_preorder_counts_in_reconciliation_of_the_delivery_day(house_recipe):
 
 @pytest.mark.django_db
 def test_build_day_closing_lists_upcoming_preorders(setup_stock):
-    """WP-D: o fechamento informa as encomendas dos próximos dias (qtd + total),
-    agregadas pela data combinada."""
+    """WP-D: o fechamento informa as encomendas dos próximos dias (quantos
+    pedidos, nunca o valor: fechamento é cego para dinheiro), agregadas pela
+    data combinada."""
     from datetime import timedelta
 
     from django.utils import timezone
@@ -341,11 +342,10 @@ def test_build_day_closing_lists_upcoming_preorders(setup_stock):
     closing = build_day_closing()
 
     assert closing.has_upcoming_preorders is True
-    assert [(row.date_display, row.orders_count, row.total_display) for row in closing.upcoming_preorders] == [
-        ("amanhã", 2, "R$ 40,00"),
-        (closing.upcoming_preorders[1].date_display, 1, "R$ 10,00"),
+    assert [(row.date_display, row.orders_count) for row in closing.upcoming_preorders] == [
+        ("amanhã", 2),
+        (closing.upcoming_preorders[1].date_display, 1),
     ]
-    assert closing.upcoming_preorders[0].total_q == 4000
 
 
 # ── Caixa aberto no fechamento do dia ─────────────────────────────────────
@@ -438,22 +438,3 @@ def test_quantidade_vazia_continua_valendo_zero(client, setup_stock, closing_use
     )
 
     assert response.status_code == 200
-
-
-@pytest.mark.django_db
-def test_upcoming_preorders_somam_o_total_EFETIVO(setup_stock):
-    """Pedido ajustado depois de aceito (iFood) vale o total do ajuste, não o selado."""
-    from datetime import timedelta
-
-    from django.utils import timezone
-
-    tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
-    Order.objects.create(
-        ref="ENC-AJ", channel_ref="ifood", status="accepted", total_q=5000,
-        data={"delivery_date": tomorrow, "adjustment": {"items": [], "total_q": 3200}},
-    )
-
-    closing = build_day_closing()
-
-    assert [row.total_q for row in closing.upcoming_preorders] == [3200]
-

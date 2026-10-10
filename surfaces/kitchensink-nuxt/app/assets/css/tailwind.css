@@ -1,0 +1,13 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Núcleo comum das superfícies de operador (tokens do tema, escaneamento do kit,
+   variante dark, animações, reset de base, utilitários). Abaixo desta linha só
+   entra o que é deste app. */
+@import "../../../../operator-kit/app/assets/css/operator-base.css";
+
+/* Resolve pelo node_modules DESTE app; o kit não tem um. Por isso o plugin fica
+   aqui e não na base compartilhada. */
+@plugin "@tailwindcss/forms" {
+  strategy: "class";
+}

@@ -1,85 +1,256 @@
 <script setup lang="ts">
-// INICIAR ESTE DISPOSITIVO — a montagem do balcão, uma vez por máquina.
+import { useScreen } from "../composables/useScreen";
+// VINCULAR ESTE DISPOSITIVO A UM POSTO DE TRABALHO: uma vez por máquina, em qualquer app.
 //
-// Aparece para quem gere operadores, logado com senha, num dispositivo que ainda não
-// é uma estação. Depois disso o balcão abre sozinho de manhã e pede PIN, e
-// ninguém precisa trazer senha de gestor para a loja abrir.
+// Aparece para quem gere operadores, logado, num dispositivo que ainda não é posto.
+// Depois disso o dispositivo abre sozinho e pede PIN, e ninguém precisa trazer senha
+// de gestor para a loja abrir.
 //
-// É oferta, não parede: no PC pessoal do gestor a resposta certa é "agora não", e
-// obrigar a escolher um terminal ali criaria uma estação onde não há balcão —
-// uma chave da antessala solta num notebook que sai de casa.
-import { stationTerminalHint } from "../presentation/stationOccupancy";
+// É oferta, não parede: no notebook pessoal do gestor a resposta certa é "usar sem vincular",
+// e obrigar a escolher ali criaria um posto onde não há posto. Quem não pode vincular
+// (403) nem vê: a oferta se dispensa sozinha.
+//
+// Cada app lista os postos que fazem sentido nele (a Produção oferece salas; a
+// Cozinha, estações e Expedição), mas o posto é um só para todos os apps. Toda
+// palavra desta tela vem do servidor (`workstation_vocabulary.py`).
+import { workstationRadioOptions } from "../presentation/workstation";
 
-const emit = defineEmits<{ (e: "done"): void; (e: "dismiss"): void }>();
+const props = defineProps<{
+  /** Id do app (`surfaces/registry.json`). Omitido → a identidade do app. */
+  surface?: string;
+  /** `inline` preserva o trabalho visível e abre os passos num Slideover. */
+  mode?: "modal" | "inline";
+  /** Destino canônico para cadastrar postos quando ainda não existe opção. */
+  emptyTo?: string;
+}>();
 
-const { terminals, allowed, loaded, busy, error, confirmFor, load, provision } = useStationProvision();
+// `dismiss` é o "Usar sem vincular" de quem podia vincular; `unavailable`, o 403 de quem não
+// pode. O shell lembra só o primeiro: quem não pode hoje pode passar a poder.
+const emit = defineEmits<{
+  (e: "done"): void;
+  (e: "dismiss"): void;
+  (e: "unavailable"): void;
+}>();
+
+const {
+  workstations,
+  copy,
+  allowed,
+  loaded,
+  busy,
+  error,
+  confirmFor,
+  load,
+  provision,
+} = useStationProvision(props.surface);
 const escolhido = ref("");
+const open = ref(false);
 
 onMounted(async () => {
   await load();
-  if (terminals.value.length === 1) escolhido.value = terminals.value[0]!.ref;
+  // Sem permissão, não há oferta: o app segue como se ela não existisse.
+  if (!allowed.value) {
+    emit("unavailable");
+    return;
+  }
+  if (workstations.value.length === 1)
+    escolhido.value = workstations.value[0]!.ref;
 });
 
-// O `ref` do terminal vira a segunda linha da opção: dois balcões podem ter
-// rótulo parecido, e é o ref que desempata na hora de dizer qual máquina é esta.
-// Ao lado dele, o que já está no balcão: outros dispositivos e caixa aberto.
-const terminalOptions = computed(() =>
-  terminals.value.map((terminal) => ({
-    value: terminal.ref,
-    label: terminal.label,
-    hint: stationTerminalHint(terminal),
-  })),
+const options = computed(() => workstationRadioOptions(workstations.value));
+const escolhidoHint = computed(
+  () => options.value.find((o) => o.value === escolhido.value)?.hint ?? "",
 );
 
-// A segunda palavra só vale para o balcão que o servidor avisou.
-const pedeConfirmacao = computed(() => Boolean(confirmFor.value) && confirmFor.value === escolhido.value);
+// A segunda palavra só vale para o caixa que o servidor avisou.
+const pedeConfirmacao = computed(
+  () => Boolean(confirmFor.value) && confirmFor.value === escolhido.value,
+);
 
 async function confirmar() {
-  if (await provision(escolhido.value, { confirm: pedeConfirmacao.value })) emit("done");
+  if (await provision(escolhido.value, { confirm: pedeConfirmacao.value }))
+    emit("done");
 }
+// No celular as ações vão para baixo do texto (orientação oficial do Alert); ao lado,
+// elas espremiam a frase numa coluna estreita.
+const { belowMd: phone } = useScreen();
 </script>
 
 <template>
-  <div
-    v-if="loaded && allowed && terminals.length"
-    class="grid min-h-dvh place-items-center p-4"
-  >
-    <div class="grid w-full max-w-sm gap-4 text-center">
-      <div class="mx-auto grid size-14 place-items-center rounded-full border bg-muted">
-        <Icon name="lucide:monitor-check" class="size-7 text-muted-foreground" />
-      </div>
-      <div class="grid gap-1.5">
-        <h2 class="text-lg font-semibold">Iniciar este dispositivo</h2>
-        <p class="text-sm text-muted-foreground">
-          Diga qual balcão é este. Depois disso ele abre sozinho e pede só o PIN de
-          quem for operar.
-        </p>
-      </div>
-
-      <div class="grid gap-2 text-left">
-        <UiRadioGroup
-          v-model="escolhido"
-          label="Qual balcão é este"
-          :disabled="busy"
-          :options="terminalOptions"
+  <template v-if="props.mode === 'inline' && loaded && allowed">
+    <NuxtAlert
+      color="neutral"
+      variant="soft"
+      :orientation="phone ? 'vertical' : 'horizontal'"
+      icon="i-lucide-map-pin"
+      :title="copy.setup_title"
+      class="shrink-0"
+      data-station-setup
+    >
+      <template #description>{{
+        options.length ? copy.setup_lead : copy.setup_empty
+      }}</template>
+      <template #actions>
+        <NuxtButton
+          v-if="options.length"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          :label="copy.setup_confirm"
+          data-station-setup-open
+          @click="open = true"
         />
-        <p
-          v-if="error"
-          class="text-sm"
-          :class="pedeConfirmacao ? 'text-warning' : 'text-destructive'"
-          role="alert"
-        >{{ error }}</p>
-      </div>
+        <NuxtButton
+          v-else-if="emptyTo"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-map-pin-plus"
+          :label="copy.manage_title"
+          :to="emptyTo"
+          data-station-setup-empty-link
+        />
+        <NuxtButton
+          size="xs"
+          color="neutral"
+          variant="outline"
+          label="Agora não"
+          data-station-setup-dismiss
+          @click="emit('dismiss')"
+        />
+      </template>
+    </NuxtAlert>
 
-      <div class="grid gap-2">
-        <UiButton size="lg" :disabled="busy || !escolhido" @click="confirmar">
-          <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:check'" class="size-5" />
-          {{ busy ? "Iniciando…" : pedeConfirmacao ? "Usar este balcão também" : "É este balcão" }}
-        </UiButton>
-        <UiButton variant="ghost" size="lg" :disabled="busy" @click="emit('dismiss')">
-          Agora não
-        </UiButton>
+    <NuxtSlideover
+      v-model:open="open"
+      :title="copy.setup_title"
+      :description="copy.setup_lead"
+      data-station-setup-steps
+    >
+      <template #body>
+        <div v-if="options.length" class="grid gap-3 text-left">
+          <NuxtFormField
+            :label="copy.setup_choice_label"
+            :description="escolhidoHint"
+          >
+            <NuxtSelect
+              v-model="escolhido"
+              class="w-full"
+              :items="options"
+              value-key="value"
+              label-key="label"
+              :disabled="busy"
+              data-station-setup-select
+            />
+          </NuxtFormField>
+          <NuxtAlert
+            v-if="error"
+            :color="pedeConfirmacao ? 'warning' : 'error'"
+            variant="subtle"
+            :title="error"
+          />
+        </div>
+        <p v-else class="text-sm text-muted" data-station-setup-empty>
+          {{ copy.setup_empty }}
+        </p>
+      </template>
+      <template #footer>
+        <div class="grid w-full gap-2">
+          <NuxtButton
+            v-if="options.length"
+            block
+            :loading="busy"
+            :disabled="!escolhido"
+            :label="
+              busy
+                ? copy.setup_busy
+                : pedeConfirmacao
+                  ? copy.setup_confirm_shared
+                  : copy.setup_confirm
+            "
+            data-station-setup-confirm
+            @click="confirmar"
+          />
+          <NuxtButton
+            block
+            color="neutral"
+            variant="outline"
+            :label="copy.setup_dismiss"
+            :disabled="busy"
+            @click="emit('dismiss')"
+          />
+        </div>
+      </template>
+    </NuxtSlideover>
+  </template>
+
+  <NuxtModal
+    v-else-if="loaded && allowed"
+    :open="true"
+    :dismissible="false"
+    :close="false"
+    :title="copy.setup_title"
+    :description="copy.setup_lead"
+    data-station-setup
+  >
+    <template #body>
+      <div v-if="options.length" class="grid gap-2 text-left">
+        <NuxtFormField
+          :label="copy.setup_choice_label"
+          :description="escolhidoHint"
+        >
+          <NuxtSelect
+            v-model="escolhido"
+            class="w-full"
+            :items="options"
+            value-key="value"
+            label-key="label"
+            :disabled="busy"
+            data-station-setup-select
+          />
+        </NuxtFormField>
+        <NuxtAlert
+          v-if="error"
+          :color="pedeConfirmacao ? 'warning' : 'error'"
+          variant="subtle"
+          :title="error"
+        />
       </div>
-    </div>
-  </div>
+      <NuxtEmpty
+        v-else
+        icon="i-lucide-map-pin-off"
+        :title="copy.setup_empty"
+        data-station-setup-empty
+      />
+    </template>
+    <template #footer>
+      <div class="grid w-full gap-2">
+        <NuxtButton
+          v-if="options.length"
+          block
+          icon="i-lucide-check"
+          :loading="busy"
+          :disabled="busy || !escolhido"
+          :label="
+            busy
+              ? copy.setup_busy
+              : pedeConfirmacao
+                ? copy.setup_confirm_shared
+                : copy.setup_confirm
+          "
+          data-station-setup-confirm
+          @click="confirmar"
+        />
+        <NuxtButton
+          block
+          color="neutral"
+          variant="outline"
+          :disabled="busy"
+          :label="copy.setup_dismiss"
+          data-station-setup-dismiss
+          @click="emit('dismiss')"
+        />
+      </div>
+    </template>
+  </NuxtModal>
 </template>

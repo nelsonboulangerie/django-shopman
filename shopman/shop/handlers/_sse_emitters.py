@@ -17,10 +17,17 @@ eagerly (value snapshots at signal time, never live model instances) and only
 the publish itself waits for the COMMIT. Outside an atomic block, Django runs
 ``on_commit`` callbacks immediately, so non-transactional callers keep the
 synchronous behavior.
+
+Dentro de um request, o envio vai para DEPOIS da resposta e o evento idêntico
+(mesmo canal, tipo e payload) sai uma vez só (:func:`_publish_after_commit`).
+Fechar uma venda do PDV publica o mesmo ``order-<ref>`` a cada transição do
+pedido e o mesmo ``stock-update`` a cada reserva, confirmação e baixa do SKU;
+cada envio são quatro consultas, e o operador esperava por todas.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 
 from django.core.cache import cache
@@ -28,8 +35,23 @@ from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_save
 
 from shopman.shop.handlers._resilient import resilient_receiver
+from shopman.shop.request_memo import run_at_request_end
 
 logger = logging.getLogger(__name__)
+
+
+def _publish_after_commit(key: tuple, publish) -> None:
+    """Publica depois do COMMIT; num request, depois da resposta e sem repetir o idêntico.
+
+    ``key`` identifica o evento inteiro (canal, tipo, payload): dois avisos iguais
+    no mesmo request dizem a mesma coisa a quem refaz o fetch (ADR-016), e só
+    eles se fundem. Avisos diferentes saem todos.
+    """
+    try:
+        identity = ("sse", *key[:-1], json.dumps(key[-1], sort_keys=True, default=str))
+    except (TypeError, ValueError):
+        identity = ("sse", *key[:-1], id(publish))
+    transaction.on_commit(lambda: run_at_request_end(identity, publish))
 
 
 def _is_pos_counter_order(order) -> bool:
@@ -92,8 +114,9 @@ def _emit_for_sku(sku: str, *, event_type: str, extra: dict | None = None) -> No
         return
 
     payload = {"sku": sku, **(extra or {})}
-    transaction.on_commit(
-        lambda: _publish_for_sku(sku, event_type=event_type, payload=payload)
+    _publish_after_commit(
+        ("sku", sku, event_type, payload),
+        lambda: _publish_for_sku(sku, event_type=event_type, payload=payload),
     )
 
 
@@ -133,7 +156,7 @@ def emit_fomo_for_sku(sku: str, *, reason: str) -> None:
     """
     if not sku:
         return
-    transaction.on_commit(lambda: _publish_fomo(sku, reason=reason))
+    _publish_after_commit(("fomo", sku, reason), lambda: _publish_fomo(sku, reason=reason))
 
 
 def _publish_fomo(sku: str, *, reason: str) -> None:
@@ -216,6 +239,9 @@ def _connect() -> None:
             signal.connect(_on_catalog_saved, sender=model, weak=False,
                 dispatch_uid=f"shopman.catalog_sse.{model._meta.label_lower}.{signal is post_save}")
 
+    # Canal ligado/desligado: a Fila do Gestor mostra o estado dos canais de venda.
+    post_save.connect(_on_channel_saved_for_orders, sender=Channel, weak=False,
+                      dispatch_uid="shopman.orders_sse.channel_menu")
     post_save.connect(_on_hold_saved, sender=Hold, weak=False)
     post_save.connect(_on_move_saved, sender=Move, weak=False)
     pre_save.connect(_track_product_sellable, sender=Product, weak=False)
@@ -268,8 +294,9 @@ def _emit_for_order(order_ref: str, *, event_type: str, payload: dict | None = N
     if not order_ref:
         return
     payload = dict(payload) if payload else {"ref": order_ref}
-    transaction.on_commit(
-        lambda: _publish_for_order(order_ref, event_type=event_type, payload=payload)
+    _publish_after_commit(
+        ("order", order_ref, event_type, payload),
+        lambda: _publish_for_order(order_ref, event_type=event_type, payload=payload),
     )
 
 
@@ -288,7 +315,7 @@ def _publish_for_order(order_ref: str, *, event_type: str, payload: dict) -> Non
 
 
 def _on_order_context_event(sender, instance, created, **kwargs):
-    if not created or instance.type not in {"kitchen_note_changed", "order_assigned", "order_unassigned", "operator_comment", "equipment_returned", "payment_collected"}:
+    if not created or instance.type not in {"kitchen_note_changed", "order_assigned", "order_unassigned", "operator_comment", "equipment_returned", "payment_collected", "handoff_requested", "handoff_undone", "handoff_refused", "auto_ready_undone", "volumes_declared"}:
         return
     order = instance.order
     # Operational context is private: no customer tracking channel or note text.
@@ -492,6 +519,16 @@ def emit_kds_change(ticket, *, event_type: str = "backstage-kds-update", scope: 
         )
 
 
+def emit_kds_station_settings(instance) -> None:
+    """A estação mudou densidade ou som: todas as telas dela releem o quadro."""
+    _emit_backstage(
+        "kds",
+        "backstage-kds-update",
+        {"kind": "station", "kds_instance_ref": instance.ref, "station": instance.ref},
+        scope=instance.ref,
+    )
+
+
 def _track_kds_ticket_state(sender, instance, **kwargs):
     if not instance.pk:
         instance._sse_old_status = None
@@ -539,6 +576,15 @@ def _active_kds_count(kds_instance_id) -> int:
         return 0
 
 
+def emit_orders_menu_update() -> None:
+    """O cardápio ou um canal de venda mudou: a Fila do Gestor relê "Agora no cardápio"."""
+    _emit_backstage("orders", "backstage-orders-update", {"kind": "menu"})
+
+
+def _on_channel_saved_for_orders(sender, instance, **kwargs):
+    emit_orders_menu_update()
+
+
 def emit_delivery_device_update() -> None:
     """Inventory configuration changed; authorized readers reload their projection."""
     _emit_backstage("orders", "backstage-orders-update", {"kind": "delivery_device"})
@@ -546,7 +592,10 @@ def emit_delivery_device_update() -> None:
 
 def _emit_backstage(kind: str, event_type: str, payload: dict, *, scope: str | None = None) -> None:
     payload = dict(payload)
-    transaction.on_commit(lambda: _publish_backstage(kind, event_type, payload, scope))
+    _publish_after_commit(
+        ("backstage", kind, event_type, scope, payload),
+        lambda: _publish_backstage(kind, event_type, payload, scope),
+    )
 
 
 def _publish_backstage(kind: str, event_type: str, payload: dict, scope: str | None) -> None:

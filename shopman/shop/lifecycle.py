@@ -38,6 +38,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
+from shopman.utils.monetary import format_money
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.services import (
@@ -277,11 +278,23 @@ def enqueue_phase(order, phase: str):
         raise ValueError(f"Unsupported queued lifecycle phase: {phase}")
     if phase_complete(order, phase):
         return None
+    from shopman.shop.services import order_undo
+
+    payload = {"order_ref": order.ref, "channel_ref": order.channel_ref, "phase": phase}
+    dedupe_key = f"lifecycle.phase:{order.ref}:{phase}"
+    # Pronto automático: o que sai da casa espera a janela do desfazer. O token
+    # entra na identidade (o pronto desfeito e refeito é outra fase devida) e no
+    # payload (a directive do pronto desfeito vira no-op no handler).
+    held_until, hold_token = order_undo.held_until(order, phase)
+    if hold_token:
+        payload["hold_token"] = hold_token
+        dedupe_key = f"{dedupe_key}:{hold_token}"
     return create_persistently_deduped(
         ORDER_LIFECYCLE_PHASE,
-        payload={"order_ref": order.ref, "channel_ref": order.channel_ref, "phase": phase},
-        dedupe_key=f"lifecycle.phase:{order.ref}:{phase}",
+        payload=payload,
+        dedupe_key=dedupe_key,
         receipt_scope=LIFECYCLE_PHASE_RECEIPT_SCOPE,
+        available_at=held_until,
     )
 
 
@@ -401,6 +414,21 @@ def _record_coupon_use(order) -> None:
             data["coupon_use_recorded"] = code
             order.data = data
             order.save(update_fields=["data", "updated_at"])
+            if promotion_service.is_concierge_coupon(code):
+                # Transparência (dono, 03/10/2026): o desconto que a Concierge
+                # concedeu aparece no histórico do pedido, com valor e cupom.
+                order.emit_event(
+                    event_type="concierge_discount",
+                    actor="concierge",
+                    payload={
+                        "note": (
+                            f"Desconto concedido pela Concierge a pedido do cliente: "
+                            f"R$ {format_money(int(coupon.get('discount_q') or 0))} (cupom {code})"
+                        ),
+                        "coupon_code": code,
+                        "discount_q": int(coupon.get("discount_q") or 0),
+                    },
+                )
         else:
             # Cupom esgotou entre o carrinho e o commit (corrida): a venda
             # já saiu com o desconto. Contador fica no teto (não estoura),

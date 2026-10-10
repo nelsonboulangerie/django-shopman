@@ -132,10 +132,11 @@ const optionClass = (active: boolean, available: boolean) => {
             :role="isSingleChoice(group) ? 'radiogroup' : 'group'"
             :aria-label="group.label"
           >
-            <button
+            <NuxtButton
               v-for="option in group.options"
               :key="option.ref"
-              type="button"
+              color="neutral"
+              variant="ghost"
               :role="isSingleChoice(group) ? 'radio' : 'checkbox'"
               :aria-checked="isChosen(group.ref, option.ref)"
               :disabled="!option.available"
@@ -158,7 +159,7 @@ const optionClass = (active: boolean, available: boolean) => {
               <span v-else-if="option.price_q > 0" class="text-xs tabular-nums text-muted-foreground">
                 {{ optionPriceLabel(option.price_q) }}
               </span>
-            </button>
+            </NuxtButton>
           </div>
         </fieldset>
       </div>

@@ -1908,8 +1908,10 @@ def dispatch(announcement: Announcement) -> int:
     ``dispatch`` ressuscitar a mensagem já retirada.
     """
     with transaction.atomic():
+        # ``of=("self",)``: só o anúncio muda aqui, e ``rule`` é FK anulável; o
+        # PostgreSQL recusa ``FOR UPDATE`` no lado anulável do OUTER JOIN.
         current = (
-            Announcement.objects.select_for_update()
+            Announcement.objects.select_for_update(of=("self",))
             .select_related("rule")
             .get(pk=announcement.pk)
         )

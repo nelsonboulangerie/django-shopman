@@ -27,6 +27,12 @@ ao mergear, **tire a linha no mesmo PR** (escreva o registro com "na fila #N").
 
 | id | frente | estado | sessão | branch / PR | desde (UTC) |
 |---|---|---|---|---|---|
+| UX-P2 | Planejamento: o número na linha e o "Por quê" por cima (SUITE-UX §15) | EM_PR | suite-ux (session_01UcT9P3) | #1419 | 2026-10-03 14:00 |
+| UX-M1 | Marketing: fila de decisões por prazo (SUITE-UX §9) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | #1420 | 2026-10-03 14:00 |
+| UX-H1 | Central como fila das filas (SUITE-UX §6) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | `claude/ux-h1-central-fila` | 2026-10-03 14:08 |
+| UX-G2 | Gestor: "pronto" automático e desfazer de 5 s em Entregar/Despachar (SUITE-UX §5.1, §15) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | `claude/ux-g2-pronto-automatico-desfazer` | 2026-10-03 14:47 |
+
+**SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). Registros em `ROUNDS/UX-*.md`.
 
 **Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
 desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),
@@ -66,10 +72,9 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
 
 ## Armadilhas ativas (leia antes de mexer)
 
-1. ⛔ **O drift do spec está `[FAIL]` de propósito, só por `SHOPMAN_COURIER_ADAPTER`** (D-020/D-026):
-   ligado no painel, fora do arquivo. **Aplicar o arquivo desliga a entrega por parceiro.** As
-   chaves do Jev e da Concierge ligada para o dono (`assist`, `SHOPMAN_CONCIERGE_ENABLED=true`,
-   `CONCIERGE_TRIAGE_CLASSIFIER=jev`, 03/10) estão no arquivo desde `claude/spec-concierge-ligada`.
+1. `SHOPMAN_COURIER_ADAPTER` mora no arquivo do spec desde 10/10 (#1633), com o valor do vivo
+   (D-026 superada). O drift que restou em 10/10 é `KDS__NUXT_PUBLIC_ORDERS_URL` só no arquivo: o
+   vivo não a tem e a Saída do KDS aponta para `http://127.0.0.1:3004/`; o arquivo está certo.
 2. ⛔ **O checkout principal está 3201 commits atrás** de `origin/main` (02/10 15:55 UTC), num branch do Codex
    de 28/08. Leia de `origin/main`, escreva em worktree.
 3. ⛔ **NUNCA `doctl apps update` no spec vivo.**

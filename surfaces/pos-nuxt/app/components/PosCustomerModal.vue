@@ -26,6 +26,8 @@ import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/c
 import { candidateSubtitle, candidateValue, customerDecisionCopy, firstName as firstNameOf } from "~/presentation/customerDecision";
 
 const props = withDefaults(defineProps<{
+  /** O texto que a busca da venda já tinha ("Maria"): a busca de cliente nasce com ele. */
+  seedQuery?: string;
   open: boolean;
   customerName: string;
   customerPhone: string;
@@ -188,7 +190,7 @@ watch(() => props.open, (open) => { if (!open) emit("search", ""); });
 // resposta do servidor chega: sem isto, a recusa nasceria atrás de uma tela
 // fechada e o operador veria a venda seguir com o cliente errado.
 const isReceiptDecision = computed(() => props.customerDecision?.kind === "receipt_identity");
-const receiptTitleRef = ref<{ $el?: HTMLElement } | null>(null);
+const receiptTitleRef = ref<HTMLElement | null>(null);
 const receiptActionRef = ref<{ $el?: HTMLElement } | null>(null);
 const decisionCopy = computed(() =>
   props.customerDecision ? customerDecisionCopy(props.customerDecision) : null,
@@ -196,7 +198,7 @@ const decisionCopy = computed(() =>
 watch(() => props.customerDecision, (decision, previous) => {
   if (decision && !props.open) emit("update:open", true);
   if (!decision && previous?.kind === "receipt_identity") emit("update:open", false);
-  if (decision?.kind === "receipt_identity") void nextTick(() => receiptTitleRef.value?.$el?.focus());
+  if (decision?.kind === "receipt_identity") void nextTick(() => receiptTitleRef.value?.focus());
 });
 // O contato que o painel libera: o que o operador digitou, ou o valor do dono
 // quando a recusa veio sem o digitado.
@@ -296,7 +298,7 @@ function receiptButtons() {
   return [...(receiptPanelRef.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || [])];
 }
 watch(confirmingAttend, () => {
-  if (isReceiptDecision.value) void nextTick(() => receiptTitleRef.value?.$el?.focus());
+  if (isReceiptDecision.value) void nextTick(() => receiptTitleRef.value?.focus());
 });
 function onReceiptKey(event: KeyboardEvent) {
   if (!isReceiptDecision.value || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
@@ -389,7 +391,7 @@ function onCreateNameOnly(name: string) {
 
 // Foco garantido na BUSCA ao abrir: sem isto o foco inicial do diálogo caía no
 // primeiro focável — "Remover cliente", o pior lugar para um Enter distraído.
-const searchRef = ref<{ focus: () => void; reset: () => void } | null>(null);
+const searchRef = ref<{ focus: () => void; reset: () => void; seed: (value: string) => void } | null>(null);
 const nameInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const phoneInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const emailInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
@@ -397,9 +399,11 @@ const taxIdInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 function onOpenAutoFocus(event: Event) {
   event.preventDefault();
   void nextTick(() => {
-    if (isReceiptDecision.value) receiptTitleRef.value?.$el?.focus();
-    else if (!hasCustomer.value) searchRef.value?.focus();
-    else nameInputRef.value?.inputRef?.focus();
+    if (isReceiptDecision.value) receiptTitleRef.value?.focus();
+    else if (!hasCustomer.value) {
+      if (props.seedQuery) searchRef.value?.seed(props.seedQuery);
+      searchRef.value?.focus();
+    } else nameInputRef.value?.inputRef?.focus();
   });
 }
 
@@ -412,16 +416,22 @@ const newCustomerNote = computed(() => {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <!-- A decisão do documento usa largura compacta; o cadastro mantém seu formulário. -->
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto" :class="isReceiptDecision ? 'w-[calc(100%-2rem)] max-w-[360px] sm:max-w-[360px]' : 'sm:max-w-lg'" @open-auto-focus="onOpenAutoFocus" @keydown.capture="onReceiptKey">
-      <UiDialogHeader>
-        <UiDialogTitle ref="receiptTitleRef" :tabindex="isReceiptDecision ? -1 : undefined" :class="isReceiptDecision ? 'pr-4 text-left' : undefined">{{ isReceiptDecision ? receiptTitle : "Cliente" }}</UiDialogTitle>
-        <UiDialogDescription v-if="!isReceiptDecision">
-          Busque por nome, telefone, CPF ou e-mail. Depois, escolha um cadastro ou crie um novo.
-        </UiDialogDescription>
-      </UiDialogHeader>
-
+  <!-- A decisão do documento usa largura compacta; o cadastro mantém seu formulário.
+       As teclas da decisão (1 2 3, setas, Enter, Esc) são ouvidas na captura do
+       conteúdo inteiro, inclusive com o foco no título. -->
+  <NuxtModal
+    :open="open"
+    :title="isReceiptDecision ? receiptTitle : 'Cliente'"
+    :description="isReceiptDecision ? undefined : 'Busque por nome, telefone, CPF ou e-mail. Depois, escolha um cadastro ou crie um novo.'"
+    :content="{ onOpenAutoFocus, ...({ onKeydownCapture: onReceiptKey } as object) }"
+    :ui="{ content: isReceiptDecision ? 'w-[calc(100%-2rem)] max-w-[360px] sm:max-w-[360px]' : 'sm:max-w-lg', title: isReceiptDecision ? 'pr-4 text-left' : undefined }"
+    data-pos-customer-modal
+    @update:open="$emit('update:open', Boolean($event))"
+  >
+    <template #title>
+      <span ref="receiptTitleRef" :tabindex="isReceiptDecision ? -1 : undefined" class="outline-none" data-pos-customer-title>{{ isReceiptDecision ? receiptTitle : "Cliente" }}</span>
+    </template>
+    <template #body>
       <div>
         <div class="grid gap-5">
           <!-- 1 · A PERGUNTA — e ela vem antes do resto porque é o que trava
@@ -496,7 +506,7 @@ const newCustomerNote = computed(() => {
                 <UiButton
                   type="button"
                   :disabled="customerReleaseBusy"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="$emit('decisionRelease', confirmingRelease); confirmingRelease = null"
                 >
                   <Icon
@@ -509,7 +519,7 @@ const newCustomerNote = computed(() => {
                 <UiButton
                   type="button"
                   variant="outline"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="confirmingRelease = null"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
@@ -528,7 +538,7 @@ const newCustomerNote = computed(() => {
               <div class="grid gap-2 sm:grid-cols-2">
                 <UiButton
                   type="button"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="confirmingAttend = false; $emit('decisionConfirm')"
                 >
                   <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
@@ -537,7 +547,7 @@ const newCustomerNote = computed(() => {
                 <UiButton
                   type="button"
                   variant="outline"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="confirmingAttend = false"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
@@ -632,7 +642,7 @@ const newCustomerNote = computed(() => {
               v-if="decisionCopy.release && customerDecision.kind !== 'candidate_list' && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerReleaseBusy"
-              class="h-11 w-full justify-center gap-2"
+              class="h-8 w-full justify-center gap-2"
               @click="askRelease(decisionReleaseValue)"
             >
               <Icon
@@ -660,7 +670,7 @@ const newCustomerNote = computed(() => {
               v-if="decisionCopy.merge && !decisionCopy.confirmLabel && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerMergeBusy"
-              class="h-11 w-full justify-center gap-2"
+              class="h-8 w-full justify-center gap-2"
               @click="$emit('decisionMerge')"
             >
               <Icon
@@ -681,7 +691,7 @@ const newCustomerNote = computed(() => {
                 ref="receiptActionRef"
                 type="button"
                 :disabled="lookupBusy"
-                class="h-11 justify-center gap-2"
+                class="h-8 justify-center gap-2"
                 @click="cancelDecision"
               >
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
@@ -692,13 +702,13 @@ const newCustomerNote = computed(() => {
                 type="button"
                 :disabled="lookupBusy"
                 :variant="isReceiptDecision ? 'outline' : 'default'"
-                class="h-11 justify-center gap-2"
+                class="h-8 justify-center gap-2"
                 @click="askConfirm()"
               >
                 <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
               </UiButton>
-              <UiButton v-if="!isReceiptDecision" type="button" variant="outline" class="h-11 justify-center gap-2" @click="cancelDecision">
+              <UiButton v-if="!isReceiptDecision" type="button" variant="outline" class="h-8 justify-center gap-2" @click="cancelDecision">
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
               </UiButton>
@@ -712,7 +722,7 @@ const newCustomerNote = computed(() => {
               type="button"
               variant="ghost"
               :disabled="customerMergeBusy"
-              class="h-11 w-full justify-center gap-2"
+              class="h-8 w-full justify-center gap-2"
               @click="$emit('decisionMerge')"
             >
               <Icon
@@ -888,12 +898,18 @@ const newCustomerNote = computed(() => {
         </div>
       </div>
 
-      <UiDialogFooter v-if="!isReceiptDecision">
-        <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision) || lookupBusy || concludePending" @click="onConclude">
-          <Icon v-if="concludePending" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
-          {{ footerLabel }}
-        </UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+    <template v-if="!isReceiptDecision" #footer>
+      <NuxtButton
+        size="xl"
+        block
+        color="primary"
+        :label="footerLabel"
+        :loading="concludePending"
+        :disabled="Boolean(customerDecision) || lookupBusy || concludePending"
+        data-pos-customer-conclude
+        @click="onConclude"
+      />
+    </template>
+  </NuxtModal>
 </template>

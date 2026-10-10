@@ -1,0 +1,125 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport-size" content="1440x900"><style>
+.sw{display:inline-block;width:40px;height:24px;border-radius:999px;position:relative;background:var(--muted);border:1px solid var(--border)}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.25)}
+.sw-on{background:var(--success);border-color:var(--success)} .sw-on::after{left:18px}
+.cat-sel-1{background:color-mix(in oklab,var(--primary) 6%,transparent)}
+.cat-box-1{background:var(--primary);border-color:var(--primary)} .cat-box-0{border-color:var(--input);background:var(--card)} .cat-box-0 svg{display:none}
+
+.cat-st{display:none}
+.cat-st-low,.cat-st-out,.cat-st-sync{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:600}
+.cat-st-low{background:color-mix(in oklab,var(--warning) 12%,transparent);color:var(--warning)} .cat-st-low::before{content:"● Pouco estoque";font-size:12px}
+.cat-st-out{background:color-mix(in oklab,var(--destructive) 12%,transparent);color:var(--destructive)} .cat-st-out::before{content:"● Esgotado"}
+.cat-st-sync{background:color-mix(in oklab,var(--info) 12%,transparent);color:var(--info)} .cat-st-sync::before{content:"↻ Reenviar ao iFood"}
+</style></head>
+<body class="bg-background text-foreground font-sans antialiased" data-app="orders">
+<div class="flex h-[900px] overflow-hidden relative">
+  <aside class="w-[76px] shrink-0 bg-rail text-rail-foreground flex flex-col items-center gap-1 pb-2">
+    {{> rail3top app="Gestor" icon="square-kanban"}}
+    <a class="rail-item"><i data-i="clipboard-list"></i>Pedidos<span class="badge">10</span></a>
+    <a class="rail-item on"><i data-i="book-open"></i>Catálogo</a>
+    <a class="rail-item"><i data-i="users"></i>Clientes</a>
+    <a class="rail-item"><i data-i="monitor-smartphone"></i>Canais<span class="attn"></span></a>
+    {{> rail3bottom bell="7" initials="AD" operator="Admin"}}
+  </aside>
+  <main class="flex-1 flex flex-col min-w-0 relative">
+    <header class="px-4 pt-3 pb-2 flex flex-col gap-2 border-b border-border bg-card">
+      <!-- linha 1: título + ao vivo + busca única + filtros aplicados + controles -->
+      <div class="flex items-center gap-3">
+        <h1 class="op-display !text-[22px] leading-none">Catálogo</h1>
+        <span class="inline-flex items-center gap-1.5 op-micro text-muted-foreground tnum" title="Ao vivo · última leitura 22:00:41"><span class="live-dot"></span>22:00</span>
+        <div class="w-2"></div>
+        {{> search3 w="w-[20rem]" placeholder="Buscar produto ou SKU"}}
+        <div class="flex items-center gap-1.5">
+          <button class="h-10 pl-3 pr-1.5 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-1.5 op-label whitespace-nowrap"><span class="text-muted-foreground">Canal:</span><span class="font-semibold">iFood</span><span class="size-6 rounded-full grid place-items-center"><i data-i="x" class="size-3.5"></i></span></button>
+          <button class="h-10 pl-3 pr-1.5 rounded-full border border-primary bg-primary/10 inline-flex items-center gap-1.5 op-label whitespace-nowrap"><span class="text-muted-foreground">Venda:</span><span class="font-semibold">Pausados</span><span class="size-6 rounded-full grid place-items-center"><i data-i="x" class="size-3.5"></i></span></button>
+          <button class="h-10 px-3 rounded-full border border-dashed border-border inline-flex items-center gap-1.5 op-label text-muted-foreground whitespace-nowrap"><i data-i="plus" class="size-4"></i>Filtro</button>
+          <button class="h-10 px-1.5 op-label text-primary font-semibold whitespace-nowrap">Limpar filtros</button>
+        </div>
+        <div class="flex-1"></div>
+        <button class="h-control px-3 rounded-md border border-border bg-card inline-flex items-center gap-2 op-label"><i data-i="columns-3" class="size-4"></i>Colunas</button>
+        <button class="size-control rounded-md border border-border bg-card grid place-items-center" title="Mais ações: Atualizar, Exportar"><i data-i="ellipsis" class="size-5"></i></button>
+      </div>
+      <!-- linha 2: recortes da lista (coleções) + contagem do recorte -->
+      <div class="flex items-center gap-0.5 overflow-hidden">
+        <span class="op-eyebrow text-muted-foreground mr-2">Coleção</span>
+        <a class="h-9 px-3 rounded-md inline-flex items-center gap-1.5 op-label font-semibold bg-background border border-border shadow-sm whitespace-nowrap">Todas <span class="tnum text-muted-foreground">131</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground whitespace-nowrap">Rústicos <span class="tnum">23</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground whitespace-nowrap">Macios <span class="tnum">18</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground whitespace-nowrap">Folhados <span class="tnum">7</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground whitespace-nowrap">Salgados <span class="tnum">18</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground whitespace-nowrap">Doces <span class="tnum">16</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground whitespace-nowrap">Bebidas quentes <span class="tnum">11</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground whitespace-nowrap">Bebidas geladas <span class="tnum">8</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground whitespace-nowrap">Mercearia <span class="tnum">46</span></a>
+        <a class="h-9 px-2.5 rounded-md inline-flex items-center gap-1.5 op-label text-muted-foreground whitespace-nowrap"><i data-i="sparkles" class="size-3.5 text-primary"></i>Combos <span class="tnum">0</span></a>
+        <div class="flex-1"></div>
+        <span class="op-micro text-muted-foreground tnum whitespace-nowrap pl-3">23 de 131 produtos · 4 canais · 4 feeds</span>
+      </div>
+    </header>
+
+    <!-- Tabela padrão -->
+    <div class="flex-1 overflow-hidden px-4 pt-3">
+      <div class="rounded-lg border border-border bg-card overflow-hidden">
+        <div class="grid grid-cols-[44px_minmax(0,1fr)_repeat(4,92px)_1px_repeat(4,80px)] items-center h-11 bg-muted/60 border-b border-border op-eyebrow text-muted-foreground">
+          <div class="pl-4"><span class="size-5 rounded border-2 border-primary bg-primary grid place-items-center"><i data-i="minus" class="size-3.5 text-primary-foreground"></i></span></div>
+          <div class="pl-2">Produto</div>
+          <div class="inline-flex items-center gap-1.5 justify-center"><i data-i="store" class="size-3.5"></i>PDV</div>
+          <div class="inline-flex items-center gap-1.5 justify-center"><i data-i="globe" class="size-3.5"></i>Site</div>
+          <div class="inline-flex items-center gap-1.5 justify-center text-foreground"><i data-i="bike" class="size-3.5"></i>iFood</div>
+          <div class="inline-flex items-center gap-1.5 justify-center"><i data-i="message-circle" class="size-3.5"></i>WhatsApp</div>
+          <div class="h-full bg-border"></div>
+          <div class="inline-flex items-center gap-1 justify-center"><i data-i="rss" class="size-3.5"></i>Meta</div>
+          <div class="inline-flex items-center gap-1 justify-center"><i data-i="rss" class="size-3.5"></i>Google</div>
+          <div class="inline-flex items-center gap-1 justify-center"><i data-i="tv" class="size-3.5"></i>TV 1</div>
+          <div class="inline-flex items-center gap-1 justify-center"><i data-i="tv" class="size-3.5"></i>TV 2</div>
+        </div>
+        <!-- rows generated below -->
+        {{> catrow sel="1" name="Baguete Gergelim" sku="BGG" price="R$ 18,00" col="Rústicos" st="" ifood="off" initial="B" tint="#8b6b2e"}}
+        {{> catrow sel="1" name="Baguette Campagne" sku="CPBG" price="R$ 17,00" col="Rústicos" st="" ifood="off" initial="B" tint="#8b6b2e"}}
+        {{> catrow sel="1" name="Brioche Nanterre" sku="BRNT" price="R$ 22,00" col="Macios" st="low" ifood="off" initial="B" tint="#c8962f"}}
+        {{> catrow sel="0" name="Croissant Manteiga" sku="CRO" price="R$ 13,00" col="Folhados" st="sync" ifood="off" initial="C" tint="#965411"}}
+        {{> catrow sel="0" name="Pain au Chocolat" sku="PCHOC" price="R$ 15,00" col="Folhados" st="" ifood="off" initial="P" tint="#965411"}}
+        {{> catrow sel="0" name="Bichon au Citron" sku="BICH" price="R$ 18,00" col="Doces" st="out" ifood="off" initial="B" tint="#7c3a40"}}
+        {{> catrow sel="0" name="Madeleine" sku="MDLN" price="R$ 6,00" col="Doces" st="" ifood="off" initial="M" tint="#7c3a40"}}
+        {{> catrow sel="0" name="Shokupan" sku="FORMA" price="R$ 24,00" col="Macios" st="" ifood="off" initial="S" tint="#c8962f"}}
+        {{> catrow sel="0" name="Ciabatta" sku="CI" price="R$ 14,00" col="Rústicos" st="" ifood="off" initial="C" tint="#8b6b2e"}}
+      </div>
+    </div>
+
+    <!-- barra de lote -->
+    <div class="absolute left-[50%] -translate-x-1/2 bottom-5 rounded-xl bg-foreground text-background shadow-2xl px-2 py-2 flex items-center gap-1.5 z-20">
+      <span class="px-3 op-label font-semibold tnum whitespace-nowrap">3 selecionados</span>
+      <span class="w-px h-7 bg-background/20"></span>
+      <button class="h-control px-3 rounded-md bg-background/10 inline-flex items-center gap-2 op-label"><i data-i="bike" class="size-4"></i>iFood<i data-i="chevron-down" class="size-4 opacity-70"></i></button>
+      <button class="h-control px-3 rounded-md hover:bg-background/10 inline-flex items-center gap-2 op-label font-semibold bg-primary text-primary-foreground"><i data-i="play" class="size-4"></i>Ativar</button>
+      <button class="h-control px-3 rounded-md inline-flex items-center gap-2 op-label"><i data-i="pause" class="size-4"></i>Pausar</button>
+      <button class="h-control px-3 rounded-md inline-flex items-center gap-2 op-label"><i data-i="tag" class="size-4"></i>Preço…</button>
+      <button class="h-control px-3 rounded-md inline-flex items-center gap-2 op-label"><i data-i="eye-off" class="size-4"></i>Ocultar</button>
+      <button class="h-control px-3 rounded-md inline-flex items-center gap-2 op-label"><i data-i="eye" class="size-4"></i>Exibir</button>
+      <span class="w-px h-7 bg-background/20"></span>
+      <button class="h-control px-3 rounded-md inline-flex items-center gap-2 op-label opacity-80"><i data-i="x" class="size-4"></i>Limpar</button>
+    </div>
+  </main>
+  <span class="pin" style="left:26px;top:40px">1</span>
+  <span class="pin" style="left:62px;top:150px">2</span>
+  <span class="pin" style="left:210px;top:4px">3</span>
+  <span class="pin" style="left:330px;top:4px">4</span>
+  <span class="pin" style="left:690px;top:4px">5</span>
+  <span class="pin" style="left:1310px;top:4px">6</span>
+  <span class="pin" style="left:1196px;top:58px">7</span>
+  <span class="pin" style="left:62px;top:660px">8</span>
+  <span class="pin" style="left:330px;top:806px">9</span>
+</div>
+<div class="legend">
+  <p class="t">Gestor · Catálogo · v3 <span>seções no rail, uma barra só, uma busca só; mesma tabela e mesmos controles</span></p>
+  <div><b>1</b>Trocar de app: o selo do Gestor no topo do rail (antes o rail inteiro da suíte).</div>
+  <div><b>2</b>Pedidos, Catálogo, Clientes e Canais saíram da barra de seções e moram no rail, com contagem (10) e ponto de atenção (Canais).</div>
+  <div><b>3</b>"Ao vivo 22:00" da faixa global vira ponto + hora ao lado do título; a "Última leitura" segue no toque/hover.</div>
+  <div><b>4</b>Uma busca só (/ ou Ctrl K): "Produto ou SKU" e "Buscar na suíte" viraram o mesmo campo; filtra a tabela ao digitar e oferece App e Toda a suíte abaixo.</div>
+  <div><b>5</b>Filtros aplicados sobem para a linha do título como chips "Dimensão: valor ✕", com + Filtro e Limpar filtros.</div>
+  <div><b>6</b>Colunas (ColumnPicker) e ⋯ (Atualizar, Exportar) no fim da linha 1.</div>
+  <div><b>7</b>Coleções seguem como segunda linha do cabeçalho (arrastar para reordenar, ✦ coleção inteligente); a contagem "23 de 131 produtos · 4 canais · 4 feeds" foi para o fim dela.</div>
+  <div><b>8</b>Sino (Avisos) e Atalhos saíram do topo para o pé do rail, junto de Bloquear e operador. </div>
+  <div><b>9</b>Tabela, linhas e barra de lote ficam como na v2 (Ativar, Pausar, Preço…, Ocultar, Exibir, Limpar, com revisão antes de confirmar). Altura acima da tabela: v2 ~171 px (2 faixas); v3 ~110 px.</div>
+</div>
+</body></html>

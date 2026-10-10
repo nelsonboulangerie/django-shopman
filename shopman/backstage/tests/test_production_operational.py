@@ -123,7 +123,7 @@ def test_low_yield_alert_created_once(recipe):
     assert maybe_create_low_yield_alert(work_order) is False
     alert = OperatorAlert.objects.get(type="production_low_yield")
     assert alert.order_ref == work_order.ref
-    assert "yield de 70%" in alert.message
+    assert "aproveitamento de 70%" in alert.message
     assert alert.resolved_at is not None
 
 

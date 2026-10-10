@@ -13,8 +13,8 @@ export type OrientationLockStatus = "unlocked" | "locked" | "unsupported" | "nee
 export const ORIENTATION_LOCK_STORAGE_KEY = "shopman-operator-orientation-lock";
 
 export const ORIENTATION_LOCK_COPY = {
-  unsupported: "Este dispositivo não deixa o app travar o giro — use o bloqueio de rotação do sistema.",
-  needsInstall: "O giro só trava com o app instalado — abra pelo ícone na tela inicial.",
+  unsupported: "Este dispositivo não deixa o app travar o giro. Use o bloqueio de rotação do sistema.",
+  needsInstall: "O giro só trava com o app instalado. Abra pelo ícone na tela inicial.",
   unlocked: "Giro liberado.",
 } as const;
 

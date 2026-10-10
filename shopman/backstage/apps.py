@@ -58,6 +58,21 @@ class BackstageConfig(AppConfig):
             weak=False,
         )
 
+        # Esgotado/pausa abriu ou fechou: a Fila do Gestor relê "Agora no
+        # cardápio" (o publish espera o commit, ADR-016).
+        from shopman.backstage.models import ShelfOutage
+        from shopman.shop.handlers._sse_emitters import emit_orders_menu_update
+
+        def _on_outage_saved(sender, instance, **kwargs):
+            emit_orders_menu_update()
+
+        post_save.connect(
+            _on_outage_saved,
+            sender=ShelfOutage,
+            dispatch_uid="backstage.shelf_outage.orders_menu_sse",
+            weak=False,
+        )
+
         # Os fatos de caixa que outra estação precisa ver (pedido de troco,
         # devolução entregue, turno aberto/fechado) são anunciados por quem OUVE
         # o livro, e não por quem grava: o `cashman` não sabe o que é SSE, e o
@@ -76,6 +91,21 @@ class BackstageConfig(AppConfig):
         shift_closed.connect(
             on_shift_closed,
             dispatch_uid="backstage.pos_event.on_shift_closed",
+            weak=False,
+        )
+
+        # A tolerância do caixa: o veredito nasce DEPOIS do fechamento cego, por
+        # quem ouve o livro, e vai só para quem audita (services/cash_tolerance.py).
+        from shopman.backstage.services import cash_tolerance
+
+        shift_closed.connect(
+            cash_tolerance.on_shift_closed,
+            dispatch_uid="backstage.cash_tolerance.on_shift_closed",
+            weak=False,
+        )
+        entry_recorded.connect(
+            cash_tolerance.on_entry_recorded,
+            dispatch_uid="backstage.cash_tolerance.on_entry_recorded",
             weak=False,
         )
 
@@ -112,6 +142,30 @@ class BackstageConfig(AppConfig):
             on_ticket_saved,
             sender=KDSTicket,
             dispatch_uid="backstage.kitchen_ticket_print.on_ticket_saved",
+            weak=False,
+        )
+
+        # Postos de trabalho: todo caixa é um posto (o Terminal novo ganha o seu
+        # posto Caixa), e um caixa novo não toma o ref de um posto sem caixa —
+        # senão os dispositivos daquele posto abririam a gaveta dele. Ver
+        # models/workstation.py.
+        from shopman.cashman.models import Terminal
+
+        from shopman.backstage.services.workstations import (
+            ensure_cash_desk_workstation,
+            guard_terminal_ref,
+        )
+
+        pre_save.connect(
+            guard_terminal_ref,
+            sender=Terminal,
+            dispatch_uid="backstage.workstation.guard_terminal_ref",
+            weak=False,
+        )
+        post_save.connect(
+            ensure_cash_desk_workstation,
+            sender=Terminal,
+            dispatch_uid="backstage.workstation.ensure_cash_desk",
             weak=False,
         )
 

@@ -3,7 +3,7 @@
 **Status:** **Aceito** (dono, 2026-08-19) — opção A: dois custos
 **Data:** 2026-08-19 (proposta e decisão no mesmo dia)
 **Escopo:** `shopman/shop` (adapter de custo composto, `OFFERMAN["COST_BACKEND"]`); `packages/craftsman` (snapshot de custo no `finish`); `packages/buyman` (leitura do custo preferencial); `docs/reference/data-schemas.md`
-**Ainda não implementado:** o backend depende da unidade em que o custo é expresso — [ADR-024](adr-024-material-unit-base-and-purchase.md) segue **Proposto**. Escrever o backend antes dela seria migrar dado de custo duas vezes.
+**Implementado (custo vivo, 04/10/2026, V6-BI):** `shopman/shop/adapters/cost.py` (`RecipeCostBackend`), ligado em `OFFERMAN["COST_BACKEND"]`, já na base única da [ADR-024](adr-024-material-unit-base-and-purchase.md) (`SupplierMaterialCost.cost_per_base_unit`). Lê o "R$ de custo" da sobra no B.I. **Falta:** o custo congelado no `finish` do lote (§3).
 **Origem:** auditoria do Buyman (2026-08-18), achado B1
 
 ---

@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { tabTitleView } from "~/presentation/tabTitle";
 import { toast } from "vue-sonner";
+
+import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { resolveAffordance } from "~/presentation/actions";
@@ -11,6 +15,7 @@ import type { PreorderRedoResponse } from "~/types/preorders";
 import { rollStyle } from "~/presentation/printGeometry";
 import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
+import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/shortcuts";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
@@ -18,9 +23,12 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // (app.vue); a sessão de caixa (abrir/fechar/movimentos) vive na antesala
 // (`/session`) — sem turno aberto, esta página manda o operador pra lá.
 
-// Mantém a divisória do carrinho alinhada ao contexto, inclusive quando as pills quebram linha.
-const contextHeader = ref<HTMLElement | null>(null);
-const { height: contextHeaderHeight } = useElementSize(contextHeader, undefined, { box: "border-box" });
+// O ao vivo discreto da barra de contexto: estado do push e hora da última leitura.
+const liveStatus = usePosLiveStatus();
+// Tablet em pé e celular (v4 `pos-tablet.jpg`): a grade é a tela e a comanda vira a
+// folha de baixo. Do desktop (1024px) para cima ela segue como coluna. A régua é a do
+// kit (`useScreen`, segura para o SSR): até a hidratação, mesa; depois, a largura real.
+const { belowLg: ticketAsSheet } = useScreen();
 
 const apiPath = useApiPath();
 const action = usePosAction();
@@ -36,7 +44,7 @@ const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
 const { attrsFor: crossAppAttrs } = useOperatorAppLink();
 const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
-const { pos, tabs, actions, pending, refresh } = await usePosTerminal();
+const { pos, tabs, actions, pending, refresh, refreshTabs } = await usePosTerminal();
 
 // MODO EDIÇÃO (WP-E6): `/?edit=<ref>` abre esta mesma tela como o editor da
 // encomenda — carrinho, grade, F7 e F8 —, com "Salvar alterações" no lugar do
@@ -70,19 +78,10 @@ if (
 
 // Identidade do operador — mesmo estado compartilhado do shell (useFetch deduplicado).
 const OPERATOR_PERM = "cashman.operate_pos";
-const { operator: activeOperator, locked, lock } = useOperatorLock(OPERATOR_PERM);
+const { operator: activeOperator, locked } = useOperatorLock(OPERATOR_PERM);
 
-async function goToCashSession() {
-  await navigateTo("/session");
-}
-
-// Tela do cliente: segunda janela desta máquina, para arrastar ao monitor virado ao
-// cliente. A abertura (e a sonda de versão que vai junto) mora no composable.
-const customerDisplayWindow = useCustomerDisplayWindow();
-function openCustomerDisplay() {
-  if (!customerDisplayWindow.open()) toast.error("O navegador bloqueou a Tela do Cliente.", {
-    description: "Permita pop-ups para este site e tente novamente.",
-  });
+function notifyCustomerLocked(reason: string) {
+  toast.info(reason);
 }
 
 // Write-side of the open sale: cart draft + every session command.
@@ -216,6 +215,10 @@ const {
   prepareCheckout,
   reviewCheckout,
   reviewFailed,
+  reviewFailureReason,
+  saleReview,
+  saleTotal,
+  saleTotalPaused,
   submitSale,
   dismissResult,
   markFiscalState,
@@ -235,7 +238,8 @@ const {
   cancelRecentSale,
   cancelRecentSaleWithBadge,
   drawerLock,
-} = usePosSale({ pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl });
+  drawerOpening,
+} = usePosSale({ pos, tabs, actions, refresh, refreshTabs, action, apiPath, requestHeaders, ordersUrl });
 
 // ── Editar a encomenda (WP-E6) ────────────────────────────────────────────
 const orderEdit = usePosOrderEdit();
@@ -253,6 +257,9 @@ const {
   managerChallenge: editChallenge,
 } = orderEdit;
 const editManagerOpen = ref(false);
+// A edição de encomenda tem a prévia própria (no "Salvar alterações"): a
+// revisão de venda fica parada e o botão não mostra total.
+watch(editing, (on) => { saleTotalPaused.value = on; }, { immediate: true });
 
 async function startOrderEdit(ref: string) {
   const tab = await orderEdit.start(ref);
@@ -332,6 +339,10 @@ function clearOrDiscard() {
 }
 
 const confirmCounterMode = ref(false);
+// A TRAVA CONTRA COBRANÇA DUPLICADA no cabeçalho: o aviso (`alerts`) leva UMA ação,
+// e ela abre a caixa com as três saídas (conferir Últimas vendas, procurar no Gestor,
+// liberar a tentativa depois de conferir). Sem nada além de Últimas vendas para fazer
+// (outra aba cobrando), a ação do aviso é ela mesma, sem caixa no meio.
 const uncertainCloseRecoveryOpen = ref(false);
 const uncertainCloseReviewed = ref(false);
 const uncertainCloseRecoveryBusy = ref(false);
@@ -339,6 +350,13 @@ function openUncertainCloseRecovery() {
   uncertainCloseReviewed.value = false;
   uncertainCloseRecoveryOpen.value = true;
 }
+function checkRecentSalesFromGuard() {
+  uncertainCloseRecoveryOpen.value = false;
+  recentSalesOpen.value = true;
+}
+watch(closeGuardNotice, (notice) => {
+  if (!notice) uncertainCloseRecoveryOpen.value = false;
+});
 async function confirmUncertainCloseRecovery() {
   if (!uncertainCloseReviewed.value || uncertainCloseRecoveryBusy.value) return;
   uncertainCloseRecoveryBusy.value = true;
@@ -366,7 +384,7 @@ function convertToCounter() {
 // Tela do cliente (segundo monitor): fontes lidas por getter; publicação e
 // transformação vivem inteiras no <PosDisplayPublisher> (renderless). O troco
 // congelado já viaja dentro do `result` (`changeQ`).
-const displaySources = { pos: () => pos.value, items: () => cart.items, review: () => review.value, result: () => result.value, pixStatus: () => pixStatus.value, checkoutMode: () => checkoutMode.value };
+const displaySources = { pos: () => pos.value, items: () => cart.items, review: () => (checkoutMode.value ? review.value : saleReview.value), result: () => result.value, pixStatus: () => pixStatus.value, checkoutMode: () => checkoutMode.value };
 
 // Auto-lock ciente do pagamento: o shell (app.vue) lê este sinal e ADIA o lock
 // de ociosidade enquanto o checkout está aberto ou um PIX segue aguardando —
@@ -457,7 +475,7 @@ async function printReceipt() {
       if (outcome.status === "printed") return;
       toast.warning(`A impressora do balcão não respondeu: ${outcome.detail || "sem detalhe"}. O recibo saiu pelo diálogo do navegador.`);
     } catch (error) {
-      toast.warning(`${httpErrorMessage(error, "O servidor não montou o recibo para a bobina.")} O recibo saiu pelo diálogo do navegador.`);
+      toast.warning(`${httpErrorMessage(error, "O recibo para a bobina não ficou pronto.")} O recibo saiu pelo diálogo do navegador.`);
     } finally {
       printingReceipt.value = false;
     }
@@ -556,7 +574,7 @@ async function printDanfe() {
     // 409 = a emissão é assíncrona e a nota ainda não autorizou.
     // Fragmento: entra dentro de "A DANFE não saiu na bobina: …", e é o
     // `danfeFallbackToast` que traz a saída (ver a nota dele logo abaixo).
-    danfeFallbackToast(orderRef, httpErrorMessage(error, "o servidor não montou a DANFE"));
+    danfeFallbackToast(orderRef, httpErrorMessage(error, "a DANFE não ficou pronta"));
   } finally {
     printingDanfe.value = false;
   }
@@ -593,7 +611,7 @@ const orderEntryRef = ref<{ focusCurrent: () => void } | null>(null);
 function focusOrderEntry() {
   if (orderSetupPending.value) void nextTick(() => orderEntryRef.value?.focusCurrent());
 }
-const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
+const tabHeaderRef = ref<{ openCustomer: (seed?: string) => void; askRelease: () => void } | null>(null);
 
 // O Recebimento agora é perguntado na TELA DE VENDA (chip da barra e abertura da
 // comanda), não só no checkout. O estado mora aqui porque as duas superfícies
@@ -611,8 +629,82 @@ watch([fulfillmentSheetOpen, scheduleSheetOpen], ([fulfillment, schedule]) => {
 // O chip da barra abre a caixa de quem é dono dela na tela atual: no checkout, a
 // da tela de pagamento (mesmo componente, outro estado) — assim F7 e o chip
 // nunca abrem duas caixas diferentes.
+// NO BALCÃO os dois chips existem (v4: "Consumir aqui F7", "Agora F8") e são a
+// porta para a encomenda: entregar ou agendar É encomenda, então o gesto troca o
+// modo e abre a mesma pergunta já no modo certo. Se a troca for recusada (edição
+// de encomenda), nada abre.
+// "vai à cozinha" na linha nova (v4): para onde o roteamento real mandaria cada
+// produto (`kitchen_station` do catálogo, `services/kds.kitchen_routes_for_skus`).
+const kitchenStations = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {};
+  for (const product of pos.value?.products || []) {
+    if (product.kitchen_station) map[product.sku] = product.kitchen_station;
+  }
+  return map;
+});
+// PIX e Maquininha direto na folha (v4 tablet b): os meios que o PDV já tem,
+// lidos da projeção; um meio que o canal não oferece não aparece.
+const quickPayments = computed(() => {
+  const methods = pos.value?.payment_methods || [];
+  const out: Array<{ ref: string; label: string; icon: string; hint?: string; secondary?: boolean }> = [];
+  if (methods.some((m) => m.ref === "pix")) out.push({ ref: "pix", label: "PIX", icon: "lucide:qr-code" });
+  const card = methods.find((m) => m.ref === "credit") || methods.find((m) => m.ref === "card") || methods.find((m) => m.ref === "debit");
+  if (card) out.push({ ref: card.ref, label: "Maquininha", icon: "lucide:credit-card" });
+  // V6-CAIXA: o dinheiro recebido na mesa. A venda fecha aqui e vira o cartão
+  // "Abrir gaveta do Balcão" (useDrawerOpening, pulso pelo relay); a gaveta nunca
+  // abre sozinha longe do Balcão.
+  if (methods.some((m) => m.ref === "cash")) {
+    out.push({ ref: "cash", label: "Dinheiro", icon: "lucide:banknote", hint: "abre a gaveta do Balcão", secondary: true });
+  }
+  return out;
+});
+// Pagar pela folha: abre o Pagamento já com o meio escolhido lançado (a mesma
+// tecla do checkout, `pressMethodKey`), sem o operador escolher de novo.
+const QUICK_PAYMENT_KEYS: Record<string, string> = { pix: "P", credit: "C", card: "C", debit: "D", cash: "R" };
+async function payOnSheet(method: string) {
+  await prepareCheckout();
+  if (!checkoutMode.value) return;
+  await nextTick();
+  const letter = QUICK_PAYMENT_KEYS[method];
+  if (letter) paymentWorkspaceRef.value?.pressMethodKey(letter);
+}
+// ENVIO AUTOMÁTICO (opcional por estação, desligado por padrão; dono, plano §13
+// item 3): a linha nova de uma estação com o interruptor ligado vai sozinha quando
+// o operador sai da comanda ou ela fica parada. Nunca no meio do lançamento, nunca
+// na encomenda (que espera a data) e nunca na edição.
+const AUTO_FIRE_IDLE_MS = 90_000;
+const autoFireSkus = computed(() => new Set((pos.value?.products || []).filter((p) => p.kitchen_auto_fire).map((p) => p.sku)));
+const autoFireOn = computed(() => cart.items.some((item) => autoFireSkus.value.has(item.sku)));
+async function autoFireLeftovers() {
+  if (!hasOpenTab.value || editing.value || cart.salesMode === "order" || firing.value) return;
+  if (!fireAction.value.present || !fireAction.value.enabled) return;
+  const unfired = cart.items.filter((item) => !item.fired);
+  const auto = unfired.filter((item) => autoFireSkus.value.has(item.sku)).map((item) => item.line_id);
+  if (!auto.length) return;
+  // Tudo o que falta é automático: o envio de sempre (grava e manda o delta).
+  // Senão, só as linhas automáticas; as outras esperam o "Enviar à cozinha".
+  await fireTab(auto.length === unfired.length ? undefined : auto);
+}
+let autoFireTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => [cart.tabSessionKey, cart.items.map((item) => `${item.line_id}:${item.qty}:${item.fired ? 1 : 0}`).join("|")],
+  () => {
+    if (autoFireTimer) clearTimeout(autoFireTimer);
+    autoFireTimer = null;
+    if (!autoFireSkus.value.size || !inSaleView.value) return;
+    autoFireTimer = setTimeout(() => { void autoFireLeftovers(); }, AUTO_FIRE_IDLE_MS);
+  },
+);
+watch(inSaleView, (now, was) => {
+  if (was && !now) void autoFireLeftovers();
+});
+onBeforeUnmount(() => { if (autoFireTimer) clearTimeout(autoFireTimer); });
+function leaveCounterThen(next: () => void) {
+  requestSalesMode("order");
+  if (cart.salesMode === "order") next();
+}
 function openFulfillmentHere() {
-  if (cart.salesMode === "counter") return;
+  if (cart.salesMode === "counter") { leaveCounterThen(openFulfillmentHere); return; }
   if (orderSetupPending.value && orderSetupIssue.value === "customer") {
     tabHeaderRef.value?.openCustomer();
     return;
@@ -656,7 +748,7 @@ watch(customerFocusNonce, () => {
 // exatamente o que a barra de contexto veio desfazer (mesmo desvio de
 // `openFulfillmentHere`).
 function openScheduleHere() {
-  if (cart.salesMode === "counter") return;
+  if (cart.salesMode === "counter") { leaveCounterThen(openScheduleHere); return; }
   if (orderSetupPending.value && ["customer", "fulfillment", "address"].includes(orderSetupIssue.value)) {
     openFulfillmentHere();
     return;
@@ -709,6 +801,109 @@ const fulfillmentChipLabel = computed(() => {
   const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
   return bairro ? `${base} · ${bairro}` : base;
 });
+
+// A BARRA DO TOPO da venda é a da suíte (`OperatorPageHeader`, fase 2): o título da
+// tela, o ao vivo e os estados da venda na segunda linha, e as ações como dados no ⋯
+// "Mais ações" (no celular, Últimas vendas ganha a vaga de ícone). A barra da venda
+// (cliente F6, recebimento F7, quando F8) é a carta branca do PDV: ocupa o lugar da
+// toolbar enquanto a comanda está aberta (`#below`).
+const saleHeaderTitle = computed(() => (inSaleView.value && !checkoutMode.value && !editing.value && !result.value ? "Venda" : screenTitle.value));
+const saleOpen = computed(() => inSaleView.value && !checkoutMode.value && !result.value);
+const headerActions = computed<OperatorHeaderAction[]>(() => {
+  const list: OperatorHeaderAction[] = [];
+  if (saleOpen.value && hasOpenTab.value) {
+    if (!editing.value) {
+      const toOrder = (cart.salesMode || "counter") === "counter";
+      list.push({
+        label: toOrder ? "Mudar para encomenda" : "Mudar para balcão",
+        icon: toOrder ? "i-lucide-calendar-clock" : "i-lucide-store",
+        disabled: busy.value,
+        onSelect: () => requestSalesMode(toOrder ? "order" : "counter"),
+      });
+    }
+    list.push(
+      {
+        label: cart.salesMode === "order" ? `Recebimento: ${fulfillmentChipLabel.value}` : "Consumir aqui (entregar vira encomenda)",
+        icon: cart.salesMode === "order" ? "i-lucide-store" : "i-lucide-utensils",
+        kbds: ["F7"],
+        onSelect: () => openFulfillmentHere(),
+      },
+      {
+        label: cart.salesMode === "order" ? `Quando: ${scheduleChipLabel.value}` : "Agendar (vira encomenda)",
+        icon: "i-lucide-clock",
+        kbds: ["F8"],
+        onSelect: () => openScheduleHere(),
+      },
+    );
+  }
+  list.push({ label: "Últimas vendas", icon: "i-lucide-history", priority: 1, onSelect: () => { recentSalesOpen.value = true; } });
+  list.push({ label: "Atualizar", icon: "i-lucide-refresh-cw", disabled: pending.value, onSelect: () => void refresh() });
+  if (saleOpen.value && hasOpenTab.value && !editing.value) {
+    list.push({ label: "Liberar comanda", icon: "i-lucide-x", color: "error", onSelect: () => tabHeaderRef.value?.askRelease() });
+  }
+  return list;
+});
+// A VENDA SEM CONEXÃO: a fila de vendas guardadas e a lista que o aviso abre.
+const offlineSales = usePosOfflineSales();
+const offlineSalesOpen = ref(false);
+
+// Avisos da tela no lugar da suíte (`alerts` do cabeçalho), cada um com a saída.
+const screenAlerts = computed<OperatorScreenAlert[]>(() => {
+  const list: OperatorScreenAlert[] = [];
+  const guard = closeGuardNotice.value;
+  if (guard) {
+    const hasExits = Boolean(guard.link || guard.canRelease);
+    list.push({
+      id: "close-guard",
+      color: "error",
+      title: guard.title,
+      description: guard.body,
+      action: hasExits
+        ? { label: "Conferir a venda", onSelect: () => openUncertainCloseRecovery() }
+        : { label: "Conferir últimas vendas", onSelect: () => { recentSalesOpen.value = true; } },
+    });
+  }
+  // Depois da trava contra cobrança dupla, que é a mais grave.
+  const offline = offlineSales.alert.value;
+  if (offline) {
+    list.push({
+      id: "offline-sales",
+      color: offline.color,
+      icon: offline.color === "warning" ? "i-lucide-wifi-off" : undefined,
+      title: offline.title,
+      description: offline.description,
+      action: { label: offline.actionLabel, onSelect: () => { offlineSalesOpen.value = true; } },
+    });
+  }
+  if (inSaleView.value && tabConflict.value) {
+    list.push({
+      id: "tab-conflict",
+      color: "warning",
+      title: "A comanda mudou em outro dispositivo.",
+      description: "Confira antes de salvar. Atualizar descarta as suas alterações.",
+      action: { label: "Descartar minhas alterações e atualizar", onSelect: () => { if (!busy.value) void reloadConflictingTab(); } },
+    });
+  }
+  if (inSaleView.value && editing.value) {
+    list.push({
+      id: "order-edit",
+      color: "info",
+      title: orderEditTitle(editOrderRef.value),
+      description: "As mudanças valem para a encomenda depois de salvar.",
+      action: { label: "Descartar alterações", onSelect: () => { if (!busy.value && !editBusy.value) discardOrderEdit(); } },
+    });
+  }
+  return list;
+});
+
+// "Comandas" na barra lateral (ou na barra inferior) com a venda na tela: a rota já
+// é esta, então o shell pede e a tela volta ao quadro (`usePosShell`).
+const boardRequest = usePosBoardRequest();
+watch(boardRequest, () => {
+  if (editing.value) return; // a edição sai por Salvar ou Descartar, nunca pelo quadro
+  checkoutMode.value = false;
+  goToTabs();
+});
 const paymentWorkspaceRef = ref<{
   validate: () => void;
   openCustomer: () => void;
@@ -721,7 +916,18 @@ const paymentWorkspaceRef = ref<{
   pressReceiptKey: (letter: string) => boolean;
   toggleCpfOnInvoice: () => boolean;
 } | null>(null);
-const shortcutsHelpOpen = ref(false);
+// A ajuda de atalhos é a do kit (V6-KIT): "Atalhos" no pé do rail e "?"; o PDV entrega
+// o dicionário das teclas dele.
+const { open: shortcutsHelpOpen } = useOperatorShortcuts();
+provideOperatorShortcuts(POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION);
+// Transferir a partir do modo seleção da comanda (v4): o diálogo nasce com as linhas
+// marcadas, pelo botão ou pelo F10 que ele anuncia. Sem marcas, o F10 abre vazio.
+const movePreselected = ref<string[]>([]);
+const cartPanelRef = ref<{ moveSelection: () => boolean } | null>(null);
+function openMoveWith(lineIds?: string[]) {
+  movePreselected.value = lineIds ?? [];
+  void openMoveDialog();
+}
 
 async function gotoTabInput() {
   checkoutMode.value = false;
@@ -939,7 +1145,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
     case "F10":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openSplit();
-      else if (inSaleView.value && cart.items.length && !editing.value) openMoveDialog();
+      else if (inSaleView.value && cart.items.length && !editing.value && !cartPanelRef.value?.moveSelection()) openMoveWith();
       return;
     case "Enter":
       // Total coberto + review fresca → Enter valida, pelo MESMO caminho do
@@ -982,192 +1188,148 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main :style="{ '--pos-context-header-height': `${contextHeaderHeight || 53}px` }" class="flex flex-wrap content-start min-h-dvh bg-background text-foreground md:h-[100dvh] md:min-h-0 md:flex-nowrap md:overflow-hidden">
-    <PosFunctionRail
+  <main class="flex min-h-0 flex-1 flex-col" data-pos-sale-screen>
+    <OperatorPageHeader
       v-if="pos"
-      :pos="pos"
-      :has-open-cash-session="pos.has_open_cash_session"
-      :operator-name="activeOperator?.name || ''"
-      :pending="pending"
-      :view="checkoutMode ? 'checkout' : (inSaleView ? 'sale' : 'board')"
-      @board="goToTabs"
-      @cash="goToCashSession"
-      @display="openCustomerDisplay"
-      @lock="lock()"
-      @refresh="refresh()"
-    />
-
-    <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
-      <header v-if="pos" ref="contextHeader" class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
-        <!-- Controle do rail (kit): cicla colapsado/compacto/estendido; mora no cabeçalho
-             para que o rail suma por inteiro quando colapsado. -->
-        <RailToggle />
-        <UiButton
-          v-if="inSaleView && !editing"
+      :title="saleHeaderTitle"
+      :actions="headerActions"
+      :actions-label="saleOpen ? 'Mais ações da comanda' : 'Mais ações'"
+      :alerts="screenAlerts"
+      data-pos-context-header
+    >
+      <!-- A busca da suíte na Venda: o campo e o `/` são do produto (F3), então a suíte
+           abre no Ctrl K, num diálogo, sem um segundo campo na tela. -->
+      <template #search>
+        <OperatorSuiteSearch variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
+      </template>
+      <template v-if="inSaleView && !editing && !result" #lead>
+        <NuxtButton
+          color="neutral"
           variant="ghost"
-          size="icon-sm"
-          class="-ml-1 shrink-0"
+          icon="i-lucide-arrow-left"
+          square
           :aria-label="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
           :title="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
+          data-pos-back
           @click="checkoutMode ? (checkoutMode = false) : goToTabs()"
-        >
-          <Icon name="lucide:arrow-left" class="size-5" />
-        </UiButton>
-        <span
+        />
+      </template>
+      <template #status>
+        <OperatorLiveStatus
+          :tone="liveStatus.view.value.tone"
+          :time="liveStatus.time.value"
+          :label="liveStatus.view.value.label"
+          :detail="liveStatus.view.value.detail"
+        />
+        <NuxtBadge
           v-if="inSaleView && !checkoutMode && unsaved"
-          class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-xs font-medium text-warning"
+          color="warning"
+          icon="i-lucide-cloud-off"
+          label="Não salvo"
           role="status"
           :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
-        >
-          <Icon name="lucide:cloud-off" class="size-3.5" /> Não salvo
-        </span>
-        <UiButton v-if="inSaleView && tabConflict" variant="ghost" size="sm" :disabled="busy" @click="reloadConflictingTab">
-          Descartar minhas alterações e atualizar
-        </UiButton>
-        <!-- A BARRA CARREGA OS FATOS DO PEDIDO — cliente e recebimento — e segue
-             carregando durante o checkout. Antes ela sumia ali, e a informação
-             tinha de ser reconstruída dentro da coluna de trabalho do pagamento;
-             agora ela acompanha a venda inteira, do primeiro item ao troco. -->
-        <!-- MODO EDIÇÃO: o que está sendo mexido é a encomenda, não uma venda nova. -->
-        <div
-          v-if="inSaleView && editing"
-          class="flex shrink-0 items-center gap-2 rounded-md border border-info/40 bg-info/10 py-1 pl-2 pr-1 text-sm font-medium text-info"
-          role="status"
-          data-order-edit-banner
-        >
-          <Icon name="lucide:pencil" class="size-4" />
-          {{ orderEditTitle(editOrderRef) }}
-          <UiButton
-            variant="ghost"
-            size="sm"
-            :disabled="busy || editBusy"
-            data-order-edit-discard
-            @click="discardOrderEdit"
-          >
-            Descartar alterações
-          </UiButton>
-        </div>
-        <PosTabHeader
-          v-if="inSaleView"
-          ref="tabHeaderRef"
-          v-model:customer-name="cart.customerName"
-          v-model:customer-phone="cart.customerPhone"
-          v-model:customer-tax-id="cart.customerTaxId"
-          v-model:customer-email="cart.customerEmail"
-          class="min-w-0 flex-1"
-          :tab-display="cart.tabDisplay"
-          :sales-mode="cart.salesMode"
-          :has-open-tab="hasOpenTab"
-          :can-rename="canRenameTab"
-          :customer-lookup="customerLookup"
-          :lookup-busy="lookupBusy"
-          :search-results="customerSearchResults"
-          :search-busy="customerSearchBusy"
-          :customer-resolved-new="customerResolvedNew"
-          :new-customer-prefs="pendingCustomerPrefs"
-          :customer-decision="customerDecision"
-          :customer-merge-busy="customerMergeBusy"
-          :customer-release-busy="customerReleaseBusy"
-          :read-only="checkoutMode"
-          :fulfillment-type="cart.fulfillmentType"
-          :fulfillment-label="fulfillmentChipLabel"
-          :schedule-label="scheduleChipLabel"
-          :scheduled="scheduleChipActive"
-          :has-fired-items="cart.items.some((item) => item.fired)"
-          :customer-required="customerRequiredForSchedule"
-          :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
-          :schedule-conflict="scheduleChipConflict"
-          :schedule-conflict-reason="scheduleConflictReason"
-          :loading="busy"
-          @sales-mode-change="requestSalesMode"
-          @customer-closed="focusOrderEntry"
-          @customer-locked="(reason: string) => toast.info(reason)"
-          @rename="(ref: string) => { if (!editing) void renameTab(ref); }"
-          @clear="clearOrDiscard"
-          @clear-customer="clearCustomer"
-          @lookup-customer="lookupCustomer"
-          @resolve-customer="(done) => { void resolveCustomer().then(done) }"
-          @decision-confirm="confirmCustomerDecision"
-          @decision-cancel="cancelCustomerDecision"
-          @decision-merge="mergeConflictCustomers"
-          @decision-release="releaseConflictContact"
-          @decision-pick="pickConflictCandidate"
-          @search="searchCustomers"
-          @select-result="selectCustomerResult"
-          @apply-customer-favorite="applyCustomerFavorite"
-          @apply-preference="applyCustomerPreference"
-          @repeat-customer-last-order="repeatCustomerLastOrder"
-          @open-fulfillment="openFulfillmentHere"
-          @open-schedule="openScheduleHere"
-          @open-customer="paymentWorkspaceRef?.openCustomer()"
+          data-pos-unsaved
         />
-        <h1 v-else class="min-w-0 truncate text-lg font-semibold">{{ screenTitle }}</h1>
-        <!-- PIX pendente que saiu da tela de resultado: chip compacto, com o
-             polling seguindo por baixo até resolver/expirar (aí vira toast). -->
-        <span
+        <!-- PIX pendente que saiu da tela de resultado: o selo segue, com o polling por
+             baixo até resolver ou expirar (aí vira aviso passageiro). -->
+        <NuxtBadge
           v-if="pendingPixOrderRef"
-          class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-info/40 bg-info/10 px-2 py-1 text-xs font-medium text-info"
+          color="info"
+          icon="i-lucide-loader-circle"
           role="status"
-          :title="`PIX do pedido ${pendingPixOrderRef} aguardando confirmação`"
-        >
-          <Icon name="lucide:loader-circle" class="size-3.5 animate-spin motion-reduce:animate-none" />
-          PIX aguardando · <span class="font-mono">{{ pendingPixOrderRef }}</span>
-        </span>
-        <UiButton
-          variant="ghost"
-          size="icon-sm"
-          class="ml-auto shrink-0"
-          aria-label="Atalhos do teclado"
-          title="Atalhos do teclado (?)"
-          @click="shortcutsHelpOpen = true"
-        >
-          <Icon name="lucide:keyboard" class="size-5" />
-        </UiButton>
-        <UiButton
-          variant="ghost"
-          size="icon-sm"
-          class="shrink-0"
-          aria-label="Últimas vendas"
-          title="Últimas vendas (status fiscal, DANFE, reenvio)"
-          @click="recentSalesOpen = true"
-        >
-          <Icon name="lucide:history" class="size-5" />
-        </UiButton>
-      </header>
+          :title="`Pix do pedido ${pendingPixOrderRef} aguardando confirmação`"
+          data-pos-pix-pending
+        >Pix aguardando · {{ pendingPixOrderRef }}</NuxtBadge>
+      </template>
+      <!-- A BARRA DA VENDA (carta branca do PDV, WP-FASE2 §7): cliente, recebimento e
+           quando, os fatos do PEDIDO, no lugar da toolbar enquanto a comanda está aberta,
+           e seguem durante o checkout (só leitura). -->
+      <template v-if="inSaleView && !result" #below>
+        <div class="flex min-h-12 items-center gap-2 overflow-x-auto border-b border-default px-3 py-1.5 no-scrollbar" data-pos-sale-bar>
+          <PosTabHeader
+            ref="tabHeaderRef"
+            v-model:customer-name="cart.customerName"
+            v-model:customer-phone="cart.customerPhone"
+            v-model:customer-tax-id="cart.customerTaxId"
+            v-model:customer-email="cart.customerEmail"
+            class="min-w-0 flex-1"
+            :tab-display="cart.tabDisplay"
+            :tab-number="cart.tabNumber"
+            :opened-at="cart.tabOpenedAt"
+            :seating-spots="pos.seating_spots || []"
+            :seating-spot-ref="cart.tabSeatingSpot"
+            :occupied-spot-refs="tabs.filter((tab) => tab.seating_spot_ref && tab.ref !== cart.tabRef).map((tab) => tab.seating_spot_ref!)"
+            :sales-mode="cart.salesMode"
+            :has-open-tab="hasOpenTab"
+            :can-rename="canRenameTab"
+            :customer-lookup="customerLookup"
+            :lookup-busy="lookupBusy"
+            :search-results="customerSearchResults"
+            :search-busy="customerSearchBusy"
+            :customer-resolved-new="customerResolvedNew"
+            :new-customer-prefs="pendingCustomerPrefs"
+            :customer-decision="customerDecision"
+            :customer-merge-busy="customerMergeBusy"
+            :customer-release-busy="customerReleaseBusy"
+            :read-only="checkoutMode"
+            :fulfillment-type="cart.fulfillmentType"
+            :fulfillment-label="fulfillmentChipLabel"
+            :schedule-label="scheduleChipLabel"
+            :scheduled="scheduleChipActive"
+            :has-fired-items="cart.items.some((item) => item.fired)"
+            :customer-required="customerRequiredForSchedule"
+            :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
+            :schedule-conflict="scheduleChipConflict"
+            :schedule-conflict-reason="scheduleConflictReason"
+            :loading="busy"
+            @sales-mode-change="requestSalesMode"
+            @customer-closed="focusOrderEntry"
+            @customer-locked="notifyCustomerLocked"
+            @rename="(ref: string, spot?: string) => { if (!editing) void renameTab(ref, spot); }"
+            @clear="clearOrDiscard"
+            @clear-customer="clearCustomer"
+            @lookup-customer="lookupCustomer"
+            @resolve-customer="(done) => { void resolveCustomer().then(done) }"
+            @decision-confirm="confirmCustomerDecision"
+            @decision-cancel="cancelCustomerDecision"
+            @decision-merge="mergeConflictCustomers"
+            @decision-release="releaseConflictContact"
+            @decision-pick="pickConflictCandidate"
+            @search="searchCustomers"
+            @select-result="selectCustomerResult"
+            @apply-customer-favorite="applyCustomerFavorite"
+            @apply-preference="applyCustomerPreference"
+            @repeat-customer-last-order="repeatCustomerLastOrder"
+            @open-fulfillment="openFulfillmentHere"
+            @open-schedule="openScheduleHere"
+            @open-customer="paymentWorkspaceRef?.openCustomer()"
+          />
+        </div>
+      </template>
+    </OperatorPageHeader>
 
-      <UiAlert
-        v-if="closeGuardNotice"
-        variant="destructive"
-        icon="lucide:triangle-alert"
-        class="mx-4 mt-3 shrink-0"
-        role="alert"
-      >
-        <UiAlertTitle>{{ closeGuardNotice.title }}</UiAlertTitle>
-        <UiAlertDescription class="gap-3">
-          <p>{{ closeGuardNotice.body }}</p>
-          <div class="flex flex-wrap gap-2">
-            <UiButton variant="outline" size="sm" @click="recentSalesOpen = true">Conferir últimas vendas</UiButton>
-            <!-- O corpo dizia "confira no Gestor" e não levava. Agora leva: a
-                 fila, porque o que está em dúvida é se o pedido nasceu — não há
-                 `ref` para apontar. -->
-            <UiButton
-              v-if="closeGuardNotice.link"
-              variant="outline"
-              size="sm"
-              class="gap-1.5"
-              :href="closeGuardNotice.link.href"
-              v-bind="crossAppAttrs(closeGuardNotice.link.href)"
-              data-close-guard-orders-link
-            >
-              <Icon name="lucide:external-link" class="size-4" />
-              {{ closeGuardNotice.link.label }}
-            </UiButton>
-            <UiButton v-if="closeGuardNotice.canRelease" size="sm" @click="openUncertainCloseRecovery">Já conferi · liberar tentativa</UiButton>
-          </div>
-        </UiAlertDescription>
-      </UiAlert>
+    <div class="flex min-h-0 flex-1 max-lg:flex-col">
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 
-      <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-4 py-3 md:min-h-0 md:overflow-hidden">
+      <!-- Abaixo do desktop a comanda é a folha de baixo: a grade ganha o respiro dela. -->
+      <div class="flex min-h-0 w-full flex-1 flex-col gap-3 px-3 pt-2.5 pb-3 max-md:overflow-x-clip max-md:overflow-y-auto md:overflow-hidden">
+      <!-- O dinheiro das vendas do tablet que ainda não chegou à gaveta: o
+           cartão segue de pé depois da "Nova venda", até o atendente abrir a
+           gaveta do Balcão na frente dela (pos-tablet-fluxo.jpg, passo 3). -->
+      <div v-if="!result && drawerOpening.pendingCash.value.length" class="grid gap-2" data-pending-cash>
+        <PosDrawerPulseCard
+          v-for="pending in drawerOpening.pendingCash.value"
+          :key="pending.orderRef"
+          compact
+          :pending="pending"
+          :terminal-label="drawerOpening.terminalLabel.value"
+          :state="drawerOpening.openingRef.value === pending.orderRef ? drawerOpening.state.value : 'idle'"
+          :message="drawerOpening.openingRef.value === pending.orderRef ? drawerOpening.message.value : ''"
+          :relay-warning="drawerOpening.relay.value?.online ? '' : drawerOpening.relay.value?.reason"
+          @open="drawerOpening.open({ purpose: 'sale', orderRef: pending.orderRef })"
+          @dismiss="drawerOpening.dismissPendingCash(pending.orderRef)"
+        />
+      </div>
       <div class="flex-1 md:min-h-0 md:overflow-hidden">
       <!-- TELA DE RESULTADO — substitui o banner de antes: tela cheia no fluxo
            de venda, com o troco congelado como herói e "Nova venda" dominante. -->
@@ -1187,7 +1349,21 @@ onBeforeUnmount(() => {
           @print-danfe="printDanfe"
           @cancel-sale="openCancelSaleDialog"
           @payment-notice="sendPaymentNotice"
-        />
+        >
+          <template #drawer>
+            <PosDrawerPulseCard
+              v-for="pending in drawerOpening.pendingCash.value.filter((item) => item.orderRef === result?.orderRef)"
+              :key="pending.orderRef"
+              :pending="pending"
+              :terminal-label="drawerOpening.terminalLabel.value"
+              :state="drawerOpening.openingRef.value === pending.orderRef ? drawerOpening.state.value : 'idle'"
+              :message="drawerOpening.openingRef.value === pending.orderRef ? drawerOpening.message.value : ''"
+              :relay-warning="drawerOpening.relay.value?.online ? '' : drawerOpening.relay.value?.reason"
+              @open="drawerOpening.open({ purpose: 'sale', orderRef: pending.orderRef })"
+              @dismiss="drawerOpening.dismissPendingCash(pending.orderRef)"
+            />
+          </template>
+        </PosSaleResult>
       </div>
 
       <div v-else-if="checkoutMode" class="h-full md:overflow-y-auto">
@@ -1275,6 +1451,7 @@ onBeforeUnmount(() => {
         :loading="busy"
         :lookup-busy="lookupBusy"
         :review-failed="reviewFailed"
+        :review-failure-reason="reviewFailureReason"
         @back="checkoutMode = false"
         @submit="submitSale"
         @add-tender="addTender"
@@ -1310,6 +1487,7 @@ onBeforeUnmount(() => {
              negada). Mostrar o quadro nesse estado afirmaria "nenhuma comanda"
              sobre uma pergunta que nem foi respondida — e um balcão com comandas
              abertas leria isso como perda de dados. -->
+        <PosStoreNetworkNotice v-if="!inSaleView && pos" class="mb-3" />
         <PosTabBoard
           v-if="!inSaleView && pos"
           ref="tabBoardRef"
@@ -1366,7 +1544,12 @@ onBeforeUnmount(() => {
           :favorite-refs="pos?.favorite_collection_refs || []"
           :cart-items="cart.items"
           :pending="pending"
+          :tabs="tabs"
+          :current-tab-ref="cart.tabRef"
+          :customer-search="!editing"
           @add="addProduct"
+          @open-tab="openTab"
+          @find-customer="(query: string) => tabHeaderRef?.openCustomer(query)"
         />
       </div>
       </div>
@@ -1377,11 +1560,19 @@ onBeforeUnmount(() => {
          edge alongside the rail; on mobile it wraps below the product grid). -->
     <aside
       v-if="pos && inSaleView && !checkoutMode && !orderSetupPending"
-      class="flex w-full shrink-0 flex-col border-t border-border bg-card md:order-none md:h-full md:w-[360px] md:border-l md:border-t-0"
+      class="relative z-30 flex shrink-0 flex-col lg:h-full lg:w-[360px] lg:border-l lg:border-border lg:bg-card xl:w-[400px]"
+      data-pos-ticket
     >
         <div class="min-h-0 flex-1 md:overflow-hidden">
           <PosCartPanel
+            ref="cartPanelRef"
+            :sheet="ticketAsSheet"
+            :tab-title="hasOpenTab ? tabTitleView(cart.tabDisplay, cart.tabNumber).title : ''"
+            :kitchen-stations="kitchenStations"
+            :quick-payments="quickPayments"
+            :auto-fire="autoFireOn"
             :items="cart.items"
+            :total="saleTotal"
             :requires-tab="tabRequiredForCart"
             :has-open-tab="hasOpenTab"
             :loading="busy"
@@ -1402,8 +1593,10 @@ onBeforeUnmount(() => {
             @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
             @prepare="editing ? saveOrderEdit() : prepareCheckout()"
-            @move="openMoveDialog"
+            @move="openMoveWith"
             @fire="fireTab"
+            @pay="payOnSheet"
+            @auto-fire-settings="navigateTo('/settings/kitchen')"
             @unfire="unfireTab"
             @fire-lines="(ids, complete) => fireTab(ids).then(complete)"
             @unfire-lines="(ids, complete) => unfireSelected(ids).then(complete)"
@@ -1411,6 +1604,8 @@ onBeforeUnmount(() => {
           />
         </div>
     </aside>
+
+    </div>
 
     <!-- RECEBIMENTO na tela de venda. É fato do PEDIDO, não do pagamento:
          entrega acrescenta taxa e depende de endereço, e perguntar isso só no
@@ -1460,35 +1655,75 @@ onBeforeUnmount(() => {
       :max-date="scheduleMaxDate"
     />
 
-    <UiDialog v-model:open="confirmCounterMode">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Converter para atendimento de balcão?</UiDialogTitle>
-          <UiDialogDescription>A entrega, o agendamento e a cobrança na entrega serão removidos. Os itens e o cliente continuam neste atendimento.</UiDialogDescription>
-        </UiDialogHeader>
-        <UiDialogFooter class="gap-2">
-          <UiButton variant="outline" @click="confirmCounterMode = false">Continuar encomenda</UiButton>
-          <UiButton :disabled="busy" @click="convertToCounter">Converter para balcão</UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+    <NuxtModal
+      v-model:open="confirmCounterMode"
+      title="Converter para atendimento de balcão?"
+      description="A entrega, o agendamento e a cobrança na entrega serão removidos. Os itens e o cliente continuam neste atendimento."
+      :ui="{ content: 'sm:max-w-md' }"
+      data-pos-counter-mode
+    >
+      <template #footer>
+        <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <NuxtButton color="neutral" variant="outline" label="Continuar encomenda" @click="confirmCounterMode = false" />
+          <NuxtButton color="primary" label="Converter para balcão" :disabled="busy" @click="convertToCounter" />
+        </div>
+      </template>
+    </NuxtModal>
 
-    <UiDialog v-model:open="uncertainCloseRecoveryOpen">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Você conferiu pedido e pagamento?</UiDialogTitle>
-          <UiDialogDescription>Verifique primeiro em Últimas vendas ou no Gestor. Liberar sem conferir pode repetir uma cobrança cujo resultado não chegou a esta tela.</UiDialogDescription>
-        </UiDialogHeader>
-        <label class="flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm">
-          <UiSwitch v-model="uncertainCloseReviewed" />
-          <span>Conferi o pedido e o pagamento e sei se esta venda precisa ser tentada novamente.</span>
-        </label>
-        <UiDialogFooter class="gap-2">
-          <UiButton variant="outline" @click="uncertainCloseRecoveryOpen = false">Voltar e conferir</UiButton>
-          <UiButton :disabled="!uncertainCloseReviewed || uncertainCloseRecoveryBusy" @click="confirmUncertainCloseRecovery">{{ uncertainCloseRecoveryBusy ? 'Verificando…' : 'Liberar tentativa' }}</UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+    <!-- A venda que ficou sem resposta (a trava contra cobrança duplicada): as três
+         saídas do aviso do cabeçalho numa caixa só. Conferir vem antes de liberar;
+         liberar pede a declaração explícita de quem conferiu. -->
+    <NuxtModal
+      v-model:open="uncertainCloseRecoveryOpen"
+      :title="closeGuardNotice?.title || 'Conferir a venda'"
+      :description="closeGuardNotice?.body"
+      :ui="{ content: 'sm:max-w-md' }"
+      data-close-guard-dialog
+    >
+      <template #body>
+        <div class="grid gap-3">
+          <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-history"
+              label="Conferir últimas vendas"
+              data-close-guard-recent
+              @click="checkRecentSalesFromGuard"
+            />
+            <!-- O corpo dizia "confira no Gestor" e não levava. Leva: a fila, porque o
+                 que está em dúvida é se o pedido nasceu; não há `ref` para apontar. -->
+            <NuxtButton
+              v-if="closeGuardNotice?.link"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-external-link"
+              :label="closeGuardNotice.link.label"
+              :href="closeGuardNotice.link.href"
+              v-bind="crossAppAttrs(closeGuardNotice.link.href)"
+              data-close-guard-orders-link
+            />
+          </div>
+          <label v-if="closeGuardNotice?.canRelease" class="flex cursor-pointer items-center gap-3 rounded-md border border-default p-3 text-sm" data-close-guard-reviewed>
+            <UiSwitch v-model="uncertainCloseReviewed" />
+            <span>Conferi o pedido e o pagamento e sei se esta venda precisa ser tentada novamente.</span>
+          </label>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <NuxtButton color="neutral" variant="outline" label="Voltar e conferir" @click="uncertainCloseRecoveryOpen = false" />
+          <NuxtButton
+            v-if="closeGuardNotice?.canRelease"
+            color="primary"
+            :label="uncertainCloseRecoveryBusy ? 'Verificando…' : 'Liberar tentativa'"
+            :disabled="!uncertainCloseReviewed || uncertainCloseRecoveryBusy"
+            data-close-guard-release
+            @click="confirmUncertainCloseRecovery"
+          />
+        </div>
+      </template>
+    </NuxtModal>
 
     <PosTabPickerDialog
       v-model:open="tabDialogOpen"
@@ -1530,6 +1765,17 @@ onBeforeUnmount(() => {
       @authorize-badge="drawerLock.unlockWithBadge"
     />
 
+    <PosOfflineSalesDialog
+      v-model:open="offlineSalesOpen"
+      :online="offlineSales.isOnline.value !== false"
+      :sales="offlineSales.sales.value"
+      :sending="offlineSales.sending.value"
+      :durable="offlineSales.durable.value"
+      @send-now="offlineSales.flush()"
+      @retry="(id: string) => offlineSales.retry(id)"
+      @send-with-server-total="(id: string) => offlineSales.sendWithServerTotal(id)"
+    />
+
     <PosCancelSaleDialog
       v-model:open="cancelSaleDialogOpen"
       v-model:reason="cancelSaleReason"
@@ -1563,6 +1809,7 @@ onBeforeUnmount(() => {
       :tab-display="cart.tabDisplay"
       :items="cart.items"
       :suggested-split-ref="suggestedSplitRef"
+      :preselected="movePreselected"
       :other-tabs="otherOpenTabs"
       :capability="tabManipulation"
       :busy="busy"
@@ -1614,7 +1861,6 @@ onBeforeUnmount(() => {
       @authorize="(username: string, pin: string) => confirmOrderEdit({ username, pin })"
       @authorize-badge="(badge: string) => confirmOrderEdit({ badge })"
     />
-    <PosShortcutsHelp v-model:open="shortcutsHelpOpen" />
     <PosDisplayPublisher :sources="displaySources" />
   </main>
 </template>

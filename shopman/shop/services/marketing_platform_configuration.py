@@ -134,11 +134,11 @@ def verified_whatsapp_flow_binding(
             code="whatsapp_flow_not_selected",
             detail=(
                 "O WhatsApp ainda não tem um fluxo aprovado. Escolha-o em "
-                "Marketing → Plataformas antes de revisar este envio."
+                "Ajustes › Plataformas antes de revisar este envio."
             ),
             field_errors={
                 "platforms.whatsapp": (
-                    "Escolha um fluxo aprovado e ativo em Marketing → Plataformas.",
+                    "Escolha um fluxo aprovado e ativo em Ajustes › Plataformas.",
                 )
             },
         )
@@ -147,7 +147,7 @@ def verified_whatsapp_flow_binding(
             code="whatsapp_template_inactive",
             detail=(
                 "A configuração do WhatsApp está inativa. Escolha novamente um "
-                "fluxo em Marketing → Plataformas."
+                "fluxo em Ajustes › Plataformas."
             ),
             field_errors={
                 "platforms.whatsapp": (
@@ -162,7 +162,7 @@ def verified_whatsapp_flow_binding(
             code="whatsapp_flow_verification_unavailable",
             detail=(
                 "Não foi possível confirmar o fluxo ativo agora. O conteúdo não foi "
-                "aprovado; tente a verificação em Marketing → Plataformas."
+                "aprovado; tente a verificação em Ajustes › Plataformas."
             ),
         )
     flow_ref = template.whatsapp_flow_ns.strip()
@@ -172,7 +172,7 @@ def verified_whatsapp_flow_binding(
             code="whatsapp_flow_not_active",
             detail=(
                 "O fluxo configurado não aparece na lista ativa. Escolha um fluxo "
-                "atual em Marketing → Plataformas."
+                "atual em Ajustes › Plataformas."
             ),
             field_errors={
                 "platforms.whatsapp": (

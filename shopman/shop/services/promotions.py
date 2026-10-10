@@ -91,6 +91,69 @@ def release_coupon_use(code: str) -> None:
     Coupon.objects.filter(code=code, uses_count__gt=0).update(uses_count=F("uses_count") - 1)
 
 
+#: Prefixo do cupom que a Concierge emite: o código diz, no Admin e no pedido, de onde veio.
+CONCIERGE_COUPON_PREFIX = "CONCIERGE-"
+
+
+def is_concierge_coupon(code: str | None) -> bool:
+    return str(code or "").upper().startswith(CONCIERGE_COUPON_PREFIX)
+
+
+def issue_concierge_coupon(
+    *,
+    value_q: int,
+    min_order_q: int,
+    channel_ref: str,
+    conversation_id: int,
+    valid_for,
+) -> str:
+    """Emite o cupom de uso único do desconto da Concierge e devolve o código.
+
+    É um cupom como o do site (``Promotion`` de valor fixo + ``Coupon`` com
+    ``max_uses=1``), para que o desconto passe pelas MESMAS portas: escopo de
+    canal, pedido mínimo, "maior desconto ganha" e uso contado no commit. O
+    ``min_order_q`` é o subtotal mínimo em que o valor ainda cabe no teto: se o
+    cliente esvaziar a sacola depois, o cupom para de valer sozinho.
+
+    O canal é obrigatório: promoção sem canal vale em todos, e o desconto da
+    Concierge vale só no canal dela.
+    """
+    import secrets
+
+    from django.utils import timezone
+
+    from shopman.shop.models import Channel, Coupon, Promotion
+
+    if value_q <= 0:
+        raise ValueError("value_q deve ser > 0")
+    channel = Channel.objects.filter(ref=channel_ref).first()
+    if channel is None:
+        raise ValueError(f"canal inexistente: {channel_ref!r}")
+    token = secrets.token_hex(4).upper()
+    now = timezone.now()
+    promotion = Promotion.objects.create(
+        ref=f"concierge-{token.lower()}",
+        name=f"Desconto da Concierge (conversa {conversation_id})",
+        type=Promotion.FIXED,
+        value=int(value_q),
+        valid_from=now,
+        valid_until=now + valid_for,
+        min_order_q=max(0, int(min_order_q)),
+        is_active=True,
+    )
+    promotion.channels.set([channel])
+    code = f"{CONCIERGE_COUPON_PREFIX}{token}"
+    Coupon.objects.create(code=code, promotion=promotion, max_uses=1)
+    return code
+
+
+def withdraw_coupon(code: str) -> None:
+    """Desliga um cupom emitido que não chegou a valer (nada aplicado)."""
+    from shopman.shop.models import Coupon
+
+    Coupon.objects.filter(code=code).update(is_active=False)
+
+
 def match_delivery_zone(postal_code: str, neighborhood: str) -> Any | None:
     """A DeliveryZone ativa de maior prioridade, ou ``None``."""
     from shopman.shop.models import DeliveryZone

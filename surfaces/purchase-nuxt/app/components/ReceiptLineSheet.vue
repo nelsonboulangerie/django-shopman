@@ -8,13 +8,22 @@ import type {
   ReceiptLinePreview,
   ReceiptWarningTone,
 } from "~/types/purchase";
-import { formatMoney, formatQty, receiptLineLabel, receiptLineStatus, receiptLineStatusBadge } from "~/presentation/purchase";
-import { RECEIPT_LINE_STATUS_BADGE } from "~/utils/receiptLineStatus";
+import { ref, watch } from "vue";
+import { createReusableTemplate } from "@vueuse/core";
+import {
+  formatMoney,
+  formatQty,
+  receiptLineDifference,
+  receiptLineLabel,
+  receiptLineStatus,
+  receiptLineStatusBadge,
+} from "~/presentation/purchase";
+import { RECEIPT_LINE_STATUS_COLOR } from "~/utils/receiptLineStatus";
 import { FLASH_RING } from "~/utils/receiptFocus";
 import { todayIso as todayIsoDate } from "../../../operator-kit/app/presentation/dates";
 
 /**
- * UM item da entrada, aberto por inteiro — e o nome dele SEMPRE à vista.
+ * UM item da entrada, aberto por inteiro, e o nome dele SEMPRE à vista.
  *
  * A lista lá fora é para enxergar a nota toda; aqui é para mexer num item só.
  * Por isso o cabeçalho não rola: numa gaveta com insumo, embalagem, quantidade,
@@ -25,13 +34,15 @@ import { todayIso as todayIsoDate } from "../../../operator-kit/app/presentation
  * Conferir é o gesto que FECHA a gaveta: o item se resolve e a lista atrás
  * muda de cor sozinha. É o retorno do gesto, no lugar onde o olho já está.
  *
- * ⚠️ O `UiSelect` daqui de dentro tem véu próprio (`fixed inset-0`) e engole o
- * `Esc` (`stopPropagation`), de propósito: sem isso o `Esc` que fecha a lista de
- * insumos atravessaria e fecharia a gaveta inteira junto.
+ * O ir e vir entre itens ("Item 3 de 7" e as setas) é da página: ela entrega o
+ * `OperatorRecordNav` no slot `nav`, no cabeçalho, nos dois jeitos da gaveta.
+ *
+ * A lista de itens é um `NuxtSelectMenu` (camada própria do reka): o `Esc` que
+ * fecha a lista fecha só a lista, e não a gaveta inteira junto.
  */
 const props = defineProps<{
   open: boolean;
-  /** `null` enquanto nenhum item está aberto — a gaveta não monta formulário vazio. */
+  /** `null` enquanto nenhum item está aberto: a gaveta não monta formulário vazio. */
   preview: ReceiptLinePreview | null;
   materials: Material[];
   /** Só as conversões do insumo deste item. */
@@ -39,8 +50,13 @@ const props = defineProps<{
   pending?: boolean;
   /** Quanto fica no estoque depois desta entrada, na unidade-base do insumo. */
   stockAfter: number;
-  /** O campo que a tela acabou de apontar — ganha o anel âmbar por alguns segundos. */
+  /** O campo que a tela acabou de apontar: ganha o anel âmbar por alguns segundos. */
   flashField?: ReceiptFieldAnchor | null;
+  /**
+   * Tablet (C09): a gaveta encaixada ao lado da lista, sem véu por cima. A lista
+   * continua tocável e o item vizinho abre sem fechar a gaveta (slot `nav`).
+   */
+  docked?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -54,23 +70,102 @@ const emit = defineEmits<{
   declareConversion: [input: { label: string; factor: string; kind: ConversionKind }];
   check: [checked: boolean];
   remove: [];
+  "scan-ean": [];
+  "read-package": [];
+  "reject-line": [];
 }>();
 
-// O insumo vira opção genérica do `UiSelect`: o SKU e a unidade seguem
-// pesquisáveis (é o que o operador lê na etiqueta quando o nome não bate), e a
-// categoria entra só na busca, porque na linha ela não caberia.
-const materialOptions = computed(() =>
+defineSlots<{
+  /** O ir e vir entre itens (a página passa o `OperatorRecordNav`). */
+  nav?: () => unknown;
+}>();
+
+const [DefineBody, ReuseBody] = createReusableTemplate();
+
+// ── Numérico na tela (C10, v3 tablet pino 6): o campo ativo recebe os dígitos sem
+// o teclado do sistema cobrir metade da gaveta. −1/+1 na quantidade, Limpar, e
+// "Valor →" pula da quantidade para o valor total.
+type PadField = "qty" | "cost";
+const padField = ref<PadField>("qty");
+const padFresh = ref(true);
+watch(
+  () => props.preview?.line.id,
+  () => {
+    padField.value = "qty";
+    padFresh.value = true;
+  },
+);
+function padDigit(digit: string) {
+  if (padField.value === "qty") {
+    const current = padFresh.value ? "" : String(purchaseQty.value ?? "").replace(".", ",");
+    const next = `${current}${digit}`;
+    purchaseQty.value = Number(next.replace(",", ".")) || 0;
+  } else {
+    const current = padFresh.value ? "" : String(costInput.value ?? "");
+    costInput.value = `${current}${digit}`;
+  }
+  padFresh.value = false;
+}
+function padComma() {
+  if (padField.value === "cost") {
+    if (!String(costInput.value).includes(",")) costInput.value = `${padFresh.value ? "0" : costInput.value},`;
+  }
+  padFresh.value = false;
+}
+function padBackspace() {
+  if (padField.value === "qty") {
+    const text = String(purchaseQty.value ?? "");
+    purchaseQty.value = Number(text.slice(0, -1)) || 0;
+  } else {
+    costInput.value = String(costInput.value ?? "").slice(0, -1);
+  }
+  padFresh.value = false;
+}
+function padClear() {
+  if (padField.value === "qty") purchaseQty.value = 0;
+  else costInput.value = "";
+  padFresh.value = true;
+}
+function padBump(delta: number) {
+  padField.value = "qty";
+  purchaseQty.value = Math.max(0, (Number(purchaseQty.value) || 0) + delta);
+  padFresh.value = false;
+}
+function padNext() {
+  padField.value = padField.value === "qty" ? "cost" : "qty";
+  padFresh.value = true;
+}
+function padFocus(field: PadField) {
+  padField.value = field;
+  padFresh.value = true;
+}
+const hasDifference = computed(() => (props.preview ? Boolean(receiptLineDifference(props.preview.line)) : false));
+
+// O insumo vira item do `NuxtSelectMenu`: o SKU e a unidade seguem pesquisáveis (é
+// o que o operador lê na etiqueta quando o nome não bate), e a categoria entra só
+// na busca, porque na linha ela não caberia.
+const materialItems = computed(() =>
   props.materials.map((material) => ({
     value: material.sku,
     label: material.name,
-    hint: `${material.sku} · conta em ${material.unit}`,
+    description: `${material.sku} · conta em ${material.unit}`,
     keywords: material.category,
   })),
 );
+// O nome escolhido pode passar da largura do campo: a reticência leva o completo na
+// dica (o rótulo que cabe, dono 10/10/2026).
+const materialName = computed(
+  () => props.materials.find((material) => material.sku === props.preview?.line.materialSku)?.name || undefined,
+);
+// No toque, a busca não pega o foco ao abrir: o teclado virtual só sobe quando a
+// pessoa toca na busca.
+const touch = useCoarsePointer();
+const materialSearch = computed(() => ({ placeholder: "Buscar item do Compras", autofocus: !touch.value }));
 
 const label = computed(() => (props.preview ? receiptLineLabel(props.preview) : ""));
 const status = computed(() => (props.preview ? receiptLineStatus(props.preview) : "ready"));
 const badge = computed(() => receiptLineStatusBadge(status.value));
+const invoiceSummary = computed(() => props.preview?.invoiceSummary || "Lançado à mão, sem documento fiscal.");
 
 /**
  * Os campos de digitar continuam com `v-model`, e não com `:value`/`@input`.
@@ -78,7 +173,7 @@ const badge = computed(() => receiptLineStatusBadge(status.value));
  * Não é preguiça: a diretiva do `v-model` sabe não sobrescrever o que está
  * sendo digitado (`1,` a caminho de `1,5`), e uma ligação de atributo à mão
  * apaga o dígito no meio da digitação. O `set` de cada um manda o patch para
- * quem é dono da linha — mutar a prop aqui dentro seria escrever no rascunho
+ * quem é dono da linha: mutar a prop aqui dentro seria escrever no rascunho
  * pelas costas do composable.
  */
 function lineField<K extends keyof ReceiptLine>(key: K, fallback: ReceiptLine[K]) {
@@ -100,10 +195,10 @@ const visibleWarnings = computed(() =>
   props.preview ? props.preview.warnings.filter((warning) => warning.label !== props.preview!.nextStep) : [],
 );
 
-const warningClasses: Record<ReceiptWarningTone, string> = {
-  ok: "border-success/25 bg-success/10 text-success",
-  watch: "border-warning/30 bg-warning/10 text-warning",
-  block: "border-destructive/30 bg-destructive/10 text-destructive",
+const warningColor: Record<ReceiptWarningTone, "success" | "warning" | "error"> = {
+  ok: "success",
+  watch: "warning",
+  block: "error",
 };
 
 function ring(field: ReceiptFieldAnchor): string {
@@ -118,52 +213,50 @@ function onCheck(checked: boolean) {
 </script>
 
 <template>
-  <UiSheet :open="open" @update:open="emit('update:open', $event)">
-    <UiSheetContent
-      v-if="preview"
-      :data-receipt-sheet="preview.line.id"
-      side="right"
-      class="w-full sm:max-w-xl"
-    >
-      <!-- O TÍTULO NÃO ROLA. É a promessa desta tela: o operador rola o
-           formulário inteiro e continua sabendo em qual item está. -->
-      <UiSheetHeader class="shrink-0 gap-2 border-b border-border bg-card p-4">
+  <!-- O corpo da gaveta, um só para os dois jeitos (encaixada no tablet, por cima no
+       celular e no desktop). O TÍTULO NÃO ROLA: o operador rola o formulário inteiro
+       e continua sabendo em qual item está. -->
+  <DefineBody>
+    <template v-if="preview">
+      <header class="shrink-0 space-y-2 border-b border-border bg-card p-3" data-slot="sheet-header">
         <div class="flex items-start justify-between gap-2">
-          <span
-            class="inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-semibold"
-            :class="RECEIPT_LINE_STATUS_BADGE[status]"
-          >
-            <Icon :name="badge.icon" class="size-3.5" />
-            {{ badge.label }}
-          </span>
-          <!-- Fechar é o PRIMEIRO controle da gaveta, e não por estética: ao
-               abrir, o foco pousa no primeiro botão de dentro. Com a lixeira
-               aqui, um Enter distraído apagaria o item da nota. Remover mora no
-               rodapé, longe do gesto automático. -->
-          <UiSheetX />
+          <NuxtBadge :color="RECEIPT_LINE_STATUS_COLOR[status]" :icon="badge.icon" :label="badge.label" data-receipt-sheet-status />
+          <!-- O ir e vir é da página (slot `nav`). Por cima, Fechar fica ao lado dele,
+               nunca a lixeira. -->
+          <div class="flex items-center gap-1.5">
+            <slot name="nav" />
+            <NuxtButton
+              v-if="!docked"
+              variant="ghost"
+              color="neutral"
+              square
+              icon="i-lucide-x"
+              aria-label="Fechar"
+              data-receipt-sheet-close
+              @click="emit('update:open', false)"
+            />
+          </div>
         </div>
-        <UiSheetTitle class="text-base leading-snug">{{ label }}</UiSheetTitle>
-        <UiSheetDescription>
-          {{ preview.invoiceSummary || "Lançado à mão, sem documento fiscal." }}
-        </UiSheetDescription>
-        <p
+        <h2 class="text-base font-semibold" data-slot="sheet-title">{{ label }}</h2>
+        <p class="text-sm text-muted-foreground" data-slot="sheet-description">{{ invoiceSummary }}</p>
+        <NuxtAlert
           v-if="preview.nextStep"
-          class="flex items-center gap-1.5 rounded-md bg-warning/10 px-2 py-1.5 text-xs font-medium text-warning"
-        >
-          <Icon name="lucide:arrow-right" class="size-3.5 shrink-0" />
-          {{ preview.nextStep }}
-        </p>
-      </UiSheetHeader>
+          variant="subtle"
+          color="warning"
+          icon="i-lucide-arrow-right"
+          :title="preview.nextStep"
+          data-receipt-sheet-next-step
+        />
+      </header>
 
       <!-- O corpo rola por baixo do cabeçalho. -->
-      <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+      <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         <div v-if="preview.line.invoiceTotal" class="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
           <span class="text-xs font-medium text-muted-foreground">Valor na nota</span>
           <span class="font-semibold tabular-nums">{{ preview.line.invoiceTotal }}</span>
         </div>
 
-        <!-- 1. Qual insumo é. Quando há sugestão, o campo INTEIRO entra num card
-             de atenção: a proposta fica colada ao campo de que ela fala. -->
+        <!-- 1. Qual insumo é, com o EAN pela câmera ao lado (C11). -->
         <ReceiptField
           data-receipt-field="material"
           class="scroll-mt-4 transition-shadow"
@@ -172,26 +265,34 @@ function onCheck(checked: boolean) {
           :title="preview.suggestion ? 'Confirme a sugestão' : 'Escolha o item desta linha'"
           :icon="preview.suggestion ? 'lucide:sparkles' : 'lucide:package-search'"
         >
-          <!-- O rótulo é um `<span>`, NÃO um `<label>`: um `<label>` sem `for`
-               adota o primeiro controle rotulável de dentro (o botão que abre o
-               UiSelect) e reencaminha para ele os cliques que caem em
-               parte não interativa — inclusive o véu de fechar do próprio
-               picker. Escolher o insumo fechava e reabria a lista no mesmo
-               clique. O nome acessível vai por `labelledBy`. A armadilha
-               continua valendo: ela mora no docstring do `UiSelect`. -->
-          <div>
-            <span :id="`receipt-material-${preview.line.id}`" class="block text-xs font-medium text-muted-foreground">Item</span>
-            <UiSelect
-              class="mt-1"
-              :options="materialOptions"
-              :model-value="preview.line.materialSku"
-              :labelled-by="`receipt-material-${preview.line.id}`"
-              placeholder="Escolher item"
-              search-placeholder="Buscar item do Compras"
-              :empty-text="`Nenhum item do Compras com esse nome.`"
-              @update:model-value="emit('selectMaterial', $event)"
-            />
-          </div>
+          <NuxtFormField label="Item">
+            <div class="flex gap-2">
+              <NuxtSelectMenu
+                class="min-w-0 flex-1"
+                :items="materialItems"
+                value-key="value"
+                :filter-fields="['label', 'description', 'keywords']"
+                :model-value="preview.line.materialSku || undefined"
+                :title="materialName"
+                :search-input="materialSearch"
+                placeholder="Escolher item"
+                data-receipt-material-select
+                @update:model-value="(sku: unknown) => sku && emit('selectMaterial', String(sku))"
+              >
+                <template #empty>Nenhum item do Compras com esse nome.</template>
+              </NuxtSelectMenu>
+              <NuxtButton
+                variant="outline"
+                color="neutral"
+                icon="i-lucide-scan-barcode"
+                label="EAN"
+                aria-label="Ler o EAN do item pela câmera"
+                data-sheet-scan-ean
+                @click="emit('scan-ean')"
+              />
+            </div>
+          </NuxtFormField>
+          <p v-if="preview.line.scannedEan" class="mt-1 text-xs text-muted-foreground tnum">EAN lido: {{ preview.line.scannedEan }}</p>
           <template v-if="preview.suggestion">
             <p v-if="preview.suggestion.byBarcode" class="mt-2 text-xs text-muted-foreground">
               O código de barras da nota é o de <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span>
@@ -199,16 +300,11 @@ function onCheck(checked: boolean) {
             <p v-else class="mt-2 text-xs text-muted-foreground">
               Parece <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span> ({{ preview.suggestion.scorePercent }}% parecido)
             </p>
-            <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground sm:w-auto" @click="emit('acceptSuggestion')">
-              <Icon name="lucide:check" class="size-3.5" />
-              É este
-            </button>
+            <NuxtButton class="mt-2 justify-center" icon="i-lucide-check" label="É este" @click="emit('acceptSuggestion')" />
           </template>
         </ReceiptField>
 
-        <!-- 2. Só depois do insumo: quanto isso vale na unidade dele. Pedir
-             conversão antes de saber o insumo é pedir o impossível — não há
-             unidade-base para converter PARA. -->
+        <!-- 2. Só depois do insumo: quanto isso vale na unidade dele. -->
         <div v-if="preview.line.materialSku" data-receipt-field="conversion" class="scroll-mt-4 transition-shadow" :class="ring('conversion')">
           <ReceiptConversion
             :preview="preview"
@@ -221,24 +317,100 @@ function onCheck(checked: boolean) {
           />
         </div>
 
-        <!-- 3. Quanto e quanto custou. O custo por unidade-base mora COM o
-             valor, porque é dele que ele deriva. -->
-        <div data-receipt-field="qty" class="grid scroll-mt-4 gap-3 transition-shadow sm:grid-cols-2" :class="ring('qty')">
-          <label class="block text-xs font-medium text-muted-foreground">
-            Quantidade{{ preview.purchaseUnitLabel ? ` (${preview.purchaseUnitLabel})` : "" }}
-            <input v-model.number="purchaseQty" type="number" min="0" step="0.01" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm tabular-nums text-foreground" />
-          </label>
-          <label class="block text-xs font-medium text-muted-foreground">
-            Valor total (R$)
-            <input v-model="costInput" inputmode="decimal" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm tabular-nums text-foreground" placeholder="0,00" />
-            <span v-if="preview.baseQtyKnown && preview.baseCostQ > 0" class="mt-1 block text-xs font-normal text-muted-foreground">
-              {{ formatMoney(preview.baseCostQ) }} por {{ preview.material.unit }}
-            </span>
-          </label>
+        <!-- 3. Quanto e quanto custou, com o numérico na tela (C10). O campo ativo
+             fica marcado; tocar no outro campo troca o alvo do teclado. -->
+        <div data-receipt-field="qty" class="scroll-mt-4 space-y-2 transition-shadow" :class="ring('qty')">
+          <div class="grid gap-2 sm:grid-cols-2">
+            <NuxtButton
+              size="xl"
+              variant="outline"
+              color="neutral"
+              :active="padField === 'qty'"
+              active-variant="outline"
+              active-color="primary"
+              block
+              class="min-h-16 flex-col items-start justify-center text-left"
+              :aria-pressed="padField === 'qty'"
+              data-sheet-qty-field
+              @click="padFocus('qty')"
+            >
+              <span class="text-xs font-medium text-muted-foreground">Quantidade{{ preview.purchaseUnitLabel ? ` (${preview.purchaseUnitLabel})` : "" }}</span>
+              <span class="flex w-full items-baseline justify-between gap-2">
+                <span class="text-2xl font-semibold tabular-nums">{{ String(preview.line.purchaseQty ?? 0).replace(".", ",") }}</span>
+                <span v-if="preview.baseQtyKnown && preview.line.materialSku" class="text-xs font-normal text-muted-foreground tabular-nums">
+                  entra {{ formatQty(preview.baseQty, preview.material.unit) }}
+                </span>
+              </span>
+            </NuxtButton>
+            <NuxtButton
+              size="xl"
+              variant="outline"
+              color="neutral"
+              :active="padField === 'cost'"
+              active-variant="outline"
+              active-color="primary"
+              block
+              class="min-h-16 flex-col items-start justify-center text-left"
+              :aria-pressed="padField === 'cost'"
+              data-sheet-cost-field
+              @click="padFocus('cost')"
+            >
+              <span class="text-xs font-medium text-muted-foreground">Valor total (R$)</span>
+              <span class="flex w-full items-baseline justify-between gap-2">
+                <span class="text-2xl font-semibold tabular-nums">{{ preview.line.costInput || "0,00" }}</span>
+                <span v-if="preview.baseQtyKnown && preview.baseCostQ > 0" class="text-xs font-normal text-muted-foreground tabular-nums">
+                  {{ formatMoney(preview.baseCostQ) }}/{{ preview.material.unit }}
+                </span>
+              </span>
+            </NuxtButton>
+          </div>
+          <div class="grid grid-cols-4 gap-1.5" role="group" aria-label="Teclado numérico do item" data-sheet-numpad>
+            <template v-for="digit in ['1', '2', '3']" :key="digit">
+              <NuxtButton size="xl" variant="outline" color="neutral" block class="justify-center tabular-nums" :label="digit" :aria-label="`Dígito ${digit}`" @click="padDigit(digit)" />
+            </template>
+            <NuxtButton size="xl" variant="outline" block class="justify-center" label="−1" aria-label="Um a menos" @click="padBump(-1)" />
+            <template v-for="digit in ['4', '5', '6']" :key="digit">
+              <NuxtButton size="xl" variant="outline" color="neutral" block class="justify-center tabular-nums" :label="digit" :aria-label="`Dígito ${digit}`" @click="padDigit(digit)" />
+            </template>
+            <NuxtButton size="xl" variant="outline" block class="justify-center" label="+1" aria-label="Um a mais" @click="padBump(1)" />
+            <template v-for="digit in ['7', '8', '9']" :key="digit">
+              <NuxtButton size="xl" variant="outline" color="neutral" block class="justify-center tabular-nums" :label="digit" :aria-label="`Dígito ${digit}`" @click="padDigit(digit)" />
+            </template>
+            <NuxtButton size="xl" variant="outline" block class="justify-center" label="Limpar" @click="padClear()" />
+            <NuxtButton size="xl" variant="outline" color="neutral" block class="justify-center" label="," aria-label="Vírgula" @click="padComma()" />
+            <NuxtButton size="xl" variant="outline" color="neutral" block class="justify-center tabular-nums" label="0" aria-label="Dígito 0" @click="padDigit('0')" />
+            <NuxtButton
+              size="xl"
+              variant="outline"
+              color="neutral"
+              block
+              square
+              class="justify-center"
+              icon="i-lucide-delete"
+              aria-label="Apagar último dígito"
+              @click="padBackspace()"
+            />
+            <NuxtButton
+              size="xl"
+              variant="outline"
+              block
+              class="justify-center"
+              trailing-icon="i-lucide-arrow-right"
+              :label="padField === 'qty' ? 'Valor' : 'Qtd.'"
+              :aria-label="padField === 'qty' ? 'Ir para o valor total' : 'Ir para a quantidade'"
+              data-sheet-pad-next
+              @click="padNext()"
+            />
+          </div>
         </div>
 
-        <!-- 4. De onde veio e até quando vale. Os dois saem do mesmo grupo
-             `rastro` da NF-e e respondem à mesma pergunta. -->
+        <!-- 3b. Chegou diferente da nota: nota × chegou × diferença, e o motivo. -->
+        <div data-receipt-field="reason" class="scroll-mt-4 transition-shadow" :class="ring('reason')">
+          <ReceiptDifference :preview="preview" @reason="emit('update', { lineNote: $event })" />
+        </div>
+
+        <!-- 4. Validade (escolha rápida de dia do kit) e lote, com a leitura da
+             embalagem (GS1, C21). -->
         <ReceiptField
           data-receipt-field="expiry"
           class="scroll-mt-4 transition-shadow"
@@ -248,25 +420,37 @@ function onCheck(checked: boolean) {
           icon="lucide:calendar-clock"
         >
           <div class="grid gap-3">
-            <!-- A validade é a "Escolha rápida de dia" do kit (Tipo 1). -->
-            <div class="grid gap-1 text-xs font-medium text-muted-foreground">
-              Validade
+            <div class="grid gap-1">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-medium text-muted-foreground">Validade</span>
+                <NuxtButton
+                  variant="outline"
+                  color="neutral"
+                  icon="i-lucide-scan-text"
+                  label="Ler da embalagem"
+                  data-sheet-read-package
+                  @click="emit('read-package')"
+                />
+              </div>
               <OperatorDayPicker v-model="expiryDate" :today="todayIso" label="Validade" />
-              <span v-if="preview.line.expiryFromInvoice" class="block text-xs font-normal text-muted-foreground">Veio na nota</span>
-              <span v-else-if="preview.needsExpiry" class="block text-xs font-normal text-muted-foreground">A nota não informou. Olhe na embalagem.</span>
+              <span v-if="preview.line.expiryFromInvoice" class="block text-xs text-muted-foreground">Veio na nota</span>
+              <span v-else-if="preview.needsExpiry" class="block text-xs text-muted-foreground">A nota não informou. Olhe na embalagem.</span>
             </div>
-            <label class="block text-xs font-medium text-muted-foreground">
-              Lote do fornecedor
-              <input v-model="invoiceLot" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" placeholder="Opcional" />
-              <span v-if="preview.line.invoiceLot" class="mt-1 block text-xs font-normal text-muted-foreground">É por ele que um recall chama.</span>
-            </label>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <NuxtFormField label="Lote do fornecedor">
+                <NuxtInput v-model="invoiceLot" class="w-full" placeholder="Opcional" data-receipt-lot />
+              </NuxtFormField>
+              <NuxtFormField label="Ocorrência">
+                <NuxtInput v-model="lineNote" class="w-full" placeholder="Avaria, falta, ressalva" data-receipt-note />
+              </NuxtFormField>
+            </div>
           </div>
         </ReceiptField>
 
         <!-- 5. O que entra no estoque, e a consequência disso. -->
         <div class="rounded-md border border-border bg-card px-3 py-2">
           <template v-if="preview.baseQtyKnown && preview.line.materialSku">
-            <p class="text-lg font-semibold tabular-nums">Entra {{ formatQty(preview.baseQty, preview.material.unit) }}</p>
+            <p class="text-base font-semibold tabular-nums">Entra {{ formatQty(preview.baseQty, preview.material.unit) }}</p>
             <p class="mt-0.5 text-xs text-muted-foreground">
               Estoque depois: {{ formatQty(stockAfter, preview.material.unit) }}
             </p>
@@ -274,75 +458,105 @@ function onCheck(checked: boolean) {
           <p v-else class="text-sm text-muted-foreground">A entrada aparece aqui quando o insumo e a embalagem estiverem definidos.</p>
         </div>
 
-        <label class="block text-xs font-medium text-muted-foreground">
-          Ocorrência
-          <input v-model="lineNote" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" placeholder="Avaria, falta, ressalva" />
-        </label>
-
         <div v-if="visibleWarnings.length" class="flex flex-wrap gap-1.5">
-          <span
+          <NuxtBadge
             v-for="warning in visibleWarnings"
             :key="`${preview.line.id}-${warning.key}`"
-            class="rounded-md border px-2 py-0.5 text-xs font-medium"
-            :class="warningClasses[warning.tone]"
-          >
-            {{ warning.label }}
-          </span>
+            :color="warningColor[warning.tone]"
+            :label="warning.label"
+          />
         </div>
 
-        <!-- O selo diz QUE a nota discorda do cadastro fiscal; aqui ela diz
-             DO QUÊ. A entrada não trava: o cadastro se confere no Admin, onde
-             o recebimento deixa a sugestão e o aviso. -->
-        <div
+        <NuxtAlert
           v-if="preview.fiscalDivergences.length"
+          variant="subtle"
+          color="warning"
+          icon="i-lucide-triangle-alert"
           data-receipt-fiscal-divergences
-          class="space-y-1 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning"
         >
-          <p v-for="divergence in preview.fiscalDivergences" :key="`${preview.line.id}-${divergence.field}`">
-            {{ divergence.message }}
-          </p>
-          <p class="text-muted-foreground">Nada muda no cadastro ao confirmar: fica como sugestão e aviso para conferir no Admin.</p>
-        </div>
+          <template #description>
+            <p v-for="divergence in preview.fiscalDivergences" :key="`${preview.line.id}-${divergence.field}`">
+              {{ divergence.message }}
+            </p>
+            <p class="mt-1">Nada muda no cadastro ao confirmar: fica como sugestão e aviso para conferir no Admin.</p>
+          </template>
+        </NuxtAlert>
       </div>
 
-      <!-- Conferir fecha o item e a gaveta: o gesto termina onde começou, e a
-           linha lá fora muda de cor na frente do operador. -->
-      <UiSheetFooter class="shrink-0 border-t border-border">
-        <button
-          v-if="!preview.line.checked"
-          type="button"
-          data-receipt-field="check"
-          class="inline-flex h-12 w-full scroll-mt-4 items-center justify-center gap-2.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition-shadow"
+      <!-- Conferir fecha o item (e a gaveta por cima); a linha lá fora muda de cor. -->
+      <footer class="flex shrink-0 flex-col gap-2 border-t border-border bg-card p-3">
+        <NuxtButton
+          size="xl"
+          block
+          :active="preview.line.checked"
+          active-variant="outline"
+          active-color="neutral"
+          icon="i-lucide-circle-check-big"
+          class="scroll-mt-4 justify-center transition-shadow"
           :class="ring('check')"
-          @click="onCheck(true)"
-        >
-          <Icon name="lucide:circle-check-big" class="size-5 shrink-0" />
-          Marcar como conferido
-        </button>
-        <button
-          v-else
-          type="button"
+          :label="preview.line.checked ? 'Conferido (toque para desmarcar)' : 'Marcar como conferido'"
           data-receipt-field="check"
-          class="inline-flex h-12 w-full scroll-mt-4 items-center justify-center gap-2.5 rounded-md border border-success/40 bg-success/10 px-3 text-sm font-semibold text-success transition-shadow"
-          :class="ring('check')"
-          @click="onCheck(false)"
-        >
-          <Icon name="lucide:circle-check-big" class="size-5 shrink-0" />
-          Conferido — desmarcar
-        </button>
-        <UiSheetClose class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium hover:bg-accent">
-          {{ preview.line.checked ? "Fechar" : "Fechar sem conferir" }}
-        </UiSheetClose>
-        <button
-          type="button"
-          class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-medium text-destructive hover:bg-destructive/10"
-          :aria-label="`Remover ${label}`"
-          @click="emit('remove')"
-        >
-          <Icon name="lucide:trash-2" class="size-4" />
-          Remover item da entrada
-        </button>
-      </UiSheetFooter>
-    </UiSheetContent>
-  </UiSheet>
+          @click="onCheck(!preview.line.checked)"
+        />
+        <div class="grid grid-cols-2 gap-2">
+          <NuxtButton
+            variant="outline"
+            color="neutral"
+            block
+            class="justify-center"
+            :label="preview.line.checked ? 'Fechar' : 'Fechar sem conferir'"
+            @click="emit('update:open', false)"
+          />
+          <NuxtButton
+            v-if="hasDifference"
+            variant="ghost"
+            color="error"
+            block
+            class="justify-center"
+            icon="i-lucide-undo-2"
+            label="Devolver só este item"
+            data-sheet-reject-line
+            @click="emit('reject-line')"
+          />
+          <NuxtButton
+            v-else
+            variant="ghost"
+            color="error"
+            block
+            class="justify-center"
+            icon="i-lucide-trash-2"
+            label="Remover item da entrada"
+            :aria-label="`Remover ${label}`"
+            @click="emit('remove')"
+          />
+        </div>
+      </footer>
+    </template>
+  </DefineBody>
+
+  <aside
+    v-if="docked && preview"
+    class="sticky top-36 flex max-h-[calc(100dvh-12rem)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
+    :data-receipt-sheet="preview.line.id"
+    data-receipt-sheet-docked
+  >
+    <ReuseBody />
+  </aside>
+  <!-- Por cima: o título e a descrição do diálogo (leitor de tela) são os mesmos que
+       o cabeçalho mostra. -->
+  <NuxtSlideover
+    v-else-if="!docked"
+    :open="open && Boolean(preview)"
+    side="right"
+    :title="label || 'Item da entrada'"
+    :description="invoiceSummary"
+    class="w-full max-w-none sm:max-w-xl"
+    @update:open="emit('update:open', $event)"
+  >
+    <template #content>
+      <div v-if="preview" class="flex h-full min-h-0 flex-col" :data-receipt-sheet="preview.line.id">
+        <ReuseBody />
+      </div>
+    </template>
+  </NuxtSlideover>
 </template>

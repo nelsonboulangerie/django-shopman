@@ -6,6 +6,7 @@ module owns the Orderman session writes and POS order mutations.
 
 from __future__ import annotations
 
+import copy
 import logging
 import re
 from dataclasses import dataclass
@@ -285,24 +286,30 @@ def _audit_item_index(items: list[dict]) -> dict:
 
 
 def _audit_line_diff(session: Session, *, before: list[dict], after: list[dict], actor: str) -> None:
-    """Emit add/remove/qty events for the net change between two item snapshots."""
+    """Emit add/remove/qty events for the net change between two item snapshots.
+
+    Todos numa escrita só (``emit_events``), na mesma ordem de antes: salvar dez
+    linhas novas custava setenta idas ao banco só de trilha.
+    """
     old = _audit_item_index(before)
     new = _audit_item_index(after)
+    events: list[tuple[str, dict]] = []
     for key, item in new.items():
         if key not in old:
-            session.emit_event("line_added", actor=actor, payload={
+            events.append(("line_added", {
                 "sku": item.get("sku"), "name": item.get("name"), "qty": _audit_qty(item),
-            })
+            }))
         elif _audit_qty(item) != _audit_qty(old[key]):
-            session.emit_event("qty_changed", actor=actor, payload={
+            events.append(("qty_changed", {
                 "sku": item.get("sku"), "name": item.get("name"),
                 "qty_before": _audit_qty(old[key]), "qty_after": _audit_qty(item),
-            })
+            }))
     for key, item in old.items():
         if key not in new:
-            session.emit_event("line_removed", actor=actor, payload={
+            events.append(("line_removed", {
                 "sku": item.get("sku"), "name": item.get("name"), "qty": _audit_qty(item),
-            })
+            }))
+    session.emit_events(events, actor=actor)
 
 
 def close_sale(
@@ -330,10 +337,25 @@ def close_sale(
         raise PosIntentError(
             code="edit_session_no_sale", message=pos_edit_session.REFUSAL_MESSAGE, field="tab_session_key", focus="cart",
         )
+    from shopman.shop.services import pos_offline_sale
+
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
+    # A venda feita SEM CONEXÃO, dentro das travas e com hora plausível, é a venda
+    # que o balcão COBROU (decisões C e D do dono, 10/10/2026): o payload passa a
+    # ser o cobrado, linha pesada inclusive (pelo quilo que a tela usou), e o
+    # kernel precifica na hora da cobrança. Fora disso, ``None``: régua de sempre.
+    offline_at = pos_offline_sale.pricing_instant(payload)
+    charged = pos_offline_sale.deepcopy_payload(payload) if offline_at else None
     weighed_sale.apply_to_payload(payload, channel=channel)
+    if charged is not None:
+        weighed_sale.apply_to_payload(charged, channel=channel, price_per_kg_from_line=True)
+        if pos_offline_sale.charged_payload_matches(charged):
+            payload = charged
+        else:
+            # As linhas não somam o total cobrado: o navegador não decide preço.
+            offline_at = None
     _refuse_priceless_items(payload, channel=channel)
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
     # GATE precisa dela tanto quanto a review: sem carimbo, ``_payload_discount_q``
@@ -380,12 +402,31 @@ def close_sale(
     # a andar quando a primeira commitou. Ao voltar ela lê o ``order_ref`` NA
     # PRÓPRIA TRAVA (``_answer_sale_claim`` o escreveu dentro da transação) e
     # devolve a mesma venda, em vez de criar a segunda.
+    tab_plan = None
+    leftover_tab = None
+    alert_order_ref = ""
     with transaction.atomic():
         claim = _claim_sale_request(channel_ref=channel.ref, payload=payload)
         session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
         existing = _claimed_sale(claim) or _existing_sale_by_client_request_id(
             channel_ref=channel.ref, payload=payload
         )
+        if existing is None and session is None and offline_at is not None:
+            # A comanda que este dispositivo conhecia já não está aberta: foi paga
+            # ou limpa em outro dispositivo durante a queda.
+            closed_tab = _payload_closed_tab_session(channel_ref=channel.ref, payload=payload)
+            if closed_tab is not None:
+                tab_plan = pos_offline_sale.plan_closed_tab(closed_tab, payload)
+                if tab_plan.outcome == "already_paid_all":
+                    # Tudo o que foi cobrado já estava pago: não nasce pedido. A
+                    # cobrança em dobro fica no pedido pago e o gerente é avisado.
+                    paid_ref = pos_offline_sale.record_duplicate_on_paid_order(
+                        plan=tab_plan, payload=payload, captured_at=offline_at, operator_username=operator_username,
+                    )
+                    existing = Order.objects.get(ref=paid_ref)
+                    alert_order_ref = paid_ref
+                else:
+                    pos_offline_sale.trim_payload_to(payload, tab_plan)
         if existing is not None:
             _answer_sale_claim(claim, order_ref=existing.ref)
         else:
@@ -409,8 +450,14 @@ def close_sale(
                 from shopman.shop.services.pos_intent import pos_session_revision
 
                 if session.state != "open" or ("expected_revision" in payload and payload["expected_revision"] != pos_session_revision(session)):
-                    raise PosIntentError(code="tab_revision_conflict", status=409,
-                        message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
+                    if offline_at is None or session.state != "open":
+                        raise PosIntentError(code="tab_revision_conflict", status=409,
+                            message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
+                    # Venda sem conexão: fecha o que foi cobrado; o resto da
+                    # comanda segue aberto (``reopen_tab_with_leftovers``).
+                    tab_plan = pos_offline_sale.plan_open_tab(session, payload)
+                    if tab_plan.outcome == "revision_only":
+                        tab_plan = None
                 direct_checkout = False
 
             try:
@@ -423,6 +470,8 @@ def close_sale(
                     operator_username=operator_username,
                     direct_checkout=direct_checkout,
                     approved_by=approved_by,
+                    priced_at=offline_at,
+                    tab_plan=tab_plan,
                 )
             except (OrderValidationError, OrderCommitError) as exc:
                 # A regra do commit recusou: NADA nasceu (a transação desfaz o
@@ -431,12 +480,19 @@ def close_sale(
                 # a trava contra cobrança dupla — por um pedido que nunca existiu.
                 raise _commit_refusal(exc) from exc
             _answer_sale_claim(claim, order_ref=result.order_ref)
+            if tab_plan is not None and tab_plan.outcome == "lines_left_open":
+                leftover_tab = pos_offline_sale.reopen_tab_with_leftovers(
+                    channel=channel, config=config, plan=tab_plan, previous_data=session.data or {},
+                    actor=actor, operator_username=operator_username,
+                )
 
             from shopman.shop.services.pos_sale_recovery import prepare
 
             prepare(result.order_ref, shift_id=shift.pk, operator_username=operator_username)
 
     if existing is not None:
+        if alert_order_ref:
+            pos_offline_sale.alert_manager(alert_order_ref, duplicate_of=_payload_client_request_id(payload))
         return _resume_committed_sale(existing.ref)
 
     # Fora da transação, e a ordem importa: os callbacks de ``on_commit`` do
@@ -458,6 +514,10 @@ def close_sale(
             "order_ref": result.order_ref, "total_q": int(result.total_q),
         })
         logger.info("pos_close_tab order=%s tab=%s session=%s total=%s", result.order_ref, tab_ref, session.session_key, result.total_q)
+        if leftover_tab is not None:
+            logger.info("pos_offline_tab_left_open order=%s tab=%s session=%s", result.order_ref, tab_ref, leftover_tab.session_key)
+        if offline_at is not None:
+            pos_offline_sale.alert_manager(result.order_ref)
         return _resume_committed_sale(result.order_ref)
     except Exception as exc:
         from shopman.shop.services.pos_sale_recovery import _as_error
@@ -691,12 +751,21 @@ def _commit_sale_session(
     operator_username: str,
     direct_checkout: bool,
     approved_by: str = "",
+    priced_at=None,
+    tab_plan=None,
 ):
     """Troca o conteúdo da sessão pelo carrinho do PDV e a commita. Roda sob a trava.
 
     ``approved_by`` é o gerente que o ``close_sale`` VERIFICOU nesta request — a única
     assinatura que pode ir para a linha do desconto.
+
+    ``priced_at`` (venda sem conexão, ``pos_offline_sale``): o kernel precifica na
+    hora da cobrança. Se a conta dele não bater com o total cobrado, a sessão é
+    regravada com os preços cobrados (política ``external``, sem os modifiers de
+    desconto), e a diferença fica em ``pos.offline.pricing``: o dinheiro já entrou.
     """
+    from shopman.shop.services import pos_offline_sale
+
     tab_ref = "" if direct_checkout else _session_tab_ref(session)
     tab_display = "" if direct_checkout else _session_tab_display(session)
     fulfillment_type = _payload_fulfillment_type(payload)
@@ -720,14 +789,50 @@ def _commit_sale_session(
             {"op": "set_data", "path": "client_request_id", "value": client_request_id},
             {"op": "set_data", "path": "pos.client_request_id", "value": client_request_id},
         ])
+    offline = _payload_offline(payload)
+    if offline and priced_at is not None:
+        offline["priced_at"] = priced_at.isoformat()
+    if offline and tab_plan is not None:
+        offline["tab"] = tab_plan.record()
+    if offline:
+        # Segue para ``order.data.pos.offline`` pelo merge de ``pos`` em
+        # ``_mark_tab_committed``: o pedido diz que nasceu de uma venda sem
+        # conexão, quando o balcão cobrou e de quando eram os preços da tela.
+        ops.append({"op": "set_data", "path": "pos.offline", "value": offline})
+    if tab_plan is not None and tab_plan.inherited_fired and direct_checkout:
+        # Linha cobrada aqui que já está na cozinha pela comanda fechada no outro
+        # dispositivo: o pedido novo não a manda de novo ao KDS.
+        from shopman.shop.adapters.kds import KDS_INHERITED_KEY
 
+        ops.append({"op": "set_data", "path": KDS_INHERITED_KEY, "value": list(tab_plan.inherited_fired)})
+
+    ctx = {"actor": actor}
+    if priced_at is not None:
+        from shopman.shop.modifiers import PRICED_AT_CTX_KEY
+
+        ctx[PRICED_AT_CTX_KEY] = priced_at
+    replay_ops = copy.deepcopy(ops) if priced_at is not None else []
     session = session_service.modify_session(
         session_key=session.session_key,
         channel_ref=channel.ref,
         ops=ops,
-        ctx={"actor": actor},
+        ctx=ctx,
         channel_config=config.to_dict(),
     )
+    if priced_at is not None:
+        charged_q = pos_offline_sale.charged_total_q(payload)
+        server_q = pos_offline_sale.session_total_q(session)
+        if server_q != charged_q:
+            session = _reprice_as_charged(
+                session, channel=channel, config=config, ops=replay_ops, ctx=ctx,
+                record={**offline, "pricing": pos_offline_sale.pricing_record(
+                    charged_q=charged_q, server_q=server_q, priced_at=priced_at,
+                )},
+            )
+            logger.info(
+                "pos_offline_charged_wins session=%s charged=%s server=%s",
+                session.session_key, charged_q, server_q,
+            )
 
     result = session_service.commit_session(
         session_key=session.session_key,
@@ -831,7 +936,7 @@ def review_sale(
             "code": "customer_required_for_scheduled",
             "field": "customer_phone",
             "message": (
-                "Pedido agendado precisa de um cliente identificado — "
+                "Pedido agendado precisa de um cliente identificado: "
                 "é o contato se algo mudar até a data."
             ),
         })
@@ -910,7 +1015,14 @@ def review_sale(
     # falta que a fornada de sexta cobre, e calava falta real da data.
     from shopman.shop.services import availability
 
+    #
+    # As linhas são decididas em LOTE (``decide_many``): a mesma resposta de
+    # ``decide`` linha a linha, com o canal, a vitrine e o estoque lidos uma vez
+    # para a sacola inteira. Linha a linha, eram ~15 consultas por item, e a
+    # review roda a cada mudança do carrinho (trava em
+    # ``tests/test_pos_review_queries.py``).
     target_date = _payload_commitment_date(payload)
+    checked = []
     for item in payload.get("items", []):
         if _is_delivery_fee_item(item):
             continue
@@ -918,9 +1030,13 @@ def review_sale(
         qty = _line_qty(item)
         if not sku or qty <= 0:
             continue
-        decision = availability.decide(
-            sku, qty, channel_ref=channel.ref, target_date=target_date,
-        )
+        checked.append((item, sku, qty))
+    decisions = availability.decide_many(
+        [(sku, qty) for _item, sku, qty in checked],
+        channel_ref=channel.ref,
+        target_date=target_date,
+    )
+    for (item, sku, _qty), decision in zip(checked, decisions, strict=True):
         if decision.get("approved"):
             continue
         name = str(item.get("name") or sku)
@@ -1424,7 +1540,7 @@ def _require_customer_if_scheduled(payload: dict) -> None:
         message="Pedido agendado precisa de um cliente identificado.",
         field="customer_phone",
         focus="customer",
-        recovery="Identifique o cliente para agendar — é o contato se algo mudar até a data.",
+        recovery="Identifique o cliente para agendar: é o contato se algo mudar até a data.",
     )
 
 
@@ -1681,7 +1797,13 @@ def rename_pos_tab(
         handle_ref=ref,
     )
     session.refresh_from_db()
-    session.data = {**(session.data or {}), "tab_ref": ref, "tab_display": tab_display}
+    data = dict(session.data or {})
+    # O NÚMERO da comanda sobrevive ao nome: "Mesa 6" é como a mesa chama, e
+    # "#1007" segue sendo a referência que o balcão e o cupom conhecem. Guardado
+    # só no primeiro renomear (o segundo renomear não troca o número).
+    data.setdefault("tab_number", display_tab_ref(old_ref) if old_ref else "")
+    data.update({"tab_ref": ref, "tab_display": tab_display})
+    session.data = data
     session.save(update_fields=["data"])
 
     session.emit_event("tab_renamed", actor=operator_username, payload={"from_ref": old_ref, "to_ref": ref})
@@ -1690,6 +1812,59 @@ def rename_pos_tab(
         "pos_rename_tab session=%s new_ref=%s operator=%s",
         session.session_key, ref, operator_username,
     )
+    return session
+
+
+def set_pos_tab_seating(
+    *,
+    channel_ref: str,
+    session_key: str,
+    seating_spot_ref: str,
+    operator_username: str,
+    spot_label: str = "",
+) -> Session:
+    """Vincula (ou desvincula) a comanda a uma mesa do Salão. OPCIONAL.
+
+    Decisão do dono (04/10/2026): ao dar nome à comanda, as mesas do Salão
+    aparecem para escolher com um toque; o balcão segue sem mesa, e quem não
+    escolhe vende como hoje (zero passo a mais por venda). Com o vínculo, o
+    Salão mostra a mesa ocupada e o B.I. pode medir a lotação real por mesa
+    (``Order.data["seating_spot_ref"]``, escrito no commit).
+
+    Mora em ``Session.data["seating_spot_ref"]`` (sem campo novo). Uma mesa tem
+    no máximo uma comanda aberta: a segunda é recusada com o nome da primeira.
+    ``seating_spot_ref=""`` desfaz o vínculo. Que a mesa exista no salão de hoje
+    é conferido por quem chama (``backstage/services/pos_seating.py``): o shop
+    não lê o cadastro do backstage.
+    """
+    channel, _config = _channel_and_config(channel_ref)
+    session = _get_open_pos_tab_session_by_key(channel_ref=channel.ref, session_key=session_key)
+    if session is None:
+        raise PosIntentError(code="tab_not_found", message="Comanda não encontrada.", field="session_key", focus="cart")
+
+    spot_ref = str(seating_spot_ref or "").strip()
+    data = dict(session.data or {})
+    if spot_ref:
+        holder = (
+            Session.objects.filter(channel_ref=channel.ref, state="open", data__seating_spot_ref=spot_ref)
+            .exclude(session_key=session.session_key)
+            .first()
+        )
+        if holder is not None:
+            holder_display = str((holder.data or {}).get("tab_display") or holder.handle_ref or "")
+            raise PosIntentError(
+                code="seating_spot_in_use",
+                message=f"{spot_label or 'Esta mesa'} já está com a comanda {holder_display}.",
+                field="seating_spot_ref",
+                focus="cart",
+            )
+        data["seating_spot_ref"] = spot_ref
+    else:
+        data.pop("seating_spot_ref", None)
+    session.data = data
+    session.save(update_fields=["data"])
+    session.emit_event("tab_seated", actor=operator_username, payload={"seating_spot_ref": spot_ref})
+    logger.info("pos_tab_seating session=%s spot=%s operator=%s", session.session_key, spot_ref or "-", operator_username)
     return session
 
 
@@ -1715,7 +1890,7 @@ def move_pos_tab_lines(
     Prices carry over verbatim via the kernel ``move_lines`` op.
     """
     channel, _config = _channel_and_config(channel_ref)
-    line_ids = [str(line_id) for line_id in (line_ids or []) if str(line_id).strip()]
+    line_ids = list(dict.fromkeys(str(line_id) for line_id in (line_ids or []) if str(line_id).strip()))
     if not line_ids:
         raise PosIntentError(
             code="no_line_ids",
@@ -1802,12 +1977,18 @@ def move_pos_tab_lines(
     validate_sales_mode(session_sales_payload(target), require_ready=True)
 
     try:
-        session_service.move_session_lines(
-            from_session_key=source.session_key,
-            to_session_key=target.session_key,
-            channel_ref=channel.ref,
-            line_ids=line_ids,
-        )
+        with transaction.atomic():
+            session_service.move_session_lines(
+                from_session_key=source.session_key,
+                to_session_key=target.session_key,
+                channel_ref=channel.ref,
+                line_ids=line_ids,
+            )
+            _carry_kitchen_state(
+                source_session_key=source.session_key,
+                target_session_key=target.session_key,
+                line_ids=line_ids,
+            )
     except Exception as exc:  # noqa: BLE001 - surface kernel errors as a recoverable POS error
         logger.warning(
             "pos_move_tab_lines_failed from=%s to=%s: %s",
@@ -1853,6 +2034,77 @@ def move_pos_tab_lines(
         target=target,
         source=None if source_closed else source,
         source_closed=bool(source_closed),
+    )
+
+
+def _carry_kitchen_state(*, source_session_key: str, target_session_key: str, line_ids: list[str]) -> None:
+    """A linha movida leva o estado da cozinha para a comanda de destino.
+
+    O kernel move a linha com ``line_id`` novo (a identidade é por sessão), e o
+    livro da cozinha é por comanda + ``line_id``. Sem isto, a linha já enviada
+    chegava "a enviar" no destino (o próximo Enviar a mandava de novo, e a cozinha
+    fazia duas vezes) e o ticket da origem ficava apontando para uma linha que
+    não existe mais. Aqui o ticket segue o prato (``carry_lines_to_session``),
+    a herança da venda sem conexão (``kds_inherited_lines``) passa junto, e o
+    espelho ``fired_lines``/``fired_qty`` das duas comandas é refeito.
+
+    Roda dentro da transação do ``move_session_lines``, depois dele: as duas
+    sessões já estão travadas pelo kernel (ordem ``source -> ticket``). O kernel
+    acrescenta as linhas movidas ao FIM do destino, na ordem de ``line_ids``
+    (deduplicados pelo chamador); o par velho → novo sai dali.
+    """
+    from shopman.shop.adapters import kds as kds_adapter
+
+    source = Session.objects.select_for_update().get(session_key=source_session_key)
+    target = Session.objects.select_for_update().get(session_key=target_session_key)
+    appended = list(target.items or [])[-len(line_ids):] if line_ids else []
+    source_data = dict(source.data or {})
+    if len(appended) != len(line_ids):
+        raise ValueError("Linhas movidas não conferem com o destino.")
+    line_map = {old: str(item["line_id"]) for old, item in zip(line_ids, appended, strict=True)}
+
+    fired_before = kds_adapter.fired_line_ids_for_session(source_session_key)
+    if not any(old in fired_before for old in line_map):
+        return
+    kds_adapter.carry_lines_to_session(
+        from_session_key=source_session_key, to_session_key=target_session_key, line_map=line_map,
+    )
+
+    inherited_key = kds_adapter.KDS_INHERITED_KEY
+    source_inherited = [str(x) for x in (source_data.get(inherited_key) or [])]
+    carried_inherited = [line_map[old] for old in source_inherited if old in line_map]
+    source_fired_qty = dict(source_data.get("fired_qty") or {})
+    target_data = dict(target.data or {})
+    target_fired_qty = dict(target_data.get("fired_qty") or {})
+    for old, new in line_map.items():
+        if old in source_fired_qty:
+            target_fired_qty[new] = source_fired_qty.pop(old)
+
+    if inherited_key in source_data or carried_inherited:
+        source_data[inherited_key] = [x for x in source_inherited if x not in line_map]
+    if carried_inherited:
+        target_data[inherited_key] = [
+            *[str(x) for x in (target_data.get(inherited_key) or [])], *carried_inherited,
+        ]
+    # A ordem importa: a herança do destino precisa estar gravada antes de o
+    # livro do destino ser relido, porque ele soma tickets + herdadas.
+    target_data["fired_qty"] = target_fired_qty
+    target.data = target_data
+    target.save(update_fields=["data"])
+    source_data["fired_qty"] = source_fired_qty
+    source.data = source_data
+    source.save(update_fields=["data"])
+
+    for session in (source, target):
+        session.data = {
+            **session.data,
+            "fired_lines": sorted(kds_adapter.fired_line_ids_for_session(session.session_key)),
+        }
+        session.save(update_fields=["data"])
+    logger.info(
+        "pos_move_tab_lines_kitchen from=%s to=%s carried=%s",
+        source_session_key, target_session_key,
+        sorted(new for old, new in line_map.items() if old in fired_before),
     )
 
 
@@ -2133,13 +2385,13 @@ def cancel_recent_order(
 
     if channel_ref and order.channel_ref != channel_ref:
         raise ValueError(
-            f"Pedido {order_ref} não é do PDV — cancele pelo gestor de pedidos."
+            f"Pedido {order_ref} não é do PDV. Cancele pelo gestor de pedidos."
         )
 
     age = timezone.now() - order.created_at
     if age > timedelta(minutes=max_age_minutes):
         raise ValueError(
-            f"Pedido {order_ref} criado há mais de {max_age_minutes} minutos — cancelamento não permitido"
+            f"Pedido {order_ref} criado há mais de {max_age_minutes} minutos: cancelamento não permitido"
         )
     # Os status admitidos vivem em `_recent_sale_status_allows_cancel` — o
     # mesmo predicado que a projection usa para anunciar `can_cancel`. O cancel
@@ -2216,6 +2468,33 @@ def reopen_recent_order_for_correction(
     data["pos_correction_reason"] = reason
     order.data = data
     order.save(update_fields=["data", "updated_at"])
+
+
+def _reprice_as_charged(
+    session: Session, *, channel: Channel, config: ChannelConfig, ops: list[dict], ctx: dict, record: dict
+) -> Session:
+    """Regrava a sessão com os preços COBRADOS (venda sem conexão, decisão D).
+
+    ``external``: o kernel não reprecifica pelo catálogo, guarda o preço que a
+    linha traz. ``modifiers: []``: nenhum desconto automático por cima (o balcão
+    não deu nenhum; desconto é uma das travas da venda sem conexão). O
+    ``pricing`` da passada anterior sai junto, para o pedido não carregar a
+    transparência de um desconto que não foi cobrado.
+    """
+    Session.objects.filter(pk=session.pk).update(pricing_policy="external", pricing={})
+    session.refresh_from_db()
+    replay = [{"op": "remove_line", "line_id": item["line_id"]} for item in (session.items or []) if item.get("line_id")]
+    replay.extend(op for op in ops if op.get("op") != "remove_line" and op.get("path") != "pos.offline")
+    replay.append({"op": "set_data", "path": "pos.offline", "value": record})
+    channel_config = config.to_dict()
+    channel_config["rules"] = {**(channel_config.get("rules") or {}), "modifiers": []}
+    return session_service.modify_session(
+        session_key=session.session_key,
+        channel_ref=channel.ref,
+        ops=replay,
+        ctx=ctx,
+        channel_config=channel_config,
+    )
 
 
 def build_session_ops(payload: dict, operator_username: str, *, approved_by: str = "") -> list[dict]:
@@ -2905,11 +3184,22 @@ def _refuse_priceless_items(payload: dict, *, channel) -> None:
     from shopman.shop.handlers.pricing import OffermanPricingBackend
 
     backend = OffermanPricingBackend()
-    for idx, item in enumerate(payload.get("items") or []):
+    items = payload.get("items") or []
+    # Uma leitura para a sacola inteira, não uma por linha (ver `review_sale`).
+    prices = backend.get_prices(
+        [
+            str(item.get("sku") or "")
+            for item in items
+            if isinstance(item, dict) and not _is_delivery_fee_item(item)
+        ],
+        channel,
+        qty=Decimal(1),
+    )
+    for idx, item in enumerate(items):
         if not isinstance(item, dict) or _is_delivery_fee_item(item):
             continue
         sku = str(item.get("sku") or "")
-        if int(backend.get_price(sku, channel, qty=Decimal(1)) or 0) > 0:
+        if int(prices.get(sku) or 0) > 0:
             continue
         name = str(item.get("name") or sku)
         raise PosIntentError(
@@ -4054,6 +4344,18 @@ def _payload_open_tab_session(*, channel_ref: str, payload: dict) -> Session | N
     return None
 
 
+def _payload_closed_tab_session(*, channel_ref: str, payload: dict) -> Session | None:
+    """A comanda do payload que já NÃO está aberta (paga ou limpa em outro dispositivo)."""
+    session_key = _payload_tab_session_key(payload)
+    if not session_key:
+        return None
+    return (
+        Session.objects.filter(session_key=session_key, channel_ref=channel_ref)
+        .exclude(state="open")
+        .first()
+    )
+
+
 def _payload_has_tab_identity(payload: dict) -> bool:
     return bool(_payload_tab_session_key(payload) or _payload_tab_ref(payload))
 
@@ -4128,6 +4430,10 @@ def _mark_tab_committed(
     if tab_ref:
         order_data["tab_ref"] = tab_ref
         order_data["tab_display"] = str(session_data.get("tab_display") or display_tab_ref(tab_ref))
+    # A mesa da comanda (vínculo OPCIONAL, ``set_pos_tab_seating``): o pedido leva
+    # a mesa para o B.I. medir a lotação por mesa. Sem vínculo, nada é gravado.
+    if session_data.get("seating_spot_ref"):
+        order_data["seating_spot_ref"] = str(session_data["seating_spot_ref"])
     session_pos_data = dict(session_data.get("pos") or {})
     if session_pos_data:
         order_data["pos"] = {**dict(order_data.get("pos") or {}), **session_pos_data}
@@ -4160,6 +4466,18 @@ def _mark_tab_committed(
 
     order.data = order_data
     order.save(update_fields=["data"])
+
+
+def _payload_offline(payload: dict) -> dict:
+    """``{captured_at, prices_at}`` da venda que esperou na fila do PDV, ou ``{}``."""
+    captured_at = str(payload.get("offline_captured_at") or "").strip()
+    if not captured_at:
+        return {}
+    offline = {"captured_at": captured_at}
+    prices_at = str(payload.get("offline_prices_at") or "").strip()
+    if prices_at:
+        offline["prices_at"] = prices_at
+    return offline
 
 
 def _payload_client_request_id(payload: dict) -> str:
@@ -4673,7 +4991,7 @@ def _guard_receipt_tax_id_overwrite(
         return
     raise PosTaxIdOverwriteError(
         f"Trocar o CPF do cadastro de {customer.name} ({current} sai, {tax_id} entra) "
-        "precisa de confirmação. Sem ela o cadastro fica como está — a nota vai "
+        "precisa de confirmação. Sem ela o cadastro fica como está, e a nota vai "
         "para o CPF informado de qualquer jeito.",
     )
 

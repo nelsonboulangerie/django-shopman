@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
 
 import KdsTicketCard from "../../app/components/KdsTicketCard.vue";
+import { useLongPress } from "../../app/composables/useLongPress";
 import type { KDSTicketProjection } from "../../app/types/kds";
+import { nuxtUiStubs } from "../support/nuxtUi";
 
 // Auto-imports do Nuxt que o SFC usa como globais (sem runtime Nuxt aqui). Reatividade
 // Vue REAL.
@@ -12,6 +14,7 @@ vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
 vi.stubGlobal("nextTick", nextTick);
 vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
+vi.stubGlobal("useLongPress", useLongPress);
 
 function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
   return {
@@ -42,8 +45,6 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     ],
     status: "in_progress",
     previous_tab_ref: "",
-    is_scheduled: false,
-    is_expedition: false,
     status_label: "",
     is_cancelled: false,
     cancelled_at_display: "",
@@ -51,11 +52,43 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     kitchen_note: "",
     customer_note: "",
     test_order_label: "",
+    finish_block_label: "",
+    finish_block_reason: "",
+    volumes: 0,
+    volumes_order_ref: "",
+    volumes_revision: "",
+    started_by: "",
+    started_at_display: "",
+    is_preorder: false,
+    due_time_display: "",
+    seen: false,
     ...over,
   };
 }
 
-const stubs = { Icon: true };
+// O botão com prazo é do kit (testado lá, `operator-kit/tests/components/
+// OperatorTimedButton.test.ts`); aqui basta o contrato: rótulo, prazo e o toque.
+const OperatorTimedButton = defineComponent({
+  name: "OperatorTimedButton",
+  inheritAttrs: false,
+  props: { label: String, until: Number, duration: Number },
+  emits: ["click"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h(
+        "button",
+        {
+          ...attrs,
+          type: "button",
+          "data-until": props.until,
+          "data-duration": props.duration,
+          onClick: (event: MouseEvent) => emit("click", event),
+        },
+        props.label,
+      );
+  },
+});
+const stubs = { Icon: true, OperatorTimedButton, ...nuxtUiStubs };
 const mountCard = (props: Record<string, unknown>) =>
   mount(KdsTicketCard, { props, global: { stubs } });
 
@@ -114,18 +147,6 @@ describe("KdsTicketCard — render", () => {
     expect(w.text()).toContain("Massa acabando");
   });
 
-  it("mostra encomenda futura como prévia, com a DATA, e sem botão de ação", () => {
-    const wrapper = mountCard({
-      ticket: ticket({ is_scheduled: true, status: "scheduled" }),
-      serviceDate: "2026-09-19",
-    });
-    // "libera na data" obrigava a lembrar do seletor lá no topo do cabeçalho.
-    expect(wrapper.text()).toContain("Prévia · começa em 19/09");
-    expect(wrapper.text()).toContain("19/09");
-    expect(wrapper.text()).not.toContain("Agendado");
-    expect(wrapper.find("button[data-kds-action]").exists()).toBe(false);
-  });
-
   it("nunca trunca nome de item nem observação: quebram linha", () => {
     const longo = "Croissant de amêndoas recheado com creme de pistache e framboesa";
     const w = mountCard({
@@ -173,21 +194,22 @@ describe("KdsTicketCard — os dois gestos", () => {
     expect(w.emitted("finish")).toBeUndefined();
   });
 
-  it("em preparo (já armado): o botão vira Finalizar preparo e emite finish", async () => {
+  it("em preparo (já armado): o botão vira Pronto com o código e emite finish", async () => {
     const w = mountCard({ ticket: ticket({ status: "in_progress" }) });
     const action = w.get("button[data-kds-action]");
-    expect(action.text()).toContain("Finalizar preparo");
+    expect(action.text()).toContain("Pronto 0007");
+    expect(action.attributes("aria-label")).toBe("Marcar o pedido 0007 como pronto");
     await action.trigger("click");
     expect(w.emitted("finish")).toHaveLength(1);
   });
 
-  it("toque duplo não inicia e finaliza: o botão só arma depois do intervalo", async () => {
+  it("toque duplo não inicia e marca Pronto: o botão só arma depois do intervalo", async () => {
     vi.useFakeTimers();
     const w = mountCard({ ticket: ticket({ status: "pending" }) });
     await w.get("button[data-kds-action]").trigger("click");
     await w.setProps({ ticket: ticket({ status: "in_progress" }) }); // otimista
     // O rótulo já é o do próximo ato — o que não passa é o toque.
-    expect(w.get("button[data-kds-action]").text()).toContain("Finalizar preparo");
+    expect(w.get("button[data-kds-action]").text()).toContain("Pronto 0007");
     expect(w.get("button[data-kds-action]").attributes("disabled")).toBeDefined();
     await w.get("button[data-kds-action]").trigger("click"); // o quique do dedo
     expect(w.emitted("finish")).toBeUndefined();
@@ -202,7 +224,7 @@ describe("KdsTicketCard — os dois gestos", () => {
     const w = mountCard({ ticket: ticket({ status: "in_progress" }), blocked: true });
     const action = w.get("button[data-kds-action]");
     expect(action.text()).toContain("Item cancelado");
-    expect(action.text()).toContain("cartão vermelho");
+    expect(action.text()).toContain("aviso no topo");
     await action.trigger("click");
     expect(w.emitted("blocked")).toHaveLength(1);
     expect(w.emitted("finish")).toBeUndefined();
@@ -219,17 +241,33 @@ describe("KdsTicketCard — os dois gestos", () => {
 });
 
 describe("KdsTicketCard — o Desfazer mora no card", () => {
-  it("finalizado dentro da janela: o card fica, apagado, com o Desfazer no lugar do ato", async () => {
+  it("Pronto dentro da janela: o card fica, apagado, com o Desfazer no lugar do ato", async () => {
     const w = mountCard({ ticket: ticket({ status: "in_progress" }), finishing: true });
     // O pedido continua legível — é o mesmo card, não um aviso no topo da tela.
     expect(w.text()).toContain("0007");
     expect(w.text()).toContain("Pão na Chapa");
-    expect(w.get("[data-kds-undo]").text()).toContain("Finalizado");
+    // O tempo mora no próprio botão: nada de frase "Sai em" nem barrinha acima dele.
+    expect(w.get("[data-kds-undo]").text()).not.toContain("Sai em");
     const action = w.get("button[data-kds-action]");
+    expect(Number(action.attributes("data-duration"))).toBe(5000);
+    expect(Number(action.attributes("data-until"))).toBeGreaterThan(Date.now());
     expect(action.text()).toContain("Desfazer");
+    // O MESMO botão do Pronto (dono, 09/10/2026): verde sólido, mesmo tamanho; só o
+    // texto muda. Classe por classe igual ao Pronto de antes do toque.
+    const pronto = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
+    expect(action.attributes("color")).toBe(pronto.attributes("data-color"));
+    expect(action.attributes("variant")).toBe(pronto.attributes("data-variant"));
+    expect(action.attributes("size")).toBe("xl");
+    expect(new Set(action.classes())).toEqual(new Set(pronto.classes()));
     await action.trigger("click");
     expect(w.emitted("undo")).toHaveLength(1);
     expect(w.emitted("finish")).toBeUndefined();
+  });
+
+  it("o prazo vem do quadro: montar o card de novo não reinicia a janela", () => {
+    const until = Date.now() + 2100;
+    const w = mountCard({ ticket: ticket({ status: "in_progress" }), finishing: true, finishUntil: until });
+    expect(Number(w.get("button[data-kds-action]").attributes("data-until"))).toBe(until);
   });
 
   it("durante a janela a área de leitura não aceita toque: o único gesto é desfazer", () => {
@@ -251,8 +289,8 @@ describe("KdsTicketCard — o canon do kit", () => {
   it("o botão de ação nunca desce do alvo de toque (h-11), nem no compact", () => {
     for (const [density, height] of [
       ["compact", "h-11"],
-      ["cozy", "h-11"],
-      ["roomy", "h-14"],
+      ["cozy", "h-14"],
+      ["roomy", "h-16"],
     ] as const) {
       const action = mountCard({ ticket: ticket({ status: "pending" }), density }).get(
         "button[data-kds-action]",
@@ -289,27 +327,104 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     expect(retirada.text()).toContain("Retirada");
   });
 
-  it("o cliente mora embaixo do código, fora da linha do relógio", () => {
-    const w = mountCard({ ticket: ticket({ customer_name: "Mariana" }) });
+  it("v4 nota 6: o card do dia não mostra cliente, telefone nem canal", () => {
+    const w = mountCard({ ticket: ticket({ customer_name: "+5543993333333" }) });
+    expect(w.get("[data-kds-overline]").text()).toBe("Retirada");
+    expect(w.text()).not.toContain("5543993333333");
+    expect(mountCard({ ticket: ticket({ customer_name: "Mariana" }) }).text()).not.toContain("Mariana");
+  });
+
+  it("a encomenda diz o cliente embaixo do código, fora da linha do relógio", () => {
+    const w = mountCard({ ticket: ticket({ customer_name: "Café Parisiense", is_preorder: true }) });
+    expect(w.get("[data-kds-overline]").text()).toBe("Encomenda · Café Parisiense");
     const html = w.html();
-    expect(html.indexOf("0007")).toBeLessThan(html.indexOf("Mariana"));
-    expect(html.indexOf("Mariana")).toBeLessThan(html.indexOf("1m"));
+    expect(html.indexOf("0007")).toBeLessThan(html.indexOf("Café Parisiense"));
+    expect(html.indexOf("Café Parisiense")).toBeLessThan(html.indexOf("1m"));
+    // Encomenda cujo "cliente" é um telefone cru não mostra o número.
+    const phone = mountCard({ ticket: ticket({ customer_name: "+55 43 99333-3333", is_preorder: true }) });
+    expect(phone.get("[data-kds-overline]").text()).toBe("Encomenda");
+  });
+
+  it("v4 nota 7: quem iniciou e a hora combinada aparecem no card", () => {
+    const w = mountCard({
+      ticket: ticket({ started_by: "Rafael", started_at_display: "21:56", due_time_display: "retira às 22:30" }),
+    });
+    expect(w.get("[data-kds-started]").text()).toBe("iniciado por Rafael às 21:56 · retira às 22:30");
+    expect(mountCard({ ticket: ticket() }).find("[data-kds-started]").exists()).toBe(false);
+  });
+
+  it("no celular o ato e o Desfazer moram na base da página; o card só apaga", () => {
+    // O Pronto foi tocado na ação na base, e é lá que o Desfazer fica, no mesmo botão
+    // (dono, 09/10/2026). O card não ganha um segundo botão.
+    const working = mountCard({ ticket: ticket({ order_ref: "WEB-1-W07" }), actionInBar: true });
+    expect(working.find("[data-kds-action]").exists()).toBe(false);
+    const finishing = mountCard({ ticket: ticket({ order_ref: "WEB-1-W07" }), actionInBar: true, finishing: true });
+    expect(finishing.find("[data-kds-action]").exists()).toBe(false);
+    expect(finishing.get("article").classes()).toContain("border-dashed");
+  });
+
+  it("toque longo no ticket emite hold (desfazer, reabrir, ver o pedido)", async () => {
+    vi.useFakeTimers();
+    const w = mountCard({ ticket: ticket() });
+    const area = w.get("[data-kds-hold]");
+    await area.trigger("pointerdown", { button: 0, pointerType: "touch", clientX: 10, clientY: 10 });
+    vi.advanceTimersByTime(600);
+    expect(w.emitted("hold")).toHaveLength(1);
+    vi.useRealTimers();
   });
 
   it("o botão fica DENTRO da moldura, arredondado, e não uma laje colada na borda", () => {
     const w = mountCard({ ticket: ticket({ status: "pending" }) });
     const action = w.get("button[data-kds-action]");
-    expect(action.classes()).toContain("rounded-md");
-    expect(action.element.parentElement?.className).toContain("px-4");
+    expect(action.attributes("data-color")).toBeDefined();
+    expect(action.element.parentElement?.className).toContain("px-3.5");
   });
 
-  it("Iniciar e Finalizar têm a mesma cor: um contornado, o outro sólido (decisão de 21/09)", () => {
-    const iniciar = mountCard({ ticket: ticket({ status: "pending" }) }).get("button[data-kds-action]");
-    expect(iniciar.classes()).toContain("border-foreground");
-    expect(iniciar.classes()).toContain("text-foreground");
-    expect(iniciar.classes().some((c) => c === "bg-foreground" || c.includes("primary"))).toBe(false);
-    const finalizar = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
-    expect(finalizar.classes()).toContain("bg-foreground");
+  it("v4: só o PRÓXIMO convida sólido; os outros convites são contornados; Pronto é verde", () => {
+    // A parede amarela de 21/09 (#913) não volta: um sólido de iniciar por grade.
+    const proximo = mountCard({ ticket: ticket({ status: "pending" }), next: true }).get("button[data-kds-action]");
+    expect([proximo.attributes("data-color"), proximo.attributes("data-variant")]).toEqual(["primary", "solid"]);
+    const outro = mountCard({ ticket: ticket({ status: "pending" }) }).get("button[data-kds-action]");
+    expect([outro.attributes("data-color"), outro.attributes("data-variant")]).toEqual(["neutral", "outline"]);
+    expect(outro.classes()).not.toContain("bg-success");
+    const pronto = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
+    expect(pronto.classes()).toContain("bg-success");
+  });
+
+  it("pagamento não confirmado: o motivo aparece no card e o Pronto tranca, sem emitir finish", async () => {
+    const w = mountCard({
+      ticket: ticket({
+        status: "in_progress",
+        finish_block_label: "Pix não confirmado",
+        finish_block_reason: "Pode adiantar; o botão Pronto libera quando o pagamento entrar.",
+      }),
+    });
+    expect(w.get("[data-kds-finish-block]").text()).toContain("Pix não confirmado.");
+    expect(w.get("[data-kds-pill]").text()).toContain("Bloqueado");
+    const action = w.get("button[data-kds-action]");
+    expect(action.text()).toContain("Pronto 0007");
+    expect(action.classes()).toContain("border-dashed");
+    await action.trigger("click");
+    expect(w.emitted("locked")).toHaveLength(1);
+    expect(w.emitted("finish")).toBeUndefined();
+  });
+
+  it("pagamento não confirmado não impede de adiantar: Iniciar segue livre", async () => {
+    const w = mountCard({ ticket: ticket({ status: "pending", finish_block_label: "Pix não confirmado" }) });
+    await w.get("button[data-kds-action]").trigger("click");
+    expect(w.emitted("start")).toHaveLength(1);
+  });
+
+  it("a pílula diz o estado: Atrasado, Novo, Em preparo", () => {
+    expect(
+      mountCard({ ticket: ticket({ status: "pending", timer_class: "timer-late" }), next: true })
+        .get("[data-kds-pill]")
+        .text(),
+    ).toContain("Atrasado");
+    expect(mountCard({ ticket: ticket({ status: "pending" }) }).get("[data-kds-pill]").text()).toContain("Novo");
+    expect(mountCard({ ticket: ticket({ status: "in_progress" }) }).get("[data-kds-pill]").text()).toContain(
+      "Em preparo",
+    );
   });
 
   it("à direita do código há UM chip (o relógio); a marca do detalhe não tem moldura", () => {
@@ -318,10 +433,4 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     expect(header.querySelectorAll(".border").length).toBe(1);
   });
 
-  it("prévia agendada ocupa o lugar do botão como TEXTO, não como controle", () => {
-    const w = mountCard({ ticket: ticket({ is_scheduled: true, status: "scheduled" }), serviceDate: "2026-09-19" });
-    const inert = w.get("[data-kds-action]");
-    expect(inert.element.tagName).toBe("P");
-    expect(inert.text()).toContain("Prévia · começa em 19/09");
-  });
 });

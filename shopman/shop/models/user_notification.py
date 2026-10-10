@@ -30,6 +30,9 @@ class NotificationCategory(models.TextChoices):
     ORDER = "order", "pedidos"
     PURCHASE = "purchase", "compras"
     REPORT = "report", "relatórios"
+    #: A Cozinha: pedido novo na estação que a pessoa segue no celular e o
+    #: ticket que passou da meta (vai a quem cadastra as estações).
+    KITCHEN = "kitchen", "cozinha"
     #: Alguém entrou (ou tentou entrar) NA CONTA de quem recebe. Categoria
     #: própria e não `SYSTEM` porque a leitura é diferente das outras: as demais
     #: falam da loja, esta fala da pessoa, e é a única em que "isto não fui eu"

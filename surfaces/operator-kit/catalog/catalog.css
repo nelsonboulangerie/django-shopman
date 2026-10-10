@@ -1,0 +1,6 @@
+@import "tailwindcss";
+@import "../app/assets/css/operator-base.css";
+
+/* O harness isolado não herda o CSS de uma app consumidora. Esta folha só liga
+   Tailwind e os tokens do próprio kit; a implementação do catálogo continua em
+   OperatorKitchenSink e é a mesma usada pela superfície real. */

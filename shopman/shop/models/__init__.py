@@ -51,6 +51,7 @@ from .ifood_merchant import (
     IFoodStoreStatus,
 )
 from .omotenashi_copy import OmotenashiCopy
+from .operator_passkey import OperatorPasskey
 from .privacy import (
     PrivacyRequestOperation,
     PrivacyRequestReceipt,
@@ -167,4 +168,5 @@ __all__ = [
     "PUSH_SURFACE_CATEGORIES",
     "PushSubscription",
     "PushSurface",
+    "OperatorPasskey",
 ]

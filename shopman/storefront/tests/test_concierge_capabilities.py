@@ -29,6 +29,7 @@ def channel(request, settings, monkeypatch):
     subject = "subject:cliente-α" if is_tiktok else "123456"
     settings.AI_ASSIST_API_KEY = "test-only"
     settings.SHOPMAN_CONCIERGE = {
+        "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,
         "contract_version": 3,
         "channel_ref": "web",

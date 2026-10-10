@@ -17,6 +17,11 @@ export interface Action {
 export interface POSProductProjection {
   sku: string;
   name: string;
+  /** A estação da cozinha para onde o produto vai quando a linha é enviada
+   *  (roteamento real); "" ou ausente = não vai à cozinha. */
+  kitchen_station?: string;
+  /** A estação tem o envio automático ligado: a linha nova vai sozinha. */
+  kitchen_auto_fire?: boolean;
   price_q: number;
   price_display: string;
   collection_ref: string
@@ -194,6 +199,8 @@ export interface POSCashManagementCapability {
   /** A lista vem do SERVIDOR para não existirem duas listas de dinheiro. */
   change_denominations?: POSChangeDenomination[];
   requires_open_shift_for_sale?: boolean;
+  /** Venda sem conexão ainda na fila do dispositivo barra o fechamento do caixa. */
+  blocks_close_when_offline_queue_pending?: boolean;
   [key: string]: unknown;
 }
 export interface POSKitchenHandoffCapability {
@@ -544,7 +551,15 @@ export interface POSProjection {
   terminal_components: POSTerminalComponentProjection[];
   cash_drawer?: POSCashDrawerProjection;
   device_agent?: POSDeviceAgentProjection;
+  /**
+   * O pulso pelo RELAY: o tablet (que não alcança o agente do Balcão) pede ao
+   * servidor, e o agente do terminal abre a gaveta. `available` = há caminho;
+   * `online` = o agente buscou trabalho há pouco; `reason` = por que não, ou o aviso.
+   */
+  drawer_relay?: { available: boolean; online: boolean; terminal_label: string; reason: string };
   favorite_collection_refs: string[];
+  /** As mesas do Salão de hoje, para o vínculo OPCIONAL comanda × mesa (renomear). */
+  seating_spots?: POSSeatingSpotOption[];
   delivery_minimum_q: number;
   delivery_minimum_display: string;
   fiscal_status: "ready" | "warning" | "error" | string;
@@ -605,6 +620,10 @@ export interface POSTabProjection {
   last_touched_display: string;
   items_preview: string;
   fired?: boolean;
+  /** Hora em que a comanda abriu ("21:48"). */
+  opened_at_display?: string;
+  /** A mesa do Salão vinculada (opcional). */
+  seating_spot_ref?: string;
 }
 
 export interface POSResponse {
@@ -720,6 +739,14 @@ export interface POSPaymentTenderDraft {
   _virgin?: boolean;
 }
 
+export interface POSSeatingSpotOption {
+  ref: string;
+  label: string;
+  short_label: string;
+  area: string;
+  kind: string;
+}
+
 export interface POSTabPayload {
   revision?: string;
   sales_mode?: "counter" | "order";
@@ -727,6 +754,13 @@ export interface POSTabPayload {
   tab_session_key: string;
   tab_ref: string;
   tab_display: string;
+  /** O número da comanda como o balcão fala ("1007"); a barra mostra "#1007"
+   *  pequeno ao lado do nome quando a comanda foi renomeada ("Mesa 6"). */
+  tab_number?: string;
+  /** Hora em que a comanda abriu ("21:48"). */
+  opened_at_display?: string;
+  /** A mesa do Salão vinculada (opcional); "" = sem mesa. */
+  seating_spot_ref?: string;
   /** Ref da encomenda quando esta é a comanda virtual da EDIÇÃO dela; "" numa comanda comum. */
   edit_of?: string;
   items: POSCartItem[];
@@ -931,6 +965,9 @@ export interface POSSaleReviewProjection {
    * entrega não sai sem ele (SEFAZ 787/788). A tela trava o Validar enquanto
    * "CPF na nota" estiver vazio; a review não é refeita quando o CPF muda. */
   delivery_tax_id_required?: boolean;
+  /** Só na revisão montada pela TELA sem conexão (`offlineSaleReview`): a hora
+   *  da leitura de preços usada. O servidor nunca manda este campo. */
+  offline?: { prices_at: string };
 }
 
 export interface POSSaleReviewResponse {

@@ -7,8 +7,8 @@ Um Feed exibe um conjunto de coleções para fora, sem transacionar: menuboard
 from __future__ import annotations
 
 from django.urls import path
-from django_eventstream.views import events as eventstream_view
 
+from shopman.shop.eventstream import events as eventstream_view
 from shopman.shop.menuboard_access import menuboard_access_denied
 from shopman.shop.views.menuboard import MenuboardControlView, MenuboardDataView, MenuboardPageView
 from shopman.shop.views.product_feed import ProductFeedView

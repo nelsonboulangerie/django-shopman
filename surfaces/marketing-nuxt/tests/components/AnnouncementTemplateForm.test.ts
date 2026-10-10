@@ -9,7 +9,6 @@ import type {
   MarketingPlatformCapability,
 } from "~/types/campaign";
 import { installMemoryLocalStorage } from "../support/localStorage";
-import { UiNativeSelectStub } from "../support/nativeUiStubs";
 
 beforeAll(() => {
   Object.assign(globalThis, { computed, ref, watch });
@@ -127,7 +126,7 @@ function form(
       deliveryCapabilities,
     },
     global: {
-      components: { DraftRecoveryNotice, UiNativeSelect: UiNativeSelectStub },
+      components: { DraftRecoveryNotice },
       stubs: { Icon: true },
     },
   });

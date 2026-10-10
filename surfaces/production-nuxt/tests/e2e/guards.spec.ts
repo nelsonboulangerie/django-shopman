@@ -25,7 +25,7 @@ test.describe("Produção — gate de operador", () => {
     await expect(page.getByRole("button", { name: "Entrar" })).toBeVisible();
   });
 
-  test("sessão autenticada → grade + rail canônico (kit), sem login", async ({
+  test("sessão autenticada → grade + shell da suíte (kit), sem login", async ({
     page,
     context,
   }) => {
@@ -35,11 +35,26 @@ test.describe("Produção — gate de operador", () => {
     await expect(
       page.getByRole("heading", { name: "Entre para operar" }),
     ).toHaveCount(0);
-    // Tela de operador embrulhada pelo OperatorRail compartilhado + RailToggle no cabeçalho.
-    await expect(
-      page.locator('aside[aria-label="Barra do app Produção"]'),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: /barra/i })).toBeVisible();
+    // Tela de operador no shell da suíte (kit, fase 2): barra lateral do `lg` para
+    // cima; abaixo dele, a barra inferior (as quatro primeiras etapas e o "Mais", que
+    // abre a gaveta com o menu completo).
+    const size = page.viewportSize() ?? { width: 1024, height: 768 };
+    await expect(page.locator("[data-operator-suite-shell]")).toBeVisible();
+    if (size.width >= 1024) {
+      const rail = page.locator("[data-suite-rail-navigation]").first();
+      await expect(rail).toBeVisible();
+      await expect(rail.locator('[data-section="plan"]')).toBeVisible();
+      await expect(rail.locator('[data-section="quality"]')).toBeVisible();
+      await expect(page.locator("[data-suite-rail-menu]")).toBeVisible();
+    } else {
+      const quickBar = page.locator("[data-operator-quick-bar]");
+      await expect(quickBar).toBeVisible();
+      await expect(quickBar.locator('[data-section="plan"]')).toBeVisible();
+      await quickBar.locator("[data-quick-bar-more]").click();
+      await expect(
+        page.getByRole("dialog").locator('[data-section="quality"]'),
+      ).toBeVisible();
+    }
   });
 
   test("lock bloqueia atalhos da superfície subjacente", async ({
@@ -88,7 +103,7 @@ test.describe("Produção — gate de operador", () => {
     test.skip(testInfo.project.name !== "chromium-desktop");
     await context.addCookies([authed]);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Produção" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Abertura" })).toBeVisible();
     await context.clearCookies();
     await page.reload();
     await expect(
@@ -97,7 +112,7 @@ test.describe("Produção — gate de operador", () => {
     await expect(page.getByLabel("Usuário")).toBeFocused();
   });
 
-  test("atalhos percorrem as quatro etapas sem mouse", async ({
+  test("atalhos percorrem as cinco etapas sem mouse", async ({
     page,
     context,
   }, testInfo) => {
@@ -107,7 +122,8 @@ test.describe("Produção — gate de operador", () => {
     for (const [shortcut, path] of [
       ["Alt+1", "/plan"],
       ["Alt+2", "/mise-en-place"],
-      ["Alt+4", "/expedite"],
+      ["Alt+4", "/close"],
+      ["Alt+5", "/quality"],
       ["Alt+3", "/"],
     ] as const) {
       await page.keyboard.press(shortcut);
@@ -170,4 +186,15 @@ test.describe("Produção — roteamento", () => {
     const resp = await page.goto("/rota-que-nao-existe");
     expect(resp?.status()).toBe(404);
   });
+
+  // Pré go-live, zero legado (decisão do dono, 03/10/2026): os nomes antigos do
+  // fechamento e as rotas pt-br não redirecionam; respondem como qualquer rota
+  // inexistente.
+  for (const path of ["/expedite", "/expedicao", "/planejamento", "/preparacao", "/painel"]) {
+    test(`${path} não existe mais`, async ({ page, context }) => {
+      await context.addCookies([authed]);
+      const resp = await page.goto(path);
+      expect(resp?.status()).toBe(404);
+    });
+  }
 });

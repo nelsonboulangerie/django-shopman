@@ -158,7 +158,7 @@ def step(order, *, recorded_status: str) -> str:
 
 
 def _bump_open_tickets(order) -> int:
-    """Finaliza os tickets de KDS abertos do pedido, como a cozinha faria.
+    """Marca Pronto nos tickets de KDS abertos do pedido, como a cozinha faria.
 
     ``kds.complete_ticket`` leva o pedido a "pronto" sozinho quando o último
     ticket cai (``on_all_tickets_done``). Retorna quantos tickets foram

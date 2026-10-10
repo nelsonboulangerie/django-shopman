@@ -1,35 +1,23 @@
-import { defineConfig } from "@playwright/test";
+import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 
 const appPort = 33012;
 const backendPort = 38792;
 
-export default defineConfig({
+export default defineOperatorVisualConfig({
+  app: "pos-nuxt",
+  matrix: false,
   testDir: "./tests/visual",
-  testMatch: "**/*.spec.ts",
   outputDir: "./test-results/visual",
   snapshotPathTemplate: "{testDir}/baselines/{arg}{ext}",
-  fullyParallel: false,
-  forbidOnly: true,
-  retries: 0,
-  workers: 1,
-  timeout: 60_000,
-  reporter: [["list"]],
-  expect: {
-    timeout: 10_000,
-    toHaveScreenshot: {
-      animations: "disabled",
-      caret: "hide",
-      maxDiffPixelRatio: 0.001,
-      threshold: 0.2,
-    },
-  },
   webServer: [
     {
       command: "node tests/visual/mockBackend.mjs",
       port: backendPort,
       reuseExistingServer: false,
       timeout: 30_000,
-      env: { MOCK_PORT: String(backendPort) },
+      // O dia do mock e o relógio do navegador (`page.clock` nos specs) são o MESMO dia:
+      // o retrato não muda com a semana em que roda.
+      env: { MOCK_PORT: String(backendPort), MOCK_TODAY: "2026-09-29" },
     },
     {
       command:
@@ -44,14 +32,6 @@ export default defineConfig({
   ],
   use: {
     baseURL: `http://127.0.0.1:${appPort}`,
-    browserName: "chromium",
-    headless: true,
     bypassCSP: true,
-    colorScheme: "light",
-    locale: "pt-BR",
-    reducedMotion: "reduce",
-    serviceWorkers: "block",
-    timezoneId: "America/Sao_Paulo",
-    trace: "retain-on-failure",
   },
 });

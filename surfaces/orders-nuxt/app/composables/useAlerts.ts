@@ -10,16 +10,22 @@ import type { AlertProjection, AlertsResponse } from "~/types/orders";
 
 function newAckKey(): string {
   const uuid = globalThis.crypto?.randomUUID?.();
-  return uuid || `ack-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return (
+    uuid ||
+    `ack-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  );
 }
 
 export function useAlerts() {
   const config = useRuntimeConfig();
-  const { data, refresh } = useFetch<AlertsResponse>("/api/v1/backstage/alerts/", {
-    key: useOperatorResourceKey("operator-alerts"),
-    query: { scope: "orders" },
-    server: true,
-  });
+  const { data, refresh } = useFetch<AlertsResponse>(
+    "/api/v1/backstage/alerts/",
+    {
+      key: useOperatorResourceKey("operator-alerts"),
+      query: { scope: "orders" },
+      server: true,
+    },
+  );
 
   const alerts = computed<AlertProjection[]>(() => data.value?.alerts ?? []);
   const activeCount = computed(() => data.value?.counts?.active ?? 0);
@@ -48,12 +54,19 @@ export function useAlerts() {
   });
   onBeforeUnmount(() => {
     if (pollTimer) clearInterval(pollTimer);
-    if (source) { source.close(); source = null; }
+    if (source) {
+      source.close();
+      source = null;
+    }
   });
 
   /** O alerta ainda não foi marcado como visto (o servidor oferece o gesto). */
   function ackAction(alert: AlertProjection) {
-    return alert.actions?.find((action) => action.kind === "acknowledge_alert" && action.enabled) ?? null;
+    return (
+      alert.actions?.find(
+        (action) => action.kind === "acknowledge_alert" && action.enabled,
+      ) ?? null
+    );
   }
 
   // Uma chave por alerta, mantida entre tentativas: o servidor deduplica.
@@ -94,10 +107,17 @@ export function useAlerts() {
         // A leitura venceu ou o alerta mudou: relê e deixa o operador tocar de novo.
         attempts.delete(alert.pk);
         await refresh();
-        useSonner.error("Os alertas mudaram. Confira e toque em Visto de novo.");
+        useSonner.error(
+          "Os alertas mudaram. Confira e toque em Visto de novo.",
+        );
         return;
       }
-      useSonner.error(httpErrorMessage(error, "Não deu para marcar o alerta como visto. Tente de novo."));
+      useSonner.error(
+        httpErrorMessage(
+          error,
+          "Não deu para marcar o alerta como visto. Tente de novo.",
+        ),
+      );
     }
   }
 

@@ -92,6 +92,42 @@ def test_shift_change_page_lists_the_timeline(client, closed_shift):
     assert "autorizado por gerente" in body
 
 
+def test_terminal_form_writes_its_own_cash_tolerance_over_the_shop():
+    """Tolerância por terminal: chave a chave por cima da loja; vazio = vale a loja."""
+    terminal = Terminal.objects.create(ref="t2", label="Caixa 2", channel_ref="pdv")
+    data = {
+        "ref": "t2", "label": "Caixa 2", "channel_ref": "pdv", "location_ref": "", "is_active": "on",
+        "station_mode": "attended", "cash_tolerance_percent": "", "cash_tolerance_min": "",
+        "cash_tolerance_max": "12.50",
+    }
+    form = TerminalForm(data=data, instance=terminal)
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    assert saved.metadata["cash_tolerance"] == {"max_q": 1250}
+
+    data["cash_tolerance_max"] = ""
+    saved = TerminalForm(data=data, instance=saved).save()
+    assert "cash_tolerance" not in saved.metadata
+
+
+def test_shift_report_shows_tolerance_and_drawer_openings_to_the_auditor(client, closed_shift):
+    """O gerente vê dentro/fora da tolerância e as aberturas; o operador nunca vê (fechamento cego)."""
+    from shopman.backstage.services import cash_tolerance
+
+    operator = closed_shift.opened_by
+    cash_tolerance.record_verdict(closed_shift)
+    admin_user = User.objects.create_superuser("cash-admin", "c@test.com", "pw")
+    client.force_login(admin_user)
+
+    body = client.get(reverse("admin:cashman_shift_change", args=[closed_shift.pk])).content.decode()
+    assert "dentro da tolerância" in body
+    assert "Aberturas da gaveta" in body
+
+    listing = client.get(reverse("admin:cashman_shift_changelist")).content.decode()
+    assert "Tolerância" in listing
+    assert operator.username
+
+
 def test_movement_screen_is_gone_from_the_admin():
     with pytest.raises(NoReverseMatch):
         reverse("admin:backstage_cashmovement_changelist")

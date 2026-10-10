@@ -15,14 +15,18 @@
    ============================================================================ */
 
 @theme {
-  /* Alvos operacionais: frequentes 44 px, ação primária 48 px. */
-  --spacing-control: 2.75rem;
+  /* Campos e botões na altura `md` do Nuxt UI (32 px) em todos os apps, também no
+     PDV e na Cozinha (dono, 09/10/2026, opção 1: "diminuir os campos"). O token
+     segue existindo porque os componentes legados o pedem; ele não sobe mais a
+     44 px nem a 48 px em tablet. `action` é o degrau `xl`, para o ato principal. */
+  --spacing-control: 2rem;
   --spacing-action: 3rem;
   /* Corpo/UI = Instrument Sans, a família canônica do design system (mesma da
      vitrine). O app hospedeiro incorpora os webfonts licenciados e declara os
      pesos 400–700 no próprio CSS; o kit nunca busca fontes em runtime. */
-  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans:
+    "Instrument Sans", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
 @theme inline {
@@ -35,6 +39,22 @@
 :root {
   --radius: 0.625rem; /* soft (10px) — levemente mais arredondado que o antigo 8px */
 
+  /* Geometria estrutural da suíte. Shells e wrappers consomem estes papéis; apps
+     não repetem largura de rail, chrome, pane nem escala de espaçamento. */
+  --op-rail-compact-width: 5.25rem;
+  --op-rail-expanded-width: 16rem;
+  --op-header-min-height: 3.5rem;
+  --op-action-bar-min-height: 3.5rem;
+  --op-pane-min-inline-size: 18rem;
+  --op-pane-comfortable-inline-size: 24rem;
+  --op-page-inline-space: clamp(0.75rem, 2vw, 1.5rem);
+  --op-page-block-space: clamp(0.75rem, 1.5vh, 1rem);
+  --op-region-gap: 1.5rem;
+  --op-control-gap: 0.5rem;
+  --op-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --op-layer-chrome: 30;
+  --op-layer-overlay: 50;
+
   --background: #fcf6f1; /* Faubourg-100 — paper quente do balcão */
   --foreground: #3b2a1e; /* Brass-950 — bronze quase-marrom */
   --card: #ffffff; /* surface-alt */
@@ -44,6 +64,10 @@
 
   --primary: #8b6b2e; /* Brass-700 — latão = ação do operador */
   --primary-foreground: #ffffff;
+  /* Latão como TEXTO sobre o próprio latão a 10% (Button/Badge `soft`): o puro dá
+     4,35:1 e reprova o AA (matriz da Produção, o "Mais" ativo da barra). 85% latão +
+     15% do texto dá 5,05:1 e continua lido como latão. */
+  --primary-ink: color-mix(in srgb, var(--primary) 85%, var(--foreground));
   --secondary: #f5e7dd; /* Faubourg-200 — superfície neutra 2ª */
   --secondary-foreground: #3b2a1e;
   --muted: #f5e7dd;
@@ -53,11 +77,11 @@
 
   --destructive: #b43325; /* tijolo — erro/destrutivo */
   --destructive-foreground: #ffffff;
-  --success: #3e7d44; /* verde-folha — confirmação/despacho/dinheiro */
+  --success: #356c3b; /* verde-folha — confirmação/despacho/dinheiro */
   --success-foreground: #ffffff;
   --warning: #965411; /* âmbar queimado — AA como texto inclusive sobre warning/10 */
   --warning-foreground: #ffffff;
-  --info: #3f6e8c; /* azul-poeira — informação neutra */
+  --info: #345f78; /* azul-poeira — informação neutra */
   --info-foreground: #ffffff;
 
   --border: #dec9bb; /* Faubourg-500 (rosé) */
@@ -81,6 +105,42 @@
   --sidebar-accent-foreground: #3b2a1e;
   --sidebar-border: #dec9bb;
   --sidebar-ring: #6b5019;
+
+  /* Ponte Nuxt UI -> Shopman. O componente continua usando sua anatomia e seus
+     estados oficiais; apenas a linguagem visual (marca, superfícies, texto e
+     bordas) muda. Estes nomes são a API semântica oficial do Nuxt UI 4. */
+  --ui-primary: var(--primary);
+  --ui-success: var(--success);
+  --ui-info: var(--info);
+  --ui-warning: var(--warning);
+  --ui-error: var(--destructive);
+  --ui-text-dimmed: color-mix(
+    in srgb,
+    var(--muted-foreground) 85%,
+    var(--foreground)
+  );
+  --ui-text-muted: var(--muted-foreground);
+  --ui-text-toned: color-mix(
+    in srgb,
+    var(--foreground) 78%,
+    var(--muted-foreground)
+  );
+  --ui-text: var(--foreground);
+  --ui-text-highlighted: var(--foreground);
+  --ui-text-inverted: var(--primary-foreground);
+  --ui-bg: var(--background);
+  --ui-bg-muted: color-mix(in srgb, var(--muted) 52%, var(--background));
+  --ui-bg-elevated: var(--muted);
+  --ui-bg-accented: var(--accent);
+  --ui-bg-inverted: var(--foreground);
+  --ui-border: var(--border);
+  --ui-border-muted: color-mix(in srgb, var(--border) 72%, var(--background));
+  --ui-border-accented: color-mix(
+    in srgb,
+    var(--border) 82%,
+    var(--foreground)
+  );
+  --ui-border-inverted: var(--foreground);
 }
 
 .dark {
@@ -93,6 +153,9 @@
 
   --primary: #d4a53f; /* Brass claro — ação dourada pop no escuro */
   --primary-foreground: #221610;
+  /* No escuro o latão claro já passa sobre a tinta a 10%; misturar com o creme o
+     apagaria. */
+  --primary-ink: var(--primary);
   --secondary: #3a2a20;
   --secondary-foreground: #f0e6d2;
   --muted: #332419;
@@ -131,6 +194,12 @@
   --sidebar-accent-foreground: #f0e6d2;
   --sidebar-border: #463528;
   --sidebar-ring: #d4a53f;
+
+  /* No escuro a mesma ponte continua válida, mas os pares invertidos precisam
+     acompanhar a polaridade dos tokens Shopman. */
+  --ui-text-inverted: var(--primary-foreground);
+  --ui-bg-inverted: var(--foreground);
+  --ui-border-inverted: var(--foreground);
 }
 
 /* ============================================================================

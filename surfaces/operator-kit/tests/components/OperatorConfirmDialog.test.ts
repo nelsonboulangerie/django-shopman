@@ -6,8 +6,7 @@ import { defineComponent, h, nextTick } from "vue";
 import OperatorConfirmDialog from "../../app/components/OperatorConfirmDialog.vue";
 import { answerConfirm, useConfirm } from "../../app/composables/useConfirm";
 
-// A pergunta antes de descartar, testada na fonte: o reka-ui de verdade (sem stub),
-// porque o contrato é justamente o que o AlertDialog faz com Esc, foco e toque fora.
+// A pergunta antes de descartar, testada com o Modal canônico do Nuxt UI.
 
 let mounted: Awaited<ReturnType<typeof mountSuspended>> | null = null;
 const mount = async () => (mounted = await mountSuspended(OperatorConfirmDialog, { attachTo: document.body }));
@@ -16,7 +15,7 @@ const settle = async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await nextTick();
 };
-const box = () => document.body.querySelector<HTMLElement>("[data-operator-confirm]");
+const box = () => document.body.querySelector<HTMLElement>("[data-operator-confirm]")?.closest<HTMLElement>('[role="dialog"]') ?? null;
 
 afterEach(() => {
   answerConfirm(false);
@@ -38,20 +37,59 @@ describe("useConfirm + OperatorConfirmDialog", () => {
     expect(box()).toBeNull();
     void useConfirm()(PRICE);
     await settle();
-    expect(box()?.getAttribute("role")).toBe("alertdialog");
+    expect(box()?.getAttribute("role")).toBe("dialog");
     expect(box()?.textContent).toContain("Descartar o preço digitado?");
     expect(box()?.textContent).toContain("O produto continua com o preço atual.");
     expect(box()?.querySelector("[data-operator-confirm-keep]")?.textContent?.trim()).toBe("Continuar editando");
-    expect(box()?.querySelector("[data-operator-confirm-discard]")?.textContent?.trim()).toBe("Descartar");
+    expect(box()?.querySelector("[data-operator-confirm-act]")?.textContent?.trim()).toBe("Descartar");
     expect(native).not.toHaveBeenCalled();
     window.confirm = prior;
+  });
+
+  it("sem tom declarado, o botão do ato é o vermelho de descartar (nenhum consumidor muda sem querer)", async () => {
+    await mount();
+    void useConfirm()(PRICE);
+    await settle();
+    const act = box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-act]")!;
+    expect(act.dataset.tone).toBe("danger");
+    expect(act.className).toContain("bg-error");
+    expect(act.className).not.toContain("bg-primary");
+  });
+
+  it("tom primary: ato normal na cor da casa, com os rótulos do ato; o foco continua em desistir", async () => {
+    await mount();
+    const answer = useConfirm()({
+      tone: "primary",
+      title: "Mudar a encomenda de Ana Souza para qui, 01/10?",
+      description: "O cliente será avisado da nova data. O horário combinado continua: 12h às 13h.",
+      confirmLabel: "Mudar para qui, 01/10",
+      cancelLabel: "Manter a data",
+    });
+    await settle();
+    const act = box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-act]")!;
+    const keep = box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-keep]")!;
+    expect(act.dataset.tone).toBe("primary");
+    expect(act.className).toContain("bg-primary");
+    expect(act.className).not.toContain("bg-error");
+    expect(act.textContent?.trim()).toBe("Mudar para qui, 01/10");
+    expect(keep.textContent?.trim()).toBe("Manter a data");
+    expect(document.activeElement).toBe(keep);
+    act.click();
+    await expect(answer).resolves.toBe(true);
+  });
+
+  it("tom primary exige os dois rótulos: os padrões falam de perda e mentiriam num ato normal", () => {
+    // Checagem de tipo (vue-tsc no typecheck): sem rótulos, o pedido primary não compila.
+    // @ts-expect-error confirmLabel e cancelLabel são obrigatórios no tom primary
+    const bad: Parameters<ReturnType<typeof useConfirm>>[0] = { tone: "primary", title: "x", description: "y" };
+    expect(bad.tone).toBe("primary");
   });
 
   it("Descartar responde true e fecha", async () => {
     await mount();
     const answer = useConfirm()({ ...PRICE, confirmLabel: "Descartar e sair" });
     await settle();
-    const discard = box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-discard]")!;
+    const discard = box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-act]")!;
     expect(discard.textContent?.trim()).toBe("Descartar e sair");
     discard.click();
     await expect(answer).resolves.toBe(true);
@@ -110,7 +148,7 @@ describe("useConfirm + OperatorConfirmDialog", () => {
     await settle();
     expect(document.body.querySelectorAll("[data-operator-confirm]")).toHaveLength(1);
     expect(box()?.textContent).toContain("Descartar o preço digitado?");
-    box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-discard]")!.click();
+    box()!.querySelector<HTMLButtonElement>("[data-operator-confirm-act]")!.click();
     await expect(first).resolves.toBe(true);
   });
 });

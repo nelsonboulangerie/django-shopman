@@ -23,11 +23,11 @@ from shopman.shop.mailers import default_mailer
 logger = logging.getLogger(__name__)
 
 SUBJECT_TEMPLATES: dict[str, str] = {
-    "operator_critical": "Alerta crítico operacional — {alert_type}",
+    "operator_critical": "Alerta crítico operacional: {alert_type}",
     "stock_alert": "Alerta de estoque: {product_label}",
     "announcement_published": "Novidade na padaria",
-    "purchase_request": "Pedido de compra {purchase_ref} — {shop_name}",
-    "purchase_receipt_rejected": "Devolução de recebimento {receipt_ref} — {shop_name}",
+    "purchase_request": "Pedido de compra {purchase_ref} · {shop_name}",
+    "purchase_receipt_rejected": "Devolução de recebimento {receipt_ref} · {shop_name}",
     # Avisos ao cliente: fonte única em `shopman/shop/notification_copy.py`.
     **notification_copy.subjects(),
 }
@@ -45,13 +45,13 @@ BODY_TEMPLATES: dict[str, str] = {
         "Aqui é da {shop_name}. Precisamos repor um item e gostaríamos de "
         "fechar com vocês:\n\n"
         "{lines_text}\n\n"
-        "Pelo nosso cadastro isso fica em torno de {estimated_total} — o valor "
+        "Pelo nosso cadastro isso fica em torno de {estimated_total}, mas o valor "
         "que vale é o de vocês.\n"
         "Entrega desejada: {requested_delivery_label}\n"
         "{operator_note}\n"
         "Pode confirmar disponibilidade, prazo e valor final?\n\n"
         "Obrigado!\n"
-        "{shop_name} — pedido {purchase_ref}\n"
+        "{shop_name} · pedido {purchase_ref}\n"
     ),
     "purchase_receipt_rejected": (
         "Recebimento recusado/devolvido.\n\n"

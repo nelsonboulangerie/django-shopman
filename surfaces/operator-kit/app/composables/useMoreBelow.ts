@@ -1,5 +1,5 @@
 import { measureBottomObstruction } from "./useNextFocus"
-import { hintOffset, shouldHint } from "../presentation/moreBelow"
+import { HINT_REACH, endReached as fimAlcancado, hintOffset, shouldHint } from "../presentation/moreBelow"
 import { FOCUS_OBSTRUCTION_ATTRIBUTE } from "../presentation/nextFocus"
 
 /**
@@ -49,15 +49,17 @@ export function useMoreBelow() {
       // Medido no login em 375x667: sentinela em 752 (dica certa), 37 (some,
       // certo), -11 (voltava). A pergunta certa não é "está à vista", é "o fim
       // do conteúdo já passou da linha de baixo da área observada".
-      const limite = entry.rootBounds?.bottom ?? window.innerHeight - recuo;
+      // A área observada desce `HINT_REACH` além da linha de baixo: o resto que
+      // cabe sob a própria dica não ganha dica (`endReached`).
+      const limite = (entry.rootBounds?.bottom ?? window.innerHeight - recuo + HINT_REACH) - HINT_REACH;
       chegouAoFim(entry.boundingClientRect.top, limite);
-    }, { rootMargin: `0px 0px -${recuo}px 0px` });
+    }, { rootMargin: `0px 0px ${HINT_REACH - recuo}px 0px` });
     observer.observe(el);
   }
 
-  /** O fim chegou quando o sentinela está na linha de baixo da área observada, ou acima dela. */
+  /** O fim chegou quando o sentinela está na linha de baixo da área visível, ou a menos de uma dica dela. */
   function chegouAoFim (topoDoSentinela: number, limite: number) {
-    endReached.value = topoDoSentinela <= limite;
+    endReached.value = fimAlcancado(topoDoSentinela, limite);
   }
 
   // ⚠️ SALTO NÃO DISPARA OBSERVADOR. O IntersectionObserver só avisa quando o
@@ -111,11 +113,27 @@ export function useMoreBelow() {
   // aviso do mínimo aparece): a folga e a área de observação acompanham.
   useEventListener(() => (import.meta.client ? window : null), 'resize', measure)
   useEventListener(() => (import.meta.client ? window : null), 'scrollend', reavaliar);
+  // ⚠️ DENTRO DE UM CONTÊINER ROLÁVEL O OBSERVADOR NÃO BASTA. O shell da suíte rola o
+  // `<main>`, não a janela: o sentinela é recortado pelo contêiner, a área estendida
+  // por `HINT_REACH` não o alcança, e o resto de 30 px que cabe sob a dica nunca
+  // dispara callback (medido na Central a 390x600: a dica ficava). A rolagem de um
+  // elemento não borbulha até a janela; na fase de captura do documento ela chega.
+  // Um quadro por rolagem, no máximo.
+  let quadro = 0;
+  function reavaliarNoQuadro () {
+    if (quadro) return;
+    quadro = requestAnimationFrame(() => {
+      quadro = 0;
+      reavaliar();
+    });
+  }
+  useEventListener(() => (import.meta.client ? document : null), 'scroll', reavaliarNoQuadro, { capture: true, passive: true });
   onMounted(() => {
     measure();
     watchObstructionSizes();
   });
   onBeforeUnmount(() => {
+    if (quadro) cancelAnimationFrame(quadro);
     observer?.disconnect();
     observer = null;
     obstructionSizes?.disconnect();

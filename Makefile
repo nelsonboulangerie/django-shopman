@@ -18,7 +18,7 @@ PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils
 
-.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry new-surface help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -43,7 +43,7 @@ install: ## Instala deps + apps da suite em modo editável
 		"django-unfold>=0.107,<0.108" \
 		"daphne>=4.2,<5.0" \
 		"redis>=5.1,<8.0" \
-		"psycopg[binary]>=3.2,<4.0" \
+		"psycopg[binary,pool]>=3.2,<4.0" \
 		"python-dotenv>=1.0,<2.0" \
 		"pywebpush>=2.5,<3.0" \
 		"django-storages[s3]>=1.14,<2.0" \
@@ -382,11 +382,50 @@ test-surface-versions: ## Gate: mesma versão dos pacotes compartilhados nas 10 
 	$(PYTHON) scripts/check_surface_versions.py
 
 # Todo lugar que enumera superfícies (Dependabot, gate, SURFACES, grupos, Dockerfile,
-# specs da DO, CSRF de dev, Shopman Apps, identidade, docs) concorda com
+# specs da DO, CSRF de dev, Central, identidade, docs) concorda com
 # surfaces/registry.json. Falha com o arquivo que diverge.
 test-surface-registry: ## Gate: todo lugar concorda com surfaces/registry.json
 	@echo "── Registro de superfícies ──"
 	$(PYTHON) scripts/check_surface_registry.py
+
+# Cobertura do WP-UX-8: toda tela de operador está no ledger, e a dívida de
+# componentes locais/imports diretos pode cair, mas nunca aumentar durante a
+# migração para o operator-kit.
+test-operator-components: ## Gate: ledger e teto de componentes dos oito apps de operador
+	@echo "── Componentes canônicos das superfícies ──"
+	$(PYTHON) scripts/check_operator_component_ledger.py
+
+test-operator-ux: test-operator-components ## Gates transversais do Operator Kit
+	@echo "── Atalhos globais do operador ──"
+	$(PYTHON) scripts/check_operator_shortcuts.py
+	@echo "── Layouts e tokens canônicos do operador ──"
+	$(PYTHON) scripts/check_operator_layout_guardrails.py
+	@echo "── Tema compartilhado do kit × baselines consumidoras ──"
+	$(PYTHON) scripts/check_theme_baseline_contract.py
+
+# O tema do kit é herdado por extends: as baselines de Marketing e POS dependem
+# dele. Este gate não regenera nada — ele reprova quando o tema muda sem que o
+# aceite (e as baselines) sejam regerados no mesmo PR. Ver
+# docs/reference/operator-visual-baselines.md.
+theme-baselines: ## Gate: tema compartilhado do kit casado com o aceite das baselines consumidoras
+	@echo "── Tema compartilhado do operator-kit × baselines ──"
+	$(PYTHON) scripts/check_theme_baseline_contract.py
+
+# ⚠️ Regravar o aceite NÃO regenera baseline. Só rode depois de regerar as
+# baselines afetadas no MESMO PR e de o dono ter revisado o antes/depois;
+# owner é obrigatório e fica registrado no contrato.
+theme-baselines-accept: ## Regrava o aceite do tema (SÓ após regenerar e revisar as baselines; owner=<quem aceitou>)
+	@test -n "$(owner)" || (echo 'uso: make theme-baselines-accept owner="<quem aceitou>"' >&2; exit 2)
+	$(PYTHON) scripts/check_theme_baseline_contract.py --accept --owner="$(owner)"
+
+test-operator-audit-close: ## Gate de fechamento: reprova pending, tela não visitada e captura ausente
+	$(PYTHON) scripts/check_operator_component_ledger.py --require-complete
+
+operator-visual: ## Matriz incremental: make operator-visual app=x route=/x scenario=y viewports=desktop-common
+	@test -n "$(app)" || (echo 'uso: make operator-visual app=<id|operator-kit> [route=/x] [scenario=y] [viewports=a,b] [plan=1] [update=1]' >&2; exit 2)
+	$(PYTHON) scripts/run_operator_visual.py --app "$(app)" \
+		$(if $(route),--route "$(route)") $(if $(scenario),--scenario "$(scenario)") \
+		$(if $(viewports),--viewports "$(viewports)") $(if $(plan),--plan) $(if $(update),--update-snapshots)
 
 # Cria um app de operador em surfaces/ a partir do molde e o registra em todos os
 # lugares que a trava acima confere. O subdomínio é argumento: hostname é do dono.
@@ -676,7 +715,7 @@ lint: admin ## Ruff + Admin/Unfold
 # endereço do checkout parou de avançar sozinho, e nada acusou.
 #
 # Um app por vez, sem `-` no comando: o primeiro que quebrar para a linha.
-SURFACES := storefront-nuxt hub-nuxt pos-nuxt kds-nuxt orders-nuxt production-nuxt purchase-nuxt marketing-nuxt bi-nuxt
+SURFACES := storefront-nuxt hub-nuxt pos-nuxt kds-nuxt orders-nuxt production-nuxt purchase-nuxt marketing-nuxt bi-nuxt kitchensink-nuxt
 
 surfaces: ## Superfícies Nuxt: typecheck + vitest de todos os apps
 	@for app in $(SURFACES); do \

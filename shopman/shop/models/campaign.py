@@ -343,7 +343,7 @@ class Campaign(models.Model):
                 {
                     "schedule": (
                         "O gatilho é 'agendado', então o agendamento precisa ser do tipo "
-                        "'once' ou 'recurring' — os outros só adiam um anúncio que um "
+                        "'once' ou 'recurring': os outros só adiam um anúncio que um "
                         "evento já criou, e aqui não há evento."
                     ),
                 }
@@ -362,7 +362,7 @@ class Campaign(models.Model):
             raise ValidationError(
                 {
                     "schedule": (
-                        "Este agendamento não tem nenhuma próxima ocasião — a data já "
+                        "Este agendamento não tem nenhuma próxima ocasião: a data já "
                         "passou, o período terminou, ou a configuração está incompleta."
                     ),
                 }

@@ -22,12 +22,16 @@ from shopman.shop.models import (
     UserNotificationEvent,
 )
 from shopman.shop.models.user_notification import ACTIVE_NOTIFICATION_STATES
+from shopman.shop.services import kds_alerts
 
 logger = logging.getLogger(__name__)
 
 ANNOUNCEMENT_REVIEW = "announcement_review"
 PRODUCTION_QUALITY_REVIEW = "production_quality_review"
 STOCK_ALERT_DELIVERY_INCIDENT = "stock_alert_delivery_incident"
+#: O selo do Marketing pede a segunda pessoa (SUITE-UX §15, MKT-19): o aviso vale
+#: enquanto o resumo está aberto e sem a segunda confirmação.
+MARKETING_SECOND_CONTROL = "marketing_second_control"
 OWNER_PRODUCT = "product"
 OWNER_PRODUCTION = "production"
 OWNER_ORDERS = "orders"
@@ -333,6 +337,12 @@ def reconcile_user_notifications(*, user) -> int:
         if row["source_condition"] == STOCK_ALERT_DELIVERY_INCIDENT:
             changed += reconcile_stock_alert_delivery_incident(row["source_ref"])
             continue
+        if row["source_condition"] == MARKETING_SECOND_CONTROL:
+            changed += reconcile_marketing_second_control(row["source_ref"])
+            continue
+        if row["source_condition"] in kds_alerts.CONDITIONS:
+            changed += kds_alerts.reconcile(row["source_condition"], row["source_ref"])
+            continue
         if row["source_condition"] != ANNOUNCEMENT_REVIEW:
             changed += reconcile_condition(
                 source_condition=row["source_condition"],
@@ -352,6 +362,42 @@ def reconcile_user_notifications(*, user) -> int:
             continue
         changed += reconcile_announcement_review(announcement)
     return changed
+
+
+def reconcile_marketing_second_control(source_ref: str) -> int:
+    """Fecha o pedido de segunda pessoa quando o resumo deixa de esperar por ela."""
+    import uuid
+
+    from shopman.shop.models import MarketingConfirmation
+
+    _head, _sep, raw = str(source_ref or "").partition(":")
+    try:
+        ref = uuid.UUID(raw)
+    except ValueError:
+        ref = None
+    confirmation = MarketingConfirmation.objects.filter(ref=ref).first() if ref else None
+    if confirmation is None:
+        return reconcile_condition(
+            source_condition=MARKETING_SECOND_CONTROL,
+            source_ref=source_ref,
+            state=NotificationLifecycle.EXPIRED,
+            outcome_code="source_missing",
+        )
+    if confirmation.second_approved_at is not None or confirmation.consumed_at is not None:
+        return reconcile_condition(
+            source_condition=MARKETING_SECOND_CONTROL,
+            source_ref=source_ref,
+            state=NotificationLifecycle.RESOLVED,
+            outcome_code="second_control_done",
+        )
+    if confirmation.expires_at <= timezone.now():
+        return reconcile_condition(
+            source_condition=MARKETING_SECOND_CONTROL,
+            source_ref=source_ref,
+            state=NotificationLifecycle.EXPIRED,
+            outcome_code="confirmation_expired",
+        )
+    return 0
 
 
 def reconcile_production_quality_review(source_ref: str) -> int:
@@ -765,6 +811,33 @@ def _resource_id(source_ref: str, prefix: str) -> int | None:
     return value if value > 0 else None
 
 
+#: Em que app cada condição se resolve, e o rótulo do botão que leva até lá. O
+#: caminho é relativo ao app (``_known_deep_link``); quem serve a caixa pessoal
+#: (``backstage/api/notifications.py``) troca pelo endereço absoluto do app, porque
+#: a caixa aparece em todos os apps e o lote só existe na Produção.
+CONDITION_DESTINATIONS: dict[str, tuple[str, str]] = {
+    ANNOUNCEMENT_REVIEW: ("marketing", "Revisar o anúncio"),
+    PRODUCTION_QUALITY_REVIEW: ("production", "Revisar a qualidade do lote"),
+    MARKETING_SECOND_CONTROL: ("marketing", "Conferir o disparo"),
+    **dict.fromkeys(kds_alerts.CONDITIONS, ("kds", "Abrir a estação")),
+}
+
+
+def _quality_review_path(work_order_id: int) -> str:
+    """A Qualidade filtrada no lote (``?q=<lote>&date=<dia>``), como a busca da suíte."""
+    from urllib.parse import urlencode
+
+    from shopman.craftsman.models import WorkOrder
+
+    row = WorkOrder.objects.filter(pk=work_order_id).values("ref", "target_date").first()
+    if row is None:
+        return "/quality"
+    params = {"q": row["ref"]}
+    if row["target_date"]:
+        params["date"] = row["target_date"].isoformat()
+    return f"/quality?{urlencode(params)}"
+
+
 def _known_deep_link(source_condition: str, source_ref: str) -> str:
     if source_condition == ANNOUNCEMENT_REVIEW:
         resource_id = _resource_id(source_ref, "announcement")
@@ -773,11 +846,15 @@ def _known_deep_link(source_condition: str, source_ref: str) -> str:
     if source_condition == PRODUCTION_QUALITY_REVIEW:
         resource_id = _resource_id(source_ref, "work_order")
         if resource_id is not None:
-            return "/expedite#quality"
-    if source_condition == STOCK_ALERT_DELIVERY_INCIDENT:
-        resource_id = _resource_id(source_ref, "stock_alert_delivery")
-        if resource_id is not None:
-            return "/"
+            return _quality_review_path(resource_id)
+    # STOCK_ALERT_DELIVERY_INCIDENT fica sem destino: a conferência é no ManyChat,
+    # fora do sistema, e o Gestor não tem tela onde ela se faça.
+    if source_condition == MARKETING_SECOND_CONTROL:
+        head, separator, raw = str(source_ref or "").partition(":")
+        if head == "marketing_confirmation" and separator and raw:
+            return f"/second-control/{raw}"
+    if source_condition in kds_alerts.CONDITIONS:
+        return kds_alerts.deep_link(source_ref)
     return ""
 
 

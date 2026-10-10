@@ -1,8 +1,12 @@
 <script setup lang="ts">
 // Detalhe do pedido — aberto por um toque na área de leitura do card (a que mostra
-// identidade e itens; o `i` é a marca dela). Só leitura: canal, horário, cliente,
-// notas e itens completos. A ação (iniciar/finalizar) mora no BOTÃO do card, e só
+// identidade e itens; o `i` é a marca dela). Canal, horário, cliente, quem iniciou,
+// notas e itens completos. A ação (Iniciar/Pronto) mora no BOTÃO do card, e só
 // lá — dois lugares para o mesmo gesto é um lugar a mais para tocar errado.
+//
+// O gesto daqui é outro: "Declarar volumes" (quem embalou declara, onde estiver;
+// decisão do dono, 04/10/2026). O mesmo do Gestor: − N +, Gravar, zero apaga. Só no
+// ticket de pedido (`volumes_order_ref`); comanda ainda sem pedido não tem onde gravar.
 import type { KDSTicketProjection } from "~/types/kds";
 import {
   elapsedLabel,
@@ -15,11 +19,35 @@ import {
   toneTimer,
 } from "~/presentation/board";
 
-const props = defineProps<{
-  open: boolean;
-  ticket: KDSTicketProjection | null;
-}>();
-defineEmits<{ "update:open": [boolean] }>();
+const props = withDefaults(
+  defineProps<{
+    open: boolean;
+    ticket: KDSTicketProjection | null;
+    /** Gravando os volumes (o Gravar espera). */
+    volumesBusy?: boolean;
+  }>(),
+  { volumesBusy: false },
+);
+const emit = defineEmits<{ "update:open": [boolean]; volumes: [number] }>();
+
+const canDeclareVolumes = computed(() => Boolean(props.ticket?.volumes_order_ref));
+const volumesEditing = ref(false);
+const volumesDraft = ref(0);
+watch(() => [props.open, props.ticket?.pk], () => { volumesEditing.value = false; });
+function openVolumes() {
+  const t = props.ticket;
+  if (!t) return;
+  const itemCount = t.items.length || 1;
+  volumesDraft.value = t.volumes || Math.max(1, Math.min(itemCount, 99));
+  volumesEditing.value = true;
+}
+function stepVolumes(delta: number) {
+  volumesDraft.value = Math.max(0, Math.min(99, volumesDraft.value + delta));
+}
+function saveVolumes() {
+  volumesEditing.value = false;
+  emit("volumes", volumesDraft.value);
+}
 
 const ref_ = computed(() =>
   props.ticket ? splitRef(props.ticket.order_ref) : { prefix: "", code: "" },
@@ -29,6 +57,12 @@ const tone = computed(() =>
 );
 const timerClasses = computed(() => toneTimer(tone.value));
 const barFill = computed(() => toneBar(tone.value));
+const description = computed(() => {
+  const t = props.ticket;
+  if (!t) return "";
+  const count = t.items.length === 1 ? "1 item" : `${t.items.length} itens`;
+  return `${t.customer_name || "Sem cliente"}: ${t.status_label}, ${count}.`;
+});
 const fill = computed(() =>
   props.ticket
     ? slaPercent(props.ticket.elapsed_seconds, props.ticket.target_seconds)
@@ -37,18 +71,17 @@ const fill = computed(() =>
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <UiDialogContent
-      v-if="ticket"
-      class="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
-    >
-      <UiDialogTitle class="sr-only"
-        >Pedido {{ ticket.order_ref }}</UiDialogTitle
-      >
-      <UiDialogDescription class="sr-only">
-        {{ ticket.customer_name || "Sem cliente" }} — {{ ticket.status_label }},
-        {{ ticket.items.length }} {{ ticket.items.length === 1 ? "item" : "itens" }}.
-      </UiDialogDescription>
+  <NuxtModal
+    :open="open && Boolean(ticket)"
+    :title="ticket ? `Pedido ${ticket.order_ref}` : 'Pedido'"
+    :description="description"
+    :ui="{ content: 'max-h-[90vh] sm:max-w-lg' }"
+    @update:open="$emit('update:open', Boolean($event))"
+  >
+    <!-- O título e a descrição do diálogo ficam para o leitor de tela; a tela desenha o
+         código grande e o relógio, como o ticket. -->
+    <template #content>
+    <div v-if="ticket" class="flex min-h-0 flex-1 flex-col overflow-hidden" data-kds-ticket-modal>
       <!-- header -->
       <div class="border-b">
         <div class="flex items-start justify-between gap-3 p-5">
@@ -88,6 +121,13 @@ const fill = computed(() =>
             >
               {{ ticket.customer_name }}
             </p>
+            <p
+              v-if="ticket.started_by"
+              class="mt-1 op-label text-muted-foreground"
+              data-kds-started
+            >
+              Iniciado por {{ ticket.started_by }}<template v-if="ticket.started_at_display"> às {{ ticket.started_at_display }}</template>
+            </p>
           </div>
           <div
             class="flex shrink-0 flex-col items-end gap-0.5 rounded-md border px-3 py-2 text-right"
@@ -106,6 +146,15 @@ const fill = computed(() =>
               Alvo {{ targetLabel(ticket.target_seconds) }}
             </span>
           </div>
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-x"
+            class="-mt-1 -mr-2 shrink-0"
+            aria-label="Fechar o detalhe"
+            data-kds-ticket-close
+            @click="$emit('update:open', false)"
+          />
         </div>
         <!-- time-to-SLA fill bar -->
         <div class="h-1.5 w-full bg-white/5" aria-hidden="true">
@@ -137,6 +186,56 @@ const fill = computed(() =>
           <Icon name="lucide:user" class="mt-0.5 size-4 shrink-0" />
           <span class="min-w-0 whitespace-pre-wrap">{{ ticket.customer_note }}</span>
         </p>
+      </div>
+
+      <!-- volumes: quem embalou declara aqui mesmo (a mesma porta do Gestor). -->
+      <div v-if="canDeclareVolumes" class="border-b px-4 py-3" data-kds-volumes>
+        <div v-if="volumesEditing" class="flex flex-col gap-2" data-kds-volumes-editor>
+          <p class="op-label font-semibold">Quantos volumes saem?</p>
+          <div class="flex items-center gap-2">
+            <NuxtButton
+              size="xl"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-minus"
+              aria-label="Um volume a menos"
+              @click="stepVolumes(-1)"
+            />
+            <span class="min-w-12 text-center op-title tabular-nums" aria-live="polite" data-kds-volumes-draft>{{ volumesDraft }}</span>
+            <NuxtButton
+              size="xl"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-plus"
+              aria-label="Um volume a mais"
+              @click="stepVolumes(1)"
+            />
+            <NuxtButton
+              size="xl"
+              class="ml-auto"
+              label="Gravar"
+              :disabled="volumesBusy"
+              data-kds-volumes-save
+              @click="saveVolumes"
+            />
+          </div>
+          <p class="op-micro text-muted-foreground">
+            {{ volumesDraft === 0 ? "Zero apaga: o pedido volta a contar itens." : "Sacolas ou caixas, contadas por quem embalou." }}
+          </p>
+        </div>
+        <NuxtButton
+          v-else
+          size="xl"
+          color="neutral"
+          variant="outline"
+          block
+          icon="i-lucide-package"
+          class="justify-start"
+          :label="ticket.volumes ? `Volumes: ${ticket.volumes} (mudar)` : 'Declarar volumes'"
+          :disabled="volumesBusy"
+          data-kds-volumes-open
+          @click="openVolumes"
+        />
       </div>
 
       <!-- itens: inteiros, observação em destaque -->
@@ -174,6 +273,7 @@ const fill = computed(() =>
           </li>
         </ul>
       </div>
-    </UiDialogContent>
-  </UiDialog>
+    </div>
+    </template>
+  </NuxtModal>
 </template>

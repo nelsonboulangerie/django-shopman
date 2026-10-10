@@ -3,14 +3,7 @@
 // screen-ready (timer_class, status_label pre-resolved); this layer
 // only derives the view shape + the functional-color tone for the semaphore. No
 // time/SLA arithmetic (the backend owns elapsed/target/timer_class).
-import type {
-  KDSBoardProjection,
-  KDSExitPreparingCardProjection,
-  KDSExitStationChipProjection,
-  KDSExpeditionCardProjection,
-  KDSTicketProjection,
-  KDSTimerClass,
-} from "~/types/kds";
+import type { KDSBoardProjection, KDSTicketProjection, KDSTimerClass } from "~/types/kds";
 
 /** Functional tone for a ticket's urgency (cor só onde tem significado). */
 export type KDSTone = "ok" | "warning" | "late";
@@ -31,19 +24,63 @@ export function toneBar(tone: KDSTone): string {
   return "bg-muted-foreground/30";
 }
 
-/** Superfície do card "PRÓXIMO" pintada ton sur ton no seu próprio tom do semáforo:
- *  fundo sóbrio + borda no mesmo tom (a barra inferior viva continua como é).
- *  Não cria um significado de cor competindo — amplifica o que já existe ("é o
- *  próximo E está atrasado"). É o único card pintado da grade (os demais ficam
- *  neutros), então ele se destaca sem precisar de uma posição/tamanho especial.
+/** Superfície do card "PRÓXIMO" (prévia v4, `cozinha-estacao4.html`): borda de 2px e
+ *  tinta levíssima no tom do próprio semáforo, com um halo de 4px na mesma cor. Não cria
+ *  um significado de cor competindo, amplifica o que já existe ("é o próximo E está
+ *  atrasado"). É o único card pintado da grade, então ele se destaca sem posição nem
+ *  tamanho especial.
  *
- *  ⚠️ Sem `ring`: o canon do kit (operator-base.css, "SELEÇÃO / ATIVO") reserva o
- *  ring ao FOCO DE TECLADO e pede borda + tint levíssimo para destacar. No prazo
- *  não tem cor de urgência → o par canônico `border-primary` + `bg-primary/5`. */
+ *  ⚠️ Sem `ring`: o canon do kit (operator-base.css, "SELEÇÃO / ATIVO") reserva o ring
+ *  ao FOCO DE TECLADO. O halo é sombra (`shadow-[0_0_0_4px_…]`), não ring. */
 export function toneNextSurface(tone: KDSTone): string {
-  if (tone === "late") return "bg-red-500/15 border-red-500/60";
-  if (tone === "warning") return "bg-amber-500/15 border-amber-500/60";
-  return "bg-primary/5 border-primary";
+  if (tone === "late")
+    return "border-2 border-destructive bg-destructive/8 shadow-[0_0_0_4px_color-mix(in_oklab,var(--destructive)_15%,transparent)]";
+  if (tone === "warning")
+    return "border-2 border-warning bg-warning/8 shadow-[0_0_0_4px_color-mix(in_oklab,var(--warning)_15%,transparent)]";
+  return "border-2 border-primary bg-primary/5 shadow-[0_0_0_4px_color-mix(in_oklab,var(--primary)_12%,transparent)]";
+}
+
+/** O relógio do card na v4 (`.tm`): o tempo contra a meta num número só. Atrasado é
+ *  o único sólido (fundo vermelho, texto claro); perto da meta, contorno e texto âmbar;
+ *  no prazo, contorno neutro. */
+export function toneTimerChip(tone: KDSTone): string {
+  if (tone === "late") return "border border-destructive bg-destructive text-destructive-foreground";
+  if (tone === "warning") return "border border-warning/60 text-warning";
+  return "border border-border text-foreground";
+}
+
+export type KDSPillTone = "destructive" | "warning" | "info" | "primary" | "muted";
+
+/** A pílula do card ("Atrasado", "Novo", "Em preparo", "Bloqueado"; a posição na fila mora no rótulo acima do código).
+ *  Um estilo só, a cor diz a natureza: vermelho trava ou atrasa, azul é novo, latão
+ *  está em preparo. */
+export function ticketPill(
+  ticket: Pick<KDSTicketProjection, "status" | "timer_class">,
+  state: { next?: boolean; blocked?: boolean },
+): { label: string; tone: KDSPillTone } | null {
+  if (state.blocked) return { label: "Bloqueado", tone: "destructive" };
+  const tone = ticketTone(ticket.timer_class as KDSTimerClass);
+  // O de agora já diz a posição no rótulo acima do código ("Agora"); a pílula diz só o
+  // prazo, para "Próximo" não nomear dois tickets na mesma tela.
+  if (state.next) {
+    if (tone === "late") return { label: "Atrasado", tone: "destructive" };
+    if (tone === "warning") return { label: "Perto da meta", tone: "warning" };
+  }
+  if (ticket.status === "pending") return { label: "Novo", tone: "info" };
+  if (ticket.status === "in_progress") return { label: "Em preparo", tone: "primary" };
+  return null;
+}
+
+const PILL_CLASSES: Record<KDSPillTone, string> = {
+  destructive: "pill-destructive",
+  warning: "pill-warning",
+  info: "pill-info",
+  primary: "pill-primary",
+  muted: "pill-muted",
+};
+
+export function pillClass(tone: KDSPillTone): string {
+  return PILL_CLASSES[tone];
 }
 
 /** Tonal chip classes for the live timer (border+tint+text), shared by card+modal. */
@@ -54,25 +91,12 @@ export function toneTimer(tone: KDSTone): string {
   return "border-white/10 bg-white/5 text-muted-foreground";
 }
 
-/** Type guard: expedition boards hold expedition cards, prep boards hold tickets.
- *  Discriminated by the explicit `is_expedition` flag — never by field presence
- *  (sniffing `items` broke when the expedition card gained an items list). */
-export function isExpeditionCard(
-  card: KDSTicketProjection | KDSExpeditionCardProjection,
-): card is KDSExpeditionCardProjection {
-  return card.is_expedition;
-}
-
 const TONE_RANK: Record<KDSTone, number> = { late: 0, warning: 1, ok: 2 };
 
 /** Auto-sort prep tickets by urgency (KDS best practice — work on what's due
- *  first): late before warning before ok, then oldest first within a tone.
- *  Expedition boards keep projection order. */
-export function sortByUrgency(
-  cards: (KDSTicketProjection | KDSExpeditionCardProjection)[],
-): (KDSTicketProjection | KDSExpeditionCardProjection)[] {
-  if (cards.some(isExpeditionCard)) return [...cards];
-  return [...(cards as KDSTicketProjection[])].sort((a, b) => {
+ *  first): late before warning before ok, then oldest first within a tone. */
+export function sortByUrgency(cards: KDSTicketProjection[]): KDSTicketProjection[] {
+  return [...cards].sort((a, b) => {
     const ra = TONE_RANK[ticketTone(a.timer_class)];
     const rb = TONE_RANK[ticketTone(b.timer_class)];
     return ra !== rb ? ra - rb : b.elapsed_seconds - a.elapsed_seconds;
@@ -86,12 +110,9 @@ export interface KDSAllDayCount {
 
 /** "All-day" aggregate (KDS best practice — mise en place / batch prep): how many
  *  of each item are still to make across all active prep tickets. */
-export function allDayCounts(
-  cards: (KDSTicketProjection | KDSExpeditionCardProjection)[],
-): KDSAllDayCount[] {
+export function allDayCounts(cards: KDSTicketProjection[]): KDSAllDayCount[] {
   const counts = new Map<string, number>();
   for (const card of cards) {
-    if (isExpeditionCard(card)) continue;
     for (const item of card.items) {
       counts.set(item.name, (counts.get(item.name) || 0) + Number(item.qty));
     }
@@ -103,26 +124,28 @@ export function allDayCounts(
 
 // ── Os dois gestos da cozinha ───────────────────────────────────────────────
 // O card tem UM botão, e o botão diz o ato pelo nome: "Iniciar preparo" e
-// depois "Finalizar preparo". A área grande do card (cabeçalho + itens) faz o
+// depois "Pronto W07". O ato de terminar se chama Pronto em todo tamanho (decisão
+// do dono, 04/10/2026): no card do tablet e do desktop (`cardActionLabel`) e no
+// polegar do celular (`cozinha-celular` b, `thumbActionLabel`). A área grande do card (cabeçalho + itens) faz o
 // que é SEGURO — abre o detalhe. O ato que sai da cozinha exige o botão
 // rotulado. O preparo é estado do TICKET (o servidor guarda e todos os tablets
 // veem), nunca do item.
 
-/** Tempo mínimo entre "entrou em preparo" e aceitar o toque de finalizar. O
+/** Tempo mínimo entre "entrou em preparo" e aceitar o toque de Pronto. O
  *  botão fica no MESMO lugar nos dois estados, então um toque duplo (ou o dedo
- *  que quica na tela molhada) iniciaria e finalizaria o mesmo pedido em 300 ms.
- *  Durante o intervalo o rótulo já é "Finalizar preparo" — o que muda é só ele
+ *  que quica na tela molhada) iniciaria e marcaria Pronto no mesmo pedido em 300 ms.
+ *  Durante o intervalo o rótulo já é "Pronto" — o que muda é só ele
  *  não aceitar o toque, e isso não pisca rótulo na cara de ninguém. */
 export const KDS_ARM_DELAY_MS = 900;
 
-/** Janela de "Desfazer" do finalizar. Finalizar tem efeito fora da cozinha
+/** Janela de "Desfazer" do Pronto. O Pronto tem efeito fora da cozinha
  *  (o pedido vira PRONTO e o cliente é avisado), e o "Reabrir" não desavisa
  *  ninguém — então o POST só sai quando a janela fecha. Durante a janela o card
  *  FICA NO LUGAR, apagado, com o Desfazer no mesmo ponto onde o dedo acabou de
  *  tocar: um aviso no topo da tela não se alcança com a mão ocupada. */
 export const KDS_UNDO_WINDOW_MS = 5000;
 
-export type KDSTicketActionKind = "start" | "finish" | "blocked" | "undo" | "none";
+export type KDSTicketActionKind = "start" | "finish" | "blocked" | "locked" | "undo" | "none";
 
 export interface KDSTicketAction {
   kind: KDSTicketActionKind;
@@ -137,34 +160,56 @@ const NO_ACTION: KDSTicketAction = { kind: "none", label: "", icon: "", enabled:
 
 /** O que o botão do card oferece, dado o estado do ticket.
  *
- *  - `undo`  — finalizado há menos de 5 s; o POST ainda não saiu.
+ *  - `undo`  — Pronto há menos de 5 s; o POST ainda não saiu.
  *  - `blocked` — há item cancelado deste pedido esperando confirmação: o servidor
- *    recusaria o finalizar, então a tela recusa antes e diz PARA ONDE ir. Iniciar
+ *    recusaria o Pronto, então a tela recusa antes e diz PARA ONDE ir. Iniciar
  *    nunca é bloqueado — começar o que sobrou é seguro.
- *  - agendado não tem botão: é prévia, e prévia não age. */
+ *  - `locked` — o servidor recusaria o Pronto por outro motivo (pagamento digital
+ *    ainda não capturado, pedido sem confirmação: `finish_block_label`). O botão fica
+ *    no lugar, tracejado e com cadeado, e o toque diz o motivo em vez de fingir que
+ *    deu Pronto. Iniciar continua livre: "pode adiantar".
+ */
 export function ticketAction(
-  ticket: Pick<KDSTicketProjection, "status" | "is_scheduled">,
+  ticket: Pick<KDSTicketProjection, "status"> & { finish_block_label?: string },
   state: { armed: boolean; blocked: boolean; finishing?: boolean },
 ): KDSTicketAction {
   if (state.finishing)
     return { kind: "undo", label: "Desfazer", icon: "lucide:undo-2", enabled: true };
-  if (ticket.is_scheduled) return NO_ACTION;
   if (ticket.status === "pending")
     return { kind: "start", label: "Iniciar preparo", icon: "lucide:play", enabled: true };
   if (ticket.status !== "in_progress") return NO_ACTION;
   if (state.blocked)
     return {
       kind: "blocked",
-      label: "Item cancelado — veja o cartão vermelho",
+      label: "Item cancelado: veja o aviso no topo",
       icon: "lucide:ban",
       enabled: true,
     };
+  if (ticket.finish_block_label)
+    return { kind: "locked", label: "Pronto", icon: "lucide:lock", enabled: true };
   return {
     kind: "finish",
-    label: "Finalizar preparo",
+    label: "Pronto",
     icon: "lucide:check",
     enabled: state.armed,
   };
+}
+
+/** O botão do card no tablet e no desktop: o Pronto leva o código do pedido ("Pronto
+ *  W07"), como no celular; os outros atos ficam como estão ("Iniciar preparo"). */
+export function cardActionLabel(action: KDSTicketAction, code: string): string {
+  if (action.kind === "finish" || action.kind === "locked") return `Pronto ${code}`;
+  return action.label;
+}
+
+/** O ato no polegar do celular (prévia v4 `cozinha-celular` b): o mesmo botão do card,
+ *  com o código do pedido no rótulo, porque o card em foco fica longe do dedo.
+ *  "Pronto W07", e os outros atos também levam o código junto. */
+export function thumbActionLabel(action: KDSTicketAction, code: string): string {
+  if (action.kind === "finish" || action.kind === "locked") return `Pronto ${code}`;
+  if (action.kind === "start") return `Iniciar ${code}`;
+  if (action.kind === "undo") return `Desfazer ${code}`;
+  return action.label;
 }
 
 // ── A moldura comum dos cards ───────────────────────────────────────────────
@@ -188,33 +233,60 @@ export interface KDSCardScale {
   action: string;
 }
 
+// Padrão = a medida da prévia v4 (`.tk`: 12px em cima e embaixo, 14px dos lados, 6px
+// entre os blocos; código de 30px; botão de 56px com 18px). Compacta e Ampla escalam a
+// partir dela.
 const CARD_SCALE: Record<KDSDensity, KDSCardScale> = {
-  compact: { code: "text-xl", inset: "px-3", padT: "pt-3", padB: "pb-3", gap: "gap-2.5", action: "h-11 text-sm" },
-  cozy: { code: "text-3xl", inset: "px-4", padT: "pt-4", padB: "pb-4", gap: "gap-3", action: "h-11 text-base" },
-  roomy: { code: "text-4xl", inset: "px-5", padT: "pt-5", padB: "pb-5", gap: "gap-3.5", action: "h-14 text-lg" },
+  compact: { code: "text-xl", inset: "px-3", padT: "pt-2.5", padB: "pb-2.5", gap: "gap-1.5", action: "h-11 text-base" },
+  cozy: { code: "text-3xl", inset: "px-3.5", padT: "pt-3", padB: "pb-3", gap: "gap-1.5", action: "h-14 text-lg" },
+  roomy: { code: "text-4xl", inset: "px-4", padT: "pt-4", padB: "pb-4", gap: "gap-2", action: "h-16 text-xl" },
 };
 
 export function cardScale(density: KDSDensity): KDSCardScale {
   return CARD_SCALE[density];
 }
 
-/** "Entrega" ou "Retirada" — a mesma palavra que a Saída recebe pronta da
- *  projection (`fulfillment_label`), derivada aqui do ícone que o ticket traz. */
+/** "Entrega" ou "Retirada", derivada do ícone que o ticket traz. */
 export function fulfillmentLabel(fulfillmentIcon: string): string {
   return fulfillmentIcon === "local_shipping" ? "Entrega" : "Retirada";
 }
 
-/** Dia/mês de uma data ISO ("2026-09-19" → "19/09"). O card agendado precisa
- *  DIZER a data: "libera na data" obriga o operador a lembrar do seletor que
- *  está no topo do cabeçalho, longe do card e de um minuto atrás. Fatiar a
- *  string (em vez de `new Date`) evita o fuso virar a data um dia. */
-export function shortDateLabel(iso: string): string {
-  const [, month, day] = iso.split("-");
-  return month && day ? `${day}/${month}` : iso;
+/** A linha de baixo do código (prévia v4, nota 6): "Card sem canal, telefone nem
+ *  cliente". A venda do dia diz só "Retirada"/"Entrega"; a encomenda diz "Encomenda"
+ *  e o cliente, porque é com ele que a hora foi combinada ("Encomenda · Café
+ *  Parisiense"). O nome do cliente nunca é telefone. */
+export function ticketOverline(
+  ticket: Pick<KDSTicketProjection, "fulfillment_icon" | "is_preorder" | "customer_name" | "previous_tab_ref">,
+): string {
+  if (!ticket.is_preorder) return fulfillmentLabel(ticket.fulfillment_icon);
+  const name = (ticket.customer_name || "").trim();
+  const showName = name && name !== ticket.previous_tab_ref && !looksLikePhone(name);
+  return showName ? `Encomenda · ${name}` : "Encomenda";
 }
 
-/** Pedidos com item cancelado ainda sem "Ciente" nesta estação. O servidor
- *  bloqueia o finalizar por pedido+estação; a referência exibida é a mesma
+function looksLikePhone(value: string): boolean {
+  return /^[+\d\s().-]{8,}$/.test(value);
+}
+
+/** "iniciado por Rafael às 21:56 · retira às 22:30" (prévia v4, nota 7: "quem iniciou
+ *  aparece no card"). Vazio quando não há nada a dizer. */
+export function ticketStartLine(
+  ticket: Pick<KDSTicketProjection, "started_by" | "started_at_display" | "due_time_display">,
+): string {
+  const parts: string[] = [];
+  if (ticket.started_by) {
+    parts.push(
+      ticket.started_at_display
+        ? `iniciado por ${ticket.started_by} às ${ticket.started_at_display}`
+        : `iniciado por ${ticket.started_by}`,
+    );
+  }
+  if (ticket.due_time_display) parts.push(ticket.due_time_display);
+  return parts.join(" · ");
+}
+
+/** Pedidos com item cancelado ainda sem "Recebi o cancelamento" nesta estação. O servidor
+ *  bloqueia o Pronto por pedido+estação; a referência exibida é a mesma
  *  para o ticket vivo e o cancelado da mesma venda. */
 export function blockedOrderRefs(cancelled: KDSTicketProjection[]): Set<string> {
   return new Set(cancelled.map((ticket) => ticket.order_ref));
@@ -224,19 +296,14 @@ export function blockedOrderRefs(cancelled: KDSTicketProjection[]): Set<string> 
  *  Item novo numa comanda nunca altera o ticket que já está em preparo: o
  *  servidor dispara só o delta, num ticket novo. A tela diz isso, para a
  *  cozinha não achar que é pedido repetido. */
-export function additionTicketPks(
-  cards: (KDSTicketProjection | KDSExpeditionCardProjection)[],
-  recentDone: KDSTicketProjection[],
-): Set<number> {
+export function additionTicketPks(cards: KDSTicketProjection[], recentDone: KDSTicketProjection[]): Set<number> {
   const firstPkByRef = new Map<string, number>();
   for (const ticket of [...cards, ...recentDone]) {
-    if (isExpeditionCard(ticket) || ticket.is_scheduled) continue;
     const first = firstPkByRef.get(ticket.order_ref);
     if (first === undefined || ticket.pk < first) firstPkByRef.set(ticket.order_ref, ticket.pk);
   }
   const additions = new Set<number>();
   for (const card of cards) {
-    if (isExpeditionCard(card) || card.is_scheduled) continue;
     if (firstPkByRef.get(card.order_ref) !== card.pk) additions.add(card.pk);
   }
   return additions;
@@ -245,46 +312,38 @@ export function additionTicketPks(
 export interface KDSBoardView {
   instanceRef: string;
   instanceName: string;
-  isExpedition: boolean;
-  /** Active cards, auto-sorted by urgency (prep) / projection order (expedition).
-   *  Na Saída, é a coluna "Prontos para sair" — e só ela toca o som. */
-  cards: (KDSTicketProjection | KDSExpeditionCardProjection)[];
-  /** Só na Saída: a coluna "Em preparo" (pedidos que esperam alguma estação). */
-  preparing: KDSExitPreparingCardProjection[];
+  /** Active tickets, auto-sorted by urgency. */
+  cards: KDSTicketProjection[];
   cancelled: KDSTicketProjection[];
-  /** Concluídos recentes (≤30min) — para recall (desfazer finalização). */
+  /** Concluídos recentes (≤30min) — para recall (desfazer o Pronto). */
   recentDone: KDSTicketProjection[];
   allDay: KDSAllDayCount[];
   counts: Record<string, number>;
   total: number;
-  /** Pedidos com cancelado sem confirmação — finalizar espera. */
+  /** Pedidos com cancelado sem confirmação: o Pronto espera. */
   blockedRefs: Set<string>;
   /** Tickets que são adicional de um pedido já visto nesta estação. */
   additionPks: Set<number>;
-  /** Finalizados com a janela de "Desfazer" aberta: continuam na grade, apagados. */
+  /** Marcados Pronto com a janela de "Desfazer" aberta: continuam na grade, apagados. */
   finishingPks: Set<number>;
   /** O ticket que a estação deve pegar agora (o 1º da ordem de urgência que
-   *  ainda é trabalho). Nunca um agendado nem um que está saindo. */
+   *  ainda é trabalho). Nunca um que está saindo. */
   nextPk: number | null;
-  serviceDate: string;
-  serviceDateDisplay: string;
-  today: string;
-  availableDates: string[];
+  /** Como a estação provisionada se mostra (prévia v4, nota 1): o cadastro guarda. */
+  density: KDSDensity;
+  soundEnabled: boolean;
 }
 
-/** O ticket "próximo" da grade: o primeiro da ordem de urgência que ainda é
- *  trabalho de verdade. Agendado é prévia e não se pega; a Saída não tem
- *  "próximo" (a ordem ali é a da projection). */
-export function nextTicketPk(
-  cards: (KDSTicketProjection | KDSExpeditionCardProjection)[],
-  isExpedition: boolean,
-): number | null {
-  if (isExpedition) return null;
-  const first = cards.find((card) => !isExpeditionCard(card) && !card.is_scheduled);
-  return first ? first.pk : null;
+/** O ticket "próximo" da grade: o primeiro da ordem de urgência que ainda é trabalho. */
+export function nextTicketPk(cards: KDSTicketProjection[]): number | null {
+  return cards[0]?.pk ?? null;
 }
 
-/** `finishingPks`: tickets finalizados cuja janela de "Desfazer" ainda está
+export function stationDensity(value: string): KDSDensity {
+  return value === "compact" || value === "roomy" ? value : "cozy";
+}
+
+/** `finishingPks`: tickets marcados Pronto cuja janela de "Desfazer" ainda está
  *  aberta. Eles CONTINUAM na grade, no mesmo lugar, apagados e carregando o
  *  botão de desfazer — sumir e oferecer o desfazer num aviso lá no topo da tela
  *  era pedir que a cozinha atravessasse a tela com a mão ocupada. O que eles
@@ -299,107 +358,25 @@ export function boardView(
   const working = cards.filter((card) => !finishingPks.has(card.pk));
   const recentDone = [...(board.recent_done ?? [])];
   const counts = { ...(board.counts || {}) };
-  if (!board.is_expedition) {
-    const tickets = working as KDSTicketProjection[];
-    counts.pending = tickets.filter((t) => t.status === "pending").length;
-    counts.in_progress = tickets.filter((t) => t.status === "in_progress").length;
-    counts.total = tickets.length;
-  } else if (finishingPks.size) {
-    counts.total = working.length;
-  }
+  counts.pending = working.filter((t) => t.status === "pending").length;
+  counts.in_progress = working.filter((t) => t.status === "in_progress").length;
+  counts.total = working.length;
   return {
     instanceRef: board.instance_ref,
     instanceName: board.instance_name,
-    isExpedition: board.is_expedition,
     cards,
-    preparing: [...(board.preparing ?? [])],
     cancelled: [...board.cancelled_tickets],
     recentDone,
     allDay: allDayCounts(working),
     counts,
-    total: counts.total ?? working.length,
+    total: working.length,
     blockedRefs: blockedOrderRefs(board.cancelled_tickets),
     additionPks: additionTicketPks(cards, recentDone),
     finishingPks: new Set(finishingPks),
-    nextPk: nextTicketPk(working, board.is_expedition),
-    serviceDate: board.service_date,
-    serviceDateDisplay: board.service_date_display,
-    today: board.today,
-    availableDates: [...(board.available_dates ?? [])],
+    nextPk: nextTicketPk(working),
+    density: stationDensity(board.density),
+    soundEnabled: board.sound_enabled !== false,
   };
-}
-
-// ── A Saída: um chip por estação no card "Em preparo" ───────────────────────
-// A estação de tela dá baixa sozinha: o chip só mostra em que pé ela está. A
-// estação SEM tela recebeu o pedido em papel, e quem dá a baixa dela é a Saída —
-// o chip diz quando o papel saiu e oferece "Pronto" (decisão do dono, 26/09).
-
-export type KDSExitChipTone = "done" | "working" | "waiting" | "alert";
-
-export interface KDSExitChipView {
-  /** O nome da estação ("Lanches"). */
-  station: string;
-  /** O que está acontecendo nela: "pronto", "em preparo", "impresso às 10:42"… */
-  detail: string;
-  tone: KDSExitChipTone;
-  icon: string;
-  /** Mostra o botão "Pronto" desta estação. */
-  canMarkReady: boolean;
-  /** Itens retirados depois do disparo, ditos por extenso ("1 item cancelado"). */
-  cancelledNote: string;
-}
-
-/** O que o chip da estação diz, e com que peso.
- *
- *  - pronto: verde e um ✓ — é a notícia que a Saída espera;
- *  - estação sem tela, com papel que não saiu: vermelho, porque ninguém na
- *    bancada sabe do pedido — alguém precisa ir até lá;
- *  - estação sem tela, papel na bancada: o horário do papel (é o que a Saída
- *    confere antes de dar o pronto por ela);
- *  - estação de tela: o estado, neutro. */
-export function exitChipView(chip: KDSExitStationChipProjection): KDSExitChipView {
-  const cancelledNote = chip.cancelled_items
-    ? `${chip.cancelled_items} ${chip.cancelled_items === 1 ? "item cancelado" : "itens cancelados"}`
-    : "";
-  if (chip.state === "done") {
-    return { station: chip.station_name, detail: "pronto", tone: "done", icon: "lucide:check", canMarkReady: false, cancelledNote };
-  }
-  if (chip.prints && chip.paper_failed) {
-    return {
-      station: chip.station_name,
-      detail: `${chip.paper_label} — avise a estação`,
-      tone: "alert",
-      icon: "lucide:printer",
-      canMarkReady: chip.can_mark_ready,
-      cancelledNote,
-    };
-  }
-  if (chip.prints) {
-    return {
-      station: chip.station_name,
-      detail: chip.paper_label || chip.state_label,
-      tone: "waiting",
-      icon: "lucide:printer",
-      canMarkReady: chip.can_mark_ready,
-      cancelledNote,
-    };
-  }
-  return {
-    station: chip.station_name,
-    detail: chip.state_label,
-    tone: chip.state === "in_progress" ? "working" : "waiting",
-    icon: chip.state === "in_progress" ? "lucide:flame" : "lucide:clock",
-    canMarkReady: false,
-    cancelledNote,
-  };
-}
-
-/** Classes do chip por tom — verde só no pronto, vermelho só no papel perdido. */
-export function exitChipTone(tone: KDSExitChipTone): string {
-  if (tone === "done") return "border-success/40 bg-success/10 text-success";
-  if (tone === "alert") return "border-destructive/50 bg-destructive/10 text-destructive dark:text-red-300";
-  if (tone === "working") return "border-foreground/20 bg-foreground/5 text-foreground";
-  return "border-border bg-card text-muted-foreground";
 }
 
 /** Map the projection's Material-Symbol icon names (channel + fulfillment) onto
@@ -497,4 +474,125 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
     dotClass: "bg-muted-foreground/40",
     title: "O painel atualiza sozinho a cada poucos segundos",
   };
+}
+
+// ── A fila do cozinheiro (prévia v4, SUITE-UX §10.3) ────────────────────────
+// 4 a 6 tickets em foco (3×2 no tablet deitado); o resto vira "+N na fila" e entra
+// no "A fazer". A profundidade vira agregado, nunca card minúsculo. Ticket longo
+// deixa a linha mais alta em vez de cortar a lista; a ordem de leitura não muda.
+
+export type KDSBoardFilter = "all" | "delivery" | "late";
+
+type PrepCard = KDSTicketProjection;
+
+export function isDeliveryTicket(card: PrepCard): boolean {
+  return card.fulfillment_icon === "local_shipping";
+}
+
+export function isLateTicket(card: PrepCard): boolean {
+  return card.timer_class === "timer-late";
+}
+
+export function matchesBoardFilter(card: PrepCard, filter: KDSBoardFilter): boolean {
+  if (filter === "delivery") return isDeliveryTicket(card);
+  if (filter === "late") return isLateTicket(card);
+  return true;
+}
+
+export function boardFilterCounts(cards: PrepCard[]): Record<KDSBoardFilter, number> {
+  return {
+    all: cards.length,
+    delivery: cards.filter(isDeliveryTicket).length,
+    late: cards.filter(isLateTicket).length,
+  };
+}
+
+export interface KDSFocusPlacement {
+  pk: number;
+  column: number;
+  row: number;
+}
+
+export interface KDSFocusSlice<T extends { pk: number }> {
+  visible: T[];
+  rest: T[];
+  placements: Map<number, KDSFocusPlacement>;
+}
+
+/** Quantos tickets cabem em foco e onde cada um mora, na ORDEM de ataque (dono,
+ *  09/10/2026): a ordem é UMA e se lê como texto, da esquerda para a direita, linha a
+ *  linha. Cada ticket ocupa uma célula; o ticket longo deixa a SUA linha mais alta
+ *  (as linhas seguem alinhadas pelo topo) em vez de ocupar duas alturas e empurrar os
+ *  vizinhos para buracos. Nada de mosaico: o cozinheiro nunca precisa adivinhar qual
+ *  vem depois. O que não cabe vai inteiro para o "+N", na mesma ordem. */
+export function focusSlice<T extends PrepCard>(
+  cards: T[],
+  layout: { columns: number; rows: number },
+): KDSFocusSlice<T> {
+  const columns = Math.max(1, Math.floor(layout.columns));
+  const rows = Math.max(1, Math.floor(layout.rows));
+  const visible = cards.slice(0, columns * rows);
+  const placements = new Map<number, KDSFocusPlacement>(
+    visible.map((card, index) => [
+      card.pk,
+      { pk: card.pk, column: index % columns, row: Math.floor(index / columns) },
+    ]),
+  );
+  return { visible, rest: cards.slice(visible.length), placements };
+}
+
+/** A posição na fila, escrita no ticket, a mesma em toda largura: o primeiro é o de
+ *  "Agora", o segundo o "Próximo", os outros "Depois". */
+export function queuePositionLabel(index: number): string {
+  if (index === 0) return "Agora";
+  return index === 1 ? "Próximo" : "Depois";
+}
+
+/** Quantas colunas e linhas de tickets cabem na área da grade. A largura mínima é a
+ *  da densidade; a altura mínima é a de um ticket curto legível. Sem medida (SSR,
+ *  primeira pintura), 2 linhas. */
+export function focusGrid(
+  size: { width: number; height: number },
+  minWidth: number,
+  gap = 12,
+): { columns: number; rows: number } {
+  const MIN_ROW = 230;
+  const columns = Math.min(5, Math.max(1, Math.floor((size.width + gap) / (minWidth + gap))));
+  if (!size.height) return { columns, rows: 2 };
+  const rows = Math.min(3, Math.max(1, Math.floor((size.height + gap) / (MIN_ROW + gap))));
+  return { columns, rows };
+}
+
+/** A frase do excedente: "+7 na fila" e "todos no prazo, já somados em "A fazer"". */
+export function restSummary(rest: PrepCard[]): { count: string; detail: string } {
+  const late = rest.filter(isLateTicket).length;
+  const status = late === 0 ? "todos no prazo" : late === 1 ? "1 atrasado" : `${late} atrasados`;
+  return {
+    count: `+${rest.length} na fila`,
+    detail: `${status}, já somados em "A fazer" · entram aqui quando um ticket sair`,
+  };
+}
+
+/** A linha compacta da fila no celular ("1× Cappuccino", "2× Croissant +1"). */
+export function queueLine(card: PrepCard): string {
+  const [first, ...others] = card.items;
+  if (!first) return "";
+  const head = `${first.qty}× ${first.name}`;
+  return others.length ? `${head} +${others.length}` : head;
+}
+
+/** O cancelamento como aviso da tela (`alerts` do cabeçalho). Se o pedido continua na
+ *  estação, foi um ITEM que saiu ("Pedido F22: item cancelado às 22:01. O resto
+ *  continua."); senão, o pedido inteiro. A descrição diz o que NÃO preparar. */
+export function cancelledAlert(
+  cancelled: Pick<KDSTicketProjection, "order_ref" | "cancelled_at_display" | "items">,
+  activeRefs: ReadonlySet<string>,
+): { title: string; description: string } {
+  const code = splitRef(cancelled.order_ref).code;
+  const time = cancelled.cancelled_at_display ? ` às ${cancelled.cancelled_at_display}` : "";
+  const items = cancelled.items.map((item) => `${item.qty}× ${item.name}`).join(", ");
+  const title = activeRefs.has(cancelled.order_ref)
+    ? `Pedido ${code}: item cancelado${time}. O resto continua.`
+    : `Pedido ${code} cancelado${time}.`;
+  return { title, description: items ? `Não preparar: ${items}.` : "" };
 }

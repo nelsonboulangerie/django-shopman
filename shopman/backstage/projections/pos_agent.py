@@ -412,7 +412,7 @@ def _commands(os_key: str) -> tuple[AgentStep, ...]:
             title="Está tudo certo neste balcão?",
             detail=(
                 "Um relatório: a versão instalada contra a que está no ar, a config, o "
-                "serviço, o serviço antigo e a impressora. Não para no primeiro problema — "
+                "serviço, o serviço antigo e a impressora. Não para no primeiro problema: "
                 "varre tudo e diz o que fazer em cada linha."
             ),
             command=f"{agente} --doctor",

@@ -1,6 +1,8 @@
 # ADR-013 - POS offline policy and surface ownership
 
-**Status:** Accepted; implemented for surface ownership  
+**Status:** Accepted; implemented for surface ownership. §1 superado em 10/10/2026
+pela decisão do dono de o PDV vender sem conexão (ver
+[WP-PDV-SEM-CONEXAO](../plans/WP-PDV-SEM-CONEXAO.md), que cumpre os pré-requisitos do §2)  
 **Data:** 2026-05-23  
 **Escopo:** POS, backstage operator surfaces, production readiness
 

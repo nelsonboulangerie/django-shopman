@@ -17,6 +17,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from shopman.shop.handlers._resilient import resilient_receiver
+from shopman.shop.request_memo import run_at_request_end
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,8 @@ def queue_order_to_work_order_sync(
     """Run cross-aggregate reconciliation only after the Order lock commits."""
     if order is None:
         return
+    if event_type and event_type not in _ORDER_EVENTS_THAT_RELINK:
+        return
     order_pk = order.pk
 
     def reconcile() -> None:
@@ -69,7 +72,11 @@ def queue_order_to_work_order_sync(
         except Exception:
             logger.exception("production_order_sync.order_failed order_pk=%s", order_pk)
 
-    transaction.on_commit(reconcile)
+    # Uma reconciliação por pedido, depois da resposta: a venda de balcão nasce,
+    # confirma e completa no mesmo request, e cada transição agendava a sua
+    # (cada uma travando os pedidos ativos dos mesmos SKUs). Ela relê o pedido e
+    # recalcula do estado atual, então a última vale pelas anteriores.
+    transaction.on_commit(lambda: run_at_request_end(("production_order_sync.order", order_pk), reconcile))
 
 
 def queue_order_items_resync(*, order, previous_skus) -> None:
@@ -127,11 +134,15 @@ def queue_work_order_to_order_sync(
     transaction.on_commit(reconcile)
 
 
+#: Os eventos do pedido que podem mudar o vínculo com a produção.
+_ORDER_EVENTS_THAT_RELINK = frozenset({"created", "status_changed"})
+
+
 def link_order_to_work_orders(sender=None, order=None, event_type: str = "", actor: str = "", **kwargs) -> None:
     """Attach a confirmed order to suitable planned/started work orders."""
     if order is None:
         return
-    if event_type and event_type not in {"created", "status_changed"}:
+    if event_type and event_type not in _ORDER_EVENTS_THAT_RELINK:
         return
 
     from shopman.orderman.models import Order

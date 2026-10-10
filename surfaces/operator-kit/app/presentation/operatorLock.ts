@@ -53,8 +53,24 @@ export function isLikelyBadge(value: string): boolean {
 // tecla a tecla por janela de tempo faria dedo rápido virar "crachá" e perderia
 // dígito; aqui dedo nenhum é classificado como máquina.
 
+/**
+ * A regra do PIN, como ela é: no MÍNIMO 4 dígitos, só dígitos (doorman
+ * `PIN_MIN_LENGTH = 4`, `PIN_DIGITS_ONLY`; `PinCredential.validate_raw`). O
+ * servidor não tem máximo; a tela para no oitavo (o teclado não cresce sem
+ * limite). O PIN temporário do reset do gerente nasce com o mínimo, 4.
+ *
+ * O campo desenha exatamente isso (`pinSlots`): 4 casas vazias, e uma casa a
+ * mais a cada dígito além do quarto, até 8.
+ */
+export const PIN_MIN_DIGITS = 4;
+
 /** O PIN visível para no oitavo dígito (o teclado não cresce sem limite). */
 export const PIN_MAX_DIGITS = 8;
+
+/** Quantas casas o campo do PIN mostra para o que já foi digitado. */
+export function pinSlots(pinLength: number): number {
+  return Math.min(PIN_MAX_DIGITS, Math.max(PIN_MIN_DIGITS, pinLength));
+}
 
 /** Quantas teclas formam um crachá — o mesmo 12 de `isLikelyBadge`. */
 export const BADGE_KEYS = 12;
@@ -185,7 +201,7 @@ export function canSubmitPin(quem: number | string | null, pin: string): boolean
   // ou a ter um pad próprio, que foi como nasceram os componentes duplicados.
   if (quem == null) return false;
   if (typeof quem === "string" && !quem.trim()) return false;
-  return pin.trim().length >= 4;
+  return pin.trim().length >= PIN_MIN_DIGITS;
 }
 
 /** Append a digit to the PIN buffer, capped (keypads shouldn't grow unbounded). */

@@ -14,7 +14,9 @@ import {
   finishProductionWorkOrder,
   quickFinishProduction,
   reviewProductionQuality,
+  reviewProductionQualityBatch,
 } from "~/generated/productionContract";
+import { qualityGate } from "~/presentation/qualityGate";
 import { parseShortage } from "~/presentation/production";
 import { newProductionMutationKey } from "~/utils/mutationKey";
 import {
@@ -78,7 +80,7 @@ export function useQcKiosk(initialDate = "") {
       if (shortage) return { ok: false, shortage };
       if (mutationGuard.handleMutationError(err)) return { ok: false };
       useSonner.error(httpErrorMessage(err, fallbackError));
-      // Conflito de estado (fornada fechada/estornada em outra tela): o painel
+      // Conflito de estado (lote fechado/cancelado em outra tela): o painel
       // está mentindo — atualiza na hora em vez de esperar o poll de 30s.
       if (httpErrorCode(err) === "conflict") await refresh();
       return { ok: false };
@@ -181,6 +183,32 @@ export function useQcKiosk(initialDate = "") {
       "Não deu para confirmar a qualidade. Tente de novo.",
     );
 
+  // Qualidade em lote (P19): os lotes sem exceção num ato só, tudo ou nada.
+  // O conjunto enviado é o mesmo que a projeção assinou (pk@rev de cada lote
+  // limpo); se um lote mudou, o servidor recusa tudo e a tela se atualiza.
+  const reviewQualityBatch = (): Promise<QcActResult> => {
+    const current = kiosk.value;
+    const action = current?.actions.find(
+      (candidate) => candidate.kind === "review_qc_batch",
+    );
+    if (!current || !action) return Promise.resolve({ ok: false });
+    const items = qualityGate(current.orders).clean.map((order) => ({
+      work_order_id: order.pk,
+      expected_rev: order.rev,
+    }));
+    return post(
+      action.ref,
+      (idempotencyKey, metadata) =>
+        reviewProductionQualityBatch({
+          target_date: current.selected_date,
+          items,
+          ...metadata,
+          idempotency_key: idempotencyKey,
+        }),
+      "Não deu para confirmar os lotes. Nada foi confirmado; tente de novo.",
+    );
+  };
+
   return {
     kiosk,
     selectedDate,
@@ -191,6 +219,7 @@ export function useQcKiosk(initialDate = "") {
     finish,
     quickFinish,
     reviewQuality,
+    reviewQualityBatch,
     correctQuality,
   };
 }

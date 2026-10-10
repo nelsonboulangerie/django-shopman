@@ -28,6 +28,10 @@ class PrintJob(models.Model):
         # A Via Cozinha do posto sem tela (services/kitchen_ticket_print.py):
         # um papel por ticket do KDS, na impressora escolhida no posto.
         KITCHEN_TICKET = "kitchen_ticket", "Via Cozinha"
+        # Os cinco bytes que abrem a gaveta do Balcão a pedido do tablet
+        # (services/drawer_pulse.py). Não é papel: é o pulso do RJ11 da
+        # impressora, pelo mesmo relay, e vale segundos, não horas.
+        DRAWER_PULSE = "drawer_pulse", "Pulso de gaveta"
 
     class Status(models.TextChoices):
         PREPARED = "prepared", "Preparada no navegador"

@@ -225,7 +225,7 @@ def get_sidebar_navigation(request):
             _model_item("Acessos de operador", "login", "backstage.SignInEvent"),
         ]),
         _group(
-            "Marketing — auditoria",
+            "Marketing · auditoria",
             "fact_check",
             [
                 _model_item("Anúncios", "campaign", "shop.Announcement"),

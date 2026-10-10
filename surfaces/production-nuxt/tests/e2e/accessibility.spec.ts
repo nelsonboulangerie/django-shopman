@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
+import { expectOperatorLabelsFit } from "../../../operator-kit/visual/playwright";
+
+// Alvo mínimo = altura `md` (32 px), decisão do dono de 09/10/2026; acima do piso
+// WCAG 2.2 AA (2.5.8, 24 px).
+const MIN_TARGET = 32;
+
 const authed = {
   name: "e2e_session",
   value: "authed",
@@ -47,18 +53,25 @@ async function expectTouchTargets(page: Page, context: string) {
     .locator(
       'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="switch"]',
     )
-    .evaluateAll((elements) =>
+    .evaluateAll((elements, minTarget) =>
       elements.flatMap((element) => {
         const node = element as HTMLElement;
         const style = getComputedStyle(node);
         // Checkbox/radio may be visually compact while its associated label is
-        // the actual pointer target. Measure that explicit native hit area.
+        // the actual pointer target. `UiCheckbox` follows the same anatomy, but
+        // Reka renders the control as a button inside the canonical 44 px root.
+        // Measure the explicit hit area instead of the 20 px painted square.
+        const canonicalCheckbox =
+          node.getAttribute("role") === "checkbox"
+            ? node.closest<HTMLElement>('[data-slot="checkbox"]')
+            : null;
         const target =
-          node instanceof HTMLInputElement &&
+          canonicalCheckbox ||
+          (node instanceof HTMLInputElement &&
           ["checkbox", "radio"].includes(node.type) &&
           node.closest("label")
             ? node.closest("label")!
-            : node;
+            : node);
         const rect = target.getBoundingClientRect();
         if (
           style.display === "none" ||
@@ -69,7 +82,17 @@ async function expectTouchTargets(page: Page, context: string) {
           rect.height === 0
         )
           return [];
-        return rect.width >= 44 && rect.height >= 44
+        // O `NuxtCheckbox`/`NuxtSwitch` do tema do kit pinta 16 px e alarga o alvo com
+        // um `::after` de `size-control` (32 px) centrado no controle: o toque cai nele,
+        // então é ele que se mede.
+        const hit = getComputedStyle(node, "::after");
+        const hitWidth = hit.content !== "none" && hit.position === "absolute" ? parseFloat(hit.width) || 0 : 0;
+        const hitHeight = hit.content !== "none" && hit.position === "absolute" ? parseFloat(hit.height) || 0 : 0;
+        const width = Math.max(rect.width, hitWidth);
+        const height = Math.max(rect.height, hitHeight);
+        // Arredonda o subpixel: o campo `md` do Nuxt UI mede 31,98 px (texto 20 px +
+        // 12 px de respiro, com a fonte em fração de pixel) e é o mesmo 32 do botão.
+        return Math.round(width) >= minTarget && Math.round(height) >= minTarget
           ? []
           : [
               {
@@ -78,11 +101,12 @@ async function expectTouchTargets(page: Page, context: string) {
                   node.textContent?.trim().slice(0, 60) ||
                   node.tagName,
                 tag: node.tagName,
-                width: Math.round(rect.width * 10) / 10,
-                height: Math.round(rect.height * 10) / 10,
+                width: Math.round(width * 10) / 10,
+                height: Math.round(height * 10) / 10,
               },
             ];
       }),
+    MIN_TARGET,
     );
   expect(failures, `${context}: ${JSON.stringify(failures, null, 2)}`).toEqual(
     [],
@@ -125,7 +149,8 @@ test("superfície autenticada passa AA, reflow e alvos aplicáveis", async ({
 const criticalRoutes = [
   { path: "/plan", audience: "floor" },
   { path: "/mise-en-place", audience: "floor" },
-  { path: "/expedite", audience: "floor" },
+  { path: "/close", audience: "floor" },
+  { path: "/quality", audience: "manager" },
   { path: "/reports", audience: "manager" },
   { path: "/recipes", audience: "manager" },
 ] as const;
@@ -145,6 +170,8 @@ for (const route of criticalRoutes) {
     await expect(page.locator("main")).toBeVisible();
     await expectNoAxeViolations(page, `${route.path} ${project}`);
     await expectNoPageOverflow(page, `${route.path} ${project}`);
+    // O rótulo que cabe (dono, 10/10/2026): nenhum texto de botão vaza ou corta.
+    await expectOperatorLabelsFit(page, `${route.path} ${project}`);
     if (testInfo.project.metadata.touchTargets) {
       await expectTouchTargets(page, `${route.path} ${project}`);
     }
@@ -158,7 +185,7 @@ for (const route of criticalRoutes) {
   });
 }
 
-test("relatório populado mantém os controles compostos com alvo de 44 px", async ({
+test("relatório populado mantém os controles compostos com alvo de 32 px", async ({
   context,
   page,
 }, testInfo) => {
@@ -188,18 +215,18 @@ test("relatório populado mantém os controles compostos com alvo de 44 px", asy
   await expect(page.getByText("Exportação cancelada.", { exact: true })).toBeVisible();
 });
 
-test("Expedição abre a revisão de QC mantendo contexto", async ({ context, page }, testInfo) => {
+test("Fechamento abre a revisão de QC mantendo contexto", async ({ context, page }, testInfo) => {
   test.skip(
     Boolean(testInfo.project.metadata.board) ||
       testInfo.project.name === "chromium-mobile-manager",
   );
   await context.addCookies([authed]);
-  await page.goto("/expedite");
+  await page.goto("/close");
   await page
     .getByRole("button", { name: "Finalizar o lote de Pão francês" })
     .click();
   await expect(page.getByText("Pão francês", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("40 produzidos", { exact: false })).toBeVisible();
+  await expect(page.getByText("40 previstos", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Voltar" })).toBeVisible();
   await expectNoAxeViolations(page, `QC aberto ${testInfo.project.name}`);
   await testInfo.attach(`qc-aberto-${testInfo.project.name}`, {
@@ -259,10 +286,10 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
 for (const { route, endpoint, offset } of [
   { route: "/", endpoint: "/production/?", offset: 2 },
   { route: "/board", endpoint: "/production/forecast/?", offset: 2 },
-  // A Expedição não anda para o futuro (não há lote para fechar): o dia é atrás.
-  { route: "/expedite", endpoint: "/production/qc/?", offset: -2 },
+  // O Fechamento não anda para o futuro (não há lote para fechar): o dia é atrás.
+  { route: "/close", endpoint: "/production/qc/?", offset: -2 },
 ]) {
-  test(`${route} usa o controle nativo de data sem depender de showPicker`, async ({
+  test(`${route} usa o controle de período canônico sem depender de showPicker`, async ({
     context,
     page,
   }) => {
@@ -270,9 +297,15 @@ for (const { route, endpoint, offset } of [
     // não muda a seleção, não sai request, e o teste morre em timeout — foi
     // exatamente o que aconteceu em 17/09/2026, dia em que o literal
     // "2026-09-17" virou hoje e a matriz inteira ficou vermelha. Dois dias de
-    // distância cobrem o fuso do runner (UTC) contra o da loja (-03:00).
+    // distância. O "hoje" do alvo é o da página (o `timezoneId` do
+    // playwright.config, America/Sao_Paulo), não o do runner (UTC): entre 00h e
+    // 03h UTC os dois discordam, os dois cliques para a frente paravam um dia
+    // antes do alvo e a matriz caía em timeout (08/10/2026, 21h em Londrina).
     const target = (() => {
-      const day = new Date();
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+      }).format(new Date());
+      const day = new Date(`${today}T12:00:00Z`);
       day.setUTCDate(day.getUTCDate() + offset);
       return day.toISOString().slice(0, 10);
     })();
@@ -289,21 +322,20 @@ for (const { route, endpoint, offset } of [
     await context.addCookies([authed]);
     await page.goto(route);
 
-    // O "Período" do kit: o botão abre o popover, e o dia se escolhe no campo
-    // nativo dele ("Ir para o dia").
-    await page.locator("[data-period-button]").first().click();
-    const input = page.getByLabel("Ir para o dia");
-    await input.click();
-    await expect(input).toBeFocused();
-    expect(await page.evaluate(() => window.__showPickerCalls)).toBe(0);
+    // O "Período" canônico muda por botões próprios. O input nativo, quando
+    // existe para integração de formulário, fica oculto e não é a superfície de
+    // toque nem de teclado do operador.
     const changedRequest = page.waitForRequest(
       (request) =>
         request.url().includes(endpoint) && request.url().includes(`date=${target}`),
     );
-    await input.fill(target);
-    await expect(input).toHaveValue(target);
-    await page.getByRole("button", { name: "Mostrar esta data" }).click();
+    const direction = offset > 0 ? "[data-period-next]" : "[data-period-prev]";
+    const step = page.locator(direction).first();
+    for (let i = 0; i < Math.abs(offset); i += 1) {
+      await step.click();
+    }
     await changedRequest;
+    expect(await page.evaluate(() => window.__showPickerCalls)).toBe(0);
   });
 }
 
@@ -328,7 +360,11 @@ test("copy longa e números grandes passam reflow equivalente a 200%", async ({
   await expect(
     page.getByText("Pão de fermentação natural com castanhas brasileiras"),
   ).toBeVisible();
-  await expect(page.getByText("12345,75", { exact: false }).first()).toBeVisible();
+  // O número aparece duas vezes na linha aberta: na coluna Planejado (tablet deitado
+  // e desktop) e na linha do produto (celular e tablet em pé). Vale o visível.
+  await expect(
+    page.getByText("12.345,75", { exact: false }).filter({ visible: true }).first(),
+  ).toBeVisible();
   // Isso cobre a geometria/reflow equivalente, não prova zoom real nem revisão
   // visual: Playwright não expõe uma API de zoom interoperável entre engines.
   await page.setViewportSize({ width: 512, height: 384 });
@@ -350,13 +386,12 @@ test("foco permanece distinguível em contraste forçado", async ({ context, pag
   );
 
   await context.addCookies([authed]);
-  for (const route of ["/", "/board", "/expedite"]) {
+  for (const route of ["/", "/board", "/close"]) {
     await page.goto(route);
-    await page.locator("[data-period-button]").first().click();
-    const dateInput = page.getByLabel("Ir para o dia");
-    await dateInput.focus();
-    await expect(dateInput).toBeFocused();
-    const outline = await dateInput.evaluate((node) => {
+    const periodButton = page.locator("[data-period-button]").first();
+    await periodButton.focus();
+    await expect(periodButton).toBeFocused();
+    const outline = await periodButton.evaluate((node) => {
       const style = getComputedStyle(node);
       return {
         style: style.outlineStyle,

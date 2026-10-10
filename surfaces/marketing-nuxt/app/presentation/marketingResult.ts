@@ -99,14 +99,14 @@ export function deliveryStatePresentation(
       icon: "lucide:check-circle-2",
     },
     completed_with_failures: {
-      label: "Entrega parcial — precisa de atenção",
+      label: "Entrega parcial: precisa de atenção",
       detail:
         "Parte foi disparada e parte falhou. O sucesso de uma plataforma não esconde as outras.",
       tone: "danger",
       icon: "lucide:triangle-alert",
     },
     unknown: {
-      label: "Há resultados incertos — não reenvie",
+      label: "Há resultados incertos: não reenvie",
       detail:
         "A plataforma pode ter produzido efeito sem devolver resposta. Consultar só verifica o resultado; não envia outra vez.",
       tone: "attention",
@@ -239,7 +239,7 @@ export function recoveryActionExplanation(
   if (action.kind === "cancel_announcement") {
     return "Cancela somente as plataformas que ainda não começaram. O que já começou segue até o fim.";
   }
-  return "A consequência será revalidada pelo servidor antes de confirmar.";
+  return "Se algo mudar antes de você confirmar, a ação é recusada.";
 }
 
 export function recoveryDisabledReason(reason: string): string {
@@ -394,7 +394,7 @@ export function marketingLoadError(error: unknown): {
     return {
       title: "Muitas consultas em pouco tempo",
       detail:
-        "Aguarde o prazo indicado pelo servidor e tente novamente; nenhuma ação foi repetida.",
+        "Espere um pouco e tente de novo. Nada foi repetido.",
       canRetry: true,
     };
   }
@@ -613,5 +613,5 @@ export function acceptedAwaitingConfirmationNote(count: number): string {
     total === 1
       ? "Uma entrega foi aceita pelo provedor"
       : `${formatCount(total)} entregas foram aceitas pelo provedor`;
-  return `${subject}: ele recebeu e assumiu a entrega, e a confirmação de que chegou à pessoa vem depois, dele mesmo — quando chegar, aparece neste mesmo quadro, sem você fazer nada. Até lá não reenvie: o reenvio duplicaria a mensagem em vez de apressá-la.`;
+  return `${subject}: ele recebeu e assumiu a entrega, e a confirmação de que chegou à pessoa vem depois, dele mesmo. Quando chegar, aparece neste mesmo quadro, sem você fazer nada. Até lá não reenvie: o reenvio duplicaria a mensagem em vez de apressá-la.`;
 }

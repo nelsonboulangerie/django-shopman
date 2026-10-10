@@ -325,7 +325,8 @@ describe("antesala — caixa fechado, tudo é card", () => {
     const wrapper = await openLobby();
     expect(tile(wrapper, "open_shift").exists()).toBe(true);
     expect(tile(wrapper, "open_shift").attributes("data-tone")).toBe("primary");
-    expect(wrapper.find("input").exists()).toBe(false);
+    // A busca da suíte do cabeçalho é campo, mas não é do formulário do caixa.
+    expect(wrapper.find("input:not([data-suite-search-input])").exists()).toBe(false);
     expect(dialog("open_shift")).toBeNull();
 
     await tile(wrapper, "open_shift").trigger("click");

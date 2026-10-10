@@ -16,10 +16,9 @@ class SupplierMaterialCost(models.Model):
     """Custo de um insumo por fornecedor, em centavos **da unidade de compra**.
 
     Uma linha por par (fornecedor, insumo). ``is_preferred`` marca o custo
-    canônico daquele insumo — o que **vai alimentar** o custeio de receita e o
-    ``CostBackend`` do Offerman. Hoje esta tabela não tem leitor no repositório:
-    o backend só será escrito depois da decisão de custo vivo × congelado
-    (docs/decisions/adr-023-cost-live-and-frozen.md).
+    canônico daquele insumo — o que alimenta o custeio de receita: o custo vivo
+    do orquestrador (``RecipeCostBackend``, ADR-023) lê daqui pelo
+    ``CostBackend`` do Offerman.
     Histórico de preço fica para uma fase futura.
 
     **O operador nunca divide** (ADR-024, R2). Ele copia da nota os três números
@@ -192,14 +191,14 @@ class SupplierMaterialCost(models.Model):
         if self.material_id and not self.material.is_active:
             raise ValidationError({
                 "is_preferred": _(
-                    "O insumo '%(sku)s' está inativo — um insumo aposentado não pode "
+                    "O insumo '%(sku)s' está inativo, e um insumo aposentado não pode "
                     "ter custo canônico. Reative o insumo ou marque outro custo."
                 ) % {"sku": self.material.sku}
             })
         if self.supplier_id and not self.supplier.is_active:
             raise ValidationError({
                 "is_preferred": _(
-                    "O fornecedor '%(ref)s' está inativo — o custo canônico não pode "
+                    "O fornecedor '%(ref)s' está inativo, e o custo canônico não pode "
                     "apontar para um fornecedor aposentado. Reative o fornecedor ou "
                     "promova outro custo."
                 ) % {"ref": self.supplier.ref}
@@ -236,7 +235,7 @@ class SupplierMaterialCost(models.Model):
                 "conversion": _(
                     "A conversão '%(label)s' vale só para o fornecedor "
                     "'%(other)s'. Cadastre a mesma unidade de compra para "
-                    "'%(supplier)s' — o saco de cada fornecedor pode ter um peso."
+                    "'%(supplier)s': o saco de cada fornecedor pode ter um peso."
                 ) % {
                     "label": conversion.label,
                     "other": conversion.supplier.name or conversion.supplier.ref,

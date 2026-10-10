@@ -1,28 +1,15 @@
-import { defineConfig } from "@playwright/test";
+import { defineOperatorVisualConfig } from "../operator-kit/visual/playwright";
 
-const appPort = 3010;
-const backendPort = 9011;
+// As variáveis existem para quem roda em paralelo numa faixa de portas própria.
+const appPort = Number(process.env.MARKETING_VISUAL_APP_PORT || 3010);
+const backendPort = Number(process.env.MARKETING_VISUAL_BACKEND_PORT || 9011);
 
-export default defineConfig({
+export default defineOperatorVisualConfig({
+  app: "marketing-nuxt",
+  matrix: false,
   testDir: "./tests/visual",
-  testMatch: "**/*.spec.ts",
   outputDir: "./test-results/visual",
   snapshotPathTemplate: "{testDir}/baselines/{arg}{ext}",
-  fullyParallel: false,
-  forbidOnly: true,
-  retries: 0,
-  workers: 1,
-  timeout: 60_000,
-  reporter: [["list"]],
-  expect: {
-    timeout: 10_000,
-    toHaveScreenshot: {
-      animations: "disabled",
-      caret: "hide",
-      maxDiffPixelRatio: 0.001,
-      threshold: 0.2,
-    },
-  },
   webServer: [
     {
       command: `python3 tests/visual/mock_backend.py ${backendPort}`,
@@ -45,15 +32,7 @@ export default defineConfig({
   ],
   use: {
     baseURL: `http://127.0.0.1:${appPort}`,
-    browserName: "chromium",
-    headless: true,
     bypassCSP: true,
-    colorScheme: "light",
-    locale: "pt-BR",
-    reducedMotion: "reduce",
-    serviceWorkers: "block",
-    timezoneId: "America/Sao_Paulo",
-    trace: "retain-on-failure",
     viewport: { width: 390, height: 844 },
   },
 });

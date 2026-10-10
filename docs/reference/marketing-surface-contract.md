@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-09-28
+- **Última verificação:** 2026-10-04
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -114,27 +114,83 @@ confirmação, nunca automático.
 
 ## Rotas Nuxt
 
-`/v2` é a entrada autenticada e canônica do workspace Marketing V2. `/` redireciona
-para `/v2?area=today`. Ela organiza Hoje,
-Campanhas, Ofertas e Plataformas em uma experiência própria, mas não cria um segundo
-backend nem comandos paralelos: lê as mesmas projeções e executa os mesmos Actions,
-confirmações e receipts das rotas canônicas. Os deep links mantêm `experience=v2`,
-podem abrir uma campanha com oferta pré-selecionada e podem abrir a conexão de uma
-plataforma específica. Hoje, Campanhas, Ofertas e cupons e Plataformas ocupam a barra
-superior canônica do app na V2; não existe uma segunda barra de abas dentro do
-workspace. A prévia em `/marketing-v2-preview/index.html` continua sendo
-somente referência de design, sem capacidade operacional.
+### A casa é a fila de decisões
+
+Decisão do dono (2026-10-03, SUITE-UX §9): `/` é a **fila de decisões**, ordenada
+por prazo, sem corte. Antes eram cinco portas (Hoje cortado em quatro, sino, push, a
+volta do disparo e a linha do histórico) e nenhuma tela. A fila lê
+`GET /marketing/decisions/` (`shopman/backstage/projections/marketing_decisions.py`,
+capability `shop.view_marketing`, `Cache-Control: private, no-store`) e só traz
+decisões que existem no sistema, cada uma com o lugar exato onde ela já é tomada:
+
+| Tipo (`kind`) | Quando entra | Prazo (`deadline_at`) | "Revisar" abre |
+|---|---|---|---|
+| `review` | anúncio `pending_review` dentro do prazo | `expires_at` do anúncio | `/announcements/:id#review` |
+| `retry_failed` | destino `failed_retryable` (só volta por gesto do operador) | `expires_at` do anúncio: depois dele o worker encerra o destino como vencido | `/announcements/:id#result` |
+| `reconcile_unknown` | destino `unknown` cuja última tentativa já teve consulta e nenhuma está em andamento | nenhum | `/announcements/:id#result` |
+
+Cada item leva o alcance nas duas grandezas, separadas (`reach.posts` e
+`reach.people`, nunca somadas) e, quando é falha, o motivo por plataforma
+(`failures[].reason_code`, o código mais frequente do ledger); a frase em pt-BR mora
+em `app/presentation/decisions.ts`. A projeção não leva texto do anúncio, rótulo nem
+PII. A fila também traz `automatic_checks` (o resultado incerto que o sistema
+consulta sozinho, ver abaixo), `scheduled` (aprovados com `publish_at` futuro, que
+alimentam `/scheduled`), `scheduled_today_count` e `active_campaign_count`, que viram
+a linha "+N agendados hoje · M campanhas ligadas". A fila não decide nada: a revisão
+do anúncio revalida as Actions do operador.
+
+O sino deixou de ter lista própria: é um link para `/` que diz quantas decisões
+esperam. Ele mora na barra do topo onde a barra lateral não está (celular e tablet); na
+mesa o selo de Decisões na barra lateral faz o papel dele. A caixa pessoal (SSE `/sse/notifications` e poll de 60 s, que
+só invalidam; a fila refaz o fetch) tem um dono só, o `MarketingInboxLive`, montado
+uma vez no shell em qualquer largura, que também registra os avisos como vistos quando
+a fila está na tela. O push continua abrindo `/announcements/:id#review`, que é o
+"Revisar" do cartão daquele anúncio.
+
+Seções de operação: **Decisões** (`/`), **Agendados** (`/scheduled`) e **Enviados**
+(`/history`); **Ajustes** (`/settings`) entra por um item só, no pé da barra lateral, e é
+a página que lista as quatro sub-seções, cada uma com rota própria embaixo dela:
+Campanhas (`/settings/campaigns`), Modelos (`/settings/templates`), Ofertas e cupons
+(`/settings/offers`) e Plataformas (`/settings/platforms`). Dentro de uma sub-seção, a
+faixa esquerda da toolbar (`MarketingSettingsNav`: abas na mesa, lista de escolha no
+celular) leva às outras três sem voltar. Desde a fase 2 (WP-FASE2-UX-OPERADOR) o Marketing
+mora no shell da suíte, o mesmo do Gestor (`OperatorSuiteShell`): na mesa, a barra
+lateral em três estados (aberta, compacta, oculta) com Decisões, Agendados e Enviados em
+cima e Ajustes no pé; abaixo de `lg`, a gaveta pelo ☰ (o menu completo) e a barra
+inferior com as quatro seções. Cada tela abre com o `OperatorPageHeader` do kit: título,
+busca, a ação primária da tela e o ⋯ "Mais ações" (as ações como dados; "Atualizar" com a
+tecla R mora ali), o "ao vivo" no estado da barra, os recortes na toolbar e o aviso da
+tela no lugar declarado (`alerts`).
+
+O workspace V2 (`/v2`, com o panorama em `area=today`) e a prévia estática
+`/marketing-v2-preview/` saíram na V6-MKT: pré-go-live é zero legado e sem
+redirecionamento. As capacidades que moravam nele vivem nas rotas de Ajustes acima.
+`/settings/offers` cria oferta e cupom e leva "Criar campanha com esta oferta" para
+`/settings/campaigns?new=1&offer=<ref>`.
+
+### A revisão e o selo (V6-MKT)
+
+A revisão do anúncio (`/announcements/:id`) segue a v4: foto grande com "Tirar outra" (upload
+re-encodado pelo servidor em `marketing/announcements/<id>/photo/`, e a aprovação só
+aceita uma foto que veio dessa revisão), contador de caracteres contra o limite da
+plataforma, uma linha por plataforma com interruptor, "Quando" (agora ou agendar) e a
+decisão, Recusar e Continuar: abaixo de `lg` na ação na base do kit
+(`OperatorActionBar`, flutuando acima da barra inferior, com o motivo escrito quando
+Continuar não pode), na mesa na barra do topo. O selo confirma com a **digital do dispositivo**
+(WebAuthn, `security/device/*`), que vale só para a confirmação para a qual foi pedida
+e dispensa a frase digitada e a senha; "Usar o meu código" mantém a frase e a senha ou
+o autenticador como alternativa. Acima do limiar de dupla confirmação, "Pedir a
+confirmação de outra pessoa" manda push a quem tem a capacidade de aprovar
+(`security/second-control/request/`); o aviso abre `/second-control/:ref`, onde a
+segunda pessoa confirma com a digital ou o autenticador dela. Quem pediu nunca
+confirma o próprio pedido.
 
 Os fluxos densos de campanha, disparo manual, modelo e configuração de plataforma
 abrem em um workspace modal. No desktop ele usa a largura disponível para etapas,
-composições e prévias; no mobile ocupa a tela. Fechar um deep link devolve o operador
-à área correspondente e restaura o foco no acionador. `/platforms` sem uma plataforma
-específica redireciona para `/v2?area=platforms`, evitando alternância entre o catálogo
-novo e a lista anterior. As rotas secundárias `/campaigns`, `/templates`, `/history`,
-`/platforms?platform=...` e `/announcements/:id` continuam hospedando as capacidades
-operacionais existentes sob a mesma barra superior da V2.
+composições e prévias; no mobile ocupa a tela. Fechar devolve o operador à lista da
+própria rota e restaura o foco no acionador (em Plataformas, a linha da plataforma).
 
-O inventário de destinos da V2 combina, sem fundir, a allow-list selecionável das
+O inventário de destinos combina, sem fundir, a allow-list selecionável das
 opções, o catálogo de capacidades por formato e a prontidão viva das conexões. Uma
 plataforma desconectada ou bloqueada permanece visível com o motivo real; somente a
 allow-list do servidor decide se ela entra no composer. Na fixture hermética, Google
@@ -157,11 +213,14 @@ e nenhuma plataforma recebe conteúdo no `fire`.
 <!-- marketing-ui-routes:start -->
 - `/`
 - `/announcements/:id`
-- `/campaigns`
 - `/history`
-- `/platforms`
-- `/templates`
-- `/v2`
+- `/scheduled`
+- `/second-control/:ref`
+- `/settings`
+- `/settings/campaigns`
+- `/settings/offers`
+- `/settings/platforms`
+- `/settings/templates`
 <!-- marketing-ui-routes:end -->
 
 Rotas de infraestrutura: `/api/v1/**` é o BFF same-origin, `/sse/notifications`
@@ -181,6 +240,7 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/announcements/:id/approve/`
 - `/api/v1/backstage/marketing/announcements/:id/cancel/`
 - `/api/v1/backstage/marketing/announcements/:id/delivery-actions/`
+- `/api/v1/backstage/marketing/announcements/:id/photo/`
 - `/api/v1/backstage/marketing/announcements/:id/reconcile-deliveries/`
 - `/api/v1/backstage/marketing/announcements/:id/reject/`
 - `/api/v1/backstage/marketing/announcements/:id/reschedule/`
@@ -188,6 +248,7 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/announcements/:id/rewrite/`
 - `/api/v1/backstage/marketing/announcements/:id/suggestions/:ref/disposition/`
 - `/api/v1/backstage/marketing/audience/count/`
+- `/api/v1/backstage/marketing/decisions/`
 - `/api/v1/backstage/marketing/history/`
 - `/api/v1/backstage/marketing/options/`
 - `/api/v1/backstage/marketing/offers/`
@@ -196,8 +257,14 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/rules/`
 - `/api/v1/backstage/marketing/rules/:id/`
 - `/api/v1/backstage/marketing/rules/:id/fire/`
+- `/api/v1/backstage/marketing/security/device/`
+- `/api/v1/backstage/marketing/security/device/options/`
+- `/api/v1/backstage/marketing/security/device/register/`
+- `/api/v1/backstage/marketing/security/device/register/options/`
 - `/api/v1/backstage/marketing/security/dual-control/`
 - `/api/v1/backstage/marketing/security/freeze/`
+- `/api/v1/backstage/marketing/security/second-control/:ref/`
+- `/api/v1/backstage/marketing/security/second-control/request/`
 - `/api/v1/backstage/marketing/security/step-up/`
 - `/api/v1/backstage/marketing/security/unfreeze/`
 - `/api/v1/backstage/marketing/telemetry/vital/`
@@ -281,12 +348,36 @@ continuam somando mensagens + postagens, porque ali a pergunta é volume, não r
 [ADR-032](../decisions/adr-032-marketing-ceremony-threshold-is-proportional.md) e
 [ADR-033](../decisions/adr-033-marketing-typed-phrase-follows-the-irreversible.md).
 
+**O selo** (V4-MKT, prévia `marketing-decisoes4.html`): a caixa de confirmação da
+aprovação é a mesma de antes (mesmo desafio, mesma frase, mesma senha/TOTP, mesmo
+duplo controle) com o desenho da v4. No celular ela sobe do pé como folha; o carimbo
+marca o que faz algo sair; os destinos vêm um por linha, cada um na sua grandeza
+(`sealRows`: "1 postagem" por mural, "N pessoas" na mensagem direta, nunca somados), e
+a frase de consequência separa o que volta do que não volta (`sealConsequence`:
+"Mensagem enviada não volta. Postagem pode ser apagada depois, na plataforma."). A
+confirmação pela digital do dispositivo e o pedido à segunda pessoa por push (ROUNDS
+UX-M1) são função nova e não estão no cockpit.
+
 O desafio de confirmação diz por que pediu: `ceremony_reason` vale `direct_message`
 quando a frase veio da mensagem e `""` quando não houve frase; `direct_message_count`,
 `public_post_count` e `ceremony_threshold` completam a explicação.
 Outbox, público selado, artefato imutável, destinos e tentativas formam o grafo durável.
 `accepted_unconfirmed`, `confirmed`, falha final, falha repetível e `unknown` são estados
 distintos. `unknown` nunca recebe repetição cega.
+
+**O incerto é conferido sozinho** (decisão do dono, 2026-10-03, SUITE-UX §5.1). A
+cada passada com `--with-reconciliation`, `request_automatic_reconciliations`
+(`marketing_delivery_recovery.py`) cria a consulta de cada tentativa `unknown` que
+ainda não teve nenhuma, com recibo de sistema (`actor` nulo, `actor_ref`
+`system:marketing-reconciliation`, auditoria `automatic_reconcile_unknown`), só para
+plataformas com provedor registrado no ciclo. A guarda é a mesma do comando do
+operador: a consulta usa `lookup`, que não tem `send`, e o resultado nunca volta
+para a fila de envio. Cada tentativa recebe **uma** consulta automática: se a
+plataforma responder "não sei" de novo, o destino entra na fila de decisões como
+`reconcile_unknown`, e consultar de novo é gesto do operador (o comando
+`reconcile-deliveries/`, com `shop.reconcile_unknown_marketing`). A fila mostra o que
+o sistema fez em `automatic_checks`: "O sistema está consultando sem reenviar ·
+automático" ou "O sistema consultou sem reenviar: publicado às 09:58 · automático".
 
 Dialeto de erro: comandos respondem `{code, detail, field_errors}`, o CRUD de
 campanhas/modelos `{detail, field, fields}` e o 401 leva `code`; `detail` está sempre
@@ -450,7 +541,7 @@ destinos no commit, e a passada de entrega os encontra no mesmo ciclo. Decisão 
 | `worker_id` | `maintenance_worker:marketing-delivery` | estável: o `lease_owner` diz qual componente segura o destino |
 | `limit` | `20` destinos (e 20 consultas) por passada | uma mensagem de WhatsApp com flow custa ~20 chamadas ao ManyChat; o lote cabe no ciclo |
 | `lease_seconds` | `300` | cobre a passada inteira; se o processo cair, o destino volta a ser elegível em até 5 min |
-| `--with-reconciliation` | ligado | só executa consultas somente-leitura já pedidas pelo operador; `unknown` nunca é reenviado |
+| `--with-reconciliation` | ligado | pede sozinho **uma** consulta somente-leitura por tentativa `unknown` (decisão do dono, 2026-10-03) e executa as consultas pendentes, do sistema ou do operador; `unknown` nunca é reenviado |
 | `--watch` / `--with-outbox` | desligados | passada única; a outbox já roda como tarefa própria do ciclo |
 
 `SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED` continua sendo o portão: desligada, a passada
@@ -480,7 +571,12 @@ significa "na próxima passada" e pode levar alguns minutos** — não é defeit
   URL; imprime a consequência e o comando exato, sem publicar;
 - `make admin`: garante o corte Nuxt operacional/Admin audit-only;
 - job `Marketing — cadeia completa`: instalação, unit/component, lint, tipos, build,
-  E2E, acessibilidade, visual, segurança e auditoria de dependências.
+  E2E, acessibilidade, visual e segurança — só o que o Marketing precisa provar;
+- job `Supply chain — npm audit`: o `npm audit --audit-level=high` de `operator-kit` e
+  `marketing-nuxt`, com a allowlist versionada em `surfaces/npm-audit-allowlist.json`.
+  Ele saiu de dentro do job de Marketing para que um vermelho de Marketing volte a
+  significar Marketing; o histórico está em
+  [2026-10-06-marketing-ci-health.md](../reports/2026-10-06-marketing-ci-health.md).
 
 Runbooks: [`docs/runbooks/README.md`](../runbooks/README.md). Simulador:
 [`docs/operations/marketing-local-simulator.md`](../operations/marketing-local-simulator.md).

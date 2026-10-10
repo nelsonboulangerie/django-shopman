@@ -160,8 +160,40 @@ def test_usage_reads_the_work_orders_by_version_newest_first():
     assert (v1.planned_display, v1.finished_display, v1.loss_display) == ("20", "17", "3")
     assert (v1.yield_pct, v1.yield_display) == ("85", "85%")
     assert (v1.avg_loss, v1.avg_loss_display, v1.loss_pct_display) == ("1.5", "1,5 por fornada", "15%")
-    assert v1.summary_display == "2 fornadas; rendimento médio 85%; perda média 1,5 por fornada"
+    assert v1.summary_display == "2 fornadas; aproveitamento médio 85%; perda média 1,5 por fornada"
+    assert v1.started_assumed_batches == 0
     assert (v2.batches_display, v2.yield_display, v2.avg_loss_display) == ("1 fornada", "100%", "0 por fornada")
+
+
+def test_usage_aproveitamento_is_realizado_over_previsto_not_planejado():
+    """Decisão do dono (03/10): a base é o previsto. Planejado 12, previsto 10, realizado 9.
+
+    Realizado ÷ previsto = 90%; a conta antiga (÷ planejado) dava 75%.
+    """
+    recipe = _ficha("pao-previsto", version_ref="pao-previsto@1")
+    _bake(recipe, planned=12, started=10, finished=9)
+
+    (version,) = build_recipe_usage("pao-previsto").versions
+
+    assert (version.yield_pct, version.yield_display) == ("90", "90%")
+    assert (version.loss_display, version.loss_pct_display) == ("1", "10%")
+    assert version.summary_display == "1 fornada; aproveitamento médio 90%; perda média 1 por fornada"
+
+
+def test_usage_says_when_the_previsto_was_assumed():
+    """Fechamento sem abertura: o previsto foi assumido igual ao planejado, e o resumo diz."""
+    recipe = _ficha("pao-assumido", version_ref="pao-assumido@1")
+    _bake(recipe, planned=10, started=10, finished=10)
+    wo = craft.plan(recipe, 10, date=TODAY)
+    craft.finish(wo, finished=8, actor="test")  # sem abertura declarada
+
+    (version,) = build_recipe_usage("pao-assumido").versions
+
+    assert version.started_assumed_batches == 1
+    assert version.yield_display == "90%"
+    assert version.summary_display == (
+        "2 fornadas; aproveitamento médio 90% (previsto assumido em 1 de 2); perda média 1 por fornada"
+    )
 
 
 def test_usage_puts_the_unstamped_batch_in_the_unversioned_bucket():

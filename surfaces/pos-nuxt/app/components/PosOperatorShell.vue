@@ -3,6 +3,12 @@
 // de conexão, tela de senha (para dispositivo que ainda não é estação), overlay
 // de identificação do operador (PIN/crachá), setup de estação e o auto-lock de
 // kiosk. A venda vive em `pages/index.vue`; a sessão de caixa em `pages/session/`.
+//
+// A navegação é a da suíte (fase 2): o `OperatorSuiteShell` do kit (barra lateral em
+// três estados na mesa, gaveta pelo ☰ e barra inferior abaixo de `lg`), montado UMA
+// vez aqui, com as seções de `usePosShell`. Exceção declarada (WP-FASE2 §7): os
+// corredores (Fim do dia e o Relatório de caixa) sobem sem barra lateral e sem barra
+// inferior; a saída deles é o "Sair" (ou o voltar) da própria tela.
 // Cada página lê a Projection via usePosTerminal (useFetch deduplicado — uma
 // busca só por request).
 //
@@ -11,10 +17,13 @@
 // decisão em `app.vue`. Nada aqui deve voltar a conhecer o display: se uma regra
 // precisa de "menos na tela do cliente", o lugar dela não é este arquivo.
 //
+import { refreshScopeForChannel } from "~/presentation/events";
+import { posCorridorRoute } from "~/presentation/sections";
+
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco — o tablet do
 // balcão que dormiu não fica com dados velhos. O <OfflineBanner> (auto-import do kit)
 // dá o aviso calmo enquanto offline.
-const { pos, refresh } = await usePosTerminal();
+const { pos, refresh, refreshTabs } = await usePosTerminal();
 const { onReconnect } = useConnectivity();
 onReconnect(() => refresh());
 
@@ -28,7 +37,7 @@ const { expired: sessionExpired } = useOperatorSession();
 const OPERATOR_PERM = "cashman.operate_pos";
 // `refreshOperatorSession` e não `refresh`: `refresh` aqui já é o da Projection
 // do terminal (`usePosTerminal`, linha 17). São duas leituras diferentes.
-const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession, stationRef, mustChange, lock } =
+const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession, stationRef, mustChange, lock, operator } =
   useOperatorLock(OPERATOR_PERM);
 
 // Tempo real entre estações (ADR-016): pedido de troco, devolução pendente e
@@ -38,7 +47,17 @@ const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession
 // O SSE só conecta com a estação identificada e desbloqueada (F3): no gate
 // (login/lock) os canais são negados e o EventSource entraria no ciclo de
 // reconexão com 400 — quem garante a tela ali é o poll de fallback.
-usePosEvents(() => refresh(), { enabled: () => canIdentify.value && !locked.value });
+// O aviso de comanda relê só o quadro (`refreshTabs`); o do caixa, o poll e a
+// volta à aba relêem a projeção inteira.
+const { realtime } = usePosEvents(
+  (channel) => (refreshScopeForChannel(channel?.path) === "tabs" ? refreshTabs() : refresh()),
+  { enabled: () => canIdentify.value && !locked.value },
+);
+// O "ao vivo" dos cabeçalhos (camada da suíte) lê daqui: o estado do push e a hora
+// da última leitura da Projection.
+const live = usePosLiveState();
+watch(realtime, (value) => { live.value.realtime = value; }, { immediate: true });
+watch(pos, () => { live.value.lastRead = new Date().toISOString(); }, { immediate: true });
 
 // Leitor de código da bancada (HID, modo teclado): lê o QR da Via Cozinha em
 // qualquer tela do PDV e dá o pronto do ticket da estação sem tela (decisão do
@@ -46,14 +65,11 @@ usePosEvents(() => refresh(), { enabled: () => canIdentify.value && !locked.valu
 // são do PIN/crachá, e o pronto precisa de um operador para assinar.
 useKitchenTicketScanner({ enabled: () => canIdentify.value && !locked.value });
 
-// Iniciar o dispositivo: o gestor entra com senha uma vez e diz qual balcão é este.
-// Enquanto ninguém fizer isso, o dispositivo não tem antessala — a loja só entra com
-// senha, todo dia. A oferta é dispensável de propósito: no PC pessoal do gestor a
-// resposta certa é "agora não".
-const setupDismissed = ref(false);
-const needsStationSetup = computed(
-  () => canIdentify.value && !locked.value && !stationRef.value && !setupDismissed.value,
-);
+// Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): o gestor entra
+// com senha uma vez e diz em que posto ele fica. Enquanto ninguém fizer isso, o
+// dispositivo não tem antessala. A oferta é dispensável de propósito: no PC pessoal
+// do gestor a resposta certa é "usar sem vincular".
+const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
 // Auto-lock por ociosidade é a única particularidade de kiosk do PDV (os outros apps
 // não auto-travam). Vale em qualquer rota de operador (venda ou antesala).
@@ -81,17 +97,16 @@ const needsLogin = computed(
   () => (!canIdentify.value && !sessionUnavailable.value) || sessionExpired.value,
 );
 
-// Recarrega depois de virar estação: toda leitura muda de mundo (a antessala
-// passa a existir, o terminal passa a ser este), e reconciliar peça por peça é
-// mais caminho para dar errado do que um reload numa tela que acontece uma vez.
-function reloadIntoStation() {
-  if (import.meta.client) window.location.reload();
-}
+const { sections, current, select } = usePosShell(pos);
+const route = useRoute();
+const corridor = computed(() => posCorridorRoute(route.path));
 
 </script>
 
 <template>
-  <div class="min-h-dvh bg-background text-foreground" data-pos-shell="operator">
+  <!-- `data-suite="v3"`: o PDV veste a camada visual da suíte (onda V4). Os primitivos
+       do kit leem esse atributo para vestir o visual das prévias. -->
+  <div class="min-h-dvh bg-background text-foreground" data-pos-shell="operator" data-suite="v3">
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo de conexão (kit): fixed no topo, só aparece offline. -->
     <OfflineBanner />
@@ -123,12 +138,29 @@ function reloadIntoStation() {
     />
 
     <OperatorStationSetup
-      v-else-if="needsStationSetup"
-      @done="reloadIntoStation"
-      @dismiss="setupDismissed = true"
+      v-else-if="stationSetup.offer.value"
+      @done="stationSetup.done()"
+      @dismiss="stationSetup.dismiss()"
+      @unavailable="stationSetup.dismiss({ remember: false })"
     />
 
-    <NuxtPage v-else />
+    <!-- Corredor (Fim do dia, Relatório): a tela inteira, sem navegação. -->
+    <div v-else-if="corridor" class="flex min-h-dvh flex-col" data-pos-corridor>
+      <NuxtPage />
+    </div>
+
+    <OperatorSuiteShell
+      v-else
+      storage-key="pos"
+      :sections="sections"
+      :current="current"
+      label="Seções do PDV"
+      :operator-name="operator?.name"
+      @select="select"
+      @lock="lock()"
+    >
+      <NuxtPage />
+    </OperatorSuiteShell>
 
     <OperatorSonner />
   </div>

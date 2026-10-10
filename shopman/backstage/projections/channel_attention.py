@@ -76,7 +76,7 @@ def build_channel_attention(*, user=None, now: datetime | None = None) -> Channe
         if not switches.effective_active(channel, now=now):
             record = switches.activation(channel)
             timed = bool(record and not record.is_active and record.ends_at and record.starts_at <= now < record.ends_at)
-            reason = f" — {record.reason}" if record and record.reason and not record.auto else ""
+            reason = f" ({record.reason})" if record and record.reason and not record.auto else ""
             if timed:
                 line = f"{name}: pedidos pausados até {switches.moment(record.ends_at, now=now)}{reason}"
             else:

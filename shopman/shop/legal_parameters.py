@@ -95,7 +95,7 @@ PARAMETROS: tuple[ParametroLegal, ...] = (
         urn="urn:lex:br:ministerio.saude;agencia.nacional.vigilancia.sanitaria:resolucao.diretoria.colegiada:2017-02-08;135",
         nota=(
             "Entre 100 mg e 1 g/100 g: 'baixo teor de lactose'. Acima de 100 mg: "
-            "'contém lactose'. Produto sem ingrediente lácteo está em zero — a "
+            "'contém lactose'. Produto sem ingrediente lácteo está em zero: a "
             "afirmação é sobre COMPOSIÇÃO e é verificável pela ficha."
         ),
     ),
@@ -131,8 +131,8 @@ PARAMETROS: tuple[ParametroLegal, ...] = (
         nota=(
             "⚠️ PENDENTE: a norma exige que esta declaração se baseie num "
             "**Programa de Controle de Alergênicos**. Não sei se a casa tem o "
-            "programa formalizado — perguntado ao dono em 08/09/2026, sem resposta "
-            "até aqui. Enquanto não houver, o aviso é honesto mas não está "
+            "programa formalizado (perguntado ao dono em 08/09/2026, sem resposta "
+            "até aqui). Enquanto não houver, o aviso é honesto mas não está "
             "documentado como a norma pede."
         ),
     ),

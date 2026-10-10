@@ -223,6 +223,9 @@ class CatalogRowProjection:
     # isso não cabe nos estados existentes da linha. Ver
     # ``shop.services.catalog_visibility``.
     hidden_by_inactive_collection: bool = False
+    # Tem vocação (``ProductConsumptionTag``)? Só o B.I. lê a vocação; aqui ela
+    # serve ao filtro "Sem vocação" e ao aviso discreto da lista.
+    has_vocation: bool = False
     product_action: Action | None = None
     resync_action: Action | None = None
 
@@ -238,10 +241,21 @@ class CollectionProjection:
 
 
 @dataclass(frozen=True)
+class VocationPendingProjection:
+    """Produto à venda sem vocação — o aviso "Classificar" da lista."""
+
+    sku: str
+    name: str
+
+
+@dataclass(frozen=True)
 class CatalogMatrixProjection:
     surfaces: tuple[SurfaceProjection, ...]
     rows: tuple[CatalogRowProjection, ...]
     collections: tuple[CollectionProjection, ...]
+    # Da loja inteira, não do recorte de coleção: o aviso diz quantos faltam
+    # classificar, esteja a lista filtrada ou não.
+    vocation_pending: tuple[VocationPendingProjection, ...] = ()
 
 
 # ── builders ────────────────────────────────────────────────────────────────
@@ -541,6 +555,10 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
 
     hidden_skus = catalog_visibility.hidden_by_inactive_collection_skus()
 
+    from shopman.backstage.models import ProductConsumptionTag
+
+    tagged_skus = set(ProductConsumptionTag.objects.values_list("sku", flat=True))
+
     rows: list[CatalogRowProjection] = []
     for product in products:
         primary_ref = ""
@@ -645,6 +663,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
                 social=social_view,
                 pim_complete=pim_complete,
                 hidden_by_inactive_collection=product.sku in hidden_skus,
+                has_vocation=product.sku in tagged_skus,
                 product_action=product_switch_action(product, user),
                 resync_action=resync_action(product, [surface.ref for surface in surfaces if surface.is_projection_target], user),
             )
@@ -660,4 +679,16 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
         for c in Collection.objects.filter(is_active=True).order_by("sort_order", "name")
     )
 
-    return CatalogMatrixProjection(surfaces=tuple(surfaces), rows=tuple(rows), collections=collections)
+    # "Sem vocação" = produto à venda (``is_sellable``) sem etiqueta. Produto
+    # fora de venda não entra: classificar o que não se vende não informa o B.I.
+    vocation_pending = tuple(
+        VocationPendingProjection(sku=sku, name=name)
+        for sku, name in Product.objects.filter(is_sellable=True)
+        .exclude(sku__in=tagged_skus)
+        .order_by("name", "sku")
+        .values_list("sku", "name")
+    )
+
+    return CatalogMatrixProjection(
+        surfaces=tuple(surfaces), rows=tuple(rows), collections=collections, vocation_pending=vocation_pending,
+    )

@@ -177,7 +177,7 @@ class OperatorAlert(models.Model):
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),
         ("production_late", "Produção atrasada"),
-        ("production_low_yield", "Produção com yield baixo"),
+        ("production_low_yield", "Lote fechado com aproveitamento baixo"),
         ("production_stock_short", "Produção sem insumo suficiente"),
         # Falta PREVISTA (production_stock_short) vs. falta REAL: esta é a
         # sub-baixa já commitada — o fechamento consumiu menos insumo que a ficha
@@ -188,9 +188,9 @@ class OperatorAlert(models.Model):
         # começou, a começada que nunca fechou (estoque preso em produção) e a
         # fechada sem gravar os lotes — sem lote, some o desconto de validade e
         # a rastreabilidade da partida (ADR-017).
-        ("production_forgotten", "Produção planejada nunca iniciada"),
-        ("production_unfinished", "Produção iniciada nunca concluída"),
-        ("production_batch_traceability", "Produção concluída sem gravar os lotes"),
+        ("production_forgotten", "Lote planejado nunca aberto"),
+        ("production_unfinished", "Lote aberto nunca fechado"),
+        ("production_batch_traceability", "Lote fechado sem gravar a rastreabilidade"),
         (
             "production_quality_communication",
             "Qualidade corrigida após comunicação do lote",
@@ -207,6 +207,10 @@ class OperatorAlert(models.Model):
         ("directive_backlog", "Fila de tarefas de fundo acumulada"),
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
         ("lifecycle_phase_stuck", "Fase do pedido travada"),
+        # UX-G2: Entregar/Despachar foi tocado e, quando a janela de desfazer
+        # venceu, a gravação foi recusada (turno de caixa fechou, maquininha
+        # tomada por outra saída). O pedido ficou onde estava; alguém toca de novo.
+        ("handoff_refused", "Saída tocada não foi gravada"),
         # Os apps de operação leem a memória e a CPU do próprio contêiner e
         # reportam ao Django; acima do limite crítico do Admin por mais que a
         # duração mínima, o serviço está no limite e as telas vão engasgar no
@@ -223,6 +227,11 @@ class OperatorAlert(models.Model):
         # Este é o aviso do instante, com o pedido no nome, para alguém conferir
         # a gaveta ANTES de o dinheiro virar diferença anônima.
         ("cash_sale_after_shift_close", "Venda entrou depois do fechamento do turno"),
+        # A venda que o PDV fez sem conexão entrou com ajuste: valeu o cobrado
+        # contra o preço daquela hora, a comanda mudada em outro dispositivo
+        # fechou só o que foi cobrado, ou a comanda já estava paga (cobrança em
+        # dobro). Nada foi recusado; o gerente lê a frase e decide (devolução).
+        ("pos_offline_sale_adjusted", "Venda sem conexão entrou com ajuste"),
         # A trava da gaveta caiu numa estação que TINHA medição. Ela falha
         # aberta de propósito (fila de cliente nunca para por sensor ruim), e
         # por isso mesmo precisa gritar: sem este aviso, desligar a proteção era
@@ -233,6 +242,10 @@ class OperatorAlert(models.Model):
         # a venda começa; a hora morta ficava descoberta — ninguém inicia venda,
         # ninguém vê a gaveta, e ela passa a tarde aberta.
         ("pos_drawer_left_open", "Gaveta ficou aberta sem ninguém vender"),
+        # O caixa fechou com diferença acima da tolerância da loja
+        # (services/cash_tolerance.py). Público ``finance``: o operador nunca vê
+        # o veredito, o fechamento continua cego para quem conta.
+        ("cash_out_of_tolerance", "Caixa fechou fora da tolerância"),
         # Fila de espera: a vaga que volta é decisão da loja (servir o próximo
         # ou pôr na gôndola), e por isso a liberação NUNCA é silenciosa — o
         # cliente recebe aviso e a loja recebe este alerta. O tipo existia no
@@ -285,6 +298,10 @@ class OperatorAlert(models.Model):
         # NCM —, então a divergência precisa chegar a alguém (decisão do dono,
         # 24/09/2026: "pendências que sobrarem confirmamos nas próximas NFs").
         ("purchase_invoice_fiscal_divergence", "Compras: NF-e diverge do cadastro fiscal"),
+        # O cliente abriu uma negociação no iFood (cancelamento, reembolso) e a loja
+        # tem minutos para responder; sem resposta, o iFood aplica a ação de prazo
+        # dele. Tem `respond_by`: o Gestor interrompe a tela até alguém ver.
+        ("ifood_negotiation_open", "iFood: negociação esperando resposta"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -310,23 +327,32 @@ class OperatorAlert(models.Model):
         "stock_discrepancy",
         "stock_low",
     }
+    #: Financeiro PANORÂMICO: só o dono vê (público ``finance``, permissão de
+    #: auditar o caixa). Diferença de contagem, total do dia, livro contra gateway:
+    #: mostrar o esperado ao gerente quebra a contagem cega (dono, 08/10/2026).
+    #: O financeiro de UM pedido (pagamento falhou, abaixo do total, contestação,
+    #: pago depois de cancelar) é do gerente e mora em ``ORDER_TYPES``.
     FINANCE_TYPES = {
-        "payment_failed",
-        "payment_insufficient",
         "payment_reconciliation_failed",
-        "payment_disputed",
-        "payment_after_cancel",
+        "payment_ledger_drift",
         "cash_shift_open_at_closing",
         "cash_sale_after_shift_close",
+        "cash_out_of_tolerance",
         "bi_cash_variance",
     }
     ORDER_TYPES = {
+        "payment_failed",
+        "payment_insufficient",
+        "payment_disputed",
+        "payment_after_cancel",
         "marketplace_rejected_unavailable",
         "marketplace_rejected_oos",
         "pos_rejected_unavailable",
+        "pos_offline_sale_adjusted",
         "stale_new_order",
         "customer_cancellation_requested",
         "lifecycle_phase_stuck",
+        "handoff_refused",
         "order_production_quality_risk",
         "ifood_store_closed_while_open",
         "ifood_store_open_while_closed",
@@ -335,6 +361,7 @@ class OperatorAlert(models.Model):
         "danfe_print_failed",
         "kitchen_print_failed",
         "concierge_handoff",
+        "ifood_negotiation_open",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
@@ -373,6 +400,15 @@ class OperatorAlert(models.Model):
         max_length=100,
         blank=True,
         help_text="Processo ou identidade que confirmou a resolução da causa.",
+    )
+    respond_by = models.DateTimeField(
+        "responder até",
+        null=True,
+        blank=True,
+        help_text=(
+            "Prazo em que a causa decide sozinha (ex.: o iFood aplica a ação de prazo). "
+            "Com prazo e sem Visto, a superfície interrompe a tela até alguém ver."
+        ),
     )
     created_at = models.DateTimeField("criado em", auto_now_add=True)
 

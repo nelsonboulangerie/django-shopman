@@ -1,6 +1,8 @@
+import { fileURLToPath } from "node:url";
+
 // Nuxt layer compartilhado das superfícies de operador.
 //
-// Os apps (pos/orders/kds/production-nuxt + Shopman Apps) fazem
+// Os apps (pos/orders/kds/production-nuxt + Central) fazem
 // `extends: ['../operator-kit']` no seu nuxt.config. Este layer contribui:
 //   - app/components  → auto-importados (ex.: OfflineBanner)
 //   - app/composables → auto-importados (ex.: useConnectivity)
@@ -15,18 +17,105 @@
 // neste layer (o POS mantém a própria variante, usePosOperatorLock). O storefront fica
 // de fora (superfície de cliente, branded, proxy e harness próprios).
 export default defineNuxtConfig({
+  devtools: { enabled: false },
   // Layer segue a convenção Nuxt 4 (srcDir `app/`) igual aos apps hospedeiros, para
   // que components/composables/utils/plugins em `app/` sejam auto-importados via extends.
   future: { compatibilityVersion: 4 },
 
-  // Um reka-ui só no bundle do app. Sem isto, o componente do kit que importa
-  // `reka-ui` resolve o `operator-kit/node_modules` e o app resolve o dele. Medido
-  // no build do Gestor (03/10/2026): duas cópias do DismissableLayer no bundle; com
-  // `dedupe`, uma. Duas cópias são duas pilhas de camadas, e o `OperatorConfirmDialog`
-  // aberto sobre um `UiDialog` do app não seria a camada de cima: o diálogo de baixo
-  // tomaria o toque dentro da pergunta como toque fora e puxaria o foco de volta.
+  // Nuxt UI é a camada estrutural e visual de alto nível da suíte. O tema
+  // canônico permanece ligado; operator-theme.css traduz os tokens semânticos
+  // oficiais para a marca Shopman. Wrappers só ajustam o que o caso de uso
+  // operacional comprovar necessário, sem reconstruir a anatomia do componente.
+  modules: [
+    [
+      "@nuxt/ui",
+      {
+        prefix: "Nuxt",
+        fonts: false,
+        colorMode: false,
+        theme: {
+          // Só as cores do conjunto mínimo (dono, 08/10/2026, PR #1539): cor que não
+          // é gerada não pode ser usada, e o tipo de `color` dos componentes encolhe
+          // junto. O `neutral` o Nuxt UI sempre gera. `secondary` saiu: zero usos.
+          colors: ["primary", "info", "success", "warning", "error"],
+          unstyled: false,
+          transitions: true,
+        },
+        experimental: {
+          componentDetection: true,
+        },
+      },
+    ],
+  ],
+
+  // Imports usados pelos próprios componentes do layer. O toast continua sob
+  // responsabilidade dos apps hospedeiros; o catálogo o declara somente no
+  // harness para poder compilar o layer isoladamente sem mudar essa fronteira.
+  imports: {
+    imports: [
+      { from: "tailwind-variants", name: "tv" },
+      { from: "tailwind-variants", name: "VariantProps", type: true },
+      { from: "@vueuse/core", name: "reactiveOmit" },
+      { from: "@vueuse/core", name: "useEventListener" },
+      ...(process.env.OPERATOR_KIT_CATALOG === "1"
+        ? [{ from: "vue-sonner", name: "toast", as: "useSonner" }]
+        : []),
+    ],
+  },
+
+  hooks: {
+    // Os oito apps já instalam @nuxtjs/color-mode e esse é o dono canônico do
+    // composable. O Nuxt UI também exporta um fallback homônimo mesmo quando seu
+    // módulo de color mode está desligado; removê-lo evita warning de import
+    // duplicado e, sobretudo, duas fontes possíveis para o mesmo estado.
+    "imports:extend": (imports) => {
+      const duplicate = imports.findIndex(
+        (entry) =>
+          entry.name === "useColorMode" &&
+          String(entry.from).includes("@nuxt/ui"),
+      );
+      if (duplicate >= 0) imports.splice(duplicate, 1);
+    },
+    // Catálogo vivo somente no harness explícito. Nenhum consumer publica esta
+    // rota em produção, mesmo que estenda a layer inteira.
+    ...(process.env.OPERATOR_KIT_CATALOG === "1"
+      ? {
+          "pages:extend": (pages) => {
+            pages.push({
+              name: "operator-kit-catalog",
+              path: "/__operator_kit_catalog",
+              file: fileURLToPath(new URL("./catalog/OperatorKitCatalogPage.vue", import.meta.url)),
+            });
+            // A bancada da regra do celular (barra do topo e toolbar), medida por
+            // `tests/catalog/phone-header.spec.ts`.
+            pages.push({
+              name: "operator-kit-catalog-phone-header",
+              path: "/__operator_kit_catalog/phone-header",
+              file: fileURLToPath(new URL("./catalog/OperatorKitPhoneHeaderPage.vue", import.meta.url)),
+            });
+          },
+        }
+      : {}),
+  },
+
+  // Uma instância de cada runtime com estado global no bundle do app. Sem isto, o
+  // componente do kit resolve `operator-kit/node_modules` e o app resolve a própria
+  // cópia: duas pilhas de DismissableLayer e dois stores de toast independentes.
+  // Nesse segundo caso o comando é aceito por uma cópia de vue-sonner, enquanto o
+  // OperatorSonner observa a outra, e a mensagem nunca aparece.
   vite: {
-    resolve: { dedupe: ["reka-ui"] },
+    resolve: { dedupe: ["reka-ui", "vue-sonner"] },
+  },
+
+  // O Drawer do Nuxt UI vem do `vaul-vue`, que só existe em `operator-kit/node_modules`
+  // e o Nuxt UI não põe no `transpile` (põe só o `reka-ui`). No SSR do `nuxt dev` ele
+  // era carregado pelo Node, fora do Vite, e puxava o `reka-ui` e o `vue` da cópia do
+  // kit: duas instâncias de Vue, e o primeiro Drawer com gatilho no SSR (o "Mais" da
+  // barra de seções) derrubava a página com "Cannot read properties of null (reading
+  // 'ce')". Era o que fazia o e2e do Marketing esperar 120 s por um servidor que só
+  // respondia 500. Transpilado, ele passa pelo `dedupe` acima como o resto.
+  build: {
+    transpile: ["vaul-vue"],
   },
 
   runtimeConfig: {
@@ -42,16 +131,16 @@ export default defineNuxtConfig({
     // Vazio = a identidade do app (`operatorPwa.app`), certo com um app por contêiner.
     operatorServiceName: "",
     public: {
-      // URL do Shopman Apps (a home) — o ícone do app no topo do OperatorRail leva
+      // URL da Central (a home) — o ícone do app no topo do OperatorRail leva
       // pra cá (padrão Odoo). Dev: hub-nuxt em :3001; prod: central.<zona> via env.
       operatorHubUrl: process.env.NUXT_PUBLIC_OPERATOR_HUB_URL || "http://127.0.0.1:3001/",
-      // Estado inicial do rail (só quando não há cookie ainda). Padrão compacto; a própria
-      // home sobrescreve pra "collapsed" (é a casa, não precisa do rail aberto).
+      // Estado inicial do rail (só quando não há cookie ainda). Padrão compacto em todos,
+      // a Central inclusive desde a camada da suíte (o rail dela tem "Início" e Avisos).
       railDefaultState: process.env.NUXT_PUBLIC_RAIL_DEFAULT_STATE || "compact",
       // URL do Gestor de Pedidos (orders-nuxt) — links cross-app "abrir no gestor"
       // apontam pra cá. Dev: orders-nuxt em :3004; prod: gestor.<zona> via env.
       ordersUrl: process.env.NUXT_PUBLIC_ORDERS_URL || "http://127.0.0.1:3004/",
-      // URL do PDV — usada pelo Shopman Apps para o atalho instalável same-origin que
+      // URL do PDV — usada pela Central para o atalho instalável same-origin que
       // então redireciona ao app dedicado. O destino continua dado de deploy.
       posUrl: process.env.NUXT_PUBLIC_POS_URL || "http://127.0.0.1:3002/",
       // URL do Produção (production-nuxt) — links cross-app "resolver na produção"

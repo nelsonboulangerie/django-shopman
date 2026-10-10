@@ -185,6 +185,9 @@ describe("o sistema não sai: ele envia, publica ou dispara", () => {
     // Exemplo de NOME de modelo, no mesmo formulário e pela mesma razão: quem nomeia
     // é o padeiro, e o que sai do forno é o pão.
     "Saiu do forno",
+    // O fato do lote na fila (v4, V6-MKT): "24 un saíram às 10:01". Quem sai é o pão,
+    // do forno; o anúncio continua se publicando ou se enviando.
+    "un saíram",
   ];
 
   it("nenhum texto de tela diz que alguma coisa 'sai'", () => {
@@ -326,5 +329,27 @@ describe("faixa é preço; a lane chama-se plataforma", () => {
       .filter((text) => /faixa de preço/i.test(text));
 
     expect(screens.length).toBeGreaterThan(0);
+  });
+});
+
+describe("o selo ao vivo fala na voz aprovada", () => {
+  // Frase recusada pelo dono em 09/10/2026, com a que ficou no lugar:
+  //   "Atualiza a cada 1 min" → "Atualiza sozinho a cada 1 min"
+  // A mesma forma já vale no Gestor, no PDV e no KDS (#1571); a irmã desta trava é
+  // `surfaces/orders-nuxt/tests/vocabularioFechado.guardrails.test.ts`.
+  const RETIRED = /Atualiza a cada/;
+
+  it("nenhum texto do app diz 'Atualiza a cada'", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const leaks = [
+      ...vueFiles(appRoot).flatMap((path) =>
+        RETIRED.test(screenText(readFileSync(path, "utf8"))) ? [`${path} (tela)`] : [],
+      ),
+      ...sourceFiles(appRoot, [".ts"]).flatMap((path) =>
+        RETIRED.test(codeWithoutComments(readFileSync(path, "utf8"))) ? [`${path} (código)`] : [],
+      ),
+    ];
+
+    expect(leaks).toEqual([]);
   });
 });

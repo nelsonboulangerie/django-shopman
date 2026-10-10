@@ -18,7 +18,7 @@ vi.mock("vue-sonner", async (importOriginal) => ({
  * ninguém redimensiona o que o operador já escolheu: a tela cobra o total
  * antigo.
  *
- * O "Validar" já se trava sozinho ("Atualizando…"), por isso clicar nele não
+ * O "Validar" já se trava sozinho ("Calculando o total…"), por isso clicar nele não
  * reproduz nada. O teste clica na FORMA DE PAGAMENTO, que é por onde o valor
  * errado entra.
  */
@@ -37,7 +37,7 @@ describe("PosPaymentWorkspace: as formas de pagamento esperam a revisão", () =>
     const dinheiro = w.find('[data-payment-method="cash"]');
     expect(dinheiro.exists()).toBe(true);
     expect(dinheiro.attributes("disabled")).toBeDefined();
-    expect(dinheiro.attributes("title")).toBe("Atualizando o total. A forma libera assim que ele chegar.");
+    expect(dinheiro.attributes("title")).toBe("Calculando o total. A forma libera assim que ele chegar.");
     await dinheiro.trigger("click");
     expect(w.emitted("addTender")).toBeUndefined();
   });
@@ -46,14 +46,14 @@ describe("PosPaymentWorkspace: as formas de pagamento esperam a revisão", () =>
     const w = await mountSuspended(PosPaymentWorkspace, { props: janela() });
     expect(exposto(w).pressMethodKey("R")).toBe(true);
     expect(w.emitted("addTender")).toBeUndefined();
-    expect(toast.info).toHaveBeenCalledWith("Atualizando o total. A forma libera assim que ele chegar.");
+    expect(toast.info).toHaveBeenCalledWith("Calculando o total. A forma libera assim que ele chegar.");
   });
 
   it("revisão que falhou: a forma aponta para o Tentar de novo", async () => {
     const w = await mountSuspended(PosPaymentWorkspace, { props: { ...janela(), reviewFailed: true } });
     const dinheiro = w.find('[data-payment-method="cash"]');
     expect(dinheiro.attributes("disabled")).toBeDefined();
-    expect(dinheiro.attributes("title")).toBe("O total não atualizou. Toque em Tentar de novo.");
+    expect(dinheiro.attributes("title")).toBe("O total não foi calculado. Toque em Tentar de novo.");
   });
 
   it("a revisão chega com o desconto: a forma libera e lança", async () => {

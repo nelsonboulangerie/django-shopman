@@ -11,11 +11,11 @@ const { state, cycle } = useRailState();
 const view = computed(() => {
   switch (state.value) {
     case "collapsed":
-      return { icon: "lucide:panel-left-open", action: "Mostrar barra" };
+      return { icon: "lucide:panel-left-open", action: "Mostrar a barra lateral" };
     case "extended":
-      return { icon: "lucide:panel-left-close", action: "Ocultar barra" };
+      return { icon: "lucide:panel-left-close", action: "Ocultar a barra lateral" };
     default:
-      return { icon: "lucide:panel-left", action: "Expandir barra" };
+      return { icon: "lucide:panel-left", action: "Expandir a barra lateral" };
   }
 });
 </script>

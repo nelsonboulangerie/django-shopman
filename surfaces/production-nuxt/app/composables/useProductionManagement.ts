@@ -1,4 +1,4 @@
-// Gestão do dia — KPIs de produção (rendimento médio, capacidade %, atrasos).
+// Gestão do dia — KPIs de produção (aproveitamento médio, capacidade %, atrasos).
 // GET /api/v1/backstage/production/management/ para a data escolhida; vive na
 // página /reports (persona GESTOR, perm fina backstage.view_production_reports).
 import type { Ref } from "vue";

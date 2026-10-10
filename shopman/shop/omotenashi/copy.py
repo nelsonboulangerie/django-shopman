@@ -1167,12 +1167,101 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # ``Shop``, nunca copy fixa; tenant é config, não código).
     "CONCIERGE_GREETING": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Olá, aqui é o concierge da {shop_name}, um assistente da casa. O que você gostaria de pedir hoje?",
+            message="Olá, aqui é a concierge da {shop_name}, uma assistente da casa. O que você gostaria de pedir hoje?",
         )},
+    },
+    # Cortesia sem pergunta ("bom dia", "obrigado", "tchau"): resposta curta, sem
+    # cardápio. O "Bom dia!" do começo sai do próprio cliente (small_talk.py).
+    "CONCIERGE_SMALL_TALK_OFFER": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Em que posso ajudar? 💛")},
+    },
+    "CONCIERGE_SMALL_TALK_INTRO": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Aqui é a concierge da {shop_name}.")},
+    },
+    "CONCIERGE_SMALL_TALK_HOW_ARE_YOU": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Tudo ótimo por aqui, obrigada.")},
+    },
+    "CONCIERGE_SMALL_TALK_THANKS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Nós que agradecemos! Qualquer coisa, é só chamar. 💛")},
+    },
+    "CONCIERGE_SMALL_TALK_FAREWELL": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Até logo! Quando precisar, é só chamar. 💛")},
+    },
+    # Alergia (dono, 03/10/2026, ``concierge/allergens.py``): a resposta é o
+    # aviso de produção compartilhada da casa (``Shop.food_safety_notice``) e os
+    # alérgenos declarados do produto citado. Daqui saem só a oferta da equipe,
+    # a pergunta "a quê?" e as linhas de produto. Nenhuma delas pode afirmar
+    # ausência de alérgeno: produto sem lista cadastrada NÃO é seguro.
+    # ``{product}`` é o nome do produto; ``{allergens}``, os declarados.
+    "CONCIERGE_ALLERGY_TEAM_OFFER": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Se for caso de alergia grave, responda \"sim\" que eu chamo alguém da equipe para conversar com você. 💛",
+        )},
+    },
+    "CONCIERGE_ALLERGY_ASK_WHICH": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Me conta a que é a alergia, por favor, que eu confiro o que a casa informa sobre isso.",
+        )},
+    },
+    "CONCIERGE_ALLERGY_PRODUCT_DECLARED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{product}, alérgenos declarados: {allergens}.")},
+    },
+    "CONCIERGE_ALLERGY_PRODUCT_UNDECLARED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="{product}: ainda não há lista de alérgenos cadastrada, então vale o aviso abaixo (pode conter traços).",
+        )},
+    },
+    # Memória da conversa (``shopman/storefront/concierge/dialogue.py``): o que a casa
+    # diz quando a fala depende do que veio antes. Sem referente que ainda valha, ela
+    # PERGUNTA, nunca supõe. ``{options}``, ``{item}``, ``{order}``, ``{status}``,
+    # ``{qty}`` e ``{summary}`` saem do sistema (lista mostrada, pedido, sacola).
+    "CONCIERGE_MEMORY_ASK_WHAT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe, não entendi a que você está respondendo. Pode me dizer o que você gostaria?")},
+    },
+    "CONCIERGE_MEMORY_ASK_WHICH": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Qual deles? {options}")},
+    },
+    "CONCIERGE_MEMORY_ASK_PRODUCT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="De qual produto você está falando?")},
+    },
+    "CONCIERGE_MEMORY_ASK_QTY_PRODUCT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="De qual produto você quer {qty}?")},
+    },
+    "CONCIERGE_MEMORY_ASK_ORDER_OR_NEW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Você quer acrescentar {item} ao seu pedido aberto ({order}) ou fazer um pedido novo? Responda 1 para acrescentar ou 2 para pedido novo.")},
+    },
+    "CONCIERGE_MEMORY_ASK_NEW_AFTER_CLOSED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu último pedido ({order}) já foi {status}. Quer fazer um pedido novo com {item}?")},
+    },
+    "CONCIERGE_MEMORY_DECLINED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado. Posso ajudar com mais alguma coisa?")},
+    },
+    "CONCIERGE_MEMORY_ARRIVED_THANKS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Que bom que chegou! Bom apetite 💛")},
+    },
+    "CONCIERGE_MEMORY_ORDER_THANKS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Nós que agradecemos! Fica combinado: {summary}. 💛")},
+    },
+    # Acrescentar a um pedido já feito (``shopman/storefront/concierge/order_addition.py``):
+    # a Concierge não oferece, faz quando o cliente pede, pelo mesmo serviço do PDV.
+    # ``{items}``, ``{order}``, ``{order_ref}``, ``{total}``, ``{balance}``, ``{money}``
+    # (o total novo e o destino da diferença, a frase do aviso ``order_updated``, que
+    # nesse caso não é enviado) e ``{reason}`` saem do sistema.
+    "CONCIERGE_ADD_CONFIRM": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Acrescento {items} ao {order}? Total novo {total}, saldo a pagar {balance}. Responda sim ou não.")},
+    },
+    "CONCIERGE_ADD_DONE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pronto, acrescentei {items} ao pedido {order_ref}. {money} 💛")},
+    },
+    "CONCIERGE_ADD_REFUSED_NEW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{reason} Quer que eu faça um pedido novo com {items}? Responda sim ou não.")},
+    },
+    "CONCIERGE_ADD_REFUSED_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{reason} Já chamei a equipe para ver isso com você.")},
     },
     "CONCIERGE_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Nosso concierge está fora do ar por alguns minutos. Se preferir, peça pelo site; ou siga por aqui, que a equipe continua o atendimento.",
+            message="Nossa concierge está fora do ar por alguns minutos, e a equipe já foi avisada. Se preferir, peça pelo site.",
         )},
     },
     "CONCIERGE_MEDIA_UNSUPPORTED": {
@@ -1187,7 +1276,105 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_TURN_LIMIT": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Chegamos ao limite de mensagens do assistente por hoje nesta conversa. A equipe segue com você por aqui, ou, se preferir, o pedido pode ser feito pelo site.",
+            message="Chegamos ao limite de mensagens automáticas por hoje nesta conversa. Para continuar, peça pelo site ou escreva \"quero falar com a equipe\".",
+        )},
+    },
+    # Regras da casa (``shopman/storefront/concierge/house_rules.py``): as frases
+    # fixas de R7 (nunca negociar preço) e R8 (diz que é a assistente da casa).
+    # Nenhuma promete ação: a equipe fica a uma frase, pedida pelo cliente.
+    "CONCIERGE_PRICE_NEGOTIATION": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Preço e condição especial quem decide é a equipe da casa, e eu não consigo negociar por aqui. Se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    # Intenções no plural (OBS0310-Q): cada parte da mensagem recebe resposta, inclusive
+    # "isso eu não tenho". Só a de equipe afirma uma ação, e sai com o handoff feito.
+    "CONCIERGE_PARTS_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre {topic}, já chamei a equipe, que continua com você por aqui.",
+        )},
+    },
+    "CONCIERGE_PARTS_ORDER_WITH_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre o pedido, a equipe fecha com você por aqui.",
+        )},
+    },
+    "CONCIERGE_PARTS_NOT_FOUND": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre “{part}”, não tenho essa informação aqui.",
+        )},
+    },
+    "CONCIERGE_PARTS_OFFER_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Se quiser, chamo alguém da equipe para confirmar.",
+        )},
+    },
+    "CONCIERGE_PARTS_UNCLEAR": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sobre “{part}”, não entendi bem. Pode me dizer de outro jeito?",
+        )},
+    },
+    # Pergunta repetida (OBS0310-R): "você não respondeu", "e a minha pergunta?". A
+    # Concierge responde de novo o que ficou pendente; sem achar o quê, pede para repetir.
+    "CONCIERGE_PARTS_REPEAT_LEAD": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Desculpe, ficou faltando a resposta. Aqui vai:",
+        )},
+    },
+    "CONCIERGE_PARTS_REPEAT_ASK": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Desculpe, não encontrei a sua pergunta aqui. Pode me mandar de novo?",
+        )},
+    },
+    "CONCIERGE_IDENTITY": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Sou a assistente virtual da {shop_name}: ajudo com cardápio, horários e pedidos. Se preferir falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    # Cancelamento pela Concierge (dono, 03/10/2026; ``storefront/concierge/cancellation.py``):
+    # só quando o cliente poderia cancelar pelo site, e só depois do "sim". O que
+    # aconteceu com o pagamento é anexado pelo sistema, lido depois do cancelamento.
+    "CONCIERGE_CANCEL_CONFIRM": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Cancelo o pedido {order_ref}, com {items}? Responda sim ou não.",
+        )},
+    },
+    "CONCIERGE_CANCEL_DONE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Pronto, cancelei o pedido {order_ref}, como você pediu.",
+        )},
+    },
+    "CONCIERGE_CANCEL_KEPT": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Combinado, o pedido {order_ref} segue como está.",
+        )},
+    },
+    # Desconto da Concierge (dono, 03/10/2026; ``storefront/concierge/discount.py``):
+    # até o teto da casa, como cupom do site. Os valores vêm do sistema
+    # ({before}, {after}); acima do teto, quem decide é a equipe (R7).
+    "CONCIERGE_DISCOUNT_GRANTED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Consegui um arredondamento para você 💛 O total passa de {before} para {after}.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_ABOVE_CAP": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Mais do que isso quem decide é a equipe da casa. Se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_ALREADY_GIVEN": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Neste pedido eu já fiz o arredondamento que está ao meu alcance. Condição além disso quem decide é a equipe da casa; se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_COUPON_IN_USE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Seu pedido já tem um cupom aplicado, e vale um cupom por pedido. Condição além disso quem decide é a equipe da casa; se quiser falar com alguém da equipe, é só pedir.",
+        )},
+    },
+    "CONCIERGE_DISCOUNT_NO_CART": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Quando o pedido estiver montado, posso arredondar o total para você, dentro do que a casa permite. O que você gostaria de pedir?",
         )},
     },
     "CONCIERGE_NO_PHONE": {

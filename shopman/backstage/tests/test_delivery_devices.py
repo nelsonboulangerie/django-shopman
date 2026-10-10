@@ -13,7 +13,8 @@ from shopman.backstage.projections.order_queue import build_two_zone_queue
 from shopman.backstage.services.delivery_devices import PREFIX
 from shopman.backstage.tests._order_intent import advance_payload
 from shopman.shop.models import Channel, Shop
-from shopman.shop.services import kds, operator_orders
+from shopman.shop.services import operator_orders
+from shopman.shop.tests._handoff import settle
 
 
 @pytest.fixture
@@ -69,15 +70,12 @@ def test_inactive_and_missing_do_not_block_unrelated_cash(inventory):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("entry", ["order", "kds", "fulfillment", "courier"])
+@pytest.mark.parametrize("entry", ["order", "fulfillment", "courier"])
 def test_alternative_dispatch_cannot_bypass_allocation(inventory, entry):
     pending = order("BYPASS")
     with pytest.raises(ValueError, match="maquininha"):
         if entry == "order":
             pending.transition_status("dispatched")
-        elif entry == "kds":
-            assert "Gestor" in kds.expedition_block_reason(pending, action="dispatch")
-            kds.expedition_action(pending, action="dispatch", actor="lab")
         elif entry == "courier":
             from shopman.shop.services import courier
 
@@ -125,6 +123,8 @@ def test_lost_response_replays_same_allocation_receipt(inventory, client, django
     assert receipt.json()["outcome"] == "applied"
     repeated = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="device-intent")
     assert repeated.status_code == 200 and repeated.json()["replayed"]
+    # UX-G2: a maquininha é reservada quando a saída é gravada (fim da janela).
+    assert settle(pending) == "dispatched"
     inventory.refresh_from_db()
     assert inventory.current_order_id == pending.pk
     assert pending.events.filter(type="status_changed", payload__new_status="dispatched").count() == 1

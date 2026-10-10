@@ -1,0 +1,22 @@
+
+  <span class="pin" style="left:62px;top:300px">1</span>
+  <span class="pin" style="left:150px;top:4px">2</span>
+  <span class="pin" style="left:340px;top:4px">3</span>
+  <span class="pin" style="left:740px;top:4px">4</span>
+  <span class="pin" style="left:226px;top:58px">5</span>
+  <span class="pin" style="left:730px;top:214px">6</span>
+  <span class="pin" style="left:1010px;top:830px">7</span>
+  <span class="pin" style="left:62px;top:604px">8</span>
+</div>
+<div class="legend">
+  <p class="t">Compras · Base › Insumos · v3 <span>seções no rail, uma barra só, uma busca só; nenhuma função sai da tela</span></p>
+  <div><b>1</b>Painel, Comprar, Receber e Base moram no rail; ponto de atenção em Comprar. O selo no topo do rail troca de app.</div>
+  <div><b>2</b>Título da tela com "ao vivo" em ponto e hora; só cresce quando a leitura atrasa.</div>
+  <div><b>3</b>Insumos, Fornecedores, Custos e Contagem seguem no controle segmentado, agora no próprio cabeçalho (endereço /base/insumos).</div>
+  <div><b>4</b>Uma busca só, tecla / ou Ctrl K: filtra os insumos ao digitar e oferece o app e a suíte no dropdown. Ordenar e ⋯ na mesma linha, à direita.</div>
+  <div><b>5</b>Chip "Atenção" e as métricas de Compras hoje viram a linha 2 do cabeçalho (a faixa de resumo some); cada métrica filtra a lista.</div>
+  <div><b>6</b>Tabela igual à v2: SKU e receitas na linha de apoio, Mínimo editável com marca de alterado, situação em pílula.</div>
+  <div><b>7</b>Rodapé de ação e painel docado (revenda, quando aberto vira, receitas que consomem) não mudam.</div>
+  <div><b>8</b>Avisos (3), Atalhos, Bloquear e operador no pé do rail. Cabeçalho: v2 ~172 px em três faixas; v3 ~116 px em duas linhas.</div>
+</div>
+</body></html>
