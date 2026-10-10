@@ -414,7 +414,7 @@ um, o dono diz "pode" em voz alta e o observador anota a hora.
 
 - [ ] **N2.1** Novo pedido, **Retirada**, **Cartão**, CPF na nota. **Enviar pedido** e **Pagar com cartão**. **Confira:** a página do Stripe abre em modo real (sem faixa de teste). Pagar.
 - [ ] **N2.2** **Confira** na loja: "Pagamento autorizado". Gerente: **Aceitar**.
-- [ ] ★ **N2.3** **Confira no Stripe:** o pagamento `pi_…` está **capturado** ("Succeeded"), não só autorizado ("Uncaptured"). Autorizado e não capturado é ✗ que trava: o cliente não foi cobrado. Anote o `pi_…` e confira que é o **ID do gateway** em **Auditoria › Cobranças**.
+- [ ] **N2.3** **Confira no Stripe:** o pagamento `pi_…` está **capturado** ("Succeeded"), não só autorizado ("Uncaptured"). Autorizado e não capturado é ✗ que trava: o cliente não foi cobrado. Anote o `pi_…` e confira que é o **ID do gateway** em **Auditoria › Cobranças**.
 - [ ] **N2.4** Cozinha **Pronto**; gerente **Marcar como retirado**. **Confira:** "NFC-e autorizada" no Gestor e na Focus (anote chave e protocolo).
 
 ### Canário 3 · Balcão real
@@ -432,7 +432,7 @@ estorno, que é outro caminho).
 - [ ] **N4.3** **Confira no Stripe:** um reembolso `re_…` do valor inteiro no `pi_…` do Canário 2. Um só. Anote.
 - [ ] **N4.4** **Confira na Focus:** a NFC-e do Canário 2 com status cancelada; no Gestor, "NFC-e cancelada".
 - [ ] **N4.5** **Confira** no cartão do dono (app do banco): a cobrança e o estorno, nos dias seguintes.
-- [ ] **N4.6** (Se autorizado) Estorno de um Pix: cancelar o pedido do Canário 1 **antes** de marcar retirado em outro canário, ou repetir K1 até K1.4 e cancelar. **Confira na Efí:** a devolução no mesmo Pix (`e2eid`), valor inteiro, uma só.
+- [ ] **N4.6** (Se autorizado) Estorno de um Pix: repetir N1.1 a N1.4 com um pedido novo e cancelá-lo antes de marcar retirado. **Confira na Efí:** a devolução no mesmo Pix (`e2eid`), valor inteiro, uma só.
 - [ ] **N4.7** Maquininha: estornar a venda do Canário 3 na própria maquininha e, no PDV, registrar em "Estornos na maquininha".
 
 ### Evidência do canário
