@@ -285,8 +285,17 @@ useHead({ title: "Canais" });
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
 const phoneHeaderActions = computed(() => [
-  { label: "Configurar canais no Admin", icon: "i-lucide-settings", to: `${adminBase}/admin/shop/channel/`, target: "_blank" },
-  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+  {
+    label: "Configurar canais no Admin",
+    icon: "i-lucide-settings",
+    to: `${adminBase}/admin/shop/channel/`,
+    target: "_blank",
+  },
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    onSelect: () => void refresh(),
+  },
 ]);
 </script>
 
@@ -359,12 +368,14 @@ const phoneHeaderActions = computed(() => [
             ? 'Exibindo a última leitura disponível.'
             : 'Tente atualizar para consultar os canais.'
         "
-        :actions="alertActions('error', [
-          {
-            label: 'Tentar de novo',
-            onClick: () => refresh(),
-          },
-        ])"
+        :actions="
+          alertActions('error', [
+            {
+              label: 'Tentar de novo',
+              onClick: () => refresh(),
+            },
+          ])
+        "
       />
       <!-- skeleton -->
       <div v-if="loading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -387,12 +398,12 @@ const phoneHeaderActions = computed(() => [
           v-for="sc in feeds"
           :key="sc.ref"
           as="article"
-          class="grid grid-rows-[auto_1fr_auto]"
+          class="grid grid-rows-[1fr]"
           :data-channel-card="sc.ref"
           :data-focus-target="sc.ref"
         >
-          <template #header>
-            <div class="flex items-start gap-3" data-card-header>
+          <div class="flex h-full flex-col gap-3">
+            <div class="flex items-start gap-3" data-card-title>
               <NuxtAvatar :icon="`i-lucide-${sc.kind_icon}`" size="md" />
               <div class="min-w-0 flex-1">
                 <p class="truncate font-medium text-foreground">
@@ -415,9 +426,6 @@ const phoneHeaderActions = computed(() => [
                 @update:model-value="openSwitch(sc.ref)"
               />
             </div>
-          </template>
-
-          <div class="flex h-full flex-col gap-3">
             <ChannelSwitchState v-if="sc.switch" :sw="sc.switch" />
 
             <NuxtAlert
@@ -475,10 +483,10 @@ const phoneHeaderActions = computed(() => [
               :health="healthOf(sc.ref)"
               @choose-collections="openEdit(sc)"
             />
-          </div>
-
-          <template #footer>
-            <div class="flex flex-wrap items-center gap-1.5" data-card-footer>
+            <div
+              class="mt-auto flex flex-wrap items-center gap-1.5"
+              data-card-actions
+            >
               <NuxtPopover
                 :open="editRef === sc.ref"
                 :content="{ align: 'start' }"
@@ -506,16 +514,18 @@ const phoneHeaderActions = computed(() => [
                       variant="subtle"
                       title="Alguém mudou as coleções enquanto você editava"
                       :description="`Agora: ${sc.collections.map((c) => c.name).join(', ') || 'nenhuma coleção'}. Sua seleção foi preservada.`"
-                      :actions="alertActions('warning', [
-                        {
-                          label: 'Manter minha seleção',
-                          onClick: () => resolveCollections(sc, true),
-                        },
-                        {
-                          label: 'Usar valor atual',
-                          onClick: () => resolveCollections(sc, false),
-                        },
-                      ])"
+                      :actions="
+                        alertActions('warning', [
+                          {
+                            label: 'Manter minha seleção',
+                            onClick: () => resolveCollections(sc, true),
+                          },
+                          {
+                            label: 'Usar valor atual',
+                            onClick: () => resolveCollections(sc, false),
+                          },
+                        ])
+                      "
                     />
                     <NuxtFormField label="Coleções exibidas">
                       <NuxtCheckboxGroup
@@ -581,16 +591,18 @@ const phoneHeaderActions = computed(() => [
                       variant="subtle"
                       title="Alguém mudou a rotação enquanto você editava"
                       :description="`Agora: ${sc.rotate_seconds} s e ${sc.items_per_page} itens. Seu rascunho foi preservado.`"
-                      :actions="alertActions('warning', [
-                        {
-                          label: 'Manter meus valores',
-                          onClick: () => resolveRotation(sc, true),
-                        },
-                        {
-                          label: 'Usar valor atual',
-                          onClick: () => resolveRotation(sc, false),
-                        },
-                      ])"
+                      :actions="
+                        alertActions('warning', [
+                          {
+                            label: 'Manter meus valores',
+                            onClick: () => resolveRotation(sc, true),
+                          },
+                          {
+                            label: 'Usar valor atual',
+                            onClick: () => resolveRotation(sc, false),
+                          },
+                        ])
+                      "
                     />
                     <NuxtFormField label="Trocar a cada" hint="segundos">
                       <NuxtInput
@@ -669,16 +681,18 @@ const phoneHeaderActions = computed(() => [
                       variant="subtle"
                       title="Alguém mudou a configuração enquanto você editava"
                       description="Seu texto foi preservado."
-                      :actions="alertActions('warning', [
-                        {
-                          label: 'Manter meu texto',
-                          onClick: () => resolveAutomatic(sc, true),
-                        },
-                        {
-                          label: 'Usar valor atual',
-                          onClick: () => resolveAutomatic(sc, false),
-                        },
-                      ])"
+                      :actions="
+                        alertActions('warning', [
+                          {
+                            label: 'Manter meu texto',
+                            onClick: () => resolveAutomatic(sc, true),
+                          },
+                          {
+                            label: 'Usar valor atual',
+                            onClick: () => resolveAutomatic(sc, false),
+                          },
+                        ])
+                      "
                     />
                     <NuxtFormField
                       label="Frase 1"
@@ -741,7 +755,7 @@ const phoneHeaderActions = computed(() => [
                 :title="sc.output_path"
               />
             </div>
-          </template>
+          </div>
         </NuxtCard>
       </div>
 
@@ -766,12 +780,12 @@ const phoneHeaderActions = computed(() => [
             v-for="channel in catalogChannels"
             :key="channel.ref"
             as="article"
-            class="grid grid-rows-[auto_1fr_auto]"
+            class="grid grid-rows-[1fr]"
             :data-focus-target="channel.ref"
             :data-channel-card="channel.ref"
           >
-            <template #header>
-              <div class="flex items-start gap-3" data-card-header>
+            <div class="flex h-full flex-col gap-2" data-card-body>
+              <div class="flex items-start gap-3" data-card-title>
                 <h3 class="min-w-0 flex-1 truncate font-medium">
                   {{ channel.name }}
                 </h3>
@@ -790,9 +804,6 @@ const phoneHeaderActions = computed(() => [
                   @update:model-value="openSwitch(channel.ref)"
                 />
               </div>
-            </template>
-
-            <div class="flex h-full flex-col gap-2" data-card-body>
               <ChannelSwitchState v-if="channel.switch" :sw="channel.switch" />
               <p class="text-sm text-muted-foreground">
                 {{ channel.diagnostic }}
@@ -815,10 +826,10 @@ const phoneHeaderActions = computed(() => [
                 Ainda sem registros de envio de produtos.
               </p>
               <IFoodChannelStore v-if="channel.ref === IFOOD_CHANNEL_REF" />
-            </div>
-
-            <template #footer>
-              <div class="flex flex-wrap items-center gap-2" data-card-footer>
+              <div
+                class="mt-auto flex flex-wrap items-center gap-2"
+                data-card-actions
+              >
                 <NuxtButton
                   :to="`/channels/${encodeURIComponent(channel.ref)}/catalog`"
                   label="Revisar vínculos"
@@ -832,7 +843,7 @@ const phoneHeaderActions = computed(() => [
                   variant="ghost"
                 />
               </div>
-            </template>
+            </div>
           </NuxtCard>
         </div>
       </section>

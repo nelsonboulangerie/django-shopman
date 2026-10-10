@@ -586,22 +586,43 @@ function bulkItems(placement: "toolbar" | "base"): OperatorBulkItem[] {
   const busy = bulkBusy.value;
   return [
     [
-      { label: "Pausar", icon: "i-lucide-pause", disabled: busy, onSelect: () => bulk({ is_sellable: false }) },
-      { label: "Ativar", icon: "i-lucide-play", disabled: busy, onSelect: () => bulk({ is_sellable: true }) },
+      {
+        label: "Pausar",
+        icon: "i-lucide-pause",
+        disabled: busy,
+        onSelect: () => bulk({ is_sellable: false }),
+      },
+      {
+        label: "Ativar",
+        icon: "i-lucide-play",
+        disabled: busy,
+        onSelect: () => bulk({ is_sellable: true }),
+      },
     ],
     ...(bulkSurfaceIsFeed.value
       ? []
       : [
           [
-            { label: "Ocultar", icon: "i-lucide-eye-off", disabled: busy, onSelect: () => bulk({ is_published: false }) },
-            { label: "Exibir", icon: "i-lucide-eye", disabled: busy, onSelect: () => bulk({ is_published: true }) },
+            {
+              label: "Ocultar",
+              icon: "i-lucide-eye-off",
+              disabled: busy,
+              onSelect: () => bulk({ is_published: false }),
+            },
+            {
+              label: "Exibir",
+              icon: "i-lucide-eye",
+              disabled: busy,
+              onSelect: () => bulk({ is_published: true }),
+            },
           ],
           {
             label: "Preço…",
             icon: "i-lucide-tag",
             disabled: busy,
             panel: "price",
-            open: priceOpen.value && (placement === "base") === bulkAtBase.value,
+            open:
+              priceOpen.value && (placement === "base") === bulkAtBase.value,
             onUpdateOpen: (open: boolean) => (priceOpen.value = open),
           },
         ]),
@@ -1112,31 +1133,30 @@ useHead({ title: "Catálogo" });
           A mudança é permanente. Para promoção, use as regras.
         </p>
         <NuxtCard v-if="pricePreview" variant="soft" aria-live="polite">
-          <template #header
-            ><p class="text-xs font-semibold">
-              Revise {{ pricePreview.cells.length }} células antes de
-              confirmar
-            </p></template
-          >
-          <ul class="space-y-1 text-xs">
-            <li v-for="cell in pricePreview.cells" :key="cell.id">
-              {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }} ·
-              mínimo {{ cell.tier }}:
-              {{
-                (cell.before_q / 100).toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })
-              }}
-              →
-              {{
-                (cell.after_q / 100).toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })
-              }}
-            </li>
-          </ul>
+          <div class="grid grid-cols-[minmax(0,1fr)] gap-2">
+            <p class="text-xs font-semibold" data-card-title>
+              Revise {{ pricePreview.cells.length }} células antes de confirmar
+            </p>
+            <ul class="space-y-1 text-xs">
+              <li v-for="cell in pricePreview.cells" :key="cell.id">
+                {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }} · mínimo
+                {{ cell.tier }}:
+                {{
+                  (cell.before_q / 100).toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  })
+                }}
+                →
+                {{
+                  (cell.after_q / 100).toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  })
+                }}
+              </li>
+            </ul>
+          </div>
         </NuxtCard>
         <div class="mt-2.5 flex justify-end gap-1.5">
           <NuxtButton
@@ -1147,9 +1167,7 @@ useHead({ title: "Catálogo" });
           />
           <NuxtButton
             :label="
-              pricePreview
-                ? 'Confirmar alterações'
-                : 'Revisar alterações'
+              pricePreview ? 'Confirmar alterações' : 'Revisar alterações'
             "
             :disabled="!priceValid || bulkBusy"
             @click="applyBulkPrice"
@@ -1259,7 +1277,9 @@ useHead({ title: "Catálogo" });
               >{{ item.label }}</span
             >
           </template>
-          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+          <template #trailing="{ item }"
+            ><OperatorCountChip :count="item.count"
+          /></template>
         </NuxtTabs>
         <!-- "23 de 131 produtos · 4 canais · 4 feeds" no fim da linha das coleções (v3),
              inteiro: a frase não se corta na borda. -->
@@ -1323,12 +1343,14 @@ useHead({ title: "Catálogo" });
         icon="i-lucide-tags"
         :title="vocation.headline"
         :description="vocation.names"
-        :actions="alertActions('info', [
-          {
-            label: 'Classificar',
-            onClick: classifyVocation,
-          },
-        ])"
+        :actions="
+          alertActions('info', [
+            {
+              label: 'Classificar',
+              onClick: classifyVocation,
+            },
+          ])
+        "
         data-testid="vocation-notice"
       />
       <NuxtAlert
@@ -1386,42 +1408,37 @@ useHead({ title: "Catálogo" });
         ></template>
       </NuxtAlert>
 
-      <NuxtCard
-        v-if="publicationDraft"
-        aria-label="Prévia de publicação"
-      >
-        <template #header
-          ><h2 class="font-semibold">
+      <NuxtCard v-if="publicationDraft" aria-label="Prévia de publicação">
+        <div class="grid grid-cols-[minmax(0,1fr)] gap-3">
+          <h2 class="font-semibold" data-card-title>
             Confira {{ publicationDraft.preview.cells.length }} células em
             {{ surfaceLabel(publicationDraft.surface) }}
-          </h2></template
-        >
-        <div class="space-y-3">
-          <p class="text-sm text-muted-foreground">
-            Esta prévia mostra o escopo da decisão. Após confirmar, acompanhe a
-            sincronização das plataformas separadamente nas células.
-          </p>
-          <ul class="max-h-64 space-y-1 overflow-auto text-sm">
-            <li
-              v-for="cell in publicationDraft.preview.cells"
-              :key="`${cell.sku}:${cell.surface_ref}:${cell.tier}`"
-            >
-              {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref)
-              }}<span v-if="cell.tier"> · mínimo {{ cell.tier }}</span
-              >: {{ publicationState(cell.before) }} →
-              {{ publicationState(cell.after) }}
-            </li>
-            <li
-              v-for="cell in publicationDraft.preview.skipped"
-              :key="`${cell.sku}:${cell.surface_ref}`"
-            >
-              {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }}:
-              {{ cell.reason }} Nenhuma alteração.
-            </li>
-          </ul>
-        </div>
-        <template #footer>
-          <div class="flex flex-wrap gap-2">
+          </h2>
+          <div class="space-y-3">
+            <p class="text-sm text-muted-foreground">
+              Esta prévia mostra o escopo da decisão. Após confirmar, acompanhe
+              a sincronização das plataformas separadamente nas células.
+            </p>
+            <ul class="max-h-64 space-y-1 overflow-auto text-sm">
+              <li
+                v-for="cell in publicationDraft.preview.cells"
+                :key="`${cell.sku}:${cell.surface_ref}:${cell.tier}`"
+              >
+                {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref)
+                }}<span v-if="cell.tier"> · mínimo {{ cell.tier }}</span
+                >: {{ publicationState(cell.before) }} →
+                {{ publicationState(cell.after) }}
+              </li>
+              <li
+                v-for="cell in publicationDraft.preview.skipped"
+                :key="`${cell.sku}:${cell.surface_ref}`"
+              >
+                {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }}:
+                {{ cell.reason }} Nenhuma alteração.
+              </li>
+            </ul>
+          </div>
+          <div class="flex flex-wrap gap-2" data-card-actions>
             <NuxtButton
               type="button"
               label="Confirmar este lote"
@@ -1445,7 +1462,7 @@ useHead({ title: "Catálogo" });
               @click="publicationDraft = null"
             />
           </div>
-        </template>
+        </div>
       </NuxtCard>
 
       <!-- A matriz é a tabela da suíte (`OperatorTable`, compacta por padrão): colunas
@@ -1461,7 +1478,9 @@ useHead({ title: "Catálogo" });
         :loading="pending"
         :error="Boolean(error)"
         what="o catálogo"
-        :error-description="matrix ? 'Exibindo a última leitura disponível.' : ''"
+        :error-description="
+          matrix ? 'Exibindo a última leitura disponível.' : ''
+        "
         empty-icon="i-lucide-package-search"
         :empty-title="
           Object.keys(filters).length || query.trim()
@@ -1486,411 +1505,413 @@ useHead({ title: "Catálogo" });
           />
         </template>
 
-          <template
-            v-for="surface in surfaces"
-            :key="`head-${surface.ref}`"
-            #[`${surfaceColumnId(surface.ref)}-header`]
-          >
-            <div class="flex flex-col gap-0.5">
-              <span
-                class="flex items-center gap-1 text-muted-foreground"
-                :title="
+        <template
+          v-for="surface in surfaces"
+          :key="`head-${surface.ref}`"
+          #[`${surfaceColumnId(surface.ref)}-header`]
+        >
+          <div class="flex flex-col gap-0.5">
+            <span
+              class="flex items-center gap-1 text-muted-foreground"
+              :title="
+                surface.transactional
+                  ? surface.name
+                  : `${surface.name}: feed (só exibe, não vende)`
+              "
+              data-surface-head
+            >
+              <Icon
+                :name="surfaceDisplayIcon(surface)"
+                class="size-3.5 shrink-0"
+                :class="
                   surface.transactional
-                    ? surface.name
-                    : `${surface.name}: feed (só exibe, não vende)`
+                    ? 'text-muted-foreground'
+                    : 'text-primary/70'
                 "
-                data-surface-head
-              >
-                <Icon
-                  :name="surfaceDisplayIcon(surface)"
-                  class="size-3.5 shrink-0"
-                  :class="
-                    surface.transactional
-                      ? 'text-muted-foreground'
-                      : 'text-primary/70'
-                  "
-                />
-                <span class="op-eyebrow whitespace-nowrap">{{
-                  surface.short_name
-                }}</span>
+              />
+              <span class="op-eyebrow whitespace-nowrap">{{
+                surface.short_name
+              }}</span>
+              <NuxtButton
+                v-if="surface.output_path"
+                :to="`${djangoBase}${surface.output_path}`"
+                target="_blank"
+                icon="i-lucide-external-link"
+                color="neutral"
+                variant="ghost"
+                square
+                :aria-label="`Abrir ${surface.name}`"
+                :title="`Abrir ${surface.name}`"
+                @click.stop
+              />
+            </span>
+            <NuxtBadge
+              v-if="syncBadge(surface.sync_status)"
+              :color="syncColor(surface.sync_status)"
+              :label="syncBadge(surface.sync_status)!.label"
+              :title="syncBadge(surface.sync_status)!.title"
+            />
+          </div>
+        </template>
+
+        <template #product-cell="{ row: tableRow }">
+          <template v-for="row in [tableRow.original]" :key="row.sku">
+            <div
+              :data-dragkey="row.sku"
+              class="flex items-center gap-3 sm:min-w-[260px]"
+            >
+              <!-- handle de arrastar (pointer events): aparece só quando a coleção ativa é reordenável -->
+              <span v-if="canReorderRows" class="touch-none">
                 <NuxtButton
-                  v-if="surface.output_path"
-                  :to="`${djangoBase}${surface.output_path}`"
-                  target="_blank"
-                  icon="i-lucide-external-link"
+                  type="button"
+                  icon="i-lucide-grip-vertical"
                   color="neutral"
                   variant="ghost"
                   square
-                  :aria-label="`Abrir ${surface.name}`"
-                  :title="`Abrir ${surface.name}`"
+                  aria-label="Arrastar para reordenar"
+                  aria-keyshortcuts="ArrowUp ArrowDown"
+                  aria-description="Use as setas para cima ou para baixo para mover este produto."
+                  title="Arrastar ou usar as setas para reordenar nesta coleção"
+                  @pointerdown="rowPointerDown(row.sku, $event)"
+                  @keydown="rowKeyDown(row.sku, $event)"
                   @click.stop
                 />
               </span>
-              <NuxtBadge
-                v-if="syncBadge(surface.sync_status)"
-                :color="syncColor(surface.sync_status)"
-                :label="syncBadge(surface.sync_status)!.label"
-                :title="syncBadge(surface.sync_status)!.title"
-              />
-            </div>
-          </template>
-
-          <template #product-cell="{ row: tableRow }">
-            <template v-for="row in [tableRow.original]" :key="row.sku">
-              <div
-                :data-dragkey="row.sku"
-                class="flex items-center gap-3 sm:min-w-[260px]"
-              >
-                <!-- handle de arrastar (pointer events): aparece só quando a coleção ativa é reordenável -->
-                <span v-if="canReorderRows" class="touch-none">
-                  <NuxtButton
-                    type="button"
-                    icon="i-lucide-grip-vertical"
-                    color="neutral"
-                    variant="ghost"
-                    square
-                    aria-label="Arrastar para reordenar"
-                    aria-keyshortcuts="ArrowUp ArrowDown"
-                    aria-description="Use as setas para cima ou para baixo para mover este produto."
-                    title="Arrastar ou usar as setas para reordenar nesta coleção"
-                    @pointerdown="rowPointerDown(row.sku, $event)"
-                    @keydown="rowKeyDown(row.sku, $event)"
-                    @click.stop
+              <div class="flex min-w-0 flex-1 items-center gap-3">
+                <!-- UAvatar mantém foto e fallback na mesma geometria canônica. -->
+                <NuxtButton
+                  v-if="row.image_url && !brokenImages.has(row.sku)"
+                  color="neutral"
+                  variant="ghost"
+                  square
+                  :aria-label="`Ampliar foto de ${row.name}`"
+                  :data-catalog-thumb="row.sku"
+                  @click.stop.prevent="
+                    zoom = { url: row.image_url, name: row.name }
+                  "
+                >
+                  <NuxtAvatar
+                    :src="row.image_url"
+                    :alt="row.name"
+                    size="md"
+                    :class="
+                      rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''
+                    "
+                    @error="imageFailed(row.sku)"
+                  />
+                </NuxtButton>
+                <!-- Sem foto (ou foto quebrada), o fallback continua sendo UAvatar. -->
+                <span
+                  v-else
+                  class="inline-flex shrink-0 p-1.5"
+                  aria-hidden="true"
+                  data-letter-tile
+                >
+                  <NuxtAvatar
+                    :text="letterTile(row.name).letter"
+                    color="primary"
+                    size="md"
+                    :class="
+                      rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''
+                    "
                   />
                 </span>
-                <div class="flex min-w-0 flex-1 items-center gap-3">
-                  <!-- UAvatar mantém foto e fallback na mesma geometria canônica. -->
-                  <NuxtButton
-                    v-if="row.image_url && !brokenImages.has(row.sku)"
-                    color="neutral"
-                    variant="ghost"
-                    square
-                    :aria-label="`Ampliar foto de ${row.name}`"
-                    :data-catalog-thumb="row.sku"
-                    @click.stop.prevent="
-                      zoom = { url: row.image_url, name: row.name }
+                <div class="flex min-w-0 flex-col">
+                  <span
+                    class="flex flex-wrap items-center gap-1.5 font-medium"
+                    :class="
+                      rowStatuses[row.sku]?.off
+                        ? 'text-muted-foreground'
+                        : 'text-foreground'
                     "
                   >
-                    <NuxtAvatar
-                      :src="row.image_url"
-                      :alt="row.name"
-                      size="md"
-                      :class="
-                        rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''
+                    <span>{{ row.name }}</span>
+                    <NuxtBadge
+                      v-if="rowStatuses[row.sku]?.label"
+                      :color="
+                        rowStatuses[row.sku]?.tone === 'danger'
+                          ? 'error'
+                          : rowStatuses[row.sku]?.tone === 'amber'
+                            ? 'warning'
+                            : 'neutral'
                       "
-                      @error="imageFailed(row.sku)"
+                      :label="rowStatuses[row.sku]?.label"
+                      :title="rowStatuses[row.sku]?.hint || undefined"
                     />
-                  </NuxtButton>
-                  <!-- Sem foto (ou foto quebrada), o fallback continua sendo UAvatar. -->
-                  <span
-                    v-else
-                    class="inline-flex shrink-0 p-1.5"
-                    aria-hidden="true"
-                    data-letter-tile
-                  >
-                    <NuxtAvatar
-                      :text="letterTile(row.name).letter"
-                      color="primary"
-                      size="md"
-                      :class="
-                        rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''
+                    <!-- esgotado que repõe por produção: o próximo lote reativa sozinho -->
+                    <span
+                      v-if="row.sold_out && row.replenish_qty"
+                      class="shrink-0 text-xs font-normal text-muted-foreground"
+                      >Repõe {{ row.replenish_qty }} no lote</span
+                    >
+                    <!-- estoque baixo (produto ainda ativo): aviso discreto -->
+                    <NuxtBadge
+                      v-else-if="!rowStatuses[row.sku]?.off && row.low_stock"
+                      color="warning"
+                      :label="`Resta ${row.stock_qty}`"
+                    />
+                    <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->
+                    <NuxtButton
+                      v-if="rowSyncErrors(row)"
+                      type="button"
+                      icon="i-lucide-triangle-alert"
+                      :label="String(rowSyncErrors(row))"
+                      color="error"
+                      variant="ghost"
+                      :disabled="
+                        isBusy(productKey(row.sku)) ||
+                        !row.resync_action?.enabled
                       "
+                      :title="`Erro de sincronização em ${rowSyncErrors(row)} plataforma(s). Toque para reenviar tudo.`"
+                      @click.stop="resyncRow(row)"
                     />
                   </span>
-                  <div class="flex min-w-0 flex-col">
-                    <span
-                      class="flex flex-wrap items-center gap-1.5 font-medium"
-                      :class="
-                        rowStatuses[row.sku]?.off
-                          ? 'text-muted-foreground'
-                          : 'text-foreground'
-                      "
-                    >
-                      <span>{{ row.name }}</span>
-                      <NuxtBadge
-                        v-if="rowStatuses[row.sku]?.label"
-                        :color="
-                          rowStatuses[row.sku]?.tone === 'danger'
-                            ? 'error'
-                            : rowStatuses[row.sku]?.tone === 'amber'
-                              ? 'warning'
-                              : 'neutral'
-                        "
-                        :label="rowStatuses[row.sku]?.label"
-                        :title="rowStatuses[row.sku]?.hint || undefined"
-                      />
-                      <!-- esgotado que repõe por produção: o próximo lote reativa sozinho -->
-                      <span
-                        v-if="row.sold_out && row.replenish_qty"
-                        class="shrink-0 text-xs font-normal text-muted-foreground"
-                        >Repõe {{ row.replenish_qty }} no lote</span
-                      >
-                      <!-- estoque baixo (produto ainda ativo): aviso discreto -->
-                      <NuxtBadge
-                        v-else-if="!rowStatuses[row.sku]?.off && row.low_stock"
-                        color="warning"
-                        :label="`Resta ${row.stock_qty}`"
-                      />
-                      <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->
-                      <NuxtButton
-                        v-if="rowSyncErrors(row)"
-                        type="button"
-                        icon="i-lucide-triangle-alert"
-                        :label="String(rowSyncErrors(row))"
-                        color="error"
-                        variant="ghost"
-                        :disabled="
-                          isBusy(productKey(row.sku)) ||
-                          !row.resync_action?.enabled
-                        "
-                        :title="`Erro de sincronização em ${rowSyncErrors(row)} plataforma(s). Toque para reenviar tudo.`"
-                        @click.stop="resyncRow(row)"
-                      />
-                    </span>
-                    <!-- uma linha só: com a coluna em largura fixa, sem `nowrap` o SKU +
+                  <!-- uma linha só: com a coluna em largura fixa, sem `nowrap` o SKU +
                          preço + coleção quebram e a linha da matriz cresce. -->
-                    <span
-                      class="flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-xs text-muted-foreground"
+                  <span
+                    class="flex items-center gap-1.5 overflow-hidden whitespace-nowrap text-xs text-muted-foreground"
+                  >
+                    <span class="shrink-0 font-mono">{{ row.sku }}</span>
+                    <span class="shrink-0 text-muted-foreground/40">·</span>
+                    <span class="shrink-0 tabular-nums">{{
+                      row.base_price_display
+                    }}</span>
+                    <template v-if="row.primary_collection_name"
+                      ><span class="shrink-0 text-muted-foreground/40">·</span
+                      ><span class="truncate">{{
+                        row.primary_collection_name
+                      }}</span></template
                     >
-                      <span class="shrink-0 font-mono">{{ row.sku }}</span>
-                      <span class="shrink-0 text-muted-foreground/40">·</span>
-                      <span class="shrink-0 tabular-nums">{{
-                        row.base_price_display
-                      }}</span>
-                      <template v-if="row.primary_collection_name"
-                        ><span class="shrink-0 text-muted-foreground/40">·</span
-                        ><span class="truncate">{{
-                          row.primary_collection_name
-                        }}</span></template
-                      >
-                    </span>
-                  </div>
+                  </span>
                 </div>
               </div>
-            </template>
+            </div>
           </template>
+        </template>
 
-          <!-- O cabeçalho da coluna do ⋯ é só para o leitor de tela. Um `header: ""`
+        <!-- O cabeçalho da coluna do ⋯ é só para o leitor de tela. Um `header: ""`
                virava um texto vazio que o servidor não manda, e a hidratação acusava
                mismatch na carga direta. -->
-          <template #actions-header>
-            <span class="sr-only">Ações</span>
-          </template>
+        <template #actions-header>
+          <span class="sr-only">Ações</span>
+        </template>
 
-          <!-- ⋯ da linha: as ações menos corriqueiras (editar, pausar tudo, publicar) -->
-          <template #actions-cell="{ row: tableRow }">
-            <OperatorMoreMenu
-              :items="rowMenuItems(tableRow.original)"
-              :label="`Mais ações de ${tableRow.original.name}`"
-            />
-          </template>
+        <!-- ⋯ da linha: as ações menos corriqueiras (editar, pausar tudo, publicar) -->
+        <template #actions-cell="{ row: tableRow }">
+          <OperatorMoreMenu
+            :items="rowMenuItems(tableRow.original)"
+            :label="`Mais ações de ${tableRow.original.name}`"
+          />
+        </template>
 
+        <template
+          v-for="surface in surfaces"
+          :key="`cell-${surface.ref}`"
+          #[`${surfaceColumnId(surface.ref)}-cell`]="{ row: tableRow }"
+        >
           <template
-            v-for="surface in surfaces"
-            :key="`cell-${surface.ref}`"
-            #[`${surfaceColumnId(surface.ref)}-cell`]="{ row: tableRow }"
+            v-for="row in [tableRow.original]"
+            :key="`${row.sku}-${surface.ref}`"
           >
             <template
-              v-for="row in [tableRow.original]"
-              :key="`${row.sku}-${surface.ref}`"
+              v-for="cell in [cellFor(row, surface.ref)]"
+              :key="cell.surface_ref"
             >
-              <template
-                v-for="cell in [cellFor(row, surface.ref)]"
-                :key="cell.surface_ref"
+              <div
+                v-if="cell.in_listing"
+                class="flex items-center justify-center gap-1"
+                :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
               >
-                <div
-                  v-if="cell.in_listing"
-                  class="flex items-center justify-center gap-1"
-                  :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
-                >
-                  <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off).
+                <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off).
                      Linha "fora" (esgotado/oculto) mantém a POSIÇÃO e esmaece a célula, como a
                      foto da linha: o `neutral` do Switch pinta escuro e gritava mais que o verde.
                      Vale para canal (vende) E feed (só exibe) — a mesma pausa por item. -->
-                  <NuxtSwitch
-                    color="success"
-                    :model-value="cell.is_sellable"
-                    :disabled="
-                      isBusy(cellKey(row.sku, cell.surface_ref)) ||
-                      !cell.action?.enabled
-                    "
-                    :aria-label="
-                      cell.is_sellable
-                        ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.`
-                        : `Ativar neste ${surfaceWord(cell)}`
-                    "
-                    :title="
-                      cell.is_sellable
-                        ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.`
-                        : `Pausado. Toque para ativar neste ${surfaceWord(cell)}.`
-                    "
-                    @update:model-value="toggleCell(row, cell)"
-                  />
+                <NuxtSwitch
+                  color="success"
+                  :model-value="cell.is_sellable"
+                  :disabled="
+                    isBusy(cellKey(row.sku, cell.surface_ref)) ||
+                    !cell.action?.enabled
+                  "
+                  :aria-label="
+                    cell.is_sellable
+                      ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.`
+                      : `Ativar neste ${surfaceWord(cell)}`
+                  "
+                  :title="
+                    cell.is_sellable
+                      ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.`
+                      : `Pausado. Toque para ativar neste ${surfaceWord(cell)}.`
+                  "
+                  @update:model-value="toggleCell(row, cell)"
+                />
 
-                  <span
-                    v-if="cell.pause_audit"
-                    class="max-w-40 text-xs text-muted-foreground"
-                    >{{ cell.pause_audit }}</span
-                  >
+                <span
+                  v-if="cell.pause_audit"
+                  class="max-w-40 text-xs text-muted-foreground"
+                  >{{ cell.pause_audit }}</span
+                >
 
-                  <!-- Feed não vende: sem divisória nem preço — só a pausa por item. -->
-                  <template v-if="isCellTransactional(cell)">
-                    <!-- divisória: deixa claro que toggle e preço são controles distintos -->
-                    <NuxtSeparator orientation="vertical" class="h-5" />
+                <!-- Feed não vende: sem divisória nem preço — só a pausa por item. -->
+                <template v-if="isCellTransactional(cell)">
+                  <!-- divisória: deixa claro que toggle e preço são controles distintos -->
+                  <NuxtSeparator orientation="vertical" class="h-5" />
 
-                    <!-- ÁREA 2 — preço, ao lado do toggle: base = ícone $ apagado; ALTERADO =
+                  <!-- ÁREA 2 — preço, ao lado do toggle: base = ícone $ apagado; ALTERADO =
                      seta ↑/↓ colorida + valor. title = valor; clique = popover. -->
-                    <NuxtPopover
-                      :open="isEditing(row.sku, cell.surface_ref)"
-                      :content="{ align: 'center' }"
-                      @update:open="
-                        (v) => {
-                          if (!v) void closePrice();
-                        }
+                  <NuxtPopover
+                    :open="isEditing(row.sku, cell.surface_ref)"
+                    :content="{ align: 'center' }"
+                    @update:open="
+                      (v) => {
+                        if (!v) void closePrice();
+                      }
+                    "
+                  >
+                    <NuxtButton
+                      type="button"
+                      color="neutral"
+                      variant="ghost"
+                      :disabled="
+                        isBusy(cellKey(row.sku, cell.surface_ref)) ||
+                        !cell.action?.enabled
                       "
+                      :title="priceTitle(row, cell)"
+                      :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display}. Toque para editar.`"
+                      @click="startEdit(row, cell)"
                     >
-                      <NuxtButton
-                        type="button"
-                        color="neutral"
-                        variant="ghost"
-                        :disabled="
-                          isBusy(cellKey(row.sku, cell.surface_ref)) ||
-                          !cell.action?.enabled
-                        "
-                        :title="priceTitle(row, cell)"
-                        :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display}. Toque para editar.`"
-                        @click="startEdit(row, cell)"
+                      <span
+                        v-if="cellPrice(row, cell).differs"
+                        class="flex items-center gap-0.5"
                       >
-                        <span
-                          v-if="cellPrice(row, cell).differs"
-                          class="flex items-center gap-0.5"
-                        >
-                          <Icon
-                            :name="
-                              cellPrice(row, cell).delta === 'up'
-                                ? 'lucide:arrow-up'
-                                : 'lucide:arrow-down'
-                            "
-                            class="size-2.5 shrink-0"
-                            :class="
-                              rowStatuses[row.sku]?.off
-                                ? 'text-muted-foreground/60'
-                                : cellPrice(row, cell).delta === 'up'
-                                  ? 'text-warning'
-                                  : 'text-success'
-                            "
-                          />
-                          <span
-                            class="text-xs font-semibold tabular-nums"
-                            :class="
-                              cell.is_sellable
-                                ? 'text-foreground'
-                                : 'text-muted-foreground line-through'
-                            "
-                            >{{ cell.price_display.replace("R$ ", "") }}</span
-                          >
-                        </span>
                         <Icon
-                          v-else
-                          name="lucide:circle-dollar-sign"
-                          class="size-3.5 text-muted-foreground/40"
+                          :name="
+                            cellPrice(row, cell).delta === 'up'
+                              ? 'lucide:arrow-up'
+                              : 'lucide:arrow-down'
+                          "
+                          class="size-2.5 shrink-0"
+                          :class="
+                            rowStatuses[row.sku]?.off
+                              ? 'text-muted-foreground/60'
+                              : cellPrice(row, cell).delta === 'up'
+                                ? 'text-warning'
+                                : 'text-success'
+                          "
                         />
-                      </NuxtButton>
-                      <template #content>
-                        <div class="w-64 space-y-3 p-4">
-                          <NuxtFormField
-                            :label="`Preço · ${surfaceName(cell.surface_ref)}`"
-                            :description="`Base do produto: ${row.base_price_display}`"
-                          >
-                            <NuxtInput
-                              v-model="priceInput"
-                              class="w-full"
-                              type="text"
-                              inputmode="decimal"
-                              autofocus
-                              @keyup.enter="commitPrice(row, cell)"
-                              @keyup.esc="closePrice()"
-                            />
-                          </NuxtFormField>
-                          <NuxtAlert
-                            v-if="priceConflict(cell)"
-                            color="warning"
-                            variant="subtle"
-                            title="O preço mudou"
-                            :description="`Agora: ${cell.price_display}. Seu valor digitado foi mantido.`"
-                            :actions="alertActions('warning', [
+                        <span
+                          class="text-xs font-semibold tabular-nums"
+                          :class="
+                            cell.is_sellable
+                              ? 'text-foreground'
+                              : 'text-muted-foreground line-through'
+                          "
+                          >{{ cell.price_display.replace("R$ ", "") }}</span
+                        >
+                      </span>
+                      <Icon
+                        v-else
+                        name="lucide:circle-dollar-sign"
+                        class="size-3.5 text-muted-foreground/40"
+                      />
+                    </NuxtButton>
+                    <template #content>
+                      <div class="w-64 space-y-3 p-4">
+                        <NuxtFormField
+                          :label="`Preço · ${surfaceName(cell.surface_ref)}`"
+                          :description="`Base do produto: ${row.base_price_display}`"
+                        >
+                          <NuxtInput
+                            v-model="priceInput"
+                            class="w-full"
+                            type="text"
+                            inputmode="decimal"
+                            autofocus
+                            @keyup.enter="commitPrice(row, cell)"
+                            @keyup.esc="closePrice()"
+                          />
+                        </NuxtFormField>
+                        <NuxtAlert
+                          v-if="priceConflict(cell)"
+                          color="warning"
+                          variant="subtle"
+                          title="O preço mudou"
+                          :description="`Agora: ${cell.price_display}. Seu valor digitado foi mantido.`"
+                          :actions="
+                            alertActions('warning', [
                               {
                                 label: 'Conferir e manter meu preço',
                                 onClick: () => keepPrice(cell),
                               },
-                            ])"
+                            ])
+                          "
+                        />
+                        <div class="flex justify-end gap-2">
+                          <NuxtButton
+                            color="neutral"
+                            variant="ghost"
+                            label="Cancelar"
+                            @click="closePrice()"
                           />
-                          <div class="flex justify-end gap-2">
-                            <NuxtButton
-                              color="neutral"
-                              variant="ghost"
-                              label="Cancelar"
-                              @click="closePrice()"
-                            />
-                            <NuxtButton
-                              label="Salvar preço"
-                              :disabled="
-                                priceConflict(cell) ||
-                                isBusy(cellKey(row.sku, cell.surface_ref))
-                              "
-                              @click="commitPrice(row, cell)"
-                            />
-                          </div>
+                          <NuxtButton
+                            label="Salvar preço"
+                            :disabled="
+                              priceConflict(cell) ||
+                              isBusy(cellKey(row.sku, cell.surface_ref))
+                            "
+                            @click="commitPrice(row, cell)"
+                          />
                         </div>
-                      </template>
-                    </NuxtPopover>
-                  </template>
+                      </div>
+                    </template>
+                  </NuxtPopover>
+                </template>
 
-                  <!-- ÁREA 3 — selo de SYNC (produto × plataforma), inline ao lado do preço,
+                <!-- ÁREA 3 — selo de SYNC (produto × plataforma), inline ao lado do preço,
                      só em superfície que projeta. Acionável (erro/sincronizando/nunca) =
                      botão "reenviar agora"; senão só informa. Vem por último para não
                      empurrar o toggle de lugar nas colunas em que não aparece. -->
-                  <template v-if="cellSync(cell).show">
-                    <NuxtButton
-                      v-if="cellSync(cell).actionable"
-                      type="button"
-                      :icon="cellSync(cell).icon"
-                      :color="cellSync(cell).color"
-                      variant="ghost"
-                      square
-                      :disabled="
-                        isBusy(cellKey(row.sku, cell.surface_ref)) ||
-                        !row.resync_action?.enabled
-                      "
-                      :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''}. Toque para reenviar agora.`"
-                      :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}. Toque para reenviar agora.`"
-                      @click="resyncCell(row, cell)"
-                    />
-                    <Icon
-                      v-else
-                      :name="cellSync(cell).icon"
-                      class="size-4 shrink-0"
-                      :class="{
-                        'text-success': cellSync(cell).color === 'success',
-                        'text-warning': cellSync(cell).color === 'warning',
-                        'text-error': cellSync(cell).color === 'error',
-                        'text-muted-foreground':
-                          cellSync(cell).color === 'neutral',
-                      }"
-                      :title="cellSync(cell).label"
-                      :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}`"
-                    />
-                  </template>
-                </div>
-                <div
-                  v-else
-                  class="grid h-10 place-items-center rounded-md text-xs text-muted-foreground/30"
-                >
-                  —
-                </div>
-              </template>
+                <template v-if="cellSync(cell).show">
+                  <NuxtButton
+                    v-if="cellSync(cell).actionable"
+                    type="button"
+                    :icon="cellSync(cell).icon"
+                    :color="cellSync(cell).color"
+                    variant="ghost"
+                    square
+                    :disabled="
+                      isBusy(cellKey(row.sku, cell.surface_ref)) ||
+                      !row.resync_action?.enabled
+                    "
+                    :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''}. Toque para reenviar agora.`"
+                    :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}. Toque para reenviar agora.`"
+                    @click="resyncCell(row, cell)"
+                  />
+                  <Icon
+                    v-else
+                    :name="cellSync(cell).icon"
+                    class="size-4 shrink-0"
+                    :class="{
+                      'text-success': cellSync(cell).color === 'success',
+                      'text-warning': cellSync(cell).color === 'warning',
+                      'text-error': cellSync(cell).color === 'error',
+                      'text-muted-foreground':
+                        cellSync(cell).color === 'neutral',
+                    }"
+                    :title="cellSync(cell).label"
+                    :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}`"
+                  />
+                </template>
+              </div>
+              <div
+                v-else
+                class="grid h-10 place-items-center rounded-md text-xs text-muted-foreground/30"
+              >
+                —
+              </div>
             </template>
           </template>
+        </template>
       </OperatorTable>
     </section>
 

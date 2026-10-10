@@ -747,6 +747,14 @@ describe("Gestor canônico em Nuxt UI", () => {
       new URL("../app/components/CatalogBindingReview.vue", import.meta.url),
       "utf8",
     );
+    const workstations = readFileSync(
+      new URL("../app/pages/workstations.vue", import.meta.url),
+      "utf8",
+    );
+    const productPanel = readFileSync(
+      new URL("../app/components/CatalogProductPanel.vue", import.meta.url),
+      "utf8",
+    );
     expect(appConfig).toMatch(
       /card:\s*\{[\s\S]*?header:\s*["']p-4 sm:p-4["'][\s\S]*?body:\s*["']p-4 sm:p-4 has-\[>\[data-slot=root\]:only-child>table\]:p-0 has-\[>\[data-slot=root\]:only-child>\[data-slot=item\]\[data-state\]\]:py-0["'][\s\S]*?footer:\s*["']p-4 sm:p-4["']/,
     );
@@ -767,14 +775,16 @@ describe("Gestor canônico em Nuxt UI", () => {
     // 1/3 + 2/3 quando o rodapé tem largura para isso; abaixo, empilha legível.
     expect(card).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
     expect(card).toContain('class="@container flex items-end gap-2"');
-    expect(feeds.match(/<template #header>/g)?.length).toBeGreaterThanOrEqual(
-      2,
-    );
-    expect(feeds.match(/<template #footer>/g)?.length).toBeGreaterThanOrEqual(
-      2,
-    );
     // Cartão sem cabeçalho nem rodapé destacados (conjunto mínimo, regra do dono): o
-    // título e as ações moram no corpo, sem a divisória dos slots oficiais.
+    // título e as ações moram no corpo, sem a divisória dos slots oficiais. O
+    // `OrderCard` (acima) é a exceção da Saída: o cartão do pedido tem cabeçalho.
+    for (const source of [feeds, workstations, catalog, bindings]) {
+      expect(source).not.toContain("#header");
+      expect(source).not.toContain("#footer");
+    }
+    // O painel do produto tem um #footer legítimo: o do sheet, não de cartão.
+    expect(productPanel).not.toContain("#header");
+    expect(productPanel.match(/<template #footer>/g)?.length).toBe(1);
     expect(courier).not.toContain("#header");
     expect(courier).not.toContain("#footer");
     expect(catalog).not.toContain('<NuxtCard v-if="loading"');
@@ -783,7 +793,6 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(catalog).toContain('what="o catálogo"');
     expect(customers).not.toContain("#header");
     expect(customers).not.toContain("#footer");
-    expect(bindings).toContain("<template #header>");
     expect(card).not.toContain("data-card-pack-declare");
     expect(offenders(/<article\b/)).toEqual([]);
     expect(offenders(/<style\b/)).toEqual([]);

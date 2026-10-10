@@ -100,7 +100,11 @@ async function toggleActive(row: WorkstationManageRow) {
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
 const phoneHeaderActions = computed(() => [
-  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    onSelect: () => void refresh(),
+  },
 ]);
 </script>
 
@@ -135,12 +139,14 @@ const phoneHeaderActions = computed(() => [
           icon="i-lucide-triangle-alert"
           title="Não foi possível carregar os postos"
           :description="httpErrorMessage(error, c.manage_error ?? '')"
-          :actions="alertActions('error', [
-            {
-              label: 'Tentar de novo',
-              onClick: () => refresh(),
-            },
-          ])"
+          :actions="
+            alertActions('error', [
+              {
+                label: 'Tentar de novo',
+                onClick: () => refresh(),
+              },
+            ])
+          "
         />
         <NuxtAlert
           v-if="message"
@@ -204,8 +210,11 @@ const phoneHeaderActions = computed(() => [
             as="li"
             :data-workstation-row="row.ref"
           >
-            <template #header>
-              <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="grid grid-cols-[minmax(0,1fr)] gap-3">
+              <div
+                class="flex flex-wrap items-start justify-between gap-3"
+                data-card-title
+              >
                 <div class="flex min-w-0 items-start gap-3">
                   <NuxtAvatar :icon="workstationKindIcon(row.kind)" size="lg" />
                   <div class="min-w-0">
@@ -273,35 +282,35 @@ const phoneHeaderActions = computed(() => [
                   />
                 </div>
               </div>
-            </template>
 
-            <div class="grid gap-1">
-              <p class="text-xs font-medium text-muted-foreground">
-                {{ devicesSummary(row, c) }}
-              </p>
-              <ul v-if="row.devices.length" class="divide-y divide-border">
-                <li
-                  v-for="device in row.devices"
-                  :key="device.id"
-                  class="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-1 last:pb-0"
-                  :data-workstation-device="device.id"
-                >
-                  <div class="min-w-0 text-sm">
-                    <p>{{ deviceName(device) }}</p>
-                    <p class="text-xs text-muted-foreground">
-                      {{ deviceUsageLine(device, c) }}
-                    </p>
-                  </div>
-                  <NuxtButton
-                    type="button"
-                    color="error"
-                    variant="outline"
-                    :label="c.release"
-                    :disabled="Boolean(busy)"
-                    @click="releaseDevice(row.ref, device.id)"
-                  />
-                </li>
-              </ul>
+              <div class="grid gap-1">
+                <p class="text-xs font-medium text-muted-foreground">
+                  {{ devicesSummary(row, c) }}
+                </p>
+                <ul v-if="row.devices.length" class="divide-y divide-border">
+                  <li
+                    v-for="device in row.devices"
+                    :key="device.id"
+                    class="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-1 last:pb-0"
+                    :data-workstation-device="device.id"
+                  >
+                    <div class="min-w-0 text-sm">
+                      <p>{{ deviceName(device) }}</p>
+                      <p class="text-xs text-muted-foreground">
+                        {{ deviceUsageLine(device, c) }}
+                      </p>
+                    </div>
+                    <NuxtButton
+                      type="button"
+                      color="error"
+                      variant="outline"
+                      :label="c.release"
+                      :disabled="Boolean(busy)"
+                      @click="releaseDevice(row.ref, device.id)"
+                    />
+                  </li>
+                </ul>
+              </div>
             </div>
           </NuxtCard>
         </ul>
