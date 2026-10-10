@@ -141,6 +141,14 @@ class KDSTicket(models.Model):
     # dispositivo. No cancelado, vale o "Visto" posterior ao ``cancelled_at``.
     seen_at = models.DateTimeField("visto em", null=True, blank=True)
     seen_by = models.CharField("visto por", max_length=150, blank=True, default="")
+    # O nome com que a estação conhece o pedido ("Mesa 5", "0042"): gravado no
+    # envio e regravado quando a cozinha dá Visto na mudança. Se o nome que o
+    # quadro mostra hoje é outro (a comanda foi paga e virou pedido, a linha foi
+    # transferida para outra comanda, a comanda foi renomeada), o card diz "Era a
+    # comanda Mesa 5" até alguém dar Visto (decisão do dono, 10/10/2026: mudança
+    # no que já está na cozinha chega com alarde, nunca em silêncio). Vazio =
+    # sem referência para comparar, e então nada se anuncia.
+    known_ref = models.CharField("conhecido na cozinha como", max_length=150, blank=True, default="")
 
     class Meta:
         verbose_name = "ticket KDS"
@@ -150,3 +158,11 @@ class KDSTicket(models.Model):
 
     def __str__(self):
         return f"KDS #{self.pk} · {self.session_key} → {self.kds_instance.ref}"
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and not self.known_ref and self.session_key:
+            # O nome que a estação vê agora, pelo MESMO cálculo do quadro.
+            from shopman.backstage.projections.kds import current_display_ref
+
+            self.known_ref = current_display_ref(self.session_key)[:150]
+        super().save(*args, **kwargs)
