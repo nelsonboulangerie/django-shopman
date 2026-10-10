@@ -1890,7 +1890,7 @@ def move_pos_tab_lines(
     Prices carry over verbatim via the kernel ``move_lines`` op.
     """
     channel, _config = _channel_and_config(channel_ref)
-    line_ids = [str(line_id) for line_id in (line_ids or []) if str(line_id).strip()]
+    line_ids = list(dict.fromkeys(str(line_id) for line_id in (line_ids or []) if str(line_id).strip()))
     if not line_ids:
         raise PosIntentError(
             code="no_line_ids",
@@ -1977,12 +1977,18 @@ def move_pos_tab_lines(
     validate_sales_mode(session_sales_payload(target), require_ready=True)
 
     try:
-        session_service.move_session_lines(
-            from_session_key=source.session_key,
-            to_session_key=target.session_key,
-            channel_ref=channel.ref,
-            line_ids=line_ids,
-        )
+        with transaction.atomic():
+            session_service.move_session_lines(
+                from_session_key=source.session_key,
+                to_session_key=target.session_key,
+                channel_ref=channel.ref,
+                line_ids=line_ids,
+            )
+            _carry_kitchen_state(
+                source_session_key=source.session_key,
+                target_session_key=target.session_key,
+                line_ids=line_ids,
+            )
     except Exception as exc:  # noqa: BLE001 - surface kernel errors as a recoverable POS error
         logger.warning(
             "pos_move_tab_lines_failed from=%s to=%s: %s",
@@ -2028,6 +2034,77 @@ def move_pos_tab_lines(
         target=target,
         source=None if source_closed else source,
         source_closed=bool(source_closed),
+    )
+
+
+def _carry_kitchen_state(*, source_session_key: str, target_session_key: str, line_ids: list[str]) -> None:
+    """A linha movida leva o estado da cozinha para a comanda de destino.
+
+    O kernel move a linha com ``line_id`` novo (a identidade é por sessão), e o
+    livro da cozinha é por comanda + ``line_id``. Sem isto, a linha já enviada
+    chegava "a enviar" no destino (o próximo Enviar a mandava de novo, e a cozinha
+    fazia duas vezes) e o ticket da origem ficava apontando para uma linha que
+    não existe mais. Aqui o ticket segue o prato (``carry_lines_to_session``),
+    a herança da venda sem conexão (``kds_inherited_lines``) passa junto, e o
+    espelho ``fired_lines``/``fired_qty`` das duas comandas é refeito.
+
+    Roda dentro da transação do ``move_session_lines``, depois dele: as duas
+    sessões já estão travadas pelo kernel (ordem ``source -> ticket``). O kernel
+    acrescenta as linhas movidas ao FIM do destino, na ordem de ``line_ids``
+    (deduplicados pelo chamador); o par velho → novo sai dali.
+    """
+    from shopman.shop.adapters import kds as kds_adapter
+
+    source = Session.objects.select_for_update().get(session_key=source_session_key)
+    target = Session.objects.select_for_update().get(session_key=target_session_key)
+    appended = list(target.items or [])[-len(line_ids):] if line_ids else []
+    source_data = dict(source.data or {})
+    if len(appended) != len(line_ids):
+        raise ValueError("Linhas movidas não conferem com o destino.")
+    line_map = {old: str(item["line_id"]) for old, item in zip(line_ids, appended, strict=True)}
+
+    fired_before = kds_adapter.fired_line_ids_for_session(source_session_key)
+    if not any(old in fired_before for old in line_map):
+        return
+    kds_adapter.carry_lines_to_session(
+        from_session_key=source_session_key, to_session_key=target_session_key, line_map=line_map,
+    )
+
+    inherited_key = kds_adapter.KDS_INHERITED_KEY
+    source_inherited = [str(x) for x in (source_data.get(inherited_key) or [])]
+    carried_inherited = [line_map[old] for old in source_inherited if old in line_map]
+    source_fired_qty = dict(source_data.get("fired_qty") or {})
+    target_data = dict(target.data or {})
+    target_fired_qty = dict(target_data.get("fired_qty") or {})
+    for old, new in line_map.items():
+        if old in source_fired_qty:
+            target_fired_qty[new] = source_fired_qty.pop(old)
+
+    if inherited_key in source_data or carried_inherited:
+        source_data[inherited_key] = [x for x in source_inherited if x not in line_map]
+    if carried_inherited:
+        target_data[inherited_key] = [
+            *[str(x) for x in (target_data.get(inherited_key) or [])], *carried_inherited,
+        ]
+    # A ordem importa: a herança do destino precisa estar gravada antes de o
+    # livro do destino ser relido, porque ele soma tickets + herdadas.
+    target_data["fired_qty"] = target_fired_qty
+    target.data = target_data
+    target.save(update_fields=["data"])
+    source_data["fired_qty"] = source_fired_qty
+    source.data = source_data
+    source.save(update_fields=["data"])
+
+    for session in (source, target):
+        session.data = {
+            **session.data,
+            "fired_lines": sorted(kds_adapter.fired_line_ids_for_session(session.session_key)),
+        }
+        session.save(update_fields=["data"])
+    logger.info(
+        "pos_move_tab_lines_kitchen from=%s to=%s carried=%s",
+        source_session_key, target_session_key,
+        sorted(new for old, new in line_map.items() if old in fired_before),
     )
 
 

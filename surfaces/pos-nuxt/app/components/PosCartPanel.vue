@@ -942,7 +942,15 @@ async function navigateItems(event: KeyboardEvent) {
     else closeEditor();
   }
 }
-defineExpose({ focusItem, onDigit, onBackspace });
+// F10 com linhas marcadas é o MESMO gesto do "Transferir" da barra de seleção: o
+// diálogo nasce com elas. Sem marcas, devolve false e a página abre como sempre.
+function moveSelection(): boolean {
+  if (!canMove.value || !props.hasOpenTab || !selection.value.count) return false;
+  if (!props.loading) emit("move", selection.value.lineIds);
+  return true;
+}
+
+defineExpose({ focusItem, onDigit, onBackspace, moveSelection });
 </script>
 
 <template>
