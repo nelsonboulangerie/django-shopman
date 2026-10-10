@@ -165,8 +165,10 @@ describe("Fase 2, limpeza do PDV", () => {
       .map((name) => [name, read(`../app/components/${name}.vue`)] as const);
   it("nenhum <button> cru: o botão é o NuxtButton do conjunto mínimo", () => {
     for (const [name, source] of sources()) {
-      const template = source.slice(source.indexOf("<template>")).replace(/<!--[\s\S]*?-->/g, "");
-      expect(template, name).not.toMatch(/<button[\s>]/);
+      // Só o markup: os comentários do template (que citam `<button>` na história) saem.
+      const parts = source.slice(source.indexOf("<template>")).split("<!--");
+      const markup = [parts[0], ...parts.slice(1).map((part) => part.split("-->").slice(1).join("-->"))].join("");
+      expect(markup, name).not.toMatch(/<button[\s>]/);
     }
   });
   it("os campos de cédula do Fim do dia têm a altura dos botões md (32 px)", () => {

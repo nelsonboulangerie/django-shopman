@@ -994,12 +994,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
         >
           {{ fireBar.label }}
           <template #trailing>
-            <NuxtBadge
+            <OperatorCountChip
               v-if="fireBar.unfired"
-              color="primary"
-              class="tabular-nums"
+              :count="fireBar.unfired"
               :aria-label="`${fireBar.unfired} item(ns) a enviar`"
-              :label="String(fireBar.unfired)"
             />
             <OperatorKbd v-if="!coarsePointer" aria-hidden="true">F9</OperatorKbd>
           </template>
