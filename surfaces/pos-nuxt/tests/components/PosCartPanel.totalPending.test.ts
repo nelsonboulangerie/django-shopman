@@ -87,29 +87,35 @@ describe("PosCartPanel — o total da comanda é o do servidor", () => {
     expect(wrapper.find("[data-pos-primary]").text()).not.toContain("R$");
   });
 
-  it("folha fechada: o resumo conta os itens e diz Calculando…, sem a soma local", async () => {
+  it("folha fechada: a barra conta os itens e diz Calculando…, sem a soma local", async () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ status: "calculating", display: "" }, { sheet: true }),
     });
-    const summary = wrapper.find("[data-pos-sheet-summary]");
-    expect(summary.text()).toContain("3 itens");
-    expect(summary.text()).toContain("Calculando…");
-    expect(summary.text()).not.toContain("R$");
+    const context = wrapper.find("[data-pos-sheet-bar] [data-operator-action-bar-context]");
+    expect(context.text()).toContain("3 itens");
+    expect(context.text()).toContain("Calculando…");
+    expect(context.text()).not.toContain("R$");
+    // "Calculando…" vai na linha de contexto, em texto comum: nunca no lugar do número.
+    expect(context.find("span.font-semibold").exists()).toBe(false);
   });
 
   it("folha da mesa: o Pagar mostra Calculando… sem número, e o confirmado com o valor do servidor", async () => {
     const pending = await mountSuspended(PosCartPanel, {
       props: props({ status: "calculating", display: "" }, { sheet: true, quickPayments }),
     });
-    await pending.find("[data-pos-sheet-summary]").trigger("click");
-    const pay = pending.find("[data-pos-sheet-pay]");
-    expect(pay.find("[data-pos-sheet-pay-total]").text()).toBe("Calculando…");
-    expect(pay.text()).not.toContain("R$");
+    await pending.find("[data-operator-action-bar-secondary]").trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const pay = document.body.querySelector("[data-pos-sheet-pay]");
+    expect(pay?.querySelector("[data-pos-sheet-pay-total]")?.textContent?.trim()).toBe("Calculando…");
+    expect(pay?.textContent).not.toContain("R$");
+    pending.unmount();
 
     const confirmed = await mountSuspended(PosCartPanel, {
       props: props({ status: "confirmed", display: formatBRL(990) }, { sheet: true, quickPayments }),
     });
-    await confirmed.find("[data-pos-sheet-summary]").trigger("click");
-    expect(confirmed.find("[data-pos-sheet-pay-total]").text()).toBe(formatBRL(990));
+    await confirmed.find("[data-operator-action-bar-secondary]").trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.body.querySelector("[data-pos-sheet-pay-total]")?.textContent?.trim()).toBe(formatBRL(990));
+    expect(confirmed.find("[data-operator-action-bar-context]").text()).toContain(formatBRL(990));
   });
 });

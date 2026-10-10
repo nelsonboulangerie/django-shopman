@@ -139,12 +139,15 @@ function onAddressSelected(address: StructuredAddressProjection) {
 </script>
 
 <template>
-  <UiDialog v-model:open="isOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" @open-auto-focus="onOpenAutoFocus">
-      <UiDialogHeader>
-        <UiDialogTitle>Recebimento</UiDialogTitle>
-        <UiDialogDescription>Escolha uma opção. Cliente e data não definem como o pedido será recebido.</UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    v-model:open="isOpen"
+    title="Recebimento"
+    description="Escolha uma opção. Cliente e data não definem como o pedido será recebido."
+    :content="{ onOpenAutoFocus }"
+    :ui="{ content: 'sm:max-w-lg' }"
+    data-pos-fulfillment-modal
+  >
+    <template #body>
       <div class="grid gap-4">
         <div class="grid grid-cols-2 gap-2">
           <UiButton
@@ -261,15 +264,22 @@ function onAddressSelected(address: StructuredAddressProjection) {
           <UiTextarea :model-value="orderNotes" :rows="2" placeholder="Instruções do pedido, referência, recado" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
         </label>
       </div>
-      <UiDialogFooter>
-        <!-- ⚠️ O rodapé confirma a ESCOLHA, não o desfecho: aqui só se decide
-             COMO o pedido será recebido, antes de qualquer coisa acontecer.
-             "Concluir entrega" é ato real desta casa (é o que o Gestor de
-             Pedidos faz quando o pedido chegou na mão de alguém), e numa
-             encomenda para sábado o rótulo afirmava que a entrega tinha
-             terminado no instante em que foi combinada. -->
-        <UiButton class="w-full" :disabled="!fulfillmentConfirmed" @click="isOpen = false">{{ !fulfillmentConfirmed ? "Escolha o recebimento" : fulfillmentType === "delivery" ? "Entrega neste endereço" : "Retirada no balcão" }}</UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+    <template #footer>
+      <!-- ⚠️ O rodapé confirma a ESCOLHA, não o desfecho: aqui só se decide
+           COMO o pedido será recebido, antes de qualquer coisa acontecer.
+           "Concluir entrega" é ato real desta casa (é o que o Gestor de
+           Pedidos faz quando o pedido chegou na mão de alguém), e numa
+           encomenda para sábado o rótulo afirmava que a entrega tinha
+           terminado no instante em que foi combinada. -->
+      <NuxtButton
+        block
+        color="primary"
+        :disabled="!fulfillmentConfirmed"
+        :label="!fulfillmentConfirmed ? 'Escolha o recebimento' : fulfillmentType === 'delivery' ? 'Entrega neste endereço' : 'Retirada no balcão'"
+        data-pos-fulfillment-confirm
+        @click="isOpen = false"
+      />
+    </template>
+  </NuxtModal>
 </template>

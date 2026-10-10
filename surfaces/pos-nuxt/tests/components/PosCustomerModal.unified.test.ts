@@ -62,7 +62,7 @@ const searchInput = () => document.querySelector('input[aria-label="Buscar clien
 const nameInput = () => document.querySelector('input[placeholder="Nome no balcão"]') as HTMLInputElement | null;
 const phoneInput = () => document.querySelector('input[inputmode="tel"]') as HTMLInputElement | null;
 const formEmailInput = () => document.querySelector('input[placeholder="cliente@email.com"]') as HTMLInputElement | null;
-const footer = () => Array.from(document.querySelectorAll("button")).find((b) => b.classList.contains("h-14"))!;
+const footer = () => document.querySelector("[data-pos-customer-conclude]") as HTMLButtonElement;
 const prefSwitch = (label: string) => document.querySelector(`[role="switch"][aria-label="${label}"]`);
 
 describe("PosCustomerModal — uma estrutura, um selo", () => {

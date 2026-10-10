@@ -412,25 +412,22 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       @apply-preference="(key, value) => $emit('applyPreference', key, value)"
     />
 
-    <UiDialog :open="confirmClear" @update:open="(value) => { if (!value) confirmClear = false; }">
-      <UiDialogContent class="sm:max-w-sm">
-        <UiDialogHeader>
-          <UiDialogTitle>Liberar comanda?</UiDialogTitle>
-          <UiDialogDescription>
-            <template v-if="hasFiredItems">
-              Isso descarta este atendimento e libera a comanda. O que já foi enviado à cozinha
-              é cancelado: avise quem está lá dentro. Não dá para desfazer.
-            </template>
-            <template v-else>
-              Isso descarta este atendimento e libera a comanda. A ação não pode ser desfeita.
-            </template>
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <UiDialogFooter class="gap-2">
-          <UiButton variant="outline" @click="confirmClear = false">Cancelar</UiButton>
-          <UiButton variant="destructive" :disabled="loading" @click="runClear">Liberar comanda</UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+    <NuxtModal
+      :open="confirmClear"
+      title="Liberar comanda?"
+      :description="hasFiredItems
+        ? 'Isso descarta este atendimento e libera a comanda. O que já foi enviado à cozinha é cancelado: avise quem está lá dentro. Não dá para desfazer.'
+        : 'Isso descarta este atendimento e libera a comanda. A ação não pode ser desfeita.'"
+      :ui="{ content: 'sm:max-w-sm' }"
+      data-pos-release-tab
+      @update:open="(value: boolean) => { if (!value) confirmClear = false; }"
+    >
+      <template #footer>
+        <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="confirmClear = false" />
+          <NuxtButton color="error" label="Liberar comanda" :disabled="loading" @click="runClear" />
+        </div>
+      </template>
+    </NuxtModal>
   </div>
 </template>

@@ -316,12 +316,16 @@ const TABS = SALE
       tab("15"), tab("16"), tab("17"), tab("18"),
     ]
   : [];
+// O que a prévia salvou em cada comanda volta na reabertura (ir ao pagamento relê a
+// comanda): sem isto, a venda de uma comanda livre chegava vazia ao pagamento.
+const SAVED_ITEMS = new Map();
 function tabPayload(ref) {
   const inUse = ref === "12";
+  const saved = SAVED_ITEMS.get(ref);
   return {
     revision: "rev-1", sales_mode: "counter", session_key: `S-${ref}`, tab_session_key: `S-${ref}`,
     tab_ref: ref, tab_display: ref, tab_number: ref, opened_at_display: "09:41", seating_spot_ref: "", edit_of: "",
-    items: inUse ? SALE_ITEMS : [], customer_phone: "", customer_name: inUse ? "Ana Souza" : "", customer_ref: "",
+    items: saved ?? (inUse ? SALE_ITEMS : []), customer_phone: "", customer_name: inUse ? "Ana Souza" : "", customer_ref: "",
     customer_tax_id: "", customer_email: "", fulfillment_type: "", delivery_address: "",
     delivery_address_structured: {}, delivery_date: "", delivery_time_slot: "", delivery_fee_override_q: null,
   };
@@ -500,11 +504,29 @@ createServer((req, res) => {
       return;
     }
     if (path === "/api/v1/backstage/pos/tabs/save/") {
-      void readBody(req).then((body) => send(res, 200, { ...tabPayload(body?.tab_ref || "12"), items: body?.items || [] }));
+      void readBody(req).then((body) => {
+        const ref = body?.tab_ref || "12";
+        const items = (body?.items || []).map((item) => ({
+          line_id: item.line_id, sku: item.sku, name: item.name, qty: item.qty, price_q: item.unit_price_q, notes: item.notes || "",
+        }));
+        SAVED_ITEMS.set(ref, items);
+        send(res, 200, { ...tabPayload(ref), items });
+      });
       return;
     }
     if (path === "/api/v1/backstage/pos/sale/review/") {
       void readBody(req).then((body) => send(res, 200, { ok: true, review: review(body) }));
+      return;
+    }
+    // Pagar fecha a venda: o pedido nasce. Com `MOCK_CLOSE=uncertain` a resposta não
+    // prova o pedido, e a trava contra cobrança duplicada acende (o aviso do
+    // cabeçalho e a caixa "Conferir a venda").
+    if (path === "/api/v1/backstage/pos/sale/close/") {
+      void readBody(req).then((body) => {
+        if (process.env.MOCK_CLOSE === "uncertain") return send(res, 200, {});
+        SAVED_ITEMS.delete(body?.tab_ref || "");
+        send(res, 200, { ok: true, order_ref: "NB-2001", tab_ref: body?.tab_ref || "12", fiscal_expected: false });
+      });
       return;
     }
   }
