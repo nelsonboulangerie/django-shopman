@@ -151,7 +151,8 @@ async function submitForcedChange(payload: {
     <!-- Largura do cartão = a do conteúdo (a lista em duas colunas e o
          teclado), não a da tela: num monitor largo o cartão não esticava as
          teclas, mas sobrava borda vazia em volta delas. -->
-    <NuxtCard class="w-full max-w-sm" :ui="{ body: 'grid gap-5' }">
+    <NuxtCard class="w-full max-w-sm">
+      <div class="grid gap-5">
       <!-- Forced change: manager reset the operator's PIN; rotate before operating. -->
       <OperatorPinChange
         v-if="mustChange && operator"
@@ -269,6 +270,7 @@ async function submitForcedChange(payload: {
           </template>
         </OperatorIdentify>
       </template>
+      </div>
     </NuxtCard>
   </div>
 </template>
