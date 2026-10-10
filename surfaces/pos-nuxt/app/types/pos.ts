@@ -199,6 +199,8 @@ export interface POSCashManagementCapability {
   /** A lista vem do SERVIDOR para não existirem duas listas de dinheiro. */
   change_denominations?: POSChangeDenomination[];
   requires_open_shift_for_sale?: boolean;
+  /** Venda sem conexão ainda na fila do dispositivo barra o fechamento do caixa. */
+  blocks_close_when_offline_queue_pending?: boolean;
   [key: string]: unknown;
 }
 export interface POSKitchenHandoffCapability {
@@ -963,6 +965,9 @@ export interface POSSaleReviewProjection {
    * entrega não sai sem ele (SEFAZ 787/788). A tela trava o Validar enquanto
    * "CPF na nota" estiver vazio; a review não é refeita quando o CPF muda. */
   delivery_tax_id_required?: boolean;
+  /** Só na revisão montada pela TELA sem conexão (`offlineSaleReview`): a hora
+   *  da leitura de preços usada. O servidor nunca manda este campo. */
+  offline?: { prices_at: string };
 }
 
 export interface POSSaleReviewResponse {
