@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { TabsItem } from "#ui/types";
 // Order board — the operator hub. Reads the two-zone queue projection + realtime
 // (SSE + 30s poll) via useOrdersBoard; renders Entrada / Preparo / Saída columns of
 // OrderCards; the gestures POST through the django proxy (CSRF handled there) and
@@ -16,6 +15,7 @@ import {
   changeBackSuggestionQ,
   channelOptions,
   EXIT_SELECTION_LABEL,
+  exitGesture,
   flattenZones,
   fulfillmentCounts,
   lucideIcon,
@@ -34,7 +34,9 @@ import {
 } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
+import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
+import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type { OperatorSwipeAction } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
@@ -388,7 +390,7 @@ function toggleSelectAll() {
 const bulkScope = computed(() =>
   [
     fulfillment.value !== "all"
-      ? String(fulfillmentFilterTabs.value.find((tab) => tab.value === fulfillment.value)?.label ?? "")
+      ? String(fulfillmentFilterTabs.value.find((tab) => tab.key === fulfillment.value)?.label ?? "")
       : "",
     channel.value !== "all"
       ? String(channelItems.value.find((item) => item.value === channel.value)?.label ?? "")
@@ -696,14 +698,14 @@ const EXIT_FILTERS = [
   { key: "pickup", label: "Retirada", icon: "lucide:store" },
   { key: "delivery", label: "Entrega", icon: "lucide:bike" },
 ] as const;
-const exitFilterTabs = EXIT_FILTERS.map((option) => ({
-  value: option.key,
+const exitFilterTabs: QuickFilterItem[] = EXIT_FILTERS.map((option) => ({
+  key: option.key,
   label: option.label,
   icon: option.icon.replace("lucide:", "i-lucide-"),
 }));
 // A faixa de recortes do fluxo: na Saída, os três da expedição; no celular, a versão
 // curta; no resto, com as contagens.
-const fulfillmentFilterTabs = computed<TabsItem[]>(() =>
+const fulfillmentFilterTabs = computed<QuickFilterItem[]>(() =>
   exitPostView.value
     ? exitFilterTabs
     : isPhone.value
@@ -714,6 +716,27 @@ const nowMs = useNowTick(() => queue.value?.intake[0]?.server_now_iso ?? "");
 function zoneNext(zone: ZoneView): string {
   return zone.key === "expedition" ? nextOutRef(triaged(zone)) : "";
 }
+// A Saída do celular: o ato do "Próximo" ao alcance do polegar, na ação da base da
+// suíte (`OperatorActionBar`, no rodapé do painel, depois da área que rola). É o mesmo
+// botão largo do cartão e o mesmo deslize à direita, por outro caminho: o mesmo
+// `onAction`. Com a seleção ligada, a base é da barra de seleção.
+const exitBaseAction = computed<OperatorActionBarAction | null>(() => {
+  if (!isPhone.value || view.value !== "board" || selecting.value) return null;
+  const zone = zones.value.find((z) => z.key === "expedition");
+  if (!zone || phoneZone.value !== "expedition") return null;
+  const nextRef = zoneNext(zone);
+  const card = triaged(zone).find((c) => c.ref === nextRef);
+  const gesture = card ? exitGesture(card) : null;
+  if (!card || !gesture) return null;
+  return {
+    label: gesture.label,
+    icon: "i-lucide-hand-platter",
+    loading: isBusy(card.ref),
+    onSelect: () => {
+      if (!isBusy(card.ref)) onAction(card.ref, gesture.action);
+    },
+  };
+});
 // A coluna sozinha na tela (posto Saída) usa a largura: grade de cartões, não fila única.
 function wideColumn(key: string): boolean {
   return !isPhone.value && key === "expedition" && boardLayout.exitPost.value;
@@ -785,26 +808,26 @@ const QUEUE_SCOPES: { key: QueueScope; label: string }[] = [
 ];
 const queueScopeTabs = computed(() =>
   QUEUE_SCOPES.map((option) => ({
-    value: option.key,
+    key: option.key,
     label: option.label,
     count: scopeCounts.value[option.key],
   })),
 );
-const fulfillmentTabs = computed(() => [
+const fulfillmentTabs = computed<QuickFilterItem[]>(() => [
   {
-    value: "all",
+    key: "all",
     label: "Todos",
     icon: "i-lucide-layers-3",
     count: allCards.value.length,
   },
   {
-    value: "delivery",
+    key: "delivery",
     label: "Entrega",
     icon: "i-lucide-bike",
     count: fulfillment_.value.delivery,
   },
   {
-    value: "pickup",
+    key: "pickup",
     label: "Retirada",
     icon: "i-lucide-store",
     count: fulfillment_.value.pickup,
@@ -894,7 +917,7 @@ const activeFilters = computed(() => [
   ...(fulfillment.value !== "all"
     ? [{
         key: "fulfillment",
-        label: String(fulfillmentFilterTabs.value.find((tab) => tab.value === fulfillment.value)?.label ?? fulfillment.value),
+        label: String(fulfillmentFilterTabs.value.find((tab) => tab.key === fulfillment.value)?.label ?? fulfillment.value),
         remove: () => pickFulfillment("all"),
       }]
     : []),
@@ -1543,16 +1566,13 @@ function printQueue() {
         "
         #filters
       >
-        <NuxtTabs
+        <OperatorQuickFilters
           :model-value="fulfillment"
           :items="fulfillmentFilterTabs"
-          :content="false"
-          variant="pill"
-          aria-label="Tipo de entrega"
-          @update:model-value="pickFulfillment"
-        >
-          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
-        </NuxtTabs>
+          label="Tipo de entrega"
+          data-fulfillment-filters
+          @update:model-value="pickFulfillment(String($event))"
+        />
         <NuxtSelect
           v-if="channels.length"
           v-model="channel"
@@ -1637,17 +1657,14 @@ function printQueue() {
       >
         <!-- A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o mesmo, e o
              celular não desenha os escopos antes de montar. -->
-        <NuxtTabs
+        <OperatorQuickFilters
           class="max-lg:hidden"
           :model-value="scope"
           :items="queueScopeTabs"
-          :content="false"
-          variant="pill"
+          label="Recortes da fila"
           data-queue-scopes
-          @update:model-value="pickScope"
-        >
-          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
-        </NuxtTabs>
+          @update:model-value="pickScope(String($event))"
+        />
       </template>
       <template v-if="hasChannelQueueSignal" #feedback>
         <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
@@ -2178,6 +2195,13 @@ function printQueue() {
       :clear-label="EXIT_SELECTION_LABEL"
       data-bulk-bar
       @clear="stopSelection"
+    />
+    <!-- A Saída do celular: o "Próximo" na ação da base (F7). -->
+    <OperatorActionBar
+      v-else-if="exitBaseAction"
+      :action="exitBaseAction"
+      label="Saída do próximo pedido"
+      data-exit-base-action
     />
 
     <!-- reject dialog -->

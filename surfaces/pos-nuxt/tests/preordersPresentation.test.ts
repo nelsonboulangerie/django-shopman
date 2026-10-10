@@ -15,6 +15,9 @@ import {
   parseLayout,
   NO_FILTERS,
   QUICK_FILTERS,
+  filtersFromQuickKeys,
+  quickFilterItems,
+  quickKeysOf,
   fromPanelFilters,
   NO_WINDOW_LABEL,
   balanceStandsOut,
@@ -494,17 +497,39 @@ describe("o selo da barra lateral", () => {
 
 // ── O painel de filtros da suíte (fase 2) ───────────────────────────────────
 
-describe("os recortes de todo dia são os filtros rápidos do painel da suíte", () => {
+describe("os recortes de todo dia são a faixa de filtros rápidos da suíte", () => {
   it("A receber, Sem Via Pedido, Retiradas e Entregas, cada um numa dimensão da tela", () => {
-    expect(QUICK_FILTERS.map((quick) => [quick.dimension, quick.value, quick.label])).toEqual([
-      ["pay", "to_receive", "A receber"],
-      ["print", "pending", "Sem Via Pedido"],
-      ["fulfillment", "pickup", "Retiradas"],
-      ["fulfillment", "delivery", "Entregas"],
+    expect(QUICK_FILTERS.map((quick) => [quick.key, quick.dimension, quick.value, quick.label])).toEqual([
+      ["to_receive", "pay", "to_receive", "A receber"],
+      ["unprinted", "print", "pending", "Sem Via Pedido"],
+      ["pickup", "fulfillment", "pickup", "Retiradas"],
+      ["delivery", "fulfillment", "delivery", "Entregas"],
     ]);
   });
 
-  it("o filtro rápido SOMA no painel; na tela cada dimensão tem um valor só, e o novo vence", () => {
+  it("a faixa lê e escreve o estado da tela: somam, e Retiradas e Entregas se excluem", () => {
+    expect(quickKeysOf({ fulfillment: "delivery", pay: "to_receive", print: "all" })).toEqual(["to_receive", "delivery"]);
+    const pickup = { ...NO_FILTERS, fulfillment: "pickup" as const };
+    expect(filtersFromQuickKeys(pickup, ["pickup", "delivery"])).toEqual({ ...NO_FILTERS, fulfillment: "delivery" });
+    expect(filtersFromQuickKeys(pickup, ["pickup", "to_receive"])).toEqual({ ...NO_FILTERS, fulfillment: "pickup", pay: "to_receive" });
+    expect(filtersFromQuickKeys(pickup, [])).toEqual(NO_FILTERS);
+    // O que a faixa não escreve (Pagas) fica como está.
+    expect(filtersFromQuickKeys({ ...NO_FILTERS, pay: "paid" }, ["unprinted"])).toEqual({ ...NO_FILTERS, pay: "paid", print: "pending" });
+  });
+
+  it("a contagem de cada recorte é a do que ele mostraria com os outros como estão", () => {
+    const cards = [
+      { fulfillment_type: "delivery", payment_state: "to_receive", ticket_printed: false },
+      { fulfillment_type: "pickup", payment_state: "to_receive", ticket_printed: true },
+      { fulfillment_type: "delivery", payment_state: "paid", ticket_printed: true },
+    ] as Parameters<typeof quickFilterItems>[0];
+    expect(quickFilterItems(cards, NO_FILTERS).map((item) => [item.key, item.count]))
+      .toEqual([["to_receive", 2], ["unprinted", 1], ["pickup", 1], ["delivery", 2]]);
+    expect(quickFilterItems(cards, { ...NO_FILTERS, fulfillment: "delivery" }).map((item) => [item.key, item.count]))
+      .toEqual([["to_receive", 1], ["unprinted", 1], ["pickup", 1], ["delivery", 2]]);
+  });
+
+  it("o painel devolve dois valores numa dimensão: na tela fica um só, e o novo vence", () => {
     const pickup = { ...NO_FILTERS, fulfillment: "pickup" as const };
     // Retiradas apertado, toca Entregas: o painel devolve as duas, a tela fica com Entregas.
     expect(fromPanelFilters(pickup, { fulfillment: ["pickup", "delivery"] }).fulfillment).toBe("delivery");

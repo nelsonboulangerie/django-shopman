@@ -213,169 +213,169 @@ watch(
     data-focus-target="ifood-negotiations"
     class="scroll-mt-4 outline-none"
   >
-    <template #header>
+    <div class="flex flex-col gap-3">
       <h2 class="op-title">Negociações iFood</h2>
-    </template>
-    <div class="grid gap-4">
-    <template v-for="(item, negotiationIndex) in negotiations" :key="item.id">
-      <NuxtSeparator v-if="negotiationIndex > 0" />
-      <div :data-dispute-id="item.id">
-        <div class="space-y-3">
-          <h3 class="text-sm font-medium">{{ requestLabel(item.action) }}</h3>
-          <p class="whitespace-pre-wrap break-words">
-            {{ item.message || "Solicitação recebida do iFood." }}
-          </p>
-          <p class="text-sm text-muted-foreground">
-            Prazo: {{ dateLabel(item.expires_at) }}
-          </p>
-          <p class="text-sm">{{ timeoutLabel(item.timeout_action) }}</p>
-          <ul v-if="item.items.length" class="list-inside list-disc text-sm">
-            <li v-for="(line, index) in item.items" :key="index">{{ line }}</li>
-          </ul>
-          <div class="flex flex-wrap gap-3 text-sm">
-            <NuxtButton
-              v-for="(url, index) in item.evidence_urls.filter(safeEvidence)"
-              :key="url"
-              :to="url"
-              target="_blank"
-              rel="noopener noreferrer"
-              color="neutral"
-              variant="ghost"
-              :label="`Evidência ${index + 1}`"
-              trailing-icon="i-lucide-external-link"
-            />
-          </div>
-          <p
-            v-if="item.alternatives_available"
-            class="text-sm text-muted-foreground"
-          >
-            Há contrapropostas disponíveis. Para negociar uma alternativa, use o
-            canal do iFood.
-          </p>
-          <NuxtAlert
-            v-if="item.response_notice"
-            color="info"
-            variant="subtle"
-            :description="item.response_notice"
-          />
-          <NuxtAlert
-            v-if="draft(item.id).sent"
-            color="success"
-            variant="subtle"
-            icon="i-lucide-check"
-            description="Resposta registrada para envio. Aguarde a confirmação do iFood."
-          />
-          <NuxtForm
-            v-if="item.can_respond && !draft(item.id).sent"
-            :state="draft(item.id)"
-            class="space-y-3"
-            @submit="submit(item)"
-          >
-            <fieldset
-              :disabled="draft(item.id).busy || draft(item.id).uncertain"
-              class="space-y-3"
+      <div class="grid gap-4">
+      <template v-for="(item, negotiationIndex) in negotiations" :key="item.id">
+        <NuxtSeparator v-if="negotiationIndex > 0" />
+        <div :data-dispute-id="item.id">
+          <div class="space-y-3">
+            <h3 class="text-sm font-medium">{{ requestLabel(item.action) }}</h3>
+            <p class="whitespace-pre-wrap break-words">
+              {{ item.message || "Solicitação recebida do iFood." }}
+            </p>
+            <p class="text-sm text-muted-foreground">
+              Prazo: {{ dateLabel(item.expires_at) }}
+            </p>
+            <p class="text-sm">{{ timeoutLabel(item.timeout_action) }}</p>
+            <ul v-if="item.items.length" class="list-inside list-disc text-sm">
+              <li v-for="(line, index) in item.items" :key="index">{{ line }}</li>
+            </ul>
+            <div class="flex flex-wrap gap-3 text-sm">
+              <NuxtButton
+                v-for="(url, index) in item.evidence_urls.filter(safeEvidence)"
+                :key="url"
+                :to="url"
+                target="_blank"
+                rel="noopener noreferrer"
+                color="neutral"
+                variant="ghost"
+                :label="`Evidência ${index + 1}`"
+                trailing-icon="i-lucide-external-link"
+              />
+            </div>
+            <p
+              v-if="item.alternatives_available"
+              class="text-sm text-muted-foreground"
             >
-              <legend class="text-sm font-medium">Escolha sua resposta</legend>
-              <NuxtFormField label="Decisão">
-                <NuxtSelect
-                  class="w-full"
-                  :data-focus-control="item.id === firstOpenId ? '' : undefined"
-                  :model-value="draft(item.id).decision || undefined"
-                  placeholder="Selecione uma decisão"
-                  :items="
-                    item.actions.map((action) => ({
-                      label:
-                        action.ref === 'accept'
-                          ? 'Aceitar solicitação'
-                          : 'Recusar solicitação',
-                      value: action.ref,
-                      disabled: !action.enabled,
-                    }))
-                  "
-                  @update:model-value="choose(item, String($event))"
-                />
-              </NuxtFormField>
-              <NuxtFormField
-                v-if="draft(item.id).decision && reasons(item).length"
-                label="Motivo informado pelo iFood"
-              >
-                <NuxtSelect
-                  :model-value="draft(item.id).reason || undefined"
-                  class="w-full"
-                  placeholder="Selecione um motivo"
-                  :items="
-                    reasons(item).map((reason) => ({
-                      label: reasonLabel(reason),
-                      value: reason,
-                    }))
-                  "
-                  @update:model-value="
-                    draft(item.id).reason = String($event ?? '');
-                    draft(item.id).confirmed = false;
-                  "
-                />
-              </NuxtFormField>
-              <NuxtFormField
-                v-if="draft(item.id).decision === 'accept'"
-                label="Detalhes adicionais"
-                hint="opcional"
-                :description="`${draft(item.id).detail.length}/250`"
-              >
-                <NuxtTextarea
-                  v-model="draft(item.id).detail"
-                  class="w-full"
-                  maxlength="250"
-                  :rows="3"
-                  @input="draft(item.id).confirmed = false"
-                />
-              </NuxtFormField>
-              <p
-                v-if="draft(item.id).decision && !actionFor(item)?.enabled"
-                class="text-sm"
-              >
-                {{
-                  actionFor(item)?.reason ||
-                  "Esta resposta não está disponível."
-                }}
-              </p>
-              <NuxtAlert
-                v-if="draft(item.id).decision && changed(item)"
-                color="warning"
-                variant="subtle"
-                description="A negociação foi atualizada. Selecione novamente a decisão para revisar os dados atuais."
-              />
-              <NuxtCheckbox
-                v-if="draft(item.id).decision"
-                v-model="draft(item.id).confirmed"
-                :label="`${consequence(item)} Confirmo esta consequência.`"
-              />
-            </fieldset>
+              Há contrapropostas disponíveis. Para negociar uma alternativa, use o
+              canal do iFood.
+            </p>
             <NuxtAlert
-              v-if="draft(item.id).error"
-              color="error"
+              v-if="item.response_notice"
+              color="info"
               variant="subtle"
-              icon="i-lucide-triangle-alert"
-              :description="draft(item.id).error"
+              :description="item.response_notice"
             />
-            <NuxtButton
-              v-if="draft(item.id).uncertain"
-              type="button"
-              label="Verificar mesmo envio"
-              :loading="draft(item.id).busy"
-              :disabled="draft(item.id).busy"
-              @click="submit(item, true)"
+            <NuxtAlert
+              v-if="draft(item.id).sent"
+              color="success"
+              variant="subtle"
+              icon="i-lucide-check"
+              description="Resposta registrada para envio. Aguarde a confirmação do iFood."
             />
-            <NuxtButton
-              v-else
-              type="submit"
-              label="Enviar resposta ao iFood"
-              :loading="draft(item.id).busy"
-              :disabled="!canSend(item)"
-            />
-          </NuxtForm>
+            <NuxtForm
+              v-if="item.can_respond && !draft(item.id).sent"
+              :state="draft(item.id)"
+              class="space-y-3"
+              @submit="submit(item)"
+            >
+              <fieldset
+                :disabled="draft(item.id).busy || draft(item.id).uncertain"
+                class="space-y-3"
+              >
+                <legend class="text-sm font-medium">Escolha sua resposta</legend>
+                <NuxtFormField label="Decisão">
+                  <NuxtSelect
+                    class="w-full"
+                    :data-focus-control="item.id === firstOpenId ? '' : undefined"
+                    :model-value="draft(item.id).decision || undefined"
+                    placeholder="Selecione uma decisão"
+                    :items="
+                      item.actions.map((action) => ({
+                        label:
+                          action.ref === 'accept'
+                            ? 'Aceitar solicitação'
+                            : 'Recusar solicitação',
+                        value: action.ref,
+                        disabled: !action.enabled,
+                      }))
+                    "
+                    @update:model-value="choose(item, String($event))"
+                  />
+                </NuxtFormField>
+                <NuxtFormField
+                  v-if="draft(item.id).decision && reasons(item).length"
+                  label="Motivo informado pelo iFood"
+                >
+                  <NuxtSelect
+                    :model-value="draft(item.id).reason || undefined"
+                    class="w-full"
+                    placeholder="Selecione um motivo"
+                    :items="
+                      reasons(item).map((reason) => ({
+                        label: reasonLabel(reason),
+                        value: reason,
+                      }))
+                    "
+                    @update:model-value="
+                      draft(item.id).reason = String($event ?? '');
+                      draft(item.id).confirmed = false;
+                    "
+                  />
+                </NuxtFormField>
+                <NuxtFormField
+                  v-if="draft(item.id).decision === 'accept'"
+                  label="Detalhes adicionais"
+                  hint="opcional"
+                  :description="`${draft(item.id).detail.length}/250`"
+                >
+                  <NuxtTextarea
+                    v-model="draft(item.id).detail"
+                    class="w-full"
+                    maxlength="250"
+                    :rows="3"
+                    @input="draft(item.id).confirmed = false"
+                  />
+                </NuxtFormField>
+                <p
+                  v-if="draft(item.id).decision && !actionFor(item)?.enabled"
+                  class="text-sm"
+                >
+                  {{
+                    actionFor(item)?.reason ||
+                    "Esta resposta não está disponível."
+                  }}
+                </p>
+                <NuxtAlert
+                  v-if="draft(item.id).decision && changed(item)"
+                  color="warning"
+                  variant="subtle"
+                  description="A negociação foi atualizada. Selecione novamente a decisão para revisar os dados atuais."
+                />
+                <NuxtCheckbox
+                  v-if="draft(item.id).decision"
+                  v-model="draft(item.id).confirmed"
+                  :label="`${consequence(item)} Confirmo esta consequência.`"
+                />
+              </fieldset>
+              <NuxtAlert
+                v-if="draft(item.id).error"
+                color="error"
+                variant="subtle"
+                icon="i-lucide-triangle-alert"
+                :description="draft(item.id).error"
+              />
+              <NuxtButton
+                v-if="draft(item.id).uncertain"
+                type="button"
+                label="Verificar mesmo envio"
+                :loading="draft(item.id).busy"
+                :disabled="draft(item.id).busy"
+                @click="submit(item, true)"
+              />
+              <NuxtButton
+                v-else
+                type="submit"
+                label="Enviar resposta ao iFood"
+                :loading="draft(item.id).busy"
+                :disabled="!canSend(item)"
+              />
+            </NuxtForm>
+          </div>
         </div>
-      </div>
-    </template>
-  </div>
+      </template>
+    </div>
+    </div>
   </NuxtCard>
 </template>

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { h } from "vue";
 
 import OperatorSwipeRow from "../../app/components/OperatorSwipeRow.vue";
-import OperatorThumbAction from "../../app/components/OperatorThumbAction.vue";
 
 // Deslizar uma linha no toque (F7): para a direita faz o gesto principal depois do
 // ponto de compromisso; para a esquerda revela as ações; o mouse não desliza.
@@ -94,18 +93,5 @@ describe("OperatorSwipeRow", () => {
       "motion-safe:transition-transform",
     );
     expect(row.get("[data-swipe-row]").classes()).not.toContain("overflow-hidden");
-  });
-});
-
-describe("OperatorThumbAction", () => {
-  it("o ato com o verbo e o alvo, num botão de verdade", async () => {
-    const thumb = await mountSuspended(OperatorThumbAction, {
-      props: { label: "Entregar U13 a Ana" },
-    });
-    const button = thumb.get("button");
-    expect(button.text()).toBe("Entregar U13 a Ana");
-    expect(thumb.attributes("data-focus-obstruction")).toBeDefined();
-    await button.trigger("click");
-    expect(thumb.emitted("press")).toHaveLength(1);
   });
 });

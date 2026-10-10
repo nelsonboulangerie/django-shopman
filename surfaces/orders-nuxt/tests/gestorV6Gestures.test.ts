@@ -32,8 +32,11 @@ describe("G16/G17: deslizar e puxar", () => {
     expect(column).toContain("<OperatorSwipeRow");
     expect(column).toContain(':commit="swipeCommit(card)"');
     expect(column).toContain('@commit="commitExit(card)"');
-    expect(column).toContain("<OperatorThumbAction");
-    expect(column).toContain("data-exit-thumb");
+    // o polegar é a ação da base da suíte, no rodapé do painel (não mais na coluna)
+    expect(column).not.toContain("OperatorThumbAction");
+    const page = read("../app/pages/index.vue");
+    expect(page).toContain("<OperatorActionBar");
+    expect(page).toContain("data-exit-base-action");
     expect(column).not.toMatch(/@pointer(down|move|up)/);
     // o mesmo ato do botão largo: emite `action`, não decide estado aqui
     expect(column).toContain('emit("action", card.ref, gesture.action)');

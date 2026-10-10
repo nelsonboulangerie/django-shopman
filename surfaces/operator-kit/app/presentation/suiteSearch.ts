@@ -123,12 +123,29 @@ export function suiteLevels(
 }
 
 /**
- * O alvo da frase "Filtrar … por “x”", a partir do `screen-label` da tela ("filtrando
- * o quadro" → "o quadro"). Sem rótulo, "esta tela".
+ * A contração de "de" com o artigo que a TELA escreveu no `screen-label`. O gênero e o
+ * número vêm do artigo explícito ("filtrando os clientes"), nunca da terminação do nome:
+ * "o quadro" e "a lista" não se adivinham pelo fim da palavra.
  */
-export function suiteScreenTarget(screenLabel: string): string {
-  const target = screenLabel.trim().replace(/^filtrando\s+/i, "").trim();
-  return target || "esta tela";
+const FROM_ARTICLE: Record<string, string> = { o: "do", a: "da", os: "dos", as: "das" };
+const SCREEN_LABEL = /^filtrando\s+(o|a|os|as)\s+(\S.*)$/i;
+
+/** O rótulo segue a forma "filtrando <o|a|os|as> <nome>"? (a trava das telas usa isto). */
+export function isSuiteScreenLabel(screenLabel: string): boolean {
+  return SCREEN_LABEL.test(screenLabel.trim());
+}
+
+/**
+ * O alvo das frases do nível "Nesta tela", a partir do `screen-label` ("filtrando o
+ * quadro"): `target` para "Filtrar o quadro por “x”" e `from` para "Tirar o filtro “x”
+ * do quadro". Rótulo fora da forma vira "esta tela" / "desta tela".
+ */
+export function suiteScreenTarget(screenLabel: string): { target: string; from: string } {
+  const match = SCREEN_LABEL.exec(screenLabel.trim());
+  if (!match) return { target: "esta tela", from: "desta tela" };
+  const article = match[1]!.toLowerCase();
+  const noun = match[2]!.trim();
+  return { target: `${article} ${noun}`, from: `${FROM_ARTICLE[article]} ${noun}` };
 }
 
 export function flattenGroups(groups: SuiteSearchGroup[]): SuiteSearchResult[] {

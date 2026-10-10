@@ -9,7 +9,8 @@
 //
 // Peças do kit (PR-B5 do WP-BI-CANON-LAUDO): período compacto e ⋯ no cabeçalho,
 // frescor da leitura, `NuxtSelect` nos recortes, números em `OperatorMetric`, quadros
-// em `OperatorReadingCard` (com CSV) e tabela sempre `NuxtTable`: a Conciliação soma
+// em `OperatorReadingCard` (com CSV) e tabela sempre `OperatorTable` (`in-card`, ordena
+// pelo cabeçalho onde a ordem não é a da faixa ou do perfil): a Conciliação soma
 // no rodapé da tabela, a faixa honesta e a receita por categoria deixam de ser lista.
 import type { BIProfileRange, BIProfileRow } from "~/generated/biContract";
 import {
@@ -31,10 +32,18 @@ import {
   strikeMatrix,
   csvMoney,
 } from "~/presentation/bi";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const { filters, report, freshness, pending, error, refresh, apply } = useBiProfiles();
 const { selection, bounds, presets } = useBiWindow();
 const shareItems = useBiShareMenuItems();
+// O aviso da vocação leva aonde ela se edita: as etiquetas de consumo no Admin.
+const djangoBase = String((useRuntimeConfig().public as { djangoBaseUrl?: string }).djangoBaseUrl || "").replace(/\/$/, "");
+const { attrsFor } = useOperatorAppLink();
+const tagsUrl = `${djangoBase}/admin/backstage/productconsumptiontag/`;
+const vocationActions = computed(() => [
+  { label: "Abrir as etiquetas de consumo", icon: "i-lucide-tag", to: tagsUrl, ...attrsFor(tagsUrl) },
+]);
 const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
 // ── Recortes ────────────────────────────────────────────────────────────────
@@ -90,17 +99,13 @@ const LABEL = { td: "font-medium text-highlighted" } as const;
 
 const readingColumns = [
   { accessorKey: "label", header: "Perfil", meta: { class: LABEL } },
-  { id: "orders", header: "Pedidos", meta: { class: NUM } },
-  { id: "revenue", header: "Receita", meta: { class: NUM } },
-  { id: "ticket", header: "Ticket", meta: { class: NUM } },
+  { id: "orders", accessorFn: (row: BIProfileRow) => row.orders, header: "Pedidos", enableSorting: true, meta: { class: NUM } },
+  { id: "revenue", accessorFn: (row: BIProfileRow) => row.revenue_q, header: "Receita", enableSorting: true, meta: { class: NUM } },
+  { id: "ticket", accessorFn: (row: BIProfileRow) => row.average_ticket_q, header: "Ticket", enableSorting: true, meta: { class: NUM } },
   { id: "items", header: "Unidades · produtos por pedido", meta: { class: NUM } },
 ];
 /** Linha "sem etiqueta" recua: é o resto, não um perfil. */
-const readingMeta = {
-  class: {
-    tr: (row: { original: BIProfileRow }) => (row.original.profile === "unclassified" ? "text-muted" : ""),
-  },
-};
+const readingRowClass = (row: BIProfileRow) => (row.profile === "unclassified" ? "text-muted" : "");
 const readingCsv = (reading: string): ReadingCsv => ({
   header: ["Perfil", "Pedidos", "% dos pedidos", "Receita (R$)", "% da receita", "Ticket (R$)", "Unidades por pedido", "Produtos por pedido"],
   rows: readingRows(reading).map((row) => [
@@ -255,9 +260,9 @@ const matrixCsv = computed<ReadingCsv>(() => ({
 // ── Receita por categoria ───────────────────────────────────────────────────
 const categoryRows = computed(() => (report.value?.categories ?? []).slice(0, 12));
 const categoryColumns = [
-  { accessorKey: "category", header: "Categoria", meta: { class: LABEL } },
-  { id: "revenue", header: "Receita", meta: { class: NUM } },
-  { id: "share", header: "Parcela", meta: { class: { th: "text-right", td: "w-2/5" } } },
+  { accessorKey: "category", header: "Categoria", enableSorting: true, meta: { class: LABEL } },
+  { id: "revenue", accessorFn: (row: { revenue_q: number }) => row.revenue_q, header: "Receita", enableSorting: true, meta: { class: NUM } },
+  { id: "share", accessorFn: (row: { share: number }) => row.share, header: "Parcela", enableSorting: true, meta: { class: { th: "text-right", td: "w-2/5" } } },
 ];
 const categoryCsv = computed<ReadingCsv>(() => ({
   header: ["Categoria", "Receita (R$)", "% da receita", "Bebida pronta industrializada (R$)"],
@@ -312,9 +317,9 @@ const strikeCsv = computed<ReadingCsv>(() => ({
 // ── Receita por assento por hora ────────────────────────────────────────────
 const revpashColumns = [
   { accessorKey: "title", header: "Faixa", meta: { class: LABEL } },
-  { id: "revenue", header: "Receita local", meta: { class: NUM } },
+  { id: "revenue", accessorFn: (row: { revenue_local_q: number }) => row.revenue_local_q, header: "Receita local", enableSorting: true, meta: { class: NUM } },
   { id: "denominator", header: "Assentos × horas × dias", meta: { class: { th: "text-right", td: "text-right tnum text-muted" } } },
-  { id: "revpash", header: "Por assento-hora", meta: { class: NUM } },
+  { id: "revpash", accessorFn: (row: { revpash_q: number }) => row.revpash_q, header: "Por assento-hora", enableSorting: true, meta: { class: NUM } },
 ];
 const revpashCsv = computed<ReadingCsv>(() => ({
   header: ["Faixa", "Receita local (R$)", "Assentos", "Horas", "Dias", "Receita por assento-hora (R$)"],
@@ -362,7 +367,8 @@ const revpashCsv = computed<ReadingCsv>(() => ({
         variant="subtle"
         icon="i-lucide-info"
         title="Perfil presumido pela cesta"
-        description="Cada produto tem uma vocação (consome aqui, leva ou híbrido), editável em Configurações › Como vendemos. Entrega e iFood ficam fora da pergunta e dentro da conta. A hora é a do registro da venda."
+        :actions="alertActions('info', vocationActions)"
+        description="Cada produto tem uma vocação (consome aqui, leva ou híbrido), editável em Configurações › Como vendemos › Etiquetas de consumo. Entrega e iFood ficam fora da pergunta e dentro da conta. A hora é a do registro da venda."
       />
 
       <NuxtEmpty
@@ -424,11 +430,12 @@ const revpashCsv = computed<ReadingCsv>(() => ({
             :csv="readingCsv(reading.key)"
             :data-bi-reading="reading.key"
           >
-            <NuxtTable
+            <OperatorTable
+              in-card
               :data="readingRows(reading.key)"
               :columns="readingColumns"
-              :meta="readingMeta"
-              :get-row-id="(row) => row.profile"
+              :row-class="readingRowClass"
+              :row-key="(row) => row.profile"
               :caption="`Perfis na leitura ${reading.label}`"
             >
               <template #orders-cell="{ row }">
@@ -441,7 +448,7 @@ const revpashCsv = computed<ReadingCsv>(() => ({
               </template>
               <template #ticket-cell="{ row }">{{ formatMoney(row.original.average_ticket_q) }}</template>
               <template #items-cell="{ row }">{{ formatQty(row.original.units_per_order) }} · {{ formatQty(row.original.distinct_per_order) }}</template>
-            </NuxtTable>
+            </OperatorTable>
           </OperatorReadingCard>
         </section>
 
@@ -454,10 +461,11 @@ const revpashCsv = computed<ReadingCsv>(() => ({
             :csv="sensitivityCsv"
             data-bi-sensitivity
           >
-            <NuxtTable
+            <OperatorTable
+              in-card
               :data="report.sensitivity.ranges"
               :columns="sensitivityColumns"
-              :get-row-id="(row) => row.profile"
+              :row-key="(row) => row.profile"
               caption="Pedidos de cada perfil, do piso ao teto"
             >
               <template #range-cell="{ row }">{{ rangeText(row.original) }}</template>
@@ -469,7 +477,7 @@ const revpashCsv = computed<ReadingCsv>(() => ({
                 </template>
                 <span v-else class="text-muted">sem base</span>
               </template>
-            </NuxtTable>
+            </OperatorTable>
           </OperatorReadingCard>
 
           <OperatorReadingCard
@@ -478,10 +486,11 @@ const revpashCsv = computed<ReadingCsv>(() => ({
             :csv="reconciliationCsv"
             data-bi-reconciliation
           >
-            <NuxtTable
+            <OperatorTable
+              in-card
               :data="reconciliationRows"
               :columns="reconciliationColumns"
-              :get-row-id="(row) => row.key"
+              :row-key="(row) => row.key"
               caption="Conciliação do faturamento do recorte"
             />
           </OperatorReadingCard>
@@ -545,10 +554,11 @@ const revpashCsv = computed<ReadingCsv>(() => ({
             <NuxtFormField label="Leitura" orientation="horizontal" class="self-start">
               <NuxtSelect v-model="matrixReading" :items="readingItems" class="w-72 max-w-full" data-bi-matrix-reading />
             </NuxtFormField>
-            <NuxtTable
+            <OperatorTable
+              in-card
               :data="matrixRows"
               :columns="matrixColumns"
-              :get-row-id="(row) => row.band.key"
+              :row-key="(row) => row.band.key"
               caption="Pedidos por faixa de hora e perfil"
             />
           </div>
@@ -590,10 +600,11 @@ const revpashCsv = computed<ReadingCsv>(() => ({
             :heading-level="3"
             :csv="strikeCsv"
           >
-            <NuxtTable
+            <OperatorTable
+              in-card
               :data="strike"
               :columns="strikeColumns"
-              :get-row-id="(row) => String(row.weekday)"
+              :row-key="(row) => String(row.weekday)"
               caption="Pedidos com bebida por dia da semana e faixa"
               data-bi-beverage-strike
             />
@@ -607,11 +618,14 @@ const revpashCsv = computed<ReadingCsv>(() => ({
             :csv="categoryCsv"
             data-bi-categories
           >
-            <NuxtTable
+            <OperatorTable
+              in-card
               :data="categoryRows"
               :columns="categoryColumns"
-              :get-row-id="(row) => row.category"
+              :row-key="(row) => row.category"
               caption="Receita de balcão por categoria"
+              empty-icon="i-lucide-shopping-basket"
+              empty-title="Sem vendas de balcão no recorte"
             >
               <template #category-cell="{ row }">
                 <span class="flex flex-col">
@@ -628,10 +642,7 @@ const revpashCsv = computed<ReadingCsv>(() => ({
                   <span class="w-12 text-right tnum text-highlighted">{{ formatPercent(row.original.share) }}</span>
                 </span>
               </template>
-              <template #empty>
-                <NuxtEmpty variant="naked" icon="i-lucide-shopping-basket" title="Sem vendas de balcão no recorte" />
-              </template>
-            </NuxtTable>
+            </OperatorTable>
           </OperatorReadingCard>
 
           <OperatorReadingCard
@@ -640,14 +651,19 @@ const revpashCsv = computed<ReadingCsv>(() => ({
             :csv="revpashCsv"
             data-bi-revpash
           >
-            <NuxtTable :data="report.revpash" :columns="revpashColumns" :get-row-id="(row) => row.band" caption="Receita por assento-hora por faixa">
+            <OperatorTable
+              in-card
+              :data="report.revpash"
+              :columns="revpashColumns"
+              :row-key="(row) => row.band"
+              caption="Receita por assento-hora por faixa"
+              empty-icon="i-lucide-armchair"
+              empty-title="Sem pedidos com item local no recorte"
+            >
               <template #revenue-cell="{ row }">{{ formatMoney(row.original.revenue_local_q) }}</template>
               <template #denominator-cell="{ row }">{{ revpashHint(row.original.seats, row.original.hours, row.original.days) }}</template>
               <template #revpash-cell="{ row }">{{ formatMoney(row.original.revpash_q) }}</template>
-              <template #empty>
-                <NuxtEmpty variant="naked" icon="i-lucide-armchair" title="Sem pedidos com item local no recorte" />
-              </template>
-            </NuxtTable>
+            </OperatorTable>
           </OperatorReadingCard>
         </div>
       </template>

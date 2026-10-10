@@ -12,11 +12,13 @@
 // O dia continua na URL (`?day=`, `useBiOverShort`): o "Copiar link desta leitura"
 // do ⋯ leva a mesma leitura. O endereço não aparece mais escrito na tela (F14).
 import type { TableColumn } from "#ui/types";
+import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import type { BIOverShortRow, BIProductionReport, BIReading } from "~/types/bi";
 import { formatInt, formatQty } from "~/presentation/bi";
 import {
   MADE_SOLD_SERIES,
   VERDICTS,
+  carryContext,
   carryLabel,
   collectionsOf,
   compareCaption,
@@ -193,6 +195,19 @@ const { run: carryToPlan, pending: carrying } = usePendingAction(async () => {
     useSonner.error(httpErrorMessage(error, "Não deu para levar ao plano. Tente de novo."));
   }
 });
+// No celular e no tablet o mesmo gesto mora na base (`OperatorActionBar`, em fluxo
+// depois da área que rola); da `lg` para cima ele fica logo depois da resposta.
+const carryAction = computed<OperatorActionBarAction | null>(() =>
+  view.value === "day" && day.value?.plan_day
+    ? {
+        label: carryLabel(day.value.plan_day),
+        icon: "i-lucide-arrow-right-left",
+        loading: carrying.value,
+        onSelect: () => void carryToPlan(),
+      }
+    : null,
+);
+const carryLine = computed(() => (day.value ? carryContext(day.value) : null));
 const explainOpen = ref(false);
 // "Como é calculado" é um item do ⋯ da página (o menu do kit recebe os itens por prop).
 const shareItems = useBiShareMenuItems();
@@ -250,25 +265,26 @@ onKeyStroke("/", (event) => {
   search.value?.focus();
 });
 
-// A tabela (laudo F04): NuxtTable com cabeçalho de verdade e a linha que abre o
-// detalhe ("Ver lotes e vendas") embaixo dela. Do celular ao desktop largo as colunas
+// A tabela (laudo F04): a `OperatorTable` do kit dentro do quadro (`in-card`), com
+// cabeçalho de verdade e a linha que abre o detalhe (lotes e vendas) embaixo dela pela
+// seta da própria peça. Produto e "Acabou às" ordenam pelo cabeçalho. Do celular ao desktop largo as colunas
 // secundárias recolhem para dentro da célula do produto (`meta.class`): nenhuma
 // informação fica só no desktop, e a página não rola de lado.
 const HIDE_BELOW_SM = { th: "max-sm:hidden", td: "max-sm:hidden" };
 const HIDE_BELOW_MD = { th: "max-md:hidden", td: "max-md:hidden" };
 const HIDE_BELOW_LG = { th: "max-lg:hidden", td: "max-lg:hidden" };
 const columns = computed<TableColumn<BIOverShortRow>[]>(() => [
-  { id: "product", header: "Produto" },
+  { id: "product", accessorFn: (row) => row.name, header: "Produto", enableSorting: true, enableHiding: false },
   { id: "verdict", header: "Veredito", meta: { class: HIDE_BELOW_MD } },
   { id: "made_sold", header: "Fez × vendeu", meta: { class: HIDE_BELOW_SM } },
-  { id: "soldout", header: "Acabou às", meta: { class: HIDE_BELOW_LG } },
+  // Quem não acabou vai para o fim ("99:99"): na ordem crescente, o que acabou mais cedo vem primeiro.
+  { id: "soldout", accessorFn: (row) => row.soldout_at || "99:99", header: "Acabou às", enableSorting: true, meta: { class: HIDE_BELOW_LG } },
   {
     id: "history",
     header: day.value ? historyHeading(day.value.day, day.value.compare_days) : "Nos dias iguais",
     meta: { class: HIDE_BELOW_LG },
   },
   { id: "typical", header: "Contra o típico", meta: { class: HIDE_BELOW_LG } },
-  { id: "open", header: "", meta: { class: { th: "text-end", td: "text-end" } } },
 ]);
 const csv = computed(() => overShortCsv(filtered.value));
 </script>
@@ -380,13 +396,13 @@ const csv = computed(() => overShortCsv(filtered.value));
           <OperatorMetric title="Sobrou" :value="formatInt(day.summary.over)" tone="warning" :unit="overUnit(day)" :hint="typicalLine(day, 'over')" />
           <OperatorMetric title="Na medida" :value="formatInt(day.summary.right)" tone="success" :unit="day.summary.right === 1 ? 'produto' : 'produtos'" :hint="typicalLine(day, 'right')" />
         </div>
-        <!-- O gesto principal mora logo depois da resposta, em toda largura de tela
-             (BI-11): no celular, na largura toda, ao alcance do polegar; na barra de
-             cima ele espremia o título até cortá-lo. -->
+        <!-- O gesto principal, na mesa, mora logo depois da resposta (BI-11: na barra de
+             cima ele espremia o título até cortá-lo). Abaixo de `lg` ele desce para a
+             ação na base, ao alcance do polegar (o `OperatorActionBar` no fim da tela). -->
         <NuxtButton
           v-if="day?.plan_day"
           size="xl"
-          class="w-full justify-center md:w-auto md:self-start"
+          class="self-start max-lg:hidden"
           icon="i-lucide-arrow-right-left"
           :label="carryLabel(day.plan_day)"
           :loading="carrying"
@@ -422,13 +438,19 @@ const csv = computed(() => overShortCsv(filtered.value));
           :csv="day ? csv : undefined"
           data-over-short-table
         >
-          <NuxtTable
+          <OperatorTable
             v-model:expanded="expanded"
+            in-card
             :data="visible"
             :columns="columns"
             :loading="dayPending"
-            :get-row-id="(row: BIOverShortRow) => row.sku"
+            what="a leitura do dia"
+            :row-key="(row: BIOverShortRow) => row.sku"
+            :row-label="(row: BIOverShortRow) => row.name"
             caption="Sobrou ou faltou, produto a produto"
+            :empty-icon="rows.length ? 'i-lucide-filter-x' : 'i-lucide-chef-hat'"
+            :empty-title="rows.length ? 'Nenhum produto neste recorte' : 'Nenhum lote fechado neste dia'"
+            :empty-description="rows.length ? 'Troque o veredito, a coleção ou a busca para ver os outros produtos.' : 'A leitura começa quando a Produção fecha o primeiro lote.'"
           >
             <template #product-cell="{ row }">
               <div class="flex min-w-0 flex-col gap-1 whitespace-normal" data-over-short-row :data-verdict="row.original.verdict">
@@ -463,24 +485,6 @@ const csv = computed(() => overShortCsv(filtered.value));
             <template #typical-cell="{ row }">
               <span class="whitespace-normal text-xs text-muted">{{ versusTypicalText(row.original) }}</span>
             </template>
-            <template #open-header>
-              <span class="sr-only">Lotes e vendas</span>
-            </template>
-            <template #open-cell="{ row }">
-              <NuxtButton
-                color="neutral"
-                variant="ghost"
-                :active="row.getIsExpanded()"
-                active-color="primary"
-                :trailing-icon="row.getIsExpanded() ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-                :aria-expanded="row.getIsExpanded()"
-                :aria-label="`Ver lotes e vendas de ${row.original.name}`"
-                data-over-short-toggle
-                @click="row.toggleExpanded()"
-              >
-                <span class="max-md:sr-only">Ver lotes e vendas</span>
-              </NuxtButton>
-            </template>
             <template #expanded="{ row }">
               <OverShortDetail
                 v-if="day"
@@ -491,26 +495,7 @@ const csv = computed(() => overShortCsv(filtered.value));
                 :orders-url="ordersUrl"
               />
             </template>
-            <template #loading>
-              <NuxtEmpty loading variant="naked" title="Carregando a leitura do dia" />
-            </template>
-            <template #empty>
-              <NuxtEmpty
-                v-if="rows.length"
-                variant="naked"
-                icon="i-lucide-filter-x"
-                title="Nenhum produto neste recorte"
-                description="Troque o veredito, a coleção ou a busca para ver os outros produtos."
-              />
-              <NuxtEmpty
-                v-else
-                variant="naked"
-                icon="i-lucide-chef-hat"
-                title="Nenhum lote fechado neste dia"
-                description="A leitura começa quando a Produção fecha o primeiro lote."
-              />
-            </template>
-          </NuxtTable>
+          </OperatorTable>
           <template v-if="hidden.length" #footer>
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-over-short-more>
               <p class="text-xs text-muted">{{ hiddenRowsSummary(hidden) }}</p>
@@ -529,5 +514,13 @@ const csv = computed(() => overShortCsv(filtered.value));
       <ProductionLots v-else />
       <MoreBelow />
     </main>
+    <OperatorActionBar
+      v-if="carryAction"
+      :action="carryAction"
+      :context-label="carryLine?.label"
+      :context-value="carryLine?.value"
+      label="Levar ao plano"
+      data-bi-carry-bar
+    />
   </div>
 </template>

@@ -35,7 +35,7 @@ import {
   roleLabel,
   setAnchor,
   splitDataUrl,
-  statusBadgeVariant,
+  statusBadgeColor,
   statusTone,
   stepsForPayload,
   stepsFromText,
@@ -163,9 +163,9 @@ describe("labels", () => {
     expect(statusTone("draft")).toBe("warning");
     expect(statusTone("published")).toBe("ok");
     expect(statusTone("superseded")).toBe("muted");
-    expect(statusBadgeVariant("draft")).toBe("warning");
-    expect(statusBadgeVariant("published")).toBe("success");
-    expect(statusBadgeVariant("superseded")).toBe("outline");
+    expect(statusBadgeColor("draft")).toBe("warning");
+    expect(statusBadgeColor("published")).toBe("success");
+    expect(statusBadgeColor("superseded")).toBe("neutral");
   });
 
   it("only the warning tone carries saturated color", () => {

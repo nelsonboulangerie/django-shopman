@@ -80,9 +80,17 @@ async function expectTouchTargets(page: Page, context: string) {
           rect.height === 0
         )
           return [];
+        // O `NuxtCheckbox`/`NuxtSwitch` do tema do kit pinta 16 px e alarga o alvo com
+        // um `::after` de `size-control` (32 px) centrado no controle: o toque cai nele,
+        // então é ele que se mede.
+        const hit = getComputedStyle(node, "::after");
+        const hitWidth = hit.content !== "none" && hit.position === "absolute" ? parseFloat(hit.width) || 0 : 0;
+        const hitHeight = hit.content !== "none" && hit.position === "absolute" ? parseFloat(hit.height) || 0 : 0;
+        const width = Math.max(rect.width, hitWidth);
+        const height = Math.max(rect.height, hitHeight);
         // Arredonda o subpixel: o campo `md` do Nuxt UI mede 31,98 px (texto 20 px +
         // 12 px de respiro, com a fonte em fração de pixel) e é o mesmo 32 do botão.
-        return Math.round(rect.width) >= minTarget && Math.round(rect.height) >= minTarget
+        return Math.round(width) >= minTarget && Math.round(height) >= minTarget
           ? []
           : [
               {
@@ -91,8 +99,8 @@ async function expectTouchTargets(page: Page, context: string) {
                   node.textContent?.trim().slice(0, 60) ||
                   node.tagName,
                 tag: node.tagName,
-                width: Math.round(rect.width * 10) / 10,
-                height: Math.round(rect.height * 10) / 10,
+                width: Math.round(width * 10) / 10,
+                height: Math.round(height * 10) / 10,
               },
             ];
       }),

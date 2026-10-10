@@ -431,7 +431,6 @@ Como um app migra:
 | `OperatorMenuItems` | o conteúdo do menu do operador (posto, Bloquear no celular, tema, giro, capacidade do serviço escrita) | menu de `_rail3bottom.html` |
 | `OperatorAppSeal` | o selo do app na barra de 56px dos cabeçalhos próprios (PDV, Central) | `_rail3top.html` |
 | `OperatorSwipeRow` | deslizar uma linha no toque (F7, 09/10/2026): à esquerda revela `actions` (gaveta que fica aberta depois da metade); à direita faz `commit` depois do ponto de compromisso, com o verbo e o alvo atrás da linha. Mouse não desliza; o eixo se decide no começo (rolar nunca vira deslize); `motion-safe:` na volta. Nunca a única porta: o mesmo ato existe num botão visível, e a camada de trás é `aria-hidden` | `cozinha-celular` (a), v4 |
-| `OperatorThumbAction` | o polegar do celular: o gesto principal da tela num botão `xl` largo, preso na base da área que rola (`data-focus-obstruction`), com o verbo e o alvo ("Entregar U13 a Ana"). Um por tela, só abaixo de `md` | `cozinha-celular` (a), v4 |
 | `OperatorTimedButton` | a ação que só vale até um prazo, com o tempo dentro do botão: o fundo esvazia até a janela fechar; prazo absoluto (`until`), movimento reduzido só com os segundos, rótulo fixo e "Disponível até HH:MM:SS" na descrição; ao fim some ou desabilita. Ver "Ação com prazo" | proposta #1575, aprovada 09/10/2026 |
 
 **O título da barra do topo não se corta** (PR-K5, achado do B.I. a 390 px: "Quem compra
@@ -515,7 +514,8 @@ os botões, abas e recortes usavam ("Todos 7", "Entrega 3", "Atrasados").
 - **Contraste com o pai** (coordenação, 09/10/2026): círculo × fundo do pai ≥ 3:1 e
   número × círculo AA, nos dois temas. Sobre pai PREENCHIDO de cor próxima o chip
   **inverte**: círculo na cor do texto do pai, número na cor do fundo do pai, mesmo
-  tamanho e forma. Inverte na aba ativa preenchida (`NuxtTabs` `pill`, nos dois temas)
+  tamanho e forma. Inverte na aba ativa preenchida (`NuxtTabs` `pill`, nos dois temas),
+  no botão ligado (`aria-pressed="true"`, o `solid` primário do ativo da suíte)
   e na barra lateral clara (latão); nos demais pais fica o âmbar. A inversão sai do
   próprio pai pelo CSS (`COUNT_CHIP_INVERT_CLASSES`, aba ativa do Nuxt UI e escopo
   `.bg-rail`), sem prop nem `:ui` por tela; a tabela `COUNT_CHIP_INVERTED_ON` é medida
@@ -962,12 +962,10 @@ contra ela, nos dois temas, travados em `tests/actionBarContrast.test.ts`.
 3. o **conteúdo**, que rola acima das duas e nunca fica coberto.
 
 Enquanto houver seleção numa lista, a barra de seleção (`OperatorBulkBar`, por vir)
-ocupa o lugar da ação na base. **Ponto de encontro com o `OperatorThumbAction`** (o
-polegar da Saída do Gestor, #1564): é o mesmo papel (a ação do momento ao alcance do
-polegar, `xl`, `data-focus-obstruction`), hoje `sticky` dentro da área que rola e só
-abaixo de `md`. Próximo passo: o polegar vira um `OperatorActionBar` sem linha de
-contexto (a Saída passa a ação para o rodapé do painel), e as duas peças viram uma. A
-trava abaixo declara o teto dele (1, que só cai).
+ocupa o lugar da ação na base. O polegar da Saída do Gestor no celular (F7, #1564) é
+uma ação na base sem linha de contexto: "Entregar U13 a Ana", no rodapé do painel,
+depois da área que rola (`orders-nuxt/app/pages/index.vue`, `data-exit-base-action`).
+Não existe outra peça de polegar.
 
 Trava: `tests/guardrails.actionBar.test.ts` conta, por arquivo, o texto de classe com
 `sticky`/`fixed` e `bottom-*` nos templates dos apps de operador e do kit: uso novo
@@ -1192,6 +1190,9 @@ ganha o respiro da confortável).
 - `fill`: a tabela ocupa a altura que sobra e rola por dentro, com o cabeçalho preso (a
   matriz do Catálogo). `row-class` dá à tela a classe da linha (arrastar); `active-key`
   marca o registro aberto ao lado.
+- `in-card`: a tabela mora dentro de outro cartão (o `OperatorReadingCard` do B.I.). O
+  cartão da tabela vira `soft` e o vazio e o carregando perdem a moldura: nunca cartão
+  `outline` dentro de cartão.
 - **A célula quebra** (`whitespace-normal`): texto da casa nunca é cortado. Número e ação
   que não devem quebrar dizem isso na própria célula (`whitespace-nowrap`, `min-w-max`).
 - **Sem `:ui` na tela**: a densidade é o único `:ui` da tabela e mora no componente
@@ -1244,6 +1245,48 @@ são os do cabeçalho (`active-filters`).
   toolbar (o último a sair); na mesa, logo depois dos recortes primários.
 - Trava: `guardrails.filterPanel.test.ts` (nenhum `FilterBar` no Gestor; toda tela
   que guarda favorito está no registro do servidor).
+
+### Filtros rápidos (`OperatorQuickFilters` + `#filters-primary`)
+
+O recorte de todo dia é UM toque, com a contagem ao lado (dono, P1 de 02/10/2026).
+Filtro rápido é navegação secundária: mora na toolbar do `OperatorPageHeader`, à
+esquerda (`#filters-primary`), e o `OperatorFilterPanel` segue sendo o lugar dos filtros
+completos. Itens como dados `{ key, label, count?, icon?, to?, disabled? }`; três
+jeitos, pela forma dos itens:
+
+| jeito | quando | base | teclado e papel |
+|---|---|---|---|
+| sub-seção | todo item com `to` | `NuxtTabs` que navegam; a ativa é a da rota | `tablist`; setas andam, Enter abre |
+| um recorte | `v-model` com uma chave | `NuxtTabs` `pill` | `tablist`; setas trocam |
+| vários | `v-model` com várias, `multiple` | `NuxtButton` `outline`; ligado é `active` com `QUICK_ACTIVE` (`solid` primário) e `aria-pressed` | `toolbar`; setas andam, Enter/Espaço ligam |
+
+```vue
+<template #filters-primary>
+  <OperatorQuickFilters
+    v-model="recortes" :items="quickItems" multiple label="Recortes das encomendas"
+    surface="pos" screen="preorders" :query="panelQuery" @apply="applyFavorite"
+  />
+</template>
+```
+
+- **Um ativo só na suíte** (coordenação, 09/10/2026): o recorte ligado é `solid`
+  primário (`QUICK_ACTIVE`), o mesmo peso da aba dourada do modo de um recorte; o
+  desligado é `outline` (o favorito fixado, `ghost`). O `soft` primário de antes ficava
+  quase igual ao `outline` e deixava dúvida sobre o que estava ligado; a régua é
+  `tests/countChipContrast.test.ts` (ligado × desligado ≥ 3:1 nos dois temas).
+- A contagem é o `OperatorCountChip` (zero não aparece); na aba ativa preenchida e no
+  botão ligado (`aria-pressed="true"`) ele inverte sozinho.
+- **Favoritos fixados** (`surface`/`screen`, os mesmos do painel) entram no FIM da
+  faixa, com a estrela; tocar emite `apply` com o recorte inteiro do favorito, e o
+  ativo é o que bate com `query`.
+- **Celular:** até 4 opções rolam na faixa sem cortar rótulo; mais que isso viram um
+  `NuxtSelect` (`phone-max`). Favorito fixado não vira aba no celular quando as abas já
+  não cabem: ele está no topo do painel. As duas formas existem e a régua é CSS.
+- O recorte rápido ligado aparece também como chip removível (`active-filters` do
+  cabeçalho, chips do painel na mesa).
+- Trava: `guardrails.filterPanel.test.ts` (filtro rápido declarado no painel, `:quick`,
+  só existe ao lado da faixa na mesma tela; favorito de faixa e de painel só em tela
+  registrada no servidor).
 
 ### Barra de seleção (`OperatorBulkBar` + `#selection` do `OperatorPageHeader`)
 
@@ -1301,8 +1344,10 @@ Os níveis são os GRUPOS do painel, em ordem fixa (`preserve-group-order`):
 
 1. **Nesta tela** (só onde a tela filtra a própria lista e passa o `v-model` no
    `#search`): "Filtrar o quadro por “maria”" vira o recorte da tela; com a tela já
-   filtrada, "Tirar o filtro “maria” de o quadro". O alvo sai do `screen-label`
-   ("filtrando o quadro" → "o quadro").
+   filtrada, "Tirar o filtro “maria” do quadro". O alvo sai do `screen-label`, sempre na
+   forma "filtrando <o|a|os|as> <nome>": o artigo que a tela escreve decide a contração
+   (do/da/dos/das), nunca a terminação do nome. A trava
+   `guardrails.suiteSearch.test.ts` reprova rótulo fora da forma.
 2. **No app (Gestor)**: o que a suíte achou no app atual.
 3. **Na suíte**: o que achou nos outros apps (`GET /api/v1/backstage/search/?q=`,
    projeção `shopman/backstage/projections/suite_search.py`), cada um com o tipo ao lado
@@ -1404,6 +1449,10 @@ Contrato:
   operador.
 - `prefers-reduced-motion`: a dica fica **parada**, não some — e o toque salta para o
   fim de uma vez, sem deslizar.
+- **Nunca por cima de overlay.** Os overlays do Nuxt UI (gaveta, popover, modal) não
+  têm z-index e valem pela ordem no DOM; com `z-30` a dica passava por cima do painel de
+  filtros aberto no celular. Com qualquer diálogo aberto (`role=dialog` +
+  `data-state=open`) ela some, por CSS (`body:has(...)`).
 
 ⚠️ O `BottomSheet` do storefront ainda tem a versão antiga inline. Migrá-lo pede um
 tom de degradê por superfície (`card`/`muted`) e marcar o rodapé do sheet como

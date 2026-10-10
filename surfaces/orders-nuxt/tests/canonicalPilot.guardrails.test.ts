@@ -238,6 +238,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       // O chip de contagem (dono, 09/10/2026): no fluxo o anel é transparente, a cor
       // do fundo do pai em qualquer pai; no canto do ícone continua o `ring-bg` do tema.
       "operator-kit/OperatorCountChip.vue",
+      // Os filtros rápidos (fase 2, K4): a faixa rola no celular e o rótulo da aba não
+      // se corta nem estica (as abas do Nuxt UI crescem e truncam por padrão).
+      "operator-kit/OperatorQuickFilters.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),
@@ -532,9 +535,11 @@ describe("Gestor canônico em Nuxt UI", () => {
       (board.match(/<NuxtTabs\b/g)?.length ?? 0) +
         (boardColumn.match(/<NuxtTabs\b/g)?.length ?? 0) +
         (boardHeading.match(/<NuxtTabs\b/g)?.length ?? 0),
-      // Escopo da Fila, recorte do fluxo (o mesmo na Saída), abas das colunas no
-      // celular e no tablet em pé, e a visão Grade | Lista.
-    ).toBeGreaterThanOrEqual(4);
+      // Abas das colunas no celular e no tablet em pé, e a visão Grade | Lista.
+    ).toBeGreaterThanOrEqual(2);
+    // Os recortes (escopo da Fila e o fluxo, o mesmo na Saída) são os filtros rápidos
+    // da suíte, com a contagem e o colapso no celular do kit.
+    expect(board.match(/<OperatorQuickFilters\b/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(board).toContain("<OperatorSplitter");
     expect(board).not.toContain("<QueueColumnResizeHandle");
     expect(board).not.toContain("<QueueColumnStrip");
@@ -768,15 +773,16 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(feeds.match(/<template #footer>/g)?.length).toBeGreaterThanOrEqual(
       2,
     );
-    expect(courier).toContain("<template #header>");
-    expect(courier).toContain("#footer");
+    // Cartão sem cabeçalho nem rodapé destacados (conjunto mínimo, regra do dono): o
+    // título e as ações moram no corpo, sem a divisória dos slots oficiais.
+    expect(courier).not.toContain("#header");
+    expect(courier).not.toContain("#footer");
     expect(catalog).not.toContain('<NuxtCard v-if="loading"');
     // O carregando, o vazio e o erro da matriz são o estado da tela da `OperatorTable`.
     expect(catalog).toContain(':loading="pending"');
     expect(catalog).toContain('what="o catálogo"');
-    expect(
-      customers.match(/<template #header>/g)?.length,
-    ).toBeGreaterThanOrEqual(3);
+    expect(customers).not.toContain("#header");
+    expect(customers).not.toContain("#footer");
     expect(bindings).toContain("<template #header>");
     expect(card).not.toContain("data-card-pack-declare");
     expect(offenders(/<article\b/)).toEqual([]);

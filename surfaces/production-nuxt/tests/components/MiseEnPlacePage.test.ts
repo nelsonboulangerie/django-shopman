@@ -4,7 +4,7 @@ import { mount } from "@vue/test-utils";
 
 import MiseEnPlacePage from "../../app/pages/mise-en-place.vue";
 import type { WeighingTicketProjection } from "../../app/types/production";
-import { OperatorTableStub, UiButtonStub } from "../support/nativeUiStubs";
+import { nuxtUiStubs } from "../support/nuxtUiStubs";
 
 const tickets = ref<WeighingTicketProjection[]>([]);
 const miseLines = ref<Array<Record<string, unknown>>>([]);
@@ -93,13 +93,12 @@ function installGlobals() {
 }
 
 const stubs = {
+  ...nuxtUiStubs,
   ProductionHeader: true,
   Icon: true,
   NuxtLink: { template: "<a><slot /></a>" },
-  UiBadge: { template: "<span><slot /></span>" },
-  NuxtBadge: { props: ["label"], template: "<span>{{ label }}<slot /></span>" },
-  OperatorTable: OperatorTableStub,
-  UiButton: UiButtonStub,
+  // A lista por insumo tem teste próprio de tabela no kit; aqui só importa a tela.
+  OperatorTable: { template: "<table data-mise-lines />" },
   WeighingLabels: {
     props: ["printMode", "labels", "tickets"],
     template: `
@@ -141,13 +140,14 @@ describe("Preparação — preview e identificação", () => {
   it("abre em Por preparo e mantém Por insumo como segunda visão", () => {
     const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
     const viewMode = wrapper.get('[aria-label="Modo de visualização"]');
-    const buttons = viewMode.findAll("button");
+    const tabs = viewMode.findAll('[role="tab"]');
 
-    expect(buttons.map((button) => button.text().trim())).toEqual([
+    expect(tabs.map((tab) => tab.text().trim())).toEqual([
       "Por preparo",
       "Por insumo",
     ]);
-    expect(buttons[0]?.attributes("aria-pressed")).toBe("true");
+    expect(tabs[0]?.attributes("aria-selected")).toBe("true");
+    expect(tabs[1]?.attributes("aria-selected")).toBe("false");
     expect(wrapper.find("article").exists()).toBe(true);
   });
 

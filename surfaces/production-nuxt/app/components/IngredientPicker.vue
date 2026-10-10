@@ -1,16 +1,16 @@
 <script setup lang="ts">
-// Casar um ingrediente com um insumo do sistema. Campo de texto que busca em
-// GET recipes/ingredients/?q= (debounce) e mostra a lista logo abaixo; quando a
-// captura já trouxe candidatos, eles aparecem antes de qualquer digitação. O valor
-// é o SKU escolhido; "" = ainda sem insumo (permitido em rascunho, §3).
-// A lista é absoluta dentro de um wrapper `relative` — o pai não pode recortar
-// (sem overflow-x-auto em volta do editor).
+// Casar um ingrediente com um insumo do sistema. É escolha numa lista longa, com
+// busca: `NuxtSelectMenu`. A busca vai ao servidor (GET recipes/ingredients/?q=, com
+// debounce no composable), então o filtro local fica desligado (`ignore-filter`);
+// quando a captura já trouxe candidatos, eles aparecem antes de qualquer digitação.
+// O valor é o SKU escolhido; "" = ainda sem insumo (permitido em rascunho, §3), e o
+// "limpar" do campo desfaz o insumo.
 import type { IngredientOptionProjection } from "~/types/recipeBook";
 
 const props = defineProps<{
   /** SKU casado ("" = sem insumo). */
   modelValue: string;
-  /** Nome exibido para o SKU casado (o cartão mostra nome, não código). */
+  /** Nome exibido para o SKU casado (o campo mostra nome, não código). */
   matchedName?: string;
   /** Candidatos sugeridos pela captura (aparecem antes de digitar). */
   candidates?: IngredientOptionProjection[];
@@ -24,93 +24,74 @@ const emit = defineEmits<{
 
 const { options, pending, search, reset } = useIngredientSearch();
 const term = ref("");
-const open = ref(false);
+watch(term, (value) => search(value));
 
-const list = computed<IngredientOptionProjection[]>(() =>
-  term.value.trim() ? options.value : (props.candidates ?? []),
-);
-
-function onInput(event: Event) {
-  term.value = (event.target as HTMLInputElement).value;
-  search(term.value);
-  open.value = true;
+interface PickerItem {
+  value: string;
+  label: string;
+  description?: string;
+  option: IngredientOptionProjection | null;
 }
 
-function choose(option: IngredientOptionProjection) {
-  emit("update:modelValue", option.sku);
-  emit("select", option);
+const items = computed<PickerItem[]>(() => {
+  const list = term.value.trim() ? options.value : (props.candidates ?? []);
+  const rows: PickerItem[] = list.map((option) => ({
+    value: option.sku,
+    label: option.name,
+    description: option.sku,
+    option,
+  }));
+  // O insumo já casado continua na lista, para o campo mostrar o nome dele.
+  if (props.modelValue && !rows.some((row) => row.value === props.modelValue)) {
+    rows.unshift({
+      value: props.modelValue,
+      label: props.matchedName || props.modelValue,
+      description: props.matchedName ? props.modelValue : undefined,
+      option: null,
+    });
+  }
+  return rows;
+});
+
+function onUpdate(value: string | null | undefined) {
   term.value = "";
   reset();
-  open.value = false;
+  if (!value) {
+    emit("update:modelValue", "");
+    return;
+  }
+  emit("update:modelValue", value);
+  const option = items.value.find((row) => row.value === value)?.option;
+  if (option) emit("select", option);
 }
 
-function clear() {
-  emit("update:modelValue", "");
-  term.value = "";
-  reset();
-}
-
-function onBlur() {
-  // Deixa o clique na lista acontecer antes de fechar.
-  setTimeout(() => {
-    open.value = false;
-  }, 150);
-}
+const touch = useTouchPointer();
 </script>
 
 <template>
-  <div class="relative min-w-0">
-    <div v-if="modelValue" class="flex h-9 items-center gap-1.5 rounded-md border bg-muted/40 px-2 text-sm">
-      <Icon name="lucide:link" class="size-3.5 shrink-0 text-muted-foreground" />
-      <span class="truncate font-medium">{{ matchedName || modelValue }}</span>
-      <span v-if="matchedName" class="hidden truncate font-mono text-xs text-muted-foreground sm:inline">{{
-        modelValue
-      }}</span>
-      <!-- Limpar é affordance embutida no chip de insumo e precisa caber nos 24px reservados. -->
-      <button
-        v-if="!disabled"
-        type="button"
-        class="ml-auto grid size-6 shrink-0 place-items-center rounded text-muted-foreground transition hover:text-foreground"
-        aria-label="Desfazer o insumo"
-        title="Desfazer o insumo"
-        @click="clear"
-      >
-        <Icon name="lucide:x" class="size-3.5" />
-      </button>
-    </div>
-    <template v-else>
-      <UiInput
-        :model-value="term"
-        type="text"
-        autocomplete="off"
-        :placeholder="placeholder || 'Buscar insumo…'"
-        :disabled="disabled"
-        aria-label="Buscar insumo"
-        @input="onInput"
-        @focus="open = true"
-        @blur="onBlur"
-        @keydown.escape="open = false"
-      />
-      <ul
-        v-if="open && (list.length || pending || term.trim())"
-        class="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-md border bg-card py-1 text-sm shadow-lg"
-        role="listbox"
-      >
-        <li v-if="pending" class="px-3 py-1.5 text-muted-foreground">Buscando…</li>
-        <li v-else-if="!list.length" class="px-3 py-1.5 text-muted-foreground">Nenhum insumo encontrado.</li>
-        <li v-for="option in list" :key="option.sku" role="option" :aria-selected="false">
-          <!-- A linha inteira é a opção do listbox; a anatomia textual não é a de um CTA UiButton. -->
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 px-3 py-1.5 text-left transition hover:bg-accent"
-            @mousedown.prevent="choose(option)"
-          >
-            <span class="min-w-0 flex-1 truncate">{{ option.name }}</span>
-            <UiBadge v-if="option.is_part" variant="outline" class="px-1.5 py-0 text-xs">Parte</UiBadge>
-            <span class="shrink-0 font-mono text-xs text-muted-foreground">{{ option.sku }}</span>
-          </button>
-        </li>
-      </ul>
+  <NuxtSelectMenu
+    v-model:search-term="term"
+    :model-value="modelValue || undefined"
+    :items="items"
+    value-key="value"
+    ignore-filter
+    :loading="pending"
+    :clear="!disabled"
+    :disabled="disabled"
+    :placeholder="placeholder || 'Buscar insumo…'"
+    :search-input="{ autofocus: !touch, placeholder: 'Buscar insumo' }"
+    class="w-full min-w-0"
+    aria-label="Insumo"
+    @update:model-value="onUpdate"
+  >
+    <template #item-label="{ item }">
+      <span class="flex min-w-0 items-center gap-2">
+        <span class="truncate">{{ item.label }}</span>
+        <NuxtBadge v-if="item.option?.is_part" color="neutral" label="Parte" />
+      </span>
     </template>
-  </div>
+    <template #empty>
+      {{ pending ? "Buscando…" : "Nenhum insumo encontrado." }}
+    </template>
+  </NuxtSelectMenu>
 </template>

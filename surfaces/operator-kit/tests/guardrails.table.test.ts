@@ -13,14 +13,15 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 //    `:ui` da tabela e mora na peça (regra do dono: sem `:ui` por instância).
 //
 // Os apps fora desta lista entram quando a onda de cada um trocar as tabelas pela peça.
-// O B.I. fica de fora por motivo: as tabelas dele são de LEITURA, o corpo de um
-// `OperatorReadingCard` (que já é o cartão), não listas de trabalho.
+// O B.I. entrou no acabamento da fase 2: as tabelas dele são de LEITURA, o corpo de um
+// `OperatorReadingCard`, e por isso usam `in-card` (o cartão da tabela vira `soft`,
+// nunca `outline` dentro de `outline`; trava abaixo).
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SKIP_DIRS = new Set(["node_modules", ".nuxt", ".output", "dist"]);
 
 /** Apps em que lista de trabalho é só `OperatorTable`. */
-const MIGRATED = ["orders-nuxt", "marketing-nuxt"];
+const MIGRATED = ["orders-nuxt", "marketing-nuxt", "bi-nuxt"];
 
 function vueFiles(dir: string, found: string[] = []): string[] {
   let entries: string[];
@@ -56,6 +57,17 @@ describe("tabela da suíte: OperatorTable", () => {
         for (const match of source.matchAll(/<OperatorTable\b([^>]*)>/g)) {
           if (/(^|\s)(:ui|ui)=/.test(match[1] ?? "")) offenders.push(relative(surfacesDir, file));
         }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("no B.I., a tabela dentro do quadro de leitura diz in-card (cartão soft dentro do cartão)", () => {
+    const offenders: string[] = [];
+    for (const file of vueFiles(join(surfacesDir, "bi-nuxt", "app"))) {
+      const source = readFileSync(file, "utf8");
+      for (const match of source.matchAll(/<OperatorTable\b([^>]*)>/g)) {
+        if (!/(^|\s)in-card(\s|=|$)/.test(match[1] ?? "")) offenders.push(relative(surfacesDir, file));
       }
     }
     expect(offenders).toEqual([]);

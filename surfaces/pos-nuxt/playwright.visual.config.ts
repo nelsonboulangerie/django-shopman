@@ -15,7 +15,9 @@ export default defineOperatorVisualConfig({
       port: backendPort,
       reuseExistingServer: false,
       timeout: 30_000,
-      env: { MOCK_PORT: String(backendPort) },
+      // O dia do mock e o relógio do navegador (`page.clock` nos specs) são o MESMO dia:
+      // o retrato não muda com a semana em que roda.
+      env: { MOCK_PORT: String(backendPort), MOCK_TODAY: "2026-09-29" },
     },
     {
       command:

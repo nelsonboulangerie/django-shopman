@@ -11,6 +11,7 @@ import {
   suiteQueryReady,
   suiteResultColor,
   suiteResultLabel,
+  isSuiteScreenLabel,
   suiteScreenTarget,
   suiteSearchHotkey,
   suiteTotal,
@@ -48,9 +49,22 @@ describe("níveis", () => {
   });
 
   it("o alvo do recorte sai do rótulo da tela", () => {
-    expect(suiteScreenTarget("filtrando o quadro")).toBe("o quadro");
-    expect(suiteScreenTarget("Filtrando os clientes")).toBe("os clientes");
-    expect(suiteScreenTarget("")).toBe("esta tela");
+    expect(suiteScreenTarget("filtrando o quadro")).toEqual({ target: "o quadro", from: "do quadro" });
+    expect(suiteScreenTarget("filtrando a lista")).toEqual({ target: "a lista", from: "da lista" });
+    expect(suiteScreenTarget("Filtrando os clientes")).toEqual({ target: "os clientes", from: "dos clientes" });
+    expect(suiteScreenTarget("filtrando as campanhas")).toEqual({ target: "as campanhas", from: "das campanhas" });
+    expect(suiteScreenTarget("filtrando o histórico")).toEqual({ target: "o histórico", from: "do histórico" });
+    expect(suiteScreenTarget("")).toEqual({ target: "esta tela", from: "desta tela" });
+  });
+
+  it("o gênero sai do artigo escrito pela tela, nunca da terminação do nome", () => {
+    // "o quadro" e "a mesa": a terminação não decide; "o mapa" termina em -a e é masculino.
+    expect(suiteScreenTarget("filtrando o mapa").from).toBe("do mapa");
+    expect(suiteScreenTarget("filtrando a tribo").from).toBe("da tribo");
+    // Sem artigo, a frase não chuta: cai em "esta tela".
+    expect(suiteScreenTarget("Procurando encomendas")).toEqual({ target: "esta tela", from: "desta tela" });
+    expect(isSuiteScreenLabel("filtrando os clientes")).toBe(true);
+    expect(isSuiteScreenLabel("Procurando encomendas em aberto.")).toBe(false);
   });
 
   it("o app do kit vira o nome que o Django usa (o Gestor é `orders` no kit)", () => {

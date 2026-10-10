@@ -416,6 +416,20 @@ export function carryLabel(planDay: string): string {
   return index >= 5 ? `Levar ao plano do próximo ${name}` : `Levar ao plano da próxima ${name}`;
 }
 
+/**
+ * A linha de contexto da ação na base do celular (`OperatorActionBar`): o que o
+ * "Levar ao plano" mexe: os produtos que faltaram ou sobraram (os que vão ao plano;
+ * o que ficou na medida não vai). Um conjunto só, contado em produtos.
+ */
+export function carryContext(report: Pick<BIOverShortReport, "summary">): { label: string; value: string } {
+  const { short, over } = report.summary;
+  const moved = short + over;
+  return {
+    label: "Faltaram ou sobraram",
+    value: moved === 1 ? "1 produto" : `${formatInt(moved)} produtos`,
+  };
+}
+
 /** O botão do plano: "Abrir o plano de sábado 10/10". */
 export function planLabel(planDay: string): string {
   if (!planDay) return "";
