@@ -33,16 +33,21 @@ test.describe("PDV — venda sem conexão", () => {
     await openFreeTabWithCroissant(page, context, baseURL!, "15");
 
     await context.setOffline(true);
-    await expect(page.getByText("Sem conexão. O balcão continua vendendo.")).toBeVisible();
+    await expect(page.getByText("O balcão continua vendendo.", { exact: true })).toBeVisible();
+    // Um lugar por informação: o estado é da faixa do kit; nem o selo do cabeçalho nem
+    // o aviso da tela repetem "Sem conexão".
+    await expect(page.getByText(/^Sem conexão/)).toHaveCount(1);
+    await expect(page.locator("[data-operator-offline-band]")).toContainText("Sem conexão");
 
     await page.getByRole("button", { name: /Pagamento/ }).click();
-    await expect(page.getByText(/Sem conexão: total pelos preços das \d\d:\d\d/)).toBeVisible();
+    await expect(page.getByText(/^Total pelos preços das \d\d:\d\d/)).toBeVisible();
+    await expect(page.getByText(/^Sem conexão/)).toHaveCount(1);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/pdvoff-pagamento-${page.viewportSize()?.width}.png` });
     await page.locator('[data-payment-method="cash"]').click();
     await page.getByRole("button", { name: "Validar" }).click();
 
     await expect(page.locator("[data-sale-result-offline]")).toBeVisible();
-    await expect(page.getByText("Sem conexão. 1 venda esperando envio.")).toBeVisible();
+    await expect(page.getByText("1 venda esperando envio.", { exact: true })).toBeVisible();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/pdvoff-guardada-${page.viewportSize()?.width}.png` });
     await page.getByRole("button", { name: "Ver vendas guardadas" }).click();
     await expect(page.locator('[data-pos-offline-sale="pending"]')).toHaveCount(1);
@@ -77,7 +82,7 @@ test.describe("PDV — venda sem conexão", () => {
     await payCashAndValidate(page);
 
     await expect(page.locator("[data-sale-result-offline]")).toBeVisible();
-    await expect(page.getByText("Sem conexão. 1 venda esperando envio.")).toBeVisible();
+    await expect(page.getByText("1 venda esperando envio.", { exact: true })).toBeVisible();
 
     await context.setOffline(false);
     await expect(page.getByText(/Venda guardada enviada: pedido NB-\d+\./)).toBeVisible({ timeout: 15_000 });

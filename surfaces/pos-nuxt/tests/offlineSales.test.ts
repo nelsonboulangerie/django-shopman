@@ -64,7 +64,7 @@ describe("offlineSaleReview", () => {
     expect(review.change_q).toBe(3000);
     expect(review.offline?.prices_at).toBe("2026-10-10T17:05:00.000Z");
     expect(review.warnings[0]?.code).toBe("offline_prices");
-    expect(review.warnings[0]?.message).toMatch(/^Sem conexão: total pelos preços das \d\d:\d\d\./);
+    expect(review.warnings[0]?.message).toMatch(/^Total pelos preços das \d\d:\d\d\./);
     expect(review.requires_manager_approval).toBe(false);
   });
 });
@@ -100,13 +100,13 @@ describe("classifyOfflineSend", () => {
 describe("offlineQueueAlert", () => {
   it("sem conexão e sem fila: diz que o balcão continua e o que espera", () => {
     const alert = offlineQueueAlert({ online: false, pending: 0, conflicts: 0, sending: false });
-    expect(alert?.title).toBe("Sem conexão. O balcão continua vendendo.");
+    expect(alert?.title).toBe("O balcão continua vendendo.");
     expect(alert?.actionLabel).toBe("O que funciona agora");
   });
 
   it("sem conexão com fila: conta as pendentes", () => {
     expect(offlineQueueAlert({ online: false, pending: 2, conflicts: 0, sending: false })?.title)
-      .toBe("Sem conexão. 2 vendas esperando envio.");
+      .toBe("2 vendas esperando envio.");
   });
 
   it("com conexão: some quando a fila esvazia; recusa tem precedência", () => {

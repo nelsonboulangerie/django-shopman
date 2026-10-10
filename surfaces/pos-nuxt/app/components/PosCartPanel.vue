@@ -2108,7 +2108,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
           data-pos-block-offline
         >
           <Icon name="lucide:wifi-off" class="mt-0.5 size-3.5 shrink-0" />
-          <span>Sem conexão: desconto{{ selectMode ? " e transferir voltam" : " volta" }} com a conexão.</span>
+          <span>{{ selectMode ? "Desconto e transferir voltam" : "Desconto volta" }} com a conexão.</span>
         </p>
 
         <div v-if="touchEditor && activeItem && lineEditing !== 'note'" class="mt-2 grid grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.6fr)] gap-2" data-pos-line-numpad>

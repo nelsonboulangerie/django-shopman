@@ -241,6 +241,13 @@ jobs:
         if: matrix.app == 'pos-nuxt'
         run: npm run test:geometry
 
+      # A e2e do PDV (mock hermético + build de produção): login, banner de conexão,
+      # tela do cliente e a venda sem conexão ponta a ponta, com "Sem conexão" dito
+      # uma vez só (a faixa do kit). Ficava fora de todo job (10/10/2026).
+      - name: PDV e2e (venda sem conexão)
+        if: matrix.app == 'pos-nuxt'
+        run: npm run test:e2e
+
       - name: Upload shared operator evidence
         if: always() && matrix.app == 'operator-kit'
         uses: actions/upload-artifact@v7
