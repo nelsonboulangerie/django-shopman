@@ -44,24 +44,32 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
+/**
+ * A fronteira de palavra da trava. O `\b` do JavaScript conta o `_` como letra, e aí
+ * "token_expirado", "API_KEY" e "webhook_falhou" passavam inteiros: justamente o nome
+ * de campo que vaza para a tela. Aqui só letra e dígito emendam; `_` separa.
+ */
+const term = (source: string, flags = "") =>
+  new RegExp(`(?<![\\p{L}\\d])(?:${source})(?![\\p{L}\\d])`, `u${flags}`);
+
 /** Cada termo, com o que dizer no lugar. A trava não troca sozinha: leia a linha. */
 const JARGON: ReadonlyArray<{ pattern: RegExp; hint: string }> = [
-  { pattern: /\bCore\b/, hint: "diga o que carrega: 'as compras', 'o pedido'" },
-  { pattern: /\bback-?end\b/i, hint: "diga o que não carregou, e o gesto para tentar de novo" },
-  { pattern: /\bAPI\b/, hint: "nomeie a plataforma ou o que ela faz" },
-  { pattern: /\bendpoints?\b/i, hint: "diga o que não respondeu" },
-  { pattern: /\bpayloads?\b/i, hint: "diga o que foi enviado" },
-  { pattern: /\bprojection\b/i, hint: "diga o que a tela mostra" },
-  { pattern: /\bSSE\b/, hint: "'ao vivo'" },
-  { pattern: /\btokens?\b/i, hint: "'código', 'chave', 'acesso'" },
-  { pattern: /\bwebhooks?\b/i, hint: "diga quem avisou o quê" },
-  { pattern: /\b(?:Django|Nuxt|BFF|JSON|HTTP)\b/, hint: "o operador não sabe com que o sistema foi feito" },
+  { pattern: term("Core"), hint: "diga o que carrega: 'as compras', 'o pedido'" },
+  { pattern: term("back-?end", "i"), hint: "diga o que não carregou, e o gesto para tentar de novo" },
+  { pattern: term("API"), hint: "nomeie a plataforma ou o que ela faz" },
+  { pattern: term("endpoints?", "i"), hint: "diga o que não respondeu" },
+  { pattern: term("payloads?", "i"), hint: "diga o que foi enviado" },
+  { pattern: term("projection", "i"), hint: "diga o que a tela mostra" },
+  { pattern: term("SSE"), hint: "'ao vivo'" },
+  { pattern: term("tokens?", "i"), hint: "'código', 'chave', 'acesso'" },
+  { pattern: term("webhooks?", "i"), hint: "diga quem avisou o quê" },
+  { pattern: term("(?:Django|Nuxt|BFF|JSON|HTTP)"), hint: "o operador não sabe com que o sistema foi feito" },
   {
-    pattern: /\b(?:offerman|stockman|craftsman|orderman|guestman|doorman|payman|buyman|fiscalman|cashman)\b/i,
+    pattern: term("(?:offerman|stockman|craftsman|orderman|guestman|doorman|payman|buyman|fiscalman|cashman)", "i"),
     hint: "nome de pacote: diga Catálogo, Estoque, Produção, Pedidos, Clientes, Caixa",
   },
-  { pattern: /\bservidor\b/i, hint: "diga o que aconteceu ('não ficou pronto', 'mudou enquanto você editava')" },
-  { pattern: /\bdirectives?\b/i, hint: "'tarefa'" },
+  { pattern: term("servidor", "i"), hint: "diga o que aconteceu ('não ficou pronto', 'mudou enquanto você editava')" },
+  { pattern: term("directives?", "i"), hint: "'tarefa'" },
 ];
 
 const SKIP_DIRS = new Set([
@@ -241,5 +249,15 @@ describe("a tela do operador fala a língua da padaria, não a do sistema", () =
       ...templateSnippets(text.slice(bodyStart, text.lastIndexOf("</template>")), bodyStart),
     ].filter((snippet) => JARGON.some(({ pattern }) => pattern.test(snippet.text)));
     expect(snippets.map((snippet) => lineOf(sample, snippet.offset)).sort()).toEqual([2, 5, 6, 6, 7]);
+  });
+
+  // O `_` separa palavra: o nome de campo que vaza para a tela não escapa por ele.
+  it("pega o termo emendado por _ (nome de campo na tela), sem pegar palavra maior", () => {
+    const hits = (text: string) => JARGON.some(({ pattern }) => pattern.test(text));
+    expect(hits("Falhou: token_expirado")).toBe(true);
+    expect(hits("Sem API_KEY configurada")).toBe(true);
+    expect(hits("webhook_falhou ao avisar")).toBe(true);
+    expect(hits("Abrir NuxtButton de exemplo")).toBe(false);
+    expect(hits("Coreografia do salão")).toBe(false);
   });
 });

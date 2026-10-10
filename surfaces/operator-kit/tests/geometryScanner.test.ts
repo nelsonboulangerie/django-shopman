@@ -81,6 +81,35 @@ describe("scanner geométrico", () => {
     expect(findings.some(({ kind }) => kind === "focus-clipping")).toBe(true);
   });
 
+  it("aceita o contorno de foco puxado para dentro mesmo na borda do recorte", async () => {
+    Object.defineProperty(document.documentElement, "scrollWidth", { configurable: true, value: 390 });
+    Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 390 });
+    const frame = document.createElement("div");
+    frame.style.overflow = "hidden";
+    frame.getBoundingClientRect = () => rect(10, 10, 100, 60);
+    const button = document.createElement("button");
+    button.className = "focus-visible:-outline-offset-3";
+    button.style.opacity = "1";
+    button.getBoundingClientRect = () => rect(10, 20, 48, 32);
+    frame.append(button);
+    document.body.append(frame);
+
+    const findings = await scanOperatorGeometry(page as never);
+    expect(findings.some(({ kind }) => kind === "focus-clipping")).toBe(false);
+  });
+
+  it("um controle de 32 px com arredondamento fracionário não é alvo pequeno", async () => {
+    Object.defineProperty(document.documentElement, "scrollWidth", { configurable: true, value: 390 });
+    Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 390 });
+    const input = document.createElement("input");
+    input.style.opacity = "1";
+    input.getBoundingClientRect = () => rect(10, 10, 128, 31.984375);
+    document.body.append(input);
+
+    const findings = await scanOperatorGeometry(page as never, { touch: true });
+    expect(findings.some(({ kind }) => kind === "touch-target")).toBe(false);
+  });
+
   it("não confunde conteúdo rolável fora do viewport com chrome sobreposto", async () => {
     Object.defineProperty(globalThis, "innerWidth", { configurable: true, value: 390 });
     Object.defineProperty(globalThis, "innerHeight", { configurable: true, value: 844 });

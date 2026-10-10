@@ -37,4 +37,15 @@ export interface OperatorActionBarAction {
   /** A ação só vale até um prazo ("Desfazer"): mesmo botão, fundo que esvazia. */
   timed?: OperatorActionBarTimed;
   onSelect?: (event: Event) => void;
+  /** Ganchos `data-*` para a tela e os testes acharem o botão ("data-kds-ready": ""). */
+  [data: `data-${string}`]: string | undefined;
+}
+
+/** Só os `data-*` da ação, para o botão da barra (o resto da ação não vira atributo). */
+export function actionDataAttributes(action: OperatorActionBarAction): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(action)) {
+    if (key.startsWith("data-") && typeof value === "string") out[key] = value;
+  }
+  return out;
 }

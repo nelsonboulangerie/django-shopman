@@ -904,7 +904,8 @@ const thumbAction = computed(() => {
                 </div>
                 <NuxtAlert v-if="scannerError" class="mt-2" variant="subtle" color="warning" :title="scannerError" />
               </NuxtCard>
-              <input ref="scannerFileInput" class="sr-only" type="file" accept="image/*" capture="environment" @change="readInvoiceImage" />
+              <!-- Aberto só pelo "Ler foto da NF": fora da ordem de foco e do toque. -->
+              <input ref="scannerFileInput" class="hidden" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" @change="readInvoiceImage" />
 
               <!-- Mesa e tablet: o "Escanear NF" grande no começo (no celular, na base). -->
               <NuxtButton

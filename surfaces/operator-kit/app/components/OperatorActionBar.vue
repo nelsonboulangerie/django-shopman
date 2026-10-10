@@ -38,7 +38,7 @@ import { computed, useId } from "vue";
 
 import OperatorTimedButton from "./OperatorTimedButton.vue";
 
-import type { OperatorActionBarAction } from "../presentation/actionBar";
+import { actionDataAttributes, type OperatorActionBarAction } from "../presentation/actionBar";
 
 const props = withDefaults(
   defineProps<{
@@ -113,6 +113,7 @@ function run(action: OperatorActionBarAction, event: Event) {
           :loading="secondary.loading"
           :disabled="secondary.disabled"
           :ui="SECONDARY_UI"
+          v-bind="actionDataAttributes(secondary)"
           data-operator-action-bar-secondary
           @click="run(secondary, $event)"
         />
@@ -134,6 +135,7 @@ function run(action: OperatorActionBarAction, event: Event) {
           :disabled="action.disabled"
           :aria-label="action.ariaLabel"
           :ui="BUTTON_UI"
+          v-bind="actionDataAttributes(action)"
           data-operator-action-bar-action
           data-operator-action-bar-timed
           @click="run(action, $event)"
@@ -153,6 +155,7 @@ function run(action: OperatorActionBarAction, event: Event) {
           :aria-label="action.ariaLabel"
           :aria-describedby="reason ? reasonId : undefined"
           :ui="BUTTON_UI"
+          v-bind="actionDataAttributes(action)"
           data-operator-action-bar-action
           @click="run(action, $event)"
         />

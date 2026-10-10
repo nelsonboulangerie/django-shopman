@@ -11,6 +11,7 @@ import {
   parseTableView,
   reconcileHidden,
   sortLabel,
+  sortButtonClass,
   tableDensityUi,
   toggleHidden,
   visibilityFromHidden,
@@ -73,6 +74,13 @@ describe("as decisões puras da tabela", () => {
     expect(tableDensityUi("compact").td).toContain("whitespace-normal");
     expect(tableDensityUi("comfortable").td).toContain("whitespace-normal");
     expect(tableDensityUi("compact").td).not.toContain("truncate");
+  });
+
+  it("o foco da linha e do botão de ordenar fica DENTRO da tabela (o recorte do cartão não corta)", () => {
+    expect(tableDensityUi("compact").tr).toContain("focus-visible:-outline-offset-2");
+    expect(tableDensityUi("comfortable").tr).toContain("focus-visible:-outline-offset-2");
+    expect(sortButtonClass("compact")).toBe("-ms-2 focus-visible:-outline-offset-3");
+    expect(sortButtonClass("comfortable")).toBe("-ms-2.5 focus-visible:-outline-offset-3");
   });
 
   it("o Exibir lista o que pode sumir, com o nome do cabeçalho", () => {
