@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from django.http import Http404
 from django.urls import path
-from django_eventstream.views import events as eventstream_view
+
+from shopman.shop.eventstream import events as eventstream_view
 
 app_name = "backstage"
 

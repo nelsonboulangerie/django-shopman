@@ -43,7 +43,7 @@ install: ## Instala deps + apps da suite em modo editável
 		"django-unfold>=0.107,<0.108" \
 		"daphne>=4.2,<5.0" \
 		"redis>=5.1,<8.0" \
-		"psycopg[binary]>=3.2,<4.0" \
+		"psycopg[binary,pool]>=3.2,<4.0" \
 		"python-dotenv>=1.0,<2.0" \
 		"pywebpush>=2.5,<3.0" \
 		"django-storages[s3]>=1.14,<2.0" \
