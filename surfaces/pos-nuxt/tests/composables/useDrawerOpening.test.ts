@@ -126,6 +126,34 @@ describe("useDrawerOpening — a gaveta aberta pelo tablet, com autoria", () => 
     expect(opening.pendingCash.value).toHaveLength(1);
   });
 
+  it("o servidor recusa a leitura do pulso: para na primeira recusa, sem repetir por 50 s", async () => {
+    // Alpha, 10/10/2026: o GET do pulso voltava 400 e a tela perguntava de novo a
+    // cada segundo até o prazo. Recusa do servidor (4xx) não muda na próxima volta.
+    vi.useFakeTimers();
+    tabletNetwork();
+    const pulseReads: string[] = [];
+    const actionCall = vi.fn((path: string) => {
+      if (path.includes("drawer-pulse")) {
+        pulseReads.push(path);
+        return Promise.reject({ status: 400, data: { detail: "Pulso não encontrado para esta gaveta." } });
+      }
+      return Promise.resolve({ ok: true, pulse: { ref: "abc", state: "sending", message: "" } });
+    });
+    const opening = make({ projection: { drawer_relay: RELAY }, actionCall });
+    await opening.afterCashSale({ orderRef: "1012", tabDisplay: "6", changeQ: 0 }, true);
+
+    const done = opening.open({ purpose: "sale", orderRef: "1012" });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await done).toBe(false);
+
+    expect(pulseReads).toHaveLength(1);
+    expect(opening.state.value).toBe("uncertain");
+    expect(opening.message.value).toMatch(/Pulso não encontrado/);
+    expect(opening.message.value).toMatch(/Confira a gaveta do Balcão/);
+    // O cartão fica, com a saída "Abri com a chave".
+    expect(opening.pendingCash.value).toHaveLength(1);
+  });
+
   it("sem rede, nem chega ao servidor e diz isso", async () => {
     tabletNetwork();
     const actionCall = vi.fn().mockRejectedValue({ status: 0 });
