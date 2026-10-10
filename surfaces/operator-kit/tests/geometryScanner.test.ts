@@ -129,4 +129,77 @@ describe("scanner geométrico", () => {
     expect(findings.some(({ kind }) => kind === "covered-by-chrome")).toBe(false);
     expect(document.elementFromPoint).not.toHaveBeenCalled();
   });
+
+  describe("rótulo que cabe (dono, 10/10/2026)", () => {
+    function setup() {
+      Object.defineProperty(globalThis, "innerWidth", { configurable: true, value: 1280 });
+      Object.defineProperty(globalThis, "innerHeight", { configurable: true, value: 800 });
+      Object.defineProperty(document.documentElement, "scrollWidth", { configurable: true, value: 1280 });
+      Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: 1280 });
+    }
+    function control(label: string, box: DOMRect, text: { scroll: number; client: number; rect?: DOMRect }) {
+      const button = document.createElement("button");
+      button.style.opacity = "1";
+      button.getBoundingClientRect = () => box;
+      const span = document.createElement("span");
+      span.style.opacity = "1";
+      span.textContent = label;
+      span.getBoundingClientRect = () => text.rect ?? box;
+      Object.defineProperty(span, "scrollWidth", { configurable: true, value: text.scroll });
+      Object.defineProperty(span, "clientWidth", { configurable: true, value: text.client });
+      button.append(span);
+      document.body.append(button);
+      return { button, span };
+    }
+
+    it("reprova rótulo cortado seco dentro do botão", async () => {
+      setup();
+      control("Enviar à cozinha", rect(10, 10, 60, 32), { scroll: 104, client: 40 });
+      const findings = await scanOperatorGeometry(page as never);
+      expect(findings.some(({ kind }) => kind === "control-text-overflow")).toBe(true);
+    });
+
+    it("reprova texto que passa da caixa do botão", async () => {
+      setup();
+      control("Enviar à cozinha", rect(10, 10, 60, 32), { scroll: 104, client: 104, rect: rect(10, 10, 104, 20) });
+      const findings = await scanOperatorGeometry(page as never);
+      expect(findings.find(({ kind }) => kind === "control-text-overflow")?.message).toContain("passa da caixa");
+    });
+
+    it("aceita reticência com o completo na dica, e reprova sem ela", async () => {
+      setup();
+      const { button, span } = control("Enviar à cozinha", rect(10, 10, 60, 32), { scroll: 104, client: 40 });
+      span.style.textOverflow = "ellipsis";
+      let findings = await scanOperatorGeometry(page as never);
+      expect(findings.find(({ kind }) => kind === "control-text-overflow")?.message).toContain("reticência");
+      button.title = "Enviar à cozinha";
+      findings = await scanOperatorGeometry(page as never);
+      expect(findings.some(({ kind }) => kind === "control-text-overflow")).toBe(false);
+    });
+
+    it("reprova controles sobrepostos", async () => {
+      setup();
+      control("Salvar", rect(10, 10, 80, 32), { scroll: 40, client: 40 });
+      control("Cancelar", rect(60, 10, 80, 32), { scroll: 50, client: 50 });
+      const findings = await scanOperatorGeometry(page as never);
+      expect(findings.some(({ kind }) => kind === "control-overlap")).toBe(true);
+    });
+
+    it("texto de peça fixa reserva as duas linhas e leva o completo quando corta", async () => {
+      setup();
+      const name = document.createElement("p");
+      name.className = "op-fixed-lines";
+      name.style.opacity = "1";
+      name.style.lineHeight = "20px";
+      name.textContent = "Croissant de manteiga francesa recheado com amêndoas";
+      name.getBoundingClientRect = () => rect(10, 10, 120, 20);
+      Object.defineProperty(name, "clientHeight", { configurable: true, value: 20 });
+      Object.defineProperty(name, "scrollHeight", { configurable: true, value: 60 });
+      document.body.append(name);
+      const findings = await scanOperatorGeometry(page as never);
+      const fixed = findings.filter(({ kind }) => kind === "fixed-text").map(({ message }) => message);
+      expect(fixed.some((message) => message.includes("reserva 2 linhas"))).toBe(true);
+      expect(fixed.some((message) => message.includes("cortado"))).toBe(true);
+    });
+  });
 });

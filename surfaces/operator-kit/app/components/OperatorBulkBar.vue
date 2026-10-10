@@ -16,9 +16,13 @@
 // `NuxtFieldGroup`, com o MESMO peso: todos `outline`, salvo a ação principal
 // (`primary`), uma só. Campo e botão na mesma altura (`md` na mesa, `lg` no toque).
 // Esc limpa a seleção (quando não há lista ou painel aberto).
-import { computed, ref } from "vue";
+import { computed, provide, ref } from "vue";
+
+import OperatorButton from "./OperatorButton.vue";
 
 import { useOperatorShortcutMap } from "../composables/useOperatorShortcutMap";
+import { actionFitVars } from "../presentation/actionLabel";
+import { OPERATOR_FIT_GROUP } from "../presentation/fitGroup";
 
 import {
   BULK_CLEAR_LABEL,
@@ -54,6 +58,12 @@ const label = computed(() => bulkSelectionLabel(props.count, props.scope, props.
 const groups = computed(() => bulkGroups(props.items));
 const size = computed<"md" | "lg">(() => (props.placement === "base" ? "lg" : "md"));
 const base = computed(() => props.placement === "base");
+
+// O rótulo que cabe (dono, 10/10/2026): a faixa das ações é o contêiner e todas trocam
+// juntas de degrau (completo, o curto que a ação escreveu, só o ícone), em vez de
+// quebrar a barra em duas linhas ou empurrar o × para fora.
+provide(OPERATOR_FIT_GROUP, true);
+const fitStyle = computed(() => actionFitVars(groups.value.flat(), { size: size.value }));
 
 function run(action: OperatorBulkAction, event: Event) {
   if (action.disabled || action.loading) return;
@@ -120,15 +130,19 @@ useOperatorShortcutMap(
       </div>
       <div
         v-if="groups.length"
-        :class="base ? 'flex flex-wrap items-center gap-2' : 'contents'"
+        class="op-fit-scope flex min-w-0 items-center gap-2"
+        :class="base ? 'w-full' : 'flex-1'"
+        :style="fitStyle"
         data-operator-bulk-actions
       >
         <template v-for="(group, index) in groups" :key="index">
           <NuxtFieldGroup v-if="group.length > 1" :size="size" data-operator-bulk-group>
-            <NuxtButton
+            <OperatorButton
               v-for="action in group"
               :key="action.label"
               :label="action.label"
+              :short-label="action.shortLabel"
+              :size="size"
               :icon="action.icon"
               :color="action.primary ? 'primary' : 'neutral'"
               :variant="action.primary ? 'solid' : 'outline'"
@@ -147,8 +161,9 @@ useOperatorShortcutMap(
               :content="{ align: 'center' }"
               @update:open="(open: boolean) => group[0]!.onUpdateOpen?.(open)"
             >
-              <NuxtButton
+              <OperatorButton
                 :label="group[0]!.label"
+                :short-label="group[0]!.shortLabel"
                 :icon="group[0]!.icon"
                 color="neutral"
                 variant="outline"
@@ -162,9 +177,10 @@ useOperatorShortcutMap(
                 <slot :name="group[0]!.panel" />
               </template>
             </NuxtPopover>
-            <NuxtButton
+            <OperatorButton
               v-else
               :label="group[0]!.label"
+              :short-label="group[0]!.shortLabel"
               :icon="group[0]!.icon"
               :color="group[0]!.primary ? 'primary' : 'neutral'"
               :variant="group[0]!.primary ? 'solid' : 'outline'"

@@ -896,6 +896,8 @@ onMounted(() => {
             </div>
           </section>
 
+          <OperatorKitchenSinkFit />
+
           <section
             id="matrix"
             class="space-y-4"
