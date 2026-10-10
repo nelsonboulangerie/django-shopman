@@ -327,9 +327,9 @@ function onSearchEscape() {
       <NuxtButton
         :size="coarsePointer ? 'xl' : 'md'"
         color="neutral"
-        variant="ghost"
+        variant="outline"
         active-color="primary"
-        active-variant="soft"
+        active-variant="solid"
         :active="hideUnavailable"
         class="shrink-0 whitespace-nowrap rounded-full"
         :aria-label="hideUnavailableActionLabel"

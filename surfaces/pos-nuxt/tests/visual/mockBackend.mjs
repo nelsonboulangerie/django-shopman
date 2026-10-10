@@ -149,6 +149,8 @@ function preorderList(params) {
 }
 
 const pos = {
+  // O dia da LOJA (`pos.delivery_today`): as Encomendas abrem nele, não no relógio do navegador.
+  delivery_today: TODAY,
   products: [],
   collections: [],
   payment_methods: [],

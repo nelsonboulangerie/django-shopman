@@ -531,7 +531,7 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
       props: props({ discountTypes: [{ ref: "percent", label: "Percentual" }] }),
     });
     const semAjuste = desligado.find('section[aria-label="Ajustes da conta"]');
-    expect(semAjuste.find(".border-primary").exists()).toBe(false);
+    expect(semAjuste.find("[class*='ring-primary']").exists()).toBe(false);
     expect(semAjuste.text()).toContain("F9");
 
     const ligado = await mountSuspended(PosPaymentWorkspace, {
@@ -1286,7 +1286,8 @@ describe("PosPaymentWorkspace — o link cobra a venda inteira", () => {
       props: props({ discountTypes: [{ ref: "percent", label: "%" }], splitCount: 3 }),
     });
     expect(gatilho(armado).attributes("aria-pressed")).toBe("true");
-    expect(gatilho(armado).classes()).toContain("border-primary");
+    // Ligado, o gatilho é o `outline` primário do conjunto mínimo (anel primário).
+    expect(gatilho(armado).classes().join(" ")).toMatch(/\bring-primary/);
     expect(gatilho(armado).text()).toContain("3");
   });
 

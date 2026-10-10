@@ -44,7 +44,7 @@ async function refreshScreen() {
 </script>
 
 <template>
-  <PosSettingsShell title="Terminal" subtitle="saúde do balcão e dos periféricos">
+  <PosSettingsShell title="Terminal" subtitle="saúde do balcão e dos periféricos" :refresh="refreshScreen">
     <section v-if="pos" class="rounded-xl border border-border bg-card" data-settings-terminal>
       <header class="flex items-center gap-3 border-b border-border p-4">
         <span class="grid size-11 place-items-center rounded-lg bg-secondary">

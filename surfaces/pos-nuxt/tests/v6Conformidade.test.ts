@@ -88,7 +88,7 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
   it("no toque, um instrumento só: caixa grande, numérico e a coluna com Pronto", () => {
     expect(cart).toContain("data-pos-touch-editor");
     expect(cart).toContain("(era {{ qtyWas }})");
-    expect(cart).toMatch(/Pronto<\/button>/);
+    expect(cart).toMatch(/>Pronto<\/NuxtButton>/);
   });
   it("com itens a enviar, a folha fechada promove 'Enviar à cozinha'; aberta, PIX e Maquininha", () => {
     // A folha fechada é a barra da ação do momento do kit; a primária é o envio
@@ -155,5 +155,49 @@ describe("P39: pinça para zoom na planta", () => {
   it("a planta escuta dois dedos e a página aplica o zoom", () => {
     expect(read("../app/components/PosSeatingPlan.vue")).toContain('emit("pinch"');
     expect(read("../app/pages/settings/seating.vue")).toContain('@pinch="onPinch"');
+  });
+});
+
+// Limpeza final da fase 2 no PDV: cada item que pode voltar tem a trava pela fonte.
+describe("Fase 2, limpeza do PDV", () => {
+  const sources = () =>
+    ["PosCartPanel", "PosTabHeader", "PosPaymentWorkspace", "PosTabPickerDialog", "PosFulfillmentModal", "PosTabBoard"]
+      .map((name) => [name, read(`../app/components/${name}.vue`)] as const);
+  it("nenhum <button> cru: o botão é o NuxtButton do conjunto mínimo", () => {
+    for (const [name, source] of sources()) {
+      const template = source.slice(source.indexOf("<template>")).replace(/<!--[\s\S]*?-->/g, "");
+      expect(template, name).not.toMatch(/<button[\s>]/);
+    }
+  });
+  it("os campos de cédula do Fim do dia têm a altura dos botões md (32 px)", () => {
+    const counter = read("../app/components/PosDenominationCounter.vue");
+    expect(counter).not.toContain('class="h-12 w-full');
+    expect(counter).toContain('class="h-8 w-full');
+  });
+  it("no celular o Sair do Fim do dia mora na linha do título", () => {
+    const page = read("../app/pages/session/closing.vue");
+    expect(page).toContain("#phone-actions");
+    expect(page).toContain('v-if="!phoneHeader" #actions');
+  });
+  it("gaveta vazia pede a confirmação com o nome dela", () => {
+    expect(read("../app/pages/session/closing.vue")).toContain("Confirmar gaveta vazia?");
+  });
+  it("o Atualizar dos Ajustes relê os Ajustes, não o terminal", () => {
+    const shell = read("../app/components/PosSettingsShell.vue");
+    expect(shell).toContain('refreshNuxtData("pos-settings")');
+    expect(shell).not.toContain("onSelect: () => void refreshPos()");
+  });
+  it("as Encomendas partem do dia da loja, não do relógio do dispositivo", () => {
+    const page = read("../app/pages/preorders/index.vue");
+    expect(page).toContain("pos.value?.delivery_today");
+    expect(page).not.toContain("parseView(route.query, today)");
+  });
+  it("grade/lista: o ligado é solid", () => {
+    const page = read("../app/pages/preorders/index.vue");
+    const toggle = page.slice(page.indexOf("data-preorders-layout"), page.indexOf("data-preorders-layout-option"));
+    expect(toggle).toContain('active-variant="solid"');
+    const board = read("../app/components/PosTabBoard.vue");
+    expect(board).not.toContain(":class=\"tabView === 'grid' ? 'border-primary bg-primary/5' : ''\"");
+    expect(board.match(/active-variant="solid"/g)).toHaveLength(4);
   });
 });
