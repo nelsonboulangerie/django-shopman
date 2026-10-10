@@ -478,6 +478,34 @@ _DB_URL = os.environ.get("DATABASE_URL", "").strip()
 if _DB_URL:
     _parsed = _urlparse.urlparse(_DB_URL)
     _conn_max_age = int(os.environ.get("DATABASE_CONN_MAX_AGE", "60"))
+    # Reuso de conexão sob ASGI: pool do psycopg, um por processo.
+    #
+    # Sob Daphne cada request roda numa thread nova, então `CONN_MAX_AGE > 0` não
+    # reaproveita nada: só deixa backend ocioso até o GC (bancada de 01/10, D21). Por
+    # isso o deploy roda com `DATABASE_CONN_MAX_AGE=0`, e cada request pagava uma
+    # conexão nova (no ar, 30 a 160 ms de TLS até o PgBouncer). O pool resolve as
+    # duas coisas: as conexões são do PROCESSO, não da thread, e voltam ao pool no
+    # fim de cada request (e depois de cada leitura do SSE, ver shop/eventstream.py).
+    #
+    # Liga sozinho quando `CONN_MAX_AGE` é 0 (o Django recusa os dois juntos);
+    # `DATABASE_POOL_MAX_SIZE=0` desliga sem deploy de código. Compatível com o
+    # PgBouncer em modo transaction: o Django já desliga prepared statements
+    # (`prepare_threshold=None`) e usa cursor de binding no cliente, e o deploy
+    # mantém `DATABASE_DISABLE_SERVER_SIDE_CURSORS=true`. Quem conta conexão de
+    # servidor é o PgBouncer (pool de 5); daqui saem só conexões de cliente até ele.
+    # O teto por processo fica abaixo do `max_connections` (25) do banco também no
+    # caso de alguém apontar `DATABASE_URL` para a conexão direta.
+    _pool_max_size = int(os.environ.get("DATABASE_POOL_MAX_SIZE", "8"))
+    _db_options: dict = {}
+    if _conn_max_age == 0 and _pool_max_size > 0:
+        _db_options["pool"] = {
+            "min_size": min(int(os.environ.get("DATABASE_POOL_MIN_SIZE", "1")), _pool_max_size),
+            "max_size": _pool_max_size,
+            # Espera por conexão livre antes de falhar o request (PoolTimeout).
+            "timeout": float(os.environ.get("DATABASE_POOL_TIMEOUT", "10")),
+            # Conexão parada sai do pool: não segura cliente no PgBouncer à toa.
+            "max_idle": float(os.environ.get("DATABASE_POOL_MAX_IDLE", "300")),
+        }
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -489,6 +517,7 @@ if _DB_URL:
             "CONN_MAX_AGE": _conn_max_age,
             "CONN_HEALTH_CHECKS": _env_bool("DATABASE_CONN_HEALTH_CHECKS", True),
             "DISABLE_SERVER_SIDE_CURSORS": _env_bool("DATABASE_DISABLE_SERVER_SIDE_CURSORS", False),
+            "OPTIONS": _db_options,
         }
     }
 else:

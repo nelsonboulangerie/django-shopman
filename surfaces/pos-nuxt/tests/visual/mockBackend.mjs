@@ -224,6 +224,28 @@ if (SALE) {
     ],
   });
 }
+// `MOCK_DIRECT=1`: o balcão vende SEM comanda (venda de balcão direta) e recebe
+// na maquininha. É o cenário da venda sem conexão (WP-PDV-SEM-CONEXAO): só a venda
+// direta segue sem rede. Sem a variável, nada muda nos retratos.
+const DIRECT = SALE && process.env.MOCK_DIRECT === "1";
+if (DIRECT) {
+  pos.checkout.capabilities.tab_lifecycle = { requires_open_tab_for_cart: false, requires_tab_before_save: false };
+  pos.payment_methods = [
+    { ref: "cash", label: "Dinheiro" },
+    { ref: "pix", label: "Pix" },
+    { ref: "credit", label: "Crédito" },
+    { ref: "debit", label: "Débito" },
+  ];
+  pos.payment_collections = [
+    { ref: "terminal", label: "No caixa", description: "", fulfillment_types: ["pickup", "delivery"], payment_method_refs: ["cash", "pix", "credit", "debit"] },
+  ];
+}
+// Os fechamentos recebidos, para o e2e conferir o que a fila reenviou
+// (`GET /__mock/closes`). A chave é o `client_request_id`: repetir devolve o
+// mesmo pedido, como o servidor de verdade.
+const CLOSES = [];
+const ORDER_BY_KEY = new Map();
+
 // O caixa do cenário da venda: turno aberto, que audita, com uma pendência de cada
 // natureza, para a Sessão de caixa, o Fim do dia e o Relatório terem o que mostrar.
 // `MOCK_DAY_CLOSED=1` serve o dia já fechado (o quadro do dia, com as tabelas).
@@ -509,6 +531,10 @@ createServer((req, res) => {
   const url = new URL(req.url || "/", `http://127.0.0.1:${port}`);
   const path = url.pathname;
 
+  if (path === "/__mock/closes") {
+    send(res, 200, { closes: CLOSES });
+    return;
+  }
   if (path === "/api/v1/backstage/operator/session/") {
     send(res, 200, {
       station: "CAIXA-1",
@@ -562,7 +588,11 @@ createServer((req, res) => {
       void readBody(req).then((body) => {
         if (process.env.MOCK_CLOSE === "uncertain") return send(res, 200, {});
         SAVED_ITEMS.delete(body?.tab_ref || "");
-        send(res, 200, { ok: true, order_ref: "NB-2001", tab_ref: body?.tab_ref || "12", fiscal_expected: false });
+        CLOSES.push(body);
+        const key = String(body?.client_request_id || "");
+        if (key && !ORDER_BY_KEY.has(key)) ORDER_BY_KEY.set(key, `NB-${2001 + ORDER_BY_KEY.size}`);
+        const orderRef = ORDER_BY_KEY.get(key) || "NB-2001";
+        send(res, 200, { ok: true, order_ref: orderRef, tab_ref: body?.tab_ref || "12", fiscal_expected: false });
       });
       return;
     }

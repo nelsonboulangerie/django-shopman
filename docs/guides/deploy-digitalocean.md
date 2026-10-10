@@ -125,6 +125,29 @@ zero). No Postgres pequeno sem pool isso vira `remaining connection slots are
 reserved`. Aplicado no spec vivo em 01/10/2026 (decisão D21). Com pool em modo
 transaction, mantenha `DATABASE_DISABLE_SERVER_SIDE_CURSORS=true`.
 
+**Reuso de conexão: pool do psycopg, um por processo.** Com `DATABASE_CONN_MAX_AGE=0`
+o `config/settings.py` liga o pool do psycopg (`OPTIONS["pool"]`): as conexões são do
+processo, não da thread, e voltam ao pool no fim de cada request. Antes dele, cada
+request abria conexão nova (no ar, 30 a 160 ms de TLS até o PgBouncer). Bancada local
+de 10/10 (Daphne, Postgres sem TLS, 200 requests): `/health/ready/` 9,0 → 2,6 ms e
+`/api/v1/storefront/menu/` 56 → 35 ms de média, 1 → 0 sessão nova por request.
+
+| Env | Default | Para quê |
+|---|---|---|
+| `DATABASE_POOL_MAX_SIZE` | `8` | teto de conexões por processo; `0` desliga o pool sem deploy de código |
+| `DATABASE_POOL_MIN_SIZE` | `1` | conexões mantidas abertas |
+| `DATABASE_POOL_TIMEOUT` | `10` | segundos esperando conexão livre antes do `PoolTimeout` |
+| `DATABASE_POOL_MAX_IDLE` | `300` | segundos até fechar conexão parada |
+
+Funciona com o PgBouncer em modo transaction porque o Django já desliga prepared
+statements (`prepare_threshold=None`) e usa binding no cliente. O pool não cria sessão
+SET nenhuma, então não muda o risco do `search_path` abaixo. As conexões de servidor
+continuam limitadas pelo PgBouncer (pool de 5); daqui saem só conexões de cliente.
+
+O SSE devolve a conexão depois de cada leitura (`shopman/shop/eventstream.py`). Sem
+isso, cada `EventSource` aberto segurava uma conexão a vida inteira, e com pool isso
+esgota o pool: na bancada, 8 streams levaram as 8 conexões e o 9º cliente caiu.
+
 O pool é só para a aplicação. **Cópia do banco (`pg_dump`/`pg_restore`) vai pela
 conexão direta** (porta `25060`, banco `shopman`), nunca pelo pool (`25061`): em modo
 transaction o `pg_dump` deixa `search_path=''` numa conexão de servidor que o próximo

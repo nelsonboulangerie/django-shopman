@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from django.urls import path
-from django_eventstream.views import events as eventstream_view
+
+from shopman.shop.eventstream import events as eventstream_view
 
 from . import views
 from .account import (

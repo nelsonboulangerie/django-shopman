@@ -231,7 +231,9 @@ function badgeTone(tone: KitchenBadgeView["tone"]): string {
 // revisão, o lugar do número diz "Calculando…" (ou "Não calculado", quando ela
 // falhou; o Pagamento diz o motivo e oferece "Tentar de novo").
 const totalText = computed(() => saleTotalText(props.total));
-const totalConfirmed = computed(() => props.total.status === "confirmed");
+// Sem conexão o número aparece (a venda de balcão segue), com o rótulo dizendo de
+// onde ele veio: é a soma da tela pela última leitura de preços.
+const totalConfirmed = computed(() => props.total.status === "confirmed" || props.total.status === "offline");
 const totalShown = computed(() => props.total.status !== "hidden");
 
 /** O selo do desconto que venceu a linha. Usa `reasonOptions`, que normaliza a
@@ -1754,7 +1756,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           <OperatorKbd v-if="!coarsePointer" variant="inverse" class="hidden @min-[24rem]:inline-flex" aria-hidden="true">F4</OperatorKbd>
           <span class="flex-1" />
           <span v-if="totalShown" class="ml-auto flex shrink-0 flex-col items-end leading-none" data-pos-primary-total :data-total-state="total.status">
-            <span class="op-micro opacity-80">total</span>
+            <span class="op-micro opacity-80 whitespace-nowrap">{{ total.status === "offline" ? "total sem conexão" : "total" }}</span>
             <span v-if="totalConfirmed" class="text-2xl leading-8 font-semibold whitespace-nowrap tnum @min-[24rem]:text-3xl" data-pos-primary-total-value>{{ totalText }}</span>
             <span v-else class="text-base leading-8 font-medium whitespace-nowrap opacity-80">{{ totalText }}</span>
           </span>
