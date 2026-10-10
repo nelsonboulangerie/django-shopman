@@ -21,13 +21,15 @@ const props = withDefaults(
     short?: string;
     /** Abaixo do degrau curto o botão fica só com o ícone. `false` mantém o curto. */
     iconOnly?: boolean;
-    /** O degrau do contêiner: sm (20/14 rem), md (24/18 rem), lg (28/20 rem). */
-    step?: "sm" | "md" | "lg";
+    /** O degrau do contêiner: cell (11,5/6 rem, a célula da grade da comanda), sm
+     *  (20/14 rem), md (24/18 rem), lg (28/20 rem). */
+    step?: "cell" | "sm" | "md" | "lg";
   }>(),
   { short: "", iconOnly: true, step: "md" },
 );
 
 const STEPS = {
+  cell: { full: "hidden @min-[11.5rem]:inline", short: "hidden @min-[6rem]:inline @min-[11.5rem]:hidden", shortOnly: "inline @min-[11.5rem]:hidden" },
   sm: { full: "hidden @min-[20rem]:inline", short: "hidden @min-[14rem]:inline @min-[20rem]:hidden", shortOnly: "inline @min-[20rem]:hidden" },
   md: { full: "hidden @min-[24rem]:inline", short: "hidden @min-[18rem]:inline @min-[24rem]:hidden", shortOnly: "inline @min-[24rem]:hidden" },
   lg: { full: "hidden @min-[28rem]:inline", short: "hidden @min-[20rem]:inline @min-[28rem]:hidden", shortOnly: "inline @min-[28rem]:hidden" },

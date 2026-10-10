@@ -20,20 +20,44 @@ interface Problem {
   detail: string;
 }
 
-/** Abre a comanda cheia (13) e deixa uma linha em edição. */
-async function openFullTab(page: Page, size: { width: number; height: number }, scheme: "light" | "dark", layout: "a" | "b" = "a") {
+// A largura da coluna da comanda é ajustável (DashboardSidebar do Nuxt UI, em rem,
+// gravada no cookie `pos-sale-sidebar-ticket`): a trava cobre o padrão, o mínimo e o
+// máximo. Os números são os de `pages/index.vue` (TICKET_*_REM).
+const TICKET_REM = { min: 22, default: 25, max: 32 } as const;
+type TicketWidth = keyof typeof TICKET_REM;
+
+/** Abre a comanda cheia (13) e, por padrão, deixa uma linha em edição. */
+async function openFullTab(
+  page: Page,
+  size: { width: number; height: number },
+  scheme: "light" | "dark",
+  width: TicketWidth = "default",
+  selectLine = true,
+) {
   await page.setViewportSize(size);
+  if (width !== "default") {
+    await page.context().addCookies([{
+      name: "pos-sale-sidebar-ticket",
+      value: encodeURIComponent(JSON.stringify({ size: TICKET_REM[width], collapsed: false })),
+      url: `http://127.0.0.1:${process.env.POS_GEOMETRY_PORT || 33032}`,
+    }]);
+  }
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: scheme });
   // O PDV é claro por preferência (`colorMode.preference`), não pelo sistema: o escuro
   // é o toggle, guardado no dispositivo.
   await page.addInitScript((mode) => window.localStorage.setItem("pos-nuxt-color-mode", mode), scheme);
-  // `?acoes=`: as duas arrumações das ações em prévia (PR #1636); as duas cabem.
-  await page.goto(`/?acoes=${layout}`);
+  await page.goto("/");
   await page.getByRole("button", { name: /#13/ }).first().click();
-  const rows = page.locator("aside[data-pos-ticket] [data-item-select]");
+  const rows = page.locator("[data-pos-ticket-column] [data-item-select]");
   await expect(rows).toHaveCount(9);
-  await rows.nth(4).click();
-  await expect(page.locator("[data-pos-line-editor]")).toBeVisible();
+  if (selectLine) {
+    await rows.nth(4).click();
+    await expect(page.locator("[data-pos-line-editor]")).toBeVisible();
+  } else if (await page.locator("[data-pos-line-editor-close]").isVisible()) {
+    // Sem linha aberta: o editor fechado (×, Esc), só a lista e as ações da comanda.
+    await page.locator("[data-pos-line-editor-close]").click();
+    await expect(page.locator("[data-pos-line-editor]")).toHaveCount(0);
+  }
   await page.evaluate(() => document.fonts.ready);
 }
 
@@ -125,13 +149,18 @@ async function scan(page: Page, regions: string[]): Promise<Problem[]> {
   }, regions);
 }
 
-for (const layout of ["a", "b"] as const) {
-for (const scheme of ["light", "dark"] as const) {
-  for (const size of SIZES) {
-    test(`venda ${size.width}x${size.height} (${scheme}, ações ${layout.toUpperCase()}): comanda de altura inteira, nada corta, nada se sobrepõe`, async ({ page }) => {
-      await openFullTab(page, size, scheme, layout);
-      const aside = page.locator("aside[data-pos-ticket]");
+const CASES = [
+  ...(["light", "dark"] as const).flatMap((scheme) => SIZES.map((size) => ({ scheme, size, width: "default" as TicketWidth }))),
+  ...(["min", "max"] as const).flatMap((width) => SIZES.map((size) => ({ scheme: "light" as const, size, width }))),
+];
+for (const { scheme, size, width } of CASES) {
+  {
+    test(`venda ${size.width}x${size.height} (${scheme}, coluna ${width}): comanda de altura inteira, nada corta, nada se sobrepõe`, async ({ page }) => {
+      await openFullTab(page, size, scheme, width);
+      const aside = page.locator("[data-pos-ticket-column]");
       const box = (await aside.boundingBox())!;
+      // A largura é a escolhida (rem × 16 px), dentro do mínimo e do máximo.
+      expect(Math.abs(box.width - TICKET_REM[width] * 16)).toBeLessThanOrEqual(1);
       // De cima a baixo, como a barra lateral; o cabeçalho mora só à esquerda dela.
       expect(box.y).toBeLessThanOrEqual(1);
       expect(box.y + box.height).toBeGreaterThanOrEqual(size.height - 1);
@@ -153,21 +182,68 @@ for (const scheme of ["light", "dark"] as const) {
       expect(totalFits).toBe(true);
 
       // O nome da casa quebra a linha; o comprido ocupa mais de uma.
-      const croque = page.locator("aside [data-pos-line-name]").first();
+      const croque = page.locator("[data-pos-ticket-column] [data-pos-line-name]").first();
       await expect(croque).toHaveText("Croque Monsieur com salada verde e molho de mostarda Dijon");
 
-      expect(await scan(page, ["aside[data-pos-ticket]", "[data-pos-context-header] > [data-operator-page-header]", "[data-pos-sale-bar]"])).toEqual([]);
+      expect(await scan(page, ["[data-pos-ticket-column]", "[data-pos-context-header] > [data-operator-page-header]", "[data-pos-sale-bar]"])).toEqual([]);
+
+      // A grade de controles: duas colunas de MESMA largura, bordas batendo, e o
+      // Pagamento com a largura da grade inteira.
+      const grid = await page.evaluate(() => {
+        const cells = [...document.querySelectorAll<HTMLElement>("[data-pos-ticket-controls] > [data-pos-control-cell]")].map((el) => el.getBoundingClientRect());
+        const pay = document.querySelector("[data-pos-primary]")!.getBoundingClientRect();
+        const lefts = [...new Set(cells.map((r) => Math.round(r.left)))].sort((a, b) => a - b);
+        const rights = [...new Set(cells.map((r) => Math.round(r.right)))].sort((a, b) => a - b);
+        const halves = cells.filter((r) => r.width < pay.width / 2 + 1).map((r) => Math.round(r.width));
+        return { lefts, rights, halves: [...new Set(halves)], payLeft: Math.round(pay.left), payRight: Math.round(pay.right), count: cells.length };
+      });
+      expect(grid.count).toBe(6);
+      expect(grid.lefts.length).toBe(2);
+      expect(grid.rights.length).toBe(2);
+      expect(grid.halves.length).toBe(1);
+      expect(grid.lefts[0]).toBe(grid.payLeft);
+      expect(grid.rights[1]).toBe(grid.payRight);
 
       // Seleção (Alt S): a barra do lote também cabe.
       await page.locator("[data-pos-select-lines]").click();
-      await page.locator("aside [data-item-select]").nth(1).click();
-      await page.locator("aside [data-item-select]").nth(2).click();
+      await page.locator("[data-pos-ticket-column] [data-item-select]").nth(1).click();
+      await page.locator("[data-pos-ticket-column] [data-item-select]").nth(2).click();
       await expect(page.locator("[data-pos-selection-bar]")).toContainText("2 selecionadas");
-      expect(await scan(page, ["aside[data-pos-ticket]"])).toEqual([]);
+      expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
     });
   }
 }
+
+for (const size of SIZES) {
+  test(`venda ${size.width}x${size.height} sem linha aberta: só as ações da comanda, sem buraco`, async ({ page }) => {
+    await openFullTab(page, size, "light", "min", false);
+    const cells = page.locator("[data-pos-ticket-controls] > [data-pos-control-cell]");
+    await expect(cells).toHaveCount(2);
+    await expect(page.locator("[data-pos-control-cell='fire']")).toBeVisible();
+    await expect(page.locator("[data-pos-control-cell='split']")).toBeVisible();
+    expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
+  });
 }
+
+test("a alça do Nuxt UI ajusta a largura entre o mínimo e o máximo", async ({ page }) => {
+  await openFullTab(page, { width: 1366, height: 768 }, "light", "default", false);
+  const column = page.locator("[data-pos-ticket-column]");
+  const handle = page.locator("[data-pos-sale-layout] [data-slot='handle']");
+  const start = (await column.boundingBox())!;
+  const grip = (await handle.boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x - 600, grip.y + grip.height / 2, { steps: 8 });
+  await page.mouse.up();
+  expect(Math.abs((await column.boundingBox())!.width - TICKET_REM.max * 16)).toBeLessThanOrEqual(1);
+  const now = (await handle.boundingBox())!;
+  await page.mouse.move(now.x + now.width / 2, now.y + now.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(now.x + 800, now.y + now.height / 2, { steps: 8 });
+  await page.mouse.up();
+  expect(Math.abs((await column.boundingBox())!.width - TICKET_REM.min * 16)).toBeLessThanOrEqual(1);
+  expect(start.width).toBeGreaterThan(0);
+});
 
 test("cartões de produto: a mesma altura com nome de 1, 2 ou 3+ linhas", async ({ page }) => {
   for (const size of SIZES) {

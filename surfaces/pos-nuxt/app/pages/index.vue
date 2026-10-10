@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { tabTitleView } from "~/presentation/tabTitle";
 import { toast } from "vue-sonner";
+import { createReusableTemplate } from "@vueuse/core";
 
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
@@ -29,6 +30,14 @@ const liveStatus = usePosLiveStatus();
 // folha de baixo. Do desktop (1024px) para cima ela segue como coluna. A régua é a do
 // kit (`useScreen`, segura para o SSR): até a hidratação, mesa; depois, a largura real.
 const { belowLg: ticketAsSheet } = useScreen();
+// A COLUNA DA COMANDA (dono, 10/10): largura ajustável pela alça do Nuxt UI, em rem.
+// O mínimo é o menor em que a grade de ações e o Pagamento cabem sem cortar; o
+// máximo deixa a área de produtos com espaço para a barra da venda em 1280.
+const TICKET_MIN_REM = 22;
+const TICKET_DEFAULT_REM = 25;
+const TICKET_MAX_REM = 32;
+// A comanda é a mesma na coluna da mesa e na folha de baixo: um molde só.
+const [DefineTicketPanel, ReuseTicketPanel] = createReusableTemplate();
 
 const apiPath = useApiPath();
 const action = usePosAction();
@@ -668,6 +677,14 @@ async function payOnSheet(method: string) {
   const letter = QUICK_PAYMENT_KEYS[method];
   if (letter) paymentWorkspaceRef.value?.pressMethodKey(letter);
 }
+// DIVIDIR A CONTA a partir da comanda (dono, 10/10): o mesmo modal do Pagamento
+// (decisão de 05/09: dividir é modal), aberto já no Pagamento, com o total da revisão.
+async function splitFromTicket() {
+  await prepareCheckout();
+  if (!checkoutMode.value) return;
+  await nextTick();
+  paymentWorkspaceRef.value?.openSplit();
+}
 // ENVIO AUTOMÁTICO (opcional por estação, desligado por padrão; dono, plano §13
 // item 3): a linha nova de uma estação com o interruptor ligado vai sozinha quando
 // o operador sai da comanda ou ela fica parada. Nunca no meio do lançamento, nunca
@@ -1192,7 +1209,16 @@ onBeforeUnmount(() => {
          coluna da direita vai de cima a baixo como a barra lateral, e o cabeçalho, a
          barra da venda e os filtros moram só na largura entre as duas. Abaixo do `lg`
          a comanda é a folha de baixo e o cabeçalho volta a ser a primeira faixa. -->
-    <div class="flex min-h-0 flex-1 max-lg:flex-col" data-pos-sale-layout>
+    <!-- O grupo da Venda (Nuxt UI): a coluna da comanda é um `DashboardSidebar` do lado
+         direito, com a largura AJUSTÁVEL pela alça da própria primitiva (mín. e máx.
+         em rem, gravada no cookie `pos-sale-sidebar-ticket`; dois cliques voltam ao
+         padrão). Grupo próprio, para a largura não se misturar com a do rail. -->
+    <NuxtDashboardGroup
+      storage-key="pos-sale"
+      unit="rem"
+      class="relative inset-auto flex min-h-0 flex-1 max-lg:flex-col"
+      data-pos-sale-layout
+    >
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-pos-work-column>
       <OperatorPageHeader
         v-if="pos"
@@ -1561,55 +1587,73 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- TICKET / COMANDA — full-height right flank (cart-direita, reaches the top
-         edge alongside the rail; on mobile it wraps below the product grid). -->
-    <aside
-      v-if="pos && inSaleView && !checkoutMode && !orderSetupPending"
-      class="relative z-30 flex shrink-0 flex-col lg:h-full lg:w-[360px] lg:border-l lg:border-border lg:bg-card xl:w-[400px]"
-      data-pos-ticket
-    >
-        <div class="min-h-0 flex-1 md:overflow-hidden">
-          <PosCartPanel
-            :sheet="ticketAsSheet"
-            :tab-title="hasOpenTab ? tabTitleView(cart.tabDisplay, cart.tabNumber).title : ''"
-            :kitchen-stations="kitchenStations"
-            :quick-payments="quickPayments"
-            :auto-fire="autoFireOn"
-            :items="cart.items"
-            :total="saleTotal"
-            :requires-tab="tabRequiredForCart"
-            :has-open-tab="hasOpenTab"
-            :loading="busy"
-            :saving="saving"
-            :fire-action="fireAction"
-            :unfire-action="unfireAction"
-            :firing="firing"
-            :discount-reasons="checkoutContract?.discount_reasons || []"
-            :line-adjustments-blocked-reason="editing ? ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED : undefined"
-            :primary-label="editing ? 'Salvar alterações' : undefined"
-            :primary-icon="editing ? 'lucide:save' : undefined"
-            :hide-move="editing"
-            @increment="(lineId) => setQty(lineId, lineQty(lineId) + 1)"
-            @decrement="(lineId) => setQty(lineId, lineQty(lineId) - 1)"
-            @remove="(lineId) => setQty(lineId, 0)"
-            @restore="restoreItem"
-            @set-qty="(lineId, qty) => setQty(lineId, qty)"
-            @set-notes="setLineNotes"
-            @set-discount="setLineDiscount"
-            @prepare="editing ? saveOrderEdit() : prepareCheckout()"
-            @move="openMoveWith"
-            @fire="fireTab"
-            @pay="payOnSheet"
-            @auto-fire-settings="navigateTo('/settings/kitchen')"
-            @unfire="unfireTab"
-            @fire-lines="(ids, complete) => fireTab(ids).then(complete)"
-            @unfire-lines="(ids, complete) => unfireSelected(ids).then(complete)"
-            @request-tab="requestTabAssociation('start')"
-          />
+    <!-- COMANDA: na mesa, a coluna inteira da direita (de cima a baixo, como o rail),
+         com a largura ajustável; abaixo do `lg` é a folha de baixo (o próprio
+         `PosCartPanel` em modo folha), sem coluna. -->
+    <template v-if="pos && inSaleView && !checkoutMode && !orderSetupPending">
+      <DefineTicketPanel>
+        <div class="flex min-h-0 flex-1 flex-col md:overflow-hidden">
+            <PosCartPanel
+              :sheet="ticketAsSheet"
+              :tab-title="hasOpenTab ? tabTitleView(cart.tabDisplay, cart.tabNumber).title : ''"
+              :kitchen-stations="kitchenStations"
+              :quick-payments="quickPayments"
+              :auto-fire="autoFireOn"
+              :items="cart.items"
+              :total="saleTotal"
+              :requires-tab="tabRequiredForCart"
+              :has-open-tab="hasOpenTab"
+              :loading="busy"
+              :saving="saving"
+              :fire-action="fireAction"
+              :unfire-action="unfireAction"
+              :firing="firing"
+              :discount-reasons="checkoutContract?.discount_reasons || []"
+              :line-adjustments-blocked-reason="editing ? ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED : undefined"
+              :primary-label="editing ? 'Salvar alterações' : undefined"
+              :primary-icon="editing ? 'lucide:save' : undefined"
+              :hide-move="editing"
+              @increment="(lineId) => setQty(lineId, lineQty(lineId) + 1)"
+              @decrement="(lineId) => setQty(lineId, lineQty(lineId) - 1)"
+              @remove="(lineId) => setQty(lineId, 0)"
+              @restore="restoreItem"
+              @set-qty="(lineId, qty) => setQty(lineId, qty)"
+              @set-notes="setLineNotes"
+              @set-discount="setLineDiscount"
+              @prepare="editing ? saveOrderEdit() : prepareCheckout()"
+              @move="openMoveWith"
+              @fire="fireTab"
+              @pay="payOnSheet"
+              @split="splitFromTicket"
+              @auto-fire-settings="navigateTo('/settings/kitchen')"
+              @unfire="unfireTab"
+              @fire-lines="(ids, complete) => fireTab(ids).then(complete)"
+              @unfire-lines="(ids, complete) => unfireSelected(ids).then(complete)"
+              @request-tab="requestTabAssociation('start')"
+            />
         </div>
-    </aside>
+      </DefineTicketPanel>
+      <NuxtDashboardSidebar
+        v-if="!ticketAsSheet"
+        id="ticket"
+        side="right"
+        resizable
+        :min-size="TICKET_MIN_REM"
+        :max-size="TICKET_MAX_REM"
+        :default-size="TICKET_DEFAULT_REM"
+        :toggle="false"
+        :open="false"
+        :ui="{ root: 'h-full min-h-0 border-s border-default bg-card', body: 'gap-0 overflow-hidden p-0', handle: 'z-40' }"
+        data-pos-ticket-column
+      >
+        <ReuseTicketPanel />
+      </NuxtDashboardSidebar>
+      <aside v-else class="relative z-30 flex shrink-0 flex-col" data-pos-ticket-column>
+        <ReuseTicketPanel />
+      </aside>
+    </template>
 
-    </div>
+    </NuxtDashboardGroup>
 
     <!-- RECEBIMENTO na tela de venda. É fato do PEDIDO, não do pagamento:
          entrega acrescenta taxa e depende de endereço, e perguntar isso só no

@@ -830,7 +830,7 @@ describe("PosCartPanel — sem desconto nem observação de item quando não gra
     const modos = wrapper.findAll("button").map((b) => b.text().trim());
     expect(wrapper.find('[aria-label="Quantidade de Café"]').exists()).toBe(true);
     expect(modos.some((m) => m.startsWith("Desconto"))).toBe(false);
-    expect(modos).not.toContain("Observação");
+    expect(wrapper.find("[data-pos-line-note]").exists()).toBe(false);
     expect(wrapper.find("[data-line-adjustments-blocked]").text()).toContain(REASON);
   });
 
@@ -839,7 +839,7 @@ describe("PosCartPanel — sem desconto nem observação de item quando não gra
       props: props({ lineAdjustmentsBlockedReason: REASON }),
     });
     await wrapper.find('[aria-label="Editar Café"]').trigger("click");
-    expect(wrapper.findAll("button").map((b) => b.text().trim())).not.toContain("Observação");
+    expect(wrapper.find("[data-pos-line-note]").exists()).toBe(false);
   });
 
   it("marcar itens não vira desconto em lote", async () => {
@@ -859,8 +859,8 @@ describe("PosCartPanel — sem desconto nem observação de item quando não gra
 
   it("sem o motivo, a venda segue com os modos de sempre", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    const modos = wrapper.findAll("button").map((b) => b.text().trim());
-    expect(modos).toEqual(expect.arrayContaining(["Desconto", "Observação"]));
+    expect(wrapper.find("[data-pos-line-discount]").exists()).toBe(true);
+    expect(wrapper.find("[data-pos-line-note]").exists()).toBe(true);
     await openDiscount(wrapper);
     expect(wrapper.findAll("button").map((b) => b.text().trim())).toEqual(expect.arrayContaining(["Em %", "Em R$"]));
     expect(wrapper.find("[data-line-adjustments-blocked]").exists()).toBe(false);

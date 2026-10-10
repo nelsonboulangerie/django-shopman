@@ -158,40 +158,52 @@ describe("PosCartPanel — editor da linha sob demanda (v4)", () => {
   });
 });
 
-// As duas arrumações das ações em prévia (PR #1636): a escolha é do dono, e as duas
-// precisam funcionar até lá. A é o padrão; `?acoes=b` lembra B no dispositivo.
-describe("PosCartPanel — as duas arrumações das ações (prévia)", () => {
-  afterEach(() => {
-    window.localStorage.removeItem("pos.preview.actions-layout");
-    useState("pos-actions-layout").value = "a";
-  });
-
-  it("A: Enviar à cozinha no pé, acima do Pagamento; Remover na faixa da quantidade", async () => {
+// A GRADE DE CONTROLES (dono, 10/10): o bloco da linha (quantidade | Remover;
+// Desconto | Observação) só com a linha aberta; o bloco da comanda (Enviar à cozinha |
+// Dividir) sempre, logo acima do Pagamento.
+describe("PosCartPanel — a grade de controles da comanda", () => {
+  it("linha aberta: quantidade | Remover, Desconto | Observação; e a comanda embaixo", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    expect(wrapper.find("[data-pos-ticket-foot] [data-pos-fire]").exists()).toBe(true);
-    expect(wrapper.find("[data-pos-fire-slot='top']").exists()).toBe(false);
-    expect(wrapper.find("[data-pos-line-remove-band]").exists()).toBe(false);
-    expect(wrapper.find("[data-pos-line-remove]").exists()).toBe(true);
+    const line = wrapper.find("[data-pos-controls-block='line']");
+    expect(line.findAll("[data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"))).toEqual(["qty", "remove", "discount", "note"]);
+    const tab = wrapper.find("[data-pos-ticket-foot] [data-pos-controls-block='tab']");
+    expect(tab.findAll("[data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"))).toEqual(["fire", "split"]);
+    // A dica do teclado mora no cabeçalho do editor, não no pé.
+    expect(wrapper.find("[data-pos-line-editor] [data-pos-keyboard-hint]").exists()).toBe(true);
   });
 
-  it("B: Enviar à cozinha no topo da comanda; Remover sozinho numa faixa própria", async () => {
-    window.localStorage.setItem("pos.preview.actions-layout", "b");
+  it("sem linha aberta, só Enviar | Dividir, no mesmo lugar", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    const send = wrapper.find("[data-pos-fire-slot='top'] [data-pos-fire]");
-    expect(send.exists()).toBe(true);
-    expect(wrapper.find("[data-pos-ticket-foot] [data-pos-fire]").exists()).toBe(false);
-    await send.trigger("click");
-    expect(wrapper.emitted("fire")).toHaveLength(1);
-    const remove = wrapper.find("[data-pos-line-remove-band] [data-pos-line-remove]");
-    expect(remove.exists()).toBe(true);
-    expect(wrapper.findAll("[data-pos-line-remove]")).toHaveLength(1);
+    await wrapper.find("[data-pos-line-editor-close]").trigger("click");
+    expect(wrapper.find("[data-pos-controls-block='line']").exists()).toBe(false);
+    expect(wrapper.findAll("[data-pos-ticket-foot] [data-pos-control-cell]")).toHaveLength(2);
   });
 
-  it("sem nada a enviar, nenhuma das duas mostra o botão: o estado é dito em palavra", async () => {
-    window.localStorage.setItem("pos.preview.actions-layout", "b");
+  it("Dividir pede o modal de dividir a conta", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await wrapper.find("[data-pos-split]").trigger("click");
+    expect(wrapper.emitted("split")).toHaveLength(1);
+  });
+
+  it("tudo enviado: o Enviar diz o estado em palavra, apagado, e Dividir segue ao lado", async () => {
     const fired = [item({ sku: "PAO", name: "Pão", fired: true, fired_qty: 1 })];
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: fired }) });
-    expect(wrapper.find("[data-pos-fire]").exists()).toBe(false);
-    expect(wrapper.find("[data-pos-kitchen-state]").text()).toContain("1 na cozinha");
+    const send = wrapper.find("[data-pos-fire]");
+    expect(send.text()).toContain("Enviado");
+    expect(send.attributes("disabled")).toBeDefined();
+    expect(wrapper.find("[data-pos-split]").exists()).toBe(true);
+  });
+
+  it("editando um pedido (Salvar alterações) não oferece Dividir", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ primaryLabel: "Salvar alterações" }) });
+    expect(wrapper.find("[data-pos-split]").exists()).toBe(false);
+  });
+
+  it("Pagamento numa linha: sem o rótulo 'total' empilhado; sem conexão diz 'total sem conexão'", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    expect(wrapper.find("[data-pos-primary-total]").text()).not.toMatch(/total/);
+    const offline = await mountSuspended(PosCartPanel, { props: props({ total: { status: "offline", display: formatBRL(1100) } }) });
+    expect(offline.find("[data-pos-primary-total]").text()).toContain("total sem conexão");
+    expect(offline.find("[data-pos-primary-total-value]").text()).toContain(formatBRL(1100));
   });
 });

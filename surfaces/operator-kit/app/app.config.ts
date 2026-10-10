@@ -105,13 +105,15 @@ export default defineAppConfig({
     // (`ring-bg`) ter a cor do fundo; `--primary-ink` também, porque o estado ativo
     // (`primary` `soft`) usa essa tinta e ela é resolvida no `:root` (latão sobre
     // latão). `content` é o mesmo rail aberto como slideover abaixo de `lg`.
+    // O tom do rail é do rail: a barra lateral da ESQUERDA. Uma `DashboardSidebar` do
+    // lado direito (a coluna da comanda do PDV, largura ajustável) fala com os tokens
+    // da tela, não com os do rail.
     dashboardSidebar: {
       slots: {
-        root: RAIL_SCOPE,
         content: RAIL_SCOPE,
       },
       variants: {
-        side: { left: { root: "border-e-0" } },
+        side: { left: { root: `${RAIL_SCOPE} border-e-0` } },
       },
     },
     popover: { slots: { content: "bg-popover" } },
