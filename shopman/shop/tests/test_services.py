@@ -567,6 +567,14 @@ class TestStockService:
 
 
 class TestPaymentService:
+    @pytest.fixture(autouse=True)
+    def _payman_without_attempts(self):
+        # Estes testes rodam sem banco: o Payman não responde. Desde o item 17
+        # de docs/plans/fallbacks-perigosos-go-live.md, busca que falha recusa
+        # a cobrança em vez de chutar a geração 0, então a ausência de
+        # tentativas anteriores passa a ser DADO do teste, não acidente.
+        with patch("shopman.shop.services.payment._burned_intent_generations", return_value=0):
+            yield
 
     @patch("shopman.shop.services.payment.get_adapter")
     def test_initiate_pix(self, mock_get_adapter):
