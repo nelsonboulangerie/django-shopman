@@ -384,332 +384,335 @@ async function reconcileCreate() {
 function close() {
   emit("update:open", false);
 }
+
+// Texto da casa não se corta: rótulo longo ("Não saíram ou saiu incompleto") quebra
+// linha no botão de largura cheia em vez de virar reticências.
+const WRAP_UI = { label: "text-clip whitespace-normal text-center" };
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="emit('update:open', Boolean($event))">
-    <UiDialogContent
-      hide-close
-      class="print:hidden sm:max-w-3xl"
-      data-testid="production-label-print-dialog"
-    >
-      <UiDialogHeader>
-        <UiDialogTitle>{{ title }}</UiDialogTitle>
-        <UiDialogDescription>
-          Confira o conteúdo e o destino antes de enviar. A confirmação final
-          registra somente o que realmente saiu no papel.
-        </UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    :open="open"
+    :title="title"
+    description="Confira o conteúdo e o destino antes de enviar. A confirmação final registra somente o que realmente saiu no papel."
+    :close="false"
+    class="print:hidden sm:max-w-3xl"
+    :ui="{ footer: 'justify-end' }"
+    @update:open="emit('update:open', Boolean($event))"
+  >
+    <template #body>
+      <div class="flex flex-col gap-4" data-testid="production-label-print-dialog">
+        <!-- Nota de contexto, não aviso: não há o que resolver, só o que saber. -->
+        <p class="flex items-start gap-2 text-sm text-muted-foreground">
+          <Icon name="lucide:info" class="mt-0.5 size-4 shrink-0" />
+          <span>Estas etiquetas apoiam a preparação interna e não substituem o rótulo de venda.</span>
+        </p>
 
-      <UiAlert
-        variant="info"
-        icon="lucide:info"
-        description="Estas etiquetas apoiam a preparação interna e não substituem o rótulo de venda."
-      />
-
-      <div class="grid min-h-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem]">
-        <section aria-labelledby="label-preview-title" class="min-w-0">
-          <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 id="label-preview-title" class="text-sm font-semibold">
-                Prévia · etiqueta {{ labelWidthMm }} × {{ labelHeightMm }} mm
-              </h3>
-              <p class="text-xs text-muted-foreground">{{ summary }}</p>
-              <p
-                v-if="scaleRoundingNote"
-                class="mt-1 text-xs text-muted-foreground"
-              >
-                {{ scaleRoundingNote }}
-              </p>
-            </div>
-            <UiBadge variant="outline">{{ printableWidthMm }} mm úteis</UiBadge>
-          </div>
-
-          <div
-            class="max-h-[46vh] overflow-auto rounded-md border bg-muted/30 p-3"
-          >
-            <div
-              class="label-roll-preview mx-auto flex max-w-full flex-col gap-2 bg-white p-[4mm] text-black shadow-sm"
-              :style="previewStyle"
-              aria-label="Conteúdo das etiquetas"
-            >
-              <template v-if="effectivePrintMode === 'pesagem'">
-                <article
-                  v-for="label in previewLabels"
-                  :key="label.key"
-                  class="rounded border border-black p-2"
-                >
-                  <p class="text-xs font-bold uppercase">Pesagem interna</p>
-                  <div class="flex items-baseline justify-between gap-2">
-                    <strong class="font-mono text-xl tracking-widest">{{
-                      label.code
-                    }}</strong>
-                    <span class="text-xs">{{ label.date }}</span>
-                  </div>
-                  <p class="font-semibold">{{ label.ingredient }}</p>
-                  <p class="font-mono text-xs">{{ label.sku }}</p>
-                  <p class="text-lg font-bold tabular-nums">
-                    {{ label.weight }}
-                  </p>
-                  <p
-                    v-if="label.annotation"
-                    class="text-sm text-muted-foreground"
-                  >
-                    {{ label.annotation }}
-                  </p>
-                </article>
-              </template>
-              <template v-else>
-                <article
-                  v-for="ticket in previewTickets"
-                  :key="ticket.ticket_ref || ticket.output_sku"
-                  class="rounded border border-black p-2"
-                >
-                  <span class="block text-xs font-bold uppercase">Preparo interno</span>
-                  <strong class="block uppercase leading-tight">{{
-                    ticket.name
-                  }}</strong>
-                  <span class="block font-mono text-xs">{{
-                    ticket.output_sku
-                  }}</span>
-                  <span
-                    v-if="
-                      ticket.total_weight_display || ticket.dough_weight_display
-                    "
-                    class="block font-bold tabular-nums"
-                  >
-                    Alvo total:
-                    {{
-                      operationalTargetDisplay(
-                        ticket.total_weight_display,
-                        ticket.dough_weight_display,
-                      )
-                    }}
-                  </span>
-                  <span class="block text-xs">
-                    Preparo {{ ticket.made_display }} · Validade
-                    {{ ticket.expiry_display || "não configurada" }}
-                  </span>
-                </article>
-              </template>
-              <p
-                v-if="remainingCount"
-                class="rounded border border-dashed p-2 text-center text-xs font-medium"
-              >
-                + {{ remainingCount }}
-                {{ remainingCount === 1 ? "etiqueta" : "etiquetas" }}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section
-          class="flex min-w-0 flex-col gap-3"
-          aria-label="Envio da impressão"
-        >
-          <div class="rounded-md border p-3" data-testid="print-destination">
-            <div class="flex items-start gap-2">
-              <Icon name="lucide:printer" class="mt-0.5 size-5 shrink-0" />
-              <div class="min-w-0">
-                <p class="truncate text-sm font-semibold">
-                  {{ printing.destinationLabel.value }}
-                </p>
-                <p class="text-xs text-muted-foreground">
-                  {{ printing.destinationStatusLabel.value }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div
-            v-if="printing.job.value || printing.operation.value === 'create'"
-            role="status"
-            aria-live="polite"
-            class="rounded-md border p-3"
-            data-testid="print-job-status"
-          >
-            <div class="flex items-start gap-2">
-              <Icon
-                :name="
-                  actionBusy
-                    ? 'line-md:loading-loop'
-                    : isConfirmed
-                      ? 'lucide:circle-check'
-                      : 'lucide:info'
-                "
-                class="mt-0.5 size-5 shrink-0"
-              />
+        <div class="grid min-h-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem]">
+          <section aria-labelledby="label-preview-title" class="min-w-0">
+            <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p class="font-semibold">{{ printing.statusLabel.value }}</p>
+                <h3 id="label-preview-title" class="text-sm font-semibold">
+                  Prévia · etiqueta {{ labelWidthMm }} × {{ labelHeightMm }} mm
+                </h3>
+                <p class="text-xs text-muted-foreground">{{ summary }}</p>
                 <p
-                  v-if="printing.job.value?.message"
-                  class="mt-1 text-sm text-muted-foreground"
+                  v-if="scaleRoundingNote"
+                  class="mt-1 text-xs text-muted-foreground"
                 >
-                  {{ printing.job.value.message }}
+                  {{ scaleRoundingNote }}
                 </p>
-                <p v-if="copyNumber > 1" class="mt-1 text-xs font-medium">
-                  Reimpressão {{ copyNumber }}
+              </div>
+              <NuxtBadge color="neutral" :label="`${printableWidthMm} mm úteis`" />
+            </div>
+
+            <div
+              class="max-h-[46vh] overflow-auto rounded-md border bg-muted/30 p-3"
+            >
+              <div
+                class="label-roll-preview mx-auto flex max-w-full flex-col gap-2 bg-white p-[4mm] text-black shadow-sm"
+                :style="previewStyle"
+                aria-label="Conteúdo das etiquetas"
+              >
+                <template v-if="effectivePrintMode === 'pesagem'">
+                  <article
+                    v-for="label in previewLabels"
+                    :key="label.key"
+                    class="rounded border border-black p-2"
+                  >
+                    <p class="text-xs font-bold uppercase">Pesagem interna</p>
+                    <div class="flex items-baseline justify-between gap-2">
+                      <strong class="font-mono text-xl tracking-widest">{{
+                        label.code
+                      }}</strong>
+                      <span class="text-xs">{{ label.date }}</span>
+                    </div>
+                    <p class="font-semibold">{{ label.ingredient }}</p>
+                    <p class="font-mono text-xs">{{ label.sku }}</p>
+                    <p class="text-lg font-bold tabular-nums">
+                      {{ label.weight }}
+                    </p>
+                    <p
+                      v-if="label.annotation"
+                      class="text-sm text-muted-foreground"
+                    >
+                      {{ label.annotation }}
+                    </p>
+                  </article>
+                </template>
+                <template v-else>
+                  <article
+                    v-for="ticket in previewTickets"
+                    :key="ticket.ticket_ref || ticket.output_sku"
+                    class="rounded border border-black p-2"
+                  >
+                    <span class="block text-xs font-bold uppercase">Preparo interno</span>
+                    <strong class="block uppercase leading-tight">{{
+                      ticket.name
+                    }}</strong>
+                    <span class="block font-mono text-xs">{{
+                      ticket.output_sku
+                    }}</span>
+                    <span
+                      v-if="
+                        ticket.total_weight_display || ticket.dough_weight_display
+                      "
+                      class="block font-bold tabular-nums"
+                    >
+                      Alvo total:
+                      {{
+                        operationalTargetDisplay(
+                          ticket.total_weight_display,
+                          ticket.dough_weight_display,
+                        )
+                      }}
+                    </span>
+                    <span class="block text-xs">
+                      Preparo {{ ticket.made_display }} · Validade
+                      {{ ticket.expiry_display || "não configurada" }}
+                    </span>
+                  </article>
+                </template>
+                <p
+                  v-if="remainingCount"
+                  class="rounded border border-dashed p-2 text-center text-xs font-medium"
+                >
+                  + {{ remainingCount }}
+                  {{ remainingCount === 1 ? "etiqueta" : "etiquetas" }}
                 </p>
               </div>
             </div>
-          </div>
+          </section>
 
-          <p
-            v-if="printing.pollingMessage.value"
-            role="status"
-            aria-live="polite"
-            class="text-sm text-warning"
+          <section
+            class="flex min-w-0 flex-col gap-3"
+            aria-label="Envio da impressão"
           >
-            {{ printing.pollingMessage.value }}
-          </p>
-
-          <p
-            v-if="localPrintNote"
-            role="status"
-            aria-live="polite"
-            class="text-sm text-muted-foreground"
-          >
-            {{ localPrintNote }}
-          </p>
-
-          <div
-            v-if="printing.errorMessage.value"
-            role="alert"
-            class="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
-            data-testid="print-error"
-          >
-            <p>{{ printing.errorMessage.value }}</p>
-            <UiButton
-              v-if="printing.errorCode.value === 'stale_projection'"
-              type="button"
-              variant="outline"
-              class="mt-3 min-h-8"
-              @click="printing.refreshSource()"
-            >
-              Atualizar etiquetas
-            </UiButton>
-            <UiButton
-              v-else-if="printing.createUncertain.value"
-              type="button"
-              variant="outline"
-              class="mt-3 min-h-8"
-              :loading="actionBusy"
-              @click="reconcileCreate"
-            >
-              Verificar envio
-            </UiButton>
-          </div>
-
-          <p
-            v-if="!printing.job.value && preflightBlockReason"
-            role="alert"
-            class="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
-          >
-            {{ preflightBlockReason }}
-          </p>
-          <p
-            v-if="
-              !printing.job.value &&
-              !preflightBlockReason &&
-              relayUnavailableReason
-            "
-            class="text-sm text-muted-foreground"
-          >
-            {{ relayUnavailableReason }} Você ainda pode imprimir neste
-            dispositivo.
-          </p>
-
-          <div
-            v-if="showConfirm"
-            class="rounded-md border border-primary/30 bg-primary/5 p-3"
-          >
-            <p class="mb-3 text-sm font-semibold">{{ confirmationQuestion }}</p>
-            <div class="grid gap-2">
-              <UiButton
-                type="button"
-                class="min-h-8"
-                :loading="printing.operation.value === 'confirm'"
-                :disabled="!printing.isOnline.value"
-                @click="printing.confirm(true)"
-              >
-                Sim, saíram
-              </UiButton>
-              <UiButton
-                type="button"
-                variant="outline"
-                class="min-h-8 whitespace-normal"
-                :disabled="actionBusy || !printing.isOnline.value"
-                @click="printing.confirm(false)"
-              >
-                Não saíram ou saiu incompleto
-              </UiButton>
+            <div class="rounded-md border p-3" data-testid="print-destination">
+              <div class="flex items-start gap-2">
+                <Icon name="lucide:printer" class="mt-0.5 size-5 shrink-0" />
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-semibold">
+                    {{ printing.destinationLabel.value }}
+                  </p>
+                  <p class="text-xs text-muted-foreground">
+                    {{ printing.destinationStatusLabel.value }}
+                  </p>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div
-            v-if="!printing.job.value && !printing.createUncertain.value"
-            class="grid gap-2"
-          >
-            <UiButton
-              type="button"
-              class="min-h-8 whitespace-normal"
-              :loading="
-                printing.operation.value === 'create' &&
-                activeTransport === 'relay'
-              "
-              :disabled="
-                !!preflightBlockReason || browserBusy
-              "
-              @click="printBestAvailable"
+            <div
+              v-if="printing.job.value || printing.operation.value === 'create'"
+              role="status"
+              aria-live="polite"
+              class="rounded-md border p-3"
+              data-testid="print-job-status"
             >
-              Imprimir {{ labelCount }}
-              {{ labelCount === 1 ? "etiqueta" : "etiquetas" }}
-            </UiButton>
-            <UiButton
-              v-if="localAgentAvailable || !relayUnavailableReason"
-              type="button"
+              <div class="flex items-start gap-2">
+                <Icon
+                  :name="
+                    actionBusy
+                      ? 'line-md:loading-loop'
+                      : isConfirmed
+                        ? 'lucide:circle-check'
+                        : 'lucide:info'
+                  "
+                  class="mt-0.5 size-5 shrink-0"
+                />
+                <div>
+                  <p class="font-semibold">{{ printing.statusLabel.value }}</p>
+                  <p
+                    v-if="printing.job.value?.message"
+                    class="mt-1 text-sm text-muted-foreground"
+                  >
+                    {{ printing.job.value.message }}
+                  </p>
+                  <p v-if="copyNumber > 1" class="mt-1 text-xs font-medium">
+                    Reimpressão {{ copyNumber }}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <p
+              v-if="printing.pollingMessage.value"
+              role="status"
+              aria-live="polite"
+              class="text-sm text-warning"
+            >
+              {{ printing.pollingMessage.value }}
+            </p>
+
+            <p
+              v-if="localPrintNote"
+              role="status"
+              aria-live="polite"
+              class="text-sm text-muted-foreground"
+            >
+              {{ localPrintNote }}
+            </p>
+
+            <!-- O erro leva a ação que o resolve, na cor do aviso. -->
+            <NuxtAlert
+              v-if="printing.errorMessage.value"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-triangle-alert"
+              :description="printing.errorMessage.value"
+              data-testid="print-error"
+            >
+              <template
+                v-if="
+                  printing.errorCode.value === 'stale_projection' ||
+                  printing.createUncertain.value
+                "
+                #actions
+              >
+                <NuxtButton
+                  v-if="printing.errorCode.value === 'stale_projection'"
+                  color="error"
+                  variant="outline"
+                  label="Atualizar etiquetas"
+                  @click="printing.refreshSource()"
+                />
+                <NuxtButton
+                  v-else
+                  color="error"
+                  variant="outline"
+                  label="Verificar envio"
+                  :loading="actionBusy"
+                  @click="reconcileCreate"
+                />
+              </template>
+            </NuxtAlert>
+
+            <p
+              v-if="!printing.job.value && preflightBlockReason"
+              role="alert"
+              class="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
+            >
+              {{ preflightBlockReason }}
+            </p>
+            <p
+              v-if="
+                !printing.job.value &&
+                !preflightBlockReason &&
+                relayUnavailableReason
+              "
+              class="text-sm text-muted-foreground"
+            >
+              {{ relayUnavailableReason }} Você ainda pode imprimir neste
+              dispositivo.
+            </p>
+
+            <div
+              v-if="showConfirm"
+              class="rounded-md border border-primary/30 bg-primary/5 p-3"
+            >
+              <p class="mb-3 text-sm font-semibold">{{ confirmationQuestion }}</p>
+              <div class="grid gap-2">
+                <NuxtButton
+                  block
+                  label="Sim, saíram"
+                  :loading="printing.operation.value === 'confirm'"
+                  :disabled="!printing.isOnline.value"
+                  @click="printing.confirm(true)"
+                />
+                <NuxtButton
+                  block
+                  color="neutral"
+                  variant="outline"
+                  label="Não saíram ou saiu incompleto"
+                  :ui="WRAP_UI"
+                  :disabled="actionBusy || !printing.isOnline.value"
+                  @click="printing.confirm(false)"
+                />
+              </div>
+            </div>
+
+            <div
+              v-if="!printing.job.value && !printing.createUncertain.value"
+              class="grid gap-2"
+            >
+              <NuxtButton
+                block
+                :label="`Imprimir ${labelCount} ${labelCount === 1 ? 'etiqueta' : 'etiquetas'}`"
+                :ui="WRAP_UI"
+                :loading="
+                  printing.operation.value === 'create' &&
+                  activeTransport === 'relay'
+                "
+                :disabled="
+                  !!preflightBlockReason || browserBusy
+                "
+                @click="printBestAvailable"
+              />
+              <NuxtButton
+                v-if="localAgentAvailable || !relayUnavailableReason"
+                block
+                color="neutral"
+                variant="outline"
+                label="Abrir impressão do navegador"
+                :ui="WRAP_UI"
+                :loading="browserBusy"
+                :disabled="!!preflightBlockReason || printing.busy.value"
+                @click="createBrowserPrint"
+              />
+            </div>
+
+            <NuxtButton
+              v-if="showRetry"
+              block
+              label="Tentar de novo"
+              :loading="printing.operation.value === 'retry' || browserBusy"
+              :disabled="!printing.isOnline.value"
+              @click="retry"
+            />
+            <NuxtButton
+              v-if="showReprint"
+              block
+              color="neutral"
               variant="outline"
-              class="min-h-8 whitespace-normal"
-              :loading="browserBusy"
-              :disabled="!!preflightBlockReason || printing.busy.value"
-              @click="createBrowserPrint"
-            >
-              Abrir impressão do navegador
-            </UiButton>
-          </div>
-
-          <UiButton
-            v-if="showRetry"
-            type="button"
-            class="min-h-8"
-            :loading="printing.operation.value === 'retry' || browserBusy"
-            :disabled="!printing.isOnline.value"
-            @click="retry"
-          >
-            Tentar de novo
-          </UiButton>
-          <UiButton
-            v-if="showReprint"
-            type="button"
-            variant="outline"
-            class="min-h-8"
-            :loading="printing.operation.value === 'reprint' || browserBusy"
-            :disabled="!printing.isOnline.value"
-            @click="reprint"
-          >
-            Reimprimir {{ labelCount }}
-            {{ labelCount === 1 ? "etiqueta" : "etiquetas" }}
-          </UiButton>
-        </section>
+              :label="`Reimprimir ${labelCount} ${labelCount === 1 ? 'etiqueta' : 'etiquetas'}`"
+              :loading="printing.operation.value === 'reprint' || browserBusy"
+              :disabled="!printing.isOnline.value"
+              @click="reprint"
+            />
+          </section>
+        </div>
       </div>
+    </template>
 
-      <UiDialogFooter>
-        <UiButton type="button" variant="ghost" class="min-h-8" @click="close">
-          Fechar
-        </UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+    <template #footer>
+      <NuxtButton
+        color="neutral"
+        variant="ghost"
+        label="Fechar"
+        @click="close"
+      />
+    </template>
+  </NuxtModal>
 
   <!-- O papel usa a projeção antes do POST e, obrigatoriamente, o documento
        congelado/hashado do PrintJob assim que ele existe. -->
@@ -741,7 +744,7 @@ function close() {
 }
 
 @media print {
-  :global([data-slot="dialog-overlay"]) {
+  :global([data-slot="overlay"]) {
     display: none !important;
   }
 }

@@ -31,10 +31,6 @@ const BOTTOM = /(?:^|[\s:])bottom-\S+/;
  * quando ela chegar; enquanto não chega, não acusa teto velho).
  */
 const CEILING: Record<string, { max: number; reason: string; arriving?: string }> = {
-  "operator-kit/app/components/OperatorThumbAction.vue": {
-    max: 1,
-    reason: "o polegar da Saída do Gestor (F7, #1564): mesmo papel da ação na base; unifica com o OperatorActionBar",
-  },
   "operator-kit/app/components/OperatorSectionBar.vue": {
     max: 1,
     reason: "a barra do polegar dos apps ainda fora do shell (é a barra de base)",
@@ -43,7 +39,6 @@ const CEILING: Record<string, { max: number; reason: string; arriving?: string }
     max: 1,
     reason: "o aviso de versão nova do app instalado, acima da barra inferior",
   },
-  "pos-nuxt/app/pages/session/closing.vue": { max: 3, reason: "dívida: Fim do dia, onda do PDV" },
   "pos-nuxt/app/pages/settings/seating.vue": { max: 1, reason: "dívida: Ajustes do salão, onda do PDV" },
 };
 

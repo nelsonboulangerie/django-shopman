@@ -431,7 +431,6 @@ Como um app migra:
 | `OperatorMenuItems` | o conteúdo do menu do operador (posto, Bloquear no celular, tema, giro, capacidade do serviço escrita) | menu de `_rail3bottom.html` |
 | `OperatorAppSeal` | o selo do app na barra de 56px dos cabeçalhos próprios (PDV, Central) | `_rail3top.html` |
 | `OperatorSwipeRow` | deslizar uma linha no toque (F7, 09/10/2026): à esquerda revela `actions` (gaveta que fica aberta depois da metade); à direita faz `commit` depois do ponto de compromisso, com o verbo e o alvo atrás da linha. Mouse não desliza; o eixo se decide no começo (rolar nunca vira deslize); `motion-safe:` na volta. Nunca a única porta: o mesmo ato existe num botão visível, e a camada de trás é `aria-hidden` | `cozinha-celular` (a), v4 |
-| `OperatorThumbAction` | o polegar do celular: o gesto principal da tela num botão `xl` largo, preso na base da área que rola (`data-focus-obstruction`), com o verbo e o alvo ("Entregar U13 a Ana"). Um por tela, só abaixo de `md` | `cozinha-celular` (a), v4 |
 | `OperatorTimedButton` | a ação que só vale até um prazo, com o tempo dentro do botão: o fundo esvazia até a janela fechar; prazo absoluto (`until`), movimento reduzido só com os segundos, rótulo fixo e "Disponível até HH:MM:SS" na descrição; ao fim some ou desabilita. Ver "Ação com prazo" | proposta #1575, aprovada 09/10/2026 |
 
 **O título da barra do topo não se corta** (PR-K5, achado do B.I. a 390 px: "Quem compra
@@ -963,12 +962,10 @@ contra ela, nos dois temas, travados em `tests/actionBarContrast.test.ts`.
 3. o **conteúdo**, que rola acima das duas e nunca fica coberto.
 
 Enquanto houver seleção numa lista, a barra de seleção (`OperatorBulkBar`, por vir)
-ocupa o lugar da ação na base. **Ponto de encontro com o `OperatorThumbAction`** (o
-polegar da Saída do Gestor, #1564): é o mesmo papel (a ação do momento ao alcance do
-polegar, `xl`, `data-focus-obstruction`), hoje `sticky` dentro da área que rola e só
-abaixo de `md`. Próximo passo: o polegar vira um `OperatorActionBar` sem linha de
-contexto (a Saída passa a ação para o rodapé do painel), e as duas peças viram uma. A
-trava abaixo declara o teto dele (1, que só cai).
+ocupa o lugar da ação na base. O polegar da Saída do Gestor no celular (F7, #1564) é
+uma ação na base sem linha de contexto: "Entregar U13 a Ana", no rodapé do painel,
+depois da área que rola (`orders-nuxt/app/pages/index.vue`, `data-exit-base-action`).
+Não existe outra peça de polegar.
 
 Trava: `tests/guardrails.actionBar.test.ts` conta, por arquivo, o texto de classe com
 `sticky`/`fixed` e `bottom-*` nos templates dos apps de operador e do kit: uso novo

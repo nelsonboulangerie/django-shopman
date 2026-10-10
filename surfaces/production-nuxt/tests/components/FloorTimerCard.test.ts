@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
 
 import FloorTimerCard from "../../app/components/FloorTimerCard.vue";
+import { nuxtUiStubs } from "../support/nuxtUiStubs";
 import type { FloorTimerEntry } from "../../app/composables/useFloorTimers";
 
 // O card é a peça de UX da página: o que se prova aqui é o GESTO — corpo que
@@ -23,7 +24,7 @@ function entry(overrides: Partial<FloorTimerEntry> = {}): FloorTimerEntry {
 function mountCard(overrides: Partial<FloorTimerEntry> = {}) {
   return mount(FloorTimerCard, {
     props: { entry: entry(overrides), remaining: "12:34" },
-    global: { stubs: { Icon: true } },
+    global: { stubs: { ...nuxtUiStubs, Icon: true } },
   });
 }
 
@@ -77,7 +78,7 @@ describe("FloorTimerCard — o corpo é o gesto", () => {
     vi.useFakeTimers();
     const wrapper = mount(FloorTimerCard, {
       props: { entry: entry({ mode: "ringing" }), remaining: "0:00" },
-      global: { stubs: { Icon: true } },
+      global: { stubs: { ...nuxtUiStubs, Icon: true } },
     });
 
     await wrapper.findAll("button")[0]!.trigger("click");

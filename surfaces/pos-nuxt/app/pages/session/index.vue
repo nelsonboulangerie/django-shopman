@@ -203,6 +203,27 @@ const changeAmountField = useTemplateRef<{ inputRef: HTMLInputElement | null }>(
 const openingAmountField = useTemplateRef<{ inputRef: HTMLInputElement | null }>("openingAmountField");
 const closingAmountField = useTemplateRef<{ inputRef: HTMLInputElement | null }>("closingAmountField");
 
+// O conteúdo de cada diálogo leva a marca `data-session-dialog` (o teste e o PIN do
+// gerente a procuram) e, onde há campo de valor, o foco inicial nele. O `content` do
+// `NuxtModal` tipa só as props do reka; atributo `data-*` chega ao elemento como attr
+// (o mesmo caminho do `OperatorManagerAuth`). O campo é lido na hora do foco, nunca
+// no desenho: antes de o diálogo abrir, a referência ao campo ainda é nula.
+const focusFields = {
+  opening: openingAmountField,
+  change: changeAmountField,
+  movement: () => movementAmountField.value,
+  closing: closingAmountField,
+};
+function dialogContent(key: string, focus?: keyof typeof focusFields) {
+  const content: Record<string, unknown> = { "data-session-dialog": key };
+  if (focus) {
+    const field = focusFields[focus];
+    content.onOpenAutoFocus = (event: Event) =>
+      focusOnOpen(event, typeof field === "function" ? field() : field.value);
+  }
+  return content as Record<string, string>;
+}
+
 // ABERTURA GUIADA (pedido do dono): a antesala conduz. Quem chega pela venda
 // sem turno (`?open=1`) já cai no diálogo, com o campo de valor focado; o
 // placeholder sugere o fundo de troco que o GESTOR configurou no terminal, e
@@ -395,7 +416,15 @@ async function recordMachineRefund(orderRef: string, managerApproval: ManagerApp
 // entrada não exige segunda assinatura (suprimento também não).
 const settleCustomerRef = ref<string | null>(null);
 const settleAmount = ref("");
-const settleMethod = ref<"cash" | "pix" | "credit" | "debit" | "external">("cash");
+type SettleMethod = "cash" | "pix" | "credit" | "debit" | "external";
+const settleMethod = ref<SettleMethod>("cash");
+const SETTLE_METHODS: { label: string; value: SettleMethod }[] = [
+  { label: "Dinheiro", value: "cash" },
+  { label: "Pix", value: "pix" },
+  { label: "Crédito", value: "credit" },
+  { label: "Débito", value: "debit" },
+  { label: "Outro", value: "external" },
+];
 function openSettle(customerRef: string, balanceQ: number) {
   settleCustomerRef.value = customerRef;
   settleAmount.value = (balanceQ / 100).toFixed(2).replace(".", ",");
@@ -660,156 +689,169 @@ async function confirmClose() {
     </div>
 
     <!-- ── Diálogos, um por card ───────────────────────────────────────────
-         O PIN do gerente (`OperatorManagerAuth`, no fim) sobe por cima do
-         diálogo aberto; o formulário digitado fica. -->
+         O modal canônico da suíte (`NuxtModal`); a marca `data-session-dialog` e o
+         foco inicial vão para o conteúdo pelo `content`. O PIN do gerente
+         (`OperatorManagerAuth`, no fim) sobe por cima do diálogo aberto; o
+         formulário digitado fica. -->
 
     <!-- Abrir caixa: o campo nasce focado e Enter abre — a antesala conduz, o
          operador só responde quanto tem na mão. -->
-    <UiDialog v-model:open="openShiftDialogOpen">
-      <UiDialogContent
-        class="max-h-[85vh] overflow-y-auto sm:max-w-lg"
-        data-session-dialog="open_shift"
-        @open-auto-focus="focusOnOpen($event, openingAmountField)"
-      >
-        <UiDialogHeader>
-          <div class="flex items-center gap-2">
-            <Icon name="lucide:wallet" class="size-4 text-muted-foreground" />
-            <UiDialogTitle>Abrir caixa</UiDialogTitle>
+    <NuxtModal
+      v-model:open="openShiftDialogOpen"
+      title="Abrir caixa"
+      description="Conte o dinheiro da gaveta e informe o fundo de troco."
+      :content="dialogContent('open_shift', 'opening')"
+    >
+      <template #body>
+        <div class="grid gap-3">
+          <NuxtFormField label="Fundo de troco" :error="openingError || undefined">
+            <NuxtInput
+              ref="openingAmountField"
+              v-model="openingAmount"
+              size="xl"
+              class="w-full"
+              inputmode="decimal"
+              :ui="{ base: 'text-right tabular-nums' }"
+              :placeholder="openingPlaceholder"
+              :aria-invalid="openingError ? 'true' : undefined"
+              @keydown.enter="submitOpen"
+            />
+          </NuxtFormField>
+          <!-- A sugestão preenche a UM toque, mas nunca sozinha: o botão diz o
+               valor, e tocá-lo é o operador afirmando que é isso que tem na
+               gaveta. -->
+          <div class="flex flex-wrap gap-2">
+            <NuxtButton
+              v-if="floatSuggestionDisplay && !openingAmount"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-check"
+              :label="`Está certo: ${floatSuggestionDisplay}`"
+              data-float-suggestion
+              @click="useFloatSuggestion"
+            />
+            <NuxtButton
+              v-if="!openingCounter"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-calculator"
+              label="Contar por cédulas e moedas"
+              @click="openingCounter = true"
+            />
           </div>
-          <UiDialogDescription>Conte o dinheiro da gaveta e informe o fundo de troco.</UiDialogDescription>
-        </UiDialogHeader>
-        <label class="grid gap-1 text-sm">
-          <span class="font-medium text-muted-foreground">Fundo de troco</span>
-          <UiInput
-            ref="openingAmountField"
-            v-model="openingAmount"
-            inputmode="decimal"
-            class="h-12 text-right text-lg tabular-nums"
-            :placeholder="openingPlaceholder"
-            :aria-invalid="openingError ? 'true' : undefined"
-            @keydown.enter="submitOpen"
+          <PosDenominationCounter
+            v-if="openingCounter"
+            :denominations="changeDenominationOptions"
+            :disabled="busy"
+            @total-q="openingAmount = formatAmountInput($event)"
           />
-        </label>
-        <p v-if="openingError" class="text-xs text-destructive">{{ openingError }}</p>
-        <!-- A sugestão preenche a UM toque, mas nunca sozinha: o botão diz o
-             valor, e tocá-lo é o operador afirmando que é isso que tem na
-             gaveta. -->
-        <div class="flex flex-wrap gap-2">
-          <UiButton
-            v-if="floatSuggestionDisplay && !openingAmount"
-            variant="outline"
-            size="sm"
-            data-float-suggestion
-            @click="useFloatSuggestion"
-          >
-            <Icon name="lucide:check" class="size-4" />
-            Está certo: {{ floatSuggestionDisplay }}
-          </UiButton>
-          <UiButton v-if="!openingCounter" variant="ghost" size="sm" @click="openingCounter = true">
-            <Icon name="lucide:calculator" class="size-4" />
-            Contar por cédulas e moedas
-          </UiButton>
         </div>
-        <PosDenominationCounter
-          v-if="openingCounter"
-          :denominations="changeDenominationOptions"
-          :disabled="busy"
-          @total-q="openingAmount = formatAmountInput($event)"
+      </template>
+      <template #footer>
+        <NuxtButton
+          size="xl"
+          block
+          icon="i-lucide-wallet"
+          label="Abrir caixa e vender"
+          :disabled="busy || !canOpen"
+          :loading="busy"
+          @click="submitOpen"
         />
-        <UiButton size="lg" :disabled="busy || !canOpen" :loading="busy" @click="submitOpen">
-          <Icon name="lucide:wallet" class="size-5" />
-          Abrir caixa e vender
-        </UiButton>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+    </NuxtModal>
 
     <!-- Devoluções em dinheiro. Cancelar não é devolver: o gestor cancela de
          noite e ninguém abriu gaveta; a devolução fica aqui até quem está com a
          gaveta aberta entregar as notas. Só então Payman e livro registram. -->
-    <UiDialog v-model:open="refundsDialogOpen">
-      <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" data-session-dialog="attention:refunds">
-        <UiDialogHeader>
-          <div class="flex items-center gap-2">
-            <Icon name="lucide:rotate-ccw" class="size-4 text-muted-foreground" />
-            <UiDialogTitle>Devoluções em dinheiro</UiDialogTitle>
-          </div>
-          <UiDialogDescription>Entregue o dinheiro ao cliente e toque em Devolver.</UiDialogDescription>
-        </UiDialogHeader>
-        <ul class="grid gap-2" aria-label="Devoluções em dinheiro pendentes">
-          <li
-            v-for="refund in pendingCashRefunds"
-            :key="refund.order_ref"
-            class="grid gap-2 rounded-md border bg-muted/30 p-3"
-          >
-            <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-              <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }}</span>
-              <span class="text-xs text-muted-foreground">
-                pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template><template v-if="refund.reason_label"> · {{ refund.reason_label }}</template>
-              </span>
-            </div>
-            <UiButton size="sm" :disabled="busy" @click="refundPending(refund.order_ref)">
-              <Icon name="lucide:hand-coins" class="size-4" />
-              Devolver
-            </UiButton>
-          </li>
-        </ul>
-        <p class="text-xs text-muted-foreground">
-          O dinheiro sai desta gaveta e fica registrado no turno. Um gerente autoriza com o PIN.
-        </p>
-      </UiDialogContent>
-    </UiDialog>
+    <NuxtModal
+      v-model:open="refundsDialogOpen"
+      title="Devoluções em dinheiro"
+      description="Entregue o dinheiro ao cliente e toque em Devolver."
+      :content="dialogContent('attention:refunds')"
+    >
+      <template #body>
+        <div class="grid gap-3">
+          <ul class="grid gap-2" aria-label="Devoluções em dinheiro pendentes">
+            <li
+              v-for="refund in pendingCashRefunds"
+              :key="refund.order_ref"
+              class="grid gap-2 rounded-md bg-elevated p-3"
+            >
+              <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }}</span>
+                <span class="text-xs text-muted-foreground">
+                  pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template><template v-if="refund.reason_label"> · {{ refund.reason_label }}</template>
+                </span>
+              </div>
+              <NuxtButton
+                block
+                icon="i-lucide-hand-coins"
+                label="Devolver"
+                :disabled="busy"
+                @click="refundPending(refund.order_ref)"
+              />
+            </li>
+          </ul>
+          <p class="text-xs text-muted-foreground">
+            O dinheiro sai desta gaveta e fica registrado no turno. Um gerente autoriza com o PIN.
+          </p>
+        </div>
+      </template>
+    </NuxtModal>
 
     <!-- Estornos na maquininha: encomenda paga no cartão do balcão que ficou mais
          barata. O estorno é feito NA maquininha; aqui só se registra que saiu. -->
-    <UiDialog v-model:open="cardMachineDialogOpen">
-      <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" data-session-dialog="attention:card_machine">
-        <UiDialogHeader>
-          <div class="flex items-center gap-2">
-            <Icon name="lucide:credit-card" class="size-4 text-muted-foreground" />
-            <UiDialogTitle>Estornos na maquininha</UiDialogTitle>
-          </div>
-          <UiDialogDescription>Faça o estorno na maquininha e toque em Estornei na maquininha.</UiDialogDescription>
-        </UiDialogHeader>
-        <ul class="grid gap-2" aria-label="Estornos na maquininha pendentes">
-          <li
-            v-for="refund in pendingCardMachineRefunds"
-            :key="refund.order_ref"
-            class="grid gap-2 rounded-md border bg-muted/30 p-3"
-          >
-            <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-              <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }} no {{ refund.method_label.toLowerCase() }}</span>
-              <span class="text-xs text-muted-foreground">
-                pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template> · encomenda ficou mais barata
-              </span>
-            </div>
-            <UiButton size="sm" :disabled="busy" data-card-machine-refund @click="recordMachineRefund(refund.order_ref)">
-              <Icon name="lucide:check" class="size-4" />
-              Estornei na maquininha
-            </UiButton>
-          </li>
-        </ul>
-        <p class="text-xs text-muted-foreground">
-          Nada sai da gaveta. Um gerente autoriza com o PIN, e o estorno fica registrado no pedido.
-        </p>
-      </UiDialogContent>
-    </UiDialog>
+    <NuxtModal
+      v-model:open="cardMachineDialogOpen"
+      title="Estornos na maquininha"
+      description="Faça o estorno na maquininha e toque em Estornei na maquininha."
+      :content="dialogContent('attention:card_machine')"
+    >
+      <template #body>
+        <div class="grid gap-3">
+          <ul class="grid gap-2" aria-label="Estornos na maquininha pendentes">
+            <li
+              v-for="refund in pendingCardMachineRefunds"
+              :key="refund.order_ref"
+              class="grid gap-2 rounded-md bg-elevated p-3"
+            >
+              <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }} no {{ refund.method_label.toLowerCase() }}</span>
+                <span class="text-xs text-muted-foreground">
+                  pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template> · encomenda ficou mais barata
+                </span>
+              </div>
+              <NuxtButton
+                block
+                icon="i-lucide-check"
+                label="Estornei na maquininha"
+                :disabled="busy"
+                data-card-machine-refund
+                @click="recordMachineRefund(refund.order_ref)"
+              />
+            </li>
+          </ul>
+          <p class="text-xs text-muted-foreground">
+            Nada sai da gaveta. Um gerente autoriza com o PIN, e o estorno fica registrado no pedido.
+          </p>
+        </div>
+      </template>
+    </NuxtModal>
 
     <!-- Pedidos de troco à espera: é aqui que a troca acontece, entre duas
          pessoas no balcão. O PEDIR mora no card "Pedir troco", da Gaveta. -->
-    <UiDialog v-model:open="changeRequestsDialogOpen">
-      <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" data-session-dialog="attention:change">
-        <UiDialogHeader>
-          <div class="flex items-center gap-2">
-            <Icon name="lucide:coins" class="size-4 text-muted-foreground" />
-            <UiDialogTitle>Pedidos de troco</UiDialogTitle>
-          </div>
-          <UiDialogDescription>Chegou o troco? Atenda: o gerente autoriza aqui mesmo.</UiDialogDescription>
-        </UiDialogHeader>
+    <NuxtModal
+      v-model:open="changeRequestsDialogOpen"
+      title="Pedidos de troco"
+      description="Chegou o troco? Atenda: o gerente autoriza aqui mesmo."
+      :content="dialogContent('attention:change')"
+    >
+      <template #body>
         <ul class="grid gap-2" aria-label="Pedidos de troco pendentes">
           <li
             v-for="request in pendingChangeRequests"
             :key="request.ref"
-            class="grid gap-2 rounded-md border bg-muted/30 p-3"
+            class="grid gap-2 rounded-md bg-elevated p-3"
           >
             <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <span class="text-sm font-medium">{{ changeRequestSummary(request, cashManagement) }}</span>
@@ -820,59 +862,64 @@ async function confirmClose() {
             <p v-if="request.note" class="text-xs text-muted-foreground">{{ request.note }}</p>
 
             <div v-if="cancellingChangeRef !== request.ref" class="grid grid-cols-2 gap-2">
-              <UiButton size="sm" :disabled="busy" @click="serveChange(request.ref)">
-                <Icon name="lucide:hand-coins" class="size-4" />
-                Atender
-              </UiButton>
-              <UiButton
+              <NuxtButton
+                block
+                icon="i-lucide-hand-coins"
+                label="Atender"
+                :disabled="busy"
+                @click="serveChange(request.ref)"
+              />
+              <NuxtButton
+                block
+                color="neutral"
                 variant="outline"
-                size="sm"
+                label="Cancelar pedido"
                 :disabled="busy"
                 @click="cancellingChangeRef = request.ref"
-              >
-                Cancelar pedido
-              </UiButton>
+              />
             </div>
-            <div v-else class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+            <div v-else class="grid gap-2 rounded-md bg-error/10 p-3">
               <p class="text-sm font-medium">Cancelar este pedido? Ninguém vai trazer o troco.</p>
               <div class="grid grid-cols-2 gap-2">
-                <UiButton variant="outline" size="sm" :disabled="busy" @click="cancellingChangeRef = ''">
-                  Voltar
-                </UiButton>
-                <UiButton
-                  variant="destructive"
-                  size="sm"
+                <NuxtButton
+                  block
+                  color="neutral"
+                  variant="outline"
+                  label="Voltar"
+                  :disabled="busy"
+                  @click="cancellingChangeRef = ''"
+                />
+                <NuxtButton
+                  block
+                  color="error"
+                  label="Cancelar o pedido"
                   :disabled="busy"
                   :loading="busy"
                   @click="confirmCancelChange(request.ref)"
-                >
-                  Confirmar
-                </UiButton>
+                />
               </div>
             </div>
           </li>
         </ul>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+    </NuxtModal>
 
     <!-- Conta na casa: quem deve quanto, e o acerto. Em dinheiro entra neste
          turno (a gaveta abre para guardar); pix/cartão é atestado no balcão.
          Sem PIN: entrada não exige segunda assinatura. -->
-    <UiDialog v-model:open="accountsDialogOpen">
-      <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" data-session-dialog="attention:accounts">
-        <UiDialogHeader>
-          <div class="flex items-center gap-2">
-            <Icon name="lucide:book-user" class="size-4 text-muted-foreground" />
-            <UiDialogTitle>Contas na casa</UiDialogTitle>
-          </div>
-          <UiDialogDescription>O cliente veio acertar? Toque em Receber acerto na conta certa.</UiDialogDescription>
-        </UiDialogHeader>
+    <NuxtModal
+      v-model:open="accountsDialogOpen"
+      title="Contas na casa"
+      description="O cliente veio acertar? Toque em Receber acerto na conta certa."
+      :content="dialogContent('attention:accounts')"
+    >
+      <template #body>
         <div data-house-accounts>
           <ul class="grid gap-2" aria-label="Contas na casa com saldo em aberto">
             <li
               v-for="account in accountBalances"
               :key="account.customer_ref"
-              class="grid gap-2 rounded-md border bg-muted/30 p-3"
+              class="grid gap-2 rounded-md bg-elevated p-3"
             >
               <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <span class="text-sm font-medium">{{ account.customer_name }}</span>
@@ -889,138 +936,130 @@ async function confirmClose() {
                 </span>
               </div>
               <template v-if="settleCustomerRef === account.customer_ref">
-                <div class="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
-                  <label class="grid gap-1.5 text-sm">
-                    <span class="font-medium text-muted-foreground">Recebido</span>
-                    <UiInput
+                <div class="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <NuxtFormField label="Recebido">
+                    <NuxtInput
                       v-model="settleAmount"
+                      class="w-full"
                       inputmode="decimal"
                       placeholder="0,00"
-                      class="text-right tabular-nums"
+                      :ui="{ base: 'text-right tabular-nums' }"
                       aria-label="Valor recebido no acerto"
                       @keydown.enter="submitSettle"
                     />
-                  </label>
-                  <label class="grid gap-1.5 text-sm">
-                    <span class="font-medium text-muted-foreground">Como</span>
-                    <UiNativeSelect v-model="settleMethod" aria-label="Método do acerto">
-                      <option value="cash">Dinheiro</option>
-                      <option value="pix">Pix</option>
-                      <option value="credit">Crédito</option>
-                      <option value="debit">Débito</option>
-                      <option value="external">Outro</option>
-                    </UiNativeSelect>
-                  </label>
-                  <div class="flex gap-2">
-                    <UiButton size="sm" variant="outline" :disabled="busy" @click="settleCustomerRef = null">Cancelar</UiButton>
-                    <UiButton size="sm" :disabled="busy || !settleAmount.trim()" @click="submitSettle">
-                      <Icon name="lucide:check" class="size-4" />
-                      Receber
-                    </UiButton>
-                  </div>
+                  </NuxtFormField>
+                  <!-- Lista curta e fixa: `NuxtSelect` (o `UiNativeSelect` aposentou). -->
+                  <NuxtFormField label="Como">
+                    <NuxtSelect
+                      v-model="settleMethod"
+                      :items="SETTLE_METHODS"
+                      class="w-full sm:w-36"
+                      aria-label="Método do acerto"
+                      data-settle-method
+                    />
+                  </NuxtFormField>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <NuxtButton
+                    block
+                    color="neutral"
+                    variant="outline"
+                    label="Cancelar"
+                    :disabled="busy"
+                    @click="settleCustomerRef = null"
+                  />
+                  <NuxtButton
+                    block
+                    icon="i-lucide-check"
+                    label="Receber"
+                    :disabled="busy || !settleAmount.trim()"
+                    :loading="busy"
+                    @click="submitSettle"
+                  />
                 </div>
                 <p class="text-xs text-muted-foreground">
                   O acerto é por venda inteira, da mais antiga para a mais nova; o que não couber fica em aberto.
                 </p>
               </template>
-              <UiButton v-else size="sm" :disabled="busy" @click="openSettle(account.customer_ref, account.balance_q)">
-                <Icon name="lucide:hand-coins" class="size-4" />
-                Receber acerto
-              </UiButton>
+              <NuxtButton
+                v-else
+                block
+                icon="i-lucide-hand-coins"
+                label="Receber acerto"
+                :disabled="busy"
+                @click="openSettle(account.customer_ref, account.balance_q)"
+              />
             </li>
           </ul>
         </div>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+    </NuxtModal>
 
-      <!-- Pedir troco: o dinheiro fica no balcão, o troco vem até ele.
-           Antes o operador atravessava a loja até o cofre com dinheiro na
-           mão; agora ele pede, alguém traz, e a troca acontece aqui, à
-           vista das duas pessoas. Trocar não muda o total da gaveta. -->
-      <UiDialog v-model:open="changeDialogOpen">
-        <UiDialogContent
-          class="max-h-[85vh] overflow-y-auto sm:max-w-lg"
-          data-session-dialog="request_change"
-          @open-auto-focus="focusOnOpen($event, changeAmountField)"
-        >
-          <UiDialogHeader>
-            <div class="flex items-center gap-2">
-              <Icon name="lucide:coins" class="size-4 text-muted-foreground" />
-              <UiDialogTitle>Pedido de troco</UiDialogTitle>
-            </div>
-            <UiDialogDescription>
-              Peça o troco em vez de sair do balcão com dinheiro. Um gerente traz e autoriza aqui mesmo.
-            </UiDialogDescription>
-          </UiDialogHeader>
-
+    <!-- Pedir troco: o dinheiro fica no balcão, o troco vem até ele.
+         Antes o operador atravessava a loja até o cofre com dinheiro na
+         mão; agora ele pede, alguém traz, e a troca acontece aqui, à
+         vista das duas pessoas. Trocar não muda o total da gaveta. -->
+    <NuxtModal
+      v-model:open="changeDialogOpen"
+      title="Pedido de troco"
+      description="Peça o troco em vez de sair do balcão com dinheiro. Um gerente traz e autoriza aqui mesmo."
+      :content="dialogContent('request_change', 'change')"
+    >
+      <template #body>
+        <div class="grid gap-3">
           <!-- O VALOR primeiro, e exato. É a pergunta que quem vai ao cofre
                precisa respondida antes de sair andando. -->
-          <label class="grid gap-1.5 text-sm">
-            <span class="font-medium text-muted-foreground">Quanto</span>
-            <UiInput
+          <NuxtFormField label="Quanto">
+            <NuxtInput
               ref="changeAmountField"
               v-model="changeAmount"
+              size="xl"
+              class="w-full"
               inputmode="decimal"
               placeholder="0,00"
-              class="text-right tabular-nums"
+              :ui="{ base: 'text-right tabular-nums' }"
               @keydown.enter="submitChangeRequest"
             />
-          </label>
+          </NuxtFormField>
 
           <!-- EM QUÊ. Cédula é retangular e verde, moeda é redonda e amarela,
                porque é assim que a mão reconhece no balcão sem parar para
                ler. Várias podem ser marcadas: "R$ 100 em notas de 5 e moedas
-               de 0,50" é uma frase que se diz de verdade.
+               de 0,50" é uma frase que se diz de verdade. Marcada é CHEIA
+               (`solid`), desmarcada é só o contorno: sob a luz do balcão dois
+               tons da mesma cor viram um só, cheio e vazio não.
 
                Nada aqui é obrigatório: "me traz R$ 100" já é um pedido
                inteiro, e o gerente resolve com o que houver no cofre. -->
           <div class="grid gap-1.5">
-            <span id="change-denom-label" class="text-sm font-medium text-muted-foreground">
-              Em quê <span class="font-normal">(opcional)</span>
+            <span id="change-denom-label" class="text-sm font-medium">
+              Em quê <span class="font-normal text-muted-foreground">(opcional)</span>
             </span>
             <div class="flex flex-wrap gap-2" role="group" aria-labelledby="change-denom-label">
-              <button
+              <NuxtButton
                 v-for="denom in changeDenominationOptions"
                 :key="denom.q"
-                type="button"
+                size="xl"
+                :color="denom.shape === 'note' ? 'success' : 'warning'"
+                :variant="changeDenominationsPicked.includes(denom.q) ? 'solid' : 'outline'"
+                :class="denom.shape === 'note' ? 'min-w-16 justify-center' : 'size-12 justify-center rounded-full'"
+                :label="denom.label"
                 :aria-pressed="changeDenominationsPicked.includes(denom.q)"
                 :aria-label="`${denom.shape === 'note' ? 'Nota' : 'Moeda'} de ${denom.label}`"
-                class="inline-flex items-center justify-center border text-sm font-semibold tabular-nums transition-colors disabled:opacity-50"
-                :class="[
-                  // Cédula é retangular, moeda é redonda — o desenho é a
-                  // informação, e a mão acha antes do olho ler.
-                  denom.shape === 'note' ? 'h-12 rounded-md px-4' : 'size-12 rounded-full',
-                  denom.shape === 'note'
-                    ? 'border-success/40 bg-success/10 text-success'
-                    : 'border-warning/40 bg-warning/10 text-warning',
-                  // Marcado é um ANEL, não um tom mais escuro: sob a luz do
-                  // balcão dois tons da mesma cor viram um só, e o operador
-                  // não saberia dizer o que pediu.
-                  changeDenominationsPicked.includes(denom.q)
-                    ? (denom.shape === 'note' ? 'ring-2 ring-success' : 'ring-2 ring-warning')
-                    : '',
-                ]"
                 :disabled="busy"
+                :data-denomination-shape="denom.shape"
                 @click="toggleDenomination(denom.q)"
-              >
-                {{ denom.label }}
-              </button>
+              />
             </div>
           </div>
 
-          <UiInput
+          <NuxtInput
             v-model="changeNote"
+            class="w-full"
             aria-label="Observação do pedido"
             placeholder="Observação (opcional)"
             @keydown.enter="submitChangeRequest"
           />
-
-          <UiButton
-            :disabled="busy || !canSubmitChange"
-            @click="submitChangeRequest"
-          >
-            Preciso de troco
-          </UiButton>
 
           <!-- Honestidade: o registro é trilha e dado, não um recado
                entregue. Ninguém está de olho numa tela de alertas aqui. -->
@@ -1028,55 +1067,64 @@ async function confirmClose() {
             <Icon name="lucide:megaphone" class="mt-0.5 size-4 shrink-0" />
             <span>O pedido fica registrado no turno. Avise em voz alta também.</span>
           </p>
-        </UiDialogContent>
-      </UiDialog>
+        </div>
+      </template>
+      <template #footer>
+        <NuxtButton
+          size="xl"
+          block
+          label="Preciso de troco"
+          :disabled="busy || !canSubmitChange"
+          :loading="busy"
+          @click="submitChangeRequest"
+        />
+      </template>
+    </NuxtModal>
 
-      <!-- Movimento de caixa: saída (sangria) / entrada (suprimento). Um
-           diálogo para os dois, com o tipo que o tile escolheu e o seletor
-           dentro, para trocar. -->
-      <UiDialog v-model:open="movementDialogOpen">
-        <UiDialogContent
-          class="max-h-[85vh] overflow-y-auto sm:max-w-lg"
-          data-session-dialog="movement"
-          @open-auto-focus="focusOnOpen($event, movementAmountField)"
-        >
-          <UiDialogHeader>
-            <UiDialogTitle>{{ movementDialogTitle }}</UiDialogTitle>
-            <UiDialogDescription>Movimento de caixa</UiDialogDescription>
-          </UiDialogHeader>
+    <!-- Movimento de caixa: saída (sangria) / entrada (suprimento). Um
+         diálogo para os dois, com o tipo que o tile escolheu e o seletor
+         dentro, para trocar. -->
+    <NuxtModal
+      v-model:open="movementDialogOpen"
+      :title="movementDialogTitle"
+      description="Movimento de caixa"
+      :content="dialogContent('movement', 'movement')"
+    >
+      <template #body>
+        <div class="grid gap-3">
           <div class="grid gap-1.5">
-            <span id="movement-kind-label" class="text-sm font-medium text-muted-foreground">Tipo</span>
+            <span id="movement-kind-label" class="text-sm font-medium">Tipo</span>
             <div class="grid grid-cols-2 gap-2" role="group" aria-labelledby="movement-kind-label">
-              <UiButton
+              <NuxtButton
                 v-for="kind in movementKinds"
                 :key="kind"
-                variant="outline"
-                size="sm"
+                block
+                :color="movementKind === kind ? 'primary' : 'neutral'"
+                :variant="movementKind === kind ? 'soft' : 'outline'"
+                :label="movementLabel(kind)"
                 :aria-pressed="movementKind === kind"
-                :class="movementKind === kind ? 'border-primary bg-primary/5' : ''"
                 @click="pickMovementKind(kind)"
-              >
-                {{ movementLabel(kind) }}
-              </UiButton>
+              />
             </div>
           </div>
-          <label class="grid gap-1.5 text-sm">
-            <span class="font-medium text-muted-foreground">Valor</span>
-            <UiInput
+          <NuxtFormField label="Valor" :error="movementError || undefined">
+            <NuxtInput
               ref="movementAmountField"
               v-model="movementAmount"
+              size="xl"
+              class="w-full"
               inputmode="decimal"
               placeholder="0,00"
+              :ui="{ base: 'text-right tabular-nums' }"
               :aria-invalid="movementError ? 'true' : undefined"
             />
-          </label>
-          <p v-if="movementError" class="text-xs text-destructive">{{ movementError }}</p>
+          </NuxtFormField>
 
           <!-- Motivo obrigatório, em botões. O digitado fica como saída para o
                que não estava previsto, e é o único caminho quando o tipo não
                tem opções conhecidas. -->
           <div v-if="movementKind" class="grid gap-1.5">
-            <span id="movement-reason-label" class="text-sm font-medium text-muted-foreground">
+            <span id="movement-reason-label" class="text-sm font-medium">
               {{ movementKind === "sangria" ? "Motivo (obrigatório)" : "Observação (opcional)" }}
             </span>
             <div
@@ -1085,20 +1133,20 @@ async function confirmClose() {
               role="group"
               aria-labelledby="movement-reason-label"
             >
-              <UiButton
+              <NuxtButton
                 v-for="reason in movementReasonOptions"
                 :key="reason"
-                variant="outline"
-                size="sm"
+                block
+                :color="movementReasonPick === reason ? 'primary' : 'neutral'"
+                :variant="movementReasonPick === reason ? 'soft' : 'outline'"
+                :label="reason"
                 :aria-pressed="movementReasonPick === reason"
-                :class="movementReasonPick === reason ? 'border-primary bg-primary/5' : ''"
                 @click="pickMovementReason(reason)"
-              >
-                {{ reason }}
-              </UiButton>
+              />
             </div>
-            <UiInput
+            <NuxtInput
               v-model="movementReasonOther"
+              class="w-full"
               :aria-label="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
               :placeholder="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
             />
@@ -1108,148 +1156,155 @@ async function confirmClose() {
             <Icon name="lucide:shield-check" class="mt-0.5 size-4 shrink-0" />
             <span>Tirar dinheiro da gaveta precisa da autorização de um gerente.</span>
           </p>
-          <UiButton
-            :disabled="busy || !canSubmitMovement"
-            @click="submitMovement()"
-          >
-            Registrar movimento
-          </UiButton>
-        </UiDialogContent>
-      </UiDialog>
+        </div>
+      </template>
+      <template #footer>
+        <NuxtButton
+          size="xl"
+          block
+          label="Registrar movimento"
+          :disabled="busy || !canSubmitMovement"
+          :loading="busy"
+          @click="submitMovement()"
+        />
+      </template>
+    </NuxtModal>
 
-      <!-- Abrir a gaveta sem venda: motivo obrigatório, porque é o único
-           dos quatro momentos que não deixa rastro sozinho. -->
-      <UiDialog v-model:open="drawerDialogOpen">
-        <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg" data-session-dialog="open_drawer">
-          <UiDialogHeader>
-            <div class="flex items-center gap-2">
-              <Icon name="lucide:archive" class="size-4 text-muted-foreground" />
-              <UiDialogTitle>Abrir gaveta</UiDialogTitle>
-            </div>
-            <UiDialogDescription>
-              Abrir sem venda fica registrado no turno: quem abriu, quando e por quê.
-            </UiDialogDescription>
-          </UiDialogHeader>
+    <!-- Abrir a gaveta sem venda: motivo obrigatório, porque é o único
+         dos quatro momentos que não deixa rastro sozinho. -->
+    <NuxtModal
+      v-model:open="drawerDialogOpen"
+      title="Abrir gaveta"
+      description="Abrir sem venda fica registrado no turno: quem abriu, quando e por quê."
+      :content="dialogContent('open_drawer')"
+    >
+      <template #body>
+        <div class="grid gap-3">
           <div class="grid grid-cols-2 gap-2">
-            <UiButton
+            <NuxtButton
               v-for="reason in DRAWER_REASONS"
               :key="reason"
+              block
+              color="neutral"
               variant="outline"
-              size="sm"
+              :label="reason"
               :disabled="busy"
               @click="openDrawer(reason)"
-            >
-              {{ reason }}
-            </UiButton>
+            />
           </div>
           <div class="grid grid-cols-[1fr_auto] gap-2">
-            <UiInput v-model="drawerReason" placeholder="Outro motivo" @keydown.enter="openDrawer(drawerReason)" />
-            <UiButton variant="outline" size="sm" :disabled="busy || !drawerReason.trim()" @click="openDrawer(drawerReason)">
-              Abrir
-            </UiButton>
+            <NuxtInput v-model="drawerReason" class="w-full" placeholder="Outro motivo" aria-label="Outro motivo" @keydown.enter="openDrawer(drawerReason)" />
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              label="Abrir"
+              :disabled="busy || !drawerReason.trim()"
+              @click="openDrawer(drawerReason)"
+            />
           </div>
-          <div class="mt-1 grid gap-2 border-t pt-3">
+          <div class="grid gap-2 border-t border-default pt-3">
             <!-- ⚠️ A sonda ABRE a gaveta e registra a abertura no turno
                  (`drawer_open`, motivo "Teste de gaveta"), como qualquer
                  abertura sem venda. "Testar" prometia gesto sem
                  consequência, e quem testava três vezes deixava três
                  aberturas no relatório do dia sem saber. -->
-            <UiButton variant="ghost" size="sm" :disabled="busy || drawerProbing" :loading="drawerProbing" @click="testDrawer">
-              <Icon name="lucide:stethoscope" class="size-4" />
-              Abrir para testar
-            </UiButton>
+            <NuxtButton
+              class="justify-self-start"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-stethoscope"
+              label="Abrir para testar"
+              :disabled="busy || drawerProbing"
+              :loading="drawerProbing"
+              @click="testDrawer"
+            />
             <p class="text-xs text-muted-foreground">
               Abre a gaveta e fica registrado no turno, como qualquer abertura sem venda.
             </p>
-            <p v-if="drawerProbeResult" class="text-xs" :class="drawerProbeResult.ok ? 'text-muted-foreground' : 'text-destructive'">
+            <p v-if="drawerProbeResult" class="text-xs" :class="drawerProbeResult.ok ? 'text-muted-foreground' : 'text-error'">
               <template v-if="drawerProbeResult.ok">
                 {{ drawerProbeResult.message }} A gaveta abriu? Se não abriu, confira o cabo dela na impressora.
               </template>
               <template v-else>{{ drawerProbeResult.message }}</template>
             </p>
           </div>
-        </UiDialogContent>
-      </UiDialog>
+        </div>
+      </template>
+    </NuxtModal>
 
-      <!-- Fechar caixa (contagem cega) — destrutivo; a confirmação com o
-           eco do valor continua aqui dentro. -->
-      <UiDialog v-model:open="closingDialogOpen">
-        <UiDialogContent
-          class="max-h-[85vh] overflow-y-auto sm:max-w-lg"
-          data-session-dialog="close_shift"
-          @open-auto-focus="focusOnOpen($event, closingAmountField)"
-        >
-          <UiDialogHeader>
-            <UiDialogTitle>Fechar caixa</UiDialogTitle>
-            <!-- O aviso da contagem cega É a descrição do diálogo: o
-                 leitor de tela lê antes do campo, como o olho. -->
-            <UiDialogDescription class="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-left text-xs">
-              <Icon name="lucide:eye-off" class="mt-0.5 size-4 shrink-0" />
-              <span>Contagem cega: conte o dinheiro do caixa e informe o valor. A conferência fica no gestor.</span>
-            </UiDialogDescription>
-          </UiDialogHeader>
-          <label class="grid gap-1 text-sm">
-            <span class="font-medium text-muted-foreground">Valor contado</span>
-            <!-- Nasce focado: abrir o diálogo já foi a decisão, contar é
-                 o próximo gesto. -->
-            <UiInput
+    <!-- Fechar caixa (contagem cega) — destrutivo; a confirmação com o
+         eco do valor continua aqui dentro. O aviso da contagem cega É a
+         descrição do diálogo: o leitor de tela lê antes do campo, como o olho. -->
+    <NuxtModal
+      v-model:open="closingDialogOpen"
+      title="Fechar caixa"
+      description="Contagem cega: conte o dinheiro do caixa e informe o valor. A conferência fica no gestor."
+      :content="dialogContent('close_shift', 'closing')"
+    >
+      <template #body>
+        <div class="grid gap-3">
+          <!-- Nasce focado: abrir o diálogo já foi a decisão, contar é o próximo gesto. -->
+          <NuxtFormField label="Valor contado" :error="closingError || undefined">
+            <NuxtInput
               ref="closingAmountField"
               v-model="closingAmount"
+              size="xl"
+              class="w-full"
               inputmode="decimal"
-              autofocus
               placeholder="0,00"
+              :ui="{ base: 'text-right tabular-nums' }"
               :aria-invalid="closingError ? 'true' : undefined"
             />
-          </label>
-          <p v-if="closingError" class="text-xs text-destructive">{{ closingError }}</p>
-          <UiButton
+          </NuxtFormField>
+          <NuxtButton
             v-if="!closingCounter"
-            variant="ghost"
-            size="sm"
             class="justify-self-start"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-calculator"
+            label="Contar por cédulas e moedas"
             @click="closingCounter = true"
-          >
-            <Icon name="lucide:calculator" class="size-4" />
-            Contar por cédulas e moedas
-          </UiButton>
+          />
           <PosDenominationCounter
             v-if="closingCounter"
             :denominations="changeDenominationOptions"
             :disabled="busy"
             @total-q="closingAmount = formatAmountInput($event)"
           />
-          <label class="grid gap-1 text-sm">
-            <span class="font-medium text-muted-foreground">Observações</span>
-            <UiTextarea v-model="closingNotes" :rows="2" placeholder="Conferência, divergências" />
-          </label>
-          <div v-if="!confirmingClose">
-            <!-- Só arma com um valor legível — vazio virava "0" calado, e o
-                 turno fechava com uma contagem que ninguém fez. -->
-            <!-- ⚠️ Este botão NÃO fecha: ele arma a confirmação. O
-                 tile lá fora já se chama "Fechar caixa" (porta com nome
-                 do destino); repetir o verbo do ato aqui ensinava a
-                 apertar no automático, e quem encerrava o turno dizia a
-                 palavra mais vaga da sequência ("Confirmar"). -->
-            <UiButton variant="destructive" class="w-full" :disabled="busy || !canClose" @click="confirmingClose = true">
-              Conferir e fechar
-            </UiButton>
+          <NuxtFormField label="Observações">
+            <NuxtTextarea v-model="closingNotes" class="w-full" :rows="2" placeholder="Conferência, divergências" />
+          </NuxtFormField>
+        </div>
+      </template>
+      <template #footer>
+        <!-- Só arma com um valor legível — vazio virava "0" calado, e o
+             turno fechava com uma contagem que ninguém fez. ⚠️ Este botão NÃO
+             fecha: ele arma a confirmação. O tile lá fora já se chama "Fechar
+             caixa" (porta com nome do destino); repetir o verbo do ato aqui
+             ensinava a apertar no automático. -->
+        <NuxtButton
+          v-if="!confirmingClose"
+          size="xl"
+          block
+          color="error"
+          label="Conferir e fechar"
+          :disabled="busy || !canClose"
+          @click="confirmingClose = true"
+        />
+        <div v-else class="grid w-full gap-2 rounded-md bg-error/10 p-3" data-close-shift-confirm>
+          <!-- O eco do valor: a última leitura antes de a contagem virar
+               a única palavra do operador no livro. -->
+          <p class="text-sm font-medium">
+            Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
+          </p>
+          <div class="grid grid-cols-2 gap-2">
+            <NuxtButton block color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="confirmingClose = false" />
+            <!-- O degrau que PRATICA o ato é o único que o diz. -->
+            <NuxtButton block color="error" label="Fechar o caixa" :disabled="busy" :loading="busy" @click="confirmClose" />
           </div>
-          <div v-else class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
-            <!-- O eco do valor: a última leitura antes de a contagem virar
-                 a única palavra do operador no livro. -->
-            <p class="text-sm font-medium">
-              Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
-            </p>
-            <div class="grid grid-cols-2 gap-2">
-              <UiButton variant="outline" :disabled="busy" @click="confirmingClose = false">Cancelar</UiButton>
-              <!-- O degrau que PRATICA o ato é o único que o diz. -->
-              <UiButton variant="destructive" :disabled="busy" :loading="busy" @click="confirmClose">
-                Fechar o caixa
-              </UiButton>
-            </div>
-          </div>
-        </UiDialogContent>
-      </UiDialog>
+        </div>
+      </template>
+    </NuxtModal>
 
     <OperatorManagerAuth
       v-model:open="managerAuthOpen"

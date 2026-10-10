@@ -1,7 +1,11 @@
 <script setup lang="ts">
-// Card de leitura de turno (X aberto, Z fechado) do relatório da antesala.
+// Leitura de turno (X aberto, Z fechado) do relatório da antesala.
 // BLIND: renderiza só o que a projection serve — abertura, movimentos, vendas
 // por método e (no Z) o valor CONTADO. O esperado da gaveta não existe aqui.
+//
+// Fase 2 (onda do PDV): a leitura é uma SEÇÃO, não um cartão. Os números do turno
+// moram num cartão e cada lista na tabela da suíte (`OperatorTable`, que já é o seu
+// cartão): cartão dentro de cartão era o que a leitura antiga desenhava.
 import { movementFlow, readingTitle, shiftPeriodDisplay, signedMovementDisplay } from "~/presentation/cashReport";
 import type { ShiftReading } from "~/types/cashReport";
 
@@ -18,117 +22,107 @@ const emit = defineEmits<{ reprint: [entryId: number] }>();
 
 const period = computed(() => shiftPeriodDisplay(props.reading));
 const isOpen = computed(() => props.reading.status === "open");
+
+const NUM = { class: { th: "text-right", td: "text-right tabular-nums whitespace-nowrap" } };
+const methodColumns = [
+  { accessorKey: "method_label", header: "Método" },
+  { accessorKey: "orders_count", header: "Pagamentos", meta: NUM },
+  { id: "amount", header: "Valor", meta: NUM },
+];
+const movementColumns = computed(() => [
+  { accessorKey: "kind_label", header: "Tipo" },
+  { id: "reason", header: "Motivo" },
+  { id: "amount", header: "Valor", meta: NUM },
+  ...(props.canReprint ? [{ id: "reprint", header: "Comprovante", meta: { class: { th: "text-right", td: "text-right" } } }] : []),
+]);
 </script>
 
 <template>
-  <section class="grid gap-3 rounded-md border bg-card p-4">
+  <section class="grid gap-3" :aria-label="readingTitle(reading)" data-cash-reading>
     <div class="flex flex-wrap items-center gap-2">
       <Icon :name="isOpen ? 'lucide:receipt-text' : 'lucide:archive'" class="size-4 text-muted-foreground" />
       <h2 class="text-base font-semibold">{{ readingTitle(reading) }}</h2>
-      <span
-        v-if="isOpen"
-        class="inline-flex items-center rounded-md border border-success/40 bg-success/10 px-1.5 py-0.5 text-xs font-medium text-success"
-      >
-        Turno aberto · parcial
-      </span>
-      <span class="ml-auto truncate text-sm text-muted-foreground">
+      <NuxtBadge v-if="isOpen" color="success" label="Turno aberto · parcial" />
+      <span class="text-sm text-muted-foreground sm:ml-auto">
         {{ reading.operator }} · {{ reading.terminal_label }}<template v-if="period"> · {{ period }}</template>
       </span>
     </div>
 
-    <div class="grid grid-cols-2 gap-2 rounded-md border bg-muted/40 p-3 text-sm sm:grid-cols-4">
-      <div class="flex flex-col">
-        <span class="text-xs text-muted-foreground">Abertura</span>
-        <span class="font-medium tabular-nums">R$ {{ reading.opening_amount_display }}</span>
-      </div>
-      <div class="flex flex-col">
-        <span class="text-xs text-muted-foreground">Vendas</span>
-        <span class="font-medium tabular-nums">{{ reading.sales_count }}</span>
-      </div>
-      <div class="flex flex-col">
-        <span class="text-xs text-muted-foreground">Total vendido</span>
-        <span class="font-medium tabular-nums">R$ {{ reading.sales_total_display }}</span>
-      </div>
-      <div v-if="!isOpen" class="flex flex-col">
-        <span class="text-xs text-muted-foreground">Contado no fechamento</span>
-        <span class="font-medium tabular-nums">R$ {{ reading.counted_amount_display }}</span>
-      </div>
-    </div>
+    <NuxtCard>
+      <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div class="flex flex-col">
+          <dt class="text-xs text-muted-foreground">Abertura</dt>
+          <dd class="font-medium tabular-nums">R$ {{ reading.opening_amount_display }}</dd>
+        </div>
+        <div class="flex flex-col">
+          <dt class="text-xs text-muted-foreground">Vendas</dt>
+          <dd class="font-medium tabular-nums">{{ reading.sales_count }}</dd>
+        </div>
+        <div class="flex flex-col">
+          <dt class="text-xs text-muted-foreground">Total vendido</dt>
+          <dd class="font-medium tabular-nums">R$ {{ reading.sales_total_display }}</dd>
+        </div>
+        <div v-if="!isOpen" class="flex flex-col">
+          <dt class="text-xs text-muted-foreground">Contado no fechamento</dt>
+          <dd class="font-medium tabular-nums">R$ {{ reading.counted_amount_display }}</dd>
+        </div>
+      </dl>
+    </NuxtCard>
 
-    <div class="grid gap-1">
+    <div class="grid gap-2">
       <h3 class="text-sm font-medium">Vendas por método</h3>
       <p v-if="!reading.sales_by_method.length" class="text-sm text-muted-foreground">
         Nenhum pagamento registrado no turno.
       </p>
-      <div v-else class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b text-left text-xs text-muted-foreground">
-              <th class="py-1.5 pr-3 font-medium">Método</th>
-              <th class="py-1.5 pr-3 font-medium">Pagamentos</th>
-              <th class="py-1.5 font-medium">Valor</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in reading.sales_by_method" :key="row.method" class="border-b border-border/60 last:border-0">
-              <td class="py-1.5 pr-3 font-medium">{{ row.method_label }}</td>
-              <td class="py-1.5 pr-3 tabular-nums">{{ row.orders_count }}</td>
-              <td class="py-1.5 tabular-nums">R$ {{ row.amount_display }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <OperatorTable
+        v-else
+        :data="reading.sales_by_method"
+        :columns="methodColumns"
+        :row-key="(row) => row.method"
+        :caption="`Vendas por método: ${readingTitle(reading)}`"
+      >
+        <template #amount-cell="{ row }">R$ {{ row.original.amount_display }}</template>
+      </OperatorTable>
     </div>
 
-    <div class="grid gap-1">
+    <div class="grid gap-2">
       <h3 class="text-sm font-medium">Movimentos de gaveta</h3>
       <p v-if="!reading.movements.length" class="text-sm text-muted-foreground">
         Nenhum movimento manual no turno.
       </p>
-      <div v-else class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b text-left text-xs text-muted-foreground">
-              <th class="py-1.5 pr-3 font-medium">Tipo</th>
-              <th class="py-1.5 pr-3 font-medium">Motivo</th>
-              <th class="py-1.5 font-medium">Valor</th>
-              <th v-if="props.canReprint" class="py-1.5 pl-3">
-                <span class="sr-only">Comprovante</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="movement in reading.movements" :key="movement.entry_id" class="border-b border-border/60 last:border-0">
-              <td class="py-1.5 pr-3 font-medium">{{ movement.kind_label }}</td>
-              <td class="py-1.5 pr-3 text-muted-foreground">{{ movement.reason || "Sem motivo informado" }}</td>
-              <td
-                class="py-1.5 tabular-nums"
-                :class="movementFlow(movement) === 'out' ? 'text-destructive' : 'text-success'"
-              >
-                {{ signedMovementDisplay(movement) }}
-              </td>
-              <td v-if="props.canReprint" class="py-1.5 pl-3 text-right">
-                <UiButton
-                  variant="ghost"
-                  size="sm"
-                  :disabled="props.busy"
-                  :aria-label="`Imprimir segunda via do comprovante de ${movement.kind_label.toLowerCase()}`"
-                  @click="emit('reprint', movement.entry_id)"
-                >
-                  <Icon name="lucide:printer" class="size-4" />
-                  Segunda via
-                </UiButton>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <OperatorTable
+        v-else
+        :data="reading.movements"
+        :columns="movementColumns"
+        :row-key="(row) => String(row.entry_id)"
+        :caption="`Movimentos de gaveta: ${readingTitle(reading)}`"
+      >
+        <template #reason-cell="{ row }">
+          <span class="text-muted-foreground">{{ row.original.reason || "Sem motivo informado" }}</span>
+        </template>
+        <template #amount-cell="{ row }">
+          <span :class="movementFlow(row.original) === 'out' ? 'text-error' : 'text-success'">
+            {{ signedMovementDisplay(row.original) }}
+          </span>
+        </template>
+        <template #reprint-cell="{ row }">
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-printer"
+            label="Segunda via"
+            :disabled="props.busy"
+            :aria-label="`Imprimir segunda via do comprovante de ${row.original.kind_label.toLowerCase()}`"
+            @click="emit('reprint', row.original.entry_id)"
+          />
+        </template>
+      </OperatorTable>
       <p class="text-xs text-muted-foreground">
         Entradas: R$ {{ reading.movements_in_display }} · Saídas: R$ {{ reading.movements_out_display }}
       </p>
     </div>
 
-    <p v-if="reading.notes" class="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+    <p v-if="reading.notes" class="text-sm text-muted-foreground">
       Observações: {{ reading.notes }}
     </p>
   </section>

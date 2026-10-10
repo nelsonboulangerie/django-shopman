@@ -140,6 +140,8 @@ const counterText = computed(() => {
         class="min-w-0 text-xs text-muted-foreground"
         data-header-subtitle
       >{{ subtitle }}</span>
+      <!-- O que a tela acrescenta ao "onde estou" (o anterior e o próximo do registro). -->
+      <slot name="status" />
     </template>
     <template v-if="searchable" #search>
       <OperatorSuiteSearch

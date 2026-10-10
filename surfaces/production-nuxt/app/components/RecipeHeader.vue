@@ -3,7 +3,8 @@
 // telas da Produção, com o selo "Receitas" ao lado do título, o voltar (`#lead`), a
 // busca e a ação primária da tela. Atualizar mora no ⋯ "Mais ações" (dados). SEM o
 // progresso do dia: o inventário de receitas não é etapa do lote, é conhecimento da
-// casa. Receitas mora em Ajustes.
+// casa. Receitas mora em Ajustes. O `#status` repassa o "onde estou" da tela (o
+// anterior e próxima da receita, `OperatorRecordNav`) ao mesmo slot do cabeçalho.
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 
 const props = defineProps<{
@@ -60,6 +61,9 @@ const phoneActions = computed(() => {
         aria-label="Voltar"
         title="Voltar"
       />
+    </template>
+    <template v-if="$slots.status" #status>
+      <slot name="status" />
     </template>
     <template v-if="searchable" #search>
       <OperatorSuiteSearch

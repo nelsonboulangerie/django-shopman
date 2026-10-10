@@ -166,11 +166,6 @@ const KNOWN_INERT: Record<string, string[]> = {
   "pos-nuxt/app/components/PosAddressAutocomplete.vue": ["accept"],
   "pos-nuxt/app/components/PosCustomerModal.vue": ["cancelDecision"],
   "pos-nuxt/app/components/PosPaymentResult.vue": ["copyCode", "copyLink"],
-  "pos-nuxt/app/pages/session/closing.vue": [
-    "goToCashReport",
-    "goToCashSession",
-  ],
-  "pos-nuxt/app/pages/session/report.vue": ["goToCashSession"],
   "production-nuxt/app/components/ProductionStageGrid.vue": ["confirmVoid"],
   "production-nuxt/app/pages/board.vue": ["toggleFullscreen"],
 };

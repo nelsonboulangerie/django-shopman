@@ -45,8 +45,9 @@ const emit = defineEmits<{
 
 // F7 (dono, 09/10/2026: "deslizar no mobile é sempre bom"): na Saída do celular,
 // deslizar o cartão para a DIREITA faz a saída dele ("Entregar U13 a Ana"), e o
-// "Próximo" ganha o mesmo ato no polegar. Os dois são o botão largo do cartão por
-// outro caminho: o mesmo `action`, a mesma confirmação quando ela existe.
+// "Próximo" ganha o mesmo ato na ação da base (`OperatorActionBar`, desenhada pela
+// página, no rodapé do painel). Os dois são o botão largo do cartão por outro
+// caminho: o mesmo `action`, a mesma confirmação quando ela existe.
 const exitColumn = computed(
   () => props.phone && props.zone.key === "expedition",
 );
@@ -60,11 +61,6 @@ function commitExit(card: OrderCardProjection) {
   if (gesture && !props.isBusy(card.ref))
     emit("action", card.ref, gesture.action);
 }
-const thumbCard = computed(() => {
-  if (!exitColumn.value) return null;
-  const card = props.cards.find((c) => c.ref === props.nextRef);
-  return card && exitGesture(card) ? card : null;
-});
 const hint = computed(() =>
   swipeHint(props.zone.key, exitColumn.value ? props.cards : [], props.canOpen),
 );
@@ -187,12 +183,5 @@ const hint = computed(() =>
         <Icon name="lucide:hand" class="size-4" />{{ hint }}
       </p>
     </div>
-    <OperatorThumbAction
-      v-if="thumbCard"
-      :label="exitGesture(thumbCard)!.label"
-      :loading="isBusy(thumbCard.ref)"
-      data-exit-thumb
-      @press="commitExit(thumbCard)"
-    />
   </section>
 </template>

@@ -44,6 +44,9 @@ async function confirmAdd() {
 
 const removeIndex = ref<number | null>(null);
 const removing = computed(() => (removeIndex.value === null ? null : props.references[removeIndex.value] ?? null));
+const removeDescription = computed(() =>
+  removing.value ? `"${removing.value.title}" sai das fontes desta receita.` : "",
+);
 
 async function confirmRemove() {
   if (removeIndex.value === null) return;
@@ -58,16 +61,15 @@ async function confirmRemove() {
       <h3 id="recipe-references-title" class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
         Fontes
       </h3>
-      <UiButton
+      <NuxtButton
         v-if="canEdit && !full"
-        type="button"
         class="ml-auto"
+        color="neutral"
         variant="outline"
-        size="sm"
+        icon="i-lucide-plus"
+        label="Adicionar"
         @click="openAdd"
-      >
-        <Icon name="lucide:plus" class="size-4" /> Adicionar
-      </UiButton>
+      />
     </div>
     <p class="mb-2 text-xs text-muted-foreground">Livros, vídeos e artigos de onde esta receita veio. Valem para todas as versões.</p>
 
@@ -86,86 +88,70 @@ async function confirmRemove() {
           <span v-if="reference.host_display" class="ml-1 text-xs text-muted-foreground">{{ reference.host_display }}</span>
           <p v-if="reference.note" class="whitespace-pre-line text-xs text-muted-foreground">{{ reference.note }}</p>
         </div>
-        <UiButton
+        <NuxtButton
           v-if="canEdit"
-          type="button"
+          icon="i-lucide-x"
+          color="neutral"
           variant="ghost"
-          size="icon-sm"
+          square
           :aria-label="`Remover a fonte ${reference.title}`"
           :title="`Remover a fonte ${reference.title}`"
           :disabled="busy"
           @click="removeIndex = index"
-        >
-          <Icon name="lucide:x" class="size-4" />
-        </UiButton>
+        />
       </li>
     </ul>
     <p v-else class="text-sm text-muted-foreground">Nenhuma fonte ainda.</p>
 
     <!-- ── Adicionar ─────────────────────────────────────────────────────── -->
-    <UiDialog :open="addOpen" @update:open="(v) => (addOpen = v)">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Adicionar fonte</UiDialogTitle>
-          <UiDialogDescription>Um livro, um vídeo ou um artigo de onde a receita veio.</UiDialogDescription>
-        </UiDialogHeader>
-        <form class="grid gap-3" @submit.prevent="confirmAdd">
-          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-            Título
-            <UiInput
+    <NuxtModal
+      v-model:open="addOpen"
+      title="Adicionar fonte"
+      description="Um livro, um vídeo ou um artigo de onde a receita veio."
+      :ui="{ content: 'sm:max-w-md' }"
+    >
+      <template #body>
+        <form id="recipe-reference-form" class="grid gap-3" @submit.prevent="confirmAdd">
+          <NuxtFormField label="Título" :error="errors.title || false">
+            <NuxtInput
               v-model="draft.title"
               type="text"
               autofocus
+              class="w-full"
               placeholder="Ex.: Tartine Bread, de Chad Robertson"
-              :aria-invalid="errors.title ? 'true' : undefined"
             />
-            <span v-if="errors.title" class="text-destructive">{{ errors.title }}</span>
-          </label>
-          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-            Link (opcional)
-            <UiInput
-              v-model="draft.url"
-              type="url"
-              inputmode="url"
-              placeholder="https://"
-              :aria-invalid="errors.url ? 'true' : undefined"
-            />
-            <span v-if="errors.url" class="text-destructive">{{ errors.url }}</span>
-          </label>
-          <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-            Nota (opcional)
-            <UiTextarea v-model="draft.note" :rows="2" placeholder="Ex.: página 48, a fórmula base" />
-            <span v-if="errors.note" class="text-destructive">{{ errors.note }}</span>
-          </label>
+          </NuxtFormField>
+          <NuxtFormField label="Link (opcional)" :error="errors.url || false">
+            <NuxtInput v-model="draft.url" type="url" inputmode="url" class="w-full" placeholder="https://" />
+          </NuxtFormField>
+          <NuxtFormField label="Nota (opcional)" :error="errors.note || false">
+            <NuxtTextarea v-model="draft.note" :rows="2" class="w-full" placeholder="Ex.: página 48, a fórmula base" />
+          </NuxtFormField>
           <p v-if="serverError" class="text-sm text-destructive">{{ serverError }}</p>
-          <UiDialogFooter>
-            <UiButton type="button" variant="outline" @click="addOpen = false">
-              Cancelar
-            </UiButton>
-            <UiButton type="submit" :disabled="busy">
-              Adicionar
-            </UiButton>
-          </UiDialogFooter>
         </form>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="addOpen = false" />
+          <NuxtButton type="submit" form="recipe-reference-form" label="Adicionar" :disabled="busy" />
+        </div>
+      </template>
+    </NuxtModal>
 
     <!-- ── Remover (pede confirmação) ────────────────────────────────────── -->
-    <UiDialog :open="removing !== null" @update:open="(v) => { if (!v) removeIndex = null; }">
-      <UiDialogContent class="sm:max-w-sm">
-        <UiDialogHeader>
-          <UiDialogTitle>Remover a fonte</UiDialogTitle>
-          <UiDialogDescription>"{{ removing?.title }}" sai das fontes desta receita.</UiDialogDescription>
-        </UiDialogHeader>
-        <UiDialogFooter>
-          <UiButton type="button" variant="outline" @click="removeIndex = null">
-            Cancelar
-          </UiButton>
-          <UiButton type="button" :disabled="busy" @click="confirmRemove">
-            Remover
-          </UiButton>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+    <NuxtModal
+      :open="removing !== null"
+      title="Remover a fonte"
+      :description="removeDescription"
+      :ui="{ content: 'sm:max-w-sm' }"
+      @update:open="(v: boolean) => { if (!v) removeIndex = null; }"
+    >
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="removeIndex = null" />
+          <NuxtButton color="error" label="Remover" :disabled="busy" @click="confirmRemove" />
+        </div>
+      </template>
+    </NuxtModal>
   </section>
 </template>

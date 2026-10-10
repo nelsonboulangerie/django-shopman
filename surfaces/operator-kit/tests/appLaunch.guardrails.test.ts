@@ -22,7 +22,7 @@ const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..")
 // Também a ação como dado (`:actions="[{ href: hubUrl, target: … }]"` do NuxtEmpty,
 // como no "Voltar à Central" do Marketing sem acesso).
 const CROSS_APP_HREF =
-  /(?::href="|\bhref: )(hubUrl|tile\.url|productionGrid|workOrderHref\(row\)|closeGuardNotice\.link\.href|note\.link\.href)(?=["',\s])/;
+  /(?::href="|\bhref: )(hubUrl|tile\.url|productionGrid|workOrderHref\(row(?:\.original)?\)|closeGuardNotice\.link\.href|note\.link\.href)(?=["',\s])/;
 
 /** O link declara o alvo pela regra do kit — por `:target`, pelo `v-bind` inteiro ou
  *  pelo `target:` da ação como dado. */

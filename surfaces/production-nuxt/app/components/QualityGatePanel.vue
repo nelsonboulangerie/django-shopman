@@ -52,12 +52,17 @@ type View = "pending" | "reviewed";
 // prévia `producao-qualidade4.html` a põe na linha do título): a página segura o
 // estado e passa `hide-tabs`. Sem isso, o painel mostra a troca dele.
 const view = defineModel<View>("view", { default: "pending" });
+// A troca, quando é do painel: as duas vistas com a contagem de cada uma.
 const showAllClean = ref(false);
 
 const gate = computed(() => qualityGate(props.orders));
 const pendingCount = computed(
   () => gate.value.clean.length + gate.value.exceptions.length,
 );
+const viewTabs = computed(() => [
+  { value: "pending", label: "Para confirmar", count: pendingCount.value },
+  { value: "reviewed", label: "Confirmados", count: gate.value.reviewed.length },
+]);
 const summary = computed(() => cleanSummary(gate.value.clean));
 const closers = computed(() => closersSummary(gate.value.clean));
 const released = computed(() => alertsReleased(gate.value.clean));
@@ -116,22 +121,17 @@ function closedLine(order: QCOrderCardProjection): string {
 
 <template>
   <div class="grid grid-cols-1 gap-4" data-quality-gate>
-    <UiTabs
+    <NuxtTabs
       v-if="!hideTabs"
       v-model="view"
+      :items="viewTabs"
+      :content="false"
+      variant="pill"
       class="w-full sm:w-auto sm:justify-self-end"
+      aria-label="Lotes da Qualidade"
     >
-      <UiTabsList class="grid w-full grid-cols-2 sm:w-auto" aria-label="Lotes da Qualidade">
-        <UiTabsTrigger value="pending" class="min-h-12 gap-2 font-semibold">
-          Para confirmar
-          <span class="tabular-nums">{{ pendingCount }}</span>
-        </UiTabsTrigger>
-        <UiTabsTrigger value="reviewed" class="min-h-12 gap-2 font-semibold">
-          Confirmados
-          <span class="tabular-nums">{{ gate.reviewed.length }}</span>
-        </UiTabsTrigger>
-      </UiTabsList>
-    </UiTabs>
+      <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+    </NuxtTabs>
 
     <div
       v-if="view === 'pending'"
@@ -188,24 +188,16 @@ function closedLine(order: QCOrderCardProjection): string {
                 +{{ hiddenClean }}
               </li>
             </ul>
-            <UiButton
+            <NuxtButton
               v-if="gate.clean.length > CHIP_LIMIT"
-              type="button"
+              color="neutral"
               variant="ghost"
-              class="min-h-12 justify-self-start"
+              class="justify-self-start"
+              :label="showAllClean ? 'Mostrar menos' : `Ver os ${gate.clean.length} lotes`"
+              :trailing-icon="showAllClean ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
               :aria-expanded="showAllClean"
               @click="showAllClean = !showAllClean"
-            >
-              {{
-                showAllClean
-                  ? "Mostrar menos"
-                  : `Ver os ${gate.clean.length} lotes`
-              }}
-              <Icon
-                :name="showAllClean ? 'lucide:chevron-up' : 'lucide:chevron-down'"
-                class="size-4"
-              />
-            </UiButton>
+            />
           </div>
 
           <!-- A consequência antes do gesto: quem fechou e quem será avisado. -->
@@ -244,20 +236,17 @@ function closedLine(order: QCOrderCardProjection): string {
           </div>
 
           <div class="grid gap-2">
-            <UiButton
-              type="button"
-              size="lg"
-              class="h-auto min-h-14 whitespace-normal rounded-lg text-lg font-semibold shadow-sm"
+            <NuxtButton
+              size="xl"
+              block
+              class="h-auto whitespace-normal"
+              icon="i-lucide-badge-check"
+              :label="submitting ? 'Confirmando…' : batchConfirmLabel(gate.clean.length)"
               :disabled="!batchAvailable || submitting"
               :aria-busy="submitting"
               data-quality-confirm-batch
               @click="emit('confirm-batch')"
-            >
-              <Icon name="lucide:badge-check" class="size-5" />
-              {{
-                submitting ? "Confirmando…" : batchConfirmLabel(gate.clean.length)
-              }}
-            </UiButton>
+            />
             <p class="text-center text-sm text-muted-foreground">
               Você confirma como responsável pela qualidade. Fica registrado com
               seu nome.
@@ -291,15 +280,14 @@ function closedLine(order: QCOrderCardProjection): string {
               aqui depois do Fechamento.
             </span>
           </p>
-          <UiButton
-            type="button"
+          <NuxtButton
+            color="neutral"
             variant="ghost"
-            class="min-h-12 shrink-0"
+            class="shrink-0"
+            label="Fechamento"
+            trailing-icon="i-lucide-arrow-right"
             @click="emit('go-close')"
-          >
-            Fechamento
-            <Icon name="lucide:arrow-right" class="size-4" />
-          </UiButton>
+          />
         </div>
       </section>
 
@@ -328,12 +316,12 @@ function closedLine(order: QCOrderCardProjection): string {
                 {{ closedLine(order) }}
               </p>
             </div>
-            <span
-              class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-warning/15 px-3 py-1 text-xs font-semibold text-warning"
-            >
-              <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-              {{ exceptionBadge(order) }}
-            </span>
+            <NuxtBadge
+              color="warning"
+              class="shrink-0"
+              :label="exceptionBadge(order)"
+              data-quality-exception-badge
+            />
           </div>
 
           <div
@@ -374,28 +362,26 @@ function closedLine(order: QCOrderCardProjection): string {
           </p>
 
           <div class="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
-            <UiButton
-              type="button"
+            <NuxtButton
+              color="neutral"
               variant="outline"
-              class="min-h-12 rounded-lg px-5 text-base"
+              size="xl"
+              icon="i-lucide-pencil"
+              label="Corrigir"
               :disabled="!correctionAvailable(order)"
               :aria-label="`Corrigir a qualidade do lote de ${order.recipe_name}`"
               @click="emit('correct', order)"
-            >
-              <Icon name="lucide:pencil" class="size-4" />
-              Corrigir
-            </UiButton>
-            <UiButton
-              type="button"
-              class="min-h-12 rounded-lg text-base font-semibold"
+            />
+            <NuxtButton
+              size="xl"
+              block
+              icon="i-lucide-check"
+              :label="submitting ? 'Confirmando…' : 'Confirmar assim'"
               :disabled="!reviewAvailable(order) || submitting"
               :aria-busy="submitting"
               :aria-label="`Confirmar a qualidade do lote de ${order.recipe_name} assim`"
               @click="emit('confirm-one', order)"
-            >
-              <Icon name="lucide:check" class="size-4" />
-              {{ submitting ? "Confirmando…" : "Confirmar assim" }}
-            </UiButton>
+            />
           </div>
         </article>
 
@@ -447,17 +433,16 @@ function closedLine(order: QCOrderCardProjection): string {
             </template>
           </p>
         </div>
-        <UiButton
+        <NuxtButton
           v-if="correctionAvailable(order)"
-          type="button"
+          color="neutral"
           variant="outline"
-          class="min-h-12 shrink-0"
+          class="shrink-0"
+          icon="i-lucide-pencil"
+          label="Corrigir"
           :aria-label="`Corrigir a qualidade do lote de ${order.recipe_name}`"
           @click="emit('correct', order)"
-        >
-          <Icon name="lucide:pencil" class="size-4" />
-          Corrigir
-        </UiButton>
+        />
       </div>
     </div>
   </div>

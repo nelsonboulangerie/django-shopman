@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 // Nova receita (/recipes/new) — três portas na mesma tela: Anotação (colar texto),
 // Foto (câmera/arquivo, redimensionada no navegador) e Manual (editor vazio). As
 // duas primeiras leem por POST recipes/capture/ e mostram o rascunho lido —
@@ -21,11 +22,18 @@ useHead({ title: "Nova receita" });
 type Door = "note" | "photo" | "manual";
 const route = useRoute();
 const door = ref<Door>(route.query.door === "manual" ? "manual" : route.query.door === "photo" ? "photo" : "note");
+// As três portas são escolha exclusiva da mesma tela: `NuxtTabs` sem conteúdo.
 const doors: { value: Door; label: string; icon: string }[] = [
-  { value: "note", label: "Anotação", icon: "lucide:notebook-pen" },
-  { value: "photo", label: "Foto", icon: "lucide:camera" },
-  { value: "manual", label: "Manual", icon: "lucide:pencil" },
+  { value: "note", label: "Anotação", icon: "i-lucide-notebook-pen" },
+  { value: "photo", label: "Foto", icon: "i-lucide-camera" },
+  { value: "manual", label: "Manual", icon: "i-lucide-pencil" },
 ];
+const doorChoice = computed({
+  get: () => door.value,
+  set: (value: string | number) => {
+    door.value = value as Door;
+  },
+});
 
 const { canEdit, captureAvailable, pending: accessPending } = useRecipeBookAccess();
 const { creating, createEntry } = useRecipeBook(ref(""), ref(""), ref(false));
@@ -220,75 +228,62 @@ const touch = useTouchPointer();
 
     <section v-else class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <div class="mx-auto grid max-w-4xl gap-4">
-        <UiTabs v-model="door">
-          <UiTabsList class="bg-background p-0.5" aria-label="Como entrar a receita">
-          <!-- Portas mutuamente exclusivas da captura; o tab segmentado é deliberadamente compacto. -->
-          <UiTabsTrigger
-            v-for="option in doors"
-            :key="option.value"
-            :value="option.value"
-            class="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            <Icon :name="option.icon" class="size-4" />
-            {{ option.label }}
-          </UiTabsTrigger>
-          </UiTabsList>
-        </UiTabs>
+        <NuxtTabs
+          v-model="doorChoice"
+          :items="doors"
+          :content="false"
+          variant="pill"
+          class="w-fit"
+          aria-label="Como entrar a receita"
+        />
 
         <!-- ── Anotação / Foto: entrada ──────────────────────────────────── -->
         <template v-if="door !== 'manual'">
-          <div
+          <NuxtAlert
             v-if="showUnavailable"
-            class="flex flex-wrap items-center gap-3 rounded-md border border-dashed p-4 text-sm text-muted-foreground"
-          >
-            <Icon name="lucide:sparkles" class="size-5 shrink-0" />
-            <span class="flex-1">{{ CAPTURE_UNAVAILABLE_MESSAGE }}</span>
-            <UiButton
-              type="button"
-              variant="outline"
-              size="sm"
-              @click="door = 'manual'"
-            >
-              <Icon name="lucide:pencil" class="size-4" /> Preencher à mão
-            </UiButton>
-          </div>
+            color="info"
+            variant="subtle"
+            icon="i-lucide-sparkles"
+            :title="CAPTURE_UNAVAILABLE_MESSAGE"
+            :actions="alertActions('info', [{ label: 'Preencher à mão', icon: 'i-lucide-pencil', onClick: () => (door = 'manual') }])"
+          />
 
           <template v-else-if="!hasDraft">
             <div v-if="door === 'note'" class="grid gap-2 rounded-md border bg-card p-4">
               <label class="grid gap-1 text-sm font-medium">
                 Cole ou digite a receita, em qualquer língua
-                <UiTextarea
+                <NuxtTextarea
                   v-model="noteText"
                   :rows="10"
+                  class="w-full"
                   placeholder="Ex.: Pain de campagne: 1 kg farine T65, 700 g eau, 20 g sel, 200 g levain…"
                 />
               </label>
               <div class="flex flex-wrap items-end gap-3">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Língua (opcional)
-                  <UiInput
+                  <NuxtInput
                     v-model="languageHint"
                     type="text"
                     placeholder="pt, fr, en, ja…"
                     class="w-32"
                   />
                 </label>
-                <UiButton
-                  type="button"
+                <NuxtButton
                   class="ml-auto"
-                  :disabled="!noteText.trim() || capture.reading.value"
+                  icon="i-lucide-sparkles"
+                  :loading="capture.reading.value"
+                  :label="capture.reading.value ? 'Lendo…' : 'Ler anotação'"
+                  :disabled="!noteText.trim()"
                   @click="readNote"
-                >
-                  <Icon :name="capture.reading.value ? 'lucide:loader-circle' : 'lucide:sparkles'" class="size-4" :class="capture.reading.value ? 'animate-spin' : ''" />
-                  {{ capture.reading.value ? "Lendo…" : "Ler anotação" }}
-                </UiButton>
+                />
               </div>
             </div>
 
             <div v-else class="grid gap-3 rounded-md border bg-card p-4">
               <label class="grid gap-1 text-sm font-medium">
                 Foto da ficha ou do caderno
-                <!-- Arquivo usa o seletor nativo: UiInput não pode reatribuir programaticamente seu value por segurança do navegador. -->
+                <!-- Arquivo usa o seletor nativo do navegador (o valor de um campo de arquivo não se reatribui por código). -->
                 <input
                   type="file"
                   accept="image/*"
@@ -309,35 +304,32 @@ const touch = useTouchPointer();
               <div class="flex flex-wrap items-end gap-3">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Língua (opcional)
-                  <UiInput
+                  <NuxtInput
                     v-model="languageHint"
                     type="text"
                     placeholder="pt, fr, en, ja…"
                     class="w-32"
                   />
                 </label>
-                <UiButton
-                  type="button"
+                <NuxtButton
                   class="ml-auto"
-                  :disabled="!photoFile || capture.reading.value"
+                  icon="i-lucide-sparkles"
+                  :loading="capture.reading.value"
+                  :label="capture.reading.value ? 'Lendo…' : 'Ler foto'"
+                  :disabled="!photoFile"
                   @click="readPhoto"
-                >
-                  <Icon :name="capture.reading.value ? 'lucide:loader-circle' : 'lucide:sparkles'" class="size-4" :class="capture.reading.value ? 'animate-spin' : ''" />
-                  {{ capture.reading.value ? "Lendo…" : "Ler foto" }}
-                </UiButton>
+                />
               </div>
             </div>
 
-            <div
+            <NuxtAlert
               v-if="capture.state.value === 'error'"
-              class="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 px-3 py-2 text-sm"
-            >
-              <Icon name="lucide:cloud-off" class="size-4 shrink-0 text-destructive/70" />
-              <span class="flex-1">{{ capture.error.value }}</span>
-              <UiButton type="button" variant="link" size="sm" class="p-0" @click="door = 'manual'">
-                Preencher à mão
-              </UiButton>
-            </div>
+              color="error"
+              variant="subtle"
+              icon="i-lucide-cloud-off"
+              :title="capture.error.value"
+              :actions="alertActions('error', [{ label: 'Preencher à mão', onClick: () => (door = 'manual') }])"
+            />
           </template>
 
           <!-- ── Rascunho lido: conferência ────────────────────────────── -->
@@ -345,25 +337,20 @@ const touch = useTouchPointer();
             <div class="grid gap-3 rounded-md border bg-card p-4">
               <div class="flex flex-wrap items-center gap-2">
                 <h2 class="text-lg font-semibold">O que foi lido</h2>
-                <UiBadge v-if="capture.draft.value?.language" variant="outline" class="px-1.5 py-0 text-xs">
-                  Língua: {{ capture.draft.value.language }}
-                </UiBadge>
-                <UiButton
-                  type="button"
-                  class="ml-auto"
-                  variant="ghost"
-                  size="sm"
-                  @click="capture.reset()"
-                >
-                  Ler outra
-                </UiButton>
+                <NuxtBadge
+                  v-if="capture.draft.value?.language"
+                  color="neutral"
+                  :label="`Língua: ${capture.draft.value.language}`"
+                />
+                <NuxtButton class="ml-auto" color="neutral" variant="ghost" label="Ler outra" @click="capture.reset()" />
               </div>
               <div class="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Nome
-                  <UiInput
+                  <NuxtInput
                     v-model="draftName"
                     type="text"
+                    class="w-full"
                   />
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
@@ -373,7 +360,7 @@ const touch = useTouchPointer();
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Rendimento
                   <span class="flex items-center gap-1">
-                    <UiInput
+                    <NuxtInput
                       v-model="draftYieldQuantity"
                       type="text"
                       inputmode="decimal"
@@ -445,15 +432,13 @@ const touch = useTouchPointer();
                 <template v-else>Todos os ingredientes têm insumo.</template>
               </p>
               <p v-if="draftError" class="text-sm text-destructive">{{ draftError }}</p>
-              <UiButton
-                type="button"
+              <NuxtButton
                 class="ml-auto"
-                :disabled="creating"
+                icon="i-lucide-arrow-right"
+                :loading="creating"
+                :label="creating ? 'Criando…' : 'Continuar no editor'"
                 @click="continueToEditor"
-              >
-                <Icon name="lucide:arrow-right" class="size-4" />
-                {{ creating ? "Criando…" : "Continuar no editor" }}
-              </UiButton>
+              />
             </div>
           </div>
         </template>
@@ -466,9 +451,10 @@ const touch = useTouchPointer();
           <div class="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Nome
-              <UiInput
+              <NuxtInput
                 v-model="manualName"
                 type="text"
+                class="w-full"
                 placeholder="Ex.: Pão de campanha"
                 @keydown.enter="startManual"
               />
@@ -480,7 +466,7 @@ const touch = useTouchPointer();
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Rendimento
               <span class="flex items-center gap-1">
-                <UiInput
+                <NuxtInput
                   v-model="manualYieldQuantity"
                   type="text"
                   inputmode="decimal"
@@ -492,15 +478,13 @@ const touch = useTouchPointer();
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <p v-if="manualError" class="text-sm text-destructive">{{ manualError }}</p>
-            <UiButton
-              type="button"
+            <NuxtButton
               class="ml-auto"
-              :disabled="creating"
+              icon="i-lucide-arrow-right"
+              :loading="creating"
+              :label="creating ? 'Criando…' : 'Abrir o editor'"
               @click="startManual"
-            >
-              <Icon name="lucide:arrow-right" class="size-4" />
-              {{ creating ? "Criando…" : "Abrir o editor" }}
-            </UiButton>
+            />
           </div>
         </div>
       </div>

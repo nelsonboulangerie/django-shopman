@@ -3,6 +3,7 @@
 // disjuntos; o grau padrão recebe automaticamente o saldo que não foi lançado
 // nos demais graus nem em Perda.
 import type { QCDefectProjection, QCGradeProjection } from "~/types/production";
+import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import {
   defaultGradeRef,
   gradeBandClass,
@@ -566,236 +567,273 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
 const fieldCard =
   "flex h-24 flex-col justify-between rounded-md border bg-card p-3 text-left transition";
+
+// A ação da tela é UMA: fechar o lote (ou salvar a correção). Na mesa ela fica sob o
+// teclado, como sempre; no celular desce para a base (`OperatorActionBar`), com o
+// realizado na linha de contexto. A folha de motivos continua sendo o passo seguinte
+// do mesmo gesto: a barra só a abre, e a folha, modal, cobre a barra enquanto pergunta.
+const submitBusy = computed(() => props.submitting || submitLatched.value);
+const submitDisabled = computed(
+  () => submitBusy.value || (props.mode === "correct" && !isDirty.value),
+);
+const submitLabel = computed(() => {
+  if (submitBusy.value) {
+    return props.mode === "correct" ? "Salvando correção…" : "Finalizando o lote…";
+  }
+  return props.mode === "correct" ? "Salvar correção" : "Finalizar";
+});
+const actionBarAction = computed<OperatorActionBarAction>(() => ({
+  label: submitLabel.value,
+  icon: "i-lucide-check",
+  loading: submitBusy.value,
+  disabled: submitDisabled.value,
+  reason:
+    !submitBusy.value && props.mode === "correct" && !isDirty.value
+      ? "Mude um grau, a perda ou um motivo para salvar a correção."
+      : "",
+  onSelect: () => onConfirm(),
+}));
+const actionBarValue = computed(() =>
+  anchor.anchor !== null ? `${total.value} de ${anchor.anchor}` : String(total.value),
+);
 </script>
 
 <template>
   <div
-    class="mx-auto flex w-full max-w-2xl flex-col px-4 pb-6"
+    class="flex min-h-0 flex-1 flex-col"
     data-production-shortcut-scope="exclusive"
   >
-    <header class="flex h-14 shrink-0 items-center justify-between gap-3">
-      <UiButton
-        type="button"
-        variant="outline"
-        @click="requestBack"
-      >
-        <Icon name="lucide:chevron-left" class="size-4" />
-        Voltar
-      </UiButton>
-      <div class="min-w-0 text-center">
-        <p class="truncate text-base font-semibold">{{ title }}</p>
-        <p class="truncate text-xs text-muted-foreground">
-          <template v-if="mode === 'correct'"
-            >Correção de qualidade ·
-          </template>
-          {{ subtitle }}
-        </p>
-      </div>
-      <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
-        <template v-if="anchor.anchor !== null">
-          {{ anchor.anchor }} previstos
-        </template>
-        <template v-else>Sem quantidade prevista</template>
-      </div>
-    </header>
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <div class="mx-auto flex w-full max-w-2xl flex-col px-4 pb-6">
+        <header class="flex h-14 shrink-0 items-center justify-between gap-3">
+          <NuxtButton
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-chevron-left"
+            label="Voltar"
+            @click="requestBack"
+          />
+          <div class="min-w-0 text-center">
+            <p class="truncate text-base font-semibold">{{ title }}</p>
+            <p class="truncate text-xs text-muted-foreground">
+              <template v-if="mode === 'correct'"
+                >Correção de qualidade ·
+              </template>
+              {{ subtitle }}
+            </p>
+          </div>
+          <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
+            <template v-if="anchor.anchor !== null">
+              {{ anchor.anchor }} previstos
+            </template>
+            <template v-else>Sem quantidade prevista</template>
+          </div>
+        </header>
 
-    <div class="mt-2 shrink-0">
-      <div
-        :class="[
-          fieldCard,
-          activeTarget
-            ? 'border-primary ring-2 ring-primary/30'
-            : 'border-dashed',
-        ]"
-        aria-live="polite"
-      >
-        <span
-          class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-        >
-          {{ activeLabel }}
-        </span>
-        <span class="text-4xl font-semibold tabular-nums">
-          {{ activeQuantity }}
-        </span>
-      </div>
-    </div>
-
-    <p class="flex h-9 shrink-0 items-center text-sm text-muted-foreground">
-      <template v-if="activeTarget"
-        >Digitando em: {{ activeLabel }} · Dois toques usam o saldo</template
-      >
-      <template v-else>
-        Escolha um grau ou Perda; dois toques usam o saldo disponível.
-      </template>
-    </p>
-
-    <div
-      class="grid shrink-0 grid-cols-[minmax(0,1fr)_12rem] items-start gap-8"
-      data-qc-layout
-    >
-      <OperatorNumpad
-        class="h-76 self-start"
-        subject="quantidade"
-        :disabled="!activeTarget"
-        @digit="onDigit"
-        @backspace="onBackspace"
-        @clear="onClear"
-      />
-
-      <div class="flex flex-col">
-        <div
-          class="flex flex-col gap-2"
-          role="group"
-          aria-label="Graus de qualidade"
-        >
+        <div class="mt-2 shrink-0">
           <div
-            v-for="grade in orderedGrades"
-            :key="grade.ref"
-            class="relative min-h-14 overflow-hidden rounded-md border bg-card"
-            :class="{
-              'bg-accent': isActiveGrade(grade.ref),
-            }"
-            :data-grade-card="grade.ref"
+            :class="[
+              fieldCard,
+              activeTarget
+                ? 'border-primary ring-2 ring-primary/30'
+                : 'border-dashed',
+            ]"
+            aria-live="polite"
           >
             <span
-              class="pointer-events-none absolute inset-y-0 left-0 z-30 w-1.5"
-              :class="gradeBandClass(grade, grades)"
-            />
-            <!-- O cartão divide quantidade e motivo em dois alvos grandes; não cabe na anatomia do UiButton. -->
-            <button
-              type="button"
-              :data-grade-ref="grade.ref"
-              class="absolute inset-0 z-0 w-full text-left transition hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
-              :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && anchor.anchor !== null ? ', saldo' : ''}`"
-              :aria-pressed="gradeQuantity(grade.ref) > 0"
-              @click="activateGrade(grade)"
+              class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
             >
-              <span
-                class="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-2 pl-4 pr-3"
-              >
-                <span class="min-w-0">
-                  <span class="block font-medium">{{ grade.label }}</span>
-                  <span
-                    v-if="grade.ref === defaultRef && anchor.anchor !== null"
-                    class="block text-xs leading-tight text-muted-foreground"
-                  >
-                    Saldo automático
-                  </span>
-                  <span
-                    v-else-if="mode !== 'correct' && gradeDefectRefs[grade.ref]"
-                    class="block truncate text-xs leading-tight text-muted-foreground"
-                  >
-                    {{ defectLabel(gradeDefectRefs[grade.ref]!) }}
-                  </span>
-                </span>
-                <span class="text-sm font-semibold tabular-nums">
-                  {{ gradeQuantity(grade.ref) }}
-                </span>
-              </span>
-            </button>
-            <button
-              v-if="mode === 'correct' && gradeNeedsReason(grade)"
-              type="button"
-              class="relative z-20 mb-2 ml-3 mr-2 mt-14 flex h-8 w-[calc(100%-1.25rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-offset-1"
-              :aria-label="`Editar motivo de ${grade.label}: ${
-                defectLabel(gradeDefectRefs[grade.ref] ?? '') || 'não informado'
-              }`"
-              @click="
-                openQuestion(
-                  { kind: 'grade_reason', gradeRef: grade.ref },
-                  false,
-                )
-              "
-            >
-              <span class="min-w-0 truncate">
-                {{
-                  defectLabel(gradeDefectRefs[grade.ref] ?? "") ||
-                  "Informar motivo"
-                }}
-              </span>
-              <Icon name="lucide:pencil" class="size-4" aria-hidden="true" />
-            </button>
+              {{ activeLabel }}
+            </span>
+            <span class="text-4xl font-semibold tabular-nums">
+              {{ activeQuantity }}
+            </span>
           </div>
         </div>
 
+        <p class="flex h-9 shrink-0 items-center text-sm text-muted-foreground">
+          <template v-if="activeTarget"
+            >Digitando em: {{ activeLabel }} · Dois toques usam o saldo</template
+          >
+          <template v-else>
+            Escolha um grau ou Perda; dois toques usam o saldo disponível.
+          </template>
+        </p>
+
         <div
-          class="relative mt-4 min-h-14 overflow-hidden rounded-md border border-destructive/50 bg-card"
-          :class="{
-            'bg-destructive/10': activeTarget?.kind === 'loss',
-          }"
+          class="grid shrink-0 grid-cols-[minmax(0,1fr)_12rem] items-start gap-8"
+          data-qc-layout
         >
-          <!-- Perda replica a geometria dos graus para não trocar o gesto do operador. -->
-          <button
-            type="button"
-            class="absolute inset-0 z-0 w-full text-left transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-destructive/50"
-            :aria-label="`Perda: ${lossQuantity} unidades`"
-            @click="pickLoss"
-          >
-            <span
-              class="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-2 px-3"
+          <OperatorNumpad
+            class="h-76 self-start"
+            subject="quantidade"
+            :disabled="!activeTarget"
+            @digit="onDigit"
+            @backspace="onBackspace"
+            @clear="onClear"
+          />
+
+          <div class="flex flex-col">
+            <div
+              class="flex flex-col gap-2"
+              role="group"
+              aria-label="Graus de qualidade"
             >
-              <span class="min-w-0">
-                <span class="block font-medium">Perda</span>
+              <div
+                v-for="grade in orderedGrades"
+                :key="grade.ref"
+                class="relative min-h-14 overflow-hidden rounded-md border bg-card"
+                :class="{
+                  'bg-accent': isActiveGrade(grade.ref),
+                }"
+                :data-grade-card="grade.ref"
+              >
                 <span
-                  v-if="mode !== 'correct' && lossDefectRef"
-                  class="block truncate text-xs leading-tight text-muted-foreground"
+                  class="pointer-events-none absolute inset-y-0 left-0 z-30 w-1.5"
+                  :class="gradeBandClass(grade, grades)"
+                />
+                <!-- O cartão divide quantidade e motivo em dois alvos grandes: o da
+                     quantidade cobre o cartão; o do motivo fica por cima, embaixo. -->
+                <NuxtButton
+                  color="neutral"
+                  variant="ghost"
+                  :data-grade-ref="grade.ref"
+                  class="absolute inset-0 z-0 h-auto w-full rounded-none p-0 text-left font-normal focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
+                  :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && anchor.anchor !== null ? ', saldo' : ''}`"
+                  :aria-pressed="gradeQuantity(grade.ref) > 0"
+                  @click="activateGrade(grade)"
                 >
-                  {{ defectLabel(lossDefectRef) }}
-                </span>
+                  <span
+                    class="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-2 pl-4 pr-3"
+                  >
+                    <span class="min-w-0">
+                      <span class="block font-medium">{{ grade.label }}</span>
+                      <span
+                        v-if="grade.ref === defaultRef && anchor.anchor !== null"
+                        class="block text-xs leading-tight text-muted-foreground"
+                      >
+                        Saldo automático
+                      </span>
+                      <span
+                        v-else-if="mode !== 'correct' && gradeDefectRefs[grade.ref]"
+                        class="block truncate text-xs leading-tight text-muted-foreground"
+                      >
+                        {{ defectLabel(gradeDefectRefs[grade.ref]!) }}
+                      </span>
+                    </span>
+                    <span class="text-sm font-semibold tabular-nums">
+                      {{ gradeQuantity(grade.ref) }}
+                    </span>
+                  </span>
+                </NuxtButton>
+                <NuxtButton
+                  v-if="mode === 'correct' && gradeNeedsReason(grade)"
+                  color="neutral"
+                  variant="outline"
+                  class="relative z-20 mb-2 ml-3 mr-2 mt-14 flex h-8 w-[calc(100%-1.25rem)] items-center justify-between gap-2 rounded-md bg-background px-3 text-left text-xs font-medium text-muted-foreground"
+                  :aria-label="`Editar motivo de ${grade.label}: ${
+                    defectLabel(gradeDefectRefs[grade.ref] ?? '') || 'não informado'
+                  }`"
+                  @click="
+                    openQuestion(
+                      { kind: 'grade_reason', gradeRef: grade.ref },
+                      false,
+                    )
+                  "
+                >
+                  <span class="min-w-0 truncate">
+                    {{
+                      defectLabel(gradeDefectRefs[grade.ref] ?? "") ||
+                      "Informar motivo"
+                    }}
+                  </span>
+                  <Icon name="lucide:pencil" class="size-4" aria-hidden="true" />
+                </NuxtButton>
+              </div>
+            </div>
+
+            <div
+              class="relative mt-4 min-h-14 overflow-hidden rounded-md border border-destructive/50 bg-card"
+              :class="{
+                'bg-destructive/10': activeTarget?.kind === 'loss',
+              }"
+            >
+              <!-- Perda replica a geometria dos graus para não trocar o gesto do operador. -->
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                class="absolute inset-0 z-0 h-auto w-full rounded-none p-0 text-left font-normal hover:bg-destructive/10 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-destructive/50"
+                :aria-label="`Perda: ${lossQuantity} unidades`"
+                @click="pickLoss"
+              >
                 <span
-                  v-else-if="mode !== 'correct' || lossQuantity === 0"
-                  class="block text-xs leading-tight text-muted-foreground"
+                  class="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-2 px-3"
                 >
-                  {{ lossQuantity ? "Motivo pendente" : "Sem perda" }}
+                  <span class="min-w-0">
+                    <span class="block font-medium">Perda</span>
+                    <span
+                      v-if="mode !== 'correct' && lossDefectRef"
+                      class="block truncate text-xs leading-tight text-muted-foreground"
+                    >
+                      {{ defectLabel(lossDefectRef) }}
+                    </span>
+                    <span
+                      v-else-if="mode !== 'correct' || lossQuantity === 0"
+                      class="block text-xs leading-tight text-muted-foreground"
+                    >
+                      {{ lossQuantity ? "Motivo pendente" : "Sem perda" }}
+                    </span>
+                  </span>
+                  <span class="text-sm font-semibold tabular-nums">
+                    {{ lossQuantity }}
+                  </span>
                 </span>
-              </span>
-              <span class="text-sm font-semibold tabular-nums">
-                {{ lossQuantity }}
-              </span>
-            </span>
-          </button>
-          <button
-            v-if="mode === 'correct' && lossQuantity > 0"
-            type="button"
-            class="relative z-20 mx-2 mb-2 mt-14 flex h-8 w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-destructive/50 focus-visible:ring-offset-1"
-            :aria-label="`Editar motivo da perda: ${
-              defectLabel(lossDefectRef) || 'não informado'
-            }`"
-            @click="openQuestion({ kind: 'loss_reason' }, false)"
-          >
-            <span class="min-w-0 truncate">
-              {{ defectLabel(lossDefectRef) || "Informar motivo" }}
-            </span>
-            <Icon name="lucide:pencil" class="size-4" aria-hidden="true" />
-          </button>
+              </NuxtButton>
+              <NuxtButton
+                v-if="mode === 'correct' && lossQuantity > 0"
+                color="neutral"
+                variant="outline"
+                class="relative z-20 mx-2 mb-2 mt-14 flex h-8 w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-md bg-background px-3 text-left text-xs font-medium text-muted-foreground hover:bg-destructive/10"
+                :aria-label="`Editar motivo da perda: ${
+                  defectLabel(lossDefectRef) || 'não informado'
+                }`"
+                @click="openQuestion({ kind: 'loss_reason' }, false)"
+              >
+                <span class="min-w-0 truncate">
+                  {{ defectLabel(lossDefectRef) || "Informar motivo" }}
+                </span>
+                <Icon name="lucide:pencil" class="size-4" aria-hidden="true" />
+              </NuxtButton>
+            </div>
+          </div>
         </div>
+
+        <!-- Na mesa, a ação fica sob o teclado; no celular ela mora na base. -->
+        <NuxtButton
+          size="xl"
+          block
+          class="mt-4 shrink-0 max-lg:hidden"
+          :label="submitLabel"
+          :disabled="submitDisabled"
+          :aria-busy="submitBusy"
+          aria-keyshortcuts="Enter"
+          data-qc-submit
+          @click="onConfirm"
+        />
       </div>
     </div>
 
-    <UiButton
-      type="button"
-      class="mt-4 shrink-0 text-lg"
-      size="lg"
-      :disabled="
-        submitting || submitLatched || (mode === 'correct' && !isDirty)
-      "
-      :aria-busy="submitting || submitLatched"
-      aria-keyshortcuts="Enter"
-      @click="onConfirm"
-    >
-      {{
-        submitting || submitLatched
-          ? mode === "correct"
-            ? "Salvando correção…"
-            : "Finalizando o lote…"
-          : mode === "correct"
-            ? "Salvar correção"
-            : "Finalizar"
-      }}
-    </UiButton>
+    <OperatorActionBar
+      :action="actionBarAction"
+      context-label="Realizado"
+      :context-value="actionBarValue"
+      label="Ação do lote"
+      data-qc-action-bar
+    />
 
-    <UiSheet
+    <NuxtDrawer
       :open="sheetQuestion !== null"
+      :title="sheetTitle"
       @update:open="
         (open: boolean) => {
           if (!open) {
@@ -805,116 +843,110 @@ const fieldCard =
         }
       "
     >
-      <UiSheetContent side="bottom" :title="sheetTitle">
-        <template #content>
+      <template #body>
+        <div v-if="sheetQuestion?.kind === 'overshoot'" class="grid gap-3">
+          <label class="grid gap-1.5 text-sm">
+            <span class="font-medium">
+              Por que o realizado ficou acima do previsto?
+            </span>
+            <NuxtTextarea
+              v-model="overshootReason"
+              :rows="3"
+              :maxlength="500"
+              required
+              class="w-full"
+              aria-label="Motivo do realizado acima do previsto"
+              placeholder="Ex.: contagem conferida e unidades menores que o padrão"
+            />
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              size="xl"
+              block
+              class="h-auto whitespace-normal"
+              label="Corrigir"
+              @click="fixOvershoot"
+            />
+            <NuxtButton
+              size="xl"
+              block
+              class="h-auto whitespace-normal"
+              :label="`Confirmar ${total} unidades`"
+              :disabled="!overshootReason.trim()"
+              @click="confirmOvershoot"
+            />
+          </div>
+        </div>
+        <div
+          v-else-if="sheetQuestion?.kind === 'correction_reason'"
+          class="grid gap-3"
+          data-correction-reason
+        >
           <div
-            v-if="sheetQuestion?.kind === 'overshoot'"
-            class="grid gap-3 px-4 pb-6"
+            class="flex flex-wrap gap-2"
+            role="group"
+            aria-label="Motivos comuns"
           >
-            <label class="grid gap-1.5 text-sm">
-              <span class="font-medium">
-                Por que o realizado ficou acima do previsto?
-              </span>
-              <UiTextarea
-                v-model="overshootReason"
-                :rows="3"
-                :maxlength="500"
-                required
-                class="bg-background"
-                aria-label="Motivo do realizado acima do previsto"
-                placeholder="Ex.: contagem conferida e unidades menores que o padrão"
-              />
-            </label>
-            <div class="grid grid-cols-2 gap-2">
-              <UiButton
-                type="button"
-                class="h-auto min-h-14 whitespace-normal text-base"
-                variant="outline"
-                size="lg"
-                @click="fixOvershoot"
-              >
-                Corrigir
-              </UiButton>
-              <UiButton
-                type="button"
-                class="h-auto min-h-14 whitespace-normal text-base"
-                size="lg"
-                :disabled="!overshootReason.trim()"
-                @click="confirmOvershoot"
-              >
-                Confirmar {{ total }} unidades
-              </UiButton>
-            </div>
+            <!-- Motivo pronto preenche o texto (editável); é escolha, não CTA. -->
+            <NuxtButton
+              v-for="preset in CORRECTION_REASONS"
+              :key="preset"
+              color="neutral"
+              variant="outline"
+              size="xl"
+              :active="correctionReason === preset"
+              active-color="primary"
+              active-variant="outline"
+              :aria-pressed="correctionReason === preset"
+              :label="preset"
+              data-correction-preset
+              @click="correctionReason = preset"
+            />
           </div>
-          <div
-            v-else-if="sheetQuestion?.kind === 'correction_reason'"
-            class="grid gap-3 px-4 pb-6"
-            data-correction-reason
+          <label class="grid gap-1.5 text-sm">
+            <span class="font-medium">
+              Motivo (fica registrado com seu nome)
+            </span>
+            <NuxtTextarea
+              v-model="correctionReason"
+              :rows="3"
+              :maxlength="500"
+              required
+              class="w-full"
+              aria-label="Motivo da correção de qualidade"
+              placeholder="Ex.: duas peças estavam em outra bandeja"
+            />
+          </label>
+          <NuxtButton
+            size="xl"
+            block
+            class="h-auto whitespace-normal"
+            label="Salvar correção"
+            :disabled="!correctionReason.trim()"
+            @click="confirmCorrectionReason"
+          />
+        </div>
+        <div v-else class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <!-- Motivos são cartões de escolha com título e explicação. -->
+          <NuxtButton
+            v-for="defect in activeDefects"
+            :key="defect.ref"
+            color="neutral"
+            variant="outline"
+            size="xl"
+            block
+            class="h-auto flex-col items-start justify-start gap-0.5 whitespace-normal text-left"
+            @click="answerDefect(defect)"
           >
-            <div
-              class="flex flex-wrap gap-2"
-              role="group"
-              aria-label="Motivos comuns"
-            >
-              <!-- Motivo pronto preenche o texto (editável); é escolha, não CTA. -->
-              <button
-                v-for="preset in CORRECTION_REASONS"
-                :key="preset"
-                type="button"
-                :aria-pressed="correctionReason === preset"
-                class="inline-flex min-h-12 items-center rounded-full border px-4 text-sm transition-colors"
-                :class="
-                  correctionReason === preset
-                    ? 'border-primary bg-primary/10 text-foreground'
-                    : 'text-muted-foreground hover:bg-accent'
-                "
-                data-correction-preset
-                @click="correctionReason = preset"
-              >
-                {{ preset }}
-              </button>
-            </div>
-            <label class="grid gap-1.5 text-sm">
-              <span class="font-medium">
-                Motivo (fica registrado com seu nome)
-              </span>
-              <UiTextarea
-                v-model="correctionReason"
-                :rows="3"
-                :maxlength="500"
-                required
-                class="bg-background"
-                aria-label="Motivo da correção de qualidade"
-                placeholder="Ex.: duas peças estavam em outra bandeja"
-              />
-            </label>
-            <UiButton
-              type="button"
-              class="h-auto min-h-14 whitespace-normal text-base"
-              size="lg"
-              :disabled="!correctionReason.trim()"
-              @click="confirmCorrectionReason"
-            >
-              Salvar correção
-            </UiButton>
-          </div>
-          <div v-else class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
-            <!-- Motivos são tiles de escolha com título e explicação, não botões textuais genéricos. -->
-            <button
-              v-for="defect in activeDefects"
-              :key="defect.ref"
-              type="button"
-              class="flex flex-col items-start gap-0.5 rounded-md border bg-card px-3 py-2.5 text-left transition hover:bg-accent"
-              @click="answerDefect(defect)"
-            >
-              <span class="font-medium">{{ defect.label }}</span>
-              <span class="text-xs text-muted-foreground">
-                {{ defect.hint }}
-              </span>
-            </button>
-          </div>
-        </template>
-      </UiSheetContent>
-    </UiSheet>
+            <span class="font-medium">{{ defect.label }}</span>
+            <span class="text-xs font-normal text-muted-foreground">
+              {{ defect.hint }}
+            </span>
+          </NuxtButton>
+        </div>
+      </template>
+    </NuxtDrawer>
   </div>
 </template>

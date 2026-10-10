@@ -14,7 +14,7 @@ import type {
   QCDefectProjection,
   QCGradeProjection,
 } from "../../app/types/production";
-import { UiButtonStub, UiTextareaStub } from "../support/nativeUiStubs";
+import { nuxtUiStubs } from "../support/nuxtUiStubs";
 
 const GRADES: QCGradeProjection[] = [
   {
@@ -68,7 +68,6 @@ const DEFECTS: QCDefectProjection[] = [
   },
 ];
 
-const passthrough = { template: "<div><slot /></div>" };
 const stubs = {
   Icon: true,
   OperatorNumpad: {
@@ -85,17 +84,19 @@ const stubs = {
       </div>
     `,
   },
-  UiSheet: {
-    props: ["open"],
-    template: "<div v-if='open'><slot /></div>",
+  ...nuxtUiStubs,
+  // A barra da base do kit: a ação como dados, desenhada como um botão.
+  OperatorActionBar: {
+    props: ["action", "contextLabel", "contextValue", "label"],
+    template: `
+      <footer :aria-label="label">
+        <span data-bar-context>{{ contextLabel }} {{ contextValue }}</span>
+        <button type="button" data-bar-action :disabled="action.disabled || action.loading"
+          @click="action.onSelect && action.onSelect($event)">{{ action.label }}</button>
+        <p v-if="action.disabled && action.reason" data-bar-reason>{{ action.reason }}</p>
+      </footer>
+    `,
   },
-  UiSheetContent: {
-    props: ["title"],
-    template: "<section><h2>{{ title }}</h2><slot name='content' /></section>",
-  },
-  UiBadge: passthrough,
-  UiButton: UiButtonStub,
-  UiTextarea: UiTextareaStub,
 };
 
 // O diálogo da casa (`useConfirm` do kit) no lugar do `window.confirm`.
@@ -643,5 +644,55 @@ describe("QcCloseScreen — correção auditável", () => {
     await wrapper.setProps({ submitting: true });
     const submit = buttonByText(wrapper, "Salvando correção…")!;
     expect(submit.attributes("disabled")).toBeDefined();
+  });
+});
+
+describe("QcCloseScreen — a ação do momento no celular", () => {
+  it("a barra da base fecha o lote pelo mesmo caminho do botão da mesa", async () => {
+    const wrapper = mountQc();
+    const bar = wrapper.find('footer[aria-label="Ação do lote"]');
+
+    expect(bar.find("[data-bar-context]").text()).toBe("Realizado 40 de 40");
+    // Na mesa o botão continua sob o teclado; abaixo de lg ele sai e fica a barra.
+    expect(wrapper.find("[data-qc-submit]").classes()).toContain("max-lg:hidden");
+
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "4");
+    await bar.find("[data-bar-action]").trigger("click");
+
+    // A folha de motivos continua: a barra só abre a pergunta que falta.
+    expect(wrapper.emitted("confirm")).toBeUndefined();
+    expect(wrapper.text()).toContain("Qual o motivo principal da perda de 4?");
+    await buttonByText(wrapper, "Queimado")!.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
+      quantity: "40",
+      partition: [
+        { quantity: "36", quality_grade_ref: "standard" },
+        { quantity: "4", quality_defect_ref: "burned", loss: true },
+      ],
+    });
+    await nextTick();
+    expect(bar.find("[data-bar-action]").text()).toBe("Finalizando o lote…");
+    expect(bar.find("[data-bar-action]").attributes("disabled")).toBeDefined();
+  });
+
+  it("na correção sem mudança, a barra diz por que ainda não salva", async () => {
+    const wrapper = mountQc({
+      mode: "correct",
+      initialPartition: [{ quantity: "40", quality_grade_ref: "standard" }],
+    });
+    const bar = () => wrapper.find('footer[aria-label="Ação do lote"]');
+
+    expect(bar().find("[data-bar-action]").text()).toBe("Salvar correção");
+    expect(bar().find("[data-bar-action]").attributes("disabled")).toBeDefined();
+    expect(bar().find("[data-bar-reason]").text()).toBe(
+      "Mude um grau, a perda ou um motivo para salvar a correção.",
+    );
+
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "2");
+    expect(bar().find("[data-bar-action]").attributes("disabled")).toBeUndefined();
+    expect(bar().find("[data-bar-reason]").exists()).toBe(false);
   });
 });
