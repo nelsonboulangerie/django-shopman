@@ -43,7 +43,21 @@ def fired_line_ids_for_session(session_key: str) -> set[str]:
             line_id = item.get("line_id")
             if line_id:
                 fired.add(line_id)
-    return fired
+    return fired | inherited_fired_line_ids(session_key)
+
+
+#: Linhas que já estão na cozinha num ticket de OUTRA sessão e passaram para esta.
+#: Hoje só a venda feita sem conexão grava (``pos_offline_sale``): a comanda mudada
+#: em outro dispositivo fecha só o que foi cobrado, e o resto segue numa comanda
+#: nova; a linha já enviada não pode voltar à cozinha por ter trocado de sessão.
+KDS_INHERITED_KEY = "kds_inherited_lines"
+
+
+def inherited_fired_line_ids(session_key: str) -> set[str]:
+    from shopman.orderman.models import Session
+
+    data = Session.objects.filter(session_key=session_key).values_list("data", flat=True).first() or {}
+    return {str(line_id) for line_id in (data.get(KDS_INHERITED_KEY) or []) if line_id}
 
 
 def create_ticket(session_key: str, kds_instance, items: list) -> Any:

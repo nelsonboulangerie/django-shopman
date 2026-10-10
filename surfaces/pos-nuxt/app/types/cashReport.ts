@@ -46,6 +46,8 @@ export interface ShiftReading {
   sales_total_display: string;
   sales_by_method: SalesByMethodRow[];
   notes: string;
+  /** Vendas feitas sem conexão que entraram com ajuste neste turno, uma frase cada. */
+  offline_notes?: string[];
 }
 
 export interface CashDayTotals {

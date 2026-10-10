@@ -5,7 +5,7 @@ import type { OfflineSaleStore } from "~/utils/offlineSaleStore";
 
 /** Uma rodada de envio: quantas entraram, quantas o servidor recusou, por que parou. */
 export interface OfflineFlushReport {
-  sent: Array<{ id: string; orderRef: string }>;
+  sent: Array<{ id: string; orderRef: string; note?: string }>;
   conflicts: number;
   stopped: "" | "network" | "server" | "session" | "busy";
 }
@@ -83,7 +83,9 @@ export function createOfflineSaleQueue(deps: OfflineSaleQueueDeps) {
         if (outcome.kind === "sent") {
           await deps.store.remove(sale.id);
           state.sales = state.sales.filter((row) => row.id !== sale.id);
-          report.sent.push({ id: sale.id, orderRef: outcome.orderRef });
+          report.sent.push(outcome.note
+            ? { id: sale.id, orderRef: outcome.orderRef, note: outcome.note }
+            : { id: sale.id, orderRef: outcome.orderRef });
           state.sentOrderRefs = { ...state.sentOrderRefs, [sale.id]: outcome.orderRef };
           continue;
         }

@@ -72,6 +72,14 @@ describe("offlineSaleReview", () => {
 describe("classifyOfflineSend", () => {
   it("pedido devolvido = enviada", () => {
     expect(classifyOfflineSend({ response: { ok: true, order_ref: "NB-1" } })).toEqual({ kind: "sent", orderRef: "NB-1" });
+    expect(classifyOfflineSend({ response: { ok: true, order_ref: "NB-1", offline_note: "" } }))
+      .toEqual({ kind: "sent", orderRef: "NB-1" });
+  });
+
+  it("comanda mudada em outro dispositivo: a venda entra e traz a frase do balcão", () => {
+    const note = "Itens lançados em outro dispositivo seguem abertos na comanda 12.";
+    expect(classifyOfflineSend({ response: { ok: true, order_ref: "NB-2", offline_note: note } }))
+      .toEqual({ kind: "sent", orderRef: "NB-2", note });
   });
 
   it("rede, 5xx e sessão param a rodada sem marcar a venda", () => {

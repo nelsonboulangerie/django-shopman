@@ -227,6 +227,11 @@ class OperatorAlert(models.Model):
         # Este é o aviso do instante, com o pedido no nome, para alguém conferir
         # a gaveta ANTES de o dinheiro virar diferença anônima.
         ("cash_sale_after_shift_close", "Venda entrou depois do fechamento do turno"),
+        # A venda que o PDV fez sem conexão entrou com ajuste: valeu o cobrado
+        # contra o preço daquela hora, a comanda mudada em outro dispositivo
+        # fechou só o que foi cobrado, ou a comanda já estava paga (cobrança em
+        # dobro). Nada foi recusado; o gerente lê a frase e decide (devolução).
+        ("pos_offline_sale_adjusted", "Venda sem conexão entrou com ajuste"),
         # A trava da gaveta caiu numa estação que TINHA medição. Ela falha
         # aberta de propósito (fila de cliente nunca para por sensor ruim), e
         # por isso mesmo precisa gritar: sem este aviso, desligar a proteção era
@@ -343,6 +348,7 @@ class OperatorAlert(models.Model):
         "marketplace_rejected_unavailable",
         "marketplace_rejected_oos",
         "pos_rejected_unavailable",
+        "pos_offline_sale_adjusted",
         "stale_new_order",
         "customer_cancellation_requested",
         "lifecycle_phase_stuck",

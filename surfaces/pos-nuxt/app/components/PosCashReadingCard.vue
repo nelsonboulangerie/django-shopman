@@ -122,6 +122,13 @@ const movementColumns = computed(() => [
       </p>
     </div>
 
+    <div v-if="reading.offline_notes?.length" class="grid gap-2" data-cash-offline-notes>
+      <h3 class="text-sm font-medium">Vendas sem conexão com ajuste</h3>
+      <ul class="grid gap-1 text-sm text-muted-foreground">
+        <li v-for="note in reading.offline_notes" :key="note">{{ note }}</li>
+      </ul>
+    </div>
+
     <p v-if="reading.notes" class="text-sm text-muted-foreground">
       Observações: {{ reading.notes }}
     </p>

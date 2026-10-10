@@ -20,6 +20,11 @@ configured per deployment through ``RuleConfig`` rows — enabled state, params 
 channel scope all live in the DB. They are registered unconditionally; execution
 is gated by ``get_channel_rule_params`` so a disabled rule means no discount.
 
+O relógio da precificação: todo modifier que lê a hora (Happy Hour, promoções,
+cupom, aniversário, frete promocional) lê ``pricing_now(ctx)``. É ``now()``, salvo
+quando quem precifica diz outra hora em ``ctx["priced_at"]`` (a venda feita sem
+conexão no PDV, precificada na hora em que foi cobrada).
+
 Discount policy — "maior desconto ganha":
   Per item, only ONE discount applies (the best one).
   Employee discount is post-pricing.
@@ -27,7 +32,7 @@ Discount policy — "maior desconto ganha":
 from __future__ import annotations
 
 import logging
-from datetime import time
+from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -42,6 +47,27 @@ DEFAULT_AVAILABILITY_DISCOUNT_PERCENT = 50
 DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT = 25
 DEFAULT_TIME_WINDOW_START = "17:30"
 DEFAULT_TIME_WINDOW_END = "18:00"
+
+
+#: A chave do ``ctx`` dos modifiers que diz QUANDO a sessão está sendo precificada.
+#: Ausente, é agora. A venda que o PDV fez sem conexão chega depois com a hora da
+#: cobrança (``order.data.pos.offline.captured_at``) e é precificada naquela hora:
+#: o Happy Hour que começou durante a queda não vale para a venda das 15h, e a
+#: promoção que venceu durante a queda vale para a venda feita antes (decisão do
+#: dono, 10/10/2026, WP-PDV-SEM-CONEXAO §3.3).
+PRICED_AT_CTX_KEY = "priced_at"
+
+
+def pricing_now(ctx: dict | None) -> datetime:
+    """O "agora" da precificação: ``ctx["priced_at"]`` quando presente, senão ``timezone.now()``.
+
+    Todo modifier que lê o relógio lê por aqui. Instante sem fuso não vale (seria
+    lido como outra hora em silêncio) e cai no relógio do servidor.
+    """
+    value = (ctx or {}).get(PRICED_AT_CTX_KEY)
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value
+    return timezone.now()
 
 
 def _is_non_merchandise_line(item: dict) -> bool:
@@ -517,7 +543,7 @@ class TimeWindowDiscountModifier:
         start = _parse_time(params.get("start"), DEFAULT_TIME_WINDOW_START)
         end = _parse_time(params.get("end"), DEFAULT_TIME_WINDOW_END)
 
-        now = timezone.localtime().time()
+        now = timezone.localtime(pricing_now(ctx)).time()
         if not in_time_window(start, end, now):
             # Fora da janela: limpa transparência residual de uma passagem anterior.
             pricing = session.pricing or {}
@@ -567,7 +593,7 @@ class DiscountModifier:
         # customer's ``insight``.
         self._resolve_customer_ctx(session, ctx)
 
-        now = timezone.now()
+        now = pricing_now(ctx)
 
         from shopman.shop.services import promotions as promotion_service
 
@@ -856,7 +882,9 @@ class DiscountModifier:
                 )
 
         if needs_birthday and customer.birthday:
-            today = timezone.localdate()
+            # O aniversário é o do DIA DA VENDA: a venda das 23h50 enviada depois
+            # da meia-noite ainda é do dia do aniversário (e a do dia seguinte não).
+            today = timezone.localdate(pricing_now(ctx))
             ctx["is_birthday"] = (
                 customer.birthday.month == today.month
                 and customer.birthday.day == today.day
@@ -1129,7 +1157,7 @@ class DeliveryFeeModifier:
             new_data.pop("delivery_fee_q", None)
             fee_q = None
         else:
-            fee_q = self._effective_fee_q(base_fee_q, session, channel=channel)
+            fee_q = self._effective_fee_q(base_fee_q, session, channel=channel, now=pricing_now(ctx))
             new_data["delivery_fee_q"] = fee_q
             new_data.pop("delivery_zone_error", None)
 
@@ -1233,7 +1261,7 @@ class DeliveryFeeModifier:
         return (shop_rule_q("default_delivery_fee_q"), None, False)
 
     @staticmethod
-    def _effective_fee_q(base_fee_q: int, session: Any, *, channel: Any = None) -> int:
+    def _effective_fee_q(base_fee_q: int, session: Any, *, channel: Any = None, now: datetime | None = None) -> int:
         """A taxa efetiva: a renúncia que renuncia MAIS, entre duas políticas.
 
         Duas políticas, **um dono**. O limiar permanente (`free_delivery_above_q`, de
@@ -1278,7 +1306,7 @@ class DeliveryFeeModifier:
         # depois do desconto (order=20), então o cupom já está resolvido em
         # `session.data` quando a taxa é calculada.
         waived = DeliveryFeeModifier._promotional_fee_q(
-            base_fee_q, session, channel=channel, subtotal_q=threshold_base_q
+            base_fee_q, session, channel=channel, subtotal_q=threshold_base_q, now=now
         )
         if waived is not None:
             candidates.append(waived)
@@ -1286,7 +1314,7 @@ class DeliveryFeeModifier:
         return min(candidates)
 
     @staticmethod
-    def _promotional_fee_q(base_fee_q: int, session: Any, *, channel, subtotal_q: int):
+    def _promotional_fee_q(base_fee_q: int, session: Any, *, channel, subtotal_q: int, now: datetime | None = None):
         """A taxa que sobra depois da promoção de entrega grátis, ou ``None``.
 
         ``value`` é o TETO da renúncia: `0` isenta o frete todo, `> 0` isenta até
@@ -1298,7 +1326,7 @@ class DeliveryFeeModifier:
         from shopman.shop.services import promotions as promotion_service
 
         channel_ref = getattr(channel, "ref", "") or ""
-        now = tz.now()
+        now = now or tz.now()
 
         found = [
             promo

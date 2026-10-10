@@ -77,10 +77,49 @@ A escrita resolve no `oncomplete` da transação: a tela só mostra "guardada" d
 
 ### 3.3 Reconciliação de conflitos
 
-| Conflito | Quem detecta | Saída na lista |
+Decisões do dono (10/10/2026, perguntas 3 e 4 da §9): a venda guardada **não é recusada** por
+preço nem por comanda mudada. O dinheiro já entrou; o servidor registra e avisa o gerente. Código:
+`shop/services/pos_offline_sale.py`, chamado pelo `close_sale`.
+
+**Preço (D).** O servidor precifica a venda **na hora da cobrança** (`offline_captured_at`), não na do
+envio: os modifiers que leem o relógio (Happy Hour, promoções, cupom, aniversário, frete promocional)
+leem `modifiers.pricing_now(ctx)`, que é `ctx["priced_at"]` quando presente e `now()` no resto. A
+venda das 15h enviada às 17h30, com o Happy Hour no ar, sobe sem o desconto; a promoção que venceu
+durante a queda vale para a venda feita antes; o aniversário é o do dia da venda. Se mesmo assim a
+conta do servidor divergir do cobrado (preço de catálogo editado na queda, linha pesada, Happy Hour
+que a tela sem conexão não sabia), **vale o total cobrado**: a sessão é regravada com os preços
+cobrados (política `external`, sem modifiers de desconto) e a diferença fica em
+`order.data.pos.offline.pricing`, no aviso do gerente e no relatório do caixa.
+
+**Comanda mudada em outro dispositivo (C).** A venda fecha **exatamente** as linhas que este dispositivo
+cobrou (por `line_id`). O que só a comanda tem (linha que o outro dispositivo lançou, ou a quantidade a
+mais numa linha cobrada aqui) segue aberto numa comanda nova com o **mesmo número**; a linha que já
+estava na cozinha não volta ao KDS (`kds_inherited_lines`). Linha que o outro tirou ou cuja quantidade
+mudou e este cobrou: vale o cobrado, e o ajuste fica registrado. Comanda **já paga** no outro
+dispositivo: as linhas já pagas não viram pedido de novo; o resto sobe como venda de balcão (as formas
+descem ao total novo, o dinheiro primeiro); se **todas** já estavam pagas, nenhum pedido nasce, o
+reenvio devolve o pedido pago e a cobrança em dobro fica em `pos.offline_duplicates` dele, com a
+frase "Devolva ao cliente." ao gerente. Comanda **limpa** no outro dispositivo: sobe como balcão.
+Uma linha que este dispositivo tirou sem conexão também aparece como "só a comanda tem" e fica
+aberta: deixar à vista é o lado seguro.
+
+**Proteção.** Só vale para a venda que passa nas travas da venda sem conexão (sem desconto, sem taxa,
+sem entrega, sem encomenda, dinheiro ou maquininha), cujas linhas somam o total cobrado e cuja hora é
+plausível: não no futuro (folga de 5 min no relógio do dispositivo), não mais velha que 24 h nem que o
+turno aberto. Fora disso, a régua de sempre: precificada no envio, `total_changed` e
+`tab_revision_conflict`.
+
+**Quem vê o quê.** O operador, no caso comum, nada além de "Venda guardada enviada: pedido NB-…";
+quando a comanda mudou, o aviso traz uma frase ("Itens lançados em outro dispositivo seguem abertos
+na comanda 12." ou "A comanda 12 já tinha sido paga em outro dispositivo. O gerente foi avisado.").
+O gerente recebe um aviso `pos_offline_sale_adjusted` no Gestor (abre o pedido) e vê as mesmas
+frases em "Vendas sem conexão com ajuste" no relatório do caixa (leitura X/Z, só com permissão de
+auditar o caixa).
+
+| Conflito | Quem detecta | Saída |
 |---|---|---|
-| Preço mudou (linha pesada, catálogo) | `total_changed` com `new_total_q` | "Enviar com R$ X" (a diferença aparece no fechamento do caixa) ou "Tentar de novo" |
-| Comanda editada em outro dispositivo | `tab_revision_conflict` | "Tentar de novo" depois de conferir. Sem saída automática (pergunta 3). |
+| Preço mudou (Happy Hour, promoção, catálogo, linha pesada) | o servidor, na hora da cobrança | Nenhuma no balcão: vale o cobrado, diferença registrada. Fora das travas: `total_changed`, "Enviar com R$ X" ou "Tentar de novo" |
+| Comanda editada, paga ou limpa em outro dispositivo | o servidor, por `line_id` | Nenhuma no balcão: fecha o cobrado, o resto segue aberto, nada é cobrado duas vezes no sistema. Fora das travas: `tab_revision_conflict` |
 | Turno fechado / sem turno | `cash_shift_required` | Abrir o caixa e "Tentar de novo" |
 | Estoque | não recusa: o balcão vende o que está na mão; o ledger registra no envio | nada |
 | Cliente em conflito (CPF/e-mail) | `customer_conflict` | "Tentar de novo" depois de resolver no Gestor |
@@ -180,11 +219,17 @@ PC Windows ligado no nobreak, ativação com o suporte da Focus e confirmação 
   que fica guardado no dispositivo (lista de operadores e gerentes no HTML).
 - **Gaveta sem rede abre sem registro prévio** (no Balcão já era assim na venda em dinheiro: chuta e
   registra depois). O registro vem com a venda.
-- **Preço trocado durante a queda**: a venda sobe com o total cobrado; a recusa `total_changed` só
-  acontece se a conta do servidor der outra (hoje, só a linha pesada relê o catálogo).
+- **Preço trocado durante a queda**: vale o cobrado (§3.3). O preço do catálogo ainda é o de agora
+  (a vitrine com validade por DATA não é relida na hora da cobrança); quando diverge, a diferença
+  fica registrada, e não recusa. O navegador só decide o preço dentro das travas e da janela.
+- **Cobrança em dobro** (comanda já paga no outro dispositivo): o sistema não registra a venda de
+  novo, mas o dinheiro entrou duas vezes. A devolução é do gerente, pelo aviso. Em dinheiro, até lá
+  a gaveta tem a sobra.
+- **Comanda que seguiu aberta**: a linha que já estava na cozinha conta como enviada
+  (`kds_inherited_lines`); desfazer o envio dela na comanda nova não alcança o ticket da antiga.
 - **Nota fiscal** (§5): sem Comunicador, a venda guardada sai com nota datada do envio.
 - Fora desta frente: KDS/cozinha sem rede, iFood, Pix com QR offline, desconto offline com PIN
-  local, casco offline (acima), saída automática para `tab_revision_conflict`.
+  local, casco offline (acima).
 
 ## 9. Decisões para o dono
 
@@ -195,10 +240,11 @@ PC Windows ligado no nobreak, ativação com o suporte da Focus e confirmação 
    em contingência no ato (1), ou aceitar que a venda guardada sai com nota no envio, datada do envio
    (2)? *Recomendo 1*, depois de o contador confirmar a regra do PR (24 h, duas vias). Depende de PC
    Windows ligado no nobreak e da ativação com o suporte da Focus.
-3. **Comanda mudada em outro dispositivo durante a queda** (`tab_revision_conflict` no envio).
-   Mostrar a recusa e o gerente resolve no Gestor (1), ou enviar como venda de balcão e liberar a
-   comanda (2)? *Recomendo 1*: a opção 2 pode cobrar duas vezes o que o outro dispositivo lançou.
-4. **Preço que mudou** (`total_changed` no envio). Enviar com o total do servidor e a diferença
-   aparecer no fechamento (1, o que a lista oferece hoje), ou o servidor aceitar o total cobrado
-   quando a venda traz `offline_captured_at` (2)? *Recomendo 1*: (2) deixaria o navegador decidir o
-   preço.
+3. **Comanda mudada em outro dispositivo durante a queda.** **Decidido (10/10/2026):** sem recusa e
+   sem cobrança dupla. Fecha exatamente as linhas cobradas (por `line_id`); o que o outro dispositivo
+   acrescentou segue aberto na comanda; linha tirada ou mudada lá e cobrada aqui vale o cobrado, com
+   registro; comanda já paga não é cobrada de novo no sistema (sobe só o que não estava pago; tudo
+   pago, nenhum pedido nasce e o gerente é avisado para devolver). Ver §3.3.
+4. **Preço que mudou.** **Decidido (10/10/2026):** o servidor precifica no horário da venda
+   (`offline_captured_at`); se ainda divergir, vale o total cobrado e a diferença fica no pedido, no
+   aviso do gerente e no fechamento do caixa. Só dentro das travas e da janela plausível. Ver §3.3.
