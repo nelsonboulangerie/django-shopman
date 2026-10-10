@@ -526,7 +526,7 @@ const lineEditing = computed<"discount" | "note" | "">(() => {
 const keyboardHint = computed<string[]>(() => {
   if (lineEditing.value === "discount") return ["Digite o desconto", "Enter aplica", "Esc cancela"];
   if (lineEditing.value === "note") return ["Enter aplica", "Shift Enter quebra a linha", "Esc cancela"];
-  if (selectMode.value) return ["Espaço marca", "Shift clique marca o intervalo", "Esc desmarca tudo"];
+  if (selectMode.value) return ["Espaço marca", "Shift clique: intervalo", "Esc desmarca"];
   return ["Digite a quantidade", "Del remove", "↑↓ troca a linha"];
 });
 // O BLOCO DE N, nas MESMAS posições do bloco de 1 (posição fixa por verbo): só o canto

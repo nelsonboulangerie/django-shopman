@@ -4,7 +4,8 @@ import { expect, test, type Page } from "@playwright/test";
 // quatro resoluções comuns de mesa e notebook, sem zoom, a coluna da comanda vai de
 // cima a baixo da janela, e nela, no cabeçalho e na barra da venda nenhum texto corta
 // ("Pagamento R$ 135,0…", "6 i… em 8 linhas", "Fecha…", "Croque Monsieu…") e nada se
-// sobrepõe (o "Alt S" em cima do título). O total é sagrado: nunca corta. A comanda é
+// sobrepõe (o "Alt S" em cima do título). A coluna é a das quatro zonas (WP-PDV-COLUNA-
+// COMANDA): cabeçalho fixo, lista, bloco de ação colado no pé e o pé. O total é sagrado: nunca corta. A comanda é
 // a cheia do mock (`MOCK_SCENARIO=sale`, comanda 13: nove linhas, nomes compridos, uma
 // já na cozinha), com a linha em edição.
 const SIZES = [
@@ -215,13 +216,42 @@ for (const { scheme, size, width } of CASES) {
       expect(grid.lefts[0]).toBe(grid.payLeft);
       expect(grid.rights[1]).toBe(grid.payRight);
 
-      // Seleção (Alt S): a barra do lote também cabe.
-      await page.locator("[data-pos-select-lines]").click();
-      await page.locator("[data-pos-ticket-column] [data-item-select]").nth(1).click();
-      await page.locator("[data-pos-ticket-column] [data-item-select]").nth(2).click();
-      await expect(page.locator("[data-pos-selection-bar]")).toContainText("2 selecionadas");
-      expect(await headerStep(page, "[data-pos-selection-bar]")).toBeLessThanOrEqual(0.5);
+      // MARCAR SEM MODO (dono, 10/10): a caixa aparece sem empurrar nada (a coluna do
+      // nome e do preço fica onde estava), o cabeçalho não troca nem pula, e o bloco de N
+      // tem as MESMAS colunas do bloco de 1.
+      const rowsBefore = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("[data-pos-ticket-column] [data-pos-line-name]")].map((el) => Math.round(el.getBoundingClientRect().left)),
+      );
+      const headerBefore = (await page.locator("[data-pos-ticket-header]").boundingBox())!;
+      await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(1).click();
+      await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(2).click();
+      await expect(page.locator("[data-pos-marked-title]")).toContainText("3 linhas marcadas");
+      await expect(page.locator("[data-pos-fire]")).toContainText(/Enviar 3|Enviar 3 marcadas/);
+      const rowsAfter = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("[data-pos-ticket-column] [data-pos-line-name]")].map((el) => Math.round(el.getBoundingClientRect().left)),
+      );
+      expect(rowsAfter).toEqual(rowsBefore);
+      const headerAfter = (await page.locator("[data-pos-ticket-header]").boundingBox())!;
+      expect(Math.abs(headerAfter.height - headerBefore.height)).toBeLessThanOrEqual(0.5);
+      expect(await headerStep(page, "[data-pos-ticket-header]")).toBeLessThanOrEqual(0.5);
+      const marked = await page.evaluate(() => {
+        const cells = [...document.querySelectorAll<HTMLElement>("[data-pos-ticket-controls] > [data-pos-control-cell]")].map((el) => el.getBoundingClientRect());
+        const pay = document.querySelector("[data-pos-primary]")!.getBoundingClientRect();
+        return {
+          lefts: [...new Set(cells.map((r) => Math.round(r.left)))].sort((a, b) => a - b),
+          rights: [...new Set(cells.map((r) => Math.round(r.right)))].sort((a, b) => a - b),
+          payLeft: Math.round(pay.left),
+          payRight: Math.round(pay.right),
+          count: cells.length,
+        };
+      });
+      expect(marked.count).toBe(6);
+      expect(marked.lefts).toEqual(grid.lefts);
+      expect(marked.rights).toEqual(grid.rights);
       expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
+      // Esc desmarca tudo e volta ao bloco de 1.
+      await page.keyboard.press("Escape");
+      await expect(page.locator("[data-pos-marked-title]")).toHaveCount(0);
     });
   }
 }
@@ -326,3 +356,15 @@ test("cabeçalho da comanda alinhado com a barra do topo também na comanda curt
     expect(await headerStep(page, "[data-pos-ticket-header]"), `${size.width}`).toBeLessThanOrEqual(0.5);
   }
 });
+
+// SEM CONEXÃO: o que precisa do servidor apaga com o motivo em palavra, e nada corta.
+for (const width of ["min", "max"] as const) {
+  test(`sem conexão (coluna ${width}): o motivo cabe, nada corta`, async ({ page }) => {
+    await openFullTab(page, { width: 1366, height: 768 }, "light", width);
+    await page.context().setOffline(true);
+    await expect(page.locator("[data-pos-kitchen-offline]")).toBeVisible();
+    await expect(page.locator("[data-pos-block-offline]")).toBeVisible();
+    expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
+    await page.context().setOffline(false);
+  });
+}
