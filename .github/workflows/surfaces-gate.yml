@@ -323,15 +323,24 @@ jobs:
       # O deploy usa esta receita genérica, não o workspace já preparado pelo
       # job. Construí-la aqui prova a ordem real de instalação e impede que o
       # postinstall do consumer só falhe depois do merge, ao publicar no DOCR.
+      - name: Log in to GHCR (espelho das imagens da CI)
+        if: matrix.app != 'storefront'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build operator deployment image
         if: matrix.app != 'storefront'
-        # Base e frontend vêm de espelho público da MESMA imagem oficial (o pull
-        # anônimo do Docker Hub cai com 429/504). O deploy segue no default do ARG.
+        # Base e frontend vêm do espelho da MESMA imagem oficial no GHCR do
+        # repositório (ci-image-mirror.yml); o pull anônimo cai com 429 no Docker Hub
+        # e no ECR público. O deploy segue no default do ARG.
         run: >-
           docker build --file surfaces/Dockerfile.surface
           --build-arg SURFACE=${{ matrix.surface }}
-          --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:22-alpine
-          --build-arg BUILDKIT_SYNTAX=mirror.gcr.io/docker/dockerfile:1
+          --build-arg NODE_IMAGE=ghcr.io/nelsonboulangerie/ci-mirror/node:22-alpine
+          --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1
           .
 
   marketing-complete:

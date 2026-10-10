@@ -10,6 +10,7 @@ name: Orders isolated capacity
 
 permissions:
   contents: read
+  packages: read  # services vêm do espelho no GHCR (ci-image-mirror.yml)
 
 concurrency:
   group: orders-isolated-capacity-${{ github.ref }}
@@ -32,7 +33,10 @@ jobs:
     timeout-minutes: 35
     services:
       postgres:
-        image: public.ecr.aws/docker/library/postgres:16
+        image: ghcr.io/nelsonboulangerie/ci-mirror/postgres:16
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         env:
           POSTGRES_USER: orders_lab
           POSTGRES_PASSWORD: orders_lab
@@ -43,7 +47,10 @@ jobs:
           --health-cmd "pg_isready -U orders_lab -d orders_perf_lab"
           --health-interval 5s --health-timeout 5s --health-retries 12
       redis:
-        image: public.ecr.aws/valkey/valkey:8
+        image: ghcr.io/nelsonboulangerie/ci-mirror/valkey:8
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
         ports: ["56389:6379"]
         options: >-
           --health-cmd "valkey-cli ping"
