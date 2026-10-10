@@ -369,6 +369,13 @@ envs:
     value: "8"
     scope: RUN_TIME
     type: GENERAL
+  # Ambiente de cobrança do Pix é decisão explícita: sem esta linha o default é
+  # `true` (sandbox, o Pix cobra num gateway que não recebe) e o SHOPMAN_E026
+  # reprova o PRE_DEPLOY de produção. `false` = cobra de verdade.
+  - key: EFI_SANDBOX
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
   - key: STRIPE_CAPTURE_METHOD
     value: manual
     scope: RUN_TIME

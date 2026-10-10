@@ -302,7 +302,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             "ManyChat externo inerte (trava dev/seed): template=%s",
             template,
         )
-        return True
+        return False  # inerte não é entrega: a cadeia segue (ver _external)
     from shopman.shop.adapters._notification_templates import derive_context
 
     # Também no caminho de FLOW: as variáveis do template aprovado saem dos campos

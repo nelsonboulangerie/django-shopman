@@ -94,7 +94,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             "SMS externo inerte (trava dev/seed): %s -> %s",
             template, recipient,
         )
-        return True
+        return False  # inerte não é entrega: a cadeia segue (ver _external)
 
     message = _build_message(template, context or {})
     payload = {

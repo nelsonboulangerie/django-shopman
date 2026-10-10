@@ -16,7 +16,14 @@ situações:
    - ou globalmente, ``SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG=true``.
 
 Fora dessas situações (staging/produção em operação normal) a trava nunca
-ativa — o comportamento real é sempre o de produção.
+ativa: o comportamento real é sempre o de produção.
+
+**Inerte nunca é entrega.** O adapter que pula a chamada devolve o resultado de
+FALHA (``False``), nunca o de sucesso: sucesso fazia o serviço de notificação
+gravar ``accepted`` e encerrar a cadeia, e como ``suppress()`` é global de
+processo, um processo suprimido reportava toda mensagem como entregue. Quem
+precisa distinguir "suprimido de propósito" de "falhou" pergunta a
+:func:`suppressed_reason` (o handler de notificação grava ``skipped``).
 """
 
 from __future__ import annotations
@@ -32,12 +39,17 @@ def suppress(reason: str) -> None:
     _suppressed_reason = reason
 
 
+def suppressed_reason() -> str | None:
+    """O motivo da supressão deste processo (``"seed"``), ou ``None``."""
+    return _suppressed_reason
+
+
 def inert(opt_in_setting: str | None = None) -> bool:
     """Retorna True quando o adapter deve pular a chamada externa.
 
-    O adapter então loga o que teria enviado e devolve seu resultado "neutro"
-    (sucesso para notificações, falha para OTP, de modo que a cadeia caia no
-    console).
+    O adapter então loga o que teria enviado e devolve FALHA (notificação e
+    OTP igualmente), de modo que a cadeia siga para o próximo canal e nada
+    seja registrado como entregue.
     """
     if _suppressed_reason is not None:
         return True

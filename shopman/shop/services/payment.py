@@ -214,12 +214,26 @@ def initiate(order) -> None:
         )
         return
 
-    idempotency_key = _ensure_payment_idempotency_key(
-        order,
-        payment_data=payment_data,
-        method=method,
-        amount_q=amount_q,
-    )
+    try:
+        idempotency_key = _ensure_payment_idempotency_key(
+            order,
+            payment_data=payment_data,
+            method=method,
+            amount_q=amount_q,
+        )
+    except PaymentAttemptLookupUnavailable:
+        # Sem conseguir ler as tentativas anteriores no Payman, qualquer chave
+        # é um chute: a guardada pode estar envenenada por uma falha terminal
+        # (o gateway repete a falha e o cliente não consegue pagar) e uma nova
+        # pode ser irmã de uma cobrança viva. Não cobramos no escuro.
+        _record_initiate_error(
+            order,
+            payment_data=payment_data,
+            method=method,
+            amount_q=amount_q,
+            error="Não conseguimos conferir a cobrança anterior. Tente de novo em instantes.",
+        )
+        return
     adapter_config = _adapter_config(order, method=method)
     adapter_config["idempotency_key"] = idempotency_key
     try:
@@ -2010,6 +2024,10 @@ def _extract_qr_data(intent: PaymentIntent) -> dict:
     return {}
 
 
+class PaymentAttemptLookupUnavailable(Exception):
+    """As tentativas anteriores de pagamento do pedido não puderam ser lidas."""
+
+
 def _ensure_payment_idempotency_key(
     order,
     *,
@@ -2055,9 +2073,11 @@ def _burned_intent_generations(order, *, method: str) -> int:
             method=method,
             status__in=[PaymanIntent.Status.FAILED, PaymanIntent.Status.CANCELLED],
         ).count()
-    except Exception:
-        logger.debug("payment.generation_lookup_failed order=%s", order.ref, exc_info=True)
-        return 0
+    except Exception as exc:
+        logger.warning("payment.generation_lookup_failed order=%s", order.ref, exc_info=True)
+        # Devolver 0 aqui recalculava a chave da PRIMEIRA tentativa, que pode ser
+        # justamente a que morreu: a mesma chave envenenada do item 17.
+        raise PaymentAttemptLookupUnavailable(order.ref) from exc
 
 
 def _payment_idempotency_key_reusable(
@@ -2072,9 +2092,13 @@ def _payment_idempotency_key_reusable(
         from shopman.payman import PaymentIntent as PaymanIntent
 
         intent = PaymanIntent.objects.filter(idempotency_key=key).first()
-    except Exception:
-        logger.debug("payment.idempotency_key_lookup_failed order=%s", order.ref, exc_info=True)
-        return True
+    except Exception as exc:
+        logger.warning("payment.idempotency_key_lookup_failed order=%s", order.ref, exc_info=True)
+        # Isto devolvia True ("reusa a chave guardada") quando a busca falhava.
+        # Se o intent daquela chave foi uma falha terminal, o retry reusava a
+        # chave envenenada e o gateway repetia a falha guardada. Sem a busca, não
+        # há como decidir: quem chama recusa a tentativa em vez de chutar.
+        raise PaymentAttemptLookupUnavailable(order.ref) from exc
 
     if intent is None:
         return True

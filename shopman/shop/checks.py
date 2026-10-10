@@ -28,6 +28,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E023  Google Maps exige credenciais de browser e servidor separadas em produção
   SHOPMAN_E024  Configuração VAPID parcial ou inválida
   SHOPMAN_E025  Chave HMAC dos recibos de privacidade ausente ou inválida
+  SHOPMAN_E026  Ambiente de cobrança (EFI_SANDBOX) ou fiscal (FOCUS_NFE_ENVIRONMENT) não declarado em produção
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -1364,3 +1365,43 @@ def check_privacy_receipt_hmac_configuration(app_configs, **kwargs):
             id="SHOPMAN_E025",
         )
     ]
+
+
+#: O que cada variável decide, na voz do erro. A chave é o nome da env.
+_PROVIDER_ENVIRONMENT_DECISIONS = {
+    "EFI_SANDBOX": (
+        "o ambiente de cobrança do Pix (Efí)",
+        "EFI_SANDBOX=false para cobrar de verdade",
+    ),
+    "FOCUS_NFE_ENVIRONMENT": (
+        "o ambiente fiscal da NFC-e (Focus NFe)",
+        "FOCUS_NFE_ENVIRONMENT=producao para emitir nota com validade",
+    ),
+}
+
+
+@register(deploy=True)
+def check_provider_environments_declared(app_configs, **kwargs):
+    """Produção não sobe com ambiente de cobrança ou fiscal herdado do default.
+
+    O default de ``EFI_SANDBOX`` é ``true`` e o de ``FOCUS_NFE_ENVIRONMENT`` é
+    ``homologacao``: servem o dev e o staging, e em produção seriam Pix que não
+    entra na conta e NFC-e que não existe no SEFAZ. O ``SHOPMAN_E022`` já
+    reprova o VALOR de teste em produção; este reprova a OMISSÃO, com a
+    mensagem que diz qual variável escrever. São perguntas diferentes: "o
+    valor está errado" e "ninguém decidiu".
+    """
+    if not is_production():
+        return []
+    undeclared = tuple(getattr(settings, "SHOPMAN_UNDECLARED_PROVIDER_ENVIRONMENTS", ()) or ())
+    errors = []
+    for name in undeclared:
+        what, example = _PROVIDER_ENVIRONMENT_DECISIONS.get(name, (name, f"{name}=<valor>"))
+        errors.append(
+            Error(
+                f"{name} não foi declarada: {what} está vindo do default de teste.",
+                hint=f"Declare a variável no spec de deploy de produção (ex.: {example}).",
+                id="SHOPMAN_E026",
+            )
+        )
+    return errors
