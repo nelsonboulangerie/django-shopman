@@ -7,8 +7,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.shop.observability import ServerTimingMixin
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
-from shopman.storefront.observability import ServerTimingMixin
 from shopman.storefront.presentation import build_catalog_items_for_skus, get_channel_listing_ref
 from shopman.storefront.services import catalog as catalog_service
 

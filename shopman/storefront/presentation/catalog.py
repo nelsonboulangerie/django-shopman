@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from shopman.utils.monetary import format_money
 
 from shopman.shop.config import ChannelConfig
+from shopman.shop.observability import catalog_stage
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.copy import build_copy
 from shopman.shop.projections.storefront_context import (
@@ -34,7 +35,6 @@ from shopman.shop.projections.types import (
     HappyHourProjection,
 )
 from shopman.storefront.identity import customer_pricing_hints
-from shopman.storefront.observability import catalog_stage
 from shopman.storefront.presentation.dietary import dietary_warnings as _dietary_warnings
 from shopman.storefront.presentation.icons import collection_icon
 from shopman.storefront.presentation.status import availability_label

@@ -145,6 +145,7 @@ from shopman.backstage.services.exceptions import (
     ProductionNotFound,
 )
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
+from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import notification as notification_service
@@ -617,7 +618,7 @@ def _pos_sale_review_payload(review) -> dict:
         responses={200: OpenApiResponse(description="Products, tabs, payment methods, shift summary.")},
     ),
 )
-class POSView(APIView):
+class POSView(ServerTimingMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
@@ -5399,9 +5400,10 @@ class POSTabCreateView(APIView):
         responses={200: OpenApiResponse(description="Tab payload (items + customer + tab_ref).")},
     ),
 )
-class POSTabOpenView(APIView):
+class POSTabOpenView(ServerTimingMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
+    server_timing_methods = ("GET", "HEAD", "POST")
 
     def get(self, request, tab_ref: str):
         from shopman.orderman.models import Session
@@ -5433,9 +5435,10 @@ class POSTabOpenView(APIView):
         responses={200: OpenApiResponse(description="Tab saved.")},
     ),
 )
-class POSTabSaveView(APIView):
+class POSTabSaveView(ServerTimingMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
+    server_timing_methods = ("POST",)
 
     @tab_command
     def post(self, request):
@@ -5948,9 +5951,10 @@ class POSCustomerContactReleaseView(APIView):
         responses={200: OpenApiResponse(description="Checkout review and normalized totals.")},
     ),
 )
-class POSReviewSaleView(APIView):
+class POSReviewSaleView(ServerTimingMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
+    server_timing_methods = ("POST",)
 
     def post(self, request):
         return _review_sale_response(request, request.data if hasattr(request, "data") else {})
@@ -5997,9 +6001,10 @@ def _review_sale_response(request, body: dict) -> Response:
         responses={200: OpenApiResponse(description="Order created.")},
     ),
 )
-class POSCloseSaleView(APIView):
+class POSCloseSaleView(ServerTimingMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
+    server_timing_methods = ("POST",)
 
     def post(self, request):
         if (request.data.get("tab_session_key") or request.data.get("tab_ref")) and not request.data.get("expected_revision"):

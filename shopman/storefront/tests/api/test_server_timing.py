@@ -14,7 +14,7 @@ import pytest
 from django.core.cache import cache
 from django.db import DEFAULT_DB_ALIAS, connections
 
-from shopman.storefront.observability import capture_catalog_timing
+from shopman.shop.observability import capture_catalog_timing
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
