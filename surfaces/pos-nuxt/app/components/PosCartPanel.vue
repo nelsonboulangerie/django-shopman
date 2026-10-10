@@ -408,6 +408,31 @@ const tabRows = computed<ControlCell[][]>(() => {
   if (canSplit.value) row.push("split");
   return row.length ? [row] : [];
 });
+// O rótulo que cabe (`OperatorButton`/`OperatorFitGroup` do kit): as ações da grade
+// com o curto escrito à mão; o que vai ao lado do rótulo (contagem, tecla) entra na
+// conta pelo `reserve` do grupo, em rem.
+const KBD_RESERVE_REM = 2.25;
+const COUNT_RESERVE_REM = 2;
+const REMOVE_FIT = { label: "Remover", icon: "i-lucide-trash-2" } as const;
+const fireFit = computed(() => ({
+  label: fireBar.value.label,
+  shortLabel: fireBar.value.unfired ? "Enviar" : undefined,
+  icon: props.firing ? undefined : "i-lucide-chef-hat",
+}));
+const fireReserve = computed(() =>
+  fireBar.value.unfired ? COUNT_RESERVE_REM + (coarsePointer.value ? 0 : KBD_RESERVE_REM) : 0,
+);
+const ICON_BUTTON_REM = 2.375;
+const batchFitActions = computed(() => [
+  ...(canMove.value && props.hasOpenTab && selection.value.count ? [{ label: "Transferir", icon: "i-lucide-split" }] : []),
+  ...(!lineAdjustmentsBlocked.value ? [{ label: "Desconto", icon: "i-lucide-percent" }] : []),
+  { label: "Remover", icon: "i-lucide-trash-2" },
+]);
+const batchReserve = computed(() =>
+  (canMove.value && props.hasOpenTab && selection.value.count && !coarsePointer.value ? KBD_RESERVE_REM : 0)
+  + (props.fireAction.present && selection.value.canFire ? ICON_BUTTON_REM : 0)
+  + (selection.value.canUnfire && props.unfireAction.present ? ICON_BUTTON_REM : 0),
+);
 const kitchenStateText = computed(() => {
   const { unfired, fired } = fireBar.value;
   const parts: string[] = [];
@@ -996,31 +1021,33 @@ defineExpose({ focusItem, onDigit, onBackspace });
        contorno primário; o sólido é do Pagamento. Com tudo enviado, quem diz é o
        estado em palavra ("11 na cozinha"), não um botão apagado. -->
   <DefineFireButton>
-    <NuxtButton
-      :size="controlSize"
-      :color="fireBar.unfired && !fireBar.disabled ? 'primary' : 'neutral'"
-      variant="outline"
-      :icon="firing ? undefined : 'i-lucide-chef-hat'"
-      :loading="firing"
-      block
-      class="h-full justify-center bg-default font-semibold"
-      :disabled="fireBar.disabled || firing"
-      :aria-busy="firing || undefined"
-      aria-keyshortcuts="F9"
-      :title="`${fireBar.label} as linhas novas (F9)`"
-      data-pos-fire
-      @click="$emit('fire')"
-    >
-      <PosFitLabel :label="fireBar.label" :short="fireBar.unfired ? 'Enviar' : ''" step="cell" :icon-only="false" />
-      <template #trailing>
-        <OperatorCountChip
-          v-if="fireBar.unfired"
-          :count="fireBar.unfired"
-          :aria-label="`${fireBar.unfired} ${fireBar.unfired === 1 ? 'item' : 'itens'} a enviar`"
-        />
-        <OperatorKbd v-if="!coarsePointer && fireBar.unfired" class="hidden @min-[15rem]:inline-flex" aria-hidden="true">F9</OperatorKbd>
-      </template>
-    </NuxtButton>
+    <!-- O grupo do kit é o contêiner: o rótulo (completo, "Enviar" ou só o ícone)
+         conta com a contagem e o F9 que vão ao lado (`reserve`). -->
+    <OperatorFitGroup :actions="[fireFit]" :size="controlSize" :reserve="fireReserve" class="h-full w-full">
+      <OperatorButton
+        v-bind="fireFit"
+        :size="controlSize"
+        :color="fireBar.unfired && !fireBar.disabled ? 'primary' : 'neutral'"
+        variant="outline"
+        :loading="firing"
+        block
+        class="h-full justify-center bg-default font-semibold"
+        :disabled="fireBar.disabled || firing"
+        :aria-busy="firing || undefined"
+        aria-keyshortcuts="F9"
+        :title="`${fireBar.label} as linhas novas (F9)`"
+        data-pos-fire
+        @click="$emit('fire')"
+      >
+        <template v-if="fireBar.unfired" #trailing>
+          <OperatorCountChip
+            :count="fireBar.unfired"
+            :aria-label="`${fireBar.unfired} ${fireBar.unfired === 1 ? 'item' : 'itens'} a enviar`"
+          />
+          <OperatorKbd v-if="!coarsePointer" aria-hidden="true">F9</OperatorKbd>
+        </template>
+      </OperatorButton>
+    </OperatorFitGroup>
   </DefineFireButton>
   <!-- ENVIO AUTOMÁTICO, dito em palavra ("ligado"/"desligado"). O interruptor é por
        estação (decisão do dono) e mora em Ajustes › Envio à cozinha; o toque leva lá. -->
@@ -1103,75 +1130,79 @@ defineExpose({ focusItem, onDigit, onBackspace });
               />
             </NuxtFieldGroup>
           </template>
-          <NuxtButton
+          <OperatorFitGroup
             v-else-if="cell === 'remove' && activeItem"
+            :actions="[REMOVE_FIT]"
             :size="controlSize"
-            color="error"
-            variant="outline"
-            icon="i-lucide-trash-2"
-            block
-            class="h-full justify-center bg-default font-semibold"
-            aria-keyshortcuts="Delete"
-            title="Remover (Del), com confirmação e desfazer"
-            :disabled="mutationBusy"
-            data-pos-line-remove
-            @click="askRemove(activeItem.line_id)"
+            :reserve="coarsePointer ? 0 : KBD_RESERVE_REM"
+            class="h-full w-full"
           >
-            <PosFitLabel label="Remover" step="cell" :icon-only="false" />
-            <template v-if="!coarsePointer" #trailing>
-              <OperatorKbd class="hidden @min-[11rem]:inline-flex" aria-hidden="true">Del</OperatorKbd>
-            </template>
-          </NuxtButton>
+            <OperatorButton
+              v-bind="REMOVE_FIT"
+              :size="controlSize"
+              color="error"
+              variant="outline"
+              block
+              class="h-full justify-center bg-default font-semibold"
+              aria-keyshortcuts="Delete"
+              title="Remover (Del), com confirmação e desfazer"
+              :disabled="mutationBusy"
+              data-pos-line-remove
+              @click="askRemove(activeItem.line_id)"
+            >
+              <template v-if="!coarsePointer" #trailing>
+                <OperatorKbd aria-hidden="true">Del</OperatorKbd>
+              </template>
+            </OperatorButton>
+          </OperatorFitGroup>
           <ReuseFireButton v-else-if="cell === 'fire'" />
-          <NuxtButton
+          <OperatorButton
             v-else-if="cell === 'discount' && activeItem"
+            :label="discountButtonLabel"
+            :short-label="discountShortLabel || undefined"
+            icon="i-lucide-percent"
             :size="controlSize"
             color="neutral"
             variant="outline"
             active-color="primary"
             active-variant="solid"
             :active="discountOpen"
-            icon="i-lucide-percent"
             block
             class="h-full justify-center"
             :class="!discountOpen && activeItem.discount?.value ? 'font-semibold' : ''"
             :aria-pressed="discountOpen"
             :disabled="mutationBusy"
-            :title="discountButtonLabel"
             data-pos-line-discount
             @click="toggleDiscount"
-          >
-            <PosFitLabel :label="discountButtonLabel" :short="discountShortLabel" step="cell" :icon-only="false" />
-          </NuxtButton>
-          <NuxtButton
+          />
+          <OperatorButton
             v-else-if="cell === 'split'"
+            label="Dividir conta"
+            short-label="Dividir"
+            icon="i-lucide-split"
             :size="controlSize"
             color="neutral"
             variant="outline"
-            icon="i-lucide-split"
             block
             class="h-full justify-center"
             title="Dividir a conta entre pessoas (abre no Pagamento)"
             :disabled="!items.length || loading || saving"
             data-pos-split
             @click="$emit('split')"
-          >
-            <PosFitLabel label="Dividir conta" short="Dividir" step="cell" :icon-only="false" />
-          </NuxtButton>
-          <NuxtButton
+          />
+          <OperatorButton
             v-else-if="cell === 'note' && activeItem"
+            label="Observação"
+            icon="i-lucide-message-square-text"
             :size="controlSize"
             color="neutral"
             variant="outline"
-            icon="i-lucide-message-square-text"
             block
             class="h-full justify-center"
             :disabled="mutationBusy"
             data-pos-line-note
             @click="chooseMode('note')"
-          >
-            <PosFitLabel label="Observação" step="cell" :icon-only="false" />
-          </NuxtButton>
+          />
         </div>
       </template>
     </div>
@@ -1212,7 +1243,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             data-pos-select-lines
             @click="toggleBatchMode"
           >
-            <PosFitLabel label="Selecionar" step="sm" />
+            Selecionar
           </NuxtButton>
           <NuxtButton
             v-if="sheet"
@@ -1248,48 +1279,60 @@ defineExpose({ focusItem, onDigit, onBackspace });
           <p class="shrink-0 op-title whitespace-nowrap tnum">
             {{ selection.count ? `${selection.count} ${selection.count === 1 ? "selecionada" : "selecionadas"}` : "Toque nas linhas" }}
           </p>
-          <!-- As ações do lote medem a sobra DESTA faixa (`@container`): rótulo inteiro
-               quando cabe, senão o ícone (com o nome no `title` e no leitor de tela). -->
-          <div class="@container flex min-w-0 flex-1 items-center justify-end gap-1.5">
-          <NuxtButton
+          <!-- As ações do lote são um grupo do kit (`OperatorFitGroup`): medem a sobra
+               DESTA faixa e trocam de degrau juntas (rótulo inteiro, senão o ícone, com o
+               nome no `title` e no leitor de tela). Os botões só de ícone e o F10 entram
+               na conta pelo `reserve`. -->
+          <OperatorFitGroup
+            :actions="batchFitActions"
+            :size="controlSize"
+            :gap="0.375"
+            :reserve="batchReserve"
+            class="flex flex-1 items-center justify-end gap-1.5"
+          >
+          <OperatorButton
             v-if="canMove && hasOpenTab && selection.count"
+            label="Transferir"
+            icon="i-lucide-split"
             :size="controlSize"
             color="neutral"
             variant="outline"
-            icon="i-lucide-split"
             class="shrink-0 font-semibold"
             :disabled="loading"
             title="Transferir as linhas marcadas para outra comanda (F10)"
             @click="$emit('move', selection.lineIds)"
           >
-            <PosFitLabel label="Transferir" step="md" />
-            <OperatorKbd v-if="!coarsePointer" class="hidden @min-[28rem]:inline-flex" aria-hidden="true">F10</OperatorKbd>
-          </NuxtButton>
-          <NuxtButton
+            <template v-if="!coarsePointer" #trailing>
+              <OperatorKbd aria-hidden="true">F10</OperatorKbd>
+            </template>
+          </OperatorButton>
+          <OperatorButton
             v-if="!lineAdjustmentsBlocked"
+            label="Desconto"
+            icon="i-lucide-percent"
             :size="controlSize"
             color="neutral"
             variant="outline"
             active-color="primary"
             active-variant="solid"
             :active="discountOpen"
-            icon="i-lucide-percent"
             class="shrink-0"
             :aria-pressed="discountOpen"
             :disabled="!selection.count"
             title="Desconto nas linhas marcadas"
             @click="toggleDiscount"
-          ><PosFitLabel label="Desconto" step="md" /></NuxtButton>
-          <NuxtButton
+          />
+          <OperatorButton
+            label="Remover"
+            icon="i-lucide-trash-2"
             :size="controlSize"
             color="error"
             variant="outline"
-            icon="i-lucide-trash-2"
             class="shrink-0"
             :disabled="mutationBusy || !selection.count"
             title="Remover as linhas marcadas"
             @click="batchRemove"
-          ><PosFitLabel label="Remover" step="md" /></NuxtButton>
+          />
           <NuxtButton
             v-if="fireAction.present && selection.canFire"
             :size="controlSize"
@@ -1317,7 +1360,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             :title="unfireAction.label || 'Cancelar envio à cozinha'"
             @click="batchUnfire"
           />
-          </div>
+          </OperatorFitGroup>
         </header>
       </template>
 
@@ -1836,7 +1879,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         >
           <span class="flex min-w-0 items-center gap-2.5">
             <Icon :name="loading ? 'lucide:loader-circle' : primaryIconName" class="size-5 shrink-0" :class="loading ? 'animate-spin motion-reduce:animate-none' : ''" />
-            <span class="text-lg font-semibold" data-pos-primary-label><PosFitLabel :label="primaryText" step="sm" /></span>
+            <span class="text-lg font-semibold whitespace-nowrap" data-pos-primary-label>{{ primaryText }}</span>
             <OperatorKbd v-if="!coarsePointer" variant="inverse" class="hidden opacity-80 @min-[24rem]:inline-flex" aria-hidden="true">F4</OperatorKbd>
           </span>
           <span v-if="totalShown" class="flex shrink-0 items-baseline gap-2" data-pos-primary-total :data-total-state="total.status">

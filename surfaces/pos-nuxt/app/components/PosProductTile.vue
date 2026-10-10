@@ -89,13 +89,13 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
     </div>
 
     <div class="flex min-w-0 flex-col gap-0.5 px-3 py-2">
-      <!-- O nome RESERVA duas linhas (dono, 10/10): o cartão tem a mesma altura com
+      <!-- O nome RESERVA duas linhas (dono, 10/10; `op-fixed-lines` do kit): o cartão tem a mesma altura com
            uma ou duas, e o desenho da grade não deforma. Da terceira em diante corta
            com reticências (a mercearia: "Creme de Parmesão Kraeuterkaese Pomerode
            90g"); o nome inteiro fica no `title`, e o nome acessível do cartão lê o texto todo
            (o corte é só visual). -->
       <p
-        class="line-clamp-2 min-h-[2lh] op-label leading-tight font-semibold [overflow-wrap:anywhere]"
+        class="op-fixed-lines op-label leading-tight font-semibold"
         :class="inert ? 'text-muted-foreground' : ''"
         :title="product.name"
         data-pos-product-name
