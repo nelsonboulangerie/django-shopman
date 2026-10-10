@@ -209,6 +209,20 @@ jobs:
         if: matrix.app == 'kitchensink-nuxt'
         run: npm run test:visual
 
+      # A matriz de geometria do Compras e da Cozinha (scanner do kit: nada estoura a
+      # largura, nenhum alvo de toque pequeno, nenhum foco cortado, nenhum texto
+      # cortado), com backend hermético e o build de produção. Sem baseline de pixel.
+      # Ficava fora de todo job: a régua existia e ninguém a rodava. ~3 min cada.
+      # O Gestor fica para quando a matriz dele ganhar portas por variável de ambiente
+      # (hoje fixas em 33014/38793, com `nuxt dev`).
+      - name: Install Chromium for the app geometry matrix
+        if: matrix.app == 'purchase-nuxt' || matrix.app == 'kds-nuxt'
+        run: npx playwright install chromium
+
+      - name: App geometry matrix (Compras, Cozinha)
+        if: matrix.app == 'purchase-nuxt' || matrix.app == 'kds-nuxt'
+        run: npm run test:visual
+
       - name: Upload shared operator evidence
         if: always() && matrix.app == 'operator-kit'
         uses: actions/upload-artifact@v7

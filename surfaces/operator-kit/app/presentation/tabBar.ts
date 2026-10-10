@@ -17,7 +17,9 @@ export const TAB_BAR_UI = {
   root: "justify-around border-t border-default py-2 [&>div]:flex-1",
   list: "w-full",
   item: "py-0 flex-1 min-w-0",
-  link: "w-full flex-col gap-1 px-1 min-h-control justify-center",
+  // O anel de foco do item (o contorno do `::before`) vai PARA DENTRO: o primeiro e o
+  // último item encostam na borda da tela, e para fora o anel saía cortado.
+  link: "w-full flex-col gap-1 px-1 min-h-control justify-center focus-visible:before:-outline-offset-3",
   linkLeadingIcon: "size-5",
   linkLabel: "text-[10px]/3 font-normal text-clip whitespace-normal text-center break-words",
 };

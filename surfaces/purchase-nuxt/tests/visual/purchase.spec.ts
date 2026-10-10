@@ -51,16 +51,6 @@ for (const viewport of selectedOperatorViewports()) {
         state: item.state,
         theme: "light",
         viewport,
-      }, {
-        // Duas réguas do kit em conflito, declaradas aqui com o motivo (e no relatório da
-        // onda), sem esconder o resto (estouro de largura, texto cortado, sobreposição):
-        //   - touch-target: o conjunto mínimo aprovado (08/10/2026) põe botão e campo em
-        //     `md` (32 px) em todo lugar, e o scanner ainda cobra 44 px no toque, inclusive
-        //     no chrome do kit (☰, ⋯, Avisos);
-        //   - focus-clipping: o botão de ordenar do cabeçalho da `OperatorTable` (margem
-        //     negativa) e os itens da barra inferior do shell têm o anel de foco cortado
-        //     pelo `overflow` da própria peça do kit.
-        allowedFindings: ["touch-target", "focus-clipping"],
       });
     });
   }

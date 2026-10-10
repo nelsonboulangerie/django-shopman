@@ -97,8 +97,14 @@ export async function scanOperatorGeometry(
       if (element.matches('[data-slot="handle"][role="separator"]'))
         return false;
       // Barras compactas usam deliberadamente o anel interno: ele permanece
-      // inteiro mesmo quando o item precisa recortar label/ícone nas bordas.
-      if ([...element.classList].some((name) => name.includes("ring-inset")))
+      // inteiro mesmo quando o item precisa recortar label/ícone nas bordas. O
+      // contorno puxado para dentro (`-outline-offset-*`, o da linha ativa da
+      // tabela e do item da barra inferior) vale o mesmo.
+      if (
+        [...element.classList].some(
+          (name) => name.includes("ring-inset") || name.includes("-outline-offset-"),
+        )
+      )
         return false;
       const rect = element.getBoundingClientRect();
       let parent = element.parentElement;
@@ -231,7 +237,9 @@ export async function scanOperatorGeometry(
         input.touch &&
         !resizeHandle &&
         !element.closest("[data-touch-target-exempt]") &&
-        (targetWidth < minTarget || targetHeight < minTarget)
+        // Meio pixel de folga: `2rem` sai 31,98 px no layout fracionário do
+        // navegador, e um campo de 32 px não é alvo pequeno.
+        (targetWidth < minTarget - 0.5 || targetHeight < minTarget - 0.5)
       ) {
         add(
           "touch-target",

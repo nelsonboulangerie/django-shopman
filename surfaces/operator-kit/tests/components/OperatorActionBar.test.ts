@@ -53,6 +53,20 @@ describe("OperatorActionBar, a ação do momento na base do celular", () => {
     expect(document.querySelector("[data-operator-action-bar-secondary]")).toBeNull();
   });
 
+  it("os ganchos data-* da ação chegam ao botão (e só eles)", async () => {
+    mounted = await mountSuspended(OperatorActionBar, {
+      attachTo: document.body,
+      props: {
+        action: { label: "Despachar M09", "data-orders-dispatch": "M09" },
+        secondary: { label: "Voltar", "data-orders-back": "" },
+      },
+    });
+    const action = document.querySelector<HTMLElement>("[data-operator-action-bar-action]")!;
+    expect(action.getAttribute("data-orders-dispatch")).toBe("M09");
+    expect(action.hasAttribute("label")).toBe(false);
+    expect(document.querySelector("[data-operator-action-bar-secondary]")!.hasAttribute("data-orders-back")).toBe(true);
+  });
+
   it("quando não pode, diz por quê, e o toque não age", async () => {
     const onSelect = vi.fn();
     mounted = await mountSuspended(OperatorActionBar, {

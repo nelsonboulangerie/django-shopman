@@ -78,8 +78,25 @@ export function toggleHidden(hidden: readonly string[], id: string, visible: boo
  */
 export function tableDensityUi(density: OperatorTableDensity) {
   return density === "compact"
-    ? { th: "px-2 py-1 text-sm", td: `px-2 py-1.5 text-sm whitespace-normal ${PINNED_SELECTED_CELL}` }
-    : { th: "px-4 py-3.5 text-sm", td: `p-4 text-sm whitespace-normal ${PINNED_SELECTED_CELL}` };
+    ? { tr: ROW_FOCUS, th: "px-2 py-1 text-sm", td: `px-2 py-1.5 text-sm whitespace-normal ${PINNED_SELECTED_CELL}` }
+    : { tr: ROW_FOCUS, th: "px-4 py-3.5 text-sm", td: `p-4 text-sm whitespace-normal ${PINNED_SELECTED_CELL}` };
+}
+
+/**
+ * O foco de teclado na linha que abre (tabela com `on-select`): o mesmo contorno da
+ * linha ativa, PARA DENTRO. A linha encosta nas bordas do cartão, e o contorno do
+ * navegador, para fora, saía cortado pelo recorte da tabela.
+ */
+export const ROW_FOCUS = "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary";
+
+/**
+ * O botão de ordenar do cabeçalho: a margem negativa alinha o rótulo com o texto das
+ * células (o padding do botão some na borda do cabeçalho), e o anel de foco vai PARA
+ * DENTRO. Na compacta o cabeçalho tem 8 px de padding: a margem é de 8 px, para o botão
+ * não passar da borda da coluna (e da tabela, na primeira).
+ */
+export function sortButtonClass(density: OperatorTableDensity): string {
+  return `${density === "compact" ? "-ms-2" : "-ms-2.5"} focus-visible:-outline-offset-3`;
 }
 
 /**

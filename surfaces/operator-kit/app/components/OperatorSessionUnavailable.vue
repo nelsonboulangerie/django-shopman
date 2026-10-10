@@ -23,6 +23,10 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{ retry: [] }>();
+
+// A tela inteira é este aviso, e o `NuxtEmpty` só desenha `h2`: o `h1` da página é o
+// nome do app (para o leitor de tela, que navega por título), e o aviso fica abaixo.
+const app = useOperatorAppName();
 </script>
 
 <template>
@@ -30,6 +34,7 @@ const emit = defineEmits<{ retry: [] }>();
     class="grid min-h-screen flex-1 place-items-center p-4"
     data-operator-session-unavailable
   >
+    <h1 v-if="app.name" class="sr-only">{{ app.name }}</h1>
     <NuxtEmpty
       class="max-w-sm text-center"
       icon="i-lucide-wifi-off"

@@ -807,6 +807,17 @@ dentro do plano, o item dentro do pedido) é `variant="soft"`: só o fundo, sem 
 borda. A regra mora na chamada, não no CSS: um seletor que adivinhasse o aninhamento
 pintaria errado o cartão que só está dentro de uma coluna.
 
+### Idioma das peças do Nuxt UI
+
+O `OperatorAppRoot` passa o `pt_br` oficial do Nuxt UI ao `UApp` (`:locale`): o texto
+que as peças escrevem sozinhas (lista vazia, "Selecionar", incrementar e decrementar,
+fechar) já sai em português. ⚠️ Duas frases ficam em inglês porque o `reka-ui` as
+escreve sem passar pelo locale e sem prop para trocar: o `aria-label` de cada casa do
+`NuxtPinInput` ("pin input 1 of 4") e o do grupo do `NuxtStepper` ("progress"). Não se
+remenda pelo DOM: o PIN do kit já dá o nome do campo inteiro (o `NuxtFormField` do
+`OperatorPinChange`, o `aria-label` do grupo no `OperatorIdentify`). Quando o `reka-ui` aceitar o rótulo, ele entra
+aqui, uma vez.
+
 ## Peças de tela (fase 2)
 
 As atividades comuns do operador, uma peça para cada uma
@@ -1287,6 +1298,12 @@ jeitos, pela forma dos itens:
 - Trava: `guardrails.filterPanel.test.ts` (filtro rápido declarado no painel, `:quick`,
   só existe ao lado da faixa na mesma tela; favorito de faixa e de painel só em tela
   registrada no servidor).
+- **Sub-seção mora aqui, não na barra lateral.** Consumidores do modo de rota: a Base do
+  Compras (`PurchaseBaseSections`) e os Ajustes do Marketing (`MarketingSettingsNav`).
+  O `OperatorSuiteShell` não aceita `children` (sub-seção como filha do item da barra
+  lateral) de propósito: nenhum app precisa, porque a sub-seção é a faixa da toolbar
+  (WP-FASE2-UX-OPERADOR §5). Volta à mesa só com um consumidor real que a faixa não
+  resolva.
 
 ### Barra de seleção (`OperatorBulkBar` + `#selection` do `OperatorPageHeader`)
 
@@ -1535,8 +1552,8 @@ Contrato:
   `window.confirm`. Ocupado (`busy`), o diálogo não fecha nem confirma de novo.
 - A autorização do gerente fica **fora**: o `OperatorManagerAuth` sobe por cima, e o
   motivo digitado continua embaixo.
-- ⚠️ Usa `UiDialog`, `UiButton` e `UiTextarea` do app hospedeiro, o mesmo limite do
-  `OperatorManagerAuth`.
+- Peças do Nuxt UI, nada do app hospedeiro: `NuxtModal`, `NuxtSelect`, `NuxtFormField`
+  com `NuxtTextarea`, `NuxtAlert` e `NuxtButton`.
 
 ## Pergunta antes de descartar (`useConfirm`)
 
@@ -1586,7 +1603,7 @@ Contrato:
 - **Uma pergunta por vez.** Com uma aberta, a seguinte responde `false` sem abrir: dois
   gatilhos do mesmo gesto (o Esc do campo e o Esc do popover) não empilham caixas.
 - **Abre sobre o diálogo do app.** O kit faz `dedupe` do `reka-ui` (`nuxt.config.ts`), para
-  que a pergunta e o `UiDialog` do app dividam a mesma pilha de camadas: o toque dentro
+  que a pergunta e o `NuxtModal` do app dividam a mesma pilha de camadas: o toque dentro
   da pergunta não fecha o diálogo de baixo.
 - **A função que só espera a pergunta não é clique inerte.** A trava do "Clique nunca
   inerte" reconhece o `async function` cujos `await` são todos o `useConfirm` (o toque

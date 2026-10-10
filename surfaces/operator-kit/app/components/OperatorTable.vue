@@ -27,6 +27,7 @@ import {
   OPERATOR_TABLE_DEFAULT_DENSITY,
   PINNED_COLUMN_CLASS,
   sortIcon,
+  sortButtonClass,
   sortLabel,
   SUPPORTING_COLUMN_CLASS,
   tableDensityUi,
@@ -276,7 +277,7 @@ const select = computed(() =>
             :trailing-icon="sortIcon(tableColumn.getIsSorted())"
             color="neutral"
             variant="ghost"
-            class="-ms-2.5"
+            :class="sortButtonClass(density)"
             :aria-label="sortLabel(column.label, tableColumn.getIsSorted())"
             :data-operator-table-sort="column.id"
             @click="tableColumn.toggleSorting(tableColumn.getIsSorted() === 'asc')"
