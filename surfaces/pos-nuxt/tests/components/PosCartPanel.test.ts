@@ -142,9 +142,9 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
         items: [item({ sku: "PAO", name: "Pão", fired: true, line_id: "l1" })],
       }),
     });
-    if (!wrapper.find('[aria-label="Remover"]').exists())
+    if (!wrapper.find('[data-pos-line-remove]').exists())
       await wrapper.find("button[aria-expanded]").trigger("click");
-    await wrapper.find('[aria-label="Remover"]').trigger("click");
+    await wrapper.find('[data-pos-line-remove]').trigger("click");
     expect(wrapper.emitted("remove")).toBeUndefined();
     const confirm = Array.from(document.querySelectorAll("button")).find((b) =>
       b.textContent?.includes("Remover item"),
@@ -157,12 +157,12 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
 
   it("'Remover' da barra de lote pede confirmação e remove a seleção inteira", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    await wrapper.find('[aria-label="Iniciar seleção"]').trigger("click");
+    await wrapper.find('[data-pos-select-lines]').trigger("click");
     await wrapper.find('[aria-label="Selecionar Pão"]').trigger("click");
     await wrapper.find('[aria-label="Selecionar Café"]').trigger("click");
     const batchRemove = wrapper
       .findAll("button")
-      .find((b) => b.text().trim() === "Remover");
+      .find((b) => b.attributes("title") === "Remover as linhas marcadas");
     await batchRemove!.trigger("click");
     expect(wrapper.emitted("remove")).toBeUndefined();
     const confirm = Array.from(document.querySelectorAll("button")).find((b) =>
@@ -196,7 +196,7 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
 
   it("selecionar uma linha arma a barra de lote (multi-select)", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    await wrapper.find('[aria-label="Iniciar seleção"]').trigger("click");
+    await wrapper.find('[data-pos-select-lines]').trigger("click");
     await wrapper.find('[aria-label="Selecionar Pão"]').trigger("click");
     // v4: a barra do lote é uma faixa só, e diz quantas linhas estão marcadas.
     expect(wrapper.find("[data-pos-selection-bar]").text()).toContain("1 selecionada");
@@ -275,7 +275,7 @@ describe("PosCartPanel — duas linhas do MESMO produto", () => {
       props: props({ items: doisChas }),
     });
     // Duas linhas com o mesmo nome: o segundo checkbox é o da segunda linha.
-    await wrapper.find('[aria-label="Iniciar seleção"]').trigger("click");
+    await wrapper.find('[data-pos-select-lines]').trigger("click");
     await wrapper.findAll('[aria-label="Selecionar Chá"]')[1]!.trigger("click");
     await wrapper.find("[data-pos-batch-fire]").trigger("click");
     expect(wrapper.emitted("fireLines")?.[0]?.[0]).toEqual(["L-cha-2"]);
@@ -618,7 +618,7 @@ describe("PosCartPanel — quantidade acessível sem expandir", () => {
 describe("PosCartPanel — navegação e seleção da linha inteira", () => {
   it("clicar no nome, no preço ou no checkbox alterna uma única marcação", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    await wrapper.find('[aria-label="Iniciar seleção"]').trigger("click");
+    await wrapper.find('[data-pos-select-lines]').trigger("click");
     const bread = wrapper.find('[data-item-select="L-PAO"]');
     await bread.find("strong").trigger("click");
     expect(
@@ -746,7 +746,7 @@ describe("PosCartPanel — rodapé no modo seleção", () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     const payment = () => wrapper.findAll("button").filter(b => b.text().includes("Pagamento"));
     expect(payment()).toHaveLength(1);
-    await wrapper.find('[aria-label="Iniciar seleção"]').trigger("click");
+    await wrapper.find('[data-pos-select-lines]').trigger("click");
     expect(wrapper.text()).toContain("Total parcial");
     expect(wrapper.text()).toContain(formatBRL(1100));
     expect(payment()).toHaveLength(0);
@@ -768,7 +768,7 @@ describe("PosCartPanel — rodapé no modo seleção", () => {
 
 it("mantém o rodapé compacto durante seleção até Concluir, sem depender do foco", async () => {
   const wrapper = await mountSuspended(PosCartPanel, { props: props(), attachTo: document.body });
-  await wrapper.find('[aria-label="Iniciar seleção"]').trigger('click');
+  await wrapper.find('[data-pos-select-lines]').trigger('click');
   await wrapper.vm.$nextTick();
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
   // v4: o Desconto da faixa vale para as linhas marcadas; sem marca ele fica desligado.
@@ -850,7 +850,7 @@ describe("PosCartPanel — sem desconto nem observação de item quando não gra
     await wrapper.find('[data-item-select="L-CAFE"]').trigger("keydown", { key: " " });
     // Sem desconto de item: a seleção não oferece Desconto, e o teclado físico não
     // vira desconto em lote.
-    expect(wrapper.findAll("button").some((b) => b.text().trim() === "Desconto")).toBe(false);
+    expect(wrapper.findAll("button").some((b) => b.text().includes("Desconto"))).toBe(false);
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true }));
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("setDiscount")).toBeUndefined();

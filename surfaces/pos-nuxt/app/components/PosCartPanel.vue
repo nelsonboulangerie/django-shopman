@@ -381,6 +381,8 @@ const sheetFirePrimary = computed(() => Boolean(props.sheet && fireBar.value.vis
 // molde (`DefineTicketBody` / `ReuseTicketBody`).
 const [DefineTicketBody, ReuseTicketBody] = createReusableTemplate();
 const [DefineFireButton, ReuseFireButton] = createReusableTemplate();
+// As duas arrumações das ações em prévia para o dono escolher (`?acoes=a|b`).
+const actionsLayout = usePosActionsPreview();
 const [DefineAutoFire, ReuseAutoFire] = createReusableTemplate();
 // O estado da cozinha em palavra (o que falta e o que já foi), no lugar do botão
 // apagado de quando não há nada a enviar.
@@ -1058,6 +1060,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
             @click="sheetOpen = false"
           />
         </div>
+        <!-- Arrumação B (prévia): o envio mora no topo, junto das linhas novas. -->
+        <div v-if="actionsLayout === 'b' && fireBar.visible && fireBar.unfired" class="px-3 pb-2.5" data-pos-fire-slot="top">
+          <ReuseFireButton />
+        </div>
       </header>
 
       <!-- Modo seleção (Alt S): o cabeçalho da comanda vira a barra do lote, numa faixa
@@ -1456,6 +1462,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             </div>
             <div class="flex-1" />
             <NuxtButton
+              v-if="actionsLayout === 'a'"
               color="error"
               variant="ghost"
               icon="i-lucide-trash-2"
@@ -1506,6 +1513,26 @@ defineExpose({ focusItem, onDigit, onBackspace });
               @click="$emit('unfire', activeItem.line_id)"
             />
           </p>
+          <!-- Arrumação B (prévia): o destrutivo numa faixa só dele, abaixo de uma
+               divisória, longe das ações comuns, com o nome por extenso. -->
+          <div v-if="actionsLayout === 'b'" class="mt-2.5 border-t border-border pt-2" data-pos-line-remove-band>
+            <NuxtButton
+              color="error"
+              variant="ghost"
+              icon="i-lucide-trash-2"
+              class="-ml-2 font-semibold"
+              aria-keyshortcuts="Delete"
+              title="Remover da comanda (Del), com confirmação e desfazer"
+              :disabled="mutationBusy"
+              data-pos-line-remove
+              @click="askRemove(activeItem.line_id)"
+            >
+              <PosFitLabel label="Remover da comanda" short="Remover" step="sm" :icon-only="false" />
+              <template #trailing>
+                <OperatorKbd v-if="!coarsePointer" class="hidden @min-[20rem]:inline-flex" aria-hidden="true">Del</OperatorKbd>
+              </template>
+            </NuxtButton>
+          </div>
         </template>
         <!-- Desconto (da linha ou do lote): formato, valor e motivo. O numérico da tela
              aparece aqui e, nos dispositivos de toque, também para a quantidade. -->
@@ -1734,7 +1761,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <div v-else class="grid shrink-0 gap-2 border-t border-border p-3" data-pos-ticket-foot>
         <!-- O QUE AGE NA COMANDA INTEIRA mora no pé, na ordem do gesto: a cozinha
              (só quando há o que enviar) e o Pagamento, a ação principal. -->
-        <ReuseFireButton v-if="fireBar.visible && fireBar.unfired" />
+        <ReuseFireButton v-if="actionsLayout === 'a' && fireBar.visible && fireBar.unfired" />
         <!-- O maior alvo da tela: `xl`, no mínimo a altura da faixa (h-16), o total
              dentro. O TOTAL NUNCA CORTA: ele não encolhe; quem cede espaço é o rótulo
              (vira só o ícone) e a tecla F4 (some na coluna estreita), e, no limite, o

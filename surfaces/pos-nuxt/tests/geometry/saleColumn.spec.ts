@@ -21,10 +21,14 @@ interface Problem {
 }
 
 /** Abre a comanda cheia (13) e deixa uma linha em edição. */
-async function openFullTab(page: Page, size: { width: number; height: number }, scheme: "light" | "dark") {
+async function openFullTab(page: Page, size: { width: number; height: number }, scheme: "light" | "dark", layout: "a" | "b" = "a") {
   await page.setViewportSize(size);
   await page.emulateMedia({ reducedMotion: "reduce", colorScheme: scheme });
-  await page.goto("/");
+  // O PDV é claro por preferência (`colorMode.preference`), não pelo sistema: o escuro
+  // é o toggle, guardado no dispositivo.
+  await page.addInitScript((mode) => window.localStorage.setItem("pos-nuxt-color-mode", mode), scheme);
+  // `?acoes=`: as duas arrumações das ações em prévia (PR #1636); as duas cabem.
+  await page.goto(`/?acoes=${layout}`);
   await page.getByRole("button", { name: /#13/ }).first().click();
   const rows = page.locator("aside[data-pos-ticket] [data-item-select]");
   await expect(rows).toHaveCount(9);
@@ -121,17 +125,21 @@ async function scan(page: Page, regions: string[]): Promise<Problem[]> {
   }, regions);
 }
 
+for (const layout of ["a", "b"] as const) {
 for (const scheme of ["light", "dark"] as const) {
   for (const size of SIZES) {
-    test(`venda ${size.width}x${size.height} (${scheme}): comanda de altura inteira, nada corta, nada se sobrepõe`, async ({ page }) => {
-      await openFullTab(page, size, scheme);
+    test(`venda ${size.width}x${size.height} (${scheme}, ações ${layout.toUpperCase()}): comanda de altura inteira, nada corta, nada se sobrepõe`, async ({ page }) => {
+      await openFullTab(page, size, scheme, layout);
       const aside = page.locator("aside[data-pos-ticket]");
       const box = (await aside.boundingBox())!;
       // De cima a baixo, como a barra lateral; o cabeçalho mora só à esquerda dela.
       expect(box.y).toBeLessThanOrEqual(1);
       expect(box.y + box.height).toBeGreaterThanOrEqual(size.height - 1);
-      const header = (await page.locator("[data-pos-context-header]").boundingBox())!;
-      expect(header.x + header.width).toBeLessThanOrEqual(box.x + 1);
+      // O cabeçalho é `display: contents`: quem tem caixa é a faixa dele e a barra da venda.
+      for (const band of ["[data-pos-context-header] > [data-operator-page-header]", "[data-pos-sale-bar]"]) {
+        const header = (await page.locator(band).boundingBox())!;
+        expect(header.x + header.width, band).toBeLessThanOrEqual(box.x + 1);
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
       // O total confirmado: inteiro, dentro do botão do Pagamento.
@@ -148,7 +156,7 @@ for (const scheme of ["light", "dark"] as const) {
       const croque = page.locator("aside [data-pos-line-name]").first();
       await expect(croque).toHaveText("Croque Monsieur com salada verde e molho de mostarda Dijon");
 
-      expect(await scan(page, ["aside[data-pos-ticket]", "[data-pos-context-header]"])).toEqual([]);
+      expect(await scan(page, ["aside[data-pos-ticket]", "[data-pos-context-header] > [data-operator-page-header]", "[data-pos-sale-bar]"])).toEqual([]);
 
       // Seleção (Alt S): a barra do lote também cabe.
       await page.locator("[data-pos-select-lines]").click();
@@ -158,6 +166,7 @@ for (const scheme of ["light", "dark"] as const) {
       expect(await scan(page, ["aside[data-pos-ticket]"])).toEqual([]);
     });
   }
+}
 }
 
 test("cartões de produto: a mesma altura com nome de 1, 2 ou 3+ linhas", async ({ page }) => {
@@ -170,8 +179,12 @@ test("cartões de produto: a mesma altura com nome de 1, 2 ou 3+ linhas", async 
       const heights = tiles.map((el) => Math.round(el.getBoundingClientRect().height));
       const lines = tiles.map((el) => {
         const name = el.querySelector<HTMLElement>("[data-pos-product-name]")!;
-        const lineHeight = Number.parseFloat(getComputedStyle(name).lineHeight);
-        return { name: name.textContent?.trim(), rows: Math.round(name.scrollHeight / lineHeight), clamped: name.scrollHeight > name.clientHeight + 1, title: name.title };
+        // As linhas do TEXTO (o `min-h-[2lh]` reserva duas mesmo com uma só, então a
+        // altura da caixa não conta): uma linha por topo distinto dos retângulos dele.
+        const range = document.createRange();
+        range.selectNodeContents(name);
+        const rows = new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
+        return { name: name.textContent?.trim(), rows, clamped: name.scrollHeight > name.clientHeight + 1, title: name.title };
       });
       return { heights, lines };
     });

@@ -90,7 +90,7 @@ describe("PosCartPanel — editor da linha sob demanda (v4)", () => {
   it("no balcão (sem toque) o numérico da tela só aparece no desconto", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     expect(wrapper.find("[data-pos-line-numpad]").exists()).toBe(false);
-    expect(wrapper.find("[data-pos-keyboard-hint]").text()).toContain("Digite para mudar a quantidade");
+    expect(wrapper.find("[data-pos-keyboard-hint]").text()).toContain("Digite a quantidade");
     await wrapper.find("[data-pos-line-discount]").trigger("click");
     expect(wrapper.find("[data-pos-line-numpad]").exists()).toBe(true);
     expect(wrapper.find("[data-pos-discount-panel]").exists()).toBe(true);
@@ -155,5 +155,43 @@ describe("PosCartPanel — editor da linha sob demanda (v4)", () => {
     expect(primary.text()).toContain(formatBRL(1100));
     await primary.trigger("click");
     expect(wrapper.emitted("prepare")).toHaveLength(1);
+  });
+});
+
+// As duas arrumações das ações em prévia (PR #1636): a escolha é do dono, e as duas
+// precisam funcionar até lá. A é o padrão; `?acoes=b` lembra B no dispositivo.
+describe("PosCartPanel — as duas arrumações das ações (prévia)", () => {
+  afterEach(() => {
+    window.localStorage.removeItem("pos.preview.actions-layout");
+    useState("pos-actions-layout").value = "a";
+  });
+
+  it("A: Enviar à cozinha no pé, acima do Pagamento; Remover na faixa da quantidade", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    expect(wrapper.find("[data-pos-ticket-foot] [data-pos-fire]").exists()).toBe(true);
+    expect(wrapper.find("[data-pos-fire-slot='top']").exists()).toBe(false);
+    expect(wrapper.find("[data-pos-line-remove-band]").exists()).toBe(false);
+    expect(wrapper.find("[data-pos-line-remove]").exists()).toBe(true);
+  });
+
+  it("B: Enviar à cozinha no topo da comanda; Remover sozinho numa faixa própria", async () => {
+    window.localStorage.setItem("pos.preview.actions-layout", "b");
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    const send = wrapper.find("[data-pos-fire-slot='top'] [data-pos-fire]");
+    expect(send.exists()).toBe(true);
+    expect(wrapper.find("[data-pos-ticket-foot] [data-pos-fire]").exists()).toBe(false);
+    await send.trigger("click");
+    expect(wrapper.emitted("fire")).toHaveLength(1);
+    const remove = wrapper.find("[data-pos-line-remove-band] [data-pos-line-remove]");
+    expect(remove.exists()).toBe(true);
+    expect(wrapper.findAll("[data-pos-line-remove]")).toHaveLength(1);
+  });
+
+  it("sem nada a enviar, nenhuma das duas mostra o botão: o estado é dito em palavra", async () => {
+    window.localStorage.setItem("pos.preview.actions-layout", "b");
+    const fired = [item({ sku: "PAO", name: "Pão", fired: true, fired_qty: 1 })];
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: fired }) });
+    expect(wrapper.find("[data-pos-fire]").exists()).toBe(false);
+    expect(wrapper.find("[data-pos-kitchen-state]").text()).toContain("1 na cozinha");
   });
 });
