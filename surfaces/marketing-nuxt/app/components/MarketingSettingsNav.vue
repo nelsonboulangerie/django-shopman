@@ -5,48 +5,22 @@
 // toolbar com os recortes rápidos, mas muda a URL (cada uma tem rota própria embaixo
 // de `/settings`). A tela a põe no `#filters-primary` do `OperatorPageHeader`.
 //
-// Com quatro opções, a regra do celular (seção 11: "sub-seção com mais de 3 opções vira
-// `NuxtSelect`") pede a lista no celular e as abas do `sm` para cima. As duas vão no
-// HTML do servidor e o CSS escolhe (régua única, sem `v-if` de largura): o celular
-// nasce no desenho do celular.
-//
-// ⚠️ Peça a promover: o `OperatorQuickFilters` do kit (K4, com `to`) ainda não existe;
-// quando existir, esta faixa vira ele.
-const { activeSettings, settingsSections } = useMarketingSections();
+// É o `OperatorQuickFilters` do kit no modo de rota (todo item com `to`): a ativa é a
+// da rota de agora, e a régua do celular é a do kit, igual em toda a suíte.
+const { settingsSections } = useMarketingSections();
 
 const items = computed(() =>
   settingsSections.map((section) => ({
+    key: section.key,
     label: section.label,
-    value: section.key,
     icon: section.icon.replace("lucide:", "i-lucide-"),
+    to: section.to,
   })),
 );
-
-const current = computed({
-  get: () => activeSettings.value ?? undefined,
-  set: (next: string | undefined) => {
-    const target = settingsSections.find((section) => section.key === next);
-    if (target && target.key !== activeSettings.value) void navigateTo(target.to);
-  },
-});
 </script>
 
 <template>
   <nav class="flex min-w-0" aria-label="Seções de Ajustes" data-marketing-settings-nav>
-    <NuxtTabs
-      v-model="current"
-      :items="items"
-      :content="false"
-      variant="pill"
-      class="max-sm:hidden"
-      aria-label="Seções de Ajustes"
-    />
-    <NuxtSelect
-      v-model="current"
-      :items="items"
-      class="w-48 sm:hidden"
-      aria-label="Seção de Ajustes"
-      data-marketing-settings-select
-    />
+    <OperatorQuickFilters :items="items" label="Seções de Ajustes" />
   </nav>
 </template>

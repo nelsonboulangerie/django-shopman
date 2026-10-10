@@ -137,7 +137,7 @@ async function onPrefer(cost: SupplierMaterialCost) {
         />
       </template>
       <template #filters-primary>
-        <PurchaseBaseSections current="costs" :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
+        <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
       </template>
     </OperatorPageHeader>
 
@@ -166,7 +166,7 @@ async function onPrefer(cost: SupplierMaterialCost) {
               color="neutral"
               variant="outline"
               :active="batchOnlyMissing"
-              active-variant="soft"
+              active-variant="solid"
               active-color="primary"
               :aria-pressed="batchOnlyMissing"
               @click="batchOnlyMissing = !batchOnlyMissing"

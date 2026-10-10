@@ -75,11 +75,12 @@ describe("C02/C04/C05/C06: a Base (fase 2)", () => {
     expect(page).toContain("data-base-role-tags");
     expect(page).not.toContain("truncate");
   });
-  it("sub-seções: lista no celular, abas na mesa, decididas pelo CSS", () => {
+  it("sub-seções: os filtros rápidos do kit no modo de rota (a régua do celular é a do kit)", () => {
     const sections = app("components/PurchaseBaseSections.vue");
-    expect(sections).toContain("<NuxtSelect");
-    expect(sections).toContain('class="w-44 sm:hidden"');
-    expect(sections).toContain("max-sm:hidden");
+    expect(sections).toContain("<OperatorQuickFilters");
+    expect(sections).toContain("to: section.to");
+    expect(sections).not.toContain("<NuxtTabs");
+    expect(sections).not.toContain("<NuxtSelect");
   });
 });
 

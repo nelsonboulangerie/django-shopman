@@ -496,27 +496,36 @@ function partitionKey(partition: QcPartitionGroup[]): string {
 
 const confirmDiscard = useConfirm();
 
+/**
+ * Pergunta antes de jogar fora o que foi digitado. `leave` é o voltar da tela;
+ * `switch` é andar para outro lote (o ‹ › do `OperatorRecordNav`, que a página
+ * segura no `onBeforeRouteUpdate`). Sem nada digitado, segue sem perguntar.
+ */
+function discardQuestion(action: "leave" | "switch") {
+  const confirmLabel = action === "switch" ? "Descartar e trocar de lote" : "Descartar e sair";
+  return props.mode === "correct"
+    ? {
+        title: "Descartar a correção de qualidade?",
+        description:
+          "Os números e os motivos que você mudou neste lote se perdem. A qualidade fica como estava.",
+        confirmLabel,
+      }
+    : {
+        title: "Descartar as quantidades e os motivos informados?",
+        description:
+          "O lote continua aberto no Fechamento, sem nada do que você digitou.",
+        confirmLabel,
+      };
+}
+
+function confirmDiscardChanges(action: "leave" | "switch" = "leave"): Promise<boolean> {
+  return isDirty.value ? confirmDiscard(discardQuestion(action)) : Promise.resolve(true);
+}
+
+defineExpose({ isDirty, confirmDiscardChanges });
+
 async function requestBack() {
-  if (
-    isDirty.value &&
-    !(await confirmDiscard(
-      props.mode === "correct"
-        ? {
-            title: "Descartar a correção de qualidade?",
-            description:
-              "Os números e os motivos que você mudou neste lote se perdem. A qualidade fica como estava.",
-            confirmLabel: "Descartar e sair",
-          }
-        : {
-            title: "Descartar as quantidades e os motivos informados?",
-            description:
-              "O lote continua aberto no Fechamento, sem nada do que você digitou.",
-            confirmLabel: "Descartar e sair",
-          },
-    ))
-  ) {
-    return;
-  }
+  if (isDirty.value && !(await confirmDiscard(discardQuestion("leave")))) return;
   emit("back");
 }
 

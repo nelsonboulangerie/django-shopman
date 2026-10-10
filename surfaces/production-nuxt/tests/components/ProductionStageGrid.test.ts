@@ -209,6 +209,13 @@ const stubs = {
     template:
       '<div data-select :data-value="modelValue"><span v-for="item in items" :key="item.value">{{ item.label }}</span></div>',
   },
+  // Os filtros rápidos do kit (um recorte de cada vez): abas com a contagem.
+  OperatorQuickFilters: {
+    props: ["modelValue", "items", "label"],
+    emits: ["update:modelValue"],
+    template:
+      '<div role="tablist" :aria-label="label"><button v-for="item in items" :key="item.key" role="tab" :aria-selected="String(item.key === modelValue)" @click="$emit(\'update:modelValue\', item.key)">{{ item.label }} {{ item.count }}</button></div>',
+  },
   ShortageDialog: true,
   Icon: true,
   OperatorKbd: { template: "<kbd><slot /></kbd>" },
@@ -610,7 +617,7 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
     boardRows.value = [flagged, ...cleanRows, planned];
     const w = mountGrid("plan");
 
-    // Os recortes são abas em pílula com a contagem (como no Gestor).
+    // Os recortes são os filtros rápidos do kit, com a contagem (como no Gestor).
     const chip = (label: string) =>
       w
         .findAll('[data-plan-filters] [role="tab"]')

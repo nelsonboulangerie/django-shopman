@@ -80,12 +80,11 @@ describe("seções do Marketing", () => {
     expect(source.match(/quick: true/g)).toHaveLength(4);
   });
 
-  it("a faixa de Ajustes troca abas por lista de escolha no celular, pelo CSS", () => {
+  it("a faixa de Ajustes é o OperatorQuickFilters do kit no modo de rota", () => {
     const nav = read("../app/components/MarketingSettingsNav.vue");
-    expect(nav).toContain("<NuxtTabs");
-    expect(nav).toContain('class="max-sm:hidden"');
-    expect(nav).toContain("<NuxtSelect");
-    expect(nav).toContain("sm:hidden");
+    expect(nav).toContain("<OperatorQuickFilters");
+    expect(nav).toContain("to: section.to");
+    expect(nav).not.toContain("<NuxtTabs");
     expect(nav).not.toContain("useMediaQuery");
   });
 });

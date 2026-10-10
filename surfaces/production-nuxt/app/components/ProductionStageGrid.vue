@@ -844,17 +844,18 @@ const OPEN_FILTERS: Array<{ key: OpenFilter; label: string }> = [
   { key: "pending", label: "A confirmar" },
   { key: "opened", label: "Abertos" },
 ];
-// Os recortes rápidos são abas em pílula com a contagem, como no Gestor.
+// Os recortes rápidos são os filtros rápidos do kit (um recorte de cada vez, com a
+// contagem ao lado), como no Gestor.
 const planFilterTabs = computed(() =>
   PLAN_FILTERS.map((filter) => ({
-    value: filter.key,
+    key: filter.key,
     label: filter.label,
     count: planGroups.value.counts[filter.key],
   })),
 );
 const openFilterTabs = computed(() =>
   OPEN_FILTERS.map((filter) => ({
-    value: filter.key,
+    key: filter.key,
     label: filter.label,
     count: openGroups.value.counts[filter.key],
   })),
@@ -1141,30 +1142,22 @@ const startedDescription = computed(() => {
       </template>
       <template #filters>
         <!-- Os recortes rápidos: abas em pílula com a contagem, como no Gestor. -->
-        <NuxtTabs
+        <OperatorQuickFilters
           v-if="stage === 'plan'"
           :model-value="planFilter"
           :items="planFilterTabs"
-          :content="false"
-          variant="pill"
-          aria-label="Recorte do Planejamento"
+          label="Recorte do Planejamento"
           data-plan-filters
-          @update:model-value="(value: string | number) => (planFilter = value as PlanFilter)"
-       >
-          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
-        </NuxtTabs>
-        <NuxtTabs
+          @update:model-value="(value) => (planFilter = (Array.isArray(value) ? value[0] : value) as PlanFilter)"
+        />
+        <OperatorQuickFilters
           v-else
           :model-value="openFilter"
           :items="openFilterTabs"
-          :content="false"
-          variant="pill"
-          aria-label="Recorte da Abertura"
+          label="Recorte da Abertura"
           data-open-filters
-          @update:model-value="(value: string | number) => (openFilter = value as OpenFilter)"
-       >
-          <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
-        </NuxtTabs>
+          @update:model-value="(value) => (openFilter = (Array.isArray(value) ? value[0] : value) as OpenFilter)"
+        />
         <NuxtSelect
           v-if="baseOptions.length"
           v-model="baseModel"
