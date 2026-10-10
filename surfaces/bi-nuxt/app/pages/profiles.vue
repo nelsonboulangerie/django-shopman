@@ -32,10 +32,18 @@ import {
   strikeMatrix,
   csvMoney,
 } from "~/presentation/bi";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const { filters, report, freshness, pending, error, refresh, apply } = useBiProfiles();
 const { selection, bounds, presets } = useBiWindow();
 const shareItems = useBiShareMenuItems();
+// O aviso da vocação leva aonde ela se edita: as etiquetas de consumo no Admin.
+const djangoBase = String((useRuntimeConfig().public as { djangoBaseUrl?: string }).djangoBaseUrl || "").replace(/\/$/, "");
+const { attrsFor } = useOperatorAppLink();
+const tagsUrl = `${djangoBase}/admin/backstage/productconsumptiontag/`;
+const vocationActions = computed(() => [
+  { label: "Abrir as etiquetas de consumo", icon: "i-lucide-tag", to: tagsUrl, ...attrsFor(tagsUrl) },
+]);
 const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 
 // ── Recortes ────────────────────────────────────────────────────────────────
@@ -359,7 +367,8 @@ const revpashCsv = computed<ReadingCsv>(() => ({
         variant="subtle"
         icon="i-lucide-info"
         title="Perfil presumido pela cesta"
-        description="Cada produto tem uma vocação (consome aqui, leva ou híbrido), editável em Configurações › Como vendemos. Entrega e iFood ficam fora da pergunta e dentro da conta. A hora é a do registro da venda."
+        :actions="alertActions('info', vocationActions)"
+        description="Cada produto tem uma vocação (consome aqui, leva ou híbrido), editável em Configurações › Como vendemos › Etiquetas de consumo. Entrega e iFood ficam fora da pergunta e dentro da conta. A hora é a do registro da venda."
       />
 
       <NuxtEmpty

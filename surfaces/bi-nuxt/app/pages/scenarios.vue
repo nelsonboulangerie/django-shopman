@@ -9,6 +9,7 @@
 // `NuxtEmpty`.
 import type { BIScenarioReportView } from "~/types/bi";
 import { scenarioReportHeadline, scenarioStatusLabel } from "~/presentation/bi";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const { page, freshness, pending, error, refresh, generate, generating } = useBiScenarios();
 const shareItems = useBiShareMenuItems();
@@ -33,6 +34,13 @@ function pickRound(value: string | string[] | undefined) {
   const picked = Array.isArray(value) ? value[0] : value;
   openId.value = picked ? Number(picked) : null;
 }
+
+// A rodada que falhou oferece a próxima no mesmo foco, onde a geração está ligada.
+const retryActions = computed(() =>
+  page.value?.configured
+    ? [{ label: "Gerar de novo", icon: "i-lucide-refresh-cw", loading: generating.value, onClick: () => void run() }]
+    : [],
+);
 
 async function run() {
   const report = await generate(focus.value);
@@ -124,6 +132,7 @@ async function run() {
                   icon="i-lucide-circle-alert"
                   title="A IA não respondeu no formato esperado"
                   :description="item.report.error"
+                  :actions="alertActions('error', retryActions)"
                 />
                 <NuxtCard
                   v-for="(scenario, index) in item.report.scenarios"
