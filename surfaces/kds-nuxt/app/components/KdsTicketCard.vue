@@ -99,6 +99,9 @@ const finishLocked = computed(() => Boolean(props.ticket.finish_block_label) && 
 // Pede ciência agora: mudou depois de chegar, ou caiu inteiro.
 const alarm = computed(() => needsAcknowledgement(props.ticket) && !props.finishing);
 const cancelled = computed(() => props.ticket.is_cancelled || props.ticket.status === "cancelled");
+// O aviso "Era a comanda Mesa 5" já diz o nome antigo: o riscado do subtítulo sai,
+// para o nome não aparecer duas vezes no mesmo card.
+const announcesRename = computed(() => (props.ticket.changes ?? []).some((change) => change.kind === "moved"));
 // Toque longo (celular, prévia v4 nota 7): desfazer, reabrir e ver o pedido, sem botões
 // a mais na tela. A página decide se escuta (`@hold`).
 const longPress = useLongPress(() => emit("hold"));
@@ -273,7 +276,7 @@ const d = computed(() => ({
               </span>
               <span class="min-w-0 break-words" data-kds-overline>{{ overline }}</span>
               <span
-                v-if="ticket.previous_tab_ref"
+                v-if="ticket.previous_tab_ref && !announcesRename"
                 class="line-through"
                 :title="`Comanda ${ticket.previous_tab_ref} já liberada`"
                 >Comanda {{ ticket.previous_tab_ref }}</span

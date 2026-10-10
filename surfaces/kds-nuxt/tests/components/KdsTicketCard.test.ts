@@ -263,6 +263,17 @@ describe("KdsTicketCard — os dois gestos", () => {
     expect(w.get("article").classes()).toContain("border-destructive");
   });
 
+  it("nome trocado: o nome antigo aparece uma vez só, no aviso", () => {
+    const moved = mountCard({
+      ticket: ticket({ previous_tab_ref: "Mesa 5", changes: [{ kind: "moved", text: "Era a comanda Mesa 5" }] }),
+    });
+    expect(moved.text().match(/Mesa 5/g)).toHaveLength(1);
+    expect(moved.find(".line-through").exists()).toBe(false);
+    // Depois do Visto, o riscado volta a ser a referência discreta de sempre.
+    const seen = mountCard({ ticket: ticket({ previous_tab_ref: "Mesa 5" }) });
+    expect(seen.get(".line-through").text()).toBe("Comanda Mesa 5");
+  });
+
   it("pedido cancelado inteiro: itens riscados, Não preparar, sem relógio e sem abrir detalhe", () => {
     const w = mountCard({
       ticket: ticket({ status: "cancelled", is_cancelled: true, cancelled_at_display: "22:01" }),
