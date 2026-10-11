@@ -2275,8 +2275,22 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
         >
           <span class="flex min-w-0 items-center gap-2.5">
             <Icon :name="loading ? 'lucide:loader-circle' : primaryIconName" class="size-5 shrink-0" :class="loading ? 'animate-spin motion-reduce:animate-none' : ''" />
-            <span class="text-lg font-semibold whitespace-nowrap" data-pos-primary-label>{{ primaryText }}</span>
-            <OperatorKbd v-if="!coarsePointer" variant="inverse" class="hidden opacity-80 @min-[24rem]:inline-flex" aria-hidden="true">F4</OperatorKbd>
+            <!-- Sem conexão, o total ganha "total sem conexão" ao lado e o conjunto não
+                 cabe com o rótulo abaixo de 30rem (a coluna mínima e a padrão): ali o
+                 rótulo cede ao ícone (fica para o leitor de tela e no title) e a tecla
+                 cai junto; o total segue inteiro. -->
+            <span
+              class="text-lg font-semibold whitespace-nowrap"
+              :class="total.status === 'offline' ? 'sr-only @min-[30rem]:not-sr-only' : ''"
+              data-pos-primary-label
+            >{{ primaryText }}</span>
+            <OperatorKbd
+              v-if="!coarsePointer"
+              variant="inverse"
+              class="hidden opacity-80"
+              :class="total.status === 'offline' ? '@min-[30rem]:inline-flex' : '@min-[24rem]:inline-flex'"
+              aria-hidden="true"
+            >F4</OperatorKbd>
           </span>
           <span v-if="totalShown" class="flex shrink-0 items-baseline gap-2" data-pos-primary-total :data-total-state="total.status">
             <span v-if="total.status === 'offline'" class="op-micro font-medium whitespace-nowrap opacity-90">total sem conexão</span>
