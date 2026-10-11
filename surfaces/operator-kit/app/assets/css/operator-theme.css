@@ -144,8 +144,9 @@
    em todos os apps, então NADA estiliza o select nativo hoje — esta é a única
    regra, num lugar só, sem tocar call site.
 
-   Chevron: SVG inline em `background-image` (o mesmo `chevron-down` do Lucide que
-   o UiSelect usa), 1rem, a 0.625rem da borda direita. A cor é a de
+   Chevron: SVG inline em `background-image` (o `chevron-down` do Lucide, o mesmo
+   do UiSelect do storefront — os apps de operador não têm UiSelect), 1rem, a
+   0.625rem da borda direita. A cor é a de
    `--muted-foreground` de cada tema, embutida no SVG — data URI não lê
    `currentColor` nem custom property, por isso são DOIS SVGs (claro e `.dark`).
    Alternativa descartada: `mask-image` + `background-color: currentColor` seguiria
