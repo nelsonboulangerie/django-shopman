@@ -44,43 +44,36 @@ async function install() {
 </script>
 
 <template>
-  <aside
+  <NuxtCard
     v-if="visible"
-    class="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-md rounded-md border border-border bg-card p-4 text-card-foreground shadow-xl"
-    aria-live="polite"
+    class="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-md"
     data-operator-pwa-install
   >
-    <p class="text-sm font-semibold">{{ title }}</p>
-    <p v-if="identity" class="mt-1 mb-3 text-sm text-muted-foreground">{{ identity.install }}</p>
+    <template #header>
+      <h2 class="font-semibold">{{ title }}</h2>
+      <p v-if="identity" class="text-sm text-muted-foreground">{{ identity.install }}</p>
+    </template>
 
     <OperatorInstallSteps v-if="plan.kind === 'steps'" :plan="plan" />
 
-    <div class="mt-4 flex gap-2">
-      <button
-        type="button"
-        class="h-11 flex-1 rounded-md px-4 text-sm font-medium text-muted-foreground hover:bg-muted"
-        @click="pwa.dismiss()"
-      >
-        Agora não
-      </button>
-      <button
+    <template #footer>
+      <div class="flex gap-2">
+      <NuxtButton class="flex-1" color="neutral" variant="ghost" label="Agora não" @click="pwa.dismiss()" />
+      <NuxtButton
         v-if="plan.kind === 'prompt'"
-        type="button"
-        class="h-11 flex-1 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
+        class="flex-1"
+        label="Instalar"
         @click="install"
-      >
-        Instalar
-      </button>
+      />
       <!-- Ninguém sabe daqui se ela seguiu os passos; quem sabe é ela. Dizer "já
            instalei" encerra o convite de vez em vez de repeti-lo na semana seguinte. -->
-      <button
+      <NuxtButton
         v-else
-        type="button"
-        class="h-11 flex-1 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
+        class="flex-1"
+        label="Já instalei"
         @click="pwa.dismissAsDone()"
-      >
-        Já instalei
-      </button>
-    </div>
-  </aside>
+      />
+      </div>
+    </template>
+  </NuxtCard>
 </template>

@@ -46,14 +46,13 @@ describe("OperatorLogin", () => {
     expect(inputs[0]!.attributes()).toMatchObject({
       type: "text",
       autocomplete: "username",
-      "aria-label": "Usuário",
     });
+    expect(wrapper.get('label[for="operator-login-username"]').text()).toBe("Usuário");
     expect(inputs[1]!.attributes()).toMatchObject({
       type: "password",
       autocomplete: "current-password",
-      "aria-label": "Senha",
     });
-    expect(inputs[0]!.classes()).toContain("h-11");
+    expect(wrapper.get('label[for="operator-login-password"]').text()).toBe("Senha");
     expect(wrapper.get('button[type="submit"]').attributes("disabled")).toBe(
       "",
     );
@@ -103,7 +102,7 @@ describe("OperatorLogin", () => {
     await wrapper.get("form").trigger("submit");
     await flushPromises();
 
-    expect(wrapper.get('[role="alert"]').text()).toBe(
+    expect(wrapper.get('[data-operator-login-error]').text()).toBe(
       "Usuário ou senha inválidos.",
     );
     expect(
@@ -126,28 +125,22 @@ describe("OperatorLogin", () => {
     expect(wrapper.text()).toContain(
       "Acesse com sua conta autorizada a operar o caixa.",
     );
-    expect(wrapper.get("input").classes()).toContain("h-12");
-    expect(wrapper.get('button[type="submit"]').classes()).toContain("h-14");
-    expect(wrapper.get("form").classes()).not.toContain("bg-card");
+    expect(wrapper.findAll("input")).toHaveLength(2);
     expect(wrapper.get(".iconify").classes()).toContain("i-lucide:lock-keyhole");
   });
 
-  // Identidade do app no gate: o PNG da família PWA (o mesmo do rail e da Central),
-  // com fallback para o Lucide se a prop faltar ou a imagem falhar.
-  it("com iconSrc mostra o PNG do app; a imagem que falha cai no Lucide", async () => {
+  // Identidade do app no gate: o PNG da família PWA, com ícone canônico quando
+  // a identidade não fornece imagem.
+  it("com iconSrc mostra o PNG do app e sem imagem usa o Lucide", async () => {
     const wrapper = await mountLogin({
       icon: "lucide:layout-grid",
       iconSrc: "/pwa/pwa-64x64.png?v=3",
     });
-    const roundel = wrapper.get("form > div:first-child");
-    const img = roundel.get("img");
+    const img = wrapper.get("img");
     expect(img.attributes("src")).toBe("/pwa/pwa-64x64.png?v=3");
-    expect(img.attributes("alt")).toBe("");
-    expect(roundel.find(".iconify").exists()).toBe(false);
-
-    await img.trigger("error");
-
-    expect(roundel.find("img").exists()).toBe(false);
-    expect(roundel.get(".iconify").classes()).toContain("i-lucide:layout-grid");
+    expect(img.attributes("alt") ?? "").toBe("");
+    wrapper.unmount();
+    const fallback = await mountLogin({ icon: "lucide:layout-grid", iconSrc: "" });
+    expect(fallback.findAll(".iconify").some((node) => node.classes().includes("i-lucide:layout-grid"))).toBe(true);
   });
 });

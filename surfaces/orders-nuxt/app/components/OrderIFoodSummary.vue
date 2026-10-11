@@ -4,9 +4,7 @@ defineProps<{ cancellationNotice?: string; paymentSummary?: readonly string[]; o
 
 <template>
   <div v-if="cancellationNotice || paymentSummary?.length || operationSummary?.length" class="space-y-1 text-xs" data-ifood-summary>
-    <p v-if="cancellationNotice" class="rounded-md border border-warning/40 bg-warning/10 p-2" role="status" data-ifood-cancellation>
-      {{ cancellationNotice }}
-    </p>
+    <NuxtAlert v-if="cancellationNotice" color="warning" variant="subtle" icon="i-lucide-triangle-alert" :description="cancellationNotice" data-ifood-cancellation />
     <p v-for="(line, index) in paymentSummary" :key="index" class="text-muted-foreground" data-ifood-payment>
       {{ line }}
     </p>

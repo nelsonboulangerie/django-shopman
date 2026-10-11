@@ -25,9 +25,7 @@ import {
   splitRef,
   statusTone,
   stripSummary,
-  timerChip,
   timerTone,
-  toneBadge,
   triageCards,
   waitingStripText,
   zoneEmptyText,
@@ -122,6 +120,12 @@ const allCards = computed<OrderCardProjection[]>(() => zones.value.flatMap((z) =
 const channels = computed(() => channelOptions(allCards.value));
 const fulfillment_ = computed(() => fulfillmentCounts(allCards.value));
 const sortLabel = computed(() => SORT_OPTIONS.find((o) => o.key === sort.value)?.label ?? "Chegada");
+const sortMenuItems = computed(() => (view.value === "queue" ? QUEUE_SORT_OPTIONS : SORT_OPTIONS).map((option) => ({
+  label: option.label,
+  description: "hint" in option && typeof option.hint === "string" ? option.hint : undefined,
+  icon: (view.value === "queue" ? queueSort.value : sort.value) === option.key ? "i-lucide-check" : "i-lucide-arrow-up-down",
+  onSelect: () => view.value === "queue" ? pickQueueSort(option.key as QueueSort) : pickSort(option.key as SortKey),
+})));
 
 function triaged(zone: ZoneView): OrderCardProjection[] {
   return triageCards(zone.cards, { query: query.value, channel: channel.value, sort: sort.value, fulfillment: fulfillment.value });
@@ -191,12 +195,9 @@ const { run: bulkAdvance, pending: bulkAdvancing } = usePendingAction(async () =
   selected.value = new Set([...selected.value].filter((ref) => !targets.includes(ref) || actionError(ref)));
 });
 
-// sort menu (house pattern: button + backdrop + absolute panel).
-const sortOpen = ref(false);
 // ⋯ da fila: atualizar, Ciente, seleção, exportar e imprimir (e, no posto Saída e no
 // celular, também ordenar, a visão e o som).
 const moreOpen = ref(false);
-const channelOpen = ref(false);
 function menuDo(fn: () => void, close = true) {
   if (close) moreOpen.value = false;
   fn();
@@ -219,7 +220,6 @@ function pickPhoneZone(value: string | number) {
 }
 function pickSort(key: SortKey) {
   sort.value = key;
-  sortOpen.value = false;
 }
 // A Saída no celular (G16, v4 `cozinha-celular` (a)): entrou pelo "Saída" da barra, as
 // abas são "Prontos para sair" e "Em preparo" (com o ponto de atraso); pelo "Pedidos",
@@ -235,6 +235,12 @@ const phoneTabs = computed(() => {
     return zone ? [{ ...tab, zone, late: lateCount(zone) }] : [];
   });
 });
+const phoneTabItems = computed(() => phoneTabs.value.map((tab) => ({
+  ...tab,
+  value: tab.key,
+  label: tab.title,
+  badge: triaged(tab.zone).length,
+})));
 // Puxe para atualizar (celular) e o aviso dos gestos no fim da lista.
 const { pull, refreshing: pullRefreshing, label: pullText } = usePullToRefresh(queueViewport, () => refresh(), isPhone);
 // Deslizar o cartão para a esquerda (G17): Atender (quem gerencia) e Recusar (pedido novo).
@@ -285,6 +291,14 @@ watch(() => route.query[BOARD_COLUMNS_QUERY], () => { if (route.path === "/") ap
 const isWide = useMediaQuery("(min-width: 1024px)");
 const queueAvailable = computed(() => !boardLayout.exitPost.value && (!mountedView.value || isWide.value));
 const view = computed(() => (viewMode.value === "queue" && !queueAvailable.value ? "board" : viewMode.value));
+const viewTabs = computed(() => [
+  ...(queueAvailable.value ? [{ value: "queue", label: "Fila", icon: "i-lucide-list-checks" }] : []),
+  { value: "table", label: "Supervisão", icon: "i-lucide-table-2" },
+]);
+function pickView(value: string | number) {
+  const next = String(value);
+  if (next === "queue" || next === "table") viewMode.value = next;
+}
 const touchCards = computed(() => view.value === "board" && boardLayout.exitPost.value);
 const exitPostView = computed(() => view.value === "board" && boardLayout.exitPost.value && !isPhone.value);
 // Tablet em pé (e o posto Saída): a linha de cima fica com o essencial; ordenar e a
@@ -322,6 +336,7 @@ const EXIT_FILTERS = [
   { key: "pickup", label: "Retirada", icon: "lucide:store" },
   { key: "delivery", label: "Entrega", icon: "lucide:bike" },
 ] as const;
+const exitFilterTabs = EXIT_FILTERS.map((option) => ({ value: option.key, label: option.label, icon: option.icon.replace("lucide:", "i-lucide-") }));
 const { width: exitGridWidth } = useElementSize(exitGrid);
 const exitShowAll = ref(false);
 const exitCapacity = computed(() => {
@@ -393,10 +408,34 @@ const QUEUE_SCOPES: { key: QueueScope; label: string }[] = [
   { key: "all", label: "Todos" },
   { key: "late", label: "Atrasados" },
 ];
+const queueScopeTabs = computed(() => QUEUE_SCOPES.map((option) => ({
+  value: option.key,
+  label: option.label,
+  badge: scopeCounts.value[option.key],
+})));
+const fulfillmentTabs = computed(() => [
+  { value: "all", label: "Todos", icon: "i-lucide-layers-3", badge: allCards.value.length },
+  { value: "delivery", label: "Entrega", icon: "i-lucide-bike", badge: fulfillment_.value.delivery },
+  { value: "pickup", label: "Retirada", icon: "i-lucide-store", badge: fulfillment_.value.pickup },
+]);
+const fulfillmentCompactTabs = computed(() => fulfillmentTabs.value.map(({ icon: _icon, ...item }) => item));
+const channelItems = computed(() => [
+  { value: "all", label: "Todos os canais", icon: "i-lucide-layers" },
+  ...channels.value.map((option) => ({
+    value: option.ref,
+    label: `${option.label} (${option.count})`,
+    icon: `i-lucide-${lucideIcon(allCards.value.find((card) => card.channel_ref === option.ref)?.channel_icon || "")}`,
+  })),
+]);
+function pickScope(value: string | number) {
+  if (value === "attention" || value === "all" || value === "late") scope.value = value;
+}
+function pickFulfillment(value: string | number) {
+  if (value === "all" || value === "delivery" || value === "pickup") fulfillment.value = value;
+}
 const queueSortLabel = computed(() => QUEUE_SORT_OPTIONS.find((o) => o.key === queueSort.value)?.label ?? "Urgência");
 function pickQueueSort(key: QueueSort) {
   queueSort.value = key;
-  sortOpen.value = false;
 }
 // A tecla A aceita o pedido novo em foco; sem ele, o pedido novo mais urgente da Fila.
 const acceptRef = computed(() => {
@@ -464,11 +503,9 @@ function queueKey(e: KeyboardEvent): boolean {
 const searchInput = ref<{ focus: () => void } | null>(null);
 function onKeydown(e: KeyboardEvent) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  // Esc fecha primeiro o painel aberto (⋯, ordenar, canal); só depois limpa os recortes.
-  if (e.key === "Escape" && (moreOpen.value || sortOpen.value || channelOpen.value)) {
+  // Esc fecha primeiro o drawer móvel; menus canônicos cuidam do próprio Escape.
+  if (e.key === "Escape" && moreOpen.value) {
     moreOpen.value = false;
-    sortOpen.value = false;
-    channelOpen.value = false;
     return;
   }
   const el = e.target as HTMLElement | null;
@@ -720,8 +757,8 @@ function printQueue() {
         <OperatorLiveStatus
           :tone="liveTone"
           :time="readClock"
-          :label="isPhone && !error ? '' : error ? 'Atualização falhou' : realtimeView.label"
-          :detail="isPhone && !error ? `${realtimeView.label}. ${realtimeView.title}` : realtimeView.title"
+          :label="isPhone && !error ? '' : error ? (isPhone ? 'Falhou' : 'Atualização falhou') : realtimeView.label"
+          :detail="isPhone ? `${error ? 'Atualização falhou. ' : `${realtimeView.label}. `}${realtimeView.title}` : realtimeView.title"
         />
       </template>
       <template #search>
@@ -738,168 +775,113 @@ function printQueue() {
       <template v-if="!isPhone" #actions>
         <!-- No posto Saída a faixa da Entrada pulsa e o Ciente fica no ⋯ (a linha da v4
              não tem lugar para ele ao lado da busca, no tablet). -->
-        <button
+        <NuxtButton
           v-if="attentionPending && !exitPostView && !isPhone"
-          type="button"
-          class="inline-flex h-control items-center gap-2 rounded-md border border-primary/50 bg-primary/10 px-3 op-label font-semibold transition hover:bg-primary/15"
+          icon="i-lucide-check"
+          label="Ciente"
+          color="primary"
+          variant="soft"
+          size="lg"
           aria-label="Reconhecer aviso de pedido novo"
           @click="acknowledgeAttention"
-        >
-          <Icon name="lucide:check" class="size-4" />
-          Ciente
-        </button>
+        />
         <!-- a visão deste posto e o caminho de volta às três colunas -->
         <template v-if="view === 'board' && !boardLayout.allOpen.value && !isPhone">
-          <span
-            class="hidden h-control items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3.5 op-label lg:inline-flex"
+          <NuxtBadge
+            icon="i-lucide-panel-left-close"
+            color="primary"
+            variant="subtle"
+            size="lg"
             :title="boardLayout.memoryText.value"
             data-board-view-label
           >
-            <Icon name="lucide:panel-left-close" class="size-5 text-primary" aria-hidden="true" />
-            <span class="text-muted-foreground">Visão:</span>
-            <b class="font-semibold">{{ boardLayout.viewLabel.value.replace(/^Visão:\s*/, "") }}</b>
-          </span>
-          <button
-            type="button"
-            class="inline-flex h-control items-center gap-2 rounded-md border border-border bg-card px-4 op-label font-semibold transition hover:bg-accent"
+            {{ boardLayout.viewLabel.value }}
+          </NuxtBadge>
+          <NuxtButton
+            icon="i-lucide-columns-3"
+            label="Mostrar as 3 colunas"
+            color="neutral"
+            variant="outline"
+            size="lg"
             title="Mostrar as 3 colunas (atalhos: 1, 2 e 3)"
             data-board-show-all
             @click="boardLayout.showAll()"
-          >
-            <Icon name="lucide:columns-3" class="size-5" aria-hidden="true" />
-            Mostrar as 3 colunas
-          </button>
+          />
         </template>
         <!-- som de pedido novo (mesmos 3 estados do KDS): ligado / desligado /
              ligado-mas-bloqueado pelo autoplay (ponto âmbar até o 1º gesto). -->
-        <button
-          v-if="!isPhone"
-          type="button"
-          class="relative grid size-control place-items-center rounded-md border border-border bg-card transition hover:bg-accent"
-          :class="soundOn && soundBlocked ? 'border-warning/50 text-warning' : 'text-foreground'"
-          :aria-label="soundOn && soundBlocked ? 'Som bloqueado: toque para ativar' : soundOn ? 'Som de pedido novo ativo' : 'Som de pedido novo desativado'"
-          :title="soundOn && soundBlocked ? 'Som bloqueado: toque para ativar' : 'Som de pedido novo'"
-          data-sound-toggle
-          @click="handleSoundAction"
-        >
-          <Icon :name="soundOn ? 'lucide:volume-2' : 'lucide:volume-x'" class="size-5" />
-          <span v-if="soundOn && soundBlocked" class="absolute -right-1 -top-1 size-2 rounded-full bg-warning" aria-hidden="true" />
-        </button>
+        <NuxtChip v-if="!isPhone" :show="soundOn && soundBlocked" color="warning" inset>
+          <NuxtButton
+            :icon="soundOn ? 'i-lucide-volume-2' : 'i-lucide-volume-x'"
+            color="neutral"
+            variant="outline"
+            size="lg"
+            square
+            :aria-label="soundOn && soundBlocked ? 'Som bloqueado: toque para ativar' : soundOn ? 'Som de pedido novo ativo' : 'Som de pedido novo desativado'"
+            :title="soundOn && soundBlocked ? 'Som bloqueado: toque para ativar' : 'Som de pedido novo'"
+            data-sound-toggle
+            @click="handleSoundAction"
+          />
+        </NuxtChip>
 
         <template v-if="!compactHeader && !isPhone">
           <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
                no quadro e na tabela, a ordem deles -->
-          <UiPopover v-model:open="sortOpen">
-            <UiPopoverTrigger as-child>
-              <button
-                type="button"
-                class="inline-flex h-control min-w-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
-                :title="view === 'queue' ? 'Ordenar a Fila' : 'Ordenar (atalho: s)'"
-                data-board-sort
-              >
-                <Icon name="lucide:arrow-up-down" class="size-4" />
-                <span>{{ view === "queue" ? queueSortLabel : sortLabel }}</span>
-                <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-              </button>
-            </UiPopoverTrigger>
-            <UiPopoverContent v-if="sortOpen" align="end" :side-offset="6" class="w-64 overflow-hidden p-1" role="menu">
-              <template v-if="view === 'queue'">
-                <button
-                  v-for="opt in QUEUE_SORT_OPTIONS"
-                  :key="opt.key"
-                  type="button"
-                  role="menuitemradio"
-                  :aria-checked="queueSort === opt.key"
-                  class="flex min-h-control w-full items-center justify-between gap-2 px-3 py-1.5 text-left op-body transition hover:bg-accent"
-                  @click="pickQueueSort(opt.key)"
-                >
-                  <span class="flex flex-col"><span>{{ opt.label }}</span><span class="op-micro text-muted-foreground">{{ opt.hint }}</span></span>
-                  <Icon v-if="queueSort === opt.key" name="lucide:check" class="size-4 shrink-0 text-primary" />
-                </button>
-              </template>
-              <template v-else>
-                <button
-                  v-for="opt in SORT_OPTIONS"
-                  :key="opt.key"
-                  type="button"
-                  role="menuitemradio"
-                  :aria-checked="sort === opt.key"
-                  class="flex min-h-control w-full items-center justify-between px-3 py-1.5 text-left op-body transition hover:bg-accent"
-                  @click="pickSort(opt.key)"
-                >
-                  {{ opt.label }}
-                  <Icon v-if="sort === opt.key" name="lucide:check" class="size-4 text-primary" />
-                </button>
-              </template>
-            </UiPopoverContent>
-          </UiPopover>
+          <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'end' }">
+            <NuxtButton
+              icon="i-lucide-arrow-up-down"
+              trailing-icon="i-lucide-chevron-down"
+              :label="view === 'queue' ? queueSortLabel : sortLabel"
+              color="neutral"
+              variant="outline"
+              size="lg"
+              :title="view === 'queue' ? 'Ordenar a Fila' : 'Ordenar (atalho: s)'"
+              data-board-sort
+            />
+          </NuxtDropdownMenu>
 
           <!-- visão (v4): dois segmentos, Fila F | Supervisão T. A Supervisão é a tabela
                densa com seleção em lote; as três colunas (Entrada, Preparo, Saída) moram
                no ⋯ e na tecla V, e o posto Saída abre nelas. -->
-          <div class="inline-flex h-control items-center gap-0.5 rounded-md bg-secondary" data-view-switch>
-            <button
-              v-if="queueAvailable"
-              type="button"
-              class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
-              :class="view === 'queue' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
-              aria-label="Fila: o que precisa de você"
-              title="Fila: o que precisa de você (atalho: f)"
-              :aria-pressed="view === 'queue'"
-              @click="viewMode = 'queue'"
-            >
-              <Icon name="lucide:list-checks" class="size-4" />
-              <span aria-hidden="true">Fila</span>
-              <kbd class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">F</kbd>
-            </button>
-            <button
-              type="button"
-              class="inline-flex h-full min-w-control items-center justify-center gap-1.5 rounded-md px-2.5 op-label transition"
-              :class="view === 'table' ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
-              aria-label="Supervisão: tabela densa, seleção em lote"
-              title="Supervisão: tabela densa, seleção em lote (atalho: t)"
-              :aria-pressed="view === 'table'"
-              data-view-supervision
-              @click="viewMode = 'table'"
-            >
-              <Icon name="lucide:table-2" class="size-4" />
-              <span aria-hidden="true">Supervisão</span>
-              <kbd class="ml-0.5 hidden font-mono op-micro text-muted-foreground pointer-fine:xl:inline" aria-hidden="true">T</kbd>
-            </button>
-          </div>
+          <NuxtTabs
+            :model-value="view"
+            :items="viewTabs"
+            :content="false"
+            color="neutral"
+            variant="pill"
+            size="lg"
+            aria-label="Visão do Gestor"
+            data-view-switch
+            @update:model-value="pickView"
+          />
         </template>
 
         <!-- ⋯ da fila (do tablet para cima; no celular ele mora no fim dos recortes). O posto
              Saída (v4 `gestor-colunas`) não tem ⋯: a leitura se atualiza sozinha e o Ciente
              é tocar a faixa da Entrada que pulsa. -->
-        <UiPopover v-if="!isPhone && !exitPostView" v-model:open="moreOpen">
-          <UiPopoverTrigger as-child>
-            <UiIconButton icon="lucide:ellipsis" label="Mais ações da fila" data-board-more />
-          </UiPopoverTrigger>
-          <UiPopoverContent v-if="moreOpen" align="end" :side-offset="6" class="max-h-[calc(100dvh-5rem)] w-72 overflow-y-auto rounded-lg p-0 shadow-lg">
-            <BoardMenu
-              :metadata="readMetadata"
-              :failed="Boolean(error)"
-              :pending="pending"
-              :sort="sort"
-              :view-mode="view"
-              :queue-available="queueAvailable"
-              :sound-on="soundOn"
-              :sound-blocked="soundBlocked"
-              :attention-pending="attentionPending"
-              :selecting="selecting"
-              :full="compactHeader"
-              @refresh="refresh()"
-              @acknowledge="menuDo(acknowledgeAttention)"
-              @select="menuDo(() => (selecting ? stopSelection() : startSelection()))"
-              @sort="(key) => menuDo(() => pickSort(key))"
-              @view="(mode) => menuDo(() => (viewMode = mode))"
-              @sound="menuDo(handleSoundAction)"
-              @export="menuDo(exportCsv)"
-              @print="menuDo(printQueue)"
-            />
-          </UiPopoverContent>
-        </UiPopover>
+        <BoardMenu
+          v-if="!isPhone && !exitPostView"
+          mode="dropdown"
+          :metadata="readMetadata"
+          :failed="Boolean(error)"
+          :pending="pending"
+          :sort="sort"
+          :view-mode="view"
+          :queue-available="queueAvailable"
+          :sound-on="soundOn"
+          :sound-blocked="soundBlocked"
+          :attention-pending="attentionPending"
+          :selecting="selecting"
+          :full="compactHeader"
+          @refresh="refresh()"
+          @acknowledge="acknowledgeAttention"
+          @select="selecting ? stopSelection() : startSelection()"
+          @sort="pickSort"
+          @view="(mode) => (viewMode = mode)"
+          @sound="handleSoundAction"
+          @export="exportCsv"
+          @print="printQueue"
+        />
       </template>
 
       <!-- recortes (v4): Todos, o eixo do fluxo (Entrega, Retirada) e o canal num
@@ -910,107 +892,44 @@ function printQueue() {
       <template v-if="((allCards.length && !exitPostView) || isPhone) && !(isPhone && phoneExitMode)" #filters>
         <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
              muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. -->
-        <template v-if="view === 'queue'">
-          <UiFilterChip
-            v-for="opt in QUEUE_SCOPES"
-            :key="opt.key"
-            :active="scope === opt.key"
-            :count="scopeCounts[opt.key]"
-            :data-queue-scope="opt.key"
-            @click="scope = opt.key"
-          >
-            <template v-if="opt.key === 'late'" #icon>
-              <span class="size-2 rounded-full bg-warning" aria-hidden="true" />
-            </template>
-            <template v-else-if="scope === opt.key" #icon>
-              <Icon name="lucide:check" class="size-4 text-primary" />
-            </template>
-            {{ opt.label }}
-          </UiFilterChip>
-        </template>
-        <UiFilterChip v-else :active="channel === 'all' && fulfillment === 'all'" :count="allCards.length" @click="channel = 'all'; fulfillment = 'all'">
-          <template v-if="channel === 'all' && fulfillment === 'all'" #icon>
-            <Icon name="lucide:check" class="size-4 text-primary" />
-          </template>
-          Todos
-        </UiFilterChip>
-        <span class="mx-1 h-6 w-px shrink-0 bg-border" aria-hidden="true" />
-        <UiFilterChip :active="fulfillment === 'delivery'" :count="fulfillment_.delivery" @click="fulfillment = fulfillment === 'delivery' ? 'all' : 'delivery'">
-          <template #icon><Icon name="lucide:bike" class="size-4" /></template>
-          Entrega
-        </UiFilterChip>
-        <UiFilterChip :active="fulfillment === 'pickup'" :count="fulfillment_.pickup" @click="fulfillment = fulfillment === 'pickup' ? 'all' : 'pickup'">
-          <template #icon><Icon name="lucide:store" class="size-4" /></template>
-          Retirada
-        </UiFilterChip>
-        <!-- o canal: um seletor; o canal escolhido vira chip cheio, com o × de volta -->
-        <UiPopover v-if="channels.length" v-model:open="channelOpen">
-          <UiPopoverTrigger as-child>
-            <button
-              type="button"
-              class="inline-flex h-10 items-center gap-2 rounded-full border px-3 op-label transition"
-              :class="channel !== 'all' ? 'border-primary bg-primary/10 font-semibold' : 'border-dashed border-border text-muted-foreground hover:bg-accent'"
-              data-channel-picker
-            >
-              <Icon :name="channel !== 'all' ? `lucide:${lucideIcon(allCards.find((c) => c.channel_ref === channel)?.channel_icon || '')}` : 'lucide:plus'" class="size-4" />
-              {{ channel !== "all" ? channelLabel(channel) : "Canal" }}
-              <span v-if="channel !== 'all'" class="tnum text-muted-foreground">{{ channels.find((o) => o.ref === channel)?.count ?? 0 }}</span>
-            </button>
-          </UiPopoverTrigger>
-          <UiPopoverContent v-if="channelOpen" align="start" :side-offset="6" class="w-56 overflow-hidden p-1" role="menu">
-            <button
-              type="button"
-              role="menuitemradio"
-              :aria-checked="channel === 'all'"
-              class="flex min-h-control w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent"
-              @click="channel = 'all'; channelOpen = false"
-            >
-              <Icon name="lucide:layers" class="size-4 text-muted-foreground" />
-              <span class="flex-1">Todos os canais</span>
-              <Icon v-if="channel === 'all'" name="lucide:check" class="size-4 text-primary" />
-            </button>
-            <button
-              v-for="opt in channels"
-              :key="opt.ref"
-              type="button"
-              role="menuitemradio"
-              :aria-checked="channel === opt.ref"
-              class="flex min-h-control w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent"
-              @click="channel = opt.ref; channelOpen = false"
-            >
-              <Icon :name="`lucide:${lucideIcon(allCards.find((c) => c.channel_ref === opt.ref)?.channel_icon || '')}`" class="size-4 text-muted-foreground" />
-              <span class="flex-1">{{ opt.label }}</span>
-              <span class="tnum text-muted-foreground">{{ opt.count }}</span>
-              <Icon v-if="channel === opt.ref" name="lucide:check" class="size-4 text-primary" />
-            </button>
-          </UiPopoverContent>
-        </UiPopover>
-        <button
-          v-if="channel !== 'all'"
-          type="button"
-          class="grid size-10 place-items-center rounded-full text-muted-foreground transition hover:bg-accent"
-          :aria-label="`Tirar o recorte ${channelLabel(channel)}`"
-          @click="channel = 'all'"
-        >
-          <Icon name="lucide:x" class="size-4" />
-        </button>
+        <NuxtTabs
+          v-if="view === 'queue'"
+          :model-value="scope"
+          :items="queueScopeTabs"
+          :content="false"
+          variant="pill"
+          data-queue-scopes
+          @update:model-value="pickScope"
+        />
+        <NuxtTabs
+          :model-value="fulfillment"
+          :items="isPhone ? fulfillmentCompactTabs : fulfillmentTabs"
+          :content="false"
+          variant="pill"
+          aria-label="Tipo de entrega"
+          @update:model-value="pickFulfillment"
+        />
+        <NuxtSelect
+          v-if="channels.length"
+          v-model="channel"
+          :items="channelItems"
+          aria-label="Canal"
+          data-channel-picker
+        />
         <!-- celular: os controles do quadro num painel só ("Filtros" da prévia v3), no começo
              da linha para nunca ficar fora da tela -->
-        <span v-if="isPhone" class="order-first">
-        <button
-          type="button"
-          class="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card px-3 op-label font-semibold"
-          aria-haspopup="menu"
-          :aria-expanded="moreOpen"
-          aria-label="Mais ações da fila"
-          data-board-more
-          @click="moreOpen = !moreOpen"
-        >
-          <Icon name="lucide:sliders-horizontal" class="size-4" />
-          Filtros
-          <span v-if="attentionPending || (soundOn && soundBlocked)" class="size-2 rounded-full bg-warning" aria-hidden="true" />
-        </button>
-        </span>
+        <NuxtChip v-if="isPhone" :show="attentionPending || (soundOn && soundBlocked)" color="warning" inset>
+          <NuxtButton
+            icon="i-lucide-sliders-horizontal"
+            label="Filtros"
+            color="neutral"
+            variant="outline"
+            aria-haspopup="dialog"
+            :aria-expanded="moreOpen"
+            data-board-more
+            @click="moreOpen = true"
+          />
+        </NuxtChip>
       </template>
       <template #below>
         <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
@@ -1019,8 +938,14 @@ function printQueue() {
     </OperatorPageHeader>
 
     <!-- celular: o painel dos controles sobe do pé, ao alcance do polegar -->
-    <UiSheet v-if="isPhone" :open="moreOpen" @update:open="(value) => (moreOpen = value)">
-      <UiSheetContent v-if="moreOpen" side="bottom" composition="bare" class="inset-x-2 bottom-2 h-auto max-h-[80dvh] w-auto overflow-y-auto rounded-xl border" data-board-menu-sheet>
+    <NuxtDrawer
+      v-if="isPhone"
+      :open="moreOpen"
+      title="Filtros e ações da fila"
+      description="Ordenação, visão, atualização e ações auxiliares."
+      @update:open="(value) => (moreOpen = value)"
+    >
+      <template #body>
         <BoardMenu
           :metadata="readMetadata"
           :failed="Boolean(error)"
@@ -1042,71 +967,58 @@ function printQueue() {
           @export="menuDo(exportCsv)"
           @print="menuDo(printQueue)"
         />
-      </UiSheetContent>
-    </UiSheet>
+      </template>
+    </NuxtDrawer>
 
     <!-- celular: as colunas viram abas -->
-    <UiTabs
+    <NuxtTabs
       v-if="isPhone && view === 'board' && zones.length"
       :model-value="phoneZone"
-      class="shrink-0 print:hidden"
+      :items="phoneTabItems"
+      :content="false"
+      color="primary"
+      variant="link"
+     
       data-board-zone-tabs
       @update:model-value="pickPhoneZone"
-    >
-      <UiTabsList class="flex w-full rounded-none border-x-0 border-t-0 bg-card px-2 py-0" aria-label="Colunas do quadro">
-        <UiTabsTrigger
-          v-for="tab in phoneTabs"
-          :key="tab.key"
-          :value="tab.key"
-          class="h-12 flex-1 gap-1.5 rounded-none op-body data-[state=active]:shadow-[inset_0_-3px_0_var(--primary)]"
-          :data-phone-tab="tab.key"
-        >
-          {{ tab.title }}
-          <span
-            class="tnum"
-            :class="phoneZone === tab.key && triaged(tab.zone).length ? 'grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs text-primary-foreground' : ''"
-          >{{ triaged(tab.zone).length }}</span>
-          <span v-if="phoneExitMode && tab.late" class="size-2 rounded-full bg-warning" :aria-label="`${tab.late} passou da meta`" />
-        </UiTabsTrigger>
-      </UiTabsList>
-    </UiTabs>
+    />
 
     <!-- barra da seleção em lote (o modo ligado) -->
-    <div v-if="selecting" class="flex shrink-0 flex-wrap items-center gap-2 border-b bg-primary/10 px-4 py-2 text-sm print:hidden" data-bulk-bar>
-      <Icon name="lucide:list-checks" class="size-4 text-primary" />
-      <span class="font-semibold">{{ selected.size ? `${selected.size} selecionado${selected.size > 1 ? "s" : ""}` : "Toque nos pedidos para marcar" }}</span>
+    <NuxtDashboardToolbar v-if="selecting" data-bulk-bar>
+      <template #left>
+        <NuxtBadge color="primary" variant="subtle" icon="i-lucide-list-checks" :label="selected.size ? `${selected.size} selecionado${selected.size > 1 ? 's' : ''}` : 'Toque nos pedidos para marcar'" />
+      </template>
+      <template #right>
       <div class="ml-auto flex flex-wrap items-center gap-1.5">
-        <button
+        <NuxtButton
           v-if="confirmableSel.length"
-          type="button"
-          class="min-h-action min-w-action inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-progress disabled:opacity-80"
+          :icon="bulkConfirming ? 'i-line-md-loading-loop' : 'i-lucide-check'"
+          :label="`Aceitar ${confirmableSel.length}`"
+          color="primary"
+          size="lg"
           :disabled="bulkConfirming"
+          :loading="bulkConfirming"
           :aria-busy="bulkConfirming || undefined"
           @click="bulkConfirm"
-        >
-          <Icon :name="bulkConfirming ? 'line-md:loading-loop' : 'lucide:check'" class="size-3.5" aria-hidden="true" /> Aceitar {{ confirmableSel.length }}
-        </button>
-        <button
+        />
+        <NuxtButton
           v-if="advanceableSel.length"
-          type="button"
-          class="min-h-control min-w-control inline-flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent disabled:cursor-progress disabled:opacity-80"
+          :icon="bulkAdvancing ? 'i-line-md-loading-loop' : 'i-lucide-arrow-right'"
+          :label="`Avançar ${advanceableSel.length}`"
+          color="neutral"
+          variant="outline"
+          size="lg"
           :disabled="bulkAdvancing"
+          :loading="bulkAdvancing"
           :aria-busy="bulkAdvancing || undefined"
           @click="bulkAdvance"
-        >
-          <Icon :name="bulkAdvancing ? 'line-md:loading-loop' : 'lucide:arrow-right'" class="size-3.5" aria-hidden="true" /> Avançar {{ advanceableSel.length }}
-        </button>
-        <button type="button" class="min-h-control min-w-control rounded-md border bg-card px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="toggleSelectAll">
-          {{ allVisibleSelected ? "Desmarcar todos" : "Marcar todos" }}
-        </button>
-        <button v-if="selected.size" type="button" class="min-h-control min-w-control rounded-md border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent" @click="clearSelection">
-          Limpar
-        </button>
-        <button type="button" class="min-h-control min-w-control rounded-md border bg-card px-2.5 py-1.5 text-xs font-semibold transition hover:bg-accent" data-bulk-done @click="stopSelection">
-          Concluir
-        </button>
+        />
+        <NuxtButton :label="allVisibleSelected ? 'Desmarcar todos' : 'Marcar todos'" color="neutral" variant="outline" size="lg" @click="toggleSelectAll" />
+        <NuxtButton v-if="selected.size" label="Limpar" color="neutral" variant="ghost" size="lg" @click="clearSelection" />
+        <NuxtButton label="Concluir" color="neutral" variant="outline" size="lg" data-bulk-done @click="stopSelection" />
       </div>
-    </div>
+      </template>
+    </NuxtDashboardToolbar>
 
     <section ref="queueViewport" class="flex min-h-0 flex-1 flex-col overflow-auto p-3 md:p-4" @scroll.passive="rememberPosition" @click.capture="rememberFocus">
       <!-- puxe para atualizar (celular) -->
@@ -1122,23 +1034,24 @@ function printQueue() {
       <p v-if="pending && !zones.length" class="text-sm text-muted-foreground">Carregando…</p>
       <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`; quem
            fala nesse estado é a identificação que sobe por cima (app.vue). -->
-      <p v-else-if="error && !stationLocked" class="mb-3 rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-queue-error>
-        Falha ao atualizar a fila. Mantivemos a última leitura; atualize antes de confirmar ações.
-      </p>
+      <NuxtAlert v-else-if="error && !stationLocked" color="error" variant="subtle" icon="i-lucide-triangle-alert" title="Falha ao atualizar a fila" description="Mantivemos a última leitura; atualize antes de confirmar ações." data-queue-error />
 
       <template v-if="queue">
         <section v-if="negotiationCards.length" class="mb-6 space-y-3" data-ifood-negotiation-orders>
           <h2 class="text-sm font-bold uppercase tracking-wide">Negociações iFood pendentes</h2>
           <p class="text-sm text-muted-foreground">Confira solicitações e prazos, inclusive de pedidos já encerrados.</p>
           <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            <OrderCard v-for="card in negotiationCards" :key="`negotiation-${card.ref}`" :card="card" negotiation-only />
+            <OrderCard
+              v-for="card in negotiationCards"
+              :key="`negotiation-${card.ref}`"
+              :card="card"
+              :touch="isPhone"
+              negotiation-only
+            />
           </div>
         </section>
         <!-- no results across all zones for the active filters -->
-        <p v-if="hasFilter && !visibleCount" class="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Nenhum pedido para os filtros atuais.
-          <button type="button" class="min-h-control min-w-control ml-1 font-medium text-primary hover:underline" @click="query = ''; channel = 'all'; fulfillment = 'all'">Limpar filtros</button>
-        </p>
+        <NuxtEmpty v-if="hasFilter && !visibleCount" icon="i-lucide-search-x" title="Nenhum pedido para os filtros atuais" :actions="[{ label: 'Limpar filtros', onClick: () => { query = ''; channel = 'all'; fulfillment = 'all'; } }]" />
 
         <!-- a Fila "Precisa de você" (v4): só o fato humano é botão -->
         <QueueView
@@ -1204,35 +1117,22 @@ function printQueue() {
               <span v-else class="ml-auto hidden truncate op-micro text-muted-foreground sm:block" :title="zone.subtitle">{{ zone.subtitle }}</span>
               <template v-if="wideColumn(zone.key)">
                 <span class="flex-1" />
-                <button
-                  v-for="opt in EXIT_FILTERS"
-                  :key="opt.key"
-                  type="button"
-                  class="inline-flex h-11 items-center gap-1.5 rounded-full border px-3.5 op-label transition"
-                  :class="fulfillment === opt.key ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
-                  :aria-pressed="fulfillment === opt.key"
-                  @click="fulfillment = opt.key"
-                >
-                  <Icon v-if="opt.key !== 'all' || fulfillment === 'all'" :name="opt.icon" class="size-4" :class="fulfillment === opt.key ? 'text-primary' : ''" />
-                  {{ opt.label }}
-                </button>
+                <NuxtTabs v-model="fulfillment" :items="exitFilterTabs" :content="false" size="sm" aria-label="Filtrar a Saída" />
               </template>
-              <UiIconButton
+              <NuxtButton
                 v-if="boardLayout.canCollapse(zone.key)"
-                class="-mr-2 ml-auto shrink-0 border-transparent !bg-transparent text-muted-foreground sm:ml-0"
-                icon="lucide:chevrons-left"
-                :label="`Recolher a coluna ${zone.title} (atalho: ${shortcutHint(zone.key)})`"
+               
+                icon="i-lucide-chevrons-left"
+                color="neutral"
+                variant="ghost"
+                square
+                :aria-label="`Recolher a coluna ${zone.title} (atalho: ${shortcutHint(zone.key)})`"
                 data-board-collapse
                 @click="boardLayout.toggle(zone.key)"
               />
             </div>
 
-            <div v-if="!triaged(zone).length" class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border bg-card/60 px-6 py-8 text-center">
-              <span class="grid size-11 place-items-center rounded-full bg-success/10 text-success">
-                <Icon name="lucide:circle-check" class="size-6" />
-              </span>
-              <p class="op-label font-normal text-muted-foreground">{{ zoneEmptyText(zone.key) }}</p>
-            </div>
+            <NuxtEmpty v-if="!triaged(zone).length" icon="i-lucide-circle-check" :title="zoneEmptyText(zone.key)" />
 
             <!-- celular, a Saída da v4: o mais antigo expandido, o resto em linhas de
                  64px que se deslizam para entregar, e o gesto no polegar. -->
@@ -1280,25 +1180,27 @@ function printQueue() {
                   @volumes="(count) => declareVolumes(card.ref, count, 'exit')"
                 />
               </div>
-              <button
+              <NuxtButton
                 v-if="exitOverflow(zone).length"
-                type="button"
-                class="flex min-h-11 shrink-0 flex-wrap items-center justify-center gap-x-2 rounded-lg border border-dashed border-border px-3 op-label transition hover:bg-accent"
+                color="neutral"
+                variant="outline"
+                trailing-icon="i-lucide-chevron-right"
+               
                 data-exit-overflow
                 @click="exitShowAll = true"
               >
                 <b class="tnum">+{{ exitOverflow(zone).length }}</b>
                 <span class="font-normal text-muted-foreground">{{ waitingStripText(exitOverflow(zone)) }} · aparecem aqui quando um destes sair</span>
-                <span class="inline-flex items-center gap-1 font-semibold">Ver todos<Icon name="lucide:chevron-right" class="size-4" /></span>
-              </button>
-              <button
+                <span class="font-semibold">Ver todos</span>
+              </NuxtButton>
+              <NuxtButton
                 v-else-if="exitShowAll && triaged(zone).length > exitCapacity"
-                type="button"
-                class="flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-dashed border-border op-label text-muted-foreground transition hover:bg-accent"
+                :label="`Mostrar só os ${exitCapacity} primeiros`"
+                color="neutral"
+                variant="outline"
+                class="h-11 shrink-0 border-dashed"
                 @click="exitShowAll = false"
-              >
-                Mostrar só os {{ exitCapacity }} primeiros
-              </button>
+              />
             </template>
 
             <div v-else class="flex flex-col gap-3" data-zone-cards>
@@ -1319,7 +1221,7 @@ function printQueue() {
                 :selecting="selecting"
                 :next="card.ref === zoneNext(zone)"
                 :danfe-printing="danfePrint.isPrinting(card.ref)"
-                :touch="touchCards"
+                :touch="isPhone || touchCards"
                 :can-open="canManageOrders"
                 @action="(action) => onAction(card.ref, action)"
                 @dismiss-error="clearActionError(card.ref)"
@@ -1348,22 +1250,21 @@ function printQueue() {
         </div>
 
         <!-- dense table view (power-user) -->
-        <div v-else class="overflow-x-auto rounded-lg border bg-card">
+        <NuxtCard v-else>
+        <div class="overflow-x-auto">
           <table class="w-full border-collapse text-sm">
             <thead>
               <tr class="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground [&>th]:sticky [&>th]:top-0 [&>th]:z-20 [&>th]:border-b [&>th]:bg-card">
                 <th class="w-9 px-3 py-2">
-                  <button
-                    type="button"
-                    class="grid size-control place-items-center rounded transition hover:bg-accent"
+                  <NuxtButton
+                    :icon="allVisibleSelected ? 'i-lucide-check-square-2' : 'i-lucide-square'"
+                    color="neutral"
+                    variant="ghost"
+                    square
                     :aria-label="allVisibleSelected ? 'Desmarcar todos' : 'Selecionar todos'"
                     :aria-pressed="allVisibleSelected"
                     @click="toggleSelectAll"
-                  >
-                    <span class="grid size-4 place-items-center rounded border" :class="allVisibleSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'">
-                      <Icon v-if="allVisibleSelected" name="lucide:check" class="size-3" />
-                    </span>
-                  </button>
+                  />
                 </th>
                 <th class="px-3 py-2">Código</th>
                 <th class="px-3 py-2">Etapa</th>
@@ -1379,17 +1280,15 @@ function printQueue() {
               <template v-for="row in tableRows" :key="row.card.ref">
               <tr class="transition hover:bg-accent/40" :class="[actionError(row.card.ref) ? '' : 'border-b last:border-0', isSelected(row.card.ref) ? 'bg-primary/5' : '']">
                 <td class="px-3 py-2">
-                  <button
-                    type="button"
-                    class="grid size-control place-items-center rounded transition hover:bg-accent"
+                  <NuxtButton
+                    :icon="isSelected(row.card.ref) ? 'i-lucide-check-square-2' : 'i-lucide-square'"
+                    color="neutral"
+                    variant="ghost"
+                    square
                     :aria-label="isSelected(row.card.ref) ? 'Desmarcar pedido' : 'Selecionar pedido'"
                     :aria-pressed="isSelected(row.card.ref)"
                     @click="toggleSelect(row.card.ref)"
-                  >
-                    <span class="grid size-4 place-items-center rounded border" :class="isSelected(row.card.ref) ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary'">
-                      <Icon v-if="isSelected(row.card.ref)" name="lucide:check" class="size-3" />
-                    </span>
-                  </button>
+                  />
                 </td>
                 <td class="px-3 py-2">
                   <NuxtLink v-if="canManageOrders" :to="`/${row.card.ref}`" class="inline-flex min-h-control min-w-control items-center font-bold tabular-nums hover:underline" :aria-label="`Abrir pedido ${row.card.ref}`">
@@ -1398,9 +1297,7 @@ function printQueue() {
                   <span v-else class="inline-flex min-h-control items-center font-bold tabular-nums">{{ splitRef(row.card.ref).code }}</span>
                 </td>
                 <td class="px-3 py-2">
-                  <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium" :class="toneBadge(statusTone(row.card.status))">
-                    {{ row.card.status_label }}
-                  </span>
+                  <NuxtBadge :color="statusTone(row.card.status) === 'danger' ? 'error' : statusTone(row.card.status) === 'success' ? 'success' : statusTone(row.card.status) === 'warning' ? 'warning' : 'neutral'" variant="subtle" :label="row.card.status_label" />
                 </td>
                 <td class="px-3 py-2">
                   <span class="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -1417,55 +1314,46 @@ function printQueue() {
                 <td class="hidden max-w-56 truncate px-3 py-2 text-muted-foreground lg:table-cell">{{ row.card.items_summary }}</td>
                 <td class="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums">{{ row.card.total_display }}</td>
                 <td class="px-3 py-2 text-right">
-                  <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-xs tabular-nums" :class="timerChip(timerTone(row.card.timer_class))">
-                    {{ elapsedLabel(row.card.elapsed_seconds) }}
-                  </span>
+                  <NuxtBadge :color="timerTone(row.card.timer_class) === 'danger' ? 'error' : timerTone(row.card.timer_class) === 'warning' ? 'warning' : 'neutral'" variant="subtle" :label="elapsedLabel(row.card.elapsed_seconds)" />
                 </td>
                 <td class="px-3 py-2">
                   <div class="flex items-center justify-end gap-1">
-                    <button
-                      type="button"
+                    <NuxtButton
+                      :icon="row.card.assigned_operator ? 'i-lucide-user-check' : 'i-lucide-user-plus'"
+                      :color="row.card.assigned_operator ? 'primary' : 'neutral'"
+                      :variant="row.card.assigned_operator ? 'soft' : 'outline'"
+                      square
                       :disabled="isBusy(row.card.ref)"
-                      class="grid size-control place-items-center rounded border transition disabled:opacity-50"
-                      :class="row.card.assigned_operator ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'"
                       :aria-label="row.card.assigned_operator ? `Atendido por ${row.card.assigned_operator}. Toque para liberar` : 'Atender'"
                       :title="row.card.assigned_operator ? `${row.card.assigned_operator}: toque para liberar` : 'Atender'"
                       @click="onToggleAssign(row.card)"
-                    >
-                      <Icon :name="row.card.assigned_operator ? 'lucide:user-check' : 'lucide:user-plus'" class="size-3.5" />
-                    </button>
-                    <button
+                    />
+                    <NuxtButton
                       v-for="a in cardAffordances(row.card)"
                       :key="a.ref"
-                      type="button"
+                      :icon="a.icon.replace('lucide:', 'i-lucide-')"
+                      :color="a.priority === 'primary' ? 'primary' : a.priority === 'danger' ? 'error' : 'neutral'"
+                      :variant="a.priority === 'primary' ? 'solid' : 'outline'"
+                      square
                       :disabled="isBusy(row.card.ref) || a.disabled"
-                      class="grid size-control place-items-center rounded border transition disabled:opacity-50"
-                      :class="a.priority === 'primary' ? 'min-h-action min-w-action border-transparent bg-primary text-primary-foreground hover:bg-primary/90' : a.priority === 'danger' ? 'border-destructive/40 text-destructive hover:bg-destructive/10 dark:text-orange-300' : 'hover:bg-accent'"
                       :aria-label="a.label"
                       :title="a.reason || a.label"
                       @click="onAction(row.card.ref, a.ref)"
-                    >
-                      <Icon :name="a.icon" class="size-3.5" />
-                    </button>
+                    />
                   </div>
                 </td>
               </tr>
               <!-- action error sub-row: the backend's specific reason, inline -->
               <tr v-if="actionError(row.card.ref)" class="border-b last:border-0">
                 <td colspan="9" class="px-3 pb-2">
-                  <div class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive dark:text-orange-300" role="alert">
-                    <Icon name="lucide:alert-triangle" class="mt-px size-3.5 shrink-0" />
-                    <span class="min-w-0 flex-1">{{ actionError(row.card.ref) }}</span>
-                    <button type="button" class="min-h-control min-w-control shrink-0 rounded p-0.5 transition hover:bg-destructive/20" aria-label="Dispensar aviso" @click="clearActionError(row.card.ref)">
-                      <Icon name="lucide:x" class="size-3.5" />
-                    </button>
-                  </div>
+                  <NuxtAlert color="error" variant="subtle" icon="i-lucide-triangle-alert" :description="actionError(row.card.ref)" :actions="[{ label: 'Dispensar', color: 'error', variant: 'ghost', onClick: () => clearActionError(row.card.ref) }]" />
                 </td>
               </tr>
               </template>
             </tbody>
           </table>
         </div>
+        </NuxtCard>
 
         <!-- Agendados: pedidos confirmados para datas futuras, fora das colunas
              do dia. Agrupados pela data combinada; no dia, o despertador devolve
@@ -1474,7 +1362,7 @@ function printQueue() {
           <div class="flex items-center gap-2 border-b pb-2">
             <Icon name="lucide:calendar-clock" class="size-4 text-muted-foreground" />
             <h2 class="text-sm font-bold uppercase tracking-wide">Agendados</h2>
-            <span class="grid min-w-5 place-items-center rounded-full bg-muted px-1.5 text-xs font-bold tabular-nums">{{ preordersCount }}</span>
+            <NuxtBadge color="neutral" variant="subtle" :label="String(preordersCount)" />
             <span class="ml-auto hidden text-right text-xs text-muted-foreground sm:block">Confirmados para os próximos dias</span>
           </div>
           <div class="mt-3 grid gap-4 lg:grid-cols-3">
@@ -1504,53 +1392,47 @@ function printQueue() {
     </section>
 
     <!-- reject dialog -->
-    <UiDialog :open="rejectRef != null" @update:open="(v) => { if (!v) closeReject() }">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Recusar pedido {{ rejectRef }}</UiDialogTitle>
-          <UiDialogDescription>
-            {{ isMarketplaceReject ? "Escolha o motivo que o iFood exige. Ele é enviado ao iFood." : "Informe o motivo. O cliente recebe o aviso com ele." }}
-          </UiDialogDescription>
-        </UiDialogHeader>
+    <NuxtModal
+      :open="rejectRef != null"
+      :title="`Recusar pedido ${rejectRef ?? ''}`"
+      :description="isMarketplaceReject ? 'Escolha o motivo que o iFood exige. Ele é enviado ao iFood.' : 'Informe o motivo. O cliente recebe o aviso com ele.'"
+      @update:open="(v) => { if (!v) closeReject() }"
+    >
+      <template #body>
         <p v-if="rejectReasonsLoading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
-        <div v-else-if="rejectReasonsError" role="alert" class="text-sm text-destructive">
-          <p>{{ rejectReasonsError }}</p>
-          <button type="button" class="min-h-control min-w-control underline" @click="loadRejectReasons">Consultar novamente</button>
-        </div>
+        <NuxtAlert v-else-if="rejectReasonsError" color="error" variant="subtle" icon="i-lucide-triangle-alert" :description="rejectReasonsError" :actions="[{ label: 'Consultar novamente', color: 'error', variant: 'outline', onClick: () => loadRejectReasons() }]" />
         <p v-else-if="isMarketplaceReject && !rejectReasons.length" class="text-sm">O iFood não oferece motivos de cancelamento neste momento.</p>
         <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
-        <UiNativeSelect
+        <NuxtSelect
           v-else-if="isMarketplaceReject"
           v-model="rejectCode"
+          :items="rejectReasons.map((reason) => ({ label: reason.description, value: reason.code }))"
+          placeholder="Selecione o motivo…"
           class="w-full"
           aria-label="Motivo do cancelamento (iFood)"
-          @change="onRejectCodeChange"
-        >
-          <option value="" disabled>Selecione o motivo…</option>
-          <option v-for="r in rejectReasons" :key="r.code" :value="r.code">{{ r.description }}</option>
-        </UiNativeSelect>
+          @update:model-value="onRejectCodeChange"
+        />
         <!-- Other channels: free-text reason -->
-        <textarea
+        <NuxtTextarea
           v-else
           v-model="rejectReason"
-          rows="3"
+          ::rows="3"
           placeholder="Motivo da recusa…"
-          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+         
           aria-label="Motivo da recusa"
         />
-        <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" :disabled="Boolean(rejectRef && isBusy(rejectRef))" @click="closeReject">Voltar</button>
-          <button
-            type="button"
+      </template>
+      <template #footer>
+          <NuxtButton label="Voltar" color="neutral" variant="outline" size="lg" :disabled="Boolean(rejectRef && isBusy(rejectRef))" @click="closeReject" />
+          <NuxtButton
+            label="Recusar pedido"
+            color="error"
+            size="lg"
             :disabled="!canConfirmReject || Boolean(rejectRef && isBusy(rejectRef))"
-            class="min-h-action min-w-action rounded-md border border-transparent bg-destructive px-3 py-2 text-sm font-semibold text-white transition hover:bg-destructive/90 disabled:opacity-50"
             @click="confirmReject"
-          >
-            Recusar pedido
-          </button>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+          />
+      </template>
+    </NuxtModal>
 
     <!-- o interruptor do canal (coluna da Fila): o mesmo diálogo de Canais -->
     <ChannelSwitchDialog
@@ -1583,48 +1465,39 @@ function printQueue() {
     />
 
     <!-- settle-cash dialog -->
-    <UiDialog :open="settleRef != null" @update:open="(v) => { if (!v) settleRef = null }">
-      <UiDialogContent class="sm:max-w-sm">
-        <UiDialogHeader>
-          <UiDialogTitle>{{ settleCard?.fulfillment_type === "pickup" ? "Pagamento na retirada" : "Acerto da entrega" }}</UiDialogTitle>
-          <UiDialogDescription>{{ settleCard?.fulfillment_type === "pickup" ? "Valor recebido na retirada" : "Valor recebido na entrega" }} ({{ settleRef }}). Em branco usa o total de {{ settleCard?.total_display }}. {{ settleCustody }}</UiDialogDescription>
-        </UiDialogHeader>
-        <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
-          <button type="button" class="min-h-control min-w-control underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
-        </p>
-        <input
-          v-model="settleAmount"
-          type="text"
-          inputmode="decimal"
-          placeholder="Ex.: 15,00"
-          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-          aria-label="Valor recebido"
-        />
+    <NuxtModal
+      :open="settleRef != null"
+      :title="settleCard?.fulfillment_type === 'pickup' ? 'Pagamento na retirada' : 'Acerto da entrega'"
+      :description="`${settleCard?.fulfillment_type === 'pickup' ? 'Valor recebido na retirada' : 'Valor recebido na entrega'} (${settleRef}). Em branco usa o total de ${settleCard?.total_display}. ${settleCustody}`"
+      @update:open="(v) => { if (!v) settleRef = null }"
+    >
+      <template #body>
+        <NuxtAlert v-if="settleChanged" color="warning" variant="subtle" title="O pedido ou turno mudou" :description="`Confira o contexto atual: ${settleAction?.confirmation.description || ''}`" :actions="[{ label: 'Conferir e manter os valores digitados', color: 'warning', variant: 'outline', onClick: () => reviewSettleCustody() }]" />
+        <NuxtFormField label="Valor recebido">
+          <NuxtInput v-model="settleAmount" type="text" inputmode="decimal" placeholder="Ex.: 15,00" />
+        </NuxtFormField>
         <!-- o entregador levou troco da gaveta: quanto voltou (zero vale) -->
-        <label v-if="settleAsksChangeBack" class="min-h-control flex flex-col gap-1 text-sm" data-change-back>
-          <span class="text-muted-foreground">{{ settleCard?.change_label }}. Quanto voltou?</span>
-          <input
+        <NuxtFormField v-if="settleAsksChangeBack" :label="`${settleCard?.change_label}. Quanto voltou?`" data-change-back>
+          <NuxtInput
             v-model="settleChangeBack"
             type="text"
             inputmode="decimal"
             placeholder="0,00"
-            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+           
             aria-label="Troco que voltou"
           />
-        </label>
-        <UiCheckbox
+        </NuxtFormField>
+        <NuxtCheckbox
           v-if="settleAsksEquipment"
           v-model="settleEquipmentBack"
           :label="`${settleCard?.equipment_label}. Voltou junto`"
           data-equipment-back
         />
-        <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="settleRef = null">Voltar</button>
-          <button type="button" class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" :disabled="settleChanged || !settleAction?.enabled || (settleRef ? isBusy(settleRef) : false)" @click="confirmSettle">
-            Confirmar acerto
-          </button>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+      <template #footer>
+          <NuxtButton label="Voltar" color="neutral" variant="outline" size="lg" @click="settleRef = null" />
+          <NuxtButton label="Confirmar acerto" color="primary" size="lg" :disabled="settleChanged || !settleAction?.enabled || (settleRef ? isBusy(settleRef) : false)" @click="confirmSettle" />
+      </template>
+    </NuxtModal>
   </main>
 </template>

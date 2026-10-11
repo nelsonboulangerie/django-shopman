@@ -35,7 +35,7 @@ describe("UiFilterChip", () => {
     const button = wrapper.get("button");
     expect(button.attributes("type")).toBe("button");
     expect(button.classes()).toContain("min-h-control");
-    expect(button.classes()).toContain("bg-primary");
+    expect(button.classes()).toContain("bg-primary/10");
     expect(wrapper.get(".glyph").exists()).toBe(true);
     expect(wrapper.text()).toContain("Balcão");
     expect(wrapper.text()).toContain("12");
@@ -44,7 +44,7 @@ describe("UiFilterChip", () => {
   it("some com a contagem quando ela não existe, e fica neutro sem active", async () => {
     const wrapper = await mount(UiFilterChip, { slots: { default: () => "Todos" } });
 
-    expect(wrapper.get("button").classes()).toContain("text-muted-foreground");
+    expect(wrapper.get("button").classes()).toContain("text-default");
     expect(wrapper.text()).toBe("Todos");
   });
 });

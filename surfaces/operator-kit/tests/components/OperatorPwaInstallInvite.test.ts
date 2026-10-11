@@ -77,7 +77,7 @@ describe("OperatorPwaInstallInvite", () => {
     state.canInvite.value = true;
     const wrapper = await mountSuspended(OperatorPwaInstallInvite, { props: { app: "pos", identity: POS } });
     expect(state.install).not.toHaveBeenCalled();
-    await wrapper.get("button.bg-primary").trigger("click");
+    await wrapper.findAll("button").find((button) => button.text() === "Instalar")!.trigger("click");
     expect(state.install).toHaveBeenCalledOnce();
     await vi.waitFor(() => expect(state.dismissAsDone).toHaveBeenCalledOnce());
   });
@@ -87,11 +87,11 @@ describe("OperatorPwaInstallInvite", () => {
     state.canInvite.value = true;
     const wrapper = await mountSuspended(OperatorPwaInstallInvite, { props: { app: "pos", identity: POS } });
 
-    await wrapper.get("button.bg-primary").trigger("click");
+    await wrapper.findAll("button").find((button) => button.text() === "Já instalei")!.trigger("click");
     expect(state.dismissAsDone).toHaveBeenCalledOnce();
     expect(state.install).not.toHaveBeenCalled();
 
-    await wrapper.get("button.text-muted-foreground").trigger("click");
+    await wrapper.findAll("button").find((button) => button.text() === "Agora não")!.trigger("click");
     expect(state.dismiss).toHaveBeenCalledOnce();
   });
 });

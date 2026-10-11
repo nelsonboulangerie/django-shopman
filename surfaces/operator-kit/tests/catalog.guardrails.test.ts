@@ -26,6 +26,7 @@ describe("catálogo vivo", () => {
   it("demonstra layouts completos e famílias oficiais", () => {
     for (const component of [
       "OperatorOfficeShell",
+      "OperatorSuiteShell",
       "OperatorOperationalShell",
       "NuxtNavigationMenu",
       "OperatorPage",

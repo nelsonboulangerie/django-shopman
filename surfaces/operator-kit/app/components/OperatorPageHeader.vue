@@ -69,97 +69,71 @@ const { request: openSearch } = useSuiteSearchRequest();
 </script>
 
 <template>
-  <header
-    class="flex min-h-[var(--op-header-min-height)] shrink-0 flex-col border-b border-border bg-card print:hidden"
-    data-operator-page-header
-  >
-    <div class="flex flex-wrap items-center gap-x-2 gap-y-2 pr-2 pl-4 md:gap-x-3 md:px-4 md:pt-3 md:pb-2.5">
-      <!-- celular e tablet em pé: o selo do app (o rail não existe ali) -->
-      <!-- Tela com caminho de volta (`#lead`): no celular o voltar ocupa o lugar do selo. -->
-      <!-- O alvo de toque é de 44px (a régua da casa); o selo desenhado segue com 36. -->
+  <NuxtDashboardNavbar as="header" :toggle="false" class="print:hidden" data-operator-page-header>
+    <template #leading>
       <OperatorAppSeal v-if="hubUrl && !$slots.lead" />
-
-      <!-- tablet deitado/desktop com o rail oculto: o caminho de volta para ele -->
-      <button
+      <NuxtButton
         v-if="isCollapsed"
-        type="button"
-        class="hidden size-control shrink-0 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground rail:grid"
+        class="hidden rail:inline-flex"
+        icon="i-lucide-panel-left-open"
+        color="neutral"
+        variant="ghost"
+        square
         aria-label="Mostrar a barra"
         title="Mostrar a barra"
         data-page-header-show-rail
         @click="setRail('compact')"
-      >
-        <Icon name="lucide:panel-left-open" class="size-5" />
-      </button>
-
+      />
       <slot name="lead" />
+    </template>
 
-      <div class="flex min-w-0 flex-1 basis-0 items-center gap-2 py-2.5 md:flex-none md:basis-auto md:gap-3 md:py-0">
-        <div class="min-w-0">
-          <p v-if="eyebrowText" class="op-eyebrow truncate text-muted-foreground" data-page-header-eyebrow>{{ eyebrowText }}</p>
-          <h1 class="truncate text-[19px] leading-none font-semibold tracking-[-0.01em] outline-none md:text-[22px]">{{ title }}</h1>
-          <!-- Linha fina SOB o título (prévias v4: "22:03 · sáb 03/10 · lotes fechados
-               hoje"; no celular "06:12 · 6 para finalizar"). Opcional. -->
-          <slot name="subtitle" />
-        </div>
-        <slot name="status" />
-      </div>
+    <template #title>
+      <span>{{ title }}</span>
+      <NuxtBadge v-if="eyebrowText" color="neutral" variant="subtle" data-page-header-eyebrow>{{ eyebrowText }}</NuxtBadge>
+    </template>
 
-      <div v-if="$slots.search || search" class="hidden w-1 md:block" aria-hidden="true" />
-      <div
-        v-if="$slots.search || search"
-        class="hidden md:block md:w-auto"
-        data-page-header-search
-      >
+    <template #trailing>
+      <slot name="subtitle" />
+      <slot name="status" />
+    </template>
+
+    <template v-if="$slots.search || search" #default>
+      <div class="w-full" data-page-header-search>
         <slot name="search"><OperatorSuiteSearch :placeholder="searchPlaceholder" /></slot>
       </div>
+    </template>
 
-      <div class="hidden flex-1 md:block" />
-
-      <!-- celular: lupa e ações de polegar na barra de 56px -->
-      <div class="flex items-center md:hidden">
-        <button
-          v-if="$slots.search || search"
-          type="button"
-          class="grid size-11 place-items-center rounded-md text-foreground md:size-12"
-          aria-label="Buscar"
-          aria-haspopup="dialog"
-          data-page-header-search-toggle
-          @click="openSearch"
-        >
-          <Icon name="lucide:search" class="size-6" />
-        </button>
-        <slot name="phone-actions" />
-      </div>
-
-      <!-- No celular os controles da tela não somem: descem para uma linha própria,
-           que rola na horizontal (nenhuma função fica só no desktop). -->
-      <div
-        v-if="$slots.actions"
-        class="order-last -ml-4 flex w-[calc(100%+1.5rem)] items-center gap-2 overflow-x-auto px-4 pb-2.5 no-scrollbar *:shrink-0 md:order-none md:ml-0 md:w-auto md:flex-wrap md:justify-end md:overflow-visible md:px-0 md:pb-0"
-        data-page-header-actions
-      >
+    <template #right>
+      <NuxtButton
+        v-if="$slots.search || search"
+        class="lg:hidden"
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-search"
+        square
+        aria-label="Buscar"
+        aria-haspopup="dialog"
+        data-page-header-search-toggle
+        @click="openSearch"
+      />
+      <slot name="phone-actions" />
+      <div v-if="$slots.actions" class="flex items-center gap-2" data-page-header-actions>
         <slot name="actions" />
       </div>
-
-      <!-- Onde o rail não existe (celular e tablet em pé): os Avisos na barra de 56px,
-           a mesma caixa do pé do rail (V6-KIT, T-06). Montada por script, não só
-           escondida: duas caixas no DOM seriam dois "Avisos". -->
       <ClientOnly v-if="inbox">
-        <div v-if="!railShown" class="-mr-1 flex shrink-0 items-center" data-page-header-inbox>
+        <div v-if="!railShown" class="flex shrink-0 items-center" data-page-header-inbox>
           <OperatorInbox placement="header" />
         </div>
       </ClientOnly>
-    </div>
+    </template>
+  </NuxtDashboardNavbar>
 
-    <div
-      v-if="$slots.filters"
-      class="flex items-center gap-1.5 overflow-x-auto px-4 pb-2.5 no-scrollbar *:shrink-0"
-      :class="filtersWrap ? 'md:flex-wrap md:overflow-visible' : ''"
-      data-page-header-filters
-    >
-      <slot name="filters" />
-    </div>
-    <slot name="below" />
-  </header>
+  <NuxtDashboardToolbar v-if="$slots.filters || $slots.below">
+    <template v-if="$slots.filters" #left>
+      <div class="flex items-center gap-2" :class="filtersWrap ? 'flex-wrap' : ''" data-page-header-filters>
+        <slot name="filters" />
+      </div>
+    </template>
+    <template v-if="$slots.below" #right><slot name="below" /></template>
+  </NuxtDashboardToolbar>
 </template>

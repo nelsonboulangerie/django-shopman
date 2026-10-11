@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { operatorAlertToInbox } from "../../operator-kit/app/presentation/suiteChrome";
+
 // Gestor de Pedidos surface shell. Thin shell — the order hub is a board + detail,
 // each at its own URL, so it uses pages/ routing (like the KDS, unlike the POS
 // kiosk single-shell). The shell holds the page outlet + chrome + the operator
@@ -35,47 +37,57 @@ async function restoreAuthenticatedWorkspace() {
   await refreshNuxtData();
 }
 
-const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
+const { sections, current } = useGestorSections();
+const { alerts, activeCount, ack } = useAlerts();
+provideOperatorInboxAlerts(() => ({
+  title: "Da operação",
+  emptyText: "Nenhum alerta de pedido agora.",
+  items: alerts.value.map(operatorAlertToInbox),
+  count: activeCount.value,
+  ack: (key) => {
+    const alert = alerts.value.find((item) => item.pk === key);
+    if (alert) return ack(alert);
+  },
+}));
 
 useOperatorWindowTitle();
 </script>
 
 <template>
-  <!-- `data-suite="v3"`: o Gestor é o piloto da camada visual da suíte (UX-KIT-V1). Os
-       primitivos do kit leem esse atributo para vestir o visual das prévias. -->
-  <div class="flex min-h-dvh bg-background text-foreground" data-suite="v3">
-    <NuxtRouteAnnouncer />
-    <!-- Aviso calmo de conexão (kit) — global, só aparece offline (paridade c/ POS/KDS/hub). -->
-    <OfflineBanner />
-    <!-- Rail da suíte (kit): o selo do app (Central), as seções do Gestor, Avisos,
-         Atalhos, Bloquear e o menu do operador. No tablet deitado e no desktop; no
-         celular e no tablet em pé as seções vão para a barra do polegar (com o "Mais"),
-         no fim da coluna de conteúdo. -->
-    <GestorNav
-      v-if="canIdentify"
-      place="rail"
-      :hub-url="hubUrl"
-      :operator-name="operator?.name"
-      @lock="lock"
-    />
-    <div class="flex min-w-0 flex-1 flex-col">
-      <div v-show="canIdentify && !locked && !mustChange" class="flex min-h-0 flex-1 flex-col">
-        <NuxtPage :key="workspaceOwner ?? 'unidentified'" />
-      </div>
-      <GestorNav v-if="canIdentify && !locked && !mustChange" place="bar" :operator-name="operator?.name" @lock="lock" />
+  <OperatorAppRoot>
+    <!-- `data-suite="v3"`: o Gestor é o piloto da camada visual da suíte (UX-KIT-V1). Os
+         primitivos do kit leem esse atributo para vestir o visual das prévias. -->
+    <div class="flex min-h-dvh bg-background text-foreground" data-suite="v3">
+      <NuxtRouteAnnouncer />
+      <!-- Aviso calmo de conexão (kit) — global, só aparece offline (paridade c/ POS/KDS/hub). -->
+      <OfflineBanner />
+      <OperatorSuiteShell
+        v-if="canIdentify"
+        storage-key="gestor"
+        :sections="sections"
+        :current="current"
+        label="Seções do Gestor"
+        :operator-name="operator?.name"
+        @lock="lock"
+      >
+        <div v-show="canIdentify && !locked && !mustChange" class="flex min-h-0 flex-1 flex-col">
+          <OperatorStationSetup
+            v-if="stationSetup.offer.value"
+            mode="inline"
+            @done="stationSetup.done()"
+            @dismiss="stationSetup.dismiss()"
+            @unavailable="stationSetup.dismiss({ remember: false })"
+          />
+          <NuxtPage :key="workspaceOwner ?? 'unidentified'" />
+        </div>
+      </OperatorSuiteShell>
+      <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
+           alpha subia a tela de senha com a sessão viva. -->
+      <OperatorSessionUnavailable v-if="sessionUnavailable" scope="os pedidos" @retry="refresh()" />
+      <OperatorLogin v-if="!canIdentify && !sessionUnavailable" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
+      <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
+      <OperatorSonner />
+      <OperatorPwaRuntime />
     </div>
-    <!-- Erro de rede NÃO é sessão morta: sem esta guarda, todo redeploy do
-         alpha subia a tela de senha com a sessão viva. -->
-    <OperatorSessionUnavailable v-if="sessionUnavailable" scope="os pedidos" @retry="refresh()" />
-    <OperatorLogin v-if="!canIdentify && !sessionUnavailable" :reload-on-success="false" @success="restoreAuthenticatedWorkspace" />
-    <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
-    <OperatorStationSetup
-      v-if="stationSetup.offer.value"
-      @done="stationSetup.done()"
-      @dismiss="stationSetup.dismiss()"
-      @unavailable="stationSetup.dismiss({ remember: false })"
-    />
-    <OperatorSonner />
-    <OperatorPwaRuntime />
-  </div>
+  </OperatorAppRoot>
 </template>

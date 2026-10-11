@@ -34,7 +34,6 @@ import {
   lucideIcon,
   relayExpiresLabel,
   statusTone,
-  toneBadge,
 } from "../presentation/orderDetail";
 import type { OperatorOrderDetail } from "../types/orderDetail";
 
@@ -70,6 +69,10 @@ const split = computed(() => props.layout === "split");
 const metaLine = computed(() =>
   [props.order.channel_name || props.order.channel_ref, props.order.ref, props.order.opened_line, props.order.fulfillment_label].filter(Boolean),
 );
+const nuxtTone = (tone: string): "error" | "warning" | "success" | "info" | "neutral" =>
+  tone === "danger" ? "error" : ["warning", "success", "info"].includes(tone)
+    ? tone as "warning" | "success" | "info"
+    : "neutral";
 </script>
 
 <template>
@@ -84,22 +87,20 @@ const metaLine = computed(() =>
       <!-- Homologação do iFood contra o ambiente VIVO: o pedido de teste avança
            como qualquer outro, e o detalhe é onde o operador decide o que fazer
            com ele. O aviso abre a tela, acima do resumo. -->
-      <p
+      <NuxtAlert
         v-if="order.test_order_notice"
-        class="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 p-3 text-sm font-medium"
-        role="status"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-flask-conical"
+        title="Pedido de teste"
+        :description="order.test_order_notice"
         data-test-order-notice
-      >
-        <Icon name="lucide:flask-conical" class="mt-0.5 size-4 shrink-0" />
-        <span>{{ order.test_order_notice }}</span>
-      </p>
+      />
 
       <!-- resumo -->
-      <section class="flex flex-col gap-3 rounded-lg border bg-card p-4" data-order-summary>
+      <NuxtCard data-order-summary>
         <div class="flex flex-wrap items-center gap-2">
-          <span v-if="showStatus" class="inline-flex items-center rounded-md border px-2 py-0.5 text-sm font-medium" :class="toneBadge(statusTone(order.status))" data-order-status>
-            {{ order.status_label }}
-          </span>
+          <NuxtBadge v-if="showStatus" :color="nuxtTone(statusTone(order.status))" variant="subtle" :label="order.status_label" data-order-status />
           <span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
             <Icon :name="`lucide:${lucideIcon(order.channel_icon)}`" class="size-4" /> {{ order.channel_name || order.channel_ref }}
           </span>
@@ -144,63 +145,60 @@ const metaLine = computed(() =>
         <!-- presente: destinatário é OPCIONAL na retirada (gift.py) — sem nome o
              pedido continua presente, e a instrução vira "embalar", não
              "entregar a alguém" com o nome pendurado no vazio. -->
-        <div v-if="order.is_gift" class="rounded-md bg-muted/60 p-2.5 text-sm" data-gift-block>
-          <p class="flex items-center gap-1.5 font-medium">
-            <Icon name="lucide:gift" class="size-4" />
-            {{ order.gift_recipient_name ? `Presente para ${order.gift_recipient_name}` : "Embalar para presente" }}
-          </p>
-          <p v-if="order.gift_recipient_phone" class="mt-1 flex items-center gap-1.5 text-muted-foreground" data-gift-phone>
-            <Icon name="lucide:phone" class="size-3.5" /> {{ order.gift_recipient_phone }}
-          </p>
-          <p v-if="order.gift_message" class="mt-1 text-muted-foreground">“{{ order.gift_message }}”</p>
-          <!-- instrução operacional: nada de valores junto do presente. -->
-          <p
-            v-if="order.gift_hide_values"
-            class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-warning/50 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
-            data-gift-hide-values
-          >
-            <Icon name="lucide:eye-off" class="size-3" /> Não mostrar valores
-          </p>
-        </div>
-      </section>
+        <NuxtAlert
+          v-if="order.is_gift"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-gift"
+          :title="order.gift_recipient_name ? `Presente para ${order.gift_recipient_name}` : 'Embalar para presente'"
+          data-gift-block
+        >
+          <template #description>
+            <span v-if="order.gift_recipient_phone" data-gift-phone>{{ order.gift_recipient_phone }}</span>
+            <template v-if="order.gift_message"> · “{{ order.gift_message }}”</template>
+            <NuxtBadge v-if="order.gift_hide_values" color="warning" variant="subtle" icon="i-lucide-eye-off" label="Não mostrar valores" data-gift-hide-values />
+          </template>
+        </NuxtAlert>
+      </NuxtCard>
 
       <!-- A barra de ações do contexto: a única parte que muda de uma tela para
            a outra. O servidor decide cada gesto; a página só liga os diálogos. -->
       <slot name="actions" />
 
       <!-- quem é este cliente (WP-360): só com cliente identificado. -->
-      <section v-if="profile" class="flex flex-col gap-1.5 rounded-lg border bg-card p-4 text-sm" data-customer-profile>
+      <NuxtCard v-if="profile" data-customer-profile>
+        <template #header>
         <div class="flex flex-wrap items-center gap-2">
           <h2 class="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide">
             <Icon name="lucide:user-round" class="size-4 text-muted-foreground" /> Cliente
           </h2>
           <!-- Selo só nos segmentos que mudam o atendimento. -->
-          <span
+          <NuxtBadge
             v-if="profile.segment_tone"
-            class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium"
-            :class="toneBadge(profile.segment_tone)"
+            :color="nuxtTone(profile.segment_tone)"
+            variant="subtle"
+            :label="profile.segment_label"
             data-customer-segment
-          >
-            {{ profile.segment_label }}
-          </span>
+          />
         </div>
+        </template>
         <OperatorOrderProfileLines :profile="profile" />
-      </section>
+      </NuxtCard>
 
       <slot name="after-profile" />
 
       <!-- nota fiscal -->
-      <section v-if="!decisionOnly && (order.fiscal_status_label || order.fiscal_links.length)" class="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 text-sm" data-order-fiscal>
+      <NuxtCard v-if="!decisionOnly && (order.fiscal_status_label || order.fiscal_links.length)" data-order-fiscal>
+        <div class="flex flex-wrap items-center gap-2">
         <Icon name="lucide:receipt" class="size-4 text-muted-foreground" />
         <span class="text-muted-foreground">{{ order.fiscal_status_label || "Fiscal" }}</span>
-        <a v-for="(link, i) in order.fiscal_links" :key="i" :href="fiscalHref(link)" target="_blank" rel="noopener" class="font-medium text-primary underline-offset-2 hover:underline">
-          {{ link.label || "Documento" }}
-        </a>
-      </section>
+        <NuxtButton v-for="(link, i) in order.fiscal_links" :key="i" :to="fiscalHref(link)" target="_blank" color="neutral" variant="link" icon="i-lucide-external-link" :label="link.label || 'Documento'" />
+        </div>
+      </NuxtCard>
 
       <!-- itens: os que VALEM agora, com os ajustes -->
-      <section class="overflow-hidden rounded-lg border bg-card" data-order-items>
-        <h2 class="border-b px-4 py-2.5 text-sm font-bold uppercase tracking-wide">Itens</h2>
+      <NuxtCard data-order-items>
+        <template #header><h2 class="op-title">Itens</h2></template>
         <table class="w-full text-sm">
           <tbody>
             <tr v-for="(item, i) in order.items" :key="i" class="border-b last:border-0">
@@ -210,24 +208,22 @@ const metaLine = computed(() =>
             </tr>
           </tbody>
         </table>
-      </section>
+      </NuxtCard>
 
       <!-- observação do CLIENTE (order_notes): somente leitura. -->
-      <section v-if="order.customer_note" class="flex flex-col gap-1.5 rounded-lg border bg-card p-4" data-customer-note>
-        <h2 class="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide">
-          <Icon name="lucide:message-square" class="size-4 text-muted-foreground" /> Observação do cliente
-        </h2>
+      <NuxtCard v-if="order.customer_note" data-customer-note>
+        <template #header><h2 class="op-title">Observação do cliente</h2></template>
         <p class="whitespace-pre-line text-sm">{{ order.customer_note }}</p>
-      </section>
+      </NuxtCard>
 
       <!-- nota da cozinha: o editor entra pelo slot onde a tela a edita (Gestor);
            nas outras ela é leitura, e só existe quando há o que ler. -->
       <slot name="kitchen-note">
-        <section v-if="order.kitchen_note" class="flex flex-col gap-1.5 rounded-lg border bg-card p-4" data-kitchen-note>
-          <h2 class="text-sm font-bold uppercase tracking-wide">Nota da cozinha</h2>
+        <NuxtCard v-if="order.kitchen_note" data-kitchen-note>
+          <template #header><h2 class="op-title">Nota da cozinha</h2></template>
           <p class="whitespace-pre-line text-sm">{{ order.kitchen_note }}</p>
           <p class="text-xs text-muted-foreground">Aparece no ticket da cozinha (KDS).</p>
-        </section>
+        </NuxtCard>
       </slot>
 
       <OperatorOrderTimeline v-model:comment="comment" :order="order" :busy="busy" :read-only="decisionOnly" @comment="(note) => emit('comment', note)" />
@@ -238,22 +234,25 @@ const metaLine = computed(() =>
          ordenadas pelo `order-*` na sequência do celular. -->
     <template v-else>
       <div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-4">
-        <p
+        <NuxtAlert
           v-if="order.test_order_notice"
-          class="order-0 flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 p-3 text-sm font-medium lg:order-none"
-          role="status"
+          class="order-0 lg:order-none"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-flask-conical"
+          title="Pedido de teste"
+          :description="order.test_order_notice"
           data-test-order-notice
-        >
-          <Icon name="lucide:flask-conical" class="mt-0.5 size-4 shrink-0" />
-          <span>{{ order.test_order_notice }}</span>
-        </p>
+        />
 
         <!-- o pedido: de onde e quando, os itens que valem e o total (v3) -->
-        <section class="order-3 overflow-hidden rounded-lg border bg-card lg:order-none" data-order-summary>
-          <p class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 border-b px-4 py-2.5 op-micro text-muted-foreground" data-order-meta>
+        <NuxtCard class="order-3 lg:order-none" data-order-summary>
+          <template #header>
+          <p class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 op-micro text-muted-foreground" data-order-meta>
             <Icon :name="`lucide:${lucideIcon(order.channel_icon)}`" class="size-4" />
             <template v-for="(part, i) in metaLine" :key="i"><span v-if="i" aria-hidden="true">·</span><span :class="part === order.ref ? 'tnum' : ''">{{ part }}</span></template>
           </p>
+          </template>
           <table class="w-full text-sm" data-order-items>
             <tbody>
               <tr v-for="(item, i) in order.items" :key="i" class="border-b">
@@ -284,39 +283,38 @@ const metaLine = computed(() =>
               <Icon name="lucide:send" class="size-4" /> {{ order.payment_link_notice }}
             </p>
           </div>
-          <div v-if="order.is_gift" class="mx-4 mb-3 rounded-md bg-muted/60 p-2.5 text-sm" data-gift-block>
-            <p class="flex items-center gap-1.5 font-medium">
-              <Icon name="lucide:gift" class="size-4" />
-              {{ order.gift_recipient_name ? `Presente para ${order.gift_recipient_name}` : "Embalar para presente" }}
-            </p>
-            <p v-if="order.gift_recipient_phone" class="mt-1 flex items-center gap-1.5 text-muted-foreground" data-gift-phone>
-              <Icon name="lucide:phone" class="size-3.5" /> {{ order.gift_recipient_phone }}
-            </p>
-            <p v-if="order.gift_message" class="mt-1 text-muted-foreground">“{{ order.gift_message }}”</p>
-            <p v-if="order.gift_hide_values" class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-warning/50 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400" data-gift-hide-values>
-              <Icon name="lucide:eye-off" class="size-3" /> Não mostrar valores
-            </p>
-          </div>
-        </section>
+          <NuxtAlert
+            v-if="order.is_gift"
+            color="info"
+            variant="subtle"
+            icon="i-lucide-gift"
+            :title="order.gift_recipient_name ? `Presente para ${order.gift_recipient_name}` : 'Embalar para presente'"
+            data-gift-block
+          >
+            <template #description>
+              <span v-if="order.gift_recipient_phone" data-gift-phone>{{ order.gift_recipient_phone }}</span>
+              <template v-if="order.gift_message"> · “{{ order.gift_message }}”</template>
+              <NuxtBadge v-if="order.gift_hide_values" color="warning" variant="subtle" icon="i-lucide-eye-off" label="Não mostrar valores" data-gift-hide-values />
+            </template>
+          </NuxtAlert>
+        </NuxtCard>
 
         <div v-if="$slots.actions" class="order-1 min-w-0 empty:hidden lg:order-none">
           <slot name="actions" />
         </div>
 
-        <section v-if="order.customer_note" class="order-4 flex flex-col gap-1.5 rounded-lg border bg-card p-4 lg:order-none" data-customer-note>
-          <h2 class="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide">
-            <Icon name="lucide:message-square" class="size-4 text-muted-foreground" /> Observação do cliente
-          </h2>
+        <NuxtCard v-if="order.customer_note" class="order-4 lg:order-none" data-customer-note>
+          <template #header><h2 class="op-title">Observação do cliente</h2></template>
           <p class="whitespace-pre-line text-sm">{{ order.customer_note }}</p>
-        </section>
+        </NuxtCard>
 
         <div class="order-5 min-w-0 empty:hidden lg:order-none">
           <slot name="kitchen-note">
-            <section v-if="order.kitchen_note" class="flex flex-col gap-1.5 rounded-lg border bg-card p-4" data-kitchen-note>
-              <h2 class="text-sm font-bold uppercase tracking-wide">Nota da cozinha</h2>
+            <NuxtCard v-if="order.kitchen_note" data-kitchen-note>
+              <template #header><h2 class="op-title">Nota da cozinha</h2></template>
               <p class="whitespace-pre-line text-sm">{{ order.kitchen_note }}</p>
               <p class="text-xs text-muted-foreground">Aparece no ticket da cozinha (KDS).</p>
-            </section>
+            </NuxtCard>
           </slot>
         </div>
 
@@ -324,27 +322,30 @@ const metaLine = computed(() =>
           <slot name="after-profile" />
         </div>
 
-        <section v-if="!decisionOnly && (order.fiscal_status_label || order.fiscal_links.length)" class="order-8 flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 text-sm lg:order-none" data-order-fiscal>
+        <NuxtCard v-if="!decisionOnly && (order.fiscal_status_label || order.fiscal_links.length)" class="order-8 lg:order-none" data-order-fiscal>
+          <div class="flex flex-wrap items-center gap-2">
           <Icon name="lucide:receipt" class="size-4 text-muted-foreground" />
           <span class="text-muted-foreground">{{ order.fiscal_status_label || "Fiscal" }}</span>
-          <a v-for="(link, i) in order.fiscal_links" :key="i" :href="fiscalHref(link)" target="_blank" rel="noopener" class="font-medium text-primary underline-offset-2 hover:underline">
-            {{ link.label || "Documento" }}
-          </a>
-        </section>
+          <NuxtButton v-for="(link, i) in order.fiscal_links" :key="i" :to="fiscalHref(link)" target="_blank" color="neutral" variant="link" icon="i-lucide-external-link" :label="link.label || 'Documento'" />
+          </div>
+        </NuxtCard>
       </div>
 
       <div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-4">
         <!-- Cliente: quem é, como falar e o que a casa sabe dela -->
-        <section class="order-2 flex flex-col gap-2 rounded-lg border bg-card p-4 text-sm lg:order-none" data-customer-card>
+        <NuxtCard class="order-2 lg:order-none" data-customer-card>
+          <template #header>
           <div class="flex flex-wrap items-center gap-2">
             <h2 class="op-eyebrow">Cliente</h2>
-            <span
+            <NuxtBadge
               v-if="profile?.segment_tone"
-              class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium"
-              :class="toneBadge(profile.segment_tone)"
+              :color="nuxtTone(profile.segment_tone)"
+              variant="subtle"
+              :label="profile.segment_label"
               data-customer-segment
-            >{{ profile.segment_label }}</span>
+            />
           </div>
+          </template>
           <div class="flex items-center gap-3">
             <div class="min-w-0 flex-1">
               <p class="op-title break-words">{{ order.customer_name || "Sem cliente" }}</p>
@@ -360,7 +361,7 @@ const metaLine = computed(() =>
           <div v-if="profile" class="flex flex-col gap-1" data-customer-profile>
             <OperatorOrderProfileLines :profile="profile" />
           </div>
-        </section>
+        </NuxtCard>
 
         <OperatorOrderTimeline
           v-model:comment="comment"

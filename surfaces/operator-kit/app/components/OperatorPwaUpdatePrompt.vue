@@ -21,20 +21,14 @@ async function update() {
 </script>
 
 <template>
-  <aside
+  <NuxtAlert
     v-if="pwa.needRefresh.value"
-    class="fixed bottom-3 right-3 z-[60] flex max-w-sm items-center gap-3 rounded-md border border-border bg-card p-3 text-card-foreground shadow-xl"
-    aria-live="polite"
+    class="fixed right-3 bottom-3 z-[60] max-w-sm"
+    color="info"
+    icon="i-lucide-refresh-cw"
+    title="Nova versão disponível"
     data-operator-pwa-update
   >
-    <p class="min-w-0 flex-1 text-sm font-medium">Nova versão disponível</p>
-    <button
-      type="button"
-      class="h-9 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-      :disabled="updating"
-      @click="update"
-    >
-      {{ updating ? "Atualizando…" : "Atualizar" }}
-    </button>
-  </aside>
+    <template #actions><NuxtButton :loading="updating" :label="updating ? 'Atualizando…' : 'Atualizar'" @click="update" /></template>
+  </NuxtAlert>
 </template>

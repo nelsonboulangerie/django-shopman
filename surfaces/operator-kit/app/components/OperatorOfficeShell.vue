@@ -9,11 +9,17 @@ withDefaults(
   defineProps<{
     storageKey: string;
     title?: string;
+    rail?: boolean;
+    navbar?: boolean;
+    sidebarSize?: number;
     sidebarDefaultSize?: number;
     sidebarMinSize?: number;
     sidebarMaxSize?: number;
   }>(),
   {
+    rail: false,
+    navbar: true,
+    sidebarSize: 72,
     sidebarDefaultSize: 18,
     sidebarMinSize: 14,
     sidebarMaxSize: 24,
@@ -24,19 +30,21 @@ withDefaults(
 <template>
   <NuxtDashboardGroup
     :storage-key="storageKey"
+    :unit="rail ? 'px' : '%'"
     class="min-h-dvh"
     data-operator-office-shell
   >
     <NuxtDashboardSidebar
-      role="complementary"
-      aria-label="Navegação do aplicativo"
       :id="`${storageKey}-navigation`"
       v-model:open="navigationOpen"
-      :default-size="sidebarDefaultSize"
-      :min-size="sidebarMinSize"
-      :max-size="sidebarMaxSize"
-      resizable
-      collapsible
+      role="complementary"
+      aria-label="Navegação do aplicativo"
+      :default-size="rail ? sidebarSize : sidebarDefaultSize"
+      :min-size="rail ? sidebarSize : sidebarMinSize"
+      :max-size="rail ? sidebarSize : sidebarMaxSize"
+      :resizable="!rail"
+      :collapsible="!rail"
+      :toggle="!rail"
     >
       <template v-if="$slots['sidebar-header']" #header="{ collapsed }"
         ><slot name="sidebar-header" :collapsed="collapsed"
@@ -49,19 +57,13 @@ withDefaults(
       /></template>
     </NuxtDashboardSidebar>
     <slot name="search" />
-    <NuxtDashboardPanel
-      :id="`${storageKey}-content`"
-      class="min-w-0"
-      :ui="{ body: 'p-0 sm:p-0 gap-0' }"
-    >
-      <template #header>
+    <NuxtDashboardPanel :id="`${storageKey}-content`">
+      <template v-if="navbar" #header>
         <NuxtDashboardNavbar
           as="header"
-          class="h-auto min-h-[var(--op-header-min-height)] py-2"
           :title="title"
-          :ui="{ title: 'whitespace-normal break-words', root: 'flex-wrap' }"
         >
-          <template #leading><NuxtDashboardSidebarCollapse /></template>
+          <template v-if="!rail" #leading><NuxtDashboardSidebarCollapse /></template>
           <template v-if="$slots.navbar" #title><slot name="navbar" /></template>
           <template #right><slot name="navbar-actions" /></template>
         </NuxtDashboardNavbar>

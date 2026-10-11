@@ -133,6 +133,12 @@ const TABS = [
   { id: "social", label: "Redes sociais" },
   { id: "fiscal", label: "Fiscal" },
 ] as const;
+const tabItems = TABS.map((item) => ({ value: item.id, label: item.label }));
+const panelMenuItems = computed(() => [
+  { label: draft.is_published ? "Ocultar no catálogo" : "Exibir no catálogo", icon: draft.is_published ? "i-lucide-eye-off" : "i-lucide-eye", disabled: !props.detail, onSelect: toggleHidden },
+  { label: props.roles?.purchasable ? "Tirar a permissão de compra" : "Permitir compra", icon: "i-lucide-shopping-basket", disabled: props.purchaseBusy || !props.roles, onSelect: togglePurchaseFromMenu },
+  ...(historyHref.value ? [{ label: "Histórico", icon: "i-lucide-history", to: historyHref.value, target: "_blank" }] : []),
+]);
 type TabId = (typeof TABS)[number]["id"];
 const tab = ref<TabId>("geral");
 
@@ -147,6 +153,14 @@ const CONDITIONS = [
   { value: "refurbished", label: "Recondicionado" },
   { value: "used", label: "Usado" },
 ] as const;
+function setAvailabilityPolicy(value: string | number) {
+  if (POLICIES.some((item) => item.value === value)) draft.availability_policy = value as (typeof POLICIES)[number]["value"];
+}
+function setCondition(value: string | number) {
+  if (CONDITIONS.some((item) => item.value === value)) draft.social.condition = value as (typeof CONDITIONS)[number]["value"];
+}
+const availabilityPolicyValue = computed(() => POLICIES.find((item) => item.value === draft.availability_policy)?.value);
+const conditionValue = computed(() => CONDITIONS.find((item) => item.value === draft.social.condition)?.value);
 
 // Tabela nutricional: os mesmos três grupos do rótulo ANVISA, na mesma ordem do
 // formulário do Admin. Rótulos em pt-BR, chaves em inglês (contrato do backend).
@@ -484,142 +498,55 @@ function currentValue(path: string): string {
   return Array.isArray(value) ? value.join(", ") : String(value);
 }
 
-const fieldClass =
-  "min-h-control w-full rounded-md border border-border bg-background px-2.5 text-sm outline-none focus:ring-1 focus:ring-ring";
-const areaClass =
-  "w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm outline-none focus:ring-1 focus:ring-ring";
-const labelClass = "mb-1 block text-xs font-medium text-muted-foreground";
 const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-foreground";
 </script>
 
 <template>
-  <UiSheet :open="open" @update:open="requestClose">
-    <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-[520px]" :title="undefined" @open-auto-focus.prevent>
-      <!-- o ✕ é do cabeçalho do painel, ao lado do ⋯ (v4), não o canto padrão da folha -->
-      <template #close><span class="hidden" /></template>
-      <!-- Cabeçalho do painel (prévia v4 `catalogo-produto4.html`): a inicial do
-           produto num quadrado, o nome e a linha do que ele é; ⋯ e ✕ à direita. -->
-      <div class="flex items-center gap-3 border-b border-border px-5 py-4">
-        <span class="grid size-12 shrink-0 place-items-center rounded-lg bg-primary text-lg font-semibold text-primary-foreground" aria-hidden="true">
-          {{ (detail?.name || sku || "?").charAt(0).toUpperCase() }}
-        </span>
-        <div class="min-w-0">
-          <p class="sr-only">Editar produto</p>
-          <h2 class="truncate text-xl leading-tight font-semibold text-foreground">{{ detail?.name || "Produto" }}</h2>
-          <p class="flex min-w-0 flex-wrap items-center gap-x-1.5 op-micro text-muted-foreground" data-panel-subtitle>
-            <span class="font-mono">{{ sku }}</span>
-            <template v-if="detail">
-              <span aria-hidden="true">·</span>
-              <span class="tnum">R$ {{ centsToText(detail.base_price_q) }}{{ detail.unit === "kg" ? "/kg" : "" }}</span>
-            </template>
-            <template v-if="detail?.primary_collection_name">
-              <span aria-hidden="true">·</span>
-              <span>{{ detail.primary_collection_name }}</span>
-            </template>
-            <template v-for="badge in roleBadges" :key="badge">
-              <span aria-hidden="true">·</span>
-              <span>{{ badge }}</span>
-            </template>
-          </p>
-        </div>
-        <UiPopover v-model:open="headerMenuOpen">
-          <UiPopoverTrigger as-child>
-            <button
-              type="button"
-              class="grid size-control place-items-center rounded-md border border-border bg-card text-foreground transition hover:bg-accent"
-              aria-label="Mais ações do produto"
-              data-panel-more
-            >
-              <Icon name="lucide:ellipsis" class="size-5" />
-            </button>
-          </UiPopoverTrigger>
-          <UiPopoverContent v-if="headerMenuOpen" align="end" :side-offset="6" class="w-60 rounded-lg p-1.5 shadow-lg" role="menu" data-panel-menu>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" :disabled="!detail" @click="toggleHidden">
-              <Icon :name="draft.is_published ? 'lucide:eye-off' : 'lucide:eye'" class="size-4 text-muted-foreground" />{{ draft.is_published ? "Ocultar no catálogo" : "Exibir no catálogo" }}
-            </button>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent disabled:opacity-50" :disabled="purchaseBusy || !roles" @click="togglePurchaseFromMenu">
-              <Icon name="lucide:shopping-basket" class="size-4 text-muted-foreground" />{{ roles?.purchasable ? "Tirar a permissão de compra" : "Permitir compra" }}
-            </button>
-            <a v-if="historyHref" :href="historyHref" target="_blank" rel="noopener" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 op-body transition hover:bg-accent" data-panel-history>
-              <Icon name="lucide:history" class="size-4 text-muted-foreground" />Histórico
-            </a>
-          </UiPopoverContent>
-        </UiPopover>
-        <button
-          type="button"
-          class="grid size-control shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          aria-label="Fechar o painel"
-          data-panel-close
-          @click="requestClose(false)"
-        >
-          <Icon name="lucide:x" class="size-5" />
-        </button>
-      </div>
+  <NuxtSlideover
+    :open="open"
+    :title="detail?.name || 'Produto'"
+    :description="`${sku}${detail ? ` · R$ ${centsToText(detail.base_price_q)}${detail.unit === 'kg' ? '/kg' : ''}` : ''}${detail?.primary_collection_name ? ` · ${detail.primary_collection_name}` : ''}${roleBadges.length ? ` · ${roleBadges.join(' · ')}` : ''}`"
+    side="right"
+    @update:open="requestClose"
+  >
+    <template #actions>
+      <NuxtDropdownMenu v-model:open="headerMenuOpen" :items="panelMenuItems" :content="{ align: 'end' }">
+        <NuxtButton icon="i-lucide-ellipsis" color="neutral" variant="ghost" square aria-label="Mais ações do produto" data-panel-more />
+      </NuxtDropdownMenu>
+    </template>
+    <template #body>
 
-      <div v-if="conflict" role="alert" class="space-y-2 border-b border-border bg-muted p-4 text-sm">
-        <p>Seu rascunho foi preservado. Confira os campos que mudaram desde sua leitura:</p>
-        <ul><li v-for="field in conflict.conflicting_fields" :key="field">
-          {{ conflictLabels[field] || "Campo editado" }}. Valor atual: {{ currentValue(field) }}
-          <span v-if="sourceChange(field)" class="block text-xs">{{ sourceChange(field) }}</span>
-        </li></ul>
-        <button type="button" class="min-h-12 rounded border px-3" @click="emit('review-conflict', true)">Manter meu rascunho</button>
-        <button type="button" class="min-h-12 rounded border px-3" @click="emit('review-conflict', false)">Descartar minhas alterações e usar valores atuais</button>
-      </div>
-      <p v-else-if="error" role="alert" class="p-4 text-sm text-destructive">{{ error }}</p>
-      <div v-if="discardRequested" role="alert" class="space-y-2 border-b p-4 text-sm">
-        <p>Há alterações não salvas neste produto.</p>
-        <button type="button" class="min-h-12 rounded border px-3" @click="discardRequested = false">Continuar editando</button>
-        <button type="button" class="min-h-12 rounded border px-3" @click="emit('update:open', false)">Descartar e fechar</button>
-      </div>
+      <NuxtAlert v-if="conflict" color="warning" variant="subtle" icon="i-lucide-git-compare" title="Seu rascunho foi preservado" :description="conflict.conflicting_fields.map((field) => `${conflictLabels[field] || 'Campo editado'}. Valor atual: ${currentValue(field)}${sourceChange(field) ? ` (${sourceChange(field)})` : ''}`).join(' · ')" :actions="[{ label: 'Manter meu rascunho', color: 'warning', variant: 'outline', onClick: () => emit('review-conflict', true) }, { label: 'Usar valores atuais', color: 'neutral', variant: 'ghost', onClick: () => emit('review-conflict', false) }]" />
+      <NuxtAlert v-else-if="error" color="error" variant="subtle" icon="i-lucide-triangle-alert" :description="error" />
+      <NuxtAlert v-if="discardRequested" color="warning" variant="subtle" title="Há alterações não salvas neste produto" :actions="[{ label: 'Continuar editando', color: 'warning', variant: 'outline', onClick: () => { discardRequested = false; } }, { label: 'Descartar e fechar', color: 'error', variant: 'ghost', onClick: () => emit('update:open', false) }]" />
 
       <!-- abas: o formulário é longo demais para uma coluna só. Rolam na horizontal
            porque cinco rótulos não cabem na largura do slide-over. -->
       <!-- as cinco abas cabem (v4): sublinhada a ativa, sem caixa; rola só se a largura faltar -->
-      <UiTabs v-model="tab">
-        <UiTabsList class="flex w-full justify-between gap-0 overflow-x-auto rounded-none border-x-0 border-t-0 bg-transparent px-3 py-0 no-scrollbar" aria-label="Partes do produto" data-panel-tabs>
-          <UiTabsTrigger
-            v-for="t in TABS"
-            :key="t.id"
-            :value="t.id"
-            class="min-h-12 shrink-0 rounded-none px-2 whitespace-nowrap data-[state=active]:shadow-[inset_0_-2px_0_var(--primary)]"
-          >{{ t.label }}</UiTabsTrigger>
-        </UiTabsList>
-      </UiTabs>
+      <NuxtTabs v-model="tab" :items="tabItems" :content="false" variant="link" aria-label="Partes do produto" data-panel-tabs />
 
       <div ref="bodyEl" class="flex-1 overflow-y-auto px-5 py-4">
-        <div v-if="loading" class="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-          <Icon name="line-md:loading-loop" class="size-4" /> Carregando produto…
-        </div>
+        <NuxtSkeleton v-if="loading" aria-label="Carregando produto" />
 
-        <div v-else-if="!detail" class="py-8 text-sm text-muted-foreground">
-          Não foi possível carregar este produto.
-        </div>
+        <NuxtEmpty v-else-if="!detail" icon="i-lucide-package-x" title="Não foi possível carregar este produto" />
 
         <template v-else>
           <!-- Geral -->
           <div v-show="tab === 'geral'" class="space-y-4">
             <!-- A Geral começa pelo nome no cardápio (v4); a disponibilidade vem logo abaixo. -->
-            <label class="block">
-              <span :class="labelClass">Nome no cardápio</span>
-              <input v-model="draft.name" :class="fieldClass" type="text" placeholder="Ex.: Pão francês" />
-            </label>
+            <NuxtFormField label="Nome no cardápio">
+              <NuxtInput v-model="draft.name" type="text" placeholder="Ex.: Pão francês" />
+            </NuxtFormField>
 
             <!-- Disponibilidade nos canais (v4): um estado só, a hora provável de volta e o
                  porquê; por canal, o que o cliente vê ali e o Pausar (o mesmo gesto da
                  célula da tabela). O motivo da pausa não é gravado (decisão do dono). -->
-            <section
-              v-if="availability.length"
-              class="overflow-hidden rounded-lg border"
-              :class="unavailableCount ? 'border-destructive/30' : 'border-border'"
-              data-panel-availability
-            >
-              <div class="px-3.5 py-3" :class="unavailableCount ? 'bg-destructive/6' : 'bg-muted/40'">
+            <NuxtCard v-if="availability.length" as="section" data-panel-availability>
+              <div>
                 <div class="flex flex-wrap items-center gap-2">
                   <h3 class="op-label font-semibold">Disponibilidade nos canais</h3>
-                  <span v-if="unavailableCount" class="pill-destructive inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold">
-                    <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ availabilityHeadline }}
-                  </span>
-                  <span v-else class="pill-success inline-flex h-6 items-center rounded-full px-2 op-micro font-semibold">À venda em todos</span>
+                  <NuxtBadge v-if="unavailableCount" color="error" variant="subtle" :label="availabilityHeadline" />
+                  <NuxtBadge v-else color="success" variant="subtle" label="À venda em todos" />
                   <span class="ml-auto op-micro text-muted-foreground">vale na hora</span>
                 </div>
                 <p v-if="unavailableCount && detail?.back_at" class="mt-1 op-micro text-muted-foreground" data-panel-back>
@@ -637,27 +564,27 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
                     <span v-else-if="row.since" class="text-muted-foreground"> desde {{ row.since }}</span>
                   </span>
                   <span v-if="row.note || (row.automatic && row.state !== 'available')" class="mt-0.5 flex flex-wrap items-center gap-1.5 text-muted-foreground" data-panel-channel-note>
-                    <span v-if="row.automatic && row.state !== 'available'" class="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-1.5 font-semibold"><Icon name="lucide:sparkles" class="size-3" />automático</span>
+                  <NuxtBadge v-if="row.automatic && row.state !== 'available'" color="neutral" variant="subtle" icon="i-lucide-sparkles" label="automático" />
                     <span v-if="row.note">{{ row.note }}</span>
                   </span>
                 </span>
-                <button
+                <NuxtButton
                   v-if="channelCells?.[row.ref]"
                   type="button"
-                  class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3 op-label font-semibold transition hover:bg-accent disabled:opacity-50"
+                 
                   :disabled="!channelCells[row.ref]!.enabled || channelCells[row.ref]!.busy"
                   :aria-label="channelCells[row.ref]!.paused ? `Retomar ${row.name}` : `Pausar ${row.name}`"
                   data-panel-pause
                   @click="emit('pause-channel', row.ref, !channelCells[row.ref]!.paused)"
                 >
                   <Icon :name="channelCells[row.ref]!.paused ? 'lucide:play' : 'lucide:pause'" class="size-4" />{{ channelCells[row.ref]!.paused ? "Retomar" : "Pausar" }}
-                </button>
+                </NuxtButton>
               </div>
               <p class="flex items-start gap-1.5 border-t border-border px-3.5 py-2 op-micro text-muted-foreground">
                 <Icon name="lucide:sparkles" class="mt-0.5 size-3 shrink-0" />
                 O sistema avisa o iFood, a Meta e o Google sozinho quando o estoque zera e quando volta. Pausar é para o que não é falta de estoque.
               </p>
-            </section>
+            </NuxtCard>
 
             <div ref="belowEl" class="scroll-mt-4" />
             <CatalogAiSuggest
@@ -669,8 +596,8 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               :assist="assist"
               @accept="(text) => (draft.short_description = text)"
             >
-              <input
-                v-model="draft.short_description" :class="fieldClass" type="text" maxlength="255"
+              <NuxtInput
+                v-model="draft.short_description" type="text" maxlength="255"
                 placeholder="Uma linha para listagens e vitrine"
               />
               <span class="mt-1 block text-xs text-muted-foreground">{{ draft.short_description.length }}/255</span>
@@ -685,19 +612,16 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               :assist="assist"
               @accept="(text) => (draft.long_description = text)"
             >
-              <textarea v-model="draft.long_description" rows="5" :class="areaClass" placeholder="Texto completo da página do produto."></textarea>
+              <NuxtTextarea v-model="draft.long_description" :rows="5" placeholder="Texto completo da página do produto."></NuxtTextarea>
             </CatalogAiSuggest>
 
-            <label class="block">
-              <span :class="labelClass">Palavras-chave</span>
-              <input v-model="draft.keywordsText" :class="fieldClass" type="text" placeholder="padaria, pão artesanal, fermentação natural" />
-              <span class="mt-1 block text-xs text-muted-foreground">Separe por vírgula. Usadas em busca e SEO.</span>
-            </label>
+            <NuxtFormField label="Palavras-chave" description="Separe por vírgula. Usadas em busca e SEO.">
+              <NuxtInput v-model="draft.keywordsText" type="text" placeholder="padaria, pão artesanal, fermentação natural" />
+            </NuxtFormField>
 
-            <label class="block">
-              <span :class="labelClass">URL da imagem</span>
-              <input v-model="draft.image_url" :class="fieldClass" type="url" placeholder="https://…" />
-            </label>
+            <NuxtFormField label="URL da imagem">
+              <NuxtInput v-model="draft.image_url" type="url" placeholder="https://…" />
+            </NuxtFormField>
             <img
               v-if="draft.image_url"
               :src="draft.image_url" alt="Prévia da imagem do produto"
@@ -710,113 +634,94 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             <!-- Vendido por peso: a unidade de venda vira kg e o MESMO campo de
                  preço passa a ser o preço do quilo. O preço final sai da balança
                  do balcão, então o item não vai para canal remoto. -->
-            <UiCheckbox
+            <NuxtCheckbox
               :model-value="soldByWeight"
               label="Vendido por peso"
               data-testid="sold-by-weight"
-              @update:model-value="setSoldByWeight"
+              @update:model-value="(value) => setSoldByWeight(value === true)"
             />
             <p v-if="soldByWeight" class="-mt-2 text-xs text-muted-foreground">Vendido só no balcão: o preço final sai da balança.</p>
 
             <div class="grid grid-cols-2 gap-3">
-              <label class="block">
-                <span :class="labelClass">{{ soldByWeight ? "Preço por kg" : "Preço" }}</span>
-                <input
-                  v-model="draft.priceText" :class="fieldClass" type="text" inputmode="decimal" placeholder="0,00"
+              <NuxtFormField :label="soldByWeight ? 'Preço por kg' : 'Preço'" :error="priceInvalid ? 'Informe um valor válido.' : undefined">
+                <NuxtInput
+                  v-model="draft.priceText" type="text" inputmode="decimal" placeholder="0,00"
                   :aria-invalid="priceInvalid"
                 />
-                <span v-if="priceInvalid" class="mt-1 block text-xs text-destructive">Informe um valor válido.</span>
-              </label>
-              <label v-if="!soldByWeight" class="block">
-                <span :class="labelClass">Unidade</span>
-                <input v-model="draft.unit" :class="fieldClass" type="text" placeholder="un, lt" />
-              </label>
+              </NuxtFormField>
+              <NuxtFormField v-if="!soldByWeight" label="Unidade">
+                <NuxtInput v-model="draft.unit" type="text" placeholder="un, lt" />
+              </NuxtFormField>
             </div>
 
             <div class="grid grid-cols-2 gap-3">
-              <label class="block">
-                <span :class="labelClass">Peso por unidade (g)</span>
-                <input v-model="draft.unit_weight_g" :class="fieldClass" type="number" min="0" placeholder="Ex.: 150" />
-              </label>
-              <label class="block">
-                <span :class="labelClass">Validade (dias)</span>
-                <input v-model="draft.shelf_life_days" :class="fieldClass" type="number" min="0" placeholder="Vazio = não perece" />
-              </label>
+              <NuxtFormField label="Peso por unidade (g)">
+                <NuxtInput v-model.number="draft.unit_weight_g" type="number" :min="0" placeholder="Ex.: 150" />
+              </NuxtFormField>
+              <NuxtFormField label="Validade (dias)">
+                <NuxtInput v-model.number="draft.shelf_life_days" type="number" :min="0" placeholder="Vazio = não perece" />
+              </NuxtFormField>
             </div>
 
-            <label class="block">
-              <span :class="labelClass">Política de disponibilidade</span>
-              <UiNativeSelect v-model="draft.availability_policy" class="w-full">
-                <option v-for="p in POLICIES" :key="p.value" :value="p.value">{{ p.label }}</option>
-              </UiNativeSelect>
-            </label>
+            <NuxtFormField label="Política de disponibilidade">
+              <NuxtSelect :model-value="availabilityPolicyValue" :items="[...POLICIES]" @update:model-value="setAvailabilityPolicy" />
+            </NuxtFormField>
 
-            <label class="block">
-              <span :class="labelClass">Dica de conservação</span>
-              <input v-model="draft.storage_tip" :class="fieldClass" type="text" maxlength="300" placeholder="Ex.: guarde em saco de pano por até 2 dias" />
-            </label>
+            <NuxtFormField label="Dica de conservação">
+              <NuxtInput v-model="draft.storage_tip" type="text" maxlength="300" placeholder="Ex.: guarde em saco de pano por até 2 dias" />
+            </NuxtFormField>
 
-            <label class="block">
-              <span :class="labelClass">Ciclo de produção (horas)</span>
-              <input v-model="draft.production_cycle_hours" :class="fieldClass" type="number" min="0" placeholder="Ex.: 4" />
-            </label>
+            <NuxtFormField label="Ciclo de produção (horas)">
+              <NuxtInput v-model.number="draft.production_cycle_hours" type="number" :min="0" placeholder="Ex.: 4" />
+            </NuxtFormField>
 
-            <UiCheckbox v-model="draft.is_batch_produced" label="Produzido em lote" />
+            <NuxtCheckbox v-model="draft.is_batch_produced" label="Produzido em lote" />
 
-            <UiCheckbox v-model="draft.allows_next_day_sale" label="Pode ser vendido no dia seguinte" />
+            <NuxtCheckbox v-model="draft.allows_next_day_sale" label="Pode ser vendido no dia seguinte" />
 
             <!-- Permitir compra: o cadastro de compra do MESMO SKU (mesmo estoque).
                  Vale na hora, fora do "Salvar" — é interruptor, não rascunho. -->
-            <div class="space-y-2 rounded-lg border border-border p-3" data-testid="purchase-toggle">
+            <NuxtCard data-testid="purchase-toggle">
               <p :class="sectionClass">Compra</p>
               <div v-if="roleBadges.length" class="flex flex-wrap gap-1">
-                <span v-for="badge in roleBadges" :key="badge" class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{{ badge }}</span>
+                <NuxtBadge v-for="badge in roleBadges" :key="badge" color="neutral" variant="outline" :label="badge" />
               </div>
               <p v-if="roles?.produced && !roles?.purchasable" class="text-xs text-muted-foreground">
                 É produzido aqui: o estoque entra pela Produção, não pela compra.
               </p>
-              <UiCheckbox
+              <NuxtCheckbox
                 v-else
                 :model-value="Boolean(roles?.purchasable)"
                 :disabled="purchaseBusy || !roles"
                 label="Permitir compra"
-                @update:model-value="onPurchaseChange"
+                @update:model-value="(value) => onPurchaseChange(value === true)"
               />
               <p v-if="roles?.purchasable" class="text-xs text-muted-foreground">
                 Aparece no Compras: recebe nota, tem custo, mínimo e pedido.
               </p>
-            </div>
+            </NuxtCard>
 
             <!-- Vocação: o que a presença do produto na cesta diz ao B.I. (consumo
                  aqui × levar). Não muda a venda, por isso fica discreta, aqui e não
                  na aba Geral. Entra no rascunho: grava no "Salvar". -->
-            <fieldset class="space-y-1.5" data-testid="vocation">
-              <legend class="flex w-full items-baseline justify-between gap-2">
-                <span :class="labelClass">Vocação</span>
-                <span class="text-xs text-muted-foreground">só para o B.I.</span>
-              </legend>
-              <UiRadioGroup v-if="vocationChoices.length" v-model="draft.vocation" label="Vocação" class="grid-cols-2 gap-x-3 gap-y-0 sm:grid-cols-3">
-                <UiRadio
-                  v-for="option in vocationChoices" :key="option.value"
-                  :value="option.value" :label="option.label" :title="option.hint || undefined" variant="inline"
-                />
-              </UiRadioGroup>
+            <NuxtFormField label="Vocação" hint="só para o B.I." data-testid="vocation">
+              <NuxtRadioGroup v-if="vocationChoices.length" v-model="draft.vocation" :items="vocationChoices.map((option) => ({ value: option.value, label: option.label, description: option.hint }))" variant="card" />
               <p v-else class="text-xs text-muted-foreground">Nenhuma vocação cadastrada. O cadastro fica no Admin.</p>
-              <button
+              <NuxtButton
                 v-if="draft.vocation" type="button"
-                class="min-h-control text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+               
                 @click="draft.vocation = ''"
               >
                 Deixar sem vocação
-              </button>
+              </NuxtButton>
               <p v-else-if="vocationChoices.length" class="text-xs text-muted-foreground">Sem vocação: o B.I. não classifica as vendas deste produto.</p>
-            </fieldset>
+            </NuxtFormField>
 
-            <div class="space-y-2 rounded-lg border border-border p-3">
+            <NuxtCard>
               <p :class="sectionClass">Visibilidade</p>
-              <UiCheckbox v-model="draft.is_published" label="Exibido no catálogo" />
-              <UiCheckbox v-model="draft.is_sellable" label="Disponível para venda" />
-            </div>
+              <NuxtCheckbox v-model="draft.is_published" label="Exibido no catálogo" />
+              <NuxtCheckbox v-model="draft.is_sellable" label="Disponível para venda" />
+            </NuxtCard>
           </div>
 
           <!-- Ingredientes e nutrição -->
@@ -831,113 +736,96 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               hint="Em ordem decrescente de peso, como manda a ANVISA."
               @accept="(text) => (draft.ingredients_text = text)"
             >
-              <textarea
-                v-model="draft.ingredients_text" rows="6" :class="areaClass"
+              <NuxtTextarea
+                v-model="draft.ingredients_text" :rows="6"
                 placeholder="Farinha de trigo, água, fermento natural, sal marinho."
-              ></textarea>
+              ></NuxtTextarea>
             </CatalogAiSuggest>
 
-            <div class="space-y-3 rounded-lg border border-border p-3">
+            <NuxtCard>
               <p :class="sectionClass">Rotulagem para compra remota</p>
-              <p
-                v-if="detail.dietary_from_recipe && (detail.allergens.length || detail.dietary_info.length)"
-                class="rounded-md bg-muted/60 px-2.5 py-2 text-xs text-muted-foreground"
-              >
-                Alérgenos e restrições vieram da receita. Ao editar aqui, o produto passa a
-                ignorar a receita e você fica responsável por manter estes campos.
-              </p>
+              <NuxtAlert
+                v-if="detail?.dietary_from_recipe && (detail.allergens.length || detail.dietary_info.length)"
+                color="neutral"
+                variant="subtle"
+                description="Alérgenos e restrições vieram da receita. Ao editar aqui, o produto passa a ignorar a receita e você fica responsável por manter estes campos."
+              />
 
-              <label class="block">
-                <span :class="labelClass">Alérgenos</span>
-                <input v-model="draft.allergensText" :class="fieldClass" type="text" placeholder="glúten, leite, gergelim" />
-                <span class="mt-1 block text-xs text-muted-foreground">Separe por vírgula.</span>
-              </label>
+              <NuxtFormField label="Alérgenos" description="Separe por vírgula.">
+                <NuxtInput v-model="draft.allergensText" type="text" placeholder="glúten, leite, gergelim" />
+              </NuxtFormField>
 
-              <label class="block">
-                <span :class="labelClass">Restrições atendidas</span>
-                <input v-model="draft.dietaryText" :class="fieldClass" type="text" placeholder="100% vegetal, sem lactose" />
-                <span class="mt-1 block text-xs text-muted-foreground">Separe por vírgula.</span>
-              </label>
+              <NuxtFormField label="Restrições atendidas" description="Separe por vírgula.">
+                <NuxtInput v-model="draft.dietaryText" type="text" placeholder="100% vegetal, sem lactose" />
+              </NuxtFormField>
 
               <div class="grid grid-cols-2 gap-3">
-                <label class="block">
-                  <span :class="labelClass">Serve</span>
-                  <input v-model="draft.serves" :class="fieldClass" type="text" placeholder="Ex.: 2 a 4 pessoas" />
-                </label>
-                <label class="block">
-                  <span :class="labelClass">Medidas aproximadas</span>
-                  <input v-model="draft.approx_dimensions" :class="fieldClass" type="text" placeholder="Ex.: aprox. 24 x 12 cm" />
-                </label>
+                <NuxtFormField label="Serve">
+                  <NuxtInput v-model="draft.serves" type="text" placeholder="Ex.: 2 a 4 pessoas" />
+                </NuxtFormField>
+                <NuxtFormField label="Medidas aproximadas">
+                  <NuxtInput v-model="draft.approx_dimensions" type="text" placeholder="Ex.: aprox. 24 x 12 cm" />
+                </NuxtFormField>
               </div>
-            </div>
+            </NuxtCard>
 
-            <div class="space-y-3 rounded-lg border border-border p-3">
+            <NuxtCard>
               <p :class="sectionClass">Tabela nutricional</p>
-              <p v-if="detail.nutrition_auto_filled" class="rounded-md bg-muted/60 px-2.5 py-2 text-xs text-muted-foreground">
-                Estes valores foram calculados a partir da receita. Ao editar, o cálculo
-                automático para de valer para este produto.
-              </p>
+              <NuxtAlert v-if="detail?.nutrition_auto_filled" color="neutral" variant="subtle" description="Estes valores foram calculados a partir da receita. Ao editar, o cálculo automático para de valer para este produto." />
 
               <div class="grid grid-cols-2 gap-3">
-                <label v-for="f in SERVING_FIELDS" :key="f.key" class="block">
-                  <span :class="labelClass">{{ f.label }}</span>
-                  <input v-model="draft.nutrition[f.key]" :class="fieldClass" type="number" min="0" :step="f.step" />
-                </label>
+                <NuxtFormField v-for="f in SERVING_FIELDS" :key="f.key" :label="f.label">
+                  <NuxtInput v-model.number="draft.nutrition[f.key]" type="number" :min="0" :step="f.step" />
+                </NuxtFormField>
               </div>
 
               <p class="pt-1 text-xs font-medium text-muted-foreground">Macronutrientes</p>
               <div class="grid grid-cols-2 gap-3">
-                <label v-for="f in MACRO_FIELDS" :key="f.key" class="block">
-                  <span :class="labelClass">{{ f.label }}</span>
-                  <input v-model="draft.nutrition[f.key]" :class="fieldClass" type="number" min="0" :step="f.step" />
-                </label>
+                <NuxtFormField v-for="f in MACRO_FIELDS" :key="f.key" :label="f.label">
+                  <NuxtInput v-model.number="draft.nutrition[f.key]" type="number" :min="0" :step="f.step" />
+                </NuxtFormField>
               </div>
 
               <p class="pt-1 text-xs font-medium text-muted-foreground">Micronutrientes</p>
               <div class="grid grid-cols-2 gap-3">
-                <label v-for="f in MICRO_FIELDS" :key="f.key" class="block">
-                  <span :class="labelClass">{{ f.label }}</span>
-                  <input v-model="draft.nutrition[f.key]" :class="fieldClass" type="number" min="0" :step="f.step" />
-                </label>
+                <NuxtFormField v-for="f in MICRO_FIELDS" :key="f.key" :label="f.label">
+                  <NuxtInput v-model.number="draft.nutrition[f.key]" type="number" :min="0" :step="f.step" />
+                </NuxtFormField>
               </div>
 
               <p class="text-xs text-muted-foreground">
                 Preencher qualquer nutriente exige informar a porção. Gorduras trans e saturadas
                 não podem passar das totais, nem açúcares dos carboidratos.
               </p>
-            </div>
+            </NuxtCard>
           </div>
 
           <!-- Redes sociais (PIM) -->
           <div v-show="tab === 'social'" class="space-y-4">
-            <p class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Atributos comerciais compartilhados pelos canais. As exigências variam por destino.
-            </p>
+            <NuxtAlert color="neutral" variant="subtle" description="Atributos comerciais compartilhados pelos canais. As exigências variam por destino." />
 
-            <label class="block">
-              <span :class="labelClass">Marca</span>
-              <input v-model="draft.social.brand" :class="fieldClass" type="text" placeholder="Ex.: Nelson Boulangerie" />
-            </label>
+            <NuxtFormField label="Marca">
+              <NuxtInput v-model="draft.social.brand" type="text" placeholder="Ex.: Nelson Boulangerie" />
+            </NuxtFormField>
 
             <div class="grid grid-cols-2 gap-3">
-              <label class="block">
-                <span :class="labelClass">GTIN / código de barras</span>
-                <input v-model="draft.social.gtin" :class="fieldClass" type="text" inputmode="numeric" placeholder="8, 12, 13 ou 14 dígitos" />
-              </label>
-              <label class="block">
-                <span :class="labelClass">Condição</span>
-                <UiNativeSelect v-model="draft.social.condition" class="w-full">
-                  <option v-for="c in CONDITIONS" :key="c.value" :value="c.value">{{ c.label }}</option>
-                </UiNativeSelect>
-              </label>
+              <NuxtFormField label="GTIN / código de barras">
+                <NuxtInput v-model="draft.social.gtin" type="text" inputmode="numeric" placeholder="8, 12, 13 ou 14 dígitos" />
+              </NuxtFormField>
+              <NuxtFormField label="Condição">
+                <NuxtSelect :model-value="conditionValue" :items="[...CONDITIONS]" @update:model-value="setCondition" />
+              </NuxtFormField>
             </div>
 
-            <div
+            <NuxtAlert
               v-if="gtinRejected"
-              class="space-y-2 rounded-lg border px-3 py-2 text-sm"
-              :class="gtinRejected.confirmed ? 'border-border bg-muted/40' : 'border-amber-500/40 bg-amber-500/10'"
+              :color="gtinRejected.confirmed ? 'neutral' : 'warning'"
+              variant="subtle"
+              icon="i-lucide-scan-barcode"
+              :title="gtinRejected.confirmed ? 'Produto mantido sem GTIN na nota' : 'GTIN recusado pela SEFAZ'"
               data-gtin-rejected
             >
+              <template #description><div class="space-y-2">
               <template v-if="gtinRejected.confirmed">
                 <p data-gtin-rejected-confirmed>
                   Sai sem GTIN na NFC-e. A SEFAZ recusou o código {{ gtinRejected.gtin }}, e {{ gtinRejected.confirmed_by || "o gestor" }} conferiu a embalagem.
@@ -958,36 +846,34 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
                 <p v-if="!gtinStillRejected" class="text-xs" data-gtin-rejected-corrected>
                   Ao salvar, o código novo volta a ir na nota.
                 </p>
-                <button
+                <NuxtButton
                   v-else
                   type="button"
-                  class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent disabled:opacity-50"
+                 
                   :disabled="!canKeepWithoutGtin"
                   data-gtin-keep-without
                   @click="keepWithoutGtin"
                 >
                   Manter sem GTIN na nota
-                </button>
+                </NuxtButton>
               </template>
-            </div>
+              </div></template>
+            </NuxtAlert>
 
-            <label class="block">
-              <span :class="labelClass">MPN (código do fabricante)</span>
-              <input v-model="draft.social.mpn" :class="fieldClass" type="text" placeholder="Opcional" />
-            </label>
+            <NuxtFormField label="MPN (código do fabricante)">
+              <NuxtInput v-model="draft.social.mpn" type="text" placeholder="Opcional" />
+            </NuxtFormField>
 
-            <label class="block">
-              <span :class="labelClass">Categoria Google</span>
-              <input
-                v-model="draft.social.google_product_category" :class="fieldClass" type="text"
+            <NuxtFormField label="Categoria Google">
+              <NuxtInput
+                v-model="draft.social.google_product_category" type="text"
                 placeholder="Ex.: Food, Beverages & Tobacco > Food Items > Bakery"
               />
-            </label>
+            </NuxtFormField>
 
-            <label class="block">
-              <span :class="labelClass">Categoria TikTok</span>
-              <input v-model="draft.social.tiktok_category_id" :class="fieldClass" type="text" placeholder="ID da categoria (opcional)" />
-            </label>
+            <NuxtFormField label="Categoria TikTok">
+              <NuxtInput v-model="draft.social.tiktok_category_id" type="text" placeholder="ID da categoria (opcional)" />
+            </NuxtFormField>
 
             <CatalogAiSuggest
               :sku="sku"
@@ -999,7 +885,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               hint="Separe por espaço ou vírgula. O &quot;#&quot; é opcional."
               @accept="(text) => (draft.social.hashtagsText = text)"
             >
-              <input v-model="draft.social.hashtagsText" :class="fieldClass" type="text" placeholder="pão artesanal caseiro" />
+              <NuxtInput v-model="draft.social.hashtagsText" type="text" placeholder="pão artesanal caseiro" />
             </CatalogAiSuggest>
 
             <CatalogAiSuggest
@@ -1011,98 +897,81 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
               :assist="assist"
               @accept="(text) => (draft.social.social_caption = text)"
             >
-              <textarea
-                v-model="draft.social.social_caption" rows="3" :class="areaClass"
+              <NuxtTextarea
+                v-model="draft.social.social_caption" :rows="3"
                 placeholder="Texto sugerido para posts e feeds."
-              ></textarea>
+              ></NuxtTextarea>
             </CatalogAiSuggest>
           </div>
 
           <!-- Fiscal (NFC-e) -->
           <div v-show="tab === 'fiscal'" class="space-y-4">
-            <p class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Usado na emissão da NFC-e. CFOP, CSOSN e PIS/COFINS vêm do perfil; aqui fica
-              só o que muda de produto para produto.
-            </p>
+            <NuxtAlert color="neutral" variant="subtle" description="Usado na emissão da NFC-e. CFOP, CSOSN e PIS/COFINS vêm do perfil; aqui fica só o que muda de produto para produto." />
 
-            <label class="block">
-              <span :class="labelClass">Perfil fiscal</span>
-              <UiNativeSelect v-model="draft.fiscal.profile" class="w-full">
-                <option v-for="p in fiscalProfiles" :key="p.key" :value="p.key">{{ p.name }}</option>
-              </UiNativeSelect>
-            </label>
+            <NuxtFormField label="Perfil fiscal">
+              <NuxtSelect v-model="draft.fiscal.profile" :items="fiscalProfiles.map((profile) => ({ value: profile.key, label: profile.name }))" />
+            </NuxtFormField>
 
             <div class="grid grid-cols-2 gap-3">
-              <label class="block">
-                <span :class="labelClass">NCM</span>
-                <input
-                  v-model="draft.fiscal.ncm" :class="fieldClass" type="text" inputmode="numeric"
+              <NuxtFormField label="NCM" :error="ncmInvalid ? 'NCM deve ter 8 dígitos.' : undefined">
+                <NuxtInput
+                  v-model="draft.fiscal.ncm" type="text" inputmode="numeric"
                   maxlength="8" placeholder="8 dígitos" :aria-invalid="ncmInvalid"
                 />
-                <span v-if="ncmInvalid" class="mt-1 block text-xs text-destructive">NCM deve ter 8 dígitos.</span>
-              </label>
-              <label class="block">
-                <span :class="labelClass">Unidade comercial</span>
-                <input v-model="draft.fiscal.unit" :class="fieldClass" type="text" maxlength="6" placeholder="UN" />
-              </label>
+              </NuxtFormField>
+              <NuxtFormField label="Unidade comercial">
+                <NuxtInput v-model="draft.fiscal.unit" type="text" maxlength="6" placeholder="UN" />
+              </NuxtFormField>
             </div>
 
-            <label class="block">
-              <span :class="labelClass">Origem da mercadoria</span>
-              <UiNativeSelect v-model="draft.fiscal.origin" class="w-full">
-                <option v-for="o in props.detail?.fiscal_origins ?? []" :key="o.key" :value="o.key">{{ o.name }}</option>
-              </UiNativeSelect>
-            </label>
+            <NuxtFormField label="Origem da mercadoria">
+              <NuxtSelect v-model="draft.fiscal.origin" :items="(props.detail?.fiscal_origins ?? []).map((origin) => ({ value: origin.key, label: origin.name }))" />
+            </NuxtFormField>
 
-            <label class="block">
-              <span :class="labelClass">CEST</span>
-              <input
-                v-model="draft.fiscal.cest" :class="fieldClass" type="text" inputmode="numeric"
+            <NuxtFormField
+              label="CEST"
+              :error="cestInvalid ? 'CEST deve ter 7 dígitos.' : undefined"
+              :description="cestRequired ? 'Obrigatório com substituição tributária.' : 'Identificação da mercadoria; a tributação vem do perfil fiscal.'"
+            >
+              <NuxtInput
+                v-model="draft.fiscal.cest" type="text" inputmode="numeric"
                 maxlength="7" placeholder="7 dígitos" :aria-invalid="cestInvalid"
               />
-              <span v-if="cestInvalid" class="mt-1 block text-xs text-destructive">CEST deve ter 7 dígitos.</span>
-              <span v-else-if="cestRequired" class="mt-1 block text-xs text-amber-600 dark:text-amber-400">
-                Obrigatório com substituição tributária.
-              </span>
-              <span v-else class="mt-1 block text-xs text-muted-foreground">
-                Identificação da mercadoria; a tributação vem do perfil fiscal.
-              </span>
-              <span
-                v-for="warning in props.detail?.fiscal_warnings ?? []" :key="warning"
-                class="mt-1 block text-xs text-amber-600 dark:text-amber-400"
-              >{{ warning }}</span>
-            </label>
+              <NuxtAlert v-for="warning in props.detail?.fiscal_warnings ?? []" :key="warning" color="warning" variant="subtle" :description="warning" />
+            </NuxtFormField>
           </div>
         </template>
       </div>
 
       <!-- Rodapé (v4): o que ainda está abaixo na Geral, Descartar e "N campo alterado · Salvar". -->
-      <div class="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
-        <button
+    </template>
+    <template #footer>
+        <NuxtButton
           v-if="tab === 'geral' && detail && !belowVisible"
           type="button"
-          class="mr-auto inline-flex min-h-control items-center gap-1 text-left op-micro text-muted-foreground transition hover:text-foreground"
+         
           data-panel-below
           @click="showBelow"
-        >Descrição e foto seguem abaixo <Icon name="lucide:chevron-down" class="size-4 shrink-0" /></button>
+        >Descrição e foto seguem abaixo <Icon name="lucide:chevron-down" class="size-4 shrink-0" /></NuxtButton>
         <span v-else class="mr-auto" />
-        <button
+        <NuxtButton
           type="button"
-          class="min-h-control rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          color="neutral"
+          variant="ghost"
           data-panel-discard
           @click="requestClose(false)"
-        >Descartar</button>
-        <button
+        >Descartar</NuxtButton>
+        <NuxtButton
           type="button"
           :disabled="!canSave"
-          class="inline-flex min-h-action items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          color="primary"
+          :loading="busy"
           data-panel-save
           @click="onSave"
         >
           <Icon v-if="busy" name="line-md:loading-loop" class="size-4" />
           <span data-panel-changes>{{ patchSize ? `${patchSize} ${patchSize === 1 ? "campo alterado" : "campos alterados"} · Salvar` : "Salvar" }}</span>
-        </button>
-      </div>
-    </UiSheetContent>
-  </UiSheet>
+        </NuxtButton>
+    </template>
+  </NuxtSlideover>
 </template>

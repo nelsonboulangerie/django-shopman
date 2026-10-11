@@ -40,18 +40,17 @@ async function storeSnapshot() {
   }))) return;
   if (await importSnapshot(rawJson.value)) { rawJson.value = ""; fileName.value = ""; dirty.value = false; }
 }
-async function selectSnapshot(event: Event) {
-  const element = event.target as HTMLSelectElement;
+async function selectSnapshot(value: string | number) {
   if (dirty.value && !(await confirmDiscard({
     title: "Trocar de inventário e descartar a seleção?",
     description: "Os vínculos que você marcou e ainda não confirmou se perdem.",
     confirmLabel: "Descartar e trocar",
     cancelLabel: "Continuar revisando",
   }))) {
-    element.value = String(board.value?.selected_snapshot?.id ?? ""); return;
+    return;
   }
   dirty.value = false;
-  selected.value = element.value;
+  selected.value = String(value);
 }
 onBeforeRouteLeave(() => !(dirty.value || rawJson.value) || confirmDiscard({
   title: "Sair sem concluir a revisão de vínculos?",
@@ -66,55 +65,59 @@ useHead({ title: "Revisão de vínculos" });
   <main class="flex min-w-0 flex-1 flex-col">
     <OperatorPageHeader :title="`${board?.channel_name || channel} · Revisão de vínculos`">
       <template #lead>
-        <NuxtLink
-          to="/feeds"
-          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
-        >
-          <Icon name="lucide:chevron-left" class="size-5 md:size-4" />
-          <span class="max-md:sr-only">Canais</span>
-        </NuxtLink>
+        <NuxtButton to="/feeds" icon="i-lucide-chevron-left" color="neutral" variant="ghost" square aria-label="Voltar para Canais" />
         <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
       </template>
       <template #actions>
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar revisão" :spinning="pending" @click="refresh()" />
+        <NuxtButton icon="i-lucide-refresh-cw" label="Atualizar revisão" :loading="pending" @click="refresh()" />
       </template>
     </OperatorPageHeader>
     <div class="min-w-0 flex-1 space-y-4 p-4">
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" :realtime="realtime" />
     <p class="max-w-4xl text-sm text-muted-foreground">Confira a identidade dos anúncios antes de associá-los ao cadastro. Os dados locais ainda precisam de revisão. Este fluxo não envia alterações à plataforma.</p>
-    <p v-if="message" role="status" class="rounded-lg border p-3 text-sm">{{ message }}</p>
-    <div v-if="error" role="alert" class="rounded-lg border border-destructive p-3 text-sm">
-      Não foi possível atualizar a revisão. {{ board ? "Exibindo a última leitura disponível; a gravação está bloqueada." : "Tente novamente para consultar os inventários." }}
-      <button class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
-    </div>
-    <p v-if="pending && !board" class="text-sm text-muted-foreground">Carregando inventários…</p>
+    <NuxtAlert v-if="message" color="info" variant="subtle" icon="i-lucide-info" :description="message" />
+    <NuxtAlert v-if="error" color="error" variant="subtle" icon="i-lucide-triangle-alert" title="Não foi possível atualizar a revisão" :description="board ? 'Exibindo a última leitura disponível; a gravação está bloqueada.' : 'Tente novamente para consultar os inventários.'" :actions="[{ label: 'Tentar de novo', color: 'error', variant: 'outline', onClick: () => refresh() }]" />
+    <NuxtSkeleton v-if="pending && !board" aria-label="Carregando inventários" />
     <template v-if="board">
-      <details class="rounded-xl border bg-card p-4">
-        <summary class="min-h-11 cursor-pointer py-2 text-sm font-medium">Carregar inventário para revisão</summary>
+      <NuxtCollapsible>
+        <NuxtButton icon="i-lucide-upload" label="Carregar inventário para revisão" color="neutral" variant="outline" />
+        <template #content>
+        <NuxtCard class="mt-2">
         <div class="max-w-2xl space-y-3 pt-2">
           <p class="text-sm text-muted-foreground">Selecione a captura completa gerada pelo coletor iFood. O arquivo será guardado no sistema; nenhum produto será alterado ou vinculado automaticamente.</p>
-          <label class="block text-sm"><span class="mb-1 block">Arquivo JSON da captura</span><input type="file" accept=".json,application/json" :disabled="busy || reading || Boolean(error)" class="min-h-11 max-w-full" @change="readFile" /></label>
+          <NuxtFormField label="Arquivo JSON da captura">
+            <NuxtInput type="file" accept=".json,application/json" :disabled="busy || reading || Boolean(error)" @change="readFile" />
+          </NuxtFormField>
           <p v-if="fileName" class="break-all text-sm">{{ fileName }}</p>
-          <p v-if="fileError" role="alert" class="text-sm text-destructive">{{ fileError }}</p>
-          <button class="min-h-11 rounded-md border px-3 text-sm font-medium disabled:opacity-50" :disabled="!rawJson || busy || reading || Boolean(error) || !board.import_action?.enabled" @click="storeSnapshot">Guardar inventário para revisão</button>
+          <NuxtAlert v-if="fileError" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="fileError" />
+          <NuxtButton label="Guardar inventário para revisão" :disabled="!rawJson || busy || reading || Boolean(error) || !board.import_action?.enabled" @click="storeSnapshot" />
         </div>
-      </details>
-      <p v-if="!board.snapshots.length && !error" class="rounded-lg border border-dashed p-5 text-sm">Nenhum inventário guardado para este canal. Carregue uma captura para começar a revisão.</p>
-      <label v-if="board.snapshots.length" class="block max-w-xl text-sm">
-        <span class="mb-1 block font-medium">Inventário em revisão</span>
-        <select :value="board.selected_snapshot?.id || ''" :disabled="busy || Boolean(error)" class="min-h-11 w-full rounded-md border bg-background px-2" @change="selectSnapshot">
-          <option v-for="snapshot in board.snapshots" :key="snapshot.id" :value="snapshot.id">Captura #{{ snapshot.id }} · {{ snapshot.captured_at }} · {{ snapshot.context }} · {{ snapshot.item_count }} anúncios</option>
-        </select>
-      </label>
-      <details v-if="board.selected_snapshot" class="rounded-lg border p-3 text-sm">
-        <summary class="min-h-11 cursor-pointer py-2">Origem e identificação da captura</summary>
+        </NuxtCard>
+        </template>
+      </NuxtCollapsible>
+      <NuxtEmpty v-if="!board.snapshots.length && !error" icon="i-lucide-package-search" title="Nenhum inventário guardado" description="Carregue uma captura para começar a revisão." />
+      <NuxtFormField v-if="board.snapshots.length" label="Inventário em revisão">
+        <NuxtSelect
+          :model-value="board.selected_snapshot?.id"
+          :items="board.snapshots.map((snapshot) => ({ value: snapshot.id, label: `Captura #${snapshot.id} · ${snapshot.captured_at} · ${snapshot.context} · ${snapshot.item_count} anúncios` }))"
+          :disabled="busy || Boolean(error)"
+          class="w-full"
+          @update:model-value="(value) => selectSnapshot(Number(value))"
+        />
+      </NuxtFormField>
+      <NuxtCollapsible v-if="board.selected_snapshot">
+        <NuxtButton icon="i-lucide-info" label="Origem e identificação da captura" color="neutral" variant="ghost" />
+        <template #content>
+        <NuxtCard class="mt-2">
         <dl class="space-y-1 break-all text-xs text-muted-foreground">
           <dt>Loja externa declarada</dt><dd>{{ board.selected_snapshot.account_ref }}</dd>
           <dt>Catálogo e contexto</dt><dd>{{ board.selected_snapshot.catalog_ref }} · {{ board.selected_snapshot.context }}</dd>
           <dt>Identificação única do arquivo</dt><dd>{{ board.selected_snapshot.sha256 }}</dd>
         </dl>
         <p class="mt-3 text-xs text-muted-foreground">{{ board.notice }}</p>
-      </details>
+        </NuxtCard>
+        </template>
+      </NuxtCollapsible>
       <CatalogBindingReview v-if="board.selected_snapshot" :key="board.selected_snapshot.id" :board="board" :busy="busy" :stale="stale" :confirm="bind" @dirty-change="dirty = $event" />
     </template>
     </div>

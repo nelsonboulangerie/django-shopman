@@ -15,8 +15,8 @@ const filtered = computed(() => {
     .some((value) => value?.toLocaleLowerCase().includes(query)));
 });
 watch(drafts, (value) => emit("dirty-change", Object.keys(value).length > 0), { deep: true });
-function choose(item: CatalogReviewItem, event: Event) {
-  drafts.value[item.item_id] = { sku: (event.target as HTMLSelectElement).value, revision: item.base_revision, reviewing: false };
+function choose(item: CatalogReviewItem, sku: string | number) {
+  drafts.value[item.item_id] = { sku: String(sku), revision: item.base_revision, reviewing: false };
 }
 const changed = (item: CatalogReviewItem) => !!drafts.value[item.item_id] && drafts.value[item.item_id]!.revision !== item.base_revision;
 const statusLabel = (status: string) => ({ AVAILABLE: "Disponível", UNAVAILABLE: "Indisponível" } as Record<string, string>)[status] || status || "Disponibilidade não informada";
@@ -36,13 +36,12 @@ function acceptCurrent(item: CatalogReviewItem) {
 
 <template>
   <section class="space-y-4" aria-label="Revisão de vínculos">
-    <label class="block max-w-lg text-sm">
-      <span class="mb-1 block font-medium">Buscar anúncio, código ou SKU</span>
-      <input v-model="search" type="search" class="min-h-11 w-full rounded-md border bg-background px-3" />
-    </label>
+    <NuxtFormField label="Buscar anúncio, código ou SKU">
+      <NuxtInput v-model="search" type="search" />
+    </NuxtFormField>
     <p class="text-sm text-muted-foreground">{{ board.items.length }} anúncios · {{ board.items.filter(item => item.needs_review).length }} pendentes de revisão</p>
-    <p v-if="!filtered.length" class="rounded-lg border p-4 text-sm">Nenhum anúncio neste recorte. Isso não comprova que a loja na plataforma esteja vazia.</p>
-    <article v-for="item in filtered" :key="item.item_id" class="space-y-3 rounded-xl border bg-card p-4" :aria-label="item.name || item.item_id">
+    <NuxtEmpty v-if="!filtered.length" icon="i-lucide-package-search" title="Nenhum anúncio neste recorte" description="Isso não comprova que a loja na plataforma esteja vazia." />
+    <NuxtCard v-for="item in filtered" :key="item.item_id" as="article" :aria-label="item.name || item.item_id">
       <div class="grid gap-4 md:grid-cols-2">
         <div class="min-w-0 space-y-2">
           <p class="text-xs font-medium text-muted-foreground">Anúncio na captura externa</p>
@@ -53,10 +52,12 @@ function acceptCurrent(item: CatalogReviewItem) {
           <p class="text-sm">Preço observado (R$): {{ item.price || "Não informado" }} · {{ statusLabel(item.status) }}</p>
           <p v-if="item.image_path" class="break-all text-xs text-muted-foreground">Imagem preservada: {{ item.image_path }}</p>
           <p v-else class="text-xs text-muted-foreground">Imagem não informada na captura.</p>
-          <details class="text-xs text-muted-foreground">
-            <summary class="min-h-11 cursor-pointer py-3">Identificação do anúncio</summary>
+          <NuxtCollapsible>
+            <NuxtButton label="Identificação do anúncio" icon="i-lucide-info" color="neutral" variant="ghost" />
+            <template #content>
             <dl class="space-y-1 break-all"><dt>Item</dt><dd>{{ item.item_id }}</dd><dt>Produto externo</dt><dd>{{ item.product_ref }}</dd><dt>Categoria externa</dt><dd>{{ item.category_ref }}</dd><dt>Item no contexto</dt><dd>{{ item.item_context_ref || "Não informado" }}</dd></dl>
-          </details>
+            </template>
+          </NuxtCollapsible>
         </div>
         <div class="min-w-0 space-y-3">
           <p class="text-xs font-medium text-muted-foreground">Associação no nosso cadastro</p>
@@ -65,26 +66,20 @@ function acceptCurrent(item: CatalogReviewItem) {
           <p v-if="item.binding && item.needs_review" class="text-sm text-muted-foreground">Vínculo confirmado em outra captura. Revise esta evidência antes de confirmar novamente.</p>
           <p class="text-sm text-muted-foreground">{{ item.notice }}</p>
           <p v-if="item.candidates.length" class="text-sm">Sugestões por código: {{ item.candidates.map(candidate => `${candidate.name} (${candidate.sku})`).join(", ") }}. Escolha explicitamente abaixo.</p>
-          <label class="block text-sm">
-            <span class="mb-1 block font-medium">Produto local para vincular</span>
-            <select :value="drafts[item.item_id]?.sku || ''" :disabled="busy || stale || !item.can_bind" class="min-h-11 w-full rounded-md border bg-background px-2" @change="choose(item, $event)">
-              <option value="">Selecione um produto</option>
-              <option v-for="product in board.products" :key="product.sku" :value="product.sku">{{ product.name }} ({{ product.sku }})</option>
-            </select>
-          </label>
-          <p v-if="!item.can_bind" class="text-sm text-destructive">{{ item.blocked_reason }}</p>
-          <div v-if="changed(item)" role="alert" class="rounded-md border p-3 text-sm">
-            O vínculo mudou desde sua seleção. Confira a associação atual antes de continuar.
-            <button class="mt-2 block min-h-11 underline" :disabled="busy || stale" @click="acceptCurrent(item)">Revisar com os dados atuais</button>
-          </div>
-          <button v-if="drafts[item.item_id]?.sku && !drafts[item.item_id]?.reviewing" class="min-h-11 rounded-md border px-3 text-sm font-medium" :disabled="busy || stale || changed(item) || !item.can_bind" @click="drafts[item.item_id]!.reviewing = true">Revisar vínculo</button>
-          <div v-if="drafts[item.item_id]?.reviewing" class="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm">
-            <p>Associar <strong>{{ item.name || item.item_id }}</strong> a <strong>{{ nameFor(drafts[item.item_id]!.sku) }}</strong> ({{ drafts[item.item_id]!.sku }}).</p>
-            <p>Confirma apenas a identidade. Não copia fotos, preços ou descrições e não envia alterações à plataforma.</p>
-            <button class="min-h-11 rounded-md bg-primary px-3 font-medium text-primary-foreground disabled:opacity-50" :disabled="busy || stale || changed(item) || !item.can_bind" @click="save(item)">Confirmar vínculo local</button>
-          </div>
+          <NuxtFormField label="Produto local para vincular">
+            <NuxtSelect
+              :model-value="drafts[item.item_id]?.sku || ''"
+              :items="[{ label: 'Selecione um produto', value: '' }, ...board.products.map((product) => ({ label: `${product.name} (${product.sku})`, value: product.sku }))]"
+              :disabled="busy || stale || !item.can_bind"
+              @update:model-value="choose(item, $event)"
+            />
+          </NuxtFormField>
+          <NuxtAlert v-if="!item.can_bind" color="error" variant="subtle" icon="i-lucide-lock" :description="item.blocked_reason" />
+          <NuxtAlert v-if="changed(item)" color="warning" variant="subtle" title="O vínculo mudou desde sua seleção" description="Confira a associação atual antes de continuar." :actions="[{ label: 'Revisar com os dados atuais', color: 'warning', variant: 'outline', disabled: busy || stale, onClick: () => acceptCurrent(item) }]" />
+          <NuxtButton v-if="drafts[item.item_id]?.sku && !drafts[item.item_id]?.reviewing" label="Revisar vínculo" :disabled="busy || stale || changed(item) || !item.can_bind" @click="drafts[item.item_id]!.reviewing = true" />
+          <NuxtAlert v-if="drafts[item.item_id]?.reviewing" color="info" variant="subtle" title="Confirmar vínculo local" :description="`Associar ${item.name || item.item_id} a ${nameFor(drafts[item.item_id]!.sku)} (${drafts[item.item_id]!.sku}). Confirma apenas a identidade. Não copia fotos, preços ou descrições e não envia alterações à plataforma.`" :actions="[{ label: 'Confirmar vínculo local', disabled: busy || stale || changed(item) || !item.can_bind, onClick: () => save(item) }]" />
         </div>
       </div>
-    </article>
+    </NuxtCard>
   </section>
 </template>

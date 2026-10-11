@@ -37,88 +37,72 @@ const notFound = computed(() => httpError(error.value).status === 404);
   <main class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader :title="customer?.name || 'Cliente'">
       <template #lead>
-        <NuxtLink
-          to="/customers"
-          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          @click.prevent="router.back()"
-        >
-          <Icon name="lucide:chevron-left" class="size-5 md:size-4" />
-          <span class="max-md:sr-only">Clientes</span>
-        </NuxtLink>
+        <NuxtButton to="/customers" icon="i-lucide-chevron-left" color="neutral" variant="ghost" square aria-label="Voltar para Clientes" @click.prevent="router.back()" />
         <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
       </template>
       <template #actions>
-        <a
+        <NuxtButton
           v-if="adminUrl && customer"
-          :href="adminUrl"
+          :to="adminUrl"
           target="_blank"
-          rel="noopener"
-          class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          icon="i-lucide-pencil"
+          trailing-icon="i-lucide-external-link"
+          label="Editar no Admin"
+          color="neutral"
+          variant="outline"
           title="Editar este cadastro (abre o Admin)"
-        >
-          <Icon name="lucide:pencil" class="size-4" />
-          <span class="hidden sm:inline">Editar no Admin</span>
-          <Icon name="lucide:external-link" class="size-3.5 opacity-60" />
-        </a>
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+        />
+        <NuxtButton icon="i-lucide-refresh-cw" label="Atualizar" :loading="pending" @click="refresh()" />
       </template>
     </OperatorPageHeader>
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
 
     <section class="min-h-0 flex-1 overflow-auto p-4">
-      <div v-if="notFound" class="rounded-lg border border-dashed p-6 text-center text-sm">
-        Este cadastro não existe.
-        <NuxtLink to="/customers" class="ml-1 underline">Voltar para Clientes</NuxtLink>
-      </div>
-      <div v-else-if="error" role="alert" class="mb-3 rounded-md border border-destructive p-3 text-sm">
-        {{ httpErrorMessage(error, "Não foi possível carregar a ficha.") }}
-        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
-      </div>
+      <NuxtEmpty v-if="notFound" icon="i-lucide-user-x" title="Este cadastro não existe" :actions="[{ label: 'Voltar para Clientes', to: '/customers' }]" />
+      <NuxtAlert v-else-if="error" color="error" variant="subtle" icon="i-lucide-triangle-alert" title="Não foi possível carregar a ficha" :description="httpErrorMessage(error, 'Não foi possível carregar a ficha.')" :actions="[{ label: 'Tentar de novo', color: 'error', variant: 'outline', onClick: () => refresh() }]" />
 
       <div v-if="pending && !customer" class="space-y-3">
-        <UiSkeleton
+        <NuxtSkeleton
           v-for="i in 3"
           :key="i"
-          class="h-28 rounded-lg border"
+         
           label="Carregando cliente"
         />
       </div>
 
       <div v-else-if="customer" class="mx-auto grid max-w-5xl gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <!-- Absorvido: a ficha diz para onde foi, e não oferece nada além disso. -->
-        <div
+        <NuxtAlert
           v-if="!customer.is_active"
-          class="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100 lg:col-span-2"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-merge"
+          title="Cadastro unificado ou desativado"
+          :description="customer.merged_into_ref ? `Este cadastro foi unificado a ${customer.merged_into_ref}. Os pedidos e contatos dele estão lá.` : 'Este cadastro está desativado.'"
+          :actions="customer.merged_into_ref ? [{ label: `Abrir ${customer.merged_into_ref}`, to: `/customers/${encodeURIComponent(customer.merged_into_ref)}` }] : []"
           data-customer-absorbed
-        >
-          <template v-if="customer.merged_into_ref">
-            Este cadastro foi unificado a
-            <NuxtLink :to="`/customers/${encodeURIComponent(customer.merged_into_ref)}`" class="font-medium underline">{{ customer.merged_into_ref }}</NuxtLink>.
-            Os pedidos e contatos dele estão lá.
-          </template>
-          <template v-else>Este cadastro está desativado.</template>
-        </div>
+        />
 
-        <article class="rounded-lg border bg-card p-4 lg:col-span-2" data-customer-header>
+        <NuxtCard as="article" class="lg:col-span-2" data-customer-header>
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0">
               <p class="text-lg font-semibold">{{ customer.name }}</p>
               <p class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span class="font-mono">{{ customer.ref }}</span>
-                <span v-if="customer.source_label" class="rounded bg-muted px-1.5 py-0.5">{{ customer.source_label }}</span>
+                <NuxtBadge v-if="customer.source_label" color="neutral" variant="subtle" :label="customer.source_label" />
                 <span v-if="customer.created_display">Cadastrado em {{ customer.created_display }}</span>
               </p>
             </div>
-            <button
+            <NuxtButton
               v-if="canMerge"
               type="button"
-              class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition hover:bg-accent"
+             
               data-customer-merge-any
               @click="compare(null)"
             >
               <Icon name="lucide:merge" class="size-4" />
               Unificar com outro cadastro…
-            </button>
+            </NuxtButton>
           </div>
           <dl class="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
             <div class="flex gap-2"><dt class="text-muted-foreground">Telefone</dt><dd>{{ customer.phone_display || "Sem telefone" }}</dd></div>
@@ -126,11 +110,11 @@ const notFound = computed(() => httpError(error.value).status === 404);
             <div class="flex gap-2"><dt class="text-muted-foreground">CPF</dt><dd>{{ customer.document_display || "Sem CPF" }}</dd></div>
             <div v-if="customer.birthday_display" class="flex gap-2"><dt class="text-muted-foreground">Aniversário</dt><dd>{{ customer.birthday_display }}</dd></div>
           </dl>
-          <p v-if="customer.notes" class="mt-3 whitespace-pre-line rounded bg-muted/50 p-2 text-sm">{{ customer.notes }}</p>
-        </article>
+          <NuxtAlert v-if="customer.notes" color="neutral" variant="subtle" title="Observação" :description="customer.notes" />
+        </NuxtCard>
 
         <!-- Quem pode ser a mesma pessoa -->
-        <article v-if="customer.candidates.length" class="rounded-lg border border-amber-300 bg-card p-4 lg:col-span-2 dark:border-amber-500/40" data-customer-candidates>
+        <NuxtCard v-if="customer.candidates.length" as="article" class="lg:col-span-2" data-customer-candidates>
           <h2 class="text-sm font-semibold">Pode ser a mesma pessoa</h2>
           <p class="text-xs text-muted-foreground">Sugestão da tela, com o motivo em cada linha. Confira antes de unificar.</p>
           <ul class="mt-2 divide-y">
@@ -139,25 +123,25 @@ const notFound = computed(() => httpError(error.value).status === 404);
                 <NuxtLink :to="`/customers/${encodeURIComponent(candidate.ref)}`" class="font-medium hover:underline">{{ candidate.name }}</NuxtLink>
                 <span class="ml-2 font-mono text-xs text-muted-foreground">{{ candidate.ref }}</span>
                 <p class="text-xs text-muted-foreground">
-                  <span class="font-medium text-amber-800 dark:text-amber-200">{{ candidate.reason_label }}</span>
+                  <NuxtBadge color="warning" variant="subtle" :label="candidate.reason_label" />
                   · {{ candidate.phone_display || "sem telefone" }}
                   <template v-if="candidate.source_label"> · {{ candidate.source_label }}</template>
                   · {{ candidate.orders_label }}
                 </p>
               </div>
-              <button
+              <NuxtButton
                 type="button"
-                class="min-h-control rounded-md border px-3 text-sm font-medium transition hover:bg-accent"
+               
                 :data-customer-compare="candidate.ref"
                 @click="compare(candidate)"
               >
                 Comparar
-              </button>
+              </NuxtButton>
             </li>
           </ul>
-        </article>
+        </NuxtCard>
 
-        <article class="rounded-lg border bg-card p-4">
+        <NuxtCard as="article">
           <h2 class="text-sm font-semibold">Pedidos</h2>
           <p class="text-sm">
             {{ customer.orders_label }}<template v-if="customer.total_spent_display"> · {{ customer.total_spent_display }} no total</template>
@@ -171,9 +155,9 @@ const notFound = computed(() => httpError(error.value).status === 404);
               </NuxtLink>
             </li>
           </ul>
-        </article>
+        </NuxtCard>
 
-        <article class="rounded-lg border bg-card p-4">
+        <NuxtCard as="article">
           <h2 class="text-sm font-semibold">Identificadores</h2>
           <p class="text-xs text-muted-foreground">As chaves pelas quais os canais reconhecem esta pessoa.</p>
           <ul v-if="customer.identifiers.length" class="mt-2 space-y-1 text-sm">
@@ -188,7 +172,7 @@ const notFound = computed(() => httpError(error.value).status === 404);
             <li v-for="address in customer.addresses" :key="address">{{ address }}</li>
           </ul>
           <p v-else class="mt-1 text-sm text-muted-foreground">Nenhum endereço salvo.</p>
-        </article>
+        </NuxtCard>
       </div>
     </section>
 

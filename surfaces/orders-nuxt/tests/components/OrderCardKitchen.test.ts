@@ -134,7 +134,7 @@ describe("OrderCard: a Cozinha no cartão", () => {
 
   it("posto de saída: alvos de 48 px", () => {
     const wrapper = mountCard(card({ kitchen: kitchen([station({ station_ref: "lanches", station_name: "Lanches", prints: true, can_mark_ready: true })], "Falta Lanches") }), { touch: true });
-    expect(wrapper.get("[data-kitchen-ready]").classes()).toContain("min-h-action");
+    expect(wrapper.get("[data-kitchen-ready]").attributes("size")).toBe("xl");
     expect(wrapper.get("[data-link]").classes()).toContain("min-h-action");
   });
 

@@ -32,20 +32,15 @@ const scope = computed(() => {
 </script>
 
 <template>
-  <div
+  <NuxtAlert
     v-if="push.supported.value && !push.active.value && push.permission.value !== 'denied'"
     data-operator-push-invite
-    class="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 max-w-xs rounded-xl border bg-card p-3 shadow-lg"
+    class="fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-40 max-w-xs"
+    color="info"
+    icon="i-lucide-bell-ring"
+    title="Avisos mesmo com o app fechado"
+    :description="`Ative neste dispositivo para receber só os avisos ${scope}.`"
   >
-    <p class="text-sm font-semibold">Avisos mesmo com o app fechado</p>
-    <p class="mt-1 text-xs text-muted-foreground">Ative neste dispositivo para receber só os avisos {{ scope }}.</p>
-    <button
-      type="button"
-      class="mt-2 inline-flex h-11 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-60"
-      :disabled="push.loading.value"
-      @click="push.activate"
-    >
-      {{ push.loading.value ? 'Ativando…' : 'Ativar avisos' }}
-    </button>
-  </div>
+    <template #actions><NuxtButton :loading="push.loading.value" :label="push.loading.value ? 'Ativando…' : 'Ativar avisos'" @click="push.activate" /></template>
+  </NuxtAlert>
 </template>

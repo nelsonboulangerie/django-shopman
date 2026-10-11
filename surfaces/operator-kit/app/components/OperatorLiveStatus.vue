@@ -21,36 +21,29 @@ const props = withDefaults(defineProps<{
   detail?: string;
 }>(), { tone: "live", time: "", detail: "" });
 
-const dotClass = computed(() => {
+const badgeColor = computed(() => {
   switch (props.tone) {
-    case "calm": return "bg-muted-foreground shadow-[0_0_0_3px_color-mix(in_oklab,var(--muted-foreground)_18%,transparent)]";
-    case "late": return "bg-warning shadow-[0_0_0_3px_color-mix(in_oklab,var(--warning)_22%,transparent)]";
-    case "off": return "bg-destructive shadow-[0_0_0_3px_color-mix(in_oklab,var(--destructive)_22%,transparent)]";
-    default: return "";
+    case "late": return "warning" as const;
+    case "off": return "error" as const;
+    case "live": return "success" as const;
+    default: return "neutral" as const;
   }
 });
 const showLabel = computed(() => props.tone !== "live" || !props.time);
 const accessible = computed(() => [props.label, props.time && `última leitura ${props.time}`, props.detail].filter(Boolean).join(". "));
+const display = computed(() => [showLabel.value ? props.label : "", props.time].filter(Boolean).join(" · "));
 </script>
 
 <template>
-  <span
-    class="inline-flex shrink-0 items-center gap-1.5 op-micro tnum text-muted-foreground"
+  <NuxtBadge
+    :color="badgeColor"
+    variant="subtle"
+    icon="i-lucide-radio"
+    :label="display"
     role="status"
     :aria-label="accessible"
     :title="accessible"
     :data-live-tone="tone"
     data-operator-live-status
-  >
-    <span class="live-dot" :class="dotClass" aria-hidden="true" />
-    <span v-if="time" class="max-[379px]:hidden" aria-hidden="true">{{ time }}</span>
-    <span
-      v-if="showLabel"
-      aria-hidden="true"
-      :class="[
-        tone === 'late' ? 'font-semibold text-warning' : tone === 'off' ? 'font-semibold text-destructive' : '',
-        tone === 'calm' ? 'max-[379px]:hidden' : '',
-      ]"
-    >{{ label }}</span>
-  </span>
+  />
 </template>

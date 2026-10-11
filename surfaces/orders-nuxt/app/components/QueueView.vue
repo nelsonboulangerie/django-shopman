@@ -23,7 +23,6 @@ import {
   QUEUE_SORT_OPTIONS,
   queueGesture,
   queueItems,
-  queueToneClass,
   queueWho,
   restLine,
   type QueueItem,
@@ -88,6 +87,11 @@ function cardFor(ref: string): OrderCardProjection | undefined {
 function blockLabel(card: OrderCardProjection): string {
   return (card.advance_block_label || "Bloqueado").replace(/…$/, "");
 }
+function toneColor(tone: QueueItem["tone"]): "success" | "warning" | "error" {
+  if (tone === "late") return "error";
+  if (tone === "warning") return "warning";
+  return "success";
+}
 /** A tecla impressa no botão (desktop, `pointer: fine`): Enter no item em foco; A no
  *  pedido novo que a tecla aceita. A que não vale ali não se imprime (o R é "atualizar"). */
 function printedKey(item: QueueItem): string {
@@ -113,25 +117,24 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
         <span class="ml-auto hidden op-micro text-muted-foreground sm:inline" data-queue-sort-hint>{{ sortHint }}</span>
       </div>
 
-      <p v-if="!items.length" class="rounded-lg border border-dashed border-border p-6 text-center op-body text-muted-foreground" data-queue-empty>
-        {{ emptyText }}
-      </p>
+      <NuxtEmpty v-if="!items.length" icon="i-lucide-inbox" :description="emptyText" data-queue-empty />
 
-      <article
+      <NuxtCard
         v-for="item in shown"
         :key="item.card.ref"
-        class="queue-item grid items-center gap-x-[18px] gap-y-2 rounded-[10px] border bg-card px-4 py-3.5"
-        :class="item.card.ref === focusRef ? 'border-primary shadow-[0_0_0_1px_var(--primary)]' : 'border-border'"
+        as="article"
+        variant="outline"
         :data-queue-item="item.kind || 'moving'"
         :data-queue-ref="item.card.ref"
         :aria-current="item.card.ref === focusRef || undefined"
         @pointerdown="emit('focus', item.card.ref)"
       >
+        <div class="grid grid-cols-[80px_minmax(0,1fr)_184px] items-center gap-4 xl:grid-cols-[92px_minmax(0,1fr)_212px]">
         <!-- código, tempo na etapa e a meta -->
         <div class="min-w-0">
           <NuxtLink v-if="canOpen" :to="`/${item.card.ref}`" class="block op-figure leading-none hover:underline" :aria-label="`Abrir pedido ${item.card.ref}`">{{ splitRef(item.card.ref).code }}</NuxtLink>
           <p v-else class="op-figure leading-none">{{ splitRef(item.card.ref).code }}</p>
-          <p class="mt-1.5 op-title tnum" :class="queueToneClass(item.tone)" :data-queue-tone="item.tone" data-queue-time>{{ item.timeLabel }}</p>
+          <NuxtBadge :color="toneColor(item.tone)" variant="subtle" :label="item.timeLabel" :data-queue-tone="item.tone" data-queue-time />
           <p class="op-micro text-muted-foreground" data-queue-goal>{{ item.goalLabel }}</p>
         </div>
 
@@ -144,38 +147,39 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
           <p class="op-body text-foreground/85">{{ item.card.items_summary }}</p>
           <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <template v-if="undoLine(item.card, nowMs)?.kind === 'auto_ready'">
-              <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-muted px-2 text-xs font-semibold whitespace-nowrap text-muted-foreground" data-queue-auto>
-                <Icon name="lucide:sparkles" class="size-3.5" />{{ undoLine(item.card, nowMs)!.label }}<template v-if="undoLine(item.card, nowMs)!.canUndo"> ·
-                  <button type="button" class="font-semibold text-foreground underline underline-offset-[3px] disabled:opacity-60" :disabled="isBusy(item.card.ref)" @click="emit('action', item.card.ref, 'undo_ready')">desfazer</button></template>
-              </span>
+              <NuxtBadge color="neutral" variant="soft" icon="i-lucide-sparkles" :label="undoLine(item.card, nowMs)!.label" data-queue-auto />
+              <NuxtButton v-if="undoLine(item.card, nowMs)!.canUndo" label="Desfazer" color="neutral" variant="link" :disabled="isBusy(item.card.ref)" @click="emit('action', item.card.ref, 'undo_ready')" />
               <span class="op-micro text-muted-foreground">{{ undoLine(item.card, nowMs)!.canUndo ? undoLine(item.card, nowMs)!.detail : `Cozinha concluiu às ${clock(item.card.ready_at_iso)}` }}</span>
             </template>
             <template v-else-if="item.kind === 'confirm'">
-              <span class="pill-primary inline-flex h-6 items-center gap-1.5 rounded-full px-2 op-micro font-semibold"><span class="size-1.5 rounded-full bg-current" aria-hidden="true" />Novo</span>
+              <NuxtBadge color="primary" variant="soft" label="Novo" />
               <span v-if="item.card.confirmation_deadline_iso && confirmationRemainingLabel(item.card.confirmation_deadline_iso, nowMs)" class="op-micro text-muted-foreground" data-queue-deadline>
                 {{ item.card.confirmation_action === "cancel" ? "cancela sozinho em" : "aceita sozinho em" }}
                 <span class="font-semibold tnum text-foreground">{{ confirmationRemainingLabel(item.card.confirmation_deadline_iso, nowMs) }}</span>
               </span>
             </template>
             <template v-else-if="item.kind === 'blocked'">
-              <span class="pill-destructive inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2 op-micro font-semibold whitespace-nowrap" data-queue-block><Icon name="lucide:lock" class="size-3.5" />{{ blockLabel(item.card) }}</span>
+              <NuxtBadge color="error" variant="soft" icon="i-lucide-lock" :label="blockLabel(item.card)" data-queue-block />
               <span class="min-w-0 op-micro text-muted-foreground" data-queue-block-reason>{{ item.card.advance_block_reason }}</span>
             </template>
             <template v-else-if="item.kind === 'station' && readyStation(item.card)">
-              <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-secondary px-2 op-micro font-semibold"><Icon name="lucide:printer" class="size-3.5" />{{ readyStation(item.card)!.station_name }} no papel</span>
+              <NuxtBadge color="neutral" variant="soft" icon="i-lucide-printer" :label="`${readyStation(item.card)!.station_name} no papel`" />
               <span class="op-micro text-muted-foreground">{{ item.card.kitchen?.missing_label }}</span>
             </template>
             <template v-else-if="!item.kind">
-              <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-muted px-2 op-micro font-semibold text-muted-foreground" data-queue-moving><span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ item.card.status_label }}</span>
+              <NuxtBadge color="neutral" variant="soft" :label="item.card.status_label" data-queue-moving />
               <span class="op-micro text-muted-foreground">nada pede você agora</span>
             </template>
           </div>
-          <div v-if="actionError(item.card.ref)" class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive" role="alert">
-            <span class="min-w-0 flex-1">{{ actionError(item.card.ref) }}</span>
-            <button type="button" class="grid size-control shrink-0 place-items-center rounded hover:bg-destructive/20" aria-label="Dispensar aviso" @click="emit('dismiss-error', item.card.ref)">
-              <Icon name="lucide:x" class="size-3.5" />
-            </button>
-          </div>
+          <NuxtAlert
+            v-if="actionError(item.card.ref)"
+            color="error"
+            variant="soft"
+            icon="i-lucide-triangle-alert"
+            :title="actionError(item.card.ref)"
+            close
+            @update:open="emit('dismiss-error', item.card.ref)"
+          />
         </div>
 
         <!-- pagamento, total e o gesto -->
@@ -185,68 +189,66 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
             <span class="shrink-0 op-title tnum">{{ item.card.total_display }}</span>
           </div>
           <template v-if="item.kind === 'station' && readyStation(item.card)">
-            <button
-              type="button"
-              class="inline-flex h-action items-center justify-center gap-2 rounded-md bg-primary op-label font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+            <NuxtButton
+              icon="i-lucide-check"
+              color="primary"
+              size="xl"
+              block
               :disabled="isBusy(item.card.ref)"
               data-queue-primary
               @click="emit('station-ready', item.card, readyStation(item.card)!.station_ref)"
             >
-              <Icon name="lucide:check" class="size-4" />Pronto de {{ readyStation(item.card)!.station_name }}
-              <kbd v-if="item.card.ref === focusRef" class="ml-1 hidden font-mono op-micro opacity-70 pointer-fine:inline" data-queue-key>Enter</kbd>
-            </button>
+              Pronto de {{ readyStation(item.card)!.station_name }}
+              <NuxtKbd v-if="item.card.ref === focusRef" value="Enter" data-queue-key />
+            </NuxtButton>
           </template>
           <div v-else-if="queueGesture(item).primary" class="flex gap-1.5">
-            <button
+            <NuxtButton
               v-if="queueGesture(item).secondary"
-              type="button"
-              class="inline-flex h-action items-center rounded-md border border-border bg-card px-3 op-label font-semibold text-muted-foreground transition hover:bg-accent disabled:opacity-60"
+              :label="queueGesture(item).secondary!.label"
+              color="neutral"
+              variant="outline"
+              size="xl"
               :disabled="isBusy(item.card.ref) || queueGesture(item).secondary!.disabled"
               :title="queueGesture(item).secondary!.reason || undefined"
               data-queue-secondary
               @click="emit('action', item.card.ref, queueGesture(item).secondary!.ref)"
-            >{{ queueGesture(item).secondary!.label }}</button>
-            <button
-              type="button"
-              class="inline-flex h-action min-w-0 flex-1 items-center justify-center gap-2 rounded-md op-label font-semibold transition"
-              :class="queueGesture(item).primary!.disabled
-                ? 'cursor-default border-2 border-dashed border-border text-muted-foreground'
-                : 'bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] disabled:opacity-60'"
+            />
+            <NuxtButton
+              :icon="queueGesture(item).primary!.disabled ? 'i-lucide-lock' : item.kind === 'dispatch' ? 'i-lucide-bike' : item.kind === 'handoff' ? 'i-lucide-hand-platter' : queueGesture(item).primary!.icon.replace('lucide:', 'i-lucide-')"
+              :color="queueGesture(item).primary!.disabled ? 'neutral' : 'primary'"
+              :variant="queueGesture(item).primary!.disabled ? 'outline' : 'solid'"
+              size="xl"
+             
               :disabled="isBusy(item.card.ref) || queueGesture(item).primary!.disabled"
               :title="queueGesture(item).primary!.reason || (queueGesture(item).primary!.verb !== queueGesture(item).primary!.label ? queueGesture(item).primary!.label : undefined)"
               data-queue-primary
               @click="emit('action', item.card.ref, queueGesture(item).primary!.ref)"
             >
-              <Icon :name="queueGesture(item).primary!.disabled ? 'lucide:lock' : item.kind === 'dispatch' ? 'lucide:bike' : item.kind === 'handoff' ? 'lucide:hand-platter' : queueGesture(item).primary!.icon" class="size-4 shrink-0" />
               <span>{{ queueGesture(item).primary!.verb }}</span>
-              <kbd v-if="printedKey(item)" class="ml-1 hidden font-mono op-micro opacity-70 pointer-fine:inline" data-queue-key>{{ printedKey(item) }}</kbd>
-            </button>
+              <NuxtKbd v-if="printedKey(item)" :value="printedKey(item)" data-queue-key />
+            </NuxtButton>
           </div>
         </div>
-      </article>
+        </div>
+      </NuxtCard>
 
       <!-- o excedente vira número: nunca paginação. "Ver todos" abre o recorte Todos. -->
-      <button
+      <NuxtButton
         v-if="rest.count"
-        type="button"
-        class="mt-0.5 flex min-h-12 items-center gap-3 rounded-lg border border-dashed border-border px-4 py-2 text-left op-label transition hover:bg-accent"
+        color="neutral"
+        variant="outline"
+        trailing-icon="i-lucide-chevron-right"
+        :label="`+${rest.count} ${rest.text} · Ver todos`"
         data-queue-rest
         @click="emit('scope', 'all')"
-      >
-        <span class="op-title tnum">+{{ rest.count }}</span>
-        <span class="min-w-0 font-normal text-muted-foreground">{{ rest.text }}</span>
-        <span class="ml-auto inline-flex shrink-0 items-center gap-1 font-semibold">Ver todos<Icon name="lucide:chevron-right" class="size-4" /></span>
-      </button>
+      />
     </section>
 
     <!-- a coluna de consciência: o agregado, o que o sistema fez e os interruptores -->
     <aside class="flex min-w-0 flex-col gap-4" aria-label="Em andamento e o que o sistema fez">
-      <section>
-        <div class="mb-2.5 flex items-baseline gap-2 border-b border-border pb-2">
-          <h2 class="op-eyebrow">Em andamento</h2><span class="op-label tnum text-muted-foreground">{{ progressCount }}</span>
-        </div>
-        <div class="rounded-lg border border-border bg-card" data-queue-progress>
-          <div v-for="line in progress" :key="line.key" class="queue-row">
+      <NuxtCard title="Em andamento" :description="`${progressCount} pedidos`" data-queue-progress>
+          <div v-for="line in progress" :key="line.key" class="flex items-center gap-2 py-2">
             <Icon :name="line.icon" class="size-4 text-info" />
             <span class="flex-1 op-body">{{ line.label }}</span>
             <span
@@ -256,41 +258,29 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
             >{{ line.detail }}</span>
             <span class="w-6 text-right op-title tnum">{{ line.count }}</span>
           </div>
-        </div>
-      </section>
+      </NuxtCard>
 
-      <section>
-        <div class="mb-2.5 flex items-baseline gap-2 border-b border-border pb-2">
-          <Icon name="lucide:sparkles" class="size-3.5 self-center text-muted-foreground" />
-          <h2 class="op-eyebrow">O sistema fez</h2>
-          <span class="ml-auto op-micro text-muted-foreground">últimos {{ awareness?.system_window_minutes ?? 15 }} min</span>
-        </div>
-        <div class="rounded-lg border border-border bg-card" data-queue-system>
-          <p v-if="!systemActions.length" class="queue-row op-micro text-muted-foreground">Nada automático neste intervalo.</p>
-          <div v-for="line in systemActions" :key="`${line.order_ref}-${line.at_iso}`" class="queue-row">
+      <NuxtCard title="O sistema fez" :description="`Últimos ${awareness?.system_window_minutes ?? 15} min`" data-queue-system>
+          <NuxtEmpty v-if="!systemActions.length" icon="i-lucide-sparkles" description="Nada automático neste intervalo." />
+          <div v-for="line in systemActions" :key="`${line.order_ref}-${line.at_iso}`" class="flex items-center gap-2 py-2">
             <span class="w-11 op-label font-semibold tnum">{{ splitRef(line.order_ref).code }}</span>
             <span class="min-w-0 flex-1 op-body">{{ line.verb }} <span class="text-muted-foreground">· {{ line.reason }}</span></span>
-            <button
+            <NuxtButton
               v-if="systemUndoOpen(line) && cardFor(line.order_ref)"
-              type="button"
-              class="h-9 rounded-md px-3 op-label font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-60"
+              label="Desfazer"
+              color="neutral"
+              variant="ghost"
               :disabled="isBusy(line.order_ref)"
               data-queue-system-undo
               @click="emit('action', line.order_ref, 'undo_ready')"
-            >Desfazer</button>
+            />
             <span v-else class="pr-3 op-micro tnum text-muted-foreground">{{ line.at_display }}</span>
           </div>
-        </div>
-        <p class="mt-2 op-micro leading-snug text-muted-foreground">Aviso ao cliente só sai depois da janela de desfazer. "Marcar pronto" à mão continua no ⋯ do pedido.</p>
-      </section>
+        <template #footer>Aviso ao cliente só sai depois da janela de desfazer. “Marcar pronto” à mão continua no menu do pedido.</template>
+      </NuxtCard>
 
-      <section v-if="outages.length || menuChannels.length">
-        <div class="mb-2.5 flex items-baseline gap-2 border-b border-border pb-2">
-          <h2 class="op-eyebrow">Agora no cardápio</h2>
-          <span v-if="awareness?.menu_outages_more" class="ml-auto op-micro text-muted-foreground">+{{ awareness.menu_outages_more }} fora do ar</span>
-        </div>
-        <div class="rounded-lg border border-border bg-card" data-queue-menu>
-          <div v-for="outage in outages" :key="outage.sku" class="queue-row py-2">
+      <NuxtCard v-if="outages.length || menuChannels.length" title="Agora no cardápio" :description="awareness?.menu_outages_more ? `+${awareness.menu_outages_more} fora do ar` : undefined" data-queue-menu>
+          <div v-for="outage in outages" :key="outage.sku" class="flex items-center gap-2 py-2">
             <span class="min-w-0 flex-1">
               <span class="block op-body">{{ outage.line }}</span>
               <span class="inline-flex items-center gap-1 op-micro text-muted-foreground"><Icon name="lucide:sparkles" class="size-3" />{{ outage.detail }}</span>
@@ -298,16 +288,16 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
           </div>
           <!-- o canal: "iFood ligado · desligar pede gerente · [interruptor]" (v4). O
                interruptor abre o MESMO diálogo de Canais (período, motivo, gerente). -->
-          <div v-for="row in menuChannels" :key="row.ref" class="queue-row" data-queue-channel>
+          <div v-for="row in menuChannels" :key="row.ref" class="flex items-center gap-2 py-2" data-queue-channel>
             <Icon :name="row.ref === 'ifood' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
             <NuxtLink v-if="awareness?.can_open_channels" :to="row.focus_path" class="min-w-0 flex-1 op-body hover:underline" :title="`Abrir ${row.name} em Canais`">
               {{ row.name }} {{ row.active ? "ligado" : "desligado" }}
             </NuxtLink>
             <span v-else class="min-w-0 flex-1 op-body">{{ row.name }} {{ row.active ? "ligado" : "desligado" }}</span>
             <span v-if="switchHint(row)" class="hidden shrink-0 op-micro text-muted-foreground sm:inline" data-queue-channel-hint>{{ switchHint(row) }}</span>
-            <UiSwitch
+            <NuxtSwitch
               v-if="row.switch"
-              tone="success"
+              color="success"
               :model-value="row.active"
               :disabled="switching(row.ref) || !row.switch.enabled"
               :aria-label="row.active ? `${row.name}: ligado. Desligar…` : `${row.name}: desligado. Ligar…`"
@@ -316,30 +306,7 @@ function switchHint(row: { active: boolean; switch?: { requires_manager_approval
               @update:model-value="emit('switch', row.ref)"
             />
           </div>
-        </div>
-      </section>
+      </NuxtCard>
     </aside>
   </div>
 </template>
-
-<style scoped>
-/* Medidas da prévia (`.qi`, `.srow`, `.tg` de gestor-fila4.html). */
-.queue-item {
-  grid-template-columns: 92px minmax(0, 1fr) 212px;
-}
-@media (max-width: 1279.98px) {
-  .queue-item {
-    grid-template-columns: 80px minmax(0, 1fr) 184px;
-  }
-}
-.queue-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 48px;
-  padding: 0 14px;
-}
-.queue-row + .queue-row {
-  border-top: 1px solid var(--border);
-}
-</style>

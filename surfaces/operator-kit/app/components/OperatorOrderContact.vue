@@ -14,67 +14,68 @@ defineProps<{
   compact?: boolean;
 }>();
 
-const ROUND = "inline-grid size-11 place-items-center rounded-full border transition-colors hover:bg-accent";
-const PILL = "inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent";
 </script>
 
 <template>
-  <a
+  <NuxtButton
     v-if="order.customer_whatsapp_url"
-    :href="order.customer_whatsapp_url"
+    :to="order.customer_whatsapp_url"
     target="_blank"
-    rel="noopener"
-    :class="compact ? ROUND : PILL"
-    :aria-label="compact ? 'WhatsApp do cliente' : undefined"
+    color="neutral"
+    variant="outline"
+    icon="i-lucide-message-circle"
+    :label="compact ? undefined : 'WhatsApp'"
+    :aria-label="compact ? 'WhatsApp do cliente' : 'WhatsApp'"
     data-contact-whatsapp
-  >
-    <Icon name="lucide:message-circle" class="size-4" /><template v-if="!compact"> WhatsApp</template>
-  </a>
+  />
   <!-- Pedido do iFood: o número NÃO é do cliente. É o 0800 da central deles + um
        código que leva até a pessoa, e o código vence. Por isso não há WhatsApp aqui,
        e o "Ligar" disca os dois de uma vez. -->
-  <div
+  <NuxtAlert
     v-if="order.customer_relay_phone"
-    class="flex w-full flex-wrap items-center gap-2 rounded-md bg-muted px-2.5 py-2 text-sm"
+    color="info"
+    variant="subtle"
+    icon="i-lucide-phone-call"
+    title="Falar pelo iFood"
     data-contact-relay
   >
-    <span class="text-muted-foreground">Falar pelo iFood:</span>
-    <span class="tabular-nums">Central {{ order.customer_relay_phone }}</span>
-    <template v-if="order.customer_relay_code">
-      <span class="text-muted-foreground">·</span>
-      <span class="font-semibold tabular-nums" data-contact-relay-code>Código {{ order.customer_relay_code }}</span>
-      <span v-if="relayExpires" class="text-xs text-muted-foreground">{{ relayExpires }}</span>
+    <template #description>
+      <span>Central {{ order.customer_relay_phone }}</span>
+      <template v-if="order.customer_relay_code">
+        · <span data-contact-relay-code>Código {{ order.customer_relay_code }}</span>
+        <template v-if="relayExpires"> · {{ relayExpires }}</template>
+      </template>
+      <span v-else data-contact-relay-expired> · Código vencido: o iFood não repassa mais a ligação</span>
     </template>
-    <span v-else class="text-xs text-muted-foreground" data-contact-relay-expired>
-      Código vencido: o iFood não repassa mais a ligação
-    </span>
-  </div>
-  <a
+  </NuxtAlert>
+  <NuxtButton
     v-if="order.customer_phone_uri"
-    :href="order.customer_phone_uri"
-    :class="compact ? ROUND : PILL"
-    :aria-label="compact ? (order.customer_relay_phone ? 'Ligar pela central' : 'Ligar para o cliente') : undefined"
+    :to="order.customer_phone_uri"
+    color="neutral"
+    variant="outline"
+    icon="i-lucide-phone"
+    :label="compact ? undefined : (order.customer_relay_phone ? 'Ligar pela central' : 'Ligar')"
+    :aria-label="compact ? (order.customer_relay_phone ? 'Ligar pela central' : 'Ligar para o cliente') : (order.customer_relay_phone ? 'Ligar pela central' : 'Ligar')"
     data-contact-phone
-  >
-    <Icon name="lucide:phone" class="size-4" /><template v-if="!compact"> {{ order.customer_relay_phone ? "Ligar pela central" : "Ligar" }}</template>
-  </a>
-  <a
+  />
+  <NuxtButton
     v-if="order.customer_email"
-    :href="`mailto:${order.customer_email}`"
-    :class="compact ? ROUND : PILL"
-    :aria-label="compact ? 'E-mail do cliente' : undefined"
+    :to="`mailto:${order.customer_email}`"
+    color="neutral"
+    variant="outline"
+    icon="i-lucide-mail"
+    :label="compact ? undefined : 'E-mail'"
+    :aria-label="compact ? 'E-mail do cliente' : 'E-mail'"
     data-contact-email
-  >
-    <Icon name="lucide:mail" class="size-4" /><template v-if="!compact"> E-mail</template>
-  </a>
-  <a
+  />
+  <NuxtButton
     v-if="adminUrl"
-    :href="adminUrl"
+    :to="adminUrl"
     target="_blank"
-    rel="noopener"
-    class="inline-flex min-h-control min-w-control items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+    color="neutral"
+    variant="ghost"
+    icon="i-lucide-id-card"
+    label="Abrir cadastro"
     data-contact-cadastro
-  >
-    <Icon name="lucide:id-card" class="size-4" /> Abrir cadastro
-  </a>
+  />
 </template>

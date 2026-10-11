@@ -17,7 +17,6 @@ import {
   realtimeIndicator,
   splitRef,
   statusTone,
-  toneBadge,
   undoLine,
 } from "~/presentation/board";
 import { onMounted, onBeforeUnmount } from "vue";
@@ -266,11 +265,19 @@ const { denied: stationLocked } = useStationLock();
 
 // ── O cabeçalho de uma linha e o gesto do momento (G14/G15) ─────────────────
 const isPhone = useMediaQuery("(max-width: 767.98px)");
-const MENU_ITEM = "flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent disabled:opacity-50";
 function menuDo(fn: () => unknown) {
   menuOpen.value = false;
   void fn();
 }
+const detailMenuItems = computed(() => [
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", loading: pending.value, "data-action": "refresh", onSelect: () => refresh() },
+  ...(menuAdvance.value ? [{ label: menuAdvance.value.label, description: "O pronto vem sozinho quando a Cozinha conclui. Use para a estação sem tela.", icon: "i-lucide-check", "data-action": "advance", disabled: busy.value || !menuAdvance.value.enabled, title: menuAdvance.value.reason || undefined, onSelect: onMenuAdvance }] : []),
+  ...(order.value?.can_settle_delivery_cash && primary.value?.key !== "settle" ? [{ label: order.value.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega", icon: "i-lucide-banknote", "data-action": "settle", disabled: busy.value || !settleAction.value?.enabled, title: settleAction.value?.reason || undefined, onSelect: () => menuDo(() => openDialog("settle")) }] : []),
+  ...(order.value?.equipment_back_pending ? [{ label: "Maquininha voltou", icon: "i-lucide-smartphone-nfc", "data-action": "equipment-back", disabled: busy.value || !projectedAction("equipment-back")?.enabled, title: projectedAction("equipment-back")?.reason || undefined, onSelect: () => menuDo(equipmentBack) }] : []),
+  ...(order.value?.fiscal_status === "failed" ? [{ label: "Reprocessar NFC-e", icon: "i-lucide-file-text", "data-action": "requeue-fiscal", disabled: busy.value || !projectedAction("requeue-fiscal")?.enabled, title: projectedAction("requeue-fiscal")?.reason || undefined, onSelect: () => menuDo(requeueFiscal) }] : []),
+  ...(order.value?.can_resend_payment_link ? [{ label: "Reenviar link de pagamento", icon: "i-lucide-send", "data-action": "resend-payment-link", disabled: busy.value, onSelect: () => menuDo(resendPaymentLink) }] : []),
+  ...(order.value?.can_cancel ? [{ label: order.value.cancel_requires_approval ? "Cancelar pedido (pede gerente)" : "Cancelar pedido", icon: "i-lucide-ban", "data-action": "cancel", color: "error" as const, disabled: busy.value, onSelect: () => menuDo(() => openDialog("cancel")) }] : []),
+]);
 const rejectAction = computed(() => projectedAction("reject"));
 /** A ação primária do pedido agora: aceitar, o próximo passo do fluxo ou o acerto. O
  *  servidor decide se vale; travada, ela continua no lugar dizendo por quê. */
@@ -309,6 +316,10 @@ const readClock = computed(() => {
   return at ? new Date(at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
 });
 const channelIcon = computed(() => `lucide:${lucideIcon(order.value?.channel_icon || "")}`);
+const statusColor = (status: string) => {
+  const tone = statusTone(status);
+  return tone === "danger" ? "error" : tone;
+};
 // "Confirma sozinho em 4:32 se ninguém recusar." — o prazo do pedido novo, no relógio.
 const deadlineText = computed(() => {
   const o = order.value;
@@ -339,15 +350,15 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
          para o polegar. -->
     <OperatorPageHeader :title="clockReady && isPhone ? code.code : `Pedido ${code.code}`">
       <template #lead>
-        <NuxtLink
+        <NuxtButton
           :to="backLocation"
-          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          :icon="isPhone ? 'i-lucide-arrow-left' : 'i-lucide-chevron-left'"
+          color="neutral"
+          variant="ghost"
+          square
           :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'"
           data-detail-back
-        >
-          <Icon :name="isPhone ? 'lucide:arrow-left' : 'lucide:chevron-left'" class="size-5 md:size-4" />
-          <span class="max-md:sr-only">{{ fromHistory ? "Histórico" : "Pedidos" }}</span>
-        </NuxtLink>
+        />
         <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
       </template>
       <template #status>
@@ -356,112 +367,79 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
         <span v-if="order" class="inline-flex min-w-0 items-center gap-1 op-micro text-muted-foreground md:hidden" data-detail-channel>
           <Icon :name="channelIcon" class="size-4 shrink-0" />{{ order.channel_name || order.channel_ref }}
         </span>
-        <span
+        <NuxtBadge
           v-if="order?.status_label"
-          class="hidden h-6 shrink-0 items-center gap-1.5 rounded-full border border-transparent px-2 text-xs font-semibold md:inline-flex"
-          :class="toneBadge(statusTone(order.status))"
+          :color="statusColor(order.status)"
+          variant="subtle"
+          :label="order.status_label"
           data-detail-status
-        >
-          <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-          {{ order.status_label }}
-        </span>
+        />
         <span class="hidden md:inline-flex">
           <OperatorLiveStatus :tone="liveTone" :time="readClock" :label="error ? 'Atualização falhou' : liveLabel" :detail="liveDetail" />
         </span>
       </template>
       <template #phone-actions>
         <div class="relative">
-          <button type="button" class="grid size-12 place-items-center rounded-md" aria-label="Mais ações do pedido" :aria-expanded="menuOpen" data-action="menu-phone" @click="menuOpen = !menuOpen">
+          <NuxtButton type="button" aria-label="Mais ações do pedido" :aria-expanded="menuOpen" data-action="menu-phone" @click="menuOpen = !menuOpen">
             <Icon name="lucide:ellipsis-vertical" class="size-6" />
-          </button>
+          </NuxtButton>
         </div>
       </template>
       <template v-if="!isPhone" #actions>
         <!-- bilhete de volta: quem veio de outro app volta para onde estava -->
-        <a
+        <NuxtButton
           v-if="returnTicket"
-          :href="returnTicket.href"
-          class="inline-flex h-control items-center gap-2 rounded-full bg-destructive/85 px-4 op-label font-semibold text-white transition hover:bg-destructive"
+          :to="returnTicket.href"
+          icon="i-lucide-corner-up-left"
+          :label="returnTicket.label"
+          color="error"
           data-detail-return
-        >
-          <Icon name="lucide:corner-up-left" class="size-4" />{{ returnTicket.label }}
-        </a>
+        />
         <div class="relative">
-          <UiIconButton icon="lucide:ellipsis" label="Mais ações do pedido" aria-haspopup="menu" :aria-expanded="menuOpen" data-action="menu" @click="menuOpen = !menuOpen" />
+          <NuxtButton icon="i-lucide-ellipsis" label="Mais ações do pedido" aria-haspopup="menu" :aria-expanded="menuOpen" data-action="menu" @click="menuOpen = !menuOpen" />
         </div>
-        <button
+        <NuxtButton
           v-if="rejectAction"
           type="button"
           :disabled="busy || !rejectAction.enabled"
-          class="inline-flex h-control items-center gap-1.5 rounded-md border border-border bg-card px-3.5 op-label font-semibold text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+         
           data-action="reject"
           @click="openDialog('reject')"
-        >Recusar</button>
-        <button
+        >Recusar</NuxtButton>
+        <NuxtButton
           v-if="primary"
           type="button"
           :disabled="busy || !primary.enabled"
           :title="primary.reason || undefined"
-          class="inline-flex h-control items-center gap-2 rounded-md px-4 op-label font-semibold transition"
-          :class="primary.enabled ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'cursor-not-allowed border-2 border-dashed border-border text-muted-foreground'"
+         
+         
           :data-action="primary.key === 'advance' && !primary.enabled ? 'advance-blocked' : primary.key"
           @click="runPrimary"
         >
           <Icon :name="primary.icon" class="size-4" />{{ primary.label }}
-        </button>
+        </NuxtButton>
       </template>
     </OperatorPageHeader>
 
     <!-- ⋯ do pedido: atualizar e os gestos que não são o do momento -->
-    <UiSheet :open="menuOpen" @update:open="(value) => (menuOpen = value)">
-      <UiSheetContent
-        v-if="menuOpen"
-        :side="isPhone ? 'bottom' : 'right'"
-        variant="floating"
-        composition="bare"
-        class="h-auto max-h-[80dvh] overflow-y-auto rounded-lg p-1.5 md:h-[calc(100%-2rem)] md:max-h-none md:w-80"
-        role="menu"
-        data-detail-menu
-      >
-        <div class="px-2.5 pt-1 pb-2"><ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" /></div>
-        <button type="button" role="menuitem" :class="MENU_ITEM" data-action="refresh" @click="refresh()">
-          <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" :class="pending ? 'motion-safe:animate-spin' : ''" />Atualizar
-        </button>
-        <button v-if="menuAdvance" type="button" role="menuitem" :disabled="busy || !menuAdvance.enabled" :title="menuAdvance.reason || undefined" :class="MENU_ITEM" class="flex-col items-start! py-2" data-action="menu-advance" @click="onMenuAdvance">
-          <span class="font-semibold">{{ menuAdvance.label }}</span>
-          <span class="text-xs text-muted-foreground">O pronto vem sozinho quando a Cozinha conclui. Use para a estação sem tela.</span>
-        </button>
-        <button v-if="order?.can_settle_delivery_cash && primary?.key !== 'settle'" type="button" role="menuitem" :disabled="busy || !settleAction?.enabled" :title="settleAction?.reason" :class="MENU_ITEM" @click="menuDo(() => openDialog('settle'))">
-          <Icon name="lucide:banknote" class="size-4 text-muted-foreground" />{{ order.fulfillment_type === "pickup" ? "Receber na retirada" : "Acertar entrega" }}
-        </button>
-        <button v-if="order?.equipment_back_pending" type="button" role="menuitem" :disabled="busy || !projectedAction('equipment-back')?.enabled" :title="projectedAction('equipment-back')?.reason || undefined" :class="MENU_ITEM" @click="menuDo(equipmentBack)">
-          <Icon name="lucide:smartphone-nfc" class="size-4 text-muted-foreground" />Maquininha voltou
-        </button>
-        <button v-if="order?.fiscal_status === 'failed'" type="button" role="menuitem" :disabled="busy || !projectedAction('requeue-fiscal')?.enabled" :title="projectedAction('requeue-fiscal')?.reason || undefined" :class="MENU_ITEM" @click="menuDo(requeueFiscal)">
-          <Icon name="lucide:file-text" class="size-4 text-muted-foreground" />Reprocessar NFC-e
-        </button>
-        <button v-if="order?.can_resend_payment_link" type="button" role="menuitem" :disabled="busy" :class="MENU_ITEM" data-action="resend-payment-link" @click="menuDo(resendPaymentLink)">
-          <Icon name="lucide:send" class="size-4 text-muted-foreground" />Reenviar link de pagamento
-        </button>
-        <!-- Cancelar mora no ⋯ (v3): `can_cancel` já é régua + política + permissão. -->
-        <button v-if="order?.can_cancel" type="button" role="menuitem" :disabled="busy" :class="MENU_ITEM" class="text-destructive" data-action="cancel" @click="menuDo(() => openDialog('cancel'))">
-          <Icon name="lucide:ban" class="size-4" />{{ order.cancel_requires_approval ? "Cancelar pedido (pede gerente)" : "Cancelar pedido" }}
-        </button>
-        <p v-else-if="order?.cancel_block_label" class="px-2.5 py-2 op-micro text-muted-foreground" data-cancel-block>{{ order.cancel_block_label }}</p>
-      </UiSheetContent>
-    </UiSheet>
+    <NuxtDrawer
+      :open="menuOpen"
+      :direction="isPhone ? 'bottom' : 'right'"
+      title="Ações do pedido"
+      description="Atualização e ações auxiliares deste pedido."
+      data-detail-menu
+      @update:open="(value) => (menuOpen = value)"
+    >
+      <template #body>
+        <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
+        <NuxtNavigationMenu orientation="vertical" :items="detailMenuItems" />
+        <NuxtAlert v-if="!order?.can_cancel && order?.cancel_block_label" color="neutral" variant="subtle" :title="order.cancel_block_label" data-cancel-block />
+      </template>
+    </NuxtDrawer>
 
     <!-- fora da loja: o detalhe mostra só o que pede decisão (G18) -->
-    <div v-if="outside.askConsent.value" class="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 op-label md:mx-6" data-outside-consent>
-      <Icon name="lucide:map-pin" class="size-4 text-info" />
-      <span class="min-w-0 flex-1 basis-[16rem]">Usar a localização deste dispositivo para, fora da loja, mostrar só o que pede decisão?</span>
-      <button type="button" class="h-9 rounded-md px-3 font-semibold text-muted-foreground hover:bg-accent" @click="outside.decline()">Agora não</button>
-      <button type="button" class="h-9 rounded-md bg-primary px-3 font-semibold text-primary-foreground" @click="outside.allow()">Permitir</button>
-    </div>
-    <p v-if="outside.away.value" class="mx-4 mt-3 flex items-center gap-2 rounded-lg bg-info/12 px-3 py-2 op-label font-semibold text-info md:mx-6" data-outside-band>
-      <Icon name="lucide:map-pin-off" class="size-4 shrink-0" />Você está fora da loja: mostrando o que pede decisão
-      <button type="button" class="ml-auto shrink-0 font-semibold underline underline-offset-2" @click="outside.showAll()">Ver tudo</button>
-    </p>
+    <NuxtAlert v-if="outside.askConsent.value" color="info" variant="subtle" icon="i-lucide-map-pin" title="Usar a localização deste dispositivo?" description="Fora da loja, o Gestor pode mostrar somente o que pede decisão." :actions="[{ label: 'Permitir', onClick: () => outside.allow() }, { label: 'Agora não', color: 'neutral', variant: 'ghost', onClick: () => outside.decline() }]" data-outside-consent />
+    <NuxtAlert v-if="outside.away.value" color="info" variant="subtle" icon="i-lucide-map-pin-off" title="Você está fora da loja" description="Mostrando somente o que pede decisão." :actions="[{ label: 'Ver tudo', color: 'info', variant: 'outline', onClick: () => outside.showAll() }]" data-outside-band />
 
     <div class="flex w-full flex-col gap-4 p-4 md:p-6 md:pt-4">
 
@@ -469,9 +447,7 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
     <!-- `!stationLocked`: com a estação travada a leitura volta 403 e este aviso
          dizia "Pedido não encontrado", que é falso e assusta. Nesse estado quem
          fala é a identificação, que sobe por cima. -->
-    <p v-else-if="(error || !order) && !stationLocked" class="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive dark:text-orange-400" data-order-error>
-      {{ order ? "Falha ao atualizar. Mantivemos a última leitura e seu rascunho; atualize antes de confirmar ações." : "Pedido não encontrado ou falha ao carregar." }}
-    </p>
+    <NuxtAlert v-else-if="(error || !order) && !stationLocked" color="error" variant="subtle" icon="i-lucide-triangle-alert" title="Não foi possível carregar o pedido" :description="order ? 'Mantivemos a última leitura e seu rascunho; atualize antes de confirmar ações.' : 'Pedido não encontrado ou falha ao carregar.'" data-order-error />
 
     <OperatorOrderDetail
       v-if="order"
@@ -495,32 +471,12 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
       <template #actions>
         <section v-if="(isPhone && order.status_label) || deadlineText || undo || (advanceAction && !advanceAction.enabled && order.advance_block_reason)" class="flex flex-col gap-2.5" data-detail-state>
           <div v-if="isPhone" class="flex flex-wrap items-center gap-2" data-detail-pills>
-            <span class="inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold" :class="toneBadge(statusTone(order.status))">
-              <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ order.status_label }}
-            </span>
-            <span v-if="order.payment_method_label" class="inline-flex h-7 items-center gap-1.5 rounded-full bg-muted px-2.5 text-xs font-semibold text-muted-foreground">
-              <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ order.payment_status_label ? `${order.payment_method_label} · ${order.payment_status_label}` : order.payment_method_label }}
-            </span>
+            <NuxtBadge :color="statusColor(order.status)" variant="subtle" :label="order.status_label" />
+            <NuxtBadge v-if="order.payment_method_label" color="neutral" variant="subtle" :label="order.payment_status_label ? `${order.payment_method_label} · ${order.payment_status_label}` : order.payment_method_label" />
           </div>
-          <p v-if="deadlineText" class="flex items-center gap-2 rounded-lg bg-muted px-3 py-2.5 op-body" data-detail-deadline>
-            <Icon name="lucide:timer" class="size-5 shrink-0 text-warning" />
-            <span>{{ deadlineText.before }} <b class="tnum">{{ deadlineText.left }}</b> {{ deadlineText.after }}</span>
-          </p>
-          <div v-if="undo" class="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm" :data-undo="undo.kind">
-            <span class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium">
-              <Icon :name="undo.kind === 'handoff' ? 'lucide:check' : 'lucide:sparkles'" class="size-3.5" />
-              {{ undo.label }}
-            </span>
-            <span class="text-muted-foreground" data-undo-detail>{{ undo.detail }}</span>
-            <span v-if="undo.alreadyOut" class="text-muted-foreground" data-undo-already-out>· {{ undo.alreadyOut }}</span>
-            <button v-if="undo.canUndo" type="button" :disabled="busy" class="ml-auto inline-flex min-h-action min-w-action items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="undo" @click="onUndo">
-              <Icon name="lucide:undo-2" class="size-4" /> <span class="tabular-nums">{{ undo.kind === "handoff" ? `Desfazer ${undo.countdown}` : "Desfazer" }}</span>
-            </button>
-          </div>
-          <p v-if="advanceAction && !advanceAction.enabled && order.advance_block_reason" class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 op-label" data-detail-block>
-            <Icon name="lucide:lock" class="mt-0.5 size-4 shrink-0 text-destructive" />
-            <span><b class="font-semibold">{{ order.advance_block_label.replace(/…$/, "") || "Bloqueado" }}</b> · {{ order.advance_block_reason }}</span>
-          </p>
+          <NuxtAlert v-if="deadlineText" color="warning" variant="subtle" icon="i-lucide-timer" :description="`${deadlineText.before} ${deadlineText.left} ${deadlineText.after}`" data-detail-deadline />
+          <NuxtAlert v-if="undo" color="success" variant="subtle" :icon="undo.kind === 'handoff' ? 'i-lucide-check' : 'i-lucide-sparkles'" :title="undo.label" :description="[undo.detail, undo.alreadyOut].filter(Boolean).join(' · ')" :actions="undo.canUndo ? [{ label: undo.kind === 'handoff' ? `Desfazer ${undo.countdown}` : 'Desfazer', color: 'success', variant: 'outline', disabled: busy, onClick: () => onUndo() }] : []" :data-undo="undo.kind" />
+          <NuxtAlert v-if="advanceAction && !advanceAction.enabled && order.advance_block_reason" color="error" variant="subtle" icon="i-lucide-lock" :title="order.advance_block_label.replace(/…$/, '') || 'Bloqueado'" :description="order.advance_block_reason" data-detail-block />
         </section>
       </template>
 
@@ -543,47 +499,36 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
 
       <!-- A nota da cozinha se EDITA no Gestor: o editor entra no lugar da leitura. -->
       <template v-if="!outside.away.value" #kitchen-note>
-        <section class="flex flex-col gap-2 rounded-lg border bg-card p-4">
-          <label class="text-sm font-bold uppercase tracking-wide" for="order-notes">Nota para a cozinha</label>
+        <NuxtCard as="section">
+          <div class="flex flex-col gap-2">
           <!-- one-tap tags (configuráveis no Admin) — anexam ao texto, sem duplicar -->
           <div v-if="noteTags.length" class="flex flex-wrap gap-1.5">
-            <button
+            <NuxtButton
               v-for="(tag, i) in noteTags"
               :key="i"
               type="button"
-              class="min-h-control min-w-control inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+             
               @click="applyNoteTag(tag)"
             >
               <Icon name="lucide:plus" class="size-3" />{{ tag }}
-            </button>
+            </NuxtButton>
           </div>
-          <textarea
-            id="order-notes"
-            v-model="notes"
-            rows="3"
-            placeholder="Escreva uma nota…"
-            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-          />
-          <p class="text-xs text-muted-foreground">Aparece no ticket da cozinha (KDS).</p>
-          <div v-if="notesConflict" role="alert" class="rounded-md border p-3 text-sm">
-            <p>A nota mudou enquanto você escrevia. Seu texto está preservado acima.</p>
-            <p class="my-2 whitespace-pre-wrap">No servidor: {{ order.kitchen_note || "(vazia)" }}</p>
-            <div class="flex gap-2">
-              <button type="button" class="min-h-control min-w-control rounded border px-2 py-1" @click="acceptLatestNotesBase">Manter meu texto</button>
-              <button type="button" class="min-h-control min-w-control rounded border px-2 py-1" @click="useLatestNotes">Usar texto do servidor</button>
-            </div>
-          </div>
-          <p v-if="mutationError" role="alert" class="text-sm text-destructive">{{ mutationError }}</p>
-          <button
+          <NuxtFormField label="Nota para a cozinha" description="Aparece no ticket da cozinha (KDS).">
+            <NuxtTextarea id="order-notes" v-model="notes" :rows="3" placeholder="Escreva uma nota…" />
+          </NuxtFormField>
+          <NuxtAlert v-if="notesConflict" color="warning" variant="subtle" title="A nota mudou enquanto você escrevia" :description="`Seu texto foi preservado. No servidor: ${order.kitchen_note || '(vazia)'}`" :actions="[{ label: 'Manter meu texto', color: 'warning', variant: 'outline', onClick: () => acceptLatestNotesBase() }, { label: 'Usar texto do servidor', color: 'neutral', variant: 'ghost', onClick: () => useLatestNotes() }]" />
+          <NuxtAlert v-if="mutationError" color="error" variant="subtle" icon="i-lucide-triangle-alert" :description="mutationError" />
+          <NuxtButton
             v-if="notesDirty || notesConflict"
             type="button"
             :disabled="busy || !notesDirty || notesConflict"
-            class="min-h-action min-w-action self-end rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
+           
             @click="saveKitchenNote"
           >
             Salvar nota
-          </button>
-        </section>
+          </NuxtButton>
+          </div>
+        </NuxtCard>
       </template>
     </OperatorOrderDetail>
 
@@ -594,25 +539,25 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
       class="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-border bg-card px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]"
       data-detail-thumb
     >
-      <button
+      <NuxtButton
         v-if="rejectAction"
         type="button"
         :disabled="busy || !rejectAction.enabled"
-        class="h-14 rounded-xl border border-border bg-card px-5 op-action font-semibold text-destructive disabled:opacity-50"
+       
         data-action="reject"
         @click="openDialog('reject')"
-      >Recusar</button>
-      <button
+      >Recusar</NuxtButton>
+      <NuxtButton
         v-if="primary"
         type="button"
         :disabled="busy || !primary.enabled"
-        class="flex h-14 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl op-action font-semibold"
-        :class="primary.enabled ? 'bg-primary text-primary-foreground' : 'cursor-not-allowed border-2 border-dashed border-border text-muted-foreground'"
+       
+       
         :data-action="primary.key"
         @click="runPrimary"
       >
         <Icon :name="primary.icon" class="size-5" />{{ primary.label }}
-      </button>
+      </NuxtButton>
     </div>
 
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons or
@@ -633,100 +578,87 @@ const outside = useOutsideStore(() => order.value?.store_location ?? null, isPho
     />
 
     <!-- settle delivery cash dialog -->
-    <UiDialog :open="dialog === 'settle'" @update:open="(v) => { if (!v) dialog = '' }">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>{{ order?.fulfillment_type === "pickup" ? "Pagamento na retirada" : "Acerto da entrega" }}</UiDialogTitle>
-          <UiDialogDescription>{{ order?.fulfillment_type === "pickup" ? "Confirme o recebimento antes de concluir e entregar o pedido ao cliente." : "Confirme após conferir o dinheiro e os comprovantes da maquininha." }}</UiDialogDescription>
-        </UiDialogHeader>
+    <NuxtModal
+      :open="dialog === 'settle'"
+      :title="order?.fulfillment_type === 'pickup' ? 'Pagamento na retirada' : 'Acerto da entrega'"
+      :description="order?.fulfillment_type === 'pickup' ? 'Confirme o recebimento antes de concluir e entregar o pedido ao cliente.' : 'Confirme após conferir o dinheiro e os comprovantes da maquininha.'"
+      @update:open="(v) => { if (!v) dialog = '' }"
+    >
+      <template #body>
         <p class="text-sm text-muted-foreground">{{ settleCustody }}</p>
-        <p v-if="settleChanged" role="alert" class="text-sm text-destructive">O pedido ou turno mudou. Confira o contexto atual: {{ settleAction?.confirmation.description }}
-          <button type="button" class="min-h-control min-w-control underline" @click="reviewSettleCustody">Conferir e manter os valores digitados</button>
-        </p>
-        <input
-          v-model="amount"
-          type="text"
-          inputmode="decimal"
-          placeholder="Ex.: 15,00"
-          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-          aria-label="Valor recebido"
-        />
-        <label v-if="asksChangeBack" class="flex flex-col gap-1 text-sm" data-change-back>
-          <span class="text-muted-foreground">{{ order?.change_label }}. Quanto voltou?</span>
-          <input
+        <NuxtAlert v-if="settleChanged" color="warning" variant="subtle" title="O pedido ou turno mudou" :description="`Confira o contexto atual: ${settleAction?.confirmation.description || ''}`" :actions="[{ label: 'Conferir e manter os valores digitados', color: 'warning', variant: 'outline', onClick: () => reviewSettleCustody() }]" />
+        <NuxtFormField label="Valor recebido">
+          <NuxtInput v-model="amount" type="text" inputmode="decimal" placeholder="Ex.: 15,00" />
+        </NuxtFormField>
+        <NuxtFormField v-if="asksChangeBack" :label="`${order?.change_label}. Quanto voltou?`" data-change-back>
+          <NuxtInput
             v-model="changeBack"
             type="text"
             inputmode="decimal"
             placeholder="0,00"
-            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+           
             aria-label="Troco que voltou"
           />
-        </label>
-        <UiCheckbox
+        </NuxtFormField>
+        <NuxtCheckbox
           v-if="asksEquipmentBack"
           v-model="settleEquipmentBack"
           :label="`${order?.equipment_label}. Voltou junto`"
           data-equipment-back
         />
-        <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
-          <button
-            type="button"
+      </template>
+      <template #footer>
+          <NuxtButton label="Voltar" color="neutral" variant="outline" @click="dialog = ''" />
+          <NuxtButton
+            label="Confirmar"
+            color="primary"
             :disabled="busy || settleChanged || !settleAction?.enabled"
-            class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            :loading="busy"
             @click="submitSettle"
-          >
-            Confirmar
-          </button>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+          />
+      </template>
+    </NuxtModal>
 
     <!-- dispatch dialog: how much change leaves the drawer with the courier -->
-    <UiDialog :open="dialog === 'dispatch'" @update:open="(v) => { if (!v) dialog = '' }">
-      <UiDialogContent class="sm:max-w-md" data-dispatch-dialog>
-        <UiDialogHeader>
-          <UiDialogTitle>{{ dispatchAsksChange ? "Troco para o entregador" : "Saída para entrega" }}</UiDialogTitle>
-          <UiDialogDescription>
-            <template v-if="dispatchAsksChange">{{ order?.change_label }}. O valor sai do seu turno de caixa e volta no acerto.</template>
-            <template v-else>O que sai com o entregador.</template>
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <UiCheckboxGroup
+    <NuxtModal
+      :open="dialog === 'dispatch'"
+      :title="dispatchAsksChange ? 'Troco para o entregador' : 'Saída para entrega'"
+      :description="dispatchAsksChange ? `${order?.change_label}. O valor sai do seu turno de caixa e volta no acerto.` : 'O que sai com o entregador.'"
+      data-dispatch-dialog
+      @update:open="(v) => { if (!v) dialog = '' }"
+    >
+      <template #body>
+        <NuxtCheckboxGroup
           v-if="dispatchEquipmentOptions.length"
           :model-value="dispatchEquipment"
           :items="dispatchEquipmentOptions"
-          legend="O que sai com o entregador"
           variant="table"
           data-dispatch-equipment
-          :ui="{ legend: 'mb-1.5 text-sm font-medium' }"
           @update:model-value="updateDispatchEquipment"
         />
-        <label v-if="dispatchAsksChange" class="flex items-center gap-2 text-sm">
-          <span class="text-muted-foreground">R$</span>
-          <input
+        <NuxtFormField v-if="dispatchAsksChange" label="Troco que o entregador leva">
+          <NuxtInput
             v-model="changeOut"
             type="text"
             inputmode="decimal"
             placeholder="Ex.: 20,00"
-            class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+           
             aria-label="Troco que o entregador leva"
           />
-        </label>
-        <UiDialogFooter>
-          <button type="button" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent" @click="dialog = ''">Voltar</button>
-          <button v-if="dispatchAsksChange" type="button" :disabled="busy" class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent disabled:opacity-50" @click="submitDispatch('0')">Saiu sem troco</button>
-          <button
-            type="button"
+        </NuxtFormField>
+      </template>
+      <template #footer>
+          <NuxtButton label="Voltar" color="neutral" variant="outline" @click="dialog = ''" />
+          <NuxtButton v-if="dispatchAsksChange" label="Saiu sem troco" color="neutral" variant="outline" :disabled="busy" @click="submitDispatch('0')" />
+          <NuxtButton
+            :label="dispatchAsksChange ? 'Levou o troco' : 'Saiu para entrega'"
+            color="primary"
             :disabled="busy"
-            class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            :loading="busy"
             @click="submitDispatch(changeOut)"
-          >
-            {{ dispatchAsksChange ? "Levou o troco" : "Saiu para entrega" }}
-          </button>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+          />
+      </template>
+    </NuxtModal>
 
     <!-- Segunda assinatura: o mesmo diálogo canônico do PDV, com a MESMA lista de
          gerentes (``managers`` da projeção de detalhe, montada por

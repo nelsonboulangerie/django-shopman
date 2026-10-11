@@ -53,10 +53,6 @@ const missing = computed(() => (props.sw ? missingStep(props.sw, draft.value, cl
 const label = computed(() => (props.sw ? confirmLabel(props.sw, draft.value, clock.value) : ""));
 const turningOff = computed(() => Boolean(props.sw?.is_active));
 
-function pickReason(reason: string) {
-  draft.value = { ...draft.value, reason: draft.value.reason === reason ? "" : reason };
-}
-
 async function send(approval?: Record<string, string>) {
   if (!props.sw || missing.value || props.busy) return;
   failure.value = "";
@@ -91,87 +87,67 @@ function close(value: boolean) {
 </script>
 
 <template>
-  <UiDialog :open="open && !managerOpen" @update:open="close">
-    <UiDialogContent v-if="sw" class="max-h-[90dvh] overflow-y-auto sm:max-w-lg" data-channel-switch-dialog>
-      <UiDialogHeader>
-        <UiDialogTitle>{{ sw.title }}</UiDialogTitle>
-        <UiDialogDescription>{{ sw.consequence }}</UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    v-if="sw"
+    :open="open && !managerOpen"
+    :title="sw.title"
+    :description="sw.consequence"
+    scrollable
+    data-channel-switch-dialog
+    @update:open="close"
+  >
+    <template #body>
 
-      <p v-if="sw.scheduled_line" class="rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-sm" data-switch-replaces>
-        Substitui o agendamento: {{ sw.scheduled_line }}
-      </p>
+      <NuxtAlert v-if="sw.scheduled_line" color="warning" variant="subtle" icon="i-lucide-calendar-clock" title="Substitui o agendamento" :description="sw.scheduled_line" data-switch-replaces />
 
-      <fieldset class="flex flex-col gap-1.5">
-        <legend class="mb-1 text-sm font-medium">Por quanto tempo</legend>
-        <UiRadioGroup v-model="draft.period">
-          <UiRadio
-            v-for="option in sw.periods"
-            :key="option.key"
-            :value="option.key"
-            :label="option.label"
-            :description="!option.enabled ? option.reason : undefined"
-            :disabled="!option.enabled"
-            :data-period="option.key"
-          />
-        </UiRadioGroup>
-      </fieldset>
+      <NuxtFormField label="Por quanto tempo">
+        <NuxtRadioGroup
+          v-model="draft.period"
+          :items="sw.periods.map((option) => ({ value: option.key, label: option.label, description: !option.enabled ? option.reason : undefined, disabled: !option.enabled, 'data-period': option.key }))"
+          variant="card"
+        />
+      </NuxtFormField>
 
       <ChannelPeriodCalendar v-if="draft.period === CUSTOM_PERIOD" v-model="draft" :today="clock" />
       <p v-if="!turningOff" class="text-xs text-muted-foreground" data-switch-shop-hours>
         Ligado, o canal só recebe pedidos dentro do horário da loja.
       </p>
 
-      <div class="flex flex-col gap-1.5">
-        <span class="text-sm font-medium">Motivo<span v-if="!sw.reason_required" class="font-normal text-muted-foreground"> (opcional)</span></span>
-        <div v-if="sw.reasons.length" class="flex flex-wrap gap-1.5">
-          <button
-            v-for="preset in sw.reasons"
-            :key="preset"
-            type="button"
-            :aria-pressed="draft.reason === preset"
-            class="min-h-control min-w-control rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-accent"
-            :class="draft.reason === preset ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'"
-            @click="pickReason(preset)"
-          >
-            {{ preset }}
-          </button>
-        </div>
-        <textarea
+      <NuxtFormField label="Motivo" :hint="sw.reason_required ? undefined : 'opcional'">
+        <NuxtRadioGroup v-if="sw.reasons.length" v-model="draft.reason" :items="sw.reasons" variant="card" />
+        <NuxtTextarea
           v-model="draft.reason"
-          rows="2"
+          :rows="2"
           maxlength="200"
           :placeholder="sw.reasons.length ? 'Ou escreva o motivo…' : 'Escreva o motivo, se quiser…'"
-          class="min-h-control w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+         
           aria-label="Motivo"
         />
-      </div>
+      </NuxtFormField>
 
-      <p v-if="failure" role="alert" class="text-sm text-destructive" data-switch-failure>{{ failure }}</p>
+      <NuxtAlert v-if="failure" color="error" variant="subtle" icon="i-lucide-triangle-alert" :title="failure" data-switch-failure />
 
-      <UiDialogFooter class="items-center gap-2">
+    </template>
+    <template #footer>
         <p v-if="missing" class="mr-auto text-xs text-muted-foreground" data-switch-missing>{{ missing }}</p>
         <p v-else-if="sw.requires_manager_approval" class="mr-auto text-xs text-muted-foreground">Um gerente autoriza no próximo passo.</p>
-        <button
-          type="button" :disabled="busy"
-          class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+        <NuxtButton
+          label="Voltar"
+          color="neutral"
+          variant="outline"
+          :disabled="busy"
           @click="close(false)"
-        >
-          Voltar
-        </button>
-        <button
-          type="button"
+        />
+        <NuxtButton
+          :label="label"
+          :color="turningOff ? 'error' : 'primary'"
           :disabled="busy || Boolean(missing)"
-          class="min-h-action min-w-action rounded-md border border-transparent px-3 py-2 text-sm font-semibold transition disabled:opacity-50"
-          :class="turningOff ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : 'bg-primary text-primary-foreground hover:bg-primary/90'"
+          :loading="busy"
           data-switch-confirm
           @click="confirm"
-        >
-          {{ label }}
-        </button>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+        />
+    </template>
+  </NuxtModal>
 
   <OperatorManagerAuth
     :open="open && managerOpen"

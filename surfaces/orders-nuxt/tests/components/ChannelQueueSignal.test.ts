@@ -70,14 +70,14 @@ describe("aviso de canal na fila de Pedidos", () => {
       "Loja online: pedidos desligados (Loja cheia)",
       "iFood fechado com a loja aberta: nenhum pedido do iFood entra",
     ]);
-    expect(links.map((link) => link.attributes("data-to"))).toEqual(["/feeds?focus=web", "/feeds?focus=ifood"]);
+    expect(links.map((link) => link.attributes("href"))).toEqual(["/feeds?focus=web", "/feeds?focus=ifood"]);
   });
 
   it("quem não abre a aba Canais lê, sem link", () => {
     attention.value = projection({ can_open_channels: false, queue: [item("web", "sale", "paused", "Loja online: pedidos pausados até hoje às 10h30")] });
     const wrapper = mount(ChannelQueueSignal, { global: { stubs } });
     expect(wrapper.find("[data-channel-signal-link]").exists()).toBe(false);
-    expect(wrapper.get("[data-channel-signal]").text()).toBe("Loja online: pedidos pausados até hoje às 10h30");
+    expect(wrapper.get("[data-channel-signal]").text()).toContain("Loja online: pedidos pausados até hoje às 10h30");
   });
 
   it("a fila monta o aviso de canal, não mais o do iFood sozinho", () => {

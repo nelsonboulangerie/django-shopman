@@ -110,10 +110,10 @@ describe("OrderCard — render", () => {
     expect(mountCard({ card: card({ customer_name: "" }) }).text()).toContain("Sem cliente");
   });
 
-  it("can_confirm (não selecionado): selo Novo e a moldura na cor da decisão", () => {
+  it("can_confirm (não selecionado): selo Novo e estado primário", () => {
     const w = mountCard({ card: card({ can_confirm: true }) });
     expect(w.get("[data-card-seal]").text()).toBe("Novo");
-    expect(w.find("article").classes()).toContain("border-primary/70");
+    expect(w.find("article").attributes("data-card-state")).toBe("primary");
   });
 
   it("o estado continua escrito quando o selo diz outra coisa (Novo, Próximo, Bloqueado)", () => {
@@ -159,13 +159,12 @@ describe("OrderCard — ações emitidas", () => {
     const w = mountCard({ card: card({ assigned_operator: "Rita" }) });
     expect(w.get("[data-card-assigned]").text()).toContain("Rita");
     await w.get("[data-card-menu]").trigger("click");
-    expect(w.get("[data-card-assign]").attributes("aria-label")).toBe("Atendido por Rita. Toque para liberar");
+    expect(w.get("[data-card-assign]").attributes("aria-label")).toBe("Liberar (Rita atende)");
   });
 
-  it("selected → aria-pressed + ring de seleção", () => {
+  it("selected → estado canônico aria-pressed", () => {
     const w = mountCard({ card: card(), selected: true, selecting: true });
     expect(w.find('[aria-label="Desmarcar pedido"]').attributes("aria-pressed")).toBe("true");
-    expect(w.find("article").classes()).toContain("ring-primary");
   });
 
   it("erro inline renderiza a razão + dispensar emite 'dismiss-error'", async () => {
@@ -358,7 +357,7 @@ describe("OrderCard: quem embalou declara os volumes", () => {
     const w = mountCard({ card: { ...base, actions: [...base.actions, volumesAction()] } });
     await w.get("[data-card-pack-declare]").trigger("click");
     expect(w.find("[data-card-volumes-editor]").exists()).toBe(true);
-    expect(w.get("[data-card-volumes-draft]").text()).toBe("3");
+    expect(w.get("[data-card-volumes-draft] input").attributes("value")).toBe("3");
     await w.get("[aria-label='Um volume a menos']").trigger("click");
     await w.get("[data-card-volumes-save]").trigger("click");
     expect(w.emitted("volumes")?.[0]).toEqual([2]);

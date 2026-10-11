@@ -12,7 +12,6 @@ import {
   HISTORY_PRESETS,
   historyDimensions,
   historyQueryFromRoute,
-  historyStatusClass,
   routeQueryFromHistory,
 } from "~/presentation/history";
 
@@ -69,44 +68,41 @@ const loading = computed(() => pending.value && !history.value);
           :max="today"
           label="Período do histórico"
         />
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+        <NuxtButton icon="i-lucide-refresh-cw" label="Atualizar" :loading="pending" @click="refresh()" />
       </template>
     </OperatorPageHeader>
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
 
     <section class="min-h-0 flex-1 overflow-auto p-4">
       <div class="mb-3 flex items-center gap-2">
-        <button
+        <NuxtButton
           v-if="historyQuery.sku"
           type="button"
-          class="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3 text-sm font-semibold"
+         
           :aria-label="`Tirar o recorte do produto ${history?.sku_name || historyQuery.sku}`"
           data-history-sku
           @click="router.replace({ query: routeQueryFromHistory({ ...historyQuery, sku: '', page: 1 }) })"
         >
           Produto: {{ history?.sku_name || historyQuery.sku }}
           <Icon name="lucide:x" class="size-4" aria-hidden="true" />
-        </button>
+        </NuxtButton>
         <FilterBar v-model="filters" :dimensions="dimensions" touch class="min-w-0 flex-1" />
         <span v-if="history" class="shrink-0 text-xs text-muted-foreground tabular-nums" data-history-total>{{ history.total_label }}</span>
       </div>
 
-      <div v-if="error" role="alert" class="mb-3 rounded-md border border-destructive p-3 text-sm">
-        {{ httpErrorMessage(error, "Não foi possível carregar o histórico.") }}
-        {{ history ? "Exibindo a última lista carregada." : "" }}
-        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
-      </div>
+      <NuxtAlert v-if="error" color="error" variant="subtle" icon="i-lucide-triangle-alert" title="Não foi possível carregar o histórico" :description="`${httpErrorMessage(error, 'Não foi possível carregar o histórico.')} ${history ? 'Exibindo a última lista carregada.' : ''}`" :actions="[{ label: 'Tentar de novo', color: 'error', variant: 'outline', onClick: () => refresh() }]" />
 
       <div v-if="loading" class="space-y-2">
-        <UiSkeleton
+        <NuxtSkeleton
           v-for="i in 6"
           :key="i"
-          class="h-14 rounded-lg border"
+         
           label="Carregando histórico"
         />
       </div>
 
-      <ul v-else-if="items.length" class="divide-y rounded-lg border bg-card" data-history-list>
+      <NuxtCard v-else-if="items.length" data-history-list>
+      <ul class="divide-y">
         <li v-for="row in items" :key="row.ref">
           <NuxtLink
             :to="{ path: `/${encodeURIComponent(row.ref)}`, query: { from: 'history' } }"
@@ -116,7 +112,7 @@ const loading = computed(() => pending.value && !history.value);
             <span class="min-w-0">
               <span class="flex flex-wrap items-center gap-2">
                 <span class="font-mono text-sm font-semibold tabular-nums">{{ row.ref }}</span>
-                <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="historyStatusClass(row.status_tone)">{{ row.status_label }}</span>
+                <NuxtBadge :color="row.status_tone === 'danger' ? 'error' : row.status_tone === 'success' ? 'success' : row.status_tone === 'warning' ? 'warning' : 'neutral'" variant="subtle" :label="row.status_label" />
               </span>
               <span class="block text-xs text-muted-foreground tabular-nums">{{ row.closed_display }} · {{ row.channel_label }}</span>
             </span>
@@ -129,29 +125,28 @@ const loading = computed(() => pending.value && !history.value);
           </NuxtLink>
         </li>
       </ul>
+      </NuxtCard>
 
-      <p v-else-if="history" class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground" data-history-empty>
-        {{ history.total_label }}.
-      </p>
+      <NuxtEmpty v-else-if="history" icon="i-lucide-history" title="Nenhum pedido neste recorte" :description="`${history.total_label}.`" data-history-empty />
 
       <nav v-if="history && (history.page > 1 || history.has_next)" class="mt-3 flex items-center justify-between" aria-label="Páginas">
-        <button
+        <NuxtButton
           type="button"
-          class="min-h-control rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-40"
+         
           :disabled="history.page <= 1 || pending"
           @click="goToPage(history.page - 1)"
         >
           Anteriores
-        </button>
+        </NuxtButton>
         <span class="text-xs text-muted-foreground tabular-nums">Página {{ history.page }}</span>
-        <button
+        <NuxtButton
           type="button"
-          class="min-h-control rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-40"
+         
           :disabled="!history.has_next || pending"
           @click="goToPage(history.page + 1)"
         >
           Próximos
-        </button>
+        </NuxtButton>
       </nav>
     </section>
   </main>

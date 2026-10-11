@@ -84,51 +84,56 @@ watch(() => props.orderRef, () => { for (const key of Object.keys(drafts)) Refle
 </script>
 
 <template>
-  <section v-if="negotiations?.length" id="ifood-negotiations" class="space-y-4 rounded-lg border p-4" data-ifood-negotiations>
-    <h2 class="font-semibold">Negociações iFood</h2>
-    <article v-for="item in negotiations" :key="item.id" class="space-y-3 rounded-md border p-3" :data-dispute-id="item.id">
+  <NuxtCard v-if="negotiations?.length" id="ifood-negotiations" as="section" data-ifood-negotiations>
+    <template #header><h2 class="font-semibold">Negociações iFood</h2></template>
+    <div class="space-y-4">
+    <NuxtCard v-for="item in negotiations" :key="item.id" as="article" :data-dispute-id="item.id">
+      <div class="space-y-3">
       <h3 class="text-sm font-medium">{{ requestLabel(item.action) }}</h3>
       <p class="whitespace-pre-wrap break-words">{{ item.message || 'Solicitação recebida do iFood.' }}</p>
       <p class="text-sm text-muted-foreground">Prazo: {{ dateLabel(item.expires_at) }}</p>
       <p class="text-sm">{{ timeoutLabel(item.timeout_action) }}</p>
       <ul v-if="item.items.length" class="list-inside list-disc text-sm"><li v-for="(line, index) in item.items" :key="index">{{ line }}</li></ul>
       <div class="flex flex-wrap gap-3 text-sm">
-        <a v-for="(url, index) in item.evidence_urls.filter(safeEvidence)" :key="url" :href="url" target="_blank" rel="noopener noreferrer" class="min-h-control inline-flex items-center text-primary underline">Evidência {{ index + 1 }}</a>
+        <NuxtButton v-for="(url, index) in item.evidence_urls.filter(safeEvidence)" :key="url" :to="url" target="_blank" rel="noopener noreferrer" color="neutral" variant="link" :label="`Evidência ${index + 1}`" trailing-icon="i-lucide-external-link" />
       </div>
       <p v-if="item.alternatives_available" class="text-sm text-muted-foreground">Há contrapropostas disponíveis. Para negociar uma alternativa, use o canal do iFood.</p>
-      <p v-if="item.response_notice" role="status" class="text-sm">{{ item.response_notice }}</p>
-      <p v-if="draft(item.id).sent" role="status" class="text-sm">Resposta registrada para envio. Aguarde a confirmação do iFood.</p>
+      <NuxtAlert v-if="item.response_notice" color="info" variant="subtle" :description="item.response_notice" />
+      <NuxtAlert v-if="draft(item.id).sent" color="success" variant="subtle" icon="i-lucide-check" description="Resposta registrada para envio. Aguarde a confirmação do iFood." />
       <form v-if="item.can_respond && !draft(item.id).sent" class="space-y-3" @submit.prevent="submit(item)">
         <fieldset :disabled="draft(item.id).busy || draft(item.id).uncertain" class="space-y-3">
           <legend class="text-sm font-medium">Escolha sua resposta</legend>
-          <label class="block text-sm">Decisão
-            <select :value="draft(item.id).decision" class="mt-1 block min-h-control w-full rounded-md border bg-background p-2" @change="choose(item, ($event.target as HTMLSelectElement).value)">
-              <option value="">Selecione uma decisão</option>
-              <option v-for="action in item.actions" :key="action.ref" :value="action.ref" :disabled="!action.enabled">{{ action.ref === 'accept' ? 'Aceitar solicitação' : 'Recusar solicitação' }}</option>
-            </select>
-          </label>
-          <label v-if="draft(item.id).decision && reasons(item).length" class="block text-sm">Motivo informado pelo iFood
-            <select v-model="draft(item.id).reason" class="mt-1 block min-h-control w-full rounded-md border bg-background p-2" @change="draft(item.id).confirmed = false">
-              <option value="">Selecione um motivo</option>
-              <option v-for="reason in reasons(item)" :key="reason" :value="reason">{{ reasonLabel(reason) }}</option>
-            </select>
-          </label>
-          <label v-if="draft(item.id).decision === 'accept'" class="block text-sm">Detalhes adicionais (opcional)
-            <textarea v-model="draft(item.id).detail" maxlength="250" rows="3" class="mt-1 block w-full rounded-md border bg-background p-2" @input="draft(item.id).confirmed = false" />
-            <span class="text-muted-foreground">{{ draft(item.id).detail.length }}/250</span>
-          </label>
+          <NuxtFormField label="Decisão">
+            <NuxtSelect
+              :model-value="draft(item.id).decision"
+              :items="[{ label: 'Selecione uma decisão', value: '' }, ...item.actions.map((action) => ({ label: action.ref === 'accept' ? 'Aceitar solicitação' : 'Recusar solicitação', value: action.ref, disabled: !action.enabled }))]"
+              @update:model-value="choose(item, String($event))"
+            />
+          </NuxtFormField>
+          <NuxtFormField v-if="draft(item.id).decision && reasons(item).length" label="Motivo informado pelo iFood">
+            <NuxtSelect
+              v-model="draft(item.id).reason"
+              :items="[{ label: 'Selecione um motivo', value: '' }, ...reasons(item).map((reason) => ({ label: reasonLabel(reason), value: reason }))]"
+              @update:model-value="draft(item.id).confirmed = false"
+            />
+          </NuxtFormField>
+          <NuxtFormField v-if="draft(item.id).decision === 'accept'" label="Detalhes adicionais" hint="opcional" :description="`${draft(item.id).detail.length}/250`">
+            <NuxtTextarea v-model="draft(item.id).detail" maxlength="250" :rows="3" @input="draft(item.id).confirmed = false" />
+          </NuxtFormField>
           <p v-if="draft(item.id).decision && !actionFor(item)?.enabled" class="text-sm">{{ actionFor(item)?.reason || 'Esta resposta não está disponível.' }}</p>
-          <p v-if="draft(item.id).decision && changed(item)" role="alert" class="text-sm">A negociação foi atualizada. Selecione novamente a decisão para revisar os dados atuais.</p>
-          <UiCheckbox
+          <NuxtAlert v-if="draft(item.id).decision && changed(item)" color="warning" variant="subtle" description="A negociação foi atualizada. Selecione novamente a decisão para revisar os dados atuais." />
+          <NuxtCheckbox
             v-if="draft(item.id).decision"
             v-model="draft(item.id).confirmed"
             :label="`${consequence(item)} Confirmo esta consequência.`"
           />
         </fieldset>
-        <p v-if="draft(item.id).error" role="alert" class="text-sm text-destructive">{{ draft(item.id).error }}</p>
-        <button v-if="draft(item.id).uncertain" type="button" class="min-h-control rounded-md border px-3 py-2 text-sm" :disabled="draft(item.id).busy" @click="submit(item, true)">Verificar mesmo envio</button>
-        <button v-else type="submit" class="min-h-control rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50" :disabled="!canSend(item)">{{ draft(item.id).busy ? 'Enviando…' : 'Enviar resposta ao iFood' }}</button>
+        <NuxtAlert v-if="draft(item.id).error" color="error" variant="subtle" icon="i-lucide-triangle-alert" :description="draft(item.id).error" />
+        <NuxtButton v-if="draft(item.id).uncertain" type="button" label="Verificar mesmo envio" :loading="draft(item.id).busy" :disabled="draft(item.id).busy" @click="submit(item, true)" />
+        <NuxtButton v-else type="submit" label="Enviar resposta ao iFood" :loading="draft(item.id).busy" :disabled="!canSend(item)" />
       </form>
-    </article>
-  </section>
+      </div>
+    </NuxtCard>
+    </div>
+  </NuxtCard>
 </template>

@@ -24,17 +24,11 @@ async function confirmUndo() {
   <main class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader title="Unificações">
       <template #lead>
-        <NuxtLink
-          to="/customers"
-          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
-        >
-          <Icon name="lucide:chevron-left" class="size-5 md:size-4" />
-          <span class="max-md:sr-only">Clientes</span>
-        </NuxtLink>
+        <NuxtButton to="/customers" icon="i-lucide-chevron-left" color="neutral" variant="ghost" square aria-label="Voltar para Clientes" />
         <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
       </template>
       <template #actions>
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+        <NuxtButton icon="i-lucide-refresh-cw" label="Atualizar" :loading="pending" @click="refresh()" />
       </template>
     </OperatorPageHeader>
     <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
@@ -43,22 +37,20 @@ async function confirmUndo() {
       <p v-if="merges" class="mb-3 text-sm text-muted-foreground">
         Cada unificação pode ser desfeita por {{ merges.undo_window_hours }} horas. Pontos de fidelidade somados numa unificação não voltam com o desfazer.
       </p>
-      <p v-if="message" role="alert" class="mb-3 text-sm text-destructive">{{ message }}</p>
-      <div v-if="error" role="alert" class="mb-3 rounded-md border border-destructive p-3 text-sm">
-        {{ httpErrorMessage(error, "Não foi possível carregar as unificações.") }}
-        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
-      </div>
+      <NuxtAlert v-if="message" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="message" />
+      <NuxtAlert v-if="error" color="error" variant="subtle" icon="i-lucide-triangle-alert" title="Não foi possível carregar as unificações" :description="httpErrorMessage(error, 'Não foi possível carregar as unificações.')" :actions="[{ label: 'Tentar de novo', color: 'error', variant: 'outline', onClick: () => refresh() }]" />
 
       <div v-if="pending && !merges" class="space-y-2">
-        <UiSkeleton
+        <NuxtSkeleton
           v-for="i in 4"
           :key="i"
-          class="h-20 rounded-lg border"
+         
           label="Carregando uniões de clientes"
         />
       </div>
 
-      <ul v-else-if="merges?.items.length" class="divide-y rounded-lg border bg-card" data-merge-list>
+      <NuxtCard v-else-if="merges?.items.length" data-merge-list>
+      <ul class="divide-y">
         <li v-for="row in merges.items" :key="row.id" class="flex flex-wrap items-center justify-between gap-3 px-4 py-3" :data-merge-row="row.id">
           <div class="min-w-0 text-sm">
             <p>
@@ -74,53 +66,50 @@ async function confirmUndo() {
             </p>
             <p class="text-xs" :class="row.can_undo ? 'text-foreground' : 'text-muted-foreground'">{{ row.undo_label }}</p>
           </div>
-          <button
+          <NuxtButton
             v-if="row.can_undo"
             type="button"
-            class="min-h-control rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
+           
             :disabled="Boolean(busyId)"
             :data-merge-undo="row.id"
             @click="confirming = row"
           >
             Desfazer
-          </button>
-          <span v-else class="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{{ row.status_label }}</span>
+          </NuxtButton>
+          <NuxtBadge v-else color="neutral" variant="subtle" :label="row.status_label" />
         </li>
       </ul>
-      <p v-else-if="merges" class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Nenhuma unificação até agora.
-      </p>
+      </NuxtCard>
+      <NuxtEmpty v-else-if="merges" icon="i-lucide-merge" title="Nenhuma unificação até agora" />
     </section>
 
-    <UiDialog :open="Boolean(confirming)" @update:open="(open) => { if (!open && !busyId) confirming = null; }">
-      <UiDialogContent class="sm:max-w-md">
-        <UiDialogHeader>
-          <UiDialogTitle>Desfazer a unificação?</UiDialogTitle>
-          <UiDialogDescription v-if="confirming">
-            {{ confirming.source_ref }} volta a ser um cadastro separado, com {{ confirming.moved_label }}.
-            <template v-if="confirming.loyalty_merged">Os pontos de fidelidade somados ficam em {{ confirming.target_ref }}: o desfazer não os devolve.</template>
-          </UiDialogDescription>
-        </UiDialogHeader>
-        <UiDialogFooter>
-          <button
+    <NuxtModal
+      :open="Boolean(confirming)"
+      title="Desfazer a unificação?"
+      :description="confirming ? `${confirming.source_ref} volta a ser um cadastro separado, com ${confirming.moved_label}.${confirming.loyalty_merged ? ` Os pontos de fidelidade somados ficam em ${confirming.target_ref}: o desfazer não os devolve.` : ''}` : ''"
+      @update:open="(open) => { if (!open && !busyId) confirming = null; }"
+    >
+      <template #footer>
+          <NuxtButton
             type="button"
-            class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+            color="neutral"
+            variant="outline"
             :disabled="Boolean(busyId)"
             @click="confirming = null"
           >
             Voltar
-          </button>
-          <button
+          </NuxtButton>
+          <NuxtButton
             type="button"
-            class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            color="primary"
+            :loading="Boolean(busyId)"
             :disabled="Boolean(busyId)"
             data-merge-undo-confirm
             @click="confirmUndo"
           >
             {{ busyId ? "Desfazendo…" : "Desfazer a unificação" }}
-          </button>
-        </UiDialogFooter>
-      </UiDialogContent>
-    </UiDialog>
+          </NuxtButton>
+      </template>
+    </NuxtModal>
   </main>
 </template>

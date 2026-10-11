@@ -54,19 +54,19 @@ function pick(action: SwipeAction) {
   <!-- Fechada, a gaveta nem existe: o menu ⋯ do cartão abre por cima sem ser cortado. -->
   <div class="relative rounded-xl" :class="open || drag ? 'overflow-hidden' : ''" data-swipe-reveal :data-swipe-open="open || undefined">
     <div v-if="open || drag" class="absolute inset-y-0 right-0 flex" :style="{ width: `${width}px` }">
-      <button
+      <NuxtButton
         v-for="action in actions"
         :key="action.key"
         type="button"
-        class="flex flex-1 flex-col items-center justify-center gap-1 op-label font-semibold text-white disabled:opacity-60"
-        :class="action.tone === 'danger' ? 'bg-destructive' : 'bg-info'"
+       
+       
         :disabled="action.disabled"
         :tabindex="open ? 0 : -1"
         :data-swipe-action="action.key"
         @click="pick(action)"
       >
         <Icon :name="action.icon" class="size-5" />{{ action.label }}
-      </button>
+      </NuxtButton>
     </div>
     <div
       class="relative touch-pan-y"

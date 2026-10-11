@@ -66,6 +66,7 @@ const visibleCells = (row: CatalogRowProjection) => keepVisible(row.cells, hidde
 const firstFeedRef = computed(() => visibleSurfaces.value.find((s) => !s.transactional)?.ref ?? "");
 const channelsCount = computed(() => surfaces.value.filter((s) => s.transactional).length);
 const feedsCount = computed(() => surfaces.value.filter((s) => !s.transactional).length);
+const syncColor = (status: string): "success" | "warning" | "error" | "neutral" => status === "ok" ? "success" : status === "error" ? "error" : status === "never" ? "warning" : "neutral";
 const catalogCountLine = computed(() => {
   const total = matrix.value?.rows?.length ?? 0;
   const shown = rows.value.length;
@@ -112,9 +113,7 @@ function sweepBrokenImages() {
 onMounted(() => { nextTick(sweepBrokenImages); });
 watch(() => matrix.value?.rows, () => { if (import.meta.client) nextTick(sweepBrokenImages); });
 // ⋯ do cabeçalho (v3): a última leitura útil, Atualizar e Exportar.
-const headerMenuOpen = ref(false);
 function exportCatalog() {
-  headerMenuOpen.value = false;
   const csv = catalogCsv(rows.value, visibleSurfaces.value);
   const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -185,7 +184,7 @@ const orderedCollections = computed(
   () => reorderView<CollectionProjection>(collections.value, collectionOverride.value, (c) => c.ref),
 );
 const {
-  dragKey: collDragKey, onPointerDown: collPointerDown, onKeyDown: collKeyDown,
+  dragKey: _collDragKey, onPointerDown: collPointerDown, onKeyDown: collKeyDown,
 } = useDragReorder(
   () => orderedCollections.value.map((c) => c.ref),
   (order) => {
@@ -251,6 +250,11 @@ const bulkSurfaceIsFeed = computed(() => {
 });
 const channelSurfaces = computed(() => surfaces.value.filter((s) => s.transactional));
 const feedSurfaces = computed(() => surfaces.value.filter((s) => !s.transactional));
+const bulkSurfaceItems = computed(() => [
+  { label: "Todos os canais", value: "*" },
+  ...(channelSurfaces.value.length ? [{ type: "label" as const, label: "Canais" }, ...channelSurfaces.value.map((surface) => ({ label: surface.name, value: surface.ref }))] : []),
+  ...(feedSurfaces.value.length ? [{ type: "label" as const, label: "Feeds" }, ...feedSurfaces.value.map((surface) => ({ label: surface.name, value: surface.ref }))] : []),
+]);
 type PublicationDraft = { surface: string; skus: string[]; patch: { is_sellable?: boolean; is_published?: boolean }; preview: CatalogPublicationPreview };
 const publicationDraft = ref<PublicationDraft | null>(null);
 async function bulk(patch: PublicationDraft["patch"]) {
@@ -336,6 +340,22 @@ function toggleProductPublish(row: CatalogRowProjection) {
 // row actions menu (⋯) — casa das ações menos corriqueiras (editar, pausar tudo,
 // (des)publicar). Um menu por vez; keyed por sku.
 const menuOpen = ref<string | null>(null);
+const headerMenuItems = computed(() => [[
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", loading: pending.value, onSelect: () => refresh() },
+  { label: "Exportar CSV", icon: "i-lucide-download", onSelect: exportCatalog },
+]]);
+function rowMenuItems(row: CatalogRowProjection) {
+  const primary = [
+    { label: "Editar detalhes", icon: "i-lucide-pencil", onSelect: () => openDetail(row) },
+    { label: row.is_sellable ? "Pausar em todos os canais" : "Ativar em todos os canais", icon: row.is_sellable ? "i-lucide-pause" : "i-lucide-play", disabled: isBusy(productKey(row.sku)) || !row.product_action?.enabled, onSelect: () => toggleProduct(row) },
+    { label: row.is_published ? "Ocultar no catálogo" : "Exibir no catálogo", icon: row.is_published ? "i-lucide-eye-off" : "i-lucide-eye", disabled: isBusy(productKey(row.sku)) || !row.product_action?.enabled, onSelect: () => toggleProductPublish(row) },
+  ];
+  const projection = hasProjectionTargets.value ? [
+    { label: "Dados para redes sociais", icon: "i-lucide-sparkles", badge: row.pim_complete ? undefined : "Incompleto", onSelect: () => openDetail(row, "social") },
+    { label: "Reenviar às plataformas", icon: "i-lucide-refresh-cw", disabled: isBusy(productKey(row.sku)) || !row.resync_action?.enabled, onSelect: () => resyncRow(row) },
+  ] : [];
+  return projection.length ? [primary, projection] : [primary];
+}
 
 // host do Django (não o do Gestor) — usado nos deep-links de saída dos feeds.
 const djangoBase = useRuntimeConfig().public.djangoBaseUrl as string;
@@ -585,42 +605,35 @@ useHead({ title: "Catálogo" });
              declarada no seletor). A escolha persiste por estação. -->
         <ColumnPicker v-if="surfaces.length" v-model="hiddenColumns" :columns="columnOptions" />
         <!-- ⋯ (v3): a última leitura útil, Atualizar e Exportar moram aqui -->
-        <UiPopover v-model:open="headerMenuOpen">
-          <UiPopoverTrigger as-child>
-            <UiIconButton icon="lucide:ellipsis" label="Mais ações do catálogo" data-catalog-more />
-          </UiPopoverTrigger>
-          <UiPopoverContent v-if="headerMenuOpen" align="end" :side-offset="6" class="w-64 rounded-lg p-1.5 shadow-lg" role="menu" data-catalog-menu>
-            <div class="px-2.5 pt-1 pb-2"><ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" /></div>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" @click="refresh()">
-              <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" :class="pending ? 'motion-safe:animate-spin' : ''" />Atualizar
-            </button>
-            <button type="button" role="menuitem" class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent" data-catalog-export @click="exportCatalog">
-              <Icon name="lucide:download" class="size-4 text-muted-foreground" />Exportar CSV
-            </button>
-          </UiPopoverContent>
-        </UiPopover>
+        <NuxtDropdownMenu :items="headerMenuItems" :content="{ align: 'end' }">
+          <NuxtButton icon="i-lucide-ellipsis" color="neutral" variant="outline" square aria-label="Mais ações do catálogo" data-catalog-more />
+          <template #content-top>
+            <div class="p-2"><ReadFreshness inline :metadata="readMetadata" :failed="Boolean(error)" /></div>
+          </template>
+        </NuxtDropdownMenu>
       </template>
       <template #filters>
         <span v-if="collections.length" class="mr-1 shrink-0 op-eyebrow text-muted-foreground">Coleção</span>
       <!-- coleções: arraste os chips para reordenar as seções da vitrine (Collection.sort_order) -->
       <TransitionGroup v-if="collections.length" name="chip" tag="div" class="flex items-center gap-0.5">
         <!-- abas planas (v3 `depois-gestor-catalogo`): a ativa numa caixa; arrastar reordena -->
-        <button
+        <NuxtButton
           key="__all"
           type="button"
-          class="inline-flex min-h-control shrink-0 items-center gap-1.5 rounded-md px-2 op-label transition"
-          :class="collectionRef === '' ? 'border border-border bg-card font-semibold text-foreground shadow-xs' : 'text-foreground/80 hover:bg-accent'"
+          :color="collectionRef === '' ? 'primary' : 'neutral'"
+          :variant="collectionRef === '' ? 'soft' : 'ghost'"
           :aria-pressed="collectionRef === ''"
           data-collection-tab
           @click="selectCollection('')"
-        >Todas <span class="tnum text-muted-foreground">{{ matrix?.rows?.length ?? rows.length }}</span></button>
-        <button
+        >Todas <NuxtBadge color="neutral" variant="outline" :label="String(matrix?.rows?.length ?? rows.length)" /></NuxtButton>
+        <NuxtButton
           v-for="c in orderedCollections"
           :key="c.ref"
           type="button"
           :data-dragkey="c.ref"
-          class="inline-flex min-h-control shrink-0 cursor-grab touch-none items-center gap-1.5 rounded-md px-2 op-label transition-[opacity,box-shadow,background-color] active:cursor-grabbing"
-          :class="[collDragKey === c.ref ? 'opacity-50 shadow-md' : '', collectionRef === c.ref ? 'border border-border bg-card font-semibold text-foreground shadow-xs' : 'text-foreground/80 hover:bg-accent']"
+          :icon="c.is_smart ? 'i-lucide-sparkles' : undefined"
+          :color="collectionRef === c.ref ? 'primary' : 'neutral'"
+          :variant="collectionRef === c.ref ? 'soft' : 'ghost'"
           :aria-pressed="collectionRef === c.ref"
           data-collection-tab
           aria-keyshortcuts="ArrowUp ArrowDown"
@@ -628,10 +641,7 @@ useHead({ title: "Catálogo" });
           @click="selectCollection(c.ref)"
           @pointerdown="collPointerDown(c.ref, $event)"
           @keydown="collKeyDown(c.ref, $event)"
-        >
-          <Icon v-if="c.is_smart" name="lucide:sparkles" class="size-4 opacity-70" title="Coleção por regra" />
-          {{ c.name }} <span class="tnum text-muted-foreground">{{ c.product_count }}</span>
-        </button>
+        >{{ c.name }} <NuxtBadge color="neutral" variant="outline" :label="String(c.product_count)" /></NuxtButton>
       </TransitionGroup>
         <!-- "23 de 131 produtos · 4 canais · 4 feeds" no fim da linha das coleções (v3),
              inteiro: a frase não se corta na borda. -->
@@ -642,30 +652,30 @@ useHead({ title: "Catálogo" });
     </OperatorPageHeader>
 
     <section class="flex min-h-0 flex-1 flex-col gap-4 p-4">
-      <p v-if="errorMsg" role="alert" class="text-sm text-destructive">{{ errorMsg }}</p>
+      <NuxtAlert v-if="errorMsg" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="errorMsg" />
       <!-- Vocação: aviso de uma linha, tom neutro. Serve só ao B.I.; não pede pressa. -->
       <p v-if="vocation" class="-my-2 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground" data-testid="vocation-notice">
         <span>{{ vocation.headline }} ({{ vocation.names }})</span>
         <span class="text-muted-foreground/50" aria-hidden="true">·</span>
-        <button type="button" class="min-h-control underline underline-offset-2 hover:text-foreground" @click="classifyVocation">Classificar</button>
+        <NuxtButton type="button" @click="classifyVocation">Classificar</NuxtButton>
       </p>
-      <p v-if="error" role="alert" class="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-        Não foi possível atualizar o catálogo. {{ matrix ? "Exibindo a última leitura disponível." : "" }} <button class="min-h-control min-w-control underline" @click="refresh()">Tentar de novo</button>
-      </p>
+      <NuxtAlert v-if="error" color="error" variant="subtle" icon="i-lucide-triangle-alert" title="Não foi possível atualizar o catálogo" :description="matrix ? 'Exibindo a última leitura disponível.' : 'Tente atualizar para consultar os produtos.'" :actions="[{ label: 'Tentar de novo', color: 'error', variant: 'outline', onClick: () => refresh() }]" />
 
-      <div v-if="orderDraft" role="status" class="space-y-2 rounded border p-3 text-sm">
+      <NuxtAlert v-if="orderDraft" color="warning" variant="subtle" icon="i-lucide-list-restart" :title="orderSaving ? 'Confirmando a ordenação…' : 'A ordenação ainda precisa de conferência'">
+        <template #description><div class="space-y-2">
         <p>{{ orderSaving ? "Confirmando a ordenação…" : "A ordenação ainda precisa de conferência. Seu arraste foi preservado." }}</p>
         <p>Seu arraste: {{ orderDraft.ordered.map(orderLabel).join(" → ") }}</p>
         <p v-if="!orderSaving">Ordem atual: {{ currentOrder.map(orderLabel).join(" → ") || "Abra a coleção deste arraste para conferir." }}</p>
         <div v-if="!orderSaving" class="flex flex-wrap gap-2">
-          <button type="button" class="min-h-12 rounded border px-3" @click="saveOrderDraft(false, true)">Verificar esta gravação</button>
-          <button v-if="canReviewOrder" type="button" class="min-h-12 rounded border px-3" @click="saveOrderDraft(true)">Aplicar meu arraste à ordem atual</button>
-          <button type="button" class="min-h-12 rounded border px-3" @click="orderDraft = null">Descartar o rascunho de ordem</button>
+          <NuxtButton type="button" @click="saveOrderDraft(false, true)">Verificar esta gravação</NuxtButton>
+          <NuxtButton v-if="canReviewOrder" type="button" @click="saveOrderDraft(true)">Aplicar meu arraste à ordem atual</NuxtButton>
+          <NuxtButton type="button" @click="orderDraft = null">Descartar o rascunho de ordem</NuxtButton>
         </div>
-      </div>
+        </div></template>
+      </NuxtAlert>
 
-      <section v-if="publicationDraft" aria-label="Prévia de publicação" class="space-y-3 rounded border bg-card p-4">
-        <h2 class="font-semibold">Confira {{ publicationDraft.preview.cells.length }} células em {{ surfaceLabel(publicationDraft.surface) }}</h2>
+      <NuxtCard v-if="publicationDraft" aria-label="Prévia de publicação">
+        <template #header><h2 class="font-semibold">Confira {{ publicationDraft.preview.cells.length }} células em {{ surfaceLabel(publicationDraft.surface) }}</h2></template>
         <p class="text-sm text-muted-foreground">Esta prévia mostra o escopo da decisão. Após confirmar, acompanhe a sincronização das plataformas separadamente nas células.</p>
         <ul class="max-h-64 space-y-1 overflow-auto text-sm">
           <li v-for="cell in publicationDraft.preview.cells" :key="`${cell.sku}:${cell.surface_ref}:${cell.tier}`">
@@ -677,29 +687,30 @@ useHead({ title: "Catálogo" });
           </li>
         </ul>
         <div class="flex flex-wrap gap-2">
-          <button type="button" :disabled="bulkBusy" class="min-h-action rounded bg-primary px-3 text-primary-foreground disabled:opacity-50" @click="confirmPublication">Confirmar este lote</button>
-          <button type="button" :disabled="bulkBusy" class="min-h-control rounded border px-3 disabled:opacity-50" @click="reviewPublication">Atualizar esta prévia</button>
-          <button type="button" :disabled="bulkBusy" class="min-h-control rounded border px-3 disabled:opacity-50" @click="publicationDraft = null">Descartar esta prévia</button>
+          <NuxtButton type="button" :disabled="bulkBusy" @click="confirmPublication">Confirmar este lote</NuxtButton>
+          <NuxtButton type="button" :disabled="bulkBusy" @click="reviewPublication">Atualizar esta prévia</NuxtButton>
+          <NuxtButton type="button" :disabled="bulkBusy" @click="publicationDraft = null">Descartar esta prévia</NuxtButton>
         </div>
-      </section>
+      </NuxtCard>
 
       <!-- matrix -->
-      <div v-if="loading" class="overflow-hidden rounded-xl border border-border bg-card">
+      <NuxtCard v-if="loading">
       <div v-for="i in 8" :key="i" class="flex items-center gap-3 border-b border-border px-4 py-3 last:border-0">
-        <UiSkeleton class="size-10 rounded-md" label="Carregando produto" />
-        <UiSkeleton class="h-4 w-40 rounded" label="Carregando produto" />
+        <NuxtSkeleton aria-label="Carregando produto" />
+        <NuxtSkeleton aria-label="Carregando produto" />
         <div class="ml-auto flex gap-2">
-          <UiSkeleton
+          <NuxtSkeleton
             v-for="j in 6"
             :key="j"
-            class="h-8 w-[76px] rounded-md"
-            label="Carregando disponibilidade"
+           
+            aria-label="Carregando disponibilidade"
           />
         </div>
       </div>
-    </div>
+      </NuxtCard>
 
-    <div v-else-if="rows.length" role="region" aria-label="Produtos e canais. Role para o lado para ver todos os canais." tabindex="0" class="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-xs">
+    <NuxtCard v-else-if="rows.length">
+    <div role="region" aria-label="Produtos e canais. Role para o lado para ver todos os canais." tabindex="0" class="min-h-0 flex-1 overflow-auto">
       <!-- `table-fixed`: sem ele o conteúdo do cabeçalho (nome longo do canal, rótulo
            do feed) estica a coluna e a matriz fica desalinhada. Fixo, toda superfície
            tem a MESMA largura e o nome trunca com o title inteiro. O `min-w` faz a
@@ -717,11 +728,11 @@ useHead({ title: "Catálogo" });
                  `border-r` fecha a coluna fixa: no scroll horizontal é essa linha que
                  diz onde o painel parado termina e a matriz que corre começa. -->
             <th class="sticky sm:left-0 top-0 z-30 w-full min-w-[260px] border-b border-r border-border bg-card px-4 py-3 text-left">
-              <UiCheckbox
+              <NuxtCheckbox
                 :model-value="allSelected"
                 :indeterminate="someSelected"
                 label="Produto"
-                class="op-eyebrow text-muted-foreground"
+               
                 @update:model-value="toggleSelectAll"
               />
             </th>
@@ -741,22 +752,20 @@ useHead({ title: "Catálogo" });
                      o feed com saída pública abre pelo próprio nome -->
                 <span class="flex items-center gap-1 text-muted-foreground" :title="s.transactional ? s.name : `${s.name}: feed (só exibe, não vende)`" data-surface-head>
                   <Icon :name="surfaceDisplayIcon(s)" class="size-3.5 shrink-0" :class="s.transactional ? 'text-muted-foreground' : 'text-primary/70'" />
-                  <a
+                  <NuxtButton
                     v-if="s.output_path"
-                    :href="`${djangoBase}${s.output_path}`" target="_blank" rel="noopener"
-                    class="op-eyebrow whitespace-nowrap hover:text-foreground hover:underline"
+                    :to="`${djangoBase}${s.output_path}`" target="_blank"
+                    :label="s.short_name"
+                    color="neutral"
+                    variant="link"
+                    size="xs"
                     :title="`Abrir ${s.name}`" @click.stop
-                  >{{ s.short_name }}</a>
+                  />
                   <span v-else class="op-eyebrow whitespace-nowrap">{{ s.short_name }}</span>
                 </span>
                 <!-- Linha 2 só quando há estado a dizer: o sync da plataforma. O papel da
                      superfície (feed/menuboard) já é dito pelo ícone + title. -->
-                <span v-if="syncBadge(s.sync_status)" class="flex items-center gap-1">
-                  <span
-                    class="truncate text-xs font-medium leading-tight"
-                    :class="syncBadge(s.sync_status)!.toneClass" :title="syncBadge(s.sync_status)!.title"
-                  >● {{ syncBadge(s.sync_status)!.label }}</span>
-                </span>
+                <NuxtBadge v-if="syncBadge(s.sync_status)" :color="syncColor(s.sync_status)" variant="subtle" :label="syncBadge(s.sync_status)!.label" :title="syncBadge(s.sync_status)!.title" />
               </div>
             </th>
           </tr>
@@ -797,10 +806,10 @@ useHead({ title: "Catálogo" });
                 >
                   <Icon name="lucide:grip-vertical" class="pointer-events-none size-4" />
                 </span>
-                <UiCheckbox
+                <NuxtCheckbox
                   :model-value="isSelected(row.sku)"
                   :aria-label="`Selecionar ${row.name}`"
-                  class="shrink-0"
+                 
                   @update:model-value="toggleSelect(row.sku)"
                 />
                 <div class="flex min-w-0 flex-1 items-center gap-3">
@@ -825,31 +834,30 @@ useHead({ title: "Catálogo" });
                   <div class="flex min-w-0 flex-col">
                     <span class="flex items-center gap-1.5 truncate font-medium" :class="rowStatuses[row.sku]?.off ? 'text-muted-foreground' : 'text-foreground'">
                       <span class="truncate" :class="rowStatuses[row.sku]?.off ? 'line-through decoration-1' : ''">{{ row.name }}</span>
-                      <span
+                      <NuxtBadge
                         v-if="rowStatuses[row.sku]?.label"
-                        class="shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium"
+                        :color="rowStatuses[row.sku]?.tone === 'danger' ? 'error' : rowStatuses[row.sku]?.tone === 'amber' ? 'warning' : 'neutral'"
+                        variant="subtle"
+                        :label="rowStatuses[row.sku]?.label"
                         :title="rowStatuses[row.sku]?.hint || undefined"
-                        :class="{
-                          'bg-destructive/10 text-destructive': rowStatuses[row.sku]?.tone === 'danger',
-                          'bg-warning/15 text-amber-600 dark:text-amber-400': rowStatuses[row.sku]?.tone === 'amber',
-                          'bg-muted text-muted-foreground': rowStatuses[row.sku]?.tone === 'muted',
-                        }"
-                      >{{ rowStatuses[row.sku]?.label }}</span>
+                      />
                       <!-- esgotado que repõe por produção: o próximo lote reativa sozinho -->
                       <span v-if="row.sold_out && row.replenish_qty" class="shrink-0 text-xs font-normal text-muted-foreground">Repõe {{ row.replenish_qty }} no lote</span>
                       <!-- estoque baixo (produto ainda ativo): aviso discreto -->
-                      <span v-else-if="!rowStatuses[row.sku]?.off && row.low_stock" class="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">Resta {{ row.stock_qty }}</span>
+                      <NuxtBadge v-else-if="!rowStatuses[row.sku]?.off && row.low_stock" color="warning" variant="subtle" :label="`Resta ${row.stock_qty}`" />
                       <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->
-                      <button
+                      <NuxtButton
                         v-if="rowSyncErrors(row)"
                         type="button"
-                        class="min-h-control min-w-control inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/20 disabled:opacity-50"
+                        icon="i-lucide-triangle-alert"
+                        :label="String(rowSyncErrors(row))"
+                        color="error"
+                        variant="soft"
+                        size="xs"
                         :disabled="isBusy(productKey(row.sku)) || !row.resync_action?.enabled"
                         :title="`Erro de sincronização em ${rowSyncErrors(row)} plataforma(s). Toque para reenviar tudo.`"
                         @click.stop="resyncRow(row)"
-                      >
-                        <Icon name="lucide:triangle-alert" class="size-3" /> {{ rowSyncErrors(row) }}
-                      </button>
+                      />
                     </span>
                     <!-- uma linha só: com a coluna em largura fixa, sem `nowrap` o SKU +
                          preço + coleção quebram e a linha da matriz cresce. -->
@@ -862,67 +870,9 @@ useHead({ title: "Catálogo" });
                   </div>
                 </div>
                 <!-- menu ⋯ da linha: casa das ações menos corriqueiras (editar, pausar tudo, publicar) -->
-                <UiPopover :open="menuOpen === row.sku" @update:open="(v) => (menuOpen = v ? row.sku : null)">
-                  <UiPopoverTrigger as-child>
-                    <button
-                      type="button"
-                      class="grid size-control shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                      :class="menuOpen === row.sku ? 'bg-accent text-foreground' : ''"
-                      :aria-label="`Ações de ${row.name}`"
-                    >
-                      <Icon name="lucide:ellipsis-vertical" class="size-4" />
-                    </button>
-                  </UiPopoverTrigger>
-                  <UiPopoverContent align="end" :side-offset="4" class="w-56 p-1">
-                    <button
-                      type="button"
-                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent"
-                      @click="openDetail(row)"
-                    >
-                      <Icon name="lucide:pencil" class="size-4 text-muted-foreground" /> Editar detalhes
-                    </button>
-                    <button
-                      type="button" :disabled="isBusy(productKey(row.sku)) || !row.product_action?.enabled"
-                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
-                      @click="toggleProduct(row)"
-                    >
-                      <Icon :name="row.is_sellable ? 'lucide:pause' : 'lucide:play'" class="size-4 text-muted-foreground" />
-                      {{ row.is_sellable ? "Pausar em todos os canais" : "Ativar em todos os canais" }}
-                    </button>
-                    <button
-                      type="button" :disabled="isBusy(productKey(row.sku)) || !row.product_action?.enabled"
-                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
-                      @click="toggleProductPublish(row)"
-                    >
-                      <Icon :name="row.is_published ? 'lucide:eye-off' : 'lucide:eye'" class="size-4 text-muted-foreground" />
-                      {{ row.is_published ? "Ocultar no catálogo" : "Exibir no catálogo" }}
-                    </button>
-                    <!-- PIM + sync (só quando há plataforma que projeta) -->
-                    <template v-if="hasProjectionTargets">
-                    <div class="my-1 h-px bg-border"></div>
-                    <button
-                      type="button"
-                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent"
-                      @click="openDetail(row, 'social')"
-                    >
-                      <Icon name="lucide:sparkles" class="size-4 text-muted-foreground" />
-                      Dados para redes sociais
-                      <span
-                        v-if="!row.pim_complete"
-                        class="ml-auto rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
-                      >Incompleto</span>
-                    </button>
-                    <button
-                      type="button" :disabled="isBusy(productKey(row.sku)) || !row.resync_action?.enabled"
-                      class="flex min-h-control w-full items-center gap-2 rounded px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-50"
-                      @click="resyncRow(row)"
-                    >
-                      <Icon name="lucide:refresh-cw" class="size-4 text-muted-foreground" />
-                      Reenviar às plataformas
-                    </button>
-                    </template>
-                  </UiPopoverContent>
-                </UiPopover>
+                <NuxtDropdownMenu :items="rowMenuItems(row)" :content="{ align: 'end' }">
+                  <NuxtButton icon="i-lucide-ellipsis-vertical" color="neutral" variant="ghost" square :aria-label="`Ações de ${row.name}`" />
+                </NuxtDropdownMenu>
               </div>
             </td>
             <!-- cells (heatmap). Banda de feeds começa com uma divisória mais forte.
@@ -942,9 +892,9 @@ useHead({ title: "Catálogo" });
                 <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off) OU
                      linha "fora" (esgotado/etc.: mantém a POSIÇÃO ligada, mas dessatura p/ cinza).
                      Vale para canal (vende) E feed (só exibe) — a mesma pausa por item. -->
-                <UiSwitch
+                <NuxtSwitch
                   size="sm"
-                  :tone="rowStatuses[row.sku]?.off ? 'muted' : 'success'"
+                  :color="rowStatuses[row.sku]?.off ? 'neutral' : 'success'"
                   :model-value="cell.is_sellable"
                   :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
                   :aria-label="cell.is_sellable ? `${cellView(row, cell).label}. Toque para pausar neste ${surfaceWord(cell)}.` : `Ativar neste ${surfaceWord(cell)}`"
@@ -961,11 +911,12 @@ useHead({ title: "Catálogo" });
 
                 <!-- ÁREA 2 — preço, ao lado do toggle: base = ícone $ apagado; ALTERADO =
                      seta ↑/↓ colorida + valor. title = valor; clique = popover. -->
-                <UiPopover :open="isEditing(row.sku, cell.surface_ref)" @update:open="(v) => { if (!v) void closePrice() }">
-                  <UiPopoverAnchor as-child>
-                    <button
+                <NuxtPopover :open="isEditing(row.sku, cell.surface_ref)" :content="{ align: 'center' }" @update:open="(v) => { if (!v) void closePrice() }">
+                    <NuxtButton
                       type="button"
-                      class="flex min-h-control min-w-control items-center justify-center rounded px-0.5 py-0.5 leading-none transition hover:bg-muted disabled:opacity-40"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
                       :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !cell.action?.enabled"
                       :title="priceTitle(row, cell)"
                       :aria-label="`Preço em ${surfaceName(cell.surface_ref)}: ${cell.price_display}. Toque para editar.`"
@@ -982,26 +933,20 @@ useHead({ title: "Catálogo" });
                         <span class="text-xs font-semibold tabular-nums" :class="cell.is_sellable ? 'text-foreground' : 'text-muted-foreground line-through'">{{ cell.price_display.replace("R$ ", "") }}</span>
                       </span>
                       <Icon v-else name="lucide:circle-dollar-sign" class="size-3.5 text-muted-foreground/40" />
-                    </button>
-                  </UiPopoverAnchor>
-                  <UiPopoverContent align="center" :side-offset="6" class="w-52 p-3">
-                    <p class="mb-2 text-xs font-medium text-muted-foreground">Preço · {{ surfaceName(cell.surface_ref) }}</p>
-                    <input
-                      v-model="priceInput" type="text" inputmode="decimal" autofocus
-                      class="min-h-control h-9 w-full rounded-md border bg-background px-2.5 text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
-                      @keyup.enter="commitPrice(row, cell)" @keyup.esc="closePrice()"
-                    />
-                    <p class="mt-1 text-xs text-muted-foreground">Base do produto: {{ row.base_price_display }}</p>
-                    <div v-if="priceConflict(cell)" role="alert" class="mt-2 space-y-2 text-xs">
-                      <p>O preço mudou para {{ cell.price_display }}. Seu valor digitado foi mantido.</p>
-                      <button type="button" class="min-h-12 rounded border px-2" @click="keepPrice(cell)">Conferir e manter meu preço</button>
+                    </NuxtButton>
+                  <template #content>
+                    <div class="w-64 space-y-3 p-4">
+                      <NuxtFormField :label="`Preço · ${surfaceName(cell.surface_ref)}`" :description="`Base do produto: ${row.base_price_display}`">
+                        <NuxtInput v-model="priceInput" type="text" inputmode="decimal" autofocus @keyup.enter="commitPrice(row, cell)" @keyup.esc="closePrice()" />
+                      </NuxtFormField>
+                      <NuxtAlert v-if="priceConflict(cell)" color="warning" variant="subtle" title="O preço mudou" :description="`Agora: ${cell.price_display}. Seu valor digitado foi mantido.`" :actions="[{ label: 'Conferir e manter meu preço', color: 'warning', variant: 'outline', onClick: () => keepPrice(cell) }]" />
+                      <div class="flex justify-end gap-2">
+                        <NuxtButton color="neutral" variant="ghost" label="Cancelar" @click="closePrice()" />
+                        <NuxtButton label="Salvar preço" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" @click="commitPrice(row, cell)" />
+                      </div>
                     </div>
-            <div class="mt-2.5 flex justify-end gap-1.5">
-                      <button type="button" class="min-h-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="closePrice()">Cancelar</button>
-                      <button type="button" :disabled="priceConflict(cell) || isBusy(cellKey(row.sku, cell.surface_ref))" class="min-h-12 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="commitPrice(row, cell)">Salvar preço</button>
-                    </div>
-                  </UiPopoverContent>
-                </UiPopover>
+                  </template>
+                </NuxtPopover>
                 </template>
 
                 <!-- ÁREA 3 — selo de SYNC (produto × plataforma), inline ao lado do preço,
@@ -1009,16 +954,16 @@ useHead({ title: "Catálogo" });
                      botão "reenviar agora"; senão só informa. Vem por último para não
                      empurrar o toggle de lugar nas colunas em que não aparece. -->
                 <template v-if="cellSync(cell).show">
-                  <button
+                  <NuxtButton
                     v-if="cellSync(cell).actionable"
                     type="button"
-                    class="grid size-control shrink-0 place-items-center rounded-full text-xs leading-none transition hover:scale-125 disabled:opacity-40"
-                    :class="cellSync(cell).toneClass"
+                   
+                   
                     :disabled="isBusy(cellKey(row.sku, cell.surface_ref)) || !row.resync_action?.enabled"
                     :title="`${cellSync(cell).label}${cell.sync_error ? ' · ' + cell.sync_error : ''}. Toque para reenviar agora.`"
                     :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}. Toque para reenviar agora.`"
                     @click="resyncCell(row, cell)"
-                  >{{ cellSync(cell).dot }}</button>
+                  >{{ cellSync(cell).dot }}</NuxtButton>
                   <span
                     v-else
                     class="shrink-0 text-xs leading-none"
@@ -1034,15 +979,14 @@ useHead({ title: "Catálogo" });
         </tbody>
       </table>
     </div>
+    </NuxtCard>
 
-      <div v-else-if="!pending && !error" class="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
-        <Icon name="lucide:package-search" class="mb-2 size-8 text-muted-foreground/40" />
-        <p v-if="Object.keys(filters).length || query.trim()" class="text-sm text-muted-foreground">
-          Nenhum produto com esses filtros.
-          <button v-if="Object.keys(filters).length" class="min-h-control min-w-control underline" @click="filters = {}">Limpar filtros</button>
-        </p>
-        <p v-else class="text-sm text-muted-foreground">Nenhum produto {{ activeCollection ? `na coleção ${activeCollection.name}` : "no catálogo" }}.</p>
-      </div>
+      <NuxtEmpty
+        v-else-if="!pending && !error"
+        icon="i-lucide-package-search"
+        :title="Object.keys(filters).length || query.trim() ? 'Nenhum produto com esses filtros' : `Nenhum produto ${activeCollection ? `na coleção ${activeCollection.name}` : 'no catálogo'}`"
+        :actions="Object.keys(filters).length ? [{ label: 'Limpar filtros', onClick: () => { filters = {}; } }] : []"
+      />
     </section>
 
     <!-- floating bulk bar (selection-scoped) -->
@@ -1052,53 +996,33 @@ useHead({ title: "Catálogo" });
     >
       <!-- inverted surface: bg-foreground → preta no claro, branca no escuro (alto contraste,
            destaca a ação em curso sobre a matriz). Controles internos usam background/* p/ inverter junto. -->
-      <div v-if="selected.size" class="fixed inset-x-0 bottom-5 z-30 mx-auto flex w-fit max-w-[95vw] flex-wrap items-center gap-2 rounded-xl bg-foreground px-3 py-2 text-background shadow-lg">
+      <NuxtCard v-if="selected.size" class="fixed inset-x-0 bottom-5 z-30 mx-auto w-fit max-w-[95vw]">
+        <div class="flex flex-wrap items-center gap-2">
         <span class="flex items-center gap-1.5 px-1 text-sm font-medium">
           <Icon v-if="bulkBusy" name="line-md:loading-loop" class="size-4" />
           <span class="tabular-nums">{{ selected.size }}</span> selecionado{{ selected.size === 1 ? "" : "s" }}
         </span>
-        <div class="flex items-center gap-1 rounded-lg bg-background/10 px-2 py-1 text-sm">
-          <span class="text-xs opacity-70">em</span>
-          <!-- Exceção intencional: a barra é invertida e não usa o chevron global. -->
-          <UiNativeSelect v-model="bulkSurface" class="border-transparent bg-transparent bg-none font-medium text-background shadow-none [&>option]:text-foreground [&>optgroup]:text-foreground">
-            <option value="*">Todos os canais</option>
-            <optgroup v-if="channelSurfaces.length" label="Canais">
-              <option v-for="s in channelSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
-            </optgroup>
-            <optgroup v-if="feedSurfaces.length" label="Feeds">
-              <option v-for="s in feedSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
-            </optgroup>
-          </UiNativeSelect>
-        </div>
+        <NuxtFormField label="Aplicar seleção em">
+          <NuxtSelect v-model="bulkSurface" :items="bulkSurfaceItems" aria-label="Aplicar seleção em" />
+        </NuxtFormField>
         <div class="h-5 w-px bg-background/20"></div>
-        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: false })"><Icon name="lucide:pause" class="size-3.5" /> Pausar</button>
-        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: true })"><Icon name="lucide:play" class="size-3.5" /> Ativar</button>
+        <NuxtButton :disabled="bulkBusy" icon="i-lucide-pause" label="Pausar" color="neutral" variant="outline" @click="bulk({ is_sellable: false })" />
+        <NuxtButton :disabled="bulkBusy" icon="i-lucide-play" label="Ativar" color="neutral" variant="outline" @click="bulk({ is_sellable: true })" />
 
         <!-- Preço e publicação só para canais (transacionam). Feed só pausa/reativa. -->
         <template v-if="!bulkSurfaceIsFeed">
         <!-- reprecificação em lote: popover ancorado (superfície normal, legível sobre a barra invertida) -->
-        <UiPopover :open="priceOpen" @update:open="(v) => (priceOpen = v)">
-          <UiPopoverTrigger as-child>
-            <button :disabled="bulkBusy" class="inline-flex min-h-control items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50">
-              <Icon name="lucide:tag" class="size-3.5" /> Preço…
-            </button>
-          </UiPopoverTrigger>
-          <UiPopoverContent align="center" :side-offset="10" class="w-64 p-3">
-            <p class="mb-2 text-xs font-medium text-muted-foreground"><span class="tabular-nums">{{ selected.size }}</span> selecionado{{ selected.size === 1 ? "" : "s" }} em {{ surfaceLabel(bulkSurface) }}</p>
-            <div class="mb-2 inline-flex w-full rounded-md border p-0.5 text-xs">
-              <button
-                v-for="o in priceOps" :key="o.k" type="button"
-                class="min-h-control min-w-control flex-1 rounded px-2 py-1 font-medium transition"
-                :class="priceOp === o.k ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
-                @click="priceOp = o.k"
-              >{{ o.l }}</button>
-            </div>
+        <NuxtPopover :open="priceOpen" :content="{ align: 'center' }" @update:open="(v) => (priceOpen = v)">
+          <NuxtButton :disabled="bulkBusy" icon="i-lucide-tag" label="Preço…" color="neutral" variant="outline" />
+          <template #content>
+            <div class="w-72 space-y-3 p-4">
+            <p class="text-sm font-medium"><span class="tabular-nums">{{ selected.size }}</span> selecionado{{ selected.size === 1 ? "" : "s" }} em {{ surfaceLabel(bulkSurface) }}</p>
+            <NuxtTabs v-model="priceOp" :items="priceOps.map((option) => ({ label: option.l, value: option.k }))" size="sm" />
             <div class="flex items-center gap-1.5">
               <span class="w-5 shrink-0 text-center text-sm text-muted-foreground">{{ priceOp === "pct" ? "%" : "R$" }}</span>
-              <input
+              <NuxtInput
                 v-model="priceInputBulk" type="text" inputmode="decimal" autofocus
                 :placeholder="priceOp === 'set' ? '15,00' : priceOp === 'pct' ? '+10 ou -20' : '+1,00 ou -0,50'"
-                class="min-h-control h-9 w-full rounded-md border bg-background px-2.5 text-sm tabular-nums outline-none focus:ring-1 focus:ring-ring"
                 @keyup.enter="applyBulkPrice"
               />
             </div>
@@ -1106,8 +1030,8 @@ useHead({ title: "Catálogo" });
               {{ priceOp === "set" ? "Define o preço de todos os selecionados." : priceOp === "pct" ? "Aumenta (+) ou reduz (−) por porcentagem." : "Soma (+) ou subtrai (−) do preço atual." }}
               A mudança é permanente. Para promoção, use as regras.
             </p>
-            <div v-if="pricePreview" class="mt-3 max-h-64 overflow-auto rounded border p-2" aria-live="polite">
-              <p class="mb-2 text-xs font-semibold">Revise {{ pricePreview.cells.length }} células antes de confirmar</p>
+            <NuxtCard v-if="pricePreview" aria-live="polite">
+              <template #header><p class="text-xs font-semibold">Revise {{ pricePreview.cells.length }} células antes de confirmar</p></template>
               <ul class="space-y-1 text-xs">
                 <li v-for="cell in pricePreview.cells" :key="cell.id">
                   {{ cell.sku }} · {{ surfaceLabel(cell.surface_ref) }} · mínimo {{ cell.tier }}:
@@ -1115,19 +1039,21 @@ useHead({ title: "Catálogo" });
                   {{ (cell.after_q / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }}
                 </li>
               </ul>
-            </div>
+            </NuxtCard>
             <div class="mt-2.5 flex justify-end gap-1.5">
-              <button type="button" class="min-h-control rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="priceOpen = false">Cancelar</button>
-              <button type="button" :disabled="!priceValid || bulkBusy" class="min-h-action rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyBulkPrice">{{ pricePreview ? "Confirmar alterações" : "Revisar alterações" }}</button>
+              <NuxtButton color="neutral" variant="ghost" label="Cancelar" @click="priceOpen = false" />
+              <NuxtButton :label="pricePreview ? 'Confirmar alterações' : 'Revisar alterações'" :disabled="!priceValid || bulkBusy" @click="applyBulkPrice" />
             </div>
-          </UiPopoverContent>
-        </UiPopover>
+            </div>
+          </template>
+        </NuxtPopover>
 
-        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: false })">Ocultar</button>
-        <button :disabled="bulkBusy" class="inline-flex min-h-control items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: true })">Exibir</button>
+        <NuxtButton :disabled="bulkBusy" label="Ocultar" color="neutral" variant="ghost" @click="bulk({ is_published: false })" />
+        <NuxtButton :disabled="bulkBusy" label="Exibir" color="neutral" variant="ghost" @click="bulk({ is_published: true })" />
         </template>
-        <button class="min-h-control min-w-control grid size-9 place-items-center rounded-md text-background/70 transition hover:bg-background/10 hover:text-background" title="Limpar seleção" @click="clearSelection"><Icon name="lucide:x" class="size-4" /></button>
-      </div>
+        <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square aria-label="Limpar seleção" @click="clearSelection" />
+        </div>
+      </NuxtCard>
     </Transition>
 
     <!-- painel de produto (edição completa, incluindo dados sociais e fiscais) —
@@ -1157,22 +1083,13 @@ useHead({ title: "Catálogo" });
     />
 
     <!-- lightbox canônico: foco preso, Escape e retorno ao disparador são do Reka. -->
-    <UiDialog :open="Boolean(zoom)" @update:open="(value) => { if (!value) zoom = null; }">
-      <UiDialogContent v-if="zoom" class="max-w-[calc(100%-2rem)] cursor-zoom-out border-0 bg-transparent p-8 shadow-none sm:max-w-[calc(100%-2rem)]" @click="zoom = null">
-        <UiDialogTitle class="sr-only">Foto ampliada de {{ zoom.name }}</UiDialogTitle>
-        <figure class="flex flex-col items-center gap-3">
+    <NuxtModal :open="Boolean(zoom)" fullscreen :title="zoom ? `Foto ampliada de ${zoom.name}` : 'Foto ampliada'" @update:open="(value) => { if (!value) zoom = null; }">
+      <template #body>
+        <figure v-if="zoom" class="flex flex-col items-center gap-3">
           <img :src="zoom.url" :alt="zoom.name" class="max-h-[80vh] max-w-[85vw] rounded-xl object-contain shadow-2xl" />
-          <figcaption class="rounded-full bg-black/60 px-3 py-1 text-sm font-medium text-white">{{ zoom.name }}</figcaption>
+          <figcaption>{{ zoom.name }}</figcaption>
         </figure>
-      </UiDialogContent>
-    </UiDialog>
+      </template>
+    </NuxtModal>
   </main>
 </template>
-
-<style>
-/* FLIP: os chips deslizam suavemente para a nova posição ao reordenar (não é um
-   "pulo") — dá o feedback de que a intenção do operador está acontecendo. */
-.chip-move {
-  transition: transform 0.24s cubic-bezier(0.2, 0, 0, 1);
-}
-</style>

@@ -23,11 +23,8 @@ import {
   onRoadLine,
   packLabel,
   primaryVerb,
-  sealClass,
   splitRef,
   stationProgress,
-  timerChip,
-  toneBadge,
   undoLine,
   type AffordanceRef,
   type Tone,
@@ -82,9 +79,6 @@ function openVolumesMenu() {
   menuOpen.value = true;
   openVolumes();
 }
-function stepVolumes(delta: number) {
-  volumesDraft.value = Math.max(0, Math.min(99, volumesDraft.value + delta));
-}
 function saveVolumes() {
   menuOpen.value = false;
   volumesEditing.value = false;
@@ -93,7 +87,6 @@ function saveVolumes() {
 const nowMs = useNowTick(() => props.card.server_now_iso);
 const clock = computed(() => cardClock(props.card, nowMs.value));
 const seal = computed(() => cardSeal(props.card, { next: props.next }));
-const target = computed(() => props.touch ? "min-h-action min-w-action" : "min-h-control min-w-control");
 
 // A Cozinha neste pedido: a barra por estação, o "Pronto" da estação sem tela e o
 // "Voltar para…" no menu do pedido.
@@ -114,9 +107,12 @@ const waitingFor = computed(() => !primary.value && progress.value && !progress.
 
 // Pagamento: o tom vem da projeção. Dinheiro não é "pago" nem "devendo".
 const paymentAttention = computed(() => Boolean(props.card.payment_method_label) && (props.card.payment_tone === "warning" || props.card.payment_tone === "danger"));
-const paymentClass = computed(() => {
+const paymentColor = computed<"warning" | "error" | "success" | "neutral">(() => {
   const tone = props.card.payment_tone as Tone;
-  return tone === "warning" || tone === "danger" ? toneBadge(tone).split(" ").filter((c) => c.startsWith("text-")).join(" ") : "text-muted-foreground";
+  if (tone === "warning") return "warning";
+  if (tone === "danger") return "error";
+  if (tone === "success") return "success";
+  return "neutral";
 });
 const paymentIcon = computed(() => {
   if (!props.card.payment_method) return "lucide:circle-help";
@@ -128,17 +124,12 @@ const danfe = computed(() => props.negotiationOnly ? null : danfeLine(props.card
 // janela. O fato fica à vista; o gesto só enquanto o prazo corre.
 const undo = computed(() => props.negotiationOnly ? null : undoLine(props.card, nowMs.value));
 const handoff = computed(() => undo.value?.kind === "handoff" ? undo.value : null);
-// O anel do desfazer: a fração que falta da janela (a maior contagem vista é o todo).
+// A janela de desfazer usa o progresso oficial do Nuxt UI.
 const handoffWindow = ref(0);
 watch(() => handoff.value?.secondsLeft ?? 0, (left) => {
   if (left > handoffWindow.value) handoffWindow.value = left;
   if (!left) handoffWindow.value = 0;
 }, { immediate: true });
-const ringStyle = computed(() => {
-  const total = handoffWindow.value || 1;
-  const pct = Math.round(((handoff.value?.secondsLeft ?? 0) / total) * 100);
-  return { background: `conic-gradient(var(--success) 0 ${pct}%, color-mix(in oklab, var(--success) 18%, transparent) ${pct}% 100%)` };
-});
 
 // ⋯ do cartão: atender, seleção em lote, voltar para a estação, abrir o pedido.
 const menuOpen = ref(false);
@@ -147,6 +138,35 @@ function pick(fn: () => void) {
   menuOpen.value = false;
   fn();
 }
+const cardMenuItems = computed(() => [
+  ...(props.canOpen ? [{
+    label: props.card.assigned_operator ? `Liberar (${props.card.assigned_operator} atende)` : "Atender este pedido",
+    icon: props.card.assigned_operator ? "i-lucide-user-check" : "i-lucide-user-plus",
+    "data-card-assign": "",
+    onSelect: () => pick(() => emit("toggle-assign")),
+  }] : []),
+  {
+    label: props.selecting ? (props.selected ? "Desmarcar este pedido" : "Marcar este pedido") : "Selecionar vários",
+    icon: "i-lucide-list-checks",
+    "data-card-select-mode": "",
+    onSelect: () => pick(() => props.selecting ? emit("toggle-select") : emit("select-mode")),
+  },
+  ...(!volumesEditing.value && volumesAction.value ? [{
+    label: props.card.volumes ? `Volumes: ${props.card.volumes} (mudar)` : "Declarar volumes",
+    icon: "i-lucide-package",
+    "data-card-volumes": "",
+    disabled: props.busy || !volumesAction.value.enabled,
+    onSelect: (event: Event) => { event.preventDefault(); openVolumes(); },
+  }] : []),
+  ...recallOptions.value.map((option) => ({
+    label: option.label,
+    icon: "i-lucide-rotate-ccw",
+    "data-card-recall": "",
+    disabled: props.busy,
+    onSelect: () => pick(() => emit("station-recall", option.ticketPk)),
+  })),
+  ...(props.canOpen ? [{ label: "Abrir o pedido", icon: "i-lucide-file-text", to: `/${props.card.ref}` }] : []),
+]);
 
 // Toque longo liga a seleção em lote (como no celular de qualquer lista).
 let pressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -163,68 +183,61 @@ function pressEnd() {
 }
 onBeforeUnmount(pressEnd);
 
-const CHIP = "inline-flex items-center gap-1.5 rounded-lg bg-secondary px-2.5 font-semibold text-secondary-foreground";
-const chipSize = computed(() => props.touch ? "h-9 op-body" : "h-8 text-sm");
-function segClass(state: string): string {
-  if (state === "done") return "bg-success";
-  if (state === "alert") return "bg-destructive";
-  if (state === "working") return "seg-wip";
-  return "bg-foreground/15";
+function segmentColor(state: string): "success" | "error" | "info" | "neutral" {
+  if (state === "done") return "success";
+  if (state === "alert") return "error";
+  if (state === "working") return "info";
+  return "neutral";
 }
-function secondaryClass(priority: string): string {
-  if (priority === "danger") return "border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive";
-  return "border-border hover:bg-accent";
+function segmentValue(state: string): number {
+  if (state === "done") return 100;
+  if (state === "working" || state === "alert") return 50;
+  return 0;
+}
+function nuxtIcon(icon: string): string {
+  return icon.startsWith("lucide:") ? `i-lucide-${icon.slice("lucide:".length)}` : icon;
 }
 </script>
 
 <template>
-  <article
-    class="relative flex flex-col gap-2 rounded-xl border bg-card p-3.5 transition"
-    :class="[
-      fill ? 'h-full' : '',
-      handoff ? 'border-success/50 bg-success/8' : '',
-      !handoff && seal.tone === 'destructive' ? 'border-destructive/50' : '',
-      !handoff && next && !selected ? 'border-2 border-primary shadow-[0_0_0_4px_color-mix(in_oklab,var(--primary)_14%,transparent)]' : '',
-      !handoff && card.can_confirm && !next && !selected ? 'border-primary/70' : '',
-      selected ? 'border-primary ring-1 ring-primary' : '',
-      !handoff && seal.tone !== 'destructive' && !next && !card.can_confirm && !selected ? 'border-border hover:border-primary/40' : '',
-    ]"
+  <NuxtCard
+    as="article"
+    variant="outline"
+    :class="fill ? 'h-full' : undefined"
     :data-card-state="handoff ? 'handoff' : seal.tone"
     @pointerdown="pressStart"
     @pointerup="pressEnd"
     @pointerleave="pressEnd"
     @pointercancel="pressEnd"
   >
+    <div class="flex h-full flex-col gap-3">
     <!-- Homologação do iFood: o aviso vem ANTES do código, com a frase inteira. -->
-    <p
+    <NuxtAlert
       v-if="card.test_order_notice"
-      class="rounded-md border border-warning/50 bg-warning/15 p-2 text-xs font-medium"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-flask-conical"
+      :title="card.test_order_label"
+      :description="card.test_order_notice"
       role="status"
       data-test-order-notice
-    >
-      <span class="mb-0.5 flex items-center gap-1.5 font-bold uppercase tracking-wide">
-        <Icon name="lucide:flask-conical" class="size-3.5 shrink-0" />
-        {{ card.test_order_label }}
-      </span>
-      {{ card.test_order_notice }}
-    </p>
+    />
 
     <!-- código grande + nome à esquerda; selo do estado e o tempo no canto -->
     <div class="flex items-start gap-2" :class="handoff ? 'opacity-55' : ''">
-      <button
+      <NuxtButton
         v-if="selecting && !negotiationOnly"
-        type="button"
-        class="-mt-1 -ml-2 grid shrink-0 place-items-center rounded transition hover:bg-accent"
-        :class="touch ? 'size-action' : 'size-control'"
+        :icon="selected ? 'i-lucide-check-square-2' : 'i-lucide-square'"
+        color="neutral"
+        variant="ghost"
+        square
+       
+       
         :aria-label="selected ? 'Desmarcar pedido' : 'Selecionar pedido'"
         :aria-pressed="selected"
         data-card-select
         @click="emit('toggle-select')"
-      >
-        <span class="grid size-5 place-items-center rounded border" :class="selected ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-card hover:border-primary'">
-          <Icon v-if="selected" name="lucide:check" class="size-3.5" />
-        </span>
-      </button>
+      />
       <div class="min-w-0 flex-1">
         <NuxtLink
           v-if="canOpen && !negotiationOnly"
@@ -251,94 +264,96 @@ function secondaryClass(priority: string): string {
         </p>
       </div>
       <div v-if="!handoff" class="flex shrink-0 flex-col items-end gap-1 pt-1">
-        <span :class="[sealClass(seal.tone), 'inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-semibold whitespace-nowrap']" data-card-seal>
-          <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-          {{ seal.label }}
-        </span>
-        <span
+        <NuxtBadge
+          :color="seal.tone === 'destructive' ? 'error' : seal.tone === 'success' ? 'success' : seal.tone === 'warning' ? 'warning' : seal.tone === 'info' ? 'info' : seal.tone === 'primary' ? 'primary' : 'neutral'"
+          variant="subtle"
+          :label="seal.label"
+          data-card-seal
+        />
+        <NuxtBadge
           v-if="clock.countdown"
-          class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 op-micro font-semibold tnum"
-          :class="timerChip(clock.tone)"
+          :color="clock.tone === 'late' ? 'error' : clock.tone === 'warning' ? 'warning' : 'neutral'"
+          variant="outline"
           :title="card.confirmation_action === 'cancel' ? 'Cancelado automaticamente se vencer' : 'Confirmado automaticamente se vencer'"
+          :label="clock.text"
           role="timer"
           aria-live="off"
-        >{{ clock.text }}</span>
-        <span
+        />
+        <NuxtBadge
           v-else
-          class="op-micro tnum"
-          :class="clock.tone === 'late' ? 'font-bold text-warning' : clock.tone === 'warning' ? 'font-semibold text-warning' : 'text-muted-foreground'"
+          :color="clock.tone === 'late' ? 'error' : clock.tone === 'warning' ? 'warning' : 'neutral'"
+          variant="outline"
+          :label="`${seal.label !== card.status_label && !card.ready_at_iso && !card.dispatched_at_iso ? `${card.status_label} · ` : ''}${clock.text}`"
           data-card-clock
-        ><template v-if="seal.label !== card.status_label && !card.ready_at_iso && !card.dispatched_at_iso">{{ card.status_label }} · </template>{{ clock.text }}</span>
+        />
       </div>
       <span v-else class="shrink-0 pt-1 op-micro text-muted-foreground">{{ card.fulfillment_label }}<template v-if="pack"> · {{ pack }}</template></span>
     </div>
 
     <!-- Entregue, na janela do desfazer: o cartão fica no lugar, com o anel do tempo. -->
     <template v-if="handoff">
-      <div class="mt-1 flex items-center gap-3" :data-undo="handoff.kind">
-        <span class="grid size-12 shrink-0 place-items-center rounded-full" :style="ringStyle" aria-hidden="true">
-          <span class="grid size-9 place-items-center rounded-full bg-card text-success"><Icon name="lucide:check" class="size-5" /></span>
-        </span>
-        <p class="op-action">{{ handoff.label }}</p>
-      </div>
+      <NuxtBadge color="success" variant="subtle" size="lg" icon="i-lucide-check" :label="handoff.label" :data-undo="handoff.kind" />
+      <NuxtProgress :model-value="handoff.secondsLeft" :max="handoffWindow || 1" color="success" size="sm" />
       <p class="op-micro leading-snug text-muted-foreground" data-undo-detail>{{ handoff.detail }}<span v-if="handoff.alreadyOut" data-undo-already-out> · {{ handoff.alreadyOut }}</span></p>
     </template>
 
     <template v-else>
       <!-- etiquetas cheias: os fatos do pedido, com ícone (um estilo só) -->
       <div class="flex flex-wrap gap-2" data-card-tags>
-        <span :class="[CHIP, chipSize]">
-          <Icon :name="card.fulfillment_type === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4" />{{ card.fulfillment_label }}
-        </span>
+        <NuxtBadge
+          color="neutral"
+          variant="soft"
+          size="lg"
+          :icon="card.fulfillment_type === 'delivery' ? 'i-lucide-bike' : 'i-lucide-store'"
+          :label="card.fulfillment_label"
+        />
         <!-- Quem embalou declara onde estiver: com o gesto liberado, a etiqueta abre o
              "Quantos volumes saem?" num toque (o mesmo do ⋯). -->
-        <button
+        <NuxtButton
           v-if="pack && volumesAction?.enabled"
-          type="button"
-          :class="[CHIP, chipSize, 'tnum transition hover:bg-accent']"
+          icon="i-lucide-package"
+          :label="pack"
+          color="neutral"
+          variant="soft"
           :data-card-pack="card.volumes ? 'volumes' : 'items'"
           :aria-label="card.volumes ? `${pack}. Toque para mudar os volumes` : `${pack}. Toque para declarar os volumes`"
           :disabled="busy"
           data-card-pack-declare
           @click="openVolumesMenu"
-        >
-          <Icon name="lucide:package" class="size-4" />{{ pack }}
-        </button>
-        <span v-else-if="pack" :class="[CHIP, chipSize, 'tnum']" :data-card-pack="card.volumes ? 'volumes' : 'items'">
-          <Icon name="lucide:package" class="size-4" />{{ pack }}
-        </span>
-        <span v-if="card.is_preorder" :class="[CHIP, chipSize]" data-preorder-badge>
-          <Icon name="lucide:calendar-clock" class="size-4" />Agendado{{ card.commitment_date_display ? ` · ${card.commitment_date_display}` : "" }}
-        </span>
+        />
+        <NuxtBadge v-else-if="pack" color="neutral" variant="soft" size="lg" icon="i-lucide-package" :label="pack" :data-card-pack="card.volumes ? 'volumes' : 'items'" />
+        <NuxtBadge v-if="card.is_preorder" color="neutral" variant="soft" size="lg" icon="i-lucide-calendar-clock" :label="`Agendado${card.commitment_date_display ? ` · ${card.commitment_date_display}` : ''}`" data-preorder-badge />
         <!-- fila de espera: o pedido não está parado, está esperando o lote -->
-        <span
+        <NuxtBadge
           v-if="card.waitlist_label"
-          :class="[CHIP, chipSize, card.waitlist_state === 'confirming' ? 'bg-primary/12 text-primary' : '']"
+          :color="card.waitlist_state === 'confirming' ? 'primary' : 'neutral'"
+          variant="soft"
+          size="lg"
+          icon="i-lucide-hourglass"
+          :label="card.waitlist_label"
           data-waitlist-badge
-        >
-          <Icon name="lucide:hourglass" class="size-4" />{{ card.waitlist_label }}
-        </span>
-        <span
+        />
+        <NuxtBadge
           v-if="card.is_gift"
-          :class="[CHIP, chipSize]"
+          color="neutral"
+          variant="soft"
+          size="lg"
+          icon="i-lucide-gift"
           role="img"
           :aria-label="card.gift_has_recipient ? 'Presente com destinatário' : 'Embalar para presente'"
           data-gift-badge
-        >
-          <Icon name="lucide:gift" class="size-4" />
-        </span>
-        <span
+        />
+        <NuxtBadge
           v-if="card.has_customer_note"
-          :class="[CHIP, chipSize]"
+          color="neutral"
+          variant="soft"
+          size="lg"
+          icon="i-lucide-message-square"
           role="img"
           aria-label="Tem observação do cliente"
           data-customer-note-badge
-        >
-          <Icon name="lucide:message-square" class="size-4" />
-        </span>
-        <span v-if="card.assigned_operator" :class="[CHIP, chipSize, 'bg-primary/12 text-primary']" data-card-assigned>
-          <Icon name="lucide:user-check" class="size-4" /><span class="max-w-24 truncate">{{ card.assigned_operator }}</span>
-        </span>
+        />
+        <NuxtBadge v-if="card.assigned_operator" color="primary" variant="soft" size="lg" icon="i-lucide-user-check" :label="card.assigned_operator" data-card-assigned />
       </div>
 
       <!-- Saída larga (v4): o cartão fica com código, nome, etiquetas, traços e a frase; os
@@ -366,13 +381,14 @@ function secondaryClass(priority: string): string {
 
       <!-- a Cozinha neste pedido: um traço por estação e a frase -->
       <div v-if="progress" class="flex flex-col gap-1" data-kitchen-progress :data-kitchen="progress.done ? undefined : ''">
-        <div class="flex gap-[3px]" role="list" aria-label="Estações deste pedido">
-          <span
+        <div class="grid gap-2" role="list" aria-label="Estações deste pedido">
+          <NuxtProgress
             v-for="seg in progress.segments"
             :key="seg.ref"
+            :model-value="segmentValue(seg.state)"
+            :color="segmentColor(seg.state)"
+            size="sm"
             role="listitem"
-            class="h-1.5 flex-1 rounded-full"
-            :class="segClass(seg.state)"
             :title="seg.title"
             :aria-label="seg.title"
             data-kitchen-station
@@ -383,48 +399,37 @@ function secondaryClass(priority: string): string {
           <span class="text-muted-foreground">{{ progress.summary }} · </span><b class="font-semibold text-info" data-kitchen-missing>{{ progress.missing }}</b>
         </p>
         <!-- só a estação que pede alguém: papel perdido, item cancelado, o Pronto da estação sem tela -->
-        <div
+        <NuxtAlert
           v-for="chip in attentionStations"
           :key="chip.ref"
-          class="flex items-center gap-2 rounded-md px-2 py-1"
-          :class="chip.tone === 'alert' ? 'bg-destructive/10 text-destructive dark:text-red-300' : 'bg-secondary'"
+          :color="chip.tone === 'alert' ? 'error' : 'neutral'"
+          variant="subtle"
+          :icon="chip.icon"
+          :title="chip.station"
+          :description="`${chip.detail}${chip.cancelledNote ? ` · ${chip.cancelledNote}` : ''}`"
           data-kitchen-attention
         >
-          <Icon :name="chip.icon" class="size-3.5 shrink-0" />
-          <span class="min-w-0 flex-1 truncate op-micro">
-            <b class="font-semibold text-foreground">{{ chip.station }}</b> · {{ chip.detail }}<span v-if="chip.cancelledNote" class="font-semibold text-destructive dark:text-red-300"> · {{ chip.cancelledNote }}</span>
-          </span>
-          <button
-            v-if="chip.canMarkReady"
-            type="button"
-            class="inline-flex shrink-0 items-center gap-1 rounded-md border border-transparent bg-foreground px-2.5 text-sm font-semibold text-background transition hover:bg-foreground/90 active:scale-[0.98] disabled:opacity-60"
-            :class="target"
-            :disabled="busy"
-            :aria-label="`Pronto de ${chip.station} no pedido ${code.code}`"
-            data-kitchen-ready
-            @click="emit('station-ready', chip.ref)"
-          >
-            <Icon name="lucide:check" class="size-3.5" />
-            Pronto de {{ chip.station }}
-          </button>
-        </div>
+          <template v-if="chip.canMarkReady" #actions>
+            <NuxtButton
+              icon="i-lucide-check"
+              :label="`Pronto de ${chip.station}`"
+              color="neutral"
+              :size="touch ? 'xl' : 'lg'"
+              :disabled="busy"
+              :aria-label="`Pronto de ${chip.station} no pedido ${code.code}`"
+              data-kitchen-ready
+              @click="emit('station-ready', chip.ref)"
+            />
+          </template>
+        </NuxtAlert>
       </div>
 
       <p v-if="fill && paymentAttention && !progress?.done" class="op-micro text-warning" data-card-payment-note>{{ card.payment_method_label }}</p>
 
       <!-- o sistema fez: "Pronto · automático · desfazer" -->
-      <div v-if="undo && undo.kind === 'auto_ready'" class="flex flex-wrap items-center gap-x-2 gap-y-1" :data-undo="undo.kind">
-        <span class="inline-flex h-6 items-center gap-1.5 rounded-full bg-muted px-2 text-xs font-semibold whitespace-nowrap text-muted-foreground">
-          <Icon name="lucide:sparkles" class="size-3.5" />
-          {{ undo.label }}<template v-if="undo.canUndo"> ·
-            <button
-              type="button"
-              class="font-semibold text-foreground underline underline-offset-[3px] disabled:opacity-60"
-              :disabled="busy"
-              data-undo-button
-              @click="emit('action', undo.action)"
-            >desfazer</button></template>
-        </span>
+      <div v-if="undo && undo.kind === 'auto_ready'" class="flex flex-wrap items-center gap-2" :data-undo="undo.kind">
+        <NuxtBadge color="neutral" variant="soft" icon="i-lucide-sparkles" :label="undo.label" />
+        <NuxtButton v-if="undo.canUndo" label="Desfazer" color="neutral" variant="link" :disabled="busy" data-undo-button @click="emit('action', undo.action)" />
         <span class="op-micro text-muted-foreground" data-undo-detail>{{ undo.detail }}</span>
         <span v-if="undo.alreadyOut" class="op-micro text-muted-foreground" data-undo-already-out>· {{ undo.alreadyOut }}</span>
       </div>
@@ -433,16 +438,16 @@ function secondaryClass(priority: string): string {
         <div class="flex items-center gap-1.5" :class="danfe.attention ? 'font-medium text-warning' : 'text-muted-foreground'">
           <Icon :name="danfe.attention ? 'lucide:triangle-alert' : card.danfe_printed ? 'lucide:receipt-text' : 'lucide:receipt'" class="size-3.5 shrink-0" />
           <span class="truncate" data-danfe-status>{{ danfe.status }}</span>
-          <button
-            type="button"
-            class="ml-auto inline-flex min-h-control shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 font-medium text-foreground transition hover:bg-accent disabled:opacity-60"
+          <NuxtButton
+            icon="i-lucide-printer"
+            :label="danfePrinting || danfe.sending ? 'Imprimindo…' : danfe.action"
+            color="neutral"
+            variant="outline"
+           
             :disabled="danfePrinting || danfe.sending"
             data-danfe-print
             @click="emit('print-danfe')"
-          >
-            <Icon name="lucide:printer" class="size-3.5" />
-            {{ danfePrinting || danfe.sending ? "Imprimindo…" : danfe.action }}
-          </button>
+          />
         </div>
         <p v-if="danfe.problem" class="text-warning" data-danfe-problem>{{ danfe.problem }}</p>
       </div>
@@ -450,127 +455,136 @@ function secondaryClass(priority: string): string {
       <NuxtLink
         v-if="!negotiationOnly && card.fiscal_status === 'failed'"
         :to="`/${card.ref}`"
-        class="min-h-control flex items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-sm font-medium text-warning"
         data-fiscal-failed
       >
-        <Icon name="lucide:triangle-alert" class="size-4 shrink-0" />
-        NFC-e não autorizada · abrir e reprocessar
+        <NuxtAlert color="warning" variant="subtle" icon="i-lucide-triangle-alert" title="NFC-e não autorizada" description="Abrir e reprocessar" />
       </NuxtLink>
     </template>
 
-    <NuxtLink v-if="card.ifood_negotiations?.length" :to="`/${card.ref}#ifood-negotiations`" class="min-h-control block rounded-md border border-warning/40 bg-warning/10 p-2 text-sm" data-ifood-negotiation-link>
-      Negociação iFood · abrir solicitação e conferir prazo
+    <NuxtLink v-if="card.ifood_negotiations?.length" :to="`/${card.ref}#ifood-negotiations`" data-ifood-negotiation-link>
+      <NuxtAlert color="warning" variant="subtle" icon="i-lucide-message-square-warning" title="Negociação iFood" description="Abrir solicitação e conferir prazo" />
     </NuxtLink>
-    <p v-if="card.ifood_cancellation_notice" class="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs" role="status" data-ifood-cancellation>{{ card.ifood_cancellation_notice }}</p>
-    <p v-if="card.ifood_remote_ahead_label" class="rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-medium" role="status" data-ifood-remote-ahead>{{ card.ifood_remote_ahead_label }}</p>
+    <NuxtAlert v-if="card.ifood_cancellation_notice" color="warning" variant="subtle" :title="card.ifood_cancellation_notice" role="status" data-ifood-cancellation />
+    <NuxtAlert v-if="card.ifood_remote_ahead_label" color="primary" variant="subtle" :title="card.ifood_remote_ahead_label" role="status" data-ifood-remote-ahead />
     <p v-if="card.ifood_schedule_label" class="op-micro text-muted-foreground" data-ifood-schedule>{{ card.ifood_schedule_label }}</p>
-    <p v-if="card.ifood_pickup_code" class="flex items-baseline gap-2 rounded-md bg-muted px-2.5 py-1.5" data-ifood-pickup-code>
-      <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Código de retirada</span>
-      <span class="ml-auto text-base font-bold tnum">{{ card.ifood_pickup_code }}</span>
-    </p>
+    <NuxtBadge v-if="card.ifood_pickup_code" color="neutral" variant="subtle" icon="i-lucide-key-round" :label="`Código de retirada · ${card.ifood_pickup_code}`" data-ifood-pickup-code />
 
     <!-- aguardando produção -->
-    <div v-if="card.awaiting_work_orders.length && !handoff" class="flex flex-col gap-1">
-      <div v-for="wo in card.awaiting_work_orders" :key="wo.ref" class="flex items-center gap-1.5 rounded-md bg-muted/60 px-2 py-1 op-micro text-muted-foreground">
-        <Icon name="lucide:factory" class="size-3 shrink-0" />
-        <span class="truncate">{{ wo.output_sku }} · {{ wo.status_label }}</span>
-        <span class="ml-auto tnum">{{ wo.progress_pct }}%</span>
-      </div>
+    <div v-if="card.awaiting_work_orders.length && !handoff" class="flex flex-col gap-1.5">
+      <NuxtProgress
+        v-for="wo in card.awaiting_work_orders"
+        :key="wo.ref"
+        :model-value="wo.progress_pct"
+        :max="100"
+        color="primary"
+        size="sm"
+        status
+        :get-value-label="() => `${wo.output_sku}, ${wo.status_label}, ${wo.progress_pct}%`"
+        data-work-order-progress
+      >
+        <template #status>
+          <span class="flex min-w-0 items-center gap-1.5">
+            <Icon name="lucide:factory" class="size-3 shrink-0" />
+            <span class="truncate">{{ wo.output_sku }} · {{ wo.status_label }}</span>
+          </span>
+          <span class="ml-auto shrink-0 tnum">{{ wo.progress_pct }}%</span>
+        </template>
+      </NuxtProgress>
     </div>
 
     <!-- bloqueio antes do gesto (v4): o motivo escrito no cartão, com o cadeado. Quando
          a frase não trava o gesto do momento (ex.: o pedido novo ainda sem próxima
          etapa), ela fica à vista em texto calmo, como antes. -->
-    <div
+    <NuxtAlert
       v-if="!negotiationOnly && card.advance_block_reason && !handoff && seal.tone === 'destructive'"
-      class="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/12 px-2.5 py-1.5"
-    >
-      <Icon name="lucide:lock" class="mt-0.5 size-4 shrink-0 text-destructive" />
-      <p class="op-label leading-snug" data-advance-block>{{ card.advance_block_reason }}</p>
-    </div>
-    <p v-else-if="!negotiationOnly && card.advance_block_reason && !handoff" class="op-micro text-muted-foreground" data-advance-block>
-      {{ card.advance_block_reason }}
-    </p>
+      color="error"
+      variant="subtle"
+      icon="i-lucide-lock"
+      :title="card.advance_block_reason"
+      data-advance-block
+    />
+    <NuxtAlert
+      v-else-if="!negotiationOnly && card.advance_block_reason && !handoff"
+      color="neutral"
+      variant="soft"
+      icon="i-lucide-lock"
+      :title="card.advance_block_reason"
+      data-advance-block
+    />
 
     <!-- erro da ação: a razão do servidor, à vista até dispensar -->
-    <div
+    <NuxtAlert
       v-if="error"
-      class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive dark:text-orange-300"
-      role="alert"
-    >
-      <Icon name="lucide:alert-triangle" class="mt-px size-3.5 shrink-0" />
-      <span class="min-w-0 flex-1">{{ error }}</span>
-      <button type="button" class="grid size-control shrink-0 place-items-center rounded transition hover:bg-destructive/20" aria-label="Dispensar aviso" @click="emit('dismiss-error')">
-        <Icon name="lucide:x" class="size-3.5" />
-      </button>
-    </div>
+      color="error"
+      variant="subtle"
+      icon="i-lucide-triangle-alert"
+      :title="error"
+      :close="{ label: 'Dispensar aviso' }"
+      data-card-error
+      @update:open="emit('dismiss-error')"
+    />
 
     <div v-if="!negotiationOnly" class="flex-1" />
 
     <!-- pagamento e total, logo acima do gesto -->
     <div v-if="!negotiationOnly && !handoff && !fill" class="flex items-baseline justify-between gap-2">
-      <span class="inline-flex min-w-0 items-center gap-1.5 op-micro" :class="paymentClass" data-card-payment>
-        <Icon v-if="card.payment_method_label" :name="paymentIcon" class="size-3.5 shrink-0" />
-        <span class="truncate">{{ card.payment_method_label }}</span>
-      </span>
+      <NuxtBadge v-if="card.payment_method_label" :color="paymentColor" variant="subtle" :icon="paymentIcon.replace('lucide:', 'i-lucide-')" :label="card.payment_method_label" data-card-payment />
       <span class="shrink-0 op-title tnum">{{ card.total_display }}</span>
     </div>
 
     <!-- o gesto: um botão largo com o verbo e o nome; o resto no ⋯ -->
     <div v-if="!negotiationOnly" class="flex items-stretch gap-2">
-      <button
+      <NuxtButton
         v-if="handoff && handoff.canUndo"
-        type="button"
-        class="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-success/50 bg-card op-action transition hover:bg-accent disabled:opacity-60"
-        :class="touch ? 'h-14' : 'h-12'"
+        color="success"
+        variant="outline"
+        :size="touch ? 'xl' : 'lg'"
+        icon="i-lucide-undo-2"
+       
         :disabled="busy"
+        :loading="busy"
         data-undo-button
         @click="emit('action', handoff.action)"
       >
-        <Icon name="lucide:undo-2" class="size-5" />
         Desfazer <span class="tnum text-muted-foreground">{{ handoff.countdown }}</span>
-      </button>
+      </NuxtButton>
       <template v-else-if="!handoff">
-        <button
+        <NuxtButton
           v-for="aff in secondary"
           :key="aff.ref"
-          type="button"
           :disabled="busy"
-          class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border bg-card px-3 op-label font-semibold transition active:scale-[0.98] disabled:opacity-60"
-          :class="[touch ? 'h-14' : 'h-12', secondaryClass(aff.priority)]"
+          :loading="busy"
+          :color="aff.priority === 'danger' ? 'error' : 'neutral'"
+          variant="outline"
+          :size="touch ? 'xl' : 'lg'"
+          :icon="nuxtIcon(aff.icon)"
+          :label="aff.label"
+         
           :title="aff.reason || undefined"
           @click="emit('action', aff.ref)"
-        >
-          <Icon :name="aff.icon" class="size-4" />
-          {{ aff.label }}
-        </button>
-        <button
+        />
+        <NuxtButton
           v-if="primary"
-          type="button"
           :disabled="busy || primary.disabled"
+          :loading="busy"
           :title="primary.reason || (primaryLabel !== primary.label ? primary.label : undefined)"
-          class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 font-semibold transition"
-          :class="[
-            touch ? 'h-14 op-action' : 'h-12 op-body font-semibold',
-            primary.disabled
-              ? 'cursor-default border-2 border-dashed border-border text-muted-foreground card-stripes'
-              : 'bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] disabled:opacity-60',
-          ]"
+          :color="primary.disabled ? 'neutral' : 'primary'"
+          :variant="primary.disabled ? 'outline' : 'solid'"
+          :size="touch ? 'xl' : 'lg'"
+          :icon="primary.disabled ? 'i-lucide-lock' : nuxtIcon(primary.icon)"
+          :label="primaryLabel"
+         
           data-card-primary
           @click="!primary.disabled && emit('action', primary.ref)"
-        >
-          <Icon :name="primary.disabled ? 'lucide:lock' : primary.icon" class="size-5 shrink-0" />
-          <span class="truncate">{{ primaryLabel }}</span>
-        </button>
-        <div
+        />
+        <NuxtAlert
           v-else-if="waitingFor"
-          class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg bg-muted px-3 font-medium text-muted-foreground"
-          :class="touch ? 'h-14 op-title font-medium' : 'h-12 op-body'"
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-chef-hat"
+          :title="`Aguardando ${waitingFor}`"
           data-card-waiting
-        >
-          <Icon name="lucide:chef-hat" class="size-5 shrink-0" />
-          <span class="text-center leading-tight">Aguardando {{ waitingFor }}</span>
-        </div>
+        />
         <div v-else class="flex-1" />
       </template>
       <div v-else class="flex-1" />
@@ -578,117 +592,36 @@ function secondaryClass(priority: string): string {
       <!-- ⋯ do cartão: atender, seleção em lote, voltar à estação, abrir. Na Saída larga
            (v4) ele não aparece: o toque longo abre o menu, e o teclado ainda o alcança. -->
       <div class="relative shrink-0" :class="fill ? 'absolute right-3 bottom-3 size-0' : ''">
-      <UiPopover v-model:open="menuOpen">
-        <UiPopoverTrigger as-child>
-          <button
-            type="button"
-            class="grid h-full place-items-center rounded-lg border border-border bg-card text-muted-foreground transition hover:bg-accent hover:text-foreground"
-            :class="[touch ? 'min-h-14 w-14' : 'min-h-12 w-12', fill ? 'sr-only focus:not-sr-only' : '']"
-            :aria-label="`Mais ações do pedido ${code.code}`"
-            data-card-menu
+      <NuxtPopover v-model:open="menuOpen" :content="{ side: 'top', align: 'end', sideOffset: 4 }">
+        <NuxtButton
+          color="neutral"
+          variant="outline"
+          :size="touch ? 'xl' : 'lg'"
+          square
+          icon="i-lucide-ellipsis"
+         
+          :aria-label="`Mais ações do pedido ${code.code}`"
+          data-card-menu
+        />
+        <template #content>
+        <div v-if="menuOpen">
+          <NuxtFormField
+            v-if="volumesEditing"
+            label="Quantos volumes saem?"
+            :description="volumesDraft === 0 ? 'Zero apaga: o cartão volta a contar itens.' : 'Sacolas ou caixas, contadas por quem embalou.'"
+            data-card-volumes-editor
           >
-            <Icon name="lucide:ellipsis" class="size-5" />
-          </button>
-        </UiPopoverTrigger>
-        <UiPopoverContent v-if="menuOpen" side="top" align="end" :side-offset="4" class="w-60 overflow-hidden p-1" role="menu">
-          <button
-            v-if="canOpen"
-            type="button"
-            role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent"
-            :class="target"
-            :aria-label="card.assigned_operator ? `Atendido por ${card.assigned_operator}. Toque para liberar` : 'Atender este pedido'"
-            data-card-assign
-            @click="pick(() => emit('toggle-assign'))"
-          >
-            <Icon :name="card.assigned_operator ? 'lucide:user-check' : 'lucide:user-plus'" class="size-4 shrink-0 text-muted-foreground" />
-            {{ card.assigned_operator ? `Liberar (${card.assigned_operator} atende)` : "Atender este pedido" }}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent"
-            :class="target"
-            data-card-select-mode
-            @click="pick(() => (selecting ? emit('toggle-select') : emit('select-mode')))"
-          >
-            <Icon name="lucide:list-checks" class="size-4 shrink-0 text-muted-foreground" />
-            {{ selecting ? (selected ? "Desmarcar este pedido" : "Marcar este pedido") : "Selecionar vários" }}
-          </button>
-          <div v-if="volumesEditing" class="flex flex-col gap-2 px-3 py-2" data-card-volumes-editor>
-            <p class="op-label font-semibold">Quantos volumes saem?</p>
             <div class="flex items-center gap-2">
-              <button type="button" class="grid place-items-center rounded-md border border-border transition hover:bg-accent" :class="target" aria-label="Um volume a menos" @click="stepVolumes(-1)">
-                <Icon name="lucide:minus" class="size-4" />
-              </button>
-              <span class="min-w-10 text-center op-title tnum" aria-live="polite" data-card-volumes-draft>{{ volumesDraft }}</span>
-              <button type="button" class="grid place-items-center rounded-md border border-border transition hover:bg-accent" :class="target" aria-label="Um volume a mais" @click="stepVolumes(1)">
-                <Icon name="lucide:plus" class="size-4" />
-              </button>
-              <button
-                type="button"
-                class="ml-auto inline-flex items-center rounded-md bg-primary px-3 op-label font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-                :class="target"
-                :disabled="busy"
-                data-card-volumes-save
-                @click="saveVolumes"
-              >Gravar</button>
+              <NuxtInputNumber v-model="volumesDraft" :min="0" :max="99" data-card-volumes-draft />
+              <NuxtButton label="Gravar" color="primary" :disabled="busy" data-card-volumes-save @click="saveVolumes" />
             </div>
-            <p class="op-micro text-muted-foreground">{{ volumesDraft === 0 ? "Zero apaga: o cartão volta a contar itens." : "Sacolas ou caixas, contadas por quem embalou." }}</p>
-          </div>
-          <button
-            v-else-if="volumesAction"
-            type="button"
-            role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent disabled:opacity-60"
-            :class="target"
-            :disabled="busy || !volumesAction.enabled"
-            :title="volumesAction.reason || undefined"
-            data-card-volumes
-            @click="openVolumes"
-          >
-            <Icon name="lucide:package" class="size-4 shrink-0 text-muted-foreground" />
-            {{ card.volumes ? `Volumes: ${card.volumes} (mudar)` : "Declarar volumes" }}
-          </button>
-          <button
-            v-for="option in recallOptions"
-            :key="option.ticketPk"
-            type="button"
-            role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 text-left op-body transition hover:bg-accent disabled:opacity-60"
-            :class="target"
-            :disabled="busy"
-            data-card-recall
-            @click="pick(() => emit('station-recall', option.ticketPk))"
-          >
-            <Icon name="lucide:rotate-ccw" class="size-4 shrink-0 text-muted-foreground" />
-            {{ option.label }}
-          </button>
-          <NuxtLink
-            v-if="canOpen"
-            :to="`/${card.ref}`"
-            role="menuitem"
-            class="flex w-full items-center gap-2.5 px-3 op-body transition hover:bg-accent"
-            :class="target"
-            data-card-open
-          >
-            <Icon name="lucide:file-text" class="size-4 shrink-0 text-muted-foreground" />
-            Abrir o pedido
-          </NuxtLink>
-        </UiPopoverContent>
-      </UiPopover>
+          </NuxtFormField>
+          <NuxtNavigationMenu v-else orientation="vertical" :items="cardMenuItems" />
+        </div>
+        </template>
+      </NuxtPopover>
       </div>
     </div>
-  </article>
+    </div>
+  </NuxtCard>
 </template>
-
-<style scoped>
-/* A estação ainda trabalhando: o traço tracejado da v4 (`.seg span.wip`). */
-.seg-wip {
-  background: repeating-linear-gradient(90deg, var(--info) 0 6px, color-mix(in oklab, var(--info) 35%, transparent) 6px 10px);
-}
-/* Botão bloqueado: tracejado com listras finas no tom do bloqueio (`.stripes` da v4). */
-.card-stripes {
-  background: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in oklab, var(--destructive) 9%, transparent) 7px 14px);
-}
-</style>

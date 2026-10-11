@@ -14,7 +14,7 @@
 // para o foco; deslizar a linha para a direita faz o gesto dela (o mesmo do polegar).
 // Nada decide estado aqui: o gesto é o primário do cartão (`cardAffordances`).
 import type { OrderCardProjection } from "~/types/orders";
-import { cardAffordances, cardClock, cardSeal, customerFirstName, packLabel, primaryVerb, sealClass, splitRef, type AffordanceRef } from "~/presentation/board";
+import { cardAffordances, cardClock, cardSeal, customerFirstName, packLabel, primaryVerb, splitRef, type AffordanceRef } from "~/presentation/board";
 import { SWIPE_COMMIT_PX, swipeOffset } from "~/presentation/swipe";
 
 const props = defineProps<{
@@ -66,6 +66,14 @@ function act(card: OrderCardProjection) {
 }
 const items = computed(() => (focus.value?.items_summary || "").replace(/\.\.\.$/, "").split(/,\s*/).filter(Boolean));
 const swipeable = computed(() => rows.value.some((card) => primaryOf(card) && !primaryOf(card)!.disabled));
+const badgeColor = (tone: string): "error" | "success" | "warning" | "info" | "primary" | "neutral" => {
+  if (tone === "danger") return "error";
+  if (tone === "success" || tone === "warning" || tone === "info" || tone === "primary") return tone;
+  return "neutral";
+};
+function dismissFocusError() {
+  if (focus.value) emit("dismiss-error", focus.value.ref);
+}
 
 // Deslizar a linha para a direita: o gesto dela, com o mesmo verbo do polegar.
 const drag = ref<{ ref: string; x0: number; dx: number } | null>(null);
@@ -93,7 +101,8 @@ const offset = (card: OrderCardProjection) => (drag.value?.ref === card.ref ? dr
     <p class="op-micro text-muted-foreground">O mais antigo no topo</p>
 
     <!-- o mais antigo, expandido -->
-    <article v-if="focus" class="flex flex-col gap-2.5 rounded-xl border-2 border-primary bg-card p-3.5" :data-phone-exit-focus="focus.ref">
+    <NuxtCard v-if="focus" as="article" :data-phone-exit-focus="focus.ref">
+      <div class="flex flex-col gap-2.5">
       <div class="flex items-start gap-2">
         <div class="min-w-0 flex-1">
           <NuxtLink v-if="canOpen" :to="`/${focus.ref}`" class="block op-code hover:underline" :aria-label="`Abrir pedido ${focus.ref}`">{{ splitRef(focus.ref).code }}</NuxtLink>
@@ -101,34 +110,22 @@ const offset = (card: OrderCardProjection) => (drag.value?.ref === card.ref ? dr
           <p class="op-title break-words">{{ focus.customer_name || "Sem cliente" }}</p>
         </div>
         <div class="flex shrink-0 flex-col items-end gap-1 pt-1">
-          <span :class="[sealClass(cardSeal(focus, { next: focus.ref === nextRef }).tone), 'inline-flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-semibold whitespace-nowrap']">
-            <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ cardSeal(focus, { next: focus.ref === nextRef }).label }}
-          </span>
+          <NuxtBadge :color="badgeColor(cardSeal(focus, { next: focus.ref === nextRef }).tone)" variant="subtle" :label="cardSeal(focus, { next: focus.ref === nextRef }).label" />
           <span class="op-micro tnum text-muted-foreground">{{ cardClock(focus, nowMs).text }}</span>
         </div>
       </div>
       <div class="flex flex-wrap gap-2">
-        <span class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-secondary px-2.5 op-body font-semibold text-secondary-foreground">
-          <Icon :name="focus.fulfillment_type === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4" />{{ focus.fulfillment_label }}
-        </span>
-        <span v-if="packLabel(focus)" class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-secondary px-2.5 op-body font-semibold text-secondary-foreground tnum">
-          <Icon name="lucide:package" class="size-4" />{{ packLabel(focus) }}
-        </span>
+        <NuxtBadge :icon="focus.fulfillment_type === 'delivery' ? 'i-lucide-bike' : 'i-lucide-store'" :label="focus.fulfillment_label" color="neutral" variant="subtle" />
+        <NuxtBadge v-if="packLabel(focus)" icon="i-lucide-package" :label="packLabel(focus)" color="neutral" variant="subtle" />
       </div>
       <ul class="flex flex-col divide-y divide-border border-t border-border" data-phone-exit-items>
         <li v-for="(line, i) in items" :key="i" class="py-1.5 op-body">{{ line }}</li>
       </ul>
       <p v-if="focus.delivery_address" class="flex items-start gap-1.5 op-micro text-muted-foreground"><Icon name="lucide:map-pin" class="mt-0.5 size-3.5 shrink-0" />{{ focus.delivery_address }}</p>
-      <p v-if="blocked(focus)" class="flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/12 px-2.5 py-1.5 op-label" data-phone-exit-block>
-        <Icon name="lucide:lock" class="mt-0.5 size-4 shrink-0 text-destructive" />{{ focus.advance_block_reason || blocked(focus) }}
-      </p>
-      <div v-if="actionError(focus.ref)" class="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive" role="alert">
-        <span class="min-w-0 flex-1">{{ actionError(focus.ref) }}</span>
-        <button type="button" class="grid size-control shrink-0 place-items-center rounded hover:bg-destructive/20" aria-label="Dispensar aviso" @click="emit('dismiss-error', focus.ref)">
-          <Icon name="lucide:x" class="size-3.5" />
-        </button>
+      <NuxtAlert v-if="blocked(focus)" color="error" variant="subtle" icon="i-lucide-lock" :description="focus.advance_block_reason || blocked(focus)" data-phone-exit-block />
+      <NuxtAlert v-if="actionError(focus.ref)" color="error" variant="subtle" icon="i-lucide-triangle-alert" :description="actionError(focus.ref)" :actions="[{ label: 'Dispensar', color: 'error', variant: 'ghost', onClick: dismissFocusError }]" />
       </div>
-    </article>
+    </NuxtCard>
 
     <!-- os outros: linhas de 64px; tocar traz para o foco, deslizar entrega -->
     <div
@@ -140,11 +137,13 @@ const offset = (card: OrderCardProjection) => (drag.value?.ref === card.ref ? dr
       <div class="absolute inset-0 flex items-center gap-2 bg-primary px-4 op-label font-semibold text-primary-foreground" aria-hidden="true">
         <Icon name="lucide:hand-platter" class="size-5" />{{ thumbLabel(card) }}
       </div>
-      <button
+      <div :style="{ transform: `translateX(${offset(card)}px)` }">
+      <NuxtButton
         type="button"
-        class="relative flex min-h-16 w-full touch-pan-y items-center gap-3 rounded-xl border bg-card px-3.5 text-left transition-transform"
-        :class="blocked(card) ? 'border-destructive/40' : 'border-border'"
-        :style="{ transform: `translateX(${offset(card)}px)` }"
+        color="neutral"
+        variant="solid"
+        size="xl"
+        block
         :aria-label="`${splitRef(card.ref).code}, ${card.customer_name || 'sem cliente'}. Tocar para ver; deslizar para ${thumbLabel(card) || 'abrir'}`"
         @pointerdown="down(card, $event)"
         @pointermove="move"
@@ -159,7 +158,8 @@ const offset = (card: OrderCardProjection) => (drag.value?.ref === card.ref ? dr
           <span v-else class="block op-micro text-muted-foreground">{{ rowLine(card) }}</span>
         </span>
         <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
-      </button>
+      </NuxtButton>
+      </div>
     </div>
 
     <p v-if="swipeable" class="flex items-center justify-center gap-1.5 op-micro text-muted-foreground" data-phone-exit-hint>
@@ -169,18 +169,16 @@ const offset = (card: OrderCardProjection) => (drag.value?.ref === card.ref ? dr
     <!-- o gesto no polegar: preso logo acima da barra de seções (4rem + área segura) -->
     <div v-if="focus && primaryOf(focus)" class="h-16 shrink-0" aria-hidden="true" />
     <div v-if="focus && primaryOf(focus)" class="fixed inset-x-3 bottom-[calc(4rem+env(safe-area-inset-bottom)+0.75rem)] z-20 md:hidden">
-      <button
+      <NuxtButton
         type="button"
-        class="flex h-14 w-full items-center justify-center gap-2 rounded-xl op-action font-semibold transition"
-        :class="primaryOf(focus)!.disabled
-          ? 'cursor-default border-2 border-dashed border-border bg-card text-muted-foreground'
-          : 'bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 active:scale-[0.98] disabled:opacity-60'"
+       
+       
         :disabled="isBusy(focus.ref) || primaryOf(focus)!.disabled"
         data-phone-exit-thumb
         @click="act(focus)"
       >
         <Icon :name="primaryOf(focus)!.disabled ? 'lucide:lock' : 'lucide:hand-platter'" class="size-5" />{{ thumbLabel(focus) }}
-      </button>
+      </NuxtButton>
     </div>
   </div>
 </template>

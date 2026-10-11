@@ -1,6 +1,7 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { DOMWrapper } from "@vue/test-utils";
 import { afterEach, describe, expect, it } from "vitest";
-import type { VueWrapper } from "vue";
+import { nextTick, type VueWrapper } from "vue";
 
 import FilterBar from "../../app/components/FilterBar.vue";
 import type { ActiveFilters, FilterDimension } from "../../app/types/filters";
@@ -29,6 +30,11 @@ const dimensions: FilterDimension[] = [
 ];
 
 const mounted: VueWrapper[] = [];
+const dom = (selector: string) => new DOMWrapper(document.querySelector(selector) as Element);
+async function click(selector: string) {
+  (document.querySelector(selector) as HTMLElement).click();
+  await nextTick();
+}
 
 async function mountBar(initial: ActiveFilters = {}) {
   const updates: ActiveFilters[] = [];
@@ -54,12 +60,12 @@ describe("FilterBar universal", () => {
   it("marca vários valores sem fechar e mostra a contagem de cada um", async () => {
     const { wrapper, updates } = await mountBar();
     await wrapper.get("[data-filter-trigger]").trigger("click");
-    await wrapper.get('[data-filter-dimension="payment"]').trigger("click");
-    expect(wrapper.get('[data-filter-option="payment:pix"]').text()).toContain("12");
-    await wrapper.get('[data-filter-option="payment:pix"]').trigger("click");
-    await wrapper.get('[data-filter-option="payment:card"]').trigger("click");
+    await click('[data-filter-dimension="payment"]');
+    expect(dom('[data-filter-option="payment:pix"]').text()).toContain("12");
+    await click('[data-filter-option="payment:pix"]');
+    await click('[data-filter-option="payment:card"]');
     expect(updates.at(-1)).toEqual({ payment: ["pix", "card"] });
-    expect(wrapper.get("[data-filter-panel]").exists()).toBe(true);
+    expect(document.querySelector("[data-filter-panel]")).not.toBeNull();
     expect(wrapper.get('[data-filter-chip="payment"]').text()).toContain("Pagamento: Pix, Cartão");
   });
 
@@ -67,31 +73,31 @@ describe("FilterBar universal", () => {
     const { wrapper } = await mountBar({ payment: ["pix"] });
     expect(wrapper.find("[data-filter-panel]").exists()).toBe(false);
     await wrapper.get('[data-filter-chip="payment"] [data-filter-edit]').trigger("click");
-    expect(wrapper.get("[data-filter-panel]").attributes("aria-label")).toBe("Filtrar por Pagamento");
-    expect(wrapper.get('[data-filter-option="payment:pix"]').attributes("aria-checked")).toBe("true");
+    expect(dom("[data-filter-panel]").attributes("aria-label")).toBe("Filtrar por Pagamento");
+    expect(dom('[data-filter-option="payment:pix"]').attributes("aria-pressed")).toBe("true");
   });
 
   it("lista longa ganha busca", async () => {
     const { wrapper } = await mountBar();
     await wrapper.get("[data-filter-trigger]").trigger("click");
-    await wrapper.get('[data-filter-dimension="channel"]').trigger("click");
-    await wrapper.get("[data-filter-search]").setValue("ifo");
-    expect(wrapper.findAll("[data-filter-option]").map((o) => o.text())).toEqual(["iFood"]);
+    await click('[data-filter-dimension="channel"]');
+    await dom("[data-filter-search]").setValue("ifo");
+    expect([...document.querySelectorAll<HTMLElement>("[data-filter-option]")].map((o) => o.textContent)).toEqual(["iFood"]);
   });
 
   it("campo de texto e intervalo de data aplicam no Aplicar, e vários campos convivem", async () => {
     const { wrapper, updates } = await mountBar({ payment: ["pix"] });
     await wrapper.get("[data-filter-trigger]").trigger("click");
-    await wrapper.get('[data-filter-dimension="customer"]').trigger("click");
-    await wrapper.get('[data-filter-input="text"]').setValue("maria");
-    await wrapper.get("[data-filter-form]").trigger("submit");
+    await click('[data-filter-dimension="customer"]');
+    await dom('[data-filter-input="text"]').setValue("maria");
+    await dom("[data-filter-form]").trigger("submit");
     expect(updates.at(-1)).toEqual({ payment: ["pix"], customer: ["maria"] });
     expect(wrapper.find("[data-filter-panel]").exists()).toBe(false);
 
     await wrapper.get("[data-filter-trigger]").trigger("click");
-    await wrapper.get('[data-filter-dimension="closed"]').trigger("click");
-    await wrapper.get('[data-filter-input="from"]').setValue("2026-10-01");
-    await wrapper.get("[data-filter-form]").trigger("submit");
+    await click('[data-filter-dimension="closed"]');
+    await dom('[data-filter-input="from"]').setValue("2026-10-01");
+    await dom("[data-filter-form]").trigger("submit");
     expect(updates.at(-1)).toEqual({ payment: ["pix"], customer: ["maria"], closed: ["2026-10-01", ""] });
     expect(wrapper.get('[data-filter-chip="closed"]').text()).toContain("Fechado em: a partir de 01/10");
   });

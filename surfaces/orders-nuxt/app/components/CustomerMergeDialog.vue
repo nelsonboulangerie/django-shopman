@@ -137,34 +137,30 @@ async function confirm() {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="requestOpen">
-    <UiDialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl" data-customer-merge-dialog>
-      <UiDialogHeader>
-        <UiDialogTitle>Unificar cadastros</UiDialogTitle>
-        <UiDialogDescription>
-          Use quando os dois cadastros são a mesma pessoa. Um deles deixa de existir e tudo o que é dele passa para o outro.
-        </UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    :open="open"
+    title="Unificar cadastros"
+    description="Use quando os dois cadastros são a mesma pessoa. Um deles deixa de existir e tudo o que é dele passa para o outro."
+    scrollable
+    data-customer-merge-dialog
+    @update:open="requestOpen"
+  >
+    <template #body>
 
       <!-- 1. Escolher o outro cadastro -->
       <div v-if="!other" class="space-y-2">
-        <label class="block text-sm font-medium" for="merge-search">Com qual cadastro?</label>
-        <input
-          id="merge-search"
-          v-model="search"
-          type="search"
-          autocomplete="off"
-          placeholder="Nome, telefone, CPF, e-mail ou código"
-          class="h-control w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-        />
-        <p v-if="searchError" role="alert" class="text-sm text-destructive">{{ searchError }}</p>
-        <p v-else-if="searching" class="text-sm text-muted-foreground">Buscando…</p>
-        <p v-else-if="search.trim().length >= 2 && !results.length" class="text-sm text-muted-foreground">Nenhum outro cadastro com essa busca.</p>
-        <ul v-if="results.length" class="divide-y rounded-md border">
+        <NuxtFormField label="Com qual cadastro?">
+          <NuxtInput id="merge-search" v-model="search" type="search" autocomplete="off" placeholder="Nome, telefone, CPF, e-mail ou código" />
+        </NuxtFormField>
+        <NuxtAlert v-if="searchError" color="error" variant="subtle" :description="searchError" />
+        <NuxtSkeleton v-else-if="searching" aria-label="Buscando cadastros" />
+        <NuxtEmpty v-else-if="search.trim().length >= 2 && !results.length" icon="i-lucide-user-search" title="Nenhum outro cadastro com essa busca" />
+        <NuxtCard v-if="results.length">
+        <ul class="divide-y">
           <li v-for="row in results" :key="row.ref">
-            <button
+            <NuxtButton
               type="button"
-              class="flex min-h-control w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition hover:bg-accent"
+             
               @click="choose(row)"
             >
               <span>
@@ -172,22 +168,21 @@ async function confirm() {
                 <span class="ml-2 font-mono text-xs text-muted-foreground">{{ row.ref }}</span>
               </span>
               <span class="text-xs text-muted-foreground">{{ row.phone_display || "Sem telefone" }} · {{ row.orders_label }}</span>
-            </button>
+            </NuxtButton>
           </li>
         </ul>
+        </NuxtCard>
       </div>
 
       <!-- 2 e 3. Quem fica, e o que muda -->
       <template v-else>
         <!-- Quem sai à esquerda, quem fica à direita: a leitura segue a seta. -->
         <div class="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-stretch">
-          <article
+          <NuxtCard
             v-for="(side, index) in sides"
             :key="side.ref"
-            class="rounded-lg border p-3 text-sm"
-            :class="[
-              index === 0 ? 'border-dashed opacity-80 sm:order-1' : 'border-primary bg-primary/5 sm:order-3',
-            ]"
+            :variant="index === 0 ? 'outline' : 'subtle'"
+            :class="index === 0 ? 'sm:order-1' : 'sm:order-3'"
             :data-merge-side="index === 0 ? 'source' : 'target'"
           >
             <p class="text-xs font-semibold uppercase tracking-wide" :class="index === 0 ? 'text-muted-foreground' : 'text-primary'">
@@ -199,24 +194,25 @@ async function confirm() {
               <div class="flex gap-1"><dt class="text-muted-foreground">Telefone:</dt><dd>{{ side.phone_display || "sem telefone" }}</dd></div>
               <div v-if="side.source_label" class="flex gap-1"><dt class="text-muted-foreground">Origem:</dt><dd>{{ side.source_label }}</dd></div>
             </dl>
-          </article>
+          </NuxtCard>
           <div class="flex items-center justify-center sm:order-2">
-            <button
+            <NuxtButton
               type="button"
-              class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
+             
               :disabled="busy"
               data-merge-swap
               @click="swap"
             >
               <Icon name="lucide:arrow-left-right" class="size-4" />
               Trocar quem fica
-            </button>
+            </NuxtButton>
           </div>
         </div>
 
-        <div class="space-y-3 rounded-lg bg-muted/40 p-3 text-sm" aria-live="polite">
+        <NuxtAlert color="neutral" variant="subtle" aria-live="polite">
+          <template #description>
           <p v-if="loadingPreview" class="text-muted-foreground">Calculando o que muda…</p>
-          <p v-else-if="previewError" role="alert" class="text-destructive">{{ previewError }}</p>
+          <NuxtAlert v-else-if="previewError" color="error" variant="subtle" :description="previewError" />
           <template v-else-if="preview">
             <p>{{ preview.summary }}</p>
             <div v-if="preview.moves.length">
@@ -235,40 +231,44 @@ async function confirm() {
             <p v-if="preview.loyalty_label">{{ preview.loyalty_label }}.</p>
             <p class="text-muted-foreground">{{ preview.undo_notice }}</p>
           </template>
-        </div>
+          </template>
+        </NuxtAlert>
 
-        <p v-if="submitError" role="alert" class="text-sm text-destructive">{{ submitError }}</p>
+        <NuxtAlert v-if="submitError" color="error" variant="subtle" icon="i-lucide-triangle-alert" :description="submitError" />
       </template>
 
-      <UiDialogFooter>
-        <button
+    </template>
+    <template #footer>
+        <NuxtButton
           v-if="other && !initialOther"
           type="button"
-          class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+          color="neutral"
+          variant="outline"
           :disabled="busy"
           @click="other = null"
         >
           Escolher outro cadastro
-        </button>
-        <button
+        </NuxtButton>
+        <NuxtButton
           type="button"
-          class="min-h-control min-w-control rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
+          color="neutral"
+          variant="outline"
           :disabled="busy"
           @click="requestOpen(false)"
         >
           Voltar
-        </button>
-        <button
+        </NuxtButton>
+        <NuxtButton
           v-if="other"
           type="button"
           :disabled="busy || !preview || loadingPreview"
-          class="min-h-action min-w-action rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          color="primary"
+          :loading="busy"
           data-merge-confirm
           @click="confirm"
         >
           {{ busy ? "Unificando…" : "Unificar os dois cadastros" }}
-        </button>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+        </NuxtButton>
+    </template>
+  </NuxtModal>
 </template>

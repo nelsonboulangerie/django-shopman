@@ -29,16 +29,14 @@ const username = ref("");
 const password = ref("");
 const pending = ref(false);
 const error = ref("");
-const dialog = ref<HTMLFormElement | null>(null);
-const usernameInput = ref<HTMLInputElement | null>(null);
+const dialog = ref<HTMLElement | null>(null);
+const usernameInput = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const { reset: resetSession } = useOperatorSession();
-const iconBroken = ref(false);
 // Mesma identidade do rail: o PNG e o ícone de recurso saem de `app-identity.json` pelo
 // `runtimeConfig`. O app sem a capability (harness de teste) cai no cadeado genérico.
 const identity = (useRuntimeConfig().public?.operatorPwa as { identity?: { icon: string; iconSrc: string } } | undefined)?.identity;
 const icon = computed(() => props.icon || (identity?.icon ? `lucide:${identity.icon}` : "lucide:log-in"));
 const iconSrc = computed(() => props.iconSrc || identity?.iconSrc);
-const showIconImage = computed(() => Boolean(iconSrc.value) && !iconBroken.value);
 
 const displayTitle = computed(() =>
   props.title ?? (props.expired ? "Sua sessão terminou" : "Entre para operar"),
@@ -49,11 +47,7 @@ const displayDescription = computed(() =>
     ? "Entre novamente. Seu rascunho e sua decisão ainda não enviada foram preservados."
     : "Acesse com sua conta autorizada."),
 );
-const fieldDescription = computed(() =>
-  error.value
-    ? "operator-login-description operator-login-error"
-    : "operator-login-description",
-);
+const fieldDescription = computed(() => "operator-login-description");
 
 function trapFocus(event: KeyboardEvent) {
   if (props.mode !== "overlay") return;
@@ -74,7 +68,7 @@ function trapFocus(event: KeyboardEvent) {
   }
 }
 
-onMounted(() => nextTick(() => usernameInput.value?.focus()));
+onMounted(() => nextTick(() => usernameInput.value?.inputRef?.focus()));
 
 async function submit() {
   if (pending.value) return;
@@ -112,10 +106,10 @@ async function submit() {
         : 'grid min-h-dvh place-items-center p-4'
     "
   >
-    <form
+    <NuxtCard
       ref="dialog"
-      class="grid w-full max-w-sm gap-4 text-center"
-      :class="mode === 'overlay' ? 'rounded-md border bg-card p-6 shadow-lg' : ''"
+      as="form"
+      class="w-full max-w-sm text-center"
       :role="mode === 'overlay' ? 'dialog' : undefined"
       :aria-modal="mode === 'overlay' ? 'true' : undefined"
       aria-labelledby="operator-login-title"
@@ -123,17 +117,7 @@ async function submit() {
       @submit.prevent="submit"
       @keydown.tab="trapFocus"
     >
-      <div class="mx-auto grid size-14 place-items-center overflow-hidden rounded-full border bg-muted">
-        <img
-          v-if="showIconImage"
-          :src="iconSrc"
-          class="size-14"
-          alt=""
-          decoding="async"
-          @error="iconBroken = true"
-        >
-        <Icon v-else :name="icon" class="size-7 text-muted-foreground" />
-      </div>
+      <NuxtAvatar class="mx-auto" size="3xl" :src="iconSrc" :icon="icon" />
       <div class="grid gap-1.5">
         <h2 id="operator-login-title" class="text-lg font-semibold">
           {{ displayTitle }}
@@ -144,10 +128,8 @@ async function submit() {
       </div>
 
       <div class="grid gap-2.5 text-left">
-        <label for="operator-login-username" class="text-sm font-semibold">
-          Usuário
-        </label>
-        <input
+        <NuxtFormField label="Usuário">
+        <NuxtInput
           id="operator-login-username"
           ref="usernameInput"
           v-model="username"
@@ -156,49 +138,39 @@ async function submit() {
           autocapitalize="none"
           autocorrect="off"
           placeholder="Usuário"
-          aria-label="Usuário"
           :aria-describedby="fieldDescription"
           :aria-invalid="error ? 'true' : undefined"
           :disabled="pending"
-          class="w-full rounded-md border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
-          :class="largeFields ? 'h-12 text-base' : 'h-11 text-sm'"
-        >
-        <label for="operator-login-password" class="text-sm font-semibold">
-          Senha
-        </label>
-        <input
+          :size="largeFields ? 'xl' : 'lg'"
+          class="w-full"
+        />
+        </NuxtFormField>
+        <NuxtFormField label="Senha">
+        <NuxtInput
           id="operator-login-password"
           v-model="password"
           type="password"
           autocomplete="current-password"
           placeholder="Senha"
-          aria-label="Senha"
           :aria-describedby="fieldDescription"
           :aria-invalid="error ? 'true' : undefined"
           :disabled="pending"
-          class="w-full rounded-md border bg-background px-3 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
-          :class="largeFields ? 'h-12 text-base' : 'h-11 text-sm'"
-        >
-        <p
-          v-if="error"
-          id="operator-login-error"
-          class="text-sm text-destructive"
-          role="alert"
-        >
-          {{ error }}
-        </p>
+          :size="largeFields ? 'xl' : 'lg'"
+          class="w-full"
+        />
+        </NuxtFormField>
+        <NuxtAlert v-if="error" color="error" :title="error" data-operator-login-error />
       </div>
 
-      <button
+      <NuxtButton
         type="submit"
+        block
+        icon="i-lucide-log-in"
+        :size="largeFields ? 'xl' : 'lg'"
+        :loading="pending"
         :disabled="pending || !username.trim() || !password"
-        :aria-busy="pending"
-        class="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-        :class="largeFields ? 'h-14' : 'h-11'"
-      >
-        <Icon :name="pending ? 'line-md:loading-loop' : 'lucide:log-in'" class="size-5" />
-        {{ pending ? "Entrando…" : "Entrar" }}
-      </button>
-    </form>
+        :label="pending ? 'Entrando…' : 'Entrar'"
+      />
+    </NuxtCard>
   </div>
 </template>
