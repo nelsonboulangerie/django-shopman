@@ -8,6 +8,26 @@ for (const touch of [false, true]) {
   test.describe(touch ? "Alvos touch" : "Alvos desktop", () => {
     test.use({ hasTouch: touch, viewport: touch ? { width: 768, height: 1024 } : { width: 1440, height: 1000 } });
     test("busca, seleção, ordenação e troca de visão têm área operacional", async ({ page }, testInfo) => {
+      // O alvo que conta é o que recebe o toque, não a caixa desenhada: o meio de cada
+      // lado (1 px para dentro) do quadrado de 32 px centrado no controle tem de cair
+      // nele, isto é, 32 px de largura e de altura. Cantos não: na primeira coluna, o
+      // canto arredondado do cartão recorta a ponta do quadrado, e isso não é alvo menor.
+      async function hitTarget(locator: Locator, label: string) {
+        await expect(locator).toBeVisible();
+        const misses = await locator.evaluate((control, size) => {
+          const rect = control.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const half = size / 2 - 1;
+          return [[0, -half], [0, half], [-half, 0], [half, 0]]
+            .filter(([dx, dy]) => {
+              const hit = document.elementFromPoint(cx + dx!, cy + dy!);
+              return !hit || !(hit === control || control.contains(hit));
+            })
+            .map(([dx, dy]) => `${dx},${dy}`);
+        }, TARGET);
+        expect.soft(misses, `${label}: lados do alvo de ${TARGET} px fora do controle`).toEqual([]);
+      }
       async function target(locator: Locator, label: string) {
         await expect(locator).toBeVisible();
         const box = await locator.boundingBox();
@@ -57,11 +77,19 @@ for (const touch of [false, true]) {
       }
       const table = page.getByRole("table", { name: "Lista dos pedidos em andamento" });
       await expect(table).toBeVisible();
-      // A caixa da Lista é a do `OperatorTable` do kit (checkbox do Nuxt UI, 16 px): o
-      // alvo dela é decisão do kit, não do Gestor. Aqui basta que exista e marque.
+      // A caixa da Lista é a do `OperatorTable` do kit: o quadrado desenhado tem 16 px,
+      // mas o ALVO em volta dele tem 32 (o `after:size-control` do kit). A medida é de
+      // acerto: um toque em qualquer ponto do quadrado de 32 px cai na caixa.
       const rowBox = table.getByRole("checkbox", { name: "Selecionar o pedido WEB-20260625-0007" });
+      await hitTarget(rowBox, "Caixa da linha da Lista");
+      await hitTarget(table.locator("[data-operator-table-select-all]"), "Caixa do cabeçalho da Lista");
       await rowBox.click();
       await expect(rowBox).toBeChecked();
+      // O nome do botão de abrir a linha contrai a preposição com o artigo ("do pedido").
+      const details = table.locator("[data-operator-table-expand]").first();
+      if (await details.count()) {
+        await expect(details).toHaveAttribute("aria-label", /^Detalhes do pedido /);
+      }
       await page.screenshot({ path: testInfo.outputPath("table.png") });
     });
   });
