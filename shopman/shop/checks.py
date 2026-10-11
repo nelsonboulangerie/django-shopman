@@ -1440,8 +1440,11 @@ def _declared_adapter_paths(adapter_type: str, settings_name: str) -> dict[str, 
 
         collect(f"Shop.integrations[{adapter_type}]", _shop_integrations_value(adapter_type))
     except Exception:
-        # Sem banco (build, check sem migração): vale o que o settings declara.
-        logging.getLogger(__name__).debug("live_provider_check: shop integrations unreadable", exc_info=True)
+        # Sem banco (build, check sem migração) vale o que o settings declara,
+        # mas em WARNING: um override do Admin pode estar fora desta conta.
+        logging.getLogger(__name__).warning(
+            "live_provider_check: Shop.integrations ilegível; só o settings foi conferido", exc_info=True
+        )
     return found
 
 
