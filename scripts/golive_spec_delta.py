@@ -20,7 +20,8 @@ impresso. Segredo vem cifrado no spec (``EV[...]``); o script só olha se ele
 existe e, com ``--baseline`` (o spec guardado na abertura da janela), se o
 cifrado MUDOU, que é o sinal de que o dono colou um valor novo. Mudar o
 cifrado não prova que o valor é de produção: quem prova é o release job
-(``check --deploy`` com SHOPMAN_E022 recusa chave de teste em produção).
+(``check --deploy`` com SHOPMAN_E022 recusa chave de teste em produção, e o
+SHOPMAN_E027 recusa chave live com porta de teste aberta, em qualquer ambiente).
 
 Cada chave é conferida em CADA processo Django do app (serviços web, workers e
 o job de release), com o env de componente por cima do env do app, que é como
