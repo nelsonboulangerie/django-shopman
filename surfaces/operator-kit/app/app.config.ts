@@ -2,6 +2,10 @@ export default defineAppConfig({
   ui: {
     dashboardNavbar: { slots: { root: "bg-card" } },
     dashboardToolbar: { slots: { root: "bg-card" } },
+    // Altura de controle: padrão do Nuxt UI no ponteiro fino (compacto) e
+    // --spacing-control (44/48) só no @media (pointer: coarse). Não se força
+    // altura base em campo nem em botão — era isso que desalinhava select x
+    // Number/Date/Time e inflava a paginação.
     checkbox: {
       slots: {
         base: "relative overflow-visible after:absolute after:content-[''] after:start-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:size-control",
@@ -40,49 +44,11 @@ export default defineAppConfig({
       },
       defaultVariants: { variant: "outline" },
     },
-    input: {
-      variants: { size: { md: { base: "h-control px-3 py-2 text-sm" } } },
-      defaultVariants: { size: "md" },
-    },
     select: {
       slots: { content: "bg-popover" },
-      variants: {
-        size: {
-          md: {
-            base: "h-control px-3 py-2 text-sm",
-            leading: "ps-3",
-            trailing: "pe-3",
-            item: "min-h-control items-center px-3 py-2 text-sm gap-2",
-          },
-        },
-      },
-      compoundVariants: [
-        { size: "md", leading: true, class: "ps-10" },
-        { size: "md", trailing: true, class: "pe-10" },
-      ],
-      defaultVariants: { size: "md" },
     },
     selectMenu: {
       slots: { content: "bg-popover" },
-      variants: {
-        size: {
-          md: {
-            base: "h-control px-3 py-2 text-sm",
-            leading: "ps-3",
-            trailing: "pe-3",
-            item: "min-h-control items-center px-3 py-2 text-sm gap-2",
-          },
-        },
-      },
-      compoundVariants: [
-        { size: "md", leading: true, class: "ps-10" },
-        { size: "md", trailing: true, class: "pe-10" },
-      ],
-      defaultVariants: { size: "md" },
-    },
-    textarea: {
-      variants: { size: { md: { base: "px-3 py-2 text-sm" } } },
-      defaultVariants: { size: "md" },
     },
     alert: {
       defaultVariants: { variant: "subtle" },

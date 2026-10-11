@@ -947,8 +947,7 @@ onMounted(() => {
             :disabled="taskDone"
             @click="taskDone = true"
           />
-          ></template
-        >
+        </template>
       </OperatorOperationalShell>
     </div>
   </div>
