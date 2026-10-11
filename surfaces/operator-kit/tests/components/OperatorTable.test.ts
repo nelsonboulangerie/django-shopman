@@ -7,6 +7,7 @@ import OperatorTableView from "../../app/components/OperatorTableView.vue";
 import {
   appendClass,
   hideableColumns,
+  ofRow,
   operatorTableViewCookie,
   parseTableView,
   reconcileHidden,
@@ -74,6 +75,20 @@ describe("as decisões puras da tabela", () => {
     expect(tableDensityUi("compact").td).toContain("whitespace-normal");
     expect(tableDensityUi("comfortable").td).toContain("whitespace-normal");
     expect(tableDensityUi("compact").td).not.toContain("truncate");
+  });
+
+  it("o cabeçalho compacto segura o alvo de 32 px da caixa \"marcar todas\"", () => {
+    // Com 28 px (py-1 + texto), o alvo de 32 px da caixa saía cortado pela borda de cima.
+    expect(tableDensityUi("compact").th).toContain("h-control");
+  });
+
+  it("a frase com preposição contrai com o artigo do nome da linha", () => {
+    expect(ofRow("o pedido H58")).toBe("do pedido H58");
+    expect(ofRow("a campanha Natal")).toBe("da campanha Natal");
+    expect(ofRow("os pedidos")).toBe("dos pedidos");
+    expect(ofRow("as entregas")).toBe("das entregas");
+    expect(ofRow("Pão Francês")).toBe("de Pão Francês");
+    expect(ofRow("o")).toBe("de o");
   });
 
   it("o foco da linha e do botão de ordenar fica DENTRO da tabela (o recorte do cartão não corta)", () => {
@@ -160,9 +175,19 @@ describe("OperatorTable", () => {
   it("a linha aberta NÃO compacta: o conteúdo ganha o respiro da confortável", async () => {
     mounted = await mountSuspended(OperatorTable as never, {
       attachTo: document.body,
-      props: { data: orders, columns, rowKey: (row: Order) => row.ref, caption: "Pedidos" },
+      props: {
+        data: orders,
+        columns,
+        rowKey: (row: Order) => row.ref,
+        rowLabel: (row: Order) => `o pedido ${row.ref}`,
+        caption: "Pedidos",
+      },
       slots: { expanded: ({ row }: { row: { original: Order } }) => h("p", `Itens de ${row.original.ref}`) },
     });
+    // "Detalhes do pedido H58", nunca "Detalhes de o pedido H58".
+    expect(document.querySelector("[data-operator-table-expand]")?.getAttribute("aria-label")).toBe(
+      "Detalhes do pedido H58",
+    );
     document.querySelector<HTMLElement>("[data-operator-table-expand]")!.click();
     await nextTick();
     const open = document.querySelector<HTMLElement>("[data-operator-table-expanded]")!;

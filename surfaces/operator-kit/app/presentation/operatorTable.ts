@@ -75,10 +75,12 @@ export function toggleHidden(hidden: readonly string[], id: string, visible: boo
  * O espaçamento de cada densidade. É o único `:ui` da tabela na suíte: mora aqui e no
  * componente, nunca na tela. A célula QUEBRA (`whitespace-normal`): texto da casa nunca
  * é cortado; número e ação que não devem quebrar dizem isso na própria célula.
+ * O cabeçalho compacto tem no mínimo a altura do alvo (`h-control`, 32 px): com 28 px,
+ * o alvo de 32 px da caixa "marcar todas" saía cortado pela borda de cima da tabela.
  */
 export function tableDensityUi(density: OperatorTableDensity) {
   return density === "compact"
-    ? { tr: ROW_FOCUS, th: "px-2 py-1 text-sm", td: `px-2 py-1.5 text-sm whitespace-normal ${PINNED_SELECTED_CELL}` }
+    ? { tr: ROW_FOCUS, th: "h-control px-2 py-1 text-sm", td: `px-2 py-1.5 text-sm whitespace-normal ${PINNED_SELECTED_CELL}` }
     : { tr: ROW_FOCUS, th: "px-4 py-3.5 text-sm", td: `p-4 text-sm whitespace-normal ${PINNED_SELECTED_CELL}` };
 }
 
@@ -119,7 +121,8 @@ export function expandedPadding(density: OperatorTableDensity): string {
 
 /**
  * A largura das colunas de controle (caixa de marcar, seta de abrir), com o padding da
- * densidade: a caixa tem 16 px e a seta é um botão `md` de 32 px.
+ * densidade: a caixa desenhada tem 16 px (o alvo dela, 32, vem do `after:size-control`
+ * do `app.config`) e a seta é um botão `md` de 32 px.
  */
 export function leadWidth(id: "select" | "expand" | string, density: OperatorTableDensity): number {
   const pad = density === "compact" ? 16 : 32;
@@ -196,4 +199,15 @@ export function hideableColumns(columns: readonly ColumnLike[]): { id: string; l
 export function reconcileHidden(hidden: readonly string[], known: readonly string[]): string[] {
   const set = new Set(known);
   return hidden.filter((id) => set.has(id));
+}
+
+/**
+ * "de" + o nome da linha, com a contração do português: "de o pedido H58" vira "do
+ * pedido H58" ("da campanha", "dos", "das"). Nome sem artigo fica com "de" ("de Pão
+ * Francês"). O nome da linha (`rowLabel`) vem com artigo justamente para o "Selecionar o
+ * pedido H58"; quem monta frase com preposição passa por aqui.
+ */
+export function ofRow(label: string): string {
+  const match = /^(o|a|os|as) (.+)$/.exec(label);
+  return match ? `d${match[1]} ${match[2]}` : `de ${label}`;
 }

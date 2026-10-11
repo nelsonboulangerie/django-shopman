@@ -26,6 +26,7 @@ import {
   expandedPadding,
   hideableColumns,
   leadWidth,
+  ofRow,
   OPERATOR_TABLE_DEFAULT_DENSITY,
   PINNED_COLUMN_CLASS,
   sortIcon,
@@ -271,7 +272,7 @@ const select = computed(() =>
             color="neutral"
             variant="ghost"
             square
-            :aria-label="`Detalhes de ${label(row.original)}`"
+            :aria-label="`Detalhes ${ofRow(label(row.original))}`"
             :aria-expanded="row.getIsExpanded()"
             data-operator-table-expand
             @click="row.toggleExpanded()"
