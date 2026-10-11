@@ -403,7 +403,7 @@ Todos em `shopman/shop/checks.py`, com `@register(deploy=True)`: rodam em
 |---|---|---|
 | `check_secret_key` (E001) | `SECRET_KEY` ≠ default de dev | ⚠️ **Sim.** O default é literal (`config/settings.py:71`), e essa chave deriva o HMAC do OTP, do PIN, do link de acesso e da assinatura do comprovante de caixa. Chave conhecida = OTP/PIN/comprovante forjáveis |
 | `check_allowed_hosts` (E002) | sem `*` | ⚠️ **Sim.** Default é `"*"` (`:104`) |
-| `check_payment_adapters` (E003/W006/E009) | adapters + credenciais | ✅ Fechado para o mock (runtime em `payment_mock`). `EFI_SANDBOX` e a chave test-vs-live do Stripe são cobertos pelo E022 (valor) e E026 (omissão) |
+| `check_payment_adapters` (E003/W006/E009) | adapters + credenciais | ✅ Fechado para o mock (runtime em `payment_mock`). `EFI_SANDBOX` e a chave test-vs-live do Stripe são cobertos pelo E022 (valor) e E026 (omissão); o sentido contrário (chave live com porta de teste aberta, em qualquer ambiente) pelo E027 |
 | `check_debug_otp_exposure` (E010) | OTP de debug só em dev/staging | ⚠️ **Sim** (só roda em `check --deploy`), mas o valor que ele lê voltou a ser confiável: `SHOPMAN_ENVIRONMENT` é explícito, sem inferência por substring (item 3 ✅) |
 | `check_shared_cache_backend` (E006) | Redis em prod | ⚠️ **Sim.** LocMem em prod faz o `django-ratelimit` virar por-worker: os limites de OTP/login multiplicam pelo número de workers |
 | `check_fiscal_emission_resolver` (E013) | resolver configurado | ⚠️ **Sim** (item 16). E não checa `FOCUS_NFE_ENVIRONMENT` |

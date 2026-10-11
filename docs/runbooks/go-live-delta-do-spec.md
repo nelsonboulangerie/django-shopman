@@ -134,11 +134,24 @@ delas sem acusar. Todas estão `[OK]` em 10/10.
   homologação (E022), `EFI_SANDBOX`/`FOCUS_NFE_ENVIRONMENT` não escritas
   (E026), Maps com chave única (E023). O deploy não fica `ACTIVE`
   e o app segue no deployment anterior.
-- **O lado que os checks não cobrem é o contrário**: chaves live com
-  `SHOPMAN_ENVIRONMENT=staging`. Fora de produção o E022 não roda, e esse
-  estado sobe: dinheiro de verdade com as portas de teste abertas. Quem barra
-  esse lado é este script (sai `1` enquanto `SHOPMAN_ENVIRONMENT` não for
-  `production`) e a regra da gravação única do passo 3.
+- **O contrário também não sobe**: chaves live com `SHOPMAN_ENVIRONMENT=staging`
+  (ou com qualquer porta de teste aberta) eram o lado que passava calado,
+  dinheiro de verdade com o botão "Simular pagamento" na tela. O
+  **SHOPMAN_E027** (`check_live_provider_without_test_doors`) roda em
+  **qualquer** ambiente e reprova o deploy quando há dinheiro ou nota de
+  verdade (Stripe `sk_live_`/`pk_live_`; `EFI_SANDBOX=false` com o Pix em
+  `payment_efi`; Focus apontada para `api.focusnfe.com.br` com o emissor
+  Focus ligado) **e** alguma porta de teste aberta: `DJANGO_DEBUG=true`,
+  `SHOPMAN_ENVIRONMENT` diferente de `production`,
+  `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS`, `SHOPMAN_EXPOSE_MOCK_CAPTURE`,
+  `SHOPMAN_MOCK_PIX_AUTO_CONFIRM`, `SHOPMAN_EXPOSE_DEBUG_OTP`,
+  `SHOPMAN_STAGING_AUTOPILOT` ou algum pagamento em `payment_mock` (no spec ou
+  no `Shop.integrations`). A dica lista cada porta aberta e o que fazer com
+  ela. O alpha de hoje (tudo de teste) e o ensaio do Pix (`EFI_SANDBOX=true`)
+  não têm nada live e passam. Este script continua sendo a primeira trava
+  (sai `1` enquanto `SHOPMAN_ENVIRONMENT` não for `production`), e a gravação
+  única do passo 3 continua sendo a regra: o E027 recusa o estado
+  intermediário, não o evita.
 - **Override por componente**: o script confere cada processo Django (os dois
   `web-*`, os três workers e o `release`) com o env do componente por cima do
   do app. Um worker com `SHOPMAN_ENVIRONMENT=staging` esquecido no próprio

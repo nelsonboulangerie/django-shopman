@@ -29,6 +29,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E024  Configuração VAPID parcial ou inválida
   SHOPMAN_E025  Chave HMAC dos recibos de privacidade ausente ou inválida
   SHOPMAN_E026  Ambiente de cobrança (EFI_SANDBOX) ou fiscal (FOCUS_NFE_ENVIRONMENT) não declarado em produção
+  SHOPMAN_E027  Dinheiro ou nota de verdade com porta de teste aberta (em qualquer ambiente)
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -1405,3 +1406,133 @@ def check_provider_environments_declared(app_configs, **kwargs):
             )
         )
     return errors
+
+
+_STRIPE_LIVE_PREFIXES = ("sk_live_", "pk_live_", "rk_live_")
+
+
+def _declared_adapter_paths(adapter_type: str, settings_name: str) -> dict[str, str]:
+    """Caminhos de adapter declarados, por origem: settings E ``Shop.integrations``.
+
+    A união das duas camadas, e não só a que vence: o Admin pode apontar o Pix
+    para a Efí por cima de um settings simulado (ou o contrário), e a pergunta
+    aqui é "algum caminho deste tipo leva a dinheiro de verdade?". Chave do
+    dicionário é o rótulo que a mensagem mostra.
+    """
+    found: dict[str, str] = {}
+
+    def collect(origin: str, value) -> None:
+        if isinstance(value, Mapping):
+            for method, path in value.items():
+                if path:
+                    label = (
+                        f"SHOPMAN_{str(method).upper()}_ADAPTER"
+                        if origin == "SHOPMAN_PAYMENT_ADAPTERS"
+                        else f"{origin}[{method}]"
+                    )
+                    found[label] = str(path)
+        elif value:
+            found[origin] = str(value)
+
+    collect(settings_name, getattr(settings, settings_name, None))
+    try:
+        from shopman.shop.adapters import _shop_integrations_value
+
+        collect(f"Shop.integrations[{adapter_type}]", _shop_integrations_value(adapter_type))
+    except Exception:
+        # Sem banco (build, check sem migração) vale o que o settings declara,
+        # mas em WARNING: um override do Admin pode estar fora desta conta.
+        logging.getLogger(__name__).warning(
+            "live_provider_check: Shop.integrations ilegível; só o settings foi conferido", exc_info=True
+        )
+    return found
+
+
+def _live_provider_facts() -> list[str]:
+    """O que, nesta configuração, mexe com dinheiro ou nota de verdade.
+
+    Chave live do Stripe vale por si: é credencial de cobrança. Efí fora do
+    sandbox só é dinheiro quando algum pagamento passa por ``payment_efi``, e
+    Focus em produção só é nota quando o emissor fiscal é a Focus. Efí em
+    sandbox com ``payment_efi`` (o ensaio do Pix, D-031) não é dinheiro.
+    """
+    from shopman.shop.adapters.fiscal_focusnfe import PRODUCTION_URL, _base_url
+
+    facts = []
+    stripe = getattr(settings, "SHOPMAN_STRIPE", {}) or {}
+    for key, label in (("secret_key", "STRIPE_SECRET_KEY"), ("publishable_key", "STRIPE_PUBLISHABLE_KEY")):
+        if str(stripe.get(key) or "").strip().startswith(_STRIPE_LIVE_PREFIXES):
+            facts.append(f"{label} live (cartão cobra de verdade)")
+
+    payment_paths = _declared_adapter_paths("payment", "SHOPMAN_PAYMENT_ADAPTERS")
+    efi = getattr(settings, "SHOPMAN_EFI", {}) or {}
+    if not efi.get("sandbox", True) and any("payment_efi" in path for path in payment_paths.values()):
+        facts.append("EFI_SANDBOX=false com Pix na Efí (Pix cobra de verdade)")
+
+    fiscal_paths = _declared_adapter_paths("fiscal", "SHOPMAN_FISCAL_ADAPTER")
+    focus = getattr(settings, "SHOPMAN_FOCUS_NFE", {}) or {}
+    if (
+        focus
+        and _base_url(focus) == PRODUCTION_URL
+        and any("fiscal_focusnfe" in path for path in fiscal_paths.values())
+    ):
+        facts.append("Focus NFe em produção (NFC-e com validade no SEFAZ)")
+    return facts
+
+
+def _open_test_doors() -> list[str]:
+    """As portas de teste abertas, cada uma com o que fazer para fechá-la."""
+    doors = []
+    if settings.DEBUG:
+        doors.append("DJANGO_DEBUG=true: escreva DJANGO_DEBUG=false")
+    if not is_production():
+        doors.append(
+            f"SHOPMAN_ENVIRONMENT={environment_name()} (libera seed --flush, qa_scenarios e as "
+            "travas de produção desligadas): escreva SHOPMAN_ENVIRONMENT=production"
+        )
+    for name, what in (
+        ("SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", "simulador de pagamento permitido"),
+        ("SHOPMAN_EXPOSE_MOCK_CAPTURE", 'botão "Simular pagamento" para o cliente'),
+        ("SHOPMAN_MOCK_PIX_AUTO_CONFIRM", "Pix simulado se confirma sozinho"),
+        ("SHOPMAN_EXPOSE_DEBUG_OTP", "código de login devolvido na resposta"),
+        ("SHOPMAN_STAGING_AUTOPILOT", "pedidos avançam sozinhos"),
+    ):
+        if getattr(settings, name, False):
+            doors.append(f"{name}=true ({what}): apague a variável")
+    for origin, path in sorted(_declared_adapter_paths("payment", "SHOPMAN_PAYMENT_ADAPTERS").items()):
+        if "payment_mock" in path:
+            doors.append(f"{origin}=payment_mock (pagamento simulado): aponte para o gateway real")
+    return doors
+
+
+@register(deploy=True)
+def check_live_provider_without_test_doors(app_configs, **kwargs):
+    """Dinheiro ou nota de verdade só com TODAS as portas de teste fechadas.
+
+    O ``SHOPMAN_E022`` e o ``SHOPMAN_E026`` barram a virada pela metade num
+    sentido: produção com chave de teste. Este barra o outro: chave live (ou Efí
+    fora do sandbox, ou Focus em produção) com o ambiente ainda ``staging``, o
+    simulador permitido, o botão "Simular pagamento", o OTP na resposta, o
+    piloto automático ou DEBUG. Esse estado subia calado: cobrança de verdade
+    numa loja em que o cliente ainda consegue marcar o pedido como pago com um
+    clique. Roda em QUALQUER ambiente, porque a porta aberta é justamente o
+    ambiente não ser produção. O alpha (tudo de teste) e o ensaio do Pix
+    (``EFI_SANDBOX=true`` com ``payment_efi``) não têm fato live e passam.
+    """
+    live = _live_provider_facts()
+    if not live:
+        return []
+    doors = _open_test_doors()
+    if not doors:
+        return []
+    return [
+        Error(
+            "Dinheiro ou nota de verdade com porta de teste aberta: " + "; ".join(live) + ".",
+            hint=(
+                "Feche todas as portas na mesma gravação do spec (ou volte as chaves para teste): "
+                + "; ".join(doors)
+                + "."
+            ),
+            id="SHOPMAN_E027",
+        )
+    ]
