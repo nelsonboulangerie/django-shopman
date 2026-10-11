@@ -31,6 +31,7 @@ import {
   toneBadge,
   triageCards,
   zonesView,
+  negotiationZoneView,
   zoneEmptyText,
   confirmationRemainingLabel,
   deadlineTone,
@@ -232,6 +233,26 @@ describe("zonesView", () => {
       "Nenhum pedido para retirada ou entrega agora.",
     ]);
     expect(new Set(texts).size).toBe(3);
+  });
+
+  // O pedido do iFood já entregue com negociação aberta não está em etapa nenhuma: no
+  // quadro em abas (celular, tablet em pé) ele ganha a aba "Negociação", senão some.
+  it("a aba Negociação junta só o que está fora das etapas, e some sem nenhum", () => {
+    expect(negotiationZoneView(queue())).toBeNull();
+    const zone = negotiationZoneView({
+      ...queue(),
+      ifood_negotiation_orders: [
+        card({ ref: "B" }),
+        card({ ref: "IFOOD-DONE", status: "completed" }),
+      ],
+    });
+    expect(zone?.key).toBe("negotiation");
+    expect(zone?.title).toBe("Negociação");
+    expect(zone?.cards.map((c) => c.ref)).toEqual(["IFOOD-DONE"]);
+    expect(zone?.count).toBe(1);
+    expect(zoneEmptyText("negotiation")).toBe(
+      "Nenhuma negociação do iFood esperando resposta.",
+    );
   });
 });
 

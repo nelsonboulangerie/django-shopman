@@ -20,6 +20,7 @@ import {
   fulfillmentCounts,
   lucideIcon,
   moneyInput,
+  negotiationZoneView,
   nextOutRef,
   nextSort,
   oneTapDispatch,
@@ -486,17 +487,27 @@ const kitPhone = screen.belowSm;
 const isNarrowTablet = computed(
   () => screen.belowLg.value && !screen.belowMd.value,
 );
+// A aba "Negociação" (só quando há): o pedido do iFood já fora das etapas com
+// negociação aberta. É ação pendente do gerente; a Fila do desktop o mostra, e no
+// quadro em abas ele ficava sem lugar. A Saída do celular é do posto, não do gerente.
+const negotiationZone = computed(() =>
+  queue.value ? negotiationZoneView(queue.value) : null,
+);
+const tabZones = computed<ZoneView[]>(() => [
+  ...zones.value,
+  ...(negotiationZone.value ? [negotiationZone.value] : []),
+]);
 // Celular (prévia v3 `orders-phone3.html`): Entrada, Preparo e Saída viram abas, uma
 // coluna por vez, com a contagem na aba. Abre na que tem pedido novo; sem pedido novo,
 // na primeira que tem pedido. O toque do operador manda dali em diante.
 const pickedZone = ref<string | null>(null);
 const phoneZone = computed(() => {
-  if (pickedZone.value && zones.value.some((z) => z.key === pickedZone.value))
+  if (pickedZone.value && tabZones.value.some((z) => z.key === pickedZone.value))
     return pickedZone.value;
   const intake = zones.value.find((z) => z.key === "intake");
   if (intake && triaged(intake).length) return intake.key;
   return (
-    zones.value.find((z) => triaged(z).length)?.key ??
+    tabZones.value.find((z) => triaged(z).length)?.key ??
     zones.value[0]?.key ??
     "intake"
   );
@@ -513,13 +524,16 @@ function pickSort(key: SortKey) {
 // as três colunas. Na aba da Saída, o mais antigo expandido e o resto em linhas.
 const phoneExitMode = ref(false);
 const phoneTabs = computed(() => {
-  const byKey = new Map(zones.value.map((zone) => [zone.key, zone]));
+  const byKey = new Map(tabZones.value.map((zone) => [zone.key, zone]));
   const tabs = phoneExitMode.value
     ? [
         { key: "expedition", title: "Prontos para sair" },
         { key: "prep", title: "Em preparo" },
       ]
-    : (isPhone.value ? zones.value : desktopZones.value).map((zone) => ({
+    : [
+        ...(isPhone.value ? zones.value : desktopZones.value),
+        ...(negotiationZone.value ? [negotiationZone.value] : []),
+      ].map((zone) => ({
         key: zone.key,
         title: zone.title,
       }));
@@ -528,11 +542,15 @@ const phoneTabs = computed(() => {
     return zone ? [{ ...tab, zone, late: lateCount(zone) }] : [];
   });
 });
+// A aba "Negociação" tem ícone, e no celular fica só com ele e a contagem (o nome
+// segue para o leitor de tela): com o nome inteiro, a quarta aba passava da largura.
 const phoneTabItems = computed(() =>
   phoneTabs.value.map((tab) => ({
     ...tab,
     value: tab.key,
     label: tab.title,
+    icon: tab.key === "negotiation" ? "i-lucide-message-square-warning" : undefined,
+    iconOnlyOnPhone: tab.key === "negotiation",
     count: triaged(tab.zone).length,
   })),
 );
@@ -589,7 +607,7 @@ const boardAsTabs = computed(
     isPhone.value || (isNarrowTablet.value && desktopZones.value.length > 1),
 );
 const phoneZones = computed(() =>
-  zones.value.filter((zone) => zone.key === phoneZone.value),
+  tabZones.value.filter((zone) => zone.key === phoneZone.value),
 );
 const boardSplitterItems = computed(() => {
   const open = desktopZones.value;
@@ -1737,6 +1755,7 @@ function printQueue() {
         data-board-zone-tabs
         @update:model-value="pickPhoneZone"
       >
+        <template #default="{ item }"><span :class="item.iconOnlyOnPhone ? 'max-sm:sr-only' : undefined">{{ item.label }}</span></template>
         <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
       </NuxtTabs>
     </OperatorToolbar>
