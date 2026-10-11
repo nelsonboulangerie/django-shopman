@@ -34,18 +34,39 @@ export default defineAppConfig({
     kbd: {
       defaultVariants: { variant: "soft" },
     },
+    // CONJUNTO MÍNIMO (dono, 08/10/2026; WP-BI-CANON-LAUDO, seção F). O tema fixa a
+    // escolha num lugar só, e a tela não escreve cor nem variante à mão para o caso
+    // comum. O que vale na suíte inteira:
+    //   - Button: tamanhos `md` (todo lugar) e `xl` (toque crítico: PDV, Cozinha,
+    //     quiosque); variantes `solid` (o gesto principal, um por região), `outline`
+    //     (secundário) e `ghost` (terciário, ícone, menu); cores `primary`, `neutral`
+    //     e `error`. Sem prop, é o gesto principal: `primary solid md`.
+    //   - Badge: só `subtle` (tem borda e se lê sobre o card branco), em `neutral`,
+    //     `primary`, `success`, `warning` e `error`. Sem prop: `neutral subtle`.
+    //   - Card: `outline` no nível da página; `soft` para o card DENTRO de outro card.
+    //     Destaque é `NuxtPageCard highlight` (ou `data-highlight` no card).
+    //   - Alert: só `subtle`, em `info`, `success`, `warning` e `error`. Sem prop:
+    //     `info subtle`.
+    // O que está fora do conjunto continua desenhando como antes até o app migrar
+    // (o kit muda por opt-in); a trava `guardrails.minimalSet.test.ts` impede que
+    // cresça e lista cada uso, por app, para a frente de migração dele.
+    //
     // Texto latão sobre latão a 10% (`soft`) precisa do tom de tinta do tema para
     // passar o AA (4,5:1); ver `--primary-ink` em operator-theme.css. Só a cor do
-    // texto muda; anatomia e variantes continuam as do Nuxt UI.
+    // texto muda; anatomia e variantes continuam as do Nuxt UI. `soft` está fora do
+    // conjunto: a tinta fica enquanto houver uso, para não reprovar contraste.
     button: {
       compoundVariants: [
         { color: "primary", variant: "soft", class: "text-(--primary-ink)" },
       ],
+      defaultVariants: { color: "primary", variant: "solid", size: "md" },
     },
     badge: {
       compoundVariants: [
         { color: "primary", variant: "soft", class: "text-(--primary-ink)" },
+        { color: "primary", variant: "subtle", class: "text-(--primary-ink)" },
       ],
+      defaultVariants: { color: "neutral", variant: "subtle", size: "md" },
     },
     popover: { slots: { content: "bg-popover" } },
     slideover: { slots: { content: "bg-card" } },
@@ -58,7 +79,11 @@ export default defineAppConfig({
     // operador os Alerts também aparecem sobre conteúdo rolável; a tinta precisa
     // ser pré-composta com a superfície do tema para continuar sutil, mas opaca.
     // A anatomia, o padding, a borda e as variantes continuam sendo do Nuxt UI.
+    // Conjunto mínimo: `subtle` × `info`/`success`/`warning`/`error`. As tintas de
+    // `primary`, `secondary` e `neutral` ficam enquanto houver uso explícito fora do
+    // conjunto (a trava do Gestor ainda exige as sete; sai na migração dele).
     alert: {
+      defaultVariants: { color: "info", variant: "subtle" },
       compoundVariants: [
         {
           color: "primary",
@@ -119,6 +144,8 @@ export default defineAppConfig({
       // Tabela que é o conteúdo inteiro do card fica integrada a ele, sem padding
       // (dono, 07/10/2026): a borda e o fundo branco são do card, as linhas vão de
       // ponta a ponta. Com mais coisas no corpo (o resumo do pedido), o padding fica.
+      // Conjunto mínimo (dono, 08/10/2026): `outline` no nível da página e `soft`
+      // (o oficial) para o card dentro de outro card. `subtle` e `solid` saem.
       // Accordion como conteúdo inteiro é uma lista emoldurada: sem padding vertical,
       // o gatilho de cada item já dá o respiro (Em andamento, dono, 07/10/2026).
       slots: {

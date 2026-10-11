@@ -49,7 +49,11 @@
 }
 
 :root {
-  --radius: 0.625rem; /* soft (10px) — levemente mais arredondado que o antigo 8px */
+  /* UM token de raio, o do Nuxt UI (dono, 08/10/2026; WP-BI-CANON-LAUDO F2/F3.4).
+     Dele saem `rounded-xs` … `rounded-3xl` (xs = 0,5×, sm = 1×, md = 1,5×, lg = 2×,
+     xl = 3×). 5 px dá md = 7,5 px e lg = 10 px, o raio de card que já era o da suíte.
+     Os `--radius-*` próprios do kit morreram: disputavam `--radius-md` com o tema. */
+  --ui-radius: 0.3125rem;
 
   /* Geometria estrutural da suíte. Shells e wrappers consomem estes papéis; apps
      não repetem largura de rail, chrome, pane nem escala de espaçamento. */

@@ -1,3 +1,11 @@
+<!--
+  @deprecated APOSENTADO (dono, 08/10/2026; conjunto mínimo, README "Primitivos de
+  escolha"). Lista curta e fixa: `NuxtSelect`. Lista longa ou buscável:
+  `NuxtSelectMenu`, e no toque com `:search-input="{ autofocus: false }"`.
+  Defeito conhecido: com v-model, o campo perde o valor inicial depois do SSR (mostra
+  o primeiro item). Nenhum uso novo: `tests/guardrails.minimalSet.test.ts` tem o teto
+  por app.
+-->
 <script setup lang="ts">
 import { getCurrentInstance, normalizeClass } from "vue";
 import type { HTMLAttributes } from "vue";

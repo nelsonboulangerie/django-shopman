@@ -1,3 +1,12 @@
+<!--
+  @deprecated APOSENTADO (dono, 08/10/2026; conjunto mínimo, README "Conjunto mínimo").
+  Peça nova usa `NuxtButton` direto, no conjunto do tema: tamanhos md/xl, variantes
+  solid/outline/ghost, cores primary/neutral/error. Mapa fixo para a migração de cada
+  app: default → primary solid, destructive → error solid, outline/secondary → neutral
+  outline, ghost → neutral ghost, link → primary ghost; xs/sm/default → md, lg → xl,
+  icon-* → square. Nenhum uso novo: `tests/guardrails.minimalSet.test.ts` tem o teto
+  por app. O componente fica até o último app migrar.
+-->
 <script lang="ts">
 import type { HTMLAttributes } from "vue";
 

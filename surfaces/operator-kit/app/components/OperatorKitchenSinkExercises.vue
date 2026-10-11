@@ -5,15 +5,14 @@ import type { TableColumn } from "@nuxt/ui";
 import { getPaginationRowModel } from "@tanstack/vue-table";
 
 // Exercícios do catálogo. As alternativas não são novos tokens ou wrappers.
-const cardVariants = ["outline", "soft", "subtle", "solid"] as const;
-const badgeVariants = ["solid", "outline", "soft", "subtle"] as const;
+// Conjunto mínimo (dono, 08/10/2026): Badge só `subtle`, nas cinco cores abaixo; o
+// catálogo mostra o que a suíte usa, não o leque inteiro do Nuxt UI.
 const badgeColors = [
-  "primary",
   "neutral",
+  "primary",
   "success",
   "warning",
   "error",
-  "info",
 ] as const;
 const groupVariants = ["list", "card", "table"] as const;
 const choices = [
@@ -286,7 +285,6 @@ function drop(target: string) {
       <NuxtBadge
         class="mt-2"
         :color="connectivity.isOnline.value ? 'success' : 'warning'"
-        variant="soft"
         >{{
           connectivity.isOnline.value
             ? "Dispositivo online"
@@ -296,7 +294,7 @@ function drop(target: string) {
     </NuxtCard>
 
     <h3 class="op-title">Cards, contraste e profundidade</h3>
-    <div class="grid gap-3 lg:grid-cols-3">
+    <div class="grid gap-3 lg:grid-cols-2">
       <NuxtCard
         title="Unidade de trabalho"
         description="Outline, identidade no header e decisão no footer"
@@ -312,33 +310,15 @@ function drop(target: string) {
       </NuxtCard>
       <NuxtCard
         title="Bloco subordinado"
-        description="Soft, corpo único e nenhuma cerimônia extra"
-        variant="soft"
+        description="Soft só DENTRO de outro card: corpo único e nenhuma cerimônia extra"
       >
-        <div class="flex items-center gap-2">
-          <NuxtBadge color="success" variant="soft">Pronto</NuxtBadge>
-          <p class="op-body">Estado de apoio, sem competir com a tarefa.</p>
-        </div>
+        <NuxtCard variant="soft">
+          <div class="flex items-center gap-2">
+            <NuxtBadge color="success">Pronto</NuxtBadge>
+            <p class="op-body">Estado de apoio, sem competir com a tarefa.</p>
+          </div>
+        </NuxtCard>
       </NuxtCard>
-      <NuxtCard
-        title="Contexto delimitado"
-        description="Subtle, quando fundo e contorno precisam mudar juntos"
-        variant="subtle"
-      >
-        <p class="op-body">
-          Revisão contextual com limite claro e sem sombra decorativa.
-        </p>
-      </NuxtCard>
-    </div>
-    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <NuxtCard
-        v-for="variant in cardVariants"
-        :key="variant"
-        :variant="variant"
-        :title="variant"
-        description="Mesma informação, tratamento canônico"
-        ><p class="op-figure">R$ 48,50</p></NuxtCard
-      >
     </div>
     <NuxtPageCard
       title="Destaque semântico"
@@ -396,7 +376,7 @@ function drop(target: string) {
     <NuxtAlert
       v-if="contrastAlertOpen"
       role="status"
-      color="primary"
+      color="success"
       title="Operação confirmada"
       description="Feedback contextual com ícone, borda e fundo de baixa ênfase."
       icon="i-lucide-circle-check"
@@ -417,19 +397,16 @@ function drop(target: string) {
       "
       >Mostrar toast</NuxtButton
     >
-    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <NuxtCard v-for="variant in badgeVariants" :key="variant" :title="variant"
-        ><div class="flex flex-wrap gap-2">
-          <NuxtBadge
-            v-for="color in badgeColors"
-            :key="color"
-            :color="color"
-            :variant="variant"
-            >{{ color }}</NuxtBadge
-          >
-        </div></NuxtCard
-      >
-    </div>
+    <NuxtCard title="subtle" description="A variante única do selo, em cinco cores"
+      ><div class="flex flex-wrap gap-2">
+        <NuxtBadge
+          v-for="color in badgeColors"
+          :key="color"
+          :color="color"
+          >{{ color }}</NuxtBadge
+        >
+      </div></NuxtCard
+    >
 
     <h3 class="op-title">Escolhas e menus</h3>
     <div class="grid gap-3 lg:grid-cols-3">

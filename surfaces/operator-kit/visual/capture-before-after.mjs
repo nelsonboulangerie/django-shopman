@@ -37,7 +37,12 @@ const CONFIG = {
   "pos-nuxt:login": { dir: "pos-nuxt", mock: "tests/e2e/mockBackend.mjs", scenarios: [{ id: "login", route: "/" }] },
   "kds-nuxt": {
     mock: "tests/e2e/mockBackend.mjs",
-    scenarios: [{ id: "stations", route: "/", cookies: authed }, { id: "login", route: "/" }],
+    scenarios: [
+      { id: "stations", route: "/", cookies: authed },
+      // A estação tem o selo ao vivo no cabeçalho (onda 0.M confere os quatro tons).
+      { id: "station", route: "/bancada", cookies: authed },
+      { id: "login", route: "/" },
+    ],
   },
   "production-nuxt": {
     mock: "tests/e2e/mockBackend.mjs",
@@ -53,11 +58,31 @@ const CONFIG = {
   },
   "marketing-nuxt": {
     mock: "tests/visual/mock_backend.py",
-    scenarios: [{ id: "home", route: "/" }, { id: "campaigns", route: "/campaigns" }],
+    scenarios: [
+      { id: "home", route: "/" },
+      { id: "campaigns", route: "/campaigns" },
+      { id: "history", route: "/history" },
+    ],
   },
   "bi-nuxt": { mock: "../pos-nuxt/tests/e2e/mockBackend.mjs", scenarios: [{ id: "login", route: "/" }] },
   "purchase-nuxt": { mock: "../pos-nuxt/tests/e2e/mockBackend.mjs", scenarios: [{ id: "login", route: "/" }] },
   "kitchensink-nuxt": { mock: "../pos-nuxt/tests/e2e/mockBackend.mjs", scenarios: [{ id: "catalog", route: "/" }] },
+  // O build de produção do Kitchen Sink só mostra o login (o atalho hermético é do
+  // `nuxt dev`). O catálogo em si sai do harness do kit (`catalog:build`), que monta
+  // a mesma `OperatorKitchenSink` sem trava de sessão.
+  "operator-kit:catalog": {
+    dir: "operator-kit",
+    mock: "../pos-nuxt/tests/e2e/mockBackend.mjs",
+    env: { OPERATOR_KIT_CATALOG: "1" },
+    scenarios: [
+      { id: "catalog", route: "/__operator_kit_catalog" },
+      {
+        id: "catalog-modal",
+        route: "/__operator_kit_catalog?state=success",
+        steps: [{ click: "button:has-text('Abrir confirmação')" }],
+      },
+    ],
+  },
 };
 
 const cfg = CONFIG[app];

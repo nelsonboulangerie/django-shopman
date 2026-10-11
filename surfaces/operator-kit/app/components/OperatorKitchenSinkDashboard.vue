@@ -73,8 +73,6 @@ const chartColumns = [
           >
             <div class="mb-3 flex flex-wrap items-center gap-2">
               <NuxtSwitch v-model="bars" label="Mostrar em barras" /><NuxtBadge
-                color="neutral"
-                variant="outline"
                 >Dados fixos</NuxtBadge
               >
             </div>
@@ -212,7 +210,7 @@ const chartColumns = [
                 <p class="op-label">{{ person.name }}</p>
                 <p class="op-body text-muted">{{ person.role }}</p>
               </div>
-              <NuxtBadge color="neutral" variant="outline">{{
+              <NuxtBadge>{{
                 person.status
               }}</NuxtBadge>
             </li>

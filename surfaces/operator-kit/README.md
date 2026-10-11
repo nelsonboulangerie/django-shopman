@@ -88,7 +88,7 @@ O layer contribui, via auto-import do Nuxt:
 | `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem e slot de ícone — alvo de toque de 44 px (`min-h-control`) |
 | `app/components/FilterBar.vue` | `<FilterBar>` | filtro universal: "+ Filtro" → campo → valores, chip removível que reabre a edição, painel de baixo no celular (ver "Filtro universal") |
 | `app/composables/useRouteFilters.ts` | `useRouteFilters` | o recorte da `FilterBar` na URL (`filtersToQuery`/`filtersFromQuery` em `presentation/filterBar.ts`) |
-| `app/components/UiIconButton.vue` | `<UiIconButton>` | ação quadrada de ícone da barra (44 px, `size-control`), com `active` e `spinning` |
+| `app/components/UiIconButton.vue` | `<UiIconButton>` | **aposentado** (dono, 08/10/2026; ver "Conjunto mínimo"): ação quadrada de ícone da barra. Peça nova usa `NuxtButton square variant="ghost"` com `aria-label`; os usos que existem saem quando cada app migra |
 | `app/presentation/windowTitle.ts` | `operatorAppName`, `windowTitle` | regra pura do nome e do título: `"<Casa> · <App> · <Página>"`, sempre com ponto médio — ver "Nome do app instalado" |
 | `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle`, `useOperatorAppName` | instala o `titleTemplate` no `app.vue` (e `error.vue`) e expõe o nome resolvido; as páginas passam só o próprio título |
 | `app/presentation/nextFocus.ts` | `revealPlan`, `needsInitialReveal`, … | regra pura do próximo foco (alinhamento, movimento, quando rolar na montagem) |
@@ -420,7 +420,7 @@ Como um app migra:
 | `OperatorSectionBar` | barra de baixo no celular e no tablet em pé: até 4 seções + "Mais" (o resto, o slot `#more` e o menu do operador) | `orders-phone3.html`, `cozinha-celular4.html` |
 | `OperatorPageHeader` | cabeçalho de uma linha; sem rail, barra de 56px com selo, título, ponto ao vivo, lupa, ações de polegar e Avisos; o posto do dispositivo no eyebrow; controles e recortes descem para linhas que rolam | `orders-board3.html` |
 | `OperatorToolbar` | a barra de trabalho que o app monta sem tocar a estrutura do Nuxt UI (o ledger proíbe `NuxtDashboardToolbar` direto nos apps): camada fina sobre o `NuxtDashboardToolbar`, slots `#left`, `#right` e o padrão (que ocupa a barra inteira, como no oficial), `as` = `div` (padrão), `header` ou `footer`; `class`, `data-*` e `aria-*` chegam ao elemento. Sem pele própria: o fundo vem do tema (`dashboardToolbar.slots.root` em `app.config.ts`) | DashboardToolbar do Nuxt UI |
-| `OperatorLiveStatus` | o ponto ao vivo com a hora; fora do ao vivo o estado se escreve por extenso | `.live-dot` |
+| `OperatorLiveStatus` | o ponto ao vivo com a hora; fora do ao vivo o estado se escreve por extenso. Os quatro tons (dono, 08/10/2026): `live` ponto verde e a hora ("10:12"); `calm` neutro, sem ponto, a cadência que o app passa no `label` ("Atualiza a cada 60 s"); `late` âmbar com ponto, "Última leitura às 10:04"; `off` ponto vermelho e "Sem conexão". O rótulo do app, a hora e o `detail` vão para o nome acessível. Nada de "On"/"Off" visível (a trava de vocabulário recusa) | `.live-dot` |
 | `OperatorInbox` | "Avisos": UM item no rail e UM sino na barra de 56px; um painel (portal) com duas abas, a operação (alertas do app, capacidade acima do limite) e a caixa pessoal (avisos, Meus acessos); um selo somado | `_rail3bottom.html` |
 | `OperatorShortcutsHelp` | a ajuda de atalhos de todo app: "Em todo o app" (Alt 1…9, "?") e os grupos da tela | "Atalhos (?)" de `_rail3bottom.html` |
 | `OperatorPhoneMenu` | o menu do operador sem o rail: o "Mais" da barra de baixo (`variant="bar"`) ou as iniciais na barra de 56px (`variant="header"`, a Central) | menu de `_rail3bottom.html` |
@@ -806,8 +806,16 @@ Do `UiSelect`, três coisas que valem a leitura:
   `<span id>` e passe `labelledBy`. Isto é memória de um defeito pago no recebimento do
   Compras; o teste que a prende vive em `tests/components/UiChoicePrimitives.test.ts`.
 
-O `UiNativeSelect` ao lado **continua sendo a peça certa** para lista curta e fixa: no
-celular ele abre a roda do sistema, que é ótima. O `UiSelect` é para lista longa.
+O `UiNativeSelect` está **aposentado** (dono, 08/10/2026; a decisão de 10/09 que o
+mantinha para lista curta caiu). Lista curta e fixa vai para `NuxtSelect`; lista longa,
+buscável, agrupada ou que cresce vai para `NuxtSelectMenu`, e no toque e no quiosque com
+`:search-input="{ autofocus: false }"`, para não abrir o teclado virtual. Motivos: a lista
+nativa é do sistema operacional (fora do tema, sem ícone nem selo, diferente em cada SO) e
+é a única peça de escolha que o `app.config` não alcança. ⚠️ Defeito conhecido, e mais um
+motivo: com `v-model`, o `UiNativeSelect` perde o valor inicial depois do SSR (o campo
+mostra o primeiro item, não o escolhido; visto na proposta do Kitchen Sink, PR #1539).
+Os usos que existem saem quando cada app migra; nenhum uso novo (a trava
+`guardrails.minimalSet.test.ts` tem o teto por app).
 
 ### `UiToggleChip` — escolha múltipla desenhada como pílula
 
@@ -872,7 +880,8 @@ diz o que existe.
 própria de `Ui/Checkbox.vue`, `Ui/Radio.vue`, `Ui/RadioGroup.vue`, `Ui/Select.vue`,
 `Ui/ToggleChip.vue` ou um `MaterialPicker` — duas implementações vivas é como uma garantia se perde em silêncio.
 `tests/guardrails.a11y.test.ts` varre as nove superfícies e recusa botão de ícone puro
-sem nome acessível (a peça canônica é o `UiIconButton`, que EXIGE `label`).
+sem nome acessível (a peça canônica é o `NuxtButton square` com `aria-label`; o
+`UiIconButton`, aposentado, também EXIGE `label`).
 
 O inventário do que ainda falta converter, app por app, está em
 [`docs/primitivos-de-escolha-inventario.md`](docs/primitivos-de-escolha-inventario.md).
@@ -1021,6 +1030,43 @@ Preparo, Saída), onde o tablet do passe fica só com a Saída.
 **Quem guarda é o app**, e a lei L7 manda guardar no servidor, por posto: o Gestor usa
 `orders/board-layout/` (`Terminal.metadata["gestor_board"]`, ver
 `docs/reference/data-schemas.md`). Sem servidor, a arrumação padrão (todas abertas).
+
+## Conjunto mínimo (dono, 08/10/2026)
+
+A suíte usa um conjunto curto de tamanhos, variantes e cores, fixado UMA vez no tema
+(`app/app.config.ts`, `defaultVariants` e `compoundVariants`), para que a tela não
+escreva cor nem variante à mão no caso comum. Origem: WP-BI-CANON-LAUDO, seção F, e a
+proposta mostrada no Kitchen Sink (PR #1539), aprovada como está.
+
+| peça | conjunto | sem prop (padrão do tema) |
+|---|---|---|
+| `NuxtButton` | tamanhos `md` e `xl` (toque crítico: PDV, Cozinha, quiosque, teclado numérico); variantes `solid` (o gesto principal, um por região), `outline` (secundário) e `ghost` (terciário, ícone, menu); cores `primary`, `neutral` e `error` | `primary solid md` |
+| `NuxtBadge` | só `subtle`, em `neutral`, `primary`, `success`, `warning` e `error` | `neutral subtle` |
+| `NuxtCard` | `outline` no nível da página; `soft` para o card DENTRO de outro card. Destaque é `NuxtPageCard highlight` (ou `data-highlight`) | `outline` |
+| `NuxtAlert` | só `subtle`, em `info`, `success`, `warning` e `error` | `info subtle` |
+| texto | 5 tamanhos (`text-xs` 12, `text-sm` 14, `text-base` 16, `text-xl` 20, `text-2xl` 24) × 2 pesos de destaque (`medium`, `semibold`); os papéis `op-*` são apelidos desses cinco | n/a |
+| raio | UM token, `--ui-radius` (0,3125 rem), de onde o Nuxt UI tira `rounded-xs` a `rounded-3xl`; os `--radius-*` próprios do kit morreram | n/a |
+
+Sem par no conjunto: `xs`, `sm` e `lg` no botão (use `md`, e `square` + `ghost` para
+caber numa linha), `link` e `soft` no botão (`ghost`; o "pressionado" é `active` +
+`active-variant`), `warning`/`info`/`success` no botão (estado mora no Badge ou no
+Alert), `soft`/`outline`/`solid` no Badge, `subtle` no Card, `soft`/`solid` e as cores
+`primary`/`neutral` no Alert. Quem passa um desses ainda desenha como antes: o kit muda
+por opt-in, e cada app troca na própria migração. `tests/guardrails.minimalSet.test.ts`
+conta os usos fora do conjunto por superfície e reprova quando a conta CRESCE (a lista
+com arquivo:linha sai no erro e no PR da onda 0.M).
+
+**Aposentados** (marcados `@deprecated` no componente e no catálogo; nenhum uso novo, os
+que existem saem quando cada app migra):
+
+- `UiButton` → `NuxtButton`, com o mapa fixo: `default` → `primary solid`,
+  `destructive` → `error solid`, `outline` e `secondary` → `neutral outline`, `ghost` →
+  `neutral ghost`, `link` → `primary ghost`; tamanhos `xs`, `sm` e `default` → `md`,
+  `lg` → `xl`, `icon-*` → `square` no tamanho correspondente (`icon-lg` → `xl`).
+- `UiIconButton` → `NuxtButton square color="neutral" variant="ghost"` com `aria-label`.
+- `UiNativeSelect` → `NuxtSelect` (lista curta e fixa) ou `NuxtSelectMenu` (longa ou
+  buscável; no toque, `:search-input="{ autofocus: false }"`). Ver "Primitivos de
+  escolha", com o defeito do SSR.
 
 ## Base de CSS (`operator-base.css`)
 

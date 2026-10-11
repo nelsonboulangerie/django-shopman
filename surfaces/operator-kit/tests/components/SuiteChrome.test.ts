@@ -644,50 +644,65 @@ describe("OperatorPageHeader", () => {
 });
 
 describe("OperatorLiveStatus", () => {
-  it("ao vivo: On e a hora; o detalhe fica para o leitor de tela", async () => {
+  // Contrato do README:422, confirmado pelo dono em 08/10/2026 (onda 0.M): ao vivo é o
+  // ponto verde e a hora; fora dele, o estado por extenso, cada tom com a sua cor.
+  // Nenhum tom escreve a palavra inglesa de ligado/desligado.
+  const NO_ENGLISH_SWITCH = /\bO(?:n|ff)\b/;
+  const dot = (wrapper: VueWrapper) =>
+    wrapper.find("[data-slot='root'] > [data-slot='base']");
+
+  it("ao vivo: ponto verde e a hora; o detalhe fica para o leitor de tela", async () => {
     const wrapper = await mountSuspended(OperatorLiveStatus, {
       props: { tone: "live", time: "22:03", label: "Ao vivo" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
-    expect(wrapper.text()).toContain("On 22:03");
+    expect(wrapper.text().trim()).toBe("22:03");
+    expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
     expect(wrapper.attributes("class")).toContain("bg-success/10");
-    expect(
-      wrapper.get("[data-slot='root'] > [data-slot='base']").classes(),
-    ).toContain("bg-success");
-    expect(
-      wrapper.get("[data-slot='root'] > [data-slot='base']").classes(),
-    ).toContain("h-[10px]");
+    expect(dot(wrapper as unknown as VueWrapper).classes()).toContain("bg-success");
+    expect(dot(wrapper as unknown as VueWrapper).classes()).toContain("h-[10px]");
     expect(wrapper.attributes("aria-label")).toContain("Ao vivo");
     expect(wrapper.attributes("aria-label")).toContain("22:03");
+    expect(wrapper.attributes("data-live-tone")).toBe("live");
   });
 
-  it("falha: Off sem hora, vermelho e com o motivo acessível", async () => {
+  it("calmo: neutro, sem ponto, a cadência por extenso", async () => {
+    const wrapper = await mountSuspended(OperatorLiveStatus, {
+      props: { tone: "calm", time: "10:30", label: "Atualiza a cada 60 s" },
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    expect(wrapper.text().trim()).toBe("Atualiza a cada 60 s");
+    expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
+    expect(wrapper.attributes("class")).toContain("bg-elevated");
+    expect(wrapper.attributes("class")).toContain("ring-accented");
+    expect(dot(wrapper as unknown as VueWrapper).exists()).toBe(false);
+    expect(wrapper.attributes("aria-label")).toContain("10:30");
+  });
+
+  it("atrasado: âmbar, com ponto, e a hora da última leitura por extenso", async () => {
+    const wrapper = await mountSuspended(OperatorLiveStatus, {
+      props: { tone: "late", time: "10:04", label: "Sem atualizar" },
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    expect(wrapper.text().trim()).toBe("Última leitura às 10:04");
+    expect(wrapper.attributes("class")).toContain("bg-warning/10");
+    expect(dot(wrapper as unknown as VueWrapper).classes()).toContain("bg-warning");
+    expect(wrapper.attributes("aria-label")).toContain("Sem atualizar");
+  });
+
+  it("sem conexão: ponto vermelho e \"Sem conexão\", sem hora; o motivo do app fica acessível", async () => {
     const wrapper = await mountSuspended(OperatorLiveStatus, {
       props: { tone: "off", time: "22:03", label: "Atualização falhou" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
-    expect(wrapper.text()).toContain("Off");
+    expect(wrapper.text().trim()).toBe("Sem conexão");
+    expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
     expect(wrapper.text()).not.toContain("22:03");
     expect(wrapper.attributes("aria-label")).toContain("Atualização falhou");
     expect(wrapper.attributes("aria-label")).not.toContain("22:03");
     expect(wrapper.attributes("class")).toContain("bg-error/10");
-    expect(
-      wrapper.get("[data-slot='root'] > [data-slot='base']").classes(),
-    ).toContain("bg-error");
+    expect(dot(wrapper as unknown as VueWrapper).classes()).toContain("bg-error");
     expect(wrapper.attributes("data-live-tone")).toBe("off");
-  });
-
-  it("poll automático continua On success sem alongar o cabeçalho", async () => {
-    const wrapper = await mountSuspended(OperatorLiveStatus, {
-      props: { tone: "calm", time: "10:30", label: "Atualiza a cada 1 min" },
-    });
-    mounted.push(wrapper as unknown as VueWrapper);
-    expect(wrapper.text()).toContain("On 10:30");
-    expect(wrapper.attributes("class")).toContain("bg-success/10");
-    expect(
-      wrapper.get("[data-slot='root'] > [data-slot='base']").classes(),
-    ).toContain("bg-success");
-    expect(wrapper.attributes("aria-label")).toContain("Atualiza a cada 1 min");
   });
 });
 

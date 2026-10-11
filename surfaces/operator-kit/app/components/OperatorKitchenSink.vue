@@ -272,7 +272,7 @@ onMounted(() => {
       /></template>
 
       <template #navbar-actions
-        ><NuxtBadge color="neutral" variant="outline"
+        ><NuxtBadge
           >Fixtures locais</NuxtBadge
         ></template
       >
@@ -306,6 +306,7 @@ onMounted(() => {
           description="Fixtures herméticas, composição real e um vocabulário visual deliberadamente curto."
         >
           <OperatorKitchenSinkDashboard />
+          <OperatorKitchenSinkMinimalSet />
           <OperatorKitchenSinkExercises />
           <section
             id="foundations"
@@ -351,7 +352,7 @@ onMounted(() => {
                   <NuxtBadge color="success">Sucesso</NuxtBadge
                   ><NuxtBadge color="warning">Atenção</NuxtBadge
                   ><NuxtBadge color="error">Erro</NuxtBadge
-                  ><NuxtBadge color="info">Informação</NuxtBadge>
+                  ><NuxtBadge color="neutral">Informação</NuxtBadge>
                 </div>
               </NuxtCard>
               <NuxtCard>
@@ -607,12 +608,12 @@ onMounted(() => {
                       <p class="op-heading">H58</p>
                       <p class="op-title">Maria Santos · Loja online</p>
                     </div>
-                    <NuxtBadge color="error" variant="soft" label="Bloqueado" />
+                    <NuxtBadge color="error" label="Bloqueado" />
                   </div>
                 </template>
                 <div class="flex flex-wrap gap-2">
-                  <NuxtBadge color="neutral" variant="soft" icon="i-lucide-store" label="Retirada" />
-                  <NuxtBadge color="neutral" variant="soft" icon="i-lucide-package" label="1 item" />
+                  <NuxtBadge icon="i-lucide-store" label="Retirada" />
+                  <NuxtBadge icon="i-lucide-package" label="1 item" />
                 </div>
                 <p class="op-body">1x Croissant</p>
                 <NuxtProgress :model-value="0" :max="100" color="primary" size="sm">
@@ -624,7 +625,6 @@ onMounted(() => {
                 </NuxtProgress>
                 <NuxtAlert
                   color="error"
-                  variant="soft"
                   icon="i-lucide-lock"
                   title="Expirou às 15:40"
                   description="Gerado às 15:43. Resolva o bloqueio antes de iniciar."
@@ -955,7 +955,7 @@ onMounted(() => {
               v-for="item in kitchenSinkNavigation.slice(-3)"
               :key="item.to"
               color="neutral"
-              variant="link"
+              variant="ghost"
               @click="selectSection(item.to.slice(1))"
               >{{ item.label }}</NuxtButton
             >
@@ -1020,7 +1020,7 @@ onMounted(() => {
         <template #actions
           ><NuxtButton
             label="Concluir etapa"
-            size="lg"
+            size="xl"
             :disabled="taskDone"
             @click="taskDone = true"
           />

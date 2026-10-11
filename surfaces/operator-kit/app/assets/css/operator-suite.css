@@ -55,55 +55,63 @@
   --color-suite-badge-foreground: var(--suite-badge-foreground);
 }
 
-/* Papéis tipográficos (eram só comentário na ESCALA DE DESIGN do operator-base.css).
-   Medidas das prévias: corpo 15px, título 16px, rótulo 13px, micro 12px. */
+/* Papéis tipográficos: CINCO tamanhos × DOIS pesos (dono, 08/10/2026; conjunto
+   mínimo, WP-BI-CANON-LAUDO F2). Os papéis são apelidos da escala do Tailwind que os
+   componentes Nuxt UI já usam: `text-xs` 12 px (rótulo e meta), `text-sm` 14 px
+   (texto corrido e controles), `text-base` 16 px (título de cartão), `text-xl` 20 px
+   (título de tela) e `text-2xl` 24 px (figura). Pesos de destaque: `medium` (500) e
+   `semibold` (600); o texto corrido fica no peso normal da fonte. Antes eram 15 px de
+   corpo e 13 px de rótulo, entre o 14 e o 12 dos controles, e 28/22/17/11 px soltos.
+   Exceção declarada: `op-code` (o número do pedido lido de longe no passe do Gestor,
+   35 px em negrito), até o dono decidir se fica. A trava é
+   `tests/guardrails.minimalSet.test.ts`. */
 @utility op-display {
-  font-size: 1.75rem;
-  line-height: 2.125rem;
+  font-size: var(--text-2xl);
+  line-height: var(--text-2xl--line-height);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 @utility op-heading {
   /* Título da tela no cabeçalho de uma linha ("Pedidos", "Catálogo"). */
-  font-size: 1.375rem;
+  font-size: var(--text-xl);
   line-height: 1;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 @utility op-figure {
-  font-size: 1.5rem;
-  line-height: 1.75rem;
+  font-size: var(--text-2xl);
+  line-height: var(--text-2xl--line-height);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 @utility op-title {
-  font-size: 1rem;
-  line-height: 1.5rem;
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
   font-weight: 600;
 }
 @utility op-body {
-  font-size: 0.9375rem;
-  line-height: 1.375rem;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
 }
 @utility op-label {
-  font-size: 0.8125rem;
-  line-height: 1.125rem;
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
   font-weight: 500;
 }
 @utility op-micro {
-  font-size: 0.75rem;
-  line-height: 1rem;
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
   letter-spacing: 0.02em;
 }
 @utility op-eyebrow {
-  font-size: 0.6875rem;
-  line-height: 1rem;
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 /* O código do pedido no cartão da v4 (`gestor-colunas4.html`: 2.2rem/2.3rem, negrito):
-   o número que se lê de longe, no passe. */
+   o número que se lê de longe, no passe. Fora da escala de cinco, declarado acima. */
 @utility op-code {
   font-size: 2.2rem;
   line-height: 2.3rem;
@@ -111,10 +119,10 @@
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
-/* O gesto largo do cartão no tablet (botão de 56px da v4: 17px, seminegrito). */
+/* O gesto largo do cartão no tablet (botão de 56px da v4, seminegrito). */
 @utility op-action {
-  font-size: 1.0625rem;
-  line-height: 1.25rem;
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
   font-weight: 600;
 }
 @utility tnum {

@@ -1,3 +1,8 @@
+<!--
+  @deprecated APOSENTADO (dono, 08/10/2026; conjunto mínimo, README "Conjunto mínimo").
+  Peça nova usa `NuxtButton square color="neutral" variant="ghost"` com `aria-label`.
+  Nenhum uso novo: `tests/guardrails.minimalSet.test.ts` tem o teto por app.
+-->
 <script setup lang="ts">
 // Square icon action (size-control, 44 px) das barras de trabalho do operador — refresh, export,
 // print, theme, view toggles. One neutral resting style; `active` tints it like a
