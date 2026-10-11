@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-for (const width of [375, 1280]) {
+for (const width of [375, 820, 1280]) {
   test(`negociação após entrega exige decisão explícita — ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const actions = ["accept", "reject"].map(decision => ({ ref: decision, label: decision, enabled: true, reason: "", method: "POST", payload_schema: { expected_actor_id: 1, base_revision: "r1", dispute_id: "dispute-1", decision }, confirmation: { description: decision === "accept" ? "Aceitar autoriza o cancelamento deste pedido conforme a solicitação do cliente." : "Recusar envia sua decisão para o iFood." } }));
@@ -24,9 +24,28 @@ for (const width of [375, 1280]) {
       await expect(row.locator("[data-queue-negotiation]")).toBeVisible();
       await row.getByRole("link", { name: "Responder" }).click();
     } else {
-      // A Fila é do desktop; no celular o pedido abre pelo endereço dele.
-      await expect(page.getByRole("heading", { name: "Pedidos", level: 1 })).toBeVisible();
-      await page.goto("/IFOOD-COMPLETED");
+      // A Fila é do desktop. No celular e no tablet em pé o quadro é em abas, e o pedido
+      // já entregue com negociação aberta não está em etapa nenhuma: ele ganha a aba
+      // "Negociação", com a contagem, e o cartão leva à solicitação.
+      const tabs = page.locator("[data-board-zone-tabs]");
+      await expect(tabs).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath(`board-${width}.png`) });
+      const tab = tabs.getByRole("tab", { name: /Negociação/ });
+      await expect(tab).toBeVisible();
+      await expect(tab.locator("[data-count-chip]")).toHaveText("1");
+      // As quatro abas cabem na largura: nenhuma fica cortada na borda.
+      expect(await tabs.locator('[role="tablist"]').evaluate((list) => list.scrollWidth <= list.clientWidth)).toBe(true);
+      await tab.click();
+      await expect(tab).toHaveAttribute("aria-selected", "true");
+      const column = page.locator('[data-zone="negotiation"]');
+      await expect(column.getByText("Cliente de teste")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      // O traço da aba ativa desliza até ela: a captura espera a transição.
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: testInfo.outputPath(`board-negotiation-${width}.png`) });
+      // O aviso do cartão é a pílula "Negociação iFood"; o toque abre a ação.
+      await column.locator('[data-card-notice="negotiation"]').click();
+      await page.locator("[data-ifood-negotiation-link]").click();
     }
     const form = page.locator("[data-ifood-negotiations]");
     await expect(form).toBeVisible();

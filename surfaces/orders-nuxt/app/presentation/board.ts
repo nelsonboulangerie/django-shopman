@@ -170,7 +170,9 @@ export function undoLine(source: UndoSource, nowMs: number): UndoLine | null {
 // ── Zones (Entrada / Preparo / Saída) ──────────────────────────────────────
 
 export interface ZoneView {
-  key: "intake" | "prep" | "expedition";
+  /** As três etapas do quadro, mais a aba "Negociação" do quadro em abas
+   *  (`negotiationZoneView`), que não é etapa nem coluna do desktop. */
+  key: "intake" | "prep" | "expedition" | "negotiation";
   title: string;
   subtitle: string;
   icon: string;
@@ -189,6 +191,8 @@ export function zoneEmptyText(key: ZoneView["key"]): string {
       return "Nenhum pedido novo agora.";
     case "prep":
       return "Nenhum pedido em preparo agora.";
+    case "negotiation":
+      return "Nenhuma negociação do iFood esperando resposta.";
     default:
       return "Nenhum pedido para retirada ou entrega agora.";
   }
@@ -228,6 +232,32 @@ export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
       count: expedition.length,
     },
   ];
+}
+
+/** A aba "Negociação" do quadro em abas (celular e tablet em pé): o pedido do iFood
+ *  com negociação aberta que não está em etapa nenhuma (já entregue, o cliente reclamou
+ *  depois). No desktop ele entra no "Precisa de você" da Fila; no quadro em abas, sem
+ *  esta aba, ele não aparecia em lugar nenhum. O que ainda está numa etapa já mostra a
+ *  negociação no próprio cartão, e não se repete aqui. Sem nenhum, a aba não existe. */
+export function negotiationZoneView(
+  queue: TwoZoneQueueProjection,
+): ZoneView | null {
+  const inStage = new Set(
+    zonesView(queue).flatMap((zone) => zone.cards.map((card) => card.ref)),
+  );
+  // O contrato gerado tipa `timer_class` como texto; o cartão do quadro, como a régua.
+  const cards = (
+    (queue.ifood_negotiation_orders ?? []) as OrderCardProjection[]
+  ).filter((card) => !inStage.has(card.ref));
+  if (!cards.length) return null;
+  return {
+    key: "negotiation",
+    title: "Negociação",
+    subtitle: "O iFood espera resposta",
+    icon: "lucide:message-square-warning",
+    cards,
+    count: cards.length,
+  };
 }
 
 // ── Encomendas (pedidos confirmados para datas futuras) ────────────────────
