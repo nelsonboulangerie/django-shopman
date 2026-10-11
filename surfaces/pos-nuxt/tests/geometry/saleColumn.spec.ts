@@ -358,12 +358,16 @@ test("cabeçalho da comanda alinhado com a barra do topo também na comanda curt
 });
 
 // SEM CONEXÃO: o que precisa do servidor apaga com o motivo em palavra, e nada corta.
-for (const width of ["min", "max"] as const) {
+// O total sem conexão (número da tela + "total sem conexão") chega DEPOIS da faixa:
+// a varredura espera por ele, senão mede o "Calculando…", mais curto, e passa ou
+// reprova conforme a corrida (removeu o #1660 da fila três vezes, 11/10).
+for (const width of ["min", "default", "max"] as const) {
   test(`sem conexão (coluna ${width}): o motivo cabe, nada corta`, async ({ page }) => {
     await openFullTab(page, { width: 1366, height: 768 }, "light", width);
     await page.context().setOffline(true);
     await expect(page.locator("[data-pos-kitchen-offline]")).toBeVisible();
     await expect(page.locator("[data-pos-block-offline]")).toBeVisible();
+    await expect(page.locator("[data-pos-primary-total]")).toHaveAttribute("data-total-state", "offline");
     expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
     await page.context().setOffline(false);
   });
