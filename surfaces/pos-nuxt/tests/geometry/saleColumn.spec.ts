@@ -361,15 +361,23 @@ test("cabeçalho da comanda alinhado com a barra do topo também na comanda curt
 // O total sem conexão (número da tela + "total sem conexão") chega DEPOIS da faixa:
 // a varredura espera por ele, senão mede o "Calculando…", mais curto, e passa ou
 // reprova conforme a corrida (removeu o #1660 da fila três vezes, 11/10).
+// A queda vem DEPOIS do total confirmado pelo servidor, sempre: antes, o teste caía
+// a rede com a revisão (450 ms de espera) ainda a caminho e só passava quando ela
+// falhava por falta de rede; no runner rápido da fila a revisão voltava antes, o
+// total ficava "confirmado" sem conexão para sempre, e esse era o defeito do PDV
+// (a troca de conexão não pedia o total de novo; #1646 e #1660 caíram da fila).
 for (const width of ["min", "default", "max"] as const) {
   test(`sem conexão (coluna ${width}): o motivo cabe, nada corta`, async ({ page }) => {
     await openFullTab(page, { width: 1366, height: 768 }, "light", width);
+    await expect(page.locator("[data-pos-primary-total]")).toHaveAttribute("data-total-state", "confirmed");
     await page.context().setOffline(true);
     await expect(page.locator("[data-pos-kitchen-offline]")).toBeVisible();
     await expect(page.locator("[data-pos-block-offline]")).toBeVisible();
     await expect(page.locator("[data-pos-primary-total]")).toHaveAttribute("data-total-state", "offline");
     expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
+    // A rede volta: o servidor confirma o total de novo.
     await page.context().setOffline(false);
+    await expect(page.locator("[data-pos-primary-total]")).toHaveAttribute("data-total-state", "confirmed");
   });
 }
 

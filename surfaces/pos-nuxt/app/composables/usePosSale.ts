@@ -1,4 +1,5 @@
 import type { ComputedRef } from "vue";
+import { useOnline } from "@vueuse/core";
 
 import type {
   Action,
@@ -3744,7 +3745,13 @@ export function usePosSale(deps: PosSaleDeps) {
   const saleTotalPaused = ref(false);
   let saleReviewTimer: ReturnType<typeof setTimeout> | null = null;
   let saleReviewSeq = 0;
+  // A conexão também mexe no total: o número confirmado pelo servidor não vale para
+  // a venda feita sem rede (ela cobra a soma da TELA, `localReview`), e ao voltar a
+  // rede o servidor confirma de novo. Sem isto, o total revisado antes da queda
+  // ficava "confirmado" sem conexão até o carrinho mudar.
+  const online = useOnline();
   const saleTotalKey = computed(() => JSON.stringify([
+    online.value,
     checkoutMode.value,
     saleTotalPaused.value,
     cart.items,
