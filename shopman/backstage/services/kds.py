@@ -88,6 +88,23 @@ def acknowledge_ticket(*, ticket_pk: int, actor: str):
     return ticket
 
 
+def acknowledge_changes(*, ticket_pk: int, cancelled_pks, seen_ref: str, actor: str) -> dict:
+    """O Visto nas mudanças de um card vivo: o que a tela mostrava, e só isso.
+
+    ``cancelled_pks`` são os cancelados que o card resumia; ``seen_ref`` é o nome
+    do pedido que o card mostrava. Se o nome mudou de novo entre a leitura e o
+    toque, o card continua dizendo "Era a comanda …" até o próximo Visto.
+    """
+    ticket = _get_ticket(ticket_pk)
+    _ensure_ticket_due(ticket)
+    try:
+        return kds_core.acknowledge_changes(
+            ticket, cancelled_pks=cancelled_pks, known_ref=seen_ref, actor=actor,
+        )
+    except kds_core.FutureWorkBlocked as exc:
+        raise KDSError(str(exc)) from exc
+
+
 def mark_station_seen(*, station_ref: str, ticket_pks, actor: str) -> int:
     """O "Visto" da estação (K20): grava no servidor que alguém da estação viu.
 

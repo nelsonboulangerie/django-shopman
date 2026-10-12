@@ -37,7 +37,6 @@ from .order_queue import (
 logger = logging.getLogger(__name__)
 
 ACTIVE_TICKET_STATUSES = ("pending", "in_progress")
-RECENT_CANCELLED_WINDOW = timedelta(minutes=10)
 RECENT_DONE_WINDOW = timedelta(minutes=30)
 RECENT_DONE_LIMIT = 12
 
@@ -54,6 +53,27 @@ class KDSItemProjection:
     qty: int | str
     notes: str
     stock_warning: str  # "" = no warning
+    # A identidade da linha da venda: é por ela que o quadro sabe que o item
+    # cancelado VOLTOU (outra quantidade, outra observação) em vez de ter saído.
+    line_id: str = ""
+
+
+@dataclass(frozen=True)
+class KDSChangeProjection:
+    """Uma mudança no que já estava na cozinha, ainda sem Visto da estação.
+
+    Decisão do dono (10/10/2026): o PDV ajusta sozinho o que já foi enviado, e a
+    cozinha recebe cada mudança "com alarde, a cada mudança. Jamais
+    silenciosamente!". O card mostra a mudança até alguém da estação dar Visto.
+
+    ``kind``: ``cancelled`` (o item saiu: não preparar) · ``qty`` (a quantidade
+    mudou) · ``note`` (a observação mudou) · ``resent`` (o item foi enviado de
+    novo, igual) · ``moved`` (o pedido mudou de nome: a comanda foi paga e virou
+    pedido, foi transferida ou renomeada).
+    """
+
+    kind: str
+    text: str
 
 
 @dataclass(frozen=True)
@@ -120,6 +140,11 @@ class KDSTicketProjection:
     # pedido novo para em todas as telas da estação juntas (K20, registrado no
     # servidor por estação). No cancelado, é o "Visto" DEPOIS do cancelamento.
     seen: bool = False
+    # As mudanças neste pedido que a estação ainda não viu (``KDSChangeProjection``),
+    # e os tickets cancelados que elas resumem: o Visto do card dá baixa neles
+    # (``kds/tickets/<pk>/changes/seen/``) e só então o Pronto destrava.
+    changes: tuple[KDSChangeProjection, ...] = ()
+    change_ticket_pks: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -272,6 +297,11 @@ def build_kds_board(instance_ref: str) -> KDSBoardProjection:
     )
     active_session_keys = {ticket.session_key for ticket in active_all if ticket.session_key}
     now = timezone.now()
+    # O cancelado fica no quadro até alguém da estação dar ciência. Antes ele
+    # sumia sozinho depois de 10 minutos, e a cozinha que não olhou a tela nesse
+    # intervalo nunca sabia que o pedido tinha caído (decisão do dono, 10/10/2026:
+    # jamais em silêncio). O limite é o turno: cancelado de outro dia não volta.
+    start_of_today = timezone.make_aware(datetime.combine(today, time.min))
     cancelled_all = list(
         KDSTicket.objects.filter(
             kds_instance=instance,
@@ -279,7 +309,7 @@ def build_kds_board(instance_ref: str) -> KDSBoardProjection:
             acknowledged_at__isnull=True,
         )
         .filter(
-            Q(cancelled_at__gte=now - RECENT_CANCELLED_WINDOW)
+            Q(cancelled_at__gte=start_of_today)
             | Q(session_key__in=active_session_keys)
         )
         .order_by("-cancelled_at", "-created_at")
@@ -311,8 +341,18 @@ def build_kds_board(instance_ref: str) -> KDSBoardProjection:
     ]
 
     names = _operator_names(active, sources)
-    tickets = tuple(_build_ticket(t, instance, source=sources[t.pk], names=names) for t in active)
-    cancelled_tickets = tuple(_build_ticket(t, instance, source=sources[t.pk]) for t in cancelled)
+    absorbed, changes_by_pk = _changes_on_live_tickets(active, cancelled)
+    tickets = tuple(
+        _build_ticket(
+            t, instance, source=sources[t.pk], names=names, changes=changes_by_pk.get(t.pk),
+        )
+        for t in active
+    )
+    # O cancelado que não tem card vivo da mesma venda nesta estação (o pedido
+    # inteiro caiu, a comanda foi liberada) vira card próprio na grade.
+    cancelled_tickets = tuple(
+        _build_ticket(t, instance, source=sources[t.pk]) for t in cancelled if t.pk not in absorbed
+    )
     recent_done = tuple(_build_ticket(t, instance, source=sources[t.pk]) for t in done)
     pending = sum(1 for t in tickets if t.status == "pending")
     in_progress = sum(1 for t in tickets if t.status == "in_progress")
@@ -772,7 +812,89 @@ def _display_order_refs(source, source_data: dict, handle_ref: str, session_key:
     return tab_label or display_tab_ref(handle_ref or session_key), ""
 
 
-def _build_ticket(ticket, instance, *, source=None, names: dict[str, str] | None = None) -> KDSTicketProjection:
+def _changes_on_live_tickets(active: list, cancelled: list) -> tuple[set[int], dict[int, tuple]]:
+    """As mudanças que cada card vivo carrega, a partir dos cancelados sem ciência.
+
+    Desfazer o envio de uma linha (PDV: remover, diminuir, observação nova,
+    cancelar o envio; iFood: o cliente alterou o pedido) sempre deixa um ticket
+    ``cancelled`` com a linha como estava (``unfire_session_lines``). Se a mesma
+    linha (``line_id``) está de novo num ticket vivo da venda, ela MUDOU; se não
+    está, ela SAIU. O cancelado da mesma venda vai inteiro para UM card vivo desta
+    estação (o que tem a linha de volta, senão o mais antigo), para o Visto dele
+    dar baixa no cancelado inteiro.
+
+    Devolve os pks dos cancelados absorvidos e ``{pk do card: (mudanças, pks)}``.
+    """
+    live_by_session: dict[str, list] = {}
+    for ticket in active:
+        live_by_session.setdefault(ticket.session_key, []).append(ticket)
+
+    absorbed: set[int] = set()
+    found: dict[int, tuple[list[KDSChangeProjection], list[int]]] = {}
+    for cancelled_ticket in sorted(cancelled, key=lambda t: (t.cancelled_at or t.created_at, t.pk)):
+        live = live_by_session.get(cancelled_ticket.session_key)
+        if not live:
+            continue
+        line_ids = {str(it.get("line_id") or "") for it in cancelled_ticket.items or []} - {""}
+        target = next(
+            (t for t in live if line_ids & {str(it.get("line_id") or "") for it in t.items or []}),
+            live[0],
+        )
+        live_items = {
+            str(it.get("line_id")): it for t in live for it in (t.items or []) if it.get("line_id")
+        }
+        changes, pks = found.setdefault(target.pk, ([], []))
+        for item in cancelled_ticket.items or []:
+            changes.append(_item_change(item, live_items.get(str(item.get("line_id") or ""))))
+        pks.append(cancelled_ticket.pk)
+        absorbed.add(cancelled_ticket.pk)
+    return absorbed, {pk: (tuple(changes), tuple(pks)) for pk, (changes, pks) in found.items()}
+
+
+def _item_change(before: dict, now: dict | None) -> KDSChangeProjection:
+    """O que aconteceu com uma linha que saiu de um ticket vivo, em palavras da cozinha."""
+    name = before.get("name") or before.get("sku") or "item"
+    qty = json_quantity(before.get("qty", 1))
+    if now is None:
+        return KDSChangeProjection(kind="cancelled", text=f"Cancelado: {qty}× {name}")
+    new_qty = json_quantity(now.get("qty", 1))
+    if str(new_qty) != str(qty):
+        return KDSChangeProjection(kind="qty", text=f"{name}: agora {new_qty}, eram {qty}")
+    old_note = str(before.get("notes") or "").strip()
+    new_note = str(now.get("notes") or "").strip()
+    if new_note != old_note:
+        if new_note:
+            return KDSChangeProjection(kind="note", text=f"Observação nova em {name}: {new_note}")
+        return KDSChangeProjection(kind="note", text=f"{name}: observação retirada")
+    return KDSChangeProjection(kind="resent", text=f"{name}: enviado de novo")
+
+
+def current_display_ref(session_key: str) -> str:
+    """O nome que o quadro mostra hoje para esta venda ("Mesa 5", "0042").
+
+    O mesmo cálculo do card (``_display_order_refs``), para o ``known_ref`` gravado
+    no envio poder ser comparado com o que a estação vê depois.
+    """
+    from types import SimpleNamespace
+
+    source = _resolve_ticket_source(SimpleNamespace(session_key=session_key))
+    if source is None:
+        return ""
+    source_data = getattr(source, "data", None) or {}
+    order_ref, _previous = _display_order_refs(
+        source, source_data, getattr(source, "handle_ref", "") or "", session_key
+    )
+    return order_ref
+
+
+def _build_ticket(
+    ticket,
+    instance,
+    *,
+    source=None,
+    names: dict[str, str] | None = None,
+    changes: tuple | None = None,
+) -> KDSTicketProjection:
     now = timezone.now()
     is_cancelled = ticket.status == "cancelled"
     elapsed_until = ticket.cancelled_at if is_cancelled and ticket.cancelled_at else now
@@ -814,9 +936,18 @@ def _build_ticket(ticket, instance, *, source=None, names: dict[str, str] | None
             qty=json_quantity(it.get("qty", 1)),
             notes=it.get("notes", ""),
             stock_warning=it.get("stock_warning", ""),
+            line_id=str(it.get("line_id") or ""),
         )
         for it in raw_items
     )
+
+    item_changes, change_ticket_pks = changes or ((), ())
+    if ticket.status in ACTIVE_TICKET_STATUSES and ticket.known_ref and ticket.known_ref != order_ref:
+        # O pedido mudou de nome na cozinha (comanda paga, transferida ou renomeada).
+        item_changes = (
+            KDSChangeProjection(kind="moved", text=f"Era a comanda {ticket.known_ref}"),
+            *item_changes,
+        )
 
     return KDSTicketProjection(
         pk=ticket.pk,
@@ -841,6 +972,8 @@ def _build_ticket(ticket, instance, *, source=None, names: dict[str, str] | None
         is_preorder=_is_preorder(source),
         due_time_display=_due_time_display(source_data, is_delivery=is_delivery),
         seen=ticket_seen(ticket),
+        changes=tuple(item_changes),
+        change_ticket_pks=tuple(change_ticket_pks),
         **_finish_block(ticket, source),
         **_volumes_fields(source),
         **_start_fields(ticket, source_data, names or {}),

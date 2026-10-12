@@ -9,6 +9,13 @@ export interface KDSItemProjection {
   qty: number | string;
   notes: string;
   stock_warning: string;
+  line_id: string;
+}
+
+/** Uma mudança no que já estava na cozinha, ainda sem Visto da estação. */
+export interface KDSChangeProjection {
+  kind: string;
+  text: string;
 }
 
 /** A KDS ticket card (prep/picking station). */
@@ -42,6 +49,8 @@ export interface KDSTicketProjection {
   is_preorder: boolean;
   due_time_display: string;
   seen: boolean;
+  changes: KDSChangeProjection[];
+  change_ticket_pks: number[];
 }
 
 /** A KDS instance in the index (station selector). */

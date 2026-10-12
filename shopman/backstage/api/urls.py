@@ -65,6 +65,7 @@ from .kds import (
     KDSStationSeenView,
     KDSStationSettingsView,
     KDSTicketAcknowledgeView,
+    KDSTicketChangesSeenView,
     KDSTicketDoneView,
     KDSTicketRecallView,
     KDSTicketStartView,
@@ -325,6 +326,11 @@ urlpatterns = [
     path("kds/tickets/<int:ticket_pk>/start/", KDSTicketStartView.as_view(), name="api-backstage-kds-ticket-start"),
     path("kds/tickets/<int:ticket_pk>/done/", KDSTicketDoneView.as_view(), name="api-backstage-kds-ticket-done"),
     path("kds/tickets/<int:ticket_pk>/recall/", KDSTicketRecallView.as_view(), name="api-backstage-kds-ticket-recall"),
+    path(
+        "kds/tickets/<int:ticket_pk>/changes/seen/",
+        KDSTicketChangesSeenView.as_view(),
+        name="api-backstage-kds-ticket-changes-seen",
+    ),
     path(
         "kds/tickets/<int:ticket_pk>/acknowledge/",
         KDSTicketAcknowledgeView.as_view(),

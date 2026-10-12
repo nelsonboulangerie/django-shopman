@@ -33,6 +33,10 @@ export interface OperatorActionBarAction {
    */
   shortLabel?: string;
   icon?: string;
+  /** A cor do ato (conjunto mínimo): `primary` por padrão; `error` quando o ato é a
+   *  ciência de um alarme e acompanha a cor do aviso (D8; Cozinha: "Recebi o
+   *  cancelamento" do card que mudou). */
+  color?: "primary" | "error";
   to?: string;
   loading?: boolean;
   disabled?: boolean;
