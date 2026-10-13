@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -43,6 +43,7 @@ from shopman.backstage.projections.order_attention import (
 )
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
+from shopman.backstage.services.courier_reminder import CourierReminderProjection, courier_reminder
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
@@ -469,6 +470,10 @@ class OrderCardProjection:
     # Na Cozinha (aceito ou em preparo): quando deve ficar pronto, pelo início real e
     # pelo tempo que os preparos estão levando agora (G10, ``order_attention.ready_eta``).
     ready_eta_iso: str = ""
+    # Lembrete TEMPORÁRIO de chamar o entregador (``services.courier_reminder``):
+    # entrega da casa em preparo sem corrida pedida. A tela mostra o aviso quando o
+    # relógio passa de ``due_at_iso``. ``None`` quando não cabe.
+    courier_reminder: CourierReminderProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -1178,7 +1183,7 @@ def _courier_block(order: Order) -> dict | None:
         if not block and not adapter_on:
             return None
 
-        from shopman.shop.services.courier import house_dispatches
+        from shopman.shop.services.courier import RIDE_ORDER_STATUSES, house_dispatches
 
         # Entrega do marketplace nunca oferece Chamar/Cotar (falha fechado; o
         # servidor recusa também em ``courier.redispatch``).
@@ -1188,7 +1193,7 @@ def _courier_block(order: Order) -> dict | None:
 
         ride_status = str(block.get("status") or "")
         active = bool(block.get("id_mch")) and ride_status not in TERMINAL_STATUSES
-        order_can_ride = order.status in (Order.Status.READY, Order.Status.DISPATCHED)
+        order_can_ride = order.status in RIDE_ORDER_STATUSES
 
         estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
         estimate_display = ""
@@ -1246,6 +1251,8 @@ def _courier_block(order: Order) -> dict | None:
             "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None,
             "can_dispatch_again": adapter_on and house and not active and order_can_ride and unresolved is not None,
             "can_cancel": adapter_on and active and ride_status in CANCELLABLE_STATUSES and not cancellation_pending,
+            # O lembrete temporário de chamar (o mesmo do cartão), ou ``None``.
+            "reminder": asdict(reminder) if (reminder := courier_reminder(order)) is not None else None,
             # O que a chamada pergunta: troco da gaveta e maquininha da casa
             # que vão com o entregador da TaOn (``partner_custody_asks``).
             "custody": operator_orders.partner_custody_asks(order),
@@ -1960,6 +1967,7 @@ def _build_card(
         danfe_state=danfe.state,
         danfe_problem=danfe.problem,
         kitchen=_kitchen_progress(order, (kitchen_chips or {}).get(order.ref)),
+        courier_reminder=courier_reminder(order) if order.status == Order.Status.PREPARING else None,
     )
     attention = card_attention(order, card, channel_config)
     if expectation is not None:

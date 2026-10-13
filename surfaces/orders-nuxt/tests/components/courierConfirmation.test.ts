@@ -7,6 +7,7 @@ import type { CourierBlock } from "../../app/types/orders";
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
+vi.stubGlobal("useNowTick", () => ref(0));
 const { default: Panel } = await import("../../app/components/OrderCourierPanel.vue");
 
 describe("confirmação da corrida observada", () => {

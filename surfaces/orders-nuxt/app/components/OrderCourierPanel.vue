@@ -5,9 +5,11 @@
 // server projection; steps/tones are derived from the raw letter.
 import {
   courierFailed,
+  courierReminderLine,
   courierSteps,
   courierTone,
 } from "~/presentation/courier";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 import {
   freeMachines,
   machinePhrase,
@@ -29,12 +31,15 @@ const props = defineProps<{
   /** As maquininhas do pedido (`order.equipment_options`), para a custódia. */
   equipmentOptions?: EquipmentOptionProjection[];
   dispatchAgainAction?: Action;
+  /** Abrir com a confirmação de "Chamar entregador" já armada (veio do lembrete do cartão). */
+  armDispatch?: boolean;
 }>();
 const emit = defineEmits<{
   quote: [];
   dispatch: [custody: { change_out?: string; equipment?: string[] }];
   cancel: [];
   dispatchAgain: [];
+  dismissReminder: [];
 }>();
 
 const steps = computed(() => courierSteps(props.courier.status));
@@ -117,6 +122,37 @@ function requestDispatch() {
     ...(asksMachine.value ? { equipment: [machineRef.value] } : {}),
   });
 }
+// Vindo do lembrete do cartão (`#courier-call`), a página abre já perguntando.
+if (props.armDispatch && props.courier.can_dispatch) {
+  armCustody();
+  confirmingDispatch.value = true;
+}
+
+// Lembrete temporário (entrega da casa em preparo há X min, sem entregador chamado):
+// o aviso amarelo leva o "Chamar entregador", que arma a MESMA confirmação de baixo
+// (pergunta, troco e maquininha); armada, o botão de confirmar é o de sempre.
+const nowMs = useNowTick();
+const reminderLine = computed(() =>
+  props.courier.can_dispatch
+    ? courierReminderLine(props.courier.reminder, nowMs.value)
+    : null,
+);
+const reminderActions = computed(() => [
+  !confirmingDispatch.value && {
+    label: "Chamar entregador",
+    icon: "i-lucide-send",
+    disabled: props.busy || !props.dispatchAction?.enabled,
+    onClick: requestDispatch,
+    ...{ "data-courier-reminder-call": "" },
+  },
+  {
+    label: "Dispensar",
+    disabled: props.busy,
+    onClick: () => emit("dismissReminder"),
+    ...{ "data-courier-reminder-dismiss": "" },
+  },
+]);
+
 function blurDispatch() {
   // Com campos a preencher, sair do botão não desarma: o operador está
   // conferindo o troco ou a maquininha. "Voltar" desarma.
@@ -127,7 +163,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
 </script>
 
 <template>
-  <NuxtCard as="section">
+  <NuxtCard id="courier-call" as="section" class="scroll-mt-20">
     <div class="flex flex-col gap-3">
       <div class="flex flex-wrap items-center gap-2">
         <h2 class="flex items-center gap-1.5 op-title">
@@ -165,6 +201,18 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       </div>
 
       <div class="flex flex-col gap-3">
+        <!-- lembrete: já dá para chamar o entregador? -->
+        <NuxtAlert
+          v-if="reminderLine"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-bike"
+          :title="reminderLine"
+          :actions="alertActions('warning', reminderActions)"
+          role="status"
+          data-courier-reminder
+        />
+
         <!-- a TaOn não respondeu à última chamada: só ela trava chamar outra. É
              cautela (a corrida pode ter aberto), não erro da casa: tom de atenção, e
              o botão acompanha a cor do aviso. -->
@@ -332,7 +380,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         </div>
         <div class="flex flex-wrap gap-2">
           <NuxtButton
-            v-if="courier.can_dispatch"
+            v-if="courier.can_dispatch && (!reminderLine || confirmingDispatch)"
             type="button"
             :disabled="
               busy ||

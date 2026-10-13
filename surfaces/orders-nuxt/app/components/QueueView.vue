@@ -39,6 +39,11 @@ import {
   type QueueSort,
 } from "~/presentation/queue";
 import OrderCardMenu from "./OrderCardMenu.vue";
+import {
+  COURIER_CALL_HASH,
+  courierReminderLine,
+} from "~/presentation/courier";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = withDefaults(
   defineProps<{
@@ -90,6 +95,18 @@ const rest = computed(() =>
     : { hidden: 0, moving: 0, text: "" },
 );
 const working = computed(() => workingOrders(props.cards, props.nowMs));
+// Lembrete temporário de chamar o entregador: a entrega da casa em preparo há X min
+// sem entregador chamado não pede "fato humano" à Fila, mas cobra aqui, no topo,
+// um aviso por pedido, com o gesto e o "Dispensar".
+const courierReminders = computed(() => {
+  const seen = new Set<string>();
+  return props.cards.flatMap((card) => {
+    if (seen.has(card.ref)) return [];
+    seen.add(card.ref);
+    const line = courierReminderLine(card.courier_reminder, props.nowMs);
+    return line ? [{ card, line }] : [];
+  });
+});
 const workingCount = computed(
   () => working.value.kitchen.length + working.value.road.length,
 );
@@ -229,6 +246,32 @@ function switchHint(row: {
           >{{ sortHint }}</span
         >
       </div>
+
+      <NuxtAlert
+        v-for="reminder in courierReminders"
+        :key="`courier-reminder-${reminder.card.ref}`"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-bike"
+        :title="reminder.line"
+        :actions="
+          alertActions('warning', [
+            canOpen && {
+              label: 'Chamar entregador',
+              icon: 'i-lucide-send',
+              to: `/${reminder.card.ref}${COURIER_CALL_HASH}`,
+            },
+            {
+              label: 'Dispensar',
+              disabled: isBusy(reminder.card.ref),
+              onClick: () =>
+                emit('action', reminder.card.ref, 'dismiss_courier_reminder'),
+            },
+          ])
+        "
+        role="status"
+        :data-queue-courier-reminder="reminder.card.ref"
+      />
 
       <NuxtEmpty
         v-if="!items.length"
