@@ -157,7 +157,7 @@ class TestOperatePosPerm(TestCase):
 
 
 class TestCashierGroup(TestCase):
-    """Cashier (Caixa) group: operate_pos + manage_orders. NOT operate_kds."""
+    """Cashier (Caixa) group: operate_pos + manage_orders + operate_kds."""
 
     def setUp(self):
         self.client = Client()
@@ -176,11 +176,12 @@ class TestCashierGroup(TestCase):
         self.client.force_login(self.user)
         self.assertEqual(self.client.get(POS_URL).status_code, 200)
 
-    def test_cashier_cannot_access_kds(self):
+    def test_cashier_can_access_kds(self):
         url = _kds_board_url()
         self.client.force_login(self.user)
-        # Cashier lacks operate_kds; the KDS station is operator-only (like POS for kitchen).
-        self.assertEqual(self.client.get(url).status_code, 403)
+        # O balcão abre a Cozinha (decisão do dono, 13/10/2026).
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertEqual(self.client.get("/api/v1/backstage/kds/").status_code, 200)
 
     def test_cashier_cannot_access_production(self):
         self.client.force_login(self.user)
@@ -224,7 +225,7 @@ class TestKitchenGroup(TestCase):
 
 
 class TestManagerGroup(TestCase):
-    """Manager (Gerente) group: manage_orders, operate_pos, perform_closing, view_reports."""
+    """Manager (Gerente) group: manage_orders, operate_pos, operate_kds, perform_closing, view_reports."""
 
     def setUp(self):
         self.client = Client()
@@ -243,11 +244,12 @@ class TestManagerGroup(TestCase):
         self.client.force_login(self.user)
         self.assertEqual(self.client.get(POS_URL).status_code, 200)
 
-    def test_manager_cannot_access_kds(self):
+    def test_manager_can_access_kds(self):
         url = _kds_board_url()
         self.client.force_login(self.user)
-        # Manager lacks operate_kds; the KDS station is operator-only (passive viewing via customer board).
-        self.assertEqual(self.client.get(url).status_code, 403)
+        # A gerente abre qualquer estação da Cozinha (decisão do dono, 13/10/2026).
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertEqual(self.client.get("/api/v1/backstage/kds/").status_code, 200)
 
     def test_manager_can_access_production(self):
         # Gerente holds operate_production (oversight of the floor + planning).
@@ -279,6 +281,7 @@ class TestDefaultGroupsExist(TestCase):
         self.assertTrue(self._has_perm(g, "operate_pos", "cashman"))
         self.assertFalse(self._has_perm(g, "operate_pos", "backstage"))
         self.assertTrue(self._has_perm(g, "manage_orders"))
+        self.assertTrue(self._has_perm(g, "operate_kds"))
 
     def test_kitchen_group_exists_with_perms(self):
         g = Group.objects.get(name="Cozinha")
@@ -297,6 +300,7 @@ class TestDefaultGroupsExist(TestCase):
         self.assertTrue(self._has_perm(g, "operate_purchase"))
         self.assertTrue(self._has_perm(g, "view_reports"))
         self.assertTrue(self._has_perm(g, "manage_customers"))
+        self.assertTrue(self._has_perm(g, "operate_kds"))
 
     def test_catalog_admin_group_exists_with_perms(self):
         g = Group.objects.get(name="Admin de Catálogo")

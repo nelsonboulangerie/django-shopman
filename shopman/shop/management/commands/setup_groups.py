@@ -105,6 +105,9 @@ class Command(BaseCommand):
             "Caixa": [
                 shop_cash("operate_pos"),
                 shop_shop("manage_orders"),
+                # Quem está no balcão abre a Cozinha: vê o que está saindo e dá o
+                # Pronto quando o prato passa por ele (decisão do dono, 13/10/2026).
+                shop_kdst("operate_kds"),
             ],
             "Cozinha": [
                 # No Admin ele CONFERE o que fabrica — ficha técnica, ordem, insumo,
@@ -158,6 +161,9 @@ class Command(BaseCommand):
                 # cozinha é gesto de gestão, e a Cozinha opera nele sem cadastrá-lo.
                 *_escrever("backstage", "kdsinstance"),
                 shop_shop("manage_orders"),
+                # A Cozinha também: a gerente abre qualquer estação (decisão do dono,
+                # 13/10/2026). Antes ela só via o quadro pelas colunas do Gestor.
+                shop_kdst("operate_kds"),
                 # Cancelar depois de PRONTO (e a venda de balcão já fechada) é o
                 # degrau do gerente; a esteira normal permanece em manage_orders.
                 shop_shop("cancel_advanced_order"),
