@@ -1136,12 +1136,15 @@ desfazer a saída no Gestor.
   só o texto muda ("Pronto 0131" vira "Desfazer 0131") e o fundo esvazia atrás dele.
   Nada de trocar para contornado ou neutro, nada de mudar altura ou largura. Trava: o
   teste compara, classe por classe, com o `NuxtButton` de mesma cor, variante e tamanho.
-- **O esvaziamento se vê de relance** (dono, 09/10/2026: a primeira versão era "muito
-  sutil"). No sólido de cor (`primary`, e o verde do Pronto da Cozinha com
-  `fill-tint="inverted"`) são duas partes com 3:1 entre si (WCAG 1.4.11) e o rótulo AA
-  sobre as duas: no claro, o que RESTA é a cor quase preta e o que esvaziou é a cor do
-  botão; no escuro, o que resta é a cor quase branca e o que esvaziou fica um pouco mais
-  fundo. A borda entre elas é seca, sem degradê. Os valores moram no `<style>` da peça
+- **O esvaziamento se vê de relance, e é um SOBRETOM da cor do botão** (dono,
+  09/10/2026: a primeira versão era "muito sutil"; dono, 13/10/2026: o quase branco
+  sobre o verde no escuro era "árido e ríspido"). No sólido de cor (`primary`, `error` e
+  o verde do Pronto da Cozinha com `fill-tint="inverted"`) são duas partes e o rótulo é
+  AA sobre as duas: o que RESTA é a mesma cor um tom mais funda no claro (preto a 35%) e
+  um tom mais clara no escuro (branco a 40%), sempre na direção que aumenta o contraste
+  do rótulo; o que esvaziou é a cor do botão. A diferença entre as partes fica entre
+  1,4:1 e 2,2:1: visível, sem virar quase preto nem quase branco. A borda entre elas é
+  seca, sem degradê. Os valores moram no `<style>` da peça
   (`--timed-remaining`, `--timed-spent`) e a trava `tests/timedButtonContrast.test.ts`
   lê de lá. O neutro sólido (`fill-tint="page"`) e o contornado não comportam duas
   partes com o rótulo AA e ficam com o tom leve (contornado: a cor do rótulo a 10%).
