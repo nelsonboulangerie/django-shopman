@@ -167,6 +167,7 @@ describe('Chamar entregador registra a custódia que sai com ele', () => {
       } finally { wrapper.unmount(); }
     }
   });
+});
 
 describe('chamada sem resposta da TaOn', () => {
   const courier = { status: '', status_label: 'Sem resposta da TaOn', can_quote: false, can_dispatch: false,
