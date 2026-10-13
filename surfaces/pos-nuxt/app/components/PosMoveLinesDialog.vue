@@ -172,15 +172,17 @@ function submit() {
       <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <NuxtButton color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="$emit('update:open', false)" />
         <!-- O botão diz o RESULTADO, em palavras (dono, N=1). -->
+        <!-- Frase inteira, que quebra linha no celular em vez de cortar. -->
         <NuxtButton
           color="primary"
-          :label="cta"
           :disabled="!canSubmit"
           :loading="busy"
-          class="whitespace-normal text-left"
+          class="justify-center"
           data-pos-move-submit
           @click="submit"
-        />
+        >
+          <span class="whitespace-normal text-center [overflow-wrap:anywhere]">{{ cta }}</span>
+        </NuxtButton>
       </div>
     </template>
   </NuxtModal>
