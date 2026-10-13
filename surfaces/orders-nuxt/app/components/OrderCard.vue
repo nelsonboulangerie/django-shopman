@@ -18,6 +18,7 @@ import type { ButtonProps } from "#ui/types";
 import type { OrderCardProjection } from "~/types/orders";
 import {
   cardAffordances,
+  cardAuthorizationNotice,
   cardClock,
   cardSeal,
   channelLabel,
@@ -195,6 +196,49 @@ const notices = computed<CardNotice[]>(() => {
       attrs: { "data-test-order-notice": "" },
     });
   if (handoff.value) return out;
+  // Cartão autorizado esperando aceite: a reserva vence no Stripe. O aviso traz o
+  // prazo e os dois gestos que o resolvem, na cor do aviso (D8).
+  const cardAuth = cardAuthorizationNotice(
+    card.card_authorization_expires_iso,
+    nowMs.value,
+  );
+  if (cardAuth) {
+    const accept = affordances.value.find((a) => a.ref === "confirm");
+    const reject = affordances.value.find((a) => a.ref === "reject");
+    out.push({
+      key: "card-authorization",
+      color: cardAuth.tone,
+      icon: "i-lucide-credit-card",
+      label: cardAuth.label,
+      title: cardAuth.title,
+      description: cardAuth.description,
+      actions: cardAuth.expired
+        ? undefined
+        : [
+            accept &&
+              action(
+                {
+                  label: "Aceitar",
+                  icon: "i-lucide-check",
+                  disabled: props.busy || accept.disabled,
+                  onClick: () => emit("action", "confirm"),
+                },
+                { "data-card-authorization-accept": "" },
+              ),
+            reject &&
+              action(
+                {
+                  label: "Recusar",
+                  icon: "i-lucide-x",
+                  disabled: props.busy || reject.disabled,
+                  onClick: () => emit("action", "reject"),
+                },
+                { "data-card-authorization-reject": "" },
+              ),
+          ].filter((a): a is ButtonProps => Boolean(a)),
+      attrs: { "data-card-authorization": "" },
+    });
+  }
   if (card.advance_block_reason)
     out.push({
       key: "block",

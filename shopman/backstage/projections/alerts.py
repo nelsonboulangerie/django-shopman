@@ -193,6 +193,7 @@ _ORDER_DETAIL_ANCHORS = {
 #: O rótulo do botão quando o aviso leva ao pedido: diz aonde leva, não "resolver".
 _ORDER_LABELS = {
     "ifood_negotiation_open": "Responder",
+    "card_authorization_expiring": "Aceitar ou recusar",
 }
 
 

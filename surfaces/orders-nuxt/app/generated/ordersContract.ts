@@ -456,6 +456,7 @@ export interface OrderCardProjection {
   awaiting_work_orders: AwaitingWorkOrderProjection[];
   confirmation_deadline_iso: string;
   confirmation_action: string;
+  card_authorization_expires_iso: string;
   channel_display_id: string;
   courier_status: string;
   courier_status_label: string;
@@ -663,6 +664,7 @@ export interface OperatorOrderProjection {
   opened_line: string;
   confirmation_deadline_iso: string;
   confirmation_action: string;
+  card_authorization_expires_iso: string;
   store_location: Record<string, number> | null;
   transferred_from_label: string;
 }

@@ -1641,6 +1641,11 @@ def _record_gateway_authorization(order, *, intent_ref: str) -> str:
 
             dispatch(order, "on_paid")
             return "paid"
+    if order.status == Order.Status.NEW:
+        # O webhook perdido também não pode deixar a autorização sem vigia.
+        from shopman.shop.services import card_authorization
+
+        card_authorization.watch(order)
     return "authorized"
 
 

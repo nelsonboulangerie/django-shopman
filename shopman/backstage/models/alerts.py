@@ -75,6 +75,13 @@ class OperatorAlert(models.Model):
         # ainda em NEW, antes de alguém confirmar. Não é falha — é o aviso de
         # que existe pedido PAGO esperando decisão do balcão.
         ("payment_awaiting_confirmation", "Pagamento chegou antes da confirmação"),
+        # Cartão da loja online autorizado (captura manual) e ninguém aceita: a
+        # reserva vence no Stripe em 7 dias e o dinheiro some do pedido. O aviso
+        # traz o prazo; vencido, o pedido é cancelado sem cobrança e o crítico
+        # diz isso. E a recusa que o Stripe não anulou: o valor segue retido.
+        ("card_authorization_expiring", "Cartão autorizado esperando aceite"),
+        ("card_authorization_expired", "Autorização do cartão venceu sem aceite"),
+        ("card_authorization_release_failed", "Recusa não liberou a autorização do cartão"),
         ("stock_low", "Estoque baixo"),
         # Estoque do sistema acima do físico, pelos três caminhos: a baixa que
         # não saiu na entrega, o pedido que passou sem reserva, e o item fora
@@ -345,6 +352,9 @@ class OperatorAlert(models.Model):
         "payment_insufficient",
         "payment_disputed",
         "payment_after_cancel",
+        "card_authorization_expiring",
+        "card_authorization_expired",
+        "card_authorization_release_failed",
         "marketplace_rejected_unavailable",
         "marketplace_rejected_oos",
         "pos_rejected_unavailable",

@@ -358,6 +358,10 @@ class OrderCardProjection:
     # countdown para o cliente não ficar no escuro sobre o prazo.
     confirmation_deadline_iso: str = ""
     confirmation_action: str = ""  # "confirm" | "cancel" — ação do directive ao vencer
+    # Cartão da loja online autorizado e esperando aceite: quando a reserva vence
+    # no Stripe (ISO). Vazio fora de NEW ou sem autorização de pé. O card mostra o
+    # aviso com Aceitar/Recusar (``services/card_authorization``).
+    card_authorization_expires_iso: str = ""
     # Número que o CANAL deu ao pedido (``displayId`` do iFood). Desde que o ref
     # adota esse número (``IFOOD-260919-4994``), o card já o mostra em destaque e
     # este campo fica VAZIO — ele só se preenche quando o ref divergiu: colisão no
@@ -694,6 +698,8 @@ class OperatorOrderProjection:
     # O prazo do pedido novo, o MESMO do cartão ("Confirma sozinho em 4:32", G15).
     confirmation_deadline_iso: str = ""
     confirmation_action: str = ""
+    # O vencimento da autorização do cartão, o MESMO do card do quadro.
+    card_authorization_expires_iso: str = ""
     # Onde fica a loja (G18, "fora da loja: mostrando o que pede decisão"): o celular
     # que consentiu compara a própria posição com esta, no dispositivo; a posição de
     # quem opera nunca vem ao servidor. ``None`` sem coordenadas no cadastro da loja.
@@ -1064,6 +1070,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         **_equipment_fields(order),
         **_payment_link_fields(order, method),
         **_detail_deadline(order),
+        card_authorization_expires_iso=_card_authorization_expires_iso(order, method, payment_status),
         store_location=_store_location(),
     )
 
@@ -1089,6 +1096,18 @@ def _store_location() -> dict[str, float] | None:
     if shop is None or shop.latitude is None or shop.longitude is None:
         return None
     return {"lat": float(shop.latitude), "lng": float(shop.longitude), "radius_m": float(STORE_RADIUS_METERS)}
+
+
+def _card_authorization_expires_iso(order: Order, method: str, payment_status: str) -> str:
+    """Quando vence a autorização do cartão do pedido novo; vazio sem uma de pé."""
+    if order.status != Order.Status.NEW or str(method or "").lower() != "card":
+        return ""
+    if str(payment_status or "").lower() != "authorized":
+        return ""
+    from shopman.shop.services import card_authorization
+
+    deadline = card_authorization.expires_at(order)
+    return deadline.isoformat() if deadline else ""
 
 
 def _detail_deadline(order: Order) -> dict[str, str]:
@@ -1944,6 +1963,7 @@ def _build_card(
         # conta um prazo só, porque para quem opera a pergunta é uma só — quanto falta.
         confirmation_deadline_iso=(deadline or _external_deadline(order) or ("", ""))[0],
         confirmation_action=(deadline or _external_deadline(order) or ("", ""))[1],
+        card_authorization_expires_iso=_card_authorization_expires_iso(order, method, payment_status),
         channel_display_id=_channel_display_id(order),
         courier_status=_card_courier_status(order),
         courier_status_label=COURIER_STATUS_LABELS.get(_card_courier_status(order), ""),
