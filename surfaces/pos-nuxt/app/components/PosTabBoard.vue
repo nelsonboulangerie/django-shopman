@@ -217,7 +217,6 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
           <NuxtBadge
             v-if="view.kitchenReady"
             color="success"
-            variant="soft"
             size="md"
             icon="lucide:bell-ring"
             class="shrink-0 whitespace-nowrap font-semibold"

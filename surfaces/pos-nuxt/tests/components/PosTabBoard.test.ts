@@ -40,7 +40,7 @@ it("comanda que a cozinha terminou: selo soft \"Tudo pronto\", com o nome inteir
   expect(badge.find("[data-tab-kitchen-ready-label]").text()).toBe("Tudo pronto");
   expect(badge.attributes("aria-label")).toBe("Tudo pronto");
   expect(badge.attributes("title")).toBe("Tudo pronto: a cozinha terminou tudo desta comanda");
-  // Selo é soft (D1), nunca o verde cheio.
+  // Selo é soft (D1, o default do tema do kit), nunca o verde cheio.
   expect(badge.classes().join(" ")).toContain("bg-success/10");
   expect(badge.classes()).not.toContain("bg-success");
   expect(w.text()).not.toContain("Pronta");
