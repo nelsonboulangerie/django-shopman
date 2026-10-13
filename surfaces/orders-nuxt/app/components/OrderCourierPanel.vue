@@ -134,7 +134,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
           aria-label="Etapas da corrida"
         />
         <p v-else-if="failed" class="text-sm text-muted-foreground">
-          A corrida não foi concluída. Re-despache ou combine a entrega por fora.
+          A corrida não foi concluída. Chame o entregador de novo.
         </p>
 
         <!-- entregador -->

@@ -180,7 +180,7 @@ class CourierDispatchHandler:
                 "courier_dispatch_failed",
                 "critical",
                 f"A corrida do pedido {order.ref} não abriu na central ({message[:200]}). "
-                "Abra o pedido e chame o entregador de novo, ou leve com um entregador da casa.",
+                "Abra o pedido e chame o entregador de novo.",
                 order_ref=order.ref,
             )
         except Exception:
