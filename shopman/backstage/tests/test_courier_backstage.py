@@ -157,7 +157,8 @@ def test_courier_dispatch_action_queues_directive(client, operator, shop):
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_courier_dispatch_blocked_for_wrong_status(client, operator, shop):
-    order = _delivery_order(status=Order.Status.PREPARING)
+    # Desde o preparo a casa pode chamar (lembrete do Gestor); antes dele, não.
+    order = _delivery_order(status=Order.Status.ACCEPTED)
     client.force_login(operator)
     from shopman.shop.services.courier import dispatch_revision
 
@@ -165,7 +166,7 @@ def test_courier_dispatch_blocked_for_wrong_status(client, operator, shop):
         {"expected_actor_id": operator.pk, "base_revision": dispatch_revision(order)},
         content_type="application/json", HTTP_IDEMPOTENCY_KEY="dispatch-test")
     assert resp.status_code == 400
-    assert "pronto" in resp.json()["detail"]
+    assert "em preparo, pronto ou em entrega" in resp.json()["detail"]
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)

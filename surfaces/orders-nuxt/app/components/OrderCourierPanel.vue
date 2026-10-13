@@ -5,9 +5,11 @@
 // server projection; steps/tones are derived from the raw letter.
 import {
   courierFailed,
+  courierReminderLine,
   courierSteps,
   courierTone,
 } from "~/presentation/courier";
+import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 import type { Action } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 
@@ -18,12 +20,15 @@ const props = defineProps<{
   quoteAction?: Action;
   dispatchAction?: Action;
   dispatchAgainAction?: Action;
+  /** Abrir com a confirmação de "Chamar entregador" já armada (veio do lembrete do cartão). */
+  armDispatch?: boolean;
 }>();
 const emit = defineEmits<{
   quote: [];
   dispatch: [];
   cancel: [];
   dispatchAgain: [];
+  dismissReminder: [];
 }>();
 
 const steps = computed(() => courierSteps(props.courier.status));
@@ -62,7 +67,10 @@ function requestCancel() {
 
 // Chamar entregador abre corrida paga na central → confirm de 1 toque, com a
 // pergunta inteira (quem vem, para qual pedido, quem paga) vinda do servidor.
-const confirmingDispatch = ref(false);
+// Vindo do lembrete do cartão (`#courier-call`), a página abre já perguntando.
+const confirmingDispatch = ref(
+  Boolean(props.armDispatch && props.courier.can_dispatch),
+);
 const dispatchQuestion = computed(() =>
   String(props.dispatchAction?.confirmation?.description ?? ""),
 );
@@ -81,11 +89,35 @@ function requestDispatch() {
   emit("dispatch");
 }
 
+// Lembrete temporário (entrega da casa em preparo há X min, sem entregador chamado):
+// o aviso amarelo leva o próprio "Chamar entregador", com a mesma confirmação.
+const nowMs = useNowTick();
+const reminderLine = computed(() =>
+  props.courier.can_dispatch
+    ? courierReminderLine(props.courier.reminder, nowMs.value)
+    : null,
+);
+const reminderActions = computed(() => [
+  {
+    label: confirmingDispatch.value ? "Confirmar chamada" : "Chamar entregador",
+    icon: "i-lucide-send",
+    disabled: props.busy || !props.dispatchAction?.enabled,
+    onClick: requestDispatch,
+    ...{ "data-courier-reminder-call": "" },
+  },
+  {
+    label: "Dispensar",
+    disabled: props.busy,
+    onClick: () => emit("dismissReminder"),
+    ...{ "data-courier-reminder-dismiss": "" },
+  },
+]);
+
 const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
 </script>
 
 <template>
-  <NuxtCard as="section">
+  <NuxtCard id="courier-call" as="section" class="scroll-mt-20">
     <div class="flex flex-col gap-3">
       <div class="flex flex-wrap items-center gap-2">
         <h2 class="flex items-center gap-1.5 op-title">
@@ -123,6 +155,19 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       </div>
 
       <div class="flex flex-col gap-3">
+        <!-- lembrete: já dá para chamar o entregador? (a pergunta entra quando arma) -->
+        <NuxtAlert
+          v-if="reminderLine"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-bike"
+          :title="reminderLine"
+          :description="confirmingDispatch ? dispatchQuestion : undefined"
+          :actions="alertActions('warning', reminderActions)"
+          role="status"
+          data-courier-reminder
+        />
+
         <!-- a TaOn não respondeu à última chamada: só ela trava chamar outra. É
              cautela (a corrida pode ter aberto), não erro da casa: tom de atenção, e
              o botão acompanha a cor do aviso. -->
@@ -132,8 +177,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
           variant="subtle"
           icon="i-lucide-circle-help"
           :title="
-            courier.error?.message ||
-            'A TaOn não respondeu à última chamada.'
+            courier.error?.message || 'A TaOn não respondeu à última chamada.'
           "
           data-courier-no-answer
         >
@@ -226,14 +270,22 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
             class="flex items-center gap-1.5 text-muted-foreground"
           >
             <Icon name="lucide:key-round" class="size-4" /> Código:
-            <strong class="tabular-nums">{{ courier.confirmation_code }}</strong>
+            <strong class="tabular-nums">{{
+              courier.confirmation_code
+            }}</strong>
           </span>
         </div>
       </div>
 
-      <template v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel">
+      <template
+        v-if="
+          courier.can_quote ||
+          (courier.can_dispatch && !reminderLine) ||
+          courier.can_cancel
+        "
+      >
         <p
-          v-if="confirmingDispatch && dispatchQuestion"
+          v-if="confirmingDispatch && dispatchQuestion && !reminderLine"
           class="text-sm"
           role="status"
           data-testid="courier-dispatch-question"
@@ -242,7 +294,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         </p>
         <div class="flex flex-wrap gap-2">
           <NuxtButton
-            v-if="courier.can_dispatch"
+            v-if="courier.can_dispatch && !reminderLine"
             type="button"
             :disabled="busy || !dispatchAction?.enabled"
             :title="

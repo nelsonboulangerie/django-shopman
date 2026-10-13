@@ -22,6 +22,7 @@ import {
 } from "~/presentation/board";
 import { onMounted, onBeforeUnmount } from "vue";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
+import { COURIER_CALL_HASH } from "~/presentation/courier";
 import type { CancellationReason } from "~/types/orders";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
@@ -76,6 +77,7 @@ const {
   addComment,
   courierDispatch,
   courierDispatchAgain,
+  courierReminderDismiss,
   courierCancel,
   courierQuote,
   managerChallenge,
@@ -1085,6 +1087,7 @@ const outside = useOutsideStore(
               order.actions.find((action) => action.ref === 'courier-dispatch')
             "
             :busy="busy"
+            :arm-dispatch="route.hash === COURIER_CALL_HASH"
             :dispatch-again-action="
               order.actions.find(
                 (action) => action.ref === 'courier-dispatch-again',
@@ -1094,6 +1097,7 @@ const outside = useOutsideStore(
             @dispatch="courierDispatch"
             @dispatch-again="onCourierDispatchAgain"
             @cancel="courierCancel"
+            @dismiss-reminder="courierReminderDismiss"
           />
           <!-- comprovante de entrega dos avisos ao cliente (D3) -->
           <OrderNotificationReceipts :receipts="order.notification_receipts" />

@@ -408,6 +408,14 @@ export interface KitchenProgressProjection {
   missing_label: string;
 }
 
+/** O lembrete de um pedido. A tela mostra quando o relógio passa de ``due_at_iso``. */
+export interface CourierReminderProjection {
+  due_at_iso: string;
+  since_iso: string;
+  since_basis: string;
+  short_ref: string;
+}
+
 /** A single order card in the operator queue. */
 export interface OrderCardProjection {
   ref: string;
@@ -500,6 +508,7 @@ export interface OrderCardProjection {
   goal_minutes: number;
   goal_label: string;
   ready_eta_iso: string;
+  courier_reminder: CourierReminderProjection | null;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */

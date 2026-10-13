@@ -3677,6 +3677,26 @@ class OrderCourierDispatchAgainView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Dismiss the temporary 'call the courier' reminder of an order (all devices)",
+        responses={200: OpenApiResponse(description="Reminder dismissed (idempotent).")},
+    ),
+)
+class OrderCourierReminderDismissView(_OrderActionBase):
+    """"Dispensar" o lembrete de chamar o entregador. Idempotente: dispensar de novo é sucesso."""
+
+    def post(self, request, ref: str):
+        from shopman.backstage.services import courier_reminder
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        courier_reminder.dismiss(order, actor=_actor(request))
+        return Response({"ok": True, "ref": order.ref})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Cancel the active external courier ride",
         responses={200: OpenApiResponse(description="Courier cancellation queued; remote outcome pending.")},
     ),

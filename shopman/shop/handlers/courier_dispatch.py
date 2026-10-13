@@ -47,7 +47,7 @@ class CourierDispatchHandler:
             self._unknown(order, message, "Tentativa anterior sem resultado confirmado.")
         if state in {"not_applied", "inert", "released"}:
             return
-        if get_fulfillment_type(order) != "delivery" or order.status not in {Order.Status.READY, Order.Status.DISPATCHED}:
+        if get_fulfillment_type(order) != "delivery" or order.status not in courier.RIDE_ORDER_STATUSES:
             self._set_attempt(message, "not_applied")
             return
         if not courier.house_dispatches(order):
@@ -87,7 +87,7 @@ class CourierDispatchHandler:
                 blocked_elsewhere = False
             blocked = bool(current) or other is not None
             if not blocked:
-                if order.status not in {Order.Status.READY, Order.Status.DISPATCHED} or courier.has_active_ride(order):
+                if order.status not in courier.RIDE_ORDER_STATUSES or courier.has_active_ride(order):
                     self._set_attempt(message, "not_applied")
                     return
                 # Use the freshly locked order, never the pre-estimate snapshot.
@@ -160,7 +160,7 @@ class CourierDispatchHandler:
             seconds = courier.poll_seconds()
             if seconds > 0:
                 courier.schedule_sync(order, delay_seconds=min(seconds, courier.FIRST_SYNC_SECONDS))
-        if order.status not in {Order.Status.READY, Order.Status.DISPATCHED}:
+        if order.status not in courier.RIDE_ORDER_STATUSES:
             self._record_terminal_failure(order, "A central aceitou a corrida enquanto o pedido mudou. Confira a corrida vinculada antes de agir.")
 
     @staticmethod

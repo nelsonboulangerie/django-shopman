@@ -149,6 +149,7 @@ from .operations import (
     OrderCourierDispatchAgainView,
     OrderCourierDispatchView,
     OrderCourierQuoteView,
+    OrderCourierReminderDismissView,
     OrderDanfeEscposView,
     OrderDetailView,
     OrderEditPreviewView,
@@ -741,6 +742,11 @@ urlpatterns = [
         "orders/<str:ref>/courier-dispatch-again/",
         OrderCourierDispatchAgainView.as_view(),
         name="api-backstage-order-courier-dispatch-again",
+    ),
+    path(
+        "orders/<str:ref>/courier-reminder-dismiss/",
+        OrderCourierReminderDismissView.as_view(),
+        name="api-backstage-order-courier-reminder-dismiss",
     ),
     path(
         "orders/<str:ref>/courier-cancel/", OrderCourierCancelView.as_view(), name="api-backstage-order-courier-cancel"

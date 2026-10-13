@@ -281,6 +281,11 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
+  // O "Dispensar" do lembrete de chamar o entregador (todos os dispositivos).
+  async function courierReminderDismiss(): Promise<boolean> {
+    return act("courier-reminder-dismiss");
+  }
+
   async function courierCancel(): Promise<boolean> {
     const ok = await act("courier-cancel");
     if (ok)
@@ -319,6 +324,7 @@ export function useOrderDetail(orderRef: string) {
     addComment,
     courierDispatch,
     courierDispatchAgain,
+    courierReminderDismiss,
     courierCancel,
     courierQuote,
     managerChallenge,
