@@ -190,6 +190,30 @@ def deferred_settlement(order) -> bool:
     return str(payment.get("method") or "").strip().lower() == "account"
 
 
+def intermediated_sale(order) -> bool:
+    """Emite quando a venda veio por INTERMEDIADOR (marketplace: iFood).
+
+    A plataforma cobra o cliente e repassa à casa: o pagamento chega aqui como
+    ``external``, sem tender nenhum, e por isso nenhum resolver de forma de
+    pagamento o enxerga (``eletronic_payment`` lê Pix/cartão; ``external`` fica
+    de fora). Sem este resolver, o pedido do iFood só emitia quando o cliente
+    informava o CPF, e o iFood pago online sem CPF saía sem nota, contra a
+    decisão de 24/09/2026 e o ADR-035: a venda intermediada sem documento sai
+    como NFC-e PRESENCIAL, consumidor não identificado (praxe do mercado). O
+    COMO (presencial, base da casa, grupo do intermediador) é do
+    ``build_emission_payload``; aqui só se decide o SE.
+
+    Quem é intermediador é a configuração do deployment
+    (``SHOPMAN_FISCAL_INTERMEDIARIES``, lida por
+    ``fiscal_intermediary.is_intermediated``), não um ``if channel == "ifood"``:
+    um segundo marketplace declarado ali emite pelo mesmo resolver. O pedido
+    de teste do marketplace continua sem nota (``fiscal.emit`` barra antes).
+    """
+    from shopman.shop import fiscal_intermediary
+
+    return fiscal_intermediary.is_intermediated(order)
+
+
 def payment_methods(*methods: str):
     """Fábrica: emite quando a forma de pagamento está no conjunto.
 
