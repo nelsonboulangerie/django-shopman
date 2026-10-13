@@ -68,6 +68,10 @@ class OperatorAlert(models.Model):
         # sai (senão o iFood reentrega para sempre), mas nunca calado: é assim
         # que um evento novo do marketplace aparece antes de virar prejuízo.
         ("ifood_event_unhandled", "Evento do iFood sem tratamento"),
+        # A loja pediu o cancelamento e o iFood RECUSOU. O pedido sai do
+        # "cancelamento pendente" e volta a andar; quem decide é gente: seguir com
+        # ele ou tentar cancelar de novo com outro motivo.
+        ("ifood_cancellation_refused", "iFood recusou o cancelamento"),
         ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
@@ -362,6 +366,7 @@ class OperatorAlert(models.Model):
         "kitchen_print_failed",
         "concierge_handoff",
         "ifood_negotiation_open",
+        "ifood_cancellation_refused",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
