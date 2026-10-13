@@ -516,6 +516,7 @@ const settings = {
   kitchen_stations: [
     { ref: "forno", name: "Forno", type: "prep", type_label: "Preparo", collections: ["Salgados"], print_terminal: "", auto_fire: true },
     { ref: "bebidas", name: "Bebidas", type: "prep", type_label: "Preparo", collections: ["Cafés", "Sucos"], print_terminal: "Caixa 1", auto_fire: false },
+    ...(SALE ? [{ ref: "cozinha", name: "Cozinha", type: "prep", type_label: "Preparo", collections: ["Pratos da cozinha"], print_terminal: "", auto_fire: false }] : []),
   ],
   shortcuts: {
     favorite_collection_refs: ["cafes", "paes"],
@@ -707,6 +708,26 @@ createServer((req, res) => {
     return;
   }
   if (path === "/api/v1/backstage/pos/settings/") {
+    // O Envio (Auto · Manual) da comanda grava o interruptor da estação: o catálogo do
+    // PDV acompanha (`kitchen_auto_fire` dos produtos daquela estação).
+    if (req.method === "POST") {
+      void readBody(req).then((body) => {
+        if (body?.section === "kitchen_station") {
+          const station = settings.kitchen_stations.find((entry) => entry.ref === body.station_ref);
+          if (station) {
+            station.auto_fire = Boolean(body.auto_fire);
+            for (const product of pos.products || []) {
+              if (product.kitchen_station === station.name) {
+                if (station.auto_fire) product.kitchen_auto_fire = true;
+                else delete product.kitchen_auto_fire;
+              }
+            }
+          }
+        }
+        send(res, 200, settings);
+      });
+      return;
+    }
     send(res, 200, settings);
     return;
   }

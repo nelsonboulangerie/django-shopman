@@ -61,7 +61,14 @@ function props(overrides: Record<string, unknown> = {}) {
 }
 
 /** v4: um botão "Desconto" abre o painel (formato, valor e motivo) no editor ou na seleção. */
+/** Tocar a linha marca só ela e abre o bloco dela (dono, 13/10/2026): nada nasce marcado. */
+async function open(wrapper: Awaited<ReturnType<typeof mountSuspended>>, name?: string) {
+  const row = name ? wrapper.find(`[aria-label="Editar ${name}"]`) : wrapper.findAll("[data-item-select]").at(-1)!;
+  if (row.attributes("aria-pressed") !== "true") await row.trigger("click");
+}
+
 async function openDiscount(wrapper: Awaited<ReturnType<typeof mountSuspended>>) {
+  if (!wrapper.find("[data-pos-line-editor]").exists()) await open(wrapper);
   const button = wrapper.findAll("button").find((b) => b.text().trim().startsWith("Desconto"));
   expect(button, "botão Desconto").toBeTruthy();
   await button!.trigger("click");
@@ -146,8 +153,7 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
         items: [item({ sku: "PAO", name: "Pão", fired: true, line_id: "l1" })],
       }),
     });
-    if (!wrapper.find('[data-pos-line-remove]').exists())
-      await wrapper.find("button[aria-expanded]").trigger("click");
+    await open(wrapper, "Pão");
     await wrapper.find('[data-pos-line-remove]').trigger("click");
     expect(wrapper.emitted("remove")).toBeUndefined();
     // Decisão 5 do dono: a linha na cozinha sai da conta E é cancelada lá.
@@ -305,6 +311,7 @@ describe("PosCartPanel — a linha do carrinho", () => {
         items: [item({ sku: "PAO", name: "Pão", price_q: 500, qty: 1 })],
       }),
     });
+    await open(wrapper, "Pão");
     expect(wrapper.text()).toContain("R$ 5,00 cada");
     expect(wrapper.findAll("strong").map((el) => el.text())).toContain(
       formatBRL(500),
@@ -510,7 +517,8 @@ describe("PosCartPanel — autoria discreta", () => {
     });
     expect(wrapper.text()).not.toContain("Editado por Bruno");
     expect(wrapper.text()).not.toContain("Lançado por Ana");
-    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
+    // Nada marcado ao abrir: nenhuma quantidade à vista ainda.
+    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(0);
     await wrapper.find('[aria-label="Editar Pão"]').trigger("keydown", { key: "ArrowRight" });
     expect(wrapper.text()).toContain("Lançado por Ana");
     expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
@@ -563,6 +571,7 @@ describe("PosCartPanel — acordeão", () => {
 describe("PosCartPanel — quantidade acessível sem expandir", () => {
   it("permite incrementar e selecionar quantidade para o teclado com a linha recolhida", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await open(wrapper, "Café");
     await wrapper
       .find('[aria-label="Quantidade de Café"] [aria-label="Aumentar"]')
       .trigger("click");
@@ -607,6 +616,7 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ saving: true }),
     });
+    await open(wrapper, "Café");
     await wrapper
       .find('[data-item-select="L-CAFE"]')
       .trigger("keydown", { key: "+" });
@@ -649,6 +659,7 @@ describe("PosCartPanel — sem desconto nem observação de item quando não gra
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ lineAdjustmentsBlockedReason: REASON }),
     });
+    await open(wrapper, "Café");
     // v4: o editor da linha fica só com a quantidade (− n +), sem Desconto nem
     // Observação, e a frase diz por quê.
     const modos = wrapper.findAll("button").map((b) => b.text().trim());
@@ -683,6 +694,7 @@ describe("PosCartPanel — sem desconto nem observação de item quando não gra
 
   it("sem o motivo, a venda segue com os modos de sempre", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await open(wrapper, "Café");
     expect(wrapper.find("[data-pos-line-discount]").exists()).toBe(true);
     expect(wrapper.find("[data-pos-line-note]").exists()).toBe(true);
     await openDiscount(wrapper);

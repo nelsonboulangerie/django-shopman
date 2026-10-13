@@ -12,6 +12,7 @@ import { ORDER_EDIT_CUSTOMER_LOCKED, ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED, orderE
 import { wantsNewOrder } from "~/presentation/orderSetup";
 import { redoTabLabel } from "~/presentation/preorderActions";
 import type { PreorderRedoResponse } from "~/types/preorders";
+import type { PosSettingsResponse } from "~/types/settings";
 import { rollStyle } from "~/presentation/printGeometry";
 import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
 import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
@@ -693,6 +694,30 @@ async function autoFireLeftovers() {
   // Tudo o que falta é automático: o envio de sempre (grava e manda o delta).
   // Senão, só as linhas automáticas; as outras esperam o "Enviar à cozinha".
   await fireTab(auto.length === unfired.length ? undefined : auto);
+}
+// ENVIO: AUTO · MANUAL na comanda (dono, 13/10/2026): o controle do cabeçalho grava o
+// mesmo interruptor de Ajustes › Envio à cozinha, nas estações desta comanda (a
+// leitura dos Ajustes dá o `ref` de cada uma pelo nome), e relê o catálogo para a coluna
+// e o relógio do envio automático acompanharem.
+const autoFireBusy = ref(false);
+async function changeAutoFire(on: boolean) {
+  const names = new Set(cart.items.map((item) => kitchenStations.value[item.sku]).filter(Boolean));
+  if (!names.size || autoFireBusy.value) return;
+  autoFireBusy.value = true;
+  try {
+    const current = await action.call<PosSettingsResponse>("/api/v1/backstage/pos/settings/", { method: "GET" });
+    const stations = current.kitchen_stations.filter((station) => names.has(station.name) && station.auto_fire !== on);
+    for (const station of stations) {
+      await action.call("/api/v1/backstage/pos/settings/", { body: { section: "kitchen_station", station_ref: station.ref, auto_fire: on } });
+    }
+    await refresh();
+    const label = [...names].join(" e ");
+    toast.success(on ? `${label}: Envio Auto.` : `${label}: Envio Manual.`);
+  } catch (err) {
+    toast.error(httpErrorMessage(err, "Não deu para mudar o envio. Tente de novo ou use Ajustes › Envio à cozinha."));
+  } finally {
+    autoFireBusy.value = false;
+  }
 }
 let autoFireTimer: ReturnType<typeof setTimeout> | null = null;
 // A coluna segura o relógio enquanto há rascunho aberto (desconto, observação) ou
@@ -1608,6 +1633,7 @@ onBeforeUnmount(() => {
               :quick-payments="quickPayments"
               :auto-fire="autoFireOn"
               :auto-fire-skus="autoFireSkuList"
+              :auto-fire-busy="autoFireBusy"
               :offline="offlineSales.isOnline.value === false"
               :items="cart.items"
               :total="saleTotal"
@@ -1639,7 +1665,7 @@ onBeforeUnmount(() => {
               @auto-fire-hold="(held) => { autoFireHeld = held; }"
               @fire="fireTab"
               @pay="payOnSheet"
-              @auto-fire-settings="navigateTo('/settings/kitchen')"
+              @auto-fire-change="changeAutoFire"
               @unfire="unfireTab"
               @fire-lines="(ids, complete) => fireTab(ids).then(complete)"
               @unfire-lines="(ids, complete) => unfireSelected(ids).then(complete)"

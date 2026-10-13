@@ -223,12 +223,12 @@ for (const { scheme, size, width } of CASES) {
         [...document.querySelectorAll<HTMLElement>("[data-pos-ticket-column] [data-pos-line-name]")].map((el) => Math.round(el.getBoundingClientRect().left)),
       );
       const headerBefore = (await page.locator("[data-pos-ticket-header]").boundingBox())!;
-      // A marca é literal (dono, 13/10): as três caixas clicadas, e só elas.
+      // A linha tocada já é a marcada (dono, 13/10); as caixas somam mais duas.
       await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(1).click();
       await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(2).click();
-      await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(4).click();
-      await expect(page.locator("[data-pos-marked-title]")).toContainText("3 linhas marcadas");
-      await expect(page.locator("[data-pos-fire]")).toContainText(/Enviar 3|Enviar 3 marcadas/);
+      await expect(page.locator("[data-pos-ticket-column] [data-pos-line-marked]")).toHaveCount(3);
+      await expect(page.locator("[data-pos-marked-title]")).toContainText("itens marcados");
+      await expect(page.locator("[data-pos-fire]")).toContainText(/Enviar marcados|Enviar/);
       const rowsAfter = await page.evaluate(() =>
         [...document.querySelectorAll<HTMLElement>("[data-pos-ticket-column] [data-pos-line-name]")].map((el) => Math.round(el.getBoundingClientRect().left)),
       );
@@ -428,7 +428,7 @@ for (const size of SIZES) {
 // marcadas" ao lado de um "Transferir" curto.
 async function footSteps(page: Page) {
   return page.evaluate(() =>
-    [...document.querySelectorAll<HTMLElement>("[data-pos-ticket-foot] [data-pos-controls-block='tab'] button")].map((button) => {
+    [...document.querySelectorAll<HTMLElement>("[data-pos-ticket-column] [data-pos-controls-block='tab'] button")].map((button) => {
       const seen = (el: Element | null) => Boolean(el && el.getBoundingClientRect().width > 0.5);
       const variants = [...button.querySelectorAll("[data-op-fit-variant]")].filter(seen).map((el) => el.getAttribute("data-op-fit-variant"));
       const key = button.querySelector("[data-op-fit-key]");
@@ -459,9 +459,9 @@ for (const width of ["min", "default", "max"] as const) {
       await expect(page.locator("[data-pos-marked-title]")).toBeVisible();
       const marked = await footSteps(page);
       sameStep(marked);
-      // Com marcadas os dois têm curto ("Enviar 3" | "Transferir 3"): o degrau é o mesmo.
+      // Com marcados os dois têm curto ("Enviar" | "Transferir"): o degrau é o mesmo.
       expect(marked.every((step) => step.hasShort)).toBe(true);
-      expect(await scan(page, ["[data-pos-ticket-foot]"])).toEqual([]);
+      expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
     });
   }
 }
@@ -496,8 +496,8 @@ for (const size of [{ width: 800, height: 600 }, { width: 1366, height: 768 }, {
 // O TIQUE NO MESMO QUADRO DO TOQUE (dono, 13/10/2026): a caixa clicada aparece marcada
 // antes do próximo quadro de tela, e só ela. O defeito era de regra (conjunto de um virava
 // "linha aberta", a caixa ficava vazia), e o operador clicava de novo sem saber se aceitou.
-test("a caixa de marcar aparece marcada no mesmo quadro do clique, com e sem linha aberta", async ({ page }) => {
-  await openFullTab(page, { width: 1366, height: 768 }, "light");
+test("a caixa de marcar aparece marcada no mesmo quadro do clique, e só ela", async ({ page }) => {
+  await openFullTab(page, { width: 1366, height: 768 }, "light", "default", false);
   const tickedInNextFrame = (index: number) =>
     page.evaluate((i) => new Promise<{ checked: string | null; marked: number }>((resolve) => {
       const boxes = document.querySelectorAll<HTMLElement>("[data-pos-ticket-column] [data-pos-line-mark]");
@@ -508,8 +508,9 @@ test("a caixa de marcar aparece marcada no mesmo quadro do clique, com e sem lin
         marked: document.querySelectorAll("[data-pos-ticket-column] [data-pos-line-marked]").length,
       }));
     }), index);
-  // A caixa da própria linha aberta (a 5ª) e depois a de outra.
+  // A 5ª, depois a 2ª (somam), e a 2ª de novo (tira só ela).
   expect(await tickedInNextFrame(4)).toEqual({ checked: "true", marked: 1 });
   expect(await tickedInNextFrame(1)).toEqual({ checked: "true", marked: 2 });
   expect(await tickedInNextFrame(1)).toEqual({ checked: "false", marked: 1 });
 });
+
