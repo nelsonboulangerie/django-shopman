@@ -143,6 +143,17 @@ def test_manual_ready_moves_to_the_menu_while_the_kitchen_works(channel):
     assert advance.label == "Marcar pronto"
 
 
+def test_manual_ready_stays_in_sight_for_delivery_while_the_kitchen_works(channel):
+    """Na entrega quem decide o pronto é o operador (dono, 13/10/2026): ele sabe
+    se a sacola está pronta e chama o entregador na hora."""
+    order = _order("UNDO-A4D", fulfillment="delivery", channel_ref="pdv")
+    _ticket(order, "lanches")
+
+    advance = next(a for a in operator_orders.operational_actions(order) if a.ref == "advance")
+    assert advance.priority == "primary"
+    assert advance.label == "Marcar pronto"
+
+
 def test_manual_ready_stays_primary_without_kitchen_ticket(channel):
     order = _order("UNDO-A5")
     advance = next(a for a in operator_orders.operational_actions(order) if a.ref == "advance")

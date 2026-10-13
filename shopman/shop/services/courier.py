@@ -44,10 +44,18 @@ ESTIMATE_CACHE_SECONDS = 600
 #: Intervalo default de polling quando Shop.defaults não configura.
 DEFAULT_POLL_SECONDS = 60
 
-#: Em que estados do pedido a casa pode chamar o entregador. Desde o preparo: o
-#: lembrete do Gestor (``courier_reminder``) cobra a chamada durante o preparo,
-#: para o entregador chegar com a sacola pronta (WP-ENTREGADOR-CHAMADA-ANTECIPADA).
-RIDE_ORDER_STATUSES = frozenset({Order.Status.PREPARING, Order.Status.READY, Order.Status.DISPATCHED})
+#: Em que estados do pedido a casa pode chamar o entregador: desde o aceite.
+#: Quem chama é o operador, conscientemente, e só ele sabe se a sacola já está
+#: pronta (decisão do dono, 13/10/2026): a entrega da casa se despacha na hora,
+#: sem esperar o "pronto" do sistema. O lembrete do Gestor (``courier_reminder``)
+#: cobra a chamada durante o preparo (WP-ENTREGADOR-CHAMADA-ANTECIPADA).
+RIDE_ORDER_STATUSES = frozenset({
+    Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY, Order.Status.DISPATCHED,
+})
+
+#: Chamada antes do pronto: a coleta (``E``) leva o pedido pelos degraus que
+#: faltam até a saída, porque a sacola foi com o entregador.
+_BEFORE_READY_STATUSES = frozenset({Order.Status.ACCEPTED, Order.Status.PREPARING})
 
 
 # ── Bloco Order.data["courier"] ─────────────────────────────────────
@@ -404,7 +412,7 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Di
     if not house_dispatches(order):
         raise ValueError(not_house_dispatch_message(order))
     if order.status not in RIDE_ORDER_STATUSES:
-        raise ValueError("Chamar entregador só é possível com o pedido em preparo, pronto ou em entrega.")
+        raise ValueError("Chamar entregador só é possível depois de aceitar o pedido.")
     if has_active_ride(order):
         raise ValueError("Já existe uma corrida ativa para este pedido.")
 
@@ -674,6 +682,9 @@ def recover_local_status(order, *, ride_id: str) -> None:
     if block.get("id_mch") != ride_id:
         return
     status = block.get("status")
+    if status in ("E", "F") and order.status in _BEFORE_READY_STATUSES:
+        _collected_before_ready(order, ride_id=ride_id)
+        order.refresh_from_db()
     if status in ("E", "F") and order.status == Order.Status.READY:
         # A coleta despacha também com cobrança na porta (decisão do dono,
         # 13/10/2026): a cobrança foi na observação e fica em ``door_charge``.
@@ -685,6 +696,29 @@ def recover_local_status(order, *, ride_id: str) -> None:
         )
     if status == "F":
         operator_orders.confirm_received(order, actor="courier:machine", expected_courier_id=ride_id)
+
+
+def _collected_before_ready(order, *, ride_id: str) -> None:
+    """O entregador coletou um pedido que ninguém marcou pronto.
+
+    O operador chamou a corrida sabendo que a sacola estava pronta (a chamada é
+    consciente desde o aceite): a coleta é o fato de que ela saiu. O pedido sobe
+    os degraus que faltam até o pronto pelo mesmo ``advance_order`` (avisos e
+    trava de pagamento incluídos); a saída segue no fluxo de sempre. Se um degrau
+    for recusado, o pedido fica onde está e o Gestor mostra a corrida em curso.
+    """
+    from shopman.shop.services import operator_orders
+
+    for _ in range(len(_BEFORE_READY_STATUSES)):
+        if order.status not in _BEFORE_READY_STATUSES:
+            return
+        try:
+            operator_orders.advance_order(order, actor="courier:machine", expected_courier_id=ride_id)
+        except Exception:
+            logger.warning("courier.collected_before_ready_refused order=%s status=%s",
+                           order.ref, order.status, exc_info=True)
+            return
+        order.refresh_from_db()
 
 
 def _enrich_accepted(block: dict, details: dict | None) -> None:
