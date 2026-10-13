@@ -100,9 +100,11 @@ describe("G19: Exportar do ⋯", () => {
       ],
       [{ ref: "web", name: "Loja online" } as never],
     );
-    expect(csv.split("\n")[0]).toBe(
-      '"Produto","SKU","Preço","Coleção","Loja online"',
-    );
-    expect(csv.split("\n")[1]).toBe('"Baguete","BGG","R$ 18,00","Rústicos",""');
+    // Como a planilha em português lê (o escritor do kit, `readingCsvText`): ";" entre
+    // colunas, BOM, e o preço como número em reais com vírgula, para a planilha somar.
+    expect(csv.startsWith("﻿")).toBe(true);
+    const [header, line] = csv.slice(1).split("\n");
+    expect(header).toBe("Produto;SKU;Preço (R$);Coleção;Loja online");
+    expect(line).toBe("Baguete;BGG;18,00;Rústicos;");
   });
 });

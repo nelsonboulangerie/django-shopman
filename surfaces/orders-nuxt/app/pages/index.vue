@@ -1391,7 +1391,7 @@ function onToggleAssign(card: OrderCardProjection) {
 // browser dialog (the print stylesheet hides the chrome and shows the table).
 function exportCsv() {
   const csv = rowsToCsv(tableRows.value);
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const stamp = new Date()
     .toISOString()
