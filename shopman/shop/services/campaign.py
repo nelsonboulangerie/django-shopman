@@ -699,6 +699,7 @@ _TRANSACTIONAL_TEST_VALUES = {
     "product_url": "https://shopman.invalid/teste/produto",
     "purchase_qty_display": "2 kg",
     "purchase_ref": "COMPRA-TESTE-A47",
+    "refund_amount_display": "R$ 12,00",
     "reorder_url": "https://shopman.invalid/teste/refazer",
     "reserve_note": "Reserva sintética para validar o modelo.",
     "revoke_url": "https://shopman.invalid/teste/revogar",

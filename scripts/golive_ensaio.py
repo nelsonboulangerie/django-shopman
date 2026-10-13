@@ -163,6 +163,21 @@ def _set_everywhere(spec: dict, key: str, value: str, *, secret: bool = False) -
         spec["envs"].append(entry)
 
 
+def _append_everywhere(spec: dict, key: str, item: str) -> None:
+    """Acrescenta ``item`` à lista separada por vírgula de ``key``, sem tirar nada."""
+    touched = False
+    for envs in _env_lists(spec):
+        for entry in envs:
+            if entry.get("key") == key:
+                parts = [p.strip() for p in str(entry.get("value") or "").split(",") if p.strip()]
+                if item not in parts:
+                    parts.append(item)
+                entry["value"] = ",".join(parts)
+                touched = True
+    if not touched:
+        spec["envs"].append({"key": key, "scope": "RUN_AND_BUILD_TIME", "value": item})
+
+
 def _remove_everywhere(spec: dict, key: str) -> None:
     for envs in _env_lists(spec):
         envs[:] = [entry for entry in envs if entry.get("key") != key]
@@ -196,6 +211,9 @@ def apply_delta(antes: dict) -> tuple[dict, list[str]]:
         elif rule.kind == "prefix":
             _set_everywhere(depois, row.key, f"{rule.value}{MARK.replace('-', '_')}")
             changes.append(f"{row.key} = {rule.value}… (marcador)")
+        elif rule.kind == "includes":
+            _append_everywhere(depois, row.key, rule.value)
+            changes.append(f"{row.key}: acrescentar ,{rule.value}")
         else:
             # ``present`` faltando: o dia D não inventa valor. Fica [VIRAR] no
             # delta do depois, que é o achado do ensaio.

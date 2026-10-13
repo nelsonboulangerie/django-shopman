@@ -34,7 +34,7 @@ originais, divergindo o que a cozinha prepara, o estoque, a cobrança e a nota.
 Agora há três destinos, e nenhum deles é silêncio:
 
 - **tratado** — tem processador (``PLC``, ``CFM``, ``DSP``, ``CAN``, ``CON``,
-  handshake e ``ORDER_PATCHED``);
+  handshake, ``ORDER_PATCHED`` e ``CANCELLATION_REQUEST_FAILED``);
 - **inerte** (``_INERT_CODES``) — ACK calado, mas por DECISÃO escrita e com
   motivo ao lado de cada código;
 - **qualquer outro** — ACK (não ackar faria o iFood reentregar em laço) + log de
@@ -73,6 +73,12 @@ _HANDSHAKE_CODES = {"HSD", "HANDSHAKE_DISPUTE", "HSS", "HANDSHAKE_SETTLEMENT"}
 # uma sigla aparecer no vivo, ela cai no ramo de código não tratado logo abaixo,
 # que grita — em vez de ser engolida como era até 19/09/2026.
 _PATCH_CODES = {"ORDER_PATCHED"}
+# O iFood RECUSOU o cancelamento que a loja pediu (``requestCancellation`` já
+# tinha voltado 202). Só o ``fullCode``, pela mesma disciplina do PATCHED: o
+# laço lê ``fullCode`` antes de ``code``, e uma sigla que apareça sozinha cai
+# no ramo não tratado, que grita. Sem tratamento, o pedido ficava "cancelamento
+# pendente" para sempre: nem aceitava, nem avançava.
+_CANCELLATION_REFUSED_CODES = {"CANCELLATION_REQUEST_FAILED"}
 # Códigos documentados que esta casa decidiu não tratar, COM motivo. Não é
 # silêncio: é decisão escrita, e o ACK calado é a resposta certa para eles.
 _INERT_CODES = {
@@ -192,10 +198,12 @@ def process_events(events: list[dict]) -> dict:
         # Remote state changes reconcile only after the order exists.
         if code in (
             _CANCELLATION_CODES | _CONCLUSION_CODES | _CONFIRMATION_CODES
-            | _DISPATCH_CODES | _HANDSHAKE_CODES | _PATCH_CODES
+            | _DISPATCH_CODES | _HANDSHAKE_CODES | _PATCH_CODES | _CANCELLATION_REFUSED_CODES
         ):
             if code in _PATCH_CODES:
                 outcome = _process_patch(event, event_id, order_id)
+            elif code in _CANCELLATION_REFUSED_CODES:
+                outcome = _process_cancellation_refused(event, event_id, order_id)
             elif code in _HANDSHAKE_CODES:
                 outcome = _process_handshake(event, settlement=code in {"HSS", "HANDSHAKE_SETTLEMENT"})
             elif code in _CANCELLATION_CODES:
@@ -926,6 +934,61 @@ def _process_cancellation(event_id: str, order_id: str) -> str:
 
     webhook_idempotency.mark_done(claim, response_body={"status": "cancelled", "order_ref": order.ref})
     return outcome
+
+
+def _process_cancellation_refused(event: dict, event_id: str, order_id: str) -> str:
+    """O iFood recusou o cancelamento pedido pela loja: destrava e avisa.
+
+    O pedido volta a ser operável no estado em que estava (ele não mudou
+    enquanto esperava), o motivo do iFood fica gravado no pedido e vai no aviso
+    ao operador, com as duas saídas: seguir com o pedido ou tentar cancelar de
+    novo. Fatos do iFood que esperavam a decisão (um CFM, por exemplo) são
+    aplicados em seguida pela reconciliação de sempre.
+
+    Sem pedido de cancelamento pendente (já resolvido, ou o CAN chegou antes),
+    o evento é só registrado: nada a destravar.
+    """
+    if not order_id:
+        logger.warning("ifood_events: CANCELLATION_REQUEST_FAILED %s without orderId", event_id)
+        return "failed"
+    claim = webhook_idempotency.claim(
+        _IDEMPOTENCY_SCOPE, f"event:{webhook_idempotency.stable_webhook_key(event_id)}",
+    )
+    if claim.replayed:
+        return "deduped"
+    if claim.in_progress:
+        return "failed"
+
+    from django.db import transaction
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import ifood_cancellation
+
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    reason = ifood_cancellation.refusal_reason(metadata)
+    try:
+        with transaction.atomic():
+            order = Order.objects.select_for_update().filter(
+                channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, external_ref=order_id,
+            ).first()
+            if order is None:
+                webhook_idempotency.mark_failed(claim)
+                return "failed"
+            refused = ifood_cancellation.refuse_locked(
+                order, reason=reason, event_id=event_id, metadata=metadata,
+            )
+            webhook_idempotency.mark_done(
+                claim, response_body={"status": "refused" if refused else "nothing_pending", "order_ref": order.ref},
+            )
+    except Exception:
+        logger.exception("ifood_events: failed to record cancellation refusal for order %s (event %s)", order_id, event_id)
+        webhook_idempotency.mark_failed(claim)
+        return "failed"
+    if not refused:
+        logger.info("ifood_events: CANCELLATION_REQUEST_FAILED for order %s with nothing pending", order_id)
+        return "deduped"
+    reconcile_remote(order)
+    return "ingested"
 
 
 def _process_conclusion(event_id: str, order_id: str) -> str:

@@ -92,6 +92,7 @@ vai para o repositório); **apagar** = remover a linha (ausente vale o mesmo que
 | `FOCUS_NFE_TOKEN` | segredo (homologação) | **colar** o token de produção | A Focus tem um token por ambiente. | script com `--baseline`; NFC-e do canário autorizada | colar o de homologação |
 | `SHOPMAN_ADMIN_REQUIRE_2FA` | ausente | `true` | Admin com segundo fator. **Pré-condição**: `check_admin_2fa_ready` verde no banco do app (todo staff ativo com autenticador e recuperação). Sem ela, tranca o staff fora. | script; login no Admin pede o código | apagar |
 | `SHOPMAN_GO_LIVE` | ausente | `true` | Arma a política de migração da ADR-015 dentro do contêiner (a imagem não tem `.git`, então a tag `go-live-v1` não é legível lá). | script; log do release: `migration_safety` diz "política ADR-015: ARMADA" | apagar |
+| `SHOPMAN_FISCAL_EMISSION_RESOLVER` | os quatro resolvers da casa (`on_request_or_tax_id`, `eletronic_payment`, `deferred_settlement`, `on_requested_receipt`) | os mesmos quatro **e** `shopman.shop.fiscal_resolvers.intermediated_sale` no fim (acrescentar, sem tirar nada) | A venda pelo iFood sem CPF tem de sair com NFC-e presencial (decisão de 24/09, ADR-035). O pagamento dela é `external`, e nenhum dos quatro o enxerga: sem o quinto, o iFood pago online sem CPF sai sem nota. Os outros quatro seguem (E013: a política de quando emitir é decisão fiscal). | script `[OK]` (o valor contém o resolver); o primeiro iFood sem CPF concluído gera a nota presencial | tirar o `,shopman.shop.fiscal_resolvers.intermediated_sale` do fim |
 
 ### O que já está no valor de produção e não pode sair dele
 
@@ -105,7 +106,6 @@ delas sem acusar. Todas estão `[OK]` em 10/10.
 | `SHOPMAN_CARD_ADAPTER` | `shopman.shop.adapters.payment_stripe` | E003/E009. | não muda |
 | `SHOPMAN_LINK_ADAPTER` | ausente (cai no do cartão, Stripe) | O link do balcão usa o mesmo Checkout do cartão. | não muda |
 | `SHOPMAN_FISCAL_ADAPTER` | `shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend` | Sem ele nenhuma nota sai. | não muda |
-| `SHOPMAN_FISCAL_EMISSION_RESOLVER` | os quatro resolvers de hoje | E013. A política de quando emitir é decisão fiscal, não do dia D. | não muda |
 | `FOCUS_NFE_BASE_URL` | ausente | Se existir, vence o ambiente: apontada para homologação, a nota vai para lá mesmo com `producao`. | não muda |
 | `SHOPMAN_EXPOSE_DEBUG_OTP` | `false` | E010. | não muda |
 | `SHOPMAN_STAGING_AUTOPILOT` | `false` | E012: em produção avançaria pedido de cliente sozinho. | não muda |

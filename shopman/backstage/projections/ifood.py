@@ -19,6 +19,13 @@ def cancellation_notice(order) -> str:
         return "Solicitação de cancelamento na fila. O pedido ainda não foi cancelado."
     if state == "sent":
         return "Cancelamento solicitado. Aguardando confirmação do iFood."
+    if state == "refused":
+        reason = str(request.get("refusal_reason") or "").strip().rstrip(".")
+        because = f" Motivo do iFood: {reason}." if reason else ""
+        return (
+            f"O iFood recusou o cancelamento.{because} "
+            "O pedido continua ativo: siga com ele ou tente cancelar de novo com outro motivo."
+        )
     if state == "error":
         if request.get("retryable"):
             return "Falha temporária no envio ao iFood. A confirmação continua pendente."

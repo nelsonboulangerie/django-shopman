@@ -83,6 +83,17 @@ _COMMON = [
     _env("EMAIL_HOST", "smtp.gmail.com"),
 ]
 
+_RESOLVERS_DIA_D = ",".join(
+    f"shopman.shop.fiscal_resolvers.{name}"
+    for name in (
+        "on_request_or_tax_id",
+        "eletronic_payment",
+        "deferred_settlement",
+        "on_requested_receipt",
+        "intermediated_sale",
+    )
+)
+
 _HMAC = {
     name: [_env("SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY", "EV[1:hmac]", secret=True)]
     for name in ("web-operator", "web-storefront", "release")
@@ -118,7 +129,7 @@ def _dia_d() -> dict:
         "FOCUS_NFE_TOKEN",
     }
     envs = [
-        *_COMMON,
+        *[e for e in _COMMON if e["key"] != "SHOPMAN_FISCAL_EMISSION_RESOLVER"],
         _env("SHOPMAN_ENVIRONMENT", "production"),
         _env("SHOPMAN_PIX_ADAPTER", "shopman.shop.adapters.payment_efi"),
         _env("EFI_SANDBOX", "false"),
@@ -126,12 +137,27 @@ def _dia_d() -> dict:
         _env("FOCUS_NFE_ENVIRONMENT", "producao"),
         _env("SHOPMAN_ADMIN_REQUIRE_2FA", "true"),
         _env("SHOPMAN_GO_LIVE", "true"),
+        _env("SHOPMAN_FISCAL_EMISSION_RESOLVER", _RESOLVERS_DIA_D),
         *[
             _env(key, f"EV[1:depois-{key}]" if key in rotated else value, secret=True)
             for key, value in _SECRETS_TODAY.items()
         ],
     ]
     return _spec(envs, component_envs=_HMAC)
+
+
+def test_resolver_do_ifood_vira_acrescentando_sem_tirar_os_da_casa():
+    # O vivo de 10/10 tem os quatro resolvers da casa; o dia D acrescenta o do
+    # intermediador (ADR-035). A linha do painel diz acrescentar, nunca trocar.
+    findings = delta.evaluate(_today())
+    by_key = {f.row.key: f for f in findings}
+    resolver = by_key["SHOPMAN_FISCAL_EMISSION_RESOLVER"]
+    assert resolver.status == "virar"
+    assert "acrescentar ,shopman.shop.fiscal_resolvers.intermediated_sale" in delta.paste_line(resolver)
+    # Sem a chave, também falta: o spec do dia D tem de dizer o valor.
+    spec = _dia_d()
+    spec["envs"] = [e for e in spec["envs"] if e["key"] != "SHOPMAN_FISCAL_EMISSION_RESOLVER"]
+    assert _status(delta.evaluate(spec, baseline_spec=_today()))["SHOPMAN_FISCAL_EMISSION_RESOLVER"] == "virar"
 
 
 def _status(findings) -> dict[str, str]:
@@ -157,6 +183,7 @@ def test_spec_de_hoje_lista_tudo_o_que_falta_virar():
         "FOCUS_NFE_ENVIRONMENT",
         "SHOPMAN_ADMIN_REQUIRE_2FA",
         "SHOPMAN_GO_LIVE",
+        "SHOPMAN_FISCAL_EMISSION_RESOLVER",
     }
     # Sem baseline, segredo presente não é "trocado": é sem prova, e conta como pendência.
     assert status["STRIPE_SECRET_KEY"] == "sem_prova"
