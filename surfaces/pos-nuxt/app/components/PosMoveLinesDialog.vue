@@ -106,24 +106,35 @@ function submit() {
     :open="open"
     title="Transferir itens"
     :description="showPriceNote ? 'O preço de cada item é mantido como foi cobrado nesta comanda.' : undefined"
-    :ui="{ content: 'sm:max-w-md' }"
+    :ui="{ content: 'sm:max-w-xl' }"
     data-pos-move-dialog
     @update:open="$emit('update:open', Boolean($event))"
   >
     <template #body>
       <div class="grid gap-3">
-        <div class="grid gap-2" :style="{ gridTemplateColumns: `repeat(${modes.length}, minmax(0, 1fr))` }">
-          <NuxtButton
+        <!-- O DESTINO, em colunas iguais que descem JUNTAS (dono, 13/10): completo, o
+             curto escrito à mão, ícone. Nunca "Juntar comand…" cortado. -->
+        <OperatorFitGroup
+          :actions="modes"
+          equal
+          class="grid gap-2"
+          :style="{ gridTemplateColumns: `repeat(${modes.length}, minmax(0, 1fr))` }"
+          data-pos-move-modes
+        >
+          <OperatorButton
             v-for="option in modes"
             :key="option.ref"
+            :label="option.label"
+            :short-label="option.shortLabel"
+            :icon="option.icon"
             block
+            class="justify-center"
             :color="mode === option.ref ? 'primary' : 'neutral'"
             :variant="mode === option.ref ? 'solid' : 'outline'"
-            :label="option.label"
             :aria-pressed="mode === option.ref"
             @click="mode = option.ref"
           />
-        </div>
+        </OperatorFitGroup>
 
         <p v-if="mode === 'merge'" class="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
           Leva todos os itens desta comanda para a escolhida e libera esta.
@@ -135,11 +146,13 @@ function submit() {
           <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
           Preparando a comanda…
         </p>
-        <div v-else-if="needsSelection" class="grid max-h-56 gap-1 overflow-y-auto">
+        <!-- A lista cabe na largura: a coluna é `minmax(0, 1fr)` (sem ela a grade cresce
+             até o nome mais comprido e rola de lado) e o nome quebra linha. -->
+        <div v-else-if="needsSelection" class="grid max-h-56 grid-cols-[minmax(0,1fr)] gap-1 overflow-y-auto overflow-x-hidden">
           <div
             v-for="line in lineViews"
             :key="line.id"
-            class="flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5"
+            class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5"
             :class="selected.has(line.id) ? 'border-primary bg-primary/5' : ''"
           >
             <UiCheckbox
@@ -147,7 +160,7 @@ function submit() {
               :aria-label="`Selecionar ${line.label}`"
               @update:model-value="toggle(line.id)"
             />
-            <span class="min-w-0 flex-1 truncate text-sm">{{ line.label }}</span>
+            <span class="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">{{ line.label }}</span>
             <span class="text-xs tabular-nums text-muted-foreground">{{ line.amountDisplay }}</span>
           </div>
         </div>

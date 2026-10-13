@@ -29,6 +29,12 @@ export interface OperatorAdaptiveLabel {
   /** O rótulo curto, escrito por quem conhece a ação ("Cozinha" para "Enviar à cozinha"). */
   shortLabel?: string;
   icon?: string;
+  /** O que vai ao lado do rótulo DESTA ação (uma contagem), em `rem`. Na grade de
+   *  colunas iguais (`equal`) pesa só na coluna dela; na barra, soma como o resto. */
+  reserve?: number;
+  /** A tecla anunciada no botão ("F10"). Só pesa na grade de colunas iguais (`equal`),
+   *  onde as teclas das irmãs caem juntas. */
+  shortcut?: string;
 }
 
 /**
@@ -112,12 +118,23 @@ function round(value: number): string {
 }
 
 /** Quanto um botão precisa mostrando um texto (com o ícone, se houver). */
-function buttonWidth(text: string, icon: boolean, size: OperatorFitSize): Width {
+function buttonWidth(text: string, icon: boolean, size: OperatorFitSize, reserve = 0): Width {
   const metric = FIT_SIZE_METRICS[size];
   return {
     em: labelWidthEm(text),
-    rem: metric.padding * 2 + (icon ? metric.icon + metric.gap : 0) + BORDER_REM * 2,
+    rem: metric.padding * 2 + (icon ? metric.icon + metric.gap : 0) + BORDER_REM * 2 + reserve,
   };
+}
+
+/**
+ * A GRADE DE COLUNAS IGUAIS: cada ação ganha 1/n do contêiner, então o grupo cabe
+ * quando a MAIS LARGA cabe na coluna dela. A largura que o grupo pede é n vezes a
+ * maior (o `max()` do CSS, porque em e rem só se comparam no navegador) mais os espaços.
+ */
+function equalLength(widths: Width[], gapRem: number, reserve: number): string {
+  const extra = Math.max(0, widths.length - 1) * gapRem + reserve;
+  const widest = widths.length === 1 ? cssLength(widths[0]!) : `max(${widths.map(cssLength).join(", ")})`;
+  return `calc(${widths.length} * ${widest} + ${round(extra)}rem)`;
 }
 
 function sum(widths: Width[], gapRem: number): Width {
@@ -144,6 +161,9 @@ export interface OperatorFitOptions {
   gap?: number;
   /** Largura que o contêiner gasta com o que não é ação (o ×, a frase), em `rem`. */
   reserve?: number;
+  /** As ações moram numa grade de colunas IGUAIS (`grid-cols-n`), não lado a lado
+   *  pela largura natural: o grupo cabe quando a mais larga cabe na coluna dela. */
+  equal?: boolean;
 }
 
 /**
@@ -160,35 +180,51 @@ export interface OperatorFitOptions {
 export function actionFitVars(
   actions: readonly OperatorAdaptiveLabel[],
   options: OperatorFitOptions = {},
-): Record<"--op-fit-full" | "--op-fit-short" | "--op-fit-min", string> {
+): Record<"--op-fit-full" | "--op-fit-short" | "--op-fit-min", string> & { "--op-fit-keyed"?: string } {
   const size = options.size ?? "md";
   const gap = options.gap ?? FIT_GROUP_GAP_REM;
   const reserve = options.reserve ?? 0;
-  const full = sum(
-    actions.map((action) => buttonWidth(action.label, Boolean(action.icon), size)),
-    gap,
-  );
+  const fullWidths = actions.map((action) => buttonWidth(action.label, Boolean(action.icon), size, action.reserve));
+  const full = sum(fullWidths, gap);
   // Abaixo de `--op-fit-short` quem tem ícone vira só ícone. Quem não tem ícone nunca
   // chega lá: fica com o curto (ou o completo) e quebra linha. Sem nenhum ícone no
   // grupo, o degrau 3 não existe e o limite é zero. Sem nenhum curto, o limite é o do
   // completo (do completo direto ao ícone).
   const anyIcon = actions.some((action) => action.icon);
-  const short = sum(
-    actions.map((action) => buttonWidth(shortOf(action) || action.label, Boolean(action.icon), size)),
-    gap,
+  const shortWidths = actions.map((action) =>
+    buttonWidth(shortOf(action) || action.label, Boolean(action.icon), size, action.reserve),
   );
+  const short = sum(shortWidths, gap);
   // O mínimo do grupo no último degrau: quem tem ícone vira o botão quadrado, quem não
   // tem fica com o curto. É o `min-width` do contêiner numa linha que quebra
   // (`flex-wrap`): abaixo dele o grupo desce de linha em vez de vazar.
   const metric = FIT_SIZE_METRICS[size];
-  const least = sum(
-    actions.map((action) =>
-      action.icon
-        ? { em: 0, rem: metric.icon + metric.square * 2 + BORDER_REM * 2 }
-        : buttonWidth(shortOf(action) || action.label, false, size),
-    ),
-    gap,
+  const leastWidths = actions.map((action) =>
+    action.icon
+      ? { em: 0, rem: metric.icon + metric.square * 2 + BORDER_REM * 2 + (action.reserve ?? 0) }
+      : buttonWidth(shortOf(action) || action.label, false, size, action.reserve),
   );
+  const least = sum(leastWidths, gap);
+  if (options.equal) {
+    const keyed = actions.some((action) => action.shortcut)
+      ? {
+          "--op-fit-keyed": equalLength(
+            fullWidths.map((width, index) => {
+              const shortcut = actions[index]!.shortcut;
+              return shortcut ? { em: width.em, rem: width.rem + shortcutWidthRem(shortcut) + metric.gap } : width;
+            }),
+            gap,
+            reserve,
+          ),
+        }
+      : {};
+    return {
+      ...keyed,
+      "--op-fit-full": equalLength(fullWidths, gap, reserve),
+      "--op-fit-short": anyIcon ? equalLength(shortWidths, gap, reserve) : "0px",
+      "--op-fit-min": equalLength(leastWidths, gap, reserve),
+    };
+  }
   return {
     "--op-fit-full": cssLength({ em: full.em, rem: full.rem + reserve }),
     "--op-fit-short": anyIcon ? cssLength({ em: short.em, rem: short.rem + reserve }) : "0px",
@@ -235,11 +271,22 @@ export function adaptiveTitle(action: OperatorAdaptiveLabel & { ariaLabel?: stri
  * dos degraus do rótulo: ela usa o limite do completo (`--op-fit-full`, do botão ou do
  * grupo) mais a própria largura. Estilo em linha, como o resto da conta: nada roda em JS.
  */
-export function shortcutFitStyle(shortcut: string, size: OperatorFitSize = "md"): Record<string, string> {
-  // O `OperatorKbd`: `text-xs` mono (~0,45 rem por caractere), `px-1.5`, mínimo `min-w-5`.
-  const key = Math.max(1.25, shortcut.length * 0.45 + 0.75) + BORDER_REM * 2;
+/** A largura da tecla (`OperatorKbd`: `text-xs` mono, ~0,45 rem por caractere, `px-1.5`,
+ *  mínimo `min-w-5`), em `rem`. */
+export function shortcutWidthRem(shortcut: string): number {
+  return Math.max(1.25, shortcut.length * 0.45 + 0.75) + BORDER_REM * 2;
+}
+
+export function shortcutFitStyle(
+  shortcut: string,
+  size: OperatorFitSize = "md",
+  keyed = false,
+): Record<string, string> {
+  const key = shortcutWidthRem(shortcut);
   const gap = FIT_SIZE_METRICS[size].gap;
-  const limit = `(var(--op-fit-full, 0px) + ${round(key + gap)}rem)`;
+  // Na grade de colunas iguais o grupo já fez a conta de todas as teclas juntas.
+  const own = `(var(--op-fit-full, 0px) + ${round(key + gap)}rem)`;
+  const limit = keyed ? `var(--op-fit-keyed, ${own})` : own;
   return {
     "max-width": `clamp(0px, calc((100cqi - ${limit}) * 100000), 100vw)`,
     "margin-inline-start": `clamp(${round(-gap)}rem, calc((100cqi - ${limit}) * 100000), 0px)`,

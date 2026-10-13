@@ -87,6 +87,9 @@ describe("moveLines — Transferir é o verbo", () => {
   it("os modos são o destino; o botão diz Transferir ou Juntar", () => {
     const modes = availableMoveModes(null);
     expect(modes.map((m) => m.label)).toEqual(["Outra comanda", "Comanda nova", "Juntar comandas"]);
+    // O curto escrito à mão para quando os três não cabem completos (descem juntos).
+    expect(modes.map((m) => m.shortLabel)).toEqual(["Outra", "Nova", "Juntar"]);
+    expect(modes.every((m) => m.icon)).toBe(true);
     expect(moveSubmitLabel("split")).toBe("Transferir");
     expect(moveSubmitLabel("transfer")).toBe("Transferir");
     expect(moveSubmitLabel("merge")).toBe("Juntar");

@@ -124,3 +124,27 @@ describe("rótulo que cabe: atributos do botão", () => {
     expect(adaptiveTitle({ label: "Registrar sangria" })).toBeUndefined();
   });
 });
+
+describe("actionFitVars — grade de colunas iguais (irmãos descem juntos)", () => {
+  const acoes = [
+    { label: "Enviar 3 marcadas", shortLabel: "Enviar 3", icon: "i-lucide-chef-hat", shortcut: "F9" },
+    { label: "Transferir 3 marcadas", shortLabel: "Transferir 3", icon: "i-lucide-arrow-right-left", shortcut: "F10" },
+  ];
+  it("pede n vezes a MAIS LARGA (o max do CSS), não a soma", () => {
+    const vars = actionFitVars(acoes, { size: "md", equal: true });
+    expect(vars["--op-fit-full"]).toMatch(/^calc\(2 \* max\(/);
+    expect(vars["--op-fit-short"]).toMatch(/^calc\(2 \* max\(/);
+    expect(vars["--op-fit-min"]).toMatch(/^calc\(2 \* /);
+  });
+  it("publica o limite das teclas, que caem juntas; sem tecla, não publica", () => {
+    expect(actionFitVars(acoes, { equal: true })["--op-fit-keyed"]).toMatch(/^calc\(2 \* max\(/);
+    const semTecla = acoes.map((acao) => ({ label: acao.label, shortLabel: acao.shortLabel, icon: acao.icon }));
+    expect(actionFitVars(semTecla, { equal: true })).not.toHaveProperty("--op-fit-keyed");
+    expect(actionFitVars(acoes)).not.toHaveProperty("--op-fit-keyed");
+  });
+  it("a reserva da ação (a contagem) pesa na coluna dela", () => {
+    const plain = actionFitVars([acoes[0]!], { equal: true });
+    const counted = actionFitVars([{ ...acoes[0]!, reserve: 2 }], { equal: true });
+    expect(plain["--op-fit-full"]).not.toBe(counted["--op-fit-full"]);
+  });
+});

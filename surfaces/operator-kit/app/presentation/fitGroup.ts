@@ -4,3 +4,7 @@
 import type { InjectionKey } from "vue";
 
 export const OPERATOR_FIT_GROUP: InjectionKey<boolean> = Symbol("operator-fit-group");
+
+/** O grupo é uma grade de colunas iguais e publica `--op-fit-keyed`: as teclas das
+ *  irmãs caem JUNTAS, na largura em que toda coluna cabe o rótulo E a tecla dela. */
+export const OPERATOR_FIT_GROUP_KEYED: InjectionKey<boolean> = Symbol("operator-fit-group-keyed");

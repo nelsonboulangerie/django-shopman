@@ -42,6 +42,7 @@ import {
 } from "~/presentation/firedLineChange";
 
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
+import OperatorFitGroup from "../../../operator-kit/app/components/OperatorFitGroup.vue";
 
 const props = defineProps<{
   items: POSCartItem[];
@@ -531,9 +532,12 @@ const canTransferTab = computed(() => canMove.value && props.hasOpenTab && !prop
 const sheetPayFoot = computed(() => Boolean(props.sheet && props.quickPayments?.length && !props.primaryLabel));
 const footTransfer = computed(() => canTransferTab.value && !sheetPayFoot.value);
 // Com marcadas, o Transferir do pé segue o foco como o Enviar ("Transferir 3 marcadas").
-const transferLabel = computed(() => {
-  const n = selectMode.value ? selection.value.lineIds.length : 0;
-  return n ? `Transferir ${n} ${n === 1 ? "marcada" : "marcadas"}` : "Transferir";
+const transferMarked = computed(() => (selectMode.value ? selection.value.lineIds.length : 0));
+const transferFit = computed(() => {
+  const n = transferMarked.value;
+  return n
+    ? { label: `Transferir ${n} ${n === 1 ? "marcada" : "marcadas"}`, shortLabel: `Transferir ${n}`, icon: "i-lucide-arrow-right-left" }
+    : { label: "Transferir", icon: "i-lucide-arrow-right-left" };
 });
 const lineRows = computed<ControlCell[][]>(() => {
   if (!lineControlsInGrid.value) return [];
@@ -577,6 +581,19 @@ const fireFit = computed(() => ({
   icon: props.firing ? undefined : "i-lucide-chef-hat",
 }));
 const fireReserve = computed(() => (fireCell.value.count ? COUNT_RESERVE_REM : 0));
+// O pé como um grupo de colunas iguais: as ações na ordem das células, cada uma com o
+// que leva ao lado (a contagem do Enviar) e a tecla anunciada (cai junto com a irmã).
+const tabFitActions = computed(() =>
+  (tabRows.value[0] || []).map((cell) =>
+    cell === "fire"
+      ? {
+          ...fireFit.value,
+          reserve: fireReserve.value,
+          shortcut: coarsePointer.value || fireCell.value.disabled ? undefined : "F9",
+        }
+      : { ...transferFit.value, shortcut: coarsePointer.value ? undefined : "F10" },
+  ),
+);
 const kitchenState = computed(() =>
   kitchenStateView({
     unfired: fireBar.value.unfired,
@@ -1468,9 +1485,9 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
        contorno primário; o sólido é do Pagamento. Com tudo enviado, quem diz é o
        estado em palavra ("11 na cozinha"), não um botão apagado. -->
   <DefineFireButton>
-    <!-- O grupo do kit é o contêiner: o rótulo conta com a contagem ao lado
-         (`reserve`). Quando aperta, o F9 cai primeiro; o verbo fica ("Enviar 5"). -->
-    <OperatorFitGroup :actions="[fireFit]" :size="controlSize" :reserve="fireReserve" class="h-full w-full">
+    <!-- O contêiner é o grupo do pé (a grade de colunas iguais, `tabFitActions`): o
+         rótulo conta com a contagem ao lado (`reserve` da ação). Quando aperta, as teclas
+         caem primeiro, juntas; depois os dois rótulos descem o mesmo degrau. -->
       <OperatorButton
         v-bind="fireFit"
         :size="controlSize"
@@ -1495,19 +1512,27 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
           />
         </template>
       </OperatorButton>
-    </OperatorFitGroup>
   </DefineFireButton>
   <!-- A GRADE DE CONTROLES (dono, 10/10): duas colunas de mesma largura, bordas e
        alturas batendo. Cada célula é um `@container`: o rótulo cabe na largura DELA
        (completo, curto escrito à mão ou só o ícone), nunca corta. -->
   <DefineControlGrid v-slot="{ rows, block }">
-    <div class="grid grid-cols-2 gap-2" data-pos-ticket-controls :data-pos-controls-block="block">
+    <!-- O PÉ (bloco "tab") é UM grupo do kit em colunas iguais: Enviar e Transferir são
+         irmãos e descem o mesmo degrau (dono, 13/10), nunca um completo ao lado do outro
+         curto. As células dele não são contêiner; as dos blocos de cima são, cada uma. -->
+    <component
+      :is="block === 'tab' ? OperatorFitGroup : 'div'"
+      v-bind="block === 'tab' ? { actions: tabFitActions, size: controlSize, equal: true } : {}"
+      class="grid grid-cols-2 gap-2"
+      data-pos-ticket-controls
+      :data-pos-controls-block="block"
+    >
       <template v-for="(row, rowIndex) in rows" :key="rowIndex">
         <div
           v-for="cell in row"
           :key="cell"
-          class="@container min-w-0"
-          :class="row.length === 1 ? 'col-span-2' : ''"
+          class="min-w-0"
+          :class="[block === 'tab' ? '' : '@container', row.length === 1 ? 'col-span-2' : '']"
           :data-pos-control-cell="cell"
         >
           <template v-if="cell === 'qty' && activeItem">
@@ -1614,11 +1639,9 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             data-pos-line-discount
             @click="toggleDiscount"
           />
-          <div v-else-if="cell === 'transfer'" class="op-fit-scope h-full w-full">
+          <div v-else-if="cell === 'transfer'" class="h-full w-full">
             <OperatorButton
-              :label="transferLabel"
-              short-label="Transferir"
-              icon="i-lucide-arrow-right-left"
+              v-bind="transferFit"
               :size="controlSize"
               color="neutral"
               variant="outline"
@@ -1647,7 +1670,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
           />
         </div>
       </template>
-    </div>
+    </component>
   </DefineControlGrid>
   <DefineTicketBody>
       <!-- Z1 · O CABEÇALHO DA COMANDA (h-16, a altura da barra do topo da venda; as duas
