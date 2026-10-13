@@ -377,6 +377,7 @@ def close_sale(
     _validate_payment_completion(payload)
     _require_delivery_fiscal_identity(payload, channel_ref=channel.ref)
     _require_delivery_minimum(payload)
+    _require_delivery_coverage(payload)
     _require_house_account_if_on_account(
         payload,
         payment_method=_normalize_payment_method(payload.get("payment_method") or "cash"),
@@ -895,17 +896,22 @@ def review_sale(
     tendered_q = _int_q(payload.get("tendered_q"))
     threshold_q = discount_approval_threshold_q()
     warnings: list[dict] = []
-    # Fora da área é fato do ENDEREÇO, e o balcão precisa saber antes de
-    # prometer a entrega — não bloqueia (o combinado da porta é do operador),
-    # mas nunca acontece calado.
+    # Fora da área: UMA regra, dita aqui e cobrada igual no fechamento
+    # (`_require_delivery_coverage`). Sem taxa combinada, a entrega não fecha; com
+    # ela, fecha, e o pedido guarda quem combinou e quando.
     if delivery.blocked:
-        distancia = f" ({delivery.distance_km:g} km)" if delivery.distance_km is not None else ""
         warnings.append({
             "code": "delivery_out_of_area",
             "field": "delivery_address",
+            "message": delivery_out_of_area_message(delivery.distance_km),
+        })
+    elif delivery.out_of_area:
+        warnings.append({
+            "code": "delivery_out_of_area_agreed",
+            "field": "delivery_address",
             "message": (
-                f"Este endereço está fora da área de entrega{distancia}. "
-                "Confira o combinado antes de finalizar."
+                "Endereço fora da área de entrega, com taxa combinada por "
+                f"{_bare_username(operator_username) or 'você'}. Fica registrado no pedido."
             ),
         })
     # Endereço incompleto para a nota da entrega: aviso aqui (a review é tela);
@@ -1451,6 +1457,29 @@ def _require_delivery_minimum(payload: dict) -> None:
         field="items",
         focus="cart",
         recovery=DELIVERY_MINIMUM_RECOVERY,
+    )
+
+
+def delivery_out_of_area_message(distance_km: float | None) -> str:
+    """A frase do fora da área: a mesma na revisão e na recusa do fechamento."""
+    distancia = f" ({distance_km:g} km)".replace(".", ",") if distance_km is not None else ""
+    return f"Endereço fora da área de entrega{distancia}."
+
+
+DELIVERY_OUT_OF_AREA_RECOVERY = "Combine a taxa com o cliente e digite o valor, ou troque para retirada."
+
+
+def _require_delivery_coverage(payload: dict) -> None:
+    """Fora da área sem taxa combinada não fecha. Dito antes, na revisão, com a saída."""
+    delivery = _resolve_delivery_fee(payload)
+    if not delivery.blocked:
+        return
+    raise PosIntentError(
+        code="delivery_out_of_area",
+        message=delivery_out_of_area_message(delivery.distance_km),
+        field="delivery_address",
+        focus="delivery_address",
+        recovery=DELIVERY_OUT_OF_AREA_RECOVERY,
     )
 
 
@@ -2728,7 +2757,7 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     # telefone nascia para hoje, calada.
     _append_schedule_ops(ops, payload)
     if fulfillment_type == "delivery":
-        _append_delivery_ops(ops, payload)
+        _append_delivery_ops(ops, payload, operator_username=operator_username)
         # A LINHA é a cobrança (``Order.total_q`` é a soma das linhas), então ela
         # nasce da taxa RESOLVIDA — a mesma que a review mostrou ao operador.
         delivery_fee_q = _payload_delivery_fee_q(payload)
@@ -3528,6 +3557,9 @@ class DeliveryFeeResolution:
     source: str = ""
     distance_km: float | None = None
     blocked: bool = False
+    #: O ENDEREÇO está fora da área, mesmo quando a taxa é a combinada à mão.
+    #: ``blocked`` diz "não há taxa da loja"; isto diz "a loja não entrega ali".
+    out_of_area: bool = False
 
 
 #: Onde a resolução fica guardada DENTRO do payload. O payload atravessa a
@@ -3592,9 +3624,17 @@ def _compute_delivery_fee(payload: dict) -> DeliveryFeeResolution:
         return DeliveryFeeResolution(fee_q=0)
 
     override = payload.get("delivery_fee_override_q")
+    engine = _compute_engine_delivery_fee(payload)
     if override not in (None, ""):
-        return DeliveryFeeResolution(fee_q=max(0, _int_q(override)), source="manual")
+        return DeliveryFeeResolution(
+            fee_q=max(0, _int_q(override)), source="manual",
+            distance_km=engine.distance_km, out_of_area=engine.blocked,
+        )
+    return engine
 
+
+def _compute_engine_delivery_fee(payload: dict) -> DeliveryFeeResolution:
+    """A taxa da LOJA para o endereço (zona, faixa, frete grátis), sem a exceção."""
     address = payload.get("delivery_address_structured")
     address = address if isinstance(address, dict) else {}
     postal_code = str(address.get("postal_code") or "").strip()
@@ -3611,7 +3651,9 @@ def _compute_delivery_fee(payload: dict) -> DeliveryFeeResolution:
         postal_code, neighborhood, lat, lng, address_text=_delivery_address_text(payload, address)
     )
     if blocked:
-        return DeliveryFeeResolution(fee_q=0, source="blocked", distance_km=distance_km, blocked=True)
+        return DeliveryFeeResolution(
+            fee_q=0, source="blocked", distance_km=distance_km, blocked=True, out_of_area=True,
+        )
 
     source = "zone" if postal_code or neighborhood else "distance"
     if distance_km is None and not (postal_code or neighborhood):
@@ -4402,7 +4444,7 @@ def _append_schedule_ops(ops: list[dict], payload: dict) -> None:
         ops.append({"op": "set_data", "path": "delivery_time_slot", "value": delivery_time_slot})
 
 
-def _append_delivery_ops(ops: list[dict], payload: dict) -> None:
+def _append_delivery_ops(ops: list[dict], payload: dict, *, operator_username: str = "") -> None:
     structured_address = payload.get("delivery_address_structured") if isinstance(payload.get("delivery_address_structured"), dict) else {}
     address = str(payload.get("delivery_address") or structured_address.get("formatted_address") or "").strip()
     if address:
@@ -4421,6 +4463,15 @@ def _append_delivery_ops(ops: list[dict], payload: dict) -> None:
     override = payload.get("delivery_fee_override_q")
     if override not in (None, ""):
         ops.append({"op": "set_data", "path": "delivery_fee_override_q", "value": max(0, _int_q(override))})
+        # QUEM combinou e QUANDO: a exceção tem dono. É esta assinatura que deixa o
+        # commit aceitar o endereço fora da área (`operator_agreed_delivery_fee_q`).
+        delivery = _resolve_delivery_fee(payload)
+        ops.append({"op": "set_data", "path": "pos.delivery_fee_agreed", "value": {
+            "fee_q": max(0, _int_q(override)),
+            "by": _bare_username(operator_username) or operator_username or "pos",
+            "at": timezone.now().isoformat(),
+            "out_of_area": bool(delivery.out_of_area),
+        }})
 
 
 def _payload_tab_session_key(payload: dict) -> str:

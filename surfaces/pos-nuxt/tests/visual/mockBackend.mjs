@@ -188,6 +188,10 @@ const SEATING = SALE && process.env.MOCK_SEATING === "1";
 // Os selos do quadro (só na prévia): a 14 com a cozinha toda no Pronto ("Tudo pronto")
 // e a 13 enviada à cozinha e não paga ("Não pago").
 const KITCHEN_READY = SALE && process.env.MOCK_KITCHEN_READY === "1";
+// Prévia da entrega fora da área (MOCK_OUT_OF_AREA=1): a comanda 12 é uma encomenda de
+// entrega para um endereço fora da área. A review diz a regra do fechamento até a taxa
+// ser combinada; depois, quem combinou. Fora da flag, nada muda.
+const OUT_OF_AREA = SALE && process.env.MOCK_OUT_OF_AREA === "1";
 const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
 const PRODUCTS = [
   ["PAO-FRANCES", "Pão francês", 90, "paes"],
@@ -436,6 +440,18 @@ function tabPayload(ref) {
     customer_ref: inUse ? "C-1" : full ? "C-13" : "",
     customer_tax_id: "", customer_email: "", fulfillment_type: "", delivery_address: "",
     delivery_address_structured: {}, delivery_date: "", delivery_time_slot: "", delivery_fee_override_q: null,
+    ...(OUT_OF_AREA && inUse
+      ? {
+          sales_mode: "order", customer_phone: "43999887766", fulfillment_type: "delivery",
+          delivery_address: "Rua das Palmeiras, 410 - Jardim Bandeirantes, Cambé - PR",
+          delivery_address_structured: {
+            formatted_address: "Rua das Palmeiras, 410 - Jardim Bandeirantes, Cambé - PR",
+            route: "Rua das Palmeiras", street_number: "410", neighborhood: "Jardim Bandeirantes",
+            city: "Cambé", state_code: "PR", postal_code: "86188-000",
+          },
+          delivery_date: TODAY,
+        }
+      : {}),
   };
 }
 function review(body) {
@@ -449,6 +465,23 @@ function review(body) {
     tender_total_q: 0, tender_total_display: brl(0), tender_count: 0, tendered_q: 0, tendered_amount_display: brl(0),
     change_q: 0, change_display: brl(0), requires_manager_approval: false, manager_approval_threshold_q: 0,
     approval_reasons: [], lines: [],
+    ...(OUT_OF_AREA && body?.fulfillment_type === "delivery"
+      ? body?.delivery_fee_override_q == null
+        ? {
+            delivery_fee_source: "blocked", delivery_distance_km: 12.4,
+            warnings: [{ code: "delivery_out_of_area", field: "delivery_address", message: "Endereço fora da área de entrega (12,4 km)." }],
+          }
+        : {
+            delivery_fee_source: "manual", delivery_fee_q: Number(body.delivery_fee_override_q),
+            delivery_fee_display: brl(Number(body.delivery_fee_override_q)),
+            total_q: subtotal + Number(body.delivery_fee_override_q),
+            total_display: brl(subtotal + Number(body.delivery_fee_override_q)),
+            warnings: [{
+              code: "delivery_out_of_area_agreed", field: "delivery_address",
+              message: "Endereço fora da área de entrega, com taxa combinada por marina. Fica registrado no pedido.",
+            }],
+          }
+      : {}),
   };
 }
 function readBody(req) {

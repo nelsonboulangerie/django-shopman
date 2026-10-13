@@ -267,7 +267,14 @@ class DeliveryZoneRule(BaseRule):
         if fulfillment_type != "delivery":
             return
 
-        if session_data.get("delivery_zone_error"):
+        from shopman.shop.modifiers import operator_agreed_delivery_fee_q
+
+        # Taxa assumida no balcão (com nome e hora): a área e a coordenada não
+        # decidiram o preço, então não há cobertura nem coerência a provar aqui.
+        # O mínimo de entrega continua valendo.
+        agreed_by_operator = operator_agreed_delivery_fee_q(session_data) is not None
+
+        if session_data.get("delivery_zone_error") and not agreed_by_operator:
             raise OrderValidationError(
                 code="delivery_zone_not_covered",
                 message="Não entregamos neste endereço ainda.",
@@ -282,7 +289,7 @@ class DeliveryZoneRule(BaseRule):
                 message="Confirme o endereço com CEP para calcularmos a entrega.",
             )
 
-        if not _coordinates_match_claimed_address(session_data):
+        if not agreed_by_operator and not _coordinates_match_claimed_address(session_data):
             raise OrderValidationError(
                 code="delivery_address_mismatch",
                 message="O endereço e a localização não conferem. Confirme o endereço no mapa.",

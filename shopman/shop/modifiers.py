@@ -1093,6 +1093,23 @@ def _address_text(addr: dict) -> str:
     return ", ".join(p for p in parts if p)
 
 
+def operator_agreed_delivery_fee_q(data: dict) -> int | None:
+    """A taxa que um operador do PDV assumiu com nome e hora, ou ``None``.
+
+    Só vale com as DUAS marcas que o PDV grava juntas: o valor
+    (``delivery_fee_override_q``) e quem/quando (``pos.delivery_fee_agreed``).
+    Uma chave solta na sessão, sem assinatura, não desliga a área de entrega.
+    """
+    override = data.get("delivery_fee_override_q")
+    agreed = (data.get("pos") or {}).get("delivery_fee_agreed") if isinstance(data.get("pos"), dict) else None
+    if override in (None, "") or not isinstance(agreed, dict) or not agreed.get("by"):
+        return None
+    try:
+        return max(0, int(override))
+    except (TypeError, ValueError):
+        return None
+
+
 class DeliveryFeeModifier:
     """
     Taxa de entrega: faixa de DISTÂNCIA (motor) + zona CEP/bairro (exceção).
@@ -1125,6 +1142,22 @@ class DeliveryFeeModifier:
             new_data.pop("delivery_fee_q", None)
             new_data.pop("delivery_zone_error", None)
             new_data.pop("delivery_distance_km", None)
+            if new_data != data:
+                session.data = new_data
+                session.save(update_fields=["data"])
+            self._sync_fee_line(session, None)
+            return
+
+        agreed_fee_q = operator_agreed_delivery_fee_q(data)
+        if agreed_fee_q is not None:
+            # A taxa que o operador do balcão ASSUMIU (combinado de porta, cortesia,
+            # endereço fora da área): é a taxa, e o motor não tem segunda opinião.
+            # Fora da área deixa de ser recusa no commit porque a exceção foi feita
+            # com nome e hora (`pos.delivery_fee_agreed`); quem cobra é a linha
+            # manual que o PDV pôs no pedido (zero = nenhuma linha).
+            new_data = dict(data)
+            new_data["delivery_fee_q"] = agreed_fee_q
+            new_data.pop("delivery_zone_error", None)
             if new_data != data:
                 session.data = new_data
                 session.save(update_fields=["data"])
