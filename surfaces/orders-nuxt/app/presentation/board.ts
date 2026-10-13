@@ -372,7 +372,9 @@ export type AffordanceRef =
   | "equipment_back"
   | "courier_back"
   | "undo_handoff"
-  | "undo_ready";
+  | "undo_ready"
+  // O "Dispensar" do lembrete de chamar o entregador (aviso do cartão, não botão largo).
+  | "dismiss_courier_reminder";
 
 export interface Affordance {
   ref: AffordanceRef;

@@ -33,6 +33,7 @@ import {
 } from "~/presentation/board";
 import { computed, onBeforeUnmount } from "vue";
 import { danfeLine } from "~/presentation/danfe";
+import { COURIER_CALL_HASH, courierReminderLine } from "~/presentation/courier";
 import { kitchenChips } from "~/presentation/kitchen";
 import OrderCardMenu from "./OrderCardMenu.vue";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
@@ -239,6 +240,40 @@ const notices = computed<CardNotice[]>(() => {
       attrs: { "data-card-authorization": "" },
     });
   }
+  // Lembrete temporário (até a chamada antecipada aprender): entrega da casa em
+  // preparo há X min sem entregador chamado. O "Chamar entregador" abre o pedido
+  // com a confirmação armada (a corrida é paga: a pergunta vem antes).
+  const reminder = courierReminderLine(card.courier_reminder, nowMs.value);
+  if (reminder)
+    out.push({
+      key: "courier-reminder",
+      color: "warning",
+      icon: "i-lucide-bike",
+      label: "Chamar entregador?",
+      title: reminder,
+      actions: [
+        action(
+          {
+            label: "Chamar entregador",
+            icon: "i-lucide-send",
+            to: `/${card.ref}${COURIER_CALL_HASH}`,
+          },
+          { "data-courier-reminder-call": "" },
+        ),
+        action(
+          {
+            label: "Dispensar",
+            disabled: props.busy,
+            onClick: () => emit("action", "dismiss_courier_reminder"),
+          },
+          {
+            "aria-label": `Dispensar o lembrete do pedido ${code.value.code}`,
+            "data-courier-reminder-dismiss": "",
+          },
+        ),
+      ],
+      attrs: { "data-courier-reminder": "" },
+    });
   if (card.advance_block_reason)
     out.push({
       key: "block",

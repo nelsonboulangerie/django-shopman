@@ -57,7 +57,7 @@ def operator(db, shop):
     return user
 
 
-def _delivery_order(ref="CRB-1", status=Order.Status.READY, **data_extra) -> Order:
+def _delivery_order(ref="CRB-1", status=Order.Status.READY, channel_ref="web", **data_extra) -> Order:
     data = {
         "fulfillment_type": "delivery",
         "customer": {"name": "Ana", "phone": "5543999990000"},
@@ -74,7 +74,7 @@ def _delivery_order(ref="CRB-1", status=Order.Status.READY, **data_extra) -> Ord
     }
     data.update(data_extra)
     order = Order.objects.create(
-        ref=ref, channel_ref="web", session_key=f"S-{ref}", status=status,
+        ref=ref, channel_ref=channel_ref, session_key=f"S-{ref}", status=status,
         snapshot={"items": []}, total_q=1500, data=data,
     )
     OrderItem.objects.create(
@@ -139,6 +139,45 @@ def test_detail_active_ride_shows_driver_and_labels(client, operator, shop):
     assert block["can_dispatch"] is False
 
 
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_detail_carries_the_ride_progress_and_the_reading_gap(client, operator, shop):
+    """A tela recebe a previsão em instantes e diz quando a TaOn parou de informar."""
+    from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
+
+    order = _delivery_order()
+    courier.request_dispatch(order, actor="test")
+    CourierDispatchHandler().handle(message=Directive.objects.get(topic=COURIER_DISPATCH), ctx={})
+    order.refresh_from_db()
+    ride = courier.get_block(order)["id_mch"]
+    courier_mock.set_status(ride, "A")
+    courier_mock.set_progress(ride, {"pickup_eta_at": "2026-10-13T18:49:00+00:00", "trip_minutes": 9})
+    courier.apply_snapshot(order, courier_mock.read_ride(ride), source="poll")
+
+    client.force_login(operator)
+    block = _detail(client, order.ref)["courier"]
+    assert block["pickup_eta_at"] == "2026-10-13T18:49:00+00:00"
+    assert block["delivery_eta_at"].startswith("2026-10-13T18:58:00")
+    assert block["sync_since"] == ""
+
+    courier_mock.set_progress(ride, {"arrived_pickup_at": "2026-10-13T18:50:00+00:00"})
+    courier.apply_snapshot(order, courier_mock.read_ride(ride), source="poll")
+    block = _detail(client, order.ref)["courier"]
+    assert block["status_label"] == "Entregador na loja"
+
+    from shopman.shop.adapters.courier_machine import CourierError
+
+    order.refresh_from_db()
+    courier.record_sync_failure(order, CourierError("[67] recusado", transient=False), ride_id=ride)
+    assert _detail(client, order.ref)["courier"]["sync_since"]
+
+
+def test_on_hold_is_not_at_the_shop():
+    """S é "em espera" (termina outra entrega antes), não "na loja"."""
+    from shopman.backstage.projections.order_queue import COURIER_STATUS_LABELS
+
+    assert "loja" not in COURIER_STATUS_LABELS["S"]
+
+
 # ── Ações ───────────────────────────────────────────────────────────
 
 
@@ -157,7 +196,8 @@ def test_courier_dispatch_action_queues_directive(client, operator, shop):
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_courier_dispatch_blocked_for_wrong_status(client, operator, shop):
-    order = _delivery_order(status=Order.Status.PREPARING)
+    # Desde o aceite a casa pode chamar; o pedido ainda não aceito, não.
+    order = _delivery_order(status=Order.Status.NEW)
     client.force_login(operator)
     from shopman.shop.services.courier import dispatch_revision
 
@@ -165,7 +205,35 @@ def test_courier_dispatch_blocked_for_wrong_status(client, operator, shop):
         {"expected_actor_id": operator.pk, "base_revision": dispatch_revision(order)},
         content_type="application/json", HTTP_IDEMPOTENCY_KEY="dispatch-test")
     assert resp.status_code == 400
-    assert "pronto" in resp.json()["detail"]
+    assert "depois de aceitar o pedido" in resp.json()["detail"]
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+@pytest.mark.parametrize("status", [Order.Status.ACCEPTED, Order.Status.PREPARING])
+def test_pdv_delivery_in_preparation_offers_call_and_mark_ready(client, operator, shop, status):
+    """Caso do alpha (13/10): encomenda do PDV, entrega, em preparo.
+
+    O Gestor oferece "Chamar entregador" (e o servidor aceita) e, no preparo,
+    o "Marcar pronto" fica à vista: na entrega quem decide o pronto é o operador.
+    """
+    order = _delivery_order(ref=f"PDV-{status}", status=status, channel_ref="pdv")
+    client.force_login(operator)
+    detail = _detail(client, order.ref)
+    assert detail["courier"]["can_dispatch"] is True
+    dispatch = next(a for a in detail["actions"] if a["ref"] == "courier-dispatch")
+    assert dispatch["enabled"] is True
+    if status == Order.Status.PREPARING:
+        advance = next(a for a in detail["actions"] if a["ref"] == "advance")
+        assert advance["label"] == "Marcar pronto"
+        assert advance["priority"] == "primary"
+
+    from shopman.shop.services.courier import dispatch_revision
+
+    resp = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=f"dispatch-{status}")
+    assert resp.status_code == 200, resp.content
+    assert Directive.objects.filter(topic=COURIER_DISPATCH, payload__order_ref=order.ref).exists()
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)

@@ -66,7 +66,14 @@ import {
 } from "~/utils/posTabLifecycle";
 import { saleTotalView } from "~/presentation/saleTotal";
 import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, type PosReceiptSnapshot } from "~/presentation/receipt";
-import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
+import {
+  applyLinePrices,
+  lineListUnitQ,
+  manualDiscountChargedQ,
+  manualDiscountWasOverridden,
+  winningDiscountLabel,
+  type POSLinePrice,
+} from "~/presentation/lineDiscounts";
 import { resolveFiscalState, type PosSaleResultSnapshot } from "~/presentation/saleResult";
 import type {
   CustomerDecision,
@@ -1562,6 +1569,12 @@ export function usePosSale(deps: PosSaleDeps) {
     } else {
       delete item.discount;
     }
+    // O total da linha, o da comanda e o do Pagamento mudam no mesmo toque: o
+    // preço cobrado sai da régua do kernel aqui, e o eco da gravação confirma.
+    // A etiqueta fica fixada antes, porque sem ela a régua leria o preço já
+    // descontado como etiqueta no próximo desconto.
+    item.list_price_q = lineListUnitQ(item);
+    item.charged_price_q = manualDiscountChargedQ(item);
   }
 
   function resetCart() {
@@ -2725,11 +2738,20 @@ export function usePosSale(deps: PosSaleDeps) {
     );
   }
 
+  /** A comanda como o salvar a grava, sem a revisão (que muda a cada ida). */
+  function intentContent(): string {
+    return JSON.stringify({ ...buildCurrentIntent(), expected_revision: undefined });
+  }
+  /** O conteúdo da última gravação que o servidor aceitou. */
+  let lastPersistedContent = "";
+
   // Serialize all tab persistence so the debounced autosave can never race the
   // explicit save inside checkout/fire/move (concurrent save_tab → DB lock).
   type SavedTab = {
     revision?: string;
     line_authors?: Record<string, POSLineAuthorship>;
+    /** O preço que cada linha cobra agora (`line_id` → cobrado, etiqueta, automático). */
+    line_prices?: Record<string, POSLinePrice>;
     /** Só com `{ review: true }`: a revisão da venda, calculada logo depois do salvar. */
     review?: POSSaleReviewProjection;
     review_error?: { status?: number; detail?: string };
@@ -2757,9 +2779,14 @@ export function usePosSale(deps: PosSaleDeps) {
         throw error;
       }
       cart.expectedRevision = saved?.revision || cart.expectedRevision;
+      lastPersistedContent = savedContent;
       // O autosave fica na comanda: a autoria que o servidor carimbou volta aqui.
       applyLineAuthors(cart.items, saved?.line_authors);
-      unsaved.value = savedContent !== JSON.stringify({ ...buildCurrentIntent(), expected_revision: undefined });
+      unsaved.value = savedContent !== intentContent();
+      // E o preço que cada linha cobra, decidido pelo servidor (desconto manual
+      // contra o automático). Só quando a tela ainda é a que foi gravada: um toque
+      // feito durante a ida já tem o próprio preço, e o próximo salvar o confirma.
+      if (!unsaved.value) applyLinePrices(cart.items, saved?.line_prices);
       if (!quiet) await refresh();
       return saved;
     };
@@ -2804,6 +2831,9 @@ export function usePosSale(deps: PosSaleDeps) {
     autosaveTimer = setTimeout(() => {
       autosaveTimer = null;
       if (!hasOpenTab.value || customerDraftPending.value || checkoutMode.value || busy.value || saving.value || (orderSetupPending.value && cart.items.length)) return;
+      // O eco do servidor (autoria, preço cobrado) também mexe nas linhas e passa
+      // por aqui; gravar de novo a mesma comanda seria uma ida à toa.
+      if (lastPersistedContent && intentContent() === lastPersistedContent) return;
       persistTab(true).catch((error) => onAutosaveFailed(error));
     }, 1200);
   }

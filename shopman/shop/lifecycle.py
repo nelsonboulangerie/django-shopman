@@ -732,7 +732,11 @@ def _alert_if_card_authorization_held(order) -> None:
 
 
 def _on_returned(order, config: ChannelConfig) -> None:
-    """Order returned: revert stock + refund + revoke loyalty + cancel fiscal + notify."""
+    """Order returned: notify + revert stock + refund + revoke loyalty + cancel fiscal."""
+    # O aviso da devolução vai PRIMEIRO: o estorno pelo gateway tem aviso próprio
+    # (``payment_refunded``, enfileirado dentro do ``payment.refund``), e o cliente
+    # tem de ler "registramos a devolução" antes de "devolvemos R$ X", nunca depois.
+    notification.send(order, "order_returned")
     # A recorded return has its own exact items, amount and retry identity.
     # ReturnHandler owns stock/payment; replaying the whole order doubles goods.
     if not (order.data or {}).get("returns"):
@@ -741,7 +745,6 @@ def _on_returned(order, config: ChannelConfig) -> None:
     fiscal.cancel(order)
     loyalty.revoke(order, reason="returned")
     loyalty.restore(order, reason="returned")
-    notification.send(order, "order_returned")
 
 
 _PHASE_HANDLERS = {

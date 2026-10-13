@@ -76,3 +76,32 @@ export function courierToneBadge(tone: CourierTone): string {
       return "border-border bg-muted text-muted-foreground";
   }
 }
+
+/** O lembrete temporário de chamar o entregador, como o servidor o projeta. */
+export interface CourierReminder {
+  due_at_iso: string;
+  since_iso: string;
+  since_basis: string;
+  short_ref: string;
+}
+
+/**
+ * A frase do lembrete quando ele já vale (o relógio passou de `due_at_iso`), ou `null`.
+ * "Pedido 0042 em preparo há 10 min. Já dá para chamar o entregador?" — os minutos
+ * contam do início do preparo e andam com o relógio da tela.
+ */
+export function courierReminderLine(
+  reminder: CourierReminder | null | undefined,
+  nowMs: number,
+): string | null {
+  if (!reminder) return null;
+  const due = Date.parse(reminder.due_at_iso);
+  const since = Date.parse(reminder.since_iso);
+  if (!Number.isFinite(due) || !Number.isFinite(since) || nowMs < due)
+    return null;
+  const minutes = Math.max(1, Math.floor((nowMs - since) / 60_000));
+  return `Pedido ${reminder.short_ref} em preparo há ${minutes} min. Já dá para chamar o entregador?`;
+}
+
+/** O detalhe do pedido abre com a confirmação de "Chamar entregador" já armada. */
+export const COURIER_CALL_HASH = "#courier-call";

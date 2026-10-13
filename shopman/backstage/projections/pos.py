@@ -2819,6 +2819,33 @@ def _tab_line_list_price_q(item: dict, manual_originals: dict[str, int]) -> int:
     return pre_manual + _int_q(auto.get("amount_q"))
 
 
+def _tab_line_price_fields(item: dict, manual_originals: dict[str, int]) -> dict:
+    """O que a linha COBRA, depois que o kernel decidiu os descontos.
+
+    Vai na comanda aberta e no eco de cada gravação (:func:`tab_line_prices`): o
+    desconto manual muda o preço no servidor, e a tela que só relesse estes
+    números ao reabrir a comanda mostraria o total velho até um recarregar.
+    """
+    return {
+        "pricing_discount": _tab_payload_pricing_discount(item),
+        "list_price_q": _tab_line_list_price_q(item, manual_originals),
+        "charged_price_q": _int_q(item.get("unit_price_q", 0)),
+    }
+
+
+def tab_line_prices(session: Session) -> dict[str, dict]:
+    """``line_id -> preço cobrado`` da comanda recém-gravada, para o eco do salvar.
+
+    Sem consulta: lê só ``session.items`` e ``session.pricing``.
+    """
+    manual_originals = _manual_discount_originals(session)
+    return {
+        item["line_id"]: _tab_line_price_fields(item, manual_originals)
+        for item in (session.items or [])
+        if item.get("line_id") and not _is_delivery_fee_item(item)
+    }
+
+
 def _tab_payload_weighed(item: dict) -> dict | None:
     weighed = (item.get("meta") or {}).get("weighed")
     if not isinstance(weighed, dict) or weighed.get("entry") not in ("label", "weight"):
@@ -2901,9 +2928,7 @@ def build_open_tab(session: Session) -> dict:
             # Os tickets desta linha, para o card da cozinha que o toque abre.
             "kitchen_tickets": tickets_by_line.get(item.get("line_id", ""), []),
             "discount": _tab_payload_line_discount(item),
-            "pricing_discount": _tab_payload_pricing_discount(item),
-            "list_price_q": _tab_line_list_price_q(item, manual_originals),
-            "charged_price_q": _int_q(item.get("unit_price_q", 0)),
+            **_tab_line_price_fields(item, manual_originals),
             # Quem lançou e quem editou (``pos_intent.stamp_line_authorship``).
             "authorship": (item.get("meta") or {}).get("pos_authorship") or None,
         }

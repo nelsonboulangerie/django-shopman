@@ -60,3 +60,40 @@ it("a venda avisa quando a janela escolhida ficou impossível", async () => {
   expect(document.querySelector("[data-schedule-conflict]")?.textContent).toContain("A baguete sai às 12:00.");
   w.unmount();
 });
+
+it("hoje oferece O quanto antes como primeira escolha, marcada sem janela", async () => {
+  const w = await mountSuspended(PosScheduleModal, {
+    props: {
+      ...props,
+      fulfillmentType: "delivery" as const,
+      deliveryDate: "2026-09-12",
+      windows: [{ ref: "16:00-16:30", label: "16:00 às 16:30", enabled: true, reason: "" }],
+    },
+  });
+  const asap = document.querySelector<HTMLButtonElement>('[data-schedule-slot="asap"]');
+  expect(asap?.textContent).toContain("O quanto antes");
+  expect(asap?.getAttribute("aria-pressed")).toBe("true");
+  // Sem "A combinar" no dia de hoje: vazio é o quanto antes.
+  expect(buttons().some((b) => b.textContent?.trim() === "A combinar")).toBe(false);
+  document.querySelector<HTMLButtonElement>('[data-schedule-slot="16:00-16:30"]')?.click();
+  expect(w.emitted("update:deliveryTimeSlot")?.at(-1)).toEqual(["16:00-16:30"]);
+  await w.setProps({ deliveryTimeSlot: "16:00-16:30" });
+  expect(document.querySelector('[data-schedule-slot="asap"]')?.getAttribute("aria-pressed")).toBe("false");
+  document.querySelector<HTMLButtonElement>('[data-schedule-slot="asap"]')?.click();
+  expect(w.emitted("update:deliveryTimeSlot")?.at(-1)).toEqual([""]);
+  w.unmount();
+});
+
+it("outro dia não tem O quanto antes: sem janela é a combinar", async () => {
+  const w = await mountSuspended(PosScheduleModal, {
+    props: {
+      ...props,
+      deliveryDate: "2026-09-14",
+      deliveryTimeSlot: "slot-09",
+      windows: [{ ref: "slot-09", label: "A partir das 9h", enabled: true, reason: "" }],
+    },
+  });
+  expect(document.querySelector('[data-schedule-slot="asap"]')).toBeNull();
+  expect(buttons().some((b) => b.textContent?.trim() === "A combinar")).toBe(true);
+  w.unmount();
+});

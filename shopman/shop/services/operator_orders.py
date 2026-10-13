@@ -2147,7 +2147,14 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         # pronto automático ligado e ticket aberto na cozinha, o "Marcar pronto"
         # sai do card e fica no menu do pedido (``priority="menu"``), para a
         # estação sem tela e para o caso que o sistema não viu.
-        priority = "menu" if target == Order.Status.READY and _kitchen_will_conclude(order) else "primary"
+        # Na ENTREGA, quem decide o pronto é o operador (decisão do dono,
+        # 13/10/2026): ele sabe se a sacola está pronta e chama o entregador na
+        # hora. O "Marcar pronto" fica à vista mesmo com ticket na Cozinha.
+        priority = (
+            "menu"
+            if target == Order.Status.READY and get_fulfillment_type(order) != "delivery" and _kitchen_will_conclude(order)
+            else "primary"
+        )
         actions.append(Action(
             ref="advance", kind="mutation", label=labels[target], priority=priority,
             enabled=not reason, reason=reason, method="POST", idempotency="required",

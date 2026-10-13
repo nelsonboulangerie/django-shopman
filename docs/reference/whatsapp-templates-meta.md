@@ -433,14 +433,23 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 > (PAYMENT-TRACKING-MERGE).
 
 ### `reembolso_processado` — evento `payment_refunded` 🆕
-- Corpo: `Oi, {{1}}! O reembolso do pedido {{2}}, no valor de {{3}}, foi processado. Qualquer dúvida, estamos à disposição.`
-- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`R$ 38,00` (`total`)
+- Corpo: `Oi, {{1}}! Devolvemos {{2}} do seu pedido {{3}}. {{4}}. Qualquer dúvida, estamos à disposição.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`R$ 38,00` (`refund_amount_display`, o valor DESTE estorno) · `{{3}}`=`A47` (`order_ref_short`) · `{{4}}`=`O valor volta por Pix para a conta que fez o pagamento. Costuma cair em instantes, mas pode demorar mais, conforme o banco` (`status_note`)
 - Sem botão.
 
-> ⚠️ **Nada emite este evento hoje.** O sinal `payment_refunded` existe no `payman` e está
-> ligado só aos emissores de SSE (`handlers/_sse_emitters.py`) — não há despacho de
-> notificação ao cliente. O template pode ser aprovado e mapeado, mas **não vai disparar**
-> até alguém ligar o evento à notificação. Ver "Templates catalogados que ainda não disparam".
+> ℹ️ **Emitido desde o P1-9 (13/10/2026)**: sai quando o gateway devolveu (Pix/cartão
+> online), um por estorno (`services/payment._notify_refund`). Estorno sem gateway
+> (maquininha, dinheiro) não avisa. ⚠️ O corpo mudou: o template **ainda não foi
+> submetido** à Meta com este texto; até ser aprovado e mapeado, o aviso sai pelo
+> texto livre do ManyChat (janela de 24h) e cai para SMS/e-mail fora dela.
+
+### `pedido_devolvido` — evento `order_returned` 🆕
+- Corpo: `Oi, {{1}}. Registramos a devolução de todos os itens do seu pedido {{2}}. {{3}}. Qualquer dúvida, estamos à disposição.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`O valor volta pela mesma forma de pagamento, e avisamos por aqui quando a devolução for feita` (`status_note`)
+- Botão URL: `Ver detalhes` → `/pedido/{{1}}` (`order_ref`)
+
+> ⚠️ **Não submetido** (P1-9, 13/10/2026). Até existir, o aviso sai pelo texto livre
+> do ManyChat e pelos fallbacks (SMS/e-mail).
 
 ### `fila_vaga_disponivel` — evento `waitlist_available`
 - Corpo: `Oi, {{1}}! A fornada que você esperava saiu. Confirme o pedido {{2}} para garantir o seu.`
@@ -525,14 +534,13 @@ frente. Enquanto não fechar, **este é o único template do pacote que não dá
 
 ## Templates catalogados que ainda não disparam
 
-Dois dos templates novos são de eventos que **nenhum código emite hoje**:
+Um dos templates novos é de evento que **nenhum código emite hoje**:
 
 | Template | Evento | Estado |
 |---|---|---|
-| `reembolso_processado` | `payment_refunded` | o sinal existe no `payman`, mas só alimenta os emissores de SSE — não há notificação ao cliente |
 | `pontos_fidelidade` | `loyalty_earned` | só existe no `seed` e num teste; `handlers/loyalty.py` não notifica |
 
-Submeter os dois é legítimo — o template fica pronto para quando o código ligar, e a
+Submeter é legítimo — o template fica pronto para quando o código ligar, e a
 aprovação leva 24-48h que não se quer pagar depois. Mas é bom saber que **mapear o flow deles
 não faz nada** até o evento passar a ser emitido, e que um teste de ponta a ponta neles vai
 dar silêncio, não falha.
@@ -644,7 +652,8 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `payment_reminder` | `pagamento_lembrete` | Utility |
 | `payment_expired` | `pagamento_expirado` | Utility |
 | `payment_failed` | `pagamento_falhou` | Utility |
-| `payment_refunded` | `reembolso_processado` | Utility 🆕 (não emitido ainda) |
+| `payment_refunded` | `reembolso_processado` | Utility 🆕 (emitido desde 13/10; corpo novo a submeter) |
+| `order_returned` | `pedido_devolvido` | Utility 🆕 (a submeter) |
 | `waitlist_available` | `fila_vaga_disponivel` | Utility |
 | `waitlist_released` | `fila_vaga_liberada` | Utility |
 | `loyalty_earned` | `pontos_fidelidade` | Utility 🆕 (não emitido ainda) |

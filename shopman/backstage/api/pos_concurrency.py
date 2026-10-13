@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from shopman.orderman.models import Session
 
 from shopman.backstage.constants import POS_CHANNEL_REF
+from shopman.backstage.projections.pos import tab_line_prices
 from shopman.shop.services.pos_intent import pos_session_revision as tab_revision
 
 
@@ -70,6 +71,9 @@ def tab_command(method):
                 response.data["line_authors"] = {
                     item.get("line_id"): (item.get("meta") or {}).get("pos_authorship", {}) for item in source.items
                 }
+                # O preço que cada linha COBRA agora: o desconto manual mexe nele no
+                # servidor, e a tela só o relia ao reabrir a comanda.
+                response.data["line_prices"] = tab_line_prices(source)
 
                 from shopman.shop.handlers._sse_emitters import _emit_backstage
 

@@ -29,6 +29,9 @@ class AlertSpec:
 ALERT_SPECS: dict[str, AlertSpec] = {
     # O iFood decide sozinho no fim do prazo dele (o aviso traz ``respond_by``).
     "ifood_negotiation_open": AlertSpec("iFood", "i-lucide-bike", "Cliente pediu cancelamento", 10),
+    # A loja pediu o cancelamento e o iFood recusou: o pedido volta a andar e o
+    # prazo do iFood continua correndo. Seguir ou tentar de novo, já.
+    "ifood_cancellation_refused": AlertSpec("iFood", "i-lucide-bike", "iFood recusou o cancelamento", 5),
     # Pedido novo parado sem aceite: no iFood, o próprio iFood cancela.
     "stale_new_order": AlertSpec("Pedidos", "i-lucide-clipboard-list", "Pedido novo sem aceite", 5),
     # Cartão autorizado: o Stripe decide sozinho no fim (o aviso traz ``respond_by``

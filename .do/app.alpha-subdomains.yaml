@@ -358,9 +358,12 @@ envs:
   type: GENERAL
 # Ordem e conteúdo copiados do vivo. O `on_requested_receipt` entrou pelo painel
 # em 08/09 — sem ele, pedir a nota impressa ou por e-mail não emitia nada.
+# ⚠️ O `intermediated_sale` (venda pelo iFood, ADR-035) está AQUI e AINDA NÃO no vivo:
+#    sem ele o iFood sem CPF não emite nota. Entra no spec vivo na janela do dono,
+#    junto do delta do go-live (docs/runbooks/go-live-delta-do-spec.md).
 - key: SHOPMAN_FISCAL_EMISSION_RESOLVER
   scope: RUN_TIME
-  value: 'shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment,shopman.shop.fiscal_resolvers.deferred_settlement,shopman.shop.fiscal_resolvers.on_requested_receipt'
+  value: 'shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment,shopman.shop.fiscal_resolvers.deferred_settlement,shopman.shop.fiscal_resolvers.on_requested_receipt,shopman.shop.fiscal_resolvers.intermediated_sale'
   type: GENERAL
 - key: STRIPE_CAPTURE_METHOD
   scope: RUN_TIME

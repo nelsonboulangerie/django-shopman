@@ -975,6 +975,10 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_ACTION_CONFIRM_RECEIVED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Recebi meu pedido")},
     },
+    # O link da TaOn para seguir o entregador, o mesmo do aviso de saída.
+    "TRACKING_ACTION_TRACK_COURIER": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Acompanhar o entregador")},
+    },
     "TRACKING_PROMISE_RETURNED_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pedido devolvido.")},
     },

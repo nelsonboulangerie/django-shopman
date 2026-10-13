@@ -81,6 +81,7 @@ const {
   courierBack,
   undoHandoff,
   undoReady,
+  dismissCourierReminder,
   assign,
   unassign,
   confirmMany,
@@ -1358,6 +1359,8 @@ function onAction(ref_: string, action: AffordanceRef) {
   else if (action === "equipment_back") equipmentBack(ref_);
   else if (action === "undo_handoff") undoHandoff(ref_);
   else if (action === "undo_ready") undoReady(ref_);
+  else if (action === "dismiss_courier_reminder")
+    void dismissCourierReminder(ref_);
 }
 
 // O interruptor do canal na coluna da Fila (G09): o MESMO diálogo de Canais, com
