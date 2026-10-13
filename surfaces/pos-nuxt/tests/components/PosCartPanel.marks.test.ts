@@ -69,12 +69,16 @@ describe("PosCartPanel — marcar sem modo", () => {
     expect(wrapper.findAll("[data-pos-line-marked]")).toHaveLength(2);
   });
 
-  it("as posições não mudam: Transferir no canto da quantidade, Remover, Desconto e Observação no mesmo lugar", async () => {
+  it("as posições não mudam: Remover, Desconto e Observação no mesmo lugar; Transferir segue o foco no pé, sem repetir", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     const cells = () => wrapper.findAll("[data-pos-controls-block] [data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"));
-    expect(cells()).toEqual(["qty", "remove", "discount", "note", "fire", "split"]);
+    expect(cells()).toEqual(["qty", "remove", "discount", "note", "fire", "transfer"]);
     await mark(wrapper, "L-PAO");
-    expect(cells()).toEqual(["move", "remove", "discount", "note", "fire", "split"]);
+    expect(cells()).toEqual(["remove", "discount", "note", "fire", "transfer"]);
+    expect(wrapper.findAll("[data-pos-tab-transfer], [data-pos-batch-move]")).toHaveLength(1);
+    expect(wrapper.find("[data-pos-tab-transfer]").text()).toContain("Transferir 2 marcadas");
+    await wrapper.find("[data-pos-tab-transfer]").trigger("click");
+    expect(wrapper.emitted("move")?.[0]).toEqual([["L-PAO", "L-CAFE"], "transfer"]);
   });
 
   it("desmarcar até sobrar uma volta ao editor dela", async () => {
@@ -230,9 +234,20 @@ describe("PosCartPanel — o pé segue o foco; o Pagamento não", () => {
 });
 
 describe("PosCartPanel — a porta da comanda e as do raro", () => {
-  it("o cabeçalho tem 'Comanda ⋯' (Transferir itens, Juntar, Liberar); some na edição de encomenda", async () => {
+  it("o cabeçalho tem 'Comanda ⋯' (Juntar, Liberar; Transferir mora no pé); some na edição de encomenda", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     expect(wrapper.find("[data-pos-tab-menu]").exists()).toBe(true);
+    expect(wrapper.find("[data-pos-tab-menu]").attributes("aria-label")).toBe("Ações da comanda: juntar, liberar");
+    // Na folha que paga direto (tablet, celular) não há pé: Transferir segue no ⋯.
+    const sheet = await mountSuspended(PosCartPanel, {
+      props: props({ sheet: true, quickPayments: [{ ref: "pix", label: "PIX", icon: "i-lucide-qr-code" }] }),
+    });
+    await sheet.find("[data-operator-action-bar-secondary]").trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.body.querySelector("[data-pos-sheet-pay]")).not.toBeNull();
+    expect(document.body.querySelector("[data-pos-tab-transfer]")).toBeNull();
+    expect(document.body.querySelector("[data-pos-tab-menu]")?.getAttribute("aria-label")).toBe("Ações da comanda: transferir itens, juntar, liberar");
+    sheet.unmount();
     const editing = await mountSuspended(PosCartPanel, { props: props({ primaryLabel: "Salvar alterações", hideMove: true }) });
     expect(editing.find("[data-pos-tab-menu]").exists()).toBe(false);
   });
@@ -286,14 +301,22 @@ describe("PosCartPanel — sem conexão", () => {
   });
 });
 
-describe("PosCartPanel — envio automático com o quando", () => {
-  it("ligado: o cabeçalho diz quando vai, e a linha diz que vai sozinha", async () => {
+describe("PosCartPanel — Envio: Auto ou Manual", () => {
+  it("ligado: o cabeçalho diz 'Envio: Auto' (o quando na dica), e a linha diz que vai sozinha", async () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ autoFire: true, autoFireSkus: ["PAO"], kitchenStations: { PAO: "Forno", CAFE: "Bar" } }),
     });
-    expect(wrapper.find("[data-pos-auto-fire]").attributes("aria-label")).toBe("envio automático: ao sair ou após 90 s parada");
+    const auto = wrapper.find("[data-pos-auto-fire]");
+    expect(auto.attributes("aria-label")).toBe("Envio: Auto");
+    expect(auto.attributes("title")).toContain("90 s");
     expect(wrapper.text()).toContain("vai sozinho");
     expect(wrapper.text()).toContain("vai à cozinha");
+  });
+  it("desligado: 'Envio: Manual', nunca 'desligado'", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ autoFire: false }) });
+    const auto = wrapper.find("[data-pos-auto-fire]");
+    expect(auto.attributes("aria-label")).toBe("Envio: Manual");
+    expect(wrapper.find("[data-pos-ticket-header]").text()).not.toContain("desligado");
   });
 });
 

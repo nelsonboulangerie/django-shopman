@@ -44,10 +44,14 @@ describe("ticketColumn — o pé segue o foco", () => {
 });
 
 describe("ticketColumn — a cozinha em palavra, com o quando", () => {
-  it("diz quando o envio automático manda, e o motivo sem conexão", () => {
+  it("diz o modo do envio (Auto ou Manual), e o motivo sem conexão", () => {
     expect(kitchenStateView({ unfired: 4, fired: 1, autoFire: true, offline: false })).toMatchObject({
       counts: "4 a enviar · 1 na cozinha",
-      auto: { full: "envio automático: ao sair ou após 90 s parada", short: "automático: ao sair" },
+      auto: { full: "Envio: Auto", short: "Envio: Auto" },
+      linksToSettings: true,
+    });
+    expect(kitchenStateView({ unfired: 4, fired: 0, autoFire: false, offline: false })).toMatchObject({
+      auto: { full: "Envio: Manual", short: "Envio: Manual" },
       linksToSettings: true,
     });
     expect(kitchenStateView({ unfired: 3, fired: 0, autoFire: true, offline: true })).toMatchObject({

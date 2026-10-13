@@ -157,8 +157,6 @@ const emit = defineEmits<{
   requestTab: [];
   /** Pagar direto na folha por um meio (PIX, Maquininha): abre o Pagamento já nele. */
   pay: [method: string];
-  /** Dividir a conta: o modal do Pagamento, aberto a partir da comanda. */
-  split: [];
   /** O interruptor do envio automático mora por estação, em Ajustes › Envio à cozinha. */
   autoFireSettings: [];
 }>();
@@ -519,12 +517,24 @@ const [DefineControlGrid, ReuseControlGrid] = createReusableTemplate<{ rows: Con
 // · O bloco da LINHA, só com uma linha aberta no editor (mouse e teclado):
 //   quantidade | Remover; Desconto | Observação.
 // · O bloco da COMANDA, sempre, numa posição fixa logo acima do Pagamento (não pula
-//   quando o editor abre ou fecha): Enviar à cozinha | Dividir. As duas na mesma
-//   linha porque são da comanda e às vezes são as únicas.
+//   quando o editor abre ou fecha): Enviar à cozinha | Transferir. As duas na mesma
+//   linha porque são da comanda e às vezes são as únicas. Dividir conta mora SÓ no
+//   Pagamento (dono, 13/10/2026): é pagar em partes, e a venda não paga.
 // Célula sem par ocupa as duas colunas: sem buraco.
-type ControlCell = "qty" | "move" | "remove" | "fire" | "discount" | "split" | "note";
+type ControlCell = "qty" | "move" | "remove" | "fire" | "discount" | "transfer" | "note";
 const lineControlsInGrid = computed(() => Boolean(activeItem.value) && editorVisible.value && !touchEditor.value);
-const canSplit = computed(() => !props.primaryLabel && props.items.length > 0);
+// O Transferir do pé é o mesmo ato do F10: com marcadas, só elas; sem marcas, o diálogo
+// abre para escolher. Só numa comanda aberta, e nunca na edição de encomenda.
+const canTransferTab = computed(() => canMove.value && props.hasOpenTab && !props.primaryLabel);
+// A folha aberta do tablet e do celular troca o pé pelos meios de pagar direto: lá o
+// Transferir não tem o pé, e continua no ⋯ do cabeçalho (o único lugar dele ali).
+const sheetPayFoot = computed(() => Boolean(props.sheet && props.quickPayments?.length && !props.primaryLabel));
+const footTransfer = computed(() => canTransferTab.value && !sheetPayFoot.value);
+// Com marcadas, o Transferir do pé segue o foco como o Enviar ("Transferir 3 marcadas").
+const transferLabel = computed(() => {
+  const n = selectMode.value ? selection.value.lineIds.length : 0;
+  return n ? `Transferir ${n} ${n === 1 ? "marcada" : "marcadas"}` : "Transferir";
+});
 const lineRows = computed<ControlCell[][]>(() => {
   if (!lineControlsInGrid.value) return [];
   return lineAdjustmentsBlocked.value ? [["qty", "remove"]] : [["qty", "remove"], ["discount", "note"]];
@@ -542,17 +552,18 @@ const keyboardHint = computed<string[]>(() => {
   if (selectMode.value) return ["Espaço marca", "Shift clique: intervalo", "Esc desmarca"];
   return ["Digite a quantidade", "Del remove", "↑↓ troca a linha"];
 });
-// O BLOCO DE N, nas MESMAS posições do bloco de 1 (posição fixa por verbo): só o canto
-// da Quantidade (que é de uma linha) dá lugar a Transferir. Remover no alto à direita,
-// Desconto e Observação embaixo.
+// O BLOCO DE N, nas MESMAS posições do bloco de 1 (posição fixa por verbo): o canto da
+// Quantidade (que é de uma linha) sai. Com o Transferir no pé (dono, 13/10), ele segue o
+// foco ali, como o Enviar, e o bloco não repete o botão: Remover ocupa a linha de cima.
+// Na folha que paga direto (sem o pé), o canto continua sendo do Transferir.
 const batchRows = computed<ControlCell[][]>(() => {
-  const top: ControlCell[] = canMove.value && props.hasOpenTab ? ["move", "remove"] : ["remove"];
+  const top: ControlCell[] = canMove.value && props.hasOpenTab && !footTransfer.value ? ["move", "remove"] : ["remove"];
   return lineAdjustmentsBlocked.value ? [top] : [top, ["discount", "note"]];
 });
 const tabRows = computed<ControlCell[][]>(() => {
   const row: ControlCell[] = [];
   if (fireBar.value.visible) row.push("fire");
-  if (canSplit.value) row.push("split");
+  if (footTransfer.value) row.push("transfer");
   return row.length ? [row] : [];
 });
 // O rótulo que cabe (`OperatorButton`/`OperatorFitGroup` do kit): as ações da grade
@@ -950,8 +961,10 @@ function runConfirm() {
 
 // ── As portas do raro (o ⋯ único da suíte, `OperatorMoreMenu`) ──────────────────────
 // "Ações da comanda" no cabeçalho: o que age na comanda INTEIRA sem marcar nada
-// (Transferir itens, Juntar com outra comanda, Liberar). Sem conexão, apagado com o motivo
-// escrito sob o rótulo (o toque não tem dica de ponteiro).
+// (Juntar com outra comanda, Liberar). Transferir saiu daqui para o pé, no lugar do
+// Dividir conta (dono, 13/10/2026); só fica aqui na folha que paga direto, sem o pé.
+// Sem conexão, apagado com o motivo escrito sob o
+// rótulo (o toque não tem dica de ponteiro).
 const OFFLINE_REASON = "Volta com a conexão.";
 type MoreItem = Record<string, unknown>;
 const tabMenuItems = computed<MoreItem[][]>(() => {
@@ -960,14 +973,13 @@ const tabMenuItems = computed<MoreItem[][]>(() => {
   const groups: MoreItem[][] = [];
   if (canMove.value) {
     groups.push([
-      {
+      ...(sheetPayFoot.value ? [{
         label: "Transferir itens",
         icon: "i-lucide-arrow-right-left",
-        kbds: coarsePointer.value ? undefined : ["F10"],
         disabled: offline || !props.items.length || props.loading,
         reason,
         onSelect: () => emit("move", selectMode.value ? selection.value.lineIds : undefined, "transfer"),
-      },
+      }] : []),
       {
         label: "Juntar com outra comanda",
         icon: "i-lucide-merge",
@@ -1602,21 +1614,24 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             data-pos-line-discount
             @click="toggleDiscount"
           />
-          <OperatorButton
-            v-else-if="cell === 'split'"
-            label="Dividir conta"
-            short-label="Dividir"
-            icon="i-lucide-split"
-            :size="controlSize"
-            color="neutral"
-            variant="outline"
-            block
-            class="h-full justify-center"
-            title="Dividir a conta entre pessoas (abre no Pagamento)"
-            :disabled="!items.length || loading || saving"
-            data-pos-split
-            @click="$emit('split')"
-          />
+          <div v-else-if="cell === 'transfer'" class="op-fit-scope h-full w-full">
+            <OperatorButton
+              :label="transferLabel"
+              short-label="Transferir"
+              icon="i-lucide-arrow-right-left"
+              :size="controlSize"
+              color="neutral"
+              variant="outline"
+              block
+              class="h-full justify-center"
+              :shortcut="coarsePointer ? undefined : 'F10'"
+              aria-keyshortcuts="F10"
+              :disabled="!items.length || loading || offline"
+              :title="offline ? 'Transferir volta com a conexão' : selectMode ? 'Transferir as marcadas para outra comanda (F10)' : 'Transferir itens para outra comanda ou para uma nova (F10)'"
+              data-pos-tab-transfer
+              @click="$emit('move', selectMode ? selection.lineIds : undefined, 'transfer')"
+            />
+          </div>
           <OperatorButton
             v-else-if="cell === 'note' && (activeItem || selectMode)"
             label="Observação"
@@ -1656,7 +1671,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             <OperatorMoreMenu
               v-if="showTabMenu"
               :items="tabMenuItems"
-              label="Ações da comanda: transferir itens, juntar, liberar"
+              :label="canMove ? (sheetPayFoot ? 'Ações da comanda: transferir itens, juntar, liberar' : 'Ações da comanda: juntar, liberar') : 'Ações da comanda: liberar'"
               :size="controlSize"
               class="shrink-0"
               data-pos-tab-menu
@@ -1687,7 +1702,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                 color="neutral"
                 variant="ghost"
                 class="h-auto min-h-0 rounded-sm p-0 op-micro font-normal text-muted-foreground underline-offset-2 hover:bg-transparent hover:text-foreground hover:underline"
-                :title="autoFire ? 'Envio automático ligado na estação destes itens: vão ao sair da comanda ou depois de 90 s sem mudança (Ajustes › Envio à cozinha)' : 'Envio automático desligado (Ajustes › Envio à cozinha)'"
+                :title="autoFire ? 'Envio: Auto. Os itens destas estações vão sozinhos ao sair da comanda ou depois de 90 s sem mudança (Ajustes › Envio à cozinha)' : 'Envio: Manual. Só vai no Enviar à cozinha (Ajustes › Envio à cozinha)'"
                 :aria-label="kitchenState.auto.full"
                 data-pos-auto-fire
                 :data-auto-fire="autoFire ? 'on' : 'off'"
@@ -2192,12 +2207,13 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
       </section>
 
 
-      <!-- Z4 · O PÉ, sempre o mesmo e com a mesma altura: Enviar | Dividir conta (o Enviar
-           segue o foco: com marcadas, "Enviar 3 marcadas") e o Pagamento, que é SEMPRE a
+      <!-- Z4 · O PÉ, sempre o mesmo e com a mesma altura: Enviar | Transferir (os dois
+           seguem o foco: com marcadas, "Enviar 3 marcadas" e o Transferir leva só elas)
+           e o Pagamento, que é SEMPRE a
            comanda inteira (dinheiro não muda de sentido por causa de uma marca). -->
       <!-- FOLHA ABERTA (v4 tablet b): pagar direto daqui, pelos meios eletrônicos que
            o dispositivo leva à mesa. "Outras formas" abre o Pagamento de sempre. -->
-      <div v-if="sheet && quickPayments?.length && !primaryLabel" class="shrink-0 border-t border-border p-3" data-pos-sheet-pay>
+      <div v-if="sheetPayFoot" class="shrink-0 border-t border-border p-3" data-pos-sheet-pay>
         <div class="mb-2 flex items-baseline gap-2">
           <span class="op-label text-muted-foreground">Pagar</span>
           <strong v-if="totalConfirmed" class="text-3xl font-semibold tnum" data-pos-sheet-pay-total>{{ totalText }}</strong>
