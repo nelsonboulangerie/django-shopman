@@ -3458,7 +3458,7 @@ def _stamp_engine_prices(payload: dict, *, channel: Channel, config: ChannelConf
             )
             priced = {str(line.get("line_id") or ""): copy.deepcopy(line) for line in (session.items or [])}
             raise _DiscardPricingProbe
-    except _DiscardPricingProbe:
+    except _DiscardPricingProbe:  # silêncio-deliberado: é o desfazer da sonda, não um erro
         pass
     except (OrderValidationError, OrderCommitError, SessionError):
         logger.info("pos_pricing_probe_refused channel=%s", channel.ref, exc_info=True)
