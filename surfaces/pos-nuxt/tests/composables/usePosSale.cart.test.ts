@@ -356,6 +356,14 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
     h.handles.dispose();
   });
 
+  it("submitMove leva a mesa livre escolhida no Transferir (dono, M=1)", async () => {
+    const h = openTabSale();
+    await h.sale.submitMove({ mode: "split", lineIds: ["L1"], toTabRef: "M1-2", seatingSpotRef: "M5" });
+    const call = actionCall.mock.calls.find((c) => String(c[0]).includes("/tabs/move-lines/"))!;
+    expect(call[1]!.body).toMatchObject({ to_tab_ref: "M1-2", seating_spot_ref: "M5" });
+    h.handles.dispose();
+  });
+
   it("a origem que ficou vazia é liberada sozinha: a frase diz isso e o Desfazer reabre a comanda", async () => {
     const h = openTabSale();
     actionCall.mockResolvedValueOnce({ source_closed: true, source: null });

@@ -89,4 +89,23 @@ describe("PosMoveLinesDialog — Transferir", () => {
     expect(document.body.querySelector("[data-pos-move-destination-state]")?.textContent).toContain("Use um hífen, por exemplo 13-2.");
     expect(cta().disabled).toBe(true);
   });
+
+  it("mesa: a ocupada leva à comanda dela, a livre abre a nova já nela (dono, M=1)", async () => {
+    const spots = [
+      { ref: "M4", label: "Mesa 4", short_label: "M4", area: "Salão", kind: "table" },
+      { ref: "M5", label: "Mesa 5", short_label: "M5", area: "Salão", kind: "table" },
+    ];
+    const tabs = [{ ...otherTabs[0], seating_spot_ref: "M4" }];
+    const wrapper = await openDialog({ preselected: ["L1"], otherTabs: tabs, seatingSpots: spots });
+    input().value = "Mesa 4";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(cta().textContent).toContain("Levar 2 itens para a Mesa 4 (#12)");
+    (document.body.querySelector('[data-pos-move-spot="M5"]') as HTMLButtonElement).click();
+    await wrapper.vm.$nextTick();
+    expect(cta().textContent).toContain("Separar 2 itens na comanda nova 13-2 (Mesa 5)");
+    cta().click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("submit")?.[0]).toEqual([{ mode: "split", lineIds: ["L1"], toTabRef: "13-2", seatingSpotRef: "M5" }]);
+  });
 });

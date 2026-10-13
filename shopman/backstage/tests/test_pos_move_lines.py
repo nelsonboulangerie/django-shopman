@@ -233,6 +233,42 @@ class POSMoveTabLinesTests(TestCase):
         self.assertEqual(transferred_from_label({"transferred_from": {"tab_display": "Mesa 6"}}), "Transferida da comanda Mesa 6")
         self.assertEqual(transferred_from_label({}), "")
 
+    def test_new_tab_on_a_free_table_is_born_seated(self) -> None:
+        # Dono, M=1 (13/10/2026): a mesa livre como destino abre a comanda nova já nela.
+        from shopman.orderman.models import SessionEvent
+
+        source = self._open_with_item("00001007", sku="POS-A", qty=1)
+        result = pos_service.move_pos_tab_lines(
+            channel_ref="pdv",
+            from_session_key=source.session_key,
+            to_tab_ref="1007-2",
+            seating_spot_ref="M4",
+            seating_spot_label="Mesa 4",
+            line_ids=[source.items[0]["line_id"]],
+            actor="pos:alice", operator_username="alice",
+        )
+        self.assertEqual(result.target.data["seating_spot_ref"], "M4")
+        self.assertEqual(build_open_tab(result.target)["seating_spot_ref"], "M4")
+        self.assertTrue(SessionEvent.objects.filter(session_key=result.target.session_key, type="tab_seated").exists())
+
+    def test_occupied_table_is_refused_with_the_comanda_that_holds_it(self) -> None:
+        holder = self._open_with_item("00001008", sku="POS-B", qty=1)
+        Session.objects.filter(pk=holder.pk).update(data={**holder.data, "seating_spot_ref": "M4"})
+        source = self._open_with_item("00001007", sku="POS-A", qty=1)
+        with self.assertRaises(PosIntentError) as raised:
+            pos_service.move_pos_tab_lines(
+                channel_ref="pdv",
+                from_session_key=source.session_key,
+                to_tab_ref="1007-2",
+                seating_spot_ref="M4",
+                seating_spot_label="Mesa 4",
+                line_ids=[source.items[0]["line_id"]],
+                actor="pos:alice", operator_username="alice",
+            )
+        self.assertEqual(raised.exception.code, "seating_spot_in_use")
+        self.assertIn("Mesa 4 já está com a comanda", raised.exception.message)
+        self.assertFalse(Session.objects.filter(handle_ref="1007-2").exists())
+
     def test_split_ref_with_slash_is_refused_with_a_clear_message(self) -> None:
         source = self._open_with_item("00001007", sku="POS-A", qty=1)
         with self.assertRaises(PosIntentError) as raised:
