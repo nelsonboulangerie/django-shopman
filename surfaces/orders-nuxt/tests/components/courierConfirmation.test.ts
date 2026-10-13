@@ -102,3 +102,36 @@ describe('Chamar entregador pede um toque de confirmação', () => {
     } finally { wrapper.unmount(); }
   });
 });
+
+describe('chamada sem resposta da TaOn', () => {
+  const courier = { status: '', status_label: 'Sem resposta da TaOn', can_quote: false, can_dispatch: false,
+    can_dispatch_again: true, can_cancel: false, attempts_count: 0,
+    error: { message: 'A TaOn não respondeu à última chamada. Veja na central se a corrida abriu.', at: '' } } as CourierBlock;
+
+  it('o aviso traz o gesto curto "Chamar de novo", que emite uma vez', async () => {
+    const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch-again', enabled: true };
+    const wrapper = mount(Panel, { props: { courier, busy: false, dispatchAgainAction: action },
+      global: { stubs: { Icon: true } } });
+    try {
+      const alert = wrapper.get('[data-courier-no-answer]');
+      expect(alert.text()).toContain('A TaOn não respondeu à última chamada.');
+      expect(alert.text()).not.toContain('conferi');
+      const button = alert.findAll('button').find(item => item.text() === 'Chamar de novo')!;
+      await button.trigger('click');
+      expect(wrapper.emitted('dispatchAgain')).toHaveLength(1);
+      expect(wrapper.findAll('button').some(item => item.text() === 'Chamar entregador')).toBe(false);
+    } finally { wrapper.unmount(); }
+  });
+
+  it('bloqueado pela Action, não emite', async () => {
+    const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch-again', enabled: false, reason: 'Sem permissão para esta ação.' };
+    const wrapper = mount(Panel, { props: { courier, busy: false, dispatchAgainAction: action },
+      global: { stubs: { Icon: true } } });
+    try {
+      const button = wrapper.findAll('button').find(item => item.text() === 'Chamar de novo')!;
+      expect(button.attributes('disabled')).toBeDefined();
+      await button.trigger('click');
+      expect(wrapper.emitted('dispatchAgain')).toBeUndefined();
+    } finally { wrapper.unmount(); }
+  });
+});

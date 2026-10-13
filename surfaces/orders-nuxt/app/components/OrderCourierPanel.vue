@@ -17,8 +17,14 @@ const props = defineProps<{
   cancelAction?: Action;
   quoteAction?: Action;
   dispatchAction?: Action;
+  dispatchAgainAction?: Action;
 }>();
-const emit = defineEmits<{ quote: []; dispatch: []; cancel: [] }>();
+const emit = defineEmits<{
+  quote: [];
+  dispatch: [];
+  cancel: [];
+  dispatchAgain: [];
+}>();
 
 const steps = computed(() => courierSteps(props.courier.status));
 const tone = computed(() => courierTone(props.courier.status));
@@ -115,9 +121,35 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       </div>
 
       <div class="flex flex-col gap-3">
+        <!-- a TaOn não respondeu à última chamada: só ela trava chamar outra -->
+        <NuxtAlert
+          v-if="courier.can_dispatch_again"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-help"
+          :title="
+            courier.error?.message ||
+            'A TaOn não respondeu à última chamada.'
+          "
+          data-courier-no-answer
+        >
+          <template #actions>
+            <NuxtButton
+              type="button"
+              color="error"
+              variant="outline"
+              icon="i-lucide-refresh-cw"
+              label="Chamar de novo"
+              :disabled="busy || !dispatchAgainAction?.enabled"
+              :title="dispatchAgainAction?.reason || ''"
+              @click="emit('dispatchAgain')"
+            />
+          </template>
+        </NuxtAlert>
+
         <!-- falha terminal do despacho (Machine recusou / dados) -->
         <NuxtAlert
-          v-if="courier.error"
+          v-else-if="courier.error"
           color="error"
           variant="subtle"
           icon="i-lucide-triangle-alert"

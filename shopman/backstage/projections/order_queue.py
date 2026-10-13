@@ -1012,6 +1012,13 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             method="POST", idempotency="required",
             confirmation={"required": True, "description": _courier_dispatch_question(order)},
             payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+        extra_actions.append(Action(ref="courier-dispatch-again", kind="mutation", label="Chamar de novo",
+            enabled=authorized and courier_block["can_dispatch_again"],
+            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+                "" if courier_block["can_dispatch_again"] else "Não há chamada sem resposta da TaOn neste pedido."),
+            method="POST", idempotency="required",
+            confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
+            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
         extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Solicitar cancelamento da corrida",
             enabled=authorized and courier_block["can_cancel"],
             reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
@@ -1138,6 +1145,15 @@ def _courier_dispatch_question(order: Order) -> str:
             "A corrida é cobrada da casa.")
 
 
+#: A última chamada à TaOn ficou sem resposta: não se sabe se a corrida abriu lá.
+COURIER_NO_ANSWER_MESSAGE = "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu."
+
+#: A confirmação do "Chamar de novo", uma frase: o que aconteceu e o que conferir antes.
+COURIER_DISPATCH_AGAIN_CONFIRMATION = (
+    "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo."
+)
+
+
 def _courier_block(order: Order) -> dict | None:
     """Read-model da corrida (Order.data['courier']) + ações possíveis.
 
@@ -1196,7 +1212,7 @@ def _courier_block(order: Order) -> dict | None:
         error = block.get("error") if isinstance(block.get("error"), dict) else None
 
         if unresolved is not None:
-            error = {"message": "Despacho sem resultado confirmado. Confira a solicitação na central antes de abrir outra corrida.", "at": unresolved.updated_at.isoformat()}
+            error = {"message": COURIER_NO_ANSWER_MESSAGE, "at": unresolved.updated_at.isoformat()}
         if cancellation is not None:
             cancel_state = (cancellation.payload or {}).get("cancel_attempt", {}).get("state")
             cancellation_pending = cancellation.status in {"queued", "running"} or cancel_state in {"started", "unknown", "accepted"}
@@ -1209,7 +1225,7 @@ def _courier_block(order: Order) -> dict | None:
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
-            "status_label": "Despacho sem resultado confirmado" if unresolved is not None else COURIER_STATUS_LABELS.get(ride_status, ""),
+            "status_label": "Sem resposta da TaOn" if unresolved is not None else COURIER_STATUS_LABELS.get(ride_status, ""),
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
             "tracking_url": str(block.get("tracking_url") or ""),
@@ -1228,6 +1244,7 @@ def _courier_block(order: Order) -> dict | None:
             "error": error,
             "can_quote": can_quote(order),
             "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None,
+            "can_dispatch_again": adapter_on and house and not active and order_can_ride and unresolved is not None,
             "can_cancel": adapter_on and active and ride_status in CANCELLABLE_STATUSES and not cancellation_pending,
         }
     except Exception:
