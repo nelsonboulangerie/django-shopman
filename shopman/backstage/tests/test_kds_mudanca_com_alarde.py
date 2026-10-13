@@ -17,7 +17,9 @@ Estes testes passam pelos caminhos canônicos do servidor (``pos_service`` e
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
+from unittest import mock
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -33,6 +35,12 @@ from shopman.backstage.projections.pos import build_open_tab
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import kds as kds_core
 from shopman.shop.services import pos as pos_service
+
+# Meio-dia da loja, devolvido em UTC como o now() real. O quadro guarda o
+# cancelado até o fim do turno (dia local); sem relógio congelado, "meia hora
+# atrás" cai no dia anterior quando a suíte roda entre 00:00 e 00:30 de
+# Brasília (CI run 38340630204, 03:29 UTC).
+_SHOP_NOON = datetime(2026, 10, 10, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo")).astimezone(UTC)
 
 
 class KDSChangesAreLoudTests(TestCase):
@@ -156,7 +164,8 @@ class KDSChangesAreLoudTests(TestCase):
         changes = [(c.kind, c.text) for t in self._board().tickets for c in t.changes]
         self.assertEqual(changes, [("note", "Observação nova em FIRE-A: sem glúten")])
 
-    def test_released_tab_becomes_its_own_card_and_does_not_expire(self) -> None:
+    @mock.patch("django.utils.timezone.now", return_value=_SHOP_NOON)
+    def test_released_tab_becomes_its_own_card_and_does_not_expire(self, _now) -> None:
         key = self._fired_tab()
         pos_service.clear_pos_tab(channel_ref="pdv", session_key=key, operator_username="alice")
 
