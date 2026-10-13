@@ -75,13 +75,14 @@ def test_cancel_order_delegates(monkeypatch):
     monkeypatch.setattr(orders.operator_orders, "cancel_order", cancel_order)
 
     orders.cancel_order(
-        "order", reason="cliente pediu", actor="admin:ana", customer_note="cliente pediu"
+        "order", reason="O cliente pediu", actor="admin:ana", reason_key="customer_request", internal_note="ligou às 10h"
     )
 
     cancel_order.assert_called_once_with(
         "order",
-        reason="cliente pediu",
+        reason="O cliente pediu",
         actor="admin:ana",
         cancellation_code="",
-        customer_note="cliente pediu",
+        reason_key="customer_request",
+        internal_note="ligou às 10h",
     )

@@ -2265,9 +2265,23 @@ class OrderCancelView(_OrderActionBase):
         order, err = self._get_order(ref)
         if err:
             return err
-        operator_reason = str(request.data.get("reason") or "").strip()
-        reason = operator_reason or "Cancelado pelo operador"
+        from shopman.shop.services import cancel_reasons
+
+        # O motivo é OBRIGATÓRIO e vem da lista única (``cancel_reasons``): o
+        # cliente lê o texto revisado da chave, nunca o que o operador digitou.
+        # A observação livre é interna. No iFood o motivo é o código dele
+        # (``cancellation_code`` + a descrição em ``reason``), e a chave é opcional.
+        reason_key = str(request.data.get("reason_key") or "").strip()
+        internal_note = str(request.data.get("internal_note") or "").strip()
         code = str(request.data.get("cancellation_code") or "").strip()
+        marketplace = order.channel_ref == "ifood"
+        problem = cancel_reasons.validation_message(reason_key) if (reason_key or not marketplace) else ""
+        if problem:
+            return Response({"detail": problem, "field": "reason_key", "errors": {"reason_key": [problem]}}, status=400)
+        if marketplace:
+            reason = str(request.data.get("reason") or "").strip() or "Cancelado pelo operador"
+        else:
+            reason = cancel_reasons.cancel_reason(reason_key).label
         prepared = {}
 
         def prepare():
@@ -2309,11 +2323,15 @@ class OrderCancelView(_OrderActionBase):
 
         def execute(base):
             orders_service.cancel_order(order, reason=reason, actor=_actor(request),
-                cancellation_code=code, customer_note=operator_reason, expected_revision=base,
+                cancellation_code=code, reason_key=reason_key, internal_note=internal_note, expected_revision=base,
                 expected_authority_revision=prepared["authority"], prepared_identity=prepared["identity"])
 
         # Credentials are validated transiently; they are never fingerprinted or retained.
-        return self._context_response(request, order, "cancel", {"reason": operator_reason, "cancellation_code": code}, execute, prepare=prepare)
+        return self._context_response(
+            request, order, "cancel",
+            {"reason_key": reason_key, "internal_note": internal_note, "reason": reason, "cancellation_code": code},
+            execute, prepare=prepare,
+        )
 
 
 @extend_schema_view(

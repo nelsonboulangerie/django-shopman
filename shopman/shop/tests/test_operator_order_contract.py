@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.test import TestCase
 from shopman.orderman.models import Directive, Order
 
+from shopman.shop.services.cancel_reasons import cancel_reason
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.operator_orders import cancel_order, reject_order
 
@@ -103,47 +104,58 @@ class CancellationReasonReachesCustomerTests(TestCase):
             )
         )
 
-    def test_operator_cancel_with_reason_carries_it_to_the_customer(self) -> None:
+    def test_operator_cancel_sends_the_reviewed_text_of_the_reason_key(self) -> None:
         order = _order("CONTRACT-CANCEL-REASON", Order.Status.PREPARING)
 
         with self.captureOnCommitCallbacks(execute=True):
             cancel_order(
                 order,
-                reason="Item indisponível no momento",
+                reason="Acabou um item",
                 actor="operator:ana",
-                customer_note="Item indisponível no momento",
+                reason_key="out_of_stock",
+                internal_note="Faltou farinha",
             )
 
         order.refresh_from_db()
-        # Customer-facing note is stored separately from the audit reason.
-        self.assertEqual(order.data["cancellation_note"], "Item indisponível no momento")
-        notes = self._cancelled_notifications(order.ref)
-        self.assertEqual(len(notes), 1)
-        self.assertEqual(notes[0].payload.get("reason"), "Item indisponível no momento")
-
-    def test_operator_cancel_without_reason_stays_generic(self) -> None:
-        order = _order("CONTRACT-CANCEL-NOREASON", Order.Status.PREPARING)
-
-        with self.captureOnCommitCallbacks(execute=True):
-            cancel_order(order, reason="Cancelado pelo operador", actor="operator:ana")
-
-        order.refresh_from_db()
+        self.assertEqual(order.data["cancellation_reason_key"], "out_of_stock")
+        self.assertEqual(order.data["cancellation_internal_note"], "Faltou farinha")
         self.assertNotIn("cancellation_note", order.data)
         notes = self._cancelled_notifications(order.ref)
         self.assertEqual(len(notes), 1)
-        self.assertIsNone(notes[0].payload.get("reason"))
+        self.assertEqual(notes[0].payload["status_note"], cancel_reason("out_of_stock").customer_text)
+        self.assertNotIn("Faltou farinha", str(notes[0].payload))
 
-    def test_machine_cancellation_code_never_leaks_to_customer(self) -> None:
-        # Timeout/self-cancel paths write a machine code to cancellation_reason but
-        # no customer note — the customer must not see "pix_timeout".
-        order = _order("CONTRACT-CANCEL-CODE", Order.Status.NEW)
+    def test_operator_cancel_rejects_a_key_outside_the_list(self) -> None:
+        order = _order("CONTRACT-CANCEL-BADKEY", Order.Status.PREPARING)
 
-        with self.captureOnCommitCallbacks(execute=True):
-            cancel(order, reason="pix_timeout", actor="system")
+        with self.assertRaises(ValueError):
+            cancel_order(order, reason="x", actor="operator:ana", reason_key="acabou")
 
-        notes = self._cancelled_notifications(order.ref)
-        self.assertEqual(len(notes), 1)
-        self.assertIsNone(notes[0].payload.get("reason"))
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.PREPARING)
+
+    def test_machine_cancellations_get_a_key_and_never_leak_the_code(self) -> None:
+        # Os caminhos automáticos gravam um código de máquina em cancellation_reason;
+        # o cliente lê o texto da chave correspondente, nunca "pix_timeout".
+        cases = {
+            "payment_timeout": "payment_not_confirmed",
+            "pix_timeout": "payment_not_confirmed",
+            "customer_requested": "customer_request",
+            "pos_operator": "other",
+        }
+        for machine_reason, key in cases.items():
+            with self.subTest(machine_reason=machine_reason):
+                order = _order(f"CONTRACT-CANCEL-{machine_reason}", Order.Status.NEW)
+
+                with self.captureOnCommitCallbacks(execute=True):
+                    cancel(order, reason=machine_reason, actor="system")
+
+                order.refresh_from_db()
+                self.assertEqual(order.data["cancellation_reason_key"], key)
+                notes = self._cancelled_notifications(order.ref)
+                self.assertEqual(len(notes), 1)
+                self.assertEqual(notes[0].payload["status_note"], cancel_reason(key).customer_text)
+                self.assertNotIn(machine_reason, str(notes[0].payload.get("status_note")))
 
     def test_reject_does_not_also_send_a_generic_cancelled_notification(self) -> None:
         # reject_order queues order_rejected (with the reason). The CANCELLED

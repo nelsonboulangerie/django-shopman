@@ -151,8 +151,22 @@ class AwaitingWorkOrderProjection:
 
 
 @dataclass(frozen=True)
+class CancelReasonProjection:
+    """Um motivo de cancelar da lista única (``shop/services/cancel_reasons.py``).
+
+    ``key`` é o que a tela devolve no cancelar; ``label`` é o que o operador
+    escolhe; ``customer_text`` é a frase que o cliente vai ler, mostrada na hora
+    da escolha para o operador saber o que sai.
+    """
+
+    key: str
+    label: str
+    customer_text: str
+
+
+@dataclass(frozen=True)
 class CancellationPresetGroupProjection:
-    """Motivos de recusa/cancelamento sob um cabeçalho (``label`` vazio = sem cabeçalho)."""
+    """Motivos de recusa sob um cabeçalho (``label`` vazio = sem cabeçalho)."""
 
     label: str
     presets: tuple[str, ...]
@@ -601,6 +615,9 @@ class OperatorOrderProjection:
     gift_message: str
     gift_hide_values: bool
     cancellation_presets: tuple[CancellationPresetGroupProjection, ...]
+    # Os motivos de CANCELAR (lista única, chave estável). Os presets acima
+    # ficam para a recusa.
+    cancel_reasons: tuple[CancelReasonProjection, ...]
     kitchen_note_tags: tuple[str, ...]
     # Quem é este cliente (WP-360): recorrência, recência, ticket, favorito e o
     # que o cadastro sabe. ``None`` quando o pedido não tem cliente identificado
@@ -981,9 +998,10 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             # A prova de envio do link fica (é leitura); o reenvio é do Gestor.
             payment_link_notice=_payment_link_fields(order, method).get("payment_link_notice", ""),
             counter=preorders.build_counter_block(order, user=user),
-            # O cancelar do balcão usa os MESMOS motivos prontos do Gestor (decisão
-            # do dono, P7 do redesenho das Encomendas): a lista é uma só, no Admin.
+            # O cancelar do balcão usa os MESMOS motivos do Gestor: a lista é uma
+            # só, no backend (``cancel_reasons``).
             cancellation_presets=_cancellation_presets(),
+            cancel_reasons=_cancel_reasons(),
         )
 
     bloqueio = operator_orders.gestor_advance_block(order)
@@ -1058,6 +1076,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         advance_block_reason=block_reason,
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         cancellation_presets=_cancellation_presets(),
+        cancel_reasons=_cancel_reasons(),
         kitchen_note_tags=_kitchen_note_tags(),
         courier=courier_block,
         **_courier_change_fields(order),
@@ -1255,11 +1274,21 @@ def _courier_block(order: Order) -> dict | None:
         return None
 
 
+def _cancel_reasons() -> tuple[CancelReasonProjection, ...]:
+    from shopman.shop.services.cancel_reasons import OPERATOR_CANCEL_REASONS
+
+    return tuple(
+        CancelReasonProjection(key=r.key, label=r.label, customer_text=r.customer_text)
+        for r in OPERATOR_CANCEL_REASONS
+    )
+
+
 def _cancellation_presets() -> tuple[CancellationPresetGroupProjection, ...]:
-    """Store-configured reject/cancel justification presets (Admin/Unfold), grouped.
+    """Store-configured REJECT justification presets (Admin/Unfold), grouped.
 
     The operator injects one with a tap in the gestor; the chosen text is sent to
-    the customer in the cancellation notification. Read from the Shop singleton;
+    the customer in the rejection notification. Cancelling uses the canonical
+    ``cancel_reasons`` list instead. Read from the Shop singleton;
     never fails the projection. Order is the stored order: groups appear where
     their first preset is, presets keep their order inside the group. Presets
     without a group form groups with an empty ``label`` (no heading).

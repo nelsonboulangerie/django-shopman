@@ -839,7 +839,10 @@ class TestOnCancelled:
         mock_payment.refund.assert_called_once_with(order)
         mock_loyalty.revoke.assert_called_once_with(order, reason="cancelled")
         mock_loyalty.restore.assert_called_once_with(order, reason="cancelled")
-        mock_notification.send.assert_called_once_with(order, "order_cancelled")
+        mock_notification.send.assert_called_once_with(
+            order, "order_cancelled",
+            status_note="Cancelamos conforme você nos pediu.", reason_key="customer_request",
+        )
 
 
 class TestOnReturned:

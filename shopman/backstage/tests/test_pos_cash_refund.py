@@ -86,7 +86,7 @@ def test_cancelar_pelo_gestor_nao_devolve_o_dinheiro(counter, django_capture_on_
     intent_ref = order.data["payment"]["intent_ref"]
 
     with django_capture_on_commit_callbacks(execute=True):
-        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo")
+        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo", reason_key="customer_request")
 
     order.refresh_from_db()
     assert order.status == Order.Status.CANCELLED
@@ -106,7 +106,7 @@ def test_a_pendencia_aparece_para_quem_abrir_o_caixa_depois(counter, django_capt
     """O turno da venda fechou; quem abre a gaveta amanhã vê a devolução a fazer."""
     order = _sell(counter, "r2")
     with django_capture_on_commit_callbacks(execute=True):
-        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo")
+        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo", reason_key="customer_request")
     cash.close_shift(counter["shift"], counted_q=11200, actor=counter["operator"])
 
     tomorrow = cash.open_shift(operator=counter["operator"], float_q=5000)
@@ -121,7 +121,7 @@ def test_a_pendencia_aparece_para_quem_abrir_o_caixa_depois(counter, django_capt
 def test_devolver_grava_payman_e_livro_na_gaveta_de_quem_devolve(counter, django_capture_on_commit_callbacks):
     order = _sell(counter, "r3")
     with django_capture_on_commit_callbacks(execute=True):
-        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo")
+        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo", reason_key="customer_request")
 
     refunded = pos_service.refund_cash(operator=counter["operator"], order_ref=order.ref, manager_approval=_approval())
 
@@ -150,7 +150,7 @@ def test_devolver_exige_pin_de_gerente_e_venda_cancelada(counter):
 def test_devolver_duas_vezes_diz_que_nao_ha_pendencia(counter, django_capture_on_commit_callbacks):
     order = _sell(counter, "r5")
     with django_capture_on_commit_callbacks(execute=True):
-        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo")
+        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo", reason_key="customer_request")
     pos_service.refund_cash(operator=counter["operator"], order_ref=order.ref, manager_approval=_approval())
     with pytest.raises(POSError, match="pendente"):
         pos_service.refund_cash(operator=counter["operator"], order_ref=order.ref, manager_approval=_approval())
@@ -160,7 +160,7 @@ def test_devolver_duas_vezes_diz_que_nao_ha_pendencia(counter, django_capture_on
 def test_endpoint_de_devolucao(client, counter, django_capture_on_commit_callbacks):
     order = _sell(counter, "r6")
     with django_capture_on_commit_callbacks(execute=True):
-        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo")
+        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo", reason_key="customer_request")
     client.force_login(counter["operator"])
     from shopman.cashman.models import Terminal
 

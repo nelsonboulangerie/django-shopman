@@ -253,7 +253,8 @@ function applyNoteTag(tag: string) {
 
 // reject + cancel + settle dialogs. Reject/cancel share OrderReasonDialog, which is
 // marketplace-aware: for an iFood order it shows the provider's required coded reasons
-// (fetched live per order); other channels get the store presets + free text.
+// (fetched live per order); other channels cancel from the canonical reason list
+// (`cancel_reasons`) and reject from the store presets + free text.
 const dialog = ref<"" | "reject" | "cancel" | "settle" | "dispatch">("");
 const cashDrafts = useOrderCashDrafts();
 const settlementDraft = computed(
@@ -378,8 +379,10 @@ async function loadReasons() {
   }
 }
 
-// Store-configured justification presets (Admin/Unfold) for non-marketplace channels.
+// Store-configured REJECT presets (Admin/Unfold) for non-marketplace channels.
 const presets = computed(() => order.value?.cancellation_presets ?? []);
+// The canonical cancel reasons (one list, in the backend).
+const cancelReasons = computed(() => order.value?.cancel_reasons ?? []);
 
 async function openDialog(kind: "reject" | "cancel" | "settle" | "dispatch") {
   if (kind === "settle")
@@ -394,11 +397,13 @@ async function openDialog(kind: "reject" | "cancel" | "settle" | "dispatch") {
   }
 }
 
-// OrderReasonDialog emits the chosen (trimmed) reason + code; we apply the generic
-// fallback text and route to the right action, then reconcile.
+// OrderReasonDialog emits the chosen (trimmed) reason + code (+ the reason key when
+// cancelling outside iFood, where the text is the internal note); we route to the
+// right action, then reconcile.
 async function submitReason(payload: {
   reason: string;
   cancellationCode: string;
+  reasonKey: string;
 }) {
   let ok = false;
   if (dialog.value === "reject")
@@ -408,8 +413,9 @@ async function submitReason(payload: {
     );
   else if (dialog.value === "cancel")
     ok = await cancel(
-      payload.reason || "Cancelado pelo operador",
-      payload.cancellationCode,
+      payload.reasonKey
+        ? { reasonKey: payload.reasonKey, internalNote: payload.reason, reason: "", cancellationCode: "" }
+        : { reasonKey: "", internalNote: "", reason: payload.reason, cancellationCode: payload.cancellationCode },
     );
   if (ok) dialog.value = "";
 }
@@ -1178,8 +1184,8 @@ const outside = useOutsideStore(
       data-detail-thumb
     />
 
-    <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons or
-         store presets + free text) -->
+    <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons,
+         the canonical cancel list, or store presets + free text for reject) -->
     <OrderReasonDialog
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"
@@ -1188,6 +1194,7 @@ const outside = useOutsideStore(
       :marketplace="order?.channel_ref === 'ifood'"
       :reasons="reasons"
       :presets="presets"
+      :cancel-reasons="cancelReasons"
       :busy="busy"
       @dirty-change="reasonDirty = $event"
       @retry="loadReasons"

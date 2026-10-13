@@ -75,7 +75,7 @@ async function submitComment(note: string) {
 async function confirmReschedule(choice: { date: string; slot: string; reason: string }) {
   if (await actions.reschedule(choice)) rescheduleOpen.value = false;
 }
-const cancelReason = ref("");
+const cancelChoice = ref({ reasonKey: "", internalNote: "" });
 // "Cancelar e refazer": o cancelamento é o de sempre (política e PIN); depois
 // dele a venda abre numa comanda comum pré-montada com a encomenda cancelada,
 // para o operador ajustar e fechar a venda nova (a nota autorizada não se edita).
@@ -109,9 +109,12 @@ async function confirmHandOver(body: HandOverBody) {
   if (done || actions.paidOnline.value) handOverOpen.value = false;
 }
 
-async function confirmCancel(reason: string, managerApproval: ManagerApproval | null = null) {
-  cancelReason.value = reason;
-  if (!(await actions.cancel(reason, managerApproval))) return;
+async function confirmCancel(
+  choice: { reasonKey: string; internalNote: string },
+  managerApproval: ManagerApproval | null = null,
+) {
+  cancelChoice.value = choice;
+  if (!(await actions.cancel(choice, managerApproval))) return;
   cancelOpen.value = false;
   if (redoAfterCancel.value) {
     redoAfterCancel.value = false;
@@ -130,12 +133,12 @@ async function confirmCancel(reason: string, managerApproval: ManagerApproval | 
 }
 
 // O PIN do gerente sobe por cima do diálogo de cancelar; assinado, o mesmo
-// gesto é repetido com a assinatura e o motivo que já estava digitado.
+// gesto é repetido com a assinatura e o motivo que já estava escolhido.
 function signWithPin(username: string, pin: string) {
-  void confirmCancel(cancelReason.value, { username, pin });
+  void confirmCancel(cancelChoice.value, { username, pin });
 }
 function signWithBadge(badge: string) {
-  void confirmCancel(cancelReason.value, { badge });
+  void confirmCancel(cancelChoice.value, { badge });
 }
 
 // A volta respeita de onde o operador veio: o recorte da lista (modo, data,
@@ -366,9 +369,9 @@ function goBack() {
           v-model:open="cancelOpen"
           :customer-name="customerLine(card)"
           :requires-approval="counter.cancel.requires_approval"
-          :presets="detail.cancellation_presets"
+          :cancel-reasons="detail.cancel_reasons"
           :busy="actions.busy.value"
-          @confirm="(reason: string) => confirmCancel(reason)"
+          @confirm="(choice: { reasonKey: string; internalNote: string }) => confirmCancel(choice)"
         />
         <OperatorManagerAuth
           :open="!!actions.managerChallenge.value"

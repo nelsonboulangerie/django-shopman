@@ -694,14 +694,19 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     if (order.data or {}).get("rejected_by") and not (order.data or {}).get("ifood_cancelled"):
         return
 
-    # Only an operator-authored, customer-facing note reaches the customer. Machine
-    # codes (pix_timeout, customer_requested) live in `cancellation_reason` and are
-    # never surfaced — no note means the plain cancellation message.
-    note = str((order.data or {}).get("cancellation_note") or "").strip()
-    if note:
-        notification.send(order, "order_cancelled", reason=note)
-    else:
-        notification.send(order, "order_cancelled")
+    # O cliente lê o texto revisado da chave do motivo (lista única em
+    # `services/cancel_reasons.py`). Nem o código de máquina de
+    # `cancellation_reason` (pix_timeout…) nem a observação interna do operador
+    # chegam a ele.
+    from shopman.shop.services import cancel_reasons
+
+    data = order.data or {}
+    notification.send(
+        order,
+        "order_cancelled",
+        status_note=cancel_reasons.customer_text(data),
+        reason_key=cancel_reasons.reason_key_of(data),
+    )
 
 
 def _settle_cancelled_payment(order) -> None:

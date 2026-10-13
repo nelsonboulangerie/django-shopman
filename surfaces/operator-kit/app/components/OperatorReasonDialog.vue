@@ -3,9 +3,13 @@
 // (cancelar, recusar), diz a consequência e confirma. Uma peça só para o PDV e o
 // Gestor: antes eram dois diálogos com duas regras para o mesmo ato.
 //
-// Duas formas, decididas por quem chama:
+// Três formas, decididas por quem chama:
 //   - Motivo codificado (`coded`): o marketplace (iFood) EXIGE um dos códigos dele.
 //     A descrição escolhida vira o texto que o cliente lê.
+//   - Motivo da lista (`keyedReasons`, cancelar pedido): a lista única do backend,
+//     cada motivo com a frase revisada que o cliente lê. Escolher é obrigatório; a
+//     tela mostra a frase que vai sair, e o texto livre vira a OBSERVAÇÃO INTERNA
+//     (opcional, nunca vai ao cliente).
 //   - Texto da casa: motivos prontos (um toque), agrupados sob os cabeçalhos da casa,
 //     mais o "Outros", que entrega o motivo ao texto livre.
 //
@@ -26,6 +30,7 @@ import { computed, nextTick, ref, watch } from "vue";
 
 import type {
   CodedReason,
+  KeyedReason,
   ReasonChoice,
   ReasonPresetGroup,
 } from "../types/reason";
@@ -46,6 +51,8 @@ const props = withDefaults(
     codedReasons?: CodedReason[];
     codedLabel?: string;
     codedEmptyText?: string;
+    /** Motivos da lista única do backend: escolher um é obrigatório; o texto é interno. */
+    keyedReasons?: KeyedReason[];
     loading?: boolean;
     loadingText?: string;
     /** Falha ao ler os motivos: bloqueia confirmar e oferece consultar de novo. */
@@ -62,6 +69,7 @@ const props = withDefaults(
     codedReasons: () => [],
     codedLabel: "Motivo exigido",
     codedEmptyText: "Não há motivos disponíveis neste momento.",
+    keyedReasons: () => [],
     loading: false,
     loadingText: "Carregando motivos…",
     error: "",
@@ -81,6 +89,7 @@ const emit = defineEmits<{
 
 const reason = ref("");
 const code = ref("");
+const key = ref("");
 const other = ref(false);
 const discarding = ref(false);
 const reasonInput = ref<{ $el?: HTMLElement } | HTMLElement | null>(null);
@@ -92,9 +101,22 @@ watch(
     if (!open) return;
     reason.value = "";
     code.value = "";
+    key.value = "";
     other.value = false;
     discarding.value = false;
   },
+);
+
+const keyed = computed(() => !props.coded && props.keyedReasons.length > 0);
+const keyedItems = computed(() =>
+  props.keyedReasons.map((item) => ({
+    value: item.key,
+    label: item.label,
+    "data-reason-key": item.key,
+  })),
+);
+const pickedKeyed = computed(() =>
+  props.keyedReasons.find((item) => item.key === key.value),
 );
 
 const presetGroups = computed(() =>
@@ -102,7 +124,7 @@ const presetGroups = computed(() =>
 );
 
 const dirty = computed(
-  () => props.open && Boolean(reason.value.trim() || code.value),
+  () => props.open && Boolean(reason.value.trim() || code.value || key.value),
 );
 watch(dirty, (value) => emit("dirty-change", value), { immediate: true });
 
@@ -131,6 +153,7 @@ function discard() {
 const canConfirm = computed(() => {
   if (props.loading || props.error) return false;
   if (props.coded) return props.codedReasons.some((r) => r.code === code.value);
+  if (keyed.value) return Boolean(pickedKeyed.value);
   if (other.value || props.required) return reason.value.trim() !== "";
   return true;
 });
@@ -163,7 +186,11 @@ const presetPressed = (text: string) => !other.value && reason.value === text;
 
 function submit() {
   if (!canConfirm.value || props.busy) return;
-  emit("confirm", { reason: reason.value.trim(), code: code.value });
+  emit("confirm", {
+    reason: reason.value.trim(),
+    code: code.value,
+    key: keyed.value ? key.value : "",
+  });
 }
 </script>
 
@@ -215,6 +242,37 @@ function submit() {
           data-reason-code
           @update:model-value="onCodeChange"
         />
+
+        <template v-else-if="keyed">
+          <NuxtRadioGroup
+            v-model="key"
+            :items="keyedItems"
+            variant="card"
+            :legend="reasonLabel"
+            data-reason-keyed
+          />
+          <NuxtAlert
+            v-if="pickedKeyed"
+            color="info"
+            variant="subtle"
+            icon="i-lucide-message-circle"
+            title="O cliente vai ler"
+            :description="pickedKeyed.customer_text"
+            data-reason-preview
+          />
+          <NuxtFormField
+            label="Observação interna (opcional)"
+            description="Fica só no histórico do pedido. O cliente não vê."
+          >
+            <NuxtTextarea
+              v-model="reason"
+              class="w-full"
+              :rows="2"
+              :maxlength="maxlength ?? 200"
+              data-reason-input
+            />
+          </NuxtFormField>
+        </template>
 
         <template v-else>
           <div

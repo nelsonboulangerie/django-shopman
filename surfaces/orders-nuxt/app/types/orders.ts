@@ -20,6 +20,7 @@ export type {
   MenuOutageProjection,
   MenuChannelProjection,
   AwaitingWorkOrderProjection,
+  CancelReasonProjection,
   CancellationPresetGroupProjection,
   OrderItemProjection,
   TimelineEventProjection,

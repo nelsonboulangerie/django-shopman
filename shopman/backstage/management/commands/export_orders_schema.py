@@ -89,6 +89,7 @@ from shopman.backstage.projections.order_history import (
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CancellationPresetGroupProjection,
+    CancelReasonProjection,
     CustomerProfileProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
@@ -145,6 +146,7 @@ CONTRACT_DATACLASSES = (
     NotificationAttemptProjection,
     NotificationReceiptProjection,
     AwaitingWorkOrderProjection,
+    CancelReasonProjection,
     CancellationPresetGroupProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
