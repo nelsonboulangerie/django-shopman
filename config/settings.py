@@ -366,6 +366,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Primeiro da cadeia: mede o request inteiro e vê o status final, inclusive o
+    # que um middleware de baixo responde sozinho. Opt-in por SHOPMAN_ACCESS_LOG.
+    "shopman.shop.middleware.AccessLogMiddleware",
     "shopman.shop.middleware.AppPlatformHealthCheckHostMiddleware",
     "shopman.shop.middleware.BackupSheetDomainMiddleware",
     # Scopes session/CSRF cookies to the operator zone's parent domain (no-op
@@ -2286,6 +2289,12 @@ SHOPMAN_JSON_LOGS = os.environ.get(
 ).lower() in ("true", "1", "yes")
 _SHOPMAN_LOG_FORMATTER = "json" if SHOPMAN_JSON_LOGS else "verbose"
 
+# Access log da aplicação (logger `shopman.access`): método, ROTA resolvida,
+# status e duração, sem IP, usuário, query string ou caminho cru. Substitui o do
+# daphne, que segue em /dev/null por gravar `?token=` do webhook da Efí. Ver
+# AccessLogMiddleware e docs/runbooks/web-operator-resiliencia.md.
+SHOPMAN_ACCESS_LOG = _env_bool("SHOPMAN_ACCESS_LOG", False)
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -2403,6 +2412,7 @@ SECURE_SSL_REDIRECT = os.environ.get(
 SECURE_REDIRECT_EXEMPT = [
     r"^health/live/$",
     r"^health/ready/$",
+    r"^health/database/$",
     r"^health/$",
     r"^ready/$",
 ]

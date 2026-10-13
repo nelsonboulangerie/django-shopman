@@ -561,3 +561,85 @@ def test_run_command_lost_in_the_live_app_fails():
         unit="componentes",
     )
     assert any("services/web" in line and "run_command" in line for line in problems)
+
+
+# ---------------------------------------------------------------------------
+# Sondas e alertas: entraram depois dos 503 do Admin (13/10/2026)
+# ---------------------------------------------------------------------------
+
+_ALERTS = [
+    {"operator": "GREATER_THAN", "rule": "CPU_UTILIZATION", "value": 80, "window": "FIVE_MINUTES"},
+    {"operator": "GREATER_THAN", "rule": "MEM_UTILIZATION", "value": 85, "window": "FIVE_MINUTES"},
+    {"operator": "GREATER_THAN", "rule": "RESTART_COUNT", "value": 2, "window": "TEN_MINUTES"},
+]
+
+
+def _probed(name: str = "web-operator", *, ready: str = "/health/database/", alerts=None) -> dict:
+    component = _component(name)
+    component["health_check"] = {"http_path": ready, "failure_threshold": 5, "period_seconds": 10}
+    component["liveness_health_check"] = {"http_path": "/health/live/", "failure_threshold": 3}
+    component["alerts"] = list(_ALERTS if alerts is None else alerts)
+    return component
+
+
+def _component_problems(live: dict, versioned: dict) -> list[str]:
+    return drift.compare_records(
+        drift.component_index({"services": [live]}),
+        drift.component_index({"services": [versioned]}),
+        label="componente",
+        unit="componentes",
+    )
+
+
+def test_readiness_probe_pending_apply_is_a_divergence():
+    """O delta deste PR visto pelo drift: o vivo ainda com a liveness como readiness."""
+    problems = _component_problems(_probed(ready="/health/live/"), _probed())
+    assert any(
+        "services/web-operator" in line and "health_check" in line and "/health/database/" in line
+        for line in problems
+    )
+    assert not any("liveness_health_check" in line for line in problems)
+
+
+def test_alert_removed_in_the_panel_is_reported():
+    problems = _component_problems(_probed(alerts=_ALERTS[:2]), _probed())
+    assert any("alerts" in line and "RESTART_COUNT" in line for line in problems)
+
+
+def test_alerts_only_in_the_live_app_would_vanish():
+    live, versioned = _probed(), _probed()
+    del versioned["alerts"]
+    problems = _component_problems(live, versioned)
+    assert any("SUMIRIAM" in line and "alerts" in line for line in problems)
+
+
+def test_alert_order_is_not_drift():
+    assert _component_problems(_probed(alerts=list(reversed(_ALERTS))), _probed()) == []
+
+
+def test_app_level_alert_only_in_the_live_app_fails_main(tmp_path, capsys):
+    import yaml
+
+    live = {"name": "app", "alerts": [{"rule": "DEPLOYMENT_FAILED"}, {"rule": "DOMAIN_FAILED"}]}
+    versioned = {"name": "app", "alerts": [{"rule": "DEPLOYMENT_FAILED"}]}
+    live_path, spec_path = tmp_path / "vivo.yaml", tmp_path / "versionado.yaml"
+    live_path.write_text(yaml.safe_dump(live), encoding="utf-8")
+    spec_path.write_text(yaml.safe_dump(versioned), encoding="utf-8")
+
+    assert drift.main(["--spec", str(spec_path), "--live-spec", str(live_path)]) == 1
+    out = capsys.readouterr().out
+    assert "SUMIRIAM" in out and "DOMAIN_FAILED" in out
+
+
+@pytest.mark.parametrize("spec_name", ["app.alpha-subdomains.yaml", "app.subdomains.yaml"])
+def test_every_django_service_has_restart_and_memory_alerts(spec_name):
+    """Instância única que reinicia sem ninguém ver foi o 503 do Admin de 13/10."""
+    import yaml
+
+    spec = yaml.safe_load((_SCRIPT.parents[1] / ".do" / spec_name).read_text(encoding="utf-8"))
+    services = {service["name"]: service for service in spec["services"]}
+    for name in ("web-operator", "web-storefront"):
+        signature = drift.alerts_signature(services[name].get("alerts"))
+        assert "RESTART_COUNT GREATER_THAN 2 TEN_MINUTES" in signature, name
+        assert any(line.startswith("MEM_UTILIZATION GREATER_THAN") for line in signature), name
+        assert any(line.startswith("CPU_UTILIZATION GREATER_THAN") for line in signature), name
