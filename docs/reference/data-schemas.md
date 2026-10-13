@@ -859,7 +859,9 @@ Write-back: `intent_ref` (string)
 | `copy_paste` | `string` | PixGenerateHandler (reminder) | Template (não handler) |
 | `tracking` | `dict` | FulfillmentUpdateHandler | Template (não handler) |
 | `context` | `dict` | CommitService (preorder reminder), `services.reschedule.schedule_preorder_reminder` (lembrete recriado com a data nova) | Template (não handler) |
-| `status_note` | `string` | `services.order_edit` (aviso `order_updated`) | `notification._build_context` → `{status_note}` | A frase montada NO GESTO da edição (o que mudou, o total novo e o destino da diferença, sem ponto final): quando o aviso sai, o "antes" não está mais no pedido |
+| `status_note` | `string` | `services.order_edit` (aviso `order_updated`); `services.payment._notify_refund` (aviso `payment_refunded`) | `notification._build_context` → `{status_note}` | A frase montada NO GESTO da edição (o que mudou, o total novo e o destino da diferença, sem ponto final): quando o aviso sai, o "antes" não está mais no pedido. No estorno: por onde o dinheiro volta e que pode demorar conforme o banco (`notification.refund_arrival_note`) |
+| `refund_amount_q` | `int` | `services.payment._notify_refund` (aviso `payment_refunded`) | `notification._build_context` → `{refund_amount_display}` | O valor DESTE estorno (devolução parcial devolve só uma parte). Ausente ⇒ o total do pedido |
+| `refund_method` | `string` | `services.payment._notify_refund` (aviso `payment_refunded`) | informativo | O meio do intent estornado (`pix`, `card`) |
 
 `notification_delivery` é a evidência na própria Directive: `status` (`started`,
 `unknown`, `accepted`, `skipped`, `failed`), `recorded_at` ISO, e opcionais
@@ -883,7 +885,7 @@ persistido antes de chamar o transporte, fora da transação. Entre execuções,
 se torna segura por idade. Worker antigo não entende o fence: rollout requer
 drenagem/parada dos consumidores antigos e rollback não pode reativá-los sobre
 essas Directives sem reconciliação autorizada (G03/G07).
-A `dedupe_key` é `notification.send:<ref>:<template>`, e ganha `:<ocorrência>` (`notification.send(..., occurrence=)`) nos avisos que se repetem legitimamente no mesmo pedido: `order_rescheduled` (uma por troca de data) e `order_updated` (uma por edição).
+A `dedupe_key` é `notification.send:<ref>:<template>`, e ganha `:<ocorrência>` (`notification.send(..., occurrence=)`) nos avisos que se repetem legitimamente no mesmo pedido: `order_rescheduled` (uma por troca de data), `order_updated` (uma por edição) e `payment_refunded` (uma por estorno: a ocorrência é a chave de idempotência do estorno, então o retry do mesmo estorno não avisa duas vezes). O `payment_refunded` só sai do estorno feito pelo GATEWAY (Pix/cartão online); estorno sem gateway (maquininha, cobrança externa, Pix atestado no balcão) não avisa.
 `skipped` com `reason: "rescheduled"` é o lembrete de véspera (`preorder_reminder`)
 que um reagendamento substituiu: a directive fecha `done` sem envio e outra nasce com a
 data nova (`services.reschedule`).
