@@ -1084,6 +1084,7 @@ const outside = useOutsideStore(
             :dispatch-action="
               order.actions.find((action) => action.ref === 'courier-dispatch')
             "
+            :equipment-options="order.equipment_options ?? []"
             :busy="busy"
             :dispatch-again-action="
               order.actions.find(

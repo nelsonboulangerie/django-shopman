@@ -8,7 +8,16 @@ import {
   courierSteps,
   courierTone,
 } from "~/presentation/courier";
-import type { Action } from "~/generated/ordersContract";
+import {
+  freeMachines,
+  machinePhrase,
+  machinesOutSentence,
+  moneyInput,
+} from "~/presentation/board";
+import type {
+  Action,
+  EquipmentOptionProjection,
+} from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 
 const props = defineProps<{
@@ -17,11 +26,13 @@ const props = defineProps<{
   cancelAction?: Action;
   quoteAction?: Action;
   dispatchAction?: Action;
+  /** As maquininhas do pedido (`order.equipment_options`), para a custódia. */
+  equipmentOptions?: EquipmentOptionProjection[];
   dispatchAgainAction?: Action;
 }>();
 const emit = defineEmits<{
   quote: [];
-  dispatch: [];
+  dispatch: [custody: { change_out?: string; equipment?: string[] }];
   cancel: [];
   dispatchAgain: [];
 }>();
@@ -72,13 +83,44 @@ watch(
     confirmingDispatch.value = false;
   },
 );
+// A custódia que sai com o entregador da TaOn, pré-preenchida pelo pedido:
+// troco da gaveta e/ou a maquininha da casa. Pedido pago não pergunta nada.
+const custody = computed(() => props.courier.custody);
+const asksChange = computed(
+  () => (custody.value?.change_out_suggested_q ?? 0) > 0,
+);
+const asksMachine = computed(() => Boolean(custody.value?.needs_machine));
+const asksCustody = computed(() => asksChange.value || asksMachine.value);
+const free = computed(() => freeMachines(props.equipmentOptions ?? []));
+const changeOut = ref("");
+const machineRef = ref("");
+function armCustody() {
+  changeOut.value = asksChange.value
+    ? moneyInput(custody.value?.change_out_suggested_q ?? 0)
+    : "";
+  machineRef.value = free.value[0]?.ref ?? "";
+}
+const machineItems = computed(() =>
+  free.value.map((opt) => ({ value: opt.ref, label: opt.label })),
+);
+const machineMissing = computed(() => asksMachine.value && !free.value.length);
 function requestDispatch() {
   if (!confirmingDispatch.value) {
+    armCustody();
     confirmingDispatch.value = true;
     return;
   }
+  if (machineMissing.value) return;
   confirmingDispatch.value = false;
-  emit("dispatch");
+  emit("dispatch", {
+    ...(asksChange.value ? { change_out: changeOut.value.trim() || "0" } : {}),
+    ...(asksMachine.value ? { equipment: [machineRef.value] } : {}),
+  });
+}
+function blurDispatch() {
+  // Com campos a preencher, sair do botão não desarma: o operador está
+  // conferindo o troco ou a maquininha. "Voltar" desarma.
+  if (!asksCustody.value) confirmingDispatch.value = false;
 }
 
 const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
@@ -232,19 +274,71 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       </div>
 
       <template v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel">
-        <p
-          v-if="confirmingDispatch && dispatchQuestion"
-          class="text-sm"
-          role="status"
-          data-testid="courier-dispatch-question"
+        <div
+          v-if="confirmingDispatch"
+          class="flex flex-col gap-3"
+          data-testid="courier-dispatch-confirm"
         >
-          {{ dispatchQuestion }}
-        </p>
+          <p
+            v-if="dispatchQuestion"
+            class="text-sm"
+            role="status"
+            data-testid="courier-dispatch-question"
+          >
+            {{ dispatchQuestion }}
+          </p>
+          <NuxtFormField
+            v-if="asksChange"
+            label="Troco que o entregador leva da gaveta"
+            data-testid="courier-custody-change"
+          >
+            <NuxtInput
+              v-model="changeOut"
+              class="w-40"
+              type="text"
+              inputmode="decimal"
+              icon="i-lucide-circle-dollar-sign"
+              aria-label="Troco que o entregador leva da gaveta, em reais"
+            />
+          </NuxtFormField>
+          <template v-if="asksMachine">
+            <NuxtFormField
+              v-if="free.length >= 2"
+              label="Qual maquininha vai junto?"
+              data-testid="courier-custody-machine"
+            >
+              <NuxtRadioGroup
+                v-model="machineRef"
+                :items="machineItems"
+                orientation="horizontal"
+              />
+            </NuxtFormField>
+            <p
+              v-else-if="free.length === 1"
+              class="text-sm"
+              data-testid="courier-custody-machine"
+            >
+              Leva a {{ machinePhrase(free[0]!.label) }}.
+            </p>
+            <p
+              v-else
+              class="text-sm text-error"
+              data-testid="courier-custody-machine"
+            >
+              {{ machinesOutSentence(equipmentOptions ?? []) }} Espere uma
+              voltar para chamar.
+            </p>
+          </template>
+        </div>
         <div class="flex flex-wrap gap-2">
           <NuxtButton
             v-if="courier.can_dispatch"
             type="button"
-            :disabled="busy || !dispatchAction?.enabled"
+            :disabled="
+              busy ||
+              !dispatchAction?.enabled ||
+              (confirmingDispatch && machineMissing)
+            "
             :title="
               dispatchAction?.reason ||
               (dispatchAction?.enabled
@@ -263,8 +357,16 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
                   ? 'Chamar outro entregador'
                   : 'Chamar entregador'
             "
-            @blur="confirmingDispatch = false"
+            @blur="blurDispatch"
             @click="requestDispatch"
+          />
+          <NuxtButton
+            v-if="confirmingDispatch && asksCustody"
+            type="button"
+            label="Voltar"
+            color="neutral"
+            variant="outline"
+            @click="confirmingDispatch = false"
           />
           <NuxtButton
             v-if="courier.can_quote"

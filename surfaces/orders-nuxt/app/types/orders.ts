@@ -73,6 +73,12 @@ export type CourierBlock = {
   /** A última chamada à TaOn ficou sem resposta: "Chamar de novo" libera e chama outra. */
   can_dispatch_again?: boolean;
   can_cancel: boolean;
+  /** O que a chamada pergunta: troco da gaveta e maquininha da casa. */
+  custody?: {
+    change_out_suggested_q: number;
+    needs_machine: boolean;
+    recorded: boolean;
+  };
 };
 
 /** Quem é o cliente deste pedido (WP-360). O servidor já resolve rótulo e tom;

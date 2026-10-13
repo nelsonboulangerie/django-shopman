@@ -267,8 +267,12 @@ export function useOrderDetail(orderRef: string) {
 
   // Courier ride (external delivery): dispatch/re-dispatch, cancel the active
   // ride, and "just quote" (stores the estimate; refresh shows it in the panel).
-  async function courierDispatch(): Promise<boolean> {
-    const ok = await act("courier-dispatch");
+  // A custódia que sai com o entregador da TaOn (troco da gaveta, maquininha)
+  // vai no mesmo corpo do despacho do Gestor: `change_out` e `equipment`.
+  async function courierDispatch(
+    custody: { change_out?: string; equipment?: string[] } = {},
+  ): Promise<boolean> {
+    const ok = await act("courier-dispatch", custody);
     if (ok) useSonner.success("Pedido de entregador enviado à central.");
     return ok;
   }
