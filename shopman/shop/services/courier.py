@@ -459,6 +459,62 @@ def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_rev
     return task
 
 
+#: O aviso que o cancelamento do pedido deixa quando a corrida não volta sozinha.
+#: Tipo existente (sem migração) e fora da resolução automática por status do
+#: pedido: só sai quando o operador resolve com a central.
+_CANCELLED_ORDER_ALERT_TYPE = "integration_failed"
+
+
+def on_order_cancelled(order) -> None:
+    """Pedido cancelado: a corrida dele não pode seguir aberta na central.
+
+    - Antes da coleta (``CANCELLABLE_STATUSES``): enfileira o cancelamento da
+      corrida pelo caminho de sempre (:func:`cancel_ride`, Directive
+      ``courier.cancel``, dedupe por corrida). Cancelamento já pedido é no-op.
+    - Depois da coleta (``E``): a central não cancela mais. Aviso crítico ao
+      operador, uma vez por pedido.
+    - Despacho sem resultado confirmado: pode haver corrida na central que o
+      pedido não conhece. Mesmo aviso, porque a conferência é a mesma.
+
+    Nunca levanta: o cancelamento do pedido não depende da central.
+    """
+    from shopman.shop.services.operator_orders import OrderStateConflict, short_ref
+
+    code = short_ref(order.ref)
+    try:
+        block = get_block(order)
+        status = str(block.get("status") or "")
+        if not has_active_ride(order):
+            if unresolved_dispatch(order) is not None:
+                _alert_cancelled_order(order, f"O pedido {code} foi cancelado com um pedido de entregador sem "
+                    "resultado confirmado: confira na central e cancele a corrida, se ela existir.")
+            return
+        if status == "E":
+            _alert_cancelled_order(order, f"O entregador já coletou o pedido {code}, que foi cancelado: fale com a central.")
+            return
+        if status in CANCELLABLE_STATUSES:
+            try:
+                cancel_ride(order, actor="lifecycle.on_cancelled")
+            except OrderStateConflict:  # silêncio-deliberado: cancelamento desta corrida já pedido, o worker cuida dele
+                pass
+            except ValueError:
+                _alert_cancelled_order(order, f"O pedido {code} foi cancelado e a corrida segue aberta na central: "
+                    "cancele a corrida por lá.")
+            return
+        _alert_cancelled_order(order, f"O pedido {code} foi cancelado e a corrida segue aberta na central: "
+            "cancele a corrida por lá.")
+    except Exception:
+        logger.exception("courier.on_order_cancelled_failed order=%s", order.ref)
+
+
+def _alert_cancelled_order(order, message: str) -> None:
+    from shopman.shop.adapters import alert as alert_adapter
+
+    if alert_adapter.recent_exists(_CANCELLED_ORDER_ALERT_TYPE, None, order_ref=order.ref, message_contains="foi cancelado"):
+        return
+    alert_adapter.create(_CANCELLED_ORDER_ALERT_TYPE, "critical", message, order_ref=order.ref)
+
+
 def _archive_current_ride(block: dict) -> None:
     """Move a corrida corrente para o histórico ``attempts``."""
     attempts = list(block.get("attempts") or [])
@@ -536,6 +592,10 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
 
         resolve_on_commit(order.ref, COURIER_TYPES, actor=f"courier:{status}")
         recover_local_status(order, ride_id=ride_id)
+        if status == "E" and order.status == Order.Status.CANCELLED:
+            # Coleta que chegou depois do cancelamento (a corrida não cancelou
+            # a tempo): o mesmo aviso de "já coletou", uma vez por pedido.
+            on_order_cancelled(order)
 
 
 def recover_local_status(order, *, ride_id: str) -> None:
