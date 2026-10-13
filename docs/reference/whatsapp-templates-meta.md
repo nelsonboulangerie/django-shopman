@@ -133,7 +133,9 @@ Eles não gravam nada em lugar nenhum.
 8. **Um corpo por evento, sem variantes.** `NotificationTemplate.event` é `unique=True` e o
    adapter busca um flow por evento (`_load_db_flow_ns`). Não existe "a versão com nome e a
    versão sem" da mesma mensagem: a frase escolhida tem de funcionar em **todos** os casos
-   daquele evento.
+   daquele evento. A única exceção é decidida e escolhida no código, não na copy: o
+   `order_dispatched` com link do entregador sai pelo `pedido_saiu_entrega_rastreio`
+   (evento-variante `order_dispatched_courier`), porque um botão não pode ficar vazio.
 9. **Nada auto-suprimível atravessa.** A Meta não aceita parâmetro vazio, então todo pedaço
    que o código apaga sozinho quando não há dado **não pode virar variável**: `{eta_note}`,
    `{courier_tracking_suffix}`, `{reserve_note}`, `{deadline_note}`, `{pix_suffix}`,
@@ -261,8 +263,8 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 - **Dois** botões URL: `Como chegar` (link FIXO do Google Maps da loja, sem variável) · `Ver pedido` → `/pedido/{{1}}` (`order_ref`)
 
 > ℹ️ A Meta aceita **até dois** botões de URL por template. O `Como chegar` é estático — não
-> tem variável nenhuma, é a URL do Maps colada inteira. É o único template do pacote com
-> dois botões.
+> tem variável nenhuma, é a URL do Maps colada inteira. O outro template do pacote com
+> dois botões é o `pedido_saiu_entrega_rastreio`.
 
 ### `pedido_pronto_entrega` — evento `order_ready_delivery`
 - Corpo: `Seu pedido {{1}} está pronto e aguardando o entregador. Avisamos assim que sair.`
@@ -274,9 +276,46 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 - Vars: `{{1}}`=`A47` (`order_ref_short`)
 - Botão URL: `Confirmar recebimento` → `/pedido/{{1}}` (`order_ref`)
 
-> ℹ️ O rastreio do entregador (`courier_tracking_suffix`) **fica fora**: nem toda entrega tem
-> corrida com rastreio, e sufixo auto-suprimível não vira variável (regra 9). Ele continua
-> saindo por SMS e e-mail.
+> ℹ️ Este é o aviso **sem rastreio**: entrega própria, corrida sem link ainda, ou a
+> variante abaixo não ligada. Quando a corrida (TaOn/Machine) tem link de rastreio, o
+> adapter troca para o `pedido_saiu_entrega_rastreio`, que leva o link num segundo botão
+> (decisão do dono, 13/10/2026). O sufixo do SMS e do e-mail continua como era (regra 9).
+
+### `pedido_saiu_entrega_rastreio` — evento `order_dispatched_courier` 🆕
+Variante do `order_dispatched` com o link do entregador. Não é evento emitido: o adapter
+(`notification_manychat._courier_tracking_variant`) a escolhe quando o pedido tem
+`courier_tracking_url` e o flow dela está ligado.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Seu pedido {{1}} saiu para entrega. No botão abaixo você acompanha o entregador até a sua porta. Quando receber, é só confirmar. ✨`
+- Vars: `{{1}}`=`A47` (`order_ref_short`)
+- **Dois** botões URL: `Acompanhar entregador` → `<base do link da TaOn>{{1}}` (`courier_tracking_path`) · `Confirmar recebimento` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (`order_ref`)
+
+> ⛔ **Não submeter antes de medir o link real da TaOn.** A Meta só aceita botão dinâmico
+> com prefixo FIXO e a variável no fim, e o prefixo não se edita depois de aprovado. Por
+> isso a base é configuração: `SHOPMAN_MACHINE["tracking_link_base"]`, lida da env
+> `MACHINE_TRACKING_LINK_BASE` (vazia por padrão). O formato do `tracking_url` da corrida
+> ainda **não foi medido**; será no passo 6 da corrida de prova
+> (`docs/runbooks/courier-machine-homologacao.md`). Com o link real em mãos: a base é tudo
+> antes do pedaço que muda por corrida (domínio e caminho fixos, `https://`), e o sample
+> da variável é o pedaço. Se o pedaço que muda estiver no MEIO do link, ou depois de um
+> `#`, este template não serve como está: pare e reveja (o mesmo motivo que tirou o link
+> do Stripe do `link_pagamento_enviado`).
+>
+> **O que montar no ManyChat, nesta ordem:** (1) o campo personalizado
+> `courier_tracking_path` (texto), com este nome exato; (2) o modelo, com o corpo e os dois
+> botões acima, a variável do corpo ligada ao `order_ref_short` e a do primeiro botão ao
+> `courier_tracking_path`; (3) depois de aprovado, o flow "Aviso: saiu para entrega com
+> rastreio"; (4) o namespace dele no Admin, `NotificationTemplate` do evento
+> `order_dispatched_courier` (ou `MANYCHAT_FLOW_MAP["order_dispatched_courier"]`, que pede
+> deploy); (5) a env `MACHINE_TRACKING_LINK_BASE` com a base medida.
+>
+> **O que acontece em cada caso** (o adapter nunca manda o botão com link quebrado ou vazio):
+> sem corrida ou sem link, sai o `pedido_saiu_entrega`, em silêncio; com link e sem o flow
+> da variante, sai o `pedido_saiu_entrega` com `logger.warning` dizendo que saiu sem o link;
+> com o flow ligado mas base vazia, link fora da base, resto vazio ou com token de acesso na
+> query, sai o `pedido_saiu_entrega` com `logger.error` (falhar gritando). O campo guarda só
+> o resto do link da TaOn, que é o mesmo que o SMS já entrega ao cliente; nenhum link de
+> sessão da loja vira campo.
 
 ### `pedido_entregue` — evento `order_delivered`
 > ⚠️ **A Meta reclassificou este template como MARKETING** (lido no ManyChat em 01/10/2026:
@@ -462,6 +501,7 @@ campo personalizado**. Sobram dois formatos:
 | `Pedir de novo` | `pagamento_expirado`, `fila_vaga_liberada` | `…/conta/pedidos` — **estático** |
 | `Ver saldo` | `pontos_fidelidade` | `…/conta` — **estático** |
 | `Como chegar` | `pedido_pronto_retirada` | Google Maps da loja — **estático** |
+| `Acompanhar entregador` | `pedido_saiu_entrega_rastreio` | base do link da TaOn (`MACHINE_TRACKING_LINK_BASE`) + `courier_tracking_path` |
 | `Ver novidade` | `anuncio_novidade` | ⚠️ **ainda não decidido** — ver abaixo |
 
 ⚠️ **`product_sku`, não `sku`.** As duas chaves existem no contexto e são o mesmo valor, mas
@@ -591,6 +631,7 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `order_ready_pickup` | `pedido_pronto_retirada` | Utility |
 | `order_ready_delivery` | `pedido_pronto_entrega` | Utility |
 | `order_dispatched` | `pedido_saiu_entrega` | Utility |
+| `order_dispatched` com rastreio (`order_dispatched_courier`) | `pedido_saiu_entrega_rastreio` | Utility 🆕 (falta medir o link da TaOn) |
 | `order_delivered` | `pedido_entregue` | Utility |
 | `order_cancelled` | `pedido_cancelado` | Utility |
 | `fiscal_note_ready` | `nota_fiscal_disponivel` | Utility |
@@ -648,6 +689,7 @@ nome**, senão a variável sai em branco e nada falha.
 | Total | **`order_total_display`** (nome atual no código; conferir no ManyChat) | `pedido_confirmado`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
+| Resto do link do entregador | `courier_tracking_path` (**a criar**) | `pedido_saiu_entrega_rastreio`, primeiro botão |
 | Frase que nunca fica vazia | `status_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado` |
 | Nome do produto | `product_name` | `produto_chegou`, `saiu_do_forno` |
 | Frase de disponibilidade | `availability_note` | `saiu_do_forno` |

@@ -68,7 +68,7 @@ Confira: a base impressa é a `api-vendas` e `is_configured()` é `True`. Se nã
 | 0:02 | 3. Status | `m.get_status(ride)` | uma letra: `D`, `G` ou `P` logo depois de abrir |
 | 0:03 | 4. Detalhes | `m.get_details(ride)` | dicionário sem envelope, com `request_id == ride`; `driver` vazio até alguém aceitar. Erro 404 aqui é base de detalhes errada (`/api/integracao/v1`) |
 | 0:04 | 5. Posição | `m.get_position(ride)` | `None` enquanto `D`/`G`/`P` (a doc devolve lat/lng nulos fora de A/S/E) |
-| 0:05 | 6. Link de rastreio | `m.tracking_links(ride)` | lista com `link_rastreio`. **Anote o formato cru** (rode também `m._request("GET", f"/obterLinkRastreio/{ride}")`): a doc v1 mostra `{"link": ...}`, a coleção antiga mostrava lista por parada; o adaptador aceita os dois |
+| 0:05 | 6. Link de rastreio | `m.tracking_links(ride)` | lista com `link_rastreio`. **Anote o formato cru** (rode também `m._request("GET", f"/obterLinkRastreio/{ride}")`): a doc v1 mostra `{"link": ...}`, a coleção antiga mostrava lista por parada; o adaptador aceita os dois. Anote também a **parte fixa** do link (tudo antes do pedaço que muda por corrida): ela vira `MACHINE_TRACKING_LINK_BASE` e o prefixo do botão do `pedido_saiu_entrega_rastreio` (docs/reference/whatsapp-templates-meta.md) |
 | 0:06 | 7. Cancelar | `m.cancel(ride)` | `True`; em seguida `m.get_status(ride) == "C"`. Recusa por `motivo_id` inválido: peça à central o id certo e use `m.cancel(ride, reason_id=<id>)`, depois ajuste `MACHINE_CANCEL_REASON_ID` |
 | 0:08 | 8. Webhook (só forma B) | ver bloco 8 | dois "Webhook ... cadastrado"; abra e cancele uma segunda corrida (blocos 2 e 7) e veja o evento chegar no log do `web` |
 

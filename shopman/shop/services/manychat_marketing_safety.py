@@ -135,6 +135,9 @@ _PURCHASE_REQUEST_FLOW_FIELDS = (
 # flows usam o valor cru (`payment_deadline`) em vez do sufixo textual usado por
 # SMS/e-mail. Os aliases `customer_name_greeting`/`order_total_display` mantêm
 # compatibilidade com flows já criados antes da padronização documentada.
+#: Evento-variante do ``order_dispatched`` com o link de rastreio do entregador.
+COURIER_DISPATCH_VARIANT = "order_dispatched_courier"
+
 _CUSTOMER = ("customer_name", "customer_name_greeting")
 _ORDER = ("order_ref_short",)
 _ORDER_BUTTON = ("order_ref", "order_ref_short")
@@ -147,6 +150,11 @@ TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     "order_ready_pickup": _ORDER_BUTTON,
     "order_ready_delivery": _ORDER_BUTTON,
     "order_dispatched": _ORDER_BUTTON,
+    # Variante do `order_dispatched` quando a corrida tem link de rastreio
+    # (`pedido_saiu_entrega_rastreio`): o segundo botão é `<base>{{1}}` com o resto do
+    # link. Escolhida pelo adapter (`notification_manychat._courier_tracking_variant`),
+    # nunca emitida como evento próprio.
+    COURIER_DISPATCH_VARIANT: (*_ORDER_BUTTON, "courier_tracking_path"),
     "order_delivered": (*_CUSTOMER, *_ORDER),
     "order_cancelled": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
     "preorder_reminder": (*_CUSTOMER, *_ORDER_BUTTON),
