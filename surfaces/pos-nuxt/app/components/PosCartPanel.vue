@@ -1899,8 +1899,9 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
           <!-- ENVIO: Auto · Manual, um controle de verdade (dono, 13/10). Muda o envio das
                estações desta comanda (vale para todas as comandas; Ajustes › Envio à
                cozinha tem o mesmo interruptor por estação). O QUANDO do Auto mora na dica. -->
+          <!-- Sem conexão o controle sai (não grava) e a linha de baixo diz o motivo. -->
           <div
-            v-if="fireBar.visible && !sheet"
+            v-if="fireBar.visible && !sheet && !offline"
             class="flex shrink-0 items-center gap-1.5"
             :title="autoFireTitle"
             data-pos-auto-fire
@@ -1916,7 +1917,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                 :variant="autoFire === option.on ? 'solid' : 'outline'"
                 :label="option.label"
                 :aria-pressed="autoFire === option.on"
-                :disabled="offline || autoFireBusy"
+                :disabled="autoFireBusy"
                 :loading="autoFireBusy && autoFire !== option.on"
                 :data-pos-auto-fire-option="option.value"
                 @click="autoFire !== option.on && $emit('autoFireChange', option.on)"

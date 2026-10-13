@@ -343,14 +343,16 @@ describe("PosCartPanel — Envio: Auto · Manual, um controle de verdade (dono, 
     await wrapper.find('[data-pos-auto-fire-option="manual"]').trigger("click");
     expect(wrapper.emitted("autoFireChange")).toEqual([[false]]);
   });
-  it("desligado: Manual pressionado, nunca 'desligado'; sem conexão, o controle apaga", async () => {
+  it("desligado: Manual pressionado, nunca 'desligado'; sem conexão, o motivo no lugar", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ autoFire: false }) });
     expect(wrapper.find('[data-pos-auto-fire-option="manual"]').attributes("aria-pressed")).toBe("true");
     expect(wrapper.find("[data-pos-ticket-header]").text()).not.toContain("desligado");
     await wrapper.find('[data-pos-auto-fire-option="auto"]').trigger("click");
     expect(wrapper.emitted("autoFireChange")).toEqual([[true]]);
     const offline = await mountSuspended(PosCartPanel, { props: props({ autoFire: false, offline: true }) });
-    expect(offline.find('[data-pos-auto-fire-option="auto"]').attributes("disabled")).toBeDefined();
+    // Sem conexão o controle sai (não gravaria) e o cabeçalho diz o motivo.
+    expect(offline.find("[data-pos-auto-fire]").exists()).toBe(false);
+    expect(offline.find("[data-pos-kitchen-offline]").exists()).toBe(true);
   });
 });
 
