@@ -191,9 +191,11 @@ export const PREVIEW_INDEX = {
   ],
 };
 
-function boardFor(ref, tickets, name, cancelled = []) {
+function boardFor(ref, tickets, name, cancelled = [], settings = {}) {
   return {
     board: {
+      density: settings.density ?? "cozy",
+      sound_enabled: settings.sound_enabled ?? true,
       instance_ref: ref,
       instance_name: name,
       instance_type: "prep",
@@ -220,19 +222,30 @@ export function createPreviewState() {
   const prep = PREP_TICKETS.map((t) => ({ ...t }));
   const changed = CHANGED_TICKETS.map((t) => ({ ...t }));
   const cancelled = CANCELLED_TICKETS.map((t) => ({ ...t }));
+  // Tamanho do ticket e som de cada estação (o PATCH dos controles da barra grava aqui).
+  const settings = {};
   return {
+    /** PATCH `kds/<ref>/settings/`: grava e devolve o que ficou, como o servidor. */
+    saveSettings(ref, change) {
+      const current = { density: "cozy", sound_enabled: true, ...settings[ref] };
+      if (["compact", "cozy", "roomy"].includes(change?.density)) current.density = change.density;
+      if (typeof change?.sound_enabled === "boolean") current.sound_enabled = change.sound_enabled;
+      settings[ref] = current;
+      return current;
+    },
     index: () => PREVIEW_INDEX,
     /** Volta ao começo (a matriz visual chama antes de cada caso: um caso que dá
      *  ciência num card não pode apagar o alarme da captura seguinte). */
     reset() {
       prep.splice(0, prep.length, ...PREP_TICKETS.map((t) => ({ ...t })));
+      for (const key of Object.keys(settings)) delete settings[key];
       changed.splice(0, changed.length, ...CHANGED_TICKETS.map((t) => ({ ...t })));
       cancelled.splice(0, cancelled.length, ...CANCELLED_TICKETS.map((t) => ({ ...t })));
     },
     board(ref) {
       const name = PREVIEW_INDEX.instances.find((inst) => inst.ref === ref)?.name || ref;
-      if (ref === "cafes") return boardFor(ref, changed, name, cancelled);
-      return boardFor(ref, ref === "bancada" ? prep : [], name);
+      if (ref === "cafes") return boardFor(ref, changed, name, cancelled, settings[ref]);
+      return boardFor(ref, ref === "bancada" ? prep : [], name, [], settings[ref]);
     },
     /** Aplica um POST de escrita; devolve true se reconheceu a rota. */
     write(url) {

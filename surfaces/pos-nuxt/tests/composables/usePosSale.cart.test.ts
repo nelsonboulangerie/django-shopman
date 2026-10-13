@@ -356,6 +356,23 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
     h.handles.dispose();
   });
 
+  it("a origem que ficou vazia é liberada sozinha: a frase diz isso e o Desfazer reabre a comanda", async () => {
+    const h = openTabSale();
+    actionCall.mockResolvedValueOnce({ source_closed: true, source: null });
+    await h.sale.submitMove({ mode: "transfer", lineIds: ["L1"], toSessionKey: "sess-2", closeSource: true });
+    const call = actionCall.mock.calls.find((c) => String(c[0]).includes("/tabs/move-lines/"))!;
+    expect(call[1]!.body).toMatchObject({ close_source_when_empty: true });
+    const info = vi.mocked(toast.info).mock.calls.at(-1)!;
+    expect(info[0]).toBe("Comanda M1 ficou vazia e foi liberada.");
+    const undo = (info[1] as { action: { label: string; onClick: () => void } }).action;
+    expect(undo.label).toBe("Desfazer");
+    expect(h.sale.cart.tabSessionKey).toBe("");
+    undo.onClick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(actionCall.mock.calls.some((c) => String(c[0]).includes("/tabs/M1/open/"))).toBe(true);
+    h.handles.dispose();
+  });
+
   it("cancelRecentSale só age quando há resultado e envia order_ref + reason + manager_approval", async () => {
     const h = openTabSale();
     // sem result → no-op

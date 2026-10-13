@@ -1,14 +1,52 @@
-# Entrega por parceiro (TaOn/Machine): ensaio na HOMOLOGAÇÃO
+# Entrega por parceiro (TaOn/Machine): corrida de prova e ensaio
 
-Roteiro cronometrado para provar o adaptador `shopman/shop/adapters/courier_machine.py` contra a
-**homologação** da Machine, do despacho ao cancelamento, antes de ligar o interruptor no alpha.
+Dois roteiros neste arquivo:
+
+1. **[Corrida de prova em produção](#corrida-de-prova-em-produção)** (decisão do dono E2=1,
+   13/10/2026): uma corrida curta de verdade, acompanhada de A a F, e outra cancelada antes da
+   coleta, na janela que o dono combinar. É o que vale hoje: a TaOn não tem chave de homologação
+   (ensaio de 01/10, abaixo).
+2. **[Ensaio na homologação](#o-ensaio-cerca-de-15-min)**: o roteiro original, chamada a chamada no
+   `manage.py shell`, para quando houver chave de homologação.
+
 O contrato endereço a endereço está em
 [DELIVERY-EXTERNAL-LOGISTICS-PLAN §2.1](../plans/DELIVERY-EXTERNAL-LOGISTICS-PLAN.md).
+
+**Quem autentica.** A integração usa um **usuário de integração (API) da TaOn** com a permissão
+"API - Entrega", por HTTP Basic (`MACHINE_API_USER`/`MACHINE_API_PASSWORD`) mais a `api-key`. Não
+depende do login Gestor de uma pessoa no painel: se uma pessoa troca a senha dela, a entrega não
+pode parar. No alpha as quatro `MACHINE_*` são `SECRET` no spec (conferido em 13/10/2026 com
+`doctl apps spec get ... --context shopman-do-app-admin`: `MACHINE_API_USER`, `MACHINE_API_PASSWORD`,
+`MACHINE_API_KEY`, `MACHINE_WEBHOOK_TOKEN` todas `type: SECRET`, e
+`SHOPMAN_COURIER_ADAPTER=shopman.shop.adapters.courier_machine`). Valor de `SECRET` não se lê pelo
+spec, então **qual usuário está lá se confere no painel da TaOn** (passo 0 da prova), não aqui.
+
+## Corrida de prova em produção
+
+> ⚠️ Corrida de produção chama entregador de verdade e custa a corrida (a cotação de 01/10 deu
+> R$ 8,00 para 3,4 km). Só na janela combinada com o dono, com ele presente. Nada aqui muda o spec.
+
+Cerca de 40 min. Precisa: o dono, o Gestor (`orders-nuxt`) aberto, o painel da TaOn aberto
+(`cloud.taximachine.com.br`), um destino curto e real (alguém da casa recebe) e um console no
+alpha (`doctl apps console 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f web --context shopman-do-app-admin`).
+
+| # | Passo | O que conferir | Como desfazer |
+|---|---|---|---|
+| 0 | **Antes.** No painel da TaOn, Usuários: o usuário de `MACHINE_API_USER` é o de integração (API) com "API - Entrega". No Admin, o canal de entrega: `fulfillment.courier` (`auto` chama sozinho no Pronto; `none` só pelo botão). No console: `python manage.py shell -c "from shopman.shop.adapters import courier_machine as m; print(m.is_configured(), m._base_url())"` | `True` e a base `https://api.taximachine.com.br/api/integracao`. Se o usuário for o login de uma pessoa, anote e siga (a troca é decisão do dono) | nada a desfazer |
+| 1 | **Registrar o aviso da TaOn** (webhook), no console: `python manage.py machine_register_webhook https://api.boulangerie.com.br` | duas linhas "Webhook 'status'/'posicao' cadastrado". Sem `MACHINE_WEBHOOK_TOKEN` o comando recusa antes de chamar a TaOn. Polling (60 s) segue como rede, então a prova não depende disto | listar `m._request("GET", "/listarWebhook")` e apagar `m._request("DELETE", f"/deletarWebhook/{id}")` |
+| 2 | **Pedido A (corrida curta).** Pela loja, um pedido de entrega no destino curto, pagamento **na porta em dinheiro com troco** (prova a observação). Leve até Pronto no Gestor | o card mostra Pronto, cobrança na porta e "troco para" | cancelar o pedido no Gestor (antes do passo 3 não há corrida) |
+| 3 | **Chamar entregador** no painel Entregador do pedido A (ou o `auto` chama no Pronto) | em até 1 min o painel mostra a corrida aberta; no painel da TaOn a corrida existe com a observação `Pedido A47 · Cobrar R$ … em dinheiro · troco para R$ …` e o endereço certo | antes da coleta: **Solicitar cancelamento** no Gestor; depois da coleta: ligar para a central da TaOn |
+| 4 | **A (aceita)** | o painel mostra o entregador (nome, telefone, placa) e "Acompanhar corrida". **Anote o link de rastreio cru** (`courier.get_block(order)["tracking_url"]` no console): a base fixa dele é a `MACHINE_TRACKING_LINK_BASE` do modelo de WhatsApp com rastreio | idem 3 |
+| 5 | **E (coletou)** ao entregar a sacola | o pedido vai sozinho para Despachado (também com cobrança na porta); sai o aviso "saiu para entrega" com o link de rastreio (SMS/e-mail); `order.data["courier"]["door_charge"]` gravado. Anote se veio por webhook (`last_source: webhook`) e o atraso | ligar para a central; o pedido segue o fluxo de entrega |
+| 6 | **F (finalizou)** na porta | o pedido vai para Entregue; `final_value_q` gravado. Na volta, **Entregador voltou** fecha o acerto do dinheiro | acerto à mão no pedido, se o valor divergir |
+| 7 | **Pedido B (cancelar antes da coleta).** Outro pedido de entrega (pode ser pago online), Pronto, Chamar entregador; assim que aparecer D/G/P ou A, **Solicitar cancelamento** | corrida C no painel da TaOn; no Gestor a corrida volta ao histórico sem aviso de falha (quem cancelou foi o operador); o pedido continua Pronto, pronto para chamar de novo ou ser cancelado. Se a TaOn recusar o `motivo_id` (default 1), anote o id certo para `MACHINE_CANCEL_REASON_ID` | se o cancelamento não confirmar, ligar para a central e cancelar lá; depois cancelar o pedido B |
+| 8 | **Depois** | anotar no PR desta prova: formato do link de rastreio, atraso do webhook, `motivo_id` aceito, custo final. Decidir com o dono se o polling cai para 0 (`Shop.defaults.delivery.courier_poll_seconds`) | — |
 
 - Homologação: `https://api-vendas.taximachine.com.br/api/integracao` (detalhes em
   `https://api-vendas.taximachine.com.br/api/integracao/v1`).
 - Produção: `https://api.taximachine.com.br/api/integracao` (detalhes em `.../api/integracao/v1`).
-- A API Key é a mesma nos dois. O usuário de integração precisa da permissão "API - Entrega".
+- A doc diz que a API Key é a mesma nos dois; a de produção NÃO valeu na homologação (01/10). O
+  usuário de integração precisa da permissão "API - Entrega".
 - Na doc, tudo o que se faz na homologação é simulado e não chega à central de produção.
 
 ## Antes de começar (5 min)
@@ -143,8 +181,9 @@ apertado estoura; espere 20 s entre consultas da mesma corrida.
 
 ## Ensaio de 01/10/2026: o que aconteceu
 
-Credenciais do usuário Gestor da empresa (login do painel `cloud.taximachine.com.br`, cargo de
-administrador, permissões fixas com API Empresa, Entrega e Webhook) e a API Key que o dono tinha em
+Credenciais do login Gestor da empresa (painel `cloud.taximachine.com.br`, cargo de
+administrador, permissões fixas com API Empresa, Entrega e Webhook; em 13/10/2026 o dono afirmou que
+já existe um usuário de API da TaOn, e é ele que a integração deve usar, ver "Quem autentica") e a API Key que o dono tinha em
 mãos, lidas de um arquivo fora do repositório. Nenhuma corrida foi aberta.
 
 | Chamada | Ambiente | User-Agent | Resposta |

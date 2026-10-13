@@ -87,6 +87,8 @@ import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
+import { sourceReleasedMessage } from "~/presentation/moveLines";
+import { tabTitleView } from "~/presentation/tabTitle";
 import {
   offlineSaleBlockers,
   offlinePaymentLabel,
@@ -673,6 +675,7 @@ export function usePosSale(deps: PosSaleDeps) {
     tabNumber: "",
     tabOpenedAt: "",
     tabSeatingSpot: "",
+    tabTransferredFrom: null as { label: string; title: string } | null,
     tabSessionKey: "",
     expectedRevision: "",
     items: [] as POSCartItem[],
@@ -1236,7 +1239,16 @@ export function usePosSale(deps: PosSaleDeps) {
   const otherOpenTabs = computed(() =>
     sortedTabs.value.filter((tab) => tab.state === "in_use" && tab.session_key && tab.ref !== cart.tabRef),
   );
-  const suggestedSplitRef = computed(() => (cart.tabDisplay ? `${cart.tabDisplay}-2` : ""));
+  // O nome da comanda nova que o Transferir propõe (dono, N=1): "13-2", ou o próximo
+  // livre ("13-3") quando o "13-2" já está em uso.
+  const suggestedNewTabRef = computed(() => {
+    const base = String(cart.tabDisplay || "").trim();
+    if (!base) return "";
+    const taken = new Set(sortedTabs.value.filter((tab) => tab.session_key).map((tab) => String(tab.display_ref || tab.ref).toLowerCase()));
+    let n = 2;
+    while (taken.has(`${base}-${n}`.toLowerCase())) n += 1;
+    return `${base}-${n}`;
+  });
 
   // ⚠️ Sem cláusula de método. `cart.paymentMethod` é campo LEGADO (o primeiro
   // método da projeção, "cash", ou o que a comanda salva trouxe): filtrar por
@@ -1561,6 +1573,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.tabNumber = "";
     cart.tabOpenedAt = "";
     cart.tabSeatingSpot = "";
+    cart.tabTransferredFrom = null;
     cart.tabSessionKey = "";
     cart.expectedRevision = "";
     cart.items = [];
@@ -1623,6 +1636,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.tabNumber = payload.tab_number || "";
     cart.tabOpenedAt = payload.opened_at_display || "";
     cart.tabSeatingSpot = payload.seating_spot_ref || "";
+    cart.tabTransferredFrom = payload.transferred_from ? { label: payload.transferred_from.label, title: payload.transferred_from.title } : null;
     cart.tabSessionKey = payload.tab_session_key || payload.session_key;
     cart.expectedRevision = payload.revision || "";
     showTabs.value = false;
@@ -3461,7 +3475,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function submitMove(payload: {
-    mode: "split" | "transfer" | "merge";
+    mode: "split" | "transfer";
     lineIds: string[];
     toTabRef?: string;
     toSessionKey?: string;
@@ -3495,12 +3509,21 @@ export function usePosSale(deps: PosSaleDeps) {
         { body },
       );
       moveDialogOpen.value = false;
+      const sourceRef = cart.tabRef;
+      const sourceTitle = tabTitleView(cart.tabDisplay, "").title;
       if (response.source_closed || !response.source) {
         resetCart();
       } else {
         await setFromTabPayload(response.source);
       }
       await refresh();
+      // A ORIGEM QUE FICOU VAZIA FOI LIBERADA SOZINHA (dono, T2=1, 13/10/2026): a frase diz
+      // isso e o Desfazer reabre a comanda (vazia), para quem ainda vai lançar nela.
+      if (response.source_closed && sourceRef) {
+        toast.info(sourceReleasedMessage(sourceTitle), {
+          action: { label: "Desfazer", onClick: () => { void openTab(sourceRef); } },
+        });
+      }
     } catch (error) {
       serverError.value = `${httpErrorMessage(error, "Os itens não foram movidos.")} Eles seguem na comanda de origem. Tente de novo.`;
     } finally {
@@ -3939,7 +3962,7 @@ export function usePosSale(deps: PosSaleDeps) {
     tabDialogDescription,
     sortedTabs,
     otherOpenTabs,
-    suggestedSplitRef,
+    suggestedNewTabRef,
     // commands / handlers
     goToTabs,
     addTender,

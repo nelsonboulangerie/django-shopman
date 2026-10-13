@@ -13,10 +13,12 @@
 //     Quem chama passa a aparência do botão de origem; só o TEXTO muda ("Pronto 0131"
 //     vira "Desfazer 0131") e o fundo esvazia atrás dele. Nada de trocar para
 //     contornado/neutro, nada de mudar altura ou largura.
-//   - O fundo que esvazia é a PRÓPRIA cor do botão, translúcida: no sólido, a cor um
-//     tom mais funda (a superfície invertida a 30% por cima), que sempre AUMENTA o
-//     contraste do rótulo; no contornado, a cor do rótulo a 10%. Ao fim da janela o
-//     botão está idêntico ao de origem. AA nos dois temas: `tests/timedButtonContrast.test.ts`.
+//   - O fundo que esvazia é um SOBRETOM da própria cor do botão (dono, 13/10/2026: o
+//     branco sobre o verde no escuro era "árido e ríspido"): no sólido, a mesma cor um
+//     tom mais funda no claro e um tom mais clara no escuro, sempre na direção que
+//     AUMENTA o contraste do rótulo; no contornado, a cor do rótulo a 10%. Ao fim da
+//     janela o botão está idêntico ao de origem. AA nos dois temas:
+//     `tests/timedButtonContrast.test.ts`.
 //   - O prazo é ABSOLUTO (`until`, epoch ms ou ISO). Montar de novo, mudar de lugar ou
 //     a aba dormir em segundo plano não reinicia a janela: o fim é o mesmo instante.
 //     O prazo do servidor vem com `server-now` (o relógio dele), e o desvio do
@@ -237,13 +239,15 @@ function toKey(value: Instant | undefined): string {
   return value === undefined ? "" : String(value);
 }
 
-// A camada que esvazia, NÍTIDA de relance (dono, 09/10/2026: "muito sutil, não consegui
-// perceber"). No sólido de cor (primary, error, o verde do Pronto com `fill-tint="inverted"`)
-// são DUAS partes com 3:1 entre si (WCAG 1.4.11) e o rótulo AA sobre as duas:
-//   - claro (rótulo branco): o que RESTA é a cor quase preta (preto a 85% por cima); o
-//     que já esvaziou é a cor do botão, como ele volta a ser no fim;
-//   - escuro (rótulo escuro): o que resta é a cor quase branca (branco a 90%); o que
-//     esvaziou é a cor um pouco mais funda (preto a 20%), para o 3:1 caber.
+// A camada que esvazia: um SOBRETOM da cor do botão, nítido de relance mas da mesma cor
+// (dono, 09/10/2026: "muito sutil"; dono, 13/10/2026: o quase branco sobre o verde no
+// escuro era "árido e ríspido", o fade é um sobretom da própria cor). No sólido de cor
+// (primary, error, o verde do Pronto com `fill-tint="inverted"`) são duas partes, e o
+// rótulo é AA sobre as duas:
+//   - claro (rótulo branco): o que RESTA é a cor um tom mais funda (preto a 35% por
+//     cima); o que já esvaziou é a cor do botão, como ele volta a ser no fim;
+//   - escuro (rótulo escuro): o que resta é a cor um tom mais clara (branco a 40%); o
+//     que esvaziou, a cor do botão.
 // Os valores moram no `<style>` (`--timed-remaining`, `--timed-spent`); a trava lê de
 // lá: `tests/timedButtonContrast.test.ts`. O neutro sólido (`fill-tint="page"`) e o
 // contornado não comportam as duas partes com o rótulo AA: ficam com o tom leve.
@@ -303,21 +307,21 @@ const fillClass = computed(() => {
 </template>
 
 <style scoped>
-/* As duas partes do sólido (claro): o que resta quase preto, o que esvaziou na cor. */
+/* As duas partes do sólido (claro): o que resta um tom mais fundo, o que esvaziou na cor. */
 .timed-remaining {
-  --timed-remaining: rgb(0 0 0 / 0.85);
+  --timed-remaining: rgb(0 0 0 / 0.35);
   background-color: var(--timed-remaining);
 }
 .timed-spent {
   --timed-spent: rgb(0 0 0 / 0);
   background-color: var(--timed-spent);
 }
-/* Escuro: o que resta quase branco, o que esvaziou um pouco mais fundo. */
+/* Escuro: o que resta um tom mais claro, o que esvaziou na cor. */
 .dark .timed-remaining {
-  --timed-remaining: rgb(255 255 255 / 0.9);
+  --timed-remaining: rgb(255 255 255 / 0.4);
 }
 .dark .timed-spent {
-  --timed-spent: rgb(0 0 0 / 0.2);
+  --timed-spent: rgb(0 0 0 / 0);
 }
 .timed-fill {
   animation-name: timed-fill-drain;

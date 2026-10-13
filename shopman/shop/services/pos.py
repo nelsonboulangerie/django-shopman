@@ -1946,6 +1946,7 @@ def move_pos_tab_lines(
                 focus="cart",
             )
         tab_display = _ensure_pos_tab(ref, display=_tab_label_from_input(to_tab_ref, ref))
+        source_data = source.data or {}
         target = session_service.create_session(
             channel.ref,
             handle_type="pos_tab",
@@ -1957,6 +1958,18 @@ def move_pos_tab_lines(
                 "tab_display": tab_display,
                 "pos_operator": operator_username,
                 "last_touched_at": timezone.now().isoformat(),
+                # O RASTRO (dono, T1=1, 13/10/2026): a comanda nova guarda de onde veio.
+                # Segue ao pedido pelo CommitService; o PDV mostra o selo
+                # "Transf. da #13" e o Gestor uma linha no detalhe.
+                "transferred_from": {
+                    "tab_ref": str(source_data.get("tab_ref") or source.handle_ref or ""),
+                    "tab_display": str(source_data.get("tab_display") or "") or display_tab_ref(
+                        str(source_data.get("tab_ref") or source.handle_ref or "")
+                    ),
+                    "session_key": source.session_key,
+                    "at": timezone.now().isoformat(),
+                    "by": operator_username,
+                },
             },
         )
         target_created = True
@@ -2025,10 +2038,27 @@ def move_pos_tab_lines(
     source.refresh_from_db()
     target.refresh_from_db()
 
+    # O LOG DE EVENTOS DO PDV (dono, T1=1): quem, quando e quais itens, nas DUAS comandas.
+    moved_items = [
+        {"sku": item.get("sku"), "name": item.get("name"), "qty": _audit_qty(item)}
+        for item in (target.items or [])[-len(line_ids):]
+    ]
+    source_ref = _session_tab_ref(source)
+    target_ref = _session_tab_ref(target)
+    event_payload = {
+        "from_tab_ref": source_ref,
+        "to_tab_ref": target_ref,
+        "new_tab": target_created,
+        "items": moved_items,
+    }
+    source.emit_event("lines_transferred_out", actor=operator_username, payload=event_payload)
+    target.emit_event("lines_transferred_in", actor=operator_username, payload=event_payload)
+
     if close_source_when_empty and not source.items:
-        # JUNTAR leva o cliente junto quando o destino não tem nenhum (dono, 13/10/2026):
-        # a comanda que some não pode levar embora quem estava nela. Nunca sobrescreve o
-        # cliente que o destino já tem.
+        # A comanda que fica vazia é liberada (Juntar, ou Transferir/Dividir de tudo; dono,
+        # T2=1, 13/10/2026) e leva o cliente ao destino que não tem nenhum: a comanda que
+        # some não pode levar embora quem estava nela. Nunca sobrescreve o cliente que o
+        # destino já tem.
         _carry_customer_on_merge(source=source, target=target)
 
     source_closed = False

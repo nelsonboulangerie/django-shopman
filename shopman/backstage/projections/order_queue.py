@@ -698,6 +698,9 @@ class OperatorOrderProjection:
     # que consentiu compara a própria posição com esta, no dispositivo; a posição de
     # quem opera nunca vem ao servidor. ``None`` sem coordenadas no cadastro da loja.
     store_location: dict[str, float] | None = None
+    # O RASTRO da comanda do PDV (dono, T1=1, 13/10/2026): "Transferida da comanda #13"
+    # quando o pedido nasceu de uma comanda separada de outra. Vazio no resto.
+    transferred_from_label: str = ""
 
 
 #: Os contextos que leem o detalhe do pedido (:func:`build_operator_order`).
@@ -860,6 +863,15 @@ def _approver_options(user) -> tuple[dict[str, str], ...]:
     return _manager_cards(user)
 
 
+def transferred_from_label(data: dict) -> str:
+    """ "Transferida da comanda #13" (dono, 13/10/2026), de ``transferred_from``; "" sem rastro."""
+    origin = data.get("transferred_from") or {}
+    display = str(origin.get("tab_display") or origin.get("tab_ref") or "").strip()
+    if not display:
+        return ""
+    return f"Transferida da comanda {'#' + display if display.isdigit() else display}"
+
+
 def build_operator_order(order: Order, *, user=None, context: str = "orders") -> OperatorOrderProjection:
     """O detalhe de UM pedido — o mesmo contrato para o Gestor e para o PDV.
 
@@ -953,6 +965,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         context=context,
         channel_name=_channel_name(order.channel_ref or ""),
         opened_line=f"aberto às {timezone.localtime(order.created_at):%H:%M}" if order.created_at else "",
+        transferred_from_label=transferred_from_label(order.data or {}),
     )
 
     if context == "pos":

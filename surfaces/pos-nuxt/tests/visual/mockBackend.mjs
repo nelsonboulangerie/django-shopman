@@ -399,6 +399,8 @@ const TABS = SALE
 // O que a prévia salvou em cada comanda volta na reabertura (ir ao pagamento relê a
 // comanda): sem isto, a venda de uma comanda livre chegava vazia ao pagamento.
 const SAVED_ITEMS = new Map();
+// O rastro da comanda nova criada pelo Transferir (ref nova -> ref de origem).
+const TRANSFERRED_FROM = new Map();
 function tabPayload(ref) {
   const inUse = ref === "12";
   const full = ref === "13";
@@ -406,6 +408,9 @@ function tabPayload(ref) {
   return {
     revision: "rev-1", sales_mode: "counter", session_key: `S-${ref}`, tab_session_key: `S-${ref}`,
     tab_ref: ref, tab_display: ref, tab_number: ref, opened_at_display: "09:41", seating_spot_ref: "", edit_of: "",
+    transferred_from: TRANSFERRED_FROM.has(ref)
+      ? { tab_display: TRANSFERRED_FROM.get(ref), label: `Transf. da #${TRANSFERRED_FROM.get(ref)}`, title: `Transferida da comanda #${TRANSFERRED_FROM.get(ref)}` }
+      : null,
     items: saved ?? (inUse ? SALE_ITEMS : full ? FULL_ITEMS : COLUMN_STATES && ref === "16" ? KITCHEN_ITEMS : COLUMN_STATES && ref === "17" ? AUTO_ITEMS : []), customer_phone: "",
     // Cliente com cadastro (`customer_ref`): nome sem ref é RASCUNHO de cliente, e a
     // tela segura o salvamento ("Não salvo") até alguém concluir o cadastro.
@@ -607,6 +612,24 @@ createServer((req, res) => {
       return;
     }
     // Cancelar na cozinha (o "cancelar envio"; com `quantities`, só a diferença).
+    // Transferir (a ação única): leva as linhas para a comanda em uso ou para a nova
+    // (com o rastro), e a origem vazia é liberada quando pedido.
+    if (path === "/api/v1/backstage/pos/tabs/move-lines/") {
+      void readBody(req).then((body) => {
+        const from = String(body?.from_session_key || "").replace(/^S-/, "");
+        const to = body?.to_tab_ref ? String(body.to_tab_ref) : String(body?.to_session_key || "").replace(/^S-/, "");
+        const ids = new Set(body?.line_ids || []);
+        const before = SAVED_ITEMS.get(from) ?? tabPayload(from).items;
+        const moving = before.filter((item) => ids.has(item.line_id));
+        const rest = before.filter((item) => !ids.has(item.line_id));
+        SAVED_ITEMS.set(from, rest);
+        SAVED_ITEMS.set(to, [...(SAVED_ITEMS.get(to) ?? tabPayload(to).items), ...moving]);
+        if (body?.to_tab_ref) TRANSFERRED_FROM.set(to, from);
+        const closed = Boolean(body?.close_source_when_empty) && rest.length === 0;
+        send(res, 200, { ok: true, source_closed: closed, source: closed ? null : { ...tabPayload(from), items: rest }, target: tabPayload(to) });
+      });
+      return;
+    }
     if (path === "/api/v1/backstage/pos/tabs/unfire/") {
       void readBody(req).then((body) => {
         const ref = String(body?.session_key || "").replace(/^S-/, "") || "12";

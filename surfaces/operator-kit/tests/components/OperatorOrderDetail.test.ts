@@ -229,6 +229,13 @@ describe("OperatorOrderDetail", () => {
     expect(split.get("[data-slot-actions]").text()).toBe("estado");
   });
 
+  it("o pedido que veio de outra comanda do PDV diz de qual, na linha de cima (T1, 13/10)", async () => {
+    const wrapper = await mount({ order: order({ transferred_from_label: "Transferida da comanda #13" }), layout: "split" });
+    expect(wrapper.get("[data-order-meta]").text()).toContain("Transferida da comanda #13");
+    const plain = await mount({ order: order(), layout: "split" });
+    expect(plain.get("[data-order-meta]").text()).not.toContain("Transferida");
+  });
+
   it("decisionOnly (fora da loja, G18): sem fiscal nem comentar", async () => {
     const w = await mount({ order: order({ fiscal_status_label: "NFC-e autorizada" }), decisionOnly: true });
     expect(w.find("[data-order-fiscal]").exists()).toBe(false);

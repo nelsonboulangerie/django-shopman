@@ -770,6 +770,10 @@ o link do Stripe termina em `#…`.
 dono criou no painel as quatro credenciais `MACHINE_*` (SECRET) e, depois do #1348 no ar, o
 `SHOPMAN_COURIER_ADAPTER`. Usuário da API: o login Gestor da empresa no painel (não há seção "Machine
 API" no painel da empresa nem usuário novo). Ressalva: se a senha desse login mudar, a entrega para.
+**Atualização 13/10/2026:** o dono afirma que já existe um usuário de API (integração) na TaOn; a
+integração usa esse usuário, não o login Gestor. O spec do alpha guarda `MACHINE_API_USER` como
+`SECRET` (não legível); a conferência é o passo 0 da corrida de prova
+(`docs/runbooks/courier-machine-homologacao.md`).
 
 **Prova.** PR #1345 (spec e drift), PR #1348 (User-Agent; sem ele a borda da Machine devolve 403 a
 toda chamada); deploys `fd5c3921` e `227a0acb` ACTIVE com `/health/ready/` 200; drift `[OK]`.

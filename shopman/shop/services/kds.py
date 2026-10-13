@@ -686,6 +686,31 @@ def close_open_tickets(order, *, actor: str) -> int:
     return count
 
 
+def kitchen_done_session_keys(session_keys) -> set[str]:
+    """As vendas (comanda ou pedido, por ``session_key``) cuja cozinha terminou.
+
+    A regra é uma só, e é a do pedido que vira READY: nenhum ticket aberto e ao
+    menos um no Pronto. Cancelado não conta (reprint, unfire, item retirado nunca
+    será concluído, e incluí-lo travaria o pronto para sempre); só cancelados é
+    nada produzido. A comanda pré-pagamento não tem pedido para mudar de status,
+    então quem pergunta por ela (o quadro do PDV, o painel de retirada) usa esta
+    mesma conta.
+    """
+    from shopman.shop.adapters import kds as kds_adapter
+
+    keys = [key for key in session_keys if key]
+    if not keys:
+        return set()
+    done: set[str] = set()
+    open_: set[str] = set()
+    for session_key, status in kds_adapter.get_ticket_statuses(keys):
+        if status == "done":
+            done.add(session_key)
+        elif status != "cancelled":
+            open_.add(session_key)
+    return done - open_
+
+
 def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id: int | None = None) -> bool:
     """
     Check if all KDS tickets are done and transition order to READY.
@@ -707,19 +732,8 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id
     janela (``order_undo``). Com ``auto_ready`` desligado, o pedido fica em
     preparo e o Gestor marca pronto à mão.
     """
-    from shopman.shop.adapters import kds as kds_adapter
-
-    tickets = kds_adapter.get_tickets(order)
-    if not tickets.exists():
+    if order.session_key not in kitchen_done_session_keys([order.session_key]):
         return False
-
-    # Cancelled não conta: um ticket cancelado (reprint/unfire, item retirado)
-    # jamais será concluído — incluí-lo travaria o auto-READY para sempre.
-    all_done = not tickets.exclude(status__in=["done", "cancelled"]).exists()
-    if not all_done:
-        return False
-    if not tickets.filter(status="done").exists():
-        return False  # só cancelados = nada foi produzido; nada a avançar
 
     if order.status == Order.Status.READY:
         return False

@@ -676,6 +676,11 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     _release_coupon_use(order)
     _settle_cancelled_payment(order)
     fiscal.cancel(order)
+    # A corrida da central não segue aberta para um pedido que não existe mais:
+    # antes da coleta ela é cancelada; depois, o operador é avisado.
+    from shopman.shop.services import courier
+
+    courier.on_order_cancelled(order)
     # Venda de balcão nasce completed (counter_handoff) e pode ser cancelada na
     # janela do PIN — os pontos creditados em _on_completed voltam.
     loyalty.revoke(order, reason="cancelled")
