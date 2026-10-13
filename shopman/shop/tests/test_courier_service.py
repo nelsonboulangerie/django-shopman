@@ -211,8 +211,8 @@ def test_dispatch_handler_unknown_failure_requires_verification(shop, monkeypatc
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
-def _dispatched_order(shop) -> Order:
-    order = _delivery_order()
+def _dispatched_order(shop, ref="CR-1") -> Order:
+    order = _delivery_order(ref=ref)
     courier.request_dispatch(order, actor="test")
     _run_dispatch(order)
     return order
@@ -338,6 +338,89 @@ def test_cancel_ride_blocked_after_pickup(shop):
     order.refresh_from_db()
     with pytest.raises(ValueError, match="em rota"):
         courier.cancel_ride(order, actor="maria")
+
+
+# ── pedido cancelado: a corrida não segue aberta ────────────────────
+
+
+def _cancel_order(order) -> None:
+    """O pedido vira cancelado e a fase on_cancelled do lifecycle roda."""
+    from shopman.shop.lifecycle import dispatch
+
+    Order.objects.filter(pk=order.pk).update(status=Order.Status.CANCELLED)
+    order.refresh_from_db()
+    dispatch(order, "on_cancelled")
+
+
+def _cancelled_order_alerts(order):
+    return OperatorAlert.objects.filter(order_ref=order.ref, type="integration_failed", severity="critical")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+@pytest.mark.parametrize("ride_status", ["D", "A"])
+def test_cancelling_order_before_pickup_cancels_the_ride_once(shop, ride_status):
+    from shopman.shop.directives import COURIER_CANCEL
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["id_mch"]
+    if ride_status != "D":
+        courier.apply_status(order, ride_status, source="poll")
+    _cancel_order(order)
+    tasks = Directive.objects.filter(topic=COURIER_CANCEL, payload__order_ref=order.ref)
+    assert tasks.count() == 1  # enfileirado pela fase on_cancelled do lifecycle
+    courier.on_order_cancelled(order)  # replay da fase: idempotente
+    assert tasks.count() == 1
+    assert tasks.get().payload["courier_ref"] == ride
+    CourierCancelHandler().handle(message=tasks.get(), ctx={})
+    order.refresh_from_db()
+    assert courier_mock.rides()[ride]["status"] == "C"
+    assert not courier.has_active_ride(order)
+    courier.on_order_cancelled(order)  # corrida já cancelada: nada a fazer
+    assert tasks.count() == 1
+    assert not _cancelled_order_alerts(order).exists()
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_cancelling_order_after_pickup_warns_operator_once(shop):
+    from shopman.shop.directives import COURIER_CANCEL
+
+    order = _dispatched_order(shop, ref="NB-261013-A47")
+    block = {**courier.get_block(order), "status": "E"}
+    Order.objects.filter(pk=order.pk).update(data={**order.data, "courier": block})
+    order.refresh_from_db()
+    _cancel_order(order)
+    assert _cancelled_order_alerts(order).count() == 1  # aviso da fase on_cancelled
+    courier.on_order_cancelled(order)
+    courier.apply_status(order, "E", source="webhook")  # replay do fato
+
+    alert = _cancelled_order_alerts(order).get()
+    assert alert.message == "O entregador já coletou o pedido A47, que foi cancelado: fale com a central."
+    assert not Directive.objects.filter(topic=COURIER_CANCEL).exists()
+    assert courier_mock.rides()[block["id_mch"]]["status"] != "C"
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_pickup_arriving_after_cancellation_warns_operator(shop):
+    """A coleta chega antes de o worker cancelar a corrida: o aviso sai do fato."""
+    from shopman.shop.directives import COURIER_CANCEL
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+
+    order = _dispatched_order(shop)
+    courier.apply_status(order, "A", source="poll")
+    _cancel_order(order)
+    courier.apply_status(order, "E", source="webhook")
+    CourierCancelHandler().handle(message=Directive.objects.get(topic=COURIER_CANCEL), ctx={})
+    order.refresh_from_db()
+    assert order.status == Order.Status.CANCELLED
+    assert _cancelled_order_alerts(order).count() == 1
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_cancelling_order_without_ride_is_silent(shop):
+    order = _delivery_order(ref="CR-SEM")
+    _cancel_order(order)
+    assert not _cancelled_order_alerts(order).exists()
 
 
 # ── polling (courier.sync) ──────────────────────────────────────────
