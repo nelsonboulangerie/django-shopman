@@ -362,18 +362,19 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       <NuxtCard
         v-if="showQuote"
         variant="soft"
-        :ui="{ body: 'flex flex-col items-center gap-1 text-center' }"
         data-courier-quote
         :aria-busy="quoting || undefined"
       >
-        <p class="text-xs text-muted-foreground">Cotação da entrega</p>
-        <p
-          class="text-lg font-semibold tabular-nums"
-          role="status"
-          data-courier-quote-value
-        >
-          {{ quoting ? "Cotando a entrega…" : courier.estimate_display }}
-        </p>
+        <div class="flex flex-col items-center gap-1 text-center">
+          <p class="text-xs text-muted-foreground">Cotação da entrega</p>
+          <p
+            class="text-lg font-semibold tabular-nums"
+            role="status"
+            data-courier-quote-value
+          >
+            {{ quoting ? "Cotando a entrega…" : courier.estimate_display }}
+          </p>
+        </div>
       </NuxtCard>
 
       <template v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel">
