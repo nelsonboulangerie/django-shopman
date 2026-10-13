@@ -109,4 +109,6 @@ export interface OperatorOrderDetail {
   channel_name?: string;
   /** "aberto às 21:47" (o cabeçalho do detalhe em duas colunas). */
   opened_line?: string;
+  /** "Transferida da comanda #13": o pedido nasceu de uma comanda separada de outra no PDV. */
+  transferred_from_label?: string;
 }

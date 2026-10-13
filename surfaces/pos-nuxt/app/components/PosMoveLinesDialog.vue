@@ -1,38 +1,40 @@
 <script setup lang="ts">
 import type { POSCartItem, POSTabProjection } from "~/types/pos";
 import {
-  availableMoveModes,
+  allowsExistingTab,
+  allowsNewTab,
   buildMovePayload,
-  canSubmitMove,
-  defaultMoveTarget,
+  filterTargets,
   freezesPriceOnMove,
-  initialMoveMode,
-  type MoveMode,
+  linesToMove,
   type MovePayload,
   moveLineId,
-  moveLineView,
-  modeNeedsSelection,
-  moveSubmitLabel,
+  movesEverything,
   moveTargetOptions,
-  selectedLineIds,
+  movingSummary,
+  resolveDestination,
+  tabLabel,
+  transferCta,
 } from "~/presentation/moveLines";
-import { tabTitleView } from "~/presentation/tabTitle";
 
+// TRANSFERIR, A AÇÃO ÚNICA (dono, N=1, 13/10/2026): um campo só, "Para qual comanda?",
+// que recebe o leitor, a digitação ou a escolha na lista das comandas em uso. Ao abrir,
+// a ação padrão já está pronta: a comanda nova pré-nomeada ("13-2"), e o Enter confirma.
 const props = defineProps<{
   open: boolean;
   tabDisplay: string;
+  /** A sessão da comanda de origem (fica fora da lista de destinos). */
+  sourceSessionKey?: string;
   items: POSCartItem[];
-  suggestedSplitRef: string;
+  /** O nome que a comanda nova recebe se ninguém mudar ("13-2", ou o próximo livre). */
+  suggestedNewTabRef: string;
   otherTabs: POSTabProjection[];
-  /** `tab_manipulation` capability — drives the offered modes + price note. */
+  /** `tab_manipulation`: o que o canal deixa (comanda nova, comanda em uso) e o preço. */
   capability: unknown;
   busy: boolean;
   /** Fase de preparo (persist + reload da comanda): o diálogo já abriu. */
   preparing?: boolean;
-  /**
-   * Linhas que já vêm marcadas: o Transferir do modo seleção da comanda (v4), onde o
-   * operador escolheu antes o que sai. Pelo F10 a lista vem vazia, como sempre.
-   */
+  /** As linhas marcadas na comanda. Vazio: vai a comanda inteira. */
   preselected?: string[];
 }>();
 
@@ -41,162 +43,144 @@ const emit = defineEmits<{
   submit: [MovePayload];
 }>();
 
-const modes = computed(() => availableMoveModes(props.capability));
-const showPriceNote = computed(() => freezesPriceOnMove(props.capability));
-const targetOptions = computed(() => moveTargetOptions(props.otherTabs));
-const lineViews = computed(() => props.items.map(moveLineView));
-// DE ONDE os itens saem, sempre à vista (o título é o verbo; a origem é a primeira
-// coisa que o operador confere antes de escolher o destino).
-const originLine = computed(() => {
-  const origin = props.tabDisplay ? `Da comanda ${tabTitleView(props.tabDisplay, "").title}.` : "";
-  const price = showPriceNote.value ? "O preço de cada item fica como foi cobrado nesta comanda." : "";
+const destinationInput = ref("");
+const field = ref<{ inputRef?: HTMLInputElement; $el?: HTMLElement } | null>(null);
+
+const sourceTitle = computed(() => tabLabel(props.tabDisplay));
+const lines = computed(() => linesToMove(props.items, props.preselected));
+const lineIds = computed(() => lines.value.map(moveLineId));
+const all = computed(() => movesEverything(props.items, lineIds.value));
+const summary = computed(() => movingSummary(lines.value));
+const options = computed(() => moveTargetOptions(props.otherTabs, props.sourceSessionKey));
+const shown = computed(() => filterTargets(options.value, destinationInput.value, props.suggestedNewTabRef));
+const destination = computed(() =>
+  resolveDestination({
+    input: destinationInput.value,
+    options: options.value,
+    sourceDisplay: props.tabDisplay,
+    suggested: props.suggestedNewTabRef,
+    allowsNew: allowsNewTab(props.capability),
+    allowsExisting: allowsExistingTab(props.capability),
+  }),
+);
+const cta = computed(() => transferCta({ units: summary.value.units, all: all.value, destination: destination.value, sourceTitle: sourceTitle.value }));
+const canSubmit = computed(() => !props.busy && !props.preparing && destination.value.kind !== "invalid" && lineIds.value.length > 0);
+// A origem, sempre à vista, e a garantia do preço.
+const description = computed(() => {
+  const origin = props.tabDisplay ? `Da comanda ${sourceTitle.value}.` : "";
+  const price = freezesPriceOnMove(props.capability) ? "O preço de cada item fica como foi cobrado." : "";
   return [origin, price].filter(Boolean).join(" ") || undefined;
 });
-// O exemplo do campo é o formato que o servidor aceita (hífen; barra é recusada).
-const splitPlaceholder = computed(() => `Ex.: ${props.suggestedSplitRef || "1007-2"}`);
-
-const mode = ref<MoveMode>("transfer");
-const selected = ref<Set<string>>(new Set());
-const splitRef = ref("");
-const targetSessionKey = ref("");
 
 watch(() => props.open, (isOpen) => {
   if (!isOpen) return;
-  mode.value = initialMoveMode(modes.value, targetOptions.value.length > 0);
-  // Seleção começa VAZIA: dividir a conta é escolher O QUE SAI — nascer com
-  // tudo marcado invertia o gesto (desmarcar o que fica) e um Enter apressado
-  // movia a comanda inteira.
-  // A exceção é o Transferir do modo seleção: lá a escolha já foi feita, linha a linha.
-  const known = new Set(props.items.map(moveLineId));
-  selected.value = new Set((props.preselected ?? []).filter((id) => known.has(id)));
-  splitRef.value = props.suggestedSplitRef;
-  targetSessionKey.value = defaultMoveTarget(props.otherTabs);
+  destinationInput.value = props.suggestedNewTabRef;
+  // O campo nasce com o nome sugerido SELECIONADO: o leitor ou a digitação substituem;
+  // o Enter aceita.
+  void nextTick(() => {
+    const input = field.value?.inputRef || field.value?.$el?.querySelector?.("input");
+    input?.focus();
+    input?.select();
+  });
 });
 
-function toggle(id: string) {
-  const next = new Set(selected.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  selected.value = next;
+function pick(title: string) {
+  destinationInput.value = title;
 }
 
-const selectedIds = computed(() => selectedLineIds(props.items, selected.value));
-const needsSelection = computed(() => modeNeedsSelection(mode.value));
-const canSubmit = computed(() => canSubmitMove({
-  mode: mode.value,
-  selectedIds: selectedIds.value,
-  splitRef: splitRef.value,
-  targetSessionKey: targetSessionKey.value,
-  itemCount: props.items.length,
-  busy: props.busy,
-}));
-
-// O rodapé diz o verbo: Transferir (para outra comanda ou para uma nova) ou Juntar.
-const submitLabel = computed(() => moveSubmitLabel(mode.value));
-
 function submit() {
-  const payload = buildMovePayload({
-    mode: mode.value,
-    items: props.items,
-    selectedIds: selectedIds.value,
-    splitRef: splitRef.value,
-    targetSessionKey: targetSessionKey.value,
-  });
+  if (!canSubmit.value) return;
+  const payload = buildMovePayload({ items: props.items, lineIds: lineIds.value, destination: destination.value });
   if (payload) emit("submit", payload);
 }
 </script>
 
 <template>
-  <!-- O título é o VERBO (dono, 10/10): os botões de cima são o destino (outra
-       comanda, comanda nova, juntar), não três verbos concorrentes. -->
   <NuxtModal
     :open="open"
-    title="Transferir itens"
-    :description="originLine"
-    :ui="{ content: 'sm:max-w-xl' }"
+    title="Transferir"
+    :description="description"
+    :ui="{ content: 'sm:max-w-lg' }"
     data-pos-move-dialog
     @update:open="$emit('update:open', Boolean($event))"
   >
     <template #body>
       <div class="grid gap-3">
-        <!-- O DESTINO, em colunas iguais que descem JUNTAS (dono, 13/10): completo, o
-             curto escrito à mão, ícone. Nunca "Juntar comand…" cortado. -->
-        <OperatorFitGroup
-          :actions="modes"
-          equal
-          class="grid gap-2"
-          :style="{ gridTemplateColumns: `repeat(${modes.length}, minmax(0, 1fr))` }"
-          data-pos-move-modes
-        >
-          <OperatorButton
-            v-for="option in modes"
-            :key="option.ref"
-            :label="option.label"
-            :short-label="option.shortLabel"
-            :icon="option.icon"
-            block
-            class="justify-center"
-            :color="mode === option.ref ? 'primary' : 'neutral'"
-            :variant="mode === option.ref ? 'solid' : 'outline'"
-            :aria-pressed="mode === option.ref"
-            @click="mode = option.ref"
-          />
-        </OperatorFitGroup>
-
-        <p v-if="mode === 'merge'" class="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
-          Leva todos os itens desta comanda para a escolhida e libera esta.
+        <!-- O que vai, numa frase: as marcadas, ou a comanda inteira. -->
+        <p class="op-body [overflow-wrap:anywhere]" data-pos-move-summary>
+          <span class="font-semibold">{{ all ? "Vai tudo" : "Vão" }}</span>
+          {{ summary.text }}
         </p>
 
-        <!-- Preparo em curso: o diálogo abre na hora e a comanda é persistida por
-             baixo; sem isto o botão do rodapé parecia morto. -->
-        <p v-if="preparing" class="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+        <p v-if="preparing" class="flex items-center gap-2 op-micro text-muted-foreground">
           <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
           Preparando a comanda…
         </p>
-        <!-- A lista cabe na largura: a coluna é `minmax(0, 1fr)` (sem ela a grade cresce
-             até o nome mais comprido e rola de lado) e o nome quebra linha. -->
-        <div v-else-if="needsSelection" class="grid max-h-56 grid-cols-[minmax(0,1fr)] gap-1 overflow-y-auto overflow-x-hidden">
-          <div
-            v-for="line in lineViews"
-            :key="line.id"
-            class="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5"
-            :class="selected.has(line.id) ? 'border-primary bg-primary/5' : ''"
+
+        <div class="grid gap-1.5">
+          <label for="pos-move-destination" class="op-label font-medium">Para qual comanda?</label>
+          <NuxtInput
+            id="pos-move-destination"
+            ref="field"
+            v-model="destinationInput"
+            class="w-full"
+            autocomplete="off"
+            :placeholder="`Bipe, digite o número ou um nome (ex.: ${suggestedNewTabRef || '13-2'})`"
+            :color="destination.kind === 'invalid' ? 'error' : undefined"
+            :aria-invalid="destination.kind === 'invalid' || undefined"
+            aria-describedby="pos-move-destination-state"
+            data-pos-move-destination
+            @keydown.enter.prevent="submit"
+          />
+          <!-- O estado do campo em palavra: comanda nova, comanda em uso, ou o motivo. -->
+          <p
+            id="pos-move-destination-state"
+            class="flex items-center gap-1.5 op-micro"
+            :class="destination.kind === 'invalid' ? 'text-error' : 'text-muted-foreground'"
+            data-pos-move-destination-state
+            :data-destination-kind="destination.kind"
           >
-            <UiCheckbox
-              :model-value="selected.has(line.id)"
-              :aria-label="`Selecionar ${line.label}`"
-              @update:model-value="toggle(line.id)"
-            />
-            <span class="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">{{ line.label }}</span>
-            <span class="text-xs tabular-nums text-muted-foreground">{{ line.amountDisplay }}</span>
-          </div>
+            <template v-if="destination.kind === 'new'">
+              <Icon name="lucide:plus" class="size-3.5 shrink-0" aria-hidden="true" />Comanda nova {{ destination.title }}. Para outra, bipe ou escolha abaixo.
+            </template>
+            <template v-else-if="destination.kind === 'existing'">
+              <Icon name="lucide:receipt-text" class="size-3.5 shrink-0" aria-hidden="true" />Comanda em uso {{ destination.title }}.
+            </template>
+            <template v-else>{{ destination.reason }}</template>
+          </p>
         </div>
 
-        <label v-if="mode === 'split'" class="grid gap-1 text-sm">
-          <span class="font-medium text-muted-foreground">Nova comanda</span>
-          <UiInput v-model="splitRef" :placeholder="splitPlaceholder" data-pos-move-split-ref />
-        </label>
-
-        <div v-else class="grid gap-1 text-sm">
-          <span id="pos-move-target-label" class="font-medium text-muted-foreground">Comanda de destino</span>
-          <NuxtSelect
-            class="w-full"
-            :model-value="targetSessionKey || undefined"
-            :items="targetOptions.map((option) => ({ label: option.label, value: option.sessionKey }))"
-            :placeholder="targetOptions.length ? 'Escolha a comanda' : 'Nenhuma outra comanda aberta'"
-            :disabled="!targetOptions.length"
-            aria-labelledby="pos-move-target-label"
-            data-pos-move-target
-            @update:model-value="(value) => { targetSessionKey = String(value ?? ''); }"
-          />
+        <!-- As comandas EM USO, para escolher com um toque (a que casa com o campo). -->
+        <div v-if="shown.length" class="grid gap-1.5">
+          <span class="op-micro text-muted-foreground">Comandas em uso</span>
+          <div class="flex flex-wrap gap-2" data-pos-move-targets>
+            <NuxtButton
+              v-for="option in shown"
+              :key="option.sessionKey"
+              color="neutral"
+              :variant="destination.kind === 'existing' && destination.sessionKey === option.sessionKey ? 'solid' : 'outline'"
+              :label="option.label"
+              :aria-pressed="destination.kind === 'existing' && destination.sessionKey === option.sessionKey"
+              :data-pos-move-target="option.sessionKey"
+              @click="pick(option.title)"
+            />
+          </div>
         </div>
       </div>
     </template>
     <template #footer>
       <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <NuxtButton color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="$emit('update:open', false)" />
-        <!-- O botão diz o verbo do ato: Transferir, ou Juntar quando a comanda inteira vai. -->
-        <NuxtButton color="primary" :label="submitLabel" :disabled="!canSubmit" :loading="busy" @click="submit" />
+        <!-- O botão diz o RESULTADO, em palavras (dono, N=1). -->
+        <NuxtButton
+          color="primary"
+          :label="cta"
+          :disabled="!canSubmit"
+          :loading="busy"
+          class="whitespace-normal text-left"
+          data-pos-move-submit
+          @click="submit"
+        />
       </div>
     </template>
   </NuxtModal>

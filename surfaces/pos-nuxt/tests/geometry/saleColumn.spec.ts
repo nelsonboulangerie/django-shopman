@@ -466,10 +466,11 @@ for (const width of ["min", "default", "max"] as const) {
   }
 }
 
-// O DIÁLOGO "Transferir itens" (dono, 13/10): a aba de destino não corta ("Juntar
+// O DIÁLOGO "Transferir" (dono, N=1, 13/10): o campo, a lista das comandas em uso e o
+// botão que diz o resultado cabem sem corte e sem rolagem de lado. (Antes: "Juntar
 // comand…") e a lista de itens cabe, sem rolagem de lado, numa janela estreita também.
 for (const size of [{ width: 800, height: 600 }, { width: 1366, height: 768 }, { width: 390, height: 844 }] as const) {
-  test(`Transferir itens ${size.width}x${size.height}: abas sem corte, lista sem rolagem lateral`, async ({ page }) => {
+  test(`Transferir ${size.width}x${size.height}: campo, lista e botão do resultado sem corte nem rolagem lateral`, async ({ page }) => {
     // Abaixo do desktop a comanda é folha (sem a coluna): abre a comanda e usa o F10.
     await page.setViewportSize(size);
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -479,7 +480,8 @@ for (const size of [{ width: 800, height: 600 }, { width: 1366, height: 768 }, {
     await page.keyboard.press("Escape");
     await page.keyboard.press("F10");
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText("Transferir itens");
+    await expect(dialog).toContainText("Para qual comanda?");
+    await expect(page.locator("[data-pos-move-submit]")).toContainText("comanda nova");
     await page.evaluate(() => document.fonts.ready);
     expect(await scan(page, ["[role='dialog']"])).toEqual([]);
     const sideways = await page.evaluate(() =>

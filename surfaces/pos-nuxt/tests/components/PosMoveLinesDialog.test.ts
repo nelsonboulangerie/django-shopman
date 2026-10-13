@@ -6,37 +6,87 @@ import PosMoveLinesDialog from "~/components/PosMoveLinesDialog.vue";
 
 enableAutoUnmount(afterEach);
 
-// O DIÁLOGO "TRANSFERIR ITENS" (dono, 13/10/2026): diz de onde os itens saem, e o
-// exemplo do campo da comanda nova é o formato que o servidor aceita (hífen, nunca barra).
+// TRANSFERIR, A AÇÃO ÚNICA (dono, N=1, 13/10/2026): um campo "Para qual comanda?" que já
+// nasce com a comanda nova pré-nomeada; Enter confirma; bipar ou escolher uma comanda em
+// uso troca o destino; o botão diz o resultado em palavras.
+const items = [
+  { line_id: "L1", sku: "CR", name: "Croissant", qty: 2, price_q: 1150, notes: "" },
+  { line_id: "L2", sku: "PC", name: "Pain au chocolat", qty: 1, price_q: 1290, notes: "" },
+];
+const otherTabs = [{ ref: "00000012", display_ref: "12", session_key: "s12", state: "in_use", customer_name: "Ana Souza" }];
+
 function props(overrides: Record<string, unknown> = {}) {
   return {
-    open: true,
+    open: false,
     tabDisplay: "13",
-    items: [{ line_id: "L1", sku: "PAO", name: "Pão", qty: 1, price_q: 500, notes: "" }],
-    suggestedSplitRef: "13-2",
-    otherTabs: [],
+    sourceSessionKey: "s13",
+    items,
+    suggestedNewTabRef: "13-2",
+    otherTabs,
     capability: null,
     busy: false,
     ...overrides,
   };
 }
 
-describe("PosMoveLinesDialog", () => {
-  it("diz de qual comanda os itens saem, sem travessão", async () => {
-    await mountSuspended(PosMoveLinesDialog, { props: props(), attachTo: document.body });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+async function openDialog(overrides: Record<string, unknown> = {}) {
+  // Como na página: o diálogo nasce fechado e abre.
+  const wrapper = await mountSuspended(PosMoveLinesDialog, { props: props(overrides), attachTo: document.body });
+  await wrapper.setProps({ open: true });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return wrapper;
+}
+const input = () => document.body.querySelector<HTMLInputElement>("[data-pos-move-destination] input, input[data-pos-move-destination]")!;
+const cta = () => document.body.querySelector<HTMLButtonElement>("[data-pos-move-submit]")!;
+
+describe("PosMoveLinesDialog — Transferir", () => {
+  it("diz de onde saem e o que vai, sem travessão", async () => {
+    await openDialog({ preselected: ["L1"] });
     expect(document.body.textContent).toContain("Da comanda #13.");
+    expect(document.body.querySelector("[data-pos-move-summary]")?.textContent).toContain("2 itens: 2× Croissant");
     expect(document.body.textContent).not.toContain("—");
   });
 
-  it("sem outra comanda aberta, abre na comanda nova com o exemplo de hífen", async () => {
-    // Como na página: o diálogo nasce fechado e abre.
-    const wrapper = await mountSuspended(PosMoveLinesDialog, { props: props({ open: false }), attachTo: document.body });
-    await wrapper.setProps({ open: true });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const input = document.body.querySelector<HTMLInputElement>("[data-pos-move-split-ref]");
-    const field = input?.tagName === "INPUT" ? input : input?.querySelector("input");
-    expect(field?.getAttribute("placeholder")).toBe("Ex.: 13-2");
-    expect(document.body.textContent).not.toContain("1007/2");
+  it("a ação padrão já está pronta: comanda nova pré-nomeada, e o Enter confirma", async () => {
+    const wrapper = await openDialog({ preselected: ["L1"] });
+    expect(input().value).toBe("13-2");
+    expect(cta().textContent).toContain("Separar 2 itens na comanda nova 13-2");
+    input().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("submit")?.[0]).toEqual([{ mode: "split", lineIds: ["L1"], toTabRef: "13-2" }]);
+  });
+
+  it("sem nada marcado vai tudo, e a origem é liberada", async () => {
+    const wrapper = await openDialog();
+    expect(cta().textContent).toContain("Levar tudo para a comanda nova 13-2 e liberar a #13");
+    cta().click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("submit")?.[0]).toEqual([{ mode: "split", lineIds: ["L1", "L2"], toTabRef: "13-2", closeSource: true }]);
+  });
+
+  it("bipar ou digitar uma comanda em uso troca o destino; tocar na lista também", async () => {
+    const wrapper = await openDialog({ preselected: ["L2"] });
+    input().value = "12";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(cta().textContent).toContain("Levar 1 item para a #12");
+    input().value = "13-9";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    await wrapper.vm.$nextTick();
+    (document.body.querySelector('[data-pos-move-target="s12"]') as HTMLButtonElement).click();
+    await wrapper.vm.$nextTick();
+    expect(input().value).toBe("#12");
+    cta().click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("submit")?.[0]).toEqual([{ mode: "transfer", lineIds: ["L2"], toSessionKey: "s12" }]);
+  });
+
+  it("barra no nome: o motivo em palavra e o botão apagado", async () => {
+    const wrapper = await openDialog();
+    input().value = "13/2";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(document.body.querySelector("[data-pos-move-destination-state]")?.textContent).toContain("Use um hífen, por exemplo 13-2.");
+    expect(cta().disabled).toBe(true);
   });
 });

@@ -77,13 +77,16 @@ const showContact = computed(() =>
 );
 const profile = computed(() => props.order.customer_profile);
 const split = computed(() => props.layout === "split");
-/** "Loja online · WEB-261004-V12 · aberto às 09:51 · Retirada": quem, de onde, quando. */
+/** "Loja online · WEB-261004-V12 · aberto às 09:51 · Retirada" (e "Transferida da comanda
+ *  #13" quando veio de outra comanda do PDV): quem, de onde, quando. */
 const metaLine = computed(() =>
   [
     props.order.channel_name || props.order.channel_ref,
     props.order.ref,
     props.order.opened_line,
     props.order.fulfillment_label,
+    // O rastro da comanda do PDV (dono, T1=1, 13/10/2026): de qual comanda veio.
+    props.order.transferred_from_label,
   ].filter(Boolean),
 );
 const nuxtTone = (

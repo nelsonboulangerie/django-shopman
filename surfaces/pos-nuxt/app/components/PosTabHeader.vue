@@ -15,6 +15,8 @@ const props = defineProps<{
   tabNumber?: string;
   /** Hora em que a comanda abriu ("21:48"), lida no tablet ("aberta 21:48"). */
   openedAt?: string;
+  /** O rastro (dono, T1=1): "Transf. da #13" no selo, "Transferida da comanda #13" na dica. */
+  transferredFrom?: { label: string; title: string } | null;
   /** As mesas do Salão de hoje: ao renomear, escolher uma com um toque (vínculo
    *  OPCIONAL comanda × mesa, dono 04/10/2026). */
   seatingSpots?: POSSeatingSpotOption[];
@@ -285,6 +287,15 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       <span v-if="title.ref" class="shrink-0 self-end pb-1 op-micro text-muted-foreground tnum max-lg:hidden" data-pos-tab-number>{{ title.ref }}</span>
     </span>
     <h1 v-else class="whitespace-nowrap px-2 op-heading">Venda rápida</h1>
+    <NuxtBadge
+      v-if="hasOpenTab && transferredFrom"
+      color="neutral"
+      class="shrink-0"
+      :label="transferredFrom.label"
+      :title="transferredFrom.title"
+      :aria-label="transferredFrom.title"
+      data-pos-tab-transferred-from
+    />
     <div class="hidden h-6 w-px shrink-0 bg-border lg:block" aria-hidden="true" />
 
     <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA: F6 · F7 · F8, na ordem em que

@@ -126,6 +126,18 @@ concluído limpa as marcas; Esc desmarca tudo; dígito não faz nada com marcas.
 > saber se tinha aceitado. (2) Juntar é um dos três destinos do diálogo "Transferir itens"
 > (Outra comanda · Comanda nova · Juntar comandas) e não tem porta própria: o ⋯ da comanda
 > ficou só com Liberar (e, na folha que paga direto, Transferir itens, porque lá não há pé).
+>
+> **Decisões de 13/10, tarde (dono).** **N=1:** Transferir é a ação única, sem modos (saem
+> "Outra comanda / Comanda nova / Juntar comandas"). O diálogo "Transferir" tem um campo,
+> "Para qual comanda?", que recebe o leitor e a busca; a ação padrão já escolhida é a
+> comanda nova pré-nomeada (`13-2`), e o Enter confirma; bipou ou escolheu uma comanda em
+> uso, o destino é ela. O botão diz o resultado ("Levar 3 itens para a #12", "Levar tudo
+> para a #12 e liberar a #13", "Separar 2 itens na comanda nova 13-2"). **T2=1:** a origem
+> que fica vazia é liberada sozinha, com Desfazer. **T1=1:** a comanda nova guarda a
+> origem (`Session.data.transferred_from` → `Order.data` pelo CommitService), o log do PDV
+> registra `lines_transferred_out`/`lines_transferred_in` (quem, quando, quais itens), o
+> PDV mostra o selo "Transf. da #13" e o detalhe do pedido diz "Transferida da comanda
+> #13". Nada por item.
 
 **Quando estreita.** Tecla cai primeiro, depois o rótulo curto escrito à mão, ícone só no fim.
 A grade nunca vira uma coluna; "em 9 linhas" cai antes; o total do Pagamento nunca corta. Na

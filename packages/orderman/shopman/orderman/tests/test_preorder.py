@@ -117,6 +117,20 @@ class PreorderCommitTests(TestCase):
         self.assertEqual(order.data["order_notes"], "Embalagem para presente")
 
 
+    def test_commit_carries_the_tab_transfer_trail(self) -> None:
+        """A comanda do PDV que nasceu de uma transferência leva a origem ao pedido."""
+        trail = {"tab_ref": "00000013", "tab_display": "13", "session_key": "S-x", "at": "2026-10-13T12:00:00-03:00", "by": "alice"}
+        session = self._create_session(transferred_from=trail)
+
+        result = CommitService.commit(
+            session_key=session.session_key,
+            channel_ref=self.channel.ref,
+            idempotency_key=generate_idempotency_key(),
+        )
+
+        order = Order.objects.get(ref=result.order_ref)
+        self.assertEqual(order.data["transferred_from"], trail)
+
 class PreorderReminderDirectiveTests(TestCase):
     """Tests for D-1 reminder directive creation on preorder commit."""
 

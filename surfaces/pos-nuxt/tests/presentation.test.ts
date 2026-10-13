@@ -69,16 +69,17 @@ import {
 import type { ManagerAction } from "../../operator-kit/app/presentation/managerAuth";
 import { MANAGER_ACTIONS, managerAuthReason, managerAuthTitle } from "../../operator-kit/app/presentation/managerAuth";
 import {
-  availableMoveModes,
+  allowsExistingTab,
+  allowsNewTab,
   buildMovePayload,
-  canSubmitMove,
-  defaultMoveTarget,
+  filterTargets,
   freezesPriceOnMove,
+  linesToMove,
   moveLineId,
-  moveLineView,
-  modeNeedsSelection,
   moveTargetOptions,
-  selectedLineIds,
+  movingSummary,
+  resolveDestination,
+  transferCta,
 } from "../app/presentation/moveLines";
 import {
   allLinesFired,
@@ -857,87 +858,73 @@ describe("presentation/managerAuth — o que se assina e quem assina", () => {
   // assinatura em `approved_by` sairia da pessoa errada.
 });
 
-describe("presentation/moveLines — move modes, gate & payload", () => {
-  it("offers modes driven by the tab_manipulation capability", () => {
-    expect(availableMoveModes({ allows_split: true, allows_transfer: true, allows_merge: true }).map((m) => m.ref))
-      .toEqual(["transfer", "split", "merge"]);
-    expect(availableMoveModes({ allows_split: true, allows_transfer: false, allows_merge: true }).map((m) => m.ref))
-      .toEqual(["split", "merge"]);
-    // Absent capability is defensive: offer all three so the dialog still works.
-    expect(availableMoveModes(null).map((m) => m.ref)).toEqual(["transfer", "split", "merge"]);
+describe("presentation/moveLines — Transferir, a ação única (dono, N=1, 13/10/2026)", () => {
+  const tabs = [
+    { ref: "00000012", display_ref: "12", session_key: "s12", state: "in_use", customer_name: "Ana Souza" },
+    { ref: "MESA 6", display_ref: "Mesa 6", session_key: "s6", state: "in_use", customer_name: "" },
+    { ref: "00000013", display_ref: "13", session_key: "s13", state: "in_use", customer_name: "" },
+  ] as unknown as POSTabProjection[];
+  const options = moveTargetOptions(tabs, "s13");
+  const resolve = (input: string, extra: Partial<Parameters<typeof resolveDestination>[0]> = {}) =>
+    resolveDestination({ input, options, sourceDisplay: "13", suggested: "13-2", allowsNew: true, allowsExisting: true, ...extra });
+
+  it("os destinos são as comandas em uso, menos a de origem", () => {
+    expect(options.map((o) => o.label)).toEqual(["#12 · Ana Souza", "Mesa 6"]);
   });
 
-  it("flags price-freezing from the capability, defaulting to true", () => {
-    expect(freezesPriceOnMove({ freezes_price_on_move: true })).toBe(true);
+  it("o campo casa o número (com ou sem #, com zeros), o nome, ou vira comanda nova", () => {
+    expect(resolve("12")).toEqual({ kind: "existing", sessionKey: "s12", title: "#12" });
+    expect(resolve("#0012")).toEqual({ kind: "existing", sessionKey: "s12", title: "#12" });
+    expect(resolve("mesa 6")).toEqual({ kind: "existing", sessionKey: "s6", title: "Mesa 6" });
+    expect(resolve("13-2")).toEqual({ kind: "new", tabRef: "13-2", title: "13-2" });
+    expect(resolve("13")).toMatchObject({ kind: "invalid" });
+    expect(resolve("")).toMatchObject({ kind: "invalid" });
+    expect(resolve("13/2")).toEqual({ kind: "invalid", reason: "A comanda não pode ter barra. Use um hífen, por exemplo 13-2." });
+  });
+
+  it("o canal decide o que pode (comanda nova, comanda em uso)", () => {
+    expect(resolve("13-2", { allowsNew: false })).toMatchObject({ kind: "invalid" });
+    expect(resolve("12", { allowsExisting: false })).toMatchObject({ kind: "invalid" });
+    expect(allowsNewTab({ allows_split: false })).toBe(false);
+    expect(allowsExistingTab({ allows_transfer: false, allows_merge: true })).toBe(true);
+    expect(allowsNewTab(null)).toBe(true);
     expect(freezesPriceOnMove({ freezes_price_on_move: false })).toBe(false);
-    expect(freezesPriceOnMove({})).toBe(true);
-    expect(freezesPriceOnMove(null)).toBe(true);
   });
 
-  it("addresses a line by its line_id — e por nada mais", () => {
-    // O fallback para o sku saiu: numa comanda com dois chás ele endereçaria as
-    // duas linhas de uma vez, e a transferência levaria a errada.
-    expect(moveLineId(cartItem({ sku: "CR", line_id: "L1" }))).toBe("L1");
-    expect(moveLineId(cartItem({ sku: "CR", line_id: "L2" }))).toBe("L2");
+  it("a lista filtra pelo começo do número ou pelo nome; no nome sugerido, mostra todas", () => {
+    expect(filterTargets(options, "13-2", "13-2")).toHaveLength(2);
+    expect(filterTargets(options, "1", "13-2").map((o) => o.title)).toEqual(["#12"]);
+    expect(filterTargets(options, "ana", "13-2").map((o) => o.title)).toEqual(["#12"]);
+    expect(filterTargets(options, "13-9", "13-2")).toHaveLength(2);
   });
 
-  it("needs line selection for split/transfer but not merge", () => {
-    expect(modeNeedsSelection("split")).toBe(true);
-    expect(modeNeedsSelection("transfer")).toBe(true);
-    expect(modeNeedsSelection("merge")).toBe(false);
+  it("vão as marcadas, ou a comanda inteira sem marca", () => {
+    const items = [cartItem({ sku: "CR", line_id: "L1", qty: 2 }), cartItem({ sku: "PC", line_id: "L2" })];
+    expect(linesToMove(items, ["L2"]).map(moveLineId)).toEqual(["L2"]);
+    expect(linesToMove(items, []).map(moveLineId)).toEqual(["L1", "L2"]);
+    expect(movingSummary(items).units).toBe(3);
   });
 
-  it("shapes a line view and selects ids in tab order", () => {
-    const items = [
-      cartItem({ sku: "CR", name: "Croissant", price_q: 800, qty: 2, line_id: "L1" }),
-      cartItem({ sku: "PC", name: "Pão", price_q: 500, qty: 1, line_id: "L2" }),
-    ];
-    expect(moveLineView(items[0]!)).toEqual({ id: "L1", label: "2x Croissant", amountDisplay: formatBRL(1600) });
-    expect(selectedLineIds(items, new Set(["L2"]))).toEqual(["L2"]);
-    expect(selectedLineIds(items, new Set(["L2", "L1"]))).toEqual(["L1", "L2"]);
+  it("o botão diz o resultado em palavras", () => {
+    const existing = { kind: "existing", sessionKey: "s12", title: "#12" } as const;
+    const fresh = { kind: "new", tabRef: "13-2", title: "13-2" } as const;
+    expect(transferCta({ units: 3, all: false, destination: existing, sourceTitle: "#13" })).toBe("Levar 3 itens para a #12");
+    expect(transferCta({ units: 1, all: false, destination: existing, sourceTitle: "#13" })).toBe("Levar 1 item para a #12");
+    expect(transferCta({ units: 5, all: true, destination: existing, sourceTitle: "#13" })).toBe("Levar tudo para a #12 e liberar a #13");
+    expect(transferCta({ units: 2, all: false, destination: fresh, sourceTitle: "#13" })).toBe("Separar 2 itens na comanda nova 13-2");
+    expect(transferCta({ units: 5, all: true, destination: fresh, sourceTitle: "#13" })).toBe("Levar tudo para a comanda nova 13-2 e liberar a #13");
   });
 
-  it("gates submit per mode", () => {
-    const base = { selectedIds: ["L1"], splitRef: "1007-2", targetSessionKey: "s1", itemCount: 2, busy: false };
-    expect(canSubmitMove({ ...base, mode: "split" })).toBe(true);
-    expect(canSubmitMove({ ...base, mode: "split", splitRef: " " })).toBe(false);
-    expect(canSubmitMove({ ...base, mode: "split", selectedIds: [] })).toBe(false);
-    expect(canSubmitMove({ ...base, mode: "transfer" })).toBe(true);
-    expect(canSubmitMove({ ...base, mode: "transfer", targetSessionKey: "" })).toBe(false);
-    expect(canSubmitMove({ ...base, mode: "merge", selectedIds: [] })).toBe(true);
-    expect(canSubmitMove({ ...base, mode: "merge", itemCount: 0 })).toBe(false);
-    expect(canSubmitMove({ ...base, mode: "split", busy: true })).toBe(false);
-  });
-
-  it("builds the move payload per mode, or null when invalid", () => {
+  it("o comando: comanda em uso é transfer, nova é split; levar tudo pede a liberação da origem", () => {
     const items = [cartItem({ sku: "CR", line_id: "L1" }), cartItem({ sku: "PC", line_id: "L2" })];
-    expect(buildMovePayload({ mode: "split", items, selectedIds: ["L1"], splitRef: " 1007-2 ", targetSessionKey: "" }))
-      .toEqual({ mode: "split", lineIds: ["L1"], toTabRef: "1007-2" });
-    expect(buildMovePayload({ mode: "transfer", items, selectedIds: ["L1"], splitRef: "", targetSessionKey: "s1" }))
-      .toEqual({ mode: "transfer", lineIds: ["L1"], toSessionKey: "s1" });
-    expect(buildMovePayload({ mode: "merge", items, selectedIds: [], splitRef: "", targetSessionKey: "s1" }))
-      .toEqual({ mode: "merge", lineIds: ["L1", "L2"], toSessionKey: "s1", closeSource: true });
-    // Levar TODOS os itens pede a liberação da origem vazia (dono, T2=1).
-    expect(buildMovePayload({ mode: "transfer", items, selectedIds: ["L1", "L2"], splitRef: "", targetSessionKey: "s1" }))
-      .toEqual({ mode: "transfer", lineIds: ["L1", "L2"], toSessionKey: "s1", closeSource: true });
-    expect(buildMovePayload({ mode: "split", items, selectedIds: ["L2", "L1"], splitRef: "1007-2", targetSessionKey: "" }))
-      .toEqual({ mode: "split", lineIds: ["L2", "L1"], toTabRef: "1007-2", closeSource: true });
-    expect(buildMovePayload({ mode: "split", items, selectedIds: [], splitRef: "x", targetSessionKey: "" })).toBeNull();
-    expect(buildMovePayload({ mode: "merge", items: [], selectedIds: [], splitRef: "", targetSessionKey: "s1" })).toBeNull();
-  });
-
-  it("lists destination tabs with a session, labelling by customer when present", () => {
-    const tabs = [
-      tab({ ref: "1007", display_ref: "1007", session_key: "s1", customer_name: "Maria" }),
-      tab({ ref: "1011", display_ref: "1011", session_key: "s2" }),
-      tab({ ref: "1099", display_ref: "1099", session_key: "" }),
-    ];
-    expect(moveTargetOptions(tabs)).toEqual([
-      { sessionKey: "s1", label: "#1007 · Maria" },
-      { sessionKey: "s2", label: "#1011" },
-    ]);
-    expect(defaultMoveTarget(tabs)).toBe("s1");
-    expect(defaultMoveTarget([])).toBe("");
+    expect(buildMovePayload({ items, lineIds: ["L1"], destination: { kind: "existing", sessionKey: "s12", title: "#12" } }))
+      .toEqual({ mode: "transfer", lineIds: ["L1"], toSessionKey: "s12" });
+    expect(buildMovePayload({ items, lineIds: ["L1", "L2"], destination: { kind: "existing", sessionKey: "s12", title: "#12" } }))
+      .toEqual({ mode: "transfer", lineIds: ["L1", "L2"], toSessionKey: "s12", closeSource: true });
+    expect(buildMovePayload({ items, lineIds: ["L2"], destination: { kind: "new", tabRef: "13-2", title: "13-2" } }))
+      .toEqual({ mode: "split", lineIds: ["L2"], toTabRef: "13-2" });
+    expect(buildMovePayload({ items, lineIds: ["L1"], destination: { kind: "invalid", reason: "x" } })).toBeNull();
+    expect(buildMovePayload({ items, lineIds: [], destination: { kind: "new", tabRef: "13-2", title: "13-2" } })).toBeNull();
   });
 });
 

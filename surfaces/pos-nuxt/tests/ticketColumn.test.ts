@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { fireCellView, kitchenStateView, markRange, markedSummary, toggleMark } from "~/presentation/ticketColumn";
 import { firedLineIncrease, firedLineShrink, firedLineShrinkPolicy, offersResendWithNote } from "~/presentation/firedLineChange";
-import { availableMoveModes, initialMoveMode, moveSubmitLabel } from "~/presentation/moveLines";
 import type { POSCartItem } from "~/types/pos";
 
 const line = (id: string, qty = 1, price_q = 500): POSCartItem => ({ line_id: id, sku: id, name: id, qty, price_q, notes: "" });
@@ -84,20 +83,3 @@ describe("firedLineChange — a decisão 5 do dono", () => {
   });
 });
 
-describe("moveLines — Transferir é o verbo", () => {
-  it("os modos são o destino; o botão diz Transferir ou Juntar", () => {
-    const modes = availableMoveModes(null);
-    expect(modes.map((m) => m.label)).toEqual(["Outra comanda", "Comanda nova", "Juntar comandas"]);
-    // O curto escrito à mão para quando os três não cabem completos (descem juntos).
-    expect(modes.map((m) => m.shortLabel)).toEqual(["Outra", "Nova", "Juntar"]);
-    expect(modes.every((m) => m.icon)).toBe(true);
-    expect(moveSubmitLabel("split")).toBe("Transferir");
-    expect(moveSubmitLabel("transfer")).toBe("Transferir");
-    expect(moveSubmitLabel("merge")).toBe("Juntar");
-  });
-  it("abre no modo pedido, ou em outra comanda quando há, senão na nova", () => {
-    const modes = availableMoveModes(null);
-    expect(initialMoveMode(modes, true)).toBe("transfer");
-    expect(initialMoveMode(modes, false)).toBe("split");
-  });
-});

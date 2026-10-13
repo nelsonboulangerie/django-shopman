@@ -2821,6 +2821,15 @@ def _tab_payload_payment_tenders(payment: dict) -> list[dict]:
     return []
 
 
+def _transferred_from_view(data: dict) -> dict | None:
+    origin = data.get("transferred_from") or {}
+    display = str(origin.get("tab_display") or origin.get("tab_ref") or "").strip()
+    if not display:
+        return None
+    shown = f"#{display}" if display.isdigit() else display
+    return {"tab_display": display, "label": f"Transf. da {shown}", "title": f"Transferida da comanda {shown}"}
+
+
 def build_open_tab(session: Session) -> dict:
     """Read-model of an open POS comanda, rendered by the POS surface.
 
@@ -2896,6 +2905,9 @@ def build_open_tab(session: Session) -> dict:
         "opened_at_display": _format_time(session.opened_at) if session.opened_at else "",
         # A mesa do Salão vinculada (opcional; ``set_pos_tab_seating``).
         "seating_spot_ref": str(data.get("seating_spot_ref") or ""),
+        # O RASTRO (dono, T1=1): a comanda que nasceu de uma transferência mostra o selo
+        # "Transf. da #13" (o texto inteiro, "Transferida da comanda #13", na dica).
+        "transferred_from": _transferred_from_view(data),
         "edit_of": edit_of,
         "items": items,
         "customer_phone": customer.get("phone", ""),

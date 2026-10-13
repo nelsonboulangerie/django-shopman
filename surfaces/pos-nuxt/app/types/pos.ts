@@ -761,6 +761,9 @@ export interface POSTabPayload {
   opened_at_display?: string;
   /** A mesa do Salão vinculada (opcional); "" = sem mesa. */
   seating_spot_ref?: string;
+  /** O rastro (dono, T1=1, 13/10/2026): a comanda nasceu de uma transferência. O selo
+   *  diz `label` ("Transf. da #13"); a dica e o leitor de tela, `title`. */
+  transferred_from?: { tab_display: string; label: string; title: string } | null;
   /** Ref da encomenda quando esta é a comanda virtual da EDIÇÃO dela; "" numa comanda comum. */
   edit_of?: string;
   items: POSCartItem[];
