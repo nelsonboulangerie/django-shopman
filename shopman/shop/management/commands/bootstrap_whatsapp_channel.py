@@ -29,7 +29,9 @@ LISTING_REF = "whatsapp"
 #: gravada inteira quando o canal NÃO existe; no canal existente entram apenas as
 #: chaves de ``REQUIRED_KEYS`` que faltarem.
 CHANNEL_CONFIG = {
-    "confirmation": {"mode": "auto_confirm", "timeout_minutes": 5, "stale_new_alert_minutes": 10},
+    # Pedido remoto só é aceito quando uma pessoa confere disponibilidade, como
+    # no seed e na migração ``shop.0054``, que tirou o autoaceite dos canais remotos.
+    "confirmation": {"mode": "manual", "stale_new_alert_minutes": 10},
     # Link de Pix/cartão no chat logo depois do pedido; `at_commit` faz a
     # confirmação esperar a captura.
     "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
