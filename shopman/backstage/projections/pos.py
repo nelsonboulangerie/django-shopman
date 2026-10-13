@@ -427,7 +427,7 @@ class POSTabProjection:
     # A mesa do Salão vinculada a esta comanda (opcional), para o quadro e o Salão.
     seating_spot_ref: str = ""
     # A cozinha terminou tudo o que foi disparado (todo ticket vivo no Pronto):
-    # o balcão chama o cliente. O quadro mostra "Pronta", sobe a comanda e toca
+    # o balcão chama o cliente. O quadro mostra "Tudo pronto", sobe a comanda e toca
     # (decisão do dono, 13/10/2026).
     kitchen_ready: bool = False
 

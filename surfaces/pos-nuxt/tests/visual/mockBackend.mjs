@@ -182,6 +182,8 @@ const pos = {
 // fotos das Encomendas não mudam.
 const SALE = process.env.MOCK_SCENARIO === "sale";
 const COLUMN_STATES = SALE && process.env.MOCK_COLUMN_STATES === "1";
+// A comanda 14 com a cozinha toda no Pronto: o selo "Tudo pronto" do quadro (só na prévia).
+const KITCHEN_READY = SALE && process.env.MOCK_KITCHEN_READY === "1";
 const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
 const PRODUCTS = [
   ["PAO-FRANCES", "Pão francês", 90, "paes"],
@@ -380,7 +382,7 @@ const TABS = SALE
         total_display: brl(5960), last_touched_display: "há 2 min", items_preview: "2 Croissant · 1 Pain au chocolat · 2 Café coado",
         opened_at_display: "09:41",
       }),
-      tab("14", { state: "in_use", status_label: "Em uso", item_count: 1, line_count: 1, total_display: brl(1290), items_preview: "1 Cappuccino", opened_at_display: "10:02" }),
+      tab("14", { state: "in_use", status_label: "Em uso", item_count: 1, line_count: 1, total_display: brl(1290), items_preview: "1 Cappuccino", opened_at_display: "10:02", ...(KITCHEN_READY ? { session_key: "s-14", fired: true, kitchen_ready: true } : {}) }),
       tab("13", {
         state: "in_use", status_label: "Em uso", customer_name: "Roberto Albuquerque", item_count: 11, line_count: 9,
         total_display: brl(FULL_ITEMS.reduce((sum, item) => sum + item.price_q * item.qty, 0)), last_touched_display: "agora",

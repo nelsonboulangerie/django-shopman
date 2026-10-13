@@ -29,7 +29,7 @@ export function isKitchenReady(tab: POSTabProjection): boolean {
   return tab.state === "in_use" && tab.item_count > 0 && Boolean(tab.kitchen_ready);
 }
 
-/** Pronta primeiro (o balcão chama o cliente), depois as em uso, depois as livres;
+/** "Tudo pronto" primeiro (o balcão chama o cliente), depois as em uso, depois as livres;
  *  dentro de cada grupo, pela referência (numeric-aware, pt-BR). */
 export function sortTabs(tabs: POSTabProjection[]): POSTabProjection[] {
   const rank = (tab: POSTabProjection) => (isKitchenReady(tab) ? 0 : tab.state === "in_use" ? 1 : 2);
@@ -70,7 +70,7 @@ export interface TabCardView {
   isUnpaid: boolean;
   /** Has items but nothing sent to the kitchen yet — a quiet "a enviar" cue. */
   pendingKitchen: boolean;
-  /** A cozinha terminou tudo: "Pronta", o selo mais alto do quadro. */
+  /** A cozinha terminou tudo: "Tudo pronto", o selo mais alto do quadro. */
   kitchenReady: boolean;
   statusLabel: string;
   /** Customer name, falling back to an items preview, then "Livre". */
