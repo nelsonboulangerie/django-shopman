@@ -74,6 +74,7 @@
 | [`apply_grocery_catalog`](#apply_grocery_catalog) | config | Seed | Cria a revenda real da Mercearia e as caixas presente (PDV; canal remoto só com foto) e troca os placeholders que já têm produto real |
 | [`apply_catalog_decisions`](#apply_catalog_decisions) | config | Dados | Executa o que o dono decidiu que sai do catálogo (apaga, com lápide) ou sai da loja (despublica) — ensaio por padrão |
 | [`apply_material_skus`](#apply_material_skus) | config | Dados | Aplica a curadoria da LISTA DE INSUMOS num banco que já roda: renomeia, cria o que falta, reaponta a ficha (ensaio por padrão) |
+| [`purge_synthetic_data`](#purge_synthetic_data) | config | Dados | Dia D: apaga o dado do ensaio e mantém o cadastro do Dia 1 no mesmo banco (ensaio por padrão; `--apply` com o nome do banco digitado) |
 | [`calibrate_conversions`](#calibrate_conversions) | buyman | Dados | Lista as equivalências APROXIMADAS que ninguém pesou, e grava a pesagem da casa com carimbo de procedência |
 
 ---
@@ -259,6 +260,34 @@ por decisão do dono.
 ⚠️ **O `seed.py` é a FONTE da lista.** Renomear só no banco é meia correção: o
 próximo reseed recria o nome antigo. O relatório conta as ocorrências no código e
 cobra; quem as troca é o commit.
+
+---
+
+
+### purge_synthetic_data
+
+Passo "Dia D · dados" do [cutover](../runbooks/go-live-cutover.md) (D-029: a
+loja vira produção no próprio app, no mesmo banco). Apaga pedidos, pagamentos,
+clientes e suas contas, turnos e livro-caixa, produção, estoque, conversas e o
+marketing de ensaio; mantém catálogo, preços, fichas, insumos, fornecedores,
+canais, regras, Shop, operadores (com PIN e 2FA), terminais, estações pareadas e
+o histórico real do Yooga.
+
+```bash
+python manage.py purge_synthetic_data                                    # ensaio: executa, mede e desfaz
+python manage.py purge_synthetic_data --json relatorio.json              # o relatório inteiro, por tabela
+python manage.py purge_synthetic_data --apply --confirm-database shopman # grava
+```
+
+A política mora em `config/synthetic_purge.py` (`POLICY`): **todo** modelo tem
+destino e motivo. Modelo novo sem linha, ou cadastro que aponta por FK para
+tabela que vai ser apagada, faz o comando recusar antes de tocar em qualquer
+coisa. Uma transação só; antes de terminar, as constraints são conferidas e a
+contagem de cada tabela mantida tem de bater com a de antes, ou tudo é
+desfeito. O `--apply` recusa com a política do go-live armada
+(`SHOPMAN_GO_LIVE`/tag `go-live-v1`) ou com `SHOPMAN_ENVIRONMENT=production`.
+Idempotente. Depois: inventário de abertura (o estoque fica zerado),
+`refresh_bi_daily_series --all` e o `compute_product_affinity` do worker.
 
 ---
 
