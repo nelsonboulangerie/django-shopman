@@ -781,7 +781,7 @@ def _address_key(structured) -> tuple:
 
 
 def _require_delivery_identity(order, data_updates: dict, *, total_q: int) -> None:
-    """Entrega com nota exige CPF/CNPJ e endereço completo — a régua da venda (24/09)."""
+    """Entrega com nota exige endereço completo e CPF/CNPJ válido quando informado — a régua da venda (13/10)."""
     from shopman.shop.services import delivery_fiscal_identity as identity
 
     view_data = dict(order.data or {})

@@ -34,7 +34,7 @@ Django semeado + pos-nuxt.
 createdb shopman_sonda
 DATABASE_URL=postgres://localhost/shopman_sonda DJANGO_DEBUG=1 .venv/bin/python manage.py migrate
 DATABASE_URL=postgres://localhost/shopman_sonda DJANGO_DEBUG=1 .venv/bin/python manage.py seed --profile qa
-# o bloqueio "Entrega com nota fiscal: falta o CPF" só aparece com um resolver
+# os avisos da nota da entrega (endereço incompleto) só aparecem com um resolver
 # fiscal que emita na entrega (o do alpha):
 SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment,shopman.shop.fiscal_resolvers.deferred_settlement" \
 DATABASE_URL=postgres://localhost/shopman_sonda DJANGO_DEBUG=1 .venv/bin/python manage.py runserver 127.0.0.1:8811

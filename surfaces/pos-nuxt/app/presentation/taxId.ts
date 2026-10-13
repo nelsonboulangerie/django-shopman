@@ -50,25 +50,6 @@ export function isValidTaxId(value: string): boolean {
 }
 
 /**
- * A entrega com nota ainda não tem o documento que a nota exige?
- *
- * Decisão do dono (24/09/2026): a nota da entrega a domicílio não sai sem o
- * CPF/CNPJ do cliente (a SEFAZ recusa, 787/788), e a recusa chegava com o
- * entregador na rua. O servidor diz se ESTA entrega vai com nota
- * (`review.delivery_tax_id_required`, a mesma regra da emissão); a tela
- * confere o campo ao vivo, porque digitar o CPF não refaz a review.
- */
-export function deliveryTaxIdMissing(input: {
-  fulfillmentType: string;
-  required: boolean | undefined;
-  wantsCpfOnInvoice: boolean;
-  invoiceTaxId: string;
-}): boolean {
-  if (input.fulfillmentType !== "delivery" || !input.required) return false;
-  return !(input.wantsCpfOnInvoice && isValidTaxId(input.invoiceTaxId));
-}
-
-/**
  * O documento com a máscara de CPF (até 11 dígitos) ou de CNPJ (12 a 14).
  *
  * A MÁSCARA E O VALOR GUARDADO precisam parar no mesmo dígito: guardamos só

@@ -191,18 +191,6 @@ for (const rail of RAILS) for (const viewport of VIEWPORTS) {
     await closeDialog(page);
 
     // ── ENCOMENDA DE ENTREGA, PARA AMANHÃ ──
-    // O bloqueio "Entrega com nota fiscal: falta o CPF" depende do resolver
-    // fiscal do ambiente. Para medi-lo em qualquer banco, a review desta venda
-    // responde que a nota da entrega é exigida — a tela é o que se mede.
-    await page.route("**/pos/sale/review/**", async (route) => {
-      const response = await route.fetch();
-      const body = await response.json().catch(() => null);
-      if (body?.review) {
-        await route.fulfill({ response, json: { ...body, review: { ...body.review, delivery_tax_id_required: true } } });
-      } else {
-        await route.fulfill({ response });
-      }
-    });
     // A encomenda nasce guiada: um assistente de etapas (cliente → recebimento
     // → endereço, se entrega → data) que termina em "Montar encomenda".
     await openFreshTab(page);
@@ -232,7 +220,7 @@ for (const rail of RAILS) for (const viewport of VIEWPORTS) {
     await addProducts(page, PRODUCTS.slice(0, 1));
     await measure(page, "venda-encomenda-entrega-cabecalho");
     await step(page, "pagamento-encomenda-entrega", () => openPayment(page));
-    // Cada cobrança muda os bloqueios: a nota da entrega (CPF), o link, o Pix.
+    // Cada cobrança muda os bloqueios: a nota da entrega (endereço), o link, o Pix.
     for (const [collection, method] of [
       ["No balcão", "Dinheiro"], ["No balcão", "Pix"], ["No balcão", "Crédito"], ["No balcão", "Link de pagamento"],
       ["Na entrega", "Dinheiro"], ["Na entrega", "Crédito"],
