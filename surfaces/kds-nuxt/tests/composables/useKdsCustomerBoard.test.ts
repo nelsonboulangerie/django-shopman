@@ -84,6 +84,32 @@ describe("useKdsCustomerBoard — SSE da TV de retirada", () => {
   beforeEach(() => { env.reset(); vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
+  it("ouve o canal público do painel e refaz o GET a cada aviso da cozinha", async () => {
+    const { unmount } = await withMountedBrowser(() => useKdsCustomerBoard());
+    try {
+      const source = FakeEventSource.instances[0]!;
+      // Não o canal do Gestor: a TV sem sessão levava stream-error ali.
+      expect(source.url).toBe("/sse/pickup");
+      expect(source.listeners.has("pickup-board-update")).toBe(true);
+      expect(source.listeners.has("backstage-orders-update")).toBe(false);
+      source.open();
+      env.refresh.mockClear();
+      source.emit("pickup-board-update"); // a cozinha deu o Pronto
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+    } finally { unmount(); }
+  });
+
+  it("o poll é só reserva, em cadência calma", async () => {
+    const { unmount } = await withMountedBrowser(() => useKdsCustomerBoard());
+    try {
+      env.refresh.mockClear();
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(env.refresh).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+    } finally { unmount(); }
+  });
+
   it("volta a ouvir depois do 502 de deploy, sem precisar recarregar a TV", async () => {
     const { value, unmount } = await withMountedBrowser(() => useKdsCustomerBoard());
     try {

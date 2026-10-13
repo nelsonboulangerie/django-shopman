@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from django.urls import path
 
+from shopman.shop.eventstream import events as eventstream_view
+
 from .alerts import AlertAckView, AlertListView
 from .backup import BackupExportView
 from .bi import (
@@ -319,6 +321,14 @@ urlpatterns = [
     # KDS
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
+    # Push do painel de retirada: canal público ``pickup-board``, efêmero e de
+    # corpo vazio. O painel refaz o GET acima no evento (ADR-016).
+    path(
+        "kds/pickup/events/",
+        eventstream_view,
+        {"channels": ["pickup-board"]},
+        name="api-backstage-kds-customer-events",
+    ),
     path("kds/<slug:ref>/", KDSBoardView.as_view(), name="api-backstage-kds-board"),
     path("kds/<slug:ref>/seen/", KDSStationSeenView.as_view(), name="api-backstage-kds-station-seen"),
     path("kds/<slug:ref>/settings/", KDSStationSettingsView.as_view(), name="api-backstage-kds-station-settings"),

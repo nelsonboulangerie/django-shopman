@@ -9,7 +9,7 @@ const { status, realtime } = useKdsCustomerBoard();
 const preparing = computed(() => status.value?.preparing ?? []);
 const ready = computed(() => status.value?.ready ?? []);
 // Cue de tempo-real HONESTO: "ao vivo" (verde, pulsando) só quando o SSE conectou;
-// senão neutro "atualiza sozinho" (o poll de 10s carrega). Nunca mente pro cliente.
+// senão neutro "atualiza sozinho" (o poll de reserva carrega). Nunca mente pro cliente.
 const liveCue = computed(() => realtimeIndicator(realtime.value));
 
 // Relógio ao vivo (client-only — new Date() no SSR causaria mismatch).
