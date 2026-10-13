@@ -530,10 +530,12 @@ def _process_patch(event: dict, event_id: str, order_id: str) -> str:
                 record["reconciled"] = True
                 record["reconciliation"] = outcome
 
-            patches.append(record)
             # Relido DEPOIS de ``_apply_patch``, que gravou o ajuste no mesmo
             # ``data`` — copiar antes apagaria o ajuste ao salvar aqui.
             data = dict(order.data or {})
+            if payload is not None:
+                record["previous_financials"] = _refresh_financials(data, payload, outcome)
+            patches.append(record)
             data["ifood"] = {**(data.get("ifood") or {}), "patches": patches}
             order.data = data
             order.save(update_fields=["data", "updated_at"])
@@ -585,6 +587,51 @@ def _apply_patch(order, payload: dict, event_id: str) -> dict:
         event_id=event_id,
         stock_reference=f"ifood_patch:{order.ref}",
     )
+
+
+def _refresh_financials(data: dict, payload: dict, outcome: dict | None) -> dict:
+    """Traz o dinheiro do pedido para o pedido RELIDO, e devolve o que havia.
+
+    ``_apply_patch`` ajusta itens e total efetivo; os fatos financeiros do
+    iFood gravados na ingestão (``ifood.totals``, ``ifood.payments``,
+    ``ifood.benefits``) e o ``payment`` derivado deles ficavam com os valores
+    de antes. É deles que a nota tira a base da casa
+    (``fiscal_intermediary.seller_amounts``: subtotal, taxas, cupom de quem) e
+    que o Gestor diz quanto falta receber (``payment.balance_due_q``): a nota
+    saía com a base velha sobre os itens novos. Regrava os três com o estado
+    final, pela mesma leitura da ingestão.
+
+    O ``payment`` só é refeito enquanto nada foi recebido: com um tender já
+    liquidado (o dinheiro da porta entrou), a cobrança é fato e não se reescreve.
+    O que havia volta para o registro da alteração (``previous_financials``).
+    """
+    facts = dict(data.get("ifood") or {})
+    previous = {
+        "totals": facts.get("totals") or {},
+        "payments": facts.get("payments") or {},
+        "benefits": facts.get("benefits") or [],
+        "payment_status": str((data.get("payment") or {}).get("status") or ""),
+    }
+    facts["totals"] = payload.get("totals") or {}
+    facts["payments"] = payload.get("payments") or {}
+    facts["benefits"] = payload.get("benefits") or []
+    data["ifood"] = facts
+
+    payment = dict(data.get("payment") or {})
+    tenders = payment.get("tenders") or []
+    settled = any(
+        isinstance(t, dict) and str(t.get("status") or "pending").lower() != "pending" for t in tenders
+    )
+    if not settled:
+        total_q = int((outcome or {}).get("total_q") or 0) or int(facts["totals"].get("order_amount_q") or 0)
+        for key in ("collection", "tenders", "change_for_q"):
+            payment.pop(key, None)
+        payment["status"] = ifood_ingest.payment_status_from_payload(facts["payments"], total_q)
+        payment.update(ifood_ingest._collection_on_delivery(
+            payload, payload.get("delivery") or {}, str(data.get("fulfillment_type") or ""),
+        ))
+        data["payment"] = payment
+    return previous
 
 
 def _fiscal_authorized_explanation(order) -> str:
@@ -711,6 +758,8 @@ def _alert_patched(order, record: dict, outcome: dict | None, *, fiscal_authoriz
         applied.append("o estoque acompanhou")
     if kds_outcome.get("unfired") or kds_outcome.get("refired"):
         applied.append("a cozinha recebeu a comanda atualizada")
+    if record.get("previous_financials") is not None:
+        applied.append("o pagamento e os cupons foram relidos no iFood, e a nota sai pelos valores novos")
     if stock_outcome.get("gaps"):
         applied.append(
             "FALTOU estoque para o que foi acrescentado: veja o alerta de reserva ao lado"
