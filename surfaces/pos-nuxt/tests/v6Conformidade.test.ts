@@ -109,7 +109,7 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
   });
   it("'vai à cozinha' na linha nova e o envio automático à vista", () => {
     expect(cart).toContain("data-pos-line-goes-to-kitchen");
-    expect(cart).toContain("kitchenState.auto.full");
+    expect(cart).toContain("data-pos-auto-fire-control");
   });
 });
 

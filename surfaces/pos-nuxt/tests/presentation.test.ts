@@ -406,7 +406,8 @@ describe("presentation/tabBoard — board shaping", () => {
     });
 
     const free = tabCardView(tabs[0]!);
-    expect(free).toMatchObject({ isFree: true, pendingKitchen: false, summary: "Comanda livre", identity: "Livre", selected: false });
+    expect(free).toMatchObject({ isFree: true, pendingKitchen: false, summary: "", identity: "", selected: false });
+    // "Livre" mora só no selo (dono, 13/10/2026): o corpo do cartão livre não o repete.
 
     const fired = tabCardView(tabs[2]!);
     expect(fired).toMatchObject({ isUnpaid: true, pendingKitchen: false, summary: "1 item · R$ 8,00" });

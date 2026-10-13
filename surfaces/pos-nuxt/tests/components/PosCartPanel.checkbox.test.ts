@@ -60,12 +60,13 @@ describe("PosCartPanel — a caixa de marcar responde no mesmo toque", () => {
     expect(marked(wrapper)).toEqual(["L-PAO"]);
     expect(ticked(wrapper, "L-PAO")).toBe("true");
     expect(ticked(wrapper, "L-CAFE")).toBe("false");
-    expect(wrapper.find("[data-pos-marked-title]").text()).toContain("1 linha marcada");
+    // Uma marcada é o bloco dela, com a quantidade.
+    expect(wrapper.find("[data-pos-line-editor-title]").text()).toContain("Pão");
   });
 
-  it("com o editor fechado, o primeiro clique já marca", async () => {
+  it("com nada marcado, o primeiro clique já marca", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    await wrapper.find("[data-pos-line-editor-close]").trigger("click");
+    expect(wrapper.find("[data-pos-line-editor]").exists()).toBe(false);
     await box(wrapper, "L-QUICHE").trigger("click");
     expect(marked(wrapper)).toEqual(["L-QUICHE"]);
   });

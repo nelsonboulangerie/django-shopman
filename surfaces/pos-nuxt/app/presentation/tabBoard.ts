@@ -73,9 +73,9 @@ export interface TabCardView {
   /** A cozinha terminou tudo: "Tudo pronto", o selo mais alto do quadro. */
   kitchenReady: boolean;
   statusLabel: string;
-  /** Customer name, falling back to an items preview, then "Livre". */
+  /** Customer name, falling back to an items preview; empty when there is neither. */
   identity: string;
-  /** Line summary: item count + total, or the free-tab affordance. */
+  /** Line summary: item count + total; empty for a tab without items. */
   summary: string;
   selected: boolean;
 }
@@ -97,7 +97,7 @@ export function tabCardBadge(view: TabCardView): TabCardBadge {
     return { kind: "ready", label: "Tudo pronto", title: "Tudo pronto: a cozinha terminou tudo desta comanda", color: "success", icon: "lucide:bell-ring" };
   }
   if (view.isUnpaid) {
-    return { kind: "unpaid", label: "Não pago", title: "Não pago: enviado à cozinha e ainda não pago", color: "warning", icon: "lucide:flame" };
+    return { kind: "unpaid", label: "Não pago", title: "Não pago: enviado à cozinha e ainda não pago", color: "warning", icon: "lucide:credit-card" };
   }
   if (view.pendingKitchen) {
     return { kind: "pending", label: "A enviar", title: "A enviar: tem itens ainda não enviados à cozinha", color: "neutral", icon: "lucide:utensils" };
@@ -148,10 +148,12 @@ export function tabCardView(tab: POSTabProjection, selectedRef = ""): TabCardVie
     pendingKitchen: hasItems && !tab.fired,
     kitchenReady: isKitchenReady(tab),
     statusLabel: tab.status_label,
-    identity: tab.customer_name || tab.items_preview || "Livre",
+    // O cartão sem item não repete o selo (dono, 13/10/2026): "Livre" mora SÓ no selo,
+    // e o corpo fica vazio em vez de dizer "Livre" de novo e "Comanda livre".
+    identity: tab.customer_name || tab.items_preview || "",
     summary: hasItems
       ? `${tab.item_count} ${tab.item_count === 1 ? "item" : "itens"} · ${tab.total_display}`
-      : "Comanda livre",
+      : "",
     selected: Boolean(selectedRef) && tab.ref === selectedRef,
   };
 }

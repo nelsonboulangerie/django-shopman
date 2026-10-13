@@ -14,6 +14,7 @@
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
 | [`relocate_resale_stock`](#relocate_resale_stock) | shop | Dados | Leva para a posição que vende o saldo de revenda guardado fora da venda |
+| [`repair_corrupted_tags`](#repair_corrupted_tags) | shop | Dados | Conserta etiquetas gravadas pelo Admin como repr de objeto ("[<Tag: pao>"); sem `--apply` só relata |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
 | [`bootstrap_recipe_book`](#bootstrap_recipe_book) | craftsman | Seed | Cria no inventário uma receita (versão 1 publicada) para cada ficha que ainda não tem — idempotente |
 | [`import_recipe_versions`](#import_recipe_versions) | backstage | Dados | Importa de um JSON gerado na hora (nunca versionado) uma versão nova por receita do inventário; sem `--apply` só mostra, `--publish` publica a parte antes da massa |
@@ -454,6 +455,29 @@ Roda no ciclo do `maintenance_worker`, entre `cleanup_stale_sessions` e `cleanup
 ```bash
 python manage.py sweep_orphan_holds --dry-run
 python manage.py sweep_orphan_holds
+```
+
+---
+
+### repair_corrupted_tags
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/repair_corrupted_tags.py`
+
+Até 13/10/2026 o campo de etiquetas do Admin (palavras-chave do Produto, etiquetas do Cliente)
+mostrava o repr da lista (`[<Tag: pao>, <Tag: hamburger>]`) e cada save sem mexer gravava esse
+texto de volta, quebrado na vírgula. O comando acha as etiquetas corrompidas (`<Tag: `,
+`<CustomerTag: ` ou `[]`), tira as camadas de repr até sobrar o nome, religa o objeto à etiqueta
+limpa (reusando a que existe), solta a ligação quando não sobra nome e apaga a corrompida.
+Cobre `taggit.Tag` e `guestman.CustomerTag`. Idempotente.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--apply` | — | Grava a correção. Sem ela, só relata (dry-run) |
+
+```bash
+python manage.py repair_corrupted_tags
+python manage.py repair_corrupted_tags --apply
 ```
 
 ---

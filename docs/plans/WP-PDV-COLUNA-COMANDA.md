@@ -138,6 +138,16 @@ concluído limpa as marcas; Esc desmarca tudo; dígito não faz nada com marcas.
 > registra `lines_transferred_out`/`lines_transferred_in` (quem, quando, quais itens), o
 > PDV mostra o selo "Transf. da #13" e o detalhe do pedido diz "Transferida da comanda
 > #13". Nada por item.
+>
+> **C = A (dono, 13/10/2026).** A seleção é o alvo: tocar um item marca só ele (o tique no
+> mesmo toque) e abre a quantidade; a caixa soma. Tudo o que age em itens mora num bloco
+> só, colado no Pagamento: Quantidade | Remover (uma) ou Remover (várias); Desconto |
+> Observação; Enviar | Transferir, na mesma altura com e sem marcas. Lançar não marca nada
+> (o F9 de quem lança segue a comanda inteira). Sem nada marcado, o pé diz "Enviar à
+> cozinha (N)" e "Transferir itens". O título conta itens ("5 itens marcados · R$ 49,70"),
+> sem frase de teclas. O Envio é o controle "Envio [Auto | Manual]" no cabeçalho, que
+> grava o interruptor das estações da comanda. A alternativa B (barra no alto) foi
+> descartada.
 
 **Quando estreita.** Tecla cai primeiro, depois o rótulo curto escrito à mão, ícone só no fim.
 A grade nunca vira uma coluna; "em 9 linhas" cai antes; o total do Pagamento nunca corta. Na
