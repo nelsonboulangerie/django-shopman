@@ -76,7 +76,7 @@ django-unfold==0.107.0
 djangorestframework==3.18.3
 docstring_parser==0.18.0
 drf-spectacular==0.30.0
-erpbrasil.assinatura==1.8.1
+erpbrasil.assinatura==1.8.0
 erpbrasil.base==2.4.2
 erpbrasil.edoc==3.2.0
 erpbrasil.transmissao==1.1.0
