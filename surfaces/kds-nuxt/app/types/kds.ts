@@ -11,6 +11,8 @@
 import type {
   KDSBoardProjection as KDSBoardContract,
   KDSCustomerStatusProjection,
+  KDSHistoryEntryProjection as KDSHistoryEntryContract,
+  KDSHistoryProjection as KDSHistoryContract,
   KDSInstanceSummaryProjection,
   KDSTicketProjection as KDSTicketContract,
 } from "~/generated/kdsContract";
@@ -38,9 +40,20 @@ export interface KDSBoardProjection extends KDSBoardContract {
   recent_done: KDSTicketProjection[]; // para recall (desfazer o Pronto)
 }
 
+/** Um pedido do Histórico de hoje (``GET kds/<ref>/history/``). */
+export interface KDSHistoryEntryProjection extends KDSHistoryEntryContract {
+  ticket: KDSTicketProjection;
+  state: "done" | "cancelled";
+}
+
+export interface KDSHistoryProjection extends KDSHistoryContract {
+  entries: KDSHistoryEntryProjection[];
+}
+
 // API envelopes (shopman/backstage/api/kds.py response shapes).
 export interface KDSIndexResponse { instances: KDSInstanceSummaryProjection[] }
 export interface KDSBoardResponse { board: KDSBoardProjection }
+export interface KDSHistoryResponse { history: KDSHistoryProjection }
 export interface KDSTicketResponse { ticket: KDSTicketProjection }
 export interface KDSCustomerStatusResponse { status: KDSCustomerStatusProjection }
 export interface KDSStationSettingsResponse { density: string; sound_enabled: boolean }

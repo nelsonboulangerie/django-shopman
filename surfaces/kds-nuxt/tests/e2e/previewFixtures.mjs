@@ -179,6 +179,73 @@ export const CANCELLED_TICKETS = [
   }),
 ];
 
+/** O Histórico de hoje da `bancada` (dono, 13/10/2026): concluído que ainda reabre,
+ *  concluído que já saiu da cozinha (só se vê, com o motivo), Pronto desfeito e refeito,
+ *  encomenda com cliente e um cancelado com quem deu a ciência. */
+function historyEntry(ticketOverrides, entry) {
+  return {
+    ticket: ticket({ status: "done", status_label: "Concluído", ...ticketOverrides }),
+    state: "done",
+    undone: [],
+    prep_display: "",
+    can_reopen: false,
+    reopen_block_reason: "",
+    ...entry,
+  };
+}
+
+export const HISTORY_ENTRIES = [
+  historyEntry(
+    { pk: 151, order_ref: "BAL-260921-0129", items: [item("2", "Croque monsieur"), item("1", "Café coado grande")] },
+    {
+      items_summary: "2x Croque monsieur, 1x Café coado grande",
+      steps: ["recebido 08:12", "iniciado 08:13 Rafael", "Pronto 08:21 Rafael (tela)"],
+      prep_display: "8 min",
+      can_reopen: true,
+    },
+  ),
+  historyEntry(
+    {
+      pk: 152,
+      order_ref: "WEB-260921-0125",
+      customer_name: "Helena Prado",
+      is_preorder: true,
+      items: [item("6", "Croissant de manteiga"), item("1", "Quiche lorraine")],
+    },
+    {
+      items_summary: "6x Croissant de manteiga, 1x Quiche lorraine",
+      steps: ["recebido 07:40", "iniciado 07:44 Ana", "Pronto 08:02 Ana (tela)"],
+      undone: ["Pronto 07:58 Ana (tela) → desfeito 08:00 Rafael"],
+      prep_display: "18 min",
+      can_reopen: true,
+    },
+  ),
+  historyEntry(
+    { pk: 153, order_ref: "IFD-260921-4811", channel_icon: "fastfood", items: [item("1", "Pain au chocolat")] },
+    {
+      items_summary: "1x Pain au chocolat",
+      steps: ["recebido 07:31", "iniciado 07:32 Rafael", "Pronto 07:36 Rafael (tela)"],
+      prep_display: "4 min",
+      reopen_block_reason: "Pedido despachado: não volta à cozinha. Para refazer, peça pelo PDV ou pelo Gestor.",
+    },
+  ),
+  historyEntry(
+    {
+      pk: 154,
+      order_ref: "BAL-260921-0118",
+      status: "cancelled",
+      status_label: "Cancelado",
+      is_cancelled: true,
+      items: [item("1", "Tartine de abacate")],
+    },
+    {
+      state: "cancelled",
+      items_summary: "1x Tartine de abacate",
+      steps: ["recebido 07:20", "Cancelado 07:24", "ciente 07:25 Ana"],
+    },
+  ),
+];
+
 export const PREVIEW_INDEX = {
   instances: [
     { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: PREP_TICKETS.length },
@@ -241,6 +308,13 @@ export function createPreviewState() {
       for (const key of Object.keys(settings)) delete settings[key];
       changed.splice(0, changed.length, ...CHANGED_TICKETS.map((t) => ({ ...t })));
       cancelled.splice(0, cancelled.length, ...CANCELLED_TICKETS.map((t) => ({ ...t })));
+    },
+    history(ref, query) {
+      const q = String(query || "").trim().toLowerCase();
+      const all = ref === "bancada" ? HISTORY_ENTRIES : [];
+      const entries = q ? all.filter((e) => e.ticket.order_ref.toLowerCase().includes(q)) : all;
+      const name = PREVIEW_INDEX.instances.find((inst) => inst.ref === ref)?.name || ref;
+      return { history: { instance_ref: ref, instance_name: name, entries, total: entries.length, query: q } };
     },
     board(ref) {
       const name = PREVIEW_INDEX.instances.find((inst) => inst.ref === ref)?.name || ref;

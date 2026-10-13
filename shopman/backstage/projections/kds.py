@@ -39,6 +39,9 @@ logger = logging.getLogger(__name__)
 ACTIVE_TICKET_STATUSES = ("pending", "in_progress")
 RECENT_DONE_WINDOW = timedelta(minutes=30)
 RECENT_DONE_LIMIT = 12
+#: O Histórico de hoje mostra no máximo isto (os mais recentes); a busca pelo
+#: código alcança o resto do dia.
+HISTORY_LIMIT = 100
 
 
 # ── Projections ────────────────────────────────────────────────────────
@@ -220,6 +223,49 @@ class KDSBoardProjection:
 
 
 @dataclass(frozen=True)
+class KDSHistoryEntryProjection:
+    """Um pedido que passou pela estação hoje e já saiu do quadro (Histórico de hoje).
+
+    Decisão do dono (13/10/2026): só o turno de hoje e só desta estação; o que
+    já saiu da cozinha só se VÊ (refazer nasce no PDV ou no Gestor). ``steps``
+    é a trilha pronta, na ordem: "recebido 21:40", "iniciado 21:42 Rafael",
+    "Pronto 21:51 Rafael (tela)" ou "Cancelado 21:45", "ciente 21:47 Ana".
+    ``undone`` são os Prontos desfeitos ("Pronto 21:51 → desfeito 21:58 Ana").
+    """
+
+    #: O card do ticket, para o detalhe em só leitura.
+    ticket: KDSTicketProjection
+    #: "done" · "cancelled"
+    state: str
+    #: Os itens numa linha ("2x Croissant, 1x Café coado").
+    items_summary: str
+    steps: tuple[str, ...]
+    undone: tuple[str, ...] = ()
+    #: Do início (ou da chegada, sem início) ao Pronto: "9 min". Vazio no cancelado.
+    prep_display: str = ""
+    #: Reabrir devolve o ticket à fila (a mesma régua do servidor, ``recall_block_reason``).
+    can_reopen: bool = False
+    #: Por que não reabre, quando o Pronto já não volta ("Pedido despachado: ...").
+    reopen_block_reason: str = ""
+
+
+@dataclass(frozen=True)
+class KDSHistoryProjection:
+    """O Histórico de hoje de uma estação (``GET kds/<ref>/history/``).
+
+    Fora do quadro de propósito: o quadro vai a cada push e a cada 15 s, e o
+    histórico só quando alguém abre. ``total`` conta o dia inteiro (com a busca);
+    ``entries`` traz no máximo ``HISTORY_LIMIT``, os mais recentes primeiro.
+    """
+
+    instance_ref: str
+    instance_name: str
+    entries: tuple[KDSHistoryEntryProjection, ...]
+    total: int
+    query: str = ""
+
+
+@dataclass(frozen=True)
 class KDSCustomerOrderProjection:
     """Privacy-safe order status for a customer-facing ready board."""
 
@@ -386,14 +432,211 @@ def station_density(instance) -> str:
     return value if value in STATION_DENSITIES else "cozy"
 
 
+#: Por onde o Pronto veio, na voz da trilha ("Pronto 21:51 Rafael (tela)").
+_COMPLETED_VIA_LABELS = {
+    "station": "tela",
+    "exit": "Saída",
+    "pos": "PDV",
+    "scanner": "leitor",
+    "order_advanced": "Gestor",
+}
+
+
+def build_kds_history(instance_ref: str, *, query: str = "", limit: int = HISTORY_LIMIT) -> KDSHistoryProjection:
+    """O Histórico de hoje da estação: concluídos e cancelados desde 0h (hora da loja).
+
+    A régua do dia é a mesma do cancelado no quadro (``start_of_today``). A busca
+    olha o código do pedido, a comanda anterior e o nome do cliente.
+    """
+    from shopman.backstage.models import KDSInstance, KDSTicket
+    from shopman.backstage.services.exceptions import KDSInstanceNotFound
+
+    instance = KDSInstance.objects.filter(ref=instance_ref, is_active=True).first()
+    if instance is None or instance.type == "expedition":
+        raise KDSInstanceNotFound(f"Estação de KDS não encontrada: {instance_ref}.")
+
+    today = timezone.localdate()
+    start_of_today = timezone.make_aware(datetime.combine(today, time.min))
+    rows = list(
+        KDSTicket.objects.filter(kds_instance=instance).filter(
+            Q(status="done", completed_at__gte=start_of_today)
+            | Q(status="cancelled", cancelled_at__gte=start_of_today)
+        )
+    )
+    rows.sort(key=lambda t: (t.completed_at or t.cancelled_at or t.created_at, t.pk), reverse=True)
+    sources = _resolve_ticket_sources(rows)
+
+    needle = " ".join(str(query or "").split()).lower()
+    matched: list[tuple] = []
+    for ticket in rows:
+        source = sources.get(ticket.session_key)
+        if needle and needle not in _history_haystack(ticket, source):
+            continue
+        matched.append((ticket, source))
+    shown = matched[: max(0, int(limit))]
+
+    logins: set[str] = set()
+    for ticket, _source in shown:
+        logins.update((ticket.completed_by, ticket.acknowledged_by))
+        for record in ticket.reopenings or []:
+            if isinstance(record, dict):
+                logins.update((str(record.get("completed_by") or ""), str(record.get("undone_by") or "")))
+    names = {**_first_names(logins), **_operator_names([t for t, _ in shown], {t.pk: s for t, s in shown})}
+
+    return KDSHistoryProjection(
+        instance_ref=instance.ref,
+        instance_name=instance.name,
+        entries=tuple(
+            _history_entry(ticket, instance, source=source, names=names, today=today)
+            for ticket, source in shown
+        ),
+        total=len(matched),
+        query=needle,
+    )
+
+
+def _history_haystack(ticket, source) -> str:
+    """O que a busca do histórico olha: o código, a comanda anterior e o cliente."""
+    source_data = (getattr(source, "data", None) or {}) if source is not None else {}
+    order_ref, previous = _display_order_refs(
+        source, source_data, getattr(source, "handle_ref", "") or "", ticket.session_key
+    )
+    customer = str((source_data.get("customer") or {}).get("name") or "")
+    return " ".join((order_ref, previous, customer)).lower()
+
+
+def _history_entry(ticket, instance, *, source, names, today) -> KDSHistoryEntryProjection:
+    from shopman.shop.services import kds as kds_core
+
+    card = _build_ticket(ticket, instance, source=source, names=names)
+    steps = [f"recebido {_format_time(ticket.created_at)}"]
+    if card.started_at_display:
+        steps.append(_join("iniciado", card.started_at_display, card.started_by))
+    undone = tuple(
+        _join(
+            "Pronto",
+            _format_iso_time(record.get("completed_at")),
+            _who(record.get("completed_by"), names),
+            _via(record.get("completed_via")),
+        )
+        + " → "
+        + _join("desfeito", _format_iso_time(record.get("undone_at")), _who(record.get("undone_by"), names))
+        for record in (ticket.reopenings or [])
+        if isinstance(record, dict)
+    )
+    prep_display = ""
+    can_reopen = False
+    reopen_block_reason = ""
+    if ticket.status == "done":
+        steps.append(
+            _join(
+                "Pronto",
+                _format_time(ticket.completed_at),
+                _who(ticket.completed_by, names),
+                _via(ticket.completed_via),
+            )
+        )
+        if ticket.completed_at is not None:
+            began = _started_at(ticket, source) or ticket.created_at
+            prep_display = _duration_display((ticket.completed_at - began).total_seconds())
+        if kds_core.recall_block_reason(source):
+            reopen_block_reason = (
+                f"Pedido {source.get_status_display().lower()}: não volta à cozinha. "
+                "Para refazer, peça pelo PDV ou pelo Gestor."
+            )
+        elif _due_today(source, today=today):
+            can_reopen = True
+    else:
+        steps.append(_join("Cancelado", _format_time(ticket.cancelled_at)))
+        if ticket.acknowledged_at is not None:
+            steps.append(_join("ciente", _format_time(ticket.acknowledged_at), _who(ticket.acknowledged_by, names)))
+    return KDSHistoryEntryProjection(
+        ticket=card,
+        state=ticket.status,
+        items_summary=", ".join(_station_items([ticket])),
+        steps=tuple(steps),
+        undone=undone,
+        prep_display=prep_display,
+        can_reopen=can_reopen,
+        reopen_block_reason=reopen_block_reason,
+    )
+
+
+def _join(*parts) -> str:
+    return " ".join(str(part) for part in parts if part)
+
+
+def _who(login, names: dict[str, str]) -> str:
+    """O nome de chamada de quem agiu. O ator do sistema ("system:...", "kds.all_done")
+    não é gente e não aparece."""
+    login = str(login or "")
+    if login in names:
+        return names[login]
+    if not login or ":" in login or "." in login:
+        return ""
+    return login
+
+
+def _via(value) -> str:
+    label = _COMPLETED_VIA_LABELS.get(str(value or ""), "")
+    return f"({label})" if label else ""
+
+
+def _parse_iso(value):
+    try:
+        at = datetime.fromisoformat(str(value or ""))
+    except ValueError:
+        return None
+    return timezone.make_aware(at) if timezone.is_naive(at) else at
+
+
+def _format_iso_time(value) -> str:
+    return _format_time(_parse_iso(value))
+
+
+def _started_at(ticket, source):
+    """Quando o ticket foi iniciado (``Order.data["kds_started"]``); None sem registro."""
+    started = ((getattr(source, "data", None) or {}) if source is not None else {}).get("kds_started")
+    record = started.get(str(ticket.pk)) if isinstance(started, dict) else None
+    return _parse_iso(record.get("at")) if isinstance(record, dict) else None
+
+
+def _duration_display(seconds: float) -> str:
+    """ "9 min", "1 h 05 min"; abaixo de um minuto, "menos de 1 min"."""
+    minutes = int(max(0, seconds) // 60)
+    if minutes < 1:
+        return "menos de 1 min"
+    if minutes < 60:
+        return f"{minutes} min"
+    return f"{minutes // 60} h {minutes % 60:02d} min"
+
+
+def _resolve_ticket_sources(tickets) -> dict:
+    """``session_key → origem`` (o pedido mais novo, senão a comanda aberta), em duas consultas.
+
+    A mesma régua de ``_resolve_ticket_source``, para muitos tickets de uma vez.
+    """
+    from shopman.orderman.models import Session
+
+    keys = {ticket.session_key for ticket in tickets if ticket.session_key}
+    if not keys:
+        return {}
+    sources: dict = {}
+    for order in Order.objects.filter(session_key__in=keys).order_by("id"):
+        sources[order.session_key] = order
+    missing = keys - set(sources)
+    if missing:
+        for session in Session.objects.filter(session_key__in=missing, state="open").order_by("id"):
+            sources[session.session_key] = session
+    return sources
+
+
 def _operator_names(tickets, sources: dict) -> dict[str, str]:
     """``login → nome de chamada`` de quem iniciou estes tickets, numa consulta só.
 
     ``Order.data["kds_started"][pk]["by"]`` guarda o login (o ator da API); o card
     diz o primeiro nome da conta ("iniciado por Rafael"). Sem nome, o login.
     """
-    from django.contrib.auth import get_user_model
-
     logins: set[str] = set()
     for ticket in tickets:
         source = sources.get(ticket.pk)
@@ -401,6 +644,14 @@ def _operator_names(tickets, sources: dict) -> dict[str, str]:
         record = started.get(str(ticket.pk)) if isinstance(started, dict) else None
         if isinstance(record, dict) and record.get("by"):
             logins.add(str(record["by"]))
+    return _first_names(logins)
+
+
+def _first_names(logins) -> dict[str, str]:
+    """``login → nome de chamada`` (o primeiro nome da conta; sem nome, o login)."""
+    from django.contrib.auth import get_user_model
+
+    logins = {str(login) for login in logins if login}
     if not logins:
         return {}
     names: dict[str, str] = {}

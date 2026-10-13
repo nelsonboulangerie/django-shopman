@@ -96,6 +96,11 @@ const server = createServer((req, res) => {
       return;
     }
     if (req.method === "POST" && preview.write(url)) return json(res, 200, {});
+    const historyMatch = url.match(/\/kds\/([^/?]+)\/history\/?(\?.*)?$/);
+    if (historyMatch) {
+      const q = new URLSearchParams(historyMatch[2] ? historyMatch[2].slice(1) : "").get("q");
+      return json(res, 200, preview.history(historyMatch[1], q));
+    }
     const station = url.match(/\/kds\/([^/?]+)\/?(\?|$)/);
     if (station && station[1] !== "cliente") return json(res, 200, preview.board(station[1]));
     if (/\/kds\/?(\?|$)/.test(url)) return json(res, 200, preview.index());
