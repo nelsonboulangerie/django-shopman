@@ -376,6 +376,10 @@ FAIL (6 itens de copy pública sem o aval do dono) e
 `img.nelsonboulangerie.com.br`); `omotenashi.manual` BLOCKED (falta a evidência
 do passo 6); `gateways.sandbox` BLOCKED por certificado da NF-e de compra, que
 é **artefato do ensaio** (o `env` tira o PFX). Os outros 11 OK.
+O conserto das fotos é `manage.py relocate_product_images` (relatório por
+padrão; ver [commands.md](../reference/commands.md#relocate_product_images)): os
+44 são placeholders do Unsplash sem foto da casa, e o destino de cada um (foto da
+casa ou o placeholder trazido para o host) é decisão do dono.
 
 ---
 

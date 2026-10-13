@@ -70,6 +70,7 @@
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
 | [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
+| [`relocate_product_images`](#relocate_product_images) | config | Dados | Leva as fotos de produto para o host dedicado (`img.`), conferindo cada destino antes (relatório por padrão) |
 | [`apply_product_brands`](#apply_product_brands) | config | Seed | Grava a Marca (e o GTIN conferido) do Catálogo: a da casa nos feitos aqui, a do fabricante na revenda |
 | [`apply_grocery_catalog`](#apply_grocery_catalog) | config | Seed | Cria a revenda real da Mercearia e as caixas presente (PDV; canal remoto só com foto) e troca os placeholders que já têm produto real |
 | [`apply_catalog_decisions`](#apply_catalog_decisions) | config | Dados | Executa o que o dono decidiu que sai do catálogo (apaga, com lápide) ou sai da loja (despublica) — ensaio por padrão |
@@ -343,6 +344,34 @@ pela `ref`) e só acrescenta perfil que **falta**; tira o link de exemplo
 do dono, que é bloqueio de go-live (`config/public_copy_review.py`, check
 `production.public_copy_review` do `make production-readiness`). **Não** mexe em horário,
 endereço, coordenadas, preço nem catálogo. Idempotente.
+
+---
+
+
+### relocate_product_images
+
+Conserto do dado que o check `catalog.product_image_host` do `make
+production-readiness` reprova: foto de produto fora do host dedicado
+(`SHOPMAN_PRODUCT_IMAGE_BASE`, hoje `https://img.nelsonboulangerie.com.br/products`).
+
+```bash
+python manage.py relocate_product_images            # relatório (não escreve)
+python manage.py relocate_product_images --apply    # grava
+```
+
+O destino de cada foto vem, nesta ordem, de `config/product_photos.py`
+(`HOSTED_PHOTOS`, SKU → arquivo em `surfaces/storefront-nuxt/public/img/products/`)
+ou, para foto da casa servida por um host de site (`.../img/products/<arquivo>`),
+do mesmo arquivo no host dedicado (foto principal e galeria). Cada destino é
+conferido no host (HEAD 200, `image/*`) antes de gravar; o que não responde fica
+como está. O que não tem destino (o placeholder do Unsplash sem foto da casa) sai
+no relatório com o SKU e não é apagado: sem foto o produto sai dos canais remotos,
+e isso é decisão do dono. Idempotente; grava com histórico (`simple_history`).
+
+Foto nova entra por `scripts/import_product_photo.py <SKU> <arquivo ou URL>`
+(receita da casa: quadrado, 1200 px, webp q80, sem EXIF; recusa sobrescrever,
+porque o host serve com cache imutável), mais a linha em `HOSTED_PHOTOS` no mesmo
+PR. O `seed` lê a mesma tabela. Depois do deploy, `--apply` no banco vivo.
 
 ---
 
