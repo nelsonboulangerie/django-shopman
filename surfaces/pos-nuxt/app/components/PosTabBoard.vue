@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { tabTitleView } from "~/presentation/tabTitle";
+import OperatorFitGroup from "../../../operator-kit/app/components/OperatorFitGroup.vue";
 // Tab Board (spec §2.3) — the map of open/free comandas. Odoo-style first
 // screen: pick or open a comanda before ringing. It renders the tabs Projection
 // through `presentation/tabBoard` (ordering, in-use/all filter, per-card shape)
@@ -47,6 +48,14 @@ const cards = computed(() =>
 // A próxima comanda numérica livre — um toque abre sem digitar nada.
 const nextFreeRef = computed(() => nextFreeNumericTabRef(props.tabs, props.zeroPadTo));
 const nextFreeDisplay = computed(() => nextFreeRef.value.replace(/^0+/, "") || "0");
+// A barra do quadro: as duas ações com o curto escrito à mão e o ícone (o último degrau).
+const openFit = { label: "Abrir comanda", shortLabel: "Abrir", icon: "i-lucide-plus" } as const;
+const nextFit = computed(() => ({
+  label: `Próxima livre · #${nextFreeDisplay.value}`,
+  shortLabel: `Próxima #${nextFreeDisplay.value}`,
+  icon: "i-lucide-arrow-right-circle",
+}));
+const barActions = computed(() => [openFit, nextFit.value]);
 function openNextFree() {
   if (!nextFreeRef.value) return;
   const existing = props.tabs.find((tab) => tab.ref === nextFreeRef.value);
@@ -116,22 +125,36 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         />
         <OperatorKbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-md:hidden" aria-hidden="true">F2</OperatorKbd>
       </div>
-      <UiButton type="submit" size="lg" class="h-8 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1" :disabled="busy || !modelValue.trim()">
-        <Icon name="lucide:plus" class="size-5" />
-        Abrir comanda
-      </UiButton>
-      <UiButton
-        type="button"
-        size="lg"
-        variant="outline"
-        class="h-8 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1"
-        :disabled="busy"
-        :title="`Abrir a comanda ${nextFreeDisplay}`"
-        @click="openNextFree"
+      <!-- As duas ações da barra são UM grupo do rótulo que cabe (kit, dono 10/10/2026):
+           completo, curto escrito à mão, só ícone (com o completo no aria e na dica).
+           No celular dividem a linha de baixo ao meio; nada quebra nem corta. -->
+      <OperatorFitGroup
+        :actions="barActions"
+        equal
+        class="grid grid-cols-2 gap-2 max-sm:basis-full sm:flex sm:flex-1"
+        data-pos-tab-board-actions
       >
-        <Icon name="lucide:arrow-right-circle" class="size-5" />
-        <span class="truncate"><span class="max-sm:hidden">Próxima livre · </span><span class="sm:hidden">Próxima </span>#{{ nextFreeDisplay }}</span>
-      </UiButton>
+        <OperatorButton
+          type="submit"
+          :label="openFit.label"
+          :short-label="openFit.shortLabel"
+          :icon="openFit.icon"
+          class="sm:shrink-0"
+          :disabled="busy || !modelValue.trim()"
+          data-pos-open-tab
+        />
+        <OperatorButton
+          variant="outline"
+          color="neutral"
+          :label="nextFit.label"
+          :short-label="nextFit.shortLabel"
+          :icon="nextFit.icon"
+          class="sm:shrink-0"
+          :disabled="busy"
+          data-pos-open-next-free
+          @click="openNextFree"
+        />
+      </OperatorFitGroup>
     </form>
     <div v-if="tabs.length" class="flex shrink-0 flex-wrap items-center gap-2">
       <!-- Recorte e arrumação: o ligado é `solid` (o ativo único da suíte), os outros
@@ -231,10 +254,10 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
             <span class="hidden @[9rem]:inline" data-tab-badge-label>{{ badge.label }}</span>
           </NuxtBadge>
         </div>
-        <span class="truncate text-xs font-medium" :title="view.identity">{{ view.identity }}</span>
+        <span v-if="view.identity" class="truncate text-xs font-medium" :title="view.identity">{{ view.identity }}</span>
         <span
-          class="mt-auto truncate text-xs tabular-nums"
-          :class="view.isFree ? 'text-muted-foreground' : 'font-semibold'"
+          v-if="view.summary"
+          class="mt-auto truncate text-xs font-semibold tabular-nums"
           :title="view.summary"
         >
           {{ view.summary }}
