@@ -81,3 +81,33 @@ it("todo estado do cartão sai no MESMO selo: NuxtBadge soft, um tamanho, só co
   expect(free.classes().join(" ")).not.toMatch(/success|warning/);
   w.unmount();
 });
+
+it("cartão livre diz \"Livre\" UMA vez (no selo) e tem a mesma altura do cartão em uso (D5)", async () => {
+  const w = await board([
+    tab({ ref: "12", session_key: "sk-12", state: "in_use", item_count: 2, total_display: "R$ 10,00", customer_name: "Ana" }),
+    tab({ ref: "15", status_label: "Livre" }),
+  ]);
+  const cards = w.findAll("button").filter((c) => c.find("[data-tab-badge]").exists());
+  const free = cards.find((c) => c.text().includes("#15"))!;
+  expect(free.text().match(/livre/gi)).toHaveLength(1);
+  expect(free.find('[data-tab-badge="status"]').text()).toBe("Livre");
+  // A altura é do cartão, não do conteúdo: a mesma classe fixa nos dois.
+  expect(cards).toHaveLength(2);
+  for (const card of cards) expect(card.classes()).toContain("h-[5.5rem]");
+  w.unmount();
+});
+
+it("a barra do quadro é um grupo do rótulo que cabe: completo, curto à mão e ícone; Não pago diz pagamento", async () => {
+  const w = await board([tab({ ref: "1", session_key: "sk-1", state: "in_use", item_count: 1, fired: true })]);
+  expect(w.find("[data-pos-tab-board-actions]").attributes("data-operator-fit-group")).toBeDefined();
+  const open = w.find("[data-pos-open-tab]");
+  const next = w.find("[data-pos-open-next-free]");
+  // O textContent é o completo (o curto é conteúdo gerado do kit), e o nome acessível também.
+  expect(open.text()).toContain("Abrir comanda");
+  expect(next.text()).toContain("Próxima livre · #2");
+  expect(open.html()).toContain("Abrir");
+  expect(next.html()).toContain("Próxima #2");
+  // "Não pago" usa o ícone do pagamento da suíte (o do botão de pagar), não a chama.
+  expect(w.find('[data-tab-badge="unpaid"]').html()).not.toContain("flame");
+  w.unmount();
+});

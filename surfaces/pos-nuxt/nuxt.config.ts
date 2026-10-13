@@ -168,6 +168,7 @@ export default defineNuxtConfig({
         "lucide:panel-left-dashed",
         "lucide:bell-ring",
         "lucide:flame",
+        "lucide:credit-card",
         "lucide:utensils",
         "lucide:circle-dot",
         "lucide:circle-dashed",
