@@ -65,6 +65,7 @@ import {
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
 import { saleTotalView } from "~/presentation/saleTotal";
+import { composedAddressLine, emptyAddressDraft } from "~/presentation/address";
 import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, type PosReceiptSnapshot } from "~/presentation/receipt";
 import {
   applyLinePrices,
@@ -1887,14 +1888,18 @@ export function usePosSale(deps: PosSaleDeps) {
       delivery_instructions: cart.deliveryInstructions.trim() || cart.deliveryAddressStructured.delivery_instructions || "",
       reference: cart.deliveryInstructions.trim() || cart.deliveryAddressStructured.reference || "",
     };
-    const deliveryAddressParts = [
-      structured.formatted_address || "",
-      structured.route || "",
-      structured.street_number || "",
-      structured.neighborhood || "",
-    ]
-      .filter(Boolean);
-    const deliveryAddress = structured.formatted_address || deliveryAddressParts.join(", ");
+    // A linha do endereço é RECOMPOSTA dos campos, como na loja (`addressForm`):
+    // a do Google ficava velha no instante em que o operador corrigia o número, e
+    // era ela que ia para o pedido, a nota e o entregador.
+    structured.formatted_address = composedAddressLine({
+      ...emptyAddressDraft(),
+      route: structured.route || "",
+      street_number: structured.street_number || "",
+      neighborhood: structured.neighborhood || "",
+      city: structured.city || "",
+      state_code: structured.state_code || "",
+    }) || structured.formatted_address || "";
+    const deliveryAddress = structured.formatted_address;
     const discountValueNum = Number(String(cart.discountValue).replace(",", ".").replace(/[^0-9.]/g, "")) || 0;
     const manualDiscount = discountValueNum > 0
       ? { type: cart.discountType, value: discountValueNum, reason: cart.discountReason || "cortesia" }

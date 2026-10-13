@@ -2335,7 +2335,21 @@ def _address_autocomplete_capability() -> AddressAutocompleteProjection:
         public_api_key=api_key,
         shop_latitude=lat,
         shop_longitude=lng,
+        map_confirmation_enabled=_address_map_confirmation_enabled(),
     )
+
+
+def _address_map_confirmation_enabled() -> bool:
+    """A loja confirma o ponto no mapa? A mesma chave do checkout do site."""
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.objects.order_by("pk").first()
+    except Exception:
+        logger.debug("pos_address_map_flag_lookup_failed", exc_info=True)
+        return False
+    storefront = (shop.defaults or {}).get("storefront") if shop else None
+    return bool(isinstance(storefront, dict) and storefront.get("address_map_confirmation_enabled", False))
 
 
 def _shop_name() -> str:

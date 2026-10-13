@@ -495,7 +495,8 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             required=False,
             widget=UnfoldBooleanSwitchWidget,
             help_text=(
-                "Libera a confirmação visual do ponto de entrega no checkout. "
+                "Libera a confirmação visual do ponto de entrega no checkout da loja "
+                "online e no endereço de entrega do PDV. "
                 "Começa desligado: ligue primeiro para um canário e, se houver "
                 "regressão, desligue este controle para o rollback imediato."
             ),
