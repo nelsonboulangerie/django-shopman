@@ -19,6 +19,11 @@ import type {
   StructuredAddressProjection,
 } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
+import {
+  nextEmptyAddressField,
+  type DeliveryAddressField,
+  type DeliveryAddressValues,
+} from "~/presentation/address";
 
 const props = defineProps<{
   open: boolean;
@@ -130,11 +135,56 @@ const deliveryFeeNote = computed(() => {
   }
 });
 
+// ENTER LEVA AO PRÓXIMO CAMPO VAZIO. O endereço chega da busca (CEP ou Google)
+// com rua e bairro, às vezes com o número; o operador não deveria ter de caçar
+// com o mouse o campo que falta. Cada Enter pula o que já está preenchido, na
+// ordem da tela (`nextEmptyAddressField`); sem campo vazio adiante, o Enter
+// confirma o recebimento pelo MESMO caminho do botão, e a encomenda segue para a
+// próxima etapa. O foco anda pelo mecanismo da suíte (`useNextFocus().reveal`),
+// nunca por scroll avulso.
+const { reveal } = useNextFocus();
+const fieldKey = (field: DeliveryAddressField) => `delivery-${field}`;
+
+function currentValues(overrides: Partial<DeliveryAddressValues> = {}): DeliveryAddressValues {
+  return {
+    address: props.deliveryAddress,
+    number: props.deliveryStreetNumber,
+    neighborhood: props.deliveryNeighborhood,
+    complement: props.deliveryComplement,
+    instructions: props.deliveryInstructions,
+    ...overrides,
+  };
+}
+
+function goPast(after: DeliveryAddressField | null, values: DeliveryAddressValues) {
+  const next = nextEmptyAddressField(after, values);
+  if (next) {
+    reveal(fieldKey(next), { align: "center" });
+    return;
+  }
+  if (props.fulfillmentConfirmed) isOpen.value = false;
+}
+
+function onFieldEnter(field: DeliveryAddressField, event: KeyboardEvent) {
+  if (event.isComposing) return;
+  event.preventDefault();
+  goPast(field, currentValues());
+}
+
 function onAddressSelected(address: StructuredAddressProjection) {
   emit("update:deliveryAddressStructured", address);
   if (address.route) emit("update:deliveryAddress", address.route);
   if (address.street_number) emit("update:deliveryStreetNumber", address.street_number);
   if (address.neighborhood) emit("update:deliveryNeighborhood", address.neighborhood);
+  // A busca acabou de preencher: o próximo campo vazio desde o começo (rua que
+  // o CEP não trouxe, CEP de cidade inteira, volta para a própria busca). As
+  // props ainda não refletem os emits deste instante: os valores novos entram
+  // por cima.
+  goPast(null, currentValues({
+    address: address.route || "",
+    number: address.street_number || props.deliveryStreetNumber,
+    neighborhood: address.neighborhood || props.deliveryNeighborhood,
+  }));
 }
 </script>
 
@@ -180,7 +230,9 @@ function onAddressSelected(address: StructuredAddressProjection) {
               <span class="max-w-48 truncate">{{ address.label || address.formatted_address }}</span>
             </UiButton>
           </div>
-          <label class="grid gap-1 text-sm">
+          <!-- Cada campo é um bloco do próximo foco (`data-focus-target`), e o
+               Enter anda para o próximo VAZIO (`onFieldEnter`). -->
+          <label class="grid gap-1 text-sm" :data-focus-target="fieldKey('address')">
             <span class="font-medium text-muted-foreground">Endereço</span>
             <PosAddressAutocomplete
               ref="addressAutocompleteRef"
@@ -188,26 +240,27 @@ function onAddressSelected(address: StructuredAddressProjection) {
               :capability="addressAutocomplete"
               @update:model-value="$emit('update:deliveryAddress', String($event || ''))"
               @selected="onAddressSelected"
+              @advance="goPast('address', currentValues())"
             />
           </label>
           <div class="grid gap-2 sm:grid-cols-2">
-            <label class="grid gap-1 text-sm">
+            <label class="grid gap-1 text-sm" :data-focus-target="fieldKey('number')">
               <span class="font-medium text-muted-foreground">Número</span>
-              <UiInput :model-value="deliveryStreetNumber" placeholder="123" @update:model-value="$emit('update:deliveryStreetNumber', String($event || ''))" />
+              <UiInput data-focus-control :model-value="deliveryStreetNumber" placeholder="123" @update:model-value="$emit('update:deliveryStreetNumber', String($event || ''))" @keydown.enter="onFieldEnter('number', $event)" />
             </label>
-            <label class="grid gap-1 text-sm">
+            <label class="grid gap-1 text-sm" :data-focus-target="fieldKey('neighborhood')">
               <span class="font-medium text-muted-foreground">Bairro</span>
-              <UiInput :model-value="deliveryNeighborhood" placeholder="Centro" @update:model-value="$emit('update:deliveryNeighborhood', String($event || ''))" />
+              <UiInput data-focus-control :model-value="deliveryNeighborhood" placeholder="Centro" @update:model-value="$emit('update:deliveryNeighborhood', String($event || ''))" @keydown.enter="onFieldEnter('neighborhood', $event)" />
             </label>
           </div>
           <div class="grid gap-2 sm:grid-cols-2">
-            <label class="grid gap-1 text-sm">
+            <label class="grid gap-1 text-sm" :data-focus-target="fieldKey('complement')">
               <span class="font-medium text-muted-foreground">Complemento</span>
-              <UiInput :model-value="deliveryComplement" placeholder="Apto, bloco" @update:model-value="$emit('update:deliveryComplement', String($event || ''))" />
+              <UiInput data-focus-control :model-value="deliveryComplement" placeholder="Apto, bloco" @update:model-value="$emit('update:deliveryComplement', String($event || ''))" @keydown.enter="onFieldEnter('complement', $event)" />
             </label>
-            <label class="grid gap-1 text-sm">
+            <label class="grid gap-1 text-sm" :data-focus-target="fieldKey('instructions')">
               <span class="font-medium text-muted-foreground">Instruções</span>
-              <UiInput :model-value="deliveryInstructions" placeholder="Portaria, referência" @update:model-value="$emit('update:deliveryInstructions', String($event || ''))" />
+              <UiInput data-focus-control :model-value="deliveryInstructions" placeholder="Portaria, referência" @update:model-value="$emit('update:deliveryInstructions', String($event || ''))" @keydown.enter="onFieldEnter('instructions', $event)" />
             </label>
           </div>
           <!-- QUANTO — a taxa é RESOLVIDA pelo endereço (zona de CEP, faixa de
