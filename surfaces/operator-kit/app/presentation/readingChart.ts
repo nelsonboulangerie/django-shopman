@@ -375,6 +375,27 @@ export function readingRuns(points: ReadingChartPoint[], key: string): ReadingRu
 }
 
 /**
+ * Os pontos isolados de uma série: com dado, e sem dado nos dois vizinhos (a ponta do
+ * gráfico conta como vizinho sem dado). A linha não liga ponto a nada e o traço vira um
+ * caminho de comprimento zero, invisível; o gráfico os desenha como marcador.
+ */
+export function readingIsolatedIndices(points: ReadingChartPoint[], key: string): number[] {
+  const present = (index: number) => {
+    const point = points[index];
+    return point !== undefined && pointValue(point, key) !== null;
+  };
+  return points.flatMap((_, index) =>
+    present(index) && !present(index - 1) && !present(index + 1) ? [index] : [],
+  );
+}
+
+/**
+ * O diâmetro, em pixels, do marcador de um ponto: o do ponto isolado e o do ponto em
+ * leitura (o círculo do traço vertical), o mesmo tamanho nos dois.
+ */
+export const READING_POINT_SIZE = 6;
+
+/**
  * Onde um índice cai num trecho: dentro, ele mesmo; fora, a ponta mais perto. A área
  * de um trecho leva todos os pontos (o Unovis dá o mesmo `data` a todo componente),
  * e os de fora repetem a ponta: ponto coincidente não desenha nada.

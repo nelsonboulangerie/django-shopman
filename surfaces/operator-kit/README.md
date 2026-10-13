@@ -2200,7 +2200,11 @@ os componentes em `tests/components/OperatorReadingChart.test.ts`.
   os pontos. O rótulo do eixo tem 96 px antes de quebrar.
 - **Buraco na série** (`null`): a linha quebra, e na forma `line` a área quebra junto. O
   Unovis lê o ponto ausente como zero, e a área descia até a base no buraco; ela agora sai
-  trecho a trecho (`readingRuns`), e ponto isolado não vira área.
+  trecho a trecho (`readingRuns`), e ponto isolado não vira área. O ponto isolado (sem
+  dado antes e depois, ou entre o buraco e a ponta) não tem com quem ligar e a linha o
+  desenhava com comprimento zero: ele sai como marcador no tom da série
+  (`readingIsolatedIndices`), do tamanho do círculo do ponto em leitura
+  (`READING_POINT_SIZE`, 6 px). Nas linhas da `comparison` vale o mesmo.
 - **Sem pontos**, o gráfico é o `NuxtEmpty` (`empty-title`, `empty-description`).
 - **O quadro** é o `NuxtCard` com `title`/`description` (Nuxt UI 4.7+). O título vira
   cabeçalho (`heading-level`, padrão 2) e nomeia a região. Com `csv`, o ⋯ oferece
