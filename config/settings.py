@@ -731,6 +731,9 @@ MANYCHAT_FLOW_MAP = {
     # Encomendas (templates aprovados em 29/09/2026; flows "Aviso: …" na conta):
     "order_rescheduled": "content20260929125821_042737",  # pedido_nova_data
     "order_updated": "content20260929130117_994990",  # pedido_atualizado
+    # Variante do `order_dispatched` com o botão de rastreio do entregador
+    # (`pedido_saiu_entrega_rastreio`): chave "order_dispatched_courier", ligada só
+    # depois de aprovado o template. Sem ela o aviso sai pelo `pedido_saiu_entrega`.
 }
 try:
     MANYCHAT_API_TIMEOUT = int(os.environ.get("MANYCHAT_API_TIMEOUT", "15"))
@@ -971,6 +974,12 @@ SHOPMAN_MACHINE = {
     "retorno": _env_bool("MACHINE_RETORNO", False),
     "timeout": int(os.environ.get("MACHINE_TIMEOUT", "15")),
     "cancel_reason_id": int(os.environ.get("MACHINE_CANCEL_REASON_ID", "1")),
+    # Parte FIXA do link de rastreio do entregador (tudo antes do pedaço que muda por
+    # corrida). O botão "Acompanhar entregador" do template `pedido_saiu_entrega_rastreio`
+    # é `<esta base>{{1}}`, e a Meta só aceita a variável no FIM de um prefixo fixo.
+    # VAZIA = o WhatsApp sai pelo template sem rastreio (log de erro se o flow do
+    # rastreio estiver ligado). Medir o formato real do link antes de preencher.
+    "tracking_link_base": os.environ.get("MACHINE_TRACKING_LINK_BASE", "").strip(),
 }
 SHOPMAN_COURIER_ADAPTER = os.environ.get("SHOPMAN_COURIER_ADAPTER", "").strip() or None
 
