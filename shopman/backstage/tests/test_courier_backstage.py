@@ -251,3 +251,71 @@ def test_board_card_carries_courier_badge(client, operator, shop):
     cards = resp.json()["queue"]["expedition_delivery_transit"]
     assert cards[0]["courier_status"] == "E"
     assert cards[0]["courier_status_label"] == "Saiu para entrega"
+
+
+# ── Entrega do marketplace: nunca Chamar/Cotar (falha fechado) ──────
+
+
+def _ifood_order(ref, ifood_block):
+    order = _delivery_order(ref=ref)
+    data = dict(order.data)
+    if ifood_block is not None:
+        data["ifood"] = ifood_block
+    Order.objects.filter(pk=order.pk).update(channel_ref="ifood", data=data)
+    order.refresh_from_db()
+    return order
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+@pytest.mark.parametrize("ifood_block", [{"delivered_by": "IFOOD"}, {"delivered_by": ""}, None],
+    ids=["ifood", "nao-informado", "sem-bloco"])
+def test_ifood_delivery_never_offers_or_accepts_courier(client, operator, shop, ifood_block):
+    order = _ifood_order("CRB-IF-1", ifood_block)
+    client.force_login(operator)
+    detail = _detail(client, order.ref)
+    assert detail["courier"] is None
+    assert not {"courier-dispatch", "courier-quote"} & {a["ref"] for a in detail["actions"]}
+
+    from shopman.shop.services.courier import dispatch_revision
+
+    resp = client.post(reverse("api-backstage-order-courier-dispatch", args=[order.ref]),
+        {"expected_actor_id": operator.pk, "base_revision": dispatch_revision(order)},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="dispatch-ifood")
+    assert resp.status_code == 400
+    assert "iFood" in resp.json()["detail"]
+    assert courier.request_dispatch(order, actor="lifecycle.on_ready") is None
+    assert not courier.can_quote(order)
+    assert not Directive.objects.filter(topic=COURIER_DISPATCH).exists()
+    assert not courier_mock.rides()
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ifood_delivered_by_the_house_can_call_courier(client, operator, shop):
+    order = _ifood_order("CRB-IF-M", {"delivered_by": "MERCHANT"})
+    client.force_login(operator)
+    assert _detail(client, order.ref)["courier"]["can_dispatch"] is True
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER, SHOPMAN_MACHINE={"company_name": "TaOn"})
+def test_dispatch_action_asks_in_words_before_calling(client, operator, shop):
+    order = _delivery_order(ref="NB-261013-A47")
+    client.force_login(operator)
+    action = next(a for a in _detail(client, order.ref)["actions"] if a["ref"] == "courier-dispatch")
+    assert action["confirmation"] == {
+        "required": True,
+        "description": "Chamar um entregador da TaOn para o pedido A47? A corrida é cobrada da casa.",
+    }
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_queued_dispatch_for_ifood_delivery_never_reaches_the_central(shop):
+    """Tarefa já na fila quando a marca IFOOD chega: o worker não abre corrida."""
+    from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
+
+    order = _delivery_order(ref="CRB-IF-Q")
+    task = courier.request_dispatch(order, actor="test")
+    Order.objects.filter(pk=order.pk).update(channel_ref="ifood", data={**order.data, "ifood": {"delivered_by": "IFOOD"}})
+    CourierDispatchHandler().handle(message=task, ctx={})
+    task.refresh_from_db()
+    assert task.payload["dispatch_attempt"]["state"] == "not_applied"
+    assert not courier_mock.rides()

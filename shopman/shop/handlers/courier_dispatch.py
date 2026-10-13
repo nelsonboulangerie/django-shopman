@@ -50,6 +50,11 @@ class CourierDispatchHandler:
         if get_fulfillment_type(order) != "delivery" or order.status not in {Order.Status.READY, Order.Status.DISPATCHED}:
             self._set_attempt(message, "not_applied")
             return
+        if not courier.house_dispatches(order):
+            # Entrega do marketplace (ou de dono desconhecido): nunca abre corrida
+            # paga, nem com a tarefa já na fila antes da marca chegar.
+            self._set_attempt(message, "not_applied")
+            return
         if courier.has_active_ride(order):
             return
         adapter = get_adapter("courier")
