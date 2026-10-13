@@ -529,6 +529,8 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     """
     from shopman.orderman.models import Session
 
+    from shopman.backstage.models import KDSTicket
+
     # O painel é do DIA: pedido de outro dia que ficou aberto (esquecido em
     # "pronto", ticket que nunca recebeu o Pronto) não é chamada para o cliente do salão,
     # e encomenda de amanhã também não. O dia do pedido é a data do compromisso
@@ -572,15 +574,38 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
             preparing.append(projection)
 
     # Pre-commit POS comandas fired to the kitchen but not yet paid (open Sessions).
-    sessions_qs = Session.objects.filter(state="open", updated_at__gte=day_start).order_by("-updated_at")[:fetch]
-    for session in sessions_qs:
-        if session.session_key in committed_session_keys:
-            continue  # already surfaced as its committed Order (dedup on payment)
+    sessions = [
+        session
+        for session in Session.objects.filter(state="open", updated_at__gte=day_start).order_by("-updated_at")[:fetch]
+        if session.session_key not in committed_session_keys  # dedup on payment
+    ]
+    # A comanda não tem Order para virar READY: quem diz que ficou pronta é a
+    # cozinha. Com todos os tickets vivos no Pronto, ela vai para "Pronto para
+    # retirar"; antes ficava em "Em preparo" até o pagamento, e o painel parecia
+    # parado (alpha, 13/10/2026).
+    tickets_by_session: dict[str, list[KDSTicket]] = {}
+    for ticket in KDSTicket.objects.filter(session_key__in=[s.session_key for s in sessions]).exclude(
+        status="cancelled"
+    ):
+        tickets_by_session.setdefault(ticket.session_key, []).append(ticket)
+    for session in sessions:
         data = session.data or {}
         if not data.get("fired_lines"):
             continue  # nothing fired to the kitchen yet → not "em preparo"
         if (data.get("fulfillment_type") or data.get("delivery_method") or "pickup") == "delivery":
             continue  # pickup/counter only — delivery never shows on the pickup board
+        tickets = tickets_by_session.get(session.session_key, [])
+        if tickets and all(ticket.status == "done" for ticket in tickets):
+            ready_at = max((ticket.completed_at for ticket in tickets if ticket.completed_at), default=None)
+            ready.append(
+                KDSCustomerOrderProjection(
+                    ref=_public_comanda_code(session),
+                    status=Order.Status.READY,
+                    status_label="Pronto para retirar",
+                    updated_at_display=_format_time(ready_at or session.updated_at),
+                )
+            )
+            continue
         preparing.append(
             KDSCustomerOrderProjection(
                 ref=_public_comanda_code(session),
