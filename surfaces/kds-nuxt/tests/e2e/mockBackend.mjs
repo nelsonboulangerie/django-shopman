@@ -86,6 +86,11 @@ const server = createServer((req, res) => {
     if (/\/kds\/?(\?|$)/.test(url)) return json(res, 200, preview.index());
   }
   if (/\/kds\/[^/]+\/?(\?|$)/.test(url)) return json(res, 200, BOARD); // /kds/<ref>/
+  // Operador sem a permissão da Cozinha: o índice recusa, e a tela não pode dizer
+  // "nenhuma estação cadastrada" (alpha, 13/10/2026).
+  if (/\/kds\/?(\?|$)/.test(url) && (req.headers.cookie || "").includes("e2e_kds=forbidden")) {
+    return json(res, 403, { detail: "Operador sem permissão para esta ação." });
+  }
   if (/\/kds\/?(\?|$)/.test(url)) return json(res, 200, INDEX); // índice de estações
   return json(res, 200, {});
 });
