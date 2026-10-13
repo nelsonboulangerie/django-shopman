@@ -1007,6 +1007,15 @@ Dedupe `order.handoff_commit:{order_ref}:{token}`.
 Write-back em `Order.data["courier"]` (ver detalhamento). `dedupe_key` =
 `courier.dispatch:{order_ref}:{tentativa}`.
 
+`dispatch_attempt` (recibo da tentativa, escrito pelo handler): `state` ∈ `started`,
+`unknown`, `accepted`, `not_applied`, `inert`, `released`. `started`/`unknown`/`accepted`
+sem vínculo travam outra chamada (`courier.unresolved_dispatch`). `released` é o gesto
+"Chamar de novo" do Gestor (`courier.release_unresolved_dispatch`): quem conferiu na
+central libera a chamada sem resposta da TaOn, com `released_from`, `released_by`,
+`released_at`, e uma chamada nova é enfileirada no mesmo gesto; a tentativa liberada
+nunca mais chama a TaOn. Trilha: evento `courier_dispatch_released`
+`{directive_id, previous_state}`.
+
 #### `courier.cancel`
 
 Usa a fila Directive existente. Payload: `order_ref`, `channel_ref`, `actor`,

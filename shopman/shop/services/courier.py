@@ -322,6 +322,39 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Di
     return directive
 
 
+@transaction.atomic
+def release_unresolved_dispatch(order, *, actor: str, expected_revision: str | None = None) -> Directive:
+    """"Chamar de novo": a última chamada ficou sem resposta da TaOn.
+
+    O despacho sem resultado confirmado trava qualquer outra chamada (não se
+    sabe se a corrida abriu lá). Quem conferiu na central e não achou a corrida
+    libera aqui: a tentativa pendente vira ``released`` (com quem e quando, na
+    própria Directive e na timeline do pedido) e uma chamada nova é enfileirada
+    no mesmo gesto. A tentativa liberada nunca mais chama a TaOn.
+    """
+    from shopman.shop.services.operator_orders import OrderStateConflict
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if expected_revision is not None and dispatch_revision(order) != expected_revision:
+        raise OrderStateConflict("O pedido ou a corrida mudou. Confira o contexto antes de chamar de novo.")
+    pending = unresolved_dispatch(order)
+    if pending is None:
+        raise ValueError("Não há chamada sem resposta para liberar. Atualize o pedido.")
+    task = Directive.objects.select_for_update().get(pk=pending.pk)
+    payload = dict(task.payload or {})
+    receipt = dict(payload.get("dispatch_attempt") or {})
+    previous = receipt.get("state", "")
+    now_iso = timezone.now().isoformat()
+    receipt.update(state="released", released_from=previous, released_by=actor, released_at=now_iso, updated_at=now_iso)
+    payload["dispatch_attempt"] = receipt
+    task.payload = payload
+    task.save(update_fields=["payload", "updated_at"])
+    order.emit_event(event_type="courier_dispatch_released", actor=actor,
+                     payload={"directive_id": task.pk, "previous_state": previous})
+    logger.info("courier.dispatch_released order=%s directive=%s actor=%s", order.ref, task.pk, actor)
+    return redispatch(order, actor=actor)
+
+
 def latest_cancellation(order, *, pending_only=False):
     """The existing Directive owns queued and unresolved cancellation attempts."""
     from django.db.models import Q

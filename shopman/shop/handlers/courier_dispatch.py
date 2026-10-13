@@ -45,7 +45,7 @@ class CourierDispatchHandler:
             return
         if state in {"started", "unknown"} or (not state and message.attempts > 1):
             self._unknown(order, message, "Tentativa anterior sem resultado confirmado.")
-        if state in {"not_applied", "inert"}:
+        if state in {"not_applied", "inert", "released"}:
             return
         if get_fulfillment_type(order) != "delivery" or order.status not in {Order.Status.READY, Order.Status.DISPATCHED}:
             self._set_attempt(message, "not_applied")
@@ -72,7 +72,7 @@ class CourierDispatchHandler:
             if current.get("state") == "accepted":
                 self._adopt(order, message, current["courier_ref"])
                 return
-            if current.get("state") in {"not_applied", "inert"}:
+            if current.get("state") in {"not_applied", "inert", "released"}:
                 return
             other = courier.unresolved_dispatch(order, exclude_pk=message.pk)
             if other is not None and not current:

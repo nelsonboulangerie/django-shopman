@@ -147,3 +147,61 @@ def test_quote_response_for_changed_destination_is_not_stored(client, context, m
     assert response.status_code == 409
     order.refresh_from_db()
     assert "estimate" not in order.data.get("courier", {})
+
+
+def _stuck_dispatch(order, state="unknown"):
+    return Directive.objects.create(topic=COURIER_DISPATCH, status="failed",
+        payload={"order_ref": order.ref, "actor": "lab", "dispatch_attempt": {"state": state}})
+
+
+def _action(order, ref):
+    from django.contrib.auth import get_user_model
+
+    from shopman.backstage.projections.order_queue import build_operator_order
+
+    user = get_user_model().objects.get(username="dispatch-lab")
+    return next(a for a in build_operator_order(order, user=user).actions if a.ref == ref)
+
+
+@pytest.mark.parametrize("state", ["started", "unknown"])
+def test_dispatch_again_releases_the_unanswered_call_and_queues_a_new_one(client, context, state):
+    """Gesto "Chamar de novo": a chamada sem resposta da TaOn é liberada e outra entra na fila."""
+    from shopman.backstage.projections.order_queue import COURIER_DISPATCH_AGAIN_CONFIRMATION
+
+    _, order = context
+    stuck = _stuck_dispatch(order, state)
+    assert not _action(order, "courier-dispatch").enabled
+    again = _action(order, "courier-dispatch-again")
+    assert again.enabled and again.label == "Chamar de novo"
+    assert again.confirmation == {"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION}
+    response = client.post(reverse("api-backstage-order-courier-dispatch-again", args=[order.ref]),
+        again.payload_schema, content_type="application/json", HTTP_IDEMPOTENCY_KEY="again-once")
+    assert response.status_code == 200, response.content
+    stuck.refresh_from_db()
+    receipt = stuck.payload["dispatch_attempt"]
+    assert receipt["state"] == "released" and receipt["released_from"] == state
+    assert receipt["released_by"]
+    fresh = Directive.objects.get(pk=response.json()["directive_id"])
+    assert fresh.pk != stuck.pk and fresh.status == "queued"
+    assert order.events.filter(type="courier_dispatch_released").count() == 1
+    assert not _action(order, "courier-dispatch-again").enabled
+
+
+def test_dispatch_again_without_unanswered_call_is_disabled_and_refused(client, context):
+    _, order = context
+    again = _action(order, "courier-dispatch-again")
+    assert not again.enabled
+    response = client.post(reverse("api-backstage-order-courier-dispatch-again", args=[order.ref]),
+        again.payload_schema, content_type="application/json", HTTP_IDEMPOTENCY_KEY="again-none")
+    assert response.status_code == 400
+    assert not Directive.objects.filter(topic=COURIER_DISPATCH).exists()
+
+
+def test_released_attempt_never_calls_the_provider_again(context, monkeypatch):
+    from shopman.shop.adapters import courier_mock
+    from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
+
+    _, order = context
+    stuck = _stuck_dispatch(order, "released")
+    monkeypatch.setattr(courier_mock, "dispatch", lambda payload: (_ for _ in ()).throw(AssertionError("provider called")))
+    CourierDispatchHandler().handle(message=stuck, ctx={})
