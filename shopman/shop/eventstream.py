@@ -60,7 +60,7 @@ class ShopmanChannelManager(DefaultChannelManager):
 
     def is_channel_reliable(self, channel):
         channel = str(channel or "")
-        if channel.startswith("stock-") or channel.startswith("fomo-"):
+        if channel.startswith("stock-") or channel.startswith("fomo-") or channel == "pickup-board":
             # Efêmeros: sem histórico/resume — a verdade é refeita no fetch canônico.
             return False
         return super().is_channel_reliable(channel)
@@ -146,10 +146,10 @@ class ShopmanChannelManager(DefaultChannelManager):
 #: qualquer uma delas (o canal é o push de um fetch canônico, e quem já pode
 #: fazer o fetch não descobre nada de novo pelo push).
 #:
-#:   orders     → fila do Gestor (``shop.manage_orders``) **e** painel de retirada
-#:                do KDS (``backstage.operate_kds``), que consome o mesmo
-#:                ``/sse/orders`` no BFF do kds-nuxt. O corpo é ``ref``+``status``,
-#:                exatamente o que as duas telas já leem por REST.
+#:   orders     → fila do Gestor (``shop.manage_orders``) **e** a cozinha
+#:                (``backstage.operate_kds``), as duas réguas de
+#:                ``ORDER_BOARD_PERMISSIONS``. O painel de retirada NÃO usa este
+#:                canal: tem o seu, público e de corpo vazio (``pickup-board``).
 #:   kds        → views de KDS (``backstage.operate_kds``).
 #:   production → qualquer grant nominal que torne ``can_access_board``
 #:                verdadeiro no resolvedor da superfície de produção.

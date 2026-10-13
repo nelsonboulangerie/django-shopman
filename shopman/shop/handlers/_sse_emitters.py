@@ -331,6 +331,9 @@ def _on_order_changed(sender, order, event_type, actor, **kwargs):
         event_type="order-update",
         payload={"ref": order.ref, "status": order.status, "kind": event_type},
     )
+    # O painel de retirada mostra também a venda do balcão: o aviso dele sai
+    # antes do corte do Gestor logo abaixo.
+    emit_pickup_board_changed()
     if _is_pos_counter_order(order):
         return
     _emit_backstage(
@@ -517,6 +520,37 @@ def emit_kds_change(ticket, *, event_type: str = "backstage-kds-update", scope: 
             "backstage-tabs-update",
             {"kind": "kitchen", "session_key": ticket.session_key},
         )
+    # E ao painel de retirada, que mostra a comanda andando antes do pagamento.
+    emit_pickup_board_changed()
+
+
+#: Canal PÚBLICO do painel de retirada (``kds-nuxt`` ``/pickup``). A TV do salão
+#: abre o painel sem sessão de operador, ou com a sessão do caixa; os canais
+#: ``backstage-*`` recusam os dois (403 ``stream-error``), e a tela ficava só no
+#: poll. O corpo é VAZIO: o painel refaz o GET público
+#: ``/api/v1/backstage/kds/pickup/``, que já é a verdade sem nome nem valor
+#: (ADR-016). Nada passa por aqui que o GET público não mostre.
+PICKUP_BOARD_CHANNEL = "pickup-board"
+
+
+def emit_pickup_board_changed() -> None:
+    """Algo que o painel de retirada mostra mudou: a cozinha, ou o pedido."""
+    _publish_after_commit(
+        ("pickup", PICKUP_BOARD_CHANNEL, "pickup-board-update", {}),
+        _publish_pickup_board,
+    )
+
+
+def _publish_pickup_board() -> None:
+    try:
+        from django_eventstream import send_event
+    except ImportError:
+        logger.warning("django_eventstream not installed; pickup board SSE emit skipped")
+        return
+    try:
+        send_event(PICKUP_BOARD_CHANNEL, "pickup-board-update", {})
+    except Exception:
+        logger.warning("Pickup board SSE emit failed", exc_info=True)
 
 
 def emit_kds_station_settings(instance) -> None:
