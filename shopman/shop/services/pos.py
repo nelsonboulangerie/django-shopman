@@ -2026,9 +2026,10 @@ def move_pos_tab_lines(
     target.refresh_from_db()
 
     if close_source_when_empty and not source.items:
-        # JUNTAR leva o cliente junto quando o destino não tem nenhum (dono, 13/10/2026):
-        # a comanda que some não pode levar embora quem estava nela. Nunca sobrescreve o
-        # cliente que o destino já tem.
+        # A comanda que fica vazia é liberada (Juntar, ou Transferir/Dividir de tudo; dono,
+        # T2=1, 13/10/2026) e leva o cliente ao destino que não tem nenhum: a comanda que
+        # some não pode levar embora quem estava nela. Nunca sobrescreve o cliente que o
+        # destino já tem.
         _carry_customer_on_merge(source=source, target=target)
 
     source_closed = False

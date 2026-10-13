@@ -110,15 +110,17 @@ onBeforeUnmount(() => {
 // navegação.
 const stationTitle = computed(() => view.value?.instanceName || stationRef.value);
 
-// O som é da estação (Ajustes). O navegador que bloqueia o áudio vira aviso da tela,
-// com "Ativar o som"; ligar e desligar é dos Ajustes (o ⋯ diz o estado no rótulo).
+// O som é da estação. O navegador que bloqueia o áudio vira aviso da tela, com "Ativar
+// o som"; ligar e desligar é do botão Som na barra da estação (dono, 13/10/2026), que
+// também é o indicador. No celular, sem a barra, os Ajustes da estação seguem no ⋯.
 const settingsOpen = useKdsSettingsOpen();
+const { save: saveStationSettings } = useKdsStationSettings();
 function handleSoundAction() {
   if (soundOn.value && soundBlocked.value) {
     void activateAttentionSound();
     return;
   }
-  settingsOpen.value = true;
+  void saveStationSettings({ sound_enabled: true });
 }
 
 // A4: o estado vazio prometia "a gente avisa quando o próximo chegar", e o aviso é o
@@ -347,7 +349,8 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
 });
 
 // O ⋯ "Mais ações": o que age na tela inteira. O Histórico de hoje (ver e reabrir o que
-// já saiu do quadro), os Ajustes da estação com o estado do som no rótulo, e Atualizar.
+// já saiu do quadro) e Atualizar. Tamanho do ticket e som moram na barra da estação
+// (dono, 13/10/2026); só o celular, que não tem a barra, guarda os Ajustes da estação no ⋯.
 const headerActions = computed<OperatorHeaderAction[]>(() => {
   return [
     {
@@ -357,13 +360,17 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
         historyOpen.value = true;
       },
     },
-    {
-      label: soundOn.value ? "Ajustes da estação (som ligado)" : "Ajustes da estação (som desligado)",
-      icon: soundOn.value ? "i-lucide-volume-2" : "i-lucide-volume-x",
-      onSelect: () => {
-        settingsOpen.value = true;
-      },
-    },
+    ...(isPhone.value
+      ? [
+          {
+            label: soundOn.value ? "Ajustes da estação (som ligado)" : "Ajustes da estação (som desligado)",
+            icon: soundOn.value ? "i-lucide-volume-2" : "i-lucide-volume-x",
+            onSelect: () => {
+              settingsOpen.value = true;
+            },
+          },
+        ]
+      : []),
     { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
   ];
 });
@@ -539,8 +546,18 @@ function clearSearchAndFilter() {
           aria-label="Buscar pedido por código, cliente ou item (atalho: /)"
         />
       </template>
-      <!-- Na mesa, a hora de relance; o resto age pelo ⋯ "Mais ações". -->
+      <!-- Na mesa, os controles da estação (tamanho do ticket e som, que também dizem o
+           estado) e a hora de relance; o resto age pelo ⋯ "Mais ações". Depois de
+           montar: o quadro conta a densidade e o som ao shell só no cliente. -->
       <template #actions>
+        <ClientOnly>
+          <KdsStationControls
+            v-if="view && !notHere && !isPhone"
+            class="max-md:hidden"
+            :sound-blocked="soundBlocked"
+            @activate-sound="activateAttentionSound"
+          />
+        </ClientOnly>
         <ClientOnly>
           <span v-if="now" class="hidden pl-1 op-figure leading-none md:inline" aria-hidden="true">{{ clockTime }}</span>
         </ClientOnly>
@@ -604,7 +621,7 @@ function clearSearchAndFilter() {
               color="neutral"
               variant="outline"
               icon="i-lucide-volume-2"
-              :label="soundOn && soundBlocked ? 'Ativar o som' : 'Ligar o som nos Ajustes'"
+              :label="soundOn && soundBlocked ? 'Ativar o som' : 'Ligar o som'"
               @click="handleSoundAction"
             />
           </template>

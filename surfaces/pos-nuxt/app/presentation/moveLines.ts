@@ -174,14 +174,18 @@ export function buildMovePayload(args: {
   splitRef: string;
   targetSessionKey: string;
 }): MovePayload | null {
+  // A COMANDA QUE FICA VAZIA É LIBERADA SOZINHA (dono, T2=1, 13/10/2026): levar todos
+  // os itens pede ao servidor que libere a origem (ele só libera se ela ficou vazia de
+  // fato), e a tela oferece Desfazer.
+  const empties = movesEverything(args.items, args.selectedIds);
   if (args.mode === "split") {
     const toTabRef = args.splitRef.trim();
     if (!args.selectedIds.length || !toTabRef) return null;
-    return { mode: "split", lineIds: args.selectedIds, toTabRef };
+    return { mode: "split", lineIds: args.selectedIds, toTabRef, ...(empties ? { closeSource: true } : {}) };
   }
   if (args.mode === "transfer") {
     if (!args.selectedIds.length || !args.targetSessionKey) return null;
-    return { mode: "transfer", lineIds: args.selectedIds, toSessionKey: args.targetSessionKey };
+    return { mode: "transfer", lineIds: args.selectedIds, toSessionKey: args.targetSessionKey, ...(empties ? { closeSource: true } : {}) };
   }
   if (!args.targetSessionKey || !args.items.length) return null;
   return {
@@ -190,6 +194,18 @@ export function buildMovePayload(args: {
     toSessionKey: args.targetSessionKey,
     closeSource: true,
   };
+}
+
+/** As linhas escolhidas são TODAS as da comanda: a origem vai ficar vazia. */
+export function movesEverything(items: readonly POSCartItem[], selectedIds: readonly string[]): boolean {
+  if (!items.length) return false;
+  const chosen = new Set(selectedIds);
+  return items.every((item) => chosen.has(moveLineId(item)));
+}
+
+/** A frase do toast quando a origem vazia foi liberada sozinha. */
+export function sourceReleasedMessage(tabTitle: string): string {
+  return tabTitle ? `Comanda ${tabTitle} ficou vazia e foi liberada.` : "A comanda ficou vazia e foi liberada.";
 }
 
 export interface MoveTargetOption {

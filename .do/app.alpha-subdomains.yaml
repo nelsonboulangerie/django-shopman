@@ -469,6 +469,10 @@ envs:
   scope: RUN_TIME
   value: '15'
   type: GENERAL
+- key: MACHINE_COMPANY_NAME
+  scope: RUN_TIME
+  value: 'TaOn'
+  type: GENERAL
 - key: MACHINE_API_USER
   scope: RUN_TIME
   type: SECRET

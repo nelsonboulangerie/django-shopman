@@ -22,7 +22,7 @@ import {
   productFallbackIcon,
   productFallbackStyle,
 } from "../app/presentation/catalog";
-import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardView } from "../app/presentation/tabBoard";
+import { countOpenTabs, filterTabs, filterTabsByQuery, newlyReadyTabs, sanitizeTabRef, sortTabs, tabCardView } from "../app/presentation/tabBoard";
 import { nextFreeNumericTabRef } from "../app/utils/posTabLifecycle";
 import { clampPercent, clampQty, popDigit, pushDigit } from "../app/presentation/numpad";
 import {
@@ -361,6 +361,28 @@ describe("presentation/tabBoard — board shaping", () => {
 
   it("sorts open tabs first, then numerically by display ref", () => {
     expect(sortTabs(tabs).map((t) => t.ref)).toEqual(["00001001", "00001002", "00001003"]);
+  });
+
+  it("a comanda pronta sobe para o topo e veste o selo (dono, 13/10/2026)", () => {
+    const ready = tab({ ref: "00001009", session_key: "sk-9", state: "in_use", item_count: 1, fired: true, kitchen_ready: true });
+    expect(sortTabs([...tabs, ready]).map((t) => t.ref)).toEqual(["00001009", "00001001", "00001002", "00001003"]);
+    expect(tabCardView(ready)).toMatchObject({ kitchenReady: true, isUnpaid: true });
+    expect(tabCardView(tabs[2]!).kitchenReady).toBe(false);
+    // Comanda sem item não é "pronta" (o dado pode sobrar de uma comanda esvaziada).
+    expect(tabCardView({ ...ready, item_count: 0 }).kitchenReady).toBe(false);
+  });
+
+  it("toca só o que FICOU pronto com a tela aberta, uma vez", () => {
+    const a = tab({ ref: "1", session_key: "sk-a", state: "in_use", item_count: 1, kitchen_ready: true });
+    const b = tab({ ref: "2", session_key: "sk-b", state: "in_use", item_count: 1 });
+    // Primeira leitura: o que já estava pronto ao abrir não toca.
+    const first = newlyReadyTabs(null, [a, b]);
+    expect(first.fresh).toEqual([]);
+    // A cozinha termina a B: toca a B.
+    const second = newlyReadyTabs(first.ready, [a, { ...b, kitchen_ready: true }]);
+    expect(second.fresh).toEqual(["sk-b"]);
+    // A mesma leitura de novo (o poll, outro aviso): não toca outra vez.
+    expect(newlyReadyTabs(second.ready, [a, { ...b, kitchen_ready: true }]).fresh).toEqual([]);
   });
 
   it("filters and counts the in-use tabs", () => {
@@ -917,6 +939,11 @@ describe("presentation/moveLines — move modes, gate & payload", () => {
       .toEqual({ mode: "transfer", lineIds: ["L1"], toSessionKey: "s1" });
     expect(buildMovePayload({ mode: "merge", items, selectedIds: [], splitRef: "", targetSessionKey: "s1" }))
       .toEqual({ mode: "merge", lineIds: ["L1", "L2"], toSessionKey: "s1", closeSource: true });
+    // Levar TODOS os itens pede a liberação da origem vazia (dono, T2=1).
+    expect(buildMovePayload({ mode: "transfer", items, selectedIds: ["L1", "L2"], splitRef: "", targetSessionKey: "s1" }))
+      .toEqual({ mode: "transfer", lineIds: ["L1", "L2"], toSessionKey: "s1", closeSource: true });
+    expect(buildMovePayload({ mode: "split", items, selectedIds: ["L2", "L1"], splitRef: "1007-2", targetSessionKey: "" }))
+      .toEqual({ mode: "split", lineIds: ["L2", "L1"], toTabRef: "1007-2", closeSource: true });
     expect(buildMovePayload({ mode: "split", items, selectedIds: [], splitRef: "x", targetSessionKey: "" })).toBeNull();
     expect(buildMovePayload({ mode: "merge", items: [], selectedIds: [], splitRef: "", targetSessionKey: "s1" })).toBeNull();
   });

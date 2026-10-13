@@ -65,6 +65,10 @@ watch(pos, () => { live.value.lastRead = new Date().toISOString(); }, { immediat
 // são do PIN/crachá, e o pronto precisa de um operador para assinar.
 useKitchenTicketScanner({ enabled: () => canIdentify.value && !locked.value });
 
+// Comanda pronta: a cozinha terminou tudo o que foi disparado e o balcão ouve, em
+// qualquer tela do PDV (decisão do dono, 13/10/2026). O selo e o topo são do quadro.
+usePosKitchenReadyAlert(usePosTabsState());
+
 // Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): o gestor entra
 // com senha uma vez e diz em que posto ele fica. Enquanto ninguém fizer isso, o
 // dispositivo não tem antessala. A oferta é dispensável de propósito: no PC pessoal

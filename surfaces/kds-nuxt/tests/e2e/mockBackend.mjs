@@ -80,6 +80,21 @@ const server = createServer((req, res) => {
       preview.reset();
       return json(res, 200, {});
     }
+    const settingsMatch = url.match(/\/kds\/([^/?]+)\/settings\/?(\?|$)/);
+    if (req.method === "PATCH" && settingsMatch) {
+      let raw = "";
+      req.on("data", (chunk) => (raw += chunk));
+      req.on("end", () => {
+        let change = {};
+        try {
+          change = JSON.parse(raw || "{}");
+        } catch {
+          /* corpo inválido: nada muda */
+        }
+        json(res, 200, preview.saveSettings(settingsMatch[1], change));
+      });
+      return;
+    }
     if (req.method === "POST" && preview.write(url)) return json(res, 200, {});
     const historyMatch = url.match(/\/kds\/([^/?]+)\/history\/?(\?.*)?$/);
     if (historyMatch) {

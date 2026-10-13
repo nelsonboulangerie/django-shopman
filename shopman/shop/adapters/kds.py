@@ -325,6 +325,13 @@ def get_tickets(order):
     return KDSTicket.objects.filter(session_key=order.session_key)
 
 
+def get_ticket_statuses(session_keys) -> list[tuple[str, str]]:
+    """[(session_key, status)] dos tickets destas vendas (comanda ou pedido)."""
+    from shopman.backstage.models import KDSTicket
+
+    return list(KDSTicket.objects.filter(session_key__in=list(session_keys)).values_list("session_key", "status"))
+
+
 def get_completed_ticket_timestamps(order) -> list[tuple[int, Any]]:
     """Return [(pk, completed_at)] for tickets with a completed_at timestamp."""
     from shopman.backstage.models import KDSTicket

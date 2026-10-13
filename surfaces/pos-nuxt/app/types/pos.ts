@@ -624,6 +624,8 @@ export interface POSTabProjection {
   opened_at_display?: string;
   /** A mesa do Salão vinculada (opcional). */
   seating_spot_ref?: string;
+  /** A cozinha terminou tudo o que foi disparado: o balcão chama o cliente. */
+  kitchen_ready?: boolean;
 }
 
 export interface POSResponse {

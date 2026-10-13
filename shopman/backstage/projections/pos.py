@@ -426,6 +426,10 @@ class POSTabProjection:
     opened_at_display: str = ""
     # A mesa do Salão vinculada a esta comanda (opcional), para o quadro e o Salão.
     seating_spot_ref: str = ""
+    # A cozinha terminou tudo o que foi disparado (todo ticket vivo no Pronto):
+    # o balcão chama o cliente. O quadro mostra "Pronta", sobe a comanda e toca
+    # (decisão do dono, 13/10/2026).
+    kitchen_ready: bool = False
 
 
 @dataclass(frozen=True)
@@ -938,11 +942,22 @@ def build_pos_tabs(
         if ref not in refs:
             refs.append(ref)
 
+    from shopman.shop.services.kds import kitchen_done_session_keys
+
+    # A comanda pronta pela mesma conta do pedido que vira READY (``kds``).
+    ready_keys = kitchen_done_session_keys(
+        [session.session_key for session in sessions.values() if (session.data or {}).get("fired_lines")]
+    )
     tabs = []
     for ref in refs:
         session = sessions.get(ref)
         session_display = str(((session.data or {}) if session is not None else {}).get("tab_display") or "").strip()
-        tab = _tab_projection(ref=ref, session=session, display_ref=session_display or tab_displays.get(ref, ""))
+        tab = _tab_projection(
+            ref=ref,
+            session=session,
+            display_ref=session_display or tab_displays.get(ref, ""),
+            kitchen_ready=session is not None and session.session_key in ready_keys,
+        )
         if query_norm and query_norm not in _tab_haystack(tab, sessions.get(ref)):
             continue
         tabs.append(tab)
@@ -2470,7 +2485,9 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
         return set()
 
 
-def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "") -> POSTabProjection:
+def _tab_projection(
+    *, ref: str, session: Session | None, display_ref: str = "", kitchen_ready: bool = False,
+) -> POSTabProjection:
     from shopman.shop.services.pos_sales_mode import sales_mode
 
     display_ref = display_ref or _display_ref(ref)
@@ -2522,6 +2539,7 @@ def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "")
         sales_mode=sales_mode(data),
         opened_at_display=_format_time(session.opened_at) if session.opened_at else "",
         seating_spot_ref=str(data.get("seating_spot_ref") or ""),
+        kitchen_ready=kitchen_ready,
     )
 
 
