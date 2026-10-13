@@ -863,6 +863,24 @@ class TestOnReturned:
         mock_loyalty.restore.assert_called_once_with(order, reason="returned")
         mock_notification.send.assert_called_once_with(order, "order_returned")
 
+    @patch("shopman.shop.lifecycle.ChannelConfig")
+    @patch("shopman.shop.lifecycle.loyalty")
+    @patch("shopman.shop.lifecycle.fiscal")
+    @patch("shopman.shop.lifecycle.stock")
+    def test_notifies_return_before_refunding(self, _stock, _fiscal, _loyalty, mock_cc):
+        """O "registramos a devolução" vem antes do "devolvemos R$ X" (P1-9)."""
+        mock_cc.for_channel.return_value = _config()
+        order = _make_order()
+        calls: list[str] = []
+        with (
+            patch("shopman.shop.lifecycle.notification") as mock_notification,
+            patch("shopman.shop.lifecycle.payment") as mock_payment,
+        ):
+            mock_notification.send.side_effect = lambda *a, **k: calls.append(f"send:{a[1]}")
+            mock_payment.refund.side_effect = lambda *a, **k: calls.append("refund")
+            dispatch(order, "on_returned")
+        assert calls == ["send:order_returned", "refund"]
+
 
 class TestNotificationPhases:
     @patch("shopman.shop.lifecycle.ChannelConfig")

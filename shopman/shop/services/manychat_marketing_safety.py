@@ -175,7 +175,17 @@ TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     "payment_reminder": (*_CUSTOMER, *_ORDER_BUTTON),
     "payment_expired": (*_CUSTOMER, *_ORDER),
     "payment_failed": (*_CUSTOMER, *_ORDER_BUTTON),
-    "payment_refunded": (*_CUSTOMER, *_ORDER, "total", "order_total_display"),
+    # O valor é o DESTE estorno (`refund_amount_display`), não o total do pedido;
+    # `total`/`order_total_display` ficam pelos flows criados antes (P1-9).
+    "payment_refunded": (
+        *_CUSTOMER,
+        *_ORDER,
+        "refund_amount_display",
+        "status_note",
+        "total",
+        "order_total_display",
+    ),
+    "order_returned": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
     "waitlist_available": (*_CUSTOMER, *_ORDER_BUTTON),
     "waitlist_released": (*_CUSTOMER, *_ORDER_BUTTON),
     "loyalty_earned": (*_CUSTOMER, *_ORDER, "account_url"),

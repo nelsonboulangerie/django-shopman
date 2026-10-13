@@ -1166,6 +1166,13 @@ def _refund_intent(
 
     if result.success:
         logger.info("payment.refund: refunded %s for order %s", intent_ref, order.ref)
+        if adapter is not None:
+            _notify_refund(
+                order,
+                method=method,
+                amount_q=int(getattr(result, "amount_q", None) or requested_q or 0),
+                idempotency_key=idempotency_key,
+            )
         return int(requested_q or 0)
 
     # Falha TERMINAL (recusa do gateway): retry não ajuda → alerta já.
@@ -1173,6 +1180,31 @@ def _refund_intent(
     logger.error("payment.refund: adapter recusou o estorno do pedido %s: %s", order.ref, detail)
     alert_refund_failed(order, intent_ref, requested_q, detail)
     return 0
+
+
+def _notify_refund(order, *, method: str, amount_q: int, idempotency_key: str) -> None:
+    """Avisa o cliente de que o GATEWAY devolveu o dinheiro (``payment_refunded``).
+
+    Só o estorno que o sistema fez de fato: o sem gateway (maquininha, cobrança
+    externa, Pix atestado no balcão) é devolvido por gente, e avisar daqui seria
+    afirmar que o dinheiro voltou sem ter voltado. Um aviso por estorno: a chave de
+    idempotência do estorno é a ocorrência do aviso, então o retry do mesmo estorno
+    não manda dois, e duas devoluções parciais mandam dois, cada um com o seu valor.
+    Falha no aviso não desfaz o estorno (o dinheiro já saiu).
+    """
+    from shopman.shop.services import notification
+
+    try:
+        notification.send(
+            order,
+            "payment_refunded",
+            occurrence=idempotency_key,
+            refund_amount_q=amount_q,
+            refund_method=method,
+            status_note=notification.refund_arrival_note(method),
+        )
+    except Exception:
+        logger.warning("payment.refund: aviso do estorno não enfileirado order=%s", order.ref, exc_info=True)
 
 
 def _asserted_at_terminal(intent_ref: str) -> bool:
