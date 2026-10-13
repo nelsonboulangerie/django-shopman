@@ -888,13 +888,26 @@ def _check_courier_change(
         .annotate(total=Sum("amount_q"))
     )
     out_by_order = {str(row["order_ref"] or ""): -int(row["total"] or 0) for row in out_rows}
+    # Troco que voltou porque a corrida da TaOn não coletou
+    # (``operator_orders.return_partner_custody``) anula a saída: não é acerto.
+    returned = (
+        Entry.objects.filter(kind=Entry.Kind.COURIER_IN, order_ref__in=list(out_by_order), payload__custody_return=True)
+        .values("order_ref")
+        .annotate(total=Sum("amount_q"))
+    )
+    for row in returned:
+        ref = str(row["order_ref"] or "")
+        out_by_order[ref] = out_by_order.get(ref, 0) - int(row["total"] or 0)
+    out_by_order = {ref: total for ref, total in out_by_order.items() if total > 0}
     if not out_by_order:
         return
-    back_refs = set(
-        Entry.objects.filter(kind=Entry.Kind.COURIER_IN, order_ref__in=list(out_by_order)).values_list(
-            "order_ref", flat=True
-        )
-    )
+    back_refs = {
+        ref
+        for ref, custody_return in Entry.objects.filter(
+            kind=Entry.Kind.COURIER_IN, order_ref__in=list(out_by_order)
+        ).values_list("order_ref", "payload__custody_return")
+        if not custody_return
+    }
     unsettled = sorted(ref for ref in out_by_order if ref not in back_refs)
     if not unsettled:
         return
