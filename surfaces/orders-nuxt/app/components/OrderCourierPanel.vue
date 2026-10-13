@@ -33,6 +33,10 @@ const props = defineProps<{
   dispatchAgainAction?: Action;
   /** Abrir com a confirmação de "Chamar entregador" já armada (veio do lembrete do cartão). */
   armDispatch?: boolean;
+  /** A cotação está a caminho (o toque em "Cotar entrega" ainda não voltou). */
+  quoting?: boolean;
+  /** A última cotação falhou: a frase do servidor, ou vazio. */
+  quoteError?: string;
 }>();
 const emit = defineEmits<{
   quote: [];
@@ -40,6 +44,7 @@ const emit = defineEmits<{
   cancel: [];
   dispatchAgain: [];
   dismissReminder: [];
+  dismissQuoteError: [];
 }>();
 
 const steps = computed(() => courierSteps(props.courier.status));
@@ -159,6 +164,24 @@ function blurDispatch() {
   if (!asksCustody.value) confirmingDispatch.value = false;
 }
 
+// A cotação antes da corrida: valor, tempo e distância numa linha forte, com o
+// "Chamar entregador" logo abaixo como a ação do momento. Com corrida aberta, o
+// valor volta ao cabeçalho (é o custo dela, não uma proposta).
+const showQuote = computed(
+  () =>
+    !hasRide.value &&
+    (props.quoting || Boolean(props.courier.estimate_display)),
+);
+const quoteActions = computed(() => [
+  {
+    label: "Cotar de novo",
+    icon: "i-lucide-refresh-cw",
+    disabled: props.busy || !props.quoteAction?.enabled,
+    onClick: () => emit("quote"),
+    ...{ "data-courier-quote-retry": "" },
+  },
+]);
+
 const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
 </script>
 
@@ -193,7 +216,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
           {{ courier.attempts_count }}ª corrida não concluída
         </span>
         <span
-          v-if="courier.estimate_display"
+          v-if="hasRide && (courier.final_value_display || courier.estimate_display)"
           class="ms-auto text-sm tabular-nums text-muted-foreground"
         >
           {{ courier.final_value_display || courier.estimate_display }}
@@ -321,6 +344,39 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         </div>
       </div>
 
+      <!-- a cotação falhou: aviso com a ação na cor dele, e dispensável -->
+      <NuxtAlert
+        v-if="quoteError && !quoting"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        title="Não deu para cotar a entrega"
+        :description="quoteError"
+        :actions="alertActions('error', quoteActions)"
+        close
+        data-courier-quote-error
+        @update:open="emit('dismissQuoteError')"
+      />
+
+      <!-- a cotação: o resultado em destaque, e a chamada logo abaixo -->
+      <NuxtCard
+        v-if="showQuote"
+        variant="soft"
+        data-courier-quote
+        :aria-busy="quoting || undefined"
+      >
+        <div class="flex flex-col items-center gap-1 text-center">
+          <p class="text-xs text-muted-foreground">Cotação da entrega</p>
+          <p
+            class="text-lg font-semibold tabular-nums"
+            role="status"
+            data-courier-quote-value
+          >
+            {{ quoting ? "Cotando a entrega…" : courier.estimate_display }}
+          </p>
+        </div>
+      </NuxtCard>
+
       <template v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel">
         <div
           v-if="confirmingDispatch"
@@ -378,7 +434,10 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
             </p>
           </template>
         </div>
-        <div class="flex flex-wrap gap-2">
+        <div
+          class="flex flex-wrap gap-2"
+          :class="showQuote ? 'justify-center' : ''"
+        >
           <NuxtButton
             v-if="courier.can_dispatch && (!reminderLine || confirmingDispatch)"
             type="button"
@@ -417,9 +476,10 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
             @click="confirmingDispatch = false"
           />
           <NuxtButton
-            v-if="courier.can_quote"
+            v-if="courier.can_quote && !confirmingDispatch && !(quoteError && !quoting)"
             type="button"
-            :disabled="busy || !quoteAction?.enabled"
+            :loading="quoting"
+            :disabled="busy || quoting || !quoteAction?.enabled"
             :title="
               quoteAction?.reason ||
               (quoteAction?.enabled
@@ -427,7 +487,8 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
                 : 'Atualize o pedido para conferir esta ação.')
             "
             icon="i-lucide-calculator"
-            label="Cotar entrega"
+            :label="courier.estimate_display ? 'Cotar de novo' : 'Cotar entrega'"
+            data-courier-quote-button
             color="neutral"
             variant="outline"
             @click="emit('quote')"
