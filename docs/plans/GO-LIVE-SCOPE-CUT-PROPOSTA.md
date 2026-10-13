@@ -83,13 +83,12 @@ Medido em 01/10/2026 sobre `origin/main` em `1f1ff5afb`.
   (`MACHINE_FORMA_PAGAMENTO`, default `F`) e o motivo de cancelamento
   (`MACHINE_CANCEL_REASON_ID`). Mais a correção de endereços da outra sessão e um
   ensaio em homologação antes de apontar para produção.
-- **Dependência externa:** API Key do painel da Machine + usuário Gestor (hoje a
-  Joyce) com permissão **API Corrida/Entrega** (`MACHINE_API_USER`,
-  `MACHINE_API_PASSWORD`, `MACHINE_API_KEY`, `config/settings.py:927-929`).
-  **Ressalva:** se a Joyce trocar a senha, a entrega para. Um usuário dedicado à
-  integração evitaria isso. [INFERÊNCIA] Como o adaptador autentica por HTTP Basic
-  com esse usuário (`courier_machine.py:10-11`), a troca de senha derruba o
-  despacho sem aviso prévio; o primeiro sinal seria o erro 4xx na diretiva.
+- **Dependência externa:** API Key do painel da Machine + **usuário de integração (API) da TaOn**
+  com permissão **API - Entrega** (`MACHINE_API_USER`, `MACHINE_API_PASSWORD`, `MACHINE_API_KEY`).
+  A integração não depende do login Gestor de uma pessoa no painel (atualizado em 13/10/2026: o
+  dono afirma que o usuário de API já existe; no alpha as quatro `MACHINE_*` são `SECRET`, e qual
+  usuário está lá se confere no painel da TaOn, passo 0 da corrida de prova em
+  `docs/runbooks/courier-machine-homologacao.md`).
 
 ### 5. Concierge (WhatsApp conversacional)
 
