@@ -24,14 +24,33 @@ export function filterTabsByQuery(tabs: POSTabProjection[], query: string): POST
   );
 }
 
-/** Open tabs first, then by display ref (numeric-aware, pt-BR). */
+/** A comanda que a cozinha terminou: a que pede o balcão agora. */
+export function isKitchenReady(tab: POSTabProjection): boolean {
+  return tab.state === "in_use" && tab.item_count > 0 && Boolean(tab.kitchen_ready);
+}
+
+/** Pronta primeiro (o balcão chama o cliente), depois as em uso, depois as livres;
+ *  dentro de cada grupo, pela referência (numeric-aware, pt-BR). */
 export function sortTabs(tabs: POSTabProjection[]): POSTabProjection[] {
-  return [...tabs].sort((a, b) => {
-    const aOpen = a.state === "in_use" ? 0 : 1;
-    const bOpen = b.state === "in_use" ? 0 : 1;
-    return aOpen - bOpen
-      || a.display_ref.localeCompare(b.display_ref, "pt-BR", { numeric: true });
-  });
+  const rank = (tab: POSTabProjection) => (isKitchenReady(tab) ? 0 : tab.state === "in_use" ? 1 : 2);
+  return [...tabs].sort((a, b) =>
+    rank(a) - rank(b)
+      || a.display_ref.localeCompare(b.display_ref, "pt-BR", { numeric: true }),
+  );
+}
+
+/**
+ * As comandas que FICARAM prontas desde a leitura anterior (por `session_key`).
+ * `previous` nulo é a primeira leitura: o que já estava pronto ao abrir a tela
+ * não toca, só o que muda com ela aberta.
+ */
+export function newlyReadyTabs(previous: ReadonlySet<string> | null, tabs: POSTabProjection[]): {
+  ready: Set<string>;
+  fresh: string[];
+} {
+  const ready = new Set(tabs.filter(isKitchenReady).map((tab) => tab.session_key).filter(Boolean));
+  const fresh = previous ? [...ready].filter((key) => !previous.has(key)) : [];
+  return { ready, fresh };
 }
 
 export function filterTabs(tabs: POSTabProjection[], filter: TabFilter): POSTabProjection[] {
@@ -51,6 +70,8 @@ export interface TabCardView {
   isUnpaid: boolean;
   /** Has items but nothing sent to the kitchen yet — a quiet "a enviar" cue. */
   pendingKitchen: boolean;
+  /** A cozinha terminou tudo: "Pronta", o selo mais alto do quadro. */
+  kitchenReady: boolean;
   statusLabel: string;
   /** Customer name, falling back to an items preview, then "Livre". */
   identity: string;
@@ -93,6 +114,7 @@ export function tabCardView(tab: POSTabProjection, selectedRef = ""): TabCardVie
     // esta esquecia.
     isUnpaid: hasItems && Boolean(tab.fired),
     pendingKitchen: hasItems && !tab.fired,
+    kitchenReady: isKitchenReady(tab),
     statusLabel: tab.status_label,
     identity: tab.customer_name || tab.items_preview || "Livre",
     summary: hasItems
