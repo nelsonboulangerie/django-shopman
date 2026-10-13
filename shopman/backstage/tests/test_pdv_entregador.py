@@ -217,12 +217,13 @@ def test_a_linha_diz_o_estado_da_corrida(caixa, shop, status, label, tone):
 def test_entrega_pronta_sem_corrida_diz_que_o_entregador_nao_foi_chamado(caixa, shop):
     client, _ = caixa
     _delivery()
-    _delivery("PDV-CEDO", status=Order.Status.ACCEPTED)
+    _delivery("PDV-CEDO", status=Order.Status.NEW)
 
     pronta = _row(client, "PDV-ENT")
     cedo = _row(client, "PDV-CEDO")
 
     assert (pronta["courier_label"], pronta["courier_tone"], pronta["courier_call"]) == (
         preorders.COURIER_NOT_CALLED_LABEL, "warning", True)
-    # Antes de poder chamar, a linha não fala da corrida (zero não é informação).
+    # Antes de poder chamar (a régua é do servidor: `courier.RIDE_ORDER_STATUSES`),
+    # a linha não fala da corrida (zero não é informação).
     assert (cedo["courier_label"], cedo["courier_call"]) == ("", False)
