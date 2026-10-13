@@ -154,10 +154,16 @@ export interface PreorderCourier {
   status: string;
   status_label: string;
   active: boolean;
-  driver: { name: string; phone: string; vehicle_plate: string; vehicle_model: string } | null;
+  driver: { name: string; phone: string; vehicle_plate: string; vehicle_model: string; vehicle_color?: string } | null;
   tracking_url: string;
   confirmation_code: string;
   attempts_count: number;
+  /** Andamento lido da TaOn, em instantes ISO (`courier.progress_view`); a tela conta os minutos. */
+  pickup_eta_at?: string;
+  arrived_pickup_at?: string;
+  delivery_eta_at?: string;
+  /** Desde quando a TaOn não informa a corrida (vazio com a leitura em dia). */
+  sync_since?: string;
   error: { message: string; at: string } | null;
   can_dispatch: boolean;
   /** A última chamada ficou sem resposta da TaOn: "Chamar de novo" libera e chama outra. */

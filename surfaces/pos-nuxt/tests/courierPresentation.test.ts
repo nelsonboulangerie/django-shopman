@@ -79,6 +79,9 @@ describe("o painel do entregador no detalhe", () => {
   it("quem vem: veículo e telefone discável", () => {
     expect(vehicleLine({ name: "Carlos", phone: "", vehicle_model: "Moto", vehicle_plate: "ABC1D23" })).toBe("Moto · ABC1D23");
     expect(vehicleLine(null)).toBe("");
+    expect(
+      vehicleLine({ name: "Carlos", phone: "", vehicle_model: "CG 160", vehicle_color: "Vermelha", vehicle_plate: "ABC1D23" }),
+    ).toBe("CG 160 · Vermelha · ABC1D23");
     expect(telHref("(43) 99876-1234")).toBe("tel:43998761234");
   });
 });
