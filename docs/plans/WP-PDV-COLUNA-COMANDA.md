@@ -120,6 +120,13 @@ Lidos no código; a prova por teste é o primeiro passo do WP de implementação
 linha aberta é a primeira marcada; marcar outra transforma o bloco de 1 no de N. Ato em lote
 concluído limpa as marcas; Esc desmarca tudo; dígito não faz nada com marcas.
 
+> **Atualização 13/10 (dono).** (1) A marca é literal: a caixa clicada é a marcada, no mesmo
+> toque, e só ela; uma marca é uma marca (bloco das marcadas com 1). A regra "a linha aberta
+> é a primeira marcada" fazia a caixa clicada ficar vazia, e o operador clicava de novo sem
+> saber se tinha aceitado. (2) Juntar é um dos três destinos do diálogo "Transferir itens"
+> (Outra comanda · Comanda nova · Juntar comandas) e não tem porta própria: o ⋯ da comanda
+> ficou só com Liberar (e, na folha que paga direto, Transferir itens, porque lá não há pé).
+
 **Quando estreita.** Tecla cai primeiro, depois o rótulo curto escrito à mão, ícone só no fim.
 A grade nunca vira uma coluna; "em 9 linhas" cai antes; o total do Pagamento nunca corta. Na
 folha (tablet e celular) valem as mesmas zonas; o toque longo marca.

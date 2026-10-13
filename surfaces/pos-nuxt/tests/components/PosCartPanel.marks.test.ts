@@ -54,15 +54,19 @@ describe("PosCartPanel — marcar sem modo", () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     expect(wrapper.find("[data-pos-select-lines]").exists()).toBe(false);
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     expect(wrapper.find("[data-pos-selection-bar]").exists()).toBe(false);
     expect(wrapper.find("[data-pos-ticket-header]").text()).toContain("4 itens");
   });
 
-  it("a linha aberta é a primeira marcada: marcar outra vira o bloco de N com o objeto no título", async () => {
+  it("marcar vira o bloco das marcadas com o objeto no título (a marca é literal: só a clicada)", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     // No balcão o editor nasce aberto na última lançada (Café).
     expect(block(wrapper).attributes("data-pos-block")).toBe("line");
     await mark(wrapper, "L-PAO");
+    expect(block(wrapper).attributes("data-pos-block")).toBe("marked");
+    expect(wrapper.findAll("[data-pos-line-marked]")).toHaveLength(1);
+    await mark(wrapper, "L-CAFE");
     expect(block(wrapper).attributes("data-pos-block")).toBe("marked");
     expect(wrapper.find("[data-pos-marked-title]").text()).toBe(`2 linhas marcadas · 3 itens · ${formatBRL(1100)}`);
     expect(wrapper.find('[data-pos-line-mark="L-CAFE"]').exists()).toBe(true);
@@ -74,22 +78,26 @@ describe("PosCartPanel — marcar sem modo", () => {
     const cells = () => wrapper.findAll("[data-pos-controls-block] [data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"));
     expect(cells()).toEqual(["qty", "remove", "discount", "note", "fire", "transfer"]);
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     expect(cells()).toEqual(["remove", "discount", "note", "fire", "transfer"]);
     expect(wrapper.findAll("[data-pos-tab-transfer], [data-pos-batch-move]")).toHaveLength(1);
     expect(wrapper.find("[data-pos-tab-transfer]").text()).toContain("Transferir 2 marcadas");
     await wrapper.find("[data-pos-tab-transfer]").trigger("click");
-    expect(wrapper.emitted("move")?.[0]).toEqual([["L-PAO", "L-CAFE"], "transfer"]);
+    expect(wrapper.emitted("move")?.[0]).toEqual([["L-PAO", "L-CAFE"]]);
   });
 
-  it("desmarcar até sobrar uma volta ao editor dela", async () => {
+  it("desmarcar a última volta ao editor da linha aberta", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     await mark(wrapper, "L-QUICHE");
     expect(wrapper.find("[data-pos-marked-title]").text()).toContain("3 linhas marcadas");
     await mark(wrapper, "L-CAFE");
     await mark(wrapper, "L-PAO");
+    expect(wrapper.find("[data-pos-marked-title]").text()).toContain("1 linha marcada");
+    await mark(wrapper, "L-QUICHE");
     expect(block(wrapper).attributes("data-pos-block")).toBe("line");
-    expect(wrapper.find("[data-pos-line-editor-title]").text()).toContain("Quiche");
+    expect(wrapper.find("[data-pos-line-editor-title]").text()).toContain("Café");
   });
 
   it("Shift + clique marca o intervalo; Esc desmarca tudo", async () => {
@@ -106,12 +114,13 @@ describe("PosCartPanel — marcar sem modo", () => {
   it("Espaço na linha em foco marca, como a caixa", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await wrapper.find('[data-item-select="L-PAO"]').trigger("keydown", { key: " " });
-    expect(wrapper.findAll("[data-pos-line-marked]")).toHaveLength(2);
+    expect(wrapper.findAll("[data-pos-line-marked]")).toHaveLength(1);
   });
 
   it("com marcas, clicar numa linha marca (não joga as marcas fora)", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     await wrapper.find('[data-item-select="L-QUICHE"]').trigger("click");
     expect(wrapper.findAll("[data-pos-line-marked]")).toHaveLength(3);
   });
@@ -119,6 +128,7 @@ describe("PosCartPanel — marcar sem modo", () => {
   it("com marcas, um dígito não faz nada (a quantidade é de uma linha)", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props(), attachTo: document.body });
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "3", bubbles: true }));
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("setQty")).toBeUndefined();
@@ -130,6 +140,7 @@ describe("PosCartPanel — o pé segue o foco; o Pagamento não", () => {
   it("com marcas, Enviar diz 'Enviar N marcadas' e envia só elas; o Pagamento segue a comanda inteira", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     const fire = wrapper.find("[data-pos-fire]");
     expect(fire.text()).toContain("Enviar 2 marcadas");
     expect(wrapper.find("[data-pos-primary]").text()).toContain(formatBRL(3590));
@@ -144,15 +155,17 @@ describe("PosCartPanel — o pé segue o foco; o Pagamento não", () => {
     expect(vm.fireSelection()).toBe(false);
     expect(vm.moveSelection()).toBe(false);
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     expect(vm.fireSelection()).toBe(true);
     expect(wrapper.emitted("fireLines")).toHaveLength(1);
     expect(vm.moveSelection()).toBe(true);
-    expect(wrapper.emitted("move")?.[0]).toEqual([["L-PAO", "L-CAFE"], "transfer"]);
+    expect(wrapper.emitted("move")?.[0]).toEqual([["L-PAO", "L-CAFE"]]);
   });
 
   it("ato em lote concluído limpa as marcas; no erro, ficam", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     await wrapper.find("[data-pos-fire]").trigger("click");
     (wrapper.emitted("fireLines")![0]![1] as (ok: boolean) => void)(false);
     await wrapper.vm.$nextTick();
@@ -176,6 +189,7 @@ describe("PosCartPanel — o pé segue o foco; o Pagamento não", () => {
   it("Remover N confirma E oferece Desfazer, como remover 1", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     await wrapper.find("[data-pos-line-remove]").trigger("click");
     expect(wrapper.emitted("remove")).toBeUndefined();
     const confirm = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Remover itens"));
@@ -191,6 +205,7 @@ describe("PosCartPanel — o pé segue o foco; o Pagamento não", () => {
   it("desconto nas marcadas: rascunho até Aplicar, vale para todas e limpa as marcas", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     await wrapper.find("[data-pos-line-discount]").trigger("click");
     const brl = wrapper.findAll("button").find((b) => b.text().trim() === "Em R$")!;
     await brl.trigger("click");
@@ -217,6 +232,7 @@ describe("PosCartPanel — o pé segue o foco; o Pagamento não", () => {
   it("observação nas marcadas: a mesma para todas", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     await wrapper.find("[data-pos-line-note]").trigger("click");
     expect(wrapper.find("[data-pos-note-help]").text()).toContain("2 linhas marcadas");
     await wrapper.find("[data-pos-note-panel] textarea").setValue("para viagem");
@@ -229,15 +245,16 @@ describe("PosCartPanel — o pé segue o foco; o Pagamento não", () => {
     const last = () => wrapper.emitted("autoFireHold")!.at(-1)![0];
     expect(last()).toBe(false);
     await mark(wrapper, "L-PAO");
+    await mark(wrapper, "L-CAFE");
     expect(last()).toBe(true);
   });
 });
 
 describe("PosCartPanel — a porta da comanda e as do raro", () => {
-  it("o cabeçalho tem 'Comanda ⋯' (Juntar, Liberar; Transferir mora no pé); some na edição de encomenda", async () => {
+  it("o cabeçalho tem 'Comanda ⋯' (só Liberar; Juntar é destino do Transferir, que mora no pé); some na edição de encomenda", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     expect(wrapper.find("[data-pos-tab-menu]").exists()).toBe(true);
-    expect(wrapper.find("[data-pos-tab-menu]").attributes("aria-label")).toBe("Ações da comanda: juntar, liberar");
+    expect(wrapper.find("[data-pos-tab-menu]").attributes("aria-label")).toBe("Ações da comanda: liberar");
     // Na folha que paga direto (tablet, celular) não há pé: Transferir segue no ⋯.
     const sheet = await mountSuspended(PosCartPanel, {
       props: props({ sheet: true, quickPayments: [{ ref: "pix", label: "PIX", icon: "i-lucide-qr-code" }] }),
@@ -246,7 +263,7 @@ describe("PosCartPanel — a porta da comanda e as do raro", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(document.body.querySelector("[data-pos-sheet-pay]")).not.toBeNull();
     expect(document.body.querySelector("[data-pos-tab-transfer]")).toBeNull();
-    expect(document.body.querySelector("[data-pos-tab-menu]")?.getAttribute("aria-label")).toBe("Ações da comanda: transferir itens, juntar, liberar");
+    expect(document.body.querySelector("[data-pos-tab-menu]")?.getAttribute("aria-label")).toBe("Ações da comanda: transferir itens, liberar");
     sheet.unmount();
     const editing = await mountSuspended(PosCartPanel, { props: props({ primaryLabel: "Salvar alterações", hideMove: true }) });
     expect(editing.find("[data-pos-tab-menu]").exists()).toBe(false);

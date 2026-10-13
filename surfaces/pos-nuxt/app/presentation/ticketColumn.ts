@@ -4,55 +4,45 @@
 // o bloco de ação (o objeto em foco) e o pé (Enviar · Transferir · Pagamento). O que
 // muda é o OBJETO em foco: a comanda, uma linha aberta ou várias linhas marcadas.
 //
-// MARCAR NÃO É MODO: a linha aberta é a primeira marcada; marcar outra transforma o
-// bloco de 1 no bloco de N, nas mesmas posições. Desmarcar até sobrar uma volta ao
-// editor daquela. Este módulo é a regra pura disso; a tela só desenha.
+// MARCAR NÃO É MODO, E A MARCA É LITERAL (dono, 13/10/2026): a caixa clicada é a caixa
+// marcada, no mesmo toque. Uma marca é uma marca (o bloco das marcadas com 1); a linha
+// aberta no editor é outra coisa (o foco da quantidade) e não entra na conta sozinha.
+// Desmarcar a última volta ao editor da linha aberta. Este módulo é a regra pura disso;
+// a tela só desenha.
 import type { POSCartItem } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 import { lineTotalQ } from "~/presentation/lineDiscounts";
 import { countUnits } from "~/presentation/selection";
 import { isWeighedLine } from "~/presentation/weighed";
 
-export interface MarkResult {
-  /** As linhas marcadas depois do gesto (vazio quando o foco é uma linha só). */
-  marked: Set<string>;
-  /** A linha que o editor abre quando sobra uma só (ou "" para não mexer). */
-  open: string;
-}
-
 /**
- * Marcar ou desmarcar uma linha. `openLineId` é a linha aberta no editor (ou ""): ela
- * entra na conta como a primeira marcada. Conjunto de um não existe: vira a linha
- * aberta (o bloco de 1).
+ * Marcar ou desmarcar UMA linha: só ela muda, nada mais entra junto. Já houve uma regra
+ * que juntava a linha aberta como "primeira marcada" e transformava conjunto de um em
+ * linha aberta; a caixa clicada ficava vazia e o operador clicava de novo sem saber se
+ * tinha aceitado (dono, 13/10/2026).
  */
-export function toggleMark(marked: ReadonlySet<string>, lineId: string, openLineId: string): MarkResult {
+export function toggleMark(marked: ReadonlySet<string>, lineId: string): Set<string> {
   const next = new Set(marked);
-  if (!next.size && openLineId) next.add(openLineId);
   if (next.has(lineId)) next.delete(lineId);
   else next.add(lineId);
-  return normalizeMarks(next);
+  return next;
 }
 
-/** Shift + clique: marca o intervalo entre a última marcada (ou a aberta) e esta. */
+/** Shift + clique: marca o intervalo entre a âncora (a última marcada, ou a linha aberta) e esta. */
 export function markRange(
   items: readonly POSCartItem[],
   marked: ReadonlySet<string>,
   anchorId: string,
   lineId: string,
-): MarkResult {
+): Set<string> {
   const ids = items.map((item) => item.line_id);
   const from = ids.indexOf(anchorId);
   const to = ids.indexOf(lineId);
-  if (from < 0 || to < 0) return toggleMark(marked, lineId, "");
+  if (from < 0 || to < 0) return toggleMark(marked, lineId);
   const next = new Set(marked);
   const [start, end] = from < to ? [from, to] : [to, from];
   for (let index = start; index <= end; index += 1) next.add(ids[index]!);
-  return normalizeMarks(next);
-}
-
-function normalizeMarks(next: Set<string>): MarkResult {
-  if (next.size === 1) return { marked: new Set(), open: [...next][0]! };
-  return { marked: next, open: "" };
+  return next;
 }
 
 export interface MarkedSummary {
@@ -85,7 +75,7 @@ export interface FireCellInput {
   /** O rótulo do servidor para enviar ("Enviar à cozinha") ou o estado ("Enviado"). */
   label: string;
   disabled: boolean;
-  /** Linhas marcadas (2 ou mais) e, delas, as que ainda não foram à cozinha. */
+  /** Linhas marcadas (1 ou mais) e, delas, as que ainda não foram à cozinha. */
   markedLines: number;
   markedFirable: number;
   offline: boolean;
@@ -107,7 +97,7 @@ export interface FireCellView {
  * só elas e diz isso ("Enviar 3 marcadas"). Sem conexão, apagado com o motivo.
  */
 export function fireCellView(input: FireCellInput): FireCellView {
-  if (input.markedLines >= 2) {
+  if (input.markedLines >= 1) {
     const n = input.markedFirable;
     if (!n) {
       return {

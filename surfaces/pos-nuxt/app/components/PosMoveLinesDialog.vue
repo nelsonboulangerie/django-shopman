@@ -33,9 +33,6 @@ const props = defineProps<{
    * operador escolheu antes o que sai. Pelo F10 a lista vem vazia, como sempre.
    */
   preselected?: string[];
-  /** O modo pedido pela porta que abriu o diálogo ("Juntar com outra comanda", no
-   *  menu da comanda). Sem ele, outra comanda quando há, senão a comanda nova. */
-  initialMode?: MoveMode;
 }>();
 
 const emit = defineEmits<{
@@ -55,7 +52,7 @@ const targetSessionKey = ref("");
 
 watch(() => props.open, (isOpen) => {
   if (!isOpen) return;
-  mode.value = initialMoveMode(modes.value, props.initialMode, targetOptions.value.length > 0);
+  mode.value = initialMoveMode(modes.value, targetOptions.value.length > 0);
   // Seleção começa VAZIA: dividir a conta é escolher O QUE SAI — nascer com
   // tudo marcado invertia o gesto (desmarcar o que fica) e um Enter apressado
   // movia a comanda inteira.

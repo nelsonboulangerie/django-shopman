@@ -9,14 +9,15 @@ const line = (id: string, qty = 1, price_q = 500): POSCartItem => ({ line_id: id
 const items = [line("a"), line("b", 2), line("c"), line("d")];
 
 describe("ticketColumn — marcar sem modo", () => {
-  it("a linha aberta é a primeira marcada; conjunto de um vira a linha aberta", () => {
-    expect([...toggleMark(new Set(), "b", "a").marked]).toEqual(["a", "b"]);
-    expect(toggleMark(new Set(), "b", "")).toEqual({ marked: new Set(), open: "b" });
-    expect(toggleMark(new Set(["a", "b"]), "a", "")).toEqual({ marked: new Set(), open: "b" });
+  it("a marca é literal: só a linha clicada muda, e uma marca é uma marca (dono, 13/10)", () => {
+    expect([...toggleMark(new Set(), "b")]).toEqual(["b"]);
+    expect([...toggleMark(new Set(["a"]), "b")]).toEqual(["a", "b"]);
+    expect([...toggleMark(new Set(["a", "b"]), "a")]).toEqual(["b"]);
+    expect([...toggleMark(new Set(["b"]), "b")]).toEqual([]);
   });
   it("Shift marca o intervalo, nos dois sentidos", () => {
-    expect([...markRange(items, new Set(), "a", "c").marked]).toEqual(["a", "b", "c"]);
-    expect([...markRange(items, new Set(), "d", "b").marked].sort()).toEqual(["b", "c", "d"]);
+    expect([...markRange(items, new Set(), "a", "c")]).toEqual(["a", "b", "c"]);
+    expect([...markRange(items, new Set(), "d", "b")].sort()).toEqual(["b", "c", "d"]);
   });
   it("o título do bloco diz linhas, itens e valor", () => {
     expect(markedSummary(items, new Set(["a", "b"])).title).toBe("2 linhas marcadas · 3 itens · R$ 15,00".replace(" ", " ") === "" ? "" : markedSummary(items, new Set(["a", "b"])).title);
@@ -96,8 +97,7 @@ describe("moveLines — Transferir é o verbo", () => {
   });
   it("abre no modo pedido, ou em outra comanda quando há, senão na nova", () => {
     const modes = availableMoveModes(null);
-    expect(initialMoveMode(modes, "merge", true)).toBe("merge");
-    expect(initialMoveMode(modes, undefined, true)).toBe("transfer");
-    expect(initialMoveMode(modes, undefined, false)).toBe("split");
+    expect(initialMoveMode(modes, true)).toBe("transfer");
+    expect(initialMoveMode(modes, false)).toBe("split");
   });
 });
