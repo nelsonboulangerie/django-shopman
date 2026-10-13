@@ -139,6 +139,45 @@ def test_detail_active_ride_shows_driver_and_labels(client, operator, shop):
     assert block["can_dispatch"] is False
 
 
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_detail_carries_the_ride_progress_and_the_reading_gap(client, operator, shop):
+    """A tela recebe a previsão em instantes e diz quando a TaOn parou de informar."""
+    from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
+
+    order = _delivery_order()
+    courier.request_dispatch(order, actor="test")
+    CourierDispatchHandler().handle(message=Directive.objects.get(topic=COURIER_DISPATCH), ctx={})
+    order.refresh_from_db()
+    ride = courier.get_block(order)["id_mch"]
+    courier_mock.set_status(ride, "A")
+    courier_mock.set_progress(ride, {"pickup_eta_at": "2026-10-13T18:49:00+00:00", "trip_minutes": 9})
+    courier.apply_snapshot(order, courier_mock.read_ride(ride), source="poll")
+
+    client.force_login(operator)
+    block = _detail(client, order.ref)["courier"]
+    assert block["pickup_eta_at"] == "2026-10-13T18:49:00+00:00"
+    assert block["delivery_eta_at"].startswith("2026-10-13T18:58:00")
+    assert block["sync_since"] == ""
+
+    courier_mock.set_progress(ride, {"arrived_pickup_at": "2026-10-13T18:50:00+00:00"})
+    courier.apply_snapshot(order, courier_mock.read_ride(ride), source="poll")
+    block = _detail(client, order.ref)["courier"]
+    assert block["status_label"] == "Entregador na loja"
+
+    from shopman.shop.adapters.courier_machine import CourierError
+
+    order.refresh_from_db()
+    courier.record_sync_failure(order, CourierError("[67] recusado", transient=False), ride_id=ride)
+    assert _detail(client, order.ref)["courier"]["sync_since"]
+
+
+def test_on_hold_is_not_at_the_shop():
+    """S é "em espera" (termina outra entrega antes), não "na loja"."""
+    from shopman.backstage.projections.order_queue import COURIER_STATUS_LABELS
+
+    assert "loja" not in COURIER_STATUS_LABELS["S"]
+
+
 # ── Ações ───────────────────────────────────────────────────────────
 
 

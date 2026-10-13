@@ -575,7 +575,7 @@ def _archive_current_ride(block: dict) -> None:
     )
     block["attempts"] = attempts
     for key in ("id_mch", "status", "status_at", "dispatched_at", "finished_at", "driver",
-                "tracking_url", "confirmation_code", "final_value_q"):
+                "tracking_url", "confirmation_code", "final_value_q", "progress", "sync"):
         block.pop(key, None)
 
 
@@ -683,7 +683,9 @@ def _enrich_accepted(block: dict, details: dict | None) -> None:
     if adapter is None:
         return
     try:
-        info = details or adapter.get_details(block["id_mch"])
+        # A leitura do polling já traz o entregador; o corpo do webhook não
+        # (só a letra e os links): aí os detalhes vêm da central.
+        info = details if isinstance(details, dict) and "driver" in details else adapter.get_details(block["id_mch"])
         driver = info.get("driver") or {}
         if driver:
             block["driver"] = {
@@ -691,6 +693,7 @@ def _enrich_accepted(block: dict, details: dict | None) -> None:
                 "phone": str(driver.get("phone") or ""),
                 "vehicle_plate": str(driver.get("vehicle_plate") or ""),
                 "vehicle_model": str(driver.get("vehicle_model") or ""),
+                "vehicle_color": str(driver.get("vehicle_color") or ""),
             }
     except CourierError as exc:
         logger.warning("courier.details_failed id_mch=%s: %s", block.get("id_mch"), exc)
@@ -709,8 +712,11 @@ def _enrich_finished(block: dict, details: dict | None) -> None:
     adapter = get_adapter("courier")
     if adapter is None:
         return
+    if isinstance(details, dict) and details.get("final_value_q") is not None:
+        block["final_value_q"] = int(details["final_value_q"])
+        return
     try:
-        info = details or adapter.get_details(block["id_mch"])
+        info = details if isinstance(details, dict) and "finished" in details else adapter.get_details(block["id_mch"])
         finished = info.get("finished") or {}
         final_value = finished.get("final_value")
         if final_value is not None:
@@ -740,6 +746,228 @@ def _alert_ride_failed(order, status: str) -> None:
         alert_adapter.create(alert_type, "warning", message, order_ref=order.ref)
     except Exception:
         logger.warning("courier.alert_failed order=%s", order.ref, exc_info=True)
+
+
+# ── Leitura da corrida: progresso e falha de leitura ────────────────
+
+#: Batidas seguidas sem conseguir ler a corrida até o aviso ao operador (~3 min).
+SYNC_ALERT_AFTER = 3
+
+#: Idade máxima da corrida para o polling seguir batendo. Corrida real dura
+#: minutos; passado isto, ninguém mais acompanha e a batida só gasta cota.
+MAX_POLL_HOURS = 6
+
+_SYNC_ALERT_TYPE = "integration_failed"
+
+
+def _sync_failures_key(ride_id: str) -> str:
+    return f"courier:sync_failures:{ride_id}"
+
+
+def _sync_alert_marker(ride_id: str) -> str:
+    return f"corrida {ride_id}"
+
+
+def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
+    """Aplica uma leitura da corrida (``adapter.read_ride``): status, entregador e progresso.
+
+    O status entra pelo funil de sempre (:func:`apply_status`). O resto
+    (estimativa de chegada à loja, chegada, coleta, viagem, valor final) só é
+    gravado quando muda, para a revisão do pedido não girar a cada batida.
+    Uma leitura que deu certo encerra o aviso de "TaOn sem notícias".
+    """
+    if not snapshot:
+        return
+    ride_id = get_block(order).get("id_mch")
+    if not ride_id:
+        return
+    status = str(snapshot.get("status") or "")
+    if status:
+        apply_status(order, status, source=source, details=snapshot)
+    cache.delete(_sync_failures_key(ride_id))
+    order.refresh_from_db()
+    tracking = _tracking_retry(ride_id, status, known=bool(get_block(order).get("tracking_url")))
+
+    had_sync = False
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") == ride_id:
+            had_sync = block.pop("sync", None) is not None
+            changed = had_sync
+            fresh = {k: v for k, v in (snapshot.get("progress") or {}).items() if v not in (None, "")}
+            previous = dict(block.get("progress") or {})
+            merged = {**previous, **fresh}
+            if merged != previous:
+                block["progress"] = merged
+                changed = True
+            driver = snapshot.get("driver")
+            if isinstance(driver, dict) and driver.get("name") and driver != block.get("driver"):
+                block["driver"] = driver
+                changed = True
+            final_value_q = snapshot.get("final_value_q")
+            if final_value_q is not None and final_value_q != block.get("final_value_q"):
+                block["final_value_q"] = int(final_value_q)
+                changed = True
+            if tracking and not block.get("tracking_url"):
+                block.update(tracking)
+                changed = True
+            if changed:
+                _save_block(order, block, emit={"kind": "progress", "status": block.get("status", "")})
+    if had_sync or str(get_block(order).get("status") or "") in TERMINAL_STATUSES or not get_block(order).get("id_mch"):
+        _resolve_sync_alert(ride_id)
+
+
+def _tracking_retry(ride_id: str, status: str, *, known: bool) -> dict:
+    """Link de rastreio que faltou no aceite: tenta de novo, no máximo a cada 5 min."""
+    if known or status not in ("A", "S", "E"):
+        return {}
+    gate = f"courier:tracking_retry:{ride_id}"
+    if not cache.add(gate, 1, 300):
+        return {}
+    adapter = get_adapter("courier")
+    if adapter is None:
+        return {}
+    try:
+        links = adapter.tracking_links(ride_id)
+    except CourierError as exc:
+        logger.warning("courier.tracking_failed id_mch=%s: %s", ride_id, exc)
+        return {}
+    if not links:
+        return {}
+    code = links[0].get("codigo_confirmacao")
+    return {
+        "tracking_url": str(links[0].get("link_rastreio") or ""),
+        "confirmation_code": str(code) if code is not None else "",
+    }
+
+
+def record_sync_failure(order, exc: Exception, *, ride_id: str) -> None:
+    """A batida não conseguiu ler a corrida: o operador precisa saber que a tela parou.
+
+    O contador fica no cache (a revisão do pedido não gira a cada minuto). O
+    pedido só muda duas vezes: na primeira falha (``sync.failing_since``, que a
+    tela mostra) e quando vira aviso (``SYNC_ALERT_AFTER`` falhas seguidas).
+    """
+    key = _sync_failures_key(ride_id)
+    failures = int(cache.get(key) or 0) + 1
+    cache.set(key, failures, MAX_POLL_HOURS * 3600)
+    first = "sync" not in get_block(order)
+    if not first and failures != SYNC_ALERT_AFTER:
+        return
+    now_iso = timezone.now().isoformat()
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") != ride_id:
+            return
+        sync = dict(block.get("sync") or {})
+        sync.setdefault("failing_since", now_iso)
+        sync["last_error"] = str(exc)[:300]
+        if failures >= SYNC_ALERT_AFTER:
+            sync["alerted_at"] = now_iso
+        block["sync"] = sync
+        _save_block(order, block, emit={"kind": "sync_failed", "status": block.get("status", "")})
+    if failures == SYNC_ALERT_AFTER:
+        _alert_sync_failed(order, ride_id)
+
+
+def _alert_sync_failed(order, ride_id: str) -> None:
+    from shopman.shop.adapters import alert as alert_adapter
+    from shopman.shop.services.operator_orders import short_ref
+
+    marker = _sync_alert_marker(ride_id)
+    try:
+        if alert_adapter.recent_exists(_SYNC_ALERT_TYPE, None, order_ref=order.ref, message_contains=marker):
+            return
+        alert_adapter.create(
+            _SYNC_ALERT_TYPE,
+            "warning",
+            f"A TaOn não está informando o andamento da {marker} do pedido {short_ref(order.ref)}. "
+            "O status na tela pode estar parado: confira no painel da TaOn.",
+            order_ref=order.ref,
+        )
+    except Exception:
+        logger.warning("courier.sync_alert_failed order=%s", order.ref, exc_info=True)
+
+
+def _resolve_sync_alert(ride_id: str) -> None:
+    from shopman.shop.adapters import alert as alert_adapter
+
+    def _resolve():
+        try:
+            alert_adapter.resolve_matching(_SYNC_ALERT_TYPE, message_contains=_sync_alert_marker(ride_id),
+                                           actor="courier:sync")
+        except Exception:
+            logger.warning("courier.sync_alert_resolve_failed id_mch=%s", ride_id, exc_info=True)
+
+    transaction.on_commit(_resolve)
+
+
+def progress_view(block: dict) -> dict:
+    """O que as telas mostram do andamento, em instantes ISO (o relógio é da tela).
+
+    ``pickup_eta_at``: quando o entregador chega à loja (aceite + "tempo até o
+    local de coleta" da TaOn). ``delivery_eta_at``: quando chega ao cliente
+    (coleta, ou a chegada prevista à loja, + a viagem estimada; sem a viagem da
+    central, a da cotação). ``sync_since``: desde quando a TaOn não informa a
+    corrida (vazio quando a leitura está em dia).
+    """
+    from django.utils.dateparse import parse_datetime
+
+    progress = block.get("progress") if isinstance(block.get("progress"), dict) else {}
+    status_at = block.get("status_at") if isinstance(block.get("status_at"), dict) else {}
+    estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
+    sync = block.get("sync") if isinstance(block.get("sync"), dict) else {}
+    status = str(block.get("status") or "")
+
+    pickup_eta_at = str(progress.get("pickup_eta_at") or "")
+    picked_up_at = str(progress.get("picked_up_at") or (status_at.get("E") if status in ("E", "F") else "") or "")
+    trip_minutes = progress.get("trip_minutes") or estimate.get("minutes")
+    delivery_eta_at = ""
+    base = parse_datetime(picked_up_at or pickup_eta_at) if (picked_up_at or pickup_eta_at) else None
+    if base is not None and trip_minutes and status not in TERMINAL_STATUSES:
+        delivery_eta_at = (base + timedelta(minutes=float(trip_minutes))).isoformat()
+    return {
+        "pickup_eta_at": pickup_eta_at if status in ("A", "S") else "",
+        "arrived_pickup_at": str(progress.get("arrived_pickup_at") or "") if status in ("A", "S", "E", "F") else "",
+        "picked_up_at": picked_up_at,
+        "delivery_eta_at": delivery_eta_at,
+        "arrived_dropoff_at": str(progress.get("arrived_dropoff_at") or ""),
+        "sync_since": str(sync.get("failing_since") or ""),
+    }
+
+
+def poll_expired(block: dict) -> bool:
+    """A corrida passou da idade em que o polling ainda acompanha."""
+    from django.utils.dateparse import parse_datetime
+
+    opened = parse_datetime(str(block.get("requested_at") or ""))
+    return opened is not None and timezone.now() - opened > timedelta(hours=MAX_POLL_HOURS)
+
+
+def record_arrival(order, *, at: str | None = None, source: str = "webhook") -> None:
+    """O entregador avisou que chegou (``AP`` do webhook): na loja antes da coleta, no cliente depois."""
+    block = get_block(order)
+    ride_id = block.get("id_mch")
+    if not ride_id or block.get("status") in TERMINAL_STATUSES:
+        return
+    key = "arrived_dropoff_at" if block.get("status") == "E" else "arrived_pickup_at"
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") != ride_id:
+            return
+        progress = dict(block.get("progress") or {})
+        if progress.get(key):
+            return
+        progress[key] = at or timezone.now().isoformat()
+        block["progress"] = progress
+        block.update(last_event_at=timezone.now().isoformat(), last_source=source)
+        _save_block(order, block, emit={"kind": "progress", "status": block.get("status", "")})
 
 
 # ── Polling (fallback do webhook) ───────────────────────────────────

@@ -233,6 +233,40 @@ def test_documented_event_that_is_not_a_state_keeps_the_ride_letter(shop, code, 
     assert courier.get_block(order)["status"] == "D"
 
 
+@override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_status_push_asks_for_a_full_reading_now(shop):
+    """O aviso traz só a letra: o entregador e a previsão vêm da batida, já."""
+    from django.utils import timezone
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import COURIER_SYNC
+
+    order = _order_with_ride()
+    APIClient().post(_url(), _documented_status("A", "ACCEPTED"), format="json")
+    sync = Directive.objects.get(topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED)
+    assert sync.available_at <= timezone.now()
+    order.refresh_from_db()
+    assert courier.get_block(order)["driver"]["name"] == "Entregador Mock"  # detalhes buscados, não o corpo do aviso
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_arrival_event_marks_the_driver_at_the_shop(shop):
+    order = _order_with_ride()
+    courier.apply_status(order, "A", source="poll")
+    resp = APIClient().post(_url(), _documented_status("AP", "ARRIVED_AT_LOCATION"), format="json")
+    assert resp.data["kind"] == "event"
+    order.refresh_from_db()
+    block = courier.get_block(order)
+    assert block["status"] == "A"
+    assert block["progress"]["arrived_pickup_at"] == "2026-10-01T13:20:05Z"
+
+    courier.apply_status(order, "E", source="poll")
+    order.refresh_from_db()
+    APIClient().post(_url(), _documented_status("AP", "ARRIVED_AT_LOCATION"), format="json")
+    order.refresh_from_db()
+    assert courier.get_block(order)["progress"]["arrived_dropoff_at"] == "2026-10-01T13:20:05Z"
+
+
 @override_settings(SHOPMAN_MACHINE=MACHINE)
 def test_documented_position_batch_goes_to_cache(shop):
     batch = {

@@ -385,3 +385,128 @@ def test_user_agent_is_never_the_requests_default():
     """A borda da Machine devolve 403 em HTML para `python-requests/x.y` (01/10/2026)."""
     assert not courier_machine.USER_AGENT.lower().startswith("python-requests")
     assert courier_machine.USER_AGENT.strip()
+
+
+# ── leitura da corrida (read_ride) ──────────────────────────────────
+
+#: A recusa que o alpha recebeu em toda batida de ``/solicitacaoStatus`` na
+#: primeira corrida real (13/10/2026, corrida 776722699).
+REFUSED_67 = _FakeResponse(
+    400,
+    {"success": False, "errors": [{"code": 67, "message": "O usuário informado não pode realizar essa operação."}]},
+)
+
+DETAILS_ACCEPTED = {
+    "request_id": 776722699,
+    "short_code": "A",
+    "full_code": "ACCEPTED",
+    "driver": {"name": "Carlos", "phone": "(43) 99876-5432", "vehicle_plate": "ABC1D23", "vehicle_model": "CG 160"},
+    "progress": {
+        "accepted_at": "2026-10-13T18:42:00Z",
+        "accept_eta_seconds": 420,
+        "accept_eta_km": 1.8,
+        "estimated_duration_minutes": 9,
+        "estimated_distance_km": 3.4,
+        "pickup_arrival": None,
+        "start_trip": None,
+    },
+    "finished": {},
+    "cancellation": [],
+}
+
+
+@pytest.fixture
+def _clear_read_via():
+    from django.core.cache import cache
+
+    cache.delete(courier_machine._READ_VIA_CACHE_KEY)
+    yield
+    cache.delete(courier_machine._READ_VIA_CACHE_KEY)
+
+
+def test_details_snapshot_has_status_driver_and_pickup_eta():
+    snap = courier_machine.snapshot_from_details(DETAILS_ACCEPTED)
+    assert snap["status"] == "A"
+    assert snap["driver"]["name"] == "Carlos"
+    assert snap["driver"]["vehicle_plate"] == "ABC1D23"
+    # "Tempo até o local de coleta" da TaOn = aceite + accept_eta_seconds
+    assert snap["progress"]["pickup_eta_at"].startswith("2026-10-13T18:49:00")
+    assert snap["progress"]["pickup_eta_minutes"] == 7
+    assert snap["progress"]["trip_minutes"] == 9
+
+
+def test_details_snapshot_derives_state_when_code_is_an_event():
+    payload = {**DETAILS_ACCEPTED, "short_code": "AP", "full_code": "ARRIVED_AT_LOCATION",
+               "progress": {**DETAILS_ACCEPTED["progress"], "pickup_arrival": "2026-10-13T18:50:00Z"}}
+    snap = courier_machine.snapshot_from_details(payload)
+    assert snap["status"] == "A"
+    assert snap["progress"]["arrived_pickup_at"] == "2026-10-13T18:50:00Z"
+
+    finished = {**payload, "finished": {"finished_at": "2026-10-13T19:05:00Z", "final_value": 8.5}}
+    snap = courier_machine.snapshot_from_details(finished)
+    assert snap["status"] == "F"
+    assert snap["final_value_q"] == 850
+
+
+def test_listing_snapshot_reads_the_documented_row():
+    row = {"id": "776722699", "status_solicitacao": "E", "nome_condutor": "Carlos",
+           "telefone_condutor": "(43) 99876-5432", "veiculo": "CG 160", "placa_veiculo": "ABC1D23",
+           "cor_veiculo": "Vermelha", "data_hora_aceite_utc": "2026-10-13T18:42:00Z",
+           "data_hora_chegada_local_utc": "2026-10-13T18:50:00Z", "data_hora_inicio": "2026-10-13T18:52:00Z",
+           "data_hora_finalizacao_utc": None, "valor_corrida": "7.00", "distancia_coleta_km": "1.80"}
+    snap = courier_machine.snapshot_from_listing(row)
+    assert snap["status"] == "E"
+    assert snap["driver"]["vehicle_color"] == "Vermelha"
+    assert snap["progress"]["picked_up_at"] == "2026-10-13T18:52:00Z"
+    assert snap["final_value_q"] is None  # valor só vale com a corrida finalizada
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_read_ride_survives_the_status_refusal_seen_in_the_alpha(_clear_read_via):
+    """O elo quebrado de 13/10: ``/solicitacaoStatus`` recusava (67) e a corrida parava em D."""
+
+    def fake(method, url, **kwargs):
+        assert method == "GET"
+        if url.endswith("/v1/request/776722699"):
+            return _FakeResponse(200, DETAILS_ACCEPTED)
+        return REFUSED_67
+
+    with patch("shopman.shop.adapters.courier_machine.requests.request", side_effect=fake):
+        snap = courier_machine.read_ride("776722699")
+    assert snap["status"] == "A"
+    assert snap["via"] == "details"
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_read_ride_falls_back_to_the_listing_and_remembers_it(_clear_read_via):
+    row = {"id": "776722699", "status_solicitacao": "A", "nome_condutor": "Carlos"}
+    calls = []
+
+    def fake(method, url, **kwargs):
+        calls.append(url)
+        if url.endswith("/solicitacao"):
+            return _ok([row])
+        return REFUSED_67
+
+    with patch("shopman.shop.adapters.courier_machine.requests.request", side_effect=fake):
+        assert courier_machine.read_ride("776722699")["via"] == "listing"
+        calls.clear()
+        assert courier_machine.read_ride("776722699")["status"] == "A"
+    assert calls == ["https://api.machine.test/api/integracao/solicitacao"]  # a via que respondeu vem primeiro
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_read_ride_raises_with_every_refusal_when_all_vias_fail(_clear_read_via):
+    with patch("shopman.shop.adapters.courier_machine.requests.request", return_value=REFUSED_67):
+        with pytest.raises(CourierError) as excinfo:
+            courier_machine.read_ride("776722699")
+    assert "[67]" in str(excinfo.value)
+    assert excinfo.value.transient is False
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_read_ride_only_reads(_clear_read_via):
+    with patch("shopman.shop.adapters.courier_machine.requests.request", return_value=REFUSED_67) as mock_request:
+        with pytest.raises(CourierError):
+            courier_machine.read_ride("1")
+    assert {call.args[0] for call in mock_request.call_args_list} == {"GET"}

@@ -396,7 +396,7 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "requested_at": "2026-07-07T18:02:11-03:00",
   "dispatched_at": null,           // setado no primeiro E (coleta)
   "finished_at": null,             // setado no F
-  "driver": {"name": "", "phone": "", "vehicle_plate": "", "vehicle_model": ""},  // a partir de A
+  "driver": {"name": "", "phone": "", "vehicle_plate": "", "vehicle_model": "", "vehicle_color": ""},  // a partir de A; a leitura da corrida atualiza (cor só pela listagem)
   "tracking_url": "",              // link de rastreio da parada (a partir de A)
   "confirmation_code": "",
   "estimate": {"value_q": 1250, "minutes": 18.0, "km": 4.2},  // custo interno (centavos)
@@ -408,9 +408,34 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "attempts": [                    // corridas anteriores (N/C ou canceladas p/ re-despacho)
     {"id_mch": "184501", "status": "N", "requested_at": "iso", "status_at": {"D": "iso", "N": "iso"}, "ended_at": "iso"}
   ],
-  "error": {"message": "...", "at": "iso"}  // falha terminal do despacho; limpo no re-despacho
+  "error": {"message": "...", "at": "iso"},  // falha terminal do despacho; limpo no re-despacho
+  "progress": {                    // andamento lido da central (`courier.apply_snapshot`); só chaves com valor; sai no arquivamento
+    "accepted_at": "iso",          // aceite (details.progress.accepted_at / listagem data_hora_aceite_utc)
+    "pickup_eta_at": "iso",        // aceite + accept_eta_seconds: o "tempo até o local de coleta" da TaOn
+    "pickup_eta_minutes": 7,       // accept_eta_seconds em minutos, no aceite
+    "pickup_km": 1.8,              // distância do entregador até a loja no aceite
+    "near_pickup_at": "iso",       // arrival_at_surroundings (arredores da loja)
+    "arrived_pickup_at": "iso",    // chegou à loja: details.pickup_arrival, listagem data_hora_chegada_local_utc ou webhook AP antes do E
+    "picked_up_at": "iso",         // start_trip / data_hora_inicio (coleta, do lado da central)
+    "trip_minutes": 9.0,           // estimated_duration_minutes (viagem loja → cliente)
+    "trip_km": 3.4,                // estimated_distance_km
+    "arrived_dropoff_at": "iso",   // webhook AP depois do E (chegou ao cliente)
+    "finished_at": "iso", "cancelled_at": "iso", "cancelled_reason": ""
+  },
+  "sync": {                        // a leitura da corrida está falhando (`courier.record_sync_failure`); sai na primeira leitura boa
+    "failing_since": "iso",        // primeira batida que falhou: a tela diz "sem notícias da TaOn desde HH:MM"
+    "last_error": "...",           // a recusa de cada via (ex.: "[67] O usuário informado não pode realizar essa operação.")
+    "alerted_at": "iso"            // virou aviso `integration_failed` (marcador "corrida <id_mch>") após `SYNC_ALERT_AFTER` batidas
+  }
 }
 ```
+
+A projeção do Gestor (`_courier_block`) entrega o andamento já resolvido por
+`courier.progress_view(block)`: `pickup_eta_at` (só em A/S), `arrived_pickup_at`,
+`picked_up_at`, `delivery_eta_at` (coleta, ou chegada prevista à loja, + viagem; sem a
+viagem da central, a da cotação), `arrived_dropoff_at` e `sync_since`. Instantes ISO: a
+tela conta os minutos com o relógio dela. As contagens de falha seguidas moram no cache
+(`courier:sync_failures:<id_mch>`), para a revisão do pedido não girar a cada batida.
 
 ### waitlist — detalhamento
 
@@ -1040,9 +1065,13 @@ até um recuperador compatível. Consulta externa/homologação de unknown depen
 |-------|------|-------------|----------|
 | `order_ref` | `string` | CourierDispatchHandler / CourierSyncHandler (reagenda) | CourierSyncHandler |
 
-Heartbeat de polling do status da corrida (fallback do webhook Machine).
-Auto-reagendável a cada `Shop.defaults.delivery.courier_poll_seconds` (default
-60; `0` desliga). Morre em status terminal (F/N/C).
+Heartbeat de polling da corrida (fallback do webhook Machine). Cada batida lê a
+corrida inteira (`adapter.read_ride`: `/v1/request/{id}`, depois `/solicitacao?id=`,
+depois `/solicitacaoStatus`; a via que responder é lembrada no cache) e aplica por
+`courier.apply_snapshot`. Auto-reagendável a cada `Shop.defaults.delivery.courier_poll_seconds`
+(default 60; `0` desliga). Morre em status terminal (F/N/C) ou com a corrida mais velha
+que `courier.MAX_POLL_HOURS` (6 h). O webhook de status agenda uma batida imediata
+(`delay_seconds=0`). Leitura que falha grava `courier.sync` e vira aviso.
 
 #### `loyalty.earn`
 
