@@ -422,7 +422,7 @@ export function attentionTiles(input: {
       key: "attention:card_machine",
       icon: "lucide:credit-card",
       label: machine === 1 ? "Estorno na maquininha" : "Estornos na maquininha",
-      description: "Venda cancelada, devolvida ou encomenda mais barata · estorne na maquininha e registre, com PIN do gerente",
+      description: "Estornar no cartão do cliente · PIN do gerente",
       disabled: false,
       tone: "attention",
       badge: String(machine),

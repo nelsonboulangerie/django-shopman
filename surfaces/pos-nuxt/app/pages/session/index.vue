@@ -821,7 +821,7 @@ async function confirmClose() {
     <NuxtModal
       v-model:open="cardMachineDialogOpen"
       title="Estornos na maquininha"
-      description="Estorne na maquininha, no cartão do cliente, e depois toque em Estornei na maquininha."
+      description="Faça o estorno na maquininha e toque em Estornei na maquininha."
       :content="dialogContent('attention:card_machine')"
     >
       <template #body>
