@@ -714,16 +714,6 @@ function clearSearchAndFilter() {
       />
     </div>
 
-    <!-- detalhe (aberto pelo card ou pelo toque longo) -->
-    <KdsTicketModal
-      :open="shownTicket != null"
-      :ticket="shownTicket"
-      :history="openTicket ? null : historyEntry"
-      :volumes-busy="volumesBusy"
-      @update:open="setModalOpen"
-      @volumes="onVolumes"
-    />
-
     <!-- toque longo no celular: ver o pedido, desfazer, o Histórico de hoje -->
     <KdsHoldSheet
       v-model:open="holdOpen"
@@ -734,7 +724,8 @@ function clearSearchAndFilter() {
       @history="historyOpen = true"
     />
 
-    <!-- Histórico de hoje: concluídos e cancelados desde 0h, só desta estação -->
+    <!-- Histórico de hoje: concluídos e cancelados desde 0h, só desta estação. Vem ANTES
+         do detalhe: o detalhe aberto da lista desenha por cima dela (ordem do portal). -->
     <KdsHistoryDialog
       v-model:open="historyOpen"
       v-model:query="historyQuery"
@@ -747,6 +738,15 @@ function clearSearchAndFilter() {
       @retry="loadHistory()"
     />
 
+    <!-- detalhe (aberto pelo card ou pelo toque longo) -->
+    <KdsTicketModal
+      :open="shownTicket != null"
+      :ticket="shownTicket"
+      :history="openTicket ? null : historyEntry"
+      :volumes-busy="volumesBusy"
+      @update:open="setModalOpen"
+      @volumes="onVolumes"
+    />
   </main>
 </template>
 

@@ -97,12 +97,17 @@ const queryModel = computed({
           >
             <span class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <span class="text-lg font-bold leading-tight tabular-nums">{{ row.code }}</span>
-              <NuxtBadge v-if="row.cancelled" color="error" variant="soft" label="Cancelado" />
+              <NuxtBadge v-if="row.cancelled" color="error" label="Cancelado" />
               <span v-if="row.overline" class="op-label font-semibold">{{ row.overline }}</span>
-              <span v-if="row.prep" class="ms-auto op-label tabular-nums text-muted-foreground">{{ row.prep }}</span>
             </span>
             <span class="block break-words op-body">{{ row.items }}</span>
-            <span class="block break-words op-label text-muted-foreground" data-kds-history-trail>{{ row.trail }}</span>
+            <!-- A trilha termina no resultado: o tempo de preparo, em destaque. -->
+            <span class="block break-words op-label text-muted-foreground" data-kds-history-trail
+              >{{ row.trail
+              }}<template v-if="row.prep">
+                · <b class="font-semibold whitespace-nowrap text-highlighted tabular-nums" data-kds-history-prep>{{ row.prep }}</b></template
+              ></span
+            >
             <span
               v-for="(line, i) in row.undone"
               :key="i"

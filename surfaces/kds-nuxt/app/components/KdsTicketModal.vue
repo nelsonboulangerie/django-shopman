@@ -143,7 +143,7 @@ const fill = computed(() =>
             class="flex shrink-0 flex-col items-end gap-0.5 px-1 py-2 text-right"
             data-kds-ticket-history-prep
           >
-            <span v-if="history.prep_display" class="text-2xl font-bold tabular-nums leading-none">{{
+            <span v-if="history.prep_display" class="text-3xl font-bold tabular-nums leading-none">{{
               history.prep_display
             }}</span>
             <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">{{
