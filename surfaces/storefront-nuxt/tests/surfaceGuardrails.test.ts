@@ -1717,6 +1717,17 @@ describe('surface claims stay inside what the projection actually says', () => {
     expect(tracking).toContain('t.eta_display')
   })
 
+  it('opens the courier link the server sends on the order page (P1-11)', () => {
+    // O link da TaOn para seguir o entregador ia só no aviso do WhatsApp. A
+    // projeção agora o manda como ação `external` da promessa de "saiu para
+    // entrega"; o painel de status desenhava só `link`, `mutation` e
+    // `instruction`, e a ação externa sumia em silêncio.
+    const tracking = read('app/pages/pedido/[ref]/index.vue')
+
+    expect(tracking).toContain("action.kind === 'external' && action.href")
+    expect(tracking).toContain("action.ref === 'track_courier'")
+  })
+
   it('names what the offer could not add, and offers a way out', () => {
     // `skipped` chegava como lista de strings e a tela só CONTAVA ("alguns itens
     // ficaram de fora"). Quem clicou num anúncio ficava sem saber o quê e sem

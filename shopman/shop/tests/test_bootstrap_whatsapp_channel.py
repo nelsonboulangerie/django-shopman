@@ -93,3 +93,15 @@ def test_sem_vitrine_da_loja_avisa_e_nao_quebra():
     assert Channel.objects.filter(ref="whatsapp", is_active=True).exists()
     assert Listing.objects.filter(ref="whatsapp").exists()
     assert "não existe" in out
+
+
+def test_canal_criado_nasce_em_aceite_manual_como_o_seed(web_listing):
+    """Pedido remoto só é aceito quando uma pessoa confere (seed + migração ``shop.0054``).
+
+    O bootstrap recriava o canal em ``auto_confirm``, desfazendo a decisão da 0054
+    em todo banco onde o canal ainda não existia.
+    """
+    _run()
+
+    confirmation = Channel.objects.get(ref="whatsapp").config["confirmation"]
+    assert confirmation == {"mode": "manual", "stale_new_alert_minutes": 10}
