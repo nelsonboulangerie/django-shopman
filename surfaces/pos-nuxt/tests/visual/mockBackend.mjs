@@ -182,6 +182,9 @@ const pos = {
 // fotos das Encomendas não mudam.
 const SALE = process.env.MOCK_SCENARIO === "sale";
 const COLUMN_STATES = SALE && process.env.MOCK_COLUMN_STATES === "1";
+// Prévia da mesa como destino do Transferir (MOCK_SEATING=1): o Salão com quatro mesas, a
+// comanda 12 na Mesa 4. Fora da flag, nada muda (retratos e trava de geometria).
+const SEATING = SALE && process.env.MOCK_SEATING === "1";
 // Os selos do quadro (só na prévia): a 14 com a cozinha toda no Pronto ("Tudo pronto")
 // e a 13 enviada à cozinha e não paga ("Não pago").
 const KITCHEN_READY = SALE && process.env.MOCK_KITCHEN_READY === "1";
@@ -210,6 +213,16 @@ const PRODUCTS = [
 }));
 if (SALE) {
   Object.assign(pos, {
+    ...(SEATING
+      ? {
+          seating_spots: [
+            { ref: "M3", label: "Mesa 3", short_label: "M3", area: "Salão", kind: "table" },
+            { ref: "M4", label: "Mesa 4", short_label: "M4", area: "Salão", kind: "table" },
+            { ref: "M5", label: "Mesa 5", short_label: "M5", area: "Salão", kind: "table" },
+            { ref: "M6", label: "Mesa 6", short_label: "M6", area: "Varanda", kind: "table" },
+          ],
+        }
+      : {}),
     products: PRODUCTS,
     collections: [
       { ref: "paes", name: "Pães" },
@@ -382,6 +395,7 @@ const TABS = SALE
         state: "in_use", status_label: "Em uso", customer_name: "Ana Souza", item_count: 5, line_count: 3,
         total_display: brl(5960), last_touched_display: "há 2 min", items_preview: "2 Croissant · 1 Pain au chocolat · 2 Café coado",
         opened_at_display: "09:41",
+        ...(SEATING ? { seating_spot_ref: "M4" } : {}),
       }),
       tab("14", { state: "in_use", status_label: "Em uso", item_count: 1, line_count: 1, total_display: brl(1290), items_preview: "1 Cappuccino", opened_at_display: "10:02", ...(KITCHEN_READY ? { session_key: "s-14", fired: true, kitchen_ready: true } : {}) }),
       tab("13", {

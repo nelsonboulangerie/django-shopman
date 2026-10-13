@@ -56,7 +56,7 @@ import {
 } from "~/presentation/lineDiscounts";
 import { managerAuthReason } from "../../../operator-kit/app/presentation/managerAuth";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
-import { deliveryTaxIdMissing, maskTaxId, taxIdEcho as taxIdEchoFor } from "~/presentation/taxId";
+import { maskTaxId, taxIdEcho as taxIdEchoFor } from "~/presentation/taxId";
 import { receiptRequestEmits, receiptRequestNote } from "~/presentation/receiptRequest";
 import {
   receiptContactArmed,
@@ -862,28 +862,6 @@ const ctaBlock = computed<{
       message: "O horário combinado não cabe mais.",
       hint: scheduleConflictReason.value,
       action: { label: "Escolher horário", run: () => { scheduleSheetOpen.value = true; } },
-    };
-  }
-  // ENTREGA COM NOTA sem o documento: a gêmea de `delivery_tax_id_required` do
-  // fechamento. A SEFAZ recusa a nota de entrega sem CPF/CNPJ, e a recusa
-  // chegava com o entregador na rua; agora o Validar trava aqui, com o toque
-  // que abre o campo.
-  if (deliveryTaxIdMissing({
-    fulfillmentType: props.fulfillmentType,
-    required: props.review?.delivery_tax_id_required,
-    wantsCpfOnInvoice: props.wantsCpfOnInvoice,
-    invoiceTaxId: props.invoiceTaxId,
-  })) {
-    return {
-      message: "Entrega com nota fiscal: falta o CPF ou CNPJ do cliente.",
-      hint: "Sem ele, a entrega não fecha; a retirada continua.",
-      action: {
-        label: "Preencher CPF na nota",
-        run: () => {
-          if (!props.wantsCpfOnInvoice) emit("update:wantsCpfOnInvoice", true);
-          focusByAriaLabel("CPF que sai na nota");
-        },
-      },
     };
   }
   // Endereço sem as partes que a nota exige (rua, número, bairro, cidade,

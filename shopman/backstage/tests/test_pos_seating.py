@@ -298,3 +298,16 @@ def test_ref_nova_nao_colide(operador, salao):
     seating.save_layout(actor=operador, spots=[{"label": "Mesa 1"}], removed=[], expected_revision=revision)
     assert SeatingSpot.objects.filter(label="Mesa 1").count() == 2
     assert SeatingSpot.objects.filter(ref="mesa-1-2").exists()
+
+
+def test_mesa_como_destino_do_transferir_so_vale_no_salao_de_hoje(salao):
+    # Dono, M=1 (13/10/2026): o Transferir abre comanda nova na mesa livre; a mesa que
+    # saiu do salão (ou não existe) é recusada com o motivo.
+    from shopman.backstage.services.pos_seating import spot_label_today
+    from shopman.shop.services.pos_intent import PosIntentError
+
+    assert spot_label_today("mesa-1") == "Mesa 1"
+    for ref in ("mesa-velha", "nao-existe"):
+        with pytest.raises(PosIntentError) as raised:
+            spot_label_today(ref)
+        assert raised.value.code == "seating_spot_not_found"

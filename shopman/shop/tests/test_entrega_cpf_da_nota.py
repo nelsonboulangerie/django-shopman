@@ -1,15 +1,16 @@
-"""Entrega com NFC-e não entra sem CPF/CNPJ e endereço completo (decisão do dono, 24/09/2026).
+"""Entrega com NFC-e: CPF/CNPJ opcional, endereço completo (decisão do dono, 13/10/2026).
 
-A SEFAZ recusa a nota de entrega a domicílio sem a identificação do consumidor
-e sem o endereço completo (787/788). Antes, o pedido entrava e a recusa só
-aparecia na emissão, com o entregador na rua. Estes testes provam:
+A decisão de 24/09 (CPF exigido na entrada da entrega) foi substituída: a
+praxe do delivery vale para todos os canais. Sem documento a entrega entra e a
+nota sai presencial, consumidor não identificado; com documento, a nota de
+entrega a domicílio (787/788) exige o documento válido e o endereço completo.
+Estes testes provam:
 
-- a régua da porta é a MESMA da emissão (o adapter Focus monta a recusa dela);
-- "vai ter nota?" é a pergunta do resolver fiscal, não uma cópia;
-- a trava do commit recusa com o campo certo, e deixa passar retirada e
-  entrega sem nota;
-- o PDV recusa no fechamento com o campo "CPF na nota" e publica a exigência
-  na review.
+- a régua da EMISSÃO (nota de entrega) continua exigindo o documento, e o
+  adapter Focus monta a recusa dela;
+- a régua da PORTA deixa passar a falta do documento, e recusa o documento
+  errado e o endereço incompleto;
+- "vai ter nota?" é a pergunta do resolver fiscal, não uma cópia.
 """
 
 from __future__ import annotations
@@ -108,11 +109,22 @@ def test_retirada_nunca_exige(emits):
     assert identity.delivery_fiscal_gaps(_order(fulfillment_type="pickup", payment={"method": "pix"})) == []
 
 
-def test_entrega_com_pix_exige_cpf(emits):
+def test_entrega_com_pix_sem_cpf_passa(emits):
+    """Decisão do dono (13/10/2026): sem CPF a nota sai presencial; a porta não recusa."""
     gaps = identity.delivery_fiscal_gaps(
         _order(fulfillment_type="delivery", payment={"method": "pix"}, delivery_address_structured=ADDRESS)
     )
-    assert [g.code for g in gaps] == ["delivery_tax_id_required"]
+    assert gaps == []
+
+
+def test_entrega_com_pix_sem_cpf_continua_exigindo_o_endereco(emits):
+    gaps = identity.delivery_fiscal_gaps(
+        _order(
+            fulfillment_type="delivery", payment={"method": "pix"},
+            delivery_address_structured={**ADDRESS, "postal_code": ""},
+        )
+    )
+    assert [g.code for g in gaps] == ["delivery_address_incomplete"]
 
 
 def test_entrega_que_a_regra_nao_emite_passa_sem_cpf(monkeypatch, settings):
@@ -147,12 +159,19 @@ def _validate(data):
     DeliveryFiscalIdentityRule().validate(channel=SimpleNamespace(ref="web"), session=_session(data), ctx={})
 
 
-def test_commit_recusa_entrega_sem_cpf_apontando_o_campo(emits):
+def test_commit_deixa_passar_entrega_sem_cpf(emits):
+    _validate({"fulfillment_type": "delivery", "payment": {"method": "pix"}, "delivery_address_structured": ADDRESS})
+
+
+def test_commit_recusa_cpf_errado_apontando_o_campo(emits):
     with pytest.raises(OrderValidationError) as exc:
-        _validate({"fulfillment_type": "delivery", "payment": {"method": "pix"}, "delivery_address_structured": ADDRESS})
-    assert exc.value.code == "delivery_tax_id_required"
+        _validate({
+            "fulfillment_type": "delivery", "payment": {"method": "pix"},
+            "fiscal": {"tax_id": "52998224700"}, "delivery_address_structured": ADDRESS,
+        })
+    assert exc.value.code == "delivery_tax_id_invalid"
     assert exc.value.context == {"field": "fiscal_tax_id"}
-    assert exc.value.message == "Para entregar, precisamos do CPF ou CNPJ para a nota fiscal."
+    assert exc.value.message == "Confira o CPF ou CNPJ: os números não conferem."
 
 
 def test_commit_recusa_endereco_incompleto_depois_do_cpf(emits):
@@ -185,7 +204,7 @@ def test_erro_do_checkout_chega_no_campo_do_cpf():
     from shopman.shop.services.checkout import map_checkout_error
 
     exc = OrderValidationError(
-        code="delivery_tax_id_required", message="m", context={"field": "fiscal_tax_id"},
+        code="delivery_tax_id_invalid", message="m", context={"field": "fiscal_tax_id"},
     )
     assert map_checkout_error(exc) == {"fiscal_tax_id": "m"}
 

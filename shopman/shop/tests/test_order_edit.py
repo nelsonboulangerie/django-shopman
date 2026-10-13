@@ -506,15 +506,18 @@ def test_entrega_vira_retirada_e_a_taxa_sai(vitrine):
     assert result.plan.customer_note.startswith("Agora é retirada na loja.")
 
 
-def test_entrega_com_nota_exige_cpf_como_na_venda(vitrine):
+def test_entrega_com_nota_aceita_sem_cpf_e_recusa_cpf_errado_como_na_venda(vitrine):
+    """Decisão do dono (13/10/2026): sem CPF a entrega passa (nota presencial)."""
     _plan(BAGUETE, 3, 10, vitrine)
     order = _encomenda("ED-15")
     fulfillment = {"type": "delivery", "delivery_address_structured": ENDERECO, "delivery_fee_override_q": 0}
 
     with patch("shopman.shop.services.fiscal.emission_expected", return_value=True):
+        assert order_edit.plan(order, fulfillment=fulfillment).fulfillment_changed
+
         with pytest.raises(EditRefused) as refused:
-            order_edit.plan(order, fulfillment=fulfillment)
-        assert refused.value.code == "delivery_tax_id_required"
+            order_edit.plan(order, fulfillment={**fulfillment, "fiscal_tax_id": "52998224700"})
+        assert refused.value.code == "delivery_tax_id_invalid"
         assert refused.value.field == "fulfillment.fiscal_tax_id"
 
         ok = order_edit.plan(order, fulfillment={**fulfillment, "fiscal_tax_id": "52998224725"})

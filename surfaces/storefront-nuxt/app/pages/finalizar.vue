@@ -4,7 +4,7 @@ import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutRe
 import type { AddressSelection } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
-import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, deliveryTaxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
+import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { buildCheckoutPayload, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
@@ -185,10 +185,11 @@ watch(() => state.payment_method, value => {
   if (value) clearFieldError('payment_method')
 })
 
-// CPF/CNPJ NA NOTA (decisões do dono, 24 e 25/09/2026). Toda ENTREGA pede o
-// documento de quem compra, no MESMO passo do endereço; sem ele a entrega não
-// fecha e a retirada continua a um toque. Na RETIRADA é o "CPF na nota?" do
-// balcão: opcional, no passo do pagamento. O campo é um só (`fiscal_tax_id`) e
+// CPF/CNPJ NA NOTA (decisão do dono, 13/10/2026, que substitui a de 24/09).
+// Na ENTREGA o campo aparece no MESMO passo do endereço, opcional: sem
+// documento a nota sai presencial, consumidor não identificado (a praxe do
+// delivery). Na RETIRADA é o "CPF na nota?" do balcão: opcional, no passo do
+// pagamento. O campo é um só (`fiscal_tax_id`) e
 // já vem com o documento que a casa conhece (cadastro ou última entrega). A
 // tela confere o que foi digitado, cedo e no campo; a trava do servidor
 // continua sendo a da emissão.
@@ -215,7 +216,7 @@ const taxIdPrefillNote = computed(() => {
 // conhecida, o cadastro dela ainda não tem documento e há um documento certo
 // indo para a nota.
 const offerSaveTaxId = computed(() => !!checkout.value?.offer_save_tax_id && isValidTaxId(noteTaxId(state)))
-const taxIdIssue = computed(() => deliveryTaxIdError(state.fiscal_tax_id, showTaxIdField.value))
+const taxIdIssue = computed(() => taxIdError(state.fiscal_tax_id))
 function onTaxIdInput (value: string | number) {
   state.fiscal_tax_id = formatTaxId(String(value ?? ''))
 }
@@ -612,9 +613,7 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
         ? 'Escolha ou informe o endereço de entrega.'
         : deliveryUncovered.value
           ? 'Ainda não entregamos nesse endereço.'
-          : showTaxIdField.value && !taxIdDigits(state.fiscal_tax_id)
-            ? 'Falta o CPF ou CNPJ para a nota fiscal.'
-            : '',
+          : '',
       run: continueFromAddress
     }
   }
@@ -1108,14 +1107,9 @@ function onFulfillmentSelected (value: string) {
   }
 }
 
-// O picker confirma o endereço e o fluxo avançaria sozinho. Com o CPF ainda em
-// branco, o próximo gesto é o CPF, no mesmo passo: a página vai até ele sem
-// acusar erro (ninguém errou ainda). O erro fica para quem tenta seguir sem ele.
+// O picker confirma o endereço e o fluxo segue sozinho: o CPF da entrega é
+// opcional, e quem quiser a nota no documento preenche antes de confirmar.
 function onAddressConfirmed () {
-  if (showTaxIdField.value && !taxIdDigits(state.fiscal_tax_id)) {
-    reveal(() => document.getElementById('checkout-tax-id'), { align: 'center' })
-    return
-  }
   void continueFromAddress()
 }
 
@@ -1660,15 +1654,14 @@ useSeoMeta({
                 <UiProgress :model-value="freeDeliveryUpsell.percent" />
               </div>
 
-              <!-- NOTA DA ENTREGA: o CPF/CNPJ no mesmo passo do endereço, com o
-                   porquê numa linha. Sem ele a entrega não fecha; a retirada fica
-                   a um toque, sem CPF. -->
+              <!-- NOTA DA ENTREGA: o CPF/CNPJ no mesmo passo do endereço,
+                   opcional. Sem ele a nota sai sem identificar o consumidor. -->
               <div
                 v-if="showTaxIdField"
                 class="shop-stack-tight rounded-lg border bg-card p-4"
                 data-checkout-tax-id
               >
-                <UiLabel for="checkout-tax-id">CPF ou CNPJ para a nota fiscal</UiLabel>
+                <UiLabel for="checkout-tax-id">CPF ou CNPJ na nota (opcional)</UiLabel>
                 <p class="shop-meta">{{ TAX_ID_WHY }}</p>
                 <UiInput
                   id="checkout-tax-id"
@@ -1700,16 +1693,6 @@ useSeoMeta({
                     <UiSwitch id="checkout-save-tax-id" v-model="state.save_fiscal_tax_id" />
                   </UiField>
                 </UiFieldLabel>
-                <UiButton
-                  v-if="availableFulfillment.includes('pickup')"
-                  variant="link"
-                  size="sm"
-                  class="h-auto self-start p-0"
-                  data-checkout-tax-id-pickup
-                  @click="switchToPickup"
-                >
-                  Prefere não informar? Retire na loja, sem CPF.
-                </UiButton>
               </div>
             </CheckoutProgressSection>
 

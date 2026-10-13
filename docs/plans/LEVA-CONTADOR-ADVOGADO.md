@@ -36,13 +36,14 @@ código: ___)
 
 **2. Entrega e iFood**
 
-2.1. Entrega pelos nossos canais (site, balcão, WhatsApp): só aceitamos com CPF ou CNPJ e endereço
-completo. A nota sai como entrega a domicílio (indPres 4), com a taxa como frete e a padaria como
+2.1. Entrega pelos nossos canais (site, balcão, WhatsApp) com CPF ou CNPJ: a nota sai como entrega
+a domicílio (indPres 4), com o destinatário, o endereço completo, a taxa como frete e a padaria como
 transportadora (modFrete 3). Está certo? (sim / outro: ___)
 
-2.2. iFood sem CPF, que é o caso comum: a nota sai presencial (indPres 1), consumidor não
-identificado, sem frete e sem transportador. É a prática dos sistemas de restaurante. Podemos
-seguir assim? (sim / não, fazer: ___)
+2.2. Entrega sem CPF, em qualquer canal (nossos e iFood): a nota sai presencial (indPres 1),
+consumidor não identificado, sem frete e sem transportador; a taxa de entrega que é da casa vai
+como outras despesas. É a prática dos sistemas de restaurante. Podemos seguir assim? (sim / não,
+fazer: ___)
 
 2.3. iFood com CPF: nota de entrega (indPres 4) com o destinatário. Como quem entrega é o iFood, a
 taxa de entrega fica fora da nota e o frete vai como "por conta de terceiros" (modFrete 2), sem
@@ -174,12 +175,14 @@ Medido no `main` em 13/10/2026 (`dfda93b44`).
   (`shopman/shop/services/fiscal.py`, `_fiscal_payment`).
 - Mudança desde o lembrete de 17/09: conta na casa já vai como 05 (era 99).
 
-**2. Entrega e iFood** (decisão do dono 24/09; PRs #888 e #897 mergeados)
-- Canal próprio exige CPF/CNPJ e endereço na entrada: `shopman/shop/services/delivery_fiscal_identity.py:69`
-  (`recipient_gaps`) e `:114`.
+**2. Entrega e iFood** (decisão do dono 13/10, substitui a de 24/09; PRs #888 e #897 mergeados)
+- Desde 13/10 a praxe do delivery vale para todo canal: entrega sem CPF/CNPJ é aceita e sai
+  presencial. A porta recusa só CPF errado e endereço incompleto
+  (`shopman/shop/services/delivery_fiscal_identity.py`, `delivery_fiscal_gaps`).
 - Nota de entrega: `fiscal_focusnfe.py:323` (indPres 4) e `:463` (`_delivery_freight_mode`: 3 da casa, 2 da
   plataforma, configurável por env).
-- iFood sem CPF sai presencial: `shopman/shop/fiscal_intermediary.py:378` (`issues_as_presential`).
+- Entrega sem CPF (qualquer canal) sai presencial: `shopman/shop/services/fiscal.py`
+  (`delivery_issues_as_presential`, chamado em `build_emission_payload`).
 - idCadIntTran: env `FISCAL_INTERMEDIARY_IFOOD_ID_CAD` vazia (`config/settings.py:1852`) e, vazia, cai no
   `Shop.name` (`fiscal_intermediary.py:152`). O comentário de `settings.py` ainda diz que sem a env o
   grupo não sai; o código atual já preenche com o nome da loja.

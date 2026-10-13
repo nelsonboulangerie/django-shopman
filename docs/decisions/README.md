@@ -66,6 +66,7 @@ pegue o próximo livre e acrescente uma linha aqui.
 | [009](adr-009-whatsapp-via-manychat.md) | WhatsApp via ManyChat: vendor lock-in consciente |
 | [026](adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md) | Concierge de WhatsApp: a língua é do modelo, o dinheiro é do código |
 | [034](adr-034-legal-archive-cited-by-the-order.md) | O pedido cita a versão de Termos e Privacidade que valia, numa cópia permanente que não muda |
+| [035](adr-035-entrega-sem-cpf-sai-presencial.md) | Entrega sem CPF é aceita em todo canal, e a NFC-e sai presencial (consumidor não identificado) |
 
 ## B.I. e operação continuada
 

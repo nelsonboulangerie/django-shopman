@@ -461,9 +461,9 @@ def build_emission_payload(order) -> dict:
         raise ValueError("Pagamento fiscal abaixo da base da nota. Corrija antes de reprocessar.")
     payment = _payment_net_of_change(payment, note_base_q(order))
     customer = _fiscal_customer(data)
-    # Entrega intermediada sem documento sai presencial, sem destinatário nem
-    # frete — ver fiscal_intermediary.issues_as_presential. Canal próprio nunca.
-    presential = fiscal_intermediary.issues_as_presential(
+    # Entrega sem documento sai presencial, sem destinatário nem frete, em
+    # TODO canal — ver delivery_issues_as_presential.
+    presential = delivery_issues_as_presential(
         order, requested_tax_id=customer.get("tax_id") or "",
     )
     delivery = None
@@ -478,6 +478,14 @@ def build_emission_payload(order) -> dict:
     if order.channel_ref:
         payload["channel_ref"] = order.channel_ref
     items = _build_fiscal_items(order)
+    if presential:
+        # A taxa da casa que veio como linha do carrinho (canal próprio) sai
+        # da nota presencial como outras despesas, igual à do intermediador.
+        items = [
+            _intermediary_freight_item(int(item.get("total_q") or 0), as_other_expense=True)
+            if _is_delivery_fee_line(item) else item
+            for item in items
+        ]
     amounts = fiscal_intermediary.seller_amounts(order)
     if amounts is not None and amounts["freight_q"] > 0:
         items.append(_intermediary_freight_item(amounts["freight_q"], as_other_expense=presential))
@@ -490,6 +498,39 @@ def build_emission_payload(order) -> dict:
     _alert_intermediary_base_unknown(order)
     _alert_intermediary_benefit_unattributed(order)
     return payload
+
+
+def delivery_issues_as_presential(order, *, requested_tax_id: str) -> bool:
+    """Esta entrega sai como NFC-e PRESENCIAL, sem destinatário?
+
+    Decisão do dono (13/10/2026, substitui a de 24/09): a praxe do delivery
+    (ERPs de restaurante fazem assim) vale para TODOS os canais, da casa e
+    intermediados. A confirmação do contador fica registrada como pendência
+    dele (``docs/plans/LEVA-CONTADOR-ADVOGADO.md``, item 2.1).
+
+    A nota de entrega a domicílio (``indPres=4``) exige destinatário
+    identificado (E01-20 → 787) e endereço (E05-20 → 788), as duas vivas. O
+    transportador NÃO é mais exigido: a X03-20 (rejeição 786) foi desabilitada
+    pela NT 2023.004, seção 2.3.2, em produção desde 01/07/2024. Sem o CPF/CNPJ
+    do destinatário, a venda é declarada como **presencial** (``indPres=1``),
+    consumidor não identificado, sem endereço, sem frete e sem transportador.
+    A taxa de entrega que foi da casa não some da nota: vira **outras
+    despesas** (``vOutro``), para o total bater com o que o cliente pagou à
+    casa. Com documento, segue a nota de entrega completa (``indPres=4``).
+
+    ``requested_tax_id`` é o documento PEDIDO para esta nota (``fiscal.tax_id``),
+    nunca o do cadastro. Documento informado e inválido **não** entra aqui: é
+    pedido de nota com dado errado, e a recusa ruidosa do adapter continua
+    sendo a resposta certa.
+    """
+    if (order.data or {}).get("fulfillment_type") != "delivery":
+        return False
+    return not re.sub(r"\D", "", str(requested_tax_id or ""))
+
+
+def _is_delivery_fee_line(item: dict) -> bool:
+    meta = item.get("meta") or {}
+    return item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") == "delivery_fee"
 
 
 def _fiscal_payment(order, data: dict) -> dict:
@@ -524,7 +565,7 @@ def _intermediary_freight_item(freight_q: int, *, as_other_expense: bool = False
     classificação fiscal.
 
     ``as_other_expense``: a nota sai presencial, sem frete
-    (``fiscal_intermediary.issues_as_presential``), e a mesma taxa entra como
+    (``delivery_issues_as_presential``), e a mesma taxa entra como
     **outras despesas** (``vOutro``). A linha ganha outra marca, e o adapter a
     declara em ``valor_outras_despesas``, nunca como frete nem como mercadoria.
     """

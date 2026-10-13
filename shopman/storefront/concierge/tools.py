@@ -845,9 +845,10 @@ def set_fulfillment(
 ) -> dict:
     """Retirada ou entrega, quando, e (na entrega) onde. Valida como o checkout do site.
 
-    Na entrega, ``tax_id`` é o CPF/CNPJ PEDIDO para a nota (``fiscal.tax_id``):
-    a nota da entrega a domicílio não sai sem ele, e a porta do pedido recusa
-    (``DeliveryFiscalIdentityRule``). Vazio não apaga o que já foi informado.
+    Na entrega, ``tax_id`` é o CPF/CNPJ PEDIDO para a nota (``fiscal.tax_id``),
+    opcional: sem ele a nota sai presencial, consumidor não identificado
+    (decisão do dono, 13/10/2026). Informado e inválido, a porta do pedido
+    recusa (``DeliveryFiscalIdentityRule``). Vazio não apaga o que já foi informado.
 
     O endereço é montado na conversa (``concierge/address.py``): pelo
     endereço do cadastro do cliente (``use_saved_address``, o padrão, ou
@@ -1169,7 +1170,8 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
 def _delivery_fiscal_missing(ctx: ToolContext, session) -> list[str]:
     """O que falta para a nota da entrega sair — a régua da porta do pedido.
 
-    ``fiscal_tax_id``: pedir o CPF ou CNPJ e gravar com set_fulfillment.
+    ``fiscal_tax_id``: o CPF ou CNPJ informado não confere; pedir de novo
+    (ou seguir sem ele) e gravar com set_fulfillment.
     ``delivery_address_details``: o endereço dito na conversa não tem rua,
     número, bairro, cidade, estado e CEP separados, que a nota exige; o
     concierge pergunta o que falta (``set_fulfillment`` com as partes).
@@ -1795,7 +1797,7 @@ def render_result(name: str, result: dict) -> str:
             if result.get("ready"):
                 rows.append("Confira o resumo. Ao confirmar, seu pedido será registrado; pagamento é uma etapa separada. Responda ‘confirmo’ para registrar.")
             else:
-                labels = {"items": "escolher os produtos", "payment_method": "escolher como pagar", "customer_phone": "confirmar seu contato", "fulfillment_type": "escolher entrega ou retirada", "delivery_time_slot": "escolher o horário", "delivery_date": "escolher uma data disponível", "delivery_address": "informar o endereço", "delivery_out_of_zone": "escolher um endereço atendido ou retirada", "fiscal_tax_id": "informar o CPF ou CNPJ para a nota fiscal da entrega (sem ele, só a retirada)", "delivery_address_details": "completar o endereço da entrega (rua, número, bairro e CEP)", "cart": "conferir a sacola"}
+                labels = {"items": "escolher os produtos", "payment_method": "escolher como pagar", "customer_phone": "confirmar seu contato", "fulfillment_type": "escolher entrega ou retirada", "delivery_time_slot": "escolher o horário", "delivery_date": "escolher uma data disponível", "delivery_address": "informar o endereço", "delivery_out_of_zone": "escolher um endereço atendido ou retirada", "fiscal_tax_id": "corrigir o CPF ou CNPJ da nota (ou seguir sem ele)", "delivery_address_details": "completar o endereço da entrega (rua, número, bairro e CEP)", "cart": "conferir a sacola"}
                 if result.get("address_missing"):
                     from shopman.shop.services.delivery_fiscal_identity import join_words
 
