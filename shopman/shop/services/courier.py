@@ -407,8 +407,8 @@ def on_order_cancelled(order) -> None:
         if status in CANCELLABLE_STATUSES:
             try:
                 cancel_ride(order, actor="lifecycle.on_cancelled")
-            except OrderStateConflict:
-                pass  # cancelamento desta corrida já pedido: o worker cuida dele
+            except OrderStateConflict:  # silêncio-deliberado: cancelamento desta corrida já pedido, o worker cuida dele
+                pass
             except ValueError:
                 _alert_cancelled_order(order, f"O pedido {code} foi cancelado e a corrida segue aberta na central: "
                     "cancele a corrida por lá.")
