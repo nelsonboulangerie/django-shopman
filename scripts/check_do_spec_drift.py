@@ -119,6 +119,19 @@ EXPECTED_VALUE_DIVERGENCE: dict[str, tuple[str, str, str]] = {
     "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED": ("true", "false", _PUBLICATION_ARMED_IN_THE_PANEL),
     "SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED": ("true", "false", _PUBLICATION_ARMED_IN_THE_PANEL),
     "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED": ("true", "false", _PUBLICATION_ARMED_IN_THE_PANEL),
+    # O arquivo já traz o resolver do intermediador (iFood sem CPF emite NFC-e
+    # presencial, ADR-035); o vivo ganha na janela do dono, junto do delta do
+    # go-live (docs/runbooks/go-live-delta-do-spec.md). Aplicado, a entrada sai.
+    "SHOPMAN_FISCAL_EMISSION_RESOLVER": (
+        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment,"
+        "shopman.shop.fiscal_resolvers.deferred_settlement,shopman.shop.fiscal_resolvers.on_requested_receipt",
+        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment,"
+        "shopman.shop.fiscal_resolvers.deferred_settlement,shopman.shop.fiscal_resolvers.on_requested_receipt,"
+        "shopman.shop.fiscal_resolvers.intermediated_sale",
+        "o resolver do intermediador (iFood sem CPF sai com NFC-e presencial, ADR-035) está no "
+        "arquivo e entra no vivo na janela do dono, com o delta do go-live. Aplicado, esta "
+        "entrada sai.",
+    ),
 }
 
 #: Chaves que existem SÓ NO VIVO e cuja remoção pelo ``apps update`` é o

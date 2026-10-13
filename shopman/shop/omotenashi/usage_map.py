@@ -756,6 +756,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_ACTION_RATE_ORDER": (
         ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_ACTION_TRACK_COURIER": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_AUTO_CONFIRM_LABEL": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),

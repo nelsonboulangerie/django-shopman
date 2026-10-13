@@ -112,12 +112,19 @@ class MachineWebhookView(APIView):
         if not ride_status:
             # Evento só de posição: cache atualizado acima, nada mais a fazer.
             return Response({"status": "ok", "kind": "position"}, status=http.HTTP_200_OK)
-        if ride_status not in _RIDE_STATUSES:
-            # Chegada ao local, parada finalizada etc.: fato registrado no log
-            # acima, sem mexer na letra da corrida.
-            return Response({"status": "ok", "kind": "event", "code": ride_status}, status=http.HTTP_200_OK)
-
         from shopman.orderman.models import Order
+
+        if ride_status not in _RIDE_STATUSES:
+            # Chegada ao local, parada finalizada etc.: não é a letra da corrida.
+            # A chegada (AP) entra no progresso (na loja antes da coleta, no
+            # cliente depois) e pede uma leitura completa já.
+            order = Order.objects.filter(data__courier__id_mch=str(ride_ref)).first()
+            if order is not None and ride_status == "AP":
+                from shopman.shop.services import courier
+
+                courier.record_arrival(order, at=_first(event, ("datetime",)) or None)
+                courier.schedule_sync(order, delay_seconds=0)
+            return Response({"status": "ok", "kind": "event", "code": ride_status}, status=http.HTTP_200_OK)
 
         order = Order.objects.filter(data__courier__id_mch=str(ride_ref)).first()
         if order is None:
@@ -137,6 +144,9 @@ class MachineWebhookView(APIView):
             from shopman.shop.services import courier
 
             courier.apply_status(order, ride_status, source="webhook", details=event)
+            # O aviso traz só a letra; a leitura completa (entregador, previsão
+            # de chegada, coleta, viagem) vem da batida, agora, não daqui a 1 min.
+            courier.schedule_sync(order, delay_seconds=0)
             webhook_idempotency.mark_done(
                 claim,
                 response_body={"status": "processed", "id_mch": str(ride_ref), "ride_status": ride_status},

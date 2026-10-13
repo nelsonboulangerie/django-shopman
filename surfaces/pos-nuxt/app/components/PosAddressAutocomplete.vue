@@ -30,6 +30,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:modelValue": [string];
   selected: [StructuredAddressProjection];
+  /** Enter sem sugestão a escolher: o operador terminou este campo. */
+  advance: [];
 }>();
 
 // O template ref pode ser o elemento nativo OU a instância do UiInput (que expõe
@@ -187,8 +189,30 @@ async function accept(suggestion: AddressSuggestion) {
   }
 }
 
+// Enter com a lista FECHADA. O CEP digitado não espera a busca de 300 ms: o
+// Enter busca já e, se o CEP resolveu, aceita o endereço (o pai leva o foco ao
+// próximo campo vazio). Rua digitada à mão: o Enter só segue adiante.
+async function onEnterWithoutList() {
+  const value = props.modelValue.trim();
+  if (looksLikeCep(value)) {
+    if (searchTimer) clearTimeout(searchTimer);
+    await runSearch(value);
+    const first = suggestions.value[0];
+    if (first) await accept(first);
+    return;
+  }
+  if (value) emit("advance");
+}
+
 function onKeydown(event: KeyboardEvent) {
-  if (!listOpen.value || !suggestions.value.length) return;
+  if (event.key === "Enter" && event.isComposing) return;
+  if (!listOpen.value || !suggestions.value.length) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void onEnterWithoutList();
+    }
+    return;
+  }
   if (event.key === "ArrowDown") {
     event.preventDefault();
     highlighted.value = (highlighted.value + 1) % suggestions.value.length;
@@ -228,6 +252,7 @@ onBeforeUnmount(() => {
       <Icon name="lucide:map-pin" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <UiInput
         ref="inputRef"
+        data-focus-control
         :model-value="modelValue"
         class="pl-9"
         autocomplete="off"

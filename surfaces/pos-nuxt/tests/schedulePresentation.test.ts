@@ -74,7 +74,7 @@ describe("scheduleLabel — o botão da barra de contexto", () => {
     // Afirmação, não campo vazio: a maioria das vendas é para agora, e a barra
     // não pode parecer que falta preencher alguma coisa.
     expect(scheduleLabel("", "", HOJE)).toBe("Sem agendamento");
-    expect(scheduleLabel(HOJE, "", HOJE)).toBe("Hoje · horário a combinar");
+    expect(scheduleLabel(HOJE, "", HOJE)).toBe("Hoje, o quanto antes");
   });
 
   it("hoje com hora marcada carrega a hora", () => {

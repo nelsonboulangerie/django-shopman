@@ -647,6 +647,9 @@ export function useOrdersBoard() {
   }
 
   const confirm = (ref_: string) => act(ref_, "confirm");
+  // O "Dispensar" do lembrete de chamar o entregador: vale para todos os dispositivos.
+  const dismissCourierReminder = (ref_: string) =>
+    act(ref_, "courier-reminder-dismiss");
   // A Cozinha no cartão (SUITE-UX §15): o "Pronto" da estação que só recebe papel
   // e o ticket que volta à cozinha. Os endpoints são os da Saída da Cozinha.
   const markStationReady = (
@@ -798,6 +801,7 @@ export function useOrdersBoard() {
     advanceMany,
     undoHandoff,
     undoReady,
+    dismissCourierReminder,
     markStationReady,
     recallStation,
     soundOn,

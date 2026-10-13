@@ -7,6 +7,7 @@ import type { CourierBlock } from "../../app/types/orders";
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
+vi.stubGlobal("useNowTick", () => ref(0));
 const { default: Panel } = await import("../../app/components/OrderCourierPanel.vue");
 
 describe("confirmação da corrida observada", () => {
@@ -213,6 +214,52 @@ describe('chamada sem resposta da TaOn', () => {
       expect(button.attributes('disabled')).toBeDefined();
       await button.trigger('click');
       expect(wrapper.emitted('dispatchAgain')).toBeUndefined();
+    } finally { wrapper.unmount(); }
+  });
+});
+
+describe('Cotar entrega mostra o resultado em destaque (dono, 13/10/2026)', () => {
+  const quoteAction = () => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-quote', enabled: true });
+  const dispatchAction = () => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch', enabled: true });
+  const courier = (extra: Partial<CourierBlock> = {}) => ({
+    status: '', can_quote: true, can_dispatch: true, can_cancel: false, attempts_count: 0, estimate_display: '', ...extra,
+  }) as CourierBlock;
+  const mountPanel = (props: Record<string, unknown>) => mount(Panel, { props: {
+    busy: false, quoteAction: quoteAction(), dispatchAction: dispatchAction(), ...props,
+  }, global: { stubs: { Icon: true } } });
+
+  it('valor, tempo e distância numa linha forte, com Chamar entregador logo abaixo como ação primária', () => {
+    const wrapper = mountPanel({ courier: courier({ estimate_display: 'R$ 7,00 · 3 min · 1,2 km' }) });
+    try {
+      expect(wrapper.get('[data-courier-quote-value]').text()).toBe('R$ 7,00 · 3 min · 1,2 km');
+      const labels = wrapper.findAll('button').map(button => button.text());
+      expect(labels.indexOf('Chamar entregador')).toBeLessThan(labels.indexOf('Cotar de novo'));
+      expect(labels).not.toContain('Cotar entrega');
+    } finally { wrapper.unmount(); }
+  });
+
+  it('enquanto cota, diz que está cotando e o botão espera', () => {
+    const wrapper = mountPanel({ courier: courier(), quoting: true });
+    try {
+      expect(wrapper.get('[data-courier-quote-value]').text()).toBe('Cotando a entrega…');
+      expect(wrapper.get('[data-courier-quote-button]').attributes('disabled')).toBeDefined();
+    } finally { wrapper.unmount(); }
+  });
+
+  it('a falha vira aviso com Cotar de novo, e o aviso se dispensa', async () => {
+    const wrapper = mountPanel({ courier: courier(), quoteError: 'Endereço sem coordenadas.' });
+    try {
+      const alert = wrapper.get('[data-courier-quote-error]');
+      expect(alert.text()).toContain('Endereço sem coordenadas.');
+      await wrapper.get('[data-courier-quote-retry]').trigger('click');
+      expect(wrapper.emitted('quote')).toHaveLength(1);
+    } finally { wrapper.unmount(); }
+  });
+
+  it('sem cotação, nada de bloco vazio', () => {
+    const wrapper = mountPanel({ courier: courier() });
+    try {
+      expect(wrapper.find('[data-courier-quote]').exists()).toBe(false);
     } finally { wrapper.unmount(); }
   });
 });

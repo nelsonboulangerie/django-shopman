@@ -1836,10 +1836,14 @@ SHOPMAN_FISCAL_ADAPTER = os.environ.get("SHOPMAN_FISCAL_ADAPTER") or None
 # e-mail). Os três são o mesmo gesto: pedir. E nem DANFE nem XML existem sem NFC-e
 # autorizada — o papel e o anexo são espelhos da nota —, então o pedido de impressão e o
 # pedido de e-mail têm que valer como pedido de nota, sob pena de o operador prometer a
-# bobina (ou a caixa de entrada) e nada sair. Pablo redefine no go-live via env.
+# bobina (ou a caixa de entrada) e nada sair. E intermediated_sale: a venda por marketplace
+# (iFood) emite sempre, presencial quando sem CPF (decisão de 24/09 e ADR-035); o pagamento
+# dela é `external` e nenhum resolver de forma de pagamento o enxerga. Pablo redefine no
+# go-live via env.
 SHOPMAN_FISCAL_EMISSION_RESOLVER = (
     os.environ.get("SHOPMAN_FISCAL_EMISSION_RESOLVER")
-    or "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.on_requested_receipt"
+    or "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.on_requested_receipt,"
+    "shopman.shop.fiscal_resolvers.intermediated_sale"
 )
 # Porteiro fiscal do catálogo: com isto LIGADO, publicar um vendável num canal de
 # venda exige classificação fiscal completa (perfil + NCM; CEST na revenda) — em

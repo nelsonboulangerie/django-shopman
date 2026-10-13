@@ -100,8 +100,8 @@ describe("assistente da encomenda", () => {
     expect(w.find("[data-schedule-window-pending]").exists()).toBe(false);
     await w.setProps({ scheduleLabel: "Domingo", scheduleWindow: "" });
     expect(w.find("[data-schedule-window-pending]").text()).toBe("Horário a combinar.");
-    // "Hoje · horário a combinar" já diz: não repete.
-    await w.setProps({ scheduleLabel: "Hoje · horário a combinar" });
+    // "Hoje, o quanto antes" já diz: não repete.
+    await w.setProps({ scheduleLabel: "Hoje, o quanto antes" });
     expect(w.find("[data-schedule-window-pending]").exists()).toBe(false);
   });
 

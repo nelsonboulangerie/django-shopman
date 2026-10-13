@@ -374,7 +374,9 @@ for key in (
 | `external_order_code` | `string` | `shop/services/ifood_ingest.py` | — | Código do pedido no marketplace iFood. Duplicado em `ifood.order_code` |
 | `merchant_id` | `string` | `shop/services/ifood_ingest.py` | — | ID do merchant na iFood. Duplicado em `ifood.merchant_id` |
 | `ifood` | `dict` | `shop/services/ifood_ingest.py` · `shop/services/ifood_events.py` | `backstage/projections/ifood.py` · `backstage/projections/order_queue.py` · `shop/services/ifood_callbacks.remote_status_observed` · `receipt_escpos` | Contexto do iFood (só em pedidos ingeridos via `ifood_ingest`). **Da ingestão:** `order_code`, `merchant_id`, `created_at`, `display_id` (o número que cliente, portal e suporte falam), `is_test`, `order_timing`, `schedule`, `totals`, `payments`, `benefits`, `delivered_by`, `pickup_code`, `ref_from_display_id` (bool — o `Order.ref` adotou o `display_id` como sufixo; `false` quando o número estava ocupado no dia ou não veio, e aí o card exibe o `display_id` à parte), `confirm_by` (ISO — quando o iFood cancela se ninguém confirmar: `createdAt` deles + `confirmation.external_sla_minutes` do canal; ausente com SLA 0). **Fatos de status vindos do iFood** (`{event_id, observed_at}`, gravados uma vez, pelo primeiro evento): `remote_confirmed` (CFM), `remote_dispatched` (DSP), `remote_concluded` (CON). ⚠️ O fato é gravado e o evento recebe ACK **mesmo quando o pedido local ainda não chegou ao ponto** — ACK é "armazenei", não "apliquei" (doc do polling; o Firefly Audit pune evento sem ACK). A aplicação local acontece depois, em `ifood_events.reconcile_remote`, chamada a cada transição pelo receiver do `order_changed`; ela nunca inventa preparo nem pula a custódia do entregador, e nenhum aviso sai ao iFood para etapa que um fato já cobre. **`patches`** (`list[dict]`, de `ifood_events._process_patch`) — o cliente ALTEROU o pedido depois de confirmado (`ORDER_PATCHED`). Lista acumulável, um registro por evento: `{event_id, change_type, items, old_total_q, new_total_q, observed_at, order_status, local_total_q, fiscal_authorized, reconciled}`. ⚠️ `reconciled` diz se a loja acompanhou: `True` significa que `order.data["adjustment"]` foi gravado e estoque e cozinha foram reconciliados; `False` significa que **o pedido local segue com os itens e o total originais**. Junto vem `reconciliation` — o resumo `{revision, total_q, previous_total_q, diff, stock, kds}` quando reconciliou, ou `"blocked:<motivo>"` quando não: `test_order` (homologação não faz a padaria trabalhar), `fiscal_authorized` (a NFC-e já saiu e corrigir é decisão fiscal), `terminal` (pedido encerrado) e `fetch_failed` (a releitura no iFood falhou). Com a mercadoria já despachada o ajuste vale mas o estoque não se desfaz: `stock: {"skipped": "goods_left"}`. `items` é o DELTA do iFood (só os itens afetados), não a lista final; `old_total_q`/`new_total_q` são centavos do `oldTotal`/`newTotal` deles, e `None` quando o campo não veio (ausente ≠ zero). `fiscal_authorized` marca que a NFC-e já saiu, e aí corrigir é decisão fiscal — o sistema avisa e para. **`handshakes`** (`dict` por id da disputa, de `shop/services/ifood_handshake.persist_event`): as negociações da Plataforma de Negociação do iFood (o cliente pede cancelamento ou reembolso, às vezes depois da entrega). Cada registro: `{state, raw, received_at, settlements, response?, last_event_id}`; `raw` é o evento deles (com `expiresAt` e `timeoutAction`, o que o iFood faz sozinho se a loja não responder), `received_at` (ISO) é quando a loja ficou sabendo e é de onde a Fila do Gestor conta o tempo. `handshake_pending` (bool) diz se há negociação não encerrada. Enquanto há uma aberta, existe um `OperatorAlert` `ifood_negotiation_open` com `respond_by` = o prazo deles (`ifood_handshake.sync_alert`) |
-| `courier` | `dict` | `CourierDispatchHandler`, `services/courier.apply_status` | `_courier_block` (projection do gestor), webhook Machine (lookup por `data__courier__id_mch`), notificação (`courier_tracking_url`) | Corrida de entrega na logística externa (Machine). Ver detalhamento abaixo |
+| `ifood_cancellation_request` | `dict` | `shop/services/ifood_cancellation.py` (`enqueue_locked`, `record_result`, `refuse_locked`) · `shop/services/ifood_events.py` | `ifood_cancellation.is_pending` · `lifecycle` · `operator_orders` · `backstage/projections/ifood.cancellation_notice` | O cancelamento que a LOJA pediu ao iFood (só o CAN dele cancela). `{id, state, requested_at, actor, reason, code, context, retryable, updated_at, last_error}`. `state`: `queued` → `sent` (o iFood respondeu 202) → `confirmed` (o CAN chegou). Pendente (`is_pending`) em `queued`, `sent` e `error` com `retryable`: o pedido fica TRAVADO (não aceita nem avança). `error` sem `retryable` = o iFood recusou no envio (4xx). `refused` = o iFood recusou depois, pelo evento `CANCELLATION_REQUEST_FAILED`: o pedido destrava e ganha `refused_at`, `refusal_reason` (o motivo deles, ou vazio), `refusal_event_id` e `refusal_metadata` (o `metadata` cru do evento). `superseded` = o CON chegou antes (`resolution=order_concluded`). Recusado (no envio ou por evento) abre o `OperatorAlert` `ifood_cancellation_refused`. Pedir de novo grava um pedido NOVO por cima |
+| `courier` | `dict` | `CourierDispatchHandler`, `services/courier.apply_status` | `_courier_block` (projection do gestor), webhook Machine (lookup por `data__courier__id_mch`), notificação (`courier_tracking_url`), página do pedido (ação `track_courier` da promessa `dispatched`, só link http(s) e corrida não encerrada) | Corrida de entrega na logística externa (Machine). Ver detalhamento abaixo |
+| `courier_reminder` | `dict` | `backstage.services.courier_reminder.dismiss` (POST `orders/<ref>/courier-reminder-dismiss/`, o "Dispensar" do aviso) | `courier_reminder.courier_reminder` (cartão do Gestor `courier_reminder` e `courier.reminder` no detalhe) | `{dismissed_at, dismissed_by}`: o lembrete TEMPORÁRIO de chamar o entregador foi dispensado, para todos os dispositivos (evento `courier_reminder_dismissed`). O lembrete em si não é gravado: é lido a cada leitura (entrega da casa em `preparing`, sem `courier.called_at`/corrida, central configurada) e vale a partir de início do preparo + `Shop.defaults.delivery.courier_reminder.minutes` (padrão 10; `enabled` padrão ligado; Admin → Pedido e entrega). Início do preparo = primeiro marco disponível: `kds_started` → `preparing_at` → `accepted_at` → `created_at` (a comanda não paga não grava `kds_started`). Sai inteiro quando a chamada antecipada existir (`docs/plans/WP-ENTREGADOR-CHAMADA-ANTECIPADA.md`) |
 | `dispatch` | `dict` | `operator_orders.advance_order`, `mark_equipment_returned` | Custódia e projeções do Gestor | `equipment` conserva tipos legados (ex. `card_machine`); `equipment_out_at/by`, `equipment_back_at/by` são trilha. Novo `device_ref` (UUID string) e `device_label` registram qual dispositivo foi levado, sem inferir históricos. `trip_ref` (ref do pedido que abriu a saída) existe só nos pedidos que saíram JUNTO com outro: a saída é o pedido-âncora mais os que apontam para ele, e o pedido de cartão que entra numa saída com maquininha grava o mesmo `device_ref` sem reserva nova (o vínculo `DeliveryDevice.current_order` fica com quem a reservou). `collector: "courier_partner"` + `collector_at`: o pedido saiu pela coleta da TaOn (status `E`, `advance_order(partner_collects=True)`, decisão do dono 13/10/2026) sem troco da gaveta nem maquininha registrados no Gestor; fato externo não inventa custódia (a trava `guard_dispatch` aceita esse despacho sem reserva). `custody_at/by`: a custódia da TaOn foi registrada NA CHAMADA ("Chamar entregador", `operator_orders.record_partner_custody`, decisão do dono E4=1): troco da gaveta (`courier_out`) e/ou maquininha (`equipment`, `device_ref`) pelas mesmas peças do despacho do Gestor, com `collector: "courier_partner"` já gravado; a coleta depois não lança nada, e a chamada repetida sem a custódia ter voltado não lança de novo. `custody_returns` (lista de `{at, by, reason, change_q, equipment, device_label}`): a corrida terminou sem coleta (`N`, `C`, pedido cancelado antes do `E`) e `operator_orders.return_partner_custody` devolveu o troco (`courier_in` com `payload.custody_return = true`, que anula o `courier_out` em `courier_change_by_order` e na conciliação) e a maquininha (`mark_equipment_returned`); as chaves da custódia saem do `dispatch` e a chamada seguinte registra do zero. "Chamar de novo" mantém a custódia (a nova chamada sai no mesmo gesto). `courier_back_at/by`: "Entregador voltou" fechou a saída (`operator_orders.courier_returned`: entregue, acerto com troco integral, maquininha devolvida, concluído). Maquininha na rua além de `Shop.defaults.delivery.card_machine_alert_minutes` (default 120; 0 desliga) vira alerta `card_machine_overdue` (`check_card_machines_out`, no ciclo do `maintenance_worker`). Disponibilidade individual vem exclusivamente de `backstage.DeliveryDevice.current_order` (vínculo exclusivo), alterado na mesma transação do despacho/devolução. Pagamento é independente. |
 | `auto_ready` | `dict` | `kds.on_all_tickets_done` → `order_undo.record_auto_ready` (antes da transição a READY); some em `order_undo.undo_auto_ready` e no recall do ticket (`kds.reopen_ticket`) | `order_undo.ready_hold`, `lifecycle.enqueue_phase`, `LifecyclePhaseHandler`, `order_queue._undo_projection` | O pronto automático da Cozinha (SUITE-UX §5.1). `{token, at, undo_until, ticket_ids, actor}`: `token` (hex) identifica ESTE pronto; `at`/`undo_until` ISO; `ticket_ids` = o ticket cuja baixa fechou o pedido (o desfazer o reabre). Enquanto `undo_until` não vence, a fase `on_ready` (aviso de pronto, nota da sacola, corrida) fica agendada para `undo_until` com `hold_token`; desfeito, vira no-op. O `readyToPickup` do iFood sai na hora (o card diz "iFood já avisado"). Só fora do balcão e com `fulfillment.ready_undo_seconds > 0`. Fica no pedido depois da janela (o card diz "Pronto · automático"). |
 | `pending_handoff` | `dict` | `operator_orders.advance_order(undo_window=True)` → `order_undo.request_handoff`; some no commit (`order_undo.commit_handoff`), no desfazer (`undo_handoff`) ou na recusa da gravação | `order_undo`, `HandoffCommitHandler`, `operational_actions`, projeções do Gestor e da Saída | Entregar/Despachar tocado no Gestor ou na Saída e ainda não gravado. `{token, from_status, to_status, requested_at, commit_at, actor, change_out_q, cash_shift_id, equipment, trip_ref}`: os argumentos do toque, reaplicados por `advance_order(handoff_token=token)` quando `commit_at` vence (directive `order.handoff_commit`). Até lá o status não muda e nada sai da casa. Recusa na gravação (turno fechado, maquininha tomada) apaga o registro e cria alerta `handoff_refused`. Entra na revisão `advance`. |
@@ -393,11 +395,13 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "provider": "machine",
   "id_mch": "184532",              // corrida ATIVA (string); some quando N/C arquiva
   "status": "E",                   // letra Machine crua
+  "called_at": "iso",              // a PRIMEIRA chamada pedida (courier.request_dispatch), antes da central responder
+  "called_by": "operator:ana",     // quem pediu (ator do request_dispatch); encerra o lembrete do Gestor
   "requested_at": "2026-07-07T18:02:11-03:00",
   "dispatched_at": null,           // setado no primeiro E (coleta)
   "finished_at": null,             // setado no F
-  "driver": {"name": "", "phone": "", "vehicle_plate": "", "vehicle_model": ""},  // a partir de A
-  "tracking_url": "",              // link de rastreio da parada (a partir de A)
+  "driver": {"name": "", "phone": "", "vehicle_plate": "", "vehicle_model": "", "vehicle_color": ""},  // a partir de A; a leitura da corrida atualiza (cor só pela listagem)
+  "tracking_url": "",              // link de rastreio da parada (a partir de A); vai no aviso de saída e no botão "Acompanhar o entregador" da página do pedido
   "confirmation_code": "",
   "estimate": {"value_q": 1250, "minutes": 18.0, "km": 4.2},  // custo interno (centavos)
   "final_value_q": null,           // finished.final_value convertido p/ centavos
@@ -408,9 +412,34 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "attempts": [                    // corridas anteriores (N/C ou canceladas p/ re-despacho)
     {"id_mch": "184501", "status": "N", "requested_at": "iso", "status_at": {"D": "iso", "N": "iso"}, "ended_at": "iso"}
   ],
-  "error": {"message": "...", "at": "iso"}  // falha terminal do despacho; limpo no re-despacho
+  "error": {"message": "...", "at": "iso"},  // falha terminal do despacho; limpo no re-despacho
+  "progress": {                    // andamento lido da central (`courier.apply_snapshot`); só chaves com valor; sai no arquivamento
+    "accepted_at": "iso",          // aceite (details.progress.accepted_at / listagem data_hora_aceite_utc)
+    "pickup_eta_at": "iso",        // aceite + accept_eta_seconds: o "tempo até o local de coleta" da TaOn
+    "pickup_eta_minutes": 7,       // accept_eta_seconds em minutos, no aceite
+    "pickup_km": 1.8,              // distância do entregador até a loja no aceite
+    "near_pickup_at": "iso",       // arrival_at_surroundings (arredores da loja)
+    "arrived_pickup_at": "iso",    // chegou à loja: details.pickup_arrival, listagem data_hora_chegada_local_utc ou webhook AP antes do E
+    "picked_up_at": "iso",         // start_trip / data_hora_inicio (coleta, do lado da central)
+    "trip_minutes": 9.0,           // estimated_duration_minutes (viagem loja → cliente)
+    "trip_km": 3.4,                // estimated_distance_km
+    "arrived_dropoff_at": "iso",   // webhook AP depois do E (chegou ao cliente)
+    "finished_at": "iso", "cancelled_at": "iso", "cancelled_reason": ""
+  },
+  "sync": {                        // a leitura da corrida está falhando (`courier.record_sync_failure`); sai na primeira leitura boa
+    "failing_since": "iso",        // primeira batida que falhou: a tela diz "sem notícias da TaOn desde HH:MM"
+    "last_error": "...",           // a recusa de cada via (ex.: "[67] O usuário informado não pode realizar essa operação.")
+    "alerted_at": "iso"            // virou aviso `integration_failed` (marcador "corrida <id_mch>") após `SYNC_ALERT_AFTER` batidas
+  }
 }
 ```
+
+A projeção do Gestor (`_courier_block`) entrega o andamento já resolvido por
+`courier.progress_view(block)`: `pickup_eta_at` (só em A/S), `arrived_pickup_at`,
+`picked_up_at`, `delivery_eta_at` (coleta, ou chegada prevista à loja, + viagem; sem a
+viagem da central, a da cotação), `arrived_dropoff_at` e `sync_since`. Instantes ISO: a
+tela conta os minutos com o relógio dela. As contagens de falha seguidas moram no cache
+(`courier:sync_failures:<id_mch>`), para a revisão do pedido não girar a cada batida.
 
 ### waitlist — detalhamento
 
@@ -831,7 +860,9 @@ Write-back: `intent_ref` (string)
 | `copy_paste` | `string` | PixGenerateHandler (reminder) | Template (não handler) |
 | `tracking` | `dict` | FulfillmentUpdateHandler | Template (não handler) |
 | `context` | `dict` | CommitService (preorder reminder), `services.reschedule.schedule_preorder_reminder` (lembrete recriado com a data nova) | Template (não handler) |
-| `status_note` | `string` | `services.order_edit` (aviso `order_updated`) | `notification._build_context` → `{status_note}` | A frase montada NO GESTO da edição (o que mudou, o total novo e o destino da diferença, sem ponto final): quando o aviso sai, o "antes" não está mais no pedido |
+| `status_note` | `string` | `services.order_edit` (aviso `order_updated`); `services.payment._notify_refund` (aviso `payment_refunded`) | `notification._build_context` → `{status_note}` | A frase montada NO GESTO da edição (o que mudou, o total novo e o destino da diferença, sem ponto final): quando o aviso sai, o "antes" não está mais no pedido. No estorno: por onde o dinheiro volta e que pode demorar conforme o banco (`notification.refund_arrival_note`) |
+| `refund_amount_q` | `int` | `services.payment._notify_refund` (aviso `payment_refunded`) | `notification._build_context` → `{refund_amount_display}` | O valor DESTE estorno (devolução parcial devolve só uma parte). Ausente ⇒ o total do pedido |
+| `refund_method` | `string` | `services.payment._notify_refund` (aviso `payment_refunded`) | informativo | O meio do intent estornado (`pix`, `card`) |
 
 `notification_delivery` é a evidência na própria Directive: `status` (`started`,
 `unknown`, `accepted`, `skipped`, `failed`), `recorded_at` ISO, e opcionais
@@ -855,7 +886,7 @@ persistido antes de chamar o transporte, fora da transação. Entre execuções,
 se torna segura por idade. Worker antigo não entende o fence: rollout requer
 drenagem/parada dos consumidores antigos e rollback não pode reativá-los sobre
 essas Directives sem reconciliação autorizada (G03/G07).
-A `dedupe_key` é `notification.send:<ref>:<template>`, e ganha `:<ocorrência>` (`notification.send(..., occurrence=)`) nos avisos que se repetem legitimamente no mesmo pedido: `order_rescheduled` (uma por troca de data) e `order_updated` (uma por edição).
+A `dedupe_key` é `notification.send:<ref>:<template>`, e ganha `:<ocorrência>` (`notification.send(..., occurrence=)`) nos avisos que se repetem legitimamente no mesmo pedido: `order_rescheduled` (uma por troca de data), `order_updated` (uma por edição) e `payment_refunded` (uma por estorno: a ocorrência é a chave de idempotência do estorno, então o retry do mesmo estorno não avisa duas vezes). O `payment_refunded` só sai do estorno feito pelo GATEWAY (Pix/cartão online); estorno sem gateway (maquininha, cobrança externa, Pix atestado no balcão) não avisa.
 `skipped` com `reason: "rescheduled"` é o lembrete de véspera (`preorder_reminder`)
 que um reagendamento substituiu: a directive fecha `done` sem envio e outra nasce com a
 data nova (`services.reschedule`).
@@ -1040,9 +1071,13 @@ até um recuperador compatível. Consulta externa/homologação de unknown depen
 |-------|------|-------------|----------|
 | `order_ref` | `string` | CourierDispatchHandler / CourierSyncHandler (reagenda) | CourierSyncHandler |
 
-Heartbeat de polling do status da corrida (fallback do webhook Machine).
-Auto-reagendável a cada `Shop.defaults.delivery.courier_poll_seconds` (default
-60; `0` desliga). Morre em status terminal (F/N/C).
+Heartbeat de polling da corrida (fallback do webhook Machine). Cada batida lê a
+corrida inteira (`adapter.read_ride`: `/v1/request/{id}`, depois `/solicitacao?id=`,
+depois `/solicitacaoStatus`; a via que responder é lembrada no cache) e aplica por
+`courier.apply_snapshot`. Auto-reagendável a cada `Shop.defaults.delivery.courier_poll_seconds`
+(default 60; `0` desliga). Morre em status terminal (F/N/C) ou com a corrida mais velha
+que `courier.MAX_POLL_HOURS` (6 h). O webhook de status agenda uma batida imediata
+(`delay_seconds=0`). Leitura que falha grava `courier.sync` e vira aviso.
 
 #### `loyalty.earn`
 
