@@ -3746,7 +3746,7 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       const orderRef = result.value.orderRef;
       const reason = cancelSaleReason.value.trim();
-      await action.call(
+      const response = await action.call<{ card_machine_refund?: { amount_display: string; method_label: string } | null }>(
         actionHref(actions.value, "cancel_recent_sale", "/api/v1/backstage/pos/sale/recent/cancel/"),
         {
           body: {
@@ -3767,9 +3767,20 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       // Confirmação como toast padrão de sucesso — o banner fixo de antes nunca
       // expirava e ficava na tela até a próxima venda.
-      toast.success("Venda cancelada", {
-        description: "O pedido foi cancelado dentro da janela do operador.",
-      });
+      // Venda paga na maquininha: cancelar não devolve o dinheiro ao cartão. A
+      // tela diz o estorno a fazer AGORA, com o cliente na frente; a pendência
+      // fica na Sessão de caixa até o "Estornei na maquininha".
+      const machine = response?.card_machine_refund;
+      if (machine) {
+        toast.warning("Venda cancelada. Falta estornar na maquininha", {
+          description: `Estorne ${machine.amount_display} no ${machine.method_label}, na maquininha. Depois toque em Estornei na maquininha, na Sessão de caixa.`,
+          duration: 15000,
+        });
+      } else {
+        toast.success("Venda cancelada", {
+          description: "O pedido foi cancelado dentro da janela do operador.",
+        });
+      }
       await refresh();
     } catch (error) {
       // QUALQUER falha fica inline no diálogo (aberto): um toast passageiro com o

@@ -135,6 +135,10 @@ class OperatorAlert(models.Model):
         # A maquininha não aparece na tela enquanto está na rua (o card da saída
         # basta). Só quando passa do tempo vira alerta: "Maquininha fora há 2 h".
         ("card_machine_overdue", "Maquininha fora há muito tempo"),
+        # Venda paga na maquininha cancelada ou devolvida: o sistema não fala
+        # com a maquininha, então o dinheiro só volta ao cartão do cliente
+        # quando alguém estorna nela. Resolve no "Estornei na maquininha".
+        ("card_machine_refund_due", "Estornar na maquininha"),
         # Fiscal: nota prometida ao cliente e recusada pela regra; NFC-e barrada
         # porque o pagamento gravado é menor que o total; nota autorizada cujo
         # e-mail não saiu; cancelamento que falhou (nota válida em pé para venda
@@ -362,6 +366,7 @@ class OperatorAlert(models.Model):
         "ifood_store_open_while_closed",
         "ifood_store_sync_failed",
         "card_machine_overdue",
+        "card_machine_refund_due",
         "danfe_print_failed",
         "kitchen_print_failed",
         "concierge_handoff",

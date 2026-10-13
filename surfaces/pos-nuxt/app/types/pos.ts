@@ -286,13 +286,23 @@ export interface POSPendingCashRefundProjection {
   reason_label?: string;
 }
 
-/** Encomenda paga na maquininha que ficou mais barata: estornar NA maquininha e registrar. */
+/**
+ * Venda paga na maquininha cujo dinheiro precisa voltar NELA: cancelada,
+ * devolvida (toda ou em parte) ou encomenda que ficou mais barata. Estornar na
+ * maquininha e registrar; só o "Estornei" grava o estorno.
+ */
 export interface POSPendingCardMachineRefundProjection {
   order_ref: string;
   amount_q: number;
   amount_display: string;
   customer_name: string;
   method_label: string;
+  /** "cancelled" · "returned" · "partial_return" · "reduced". */
+  reason?: "cancelled" | "returned" | "partial_return" | "reduced";
+  /** "Venda cancelada" · "Venda devolvida" · "Devolução de parte da venda" · "Encomenda ficou mais barata". */
+  reason_label?: string;
+  /** Como achar a transação na maquininha: "Aprovado em 13/10 às 14:32 · NSU 123456". */
+  lookup_display?: string;
 }
 
 /**

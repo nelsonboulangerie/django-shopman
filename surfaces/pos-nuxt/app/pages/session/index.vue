@@ -532,6 +532,19 @@ async function testDrawer() {
   if (drawerProbeResult.value.ok) await openDrawerWithoutSale("Teste de gaveta");
 }
 
+// O fechamento avisa o estorno na maquininha ainda não registrado: o caixa
+// fecha (nada disso está na gaveta), mas ninguém encerra o dia sem saber.
+const cardMachineClosingNotice = computed(() => {
+  const n = pendingCardMachineRefunds.value.length;
+  return n === 1
+    ? "1 estorno na maquininha ainda não foi registrado"
+    : `${n} estornos na maquininha ainda não foram registrados`;
+});
+function openCardMachineFromClosing() {
+  closingDialogOpen.value = false;
+  cardMachineDialogOpen.value = true;
+}
+
 // Fechar caixa (contagem cega) — destrutivo, exige confirmação explícita.
 //
 // O CTA só arma com um valor LEGÍVEL (zero incluso: gaveta esvaziada é
@@ -801,12 +814,14 @@ async function confirmClose() {
       </template>
     </NuxtModal>
 
-    <!-- Estornos na maquininha: encomenda paga no cartão do balcão que ficou mais
-         barata. O estorno é feito NA maquininha; aqui só se registra que saiu. -->
+    <!-- Estornos na maquininha: venda paga na maquininha cancelada ou devolvida,
+         ou encomenda que ficou mais barata. O estorno é feito NA maquininha, no
+         cartão do cliente; aqui só se registra que saiu, e só então o livro marca
+         estornado. -->
     <NuxtModal
       v-model:open="cardMachineDialogOpen"
       title="Estornos na maquininha"
-      description="Faça o estorno na maquininha e toque em Estornei na maquininha."
+      description="Estorne na maquininha, no cartão do cliente, e depois toque em Estornei na maquininha."
       :content="dialogContent('attention:card_machine')"
     >
       <template #body>
@@ -818,11 +833,15 @@ async function confirmClose() {
               class="grid gap-2 rounded-md bg-elevated p-3"
             >
               <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }} no {{ refund.method_label.toLowerCase() }}</span>
+                <span class="text-sm font-medium tabular-nums">{{ refund.amount_display }} no {{ refund.method_label === "Pix" ? "Pix" : refund.method_label.toLowerCase() }}</span>
                 <span class="text-xs text-muted-foreground">
-                  pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template> · encomenda ficou mais barata
+                  pedido {{ refund.order_ref }}<template v-if="refund.customer_name"> · {{ refund.customer_name }}</template> · {{ (refund.reason_label || "Encomenda ficou mais barata").toLowerCase() }}
                 </span>
               </div>
+              <!-- Como achar a transação na maquininha (hora da aprovação, NSU). -->
+              <p v-if="refund.lookup_display" class="text-xs text-muted-foreground tabular-nums" data-card-machine-lookup>
+                {{ refund.lookup_display }}
+              </p>
               <NuxtButton
                 block
                 icon="i-lucide-check"
@@ -834,7 +853,7 @@ async function confirmClose() {
             </li>
           </ul>
           <p class="text-xs text-muted-foreground">
-            Nada sai da gaveta. Um gerente autoriza com o PIN, e o estorno fica registrado no pedido.
+            Nada sai da gaveta. Um gerente autoriza com o PIN, e o estorno fica registrado no pedido com quem fez e quando.
           </p>
         </div>
       </template>
@@ -1245,6 +1264,20 @@ async function confirmClose() {
     >
       <template #body>
         <div class="grid gap-3">
+          <!-- Estorno na maquininha em aberto: não segura o fechamento (o
+               estorno não mexe na gaveta), mas quem fecha o dia fica sabendo
+               que um cliente ainda não recebeu o dinheiro de volta. -->
+          <NuxtAlert
+            v-if="pendingCardMachineRefunds.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-credit-card"
+            :title="cardMachineClosingNotice"
+            description="O cliente só recebe o dinheiro de volta depois do estorno. Dá para fechar o caixa assim mesmo."
+            orientation="vertical"
+            :actions="alertActions('warning', [{ label: 'Ver estornos', onClick: openCardMachineFromClosing }])"
+            data-close-shift-card-machine
+          />
           <!-- Nasce focado: abrir o diálogo já foi a decisão, contar é o próximo gesto. -->
           <NuxtFormField label="Valor contado" :error="closingError || undefined">
             <NuxtInput

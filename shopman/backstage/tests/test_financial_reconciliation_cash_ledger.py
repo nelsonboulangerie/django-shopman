@@ -272,9 +272,12 @@ def test_cancelamento_devolve_o_dinheiro_nos_dois_livros(counter, django_capture
 
 
 def test_cancelamento_de_venda_mista_devolve_so_o_dinheiro_da_gaveta(counter, django_capture_on_commit_callbacks):
-    """Mista cash 200 + pix 1000 cancelada: o Payman estorna os dois intents
-    (o pix atestado sem gateway), a gaveta devolve só os 200. Os dois lados do
-    dinheiro continuam iguais, e o cancelado não fica com saldo capturado."""
+    """Mista cash 200 + pix 1000 cancelada: a gaveta devolve só os 200; o pix
+    atestado no balcão (sem gateway) só se estorna quando alguém o devolve na
+    maquininha e toca "Estornei" (P0-2). Depois disso os dois lados do dinheiro
+    continuam iguais, e o cancelado não fica com saldo capturado."""
+    from shopman.shop.services import payment as payment_service
+
     result = counter.close(
         client_request_id="c5",
         payment_tenders=[
@@ -284,6 +287,12 @@ def test_cancelamento_de_venda_mista_devolve_so_o_dinheiro_da_gaveta(counter, dj
     )
     with django_capture_on_commit_callbacks(execute=True):
         pos_service.cancel_recent_order(order_ref=result.order_ref, actor="pos:marina")
+
+    # O cancel não diz que o pix voltou: ele espera o gesto na maquininha.
+    (pendente,) = payment_service.pending_card_machine_refunds()
+    assert (pendente.order_ref, pendente.amount_q, pendente.method) == (result.order_ref, 1000, "pix")
+    order = Order.objects.get(ref=result.order_ref)
+    assert payment_service.record_card_machine_refund(order, actor="marina") == 1000
 
     report = build_financial_reconciliation(reconciliation_date=_today())
 
