@@ -47,7 +47,7 @@ def shop():
     )
 
 
-def _delivery_order(ref="CR-1", status=Order.Status.READY, **data_overrides) -> Order:
+def _delivery_order(ref="CR-1", status=Order.Status.READY, channel_ref="web", **data_overrides) -> Order:
     data = {
         "fulfillment_type": "delivery",
         "customer": {"name": "Ana Lima", "phone": "5543999990000"},
@@ -67,7 +67,7 @@ def _delivery_order(ref="CR-1", status=Order.Status.READY, **data_overrides) -> 
     data.update(data_overrides)
     return Order.objects.create(
         ref=ref,
-        channel_ref="web",
+        channel_ref=channel_ref,
         session_key=f"S-{ref}",
         status=status,
         snapshot={"items": []},
@@ -101,8 +101,37 @@ def test_request_dispatch_noop_for_pickup_and_wrong_status(shop):
     pickup = _delivery_order(ref="CR-P", fulfillment_type="pickup")
     assert courier.request_dispatch(pickup, actor="test") is None
 
-    accepted = _delivery_order(ref="CR-W", status=Order.Status.ACCEPTED)
-    assert courier.request_dispatch(accepted, actor="test") is None
+    new = _delivery_order(ref="CR-W", status=Order.Status.NEW)
+    assert courier.request_dispatch(new, actor="test") is None
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+@pytest.mark.parametrize("status", [Order.Status.ACCEPTED, Order.Status.PREPARING])
+def test_house_delivery_calls_courier_from_acceptance_on_pdv_channel(shop, status):
+    """O operador chama na hora, desde o aceite (decisão do dono, 13/10/2026).
+
+    Caso do alpha: encomenda do PDV, entrega, em preparo (o KDS mandou) e o
+    Gestor só oferecia "Cotar entrega".
+    """
+    order = _delivery_order(ref=f"PDV-{status}", status=status, channel_ref="pdv")
+    assert courier.request_dispatch(order, actor="test") is not None
+    _run_dispatch(order)
+    assert courier.get_block(order)["id_mch"] == f"MOCK-{order.ref}"
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+@pytest.mark.parametrize("status", [Order.Status.ACCEPTED, Order.Status.PREPARING])
+def test_collection_before_ready_takes_the_order_out(shop, status):
+    """Chamou antes do pronto e o entregador coletou: o pedido sai, não fica no preparo."""
+    order = _delivery_order(ref=f"CR-EARLY-{status}", status=status)
+    courier.request_dispatch(order, actor="test")
+    _run_dispatch(order)
+    courier.apply_status(order, "E", source="webhook")
+    order.refresh_from_db()
+    assert order.status == Order.Status.DISPATCHED
+    courier.apply_status(order, "F", source="webhook")
+    order.refresh_from_db()
+    assert order.status in (Order.Status.DELIVERED, Order.Status.COMPLETED)
 
 
 def test_request_dispatch_noop_without_adapter(shop):
