@@ -18,6 +18,7 @@ from shopman.backstage.permissions import CASH_AUDIT_PERMISSION, can_audit_cash
 from shopman.backstage.projections.bi_cash import build_bi_cash
 from shopman.backstage.projections.bi_change import build_bi_change
 from shopman.backstage.projections.bi_customers import build_bi_customers
+from shopman.backstage.projections.bi_delivery_timing import build_bi_delivery_timing
 from shopman.backstage.projections.bi_explore import (
     AUDIT_ONLY_FAMILIES,
     ExploreError,
@@ -75,6 +76,24 @@ def _bi_reading(report, *, status: int = 200) -> Response:
 class BIProductionView(_BIBase):
     def get(self, request):
         report = build_bi_production(
+            date_from=_query_date(request, "date_from"),
+            date_to=_query_date(request, "date_to"),
+        )
+        return _bi_reading(report)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="B.I. delivery timing: real prep time by SKU/hour/weekday and courier arrival by hour/weekday",
+        responses={200: OpenApiResponse(description="B.I. delivery timing report.")},
+    ),
+)
+class BIDeliveryTimingView(_BIBase):
+    """O que a chamada antecipada do entregador vai aprender: preparo real e chegada."""
+
+    def get(self, request):
+        report = build_bi_delivery_timing(
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )

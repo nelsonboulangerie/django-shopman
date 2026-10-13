@@ -19,6 +19,7 @@ from shopman.backstage.models import DayClosing
 READINGS = [
     ("api-backstage-bi-production", {}),
     ("api-backstage-bi-over-short", {}),
+    ("api-backstage-bi-delivery-timing", {}),
     ("api-backstage-bi-sales", {}),
     ("api-backstage-bi-cash", {}),
     ("api-backstage-bi-customers", {}),
