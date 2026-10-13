@@ -882,7 +882,17 @@ def _start_ticket_locked(ticket, *, source, actor: str) -> bool:
     first_start = ticket.status == "pending"
     if first_start:
         ticket.status = "in_progress"
-        ticket.save(update_fields=["status"])
+        fields = ["status"]
+        if ticket.started_at is None:
+            # O marco do preparo mora no ticket: vale para a comanda ainda não paga
+            # (Session), que não tem ``Order.data`` onde gravar.
+            ticket.started_at = timezone.now()
+            ticket.started_by = str(actor or "")[:150]
+            ticket.open_tickets_at_start = (
+                ticket.__class__.objects.filter(status__in=OPEN_TICKET_STATUSES).exclude(pk=ticket.pk).count()
+            )
+            fields += ["started_at", "started_by", "open_tickets_at_start"]
+        ticket.save(update_fields=fields)
 
     order = source if isinstance(source, Order) else None
     if order is not None:
@@ -897,8 +907,9 @@ def _record_ticket_start(order, ticket, *, actor: str) -> None:
 
     Chave = ``str(ticket.pk)``, valor ``{at, by}``. Só o PRIMEIRO início conta
     (o recall reabre em preparo sem apagar). Comanda ainda não paga (``Session``)
-    não registra: o ticket dela muda de dono no commit e o registro não
-    sobreviveria sem um caminho próprio. Ver ``docs/reference/data-schemas.md``.
+    não registra aqui; o marco dela (e de todo ticket) mora no próprio ticket,
+    ``KDSTicket.started_at``/``started_by``, gravado em ``_start_ticket_locked``.
+    Ver ``docs/reference/data-schemas.md``.
     """
     data = dict(order.data or {})
     started = dict(data.get("kds_started") or {})

@@ -566,11 +566,12 @@ def _archive_current_ride(block: dict) -> None:
             "id_mch": block.get("id_mch", ""),
             "status": block.get("status", ""),
             "requested_at": block.get("requested_at", ""),
+            "status_at": dict(block.get("status_at") or {}),
             "ended_at": timezone.now().isoformat(),
         }
     )
     block["attempts"] = attempts
-    for key in ("id_mch", "status", "dispatched_at", "finished_at", "driver",
+    for key in ("id_mch", "status", "status_at", "dispatched_at", "finished_at", "driver",
                 "tracking_url", "confirmation_code", "final_value_q"):
         block.pop(key, None)
 
@@ -613,6 +614,12 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
                 if key in enrichment:
                     block[key] = enrichment[key]
             block.update(status=status, last_event_at=now_iso, last_source=source)
+            # Cada letra com a hora em que chegou pela primeira vez (A aceita, S em
+            # espera, E coletou, F finalizou): o B.I. mede daqui o tempo de chegada do
+            # entregador. ``last_event_at`` só guarda a última.
+            status_at = dict(block.get("status_at") or {})
+            status_at.setdefault(status, now_iso)
+            block["status_at"] = status_at
             if status == "E":
                 block.setdefault("dispatched_at", now_iso)
                 # A cobrança que saiu com o entregador da TaOn, registrada na coleta.

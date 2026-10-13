@@ -1253,6 +1253,9 @@ def _courier_block(order: Order) -> dict | None:
             "can_cancel": adapter_on and active and ride_status in CANCELLABLE_STATUSES and not cancellation_pending,
             # O lembrete temporário de chamar (o mesmo do cartão), ou ``None``.
             "reminder": asdict(reminder) if (reminder := courier_reminder(order)) is not None else None,
+            # O que a chamada pergunta: troco da gaveta e maquininha da casa
+            # que vão com o entregador da TaOn (``partner_custody_asks``).
+            "custody": operator_orders.partner_custody_asks(order),
         }
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)

@@ -10,7 +10,16 @@ import {
   courierTone,
 } from "~/presentation/courier";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
-import type { Action } from "~/generated/ordersContract";
+import {
+  freeMachines,
+  machinePhrase,
+  machinesOutSentence,
+  moneyInput,
+} from "~/presentation/board";
+import type {
+  Action,
+  EquipmentOptionProjection,
+} from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 
 const props = defineProps<{
@@ -19,13 +28,15 @@ const props = defineProps<{
   cancelAction?: Action;
   quoteAction?: Action;
   dispatchAction?: Action;
+  /** As maquininhas do pedido (`order.equipment_options`), para a custódia. */
+  equipmentOptions?: EquipmentOptionProjection[];
   dispatchAgainAction?: Action;
   /** Abrir com a confirmação de "Chamar entregador" já armada (veio do lembrete do cartão). */
   armDispatch?: boolean;
 }>();
 const emit = defineEmits<{
   quote: [];
-  dispatch: [];
+  dispatch: [custody: { change_out?: string; equipment?: string[] }];
   cancel: [];
   dispatchAgain: [];
   dismissReminder: [];
@@ -67,10 +78,7 @@ function requestCancel() {
 
 // Chamar entregador abre corrida paga na central → confirm de 1 toque, com a
 // pergunta inteira (quem vem, para qual pedido, quem paga) vinda do servidor.
-// Vindo do lembrete do cartão (`#courier-call`), a página abre já perguntando.
-const confirmingDispatch = ref(
-  Boolean(props.armDispatch && props.courier.can_dispatch),
-);
+const confirmingDispatch = ref(false);
 const dispatchQuestion = computed(() =>
   String(props.dispatchAction?.confirmation?.description ?? ""),
 );
@@ -80,17 +88,49 @@ watch(
     confirmingDispatch.value = false;
   },
 );
+// A custódia que sai com o entregador da TaOn, pré-preenchida pelo pedido:
+// troco da gaveta e/ou a maquininha da casa. Pedido pago não pergunta nada.
+const custody = computed(() => props.courier.custody);
+const asksChange = computed(
+  () => (custody.value?.change_out_suggested_q ?? 0) > 0,
+);
+const asksMachine = computed(() => Boolean(custody.value?.needs_machine));
+const asksCustody = computed(() => asksChange.value || asksMachine.value);
+const free = computed(() => freeMachines(props.equipmentOptions ?? []));
+const changeOut = ref("");
+const machineRef = ref("");
+function armCustody() {
+  changeOut.value = asksChange.value
+    ? moneyInput(custody.value?.change_out_suggested_q ?? 0)
+    : "";
+  machineRef.value = free.value[0]?.ref ?? "";
+}
+const machineItems = computed(() =>
+  free.value.map((opt) => ({ value: opt.ref, label: opt.label })),
+);
+const machineMissing = computed(() => asksMachine.value && !free.value.length);
 function requestDispatch() {
   if (!confirmingDispatch.value) {
+    armCustody();
     confirmingDispatch.value = true;
     return;
   }
+  if (machineMissing.value) return;
   confirmingDispatch.value = false;
-  emit("dispatch");
+  emit("dispatch", {
+    ...(asksChange.value ? { change_out: changeOut.value.trim() || "0" } : {}),
+    ...(asksMachine.value ? { equipment: [machineRef.value] } : {}),
+  });
+}
+// Vindo do lembrete do cartão (`#courier-call`), a página abre já perguntando.
+if (props.armDispatch && props.courier.can_dispatch) {
+  armCustody();
+  confirmingDispatch.value = true;
 }
 
 // Lembrete temporário (entrega da casa em preparo há X min, sem entregador chamado):
-// o aviso amarelo leva o próprio "Chamar entregador", com a mesma confirmação.
+// o aviso amarelo leva o "Chamar entregador", que arma a MESMA confirmação de baixo
+// (pergunta, troco e maquininha); armada, o botão de confirmar é o de sempre.
 const nowMs = useNowTick();
 const reminderLine = computed(() =>
   props.courier.can_dispatch
@@ -98,8 +138,8 @@ const reminderLine = computed(() =>
     : null,
 );
 const reminderActions = computed(() => [
-  {
-    label: confirmingDispatch.value ? "Confirmar chamada" : "Chamar entregador",
+  !confirmingDispatch.value && {
+    label: "Chamar entregador",
     icon: "i-lucide-send",
     disabled: props.busy || !props.dispatchAction?.enabled,
     onClick: requestDispatch,
@@ -112,6 +152,12 @@ const reminderActions = computed(() => [
     ...{ "data-courier-reminder-dismiss": "" },
   },
 ]);
+
+function blurDispatch() {
+  // Com campos a preencher, sair do botão não desarma: o operador está
+  // conferindo o troco ou a maquininha. "Voltar" desarma.
+  if (!asksCustody.value) confirmingDispatch.value = false;
+}
 
 const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
 </script>
@@ -155,14 +201,13 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       </div>
 
       <div class="flex flex-col gap-3">
-        <!-- lembrete: já dá para chamar o entregador? (a pergunta entra quando arma) -->
+        <!-- lembrete: já dá para chamar o entregador? -->
         <NuxtAlert
           v-if="reminderLine"
           color="warning"
           variant="subtle"
           icon="i-lucide-bike"
           :title="reminderLine"
-          :description="confirmingDispatch ? dispatchQuestion : undefined"
           :actions="alertActions('warning', reminderActions)"
           role="status"
           data-courier-reminder
@@ -177,7 +222,8 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
           variant="subtle"
           icon="i-lucide-circle-help"
           :title="
-            courier.error?.message || 'A TaOn não respondeu à última chamada.'
+            courier.error?.message ||
+            'A TaOn não respondeu à última chamada.'
           "
           data-courier-no-answer
         >
@@ -270,33 +316,77 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
             class="flex items-center gap-1.5 text-muted-foreground"
           >
             <Icon name="lucide:key-round" class="size-4" /> Código:
-            <strong class="tabular-nums">{{
-              courier.confirmation_code
-            }}</strong>
+            <strong class="tabular-nums">{{ courier.confirmation_code }}</strong>
           </span>
         </div>
       </div>
 
-      <template
-        v-if="
-          courier.can_quote ||
-          (courier.can_dispatch && !reminderLine) ||
-          courier.can_cancel
-        "
-      >
-        <p
-          v-if="confirmingDispatch && dispatchQuestion && !reminderLine"
-          class="text-sm"
-          role="status"
-          data-testid="courier-dispatch-question"
+      <template v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel">
+        <div
+          v-if="confirmingDispatch"
+          class="flex flex-col gap-3"
+          data-testid="courier-dispatch-confirm"
         >
-          {{ dispatchQuestion }}
-        </p>
+          <p
+            v-if="dispatchQuestion"
+            class="text-sm"
+            role="status"
+            data-testid="courier-dispatch-question"
+          >
+            {{ dispatchQuestion }}
+          </p>
+          <NuxtFormField
+            v-if="asksChange"
+            label="Troco que o entregador leva da gaveta"
+            data-testid="courier-custody-change"
+          >
+            <NuxtInput
+              v-model="changeOut"
+              class="w-40"
+              type="text"
+              inputmode="decimal"
+              icon="i-lucide-circle-dollar-sign"
+              aria-label="Troco que o entregador leva da gaveta, em reais"
+            />
+          </NuxtFormField>
+          <template v-if="asksMachine">
+            <NuxtFormField
+              v-if="free.length >= 2"
+              label="Qual maquininha vai junto?"
+              data-testid="courier-custody-machine"
+            >
+              <NuxtRadioGroup
+                v-model="machineRef"
+                :items="machineItems"
+                orientation="horizontal"
+              />
+            </NuxtFormField>
+            <p
+              v-else-if="free.length === 1"
+              class="text-sm"
+              data-testid="courier-custody-machine"
+            >
+              Leva a {{ machinePhrase(free[0]!.label) }}.
+            </p>
+            <p
+              v-else
+              class="text-sm text-error"
+              data-testid="courier-custody-machine"
+            >
+              {{ machinesOutSentence(equipmentOptions ?? []) }} Espere uma
+              voltar para chamar.
+            </p>
+          </template>
+        </div>
         <div class="flex flex-wrap gap-2">
           <NuxtButton
-            v-if="courier.can_dispatch && !reminderLine"
+            v-if="courier.can_dispatch && (!reminderLine || confirmingDispatch)"
             type="button"
-            :disabled="busy || !dispatchAction?.enabled"
+            :disabled="
+              busy ||
+              !dispatchAction?.enabled ||
+              (confirmingDispatch && machineMissing)
+            "
             :title="
               dispatchAction?.reason ||
               (dispatchAction?.enabled
@@ -315,8 +405,16 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
                   ? 'Chamar outro entregador'
                   : 'Chamar entregador'
             "
-            @blur="confirmingDispatch = false"
+            @blur="blurDispatch"
             @click="requestDispatch"
+          />
+          <NuxtButton
+            v-if="confirmingDispatch && asksCustody"
+            type="button"
+            label="Voltar"
+            color="neutral"
+            variant="outline"
+            @click="confirmingDispatch = false"
           />
           <NuxtButton
             v-if="courier.can_quote"

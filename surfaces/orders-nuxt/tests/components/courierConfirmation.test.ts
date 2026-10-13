@@ -104,6 +104,72 @@ describe('Chamar entregador pede um toque de confirmação', () => {
   });
 });
 
+describe('Chamar entregador registra a custódia que sai com ele', () => {
+  const dispatchAction = () => ({
+    ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch', enabled: true,
+    confirmation: { required: true, description: 'Chamar um entregador da TaOn para o pedido A47? A corrida é cobrada da casa.' },
+  });
+  const machine = (label: string, enabled = true) => ({
+    ref: `card_machine:${label}`, label, enabled, order_ref: enabled ? '' : 'WEB-261013-B12',
+  }) as never;
+  const mountPanel = (custody: CourierBlock['custody'], equipmentOptions: never[] = []) => mount(Panel, { props: {
+    courier: { status: '', can_quote: false, can_dispatch: true, can_cancel: false, attempts_count: 0, custody } as CourierBlock,
+    busy: false, dispatchAction: dispatchAction(), equipmentOptions,
+  }, global: { stubs: { Icon: true } } });
+  const confirmButton = (wrapper: ReturnType<typeof mountPanel>) =>
+    wrapper.findAll('button').find(b => ['Chamar entregador', 'Confirmar chamada'].includes(b.text()))!;
+
+  it('troco pré-preenchido pelo pedido vai junto na chamada', async () => {
+    const wrapper = mountPanel({ change_out_suggested_q: 2600, needs_machine: false, recorded: false });
+    try {
+      await confirmButton(wrapper).trigger('click');
+      const input = wrapper.get('[data-testid="courier-custody-change"] input');
+      expect((input.element as HTMLInputElement).value).toBe('26,00');
+      await confirmButton(wrapper).trigger('blur');
+      expect(confirmButton(wrapper).text()).toBe('Confirmar chamada');
+      await confirmButton(wrapper).trigger('click');
+      expect(wrapper.emitted('dispatch')).toEqual([[{ change_out: '26,00' }]]);
+    } finally { wrapper.unmount(); }
+  });
+
+  it('uma maquininha livre: a frase diz qual, e ela vai na chamada', async () => {
+    const wrapper = mountPanel({ change_out_suggested_q: 0, needs_machine: true, recorded: false },
+      [machine('Azul'), machine('Preta', false)]);
+    try {
+      await confirmButton(wrapper).trigger('click');
+      expect(wrapper.get('[data-testid="courier-custody-machine"]').text()).toBe('Leva a maquininha Azul.');
+      await confirmButton(wrapper).trigger('click');
+      expect(wrapper.emitted('dispatch')).toEqual([[{ equipment: ['card_machine:Azul'] }]]);
+    } finally { wrapper.unmount(); }
+  });
+
+  it('nenhuma maquininha livre: não chama, e diz onde elas estão', async () => {
+    const wrapper = mountPanel({ change_out_suggested_q: 0, needs_machine: true, recorded: false }, [machine('Azul', false)]);
+    try {
+      await confirmButton(wrapper).trigger('click');
+      expect(wrapper.get('[data-testid="courier-custody-machine"]').text()).toContain('na rua');
+      expect(confirmButton(wrapper).attributes('disabled')).toBeDefined();
+      expect(wrapper.emitted('dispatch')).toBeUndefined();
+    } finally { wrapper.unmount(); }
+  });
+
+  it('pedido pago ou custódia já registrada: só a pergunta', async () => {
+    for (const custody of [
+      { change_out_suggested_q: 0, needs_machine: false, recorded: false },
+      { change_out_suggested_q: 0, needs_machine: false, recorded: true },
+    ]) {
+      const wrapper = mountPanel(custody);
+      try {
+        await confirmButton(wrapper).trigger('click');
+        expect(wrapper.find('[data-testid="courier-custody-change"]').exists()).toBe(false);
+        expect(wrapper.find('[data-testid="courier-custody-machine"]').exists()).toBe(false);
+        await confirmButton(wrapper).trigger('click');
+        expect(wrapper.emitted('dispatch')).toEqual([[{}]]);
+      } finally { wrapper.unmount(); }
+    }
+  });
+});
+
 describe('chamada sem resposta da TaOn', () => {
   const courier = { status: '', status_label: 'Sem resposta da TaOn', can_quote: false, can_dispatch: false,
     can_dispatch_again: true, can_cancel: false, attempts_count: 0,

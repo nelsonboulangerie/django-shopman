@@ -122,6 +122,17 @@ class KDSTicket(models.Model):
         "status", max_length=20, choices=STATUS_CHOICES, default="pending",
     )
     created_at = models.DateTimeField("criado em", auto_now_add=True)
+    # O primeiro "Iniciar preparo" da estação, gravado no TICKET para valer também
+    # na comanda ainda não paga (``Order.data["kds_started"]`` só existe com pedido).
+    # É o marco que o B.I. usa para medir o preparo real, e a carga da Cozinha no
+    # mesmo instante (tickets abertos em todas as estações, fora este) é a variável
+    # que explica o preparo lento. Ver WP-ENTREGADOR-CHAMADA-ANTECIPADA.
+    started_at = models.DateTimeField("iniciado em", null=True, blank=True)
+    started_by = models.CharField("iniciado por", max_length=150, blank=True, default="")
+    open_tickets_at_start = models.PositiveIntegerField(
+        "tickets abertos no início", null=True, blank=True,
+        help_text="Carga da Cozinha quando o preparo começou: tickets abertos em todas as estações, fora este.",
+    )
     completed_at = models.DateTimeField("concluído em", null=True, blank=True)
     completed_by = models.CharField(
         "concluído por", max_length=150, blank=True, default="",

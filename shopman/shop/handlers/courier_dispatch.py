@@ -152,8 +152,9 @@ class CourierDispatchHandler:
                 return
             if courier.has_active_ride(order):
                 raise DirectiveTerminalError("A central aceitou outra referência; confira as duas corridas antes de vincular.")
-            block.update(provider="machine", id_mch=courier_ref, status="D",
-                requested_at=timezone.now().isoformat(), last_event_at=timezone.now().isoformat(), last_source="dispatch")
+            opened_at = timezone.now().isoformat()
+            block.update(provider="machine", id_mch=courier_ref, status="D", status_at={"D": opened_at},
+                requested_at=opened_at, last_event_at=opened_at, last_source="dispatch")
             block.pop("error", None)
             courier._save_block(order, block, emit={"kind": "dispatched", "status": "D"})
             order.emit_event(event_type="courier_ride_opened", actor=str((message.payload or {}).get("actor") or "courier.dispatch"), payload={"id_mch": courier_ref})
