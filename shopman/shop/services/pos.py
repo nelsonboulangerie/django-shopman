@@ -361,9 +361,12 @@ def close_sale(
     # limiar passava a ser a etiqueta declarada pelo navegador. O carimbo tem de
     # vir antes de ``validate_manager_approval`` e antes da taxa de entrega, que
     # tambem le a mesma soma para dispensar o frete.
-    _stamp_list_prices_from_session(
-        payload, _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
-    )
+    open_tab = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
+    _stamp_list_prices_from_session(payload, open_tab)
+    # Venda SEM comanda: o preço que conta é o do motor, agora (P0-1). A venda
+    # sem conexão fica de fora: nela vale o cobrado (decisão D, 10/10/2026).
+    if open_tab is None and offline_at is None and not _payload_has_tab_identity(payload):
+        _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
     _ensure_resolved_prices(payload)
     _ensure_expected_total(payload, channel_ref=channel.ref, required=require_expected_total)
     # Guardado, não descartado: é este nome — o VERIFICADO — que assina a linha do
@@ -559,16 +562,26 @@ def _ensure_expected_total(payload: dict, *, channel_ref: str, required: bool) -
     current = _payload_total_q(payload)
     if int(expected) == current:
         return
-    raise PosIntentError(
+    raise _total_changed(old_total_q=int(expected), new_total_q=current)
+
+
+def _total_changed(*, old_total_q: int, new_total_q: int) -> PosIntentError:
+    """A recusa de quando o total da tela não é o total que se cobraria.
+
+    Uma frase só para as duas portas que a levantam: a conta da revisão
+    (``_ensure_expected_total``) e o próprio commit do Orderman, que confere o
+    ``expected_total_q`` contra a soma das linhas JÁ precificadas pelo motor.
+    """
+    return PosIntentError(
         code="total_changed",
         message=(
-            f"O total mudou de R$ {format_money(int(expected))} para R$ {format_money(current)}. "
+            f"O total mudou de R$ {format_money(old_total_q)} para R$ {format_money(new_total_q)}. "
             "Confira com o cliente antes de cobrar."
         ),
         field="expected_total_q",
         focus="payment",
         recovery="Confira o total novo com o cliente e finalize de novo.",
-        context={"old_total_q": int(expected), "new_total_q": current},
+        context={"old_total_q": old_total_q, "new_total_q": new_total_q},
     )
 
 
@@ -830,11 +843,19 @@ def _commit_sale_session(
                 session.session_key, charged_q, server_q,
             )
 
+    commit_ctx: dict = {"actor": actor}
+    if priced_at is None and payload.get("expected_total_q") is not None:
+        # O total que a tela mostrou é conferido contra as linhas que o MOTOR
+        # precificou, dentro do commit: divergiu, nada nasce e o operador vê o
+        # total novo (``total_changed``). Nunca mais o pagamento reescrito calado
+        # pelo ``_reconcile_order_payment_to_total`` (P0-1). A venda sem conexão
+        # fica de fora: nela vale o cobrado.
+        commit_ctx["expected_total_q"] = int(payload["expected_total_q"])
     result = session_service.commit_session(
         session_key=session.session_key,
         channel_ref=channel.ref,
         idempotency_key=_payload_client_request_id(payload) or session_service.new_idempotency_key(),
-        ctx={"actor": actor},
+        ctx=commit_ctx,
         channel_config=config.to_dict(),
     )
     # ⚠️ O carimbo da comanda e o marcador de trilha saíram daqui de propósito —
@@ -859,7 +880,7 @@ def review_sale(
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     require_receipt_identity_choice(payload)
-    channel, _config = _channel_and_config(channel_ref)
+    channel, config = _channel_and_config(channel_ref)
     weighed_sale.apply_to_payload(payload, channel=channel)
     _refuse_priceless_items(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
@@ -867,6 +888,10 @@ def review_sale(
         raise ValueError("Abra um POS tab antes de finalizar.")
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou.
     _stamp_list_prices_from_session(payload, session)
+    if session is None:
+        # Sem comanda, o kernel ainda não precificou nada: a revisão pergunta ao
+        # motor, para a tela mostrar o total que o fechamento vai cobrar (P0-1).
+        _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
     _ensure_resolved_prices(payload)
 
     fulfillment_type = _payload_fulfillment_type(payload)
@@ -1477,6 +1502,8 @@ def _commit_refusal(exc) -> PosIntentError:
     code = str(getattr(exc, "code", "") or "commit_refused")
     message = str(getattr(exc, "message", "") or "") or "A venda foi recusada pelas regras da loja."
     context = dict(getattr(exc, "context", None) or {})
+    if code == "total_changed" and {"old_total_q", "new_total_q"} <= set(context):
+        return _total_changed(old_total_q=int(context["old_total_q"]), new_total_q=int(context["new_total_q"]))
     field, focus, recovery = "", "cart", ""
     if code == "below_delivery_minimum":
         field, recovery = "items", DELIVERY_MINIMUM_RECOVERY
@@ -3374,6 +3401,79 @@ def _normalize_line_discount(raw) -> dict:
         kind = "percent"
     reason = str(raw.get("reason") or "cortesia").strip()[:120] or "cortesia"
     return {"type": kind, "value": value, "reason": reason}
+
+
+class _DiscardPricingProbe(Exception):
+    """Desfaz a sessão descartável de ``_stamp_engine_prices``."""
+
+
+_PRICING_PROBE_LINE = "pricing-probe-"
+
+
+def _stamp_engine_prices(payload: dict, *, channel: Channel, config: ChannelConfig, operator_username: str) -> None:
+    """Venda SEM comanda: carimba no payload o preço que o MOTOR dá agora (P0-1).
+
+    Com comanda, o kernel já precificou as linhas ao salvar, e
+    ``_stamp_list_prices_from_session`` traz a etiqueta de lá. Sem comanda não
+    havia sessão, e a revisão somava o preço da vitrine: no Happy Hour (ou na
+    Xepa) a tela dizia R$ 12,00, o commit aplicava o desconto, selava R$ 7,20 e
+    o pagamento era reescrito calado (troco que ninguém deu, maquininha acima
+    da nota).
+
+    O remédio é perguntar ao mesmo motor: as linhas passam por
+    ``modify_session`` numa sessão descartável (savepoint desfeito), com os
+    mesmos ops do fechamento, e cada linha volta com o preço pós-desconto
+    automático (``unit_price_q``) e a etiqueta (``list_price_q``), exatamente o
+    que a linha de uma comanda carrega. Os descontos MANUAIS ficam fora da
+    sonda de propósito: a conta deles continua com a revisão
+    (``_payload_line_discounts_q``/``_payload_applied_order_discount_q``), que os
+    mede contra estes preços, como faz com a comanda.
+
+    Recusa do Orderman na sonda não vira recusa aqui: o fechamento passa pelo
+    mesmo caminho e recusa com a frase da regra; a revisão segue com o que tem.
+    """
+    from shopman.orderman.exceptions import SessionError
+
+    items = payload.get("items") or []
+    if not any(isinstance(item, dict) and not _is_delivery_fee_item(item) for item in items):
+        return
+    probe = copy.deepcopy(payload)
+    probe.pop("manual_discount", None)
+    for index, item in enumerate(probe.get("items") or []):
+        if isinstance(item, dict):
+            item.pop("discount", None)
+            item["line_id"] = f"{_PRICING_PROBE_LINE}{index}"
+    priced: dict[str, dict] = {}
+    try:
+        with transaction.atomic():
+            session = _create_direct_checkout_session(
+                channel_ref=channel.ref, payload=probe, operator_username=operator_username,
+            )
+            session = session_service.modify_session(
+                session_key=session.session_key,
+                channel_ref=channel.ref,
+                ops=build_session_ops(probe, operator_username),
+                ctx={"actor": f"pos:{operator_username}"},
+                channel_config=config.to_dict(),
+            )
+            priced = {str(line.get("line_id") or ""): copy.deepcopy(line) for line in (session.items or [])}
+            raise _DiscardPricingProbe
+    except _DiscardPricingProbe:
+        pass
+    except (OrderValidationError, OrderCommitError, SessionError):
+        logger.info("pos_pricing_probe_refused channel=%s", channel.ref, exc_info=True)
+        return
+    for index, item in enumerate(items):
+        if not isinstance(item, dict) or _is_delivery_fee_item(item):
+            continue
+        line = priced.get(f"{_PRICING_PROBE_LINE}{index}")
+        if not line:
+            continue
+        price_q = _int_q(line.get("unit_price_q"))
+        if price_q <= 0:
+            continue
+        item["unit_price_q"] = price_q
+        item["list_price_q"] = _int_q((line.get("meta") or {}).get("_list_q")) or price_q
 
 
 def _stamp_list_prices_from_session(payload: dict, session) -> None:
