@@ -677,14 +677,6 @@ async function payOnSheet(method: string) {
   const letter = QUICK_PAYMENT_KEYS[method];
   if (letter) paymentWorkspaceRef.value?.pressMethodKey(letter);
 }
-// DIVIDIR A CONTA a partir da comanda (dono, 10/10): o mesmo modal do Pagamento
-// (decisão de 05/09: dividir é modal), aberto já no Pagamento, com o total da revisão.
-async function splitFromTicket() {
-  await prepareCheckout();
-  if (!checkoutMode.value) return;
-  await nextTick();
-  paymentWorkspaceRef.value?.openSplit();
-}
 // ENVIO AUTOMÁTICO (opcional por estação, desligado por padrão; dono, plano §13
 // item 3): a linha nova de uma estação com o interruptor ligado vai sozinha quando
 // o operador sai da comanda ou ela fica parada. Nunca no meio do lançamento, nunca
@@ -1647,7 +1639,6 @@ onBeforeUnmount(() => {
               @auto-fire-hold="(held) => { autoFireHeld = held; }"
               @fire="fireTab"
               @pay="payOnSheet"
-              @split="splitFromTicket"
               @auto-fire-settings="navigateTo('/settings/kitchen')"
               @unfire="unfireTab"
               @fire-lines="(ids, complete) => fireTab(ids).then(complete)"

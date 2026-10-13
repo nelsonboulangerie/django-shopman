@@ -245,7 +245,11 @@ for (const { scheme, size, width } of CASES) {
           count: cells.length,
         };
       });
-      expect(marked.count).toBe(6);
+      // O Transferir mora no pé e segue o foco (dono, 13/10): o bloco de N não o repete,
+      // e o Remover ocupa a linha de cima inteira, nas mesmas bordas.
+      expect(marked.count).toBe(5);
+      await expect(page.locator("[data-pos-tab-transfer]")).toHaveCount(1);
+      await expect(page.locator("[data-pos-batch-move]")).toHaveCount(0);
       expect(marked.lefts).toEqual(grid.lefts);
       expect(marked.rights).toEqual(grid.rights);
       expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
@@ -262,7 +266,7 @@ for (const size of SIZES) {
     const cells = page.locator("[data-pos-ticket-controls] > [data-pos-control-cell]");
     await expect(cells).toHaveCount(2);
     await expect(page.locator("[data-pos-control-cell='fire']")).toBeVisible();
-    await expect(page.locator("[data-pos-control-cell='split']")).toBeVisible();
+    await expect(page.locator("[data-pos-control-cell='transfer']")).toBeVisible();
     expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
   });
 }

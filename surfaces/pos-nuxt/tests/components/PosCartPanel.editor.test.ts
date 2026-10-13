@@ -167,36 +167,38 @@ describe("PosCartPanel — a grade de controles da comanda", () => {
     const line = wrapper.find("[data-pos-controls-block='line']");
     expect(line.findAll("[data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"))).toEqual(["qty", "remove", "discount", "note"]);
     const tab = wrapper.find("[data-pos-ticket-foot] [data-pos-controls-block='tab']");
-    expect(tab.findAll("[data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"))).toEqual(["fire", "split"]);
+    expect(tab.findAll("[data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"))).toEqual(["fire", "transfer"]);
     // A dica do teclado mora no cabeçalho do editor, não no pé.
     expect(wrapper.find("[data-pos-line-editor] [data-pos-keyboard-hint]").exists()).toBe(true);
   });
 
-  it("sem linha aberta, só Enviar | Dividir, no mesmo lugar", async () => {
+  it("sem linha aberta, só Enviar | Transferir, no mesmo lugar", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await wrapper.find("[data-pos-line-editor-close]").trigger("click");
     expect(wrapper.find("[data-pos-controls-block='line']").exists()).toBe(false);
     expect(wrapper.findAll("[data-pos-ticket-foot] [data-pos-control-cell]")).toHaveLength(2);
   });
 
-  it("Dividir pede o modal de dividir a conta", async () => {
+  it("Transferir no pé abre o mesmo diálogo do F10 (sem marcas, a escolha é lá); Dividir conta não existe na venda", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    await wrapper.find("[data-pos-split]").trigger("click");
-    expect(wrapper.emitted("split")).toHaveLength(1);
+    expect(wrapper.find("[data-pos-split]").exists()).toBe(false);
+    expect(wrapper.find("[data-pos-ticket-foot]").text()).not.toContain("Dividir");
+    await wrapper.find("[data-pos-tab-transfer]").trigger("click");
+    expect(wrapper.emitted("move")).toEqual([[undefined, "transfer"]]);
   });
 
-  it("tudo enviado: o Enviar diz o estado em palavra, apagado, e Dividir segue ao lado", async () => {
+  it("tudo enviado: o Enviar diz o estado em palavra, apagado, e Transferir segue ao lado", async () => {
     const fired = [item({ sku: "PAO", name: "Pão", fired: true, fired_qty: 1 })];
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: fired }) });
     const send = wrapper.find("[data-pos-fire]");
     expect(send.text()).toContain("Enviado");
     expect(send.attributes("disabled")).toBeDefined();
-    expect(wrapper.find("[data-pos-split]").exists()).toBe(true);
+    expect(wrapper.find("[data-pos-tab-transfer]").exists()).toBe(true);
   });
 
-  it("editando um pedido (Salvar alterações) não oferece Dividir", async () => {
+  it("editando um pedido (Salvar alterações) não oferece Transferir", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ primaryLabel: "Salvar alterações" }) });
-    expect(wrapper.find("[data-pos-split]").exists()).toBe(false);
+    expect(wrapper.find("[data-pos-tab-transfer]").exists()).toBe(false);
   });
 
   it("Pagamento numa linha: sem o rótulo 'total' empilhado; sem conexão diz 'total sem conexão'", async () => {

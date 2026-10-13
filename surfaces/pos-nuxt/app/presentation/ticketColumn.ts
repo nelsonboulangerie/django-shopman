@@ -1,7 +1,7 @@
 // A COLUNA DA COMANDA (WP-PDV-COLUNA-COMANDA, decisões do dono de 10/10/2026).
 //
 // Quatro zonas fixas: o cabeçalho (o que a comanda É, e a porta "Comanda ⋯"), a lista,
-// o bloco de ação (o objeto em foco) e o pé (Enviar · Dividir conta · Pagamento). O que
+// o bloco de ação (o objeto em foco) e o pé (Enviar · Transferir · Pagamento). O que
 // muda é o OBJETO em foco: a comanda, uma linha aberta ou várias linhas marcadas.
 //
 // MARCAR NÃO É MODO: a linha aberta é a primeira marcada; marcar outra transforma o
@@ -155,9 +155,9 @@ export interface KitchenStateView {
 }
 
 /**
- * O estado da cozinha em palavra: o que falta, o que já foi e QUANDO o envio automático
- * manda sozinho. O relógio de `pages/index.vue` envia ao sair da comanda ou depois de
- * 90 s sem mudança; a frase diz isso, e não só "ligado".
+ * O estado da cozinha em palavra: o que falta, o que já foi e o modo do envio, "Envio:
+ * Auto" ou "Envio: Manual" (dono, 13/10/2026). O QUANDO do Auto (ao sair da comanda ou
+ * depois de 90 s sem mudança, o relógio de `pages/index.vue`) mora na dica do toque.
  */
 export function kitchenStateView(args: { unfired: number; fired: number; autoFire: boolean; offline: boolean }): KitchenStateView {
   const parts: string[] = [];
@@ -173,8 +173,8 @@ export function kitchenStateView(args: { unfired: number; fired: number; autoFir
   return {
     counts: parts.join(" · "),
     auto: args.autoFire
-      ? { full: "envio automático: ao sair ou após 90 s parada", short: "automático: ao sair", tone: "muted", wide: true }
-      : { full: "envio automático: desligado", short: "automático desligado", tone: "muted", wide: false },
+      ? { full: "Envio: Auto", short: "Envio: Auto", tone: "muted", wide: false }
+      : { full: "Envio: Manual", short: "Envio: Manual", tone: "muted", wide: false },
     linksToSettings: true,
   };
 }

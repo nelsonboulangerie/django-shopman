@@ -13,7 +13,7 @@ function toggle(station: PosKitchenStationSetting) {
   void settings.save(
     "kitchen_station",
     { station_ref: station.ref, auto_fire: !station.auto_fire },
-    station.auto_fire ? `${station.name}: envio automático desligado.` : `${station.name}: envio automático ligado.`,
+    station.auto_fire ? `${station.name}: Envio Manual.` : `${station.name}: Envio Auto.`,
   );
 }
 </script>
@@ -24,7 +24,7 @@ function toggle(station: PosKitchenStationSetting) {
     <OperatorScreenState v-else-if="!settings.data.value" state="loading" what="as estações" />
     <template v-else>
       <p class="op-body text-muted-foreground">
-        Com o envio automático ligado, a linha nova da estação vai sozinha quando você sai da comanda ou ela fica um minuto e meio parada. Desligado, só vai no "Enviar à cozinha".
+        Envio Auto (interruptor ligado): a linha nova da estação vai sozinha quando você sai da comanda ou ela fica um minuto e meio parada. Envio Manual (desligado): só vai no "Enviar à cozinha".
       </p>
       <OperatorScreenState
         v-if="!settings.data.value.kitchen_stations.length"
@@ -48,11 +48,11 @@ function toggle(station: PosKitchenStationSetting) {
             </p>
           </div>
           <label class="flex shrink-0 items-center gap-2 op-micro text-muted-foreground">
-            <span class="max-sm:sr-only">envio automático</span>
+            <span class="max-sm:sr-only">Envio Auto</span>
             <UiSwitch
               :model-value="station.auto_fire"
               :disabled="settings.saving.value === 'kitchen_station'"
-              :aria-label="`Envio automático de ${station.name}`"
+              :aria-label="`Envio Auto de ${station.name}`"
               :data-settings-auto-fire="station.ref"
               @update:model-value="toggle(station)"
             />
