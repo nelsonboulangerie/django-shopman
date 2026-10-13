@@ -6,7 +6,7 @@ import { tabTitleView } from "~/presentation/tabTitle";
 // and emits intent; it owns no orchestration. `move_lines` is Arc 4 — here the
 // board only lists, selects and opens.
 import type { POSTabProjection } from "~/types/pos";
-import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
+import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardBadge, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
 import { nextFreeNumericTabRef } from "~/utils/posTabLifecycle";
 
 const props = defineProps<{
@@ -39,7 +39,10 @@ const openCount = computed(() => countOpenTabs(props.tabs));
 // O input de referência também FILTRA os cards enquanto digita (nome/ref).
 const queried = computed(() => filterTabsByQuery(ordered.value, props.modelValue));
 const cards = computed(() =>
-  filterTabs(queried.value, tabFilter.value).map((tab) => ({ tab, view: tabCardView(tab, props.selectedTabRef) })),
+  filterTabs(queried.value, tabFilter.value).map((tab) => {
+    const view = tabCardView(tab, props.selectedTabRef);
+    return { tab, view, badge: tabCardBadge(view) };
+  }),
 );
 // A próxima comanda numérica livre — um toque abre sem digitar nada.
 const nextFreeRef = computed(() => nextFreeNumericTabRef(props.tabs, props.zeroPadTo));
@@ -201,7 +204,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
       :class="tabView === 'grid' ? 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' : 'grid gap-2'"
     >
       <NuxtButton
-        v-for="{ tab, view } in cards"
+        v-for="{ tab, view, badge } in cards"
         :key="view.ref"
         color="neutral"
         variant="ghost"
@@ -211,38 +214,22 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
       >
         <div class="flex items-center justify-between gap-2">
           <span class="truncate font-semibold tabular-nums" :title="tabTitleView(view.displayRef, '').title">{{ tabTitleView(view.displayRef, "").title }}</span>
-          <!-- "Tudo pronto" (dono, 13/10/2026): o selo soft da suíte. Não se corta:
-               no cartão estreito (container query do cartão) fica só o sino, com o
-               nome inteiro no aria-label e na dica. -->
+          <!-- O selo de estado do cartão (dono, 13/10/2026): UM selo, sempre o NuxtBadge
+               soft da suíte, do mesmo tamanho em todo estado (D1/D5/D11); a cor e o
+               ícone vêm de `tabCardBadge`. Não se corta: no cartão estreito (container
+               query do cartão) fica só o ícone, com o nome no aria-label e na dica. -->
           <NuxtBadge
-            v-if="view.kitchenReady"
-            color="success"
+            :color="badge.color"
             size="md"
-            icon="lucide:bell-ring"
-            class="shrink-0 whitespace-nowrap font-semibold"
-            aria-label="Tudo pronto"
-            title="Tudo pronto: a cozinha terminou tudo desta comanda"
-            data-tab-kitchen-ready
+            :icon="badge.icon"
+            class="shrink-0 whitespace-nowrap"
+            :aria-label="badge.label"
+            :title="badge.title"
+            :data-tab-badge="badge.kind"
+            :data-tab-kitchen-ready="view.kitchenReady ? '' : undefined"
           >
-            <span class="hidden @[9rem]:inline" data-tab-kitchen-ready-label>Tudo pronto</span>
+            <span class="hidden @[9rem]:inline" data-tab-badge-label>{{ badge.label }}</span>
           </NuxtBadge>
-          <span
-            v-else-if="view.isUnpaid"
-            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
-            title="Disparado para a cozinha e ainda não pago"
-          >
-            <Icon name="lucide:flame" class="size-3" />
-            Não pago
-          </span>
-          <span
-            v-else-if="view.pendingKitchen"
-            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
-            title="Tem itens ainda não enviados à cozinha"
-          >
-            <Icon name="lucide:utensils" class="size-3" />
-            A enviar
-          </span>
-          <span v-else class="shrink-0 text-xs text-muted-foreground">{{ view.statusLabel }}</span>
         </div>
         <span class="truncate text-xs font-medium" :title="view.identity">{{ view.identity }}</span>
         <span

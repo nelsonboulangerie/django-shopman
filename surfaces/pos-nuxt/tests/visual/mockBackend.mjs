@@ -182,7 +182,8 @@ const pos = {
 // fotos das Encomendas não mudam.
 const SALE = process.env.MOCK_SCENARIO === "sale";
 const COLUMN_STATES = SALE && process.env.MOCK_COLUMN_STATES === "1";
-// A comanda 14 com a cozinha toda no Pronto: o selo "Tudo pronto" do quadro (só na prévia).
+// Os selos do quadro (só na prévia): a 14 com a cozinha toda no Pronto ("Tudo pronto")
+// e a 13 enviada à cozinha e não paga ("Não pago").
 const KITCHEN_READY = SALE && process.env.MOCK_KITCHEN_READY === "1";
 const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
 const PRODUCTS = [
@@ -387,6 +388,7 @@ const TABS = SALE
         state: "in_use", status_label: "Em uso", customer_name: "Roberto Albuquerque", item_count: 11, line_count: 9,
         total_display: brl(FULL_ITEMS.reduce((sum, item) => sum + item.price_q * item.qty, 0)), last_touched_display: "agora",
         items_preview: "1 Croque Monsieur · 2 Croissant · 1 Pain au chocolat", opened_at_display: "09:55",
+        ...(KITCHEN_READY ? { fired: true } : {}),
       }),
       tab("15"),
       ...(COLUMN_STATES

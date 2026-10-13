@@ -80,6 +80,38 @@ export interface TabCardView {
   selected: boolean;
 }
 
+/** O selo de estado do cartão de comanda: um só por cartão, na ordem do que o
+ *  balcão precisa fazer primeiro. Todo estado sai no MESMO selo (NuxtBadge soft do
+ *  tema, um tamanho); só cor, ícone e texto mudam. O ícone é o que fica no cartão
+ *  estreito, com `label` no aria e `title` na dica. */
+export interface TabCardBadge {
+  kind: "ready" | "unpaid" | "pending" | "status";
+  label: string;
+  title: string;
+  color: "success" | "warning" | "neutral";
+  icon: string;
+}
+
+export function tabCardBadge(view: TabCardView): TabCardBadge {
+  if (view.kitchenReady) {
+    return { kind: "ready", label: "Tudo pronto", title: "Tudo pronto: a cozinha terminou tudo desta comanda", color: "success", icon: "lucide:bell-ring" };
+  }
+  if (view.isUnpaid) {
+    return { kind: "unpaid", label: "Não pago", title: "Não pago: enviado à cozinha e ainda não pago", color: "warning", icon: "lucide:flame" };
+  }
+  if (view.pendingKitchen) {
+    return { kind: "pending", label: "A enviar", title: "A enviar: tem itens ainda não enviados à cozinha", color: "neutral", icon: "lucide:utensils" };
+  }
+  const label = view.statusLabel || (view.isInUse ? "Em uso" : "Livre");
+  return {
+    kind: "status",
+    label,
+    title: view.isInUse ? `${label}: comanda aberta, sem itens` : `${label}: comanda disponível`,
+    color: "neutral",
+    icon: view.isInUse ? "lucide:circle-dot" : "lucide:circle-dashed",
+  };
+}
+
 /**
  * Shape a free-text tab reference for input: strip control chars and the
  * channel's disallowed characters, collapse whitespace, and clamp to the
