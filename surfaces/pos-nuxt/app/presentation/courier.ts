@@ -37,6 +37,18 @@ export function courierBadgeColor(tone: string | undefined): "neutral" | "info" 
   return "neutral";
 }
 
+/** O que, com a TaOn, ainda é só do Gestor de pedidos: a frase curta do painel. */
+export const GESTOR_ONLY_COURIER_LINE = "No Gestor de pedidos: cancelar a corrida e registrar a volta do troco ou da maquininha.";
+
+/** O aviso "a saída é pelo Gestor" sai quando o PDV já oferece o Entregador: ele
+ *  contradiz a tela. Sem o painel (TaOn desligada), o aviso continua. */
+export function showsDeliveryExitNotice(
+  card: Pick<PreorderCard, "fulfillment_type">,
+  courier: PreorderCourier | null | undefined,
+): boolean {
+  return !(card.fulfillment_type === "delivery" && courierPanelVisible(courier));
+}
+
 /** O painel do entregador aparece quando há o que dizer ou o que fazer: corrida
  *  pedida (qualquer estado), chamada sem resposta, falha, ou chamar agora. Antes
  *  de a encomenda poder sair, ele não ocupa a tela. */
@@ -63,30 +75,14 @@ export function telHref(phone: string): string {
 }
 
 // ── A custódia da chamada (troco da gaveta, maquininha da casa) ───────────
-
-/** As maquininhas livres para sair com o entregador. */
-export function freeMachines(options: readonly PreorderEquipmentOption[]): PreorderEquipmentOption[] {
-  return options.filter((opt) => opt.ref.startsWith("card_machine:") && opt.enabled !== false);
-}
-
-/** "maquininha Azul" (o rótulo pode já começar com "Maquininha"). */
-export function machinePhrase(label: string): string {
-  const clean = label.trim();
-  if (!clean) return "maquininha";
-  return clean.toLowerCase().startsWith("maquininha") ? clean[0]!.toLowerCase() + clean.slice(1) : `maquininha ${clean}`;
-}
+// `freeMachines`, `machinePhrase` e `moneyInput` moram no kit
+// (`operator-kit/app/presentation/custody.ts`): o Gestor usa os mesmos.
 
 /** Sem maquininha livre: onde estão as que existem (o motivo é do servidor). */
 export function noFreeMachineSentence(options: readonly PreorderEquipmentOption[]): string {
   const busy = options.filter((opt) => opt.ref.startsWith("card_machine:") && opt.reason);
   const where = busy.map((opt) => `${opt.label}: ${opt.reason}`).join(". ");
   return `${where ? `${where}. ` : "Nenhuma maquininha livre. "}Espere uma voltar para chamar.`;
-}
-
-/** Centavos → "20,00", o formato do campo de troco (o servidor lê vírgula). */
-export function moneyInput(amountQ: number): string {
-  const cents = Math.max(0, Math.round(amountQ));
-  return `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, "0")}`;
 }
 
 /** O corpo da chamada: só o que a chamada perguntou. */

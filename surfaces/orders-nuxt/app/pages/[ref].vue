@@ -14,12 +14,12 @@ import {
   changeBackSuggestionQ,
   confirmationRemainingLabel,
   lucideIcon,
-  moneyInput,
   realtimeIndicator,
   splitRef,
   statusTone,
   undoLine,
 } from "~/presentation/board";
+import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import { onMounted, onBeforeUnmount } from "vue";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";

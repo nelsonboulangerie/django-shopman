@@ -227,3 +227,24 @@ def test_entrega_pronta_sem_corrida_diz_que_o_entregador_nao_foi_chamado(caixa, 
     # Antes de poder chamar (a régua é do servidor: `courier.RIDE_ORDER_STATUSES`),
     # a linha não fala da corrida (zero não é informação).
     assert (cedo["courier_label"], cedo["courier_call"]) == ("", False)
+
+
+# ── Seguimento: o canal pelo nome, o aviso que contradizia a tela ─────────
+
+
+def test_o_detalhe_diz_o_canal_pelo_nome_nunca_pelo_ref_cru(caixa, shop):
+    """Sem cadastro do canal, o rótulo humano das Encomendas ("PDV"), não o "pdv"."""
+    client, _ = caixa
+    _delivery()
+
+    assert _detail(client, "PDV-ENT")["channel_name"] == "PDV"
+
+
+def test_o_canal_cadastrado_fala_o_nome_do_cadastro(caixa, shop):
+    from shopman.shop.models import Channel
+
+    client, _ = caixa
+    Channel.objects.create(ref="pdv", name="Balcão da loja")
+    _delivery()
+
+    assert _detail(client, "PDV-ENT")["channel_name"] == "Balcão da loja"

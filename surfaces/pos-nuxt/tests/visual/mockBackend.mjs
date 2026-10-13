@@ -476,7 +476,7 @@ function send(res, status, payload) {
 const preorderDetail = {
   ref: "NB-1042", status: "accepted", status_label: "Aceito", context: "pos",
   actions: [{ ref: "comment", label: "Comentar", enabled: true, reason: "", payload_schema: { base_revision: "rev-c" } }],
-  channel_ref: "web", channel_icon: "language", total_display: "R$ 86,00",
+  channel_ref: "web", channel_name: "Loja online", channel_icon: "language", total_display: "R$ 86,00",
   customer_name: "Ana Souza", customer_ref: "C-1", customer_phone: "(43) 99988-7766",
   customer_phone_uri: "tel:+5543999887766", customer_whatsapp_url: "https://wa.me/5543999887766",
   customer_email: "ana.souza.com.um.endereco.comprido@exemplo.com.br",
@@ -570,7 +570,7 @@ function rideDetail(ref) {
     payload_schema: { base_revision: `rev-${ref}`, expected_actor_id: 7 },
   });
   return {
-    ...preorderDetail, ref, status: RIDES[ref].status, status_label: "Pronto", channel_ref: "pdv", channel_icon: "storefront",
+    ...preorderDetail, ref, status: RIDES[ref].status, status_label: "Pronto", channel_ref: "pdv", channel_name: "PDV", channel_icon: "storefront",
     customer_name: RIDES[ref].name, fulfillment_type: "delivery", fulfillment_label: "Entrega",
     delivery_address: "Rua das Flores, 123 · Centro · Londrina", payment_method_label: "Dinheiro na entrega",
     items: preorderDetail.items.slice(0, 3), customer_note: "",

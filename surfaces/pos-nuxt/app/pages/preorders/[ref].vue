@@ -33,7 +33,7 @@ import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetail";
 import { handOverCta, redoNotice } from "~/presentation/preorderActions";
 import { customerLine, moneyLine, rowShowsSituation, situationTone } from "~/presentation/preorders";
-import { courierPanelVisible } from "~/presentation/courier";
+import { courierPanelVisible, showsDeliveryExitNotice } from "~/presentation/courier";
 import { canComment, detailAction, toneBadge } from "../../../../operator-kit/app/presentation/orderDetail";
 import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
 
@@ -241,7 +241,7 @@ function goBack() {
               @click="handOverOpen = true"
             />
             <NuxtAlert
-              v-else-if="card.situation !== 'delivered'"
+              v-else-if="card.situation !== 'delivered' && showsDeliveryExitNotice(card, detail.courier)"
               color="info"
               variant="subtle"
               icon="i-lucide-info"

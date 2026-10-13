@@ -9,6 +9,8 @@ import type {
   OrderTimerClass,
   TwoZoneQueueProjection,
 } from "~/types/orders";
+// A custódia do entregador (troco, maquininha) mora no kit: o PDV chama o mesmo.
+import { freeMachines, moneyInput } from "../../../operator-kit/app/presentation/custody";
 
 // ── Status tone, ícone do canal e "fatos numa linha" ──────────────────────
 // Moram no kit (`operator-kit/app/presentation/orderDetail.ts`) porque o detalhe
@@ -763,14 +765,6 @@ export function tripCandidates(
   );
 }
 
-export function freeMachines(
-  options: EquipmentOptionProjection[],
-): EquipmentOptionProjection[] {
-  return options.filter(
-    (opt) => opt.ref.startsWith("card_machine:") && opt.enabled !== false,
-  );
-}
-
 export interface DispatchStep {
   ref: string;
   changeOut?: string;
@@ -847,15 +841,6 @@ export function machinesOutSentence(
   return `${subject}: ${refs.length === 1 ? "pedido" : "pedidos"} ${joinRefs(refs)}.`;
 }
 
-/** "Saiu com a maquininha Azul" (o rótulo pode já começar com "Maquininha"). */
-export function machinePhrase(label: string): string {
-  const clean = label.trim();
-  if (!clean) return "maquininha";
-  return clean.toLowerCase().startsWith("maquininha")
-    ? clean[0]!.toLowerCase() + clean.slice(1)
-    : `maquininha ${clean}`;
-}
-
 /** Os pedidos que "Entregador voltou" fecha, para a confirmação ("Fecha os pedidos 0415 e 0418."). */
 export function courierReturnOrders(
   card: Pick<OrderCardProjection, "courier_return_orders">,
@@ -896,12 +881,6 @@ export function changeBackSuggestionQ(
   card: Pick<OrderCardProjection, "change_out_q">,
 ): number {
   return Math.max(0, card.change_out_q);
-}
-
-/** Centavos → "20,00" (para preencher o campo; o rótulo "R$" fica na tela). */
-export function moneyInput(amountQ: number): string {
-  const cents = Math.max(0, Math.round(amountQ));
-  return `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, "0")}`;
 }
 
 // ── Kitchen note tags ───────────────────────────────────────────────────────

@@ -1056,12 +1056,18 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
 
 
 def _channel_name(ref: str) -> str:
-    """O nome do canal como a loja o chama ("Loja online"); o ref cru só sem cadastro."""
+    """O nome do canal como a loja o chama ("Loja online", "PDV").
+
+    Nunca o ref cru (identificador técnico na tela): sem cadastro ou sem nome, o
+    rótulo humano das Encomendas (``preorders._fallback_channel_label``).
+    """
     if not ref:
         return ""
+    from shopman.backstage.projections.preorders import _fallback_channel_label
     from shopman.shop.models import Channel
 
-    return Channel.objects.filter(ref=ref).values_list("name", flat=True).first() or ref
+    name = Channel.objects.filter(ref=ref).values_list("name", flat=True).first()
+    return (name or "").strip() or _fallback_channel_label(ref)
 
 
 #: Até onde ainda é "na loja" (metros do ponto cadastrado): o pátio e a calçada.

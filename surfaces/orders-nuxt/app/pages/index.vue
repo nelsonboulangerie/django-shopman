@@ -19,7 +19,6 @@ import {
   flattenZones,
   fulfillmentCounts,
   lucideIcon,
-  moneyInput,
   negotiationZoneView,
   nextOutRef,
   nextSort,
@@ -33,6 +32,7 @@ import {
   timerTone,
   triageCards,
 } from "~/presentation/board";
+import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import type { OrderCardProjection } from "~/types/orders";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";

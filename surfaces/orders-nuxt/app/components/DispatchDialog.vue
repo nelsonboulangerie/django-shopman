@@ -6,14 +6,12 @@ import type { OrderCardProjection } from "~/types/orders";
 import {
   dispatchAsksChange,
   dispatchSteps,
-  freeMachines,
-  machinePhrase,
   machinesOutSentence,
-  moneyInput,
   splitRef,
   tripCandidates,
   type DispatchStep,
 } from "~/presentation/board";
+import { freeMachines, machinePhrase, moneyInput } from "../../../operator-kit/app/presentation/custody";
 
 const props = defineProps<{
   card: OrderCardProjection | null;
