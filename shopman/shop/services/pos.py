@@ -1876,6 +1876,8 @@ def move_pos_tab_lines(
     to_session_key: str = "",
     to_tab_ref: str = "",
     close_source_when_empty: bool = False,
+    seating_spot_ref: str = "",
+    seating_spot_label: str = "",
     actor: str,
     operator_username: str,
 ) -> PosMoveResult:
@@ -1945,6 +1947,19 @@ def move_pos_tab_lines(
                 field="to_tab_ref",
                 focus="cart",
             )
+        spot_ref = str(seating_spot_ref or "").strip()
+        if spot_ref:
+            # A mesa livre escolhida no Transferir (dono, M=1): uma mesa tem no máximo uma
+            # comanda aberta, a mesma régua do ``set_pos_tab_seating``.
+            holder = Session.objects.filter(channel_ref=channel.ref, state="open", data__seating_spot_ref=spot_ref).first()
+            if holder is not None:
+                holder_display = str((holder.data or {}).get("tab_display") or holder.handle_ref or "")
+                raise PosIntentError(
+                    code="seating_spot_in_use",
+                    message=f"{seating_spot_label or 'Esta mesa'} já está com a comanda {holder_display}.",
+                    field="seating_spot_ref",
+                    focus="cart",
+                )
         tab_display = _ensure_pos_tab(ref, display=_tab_label_from_input(to_tab_ref, ref))
         source_data = source.data or {}
         target = session_service.create_session(
@@ -1970,8 +1985,11 @@ def move_pos_tab_lines(
                     "at": timezone.now().isoformat(),
                     "by": operator_username,
                 },
+                **({"seating_spot_ref": spot_ref} if spot_ref else {}),
             },
         )
+        if spot_ref:
+            target.emit_event("tab_seated", actor=operator_username, payload={"seating_spot_ref": spot_ref})
         target_created = True
     else:
         raise PosIntentError(

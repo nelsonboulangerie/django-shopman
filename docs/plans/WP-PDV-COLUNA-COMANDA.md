@@ -148,6 +148,11 @@ concluído limpa as marcas; Esc desmarca tudo; dígito não faz nada com marcas.
 > sem frase de teclas. O Envio é o controle "Envio [Auto | Manual]" no cabeçalho, que
 > grava o interruptor das estações da comanda. A alternativa B (barra no alto) foi
 > descartada.
+>
+> **M=1 (dono, 13/10/2026).** O campo "Para qual comanda?" aceita a mesa do Salão: a mesa
+> ocupada leva à comanda dela ("Levar 3 itens para a Mesa 4 (#12)"); a livre abre a
+> comanda nova pré-nomeada já vinculada a ela (`seating_spot_ref`), com a lista "Mesas
+> livres" ao lado de "Comandas em uso".
 
 **Quando estreita.** Tecla cai primeiro, depois o rótulo curto escrito à mão, ícone só no fim.
 A grade nunca vira uma coluna; "em 9 linhas" cai antes; o total do Pagamento nunca corta. Na
