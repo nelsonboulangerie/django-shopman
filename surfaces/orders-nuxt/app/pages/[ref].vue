@@ -75,6 +75,7 @@ const {
   saveNotes,
   addComment,
   courierDispatch,
+  courierDispatchAgain,
   courierCancel,
   courierQuote,
   managerChallenge,
@@ -207,6 +208,26 @@ const hasUnsavedText = computed(
 );
 // Session-only drafts: leaving requires an explicit discard while text is dirty.
 const confirmDiscard = useConfirm();
+
+// "Chamar de novo": a frase da confirmação vem do servidor (a Action), uma só.
+const confirmDispatchAgain = useConfirm();
+async function onCourierDispatchAgain() {
+  const action = order.value?.actions?.find(
+    (item) => item.ref === "courier-dispatch-again",
+  );
+  const description = String(
+    (action?.confirmation as { description?: string } | undefined)
+      ?.description || "",
+  );
+  const go = await confirmDispatchAgain({
+    tone: "primary",
+    title: "Chamar o entregador de novo?",
+    description,
+    confirmLabel: "Chamar de novo",
+    cancelLabel: "Voltar",
+  });
+  if (go) await courierDispatchAgain();
+}
 onBeforeRouteLeave(() => {
   if (!hasUnsavedText.value) return true;
   return confirmDiscard({
@@ -1059,8 +1080,14 @@ const outside = useOutsideStore(
             "
             :equipment-options="order.equipment_options ?? []"
             :busy="busy"
+            :dispatch-again-action="
+              order.actions.find(
+                (action) => action.ref === 'courier-dispatch-again',
+              )
+            "
             @quote="courierQuote"
             @dispatch="courierDispatch"
+            @dispatch-again="onCourierDispatchAgain"
             @cancel="courierCancel"
           />
           <!-- comprovante de entrega dos avisos ao cliente (D3) -->

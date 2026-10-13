@@ -3670,6 +3670,28 @@ class OrderCourierDispatchView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Release a courier dispatch without confirmed outcome and dispatch again",
+        responses={200: OpenApiResponse(description="Unconfirmed dispatch released; new dispatch queued.")},
+    ),
+)
+class OrderCourierDispatchAgainView(_OrderActionBase):
+    intention_operation = "courier-dispatch-again"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+
+        def enqueue(base):
+            task = orders_service.courier_dispatch_again(order, actor=_actor(request), expected_revision=base)
+            return {"directive_id": task.pk, "status": task.status}
+
+        return self._context_response(request, order, self.intention_operation, {}, enqueue)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Cancel the active external courier ride",
         responses={200: OpenApiResponse(description="Courier cancellation queued; remote outcome pending.")},
     ),

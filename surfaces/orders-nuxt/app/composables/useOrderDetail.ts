@@ -103,6 +103,7 @@ export function useOrderDetail(orderRef: string) {
           "requeue-fiscal",
           "resend-payment-link",
           "courier-dispatch",
+          "courier-dispatch-again",
           "courier-cancel",
           "courier-quote",
           "undo-handoff",
@@ -276,6 +277,14 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
+  // "Chamar de novo": a última chamada ficou sem resposta da TaOn. Libera a
+  // chamada pendente e chama outra (a confirmação é da página).
+  async function courierDispatchAgain(): Promise<boolean> {
+    const ok = await act("courier-dispatch-again");
+    if (ok) useSonner.success("Pedido de entregador enviado à TaOn.");
+    return ok;
+  }
+
   async function courierCancel(): Promise<boolean> {
     const ok = await act("courier-cancel");
     if (ok)
@@ -313,6 +322,7 @@ export function useOrderDetail(orderRef: string) {
     saveNotes,
     addComment,
     courierDispatch,
+    courierDispatchAgain,
     courierCancel,
     courierQuote,
     managerChallenge,

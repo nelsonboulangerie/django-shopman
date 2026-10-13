@@ -70,6 +70,8 @@ export type CourierBlock = {
   error: { message: string; at: string } | null;
   can_quote: boolean;
   can_dispatch: boolean;
+  /** A última chamada à TaOn ficou sem resposta: "Chamar de novo" libera e chama outra. */
+  can_dispatch_again?: boolean;
   can_cancel: boolean;
   /** O que a chamada pergunta: troco da gaveta e maquininha da casa. */
   custody?: {

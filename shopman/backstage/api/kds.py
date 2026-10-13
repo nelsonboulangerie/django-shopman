@@ -2,6 +2,7 @@
 
 GET  /api/v1/backstage/kds/                       → list of KDS instances
 GET  /api/v1/backstage/kds/<ref>/                 → KDS board projection
+GET  /api/v1/backstage/kds/<ref>/history/?q=      → Histórico de hoje da estação
 POST /api/v1/backstage/kds/tickets/<pk>/start/    → put ticket in progress
 POST /api/v1/backstage/kds/tickets/<pk>/done/     → mark ticket done
 POST /api/v1/backstage/kds/<ref>/seen/           → "Visto" da estação (K20)
@@ -26,6 +27,7 @@ from rest_framework.views import APIView
 from shopman.backstage.projections.kds import (
     build_kds_board,
     build_kds_customer_status,
+    build_kds_history,
     build_kds_index,
     build_kds_ticket,
     build_printed_ticket_receipt,
@@ -93,6 +95,35 @@ class KDSBoardView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response({"board": projection_data(board)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Histórico de hoje da estação (concluídos e cancelados desde 0h)",
+        responses={
+            200: OpenApiResponse(description="Histórico de hoje, os mais recentes primeiro."),
+            404: OpenApiResponse(description="Estação inexistente ou desativada."),
+        },
+    ),
+)
+class KDSHistoryView(APIView):
+    """Fora do quadro de propósito: o quadro vai a cada push e a cada 15 s; o
+    histórico só quando alguém abre. ``?q=`` busca pelo código ou pelo cliente."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_kds"
+
+    def get(self, request, ref: str):
+        query = str(request.query_params.get("q") or "")[:60]
+        try:
+            history = build_kds_history(ref, query=query)
+        except KDSInstanceNotFound:
+            return Response(
+                {"detail": "Esta estação não existe mais. Escolha outra na lista de estações."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response({"history": projection_data(history)})
 
 
 @extend_schema_view(

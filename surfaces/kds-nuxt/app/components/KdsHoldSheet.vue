@@ -2,7 +2,8 @@
 // O menu do toque longo no celular (prévia v4 `cozinha-celular` b, nota 7: "Desfazer,
 // reabrir e o pedido no toque longo, sem botões a mais na tela"). Sobe da base
 // (`NuxtDrawer`), ao alcance do polegar, com os gestos que o tablet mostra no card:
-// ver o pedido, desfazer o pronto (na janela de 5 s) e reabrir um concluído.
+// ver o pedido, desfazer o pronto (na janela de 5 s) e o Histórico de hoje (onde mora o
+// Reabrir, dono 13/10/2026).
 import type { KDSTicketProjection } from "~/types/kds";
 import { splitRef } from "~/presentation/board";
 
@@ -11,18 +12,16 @@ const props = defineProps<{
   ticket: KDSTicketProjection | null;
   /** O pronto deste ticket ainda está na janela de desfazer. */
   finishing: boolean;
-  /** Concluídos dos últimos 30 minutos que dá para reabrir. */
-  recentCount: number;
 }>();
-const emit = defineEmits<{ "update:open": [boolean]; view: []; undo: []; reopen: [] }>();
+const emit = defineEmits<{ "update:open": [boolean]; view: []; undo: []; history: [] }>();
 
 const code = computed(() => (props.ticket ? splitRef(props.ticket.order_ref).code : ""));
 
-function choose(action: "view" | "undo" | "reopen") {
+function choose(action: "view" | "undo" | "history") {
   // O gesto antes de fechar: quem escuta ainda sabe de qual pedido é.
   if (action === "view") emit("view");
   else if (action === "undo") emit("undo");
-  else emit("reopen");
+  else emit("history");
   emit("update:open", false);
 }
 </script>
@@ -62,16 +61,15 @@ function choose(action: "view" | "undo" | "reopen") {
           @click="choose('undo')"
         />
         <NuxtButton
-          v-if="recentCount"
           size="xl"
           color="neutral"
           variant="ghost"
           block
-          icon="i-lucide-rotate-ccw"
+          icon="i-lucide-history"
           class="justify-start"
-          :label="`Reabrir um concluído (${recentCount})`"
-          data-kds-hold-reopen
-          @click="choose('reopen')"
+          label="Histórico de hoje"
+          data-kds-hold-history
+          @click="choose('history')"
         />
       </div>
     </template>

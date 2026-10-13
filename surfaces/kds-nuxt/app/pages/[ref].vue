@@ -23,7 +23,7 @@
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
-import type { KDSTicketProjection } from "~/types/kds";
+import type { KDSHistoryEntryProjection, KDSTicketProjection } from "~/types/kds";
 import {
   boardFilterCounts,
   elapsedLabel,
@@ -63,7 +63,6 @@ const {
   finish,
   undoFinish,
   finishUntil,
-  recall,
   acknowledgeChange,
   declareVolumes,
   volumesBusy,
@@ -134,8 +133,28 @@ const emptyTodayLine = computed(() =>
     : "Nenhum pedido na fila agora. O som está desligado: o próximo pedido aparece aqui sem avisar.",
 );
 
-// Recall: painel de concluídos recentes (desfazer o Pronto).
-const recallOpen = ref(false);
+// Histórico de hoje (dono, 13/10/2026): concluídos e cancelados desde 0h, só desta
+// estação, numa leitura própria (fora do quadro). Reabrir mora lá, onde a régua deixa.
+const {
+  open: historyOpen,
+  query: historyQuery,
+  history: historyData,
+  pending: historyPending,
+  error: historyError,
+  reopeningPk: historyReopeningPk,
+  load: loadHistory,
+  reopen: reopenHistoryTicket,
+} = useKdsHistory(stationRef.value);
+const historyEntry = ref<KDSHistoryEntryProjection | null>(null);
+async function reopenFromHistory(pk: number) {
+  const entry = historyData.value?.entries.find((e) => e.ticket.pk === pk);
+  if (!(await reopenHistoryTicket(pk))) return;
+  historyOpen.value = false;
+  historyEntry.value = null;
+  const code = entry ? splitRef(entry.ticket.order_ref).code : "";
+  useSonner.success(code ? `${code} voltou para a fila, em preparo.` : "O pedido voltou para a fila, em preparo.");
+  await refresh();
+}
 
 // Relógio em tempo real (client-only; new Date() no SSR causaria mismatch).
 const now = ref<Date | null>(null);
@@ -329,19 +348,16 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
   return alerts;
 });
 
-// O ⋯ "Mais ações": o que age na tela inteira. Reabrir (desfazer um Pronto de até 30
-// minutos) e Atualizar. Tamanho do ticket e som moram na barra da estação (dono,
-// 13/10/2026); só o celular, que não tem a barra, guarda os Ajustes da estação no ⋯.
+// O ⋯ "Mais ações": o que age na tela inteira. O Histórico de hoje (ver e reabrir o que
+// já saiu do quadro) e Atualizar. Tamanho do ticket e som moram na barra da estação
+// (dono, 13/10/2026); só o celular, que não tem a barra, guarda os Ajustes da estação no ⋯.
 const headerActions = computed<OperatorHeaderAction[]>(() => {
-  const recent = view.value?.recentDone.length ?? 0;
   return [
     {
-      label: recent ? `Reabrir um concluído (${recent})` : "Reabrir um concluído",
-      icon: "i-lucide-rotate-ccw",
-      disabled: !recent,
-      reason: recent ? undefined : "Nada concluído nos últimos 30 minutos.",
+      label: "Histórico de hoje",
+      icon: "i-lucide-history",
       onSelect: () => {
-        recallOpen.value = true;
+        historyOpen.value = true;
       },
     },
     ...(isPhone.value
@@ -364,19 +380,25 @@ const openTicketPk = ref<number | null>(null);
 const openTicket = computed<KDSTicketProjection | null>(() => {
   const pk = openTicketPk.value;
   if (pk == null) return null;
-  // O concluído recente também abre: embalar vem depois do Pronto, e os volumes se
-  // declaram no detalhe.
-  return tickets.value.find((c) => c.pk === pk) ?? view.value?.recentDone.find((c) => c.pk === pk) ?? null;
+  return tickets.value.find((c) => c.pk === pk) ?? null;
 });
+// O detalhe mostra o ticket do quadro, ou o do Histórico de hoje em só leitura (por cima
+// da lista: fechar o detalhe volta à lista).
+const shownTicket = computed(() => openTicket.value ?? historyEntry.value?.ticket ?? null);
 async function onVolumes(count: number) {
-  if (openTicket.value) await declareVolumes(openTicket.value, count);
-}
-function openFromRecent(pk: number) {
-  recallOpen.value = false;
-  openTicketPk.value = pk;
+  const ticket = shownTicket.value;
+  if (!ticket) return;
+  const saved = await declareVolumes(ticket, count);
+  if (saved && historyEntry.value) {
+    await loadHistory();
+    historyEntry.value = historyData.value?.entries.find((e) => e.ticket.pk === ticket.pk) ?? null;
+  }
 }
 function setModalOpen(value: boolean) {
-  if (!value) openTicketPk.value = null;
+  if (!value) {
+    openTicketPk.value = null;
+    historyEntry.value = null;
+  }
 }
 
 // O ticket em foco no celular: o tocado (ou o deslizado para Pronto), senão o primeiro
@@ -709,77 +731,39 @@ function clearSearchAndFilter() {
       />
     </div>
 
-    <!-- detalhe (aberto pelo card ou pelo toque longo) -->
-    <KdsTicketModal
-      :open="openTicket != null"
-      :ticket="openTicket"
-      :volumes-busy="volumesBusy"
-      @update:open="setModalOpen"
-      @volumes="onVolumes"
-    />
-
-    <!-- toque longo no celular: ver o pedido, desfazer, reabrir -->
+    <!-- toque longo no celular: ver o pedido, desfazer, o Histórico de hoje -->
     <KdsHoldSheet
       v-model:open="holdOpen"
       :ticket="heldTicket"
       :finishing="heldTicket ? view?.finishingPks.has(heldTicket.pk) ?? false : false"
-      :recent-count="view?.recentDone.length ?? 0"
       @view="heldTicket && (openTicketPk = heldTicket.pk)"
       @undo="heldTicket && undoFinish(heldTicket.pk)"
-      @reopen="recallOpen = true"
+      @history="historyOpen = true"
     />
 
-    <!-- recall: concluídos recentes (desfazer o Pronto) -->
-    <NuxtModal
-      v-model:open="recallOpen"
-      title="Concluídos recentes"
-      description="Reabra um pedido marcado Pronto por engano (últimos 30 minutos)."
-    >
-      <template #body>
-        <OperatorScreenState
-          v-if="!view || !view.recentDone.length"
-          state="empty"
-          in-card
-          icon="i-lucide-rotate-ccw"
-          title="Nada concluído nos últimos 30 minutos."
-        />
-        <ul v-else class="flex flex-col gap-1.5" data-kds-recall-list>
-          <li
-            v-for="t in view.recentDone"
-            :key="t.pk"
-            class="flex items-center gap-3 rounded-lg border border-default p-3"
-          >
-            <div class="min-w-0 flex-1">
-              <p class="text-lg font-bold tabular-nums leading-tight">
-                {{ splitRef(t.order_ref).code }}
-              </p>
-              <p class="break-words op-label text-muted-foreground">
-                {{ t.customer_name || t.order_ref
-                }}<template v-if="t.completed_at_display"> · {{ t.completed_at_display }}</template>
-              </p>
-            </div>
-            <NuxtButton
-              v-if="t.volumes_order_ref"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-package"
-              :label="t.volumes ? `${t.volumes} volumes` : 'Volumes'"
-              :aria-label="`Volumes do pedido ${splitRef(t.order_ref).code}`"
-              data-kds-recent-volumes
-              @click="openFromRecent(t.pk)"
-            />
-            <NuxtButton
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-rotate-ccw"
-              label="Reabrir"
-              :aria-label="`Reabrir o pedido ${splitRef(t.order_ref).code}`"
-              @click="recall(t.pk)"
-            />
-          </li>
-        </ul>
-      </template>
-    </NuxtModal>
+    <!-- Histórico de hoje: concluídos e cancelados desde 0h, só desta estação. Vem ANTES
+         do detalhe: o detalhe aberto da lista desenha por cima dela (ordem do portal). -->
+    <KdsHistoryDialog
+      v-model:open="historyOpen"
+      v-model:query="historyQuery"
+      :history="historyData"
+      :pending="historyPending"
+      :error="historyError"
+      :reopening-pk="historyReopeningPk"
+      @view="(entry) => (historyEntry = entry)"
+      @reopen="reopenFromHistory"
+      @retry="loadHistory()"
+    />
+
+    <!-- detalhe (aberto pelo card ou pelo toque longo) -->
+    <KdsTicketModal
+      :open="shownTicket != null"
+      :ticket="shownTicket"
+      :history="openTicket ? null : historyEntry"
+      :volumes-busy="volumesBusy"
+      @update:open="setModalOpen"
+      @volumes="onVolumes"
+    />
   </main>
 </template>
 

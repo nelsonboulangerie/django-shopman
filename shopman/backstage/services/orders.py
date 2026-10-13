@@ -515,6 +515,18 @@ def courier_dispatch(order, *, actor: str, expected_revision=None, operator=None
         raise OrderError(str(exc) or "Não foi possível despachar a corrida.") from exc
 
 
+def courier_dispatch_again(order, *, actor: str, expected_revision=None):
+    """"Chamar de novo": libera a chamada sem resposta da TaOn e chama outra."""
+    from shopman.shop.services import courier
+
+    try:
+        return courier.release_unresolved_dispatch(order, actor=actor, expected_revision=expected_revision)
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except ValueError as exc:
+        raise OrderError(str(exc) or "Não foi possível chamar de novo.") from exc
+
+
 def courier_cancel(order, *, actor: str, reason_id=None, expected_revision=None):
     """Cancela a corrida ativa na central de entregas."""
     from shopman.shop.services import courier

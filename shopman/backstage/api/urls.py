@@ -58,6 +58,7 @@ from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
     KDSExitPrintedStationDoneView,
+    KDSHistoryView,
     KDSIndexView,
     KDSPrintedTicketDoneView,
     KDSPrintedTicketScanView,
@@ -143,6 +144,7 @@ from .operations import (
     OrderConfirmView,
     OrderCourierBackView,
     OrderCourierCancelView,
+    OrderCourierDispatchAgainView,
     OrderCourierDispatchView,
     OrderCourierQuoteView,
     OrderDanfeEscposView,
@@ -320,6 +322,7 @@ urlpatterns = [
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
     path("kds/<slug:ref>/", KDSBoardView.as_view(), name="api-backstage-kds-board"),
+    path("kds/<slug:ref>/history/", KDSHistoryView.as_view(), name="api-backstage-kds-history"),
     path("kds/<slug:ref>/seen/", KDSStationSeenView.as_view(), name="api-backstage-kds-station-seen"),
     path("kds/<slug:ref>/settings/", KDSStationSettingsView.as_view(), name="api-backstage-kds-station-settings"),
     path("kds/<slug:ref>/follow/", KDSStationFollowView.as_view(), name="api-backstage-kds-station-follow"),
@@ -723,6 +726,11 @@ urlpatterns = [
         "orders/<str:ref>/courier-dispatch/",
         OrderCourierDispatchView.as_view(),
         name="api-backstage-order-courier-dispatch",
+    ),
+    path(
+        "orders/<str:ref>/courier-dispatch-again/",
+        OrderCourierDispatchAgainView.as_view(),
+        name="api-backstage-order-courier-dispatch-again",
     ),
     path(
         "orders/<str:ref>/courier-cancel/", OrderCourierCancelView.as_view(), name="api-backstage-order-courier-cancel"
