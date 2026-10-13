@@ -68,7 +68,7 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     # permissions.can_operate_pos + admin/pos.py + cashman.contrib.admin_unfold
     ("cashman.operate_pos", {"Caixa", "Gerente"}),
     # permissions.can_operate_kds + admin/kds.py
-    ("backstage.operate_kds", {"Cozinha"}),
+    ("backstage.operate_kds", {"Cozinha", "Caixa", "Gerente"}),
     # permissions.can_operate_production (dedicated floor app gate)
     ("backstage.operate_production", {"Cozinha", "Gerente"}),
     # permissions.can_operate_purchase (dedicated purchase/receipt app gate)
