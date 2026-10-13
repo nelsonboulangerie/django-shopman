@@ -603,8 +603,6 @@ def _pos_sale_review_payload(review) -> dict:
         "delivery_date": review.delivery_date,
         "delivery_slots": list(review.delivery_slots),
         "delivery_earliest_slot": review.delivery_earliest_slot,
-        # Entrega com nota exige CPF/CNPJ: a tela trava o fechamento sem ele.
-        "delivery_tax_id_required": review.delivery_tax_id_required,
     }
 
 

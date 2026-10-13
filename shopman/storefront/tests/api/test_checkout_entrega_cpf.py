@@ -1,8 +1,10 @@
-"""Loja: entrega com nota pede o CPF/CNPJ no checkout; na próxima ele já vem preenchido.
+"""Loja: entrega oferece o CPF/CNPJ no checkout, opcional; na próxima ele já vem preenchido.
 
-Decisão do dono (24/09/2026): pedir o CPF na ENTRADA do pedido; sem CPF, a
-entrega não fica disponível e a retirada continua. A trava é do commit
-(``DeliveryFiscalIdentityRule``); a loja manda o dado e lê a recusa no campo.
+Decisão do dono (13/10/2026, substitui a de 24/09): a praxe do delivery vale
+para todos os canais. Sem CPF a entrega entra e a nota sai presencial,
+consumidor não identificado; com CPF, a nota de entrega. A trava do commit
+(``DeliveryFiscalIdentityRule``) recusa só o documento errado e o endereço
+incompleto; a loja manda o dado e lê a recusa no campo.
 
 Decisão do dono (25/09/2026): na próxima entrega o campo vem com o documento
 do cadastro ou, sem ele, com o da última entrega. O cadastro só é escrito
@@ -81,13 +83,17 @@ def _post(client, **over):
     )
 
 
-def test_entrega_sem_cpf_e_recusada_no_campo_do_cpf(client, delivery_with_note):
+def test_entrega_sem_cpf_vira_pedido_com_nota_presencial(client, delivery_with_note):
     resp = _post(client)
-    assert resp.status_code == 400, resp.content
-    body = resp.json()
-    assert body["field"] == "fiscal_tax_id"
-    assert body["errors"] == {"fiscal_tax_id": "Para entregar, precisamos do CPF ou CNPJ para a nota fiscal."}
-    assert not Order.objects.exists()
+    assert resp.status_code == 201, resp.content
+    order = Order.objects.get(ref=resp.json()["order_ref"])
+    assert not (order.data.get("fiscal") or {}).get("tax_id")
+
+    assert fiscal.delivery_issues_as_presential(order, requested_tax_id="") is True
+    emission = fiscal.build_emission_payload(order)
+    assert emission["delivery"] is None
+    assert not emission["customer"].get("tax_id")
+    assert all(item["sku"] != "__DELIVERY_FEE__" for item in emission["items"])
 
 
 def test_cpf_com_digito_errado_e_recusado_antes_do_commit(client, delivery_with_note):

@@ -3,9 +3,15 @@
 A SEFAZ recusa a nota de entrega a domicílio sem a identificação do consumidor e
 sem o endereço completo (rejeições 787/788). Antes desta regra o pedido entrava
 sem nada disso e a recusa só aparecia na emissão, com o entregador já na rua
-(alerta crítico ``fiscal_emit_failed``). Decisão do dono (24/09/2026): pedir o
-CPF na ENTRADA do pedido; quem não quiser informar não tem entrega, e a
-retirada continua aberta.
+(alerta crítico ``fiscal_emit_failed``).
+
+Decisão do dono (13/10/2026, substitui a de 24/09): a PRAXE do delivery vale
+para todos os canais. Entrega SEM CPF/CNPJ é aceita, e a NFC-e sai como venda
+presencial (``indPres=1``, consumidor não identificado, sem grupo de entrega),
+exatamente como o iFood sem CPF (``fiscal.delivery_issues_as_presential``). Com
+CPF/CNPJ, a nota de entrega a domicílio (``indPres=4``) exige o documento
+válido e o endereço completo, e é isso que a porta confere. O endereço completo
+continua exigido na entrada de toda entrega com nota prevista.
 
 Uma régua só, em três leitores:
 
@@ -23,8 +29,11 @@ Uma régua só, em três leitores:
 
 A ordem da trava importa: o que vale é a nota que VAI sair. Um CPF informado
 (mesmo errado) já é pedido de nota (``on_request_or_tax_id``), então CPF
-inválido é sempre recusado; sem CPF, a regra da env decide se a nota sai por
-outro motivo (pagamento eletrônico, liquidação na entrega).
+inválido é sempre recusado; sem CPF nada se recusa pelo documento.
+
+``recipient_gaps`` é a régua da NOTA DE ENTREGA (a emissão exige o documento
+nela); ``delivery_fiscal_gaps`` é a régua da PORTA, que deixa passar a falta
+do documento porque a nota, então, sai presencial.
 """
 
 from __future__ import annotations
@@ -39,7 +48,7 @@ ADDRESS_FIELD = "delivery_address"
 
 #: Os códigos com que a porta recusa; quem traduz erro em campo lê daqui.
 REFUSAL_CODES = frozenset({
-    "delivery_tax_id_required", "delivery_tax_id_invalid", "delivery_address_incomplete",
+    "delivery_tax_id_invalid", "delivery_address_incomplete",
 })
 
 _VALID_STATES = frozenset({
@@ -111,7 +120,6 @@ _ADDRESS_WORDS = {
     "CEP de 8 dígitos": "o CEP",
 }
 
-TAX_ID_REQUIRED_MESSAGE = "Para entregar, precisamos do CPF ou CNPJ para a nota fiscal."
 TAX_ID_INVALID_MESSAGE = "Confira o CPF ou CNPJ: os números não conferem."
 
 
@@ -166,27 +174,30 @@ def requires_delivery_fiscal_identity(order) -> bool:
 def delivery_fiscal_gaps(order) -> list[RecipientGap]:
     """As lacunas que impedem esta entrega de entrar — vazio quando pode.
 
-    Sem nota prevista, nada falta. Com nota, a régua é a da emissão.
+    Sem nota prevista, nada falta. Com nota, a régua é a da emissão, menos o
+    documento AUSENTE: entrega sem CPF/CNPJ sai com a nota presencial
+    (decisão do dono, 13/10/2026). Documento informado e inválido continua
+    recusado.
     """
     if not requires_delivery_fiscal_identity(order):
         return []
     data = getattr(order, "data", None) or {}
-    return recipient_gaps(
+    gaps = recipient_gaps(
         tax_id=(data.get("fiscal") or {}).get("tax_id"),
         address=data.get("delivery_address_structured"),
     )
+    return [gap for gap in gaps if gap.code != "delivery_tax_id_required"]
 
 
 def refusal(gaps: list[RecipientGap]) -> tuple[str, str, str] | None:
     """``(code, field, message)`` da recusa, ou ``None``. O CPF vem primeiro.
 
-    Uma recusa por vez, no campo que o conserto pede: com o CPF faltando e o
+    Uma recusa por vez, no campo que o conserto pede: com o CPF errado e o
     endereço incompleto, o CPF é o que só a pessoa pode dar.
     """
     if not gaps:
         return None
     tax = next((gap for gap in gaps if gap.field == TAX_ID_FIELD), None)
     if tax is not None:
-        message = TAX_ID_REQUIRED_MESSAGE if tax.code == "delivery_tax_id_required" else TAX_ID_INVALID_MESSAGE
-        return tax.code, TAX_ID_FIELD, message
+        return tax.code, TAX_ID_FIELD, TAX_ID_INVALID_MESSAGE
     return "delivery_address_incomplete", ADDRESS_FIELD, address_gap_message(gaps)

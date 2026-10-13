@@ -5,10 +5,10 @@ import CheckoutPage from '~/pages/finalizar.vue'
 import { PICKUP_TAX_ID_WHY, TAX_ID_INVALID_MESSAGE, TAX_ID_WHY } from '~/presentation/taxId'
 import type { CheckoutProjection } from '~/types/shopman'
 
-// CPF/CNPJ NA NOTA (decisões do dono, 24 e 25/09/2026): toda entrega pede o
-// CPF/CNPJ no MESMO passo do endereço, com o porquê numa linha. Sem CPF, a
-// entrega não fecha e a retirada fica a um toque; na retirada o documento é o
-// "CPF na nota?" do balcão, opcional. Na próxima vez o documento já vem no
+// CPF/CNPJ NA NOTA (decisão do dono, 13/10/2026, substitui a de 24/09): a
+// entrega OFERECE o CPF/CNPJ no MESMO passo do endereço, opcional. Sem CPF a
+// entrega fecha e a nota sai presencial, consumidor não identificado; na
+// retirada o documento é o "CPF na nota?" do balcão, opcional. Na próxima vez o documento já vem no
 // campo, e nunca vai para o rascunho do aparelho. Guardar no cadastro é
 // PERGUNTA, desmarcada, só quando o cadastro ainda não tem documento.
 
@@ -96,14 +96,22 @@ async function abrirCheckout (checkout: CheckoutProjection) {
   return page
 }
 
-describe('checkout: a entrega com nota pede o CPF no passo do endereço', () => {
-  it('mostra o campo com o porquê, e a retirada sem CPF a um toque', async () => {
+describe('checkout: a entrega oferece o CPF no passo do endereço, opcional', () => {
+  it('mostra o campo como convite, sem mandar para a retirada', async () => {
     const page = await abrirCheckout(projection())
     const block = page.find('[data-checkout-tax-id]')
     expect(block.exists()).toBe(true)
-    expect(block.text()).toContain('CPF ou CNPJ para a nota fiscal')
+    expect(block.text()).toContain('CPF ou CNPJ na nota (opcional)')
     expect(block.text()).toContain(TAX_ID_WHY)
-    expect(block.find('[data-checkout-tax-id-pickup]').text()).toContain('Retire na loja, sem CPF')
+    expect(block.text()).not.toContain('Retire na loja')
+    page.unmount()
+  })
+
+  it('campo vazio não acusa erro: a entrega segue sem CPF', async () => {
+    const page = await abrirCheckout(projection())
+    await page.find('#checkout-tax-id').setValue('')
+    expect(page.find('[data-checkout-tax-id] [data-slot="field-error"]').exists()).toBe(false)
+    expect(page.text()).not.toContain('Falta o CPF')
     page.unmount()
   })
 

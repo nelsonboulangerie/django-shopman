@@ -123,10 +123,6 @@ class PosSaleReview:
     #: A primeira janela oferecível deste dia para este carrinho, ou "". A tela
     #: usa para pré-selecionar sem ter que refazer a conta do servidor.
     delivery_earliest_slot: str = ""
-    #: ENTREGA COM NOTA: esta entrega vai ter NFC-e mesmo sem CPF, e a nota de
-    #: entrega não sai sem ele. A tela trava o fechamento enquanto "CPF na
-    #: nota" estiver vazio (a review não é refeita quando o CPF muda).
-    delivery_tax_id_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -1081,7 +1077,6 @@ def review_sale(
         delivery_date=delivery_day.isoformat() if delivery_day else "",
         delivery_slots=delivery_slots,
         delivery_earliest_slot=delivery_earliest_slot,
-        delivery_tax_id_required=_delivery_tax_id_required(payload, channel_ref=channel.ref),
     )
 
 
@@ -1321,7 +1316,7 @@ def _require_contact_if_payment_link(payload: dict) -> None:
     )
 
 
-def _delivery_fiscal_order_view(payload: dict, *, channel_ref: str, require_complete: bool, with_tax_id: bool = True):
+def _delivery_fiscal_order_view(payload: dict, *, channel_ref: str, require_complete: bool):
     """O pedido de entrega que ainda não existe, como a regra fiscal o lê.
 
     A pergunta "vai ter nota?" é a da emissão: ela lê o pagamento (as linhas),
@@ -1352,25 +1347,9 @@ def _delivery_fiscal_order_view(payload: dict, *, channel_ref: str, require_comp
         "delivery_address_structured": structured if isinstance(structured, dict) else {},
     }
     tax_id = str(payload.get("fiscal_tax_id") or "").strip()
-    if with_tax_id and tax_id:
+    if tax_id:
         data["fiscal"] = {"tax_id": tax_id}
     return identity.order_view(data=data, channel_ref=channel_ref, total_q=total_q)
-
-
-def _delivery_tax_id_required(payload: dict, *, channel_ref: str) -> bool:
-    """Esta entrega vai ter nota MESMO sem CPF? Então o CPF é obrigatório.
-
-    Publicado na review para a tela travar o botão ao vivo: o "CPF na nota"
-    não refaz a review (não muda o total), então a tela confere o campo por
-    conta própria contra esta resposta.
-    """
-    if _payload_fulfillment_type(payload) != "delivery":
-        return False
-    from shopman.shop.services import delivery_fiscal_identity as identity
-
-    return identity.requires_delivery_fiscal_identity(
-        _delivery_fiscal_order_view(payload, channel_ref=channel_ref, require_complete=False, with_tax_id=False)
-    )
 
 
 def _delivery_address_warning(payload: dict, *, channel_ref: str) -> dict | None:
@@ -1397,7 +1376,10 @@ def _delivery_address_warning(payload: dict, *, channel_ref: str) -> dict | None
 
 
 def _require_delivery_fiscal_identity(payload: dict, *, channel_ref: str) -> None:
-    """Entrega com nota não fecha sem o CPF/CNPJ e o endereço completo.
+    """Entrega com nota não fecha com o CPF/CNPJ errado nem sem o endereço completo.
+
+    Sem CPF/CNPJ a entrega fecha: a nota sai presencial, consumidor não
+    identificado (decisão do dono, 13/10/2026, a praxe do delivery).
 
     A mesma trava do commit (``rules.validation.DeliveryFiscalIdentityRule``),
     perguntada antes do commit para a recusa chegar no campo em que o operador
@@ -1416,10 +1398,10 @@ def _require_delivery_fiscal_identity(payload: dict, *, channel_ref: str) -> Non
     if field == identity.TAX_ID_FIELD:
         raise PosIntentError(
             code=code,
-            message=DELIVERY_TAX_ID_REQUIRED_MESSAGE,
+            message=identity.TAX_ID_INVALID_MESSAGE,
             field="fiscal_tax_id",
             focus="receipt",
-            recovery="Preencha \"CPF na nota\". Sem o documento, a entrega não fecha; a retirada continua.",
+            recovery="Corrija o \"CPF na nota\" ou apague o documento: sem ele a nota sai sem identificar o cliente.",
         )
     raise PosIntentError(
         code=code,
@@ -1515,10 +1497,6 @@ def _commit_refusal(exc) -> PosIntentError:
         status=409 if code in _COMMIT_CONFLICT_CODES else 422,
         recovery=recovery,
     )
-
-
-#: A frase do balcão para a entrega com nota sem CPF (a tela usa a mesma).
-DELIVERY_TAX_ID_REQUIRED_MESSAGE = "Entrega com nota fiscal: a SEFAZ exige o CPF ou CNPJ do cliente."
 
 
 def _payload_payment_method_set(payload: dict) -> set[str]:

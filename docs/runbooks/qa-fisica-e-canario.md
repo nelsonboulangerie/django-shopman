@@ -106,7 +106,7 @@ G1.3). Combine com o gerente.
 - [ ] ★ **C6.1** Novo pedido; em **Como receber**, escolher **Entrega**.
 - [ ] ★ **C6.2** Em **Endereço de entrega**, digitar "Rua, número ou CEP" de um endereço da área. **Confira:** o mapa pergunta "É aqui que vamos entregar?"; depois de **Usar este endereço**: "Entregamos no seu endereço · taxa de R$ X · a N km".
 - [ ] **C6.3** Testar um endereço fora da área. **Confira:** "Ainda não entregamos nesse endereço" e o botão para trocar para retirada.
-- [ ] ★ **C6.4** **Confira:** o campo "CPF ou CNPJ para a nota fiscal" é obrigatório na entrega; sem ele, o pedido não segue ("Falta o CPF ou CNPJ para a nota fiscal.").
+- [ ] ★ **C6.4** **Confira:** o campo "CPF ou CNPJ na nota (opcional)" aparece na entrega e, vazio, o pedido segue (a nota sai presencial, sem identificar o consumidor); CPF com dígito errado é recusado.
 - [ ] **C6.5** Em **Quando**, escolher a data. **Confira:** na entrega não há escolha de horário (só data).
 - [ ] ★ **C6.6** Em **Pagamento**, escolher **Cartão**, **Revisar pedido**, **Enviar pedido**.
 - [ ] ★ **C6.7** Na página do pedido, tocar em **Pagar com cartão**. **Confira:** abre a página segura do Stripe numa aba nova. Ensaio: cartão `4242 4242 4242 4242`, validade futura, CVC qualquer. Dia D: cartão real.
