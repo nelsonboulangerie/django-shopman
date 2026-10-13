@@ -917,6 +917,11 @@ describe("presentation/moveLines — move modes, gate & payload", () => {
       .toEqual({ mode: "transfer", lineIds: ["L1"], toSessionKey: "s1" });
     expect(buildMovePayload({ mode: "merge", items, selectedIds: [], splitRef: "", targetSessionKey: "s1" }))
       .toEqual({ mode: "merge", lineIds: ["L1", "L2"], toSessionKey: "s1", closeSource: true });
+    // Levar TODOS os itens pede a liberação da origem vazia (dono, T2=1).
+    expect(buildMovePayload({ mode: "transfer", items, selectedIds: ["L1", "L2"], splitRef: "", targetSessionKey: "s1" }))
+      .toEqual({ mode: "transfer", lineIds: ["L1", "L2"], toSessionKey: "s1", closeSource: true });
+    expect(buildMovePayload({ mode: "split", items, selectedIds: ["L2", "L1"], splitRef: "1007-2", targetSessionKey: "" }))
+      .toEqual({ mode: "split", lineIds: ["L2", "L1"], toTabRef: "1007-2", closeSource: true });
     expect(buildMovePayload({ mode: "split", items, selectedIds: [], splitRef: "x", targetSessionKey: "" })).toBeNull();
     expect(buildMovePayload({ mode: "merge", items: [], selectedIds: [], splitRef: "", targetSessionKey: "s1" })).toBeNull();
   });

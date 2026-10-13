@@ -87,6 +87,8 @@ import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
+import { sourceReleasedMessage } from "~/presentation/moveLines";
+import { tabTitleView } from "~/presentation/tabTitle";
 import {
   offlineSaleBlockers,
   offlinePaymentLabel,
@@ -3495,12 +3497,21 @@ export function usePosSale(deps: PosSaleDeps) {
         { body },
       );
       moveDialogOpen.value = false;
+      const sourceRef = cart.tabRef;
+      const sourceTitle = tabTitleView(cart.tabDisplay, "").title;
       if (response.source_closed || !response.source) {
         resetCart();
       } else {
         await setFromTabPayload(response.source);
       }
       await refresh();
+      // A ORIGEM QUE FICOU VAZIA FOI LIBERADA SOZINHA (dono, T2=1, 13/10/2026): a frase diz
+      // isso e o Desfazer reabre a comanda (vazia), para quem ainda vai lançar nela.
+      if (response.source_closed && sourceRef) {
+        toast.info(sourceReleasedMessage(sourceTitle), {
+          action: { label: "Desfazer", onClick: () => { void openTab(sourceRef); } },
+        });
+      }
     } catch (error) {
       serverError.value = `${httpErrorMessage(error, "Os itens não foram movidos.")} Eles seguem na comanda de origem. Tente de novo.`;
     } finally {
