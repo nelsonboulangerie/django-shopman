@@ -217,6 +217,10 @@ class PreorderHandOverProjection:
     # Pix ou link pendente que o balcão vai cancelar ao receber: a linha que a
     # tela mostra antes de confirmar. Vazio quando não há cobrança digital viva.
     digital_charge_notice: str = ""
+    # A cozinha ainda não deu o pronto (aceita ou em preparo): entregar afirma
+    # o pronto, como o "Marcar pronto" do Gestor. A linha que a tela mostra
+    # antes de confirmar; vazio quando a encomenda já está pronta.
+    kitchen_notice: str = ""
 
 
 @dataclass(frozen=True)
@@ -482,7 +486,12 @@ def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHand
         suggested_method=method if method in {"cash", "debit", "credit"} else "",
         block_reason=reason,
         digital_charge_notice=counter_takeover.notice_for(digital) if digital else "",
+        kitchen_notice=KITCHEN_NOTICE if not reason and order.status != "ready" else "",
     )
+
+
+#: Entregar antes do pronto da cozinha: o que acontece com a tela dela.
+KITCHEN_NOTICE = "A cozinha ainda não marcou pronto. Ao entregar, a encomenda sai da tela da cozinha."
 
 
 def _reschedule(order, card: PreorderCardProjection) -> PreorderRescheduleProjection:

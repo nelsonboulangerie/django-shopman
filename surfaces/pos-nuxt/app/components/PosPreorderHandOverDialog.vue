@@ -59,6 +59,14 @@ function confirm() {
     <template #body>
       <form class="grid gap-4" data-preorder-hand-over-dialog @submit.prevent="confirm">
         <NuxtAlert
+          v-if="handOver.kitchen_notice"
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-chef-hat"
+          :title="handOver.kitchen_notice"
+          data-preorder-kitchen-notice
+        />
+        <NuxtAlert
           v-if="handOver.needs_payment && handOver.digital_charge_notice"
           color="warning"
           variant="subtle"
