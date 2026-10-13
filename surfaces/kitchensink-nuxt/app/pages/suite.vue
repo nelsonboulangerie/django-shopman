@@ -106,7 +106,7 @@ onMounted(() => {
           :alerts="alerts"
         >
           <template #status>
-            <OperatorLiveStatus tone="calm" label="Atualiza sozinho a cada 30 s" detail="Fixtures locais" />
+            <OperatorLiveStatus tone="calm" label="Atualiza sozinho a cada 30 s" short-label="A cada 30 s" detail="Fixtures locais" />
           </template>
           <template #filters-primary>
             <NuxtSelect

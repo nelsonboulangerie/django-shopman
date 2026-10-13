@@ -39,6 +39,8 @@ export function shouldConnectSse(enabled: boolean | undefined): boolean {
 export interface PosLiveStatusView {
   tone: "live" | "calm";
   label: string;
+  /** O curto do selo quando a barra aperta (kit `OperatorLiveStatus`, degrau 2). */
+  shortLabel?: string;
   detail: string;
 }
 
@@ -54,5 +56,5 @@ export function posLiveStatus(input: { online: boolean; realtime: PosRealtimeSta
   if (input.realtime === "live") {
     return { tone: "live", label: "Ao vivo", detail: "Mudanças de outras estações chegam na hora" };
   }
-  return { tone: "calm", label: "Atualiza sozinho a cada 60 s", detail: "O tempo real ainda não conectou; a tela relê sozinha" };
+  return { tone: "calm", label: "Atualiza sozinho a cada 60 s", shortLabel: "A cada 60 s", detail: "O tempo real ainda não conectou; a tela relê sozinha" };
 }

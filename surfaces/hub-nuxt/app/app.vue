@@ -24,6 +24,7 @@ import {
   APPS_HINT_COPY,
   HUB_NAMED_OF,
   HUB_REFRESH_LABEL,
+  HUB_REFRESH_SHORT_LABEL,
   HUB_SECTIONS,
   hubBrandLine,
   hubFailure,
@@ -283,6 +284,7 @@ function toneDot(tile: HubTileProjection): string {
                 :tone="staleRead ? 'late' : 'calm'"
                 :time="staleRead ? readClock : ''"
                 :label="HUB_REFRESH_LABEL"
+                :short-label="HUB_REFRESH_SHORT_LABEL"
                 :detail="brandLine"
               />
               <span class="text-xs text-muted max-sm:hidden" data-hub-brand>

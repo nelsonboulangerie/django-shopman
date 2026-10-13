@@ -91,8 +91,10 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         <h2 class="flex items-center gap-1.5 op-title">
           <Icon name="lucide:bike" class="size-4" /> Entregador
         </h2>
+        <!-- Com o aviso de "não respondeu" na tela, o selo sai: ele dizia o mesmo
+             assunto logo acima do aviso ("Sem resposta da TaOn"). Um lugar só. -->
         <NuxtBadge
-          v-if="courier.status_label"
+          v-if="courier.status_label && !courier.can_dispatch_again"
           :color="
             tone === 'danger'
               ? 'error'
@@ -121,10 +123,12 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       </div>
 
       <div class="flex flex-col gap-3">
-        <!-- a TaOn não respondeu à última chamada: só ela trava chamar outra -->
+        <!-- a TaOn não respondeu à última chamada: só ela trava chamar outra. É
+             cautela (a corrida pode ter aberto), não erro da casa: tom de atenção, e
+             o botão acompanha a cor do aviso. -->
         <NuxtAlert
           v-if="courier.can_dispatch_again"
-          color="error"
+          color="warning"
           variant="subtle"
           icon="i-lucide-circle-help"
           :title="
@@ -136,7 +140,7 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
           <template #actions>
             <NuxtButton
               type="button"
-              color="error"
+              color="warning"
               variant="outline"
               icon="i-lucide-refresh-cw"
               label="Chamar de novo"

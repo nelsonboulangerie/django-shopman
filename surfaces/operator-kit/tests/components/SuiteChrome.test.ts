@@ -661,6 +661,8 @@ describe("OperatorLiveStatus", () => {
   // o estado por extenso, cada tom com a sua cor. Selo `soft` pelo tema, chip com o
   // anel `ring-2` do tema. Nenhum tom escreve a palavra inglesa de ligado/desligado.
   const NO_ENGLISH_SWITCH = /\bO(?:n|ff)\b/;
+  // O selo mora dentro do invólucro que é o contêiner do encaixe (`data-live-fit`).
+  const live = (wrapper: { get: (selector: string) => any }) => wrapper.get("[data-operator-live-status]");
   const dot = (wrapper: VueWrapper) =>
     wrapper.find("[data-slot='root'] > [data-slot='base']");
 
@@ -671,15 +673,15 @@ describe("OperatorLiveStatus", () => {
     mounted.push(wrapper as unknown as VueWrapper);
     expect(wrapper.text().trim()).toBe("22:03");
     expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
-    expect(wrapper.attributes("class")).toContain("bg-success/10");
-    expect(wrapper.attributes("class")).not.toContain("ring-inset");
+    expect(live(wrapper).attributes("class")).toContain("bg-success/10");
+    expect(live(wrapper).attributes("class")).not.toContain("ring-inset");
     const base = dot(wrapper as unknown as VueWrapper);
     expect(base.classes()).toContain("bg-success");
     expect(base.classes()).toContain("h-[10px]");
     expect(base.classes()).toContain("ring-2");
-    expect(wrapper.attributes("aria-label")).toContain("Ao vivo");
-    expect(wrapper.attributes("aria-label")).toContain("22:03");
-    expect(wrapper.attributes("data-live-tone")).toBe("live");
+    expect(live(wrapper).attributes("aria-label")).toContain("Ao vivo");
+    expect(live(wrapper).attributes("aria-label")).toContain("22:03");
+    expect(live(wrapper).attributes("data-live-tone")).toBe("live");
   });
 
   it("calmo: neutro, sem ponto, a cadência por extenso", async () => {
@@ -689,10 +691,50 @@ describe("OperatorLiveStatus", () => {
     mounted.push(wrapper as unknown as VueWrapper);
     expect(wrapper.text().trim()).toBe("Atualiza sozinho a cada 60 s");
     expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
-    expect(wrapper.attributes("class")).toContain("bg-elevated");
-    expect(wrapper.attributes("class")).not.toContain("ring-accented");
+    expect(live(wrapper).attributes("class")).toContain("bg-elevated");
+    expect(live(wrapper).attributes("class")).not.toContain("ring-accented");
     expect(dot(wrapper as unknown as VueWrapper).exists()).toBe(false);
-    expect(wrapper.attributes("aria-label")).toContain("10:30");
+    expect(live(wrapper).attributes("aria-label")).toContain("10:30");
+  });
+
+  it("o rótulo que cabe: o invólucro é o contêiner, pede a largura do completo e leva o curto escrito pelo app", async () => {
+    const wrapper = await mountSuspended(OperatorLiveStatus, {
+      props: { tone: "calm", label: "Atualiza sozinho a cada 60 s", shortLabel: "A cada 60 s" },
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    // O textContent continua sendo só o completo; o curto é conteúdo gerado.
+    expect(wrapper.text().trim()).toBe("Atualiza sozinho a cada 60 s");
+    expect(live(wrapper).classes()).not.toContain("op-fit-scope");
+    const fit = wrapper.get("[data-live-fit]");
+    expect(fit.classes()).toContain("op-fit-scope");
+    const style = fit.attributes("style") ?? "";
+    // Completo e curto, cada um com o respiro do selo (1rem); o curto é menor.
+    const full = Number(style.match(/--op-fit-full:\s*calc\(([\d.]+)em \+ 1rem\)/)?.[1]);
+    const shortEm = Number(style.match(/--op-fit-short:\s*calc\(([\d.]+)em \+ 1rem\)/)?.[1]);
+    expect(full).toBeGreaterThan(shortEm);
+    expect(shortEm).toBeGreaterThan(0);
+    expect(style).toContain("width: calc(var(--op-fit-full) + 0.25px)");
+    expect(style).toContain("min-width: 2rem");
+    expect(wrapper.find("[data-op-fit-variant='full']").text()).toBe("Atualiza sozinho a cada 60 s");
+    const short = wrapper.get("[data-op-fit-variant='short']");
+    expect(short.attributes("data-op-fit-short")).toBe("A cada 60 s");
+    expect(short.attributes("aria-hidden")).toBe("true");
+    // Degrau 3: o ícone de atualizar, com o completo no nome acessível e na dica.
+    expect(wrapper.find("[data-live-sign]").exists()).toBe(true);
+    expect(live(wrapper).attributes("title")).toContain("Atualiza sozinho a cada 60 s");
+    // Nenhuma classe corta o texto (o `truncate` do label do Badge saía "Atualiza sozinho a cada").
+    expect(wrapper.html()).not.toMatch(/\btruncate\b/);
+  });
+
+  it("fora do calmo não há curto: do completo direto ao ponto", async () => {
+    const wrapper = await mountSuspended(OperatorLiveStatus, {
+      props: { tone: "late", time: "10:04", label: "Sem atualizar", shortLabel: "A cada 60 s" },
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    expect(wrapper.find("[data-op-fit-variant='short']").exists()).toBe(false);
+    expect(wrapper.find("[data-op-fit-variant='only']").text()).toBe("Última leitura às 10:04");
+    expect(wrapper.find("[data-live-sign]").exists()).toBe(false);
+    expect(wrapper.get("[data-live-fit]").attributes("style")).toContain("min-width: 1.625rem");
   });
 
   it("atrasado: âmbar, com ponto, e a hora da última leitura por extenso", async () => {
@@ -701,11 +743,11 @@ describe("OperatorLiveStatus", () => {
     });
     mounted.push(wrapper as unknown as VueWrapper);
     expect(wrapper.text().trim()).toBe("Última leitura às 10:04");
-    expect(wrapper.attributes("class")).toContain("bg-warning/10");
+    expect(live(wrapper).attributes("class")).toContain("bg-warning/10");
     expect(dot(wrapper as unknown as VueWrapper).classes()).toContain(
       "bg-warning",
     );
-    expect(wrapper.attributes("aria-label")).toContain("Sem atualizar");
+    expect(live(wrapper).attributes("aria-label")).toContain("Sem atualizar");
   });
 
   it('sem conexão: ponto vermelho e "Sem conexão", sem hora; o motivo do app fica acessível', async () => {
@@ -716,13 +758,13 @@ describe("OperatorLiveStatus", () => {
     expect(wrapper.text().trim()).toBe("Sem conexão");
     expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
     expect(wrapper.text()).not.toContain("22:03");
-    expect(wrapper.attributes("aria-label")).toContain("Atualização falhou");
-    expect(wrapper.attributes("aria-label")).not.toContain("22:03");
-    expect(wrapper.attributes("class")).toContain("bg-error/10");
+    expect(live(wrapper).attributes("aria-label")).toContain("Atualização falhou");
+    expect(live(wrapper).attributes("aria-label")).not.toContain("22:03");
+    expect(live(wrapper).attributes("class")).toContain("bg-error/10");
     expect(dot(wrapper as unknown as VueWrapper).classes()).toContain(
       "bg-error",
     );
-    expect(wrapper.attributes("data-live-tone")).toBe("off");
+    expect(live(wrapper).attributes("data-live-tone")).toBe("off");
   });
 });
 

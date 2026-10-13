@@ -55,6 +55,7 @@ useHead({ title: "Agendados" });
             :tone="live.tone"
             :time="live.time"
             :label="live.label"
+            :short-label="live.shortLabel"
             :detail="live.detail"
           />
         </span>

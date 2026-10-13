@@ -1431,6 +1431,7 @@ function printQueue() {
           :tone="liveTone"
           :time="readClock"
           :label="error ? 'Atualização falhou' : realtimeView.label"
+          :short-label="realtimeView.shortLabel"
           :detail="realtimeView.title"
         />
       </template>

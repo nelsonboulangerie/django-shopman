@@ -1197,6 +1197,7 @@ useHead({ title: "Catálogo" });
           :label="
             error ? 'Atualização falhou' : realtimeIndicator(realtime).label
           "
+          :short-label="realtimeIndicator(realtime).shortLabel"
           :detail="realtimeIndicator(realtime).title"
         />
       </template>

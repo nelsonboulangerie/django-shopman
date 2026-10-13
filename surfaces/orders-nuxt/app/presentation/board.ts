@@ -481,6 +481,8 @@ export type RealtimeState = "connecting" | "live" | "polling";
 
 export interface RealtimeIndicatorView {
   label: string;
+  /** O curto do selo quando a barra aperta (kit `OperatorLiveStatus`, degrau 2). */
+  shortLabel?: string;
   /** true SÓ quando o SSE está aberto — a bolinha verde não mente. */
   live: boolean;
   dotClass: string;
@@ -511,6 +513,7 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
   }
   return {
     label: "Atualiza sozinho a cada 30 s",
+    shortLabel: "A cada 30 s",
     live: false,
     dotClass: "bg-muted-foreground/40",
     title: "Sem tempo real; o board atualiza sozinho a cada 30s",

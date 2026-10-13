@@ -167,7 +167,7 @@ useHead({ title: "Enviados" });
       <template #status>
         <!-- No celular o kit desce o estado para a segunda linha da barra. -->
         <span class="flex min-w-0" data-marketing-live>
-          <OperatorLiveStatus :tone="live.tone" :time="live.time" :label="live.label" :detail="live.detail" />
+          <OperatorLiveStatus :tone="live.tone" :time="live.time" :label="live.label" :short-label="live.shortLabel" :detail="live.detail" />
         </span>
       </template>
       <template #filter-panel>

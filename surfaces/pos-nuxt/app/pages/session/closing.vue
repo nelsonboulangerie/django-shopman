@@ -369,6 +369,7 @@ const discrepancyColumns = [
           :tone="liveStatus.view.value.tone"
           :time="liveStatus.time.value"
           :label="liveStatus.view.value.label"
+          :short-label="liveStatus.view.value.shortLabel"
           :detail="liveStatus.view.value.detail"
         />
         <span v-if="pos" class="text-xs text-muted-foreground">{{ pos.terminal_label }}<template v-if="closing"> · {{ closing.today_display }}</template></span>
