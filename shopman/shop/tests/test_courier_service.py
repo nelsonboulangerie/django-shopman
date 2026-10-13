@@ -101,8 +101,8 @@ def test_request_dispatch_noop_for_pickup_and_wrong_status(shop):
     pickup = _delivery_order(ref="CR-P", fulfillment_type="pickup")
     assert courier.request_dispatch(pickup, actor="test") is None
 
-    preparing = _delivery_order(ref="CR-W", status=Order.Status.PREPARING)
-    assert courier.request_dispatch(preparing, actor="test") is None
+    accepted = _delivery_order(ref="CR-W", status=Order.Status.ACCEPTED)
+    assert courier.request_dispatch(accepted, actor="test") is None
 
 
 def test_request_dispatch_noop_without_adapter(shop):
@@ -158,7 +158,8 @@ def test_dispatch_handler_skips_cancelled_order(shop):
     order.refresh_from_db()
     directive = Directive.objects.filter(topic=COURIER_DISPATCH).first()
     CourierDispatchHandler().handle(message=directive, ctx={})
-    assert courier.get_block(order) == {}
+    order.refresh_from_db()
+    assert "id_mch" not in courier.get_block(order)
     assert not courier_mock.rides()
 
 

@@ -44,6 +44,11 @@ ESTIMATE_CACHE_SECONDS = 600
 #: Intervalo default de polling quando Shop.defaults não configura.
 DEFAULT_POLL_SECONDS = 60
 
+#: Em que estados do pedido a casa pode chamar o entregador. Desde o preparo: o
+#: lembrete do Gestor (``courier_reminder``) cobra a chamada durante o preparo,
+#: para o entregador chegar com a sacola pronta (WP-ENTREGADOR-CHAMADA-ANTECIPADA).
+RIDE_ORDER_STATUSES = frozenset({Order.Status.PREPARING, Order.Status.READY, Order.Status.DISPATCHED})
+
 
 # ── Bloco Order.data["courier"] ─────────────────────────────────────
 
@@ -338,7 +343,7 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     ensure_dispatch_resolved(order)
     if not is_enabled_for(order):
         return None
-    if order.status not in (Order.Status.READY, Order.Status.DISPATCHED):
+    if order.status not in RIDE_ORDER_STATUSES:
         return None
     if has_active_ride(order):
         return None
@@ -361,6 +366,11 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     )
     if directive is None:
         return None
+    if not get_block(order).get("called_at"):
+        # A primeira chamada do pedido, com quem chamou: encerra o lembrete do
+        # Gestor (``backstage.services.courier_reminder``) e é o marco "chamada
+        # pedida" que a chamada antecipada vai aprender.
+        merge_order_data(order, {"called_at": timezone.now().isoformat(), "called_by": actor}, block="courier")
     order.emit_event(event_type="courier_dispatch_requested", actor=actor)
     logger.info("courier.dispatch_requested order=%s actor=%s", order.ref, actor)
     return directive
@@ -393,8 +403,8 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Di
         raise ValueError("Re-despacho só se aplica a pedidos de entrega.")
     if not house_dispatches(order):
         raise ValueError(not_house_dispatch_message(order))
-    if order.status not in (Order.Status.READY, Order.Status.DISPATCHED):
-        raise ValueError("Re-despacho só é possível com o pedido pronto ou em entrega.")
+    if order.status not in RIDE_ORDER_STATUSES:
+        raise ValueError("Chamar entregador só é possível com o pedido em preparo, pronto ou em entrega.")
     if has_active_ride(order):
         raise ValueError("Já existe uma corrida ativa para este pedido.")
 
