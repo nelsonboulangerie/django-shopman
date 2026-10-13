@@ -172,7 +172,7 @@ const {
   tabDialogDescription,
   sortedTabs,
   otherOpenTabs,
-  suggestedSplitRef,
+  suggestedNewTabRef,
   goToTabs,
   addTender,
   removeTender,
@@ -1296,6 +1296,7 @@ onBeforeUnmount(() => {
               :tab-display="cart.tabDisplay"
               :tab-number="cart.tabNumber"
               :opened-at="cart.tabOpenedAt"
+              :transferred-from="cart.tabTransferredFrom"
               :seating-spots="pos.seating_spots || []"
               :seating-spot-ref="cart.tabSeatingSpot"
               :occupied-spot-refs="tabs.filter((tab) => tab.seating_spot_ref && tab.ref !== cart.tabRef).map((tab) => tab.seating_spot_ref!)"
@@ -1848,8 +1849,9 @@ onBeforeUnmount(() => {
     <PosMoveLinesDialog
       v-model:open="moveDialogOpen"
       :tab-display="cart.tabDisplay"
+      :source-session-key="cart.tabSessionKey"
       :items="cart.items"
-      :suggested-split-ref="suggestedSplitRef"
+      :suggested-new-tab-ref="suggestedNewTabRef"
       :preselected="movePreselected"
       :other-tabs="otherOpenTabs"
       :capability="tabManipulation"

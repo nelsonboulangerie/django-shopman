@@ -664,6 +664,7 @@ export interface OperatorOrderProjection {
   confirmation_deadline_iso: string;
   confirmation_action: string;
   store_location: Record<string, number> | null;
+  transferred_from_label: string;
 }
 
 /** Top-level read model for the operator order queue. */

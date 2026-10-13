@@ -48,3 +48,23 @@ it("cliente travado (edição de encomenda): o chip diz por quê e não abre o m
   expect(w.findComponent({ name: "PosCustomerModal" }).attributes("open")).not.toBe("true");
   w.unmount();
 });
+
+it("a comanda que nasceu de uma transferência mostra o selo do rastro (dono, T1=1)", async () => {
+  const base = {
+    salesMode: "counter", tabDisplay: "13-2", hasOpenTab: true, canRename: false,
+    customerName: "", customerPhone: "", customerTaxId: "", customerEmail: "", customerLookup: null,
+    lookupBusy: false, searchResults: [], searchBusy: false, fulfillmentType: "pickup",
+    fulfillmentLabel: "Retirada", scheduleLabel: "Para hoje", scheduled: false, loading: false,
+  };
+  const w = await mountSuspended(PosTabHeader, {
+    props: { ...base, transferredFrom: { label: "Transf. da #13", title: "Transferida da comanda #13" } },
+    global: { stubs: { PosCustomerModal: true } },
+  });
+  const seal = w.find("[data-pos-tab-transferred-from]");
+  expect(seal.text()).toBe("Transf. da #13");
+  expect(seal.attributes("title")).toBe("Transferida da comanda #13");
+  w.unmount();
+  const plain = await mountSuspended(PosTabHeader, { props: base, global: { stubs: { PosCustomerModal: true } } });
+  expect(plain.find("[data-pos-tab-transferred-from]").exists()).toBe(false);
+  plain.unmount();
+});

@@ -387,6 +387,8 @@ class CommitService:
             "recipient",
             "gift_message",
             "gift_hide_values",
+            # Comanda do PDV que nasceu de uma transferência: de qual comanda veio.
+            "transferred_from",
         ):
             if key in session_data:
                 order_data[key] = session_data[key]
