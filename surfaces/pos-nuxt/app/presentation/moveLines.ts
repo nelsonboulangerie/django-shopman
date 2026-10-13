@@ -18,6 +18,9 @@ export type MoveMode = "split" | "transfer" | "merge";
 export interface MoveModeOption {
   ref: MoveMode;
   label: string;
+  /** O curto escrito à mão, para quando os três não cabem completos lado a lado. */
+  shortLabel: string;
+  icon: string;
 }
 
 // TRANSFERIR É O VERBO (dono, 10/10/2026): o diálogo é "Transferir itens", e os modos
@@ -28,6 +31,18 @@ const MODE_LABELS: Record<MoveMode, string> = {
   transfer: "Outra comanda",
   split: "Comanda nova",
   merge: "Juntar comandas",
+};
+// Os três descem juntos (`OperatorFitGroup` de colunas iguais): o curto é a palavra que
+// distingue o destino, nunca "Juntar comand…" (dono, 13/10).
+const MODE_SHORT_LABELS: Record<MoveMode, string> = {
+  transfer: "Outra",
+  split: "Nova",
+  merge: "Juntar",
+};
+const MODE_ICONS: Record<MoveMode, string> = {
+  transfer: "i-lucide-arrow-right-left",
+  split: "i-lucide-plus",
+  merge: "i-lucide-merge",
 };
 
 const MODE_ORDER: MoveMode[] = ["transfer", "split", "merge"];
@@ -73,7 +88,12 @@ export function availableMoveModes(capability: unknown): MoveModeOption[] {
   const allowed: Record<MoveMode, boolean> = cap
     ? { split: Boolean(cap.allows_split), transfer: Boolean(cap.allows_transfer), merge: Boolean(cap.allows_merge) }
     : { split: true, transfer: true, merge: true };
-  return MODE_ORDER.filter((mode) => allowed[mode]).map((mode) => ({ ref: mode, label: MODE_LABELS[mode] }));
+  return MODE_ORDER.filter((mode) => allowed[mode]).map((mode) => ({
+    ref: mode,
+    label: MODE_LABELS[mode],
+    shortLabel: MODE_SHORT_LABELS[mode],
+    icon: MODE_ICONS[mode],
+  }));
 }
 
 /**

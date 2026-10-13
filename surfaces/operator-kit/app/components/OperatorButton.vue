@@ -29,7 +29,7 @@ import OperatorFitLabel from "./OperatorFitLabel.vue";
 import OperatorKbd from "./OperatorKbd.vue";
 
 import { actionFitAttrs, shortcutFitStyle, type OperatorFitSize } from "../presentation/actionLabel";
-import { OPERATOR_FIT_GROUP } from "../presentation/fitGroup";
+import { OPERATOR_FIT_GROUP, OPERATOR_FIT_GROUP_KEYED } from "../presentation/fitGroup";
 
 defineOptions({ inheritAttrs: false });
 
@@ -76,12 +76,13 @@ const props = withDefaults(
 );
 
 const grouped = inject(OPERATOR_FIT_GROUP, false);
+const keyed = inject(OPERATOR_FIT_GROUP_KEYED, false);
 
 const attrs = useAttrs();
 const fit = computed(() => actionFitAttrs(props, { size: props.size, grouped }));
 // O que quem chama passa (`title` com o motivo, `class`, `data-*`) vence; o `style`
 // soma (as variáveis do encaixe e o estilo de quem chama).
-const shortcutStyle = computed(() => (props.shortcut ? shortcutFitStyle(props.shortcut, props.size) : undefined));
+const shortcutStyle = computed(() => (props.shortcut ? shortcutFitStyle(props.shortcut, props.size, keyed) : undefined));
 const bound = computed(() => ({
   ...fit.value,
   ...attrs,

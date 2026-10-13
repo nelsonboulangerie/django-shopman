@@ -889,6 +889,12 @@ ação que pode ficar apertada declara um ícone.
   pílula e sublinhada) também: o tema do kit tira o encolhimento da aba e deixa a lista
   rolar de lado quando não cabe. O mês do `NuxtCalendar` (o botão que troca a vista)
   quebra linha em vez de cortar.
+- **Grade de colunas iguais é `equal`.** Quando as irmãs moram numa grade
+  (`grid-cols-n`, cada uma com 1/n da largura), o `OperatorFitGroup equal` pede n vezes a
+  MAIS LARGA (não a soma) e as células não são contêiner: o grupo é. Assim "Enviar 3
+  marcadas" nunca fica ao lado de um "Transferir" curto. A contagem de uma ação entra
+  pelo `reserve` da própria ação, e a tecla pelo `shortcut` dela: as teclas caem juntas
+  (`--op-fit-keyed`). Usos: o pé da comanda e os destinos do "Transferir itens" no PDV.
 - **A tecla cai primeiro.** `shortcut="F9"` desenha a tecla ao lado do rótulo e ela é
   a primeira a sair quando o espaço aperta (o limite dela é o do completo mais a largura
   da tecla): o verbo fica, a tecla vai. Contagem ao lado do rótulo vem no slot

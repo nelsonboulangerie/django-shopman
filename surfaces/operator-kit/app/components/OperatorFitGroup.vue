@@ -14,7 +14,7 @@ import {
   type OperatorAdaptiveLabel,
   type OperatorFitSize,
 } from "../presentation/actionLabel";
-import { OPERATOR_FIT_GROUP } from "../presentation/fitGroup";
+import { OPERATOR_FIT_GROUP, OPERATOR_FIT_GROUP_KEYED } from "../presentation/fitGroup";
 
 const props = withDefaults(
   defineProps<{
@@ -24,14 +24,18 @@ const props = withDefaults(
     gap?: number;
     /** O que o grupo gasta com o que não é ação (frase, ×), em rem. */
     reserve?: number;
+    /** As ações moram numa grade de colunas iguais: o degrau é o da mais larga, e as
+     *  irmãs descem JUNTAS ("Enviar 3 marcadas" nunca ao lado de "Transferir" curto). */
+    equal?: boolean;
   }>(),
-  { size: "md", gap: 0.5, reserve: 0 },
+  { size: "md", gap: 0.5, reserve: 0, equal: false },
 );
 
 provide(OPERATOR_FIT_GROUP, true);
+provide(OPERATOR_FIT_GROUP_KEYED, props.equal);
 
 const style = computed(() =>
-  actionFitVars(props.actions, { size: props.size, gap: props.gap, reserve: props.reserve }),
+  actionFitVars(props.actions, { size: props.size, gap: props.gap, reserve: props.reserve, equal: props.equal }),
 );
 </script>
 

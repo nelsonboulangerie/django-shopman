@@ -419,3 +419,72 @@ for (const size of SIZES) {
     }
   });
 }
+
+// IRMÃOS DESCEM JUNTOS (dono, 13/10): no pé, Enviar e Transferir são o mesmo grupo do kit
+// em colunas iguais. Em qualquer largura da coluna, com ou sem marcadas, os dois estão no
+// MESMO degrau (completo, curto ou ícone) e as teclas caem juntas: nunca "Enviar 3
+// marcadas" ao lado de um "Transferir" curto.
+async function footSteps(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("[data-pos-ticket-foot] [data-pos-controls-block='tab'] button")].map((button) => {
+      const seen = (el: Element | null) => Boolean(el && el.getBoundingClientRect().width > 0.5);
+      const variants = [...button.querySelectorAll("[data-op-fit-variant]")].filter(seen).map((el) => el.getAttribute("data-op-fit-variant"));
+      const key = button.querySelector("[data-op-fit-key]");
+      // Quem não declara curto ("Transferir" sem marcadas) tem um texto só ("only"):
+      // ele vale pelo completo E pelo curto; o que não pode é texto ao lado de ícone.
+      return {
+        step: variants[0] || "icon",
+        hasShort: Boolean(button.querySelector("[data-op-fit-variant='short']")),
+        key: key ? seen(key) : null,
+      };
+    }),
+  );
+}
+for (const width of ["min", "default", "max"] as const) {
+  for (const size of SIZES) {
+    test(`pé ${size.width}x${size.height} (coluna ${width}): Enviar e Transferir no mesmo degrau, com e sem marcadas`, async ({ page }) => {
+      await openFullTab(page, size, "light", width, false);
+      const sameStep = (steps: Awaited<ReturnType<typeof footSteps>>) => {
+        expect(steps).toHaveLength(2);
+        const [a, b] = steps as [typeof steps[number], typeof steps[number]];
+        expect(a.step === "icon").toBe(b.step === "icon");
+        if (a.hasShort && b.hasShort) expect(a.step).toBe(b.step);
+        if (a.key !== null && b.key !== null) expect(a.key).toBe(b.key);
+      };
+      sameStep(await footSteps(page));
+      await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(1).click({ force: true });
+      await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(2).click({ force: true });
+      await expect(page.locator("[data-pos-marked-title]")).toBeVisible();
+      const marked = await footSteps(page);
+      sameStep(marked);
+      // Com marcadas os dois têm curto ("Enviar 3" | "Transferir 3"): o degrau é o mesmo.
+      expect(marked.every((step) => step.hasShort)).toBe(true);
+      expect(await scan(page, ["[data-pos-ticket-foot]"])).toEqual([]);
+    });
+  }
+}
+
+// O DIÁLOGO "Transferir itens" (dono, 13/10): a aba de destino não corta ("Juntar
+// comand…") e a lista de itens cabe, sem rolagem de lado, numa janela estreita também.
+for (const size of [{ width: 800, height: 600 }, { width: 1366, height: 768 }, { width: 390, height: 844 }] as const) {
+  test(`Transferir itens ${size.width}x${size.height}: abas sem corte, lista sem rolagem lateral`, async ({ page }) => {
+    // Abaixo do desktop a comanda é folha (sem a coluna): abre a comanda e usa o F10.
+    await page.setViewportSize(size);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/");
+    await page.getByRole("button", { name: /#13/ }).first().click();
+    await expect(page.getByText("Croissant").first()).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("F10");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Transferir itens");
+    await page.evaluate(() => document.fonts.ready);
+    expect(await scan(page, ["[role='dialog']"])).toEqual([]);
+    const sideways = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>("[role='dialog'] *")]
+        .filter((el) => /(auto|scroll)/.test(getComputedStyle(el).overflowX) && el.scrollWidth > el.clientWidth + 1)
+        .map((el) => `${el.className}`.slice(0, 80)),
+    );
+    expect(sideways).toEqual([]);
+  });
+}
