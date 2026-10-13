@@ -510,7 +510,7 @@ class POSFireTabTests(TestCase):
         assert after["00002001"].fired is True
 
     def test_tab_board_says_ready_when_the_kitchen_finishes_everything(self) -> None:
-        # A comanda fica "Pronta" no quadro do PDV só com TODO ticket vivo no
+        # A comanda fica "Tudo pronto" no quadro do PDV só com TODO ticket vivo no
         # Pronto; o cancelado não segura (decisão do dono, 13/10/2026).
         from shopman.backstage.projections.pos import build_pos_tabs
         from shopman.shop.services import kds as kds_core

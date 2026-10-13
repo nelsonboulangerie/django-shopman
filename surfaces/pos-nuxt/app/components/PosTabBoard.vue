@@ -6,7 +6,7 @@ import { tabTitleView } from "~/presentation/tabTitle";
 // and emits intent; it owns no orchestration. `move_lines` is Arc 4 — here the
 // board only lists, selects and opens.
 import type { POSTabProjection } from "~/types/pos";
-import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
+import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardBadge, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
 import { nextFreeNumericTabRef } from "~/utils/posTabLifecycle";
 
 const props = defineProps<{
@@ -39,7 +39,10 @@ const openCount = computed(() => countOpenTabs(props.tabs));
 // O input de referência também FILTRA os cards enquanto digita (nome/ref).
 const queried = computed(() => filterTabsByQuery(ordered.value, props.modelValue));
 const cards = computed(() =>
-  filterTabs(queried.value, tabFilter.value).map((tab) => ({ tab, view: tabCardView(tab, props.selectedTabRef) })),
+  filterTabs(queried.value, tabFilter.value).map((tab) => {
+    const view = tabCardView(tab, props.selectedTabRef);
+    return { tab, view, badge: tabCardBadge(view) };
+  }),
 );
 // A próxima comanda numérica livre — um toque abre sem digitar nada.
 const nextFreeRef = computed(() => nextFreeNumericTabRef(props.tabs, props.zeroPadTo));
@@ -58,8 +61,8 @@ function openNextFree() {
 // pode receber); "em uso" recede em neutro (ocupada, em andamento, sem ação).
 function cardTone(view: TabCardView): string {
   if (view.selected) return "border-primary bg-primary/5";
-  // Pronta vence o "não pago": toda pronta foi disparada e não paga, e o que o
-  // balcão precisa fazer agora é chamar o cliente.
+  // "Tudo pronto" vence o "não pago": toda comanda pronta foi disparada e não
+  // paga, e o que o balcão precisa fazer agora é chamar o cliente.
   if (view.kitchenReady) return "border-success bg-success/15";
   if (view.isUnpaid) return "border-warning/40 bg-warning/10";
   if (view.isFree) return "border-success/45 bg-success/5";
@@ -201,42 +204,32 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
       :class="tabView === 'grid' ? 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' : 'grid gap-2'"
     >
       <NuxtButton
-        v-for="{ tab, view } in cards"
+        v-for="{ tab, view, badge } in cards"
         :key="view.ref"
         color="neutral"
         variant="ghost"
-        class="flex h-[5.5rem] flex-col gap-0.5 overflow-hidden rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent items-stretch justify-start font-normal"
+        class="@container flex h-[5.5rem] flex-col gap-0.5 overflow-hidden rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent items-stretch justify-start font-normal"
         :class="cardTone(view)"
         @click="activateTab(tab)"
       >
         <div class="flex items-center justify-between gap-2">
           <span class="truncate font-semibold tabular-nums" :title="tabTitleView(view.displayRef, '').title">{{ tabTitleView(view.displayRef, "").title }}</span>
-          <span
-            v-if="view.kitchenReady"
-            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-success px-1.5 py-0.5 text-xs font-semibold text-success-foreground"
-            title="A cozinha terminou tudo desta comanda"
-            data-tab-kitchen-ready
+          <!-- O selo de estado do cartão (dono, 13/10/2026): UM selo, sempre o NuxtBadge
+               soft da suíte, do mesmo tamanho em todo estado (D1/D5/D11); a cor e o
+               ícone vêm de `tabCardBadge`. Não se corta: no cartão estreito (container
+               query do cartão) fica só o ícone, com o nome no aria-label e na dica. -->
+          <NuxtBadge
+            :color="badge.color"
+            size="md"
+            :icon="badge.icon"
+            class="shrink-0 whitespace-nowrap"
+            :aria-label="badge.label"
+            :title="badge.title"
+            :data-tab-badge="badge.kind"
+            :data-tab-kitchen-ready="view.kitchenReady ? '' : undefined"
           >
-            <Icon name="lucide:bell-ring" class="size-3" />
-            Pronta
-          </span>
-          <span
-            v-else-if="view.isUnpaid"
-            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
-            title="Disparado para a cozinha e ainda não pago"
-          >
-            <Icon name="lucide:flame" class="size-3" />
-            Não pago
-          </span>
-          <span
-            v-else-if="view.pendingKitchen"
-            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
-            title="Tem itens ainda não enviados à cozinha"
-          >
-            <Icon name="lucide:utensils" class="size-3" />
-            A enviar
-          </span>
-          <span v-else class="shrink-0 text-xs text-muted-foreground">{{ view.statusLabel }}</span>
+            <span class="hidden @[9rem]:inline" data-tab-badge-label>{{ badge.label }}</span>
+          </NuxtBadge>
         </div>
         <span class="truncate text-xs font-medium" :title="view.identity">{{ view.identity }}</span>
         <span

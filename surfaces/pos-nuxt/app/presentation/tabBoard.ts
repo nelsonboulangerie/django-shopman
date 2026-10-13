@@ -29,7 +29,7 @@ export function isKitchenReady(tab: POSTabProjection): boolean {
   return tab.state === "in_use" && tab.item_count > 0 && Boolean(tab.kitchen_ready);
 }
 
-/** Pronta primeiro (o balcão chama o cliente), depois as em uso, depois as livres;
+/** "Tudo pronto" primeiro (o balcão chama o cliente), depois as em uso, depois as livres;
  *  dentro de cada grupo, pela referência (numeric-aware, pt-BR). */
 export function sortTabs(tabs: POSTabProjection[]): POSTabProjection[] {
   const rank = (tab: POSTabProjection) => (isKitchenReady(tab) ? 0 : tab.state === "in_use" ? 1 : 2);
@@ -70,7 +70,7 @@ export interface TabCardView {
   isUnpaid: boolean;
   /** Has items but nothing sent to the kitchen yet — a quiet "a enviar" cue. */
   pendingKitchen: boolean;
-  /** A cozinha terminou tudo: "Pronta", o selo mais alto do quadro. */
+  /** A cozinha terminou tudo: "Tudo pronto", o selo mais alto do quadro. */
   kitchenReady: boolean;
   statusLabel: string;
   /** Customer name, falling back to an items preview, then "Livre". */
@@ -78,6 +78,38 @@ export interface TabCardView {
   /** Line summary: item count + total, or the free-tab affordance. */
   summary: string;
   selected: boolean;
+}
+
+/** O selo de estado do cartão de comanda: um só por cartão, na ordem do que o
+ *  balcão precisa fazer primeiro. Todo estado sai no MESMO selo (NuxtBadge soft do
+ *  tema, um tamanho); só cor, ícone e texto mudam. O ícone é o que fica no cartão
+ *  estreito, com `label` no aria e `title` na dica. */
+export interface TabCardBadge {
+  kind: "ready" | "unpaid" | "pending" | "status";
+  label: string;
+  title: string;
+  color: "success" | "warning" | "neutral";
+  icon: string;
+}
+
+export function tabCardBadge(view: TabCardView): TabCardBadge {
+  if (view.kitchenReady) {
+    return { kind: "ready", label: "Tudo pronto", title: "Tudo pronto: a cozinha terminou tudo desta comanda", color: "success", icon: "lucide:bell-ring" };
+  }
+  if (view.isUnpaid) {
+    return { kind: "unpaid", label: "Não pago", title: "Não pago: enviado à cozinha e ainda não pago", color: "warning", icon: "lucide:flame" };
+  }
+  if (view.pendingKitchen) {
+    return { kind: "pending", label: "A enviar", title: "A enviar: tem itens ainda não enviados à cozinha", color: "neutral", icon: "lucide:utensils" };
+  }
+  const label = view.statusLabel || (view.isInUse ? "Em uso" : "Livre");
+  return {
+    kind: "status",
+    label,
+    title: view.isInUse ? `${label}: comanda aberta, sem itens` : `${label}: comanda disponível`,
+    color: "neutral",
+    icon: view.isInUse ? "lucide:circle-dot" : "lucide:circle-dashed",
+  };
 }
 
 /**
