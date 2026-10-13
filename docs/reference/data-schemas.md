@@ -1192,7 +1192,7 @@ Lido por: `hooks._on_order_created`, `ConfirmationTimeoutHandler`, `confirmation
 | Campo | Tipo | Default | Descrição |
 |-------|------|---------|-----------|
 | `method` | `string \| list[str]` | `"counter"` | `"counter"`, `"pix"`, `"card"`, `"external"`, ou lista |
-| `timeout_minutes` | `int` | `15` | Timeout para PIX/card. Card timeout = `timeout_minutes * 2` |
+| `timeout_minutes` | `int` | `10` | Prazo do Pix: vira `pix_timeout_minutes` do adapter (validade do QR na Efí) e o pedido não pago cancela no vencimento. Só vale para Pix; o seed põe 10 nos canais `web` e `whatsapp`. Deve ser > 0 quando há Pix |
 | `link_timeout_minutes` | `int` | `120` | Janela do **link de pagamento** (pedido remoto do PDV), contada da venda. É o teto: o link vence em `min(agora + janela, corte do atendimento)` — início da janela combinada ou fechamento da loja no dia do compromisso (`shop/services/payment_deadline`) — preso à régua do Stripe (30 min–24 h). Deve ser > 0 |
 
 Property: `available_methods` → sempre retorna lista.
@@ -1313,8 +1313,8 @@ Estas chaves são lidas diretamente de `channel.config` como dict bruto, sem pas
 | Preset | Confirmation | Payment | Stock TTL | Notifications | Validators |
 |--------|-------------|---------|-----------|---------------|------------|
 | `pos()` | immediate | counter | 5 min | console | business_hours |
-| `remote()` | auto_confirm/5min | [pix, card]/15min | 30 min | manychat | business_hours, min_order |
-| `whatsapp()` | auto_confirm/5min | [pix, card]/15min | 30 min | whatsapp | business_hours, min_order |
+| `remote()` | manual (alerta 10 min) | [pix, card]/Pix 10min | 30 min | manychat | business_hours, min_order |
+| `whatsapp()` | manual (alerta 10 min) | [pix, card]/Pix 10min | 30 min | whatsapp | business_hours, min_order |
 | `marketplace()` | auto_cancel/5min | external | None | none | (vazio) |
 
 ---
