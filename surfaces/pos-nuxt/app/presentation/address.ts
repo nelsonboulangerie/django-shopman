@@ -111,3 +111,27 @@ export function structuredFromPlaceFields(place: PlaceFields): StructuredAddress
     is_verified: Boolean(place.id),
   };
 }
+
+/**
+ * Os campos do endereço de entrega, na ORDEM DA TELA do Recebimento. É a ordem
+ * do Enter: cada Enter leva ao próximo campo AINDA VAZIO, pulando o que o CEP ou
+ * o Google já trouxe (rua e bairro, quase sempre; o número, quando digitado na
+ * busca). Complemento e instruções são opcionais, mas vazios são a vez: é o
+ * operador quem decide deixá-los em branco, com mais um Enter.
+ */
+export const DELIVERY_ADDRESS_FIELDS = ["address", "number", "neighborhood", "complement", "instructions"] as const;
+export type DeliveryAddressField = (typeof DELIVERY_ADDRESS_FIELDS)[number];
+export type DeliveryAddressValues = Record<DeliveryAddressField, string>;
+
+/**
+ * O próximo campo vazio DEPOIS de `after` (ou desde o primeiro, com `after`
+ * nulo: o endereço acabou de chegar da busca). `null` quando não sobra nenhum:
+ * o endereço está completo e a vez é do próximo passo da encomenda.
+ */
+export function nextEmptyAddressField(
+  after: DeliveryAddressField | null,
+  values: DeliveryAddressValues,
+): DeliveryAddressField | null {
+  const start = after ? DELIVERY_ADDRESS_FIELDS.indexOf(after) + 1 : 0;
+  return DELIVERY_ADDRESS_FIELDS.slice(start).find((field) => !(values[field] || "").trim()) ?? null;
+}
