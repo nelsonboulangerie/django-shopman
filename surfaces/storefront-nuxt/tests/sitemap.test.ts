@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sitemapUrls, sitemapXml } from '../server/utils/sitemap'
+import { catalogRoutes, sitemapUrls, sitemapXml } from '../server/utils/sitemap'
 
 describe('sitemap', () => {
   it('usa o origin da request e inclui catálogo e páginas de conteúdo', () => {
@@ -25,6 +25,20 @@ describe('sitemap', () => {
       'http://localhost:3000/privacidade',
       'http://localhost:3000/termos'
     ])
+  })
+
+  it('do catálogo, cada SKU uma vez e só as coleções estáticas', () => {
+    expect(catalogRoutes({
+      items: [{ sku: 'FENDU' }, { sku: 'FENDU' }, { sku: '' }, null, { sku: 'CRO' }],
+      sections: [
+        { ref: 'featured', is_dynamic: true },
+        { ref: 'rusticos', is_dynamic: false },
+        { ref: 'rusticos', is_dynamic: false },
+        null,
+        { ref: '', is_dynamic: false }
+      ]
+    })).toEqual({ skus: ['FENDU', 'CRO'], collectionRefs: ['rusticos'] })
+    expect(catalogRoutes(undefined)).toEqual({ skus: [], collectionRefs: [] })
   })
 
   it('escreve XML válido, escapando o que precisa', () => {

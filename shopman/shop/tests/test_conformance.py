@@ -451,7 +451,7 @@ class TestC07PaymentTimeout(TransactionTestCase):
     def setUp(self):
         self.channel = _channel("c07-payment-timeout", {
             "confirmation": {"mode": "manual"},
-            "payment": {"method": "pix", "timing": "at_commit", "timeout_minutes": 15},
+            "payment": {"method": "pix", "timing": "at_commit", "timeout_minutes": 10},
         })
         self.patchers, self.mocks = _start_patches()
 

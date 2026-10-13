@@ -191,8 +191,8 @@ pipeline:
 ```yaml
 preset: remote
 cenário: Venda remota com pagamento online
-confirmação: otimista (10 min para operador cancelar)
-pagamento: [pix, card] (15 min timeout para pagamento)
+confirmação: manual (alerta de pedido parado após 10 min sem decisão)
+pagamento: [pix, card] (Pix vence em 10 min sem pagamento: `payment.timeout_minutes`)
 estoque:
   hold: 30 minutos
   safety_margin: 10 unidades
