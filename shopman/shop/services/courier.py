@@ -521,6 +521,9 @@ def on_order_cancelled(order) -> None:
             if unresolved_dispatch(order) is not None:
                 _alert_cancelled_order(order, f"O pedido {code} foi cancelado com um pedido de entregador sem "
                     "resultado confirmado: confira na central e cancele a corrida, se ela existir.")
+            else:
+                # Nenhuma corrida viva nem possível: a custódia da chamada volta já.
+                _return_custody(order, actor="lifecycle.on_cancelled", reason="order_cancelled")
             return
         if status == "E":
             _alert_cancelled_order(order, f"O entregador já coletou o pedido {code}, que foi cancelado: fale com a central.")
@@ -538,6 +541,16 @@ def on_order_cancelled(order) -> None:
             "cancele a corrida por lá.")
     except Exception:
         logger.exception("courier.on_order_cancelled_failed order=%s", order.ref)
+
+
+def _return_custody(order, *, actor: str, reason: str) -> None:
+    """Devolve a custódia da chamada; nunca derruba o funil da corrida, mas grita."""
+    from shopman.shop.services import operator_orders
+
+    try:
+        operator_orders.return_partner_custody(order, actor=actor, reason=reason)
+    except Exception:
+        logger.exception("courier.custody_return_failed order=%s reason=%s", order.ref, reason)
 
 
 def _alert_cancelled_order(order, message: str) -> None:
@@ -617,6 +630,10 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             _save_block(order, block, emit={"kind": "ride_ended" if failed_ride else "status", "status": status})
     if failed_ride and not source.startswith("operator:"):
         _alert_ride_failed(order, status)
+    if failed_ride and not observed.get("dispatched_at"):
+        # A corrida acabou sem coleta: o troco volta à gaveta e a maquininha
+        # é liberada (custódia registrada na chamada).
+        _return_custody(order, actor=f"courier:{status}", reason="not_attended" if status == "N" else "ride_cancelled")
     if not failed_ride:
         # Uma corrida viva (a de agora, ou a nova depois da que falhou): os
         # avisos de corrida que não abriu, não foi aceita ou foi cancelada

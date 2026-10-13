@@ -1038,6 +1038,91 @@ def partner_custody_asks(order: Order) -> dict:
     }
 
 
+#: Chaves da custódia da chamada que saem do ``dispatch`` quando ela volta: a
+#: chamada seguinte registra a dela do zero, sem herdar a volta desta.
+_PARTNER_CUSTODY_KEYS = (
+    "collector", "custody_at", "custody_by", "equipment", "device_ref", "device_label",
+    "equipment_out_at", "equipment_out_by", "equipment_back_at", "equipment_back_by",
+)
+
+#: Os pedidos que já saíram com o entregador: a custódia foi junto, e quem fecha
+#: é o "Entregador voltou", nunca a volta automática.
+_COLLECTED_STATUSES = frozenset({
+    Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED, Order.Status.RETURNED,
+})
+
+
+@transaction.atomic
+def return_partner_custody(order: Order, *, actor: str, reason: str) -> bool:
+    """A corrida terminou sem coleta: o troco volta à gaveta e a maquininha é liberada.
+
+    O inverso de :func:`record_partner_custody`, pelas peças do "Entregador
+    voltou": o troco vira ``courier_in`` apontando para o ``courier_out`` (no
+    mesmo turno, enquanto ele está aberto) e a maquininha volta por
+    :func:`mark_equipment_returned`. Os dois lançamentos levam
+    ``payload.custody_return`` e se anulam em :func:`courier_change_by_order`:
+    a chamada seguinte registra a custódia dela do zero, sem duplicar.
+
+    Idempotente: sem ``dispatch.custody_at`` não há o que devolver. Pedido que
+    já saiu (``_COLLECTED_STATUSES``) não devolve nada: a custódia foi com o
+    entregador. Turno do troco já fechado: o dinheiro não entra sozinho num
+    turno que não é o dele; aviso crítico ao operador, e a maquininha volta.
+    """
+    from shopman.cashman.models import Entry
+
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    dispatch = dict((order.data or {}).get("dispatch") or {})
+    if not dispatch.get("custody_at") or order.status in _COLLECTED_STATUSES:
+        return False
+    change = courier_change(order)
+    returned_q = 0
+    if change.pending:
+        courier_out = Entry.objects.filter(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref).order_by("-id").first()
+        shift = courier_out.shift if courier_out is not None else None
+        if shift is not None and getattr(shift, "is_open", False):
+            from shopman.cashman import services as cash_ledger
+
+            cash_ledger.record(
+                "courier_in", shift=shift, operator=_user_for_actor(actor) or shift.opened_by,
+                amount_q=change.out_q, order_ref=order.ref, parent=courier_out,
+                payload={"courier_out_id": courier_out.pk, "settled_by": actor,
+                         "custody_return": True, "reason": reason},
+            )
+            returned_q = change.out_q
+        else:
+            from shopman.shop.adapters import alert as alert_adapter
+
+            alert_adapter.create(
+                "integration_failed", "critical",
+                f"O troco de R$ {_money(change.out_q)} do pedido {short_ref(order.ref)} saiu da gaveta e o entregador "
+                "não veio buscar, mas o turno dele já fechou: devolva o dinheiro pelo caixa.",
+                order_ref=order.ref,
+            )
+    equipment = list(equipment_custody(order).equipment)
+    if equipment_custody(order).pending:
+        mark_equipment_returned(order, actor=actor)
+        order.refresh_from_db()
+    data = dict(order.data or {})
+    kept = {k: v for k, v in dict(data.get("dispatch") or {}).items() if k not in _PARTNER_CUSTODY_KEYS}
+    kept["custody_returns"] = [*kept.get("custody_returns", []), {
+        "at": timezone_now_iso(), "by": actor, "reason": reason,
+        "change_q": returned_q, "equipment": equipment, "device_label": dispatch.get("device_label", ""),
+    }]
+    data["dispatch"] = kept
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    order.emit_event(event_type="partner_custody_returned", actor=actor,
+        payload={"reason": reason, "change_q": returned_q, "equipment": equipment})
+    return True
+
+
+def _money(amount_q: int) -> str:
+    from shopman.utils.monetary import format_money
+
+    return format_money(int(amount_q))
+
+
 @transaction.atomic
 def record_partner_custody(
     order: Order,
@@ -1131,9 +1216,13 @@ def courier_change_by_order(order_refs) -> dict[str, tuple[int, int | None]]:
     back: dict[str, int] = {}
     rows = Entry.objects.filter(
         kind__in=[Entry.Kind.COURIER_OUT, Entry.Kind.COURIER_IN], order_ref__in=refs
-    ).values_list("order_ref", "kind", "amount_q")
-    for ref, kind, amount_q in rows:
+    ).values_list("order_ref", "kind", "amount_q", "payload__custody_return")
+    for ref, kind, amount_q, custody_return in rows:
         if kind == Entry.Kind.COURIER_OUT:
+            out[ref] = out.get(ref, 0) - int(amount_q)
+        elif custody_return:
+            # A corrida não coletou e o troco voltou (``return_partner_custody``):
+            # anula a saída, não é acerto. A chamada seguinte abre outro ciclo.
             out[ref] = out.get(ref, 0) - int(amount_q)
         else:
             back[ref] = back.get(ref, 0) + int(amount_q)

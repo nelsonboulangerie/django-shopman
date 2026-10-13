@@ -2788,6 +2788,8 @@ _EVENT_LABELS = {
     "created": "Pedido criado",
     "payment_collected": "Pagamento recebido",
     "equipment_returned": "Maquininha devolvida",
+    "partner_custody_recorded": "Separado para o entregador da TaOn (troco ou maquininha)",
+    "partner_custody_returned": "A corrida não coletou: o que ia com o entregador voltou",
     "order_rescheduled": "Data combinada alterada",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",

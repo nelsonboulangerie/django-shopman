@@ -149,21 +149,136 @@ def test_chamar_com_cartao_reserva_a_maquininha_e_a_volta_libera(client, operato
     assert azul.current_order_id is None
 
 
-def test_chamar_de_novo_depois_de_corrida_nao_aceita_nao_lanca_outra_vez(client, operator):
-    _order("DLV-0420", method="cash", total_q=7400, change_for_q=10000)
-    assert _call(client, "DLV-0420", change_out="26,00").status_code == 200
-    order = _collect_not_attended("DLV-0420")
-    assert _call(client, "DLV-0420").status_code == 200  # nada a perguntar: a custódia já saiu
-    assert Entry.objects.filter(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref).count() == 1
-
-
-def _collect_not_attended(ref):
+def _open_ride(ref):
     order = Order.objects.get(ref=ref)
     CourierDispatchHandler().handle(message=Directive.objects.filter(topic=COURIER_DISPATCH, payload__order_ref=ref).latest("pk"), ctx={})
     order.refresh_from_db()
-    courier.apply_status(order, "N", source="poll")
+    return order
+
+
+def _ride_ends(ref, status, *, source="poll"):
+    order = _open_ride(ref)
+    courier.apply_status(order, status, source=source)
     order.refresh_from_db()
     return order
+
+
+def _returns(order):
+    return Entry.objects.filter(kind=Entry.Kind.COURIER_IN, order_ref=order.ref, payload__custody_return=True)
+
+
+def _assert_returned_once(order, *, change_q, device=None):
+    order.refresh_from_db()
+    assert [e.amount_q for e in _returns(order)] == ([change_q] if change_q else [])
+    assert not operator_orders.courier_change(order).pending
+    assert "custody_at" not in order.data["dispatch"]
+    assert len(order.data["dispatch"]["custody_returns"]) == 1
+    assert order.events.filter(type="partner_custody_returned").count() == 1
+    if device is not None:
+        device.refresh_from_db()
+        assert device.current_order_id is None
+
+
+@pytest.mark.parametrize("status", ["N", "C"])
+def test_corrida_sem_coleta_devolve_troco_e_maquininha_uma_vez(client, operator, machines, status):
+    azul, _ = machines
+    _order("DLV-0420", method="mixed", total_q=7400, change_for_q=10000)
+    Order.objects.filter(ref="DLV-0420").update(data={**Order.objects.get(ref="DLV-0420").data, "payment": {
+        "method": "mixed", "collection": "on_delivery", "change_for_q": 5000,
+        "tenders": [{"method": "cash", "amount_q": 3400}, {"method": "credit", "amount_q": 4000}]}})
+    response = _call(client, "DLV-0420", change_out="16,00", equipment=[PREFIX + str(azul.ref)])
+    assert response.status_code == 200, response.json()
+    balance_after_call = cash.balance(operator.test_shift)
+
+    order = _ride_ends("DLV-0420", status, source="webhook")
+    courier.apply_status(order, status, source="poll")  # o fato repetido
+    operator_orders.return_partner_custody(order, actor="teste", reason="replay")  # chamada direta repetida
+    _assert_returned_once(order, change_q=1600, device=azul)
+    assert cash.balance(operator.test_shift) == balance_after_call + 1600
+    labels = [e["label"] for e in _detail(client, "DLV-0420")["timeline"]]
+    assert "A corrida não coletou: o que ia com o entregador voltou" in labels
+
+    # A chamada seguinte pergunta e registra de novo, sem herdar nem duplicar.
+    assert _detail(client, "DLV-0420")["courier"]["custody"]["recorded"] is False
+    assert _call(client, "DLV-0420", change_out="16,00", equipment=[PREFIX + str(azul.ref)]).status_code == 200
+    order.refresh_from_db()
+    change = operator_orders.courier_change(order)
+    assert (change.out_q, change.back_q, change.pending) == (1600, None, True)
+    azul.refresh_from_db()
+    assert azul.current_order_id == order.pk
+
+
+def test_pedido_cancelado_antes_da_coleta_devolve_pela_corrida_cancelada(client, operator):
+    from shopman.shop.directives import COURIER_CANCEL
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+    from shopman.shop.lifecycle import dispatch
+
+    _order("DLV-0450", method="cash", total_q=7400, change_for_q=10000)
+    assert _call(client, "DLV-0450", change_out="26,00").status_code == 200
+    order = _open_ride("DLV-0450")
+    courier.apply_status(order, "A", source="poll")
+    Order.objects.filter(pk=order.pk).update(status=Order.Status.CANCELLED)
+    order.refresh_from_db()
+    dispatch(order, "on_cancelled")
+    assert not _returns(order).exists()  # a corrida ainda está aberta: volta quando ela cancelar
+    CourierCancelHandler().handle(message=Directive.objects.get(topic=COURIER_CANCEL), ctx={})
+    _assert_returned_once(order, change_q=2600)
+
+
+def test_pedido_cancelado_sem_corrida_aberta_devolve_na_hora(client, operator):
+    from shopman.shop.lifecycle import dispatch
+
+    _order("DLV-0460", method="cash", total_q=7400, change_for_q=10000)
+    assert _call(client, "DLV-0460", change_out="26,00").status_code == 200
+    order = Order.objects.get(ref="DLV-0460")  # a chamada ainda na fila: a central nunca soube
+    Order.objects.filter(pk=order.pk).update(status=Order.Status.CANCELLED)
+    order.refresh_from_db()
+    dispatch(order, "on_cancelled")
+    courier.on_order_cancelled(order)  # replay da fase
+    _assert_returned_once(order, change_q=2600)
+
+
+def test_coletado_nao_devolve_nada(client, operator):
+    _order("DLV-0470", method="cash", total_q=7400, change_for_q=10000)
+    assert _call(client, "DLV-0470", change_out="26,00").status_code == 200
+    order = _collect("DLV-0470")
+    courier.apply_status(order, "C", source="webhook")
+    order.refresh_from_db()
+    assert not _returns(order).exists()
+    assert operator_orders.courier_change(order).pending
+
+
+def test_chamar_de_novo_leva_a_mesma_custodia_sem_duplicar(client, operator):
+    """"Chamar de novo" libera a tentativa e chama no mesmo gesto: o troco segue separado."""
+    _order("DLV-0480", method="cash", total_q=7400, change_for_q=10000)
+    assert _call(client, "DLV-0480", change_out="26,00").status_code == 200
+    task = Directive.objects.get(topic=COURIER_DISPATCH, payload__order_ref="DLV-0480")
+    task.payload = {**task.payload, "dispatch_attempt": {"state": "unknown"}}
+    task.save(update_fields=["payload"])
+    order = Order.objects.get(ref="DLV-0480")
+    courier.release_unresolved_dispatch(order, actor="marina")
+    order.refresh_from_db()
+    assert not _returns(order).exists()
+    assert Entry.objects.filter(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref).count() == 1
+    assert order.data["dispatch"]["custody_at"]
+
+
+def test_turno_do_troco_fechado_avisa_e_a_maquininha_volta(client, operator, machines):
+    from shopman.backstage.models import OperatorAlert
+
+    azul, _ = machines
+    _order("DLV-0490", method="mixed", total_q=7400)
+    Order.objects.filter(ref="DLV-0490").update(data={**Order.objects.get(ref="DLV-0490").data, "payment": {
+        "method": "mixed", "collection": "on_delivery", "change_for_q": 5000,
+        "tenders": [{"method": "cash", "amount_q": 3400}, {"method": "credit", "amount_q": 4000}]}})
+    assert _call(client, "DLV-0490", change_out="16,00", equipment=[PREFIX + str(azul.ref)]).status_code == 200
+    cash.close_shift(operator.test_shift, counted_q=cash.balance(operator.test_shift), actor=operator)
+    order = _ride_ends("DLV-0490", "N")
+    assert not _returns(order).exists()
+    alert = OperatorAlert.objects.get(order_ref="DLV-0490", type="integration_failed")
+    assert "R$ 16,00" in alert.message and "devolva o dinheiro pelo caixa" in alert.message
+    azul.refresh_from_db()
+    assert azul.current_order_id is None
 
 
 def test_pedido_pago_nao_pergunta_nada(client, operator):
