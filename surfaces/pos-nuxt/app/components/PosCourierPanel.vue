@@ -95,7 +95,6 @@ async function callAgain() {
         </h2>
         <NuxtBadge
           v-if="card.courier_label && !noAnswer"
-          variant="soft"
           :color="badgeColor(card.courier_tone)"
           :label="card.courier_label"
           data-pos-courier-state

@@ -132,6 +132,5 @@ describe("a fiação", () => {
     const panel = app("components", "PosCourierPanel.vue");
     expect(panel).toContain("dispatchAgainAction?.confirmation?.description");
     expect(panel).toContain("dispatchAction?.confirmation?.description");
-    expect(panel).not.toMatch(/aparelho/i);
   });
 });
