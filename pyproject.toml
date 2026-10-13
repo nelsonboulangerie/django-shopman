@@ -33,7 +33,7 @@ dependencies = [
     "django-csp>=4.0,<5.0",
     "django-eventstream>=5.3,<6.0",
     "django-import-export>=4.4,<5.0",
-    "django-unfold>=0.107,<0.108",
+    "django-unfold>=0.107,<0.109",
     "django-otp>=1.7,<2.0",
     "daphne>=4.2,<5.0",
     # Leitor do formato MMDB, para a cidade aproximada do aparelho na tela "Segurança e
