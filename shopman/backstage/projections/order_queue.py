@@ -1127,7 +1127,9 @@ COURIER_STATUS_LABELS = {
     "G": "Aguardando aceite",
     "P": "Procurando entregador",
     "A": "Entregador a caminho da loja",
-    "S": "Entregador na loja",
+    # S é "em espera": o entregador aceitou e termina outra entrega antes.
+    # "Na loja" é a chegada (``progress.arrived_pickup_at``), não esta letra.
+    "S": "Entregador vem após outra entrega",
     "E": "Saiu para entrega",
     "F": "Entregue",
     "N": "Não atendida",
@@ -1227,10 +1229,18 @@ def _courier_block(order: Order) -> dict | None:
             if not cancellation_pending:
                 error = {"message": cancellation.last_error or "Solicitação não aplicada. Confira o estado atual antes de tentar novamente.",
                     "at": cancellation.updated_at.isoformat()}
+        from shopman.shop.services.courier import progress_view
+
+        progress = progress_view(block)
+        status_label = COURIER_STATUS_LABELS.get(ride_status, "")
+        if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
+            status_label = "Entregador na loja"
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
-            "status_label": "Sem resposta da TaOn" if unresolved is not None else COURIER_STATUS_LABELS.get(ride_status, ""),
+            "status_label": "Sem resposta da TaOn" if unresolved is not None else status_label,
+            # O andamento, em instantes ISO; a tela conta os minutos com o relógio dela.
+            **progress,
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
             "tracking_url": str(block.get("tracking_url") or ""),

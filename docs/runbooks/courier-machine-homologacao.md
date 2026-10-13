@@ -9,6 +9,58 @@ Dois roteiros neste arquivo:
 2. **[Ensaio na homologação](#o-ensaio-cerca-de-15-min)**: o roteiro original, chamada a chamada no
    `manage.py shell`, para quando houver chave de homologação.
 
+## 13/10/2026: a primeira corrida real ficou parada em "Procurando entregador"
+
+Pedido `PDV-261013-S80`, corrida `776722699`, aberta 18:40:59 UTC. Medido no vivo (banco pela
+conexão direta, só leitura; log do `directive-worker`):
+
+- O polling **rodou**: 27 `courier.sync` `done` até 19:08, um por minuto, o primeiro 45 s depois da abertura.
+- **Toda** batida caiu em `GET /solicitacaoStatus?id_mch=776722699` → `400 [67] O usuário
+  informado não pode realizar essa operação.` O handler só escrevia `WARNING` no log e reagendava:
+  `Order.data["courier"]["status"]` ficou `D`, nenhum SSE saiu (nada mudou), nenhum aviso.
+- O webhook **não chegou**: nenhuma linha `machine.webhook` no `web-operator` desde 18:35 (o
+  passo 1 do roteiro abaixo não tinha sido feito, ou não vingou).
+- O mesmo `[67]` já tinha aparecido no ensaio de 01/10 com `id_mch=1` e foi lido como "a corrida 1
+  não é nossa". Era a mesma recusa.
+
+O que mudou no código (PR desta frente): a batida lê a corrida pela primeira de três vias que
+responder (`/v1/request/{id}`, `/solicitacao?id=`, `/solicitacaoStatus`) e guarda o andamento
+inteiro; leitura que falha aparece na tela ("sem notícias da TaOn desde HH:MM") e vira aviso ao
+operador na terceira batida. **O `[67]` em si é permissão do usuário de API na TaOn** (painel:
+Minha equipe > Usuário > Permissões, seção Integração). Se as três vias recusarem, o aviso diz isso
+na tela, e o conserto é no painel da TaOn, não no código.
+
+### Roteiro do dono (console do alpha; nada aqui abre corrida)
+
+`doctl apps console 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f directive-worker --context shopman-do-app-admin`
+
+1. **Sonda só leitura** (seis `GET`, nenhuma escrita). Mostra qual via a TaOn deixa este usuário
+   ler e o formato real dos detalhes:
+
+   ```bash
+   python manage.py shell -c '
+   import json
+   from shopman.shop.adapters import courier_machine as m
+   R = "776722699"
+   for path, base, params in [("/solicitacaoStatus", None, {"id_mch": R}), ("/solicitacao", None, {"id": R}),
+                              (f"/request/{R}", m._details_base(), None), (f"/obterLinkRastreio/{R}", None, None),
+                              ("/posicaoCondutor", None, {"id_mch": R}), ("/listarWebhook", None, None)]:
+       try:
+           print("OK ", path, json.dumps(m._request("GET", path, base=base, params=params), ensure_ascii=False, default=str)[:1500])
+       except Exception as exc:
+           print("ERR", path, exc)
+   '
+   ```
+
+   Anote no PR: quais deram `OK`. Se todas derem `[67]`, a permissão de leitura falta ao usuário
+   de API no painel da TaOn.
+2. **Conferir o aviso (webhook)**, só leitura: `python manage.py machine_register_webhook
+   https://api.boulangerie.com.br --list`. O token sai mascarado.
+3. **Cadastrar o aviso** (escreve na TaOn, por isso é do dono):
+   `python manage.py machine_register_webhook https://api.boulangerie.com.br`. Repetir não duplica
+   (o comando lista antes e pula o tipo já cadastrado). Depois, na próxima corrida, o log do
+   `web-operator` mostra `machine.webhook raw=...` a cada mudança.
+
 O contrato endereço a endereço está em
 [DELIVERY-EXTERNAL-LOGISTICS-PLAN §2.1](../plans/DELIVERY-EXTERNAL-LOGISTICS-PLAN.md).
 
