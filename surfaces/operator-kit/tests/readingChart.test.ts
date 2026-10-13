@@ -13,6 +13,7 @@ import {
   readingHorizontalHeight,
   readingMoneyAxisFormat,
   readingMoneyFormat,
+  readingIsolatedIndices,
   readingRunIndex,
   readingRuns,
   readingLegend,
@@ -258,5 +259,22 @@ describe("a área com buraco", () => {
   it("fora do trecho, o índice repete a ponta mais perto (ponto coincidente, sem corcova)", () => {
     const run = { start: 3, end: 5 };
     expect([0, 2, 3, 4, 5, 6, 9].map((index) => readingRunIndex(run, index))).toEqual([3, 3, 3, 4, 5, 5, 5]);
+  });
+
+  it("ponto isolado entre dois buracos (ou entre buraco e ponta) vira marcador; o do trecho, não", () => {
+    expect(readingIsolatedIndices(gaps([1, null, 3, null, 5, 6, null, 8]), "v")).toEqual([0, 2, 7]);
+    expect(readingIsolatedIndices(gaps([1, 2, 3]), "v")).toEqual([]);
+    expect(readingIsolatedIndices(gaps([4]), "v")).toEqual([0]);
+    expect(readingIsolatedIndices(gaps([null, null]), "v")).toEqual([]);
+  });
+
+  it("todo ponto com dado sai desenhado: no trecho (linha) ou isolado (marcador)", () => {
+    const values = [null, 2, null, 4, 5, null, 7, null, 9, 10, 11];
+    const points = gaps(values);
+    const inRun = readingRuns(points, "v").flatMap((run) =>
+      Array.from({ length: run.end - run.start + 1 }, (_, offset) => run.start + offset),
+    );
+    const drawn = [...inRun, ...readingIsolatedIndices(points, "v")].sort((a, b) => a - b);
+    expect(drawn).toEqual(values.flatMap((value, index) => (value === null ? [] : [index])));
   });
 });

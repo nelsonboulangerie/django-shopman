@@ -10,15 +10,18 @@ import {
   VisCrosshair,
   VisGroupedBar,
   VisLine,
+  VisScatter,
   VisStackedBar,
   VisXYContainer,
 } from "@unovis/vue";
 import { computed, ref } from "vue";
 
 import {
+  READING_POINT_SIZE,
   READING_TONE_COLOR,
   drawnSeries,
   readingFillColor,
+  readingIsolatedIndices,
   pointValue,
   readingRunIndex,
   readingRuns,
@@ -151,6 +154,21 @@ const runY = (run: ReadingRun, key: string) => (row: Row) =>
   pointValue(props.points[readingRunIndex(run, row.index)]!, key) ?? undefined;
 const DASH = [6, 4];
 
+// O ponto isolado (sem dado antes e depois) não tem com quem ligar: a linha vira um
+// traço de comprimento zero e some. Sai como marcador, no tom da série e no tamanho do
+// círculo do ponto em leitura. Só monta quando existe, para não mexer no resto.
+const isolatedSeries = computed(() =>
+  lineSeries.value.flatMap(({ item, index }) => {
+    const isolated = new Set(readingIsolatedIndices(props.points, item.key));
+    if (!isolated.size) return [];
+    return [{
+      item,
+      color: READING_TONE_COLOR[seriesTone(item, index)],
+      y: (row: Row) => (isolated.has(row.index) ? (pointValue(row.point, item.key) ?? undefined) : undefined),
+    }];
+  }),
+);
+
 // O traço vertical do ponto em leitura. Círculos só onde há linha; nas barras o
 // Crosshair recebe os acessores delas (o Unovis os exige) e não desenha círculo.
 const crosshairY = computed(() =>
@@ -251,6 +269,16 @@ function onCrosshairMove(_x?: number | Date, _datum?: Row, datumIndex?: number) 
         :line-dash-array="kind === 'comparison' ? DASH : undefined"
         :line-width="2"
       />
+      <VisScatter
+        v-for="entry in isolatedSeries"
+        :key="`isolated-${entry.item.key}`"
+        :x="x"
+        :y="entry.y"
+        :color="entry.color"
+        :size="READING_POINT_SIZE"
+        :stroke-width="0"
+        exclude-from-domain-calculation
+      />
       <VisAxis
         type="x"
         :x="x"
@@ -267,6 +295,7 @@ function onCrosshairMove(_x?: number | Date, _datum?: Row, datumIndex?: number) 
         :y="crosshairY"
         :color="crosshairColor"
         :getCircles="lineSeries.length ? undefined : noCircles"
+        :circleRadius="READING_POINT_SIZE / 2"
         :forceShowAt="forcedIndex ?? undefined"
         :hideWhenFarFromPointer="false"
         :onCrosshairMove="onCrosshairMove"
