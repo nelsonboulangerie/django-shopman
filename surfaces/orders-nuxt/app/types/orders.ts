@@ -71,6 +71,12 @@ export type CourierBlock = {
   can_quote: boolean;
   can_dispatch: boolean;
   can_cancel: boolean;
+  /** O que a chamada pergunta: troco da gaveta e maquininha da casa. */
+  custody?: {
+    change_out_suggested_q: number;
+    needs_machine: boolean;
+    recorded: boolean;
+  };
 };
 
 /** Quem é o cliente deste pedido (WP-360). O servidor já resolve rótulo e tom;

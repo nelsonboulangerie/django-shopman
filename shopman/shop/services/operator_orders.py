@@ -1018,6 +1018,108 @@ def change_out_suggested_q(order: Order) -> int:
     return max(0, _change_for_q(order) - cash_due)
 
 
+def partner_custody_asks(order: Order) -> dict:
+    """O que a chamada do entregador da TaOn pergunta antes de abrir a corrida.
+
+    ``change_out_suggested_q``: o troco que sai da gaveta (zero: não pergunta).
+    ``needs_machine``: a cobrança na porta é no cartão e a maquininha da casa vai
+    junto. ``recorded``: a custódia já foi registrada numa chamada anterior
+    (a corrida não foi aceita e o operador chama de novo): nada se pergunta.
+    Pedido pago: tudo zero, a confirmação não pergunta nada.
+    """
+    from shopman.shop.adapters.delivery_devices import needs_card_machine
+
+    dispatch = (order.data or {}).get("dispatch") or {}
+    recorded = bool(dispatch.get("custody_at"))
+    return {
+        "change_out_suggested_q": 0 if recorded else change_out_suggested_q(order),
+        "needs_machine": False if recorded else needs_card_machine(order),
+        "recorded": recorded,
+    }
+
+
+@transaction.atomic
+def record_partner_custody(
+    order: Order,
+    *,
+    actor: str,
+    change_out_q: int | None = None,
+    cash_shift=None,
+    equipment: list[str] | None = None,
+) -> dict:
+    """A custódia que sai com o entregador da TaOn, registrada na chamada.
+
+    É a mesma custódia do despacho do Gestor (``advance_order``), com as mesmas
+    peças: o troco sai da gaveta como ``courier_out`` no turno de quem chama, a
+    maquininha é reservada por ``delivery_devices.allocate`` e o pedido grava
+    ``dispatch.equipment``/``device_ref``. A diferença é que o pedido não muda
+    de status: quem despacha é a coleta (``E``), que com ``partner_collects``
+    não lança nada de novo. ``dispatch.collector = "courier_partner"`` já fica
+    gravado, para a trava de maquininha e para o acerto.
+
+    Idempotente: com ``dispatch.custody_at`` gravado, não lança nada (a chamada
+    repetida depois de uma corrida não aceita reaproveita a custódia).
+    Pedido sem nada a levar (pago, sem troco, sem cartão) não grava nada.
+    """
+    if cash_shift is not None:
+        cash_shift = type(cash_shift).objects.select_for_update().get(pk=cash_shift.pk)
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    asks = partner_custody_asks(order)
+    if asks["recorded"]:
+        return {"recorded": False, "change_out_q": 0, "device_ref": ""}
+    suggested_q = asks["change_out_suggested_q"]
+    if change_out_q is None and suggested_q > 0:
+        raise ChangeOutRequired(suggested_q)
+    change_out = int(change_out_q or 0)
+    if change_out < 0:
+        raise ValueError("O troco levado não pode ser negativo.")
+    if change_out > 0 and (cash_shift is None or not getattr(cash_shift, "is_open", False)):
+        raise ValueError("Abra um turno de caixa para o entregador levar troco da gaveta.")
+    from shopman.shop.adapters import delivery_devices
+
+    taken, device_fields = [], {}
+    if asks["needs_machine"] or equipment:
+        taken = _clean_equipment(order, equipment)
+        device = delivery_devices.allocate(order, taken, allowed=equipment_options(order.channel_ref or ""))
+        if device:
+            device_fields = {"device_ref": str(device.ref), "device_label": device.label}
+            taken = [ref for ref in taken if not ref.startswith(delivery_devices.reference_prefix())] + ["card_machine"]
+    if not taken and change_out <= 0:
+        return {"recorded": False, "change_out_q": 0, "device_ref": ""}
+
+    now = timezone_now_iso()
+    data = dict(order.data or {})
+    data["dispatch"] = {
+        **dict(data.get("dispatch") or {}),
+        "collector": "courier_partner",
+        "custody_at": now,
+        "custody_by": actor,
+        **({"equipment": taken, **device_fields, "equipment_out_at": now, "equipment_out_by": actor} if taken else {}),
+    }
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    if change_out > 0:
+        from shopman.cashman import services as cash_ledger
+
+        cash_ledger.record(
+            "courier_out",
+            shift=cash_shift,
+            operator=_user_for_actor(actor) or cash_shift.opened_by,
+            amount_q=-change_out,
+            order_ref=order.ref,
+            payload={
+                "change_for_q": _change_for_q(order),
+                "suggested_q": suggested_q,
+                "dispatched_by": actor,
+                "collector": "courier_partner",
+            },
+        )
+    order.emit_event(event_type="partner_custody_recorded", actor=actor,
+        payload={"change_out_q": change_out, "equipment": taken, **device_fields})
+    return {"recorded": True, "change_out_q": change_out, "device_ref": device_fields.get("device_ref", "")}
+
+
 def courier_change_by_order(order_refs) -> dict[str, tuple[int, int | None]]:
     """``{order_ref: (out_q, back_q | None)}`` numa consulta, para projections com muitos cards."""
     from shopman.cashman.models import Entry

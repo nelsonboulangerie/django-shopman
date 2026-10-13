@@ -3645,11 +3645,26 @@ class OrderCourierDispatchView(_OrderActionBase):
         if err:
             return err
 
+        # A custódia que sai com o entregador da TaOn (troco da gaveta, maquininha),
+        # no mesmo formato do despacho do Gestor.
+        equipment = request.data.get("equipment") or []
+        if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
+            return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)
+        equipment = sorted(set(equipment))
+        change_out = request.data.get("change_out")
+        if change_out is not None and not isinstance(change_out, str | int | float):
+            return Response({"detail": "Troco inválido."}, status=400)
+        change_out = None if change_out is None else str(change_out)
+
         def enqueue(base):
-            task = orders_service.courier_dispatch(order, actor=_actor(request), expected_revision=base)
+            task = orders_service.courier_dispatch(
+                order, actor=_actor(request), expected_revision=base, operator=request.user,
+                change_out_raw=change_out, equipment=equipment,
+            )
             return {"directive_id": task.pk, "status": task.status}
 
-        return self._context_response(request, order, self.intention_operation, {}, enqueue)
+        return self._context_response(request, order, self.intention_operation,
+            {"change_out": change_out, "equipment": equipment}, enqueue)
 
 
 @extend_schema_view(
