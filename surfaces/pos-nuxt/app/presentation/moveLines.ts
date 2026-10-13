@@ -52,15 +52,11 @@ export function moveSubmitLabel(mode: MoveMode): string {
   return mode === "merge" ? "Juntar" : "Transferir";
 }
 
-/** O modo com que o diálogo abre: o pedido (Juntar, do menu da comanda) se o canal o
- *  oferece; senão outra comanda quando há para onde ir, e a comanda nova quando não há. */
-export function initialMoveMode(
-  modes: readonly MoveModeOption[],
-  requested: MoveMode | undefined,
-  hasOtherTabs: boolean,
-): MoveMode {
+/** O destino com que o diálogo abre: outra comanda quando há para onde ir, e a comanda
+ *  nova quando não há. Juntar é escolha do operador, dentro do diálogo (uma porta só:
+ *  o ⋯ da comanda não repete o Juntar, dono 13/10/2026). */
+export function initialMoveMode(modes: readonly MoveModeOption[], hasOtherTabs: boolean): MoveMode {
   const offered = new Set(modes.map((option) => option.ref));
-  if (requested && offered.has(requested)) return requested;
   if (hasOtherTabs && offered.has("transfer")) return "transfer";
   if (offered.has("split")) return "split";
   return modes[0]?.ref ?? "transfer";

@@ -223,8 +223,10 @@ for (const { scheme, size, width } of CASES) {
         [...document.querySelectorAll<HTMLElement>("[data-pos-ticket-column] [data-pos-line-name]")].map((el) => Math.round(el.getBoundingClientRect().left)),
       );
       const headerBefore = (await page.locator("[data-pos-ticket-header]").boundingBox())!;
+      // A marca é literal (dono, 13/10): as três caixas clicadas, e só elas.
       await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(1).click();
       await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(2).click();
+      await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(4).click();
       await expect(page.locator("[data-pos-marked-title]")).toContainText("3 linhas marcadas");
       await expect(page.locator("[data-pos-fire]")).toContainText(/Enviar 3|Enviar 3 marcadas/);
       const rowsAfter = await page.evaluate(() =>
@@ -488,3 +490,24 @@ for (const size of [{ width: 800, height: 600 }, { width: 1366, height: 768 }, {
     expect(sideways).toEqual([]);
   });
 }
+
+// O TIQUE NO MESMO QUADRO DO TOQUE (dono, 13/10/2026): a caixa clicada aparece marcada
+// antes do próximo quadro de tela, e só ela. O defeito era de regra (conjunto de um virava
+// "linha aberta", a caixa ficava vazia), e o operador clicava de novo sem saber se aceitou.
+test("a caixa de marcar aparece marcada no mesmo quadro do clique, com e sem linha aberta", async ({ page }) => {
+  await openFullTab(page, { width: 1366, height: 768 }, "light");
+  const tickedInNextFrame = (index: number) =>
+    page.evaluate((i) => new Promise<{ checked: string | null; marked: number }>((resolve) => {
+      const boxes = document.querySelectorAll<HTMLElement>("[data-pos-ticket-column] [data-pos-line-mark]");
+      const target = boxes[i]!.querySelector<HTMLElement>("[role='checkbox']")!;
+      target.click();
+      requestAnimationFrame(() => resolve({
+        checked: target.getAttribute("aria-checked"),
+        marked: document.querySelectorAll("[data-pos-ticket-column] [data-pos-line-marked]").length,
+      }));
+    }), index);
+  // A caixa da própria linha aberta (a 5ª) e depois a de outra.
+  expect(await tickedInNextFrame(4)).toEqual({ checked: "true", marked: 1 });
+  expect(await tickedInNextFrame(1)).toEqual({ checked: "true", marked: 2 });
+  expect(await tickedInNextFrame(1)).toEqual({ checked: "false", marked: 1 });
+});

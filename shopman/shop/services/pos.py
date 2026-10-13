@@ -1919,7 +1919,18 @@ def move_pos_tab_lines(
                 focus="cart",
             )
     elif to_tab_ref:
-        ref = normalize_tab_ref(to_tab_ref)
+        try:
+            ref = normalize_tab_ref(to_tab_ref)
+        except ValueError as exc:
+            # A recusa diz o formato que funciona, com o número desta comanda.
+            source_display = display_tab_ref((source.data or {}).get("tab_ref") or source.handle_ref or "")
+            example = f"{source_display}-2" if source_display else "1007-2"
+            raise PosIntentError(
+                code="invalid_tab_ref",
+                message=f"{exc} Use um hífen, por exemplo {example}.",
+                field="to_tab_ref",
+                focus="cart",
+            ) from exc
         if not ref:
             raise PosIntentError(
                 code="invalid_tab_ref",
@@ -2014,6 +2025,12 @@ def move_pos_tab_lines(
     source.refresh_from_db()
     target.refresh_from_db()
 
+    if close_source_when_empty and not source.items:
+        # JUNTAR leva o cliente junto quando o destino não tem nenhum (dono, 13/10/2026):
+        # a comanda que some não pode levar embora quem estava nela. Nunca sobrescreve o
+        # cliente que o destino já tem.
+        _carry_customer_on_merge(source=source, target=target)
+
     source_closed = False
     if close_source_when_empty and not source.items:
         source_closed = session_service.abandon_session(
@@ -2035,6 +2052,35 @@ def move_pos_tab_lines(
         source=None if source_closed else source,
         source_closed=bool(source_closed),
     )
+
+
+def _session_has_customer(data: dict) -> bool:
+    customer = data.get("customer") or {}
+    return bool(
+        str(data.get("customer_ref") or "").strip()
+        or any(str(customer.get(key) or "").strip() for key in ("ref", "name", "phone"))
+    )
+
+
+def _carry_customer_on_merge(*, source: Session, target: Session) -> None:
+    """Juntar comandas: o cliente da origem passa ao destino SEM cliente (``customer`` e
+    ``customer_ref`` de ``Session.data``, as chaves que o checkout já lê). Destino com
+    cliente fica como está."""
+    source_data = source.data or {}
+    if not _session_has_customer(source_data):
+        return
+    with transaction.atomic():
+        locked = Session.objects.select_for_update().get(pk=target.pk)
+        data = dict(locked.data or {})
+        if _session_has_customer(data):
+            return
+        if source_data.get("customer"):
+            data["customer"] = dict(source_data["customer"])
+        if source_data.get("customer_ref"):
+            data["customer_ref"] = source_data["customer_ref"]
+        locked.data = data
+        locked.save(update_fields=["data"])
+    target.refresh_from_db()
 
 
 def _carry_kitchen_state(*, source_session_key: str, target_session_key: str, line_ids: list[str]) -> None:

@@ -113,6 +113,73 @@ class POSMoveTabLinesTests(TestCase):
         target.refresh_from_db()
         self.assertEqual(len(target.items), 2)
 
+    def _merge(self, source: Session, target: Session) -> None:
+        pos_service.move_pos_tab_lines(
+            channel_ref="pdv",
+            from_session_key=source.session_key,
+            to_session_key=target.session_key,
+            line_ids=[item["line_id"] for item in source.items],
+            close_source_when_empty=True,
+            actor="pos:alice", operator_username="alice",
+        )
+
+    def test_merge_carries_customer_to_target_without_one(self) -> None:
+        source = self._open_with_item("00001007", sku="POS-A", qty=1)
+        target = self._open_with_item("00001008", sku="POS-B", qty=1)
+        Session.objects.filter(pk=source.pk).update(
+            data={**source.data, "customer": {"name": "Ana", "phone": "5543999990001", "ref": "C-1"}, "customer_ref": "C-1"},
+        )
+        source.refresh_from_db()
+
+        self._merge(source, target)
+
+        target.refresh_from_db()
+        self.assertEqual(target.data["customer"]["name"], "Ana")
+        self.assertEqual(target.data["customer_ref"], "C-1")
+
+    def test_merge_never_overwrites_target_customer(self) -> None:
+        source = self._open_with_item("00001007", sku="POS-A", qty=1)
+        target = self._open_with_item("00001008", sku="POS-B", qty=1)
+        Session.objects.filter(pk=source.pk).update(data={**source.data, "customer": {"name": "Ana", "ref": "C-1"}, "customer_ref": "C-1"})
+        Session.objects.filter(pk=target.pk).update(data={**target.data, "customer": {"name": "Bia", "ref": "C-2"}, "customer_ref": "C-2"})
+        source.refresh_from_db()
+        target.refresh_from_db()
+
+        self._merge(source, target)
+
+        target.refresh_from_db()
+        self.assertEqual(target.data["customer"]["name"], "Bia")
+        self.assertEqual(target.data["customer_ref"], "C-2")
+
+    def test_transfer_does_not_move_customer(self) -> None:
+        source = self._open_with_item("00001007", sku="POS-A", qty=1)
+        target = self._open_with_item("00001008", sku="POS-B", qty=1)
+        Session.objects.filter(pk=source.pk).update(data={**source.data, "customer": {"name": "Ana", "ref": "C-1"}, "customer_ref": "C-1"})
+        source.refresh_from_db()
+
+        pos_service.move_pos_tab_lines(
+            channel_ref="pdv",
+            from_session_key=source.session_key,
+            to_session_key=target.session_key,
+            line_ids=[source.items[0]["line_id"]],
+            actor="pos:alice", operator_username="alice",
+        )
+
+        target.refresh_from_db()
+        self.assertFalse(target.data.get("customer_ref"))
+
+    def test_split_ref_with_slash_is_refused_with_a_clear_message(self) -> None:
+        source = self._open_with_item("00001007", sku="POS-A", qty=1)
+        with self.assertRaises(PosIntentError) as raised:
+            pos_service.move_pos_tab_lines(
+                channel_ref="pdv",
+                from_session_key=source.session_key,
+                to_tab_ref="1007/2",
+                line_ids=[source.items[0]["line_id"]],
+                actor="pos:alice", operator_username="alice",
+            )
+        self.assertIn("1007-2", raised.exception.message)
+
     def test_split_rollback_failure_does_not_mask_move_error(self) -> None:
         # If the split target is created but the move fails, the cleanup
         # (abandon_session) is best-effort: a cleanup failure must NOT mask the

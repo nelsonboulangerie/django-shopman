@@ -184,7 +184,7 @@ describe("PosCartPanel — a grade de controles da comanda", () => {
     expect(wrapper.find("[data-pos-split]").exists()).toBe(false);
     expect(wrapper.find("[data-pos-ticket-foot]").text()).not.toContain("Dividir");
     await wrapper.find("[data-pos-tab-transfer]").trigger("click");
-    expect(wrapper.emitted("move")).toEqual([[undefined, "transfer"]]);
+    expect(wrapper.emitted("move")).toEqual([[undefined]]);
   });
 
   it("tudo enviado: o Enviar diz o estado em palavra, apagado, e Transferir segue ao lado", async () => {

@@ -898,7 +898,7 @@ describe("presentation/moveLines — move modes, gate & payload", () => {
   });
 
   it("gates submit per mode", () => {
-    const base = { selectedIds: ["L1"], splitRef: "1007/2", targetSessionKey: "s1", itemCount: 2, busy: false };
+    const base = { selectedIds: ["L1"], splitRef: "1007-2", targetSessionKey: "s1", itemCount: 2, busy: false };
     expect(canSubmitMove({ ...base, mode: "split" })).toBe(true);
     expect(canSubmitMove({ ...base, mode: "split", splitRef: " " })).toBe(false);
     expect(canSubmitMove({ ...base, mode: "split", selectedIds: [] })).toBe(false);
@@ -911,8 +911,8 @@ describe("presentation/moveLines — move modes, gate & payload", () => {
 
   it("builds the move payload per mode, or null when invalid", () => {
     const items = [cartItem({ sku: "CR", line_id: "L1" }), cartItem({ sku: "PC", line_id: "L2" })];
-    expect(buildMovePayload({ mode: "split", items, selectedIds: ["L1"], splitRef: " 1007/2 ", targetSessionKey: "" }))
-      .toEqual({ mode: "split", lineIds: ["L1"], toTabRef: "1007/2" });
+    expect(buildMovePayload({ mode: "split", items, selectedIds: ["L1"], splitRef: " 1007-2 ", targetSessionKey: "" }))
+      .toEqual({ mode: "split", lineIds: ["L1"], toTabRef: "1007-2" });
     expect(buildMovePayload({ mode: "transfer", items, selectedIds: ["L1"], splitRef: "", targetSessionKey: "s1" }))
       .toEqual({ mode: "transfer", lineIds: ["L1"], toSessionKey: "s1" });
     expect(buildMovePayload({ mode: "merge", items, selectedIds: [], splitRef: "", targetSessionKey: "s1" }))

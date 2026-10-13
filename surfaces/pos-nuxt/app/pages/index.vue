@@ -934,11 +934,9 @@ provideOperatorShortcuts(POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION);
 // Transferir a partir do modo seleção da comanda (v4): o diálogo nasce com as linhas
 // marcadas, pelo botão ou pelo F10 que ele anuncia. Sem marcas, o F10 abre vazio.
 const movePreselected = ref<string[]>([]);
-const moveInitialMode = ref<"transfer" | "merge" | undefined>(undefined);
 const cartPanelRef = ref<{ fireSelection: () => boolean; moveSelection: () => boolean } | null>(null);
-function openMoveWith(lineIds?: string[], mode?: "transfer" | "merge") {
+function openMoveWith(lineIds?: string[]) {
   movePreselected.value = lineIds ?? [];
-  moveInitialMode.value = mode;
   void openMoveDialog();
 }
 // "Reenviar com a observação": cancela na cozinha e envia de novo só esta linha.
@@ -1853,7 +1851,6 @@ onBeforeUnmount(() => {
       :items="cart.items"
       :suggested-split-ref="suggestedSplitRef"
       :preselected="movePreselected"
-      :initial-mode="moveInitialMode"
       :other-tabs="otherOpenTabs"
       :capability="tabManipulation"
       :busy="busy"

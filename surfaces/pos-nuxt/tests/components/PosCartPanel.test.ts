@@ -698,10 +698,11 @@ describe("PosCartPanel — F10 com linhas marcadas", () => {
 
   it("com marcas, leva as marcadas ao diálogo, como o botão", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    // Marcar sem modo: a linha aberta (Café) é a primeira marcada; marcar Pão faz duas.
+    // A marca é literal: marcar Pão e Café faz duas.
     await wrapper.find('[data-pos-line-mark="L-PAO"]').trigger("click");
+    await wrapper.find('[data-pos-line-mark="L-CAFE"]').trigger("click");
     expect((wrapper.vm as unknown as Exposed).moveSelection()).toBe(true);
-    expect(wrapper.emitted("move")?.[0]).toEqual([["L-PAO", "L-CAFE"], "transfer"]);
+    expect(wrapper.emitted("move")?.[0]).toEqual([["L-PAO", "L-CAFE"]]);
   });
 
   it("sem marcas, devolve false e não emite: a página abre o diálogo vazio", async () => {

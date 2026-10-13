@@ -131,9 +131,9 @@ const emit = defineEmits<{
   setDiscount: [string, number, string, "percent" | "fixed"];
   /** Operator unit-price override (numpad "Preço"); gated by manager approval. */
   prepare: [];
-  /** Transferir: com linhas marcadas (ou "Transferir esta") o diálogo nasce com elas;
-   *  `mode` é a porta do menu da comanda ("Juntar com outra comanda"). */
-  move: [lineIds?: string[], mode?: "transfer" | "merge"];
+  /** Transferir: com linhas marcadas (ou "Transferir esta linha") o diálogo nasce com
+   *  elas. Os três destinos (outra comanda, comanda nova, juntar) moram no diálogo. */
+  move: [lineIds?: string[]];
   /** + numa linha que já está na cozinha: as unidades novas vão numa linha nova, a
    *  enviar. `done` devolve o line_id dela, para o editor seguir a linha nova. */
   addLike: [lineId: string, qty: number, done: (lineId: string) => void];
@@ -162,11 +162,12 @@ const emit = defineEmits<{
   autoFireSettings: [];
 }>();
 
-// MARCAR SEM MODO (decisão 1 do dono, 10/10): a caixa de marcar está sempre à mão (no
-// hover e no foco da linha; visível em todas assim que há marcadas). A linha aberta é a
-// primeira marcada: marcar outra transforma o bloco de 1 no bloco de N, nas mesmas
-// posições, e desmarcar até sobrar uma volta ao editor dela (`presentation/ticketColumn`).
-// A seleção é um conjunto de `line_id`s, a mesma chave que fire/unfire mandam ao servidor.
+// MARCAR SEM MODO (decisão 1 do dono, 10/10) E A MARCA É LITERAL (dono, 13/10): a caixa
+// de marcar está sempre à mão (no hover e no foco da linha; visível em todas assim que há
+// marcadas), e a caixa clicada é a caixa marcada, no mesmo toque, sem nada entrar junto.
+// Uma ou mais marcadas viram o bloco das marcadas; desmarcar a última volta ao editor da
+// linha aberta (`presentation/ticketColumn`). A seleção é um conjunto de `line_id`s, a
+// mesma chave que fire/unfire mandam ao servidor.
 const selected = ref<Set<string>>(new Set());
 const selection = computed(() => selectionView(props.items, selected.value));
 const marked = computed(() => markedSummary(props.items, selected.value));
@@ -174,19 +175,16 @@ const marked = computed(() => markedSummary(props.items, selected.value));
 // do resumo do pagamento, do quadro de comandas e da tela virada para o
 // cliente. Era o último lugar do app que ainda falava linha, e o mais lido.
 const cartUnits = computed(() => countUnits(props.items));
-/** O bloco de N: duas ou mais linhas marcadas. */
-const selectMode = computed(() => selection.value.count >= 2);
+/** O bloco das marcadas: uma ou mais linhas marcadas. */
+const selectMode = computed(() => selection.value.count >= 1);
 function isSelected(lineId: string) {
   return selected.value.has(lineId);
 }
 const markAnchor = ref("");
-function applyMark(result: { marked: Set<string>; open: string }) {
-  const wasPlural = selectMode.value;
-  selected.value = result.marked;
-  if (result.open) {
-    selectLine(result.open);
-  }
-  if (wasPlural !== selectMode.value) {
+function applyMark(next: Set<string>) {
+  const wasMarking = selectMode.value;
+  selected.value = next;
+  if (wasMarking !== selectMode.value) {
     // Trocar de objeto fecha o rascunho que era do outro.
     discountOpen.value = false;
     noteDraft.value = null;
@@ -194,14 +192,14 @@ function applyMark(result: { marked: Set<string>; open: string }) {
     syncBufferToMode();
   }
 }
-/** A linha aberta no editor (a que entra na conta ao marcar a primeira outra). */
-const openLineForMarks = computed(() => (editorVisible.value || selectMode.value ? activeLineId.value : ""));
+/** A linha aberta no editor: âncora do primeiro Shift + clique, quando nada está marcado. */
+const openLineForMarks = computed(() => (editorVisible.value ? activeLineId.value : ""));
 function toggleSelect(lineId: string, range = false) {
-  const anchor = markAnchor.value && (selectMode.value || markAnchor.value === openLineForMarks.value) ? markAnchor.value : openLineForMarks.value;
+  const anchor = selectMode.value && markAnchor.value ? markAnchor.value : openLineForMarks.value;
   if (range && anchor) {
     applyMark(markRange(props.items, selected.value, anchor, lineId));
   } else {
-    applyMark(toggleMarkRule(selected.value, lineId, selectMode.value ? "" : openLineForMarks.value));
+    applyMark(toggleMarkRule(selected.value, lineId));
   }
   markAnchor.value = lineId;
 }
@@ -222,8 +220,7 @@ watch(
   () => props.items.map((item) => item.line_id).join("|"),
   () => {
     const pruned = pruneSelection(selected.value, props.items);
-    if (pruned.size === 1) applyMark({ marked: new Set(), open: [...pruned][0]! });
-    else selected.value = pruned;
+    if (pruned.size !== selected.value.size) selected.value = pruned;
   },
 );
 /** Clique na linha ABRE a linha. Com marcadas (o foco é o bloco de N), o clique marca ou
@@ -977,34 +974,25 @@ function runConfirm() {
 }
 
 // ── As portas do raro (o ⋯ único da suíte, `OperatorMoreMenu`) ──────────────────────
-// "Ações da comanda" no cabeçalho: o que age na comanda INTEIRA sem marcar nada
-// (Juntar com outra comanda, Liberar). Transferir saiu daqui para o pé, no lugar do
-// Dividir conta (dono, 13/10/2026); só fica aqui na folha que paga direto, sem o pé.
-// Sem conexão, apagado com o motivo escrito sob o
-// rótulo (o toque não tem dica de ponteiro).
+// "Ações da comanda" no cabeçalho: só o que age na comanda INTEIRA e não tem botão
+// (Liberar). Juntar NÃO mora aqui: é um dos três destinos do Transferir (outra comanda,
+// comanda nova, juntar), e duas portas para o mesmo ato confundem (dono, 13/10/2026). Na
+// folha que paga direto (sem o pé), o Transferir também mora aqui, porque lá não há pé.
+// Sem conexão, apagado com o motivo escrito sob o rótulo (o toque não tem dica de ponteiro).
 const OFFLINE_REASON = "Volta com a conexão.";
 type MoreItem = Record<string, unknown>;
 const tabMenuItems = computed<MoreItem[][]>(() => {
   const offline = Boolean(props.offline);
   const reason = offline ? OFFLINE_REASON : undefined;
   const groups: MoreItem[][] = [];
-  if (canMove.value) {
-    groups.push([
-      ...(sheetPayFoot.value ? [{
-        label: "Transferir itens",
-        icon: "i-lucide-arrow-right-left",
-        disabled: offline || !props.items.length || props.loading,
-        reason,
-        onSelect: () => emit("move", selectMode.value ? selection.value.lineIds : undefined, "transfer"),
-      }] : []),
-      {
-        label: "Juntar com outra comanda",
-        icon: "i-lucide-merge",
-        disabled: offline || !props.items.length || props.loading,
-        reason,
-        onSelect: () => emit("move", undefined, "merge"),
-      },
-    ]);
+  if (canMove.value && sheetPayFoot.value) {
+    groups.push([{
+      label: "Transferir itens",
+      icon: "i-lucide-arrow-right-left",
+      disabled: offline || !props.items.length || props.loading,
+      reason,
+      onSelect: () => emit("move", selectMode.value ? selection.value.lineIds : undefined),
+    }]);
   }
   groups.push([{
     label: "Liberar comanda",
@@ -1031,7 +1019,7 @@ const lineMenuItems = computed<MoreItem[]>(() => {
       icon: "i-lucide-arrow-right-left",
       disabled: offline || props.loading,
       reason,
-      onSelect: () => emit("move", [item.line_id], "transfer"),
+      onSelect: () => emit("move", [item.line_id]),
     });
   }
   if (state === "unfired" && fireBar.value.visible) {
@@ -1471,7 +1459,7 @@ function fireSelection(): boolean {
 }
 function moveSelection(): boolean {
   if (!canMove.value || !props.hasOpenTab || !selectMode.value) return false;
-  if (!props.loading && !props.offline) emit("move", selection.value.lineIds, "transfer");
+  if (!props.loading && !props.offline) emit("move", selection.value.lineIds);
   return true;
 }
 
@@ -1615,7 +1603,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
               :disabled="loading || offline"
               :title="offline ? 'Transferir volta com a conexão' : 'Transferir as marcadas para outra comanda (F10)'"
               data-pos-batch-move
-              @click="$emit('move', selection.lineIds, 'transfer')"
+              @click="$emit('move', selection.lineIds)"
             />
           </div>
           <ReuseFireButton v-else-if="cell === 'fire'" />
@@ -1652,7 +1640,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
               :disabled="!items.length || loading || offline"
               :title="offline ? 'Transferir volta com a conexão' : selectMode ? 'Transferir as marcadas para outra comanda (F10)' : 'Transferir itens para outra comanda ou para uma nova (F10)'"
               data-pos-tab-transfer
-              @click="$emit('move', selectMode ? selection.lineIds : undefined, 'transfer')"
+              @click="$emit('move', selectMode ? selection.lineIds : undefined)"
             />
           </div>
           <OperatorButton
@@ -1694,7 +1682,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             <OperatorMoreMenu
               v-if="showTabMenu"
               :items="tabMenuItems"
-              :label="canMove ? (sheetPayFoot ? 'Ações da comanda: transferir itens, juntar, liberar' : 'Ações da comanda: juntar, liberar') : 'Ações da comanda: liberar'"
+              :label="canMove && sheetPayFoot ? 'Ações da comanda: transferir itens, liberar' : 'Ações da comanda: liberar'"
               :size="controlSize"
               class="shrink-0"
               data-pos-tab-menu

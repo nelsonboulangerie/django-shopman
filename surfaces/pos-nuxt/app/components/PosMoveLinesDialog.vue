@@ -16,6 +16,7 @@ import {
   moveTargetOptions,
   selectedLineIds,
 } from "~/presentation/moveLines";
+import { tabTitleView } from "~/presentation/tabTitle";
 
 const props = defineProps<{
   open: boolean;
@@ -33,9 +34,6 @@ const props = defineProps<{
    * operador escolheu antes o que sai. Pelo F10 a lista vem vazia, como sempre.
    */
   preselected?: string[];
-  /** O modo pedido pela porta que abriu o diálogo ("Juntar com outra comanda", no
-   *  menu da comanda). Sem ele, outra comanda quando há, senão a comanda nova. */
-  initialMode?: MoveMode;
 }>();
 
 const emit = defineEmits<{
@@ -47,6 +45,15 @@ const modes = computed(() => availableMoveModes(props.capability));
 const showPriceNote = computed(() => freezesPriceOnMove(props.capability));
 const targetOptions = computed(() => moveTargetOptions(props.otherTabs));
 const lineViews = computed(() => props.items.map(moveLineView));
+// DE ONDE os itens saem, sempre à vista (o título é o verbo; a origem é a primeira
+// coisa que o operador confere antes de escolher o destino).
+const originLine = computed(() => {
+  const origin = props.tabDisplay ? `Da comanda ${tabTitleView(props.tabDisplay, "").title}.` : "";
+  const price = showPriceNote.value ? "O preço de cada item fica como foi cobrado nesta comanda." : "";
+  return [origin, price].filter(Boolean).join(" ") || undefined;
+});
+// O exemplo do campo é o formato que o servidor aceita (hífen; barra é recusada).
+const splitPlaceholder = computed(() => `Ex.: ${props.suggestedSplitRef || "1007-2"}`);
 
 const mode = ref<MoveMode>("transfer");
 const selected = ref<Set<string>>(new Set());
@@ -55,7 +62,7 @@ const targetSessionKey = ref("");
 
 watch(() => props.open, (isOpen) => {
   if (!isOpen) return;
-  mode.value = initialMoveMode(modes.value, props.initialMode, targetOptions.value.length > 0);
+  mode.value = initialMoveMode(modes.value, targetOptions.value.length > 0);
   // Seleção começa VAZIA: dividir a conta é escolher O QUE SAI — nascer com
   // tudo marcado invertia o gesto (desmarcar o que fica) e um Enter apressado
   // movia a comanda inteira.
@@ -105,7 +112,7 @@ function submit() {
   <NuxtModal
     :open="open"
     title="Transferir itens"
-    :description="showPriceNote ? 'O preço de cada item é mantido como foi cobrado nesta comanda.' : undefined"
+    :description="originLine"
     :ui="{ content: 'sm:max-w-xl' }"
     data-pos-move-dialog
     @update:open="$emit('update:open', Boolean($event))"
@@ -167,7 +174,7 @@ function submit() {
 
         <label v-if="mode === 'split'" class="grid gap-1 text-sm">
           <span class="font-medium text-muted-foreground">Nova comanda</span>
-          <UiInput v-model="splitRef" placeholder="Ex: 1007/2" />
+          <UiInput v-model="splitRef" :placeholder="splitPlaceholder" data-pos-move-split-ref />
         </label>
 
         <div v-else class="grid gap-1 text-sm">
