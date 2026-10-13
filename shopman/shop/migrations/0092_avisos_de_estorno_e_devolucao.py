@@ -5,26 +5,28 @@ pode demorar conforme o banco; ``order_returned`` ganha texto (era emitido sem
 nenhum). A fonte é ``shopman/shop/notification_copy.py``.
 
 Mesmo padrão da ``0078``: o estorno só troca o texto que ainda está **exatamente**
-como a casa gravou (pela ``0078`` ou pelo seed); texto reescrito no Admin fica. A
+como a ``0079`` (e o seed) gravou; texto reescrito no Admin fica. A
 devolução só nasce onde não existe linha.
 """
 
 from django.db import migrations
 
 REFUND_EVENT = "payment_refunded"
-#: Os dois textos de fábrica que podem estar no banco: o da 0078 e o do seed.
+#: O texto de fábrica que a 0079 deixou (e que o seed gravava).
 REFUND_OLD_SUBJECT = "Reembolso do pedido {order_ref_short} processado"
-REFUND_OLD_BODIES = (
-    "Oi{customer_name_greeting}! O reembolso do pedido *{order_ref_short}*, no valor de *{total}*, "
-    "foi processado. Qualquer dúvida, estamos à disposição.",
+REFUND_OLD_BODY = (
     "Oi{customer_name_greeting}! O reembolso do pedido *{order_ref_short}*, no valor de "
-    "*{order_total_display}*, foi processado. Qualquer dúvida, estamos à disposição.",
+    "*{order_total_display}*, foi processado. Qualquer dúvida, estamos à disposição."
 )
 REFUND_SUBJECT = "Pedido {order_ref_short}: valor devolvido"
 REFUND_BODY = (
     "Oi{customer_name_greeting}! Devolvemos *{refund_amount_display}* do seu pedido *{order_ref_short}*. "
     "{status_note}. Qualquer dúvida, estamos à disposição."
 )
+
+# (evento, assunto antigo, assunto novo, corpo antigo, corpo novo): o formato das
+# migrações de texto (0075, 0078, 0079), que a trava da voz encadeia até o seed.
+TEXTS = [(REFUND_EVENT, REFUND_OLD_SUBJECT, REFUND_SUBJECT, REFUND_OLD_BODY, REFUND_BODY)]
 
 RETURN_EVENT = "order_returned"
 RETURN_SUBJECT = "Pedido {order_ref_short} devolvido"
@@ -35,18 +37,26 @@ RETURN_BODY = (
 )
 
 
-def forwards(apps, schema_editor):
+def _swap(apps, *, forward: bool) -> None:
     NotificationTemplate = apps.get_model("shop", "NotificationTemplate")
-    for row in NotificationTemplate.objects.filter(event=REFUND_EVENT):
-        changed = []
-        if row.subject == REFUND_OLD_SUBJECT:
-            row.subject = REFUND_SUBJECT
-            changed.append("subject")
-        if row.body in REFUND_OLD_BODIES:
-            row.body = REFUND_BODY
-            changed.append("body")
-        if changed:
-            row.save(update_fields=changed)
+    for event, old_subject, new_subject, old_body, new_body in TEXTS:
+        source_subject, target_subject = (old_subject, new_subject) if forward else (new_subject, old_subject)
+        source_body, target_body = (old_body, new_body) if forward else (new_body, old_body)
+        for row in NotificationTemplate.objects.filter(event=event):
+            changed = []
+            if row.subject == source_subject:
+                row.subject = target_subject
+                changed.append("subject")
+            if row.body == source_body:
+                row.body = target_body
+                changed.append("body")
+            if changed:
+                row.save(update_fields=changed)
+
+
+def forwards(apps, schema_editor):
+    _swap(apps, forward=True)
+    NotificationTemplate = apps.get_model("shop", "NotificationTemplate")
     NotificationTemplate.objects.get_or_create(
         event=RETURN_EVENT,
         defaults={"subject": RETURN_SUBJECT, "body": RETURN_BODY, "is_active": True},
@@ -54,10 +64,8 @@ def forwards(apps, schema_editor):
 
 
 def backwards(apps, schema_editor):
+    _swap(apps, forward=False)
     NotificationTemplate = apps.get_model("shop", "NotificationTemplate")
-    NotificationTemplate.objects.filter(
-        event=REFUND_EVENT, subject=REFUND_SUBJECT, body=REFUND_BODY
-    ).update(subject=REFUND_OLD_SUBJECT, body=REFUND_OLD_BODIES[0])
     NotificationTemplate.objects.filter(
         event=RETURN_EVENT, subject=RETURN_SUBJECT, body=RETURN_BODY, whatsapp_flow_ns=""
     ).delete()

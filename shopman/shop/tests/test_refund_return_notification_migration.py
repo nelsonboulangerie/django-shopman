@@ -30,7 +30,7 @@ def test_migracao_troca_o_texto_de_fabrica_cria_a_devolucao_e_preserva_o_curado(
     Old.objects.create(
         event="payment_refunded",
         subject=migration.REFUND_OLD_SUBJECT,
-        body=migration.REFUND_OLD_BODIES[1],
+        body=migration.REFUND_OLD_BODY,
         is_active=True,
     )
 
